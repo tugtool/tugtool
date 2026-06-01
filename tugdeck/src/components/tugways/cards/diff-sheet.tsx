@@ -43,6 +43,7 @@ import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordi
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
+import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import {
   type GitDiffFile,
@@ -286,73 +287,79 @@ function DiffSheetBody({
     );
   }
 
-  return (
-    <div className="diff-sheet">
-      <div className="diff-sheet-header">
-        {hasFiles && payload !== null ? (
-          <div className="diff-sheet-header-text">
-            <TugLabel emphasis="proposal">
-              Uncommitted changes (git diff HEAD)
-            </TugLabel>
-            <span
-              className="diff-sheet-summary"
-              aria-label={diffSummaryLine(
-                payload.file_count,
-                payload.total_added,
-                payload.total_removed,
-              )}
-            >
-              {payload.file_count}{" "}
-              {payload.file_count === 1 ? "file" : "files"} changed{" "}
-              <span className="diff-sheet-stat-add">+{payload.total_added}</span>{" "}
-              <span className="diff-sheet-stat-remove">
-                −{payload.total_removed}
-              </span>
-            </span>
-          </div>
-        ) : (
-          <span className="diff-sheet-header-spacer" />
-        )}
-        <div className="diff-sheet-header-actions">
-          {hasFiles ? (
-            <>
-              <TugPushButton
-                size="sm"
-                emphasis="ghost"
-                onClick={expandAll}
-                data-testid="diff-expand-all"
-              >
-                Expand All
-              </TugPushButton>
-              <TugPushButton
-                size="sm"
-                emphasis="ghost"
-                onClick={collapseAll}
-                data-testid="diff-collapse-all"
-              >
-                Collapse All
-              </TugPushButton>
-            </>
-          ) : null}
-          <TugPushButton
-            size="sm"
-            emphasis="ghost"
-            onClick={refresh}
-            disabled={snapshot.phase === "loading"}
-            data-testid="diff-refresh"
+  const header = (
+    <div className="diff-sheet-header">
+      {hasFiles && payload !== null ? (
+        <div className="diff-sheet-header-text">
+          <TugLabel emphasis="proposal">
+            Uncommitted changes (git diff HEAD)
+          </TugLabel>
+          <span
+            className="diff-sheet-summary"
+            aria-label={diffSummaryLine(
+              payload.file_count,
+              payload.total_added,
+              payload.total_removed,
+            )}
           >
-            Refresh
-          </TugPushButton>
+            {payload.file_count}{" "}
+            {payload.file_count === 1 ? "file" : "files"} changed{" "}
+            <span className="diff-sheet-stat-add">+{payload.total_added}</span>{" "}
+            <span className="diff-sheet-stat-remove">
+              −{payload.total_removed}
+            </span>
+          </span>
         </div>
-      </div>
-
-      <div className="diff-sheet-body">{body}</div>
-
-      <div className="tug-sheet-actions">
-        <TugPushButton emphasis="filled" onClick={() => onClose()} data-testid="diff-done">
-          Done
+      ) : (
+        <span className="diff-sheet-header-spacer" />
+      )}
+      <div className="diff-sheet-header-actions">
+        {hasFiles ? (
+          <>
+            <TugPushButton
+              size="sm"
+              emphasis="ghost"
+              onClick={expandAll}
+              data-testid="diff-expand-all"
+            >
+              Expand All
+            </TugPushButton>
+            <TugPushButton
+              size="sm"
+              emphasis="ghost"
+              onClick={collapseAll}
+              data-testid="diff-collapse-all"
+            >
+              Collapse All
+            </TugPushButton>
+          </>
+        ) : null}
+        <TugPushButton
+          size="sm"
+          emphasis="ghost"
+          onClick={refresh}
+          disabled={snapshot.phase === "loading"}
+          data-testid="diff-refresh"
+        >
+          Refresh
         </TugPushButton>
       </div>
     </div>
+  );
+
+  return (
+    <TugSheetScaffold
+      className="diff-sheet"
+      header={header}
+      footer={
+        <div className="tug-sheet-actions">
+          <TugPushButton emphasis="filled" onClick={() => onClose()} data-testid="diff-done">
+            Done
+          </TugPushButton>
+        </div>
+      }
+    >
+      {body}
+    </TugSheetScaffold>
   );
 }

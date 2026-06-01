@@ -10,31 +10,12 @@
    Status letters and the +/− stat tint via the tone *text* tokens above, which
    layer on the inherited sheet foreground — so no @tug-renders-on ([L16]). */
 
-/* Make the hosting sheet a flex column that clips, so the diff's own body is
-   the only scroll region and the "Done" footer stays pinned as the sheet hits
-   its canvas-height cap — independent of `resizable` (the diff sheet is not
-   resizable). Scoped via `:has` so only the diff sheet's host is affected. */
-.tug-sheet-content:has(.diff-sheet) {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.tug-sheet-content:has(.diff-sheet) .tug-sheet-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.diff-sheet {
-  /* Fills the sheet body via flex (not `height: 100%`, which is fragile
-     through the portal/flex chain) so only `.diff-sheet-body` scrolls and the
-     "Done" footer stays pinned at the JS-clamped canvas bottom. */
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  min-height: 0;
+/* Layout (fixed header → scrolling file list → fixed Done) comes from the
+   composed TugSheetScaffold; the diff sheet only adds the header→body gap and
+   the diff-specific styling below. (The footer gap is the composed
+   `.tug-sheet-actions` row's own `margin-top`.) */
+.diff-sheet .tug-sheet-scaffold-header {
+  margin-bottom: 0.5rem;
 }
 
 /* Header: "Uncommitted changes (git diff HEAD)" + summary on the left, the
@@ -44,7 +25,6 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  flex: 0 0 auto;
 }
 
 .diff-sheet-header-text {
@@ -72,17 +52,6 @@
 .diff-sheet-summary {
   font-size: 0.8125rem;
   opacity: 0.7;
-}
-
-/* The scrollable file-list region. `flex: 1` fills the space between the
-   pinned header and Done; `overflow-y: auto` keeps the scroll here so a long
-   diff never pushes Done out of view. The parent chain (resizable
-   `.tug-sheet-content` → `.tug-sheet-body` → `.diff-sheet`) is height-bounded,
-   so no `max-height` backstop is needed. */
-.diff-sheet-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 /* Single centered notice for the loading / empty / no-repo / error states. */

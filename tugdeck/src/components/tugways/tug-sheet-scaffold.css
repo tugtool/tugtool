@@ -1,0 +1,43 @@
+/* @tug-pairings: none — layout only (no color-setting rules, so no
+   @tug-renders-on [L16]). The panel surface comes from the composed TugSheet;
+   header / footer / body content keep their own tokens [L20]. */
+
+/* A sheet hosting a scaffold becomes a clipping flex column, and its body
+   fills it — so the scaffold's own body is the only scroll region and the
+   header/footer stay pinned within the JS canvas-clamped panel. Keyed on the
+   scaffold class via `:has`, so ANY sheet that renders a <TugSheetScaffold>
+   gets this layout with no per-sheet CSS. */
+.tug-sheet-content:has(.tug-sheet-scaffold) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tug-sheet-content:has(.tug-sheet-scaffold) .tug-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tug-sheet-scaffold {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tug-sheet-scaffold-header {
+  flex: 0 0 auto;
+}
+
+/* The scroll region — fills the space between header and footer; a long body
+   scrolls here so the footer is always reachable. */
+.tug-sheet-scaffold-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tug-sheet-scaffold-footer {
+  flex: 0 0 auto;
+}

@@ -567,9 +567,12 @@ export function TugSheetContent({
   // tall panel (long /diff) ran off the bottom. Mirror what panes do when
   // drag-resizing: measure the rectangles and clamp in JS. The canvas is the
   // pane frame's parent; the panel's top is the (un-transformed) clip top plus
-  // its own top margin. Set `max-height` so the panel bottom lands 16px above
-  // the canvas bottom. Re-measured on canvas/pane resize and window resize.
-  // DOM write only ([L06]); inline `max-height` overrides the CSS fallback.
+  // its own top margin. Set `max-height` so the panel bottom lands
+  // `SHEET_CANVAS_GAP` px above the visible bottom. Re-measured on canvas/pane
+  // resize and window resize. DOM write only ([L06]); inline `max-height`
+  // overrides the CSS fallback. Geometry is read from the clip (never
+  // transformed) so the entrance animation on the panel doesn't skew it — no
+  // rAF/commit sequencing needed ([L05]).
   useLayoutEffect(() => {
     const content = sheetContentRef.current;
     const clip = clipRef.current;
@@ -590,15 +593,11 @@ export function TugSheetContent({
       content.style.maxHeight = `${Math.max(SHEET_RESIZE_MIN_HEIGHT, available)}px`;
     };
     measure();
-    // Re-measure once layout settles (the portal + entrance can shift the clip
-    // top a frame after the layout effect).
-    const raf = requestAnimationFrame(measure);
     const observer = new ResizeObserver(measure);
     observer.observe(canvas);
     observer.observe(paneFrameEl);
     window.addEventListener("resize", measure);
     return () => {
-      cancelAnimationFrame(raf);
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
