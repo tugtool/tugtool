@@ -50,6 +50,8 @@ that grew around it. See [P01].
   authoring convention; the parser/validator/state.db/validate-gate that mechanized it go.
 - **Git is the source of truth for dash lifecycle** ([P02]); the one datum git lacks — the
   verbatim instruction — lands in a flat append-only markdown log ([P04]).
+- **Hydrate the worktree at creation, from config** ([P07]); a fresh `tugdash/` worktree
+  arrives with deps installed, so the skills get to work instead of rediscovering `bun install`.
 - **Sequence for a green build at every step.** `StateDb` spans all dash subcommands, so the
   dash rewrite is one atomic step. `parser`/`types` can only be deleted after *both* their
   consumers (`validator`, `list`) are gone, so validation removal precedes parser removal.
@@ -65,12 +67,15 @@ that grew around it. See [P01].
 - `cargo build` and `cargo nextest run` pass clean under `-D warnings` across the workspace. (CI/local)
 - A full `dash create → commit → show → join` cycle works with no `.tugtool/state.db`
   present, leaving a `tugdash(...)` commit on `main` and lines in `.tugtool/dash-log.md`. (manual)
+- A fresh `dash create` leaves the worktree hydrated (`tugdeck/node_modules` present) with no
+  manual `bun install`. (manual)
 - `tuglaws/devise-skeleton.md` retains every structural section; only its two
   `tugutil validate` references are removed. (diff inspection)
 
 #### Scope {#scope}
 
-1. Rewrite `tugutil dash` on git primitives + a flat log; delete `state.db` / `StateDb`.
+1. Rewrite `tugutil dash` on git primitives + a flat log + config-driven worktree hydration;
+   delete `state.db` / `StateDb`.
 2. Delete `validator.rs`, `parser.rs`, `types.rs`, the `validate` command, and `tugutil list`.
 3. Strip the `validate` gate and round-ledger plumbing from the `devise`/`implement`/`dash`
    skills and `tugplug/CLAUDE.md`; strip the validation references from `devise-skeleton.md`.
@@ -232,6 +237,33 @@ no AST.
 **Implications:**
 - Removed alongside `parser.rs`/`types.rs` in [#step-3].
 
+#### [P07] `dash create` hydrates the worktree via a config-declared post-create hook (DECIDED) {#p07-worktree-hydration}
+
+**Decision:** After `git worktree add`, `dash create` runs the commands declared in
+`[tugtool.dash].post_create` (from `.tugtool/config.toml`), with the new worktree as cwd —
+e.g. `bun install --cwd tugdeck`. The hook runs **only on actual creation**, not on the
+idempotent resume path, and a non-zero exit **hard-fails** `create` with the command's output.
+
+**Rationale:**
+- A git worktree never inherits gitignored files, so `tugdeck/node_modules` is *always* absent
+  in a fresh `tugdash/` worktree — a structural certainty, not a per-dash discovery. The skills
+  currently rediscover it as prose and get diverted into an ad-hoc `bun install` before reaching
+  the task.
+- Keeping the command in config keeps `tugutil` generic — it runs what the project *declares*,
+  never a hardcoded `bun`/`tugdeck` path in the Rust binary.
+- This is also what gives `.tugtool/config.toml` a durable purpose once the validation fields
+  (`validation_level`, `show_info`) are removed — see [#step-4].
+
+**Implications:**
+- `config.rs` gains a `[tugtool.dash].post_create: Vec<String>` field; `init`'s `DEFAULT_CONFIG`
+  seeds it with `bun install --cwd tugdeck`.
+- The skills no longer install deps or check for `node_modules` — the worktree arrives hydrated
+  ([#step-5] removes that prose).
+- Hydration is the *tool's* job; establishing a green test **baseline** stays the *skill's* job
+  (contextual: which suites, Rust vs JS).
+- **Rejected:** symlinking the base checkout's `node_modules` into the worktree — fragile with
+  native bindings and bun's layout; `bun install` from bun's global cache is fast enough.
+
 ---
 
 ### Specification {#specification}
@@ -251,6 +283,18 @@ Post-rewrite command behavior (all shell out to `git`, as the current flow alrea
   from `branch.*.tugbase` ([P03]). Drops the DB status flip.
 - **`release <name>`** — remove worktree + delete branch; append a `released` line.
 - **`list`** / **`show`** — git-derived per [P02].
+
+#### Worktree hydration (contract) {#worktree-hydration-spec}
+
+`[tugtool.dash].post_create` is an ordered list of shell commands. On a real `create` (a freshly
+added worktree), `dash create` runs each from the worktree root, in order; the first non-zero
+exit aborts `create` and surfaces the failing command's stderr. On the idempotent path (worktree
+already existed) the hook is skipped. Default seeded by `init`:
+
+```toml
+[tugtool.dash]
+post_create = ["bun install --cwd tugdeck"]
+```
 
 #### Log format (contract) {#log-format}
 
@@ -300,7 +344,8 @@ the step that orphans it.
 | `Commands::{Validate,List}` | enum variants | `tugutil/src/cli.rs` | remove |
 | `Commands::{Validate,List}` dispatch | match arms | `tugutil/src/main.rs` | remove |
 | `commands` exports | mod/use | `tugutil/src/commands/mod.rs` | drop `validate`, `list`, `run_validate`, `run_list` |
-| `run_init` | fn | `tugutil/src/commands/init.rs` | stop creating `tugplan-implementation-log.md` |
+| `DashConfig`/`post_create` | struct/field | `tugutil-core/src/config.rs` | add `[tugtool.dash].post_create: Vec<String>` ([P07]); remove dead `validation_level`/`show_info` |
+| `run_init` / `DEFAULT_CONFIG` | fn/const | `tugutil/src/commands/init.rs` | stop creating `tugplan-implementation-log.md`; seed `post_create` default; drop validation fields |
 | `TugError` | enum | `tugutil-core/src/error.rs` | prune dead variants |
 | `[dependencies]` | manifest | `tugutil-core/Cargo.toml` | drop `rusqlite`, `sha2` |
 
@@ -341,26 +386,30 @@ the step that orphans it.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Dash on git + flat log; delete `state.db`/`StateDb` | pending | — |
+| #step-1 | Dash on git + worktree hydration + flat log; delete `state.db`/`StateDb` | pending | — |
 | #step-2 | Delete `validator.rs` + the `validate` command | pending | — |
 | #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | pending | — |
 | #step-4 | Cleanup: deps, `init` fossil, gitignore, orphans | pending | — |
 | #step-5 | De-ceremony skills + skeleton/docs | pending | — |
 | #step-6 | Integration checkpoint | pending | — |
 
-#### Step 1: Dash on git + flat log; delete `state.db`/`StateDb` {#step-1}
+#### Step 1: Dash on git + worktree hydration + flat log; delete `state.db`/`StateDb` {#step-1}
 
 **Commit:** `refactor(tugutil): drive dash on git primitives, retire state.db`
 
 **References:** [P02] git-source-of-truth, [P03] base-in-git-config, [P04] flat-log,
-(#dash-on-git, #log-format)
+[P07] worktree-hydration, (#dash-on-git, #worktree-hydration-spec, #log-format)
 
 **Artifacts:**
 - Rewritten `run_dash_*` in `commands/dash.rs`; new `.tugtool/dash-log.md` append path.
+- `[tugtool.dash].post_create` field in `config.rs` + a seeded default in `init`'s `DEFAULT_CONFIG`.
 - Deleted `tugutil-core/src/state.rs` and the `impl StateDb` block in `dash.rs`.
 
 **Tasks:**
 - [ ] Rewrite `run_dash_create` on `git worktree add` + `git config` ([P03]); drop `StateDb`.
+- [ ] On real creation only, run `[tugtool.dash].post_create` from the worktree root; hard-fail on
+      a non-zero exit ([P07], #worktree-hydration-spec). Add the field to `config.rs` and seed it
+      in `DEFAULT_CONFIG`.
 - [ ] Rewrite `run_dash_commit` to append a log line ([P04]) instead of `record_round`.
 - [ ] Rewrite `run_dash_join` / `run_dash_release` to read base from git config; drop status flip.
 - [ ] Rewrite `run_dash_list` / `run_dash_show` to read git ([P02]).
@@ -370,11 +419,13 @@ the step that orphans it.
 
 **Tests:**
 - [ ] Update `tugutil-core/tests/integration_tests.rs` dash cases to assert git state + log lines.
+- [ ] Add a case: `create` in a repo whose config declares a `post_create` echo command runs it
+      once on creation and not on idempotent resume.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugutil -p tugutil-core`
 - [ ] Manual: `create → commit → show → join` on a throwaway dash; confirm the `tugdash(...)`
-      commit on base and the `.tugtool/dash-log.md` lines.
+      commit on base, the `.tugtool/dash-log.md` lines, and a hydrated `tugdeck/node_modules`.
 
 ---
 
@@ -438,6 +489,9 @@ the step that orphans it.
 **Tasks:**
 - [ ] `tugutil-core/Cargo.toml` — drop `rusqlite` + `sha2`; delete the `dependency_smoke_tests`
       module in `lib.rs` (their only users).
+- [ ] `config.rs` + `DEFAULT_CONFIG` — remove the now-dead validation fields (`validation_level`,
+      `show_info`, and `naming.name_pattern` if it served only validation — confirm consumers
+      first). `[tugtool.dash].post_create` ([P07]) becomes config.toml's primary content.
 - [ ] `commands/init.rs` — stop creating `tugplan-implementation-log.md`; remove the committed
       fossil file. `init` still creates `.tugtool/` + `config.toml` (needed by `resolve`).
 - [ ] `.gitignore` — drop `.tugtool/state.db*`; add `.tugtool/dash-log.md` ([P04]).
@@ -461,10 +515,13 @@ the step that orphans it.
 
 **Tasks:**
 - [ ] `skills/implement/SKILL.md` — delete the `tugutil validate` setup gate + input clause;
-      replace `tugutil dash show`/round references with `git log` + the Step Status Ledger ([P05]).
+      replace `tugutil dash show`/round references with `git log` + the Step Status Ledger ([P05]);
+      **delete the Setup step that checks for `node_modules` and runs `bun install`** — the
+      worktree now arrives hydrated ([P07]). Keep the baseline green check (a skill judgment).
 - [ ] `skills/devise/SKILL.md` — delete the closing `tugutil validate` step + "implement gates on
       the same check" language.
-- [ ] `skills/dash/SKILL.md` — drop "records a round"/`dash show` framing; a round is a commit.
+- [ ] `skills/dash/SKILL.md` — drop "records a round"/`dash show` framing (a round is a commit)
+      and any "fresh worktree needs `bun install`" framing ([P07]).
 - [ ] `tugplug/CLAUDE.md` — remove `tugutil validate` mentions; keep `create → commit → join`.
 - [ ] `tuglaws/devise-skeleton.md` — remove "It is validated by `tugutil validate`" (header) and
       "(validated by `tug validate`)" (Depends-on rule); bump to `v4`. **Keep every section** ([P01]).
@@ -517,7 +574,7 @@ on git + a flat log, and the skills act on skeleton-structured plans directly.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Reconsider whether `.tugtool/config.toml` + `tugutil init` still earn their keep once the
-      directory holds only config + the gitignored log.
+- [ ] `.tugtool/config.toml` now earns its keep via `[tugtool.dash].post_create` ([P07]); revisit
+      only if a second project ever needs a *different* hydration command (per-project override).
 - [ ] Decide if `resolve` should absorb the "find the plan" convenience the skills currently
       hand-roll, now that `list` is gone.
