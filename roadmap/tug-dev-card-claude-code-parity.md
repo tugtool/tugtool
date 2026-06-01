@@ -931,7 +931,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.B.3 | `/clear` (mini spike → implement) | ✅ DONE | `/clear` = fresh session in card (reuse spawn path); old subprocess closed, stays resumable. Core fix: `cardServicesStore._reconcile` now rebuilds on `tugSessionId` change (also repairs latent `/resume`-different + resume-"New session" gap). `sendCloseSessionKeepingBinding`; no picker flash |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ✅ DONE | `/export`: `transcript-export.ts` (md+jsonl) → `os-export.ts` → new `exportSession` `NSSavePanel` host bridge w/ Format popup. `/add-dir`: reuse `choosePath` `NSOpenPanel` → real `add_directory` CODE_INPUT verb (claude rejects `/add-dir` headless) → tugcode respawns w/ `--add-dir`+`--resume` (mirrors effort; no Rust change). Swift `BUILD SUCCEEDED`; tugcode recompiled; needs `just app-debug` to take effect |
 | 13.C.1 | `tugproto` shared verb contract + registry | ✅ DONE | Inbound wire-verb contract authored once in source-only `tugproto/` (`@tugproto/*` alias; resolves in tugcode bun-compile, tugdeck tsc/vite). `isInboundMessage` derived from `INBOUND_VERBS` (allowlist footgun gone); `INBOUND_HANDLERS` registry replaces the 16-way `if/else`. Unions had drifted → shared with sender-permissive types + 2 one-line tugcode narrowings; guards kept (a test uses them); protocol_init/user_message stay special. Suites 555 + 3275 green |
-| 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
+| 13.D | `/rename` cross-layer session name | ✅ DONE | tugcast ledger `name TEXT` (self-healing) + `rename(...)` + `rename_session` CONTROL verb (broadcasts `session_updated`); tugdeck `encodeRenameSession`, arg+bare-dialog surface, `session-name`/`session-name-store`, Z4B chip name (≤16, tooltip=name+id), chooser row-title. Name seeded into chip on rename/list/restore. Suites 3281 + 691 green; needs `just app-debug` (tugcast no HMR) |
 | 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
 | 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
@@ -2617,17 +2617,18 @@ the existing session-list query the chooser reads returns it. No IPC to claude
 `local`-type `/rename` is local). A small cross-layer feature (ledger column +
 control verb + chip read + chooser read), not a one-file client action.
 
+✅ **DONE.**
+
 **Artifacts:**
-- Modified (tugcast): `session_ledger.rs` `name TEXT` column; `rename_session` control verb; session-list query returns `name`.
-- Modified (tugdeck): registry entry + handler (arg-bearing); reuse an input dialog for the bare form; `DevSessionIdBadge` reads the name; `dev-picker-cells.tsx` uses it as the row title.
+- ✅ tugcast: `session_ledger.rs` `name TEXT` column + self-healing `migrate_sessions_add_name` + `rename(session_id, name)` method; all four list queries + `row_from_query` carry `name`; `SessionRow.name`. `agent_supervisor.rs`: `rename_session` CONTROL verb (`parse_rename_session_payload` + `do_rename_session`) → writes the ledger + broadcasts `session_updated` (with `name`); `name` added to `build_session_updated_frame` + the `list_card_bindings` binding JSON.
+- ✅ tugdeck: `CONTROL_ACTION_RENAME_SESSION` + `encodeRenameSession`; `SessionRow.name` + `CardBinding.name`; `rename` registry entry (arg-bearing); `rename-session-sheet.tsx` (`/rename <text>` direct + bare-`/rename` one-field dialog seeded with the current name); `session-name.ts` (pure chip/tooltip/row-title helpers); `session-name-store.ts` (tugSessionId→name cache, optimistic on rename + seeded from `session_updated` / `list_sessions_ok` / `list_card_bindings_ok`); `DevSessionIdBadge` shows the name (≤16, tooltip = name + id); `dev-picker-cells.tsx` uses the name as the row title.
 
 **Tests:**
-- [ ] Pure-logic: name truncation/ellipsis (≤16 chars) + tooltip composition; chooser row-title selection (name vs. prompt-derived fallback).
-- [ ] Real-app: `/rename <text>` sets the name → Z4B chip shows it (≤16 chars, id in tooltip); bare `/rename` opens the dialog seeded with the current name.
-- [ ] Real-app: a renamed session shows its name as the row title in the session chooser.
+- ✅ Pure-logic: `session-name.test.ts` (truncation/ellipsis ≤16, chip value+tooltip, chooser row-title selection); Rust `rename_sets_clears_and_survives_respawn` + `rename_missing_session_errors`.
+- ⏭️ Real-app: deferred to live verify (`just app-debug`) — tugcast is a compiled binary (no HMR), so the ledger column + `rename_session` verb need a rebuild before the round-trip works. The chip's optimistic update is HMR-live.
 
 **Checkpoint:**
-- [ ] `just app-test rename-session`
+- ✅ tugdeck `tsc` clean + suite 3281; tugcast builds clean + suite 691. `just app-test rename-session` (full round-trip) is the user's to run after `just app-debug`.
 
 ---
 

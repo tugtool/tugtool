@@ -160,6 +160,10 @@ pub struct SessionRow {
     /// cleared by lifecycle transitions; combined with `state` it answers
     /// "which session was last bound to this card, and is it still live?"
     pub card_id: Option<String>,
+    /// User-assigned session name (`/rename`), or `None` when unnamed. Survives
+    /// re-spawn/resume (never cleared by lifecycle transitions); the chooser
+    /// shows it as the row title and the Z4B session chip shows it as its value.
+    pub name: Option<String>,
 }
 
 /// One row of the `turns` submission journal. Authored by tugcast at
@@ -447,6 +451,7 @@ impl SessionLedger {
         // typed table can opt in with one more call.
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
+        Self::migrate_sessions_add_name(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -458,7 +463,8 @@ impl SessionLedger {
                 turn_count        INTEGER NOT NULL DEFAULT 0,
                 last_user_prompt  TEXT,
                 state             TEXT NOT NULL,
-                card_id           TEXT
+                card_id           TEXT,
+                name              TEXT
             );
 
             CREATE INDEX IF NOT EXISTS sessions_workspace_recent
@@ -687,6 +693,21 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Self-healing add of the `sessions.name` column ([#step-13d], `/rename`).
+    /// A no-op when the table is absent (the `CREATE TABLE IF NOT EXISTS` below
+    /// then defines `name` directly) or already has the column — so it only
+    /// ALTERs a pre-existing table that predates the column.
+    fn migrate_sessions_add_name(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "sessions")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "name") {
+            conn.execute("ALTER TABLE sessions ADD COLUMN name TEXT", [])?;
+        }
+        Ok(())
+    }
+
     /// Drop `table` when its on-disk column set no longer matches
     /// `expected` — the [DM08] delete-and-recreate, made automatic.
     /// No-op when the table is absent (the `CREATE TABLE IF NOT EXISTS`
@@ -720,7 +741,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id, name
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -742,7 +763,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id, name
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -773,7 +794,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id, name
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
@@ -790,7 +811,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id, name
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -861,6 +882,23 @@ impl SessionLedger {
              SET last_user_prompt = ?2
              WHERE session_id = ?1",
             params![session_id, prompt],
+        )?;
+        if affected == 0 {
+            return Err(LedgerError::NotFound(session_id.to_owned()));
+        }
+        Ok(())
+    }
+
+    /// Set (or clear) the user-assigned session `name` ([#step-13d], `/rename`).
+    /// `None` clears it. Survives re-spawn/resume since `record_spawn` never
+    /// touches the column. `NotFound` if the session id is unknown.
+    pub fn rename(&self, session_id: &str, name: Option<&str>) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let affected = conn.execute(
+            "UPDATE sessions
+             SET name = ?2
+             WHERE session_id = ?1",
+            params![session_id, name],
         )?;
         if affected == 0 {
             return Err(LedgerError::NotFound(session_id.to_owned()));
@@ -1535,6 +1573,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let last_user_prompt: Option<String> = row.get(6)?;
     let state_str: String = row.get(7)?;
     let card_id: Option<String> = row.get(8)?;
+    let name: Option<String> = row.get(9)?;
     let state = match state_str.parse::<SessionState>() {
         Ok(s) => s,
         Err(e) => return Ok(Err(e)),
@@ -1549,6 +1588,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         last_user_prompt,
         state,
         card_id,
+        name,
     }))
 }
 
@@ -1817,6 +1857,33 @@ mod tests {
     fn record_user_prompt_missing_session_errors() {
         let l = fresh();
         let err = l.record_user_prompt("nope", "Hi").unwrap_err();
+        assert!(matches!(err, LedgerError::NotFound(ref id) if id == "nope"));
+    }
+
+    #[test]
+    fn rename_sets_clears_and_survives_respawn() {
+        let l = fresh();
+        let now = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", now);
+        assert_eq!(l.get("s1").unwrap().unwrap().name, None);
+
+        // Set a name (trimmed by the parser; the ledger stores verbatim).
+        l.rename("s1", Some("My session")).unwrap();
+        assert_eq!(l.get("s1").unwrap().unwrap().name.as_deref(), Some("My session"));
+
+        // A re-spawn (resume) must NOT clear the name.
+        l.record_spawn("s1", WS_A, "/proj", "card-1", now + 1_000).unwrap();
+        assert_eq!(l.get("s1").unwrap().unwrap().name.as_deref(), Some("My session"));
+
+        // Clearing sets it back to NULL.
+        l.rename("s1", None).unwrap();
+        assert_eq!(l.get("s1").unwrap().unwrap().name, None);
+    }
+
+    #[test]
+    fn rename_missing_session_errors() {
+        let l = fresh();
+        let err = l.rename("nope", Some("X")).unwrap_err();
         assert!(matches!(err, LedgerError::NotFound(ref id) if id == "nope"));
     }
 

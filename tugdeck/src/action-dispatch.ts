@@ -44,6 +44,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import { sessionNameStore } from "./lib/session-name-store";
 import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
 import { notifySpawnRejected } from "./lib/dev-session-restore";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
@@ -516,6 +517,11 @@ export function initActionDispatch(
       console.warn("session_updated: invalid payload shape", payload);
       return;
     }
+    // Keep the Z4B chip's name cache authoritative ([#step-13d]): a rename
+    // (or any ledger write) pushes the post-write row, so reflect its name.
+    if (decoded.fields !== undefined) {
+      sessionNameStore.setName(decoded.session_id, decoded.fields.name ?? null);
+    }
     publishSessionUpdated(decoded);
   });
 
@@ -534,9 +540,15 @@ export function initActionDispatch(
     // spawn-error banner is the backstop.
     const dirExists =
       typeof payload.dir_exists === "boolean" ? payload.dir_exists : true;
+    const rows = sessions as SessionRow[];
+    // Seed the chip's name cache from the listed rows ([#step-13d]) so a bound
+    // session whose name was set in a prior run reads correctly once listed.
+    for (const row of rows) {
+      sessionNameStore.setName(row.session_id, row.name);
+    }
     publishListSessionsOk({
       project_dir: projectDir,
-      sessions: sessions as SessionRow[],
+      sessions: rows,
       dir_exists: dirExists,
     });
   });
@@ -580,7 +592,13 @@ export function initActionDispatch(
       console.warn("list_card_bindings_ok: missing or invalid bindings", payload);
       return;
     }
-    publishListCardBindingsOk({ bindings: bindings as CardBinding[] });
+    const rows = bindings as CardBinding[];
+    // Seed the chip's name cache on restore ([#step-13d]) so a session renamed
+    // in a prior run shows its name the moment its card rebinds.
+    for (const b of rows) {
+      sessionNameStore.setName(b.session_id, b.name ?? null);
+    }
+    publishListCardBindingsOk({ bindings: rows });
   });
   registerAction("list_card_bindings_err", (payload) => {
     const reason = payload.reason;

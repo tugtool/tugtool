@@ -50,6 +50,7 @@ import { useAgentsSheet } from "./agents-sheet";
 import { useMemorySheet } from "./memory-sheet";
 import { useHooksSheet } from "./hooks-sheet";
 import { useHelpSheet } from "./help-sheet";
+import { useRenameSessionSheet } from "./rename-session-sheet";
 import { canOfferRewind } from "./rewind-turn-source";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
@@ -2707,6 +2708,14 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/rename` session name ([#step-13d]). `/rename <text>` sets it directly;
+  // bare `/rename` opens a one-field dialog seeded with the current name. Both
+  // optimistically update the Z4B chip and send `rename_session` to tugcast.
+  const renameSheet = useRenameSessionSheet({
+    cardId,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2836,6 +2845,13 @@ export function DevCardBody({
         codeSessionStore.addDirectory(dir);
         notify?.success("Working directory added");
       });
+    },
+    // `/rename <text>` names the session directly; bare `/rename` opens the
+    // one-field dialog seeded with the current name ([#step-13d]).
+    rename: (args) => {
+      const name = args.trim();
+      if (name.length > 0) renameSheet.renameTo(name);
+      else renameSheet.openRenameSheet();
     },
   };
 

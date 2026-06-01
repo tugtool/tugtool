@@ -67,6 +67,7 @@ export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
 export const CONTROL_ACTION_LIST_CARD_BINDINGS = "list_card_bindings";
 export const CONTROL_ACTION_TRASH_SESSION = "trash_session";
+export const CONTROL_ACTION_RENAME_SESSION = "rename_session";
 export const CONTROL_ACTION_TRASH_PROJECT_DIR_SESSIONS = "trash_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
 export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";
@@ -95,6 +96,8 @@ export interface SessionRow {
   last_user_prompt: string | null;
   state: "live" | "closed" | "failed";
   card_id: string | null;
+  /** User-assigned session name (`/rename`, [#step-13d]); `null` when unnamed. */
+  name: string | null;
 }
 
 /**
@@ -137,6 +140,9 @@ export interface CardBinding {
    * conservative when running against a stale server.
    */
   is_alive?: boolean;
+  /** User-assigned session name (`/rename`, [#step-13d]); seeds the chip on
+   *  restore so a named session reads its name immediately on relaunch. */
+  name?: string | null;
 }
 
 /** Frame flags */
@@ -475,6 +481,18 @@ export function encodeListSessions(projectDir: string): Frame {
 export function encodeTrashSession(sessionId: string): Frame {
   return controlFrame(CONTROL_ACTION_TRASH_SESSION, {
     session_id: sessionId,
+  });
+}
+
+/**
+ * Rename a session ([#step-13d]). An empty / whitespace-only `name` clears the
+ * name (tugcast trims + treats blank as `None`). tugcast writes the ledger and
+ * broadcasts `session_updated` so the chooser + Z4B chip pick it up.
+ */
+export function encodeRenameSession(sessionId: string, name: string): Frame {
+  return controlFrame(CONTROL_ACTION_RENAME_SESSION, {
+    session_id: sessionId,
+    name,
   });
 }
 

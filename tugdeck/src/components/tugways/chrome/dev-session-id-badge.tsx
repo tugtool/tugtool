@@ -21,6 +21,8 @@ import React from "react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { sessionNameStore } from "@/lib/session-name-store";
+import { sessionChipDisplay } from "@/lib/session-name";
 
 export interface DevSessionIdBadgeProps {
   /** The card whose binding's session id to display. */
@@ -29,10 +31,6 @@ export interface DevSessionIdBadgeProps {
    *  session id is inapplicable). Forwarded to {@link TugBadge}. */
   disabled?: boolean;
 }
-
-/** First N chars of the session id — long enough to disambiguate
- *  across cards, short enough to fit in the indicator strip. */
-const TRUNCATE_LENGTH = 8;
 
 export function DevSessionIdBadge({
   cardId,
@@ -45,8 +43,20 @@ export function DevSessionIdBadge({
       [cardId],
     ),
   );
+  // The user-assigned name ([#step-13d]), or null when unnamed.
+  const name = React.useSyncExternalStore(
+    sessionNameStore.subscribe,
+    React.useCallback(
+      () => (tugSessionId === null ? null : sessionNameStore.getName(tugSessionId)),
+      [tugSessionId],
+    ),
+  );
 
   if (tugSessionId === null) return null;
+
+  // Named → the name (≤16 chars, ellipsized) with name + id in the tooltip;
+  // unnamed → the truncated id, full id in the tooltip.
+  const { value, tooltip } = sessionChipDisplay(name, tugSessionId);
 
   return (
     <TugBadge
@@ -55,10 +65,10 @@ export function DevSessionIdBadge({
       size="sm"
       layout="label-top"
       label="Session"
-      title={tugSessionId}
+      title={tooltip}
       disabled={disabled}
     >
-      {tugSessionId.slice(0, TRUNCATE_LENGTH)}
+      {value}
     </TugBadge>
   );
 }

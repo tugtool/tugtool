@@ -124,6 +124,11 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "add-dir",
     description: "Add a working directory to this session",
   },
+  {
+    name: "rename",
+    description: "Name this session (shown in the chip and session chooser)",
+    takesArgs: true,
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

@@ -92,6 +92,7 @@ import {
   formatSessionRowSubtitle,
   truncateForDisplay,
 } from "./dev-picker-format";
+import { sessionRowTitle } from "@/lib/session-name";
 
 // ---------------------------------------------------------------------------
 // Selection type + context
@@ -298,8 +299,12 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
     row.last_user_prompt !== null && row.last_user_prompt.length > 0
       ? row.last_user_prompt
       : null;
+  // The user-assigned name ([#step-13d]) is the row title when set; otherwise
+  // the `last_user_prompt`-derived snippet. `""` when neither exists →
+  // "No prompts yet".
+  const titleText = sessionRowTitle(row.name, fullPrompt ?? "");
   const snippet =
-    fullPrompt !== null ? truncateForDisplay(fullPrompt, 64) : null;
+    titleText.length > 0 ? truncateForDisplay(titleText, 64) : null;
 
   const subtitleText = isLive
     ? "Live in another card"
@@ -326,8 +331,8 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
       <div className="dev-card-picker-session-option-text">
         <span
           className="dev-card-picker-session-option-title"
-          title={fullPrompt ?? undefined}
-          aria-label={fullPrompt ?? undefined}
+          title={titleText.length > 0 ? titleText : undefined}
+          aria-label={titleText.length > 0 ? titleText : undefined}
         >
           {snippet ?? <em>No prompts yet</em>}
         </span>

@@ -746,6 +746,7 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "last_user_prompt": row.last_user_prompt,
             "state": row.state,
             "card_id": row.card_id,
+            "name": row.name,
         },
     });
     Frame::new(
@@ -1076,6 +1077,27 @@ fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
         .ok_or(ControlError::MissingSessionId)?
         .to_string();
     Ok(id)
+}
+
+/// Parse a `rename_session` CONTROL payload: `{ session_id, name }`. A missing /
+/// empty / whitespace-only `name` clears the name (`None`); otherwise the
+/// trimmed name is kept. ([#step-13d])
+fn parse_rename_session_payload(payload: &[u8]) -> Result<(String, Option<String>), ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let id = value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    let name = value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    Ok((id, name))
 }
 
 /// Parse a CONTROL payload that carries `{ tug_session_id: "..." }` only.
@@ -1620,6 +1642,13 @@ impl AgentSupervisor {
             "trash_session" => match parse_session_id_payload(payload) {
                 Ok(session_id) => {
                     self.do_trash_session(&session_id).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "rename_session" => match parse_rename_session_payload(payload) {
+                Ok((session_id, name)) => {
+                    self.do_rename_session(&session_id, name.as_deref()).await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -2385,6 +2414,7 @@ impl AgentSupervisor {
                     "state": row.state,
                     "turn_count": row.turn_count,
                     "is_alive": is_alive,
+                    "name": row.name,
                 }))
             })
             .collect();
@@ -2884,6 +2914,65 @@ impl AgentSupervisor {
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
                     serde_json::to_vec(&body).expect("trash_session_err serializes"),
+                ));
+            }
+        }
+    }
+
+    /// Handle a `rename_session` CONTROL request ([#step-13d]). Writes the name
+    /// to the ledger and broadcasts a `session_updated` so the chooser + the
+    /// Z4B session chip pick it up live, then acks `rename_session_ok` / `_err`.
+    async fn do_rename_session(&self, session_id: &str, name: Option<&str>) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            let body = serde_json::json!({
+                "action": "rename_session_err",
+                "session_id": session_id,
+                "reason": "no_ledger",
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("rename_session_err serializes"),
+            ));
+            return;
+        };
+        match ledger.rename(session_id, name) {
+            Ok(_) => {
+                // Push the updated row so the chooser + chip reflect the rename
+                // without a re-fetch. A missing row here would be a TOCTOU race
+                // (renamed then trashed); the get is best-effort.
+                if let Ok(Some(row)) = ledger.get(session_id) {
+                    let _ = self.control_tx.send(build_session_updated_frame(&row));
+                }
+                let body = serde_json::json!({
+                    "action": "rename_session_ok",
+                    "session_id": session_id,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("rename_session_ok serializes"),
+                ));
+            }
+            Err(crate::session_ledger::LedgerError::NotFound(_)) => {
+                let body = serde_json::json!({
+                    "action": "rename_session_err",
+                    "session_id": session_id,
+                    "reason": "not_found",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("rename_session_err serializes"),
+                ));
+            }
+            Err(err) => {
+                warn!(error = %err, session_id, "rename_session ledger error");
+                let body = serde_json::json!({
+                    "action": "rename_session_err",
+                    "session_id": session_id,
+                    "reason": "ledger_write_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("rename_session_err serializes"),
                 ));
             }
         }
