@@ -104,6 +104,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "hooks",
     description: "View the configured hooks for this session",
   },
+  {
+    name: "copy",
+    description: "Copy the most recent assistant message to the clipboard",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

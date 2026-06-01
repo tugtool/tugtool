@@ -31,7 +31,7 @@
  * `showHandle={false}` — the sash line remains draggable.
  */
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { DevTranscriptHost, type DevTranscriptHandle } from "./dev-card-transcript";
@@ -149,6 +149,12 @@ import {
   mergeCommandProviders,
 } from "./completion-providers/local-commands";
 import { isHiddenSlashCommand } from "@/lib/slash-supported";
+import {
+  TugPaneBulletinProvider,
+  useTugPaneBulletin,
+  type TugPaneBulletinApi,
+} from "../tug-pane-bulletin";
+import { lastAssistantCopyText } from "./turn-entry-markdown";
 import {
   useDevRecentsDataSource,
   useDevSessionsDataSource,
@@ -2035,6 +2041,21 @@ function renderDevCardBanner(
   return <TugPaneBanner visible={false} message="" />;
 }
 
+/**
+ * Bridges the card-scoped `TugPaneBulletin` into the card body's imperative
+ * handlers. `useTugPaneBulletin()` must run inside the provider, but `/copy`'s
+ * `RUN_SLASH_COMMAND` handler lives in the card body (the provider's parent), so
+ * this zero-render child captures the bulletin API onto a ref the handler reads
+ * — the same handle-ref pattern the status row uses for `/context`.
+ */
+const PaneBulletinAnchor = forwardRef<TugPaneBulletinApi>(
+  function PaneBulletinAnchor(_props, ref) {
+    const paneBulletin = useTugPaneBulletin();
+    useImperativeHandle(ref, () => paneBulletin, [paneBulletin]);
+    return null;
+  },
+);
+
 export function DevCardBody({
   cardId,
   services,
@@ -2691,6 +2712,10 @@ export function DevCardBody({
   // command just opens the same surface (no separate sheet). Null while
   // the row isn't the current Z2 datum, in which case the call no-ops.
   const statusRowRef = useRef<DevTelemetryStatusRowHandle>(null);
+  // Pane-scoped bulletin API, captured from inside the provider by
+  // `PaneBulletinAnchor` (rendered below) so `/copy` can raise its
+  // confirmation toast in this card.
+  const paneBulletinRef = useRef<TugPaneBulletinApi>(null);
 
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
@@ -2703,6 +2728,25 @@ export function DevCardBody({
     agents: () => agentsSheet.openAgentsSheet(),
     memory: () => memorySheet.openMemorySheet(),
     hooks: () => hooksSheet.openHooksSheet(),
+    // Copy the most recent assistant message (committed transcript only, read
+    // live at click time per [L07]) to the clipboard, with a pane-scoped
+    // confirmation bulletin. No message yet → caution; clipboard failure →
+    // danger; both surface in this card, not the deck.
+    copy: () => {
+      const notify = paneBulletinRef.current;
+      const text = lastAssistantCopyText(
+        codeSessionStore.getSnapshot().transcript,
+      );
+      const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
+      if (text === null || writeText === undefined) {
+        notify?.caution("No message to copy yet");
+        return;
+      }
+      void writeText(text).then(
+        () => notify?.success("Most recent message copied"),
+        () => notify?.danger("Copy failed"),
+      );
+    },
   };
 
   const {
@@ -2921,6 +2965,17 @@ export function DevCardBody({
             className="dev-card-top-column"
             data-slot="dev-card-top-column"
           >
+            {/*
+              Pane-scoped bulletins (e.g. `/copy`'s confirmation) anchor to the
+              bottom of the transcript column — within the card, above the
+              prompt entry, and outside the scrolling transcript so they stay
+              pinned. `PaneBulletinAnchor` hands the bulletin API back up to the
+              card body's `/copy` handler. ([#step-13b1b])
+            */}
+            <TugPaneBulletinProvider
+              placement="bottom"
+              className="dev-card-bulletin-host"
+            >
             <div
               className="dev-card-header-content"
               data-slot="dev-card-header-content"
@@ -2934,6 +2989,8 @@ export function DevCardBody({
               responseStore={responseStore}
               renderTurnTrailing={effectiveRenderTurnTrailing}
             />
+            <PaneBulletinAnchor ref={paneBulletinRef} />
+            </TugPaneBulletinProvider>
             <div
               className="dev-card-status-bar"
               data-slot="dev-card-status-bar"

@@ -211,3 +211,24 @@ export function turnEntryToMarkdown(turn: TurnEntry): string {
 
   return sections.join("\n\n");
 }
+
+/**
+ * The copy text of the most recent assistant turn in a transcript — what
+ * `/copy` puts on the clipboard ([#step-13b1b]). Walks committed turns newest-
+ * first and returns the first non-empty {@link turnEntryToMarkdown}, so it
+ * reuses the exact text the per-row COPY affordance produces and skips turns
+ * with no assistant content (an interrupted-before-reply turn). `null` when no
+ * turn has copyable assistant content (a fresh session, or only empty turns).
+ *
+ * Pure — operates on the committed transcript only (not the in-flight turn), so
+ * `/copy` copies a settled message, never a half-streamed one.
+ */
+export function lastAssistantCopyText(
+  transcript: ReadonlyArray<TurnEntry>,
+): string | null {
+  for (let i = transcript.length - 1; i >= 0; i--) {
+    const markdown = turnEntryToMarkdown(transcript[i]);
+    if (markdown.length > 0) return markdown;
+  }
+  return null;
+}

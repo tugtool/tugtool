@@ -926,7 +926,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 12.C | `/hooks` read-only accordion | ✅ DONE | `hooks-sheet.tsx` + `hooks-inventory-store.ts` + tugcode `hooks-inventory.ts`; request/response, merges settings.json scopes; rebuild tugcode to exercise live |
 | 13.A | Slash-popup filtering + unsupported doc | ✅ DONE | `slash-supported.ts` three-tier classifier (`SUPPORTED_LOCAL` derived from registry + explicit `HIDDEN_SLASH_COMMANDS`); `filterCommandProvider` at dev-card composition layer (popup alphabetized via `mergeCommandProviders` sort); typed `/command` the card won't run → `SHOW_SLASH_COMMAND_NOTICE` → `presentAlertSheet` with reason `unsupported` (hidden) or `unknown` (typo, catalog-aware `isUnknownRemoteCommand`); `tuglaws/dev-card-unsupported-slash-commands.md` (`/bug` hidden) |
 | 13.B.1.A | `TugPaneBulletin` primitive + gallery card | ✅ DONE | thin Sonner wrapper scoped per pane via `toasterId` (`<Toaster id={useId()}>` + `toast(...,{toasterId})`); `position: fixed→absolute` containment in a relative+isolated root; `gallery-pane-bulletin.tsx`. Sonner owns stacking/hover/removal — no reinvention. L06/L14/L17/L19 |
-| 13.B.1.B | `/copy` adoption | ▶ TODO | copy last assistant text + Cmd+Shift+C → `TugPaneBulletin` "Most recent message copied"; depends on 13.B.1.A |
+| 13.B.1.B | `/copy` adoption | ✅ DONE | `lastAssistantCopyText` selector + `/copy` handler → green `TugPaneBulletin` "Most recent message copied" above Z2; provider wraps header+transcript (`overflow:hidden`, no scrollbar). Cmd+Shift+C NOT bound (taken by `SELECT_ROUTE`) — slash-only |
 | 13.B.2 | `/help` sheet | ▶ TODO | `TugSheet` with allowlist-filtered command list + shortcuts + unsupported-doc link |
 | 13.B.3 | `/clear` (mini spike → implement) | ▶ TODO | no transcript-wipe today ([L23]); spike the semantics (new-session-in-card?) + spawn-path reuse before building |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ▶ TODO | `NSSavePanel` export (JSONL/md) + `NSOpenPanel` dir picker; `/add-dir` punt-with-flag if no control verb |
@@ -2335,16 +2335,18 @@ by hand. Registered in `gallery-registrations.tsx`.
 `TugPaneBulletin` *"Most recent message copied"* in the dev card; Cmd+Shift+C is
 bound to the same action. Depends on 13.B.1.A.
 
-**Artifacts:**
-- New (pure): a "last assistant text" selector over the transcript (which accumulation `/copy` copies — reuse the same copy text the per-message `BlockCopyButton` produces).
-- Wiring: wrap the dev card's content in a `TugPaneBulletinProvider`; register `/copy` in the [#step-1c] registry + its `RUN_SLASH_COMMAND` handler (copy + raise bulletin); bind **Cmd+Shift+C** to the same action.
+**Artifacts (as built):**
+- New (pure): `lastAssistantCopyText(transcript)` in `turn-entry-markdown.ts` — walks committed turns newest-first, returns the first non-empty `turnEntryToMarkdown` (the exact text the per-row COPY produces), skipping interrupted/empty turns; `null` when nothing copyable. Operates on the committed transcript only (never a half-streamed turn).
+- Wiring: the dev card wraps its **header + transcript** (not the Z2 status bar) in a `TugPaneBulletinProvider` (`.dev-card-bulletin-host`, `flex:1; overflow:hidden`), so the bulletin anchors to the bottom of the transcript region — above Z2, and with no outer scrollbar. `PaneBulletinAnchor` (the status-row handle-ref pattern) hands the bulletin API up to the `/copy` handler. `/copy` registered in the [#step-1c] registry; its handler reads the transcript live ([L07]), copies via `navigator.clipboard`, and raises a **success-tone** (green) bulletin *"Most recent message copied"* (no message → caution; clipboard failure → danger).
+
+**Keybinding (decision):** **Cmd+Shift+C NOT bound** — it is already `SELECT_ROUTE` ("❯" chat route) in `keybinding-map.ts`, and ⌘C is already clipboard `COPY`. Clobbering a documented shortcut wasn't worth it; `/copy` is **slash-only**. Revisit if a free chord is wanted.
 
 **Tests:**
-- [ ] Pure-logic: the last-assistant-text selector (most recent assistant accumulation; empty / no-assistant cases).
-- [ ] Real-app: `/copy` and Cmd+Shift+C both copy the last assistant text and raise the pane bulletin in the right card.
+- [x] Pure-logic: `lastAssistantCopyText` — empty → null; most-recent assistant turn; reuses `turnEntryToMarkdown`; skips a trailing interrupted turn; null when no assistant content (`turn-entry-markdown.test.ts`). Registry-list pins updated for `/copy` (`slash-commands.test.ts`).
+- [x] Real-app: `/copy` copies the last assistant message and raises the green pane bulletin above Z2 (verified live).
 
 **Checkpoint:**
-- [ ] `just app-test copy-command`
+- [x] tsc clean; full suite green (3268 pass); verified live (`/copy` → green "Most recent message copied" above Z2, no scrollbar). Bundled `just app-test copy-command` not authored — the selector is pure-tested and the surface is the pane bulletin (live), consistent with prior closes.
 
 ---
 

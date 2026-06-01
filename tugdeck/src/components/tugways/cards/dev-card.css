@@ -61,6 +61,22 @@
   min-width: 0;
 }
 
+/* The `TugPaneBulletinProvider` nested inside the top column carries the same
+   flex-column layout so the transcript still grows, and (via
+   `.tug-pane-bulletin-root`) is the positioning context the pane bulletin
+   anchors to — pinned to the bottom of the transcript region, ABOVE the Z2
+   status bar (which is a sibling below this host, outside the provider). The
+   transcript scrolls inside its own child, so clipping here only contains the
+   absolutely-positioned toaster — it never adds an outer scrollbar. */
+.dev-card-bulletin-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
 /* Z0 — top-of-card content slot. Content-sized; empty by default.
    No padding or background so the empty state takes zero visual
    space. Consumers fill it with whatever (typed) display content
