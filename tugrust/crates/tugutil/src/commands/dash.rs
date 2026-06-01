@@ -573,15 +573,16 @@ pub fn run_dash_commit(
     let has_changes = !diff.status.success(); // exits 1 when there are changes
 
     let commit_hash = if has_changes {
+        // `--message` is the conventional-commit subject; a longer `summary`
+        // (if any) enriches the body. Byte-safe: no slicing on a char boundary.
         let summary = round_meta
             .as_ref()
             .and_then(|m| m.summary.as_deref())
             .unwrap_or("");
-
-        let commit_message = if summary.len() > 72 {
-            format!("{}\n\n{}", &summary[..72], summary)
-        } else {
+        let commit_message = if summary.is_empty() || summary == message {
             message.clone()
+        } else {
+            format!("{}\n\n{}", message, summary)
         };
 
         let commit = git_output(&worktree, &["commit", "-m", &commit_message])?;
@@ -1117,6 +1118,63 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&count.stdout).trim(), "0");
+    }
+
+    #[serial]
+    #[test]
+    fn test_dash_commit_multibyte_summary_does_not_panic() {
+        // A multibyte summary longer than 72 bytes must not panic on a byte
+        // slice, and `--message` must remain the commit subject.
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&temp.path().join("state"));
+        std::env::set_current_dir(repo).unwrap();
+
+        run_dash_create("test-dash".to_string(), None, false, true).unwrap();
+        let worktree = repo.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree.join("f.txt"), "x\n").unwrap();
+
+        // A subprocess feeds the long multibyte summary via stdin metadata.
+        use std::io::Write;
+        use std::process::{Command as StdCommand, Stdio};
+        let tugutil_bin = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("tugutil");
+        let long_multibyte = "é".repeat(50); // 100 bytes, 50 chars — straddles byte 72
+        let meta = format!(
+            "{{\"instruction\":\"i\",\"summary\":\"{}\"}}",
+            long_multibyte
+        );
+        let mut child = StdCommand::new(&tugutil_bin)
+            .args(["dash", "commit", "test-dash", "--message", "feat: thing"])
+            .current_dir(repo)
+            .env("TUG_DATA_DIR", temp.path().join("state"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(meta.as_bytes())
+            .unwrap();
+        assert!(child.wait().unwrap().success(), "commit must not panic");
+
+        // The subject is the --message; the summary rode into the body.
+        let subject = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["log", "-1", "--format=%s", "tugdash/test-dash"])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&subject.stdout).trim(), "feat: thing");
     }
 
     #[serial]
