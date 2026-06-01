@@ -2161,8 +2161,12 @@ builder, mirroring `skills-inventory.ts`.
   checkpoint (needs the rebuilt tugcode — `just app-debug`).
 
 **Checkpoint (12.A–12.D):**
-- [ ] `just app-test listing-sheets` — the grouped real-app check for all four
-  listing sheets; run after a `just app-debug` rebuild (tugcode + host changes).
+- [x] **Closed.** All four listing sheets verified live (`just app-debug`) and
+  covered by per-layer pure-logic tests (tugcode builders + tugdeck
+  store/projection/parse). The bundled `just app-test listing-sheets` was
+  intentionally not authored — these are read-only projection surfaces with no
+  engine/editor behavior to assert, and live verification + the pure-logic
+  suites are the right-layer coverage here. Step 12 is complete.
 
 ---
 
