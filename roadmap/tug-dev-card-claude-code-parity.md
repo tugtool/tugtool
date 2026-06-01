@@ -820,11 +820,11 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | `tugdeck/src/components/tugways/cards/resume-sheet-data-source.ts` | `/resume` data source over tugbank session journal ([#step-8]) |
 | `tugdeck/src/components/tugways/cards/permission-rules-editor.tsx` | `/permissions` picker + rules editor sheet ([#step-9]) |
 | `tugdeck/src/components/tugways/cards/diff-sheet.tsx` | `/diff` overlay sheet ([#step-10]) |
-| `tugdeck/src/components/tugways/cards/context-hud.tsx` | Persistent context-usage HUD reusing status-bar arc gauge ([#step-11]) |
-| `tugdeck/src/components/tugways/cards/memory-sheet.tsx` | `/memory` file listing + editor launcher ([#step-12]) |
-| `tugdeck/src/components/tugways/cards/agents-sheet.tsx` | `/agents` listing ([#step-12]) |
-| `tugdeck/src/components/tugways/cards/hooks-sheet.tsx` | `/hooks` listing ([#step-12]) |
-| `tugdeck/src/components/tugways/cards/skills-sheet.tsx` | `/skills` read-only listing ([#step-12]) |
+| _(no new file — `/context` reuses the status-row CONTEXT popover via `DevTelemetryStatusRowHandle`; [#step-11])_ | — |
+| `tugdeck/src/components/tugways/cards/memory-sheet.tsx` | `/memory` listing; row-click opens the path in the OS editor/Finder via the host `openPath` handler ([#step-12a]) |
+| `tugdeck/src/components/tugways/cards/agents-sheet.tsx` | `/agents` Running + Library tabbed listing ([#step-12b]) |
+| `tugdeck/src/components/tugways/cards/hooks-sheet.tsx` | `/hooks` read-only accordion ([#step-12c]) |
+| `tugdeck/src/components/tugways/cards/skills-sheet.tsx` | `/skills` read-only listing with rich columns ([#step-12d]) |
 | `tugdeck/src/components/tugways/cards/help-tabbed-sheet.tsx` | `/help` tabbed sheet ([#step-13]) per [D16] |
 | `tugdeck/src/lib/slash-commands.ts` | `LOCAL_SLASH_COMMANDS` registry + `matchLocalSlashCommand` — the locally-handled-command dispatch source of truth ([#step-1c]) per [D23] |
 | `tugdeck/src/lib/slash-supported.ts` | Canonical `GRAPHICAL_SUPPORTED_COMMANDS` allowlist per [D14] ([#step-13]; reads / co-located with `slash-commands.ts`) |
@@ -920,7 +920,10 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 10.A | `/diff` sourcing — tugcast `git_diff_request` | ✅ DONE | tugcast handler + protocol + round-trip proof |
 | 10.B | `/diff` accordion sheet (dev-card UI) | ✅ DONE | `diff-sheet.tsx` over the 10.A feed |
 | 11 | `/context` → status-bar popover | ✅ DONE | typed `/context` pops the existing CONTEXT popover via `DevTelemetryStatusRow` imperative handle; no HUD/sheet |
-| 12 | Listing sheets (`/memory` `/agents` `/hooks` `/skills`) | ▶ TODO | |
+| 12.D | `/skills` read-only list | ▶ TODO | `skills-sheet.tsx`; tugcode emits rich skill metadata |
+| 12.B | `/agents` Running + Library tabs | ▶ TODO | `agents-sheet.tsx` (TugTabBar); tugcode emits agent model/scope |
+| 12.A | `/memory` list → OS editor | ▶ TODO | `memory-sheet.tsx`; host `openPath` handler; no embedded editor |
+| 12.C | `/hooks` read-only accordion | ▶ TODO | `hooks-sheet.tsx`; tugcode emits hooks from settings.json |
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
 | 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
@@ -1930,29 +1933,144 @@ that existing popover — the same surface a click on the cell opens. No
 
 **Depends on:** #step-1c, #step-6
 
-**Commit:** `feat(dev-card): memory/agents/hooks/skills listing overlay sheets`
+Four read-only listing surfaces, each modeled on what Claude Code's terminal
+actually shows for that command and each its own card-scoped overlay sheet
+([D15]). Split into **12.A–12.D**, one per command. Common shape: overlays
+dismiss on ESC / click-outside, focus restores to the prompt entry, each
+composes `TugSheetScaffold`, and the three list surfaces reuse one
+`TugListView` cell shape.
 
-**References:** [D04] SessionMetadataStore hub, [D15] overlays, [#l02-slash-cmd-audit] (`/skills` cheap-win), (#slash-cmd-inventory)
+**Data reality (drives the sub-steps):** `system_metadata` carries
+`slash_commands` / `skills` / `agents` as essentially **name** arrays today; it
+does **not** carry memory paths, hooks, agent models, or per-skill metadata.
+tugcode is the layer that reads `~/.claude` + the project plugin dir (it already
+tokenizes agent `.md` / `SKILL.md` frontmatter and reads `settings.json` for the
+context breakdown), so the **richer per-entry data is sourced by tugcode** and
+flows to the client (enrich the existing `system_metadata` / capability arrays
+from name-strings into objects — the `parseEntry` shape already accepts
+`{name, description, …}`). The **rich columns are in scope**, not deferred.
+
+**Order:** 12.D → 12.B → 12.A → 12.C.
+
+> Note: `/mcp` was previously in this step but is now out of scope per [D14] /
+> [Q06]. Hidden from slash popup.
+
+---
+
+##### Step 12.D: `/skills` — read-only list {#step-12d}
+
+**Commit:** `feat(dev-card): /skills read-only listing sheet`
+
+**References:** [D04] SessionMetadataStore hub, [D15] overlays, [#l02-slash-cmd-audit]
+
+**Analog:** CC's `/skills` is a flat list, one row per skill. We mirror it as a
+`TugListView` sheet — each row shows **name, scope (user-only/project/…),
+source (plugin/built-in), token estimate (`~N tok`), and locked status**, plus
+the description.
 
 **Artifacts:**
-- New: `memory-sheet.tsx`, `agents-sheet.tsx`, `hooks-sheet.tsx`, `skills-sheet.tsx` (overlays per [D15])
-- Modified: register `/memory`, `/agents`, `/hooks`, `/skills` in the [#step-1c] registry; each `RUN_SLASH_COMMAND` handler opens its sheet
+- New: `skills-sheet.tsx` (+ `.css`)
+- Modified: register `/skills` in the [#step-1c] registry; `RUN_SLASH_COMMAND` opens the sheet
+- Modified (tugcode): enrich the emitted skill descriptors with `scope`, `source`, per-skill token estimate, and `locked` (tugcode already enumerates + tokenizes the skills dirs for the context breakdown)
 
 **Tasks:**
-- [ ] `MemorySheet`: list files in `system_metadata.memory_paths.auto`; row-click opens file in embedded `gallery-text-editor.tsx`.
-- [ ] `AgentsSheet`: list `system_metadata.agents`; row-click opens the agent's `.md` file in embedded editor.
-- [ ] `HooksSheet`: list hooks from settings.json (via host-app or tugbank).
-- [ ] `SkillsSheet` (the [#l02-slash-cmd-audit] cheap win): list `SessionMetadataStore.slashCommands` filtered to `category === "skill"` (the skills already parsed from `system_metadata.skills`). **Read-only** — built-in skills have no backing file, so unlike `AgentsSheet`/`MemorySheet` there is no row-click-to-edit; the row shows name + description. Reuses the same `TugListView` cell shape as the other three (one renderer, no bespoke surface).
-- [ ] All four mount as overlays; ESC / click-outside dismiss; focus restores to prompt entry.
+- [ ] tugcode emits per-skill metadata (name, description, scope, source, token estimate, locked).
+- [ ] `SkillsSheet`: `TugListView` over `SessionMetadataStore` skills; rich columns; read-only (built-in skills have no editable backing file). Search/sort optional.
 
 **Tests:**
-- [ ] Pure-logic: list projection from `system_metadata` (including the skill-category filter for `SkillsSheet`).
-- [ ] Real-app: open each sheet, assert correct counts against a fixture session.
+- [ ] Pure-logic: skill projection (filter + column derivation) from the metadata snapshot.
+- [ ] Real-app: open `/skills`, assert row count + a known row's columns against a fixture session.
 
-**Checkpoint:**
+---
+
+##### Step 12.B: `/agents` — two read-only tabs (Running / Library) {#step-12b}
+
+**Commit:** `feat(dev-card): /agents Running + Library tabbed sheet`
+
+**References:** [D04], [D15], [D100] task/agent event stream, `feedback_use_tug_components` (TugTabBar)
+
+**Analog:** CC's `/agents` has a `Running` tab and a `Library` tab. We mirror it
+as a sheet with **`TugTabBar`** (existing component) over two read-only tabs:
+- **Running** — currently-running subagents, derived from in-flight `Agent`
+  tool calls (tracked via `parent_tool_use_id` / the Agent transcript blocks);
+  "No subagents are currently running." when empty.
+- **Library** — available agents as `TugListView` rows showing **name · model**
+  (built-in + user/project), grouped/annotated by scope.
+
+**Artifacts:**
+- New: `agents-sheet.tsx` (+ `.css`)
+- Modified: register `/agents`; `RUN_SLASH_COMMAND` opens the sheet
+- Modified (tugcode): enrich the emitted agent descriptors with `model` and `scope` (from each agent `.md` frontmatter — tugcode already reads it)
+
+**Tasks:**
+- [ ] tugcode emits per-agent metadata (name, description, model, scope).
+- [ ] `AgentsSheet`: `TugTabBar` Running/Library; Running reads in-flight Agent calls; Library is a `TugListView` with name · model + scope.
+
+**Tests:**
+- [ ] Pure-logic: Library projection (name/model/scope) + Running derivation from a transcript fixture (with and without in-flight agents).
+- [ ] Real-app: open `/agents`, assert both tabs render and switch; assert Library rows against a fixture.
+
+---
+
+##### Step 12.A: `/memory` — list → open in the OS editor {#step-12a}
+
+**Commit:** `feat(dev-card): /memory listing sheet opens files in the OS editor`
+
+**References:** [D04], [D15]; existing `AppDelegate` `NSWorkspace.shared.open` precedent (`openProjectHome` / `openGitHub`); the `webkit.messageHandlers` bridge (`frontendReady` / `setDevMode`)
+
+**Analog:** CC's `/memory` shows "Auto-memory: on" then a short list — `Project
+memory → ./CLAUDE.md`, `User memory → ~/.claude/CLAUDE.md`, `Open auto-memory
+folder` — and selecting a row opens an editor. We mirror it as a `TugListView`
+sheet whose row-click **hands the path to the OS** (file → default editor;
+folder → Finder).
+
+**Decision (this step):** OS-open only — **no embedded editor, no read/write
+IPC.** An in-app memory editor is a future project, explicitly out of scope here.
+
+**Artifacts:**
+- New: `memory-sheet.tsx` (+ `.css`)
+- New (host): a parameterized `openPath` `webkit.messageHandler` in `tugapp` that calls `NSWorkspace.shared.open(url)` (sibling of the existing handlers / `openProjectHome`), + a JS bridge helper in the web layer
+- Modified: register `/memory`; `RUN_SLASH_COMMAND` opens the sheet
+
+**Tasks:**
+- [ ] Host `openPath` handler (open file in default editor / reveal folder in Finder) + typed JS bridge helper.
+- [ ] `MemorySheet`: list the memory destinations (project `CLAUDE.md` from `cwd`, user `~/.claude/CLAUDE.md`, auto-memory folder), with the "Auto-memory: on/off" header; row-click → `openPath`.
+
+**Tests:**
+- [ ] Pure-logic: memory-destination derivation (paths + labels) from `cwd` / home / auto-memory root.
+- [ ] Real-app: open `/memory`, assert rows; assert a row-click dispatches the `openPath` bridge call (host stubbed in test).
+
+---
+
+##### Step 12.C: `/hooks` — read-only accordion {#step-12c}
+
+**Commit:** `feat(dev-card): /hooks read-only accordion sheet`
+
+**References:** [D04], [D15]; `tugcode/src/claude-code-settings.ts` (settings reader); `TugAccordion` (the `/diff` precedent)
+
+**Analog:** CC's `/hooks` shows "N hooks configured", a read-only notice, and a
+list of hook events (PreToolUse (2), PostToolUse, PostToolUseFailure,
+PostToolBatch, PermissionDenied, …); drilling into one shows its matchers +
+the input-contract explanation. We mirror it as a **`TugAccordion`** sheet —
+one item per hook event (trigger = `EventName (N)` + one-line description),
+body = configured matchers/commands or "No hooks configured for this event,"
+under a top read-only notice banner.
+
+**Artifacts:**
+- New: `hooks-sheet.tsx` (+ `.css`), and a static catalog of hook events + descriptions
+- Modified (tugcode): extend `ClaudeCodeSettings` (today only `autoCompactEnabled`) to parse the `hooks` block across user / project / local `settings.json`, and emit it to the client
+- Modified: register `/hooks`; `RUN_SLASH_COMMAND` opens the sheet
+
+**Tasks:**
+- [ ] tugcode parses + emits the merged hooks config (event → matchers/commands).
+- [ ] `HooksSheet`: `TugAccordion` over the event catalog joined with the configured hooks; per-event count in the trigger; read-only notice banner.
+
+**Tests:**
+- [ ] Pure-logic: hooks parse/merge across scopes; event-catalog join (configured vs empty).
+- [ ] Real-app: open `/hooks`, assert event rows + counts; expand one and assert its matchers render against a fixture.
+
+**Checkpoint (12.A–12.D):**
 - [ ] `just app-test listing-sheets`
-
-> Note: `/mcp` was previously in this step but is now out of scope per [D14] / [Q06]. Hidden from slash popup.
 
 ---
 
