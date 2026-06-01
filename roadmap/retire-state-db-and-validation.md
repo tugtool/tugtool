@@ -406,8 +406,8 @@ the step that orphans it.
 | #step-2 | Delete `validator.rs` + the `validate` command | done | `8a516fa7` |
 | #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | done | `865c5aff` |
 | #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | done | `ef04e84c` |
-| #step-5 | Relocate runtime state out of the repo + register Claude reads | done | — |
-| #step-6 | De-ceremony skills + skeleton/docs | pending | — |
+| #step-5 | Relocate runtime state out of the repo + register Claude reads | done | `8938a7b3` |
+| #step-6 | De-ceremony skills + skeleton/docs | done | — |
 | #step-7 | Integration checkpoint | pending | — |
 
 #### Step 1: Dash on git + `project_state_dir()` + hydration + log; delete `state.db`/`StateDb` {#step-1}
@@ -597,22 +597,24 @@ the step that orphans it.
 **References:** [P01] keep-skeleton, [P05] ledger-is-truth, (#documentation-plan)
 
 **Tasks:**
-- [ ] `skills/implement/SKILL.md` — delete the `tugutil validate` setup gate + input clause;
-      replace `tugutil dash show`/round references with `git log` + the Step Status Ledger ([P05]);
-      **delete the Setup step that checks for `node_modules` and runs `bun install`** — the
-      worktree now arrives hydrated ([P07]). Keep the baseline green check (a skill judgment).
-- [ ] `skills/devise/SKILL.md` — delete the closing `tugutil validate` step + "implement gates on
-      the same check" language.
-- [ ] `skills/dash/SKILL.md` — drop "records a round"/`dash show` framing (a round is a commit)
-      and any "fresh worktree needs `bun install`" framing ([P07]).
-- [ ] `tugplug/CLAUDE.md` — remove `tugutil validate` mentions; keep `create → commit → join`.
-- [ ] `tuglaws/devise-skeleton.md` — remove "It is validated by `tugutil validate`" (header) and
-      "(validated by `tug validate`)" (Depends-on rule); bump to `v4`. **Keep every section** ([P01]).
-- [ ] `tuglaws/design-decisions.md` + `roadmap/` sweep — reword stale enforcement references to
-      "convention"; leave archived plans untouched.
+- [x] `skills/implement/SKILL.md` — deleted the `tugutil validate` setup gate + input clause;
+      replaced `tugutil dash show`/round references with `git log` + the Step Status Ledger ([P05]);
+      removed the Setup step's `bun install` check (the worktree arrives hydrated, [P07]). Kept the
+      baseline green check.
+- [x] `skills/devise/SKILL.md` — replaced the closing `tugutil validate` step with a skeleton
+      self-check; removed the "implement gates on the same check" language.
+- [x] `skills/dash/SKILL.md` — dropped the "records a round"/`dash show` framing (a round is a
+      commit; trimmed the commit-meta heredoc to instruction/summary) and the `bun install` framing.
+- [x] `skills/audit/SKILL.md` — replaced the `dash show`-lists-rounds note with `git log <base>..`.
+- [x] `tugplug/CLAUDE.md` — removed the `tugutil validate` mention; kept `create → commit → join`.
+- [x] `tuglaws/devise-skeleton.md` — removed both validate references; bumped to `v4`. Every
+      section kept ([P01]).
+- [x] `tuglaws/design-decisions.md` + `roadmap/` sweep — no live plan-validation refs found
+      (design-decisions L07 is code action-validation); validate refs remain only in
+      `roadmap/archive/`, left untouched.
 
 **Checkpoint:**
-- [ ] `rg 'tugutil validate|tug validate' tugplug tuglaws` returns only historical/archived hits.
+- [x] `rg 'tugutil validate|tug validate' tugplug tuglaws` → none; only `roadmap/archive/` hits.
 
 ---
 

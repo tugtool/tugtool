@@ -42,11 +42,12 @@ execute the user's instruction in-thread, commit each round, and stop before mer
 tugutil dash create <name> --description "<first ~100 chars of the instruction>" --json
 ```
 Idempotent — returns the existing active dash if `<name>` already exists. **Capture the
-absolute `worktree` path** and `branch` from the response. If `tugdeck/node_modules` is
-absent in a fresh worktree, `bun install` in `tugdeck/`. **From here, the worktree
-directory is the one and only working root: address every read, write, edit, and test
-by absolute path into the worktree, and never write to the base checkout.** A stray
-write to the base root also blocks `join` (its preflight requires the base clean).
+absolute `worktree` path** and `branch` from the response. `create` hydrates the fresh
+worktree itself (its `[tugtool.dash].post_create` hook runs `bun install`), so it
+arrives ready. **From here, the worktree directory is the one and only working root:
+address every read, write, edit, and test by absolute path into the worktree, and never
+write to the base checkout.** A stray write to the base root also blocks `join` (its
+preflight requires the base clean).
 
 ### Work (in-thread, per round)
 
@@ -58,12 +59,12 @@ pipeline; `just app-test` ends in a greppable `VERDICT: PASS|FAIL` line). **Warn
 are errors.** Then commit the round:
 ```bash
 tugutil dash commit <name> --message "<conventional commit>" --json <<'EOF'
-{"instruction":"<the instruction>","summary":"<what you did + how verified>","files_modified":[...],"files_created":[...]}
+{"instruction":"<the instruction>","summary":"<what you did + how verified>"}
 EOF
 ```
-One command: git commit + a recorded round (`tugutil dash show <name>` to read them).
-A follow-up instruction for the same dash is just another round — do it and commit
-again.
+One command: git commit + a line in the per-project dash-log (the verbatim
+instruction; `git log` on the dash branch reads the commits back). A follow-up
+instruction for the same dash is just another commit — do it and commit again.
 
 ### Build (when there's something to see)
 

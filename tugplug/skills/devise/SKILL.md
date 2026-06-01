@@ -18,7 +18,7 @@ result is a plan document — written to a path **you specify** — that
 
 (The skill is named `devise` to avoid colliding with Claude Code's built-in `plan`.
 The document it produces is a standard tugplan in the devise-skeleton format, so
-`tugutil validate` and `/tugplug:implement` consume it unchanged.)
+`/tugplug:implement` consumes it unchanged.)
 
 **You are the author.** Do not spawn sub-agents (`Task`). Do the research and the
 writing in-thread.
@@ -83,13 +83,12 @@ Author the plan at the output path you were given (or asked for) following the
 Prefer a tight, real plan over an exhaustive one. Every step should be executable
 with a clear commit boundary and a falsifiable checkpoint.
 
-### 4. Validate
+### 4. Self-check
 
-```bash
-tugutil validate <plan-path>
-```
-Fix anything it flags (structure, anchors, references). The plan isn't done until
-it validates — `/tugplug:implement`'s setup gates on the same check.
+Re-read the plan against the skeleton: required sections present, anchors unique,
+`**Depends on:**` lines point at real step anchors, every step has a commit boundary
+and a falsifiable checkpoint. Conformance is a convention you uphold by authorship and
+review — fix anything off before handing off.
 
 ### 5. Hand off
 
@@ -104,8 +103,8 @@ which the user owns).
 - **Explicit path, no assumed directory.** The plan goes exactly where the user says.
   Never hardcode or default to `roadmap/`, `.tugtool/`, or any other location — ask if
   the path wasn't given.
-- **Conform to the skeleton.** `tuglaws/devise-skeleton.md` is the format contract;
-  `tugutil validate` enforces it.
+- **Conform to the skeleton.** `tuglaws/devise-skeleton.md` is the format contract,
+  upheld by authorship and review.
 - **Ground the plan in the real code.** Read before you design.
 - **Don't over-ask.** Clarify only design-changing unknowns.
 - **Don't auto-implement.** `devise` produces the document; `implement` runs it.

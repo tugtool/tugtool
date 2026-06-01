@@ -27,8 +27,7 @@ reaching for one, stop — the point of this skill is that you do the work in-th
 `/tugplug:implement <plan-path> [step-selector]`
 
 - `<plan-path>` — an **explicit path** to a plan written against the devise skeleton.
-  There is no default location — the path is always given. It must pass
-  `tugutil validate`.
+  There is no default location — the path is always given.
 - `[step-selector]` (optional) — **which steps to walk this invocation**:
   - *(omitted)* — walk the **whole plan** from the first unfinished step to the end.
   - `Step N` — walk a **single** step (e.g. `Step 3`).
@@ -43,9 +42,9 @@ truth for "where are we?". Read it first:
 
 **If the plan has no Step Status Ledger** (an older or hand-written plan), fall back
 gracefully: with no selector, walk from Step 1; infer which steps are already done from
-the dash rounds (`tugutil dash show <name>`) or `git log` if the dash exists, and
-confirm with the user before skipping any. Offer to add a ledger to the plan (on the
-worktree) so future runs resume cleanly.
+`git log` on the dash branch if the dash exists, and confirm with the user before
+skipping any. Offer to add a ledger to the plan (on the worktree) so future runs resume
+cleanly.
 
 If no plan exists yet, author one first with `/tugplug:devise`, or write it inline —
 then point `implement` at it.
@@ -73,25 +72,23 @@ convention:
 
 ### 1. Setup
 
-1. `tugutil validate <plan>` — the plan must be valid (has execution steps). Fix
-   or bail if not.
-2. Read the **Step Status Ledger** (or apply the no-ledger fallback above) and resolve
+1. Read the **Step Status Ledger** (or apply the no-ledger fallback above) and resolve
    the step selector into a concrete list of steps to walk this run.
-3. Derive a short dash name from the plan slug. `tugutil dash create <name>
+2. Derive a short dash name from the plan slug. `tugutil dash create <name>
    --description "<one line>" --json`. **Capture the absolute `worktree` path** and
    `branch` from the response. If the dash already exists (resuming a later step
-   range), `create` is idempotent and returns it.
-4. Make sure the plan is present **inside the worktree** so you can edit its ledger
+   range), `create` is idempotent and returns it. `create` hydrates the fresh worktree
+   itself (its `[tugtool.dash].post_create` hook runs `bun install`), so it arrives
+   ready — no manual dependency install.
+3. Make sure the plan is present **inside the worktree** so you can edit its ledger
    there: if it was committed on the base branch it already rode along; otherwise copy
    the file once from its given path into the worktree. From here you work on the
    worktree copy only — never the original on the base checkout.
-5. **All work from here happens inside the worktree directory, addressed by absolute
+4. **All work from here happens inside the worktree directory, addressed by absolute
    path. Nothing is written to the base checkout.**
-6. If `tugdeck/node_modules` is absent (a fresh worktree checkout), run
-   `bun install` in `tugdeck/`. Establish a green baseline (`bun test`, and for
-   Rust changes `cd tugrust && cargo nextest run`) so you know what "still green"
-   means.
-7. Create one task per step in this run's list (`TaskCreate`) so progress is visible.
+5. Establish a green baseline (`bun test`, and for Rust changes
+   `cd tugrust && cargo nextest run`) so you know what "still green" means.
+6. Create one task per step in this run's list (`TaskCreate`) so progress is visible.
 
 ### 2. Implement (walk the steps)
 
@@ -110,8 +107,9 @@ Walk the resolved steps in dependency order. For each step:
   {"instruction":"Step N: <title>","summary":"<what landed + how verified>","files_modified":[...],"files_created":[...]}
   EOF
   ```
-  One command: it makes the git commit AND records a round you can later read with
-  `tugutil dash show <name>`.
+  One command: it makes the git commit AND appends the verbatim instruction to the
+  per-project dash-log (`tugutil state-dir`). Read progress back with `git log` on the
+  dash branch.
 - **Update the Step Status Ledger** in the plan: flip the step from `pending` to
   `done` and record its commit. (Edit the plan in the worktree.)
 - Mark the task complete; move to the next step.

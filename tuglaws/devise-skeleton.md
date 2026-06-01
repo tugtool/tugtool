@@ -1,9 +1,9 @@
-<!-- devise-skeleton v3 -->
+<!-- devise-skeleton v4 -->
 
 <!--
   This is the format contract for plans authored by `/tugplug:devise` and walked
-  by `/tugplug:implement`. It is validated by `tugutil validate`. The devise skill's
-  output is a plan written against this skeleton.
+  by `/tugplug:implement`. It is a convention upheld by authorship and review.
+  The devise skill's output is a plan written against this skeleton.
 
   Prefix reservation: plan-local design decisions use `[P01]` (NOT `[D01]`).
   `[D##]` is reserved for the global design decisions in `design-decisions.md`,
@@ -131,7 +131,7 @@ Steps that depend on other steps must include a `**Depends on:**` line that refe
 - Use **anchor references** (`#step-N`), not step titles or numbers
 - Omit the line entirely for steps with no dependencies (typically Step 1)
 - Multiple dependencies are comma-separated
-- Dependencies must reference valid step anchors within the document (validated by `tug validate`)
+- Dependencies must reference valid step anchors within the document
 
 ---
 

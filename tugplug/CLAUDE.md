@@ -7,8 +7,8 @@ The plugin ships **agentless, main-loop-driven** skills — there are no sub-age
 **Plan lifecycle:**
 
 - **`devise`** — author an implementation plan in-thread against the
-  devise skeleton (`tuglaws/devise-skeleton.md`); validate with `tugutil validate`.
-  Writes to an explicit path (no assumed directory).
+  devise skeleton (`tuglaws/devise-skeleton.md`). Writes to an explicit path
+  (no assumed directory).
 - **`implement`** — drive a plan to a tested debug build on an isolated `tugutil dash`
   worktree, committing per step, stopping for review before merge. Walks a single step,
   a step range, or the whole plan, tracked via the plan's Step Status Ledger.

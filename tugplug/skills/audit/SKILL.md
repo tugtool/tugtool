@@ -37,7 +37,7 @@ files — this is a read-and-judge pass, not a fixup pass.
 Read the plan (and its **Step Status Ledger**) to know what was intended, then read
 the **actual implementation**. Pull the diff — use `git log`/`git diff` for the
 relevant commits (the ledger records commit hashes; on a dash worktree,
-`tugutil dash show <name>` lists the rounds), and read the changed files in full, not
+`git log <base>..tugdash/<name>` lists them), and read the changed files in full, not
 just the hunks. Audit the code as it stands, against what the plan promised.
 
 ### 2. Assess the code
