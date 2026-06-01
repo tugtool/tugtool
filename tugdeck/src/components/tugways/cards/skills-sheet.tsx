@@ -232,6 +232,7 @@ function SkillsSheetBody({
         cellRenderers={SKILLS_CELL_RENDERERS}
         rowLayout="flush"
         inline
+        interactive={false}
         className="skills-sheet-list"
       />
     );

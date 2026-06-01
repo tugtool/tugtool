@@ -497,6 +497,19 @@ export interface TugListViewProps<
   inline?: boolean;
 
   /**
+   * Whether cells are interactive. `true` (default) is the picker shape —
+   * `cell`-role rows are focusable (`tabIndex={0}`) and show the row hover
+   * affordance. Set `false` for a **read-only listing** (e.g. `/skills`,
+   * `/agents`): every row becomes inert — not in the tab order
+   * (`tabIndex={-1}`) and no hover highlight — so the surface doesn't imply a
+   * click that does nothing. Publishes `data-interactive="false"` on the root
+   * for the CSS that suppresses the hover fill. `delegate.onSelect` is
+   * independent of this flag (a read-only list simply omits the delegate).
+   * @default true
+   */
+  interactive?: boolean;
+
+  /**
    * Row presentation for descendant `TugListRow`s. One prop that
    * picks a coherent row treatment and publishes it two ways:
    *
@@ -750,6 +763,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       className,
       followBottom,
       inline,
+      interactive = true,
       rowLayout,
       pageByEntry,
       selectionRequired = false,
@@ -2145,6 +2159,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         data-slot="tug-list-view"
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
         data-row-layout={rowLayout}
+        data-interactive={interactive ? undefined : "false"}
         className={
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
@@ -2169,7 +2184,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //    roles, keeping the existing default-cell DOM shape
             //    byte-identical for backwards-compatible CSS
             //    selectors that don't yet know about roles.
-            const wrapperTabIndex = role === "cell" ? 0 : -1;
+            const wrapperTabIndex = interactive && role === "cell" ? 0 : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
             // `selectionRequired` mode — the owned selected row.
             // Surfaced two ways from the one source: `data-selected`

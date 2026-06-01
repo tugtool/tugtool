@@ -33,6 +33,7 @@ describe("matchLocalSlashCommand", () => {
       "diff",
       "context",
       "skills",
+      "agents",
     ]);
   });
 
@@ -77,6 +78,7 @@ describe("local-command completion + merge", () => {
       "diff",
       "context",
       "skills",
+      "agents",
     ]);
     expect(items[0].atom).toEqual({
       kind: "atom",
@@ -97,6 +99,7 @@ describe("local-command completion + merge", () => {
       "diff",
       "context",
       "skills",
+      "agents",
     ]);
     // The gate is consulted on substring queries too.
     expect(gated("rew").map((i) => i.label)).toEqual([]);
@@ -125,6 +128,7 @@ describe("local-command completion + merge", () => {
       "diff",
       "context",
       "skills",
+      "agents",
       "commit",
     ]);
   });

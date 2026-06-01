@@ -153,6 +153,18 @@ body {
   display: block;
 }
 
+/* ---- Read-only mode (`interactive={false}`) ----
+   A read-only listing's rows are inert: the wrappers are already out of the
+   tab order (the component forces `tabIndex={-1}`), and these rules drop the
+   row hover affordance + pointer so the surface never implies a click that
+   does nothing. Text remains selectable (no `pointer-events` lock). */
+.tug-list-view[data-interactive="false"] .tug-list-view-cell {
+  cursor: default;
+}
+.tug-list-view[data-interactive="false"] .tug-list-row:hover:not([data-disabled="true"]) {
+  background-color: transparent;
+}
+
 /* ---- Row layout — opt-in via the `rowLayout` prop ----
 
    `rowLayout` writes `data-row-layout` on the scroll container. When

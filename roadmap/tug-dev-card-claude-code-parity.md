@@ -822,7 +822,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | `tugdeck/src/components/tugways/cards/diff-sheet.tsx` | `/diff` overlay sheet ([#step-10]) |
 | _(no new file — `/context` reuses the status-row CONTEXT popover via `DevTelemetryStatusRowHandle`; [#step-11])_ | — |
 | `tugdeck/src/components/tugways/cards/memory-sheet.tsx` | `/memory` listing; row-click opens the path in the OS editor/Finder via the host `openPath` handler ([#step-12a]) |
-| `tugdeck/src/components/tugways/cards/agents-sheet.tsx` | `/agents` Running + Library tabbed listing ([#step-12b]) |
+| `tugdeck/src/components/tugways/cards/agents-sheet.tsx` | `/agents` read-only Running + Library sections (sectioned TugListView) ([#step-12b]) |
 | `tugdeck/src/components/tugways/cards/hooks-sheet.tsx` | `/hooks` read-only accordion ([#step-12c]) |
 | `tugdeck/src/components/tugways/cards/skills-sheet.tsx` | `/skills` read-only listing with rich columns ([#step-12d]) |
 | `tugdeck/src/components/tugways/cards/help-tabbed-sheet.tsx` | `/help` tabbed sheet ([#step-13]) per [D16] |
@@ -921,7 +921,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 10.B | `/diff` accordion sheet (dev-card UI) | ✅ DONE | `diff-sheet.tsx` over the 10.A feed |
 | 11 | `/context` → status-bar popover | ✅ DONE | typed `/context` pops the existing CONTEXT popover via `DevTelemetryStatusRow` imperative handle; no HUD/sheet |
 | 12.D | `/skills` read-only list | ✅ DONE | `skills-sheet.tsx` + `skills-inventory-store.ts` + tugcode `skills-inventory.ts`; request/response through tugcode (zero-Rust); rebuild tugcode to exercise live |
-| 12.B | `/agents` Running + Library tabs | ▶ TODO | `agents-sheet.tsx` (TugTabBar); tugcode emits agent model/scope |
+| 12.B | `/agents` Running + Library | ✅ DONE | `agents-sheet.tsx` + `agents-list.ts`; Running from transcript (pending Task), Library = built-in roster + plugin/user; sectioned TugListView, no tugcode |
 | 12.A | `/memory` list → OS editor | ▶ TODO | `memory-sheet.tsx`; host `openPath` handler; no embedded editor |
 | 12.C | `/hooks` read-only accordion | ▶ TODO | `hooks-sheet.tsx`; tugcode emits hooks from settings.json |
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
@@ -2005,32 +2005,46 @@ always fresh across a card rebind / HMR reload.
 
 ---
 
-##### Step 12.B: `/agents` — two read-only tabs (Running / Library) {#step-12b}
+##### Step 12.B: `/agents` — read-only Running + Library {#step-12b}
 
-**Commit:** `feat(dev-card): /agents Running + Library tabbed sheet`
+**Commit:** `feat(dev-card): /agents read-only Running + Library sheet`
 
-**References:** [D04], [D15], [D100] task/agent event stream, `feedback_use_tug_components` (TugTabBar)
+**References:** [D04] SessionMetadataStore hub, [D15] overlays
 
-**Analog:** CC's `/agents` has a `Running` tab and a `Library` tab. We mirror it
-as a sheet with **`TugTabBar`** (existing component) over two read-only tabs:
-- **Running** — currently-running subagents, derived from in-flight `Agent`
-  tool calls (tracked via `parent_tool_use_id` / the Agent transcript blocks);
-  "No subagents are currently running." when empty.
-- **Library** — available agents as `TugListView` rows showing **name · model**
-  (built-in + user/project), grouped/annotated by scope.
+**Scope decision:** read-only listing only — no "Create new agent", no editor
+(nobody uses `/agents` to create agents; you ask Claude to write the file).
+Mirrors CC's two surfaces, but as **two sections in one `TugListView`** (its
+section-header role) rather than a tab control — both lists visible at once,
+and neither existing tab primitive fit (TugTabBar is card-specialized;
+TugRadioGroup renders radio circles). No tugcode round-trip.
 
-**Artifacts:**
-- New: `agents-sheet.tsx` (+ `.css`)
-- Modified: register `/agents`; `RUN_SLASH_COMMAND` opens the sheet
-- Modified (tugcode): enrich the emitted agent descriptors with `model` and `scope` (from each agent `.md` frontmatter — tugcode already reads it)
+**Data sources (both pure, [L02]):**
+- **Running** — pending `Task` tool calls in the live transcript
+  (`selectRunningAgents` over the card's `CodeSessionStore`); empty state
+  otherwise. Honest live data — populates whenever a subagent is executing.
+- **Library** — `BUILTIN_AGENTS` (the fixed always-available roster Claude
+  ships, with its known model defaults — the same list CC's Library shows;
+  nothing to introspect) merged with any plugin/user agents the wire reports
+  in `slashCommands` (category `"agent"`). Built-in rows show their model
+  (`claude · inherit`); plugin/user rows show their source. If CC changes its
+  built-in roster, `BUILTIN_AGENTS` is the one place to update.
+
+**Artifacts (as built):**
+- New: `agents-list.ts` (`BUILTIN_AGENTS`, `selectLibraryAgents`,
+  `selectRunningAgents`, `agentTrailingLabel`), `agents-sheet.tsx` + `.css`
+- Modified: register `/agents` in `slash-commands.ts`; dev-card
+  `RUN_SLASH_COMMAND` surface opens the sheet (wired to both
+  `sessionMetadataStore` + `codeSessionStore`)
+- **No tugcode / wire changes.**
 
 **Tasks:**
-- [ ] tugcode emits per-agent metadata (name, description, model, scope).
-- [ ] `AgentsSheet`: `TugTabBar` Running/Library; Running reads in-flight Agent calls; Library is a `TugListView` with name · model + scope.
+- [x] `AgentsSheet`: sectioned read-only `TugListView` (Running rows / empty
+  state, then Library rows: name + model/source), composing `TugSheetScaffold`; Done.
 
 **Tests:**
-- [ ] Pure-logic: Library projection (name/model/scope) + Running derivation from a transcript fixture (with and without in-flight agents).
-- [ ] Real-app: open `/agents`, assert both tabs render and switch; assert Library rows against a fixture.
+- [x] Pure-logic: `selectLibraryAgents` (built-in roster + plugin/user merge +
+  dedup), `agentTrailingLabel`, `selectRunningAgents` (pending-Task filter) (6 tests).
+- [ ] Real-app: folded into the grouped `just app-test listing-sheets` checkpoint.
 
 ---
 

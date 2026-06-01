@@ -46,6 +46,7 @@ import { useModelPicker } from "./model-picker-sheet";
 import { useRewindSheet } from "./rewind-sheet";
 import { useDiffSheet } from "./diff-sheet";
 import { useSkillsSheet } from "./skills-sheet";
+import { useAgentsSheet } from "./agents-sheet";
 import { canOfferRewind } from "./rewind-turn-source";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
@@ -2623,6 +2624,15 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/agents` listing sheet ([#step-12b]), card-scoped per [D15]. A simple
+  // read-only directory of the subagents Claude can delegate to — projected
+  // from the agent names already in `SessionMetadataStore.slashCommands`.
+  const agentsSheet = useAgentsSheet({
+    sessionMetadataStore,
+    codeSessionStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2658,6 +2668,7 @@ export function DevCardBody({
     diff: () => diffSheet.openDiffSheet(),
     context: () => statusRowRef.current?.openContextPopover(),
     skills: () => skillsSheet.openSkillsSheet(),
+    agents: () => agentsSheet.openAgentsSheet(),
   };
 
   const {
