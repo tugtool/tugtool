@@ -96,30 +96,43 @@ body {
 
 /* ---- Display width ([data-display-width]) ----
  *
- * `standard` (default) keeps the ≈460px reading cap above. `wide` lets an
- * information-rich panel grow past that cap — but sized relative to the host
- * pane's *minimum* width (`--tug-pane-min-width`, set on the pane frame),
- * not its live width. A pane the user has dragged wide would make a percentage
- * of the live width sprawl; anchoring the percentage to the min width keeps a
- * wide sheet a predictable size regardless of how big the card is. The
- * `min-width` floor catches cards whose minimum width is very narrow, so the
- * sheet never collapses below a usable width. `margin: … auto` keeps it
- * centered; the trailing `max-width` guards against overflow on a pane
- * narrower than the floor. [L06] */
-.tug-sheet-content[data-display-width="wide"] {
-  width: calc(0.75 * var(--tug-pane-min-width, 800px));
-  min-width: min(600px, calc(100% - 2 * var(--tugx-sheet-space-b)));
+ * A fixed `sm`/`md`/`lg`/`xl` scale (mirroring TugPushButton / TugBadge).
+ * `sm` (460) is the reading-cap default; `md` (640) and `lg` (800) widen for
+ * information-rich panels; `xl` (950) is the document column for diffs. Each
+ * width is fixed (predictable regardless of how wide the user dragged the
+ * pane) but guarded by a trailing `max-width` so it shrinks rather than
+ * overflows on a pane narrower than the chosen width. `margin: … auto` (above)
+ * keeps it centered. [L06] */
+.tug-sheet-content[data-display-width="sm"] {
+  width: 460px;
+  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+}
+.tug-sheet-content[data-display-width="md"] {
+  width: 640px;
+  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+}
+.tug-sheet-content[data-display-width="lg"] {
+  width: 800px;
+  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+}
+.tug-sheet-content[data-display-width="xl"] {
+  width: 950px;
   max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
 }
 
-/* `document` — a fixed 800px reading column for content that needs real
- * horizontal room (a diff, a long document). Unlike `wide` (a fraction of
- * the pane), this is a stable width regardless of pane size; the trailing
- * `max-width` still guards against a pane narrower than 800px so the sheet
- * never overflows its host. [L06] */
-.tug-sheet-content[data-display-width="document"] {
-  width: 800px;
-  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+/* ---- Resizable ([data-resizable]) ----
+ *
+ * Opt-in drag-resize via native CSS `resize` — the browser owns the geometry
+ * (no React state, [L06]); the grab affordance is the bottom-right corner.
+ * `overflow: auto` is required for `resize` to take effect (the sheet already
+ * scrolls on overflow). `min-*` set a usable floor; the chosen
+ * `data-display-width` supplies the starting width, which dragging overrides.
+ * [L06] */
+.tug-sheet-content[data-resizable="true"] {
+  resize: both;
+  overflow: auto;
+  min-width: 360px;
+  min-height: 200px;
 }
 
 /* ---- Presentation resting states ----

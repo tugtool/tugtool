@@ -159,10 +159,18 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
         );
         expect(hunksBefore).toBe(0);
 
-        // Expanding the first file renders its hunks via DiffBlock.
-        await app.nativeClickAtElement(ACCORDION_TRIGGER);
+        // Expand All opens every file (controlled accordion) → both files'
+        // hunks render via DiffBlock.
+        await app.nativeClickAtElement(`${SHEET} [data-testid="diff-expand-all"]`);
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length >= 1`,
+          `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length >= 2`,
+          { timeoutMs: 6000 },
+        );
+
+        // Collapse All closes them again.
+        await app.nativeClickAtElement(`${SHEET} [data-testid="diff-collapse-all"]`);
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length === 0`,
           { timeoutMs: 6000 },
         );
 

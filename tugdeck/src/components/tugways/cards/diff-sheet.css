@@ -37,10 +37,19 @@
   min-width: 0;
 }
 
-/* Pushes Refresh to the right when there is no header text (empty / no-repo
-   / loading), so the control stays in its usual place. */
+/* Pushes the action cluster to the right when there is no header text
+   (empty / no-repo / loading), so the controls stay in their usual place. */
 .diff-sheet-header-spacer {
   flex: 1 1 auto;
+}
+
+/* Right-side controls: Expand All / Collapse All (when there are files) +
+   Refresh. Ghost buttons, matching block-renderer affordances. */
+.diff-sheet-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
 }
 
 .diff-sheet-summary {

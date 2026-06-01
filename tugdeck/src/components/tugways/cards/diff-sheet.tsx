@@ -29,11 +29,18 @@
 
 import "./diff-sheet.css";
 
-import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import React, {
+  useCallback,
+  useId,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import {
@@ -71,7 +78,8 @@ export function useDiffSheet({
     gitDiffStore.requestDiff();
     void showSheet({
       title: "Diff",
-      displayWidth: "document",
+      displayWidth: "xl",
+      resizable: true,
       content: (close) => (
         <DiffSheetBody gitDiffStore={gitDiffStore} onClose={close} />
       ),
@@ -164,12 +172,21 @@ function DiffSheetBody({
   const files = payload?.files ?? [];
   const hasFiles = files.length > 0;
 
-  // A single-file diff opens expanded; multi-file opens as a scannable
-  // collapsed list. Uncontrolled — the user toggles from there.
-  const defaultOpen = useMemo(
-    () => (files.length === 1 ? [fileKey(files[0])] : []),
-    [files],
-  );
+  // Controlled accordion so "Expand All" / "Collapse All" can drive every
+  // file at once. The accordion is a control: it emits `toggleSection`
+  // through the chain ([L11]); this form binding captures it into the open
+  // set. Files open collapsed (a scannable list) — Expand All is one click.
+  const accordionSenderId = useId();
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
+  const { ResponderScope: AccordionScope, responderRef: accordionRef } =
+    useResponderForm({
+      toggleSectionMulti: {
+        [accordionSenderId]: (v: string[]) => setOpenKeys(v),
+      },
+    });
+  const allKeys = useMemo(() => files.map(fileKey), [files]);
+  const expandAll = useCallback(() => setOpenKeys(allKeys), [allKeys]);
+  const collapseAll = useCallback(() => setOpenKeys([]), []);
 
   // Body content by phase. The empty / no-repo states render a *single*
   // centered proposal label (no repeated "no changes" — the header
@@ -190,38 +207,43 @@ function DiffSheetBody({
   } else if (payload.no_repo) {
     body = (
       <div className="diff-sheet-notice" role="status">
-        <TugLabel emphasis="proposal" align="center">
-          Not a git repository.
+        <TugLabel emphasis="proposal" size="lg" align="center">
+          Not a git repository
         </TugLabel>
       </div>
     );
   } else if (!hasFiles) {
     body = (
       <div className="diff-sheet-notice" role="status">
-        <TugLabel emphasis="proposal" align="center">
-          No uncommitted changes.
+        <TugLabel emphasis="proposal" size="lg" align="center">
+          No uncommitted changes
         </TugLabel>
       </div>
     );
   } else {
     body = (
-      <TugAccordion
-        type="multiple"
-        variant="separator"
-        defaultValue={defaultOpen}
-        className="diff-sheet-files"
-      >
-        {files.map((file) => (
-          <TugAccordionItem
-            key={fileKey(file)}
-            value={fileKey(file)}
-            trigger={<FileTrigger file={file} />}
-            data-testid="diff-file"
+      <AccordionScope>
+        <div ref={accordionRef as (el: HTMLDivElement | null) => void}>
+          <TugAccordion
+            type="multiple"
+            variant="separator"
+            value={openKeys}
+            senderId={accordionSenderId}
+            className="diff-sheet-files"
           >
-            <FileBody file={file} />
-          </TugAccordionItem>
-        ))}
-      </TugAccordion>
+            {files.map((file) => (
+              <TugAccordionItem
+                key={fileKey(file)}
+                value={fileKey(file)}
+                trigger={<FileTrigger file={file} />}
+                data-testid="diff-file"
+              >
+                <FileBody file={file} />
+              </TugAccordionItem>
+            ))}
+          </TugAccordion>
+        </div>
+      </AccordionScope>
     );
   }
 
@@ -252,14 +274,37 @@ function DiffSheetBody({
         ) : (
           <span className="diff-sheet-header-spacer" />
         )}
-        <TugPushButton
-          size="sm"
-          onClick={refresh}
-          disabled={snapshot.phase === "loading"}
-          data-testid="diff-refresh"
-        >
-          Refresh
-        </TugPushButton>
+        <div className="diff-sheet-header-actions">
+          {hasFiles ? (
+            <>
+              <TugPushButton
+                size="sm"
+                emphasis="ghost"
+                onClick={expandAll}
+                data-testid="diff-expand-all"
+              >
+                Expand All
+              </TugPushButton>
+              <TugPushButton
+                size="sm"
+                emphasis="ghost"
+                onClick={collapseAll}
+                data-testid="diff-collapse-all"
+              >
+                Collapse All
+              </TugPushButton>
+            </>
+          ) : null}
+          <TugPushButton
+            size="sm"
+            emphasis="ghost"
+            onClick={refresh}
+            disabled={snapshot.phase === "loading"}
+            data-testid="diff-refresh"
+          >
+            Refresh
+          </TugPushButton>
+        </div>
       </div>
 
       <div className="diff-sheet-body">{body}</div>

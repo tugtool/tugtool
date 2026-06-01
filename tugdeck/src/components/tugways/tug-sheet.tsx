@@ -139,7 +139,15 @@ export type TugSheetPresentation = "top" | "bottom" | "scale-fade";
  * resting width differs [L06]. Declared in `tug-sheet.css` keyed on
  * `data-display-width`.
  */
-export type TugSheetDisplayWidth = "standard" | "wide" | "document";
+/**
+ * Resting width of the sheet panel, on the same `sm`/`md`/`lg`/`xl` scale as
+ * `TugPushButton` / `TugBadge`. `sm` (≈460px) is the reading-cap default;
+ * `md` (640) and `lg` (800) widen for information-rich panels; `xl` (950) is
+ * the document column for diffs and other content that needs real room.
+ * Each is fixed but guarded by a `max-width` so it never overflows a narrow
+ * pane.
+ */
+export type TugSheetDisplayWidth = "sm" | "md" | "lg" | "xl";
 
 /** Enter/exit keyframe pair for one presentation style. */
 interface SheetPresentationMotion {
@@ -431,10 +439,15 @@ export interface TugSheetContentProps {
    */
   presentation?: TugSheetPresentation;
   /**
-   * Resting width of the panel within the host pane. Defaults to
-   * `"standard"`. See {@link TugSheetDisplayWidth}.
+   * Resting width of the panel within the host pane. Defaults to `"sm"`.
+   * See {@link TugSheetDisplayWidth}.
    */
   displayWidth?: TugSheetDisplayWidth;
+  /**
+   * When `true`, the user can drag-resize the panel (native CSS `resize`).
+   * Defaults to `false`. See {@link ShowSheetOptions.resizable}.
+   */
+  resizable?: boolean;
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -460,7 +473,8 @@ export function TugSheetContent({
   getResult,
   senderId: senderIdProp,
   presentation = "scale-fade",
-  displayWidth = "standard",
+  displayWidth = "sm",
+  resizable = false,
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -799,6 +813,7 @@ export function TugSheetContent({
             data-slot="tug-sheet"
             data-tug-sheet-presentation={presentation}
             data-display-width={displayWidth}
+            data-resizable={resizable ? "true" : undefined}
             onKeyDown={handleKeyDown}
             onMouseDown={suppressButtonFocusShift}
           >
@@ -897,10 +912,18 @@ export interface ShowSheetOptions {
    */
   presentation?: TugSheetPresentation;
   /**
-   * Resting width of the panel within the host pane. Defaults to
-   * `"standard"`. See {@link TugSheetDisplayWidth}.
+   * Resting width of the panel within the host pane. Defaults to `"sm"`.
+   * See {@link TugSheetDisplayWidth}.
    */
   displayWidth?: TugSheetDisplayWidth;
+  /**
+   * When `true`, the sheet can be drag-resized by the user (a grab handle
+   * at the bottom-right corner; native CSS `resize`, so the browser owns
+   * the geometry and no React state is involved — [L06]). The chosen
+   * `displayWidth` is the starting size; dragging overrides it for the
+   * life of the open sheet. Defaults to `false`.
+   */
+  resizable?: boolean;
   /**
    * Cascade-target responder id captured at sheet-open time.
    *
@@ -1251,6 +1274,7 @@ export function useTugSheet(): {
           senderId={senderId}
           presentation={options.presentation}
           displayWidth={options.displayWidth}
+          resizable={options.resizable}
         >
           {options.content(close)}
         </TugSheetContent>

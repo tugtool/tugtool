@@ -726,7 +726,7 @@ export function usePermissionRulesSheet({
     if (cwd === null || cwd === "") return;
     void showSheet({
       title: "Permissions",
-      displayWidth: "wide",
+      displayWidth: "md",
       content: (close) => (
         <PermissionRulesSheetBody
           cwd={cwd}

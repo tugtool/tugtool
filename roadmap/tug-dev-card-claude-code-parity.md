@@ -1859,6 +1859,13 @@ Split into **[#step-10a] sourcing** (tugcast `git_diff_request`/`git_diff_respon
 - [x] **Diff scrolls**: the file list is a bounded scroll region (`.diff-sheet-body`, header + Done pinned); long code lines scroll horizontally within their hunk (sheet-scoped).
 - [x] **DiffBlock hunk header readable**: `@@ … @@` text sized to the diff body and a larger chevron (override the cue's `--tugx-cue-*` slots, [L17]).
 
+**Polish round 2 (2026-05-31):**
+- [x] **Non-git dir wording** — the `no_repo` flag now renders "Not a git repository" (was already wired; needs a relaunch with the rebuilt tugcast to show live, since tugcast is a compiled binary).
+- [x] **Empty / no-repo notice**: no trailing period, larger `proposal` TugLabel (`size="lg"`).
+- [x] **Header controls are ghost** (matching block-renderer affordances) and gained **Expand All / Collapse All** — the accordion is now controlled (`value` + `toggleSectionMulti` capture, [L11]).
+- [x] **TugSheet width scale → `sm`/`md`/`lg`/`xl`** (mirroring TugPushButton/TugBadge): mapped `standard→sm` (460), `wide→md` (640), `document→lg` (800), added `xl` (950). Migrated all callers; `/diff` uses `xl`.
+- [x] **TugSheet `resizable` prop** (default false) — native CSS `resize: both` drag-resize ([L06], browser-owned geometry, no React state); `/diff` opts in.
+
 ---
 
 #### Step 11: `/context` HUD via status-bar arc gauge {#step-11}

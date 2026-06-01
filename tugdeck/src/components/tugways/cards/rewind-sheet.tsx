@@ -102,7 +102,7 @@ export function useRewindSheet({
       title: "Rewind",
       // Guidance renders as a centered proposal label below the divider (in
       // the body), not as a below-the-line description.
-      displayWidth: "wide",
+      displayWidth: "md",
       content: (close) => (
         <RewindSheetBody
           rows={rows}
