@@ -81,35 +81,6 @@ pub struct InitCheckData {
     pub path: String,
 }
 
-/// Data payload for list command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListData {
-    /// List of plans
-    pub plans: Vec<PlanSummary>,
-}
-
-/// Summary of a plan for list command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlanSummary {
-    /// Name without prefix/extension
-    pub name: String,
-    /// Status from metadata
-    pub status: String,
-    /// Progress (done/total checkboxes)
-    pub progress: Progress,
-    /// Last updated date
-    pub updated: String,
-}
-
-/// Progress tracking
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Progress {
-    /// Number of completed items
-    pub done: usize,
-    /// Total number of items
-    pub total: usize,
-}
-
 /// Data payload for `tug resolve --json`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolveData {

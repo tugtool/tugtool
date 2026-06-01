@@ -50,18 +50,6 @@ pub enum Commands {
         check: bool,
     },
 
-    /// List all plans with summary information
-    ///
-    /// Shows each plan's name, status, and completion percentage.
-    #[command(
-        long_about = "List all plans with summary information.\n\nDisplays:\n  - Plan name (from filename)\n  - Status (draft, active, done)\n  - Progress (completed/total items)\n\nPlans are found in .tugtool/ matching the naming pattern."
-    )]
-    List {
-        /// Filter by status (draft, active, done)
-        #[arg(long)]
-        status: Option<String>,
-    },
-
     /// Resolve a plan identifier to a file path
     ///
     /// Uses the five-stage resolution cascade: exact path, bare filename, slug, prefix, auto-select.

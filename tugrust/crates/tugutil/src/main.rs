@@ -17,7 +17,6 @@ fn main() -> ExitCode {
         Some(Commands::Init { force, check }) => {
             commands::run_init(force, check, cli.json, cli.quiet)
         }
-        Some(Commands::List { status }) => commands::run_list(status, cli.json, cli.quiet),
         Some(Commands::Resolve { identifier }) => {
             commands::run_resolve(identifier, cli.json, cli.quiet)
         }

@@ -4,7 +4,6 @@ pub mod color;
 pub mod dash;
 pub mod init;
 pub mod instance;
-pub mod list;
 pub mod resolve;
 pub mod state_dir;
 pub mod tell;
@@ -17,7 +16,6 @@ pub use dash::{
 };
 pub use init::run_init;
 pub use instance::{InstanceCommands, run_instance};
-pub use list::run_list;
 pub use resolve::run_resolve;
 pub use state_dir::run_state_dir;
 pub use tell::run_tell;

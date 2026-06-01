@@ -403,8 +403,8 @@ the step that orphans it.
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | done | `964bc9a1` |
-| #step-2 | Delete `validator.rs` + the `validate` command | done | — |
-| #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | pending | — |
+| #step-2 | Delete `validator.rs` + the `validate` command | done | `8a516fa7` |
+| #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | done | — |
 | #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | pending | — |
 | #step-5 | Relocate runtime state out of the repo + register Claude reads | pending | — |
 | #step-6 | De-ceremony skills + skeleton/docs | pending | — |
@@ -504,17 +504,18 @@ the step that orphans it.
 - Deleted `commands/list.rs`, `parser.rs`, `types.rs`.
 
 **Tasks:**
-- [ ] Delete `commands/list.rs`; remove `List` from `cli.rs`, its `main.rs` arm, the `run_list`
-      export ([P06]).
-- [ ] Now that `validator` (#step-2) and `list` are gone, delete `parser.rs` + `types.rs`; remove
+- [x] Delete `commands/list.rs`; remove `List` from `cli.rs`, its `main.rs` arm, the `run_list`
+      export ([P06]). Removed list payloads (`ListData`/`PlanSummary`/`Progress`) from `output.rs`.
+- [x] Now that `validator` (#step-2) and `list` are gone, deleted `parser.rs` + `types.rs`; removed
       `pub mod parser`/`types` + `parse_tugplan`/`TugPlan`/`ParseDiagnostic` re-exports from `lib.rs`.
-      Inline a minimal local type for any surviving incidental use rather than keeping the module.
+      No surviving incidental use — no local type needed.
 
 **Tests:**
-- [ ] Remove parser/list cases from the integration tests.
+- [x] Removed the `list` cases from `cli_integration_tests.rs` (and the now-orphaned `MINIMAL_PLAN`
+      / `create_test_plan` helpers); parser cases went with the deleted core integration test in #step-2.
 
 **Checkpoint:**
-- [ ] `cargo build` + `cargo nextest run` clean under `-D warnings`.
+- [x] `cargo build` (workspace) + `cargo nextest run` clean under `-D warnings` (107 passed).
 
 ---
 

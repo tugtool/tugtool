@@ -1,6 +1,5 @@
 //! CLI integration tests for tug commands
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -35,84 +34,6 @@ fn setup_test_project() -> tempfile::TempDir {
 
     temp
 }
-
-/// Create a minimal valid plan in the test project
-fn create_test_plan(temp_dir: &tempfile::TempDir, name: &str, content: &str) {
-    let plan_path = temp_dir
-        .path()
-        .join(".tugtool")
-        .join(format!("tugplan-{}.md", name));
-    fs::write(&plan_path, content).expect("failed to write test plan");
-}
-
-const MINIMAL_PLAN: &str = r#"## Phase 1.0: Test Feature {#phase-1}
-
-**Purpose:** Test plan for integration testing.
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | Test |
-| Status | active |
-| Target branch | main |
-| Tracking issue/PR | N/A |
-| Last updated | 2026-02-04 |
-
----
-
-### Phase Overview {#phase-overview}
-
-#### Context {#context}
-
-Test context paragraph.
-
----
-
-### 1.0.0 Design Decisions {#design-decisions}
-
-#### [D01] Test Decision (DECIDED) {#d01-test}
-
-**Decision:** This is a test decision.
-
-**Rationale:**
-- Because testing
-
-**Implications:**
-- Tests work
-
----
-
-### 1.0.5 Execution Steps {#execution-steps}
-
-#### Step 1: Setup {#step-1}
-
-**Commit:** `feat: setup`
-
-**References:** [D01] Test Decision, (#context)
-
-**Tasks:**
-- [x] Create project
-- [ ] Add tests
-
-**Tests:**
-- [ ] Unit test
-
-**Checkpoint:**
-- [x] Build passes
-
----
-
-### 1.0.6 Deliverables and Checkpoints {#deliverables}
-
-**Deliverable:** Working test feature.
-
-#### Phase Exit Criteria {#exit-criteria}
-
-- [ ] All tests pass
-"#;
 
 #[test]
 fn test_init_creates_expected_files() {
@@ -204,23 +125,6 @@ fn test_init_with_force_succeeds() {
 }
 
 #[test]
-fn test_list_shows_plans() {
-    let temp = setup_test_project();
-    create_test_plan(&temp, "test", MINIMAL_PLAN);
-
-    let output = Command::new(tug_binary())
-        .arg("list")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run tug list");
-
-    assert!(output.status.success(), "list should succeed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("test"), "output should contain plan name");
-    assert!(stdout.contains("active"), "output should contain status");
-}
-
-#[test]
 fn test_json_output_init() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -240,30 +144,6 @@ fn test_json_output_init() {
     assert_eq!(json["command"], "init");
     assert_eq!(json["status"], "ok");
     assert!(json["data"]["files_created"].is_array());
-}
-
-#[test]
-fn test_json_output_list() {
-    let temp = setup_test_project();
-    create_test_plan(&temp, "test", MINIMAL_PLAN);
-
-    let output = Command::new(tug_binary())
-        .arg("list")
-        .arg("--json")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run tug list --json");
-
-    assert!(output.status.success(), "list --json should succeed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Parse JSON
-    let json: serde_json::Value = serde_json::from_str(&stdout).expect("should be valid JSON");
-    assert_eq!(json["schema_version"], "1");
-    assert_eq!(json["command"], "list");
-    assert_eq!(json["status"], "ok");
-    assert!(json["data"]["plans"].is_array());
-    assert_eq!(json["data"]["plans"][0]["name"], "test");
 }
 
 #[test]
