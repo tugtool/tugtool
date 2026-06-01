@@ -232,15 +232,17 @@ export const TUG_ACTIONS = {
   //                 Transport-independent — not gated on send-readiness.
   //                 A host with no handler leaves it unhandled, so the
   //                 prompt entry sends the text to claude instead.
-  // SHOW_UNKNOWN_SLASH_COMMAND: payload — `value: { name, commandLine }`. The
-  //                 prompt entry dispatches it key-card-scoped when a typed
-  //                 `/command` is neither local nor hidden and claude's
-  //                 reported command catalog does not contain it (a genuine
-  //                 unknown / typo). The dev card's card-content responder
-  //                 handles it by presenting an "unknown command" alert
-  //                 instead of sending the line to claude ([#step-13a]). A
-  //                 host with no handler leaves it unhandled, so the prompt
-  //                 entry falls through and sends the text to claude.
+  // SHOW_SLASH_COMMAND_NOTICE: payload — `value: { name, commandLine, reason }`
+  //                 where `reason` is `"unknown"` (no such command — a typo) or
+  //                 `"unsupported"` (a real Claude Code command with no meaning
+  //                 over the bridge — the hidden set). The prompt entry
+  //                 dispatches it key-card-scoped for a typed `/command` that
+  //                 the dev card will not run; the card-content responder
+  //                 presents a `TugAlertSheet` with reason-appropriate text
+  //                 instead of silently dropping it or burning a turn
+  //                 ([#step-13a]). For `unknown`, a host with no handler leaves
+  //                 it unhandled so the prompt entry falls through to claude;
+  //                 a hidden command is never sent to claude regardless.
   CYCLE_CARD:     "cycle-card",
   PREVIOUS_TAB:   "previous-tab",
   NEXT_TAB:       "next-tab",
@@ -250,7 +252,7 @@ export const TUG_ACTIONS = {
   JUMP_TO_TAB:    "jump-to-tab",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
   RUN_SLASH_COMMAND: "run-slash-command",
-  SHOW_UNKNOWN_SLASH_COMMAND: "show-unknown-slash-command",
+  SHOW_SLASH_COMMAND_NOTICE: "show-slash-command-notice",
 
   // ---- Dialog / popover ----
   //

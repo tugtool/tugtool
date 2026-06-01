@@ -2734,19 +2734,32 @@ export function DevCardBody({
         const open = slashCommandSurfaces[payload.name];
         if (open !== undefined) open(payload.args);
       },
-      // A typed `/command` claude does not recognize, dispatched by the
-      // prompt entry once it has confirmed (against claude's reported
-      // catalog) that the name is a genuine unknown ([#step-13a]). Present
-      // a pane-modal alert rather than letting the line burn a turn.
-      [TUG_ACTIONS.SHOW_UNKNOWN_SLASH_COMMAND]: (event: ActionEvent) => {
-        const payload = event.value as { name: string } | undefined;
+      // A typed `/command` the dev card will not run, dispatched by the prompt
+      // entry ([#step-13a]). `unknown` = a typo (not in claude's catalog);
+      // `unsupported` = a real Claude Code command we hide (no meaning over the
+      // bridge). Present a pane-modal alert with reason-appropriate text rather
+      // than burning a turn (unknown) or silently dropping it (unsupported).
+      [TUG_ACTIONS.SHOW_SLASH_COMMAND_NOTICE]: (event: ActionEvent) => {
+        const payload = event.value as
+          | { name: string; reason: "unknown" | "unsupported" }
+          | undefined;
         if (payload === undefined) return;
+        const { title, message } =
+          payload.reason === "unsupported"
+            ? {
+                title: "Command not available",
+                message: `The /${payload.name} command is not available in the dev card. Type / to see the available commands.`,
+              }
+            : {
+                title: "Unknown command",
+                message: `There is no /${payload.name} command in this project. Type / to see the available commands.`,
+              };
         void presentAlertSheet(cardPickerSheet.showSheet, {
-          title: "Unknown command",
+          title,
           // Match the canonical TugAlert icon sizing (the `.tug-alert-icon`
           // box is 48×48; the default glyph is `size={48}`).
           icon: <AlertTriangle size={48} aria-hidden="true" />,
-          message: `There is no /${payload.name} command in this project. Type / to see the available commands.`,
+          message,
         });
       },
     },

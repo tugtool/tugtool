@@ -1029,62 +1029,43 @@ export const TugPromptEntry = React.forwardRef<
         }
       }
 
-      // [D14] submit-side blocklist ([#step-13a]). A typed command line
-      // whose name is in the known-unsupported set is swallowed here —
-      // silent drop, never sent to claude (which over stream-json would
-      // only bounce it as unavailable). A local command was already
-      // dispatched above; a pass-through / unknown name falls through to
-      // `send()`. Recorded in history like any submitted line so ↑ recalls
-      // it, mirroring the local-command path.
+      // [D14] notice for a typed `/command` the dev card will not run
+      // ([#step-13a]). Two cases: a *hidden* (known-unsupported) command —
+      // never sent to claude — and a *genuine unknown* (catalog populated,
+      // name absent) that would otherwise burn a turn on a typo. Either way,
+      // surface a client-side `SHOW_SLASH_COMMAND_NOTICE` alert via the card's
+      // responder with the matching `reason`, instead of silently dropping or
+      // bouncing off claude. Recorded in history (↑ recalls it), mirroring the
+      // local-command path. A local command was already dispatched above.
       if (commandLine !== null) {
-        const hiddenName = slashCommandName(commandLine);
-        if (hiddenName !== null && isHiddenSlashCommand(hiddenName)) {
-          const sessionId = snapRef.current.tugSessionId;
-          historyStore.push({
-            id: `${sessionId}-${Date.now()}`,
-            sessionId,
-            projectPath: "",
-            route: routeLifecycle.getRoute() || "",
-            text: commandLine,
-            atoms: [],
-            timestamp: Date.now(),
-          });
-          editor.clear();
-          currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
-          return;
-        }
-      }
-
-      // Unknown-command interception ([#step-13a]). A typed `/command` that
-      // is neither local nor hidden and that claude does not report in its
-      // command catalog is a genuine unknown (a typo) — surface it
-      // client-side via the card's responder instead of burning a turn
-      // (claude would only reply "Unknown command", possibly suggesting a
-      // command we hide). Gated on a populated catalog inside
-      // `isUnknownRemoteCommand`. If no responder claims it (a host with no
-      // handler), fall through to `send()`.
-      const targetForUnknown = localCommandTargetIdRef.current;
-      if (commandLine !== null && manager !== null && targetForUnknown !== undefined) {
         const name = slashCommandName(commandLine);
-        const catalogNames = sessionMetadataStore
-          .getSnapshot()
-          .slashCommands.map((c) => c.name);
-        if (
+        const hidden = name !== null && isHiddenSlashCommand(name);
+        const unknown =
           name !== null &&
-          isUnknownRemoteCommand(name, catalogNames) &&
-          manager.nodeCanHandle(
-            targetForUnknown,
-            TUG_ACTIONS.SHOW_UNKNOWN_SLASH_COMMAND,
-          )
-        ) {
-          const handled = manager.sendToTarget(targetForUnknown, {
-            action: TUG_ACTIONS.SHOW_UNKNOWN_SLASH_COMMAND,
-            value: { name, commandLine },
-            phase: "discrete",
-          });
-          if (handled) {
-            // Record the typo in history so ↑ recalls it for a quick fix,
-            // mirroring the local-command and hidden-command paths.
+          !hidden &&
+          isUnknownRemoteCommand(
+            name,
+            sessionMetadataStore.getSnapshot().slashCommands.map((c) => c.name),
+          );
+        if (name !== null && (hidden || unknown)) {
+          const target = localCommandTargetIdRef.current;
+          const notified =
+            manager !== null &&
+            target !== undefined &&
+            manager.nodeCanHandle(
+              target,
+              TUG_ACTIONS.SHOW_SLASH_COMMAND_NOTICE,
+            ) &&
+            manager.sendToTarget(target, {
+              action: TUG_ACTIONS.SHOW_SLASH_COMMAND_NOTICE,
+              value: { name, commandLine, reason: hidden ? "unsupported" : "unknown" },
+              phase: "discrete",
+            });
+          // A hidden command is always swallowed (never reaches claude). A
+          // genuine unknown is swallowed only when a notice was actually
+          // shown — with no responder (e.g. the gallery host), fall through to
+          // `send()` so claude still sees it.
+          if (hidden || notified) {
             const sessionId = snapRef.current.tugSessionId;
             historyStore.push({
               id: `${sessionId}-${Date.now()}`,

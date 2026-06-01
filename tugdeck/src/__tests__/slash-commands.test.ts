@@ -120,26 +120,26 @@ describe("local-command completion + merge", () => {
     expect(labels(localCommandCompletionProvider(), "vim")).toEqual([]);
   });
 
-  test("merge lists local first and dedups a name claude also reports", () => {
+  test("merge dedups a name claude also reports (local wins) and lists alphabetically", () => {
     const claude: CompletionProvider = () => [
       mkItem("permissions"),
       mkItem("commit"),
     ];
     const merged = mergeCommandProviders(localCommandCompletionProvider(), claude);
-    // permissions appears once (local wins), then the other local commands,
-    // then claude's remaining commands.
+    // `permissions` appears once (local wins the dedup); the popup ORDER is
+    // alphabetical regardless of registry / claude-catalog order.
     expect(labels(merged, "")).toEqual([
-      "permissions",
-      "model",
-      "rewind",
-      "resume",
-      "diff",
-      "context",
-      "skills",
       "agents",
-      "memory",
-      "hooks",
       "commit",
+      "context",
+      "diff",
+      "hooks",
+      "memory",
+      "model",
+      "permissions",
+      "resume",
+      "rewind",
+      "skills",
     ]);
   });
 });

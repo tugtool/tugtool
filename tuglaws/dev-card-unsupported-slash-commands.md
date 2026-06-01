@@ -16,13 +16,14 @@ into three groups, and the popup shows only the first two:
   reports for the session: if `claude` knows it, it is passed through; if not,
   it is a genuine unknown (usually a typo) and the dev card shows an *Unknown
   command* alert client-side instead of burning a turn. Nothing is silently
-  dropped — local commands open a surface, hidden commands are no-ops (below),
-  pass-throughs reach `claude`, and unknowns get an alert.
+  dropped — local commands open a surface, hidden commands show a *"Command not
+  available"* alert (below), pass-throughs reach `claude`, and unknowns get an
+  *"Unknown command"* alert.
 - **Unsupported (hidden)** — commands that do nothing useful over the bridge:
   they render terminal-only UI, set TUI state, or address an account / host /
   device concern that isn't the dev card's. These are **absent from the popup**,
-  and typing one is a **silent no-op** (it is not sent to `claude`, which would
-  only bounce it as unavailable).
+  and typing one shows a brief *"Command not available"* alert (it is never sent
+  to `claude`) rather than silently vanishing.
 
 The authoritative hidden set is `HIDDEN_SLASH_COMMANDS` in
 `tugdeck/src/lib/slash-supported.ts`; this document mirrors it. The decision to

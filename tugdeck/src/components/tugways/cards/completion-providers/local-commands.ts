@@ -86,13 +86,19 @@ export function filterCommandProvider(
 }
 
 /**
- * Merge command providers into one, de-duplicating by command label
- * (first wins). List the local provider first so a name claude also
- * reports resolves to the local (graphical) entry rather than a
- * duplicate row.
+ * Merge command providers into one, de-duplicating by command label, and
+ * present the result **alphabetically by label** (case-insensitive). Two
+ * separate concerns:
  *
- * Synchronous only — command providers don't carry the async
- * `subscribe` hook that file completion uses.
+ * - **Dedup precedence** decides which item *survives* when a name appears in
+ *   more than one provider: first-wins, so listing the local provider first
+ *   means a name claude also reports resolves to the local (graphical) entry.
+ * - **Display order** is alphabetical, applied after dedup — the popup is
+ *   predictable regardless of registry / catalog order (which is otherwise an
+ *   unfathomable mix of local-registry order then claude's catalog order).
+ *
+ * Synchronous only — command providers don't carry the async `subscribe` hook
+ * that file completion uses.
  */
 export function mergeCommandProviders(
   ...providers: readonly CompletionProvider[]
@@ -107,6 +113,9 @@ export function mergeCommandProviders(
         merged.push(item);
       }
     }
+    merged.sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
+    );
     return merged;
   };
 }
