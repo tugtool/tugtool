@@ -88,6 +88,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "context",
     description: "Show the context-window breakdown in the status-bar popover",
   },
+  {
+    name: "skills",
+    description: "List the project's plugin + user skills",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

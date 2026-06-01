@@ -187,6 +187,20 @@ export interface SessionRewind {
   fork?: boolean;
 }
 
+/**
+ * Client → tugcode request for the `/skills` inventory ([#step-12d]). The
+ * graphical `/skills` sheet sends this when it opens; tugcode reads the
+ * plugin + user skill dirs and answers with a single {@link SkillsInventory}
+ * carrying the matching `request_id`. A request/response (rather than a
+ * session-init push) keeps the listing fresh across a card rebind / HMR
+ * reload without any ledger persistence.
+ */
+export interface SkillsInventoryQuery {
+  type: "skills_inventory_query";
+  /** Correlation id echoed back on the {@link SkillsInventory} response. */
+  request_id: string;
+}
+
 export type InboundMessage =
   | ProtocolInit
   | UserMessage
@@ -200,7 +214,8 @@ export type InboundMessage =
   | StopTask
   | RequestReplay
   | RewindPreview
-  | SessionRewind;
+  | SessionRewind
+  | SkillsInventoryQuery;
 
 // Outbound message types (tugcode stdout → tugcast)
 // ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
@@ -699,6 +714,46 @@ export interface ContextBreakdown {
 }
 
 /**
+ * One skill in the `/skills` inventory ([#step-12d]) — the read-only listing
+ * of the **plugin + user** skills (the on-disk, user-manageable set, matching
+ * Claude Code's own `/skills`; built-in skills live inside the claude package
+ * and are intentionally excluded — they surface in `/context` instead).
+ *
+ * Every field is sourced by tugcode from the skill's `SKILL.md` (the same
+ * files the context breakdown tokenizes): the display name, the frontmatter
+ * description, the originating plugin (or user scope), the frontmatter token
+ * estimate (what loads into the system prompt), and whether the skill is
+ * plugin-managed (author-locked, edited via `/plugin`).
+ */
+export interface SkillInventoryEntry {
+  /** Display name — `<plugin>:<name>` for plugin skills, bare for user skills. */
+  name: string;
+  /** One-line `description:` from the SKILL.md frontmatter; `""` when absent. */
+  description: string;
+  /** Originating plugin name, or `"user"` for `~/.claude/skills`. */
+  source: string;
+  /** Plugin skills are author-locked ("managed via /plugin"); user skills are not. */
+  locked: boolean;
+  /** Frontmatter token estimate — the per-skill cost loaded into the prompt. */
+  tokens: number;
+}
+
+/**
+ * tugcode → client answer to a {@link SkillsInventoryQuery} ([#step-12d]) —
+ * the assembled plugin + user skill listing for the `/skills` sheet. Rides
+ * tugcode's stdout, relayed verbatim by tugcast on `CODE_OUTPUT` (no Rust
+ * routing, no ledger persistence). `request_id` correlates the answer to the
+ * in-flight request so a stale reply is ignored.
+ */
+export interface SkillsInventory {
+  type: "skills_inventory";
+  tug_session_id: string;
+  request_id: string;
+  skills: ReadonlyArray<SkillInventoryEntry>;
+  ipc_version: number;
+}
+
+/**
  * API retry notification. Claude Code retries up to 10 times with exponential backoff.
  */
 export interface ApiRetry {
@@ -1065,6 +1120,7 @@ export type OutboundMessage =
   | WakeStarted
   | RewindPreviewResult
   | RewindResult
+  | SkillsInventory
   | PromptAnchor;
 
 // Type guards
@@ -1084,7 +1140,8 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "stop_task" ||
     typed.type === "request_replay" ||
     typed.type === "rewind_preview" ||
-    typed.type === "session_rewind"
+    typed.type === "session_rewind" ||
+    typed.type === "skills_inventory_query"
   );
 }
 
@@ -1138,4 +1195,10 @@ export function isRewindPreview(msg: InboundMessage): msg is RewindPreview {
 
 export function isSessionRewind(msg: InboundMessage): msg is SessionRewind {
   return msg.type === "session_rewind";
+}
+
+export function isSkillsInventoryQuery(
+  msg: InboundMessage,
+): msg is SkillsInventoryQuery {
+  return msg.type === "skills_inventory_query";
 }

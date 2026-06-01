@@ -920,7 +920,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 10.A | `/diff` sourcing — tugcast `git_diff_request` | ✅ DONE | tugcast handler + protocol + round-trip proof |
 | 10.B | `/diff` accordion sheet (dev-card UI) | ✅ DONE | `diff-sheet.tsx` over the 10.A feed |
 | 11 | `/context` → status-bar popover | ✅ DONE | typed `/context` pops the existing CONTEXT popover via `DevTelemetryStatusRow` imperative handle; no HUD/sheet |
-| 12.D | `/skills` read-only list | ▶ TODO | `skills-sheet.tsx`; tugcode emits rich skill metadata |
+| 12.D | `/skills` read-only list | ✅ DONE | `skills-sheet.tsx` + `skills-inventory-store.ts` + tugcode `skills-inventory.ts`; request/response through tugcode (zero-Rust); rebuild tugcode to exercise live |
 | 12.B | `/agents` Running + Library tabs | ▶ TODO | `agents-sheet.tsx` (TugTabBar); tugcode emits agent model/scope |
 | 12.A | `/memory` list → OS editor | ▶ TODO | `memory-sheet.tsx`; host `openPath` handler; no embedded editor |
 | 12.C | `/hooks` read-only accordion | ▶ TODO | `hooks-sheet.tsx`; tugcode emits hooks from settings.json |
@@ -1964,22 +1964,44 @@ from name-strings into objects — the `parseEntry` shape already accepts
 **References:** [D04] SessionMetadataStore hub, [D15] overlays, [#l02-slash-cmd-audit]
 
 **Analog:** CC's `/skills` is a flat list, one row per skill. We mirror it as a
-`TugListView` sheet — each row shows **name, scope (user-only/project/…),
-source (plugin/built-in), token estimate (`~N tok`), and locked status**, plus
-the description.
+`TugListView` sheet — each row shows **name, source (`Plugin <name>` / `User`),
+token estimate (`~N tok`), and a lock glyph** ("locked by author" for
+plugin-managed skills), plus the description.
 
-**Artifacts:**
-- New: `skills-sheet.tsx` (+ `.css`)
-- Modified: register `/skills` in the [#step-1c] registry; `RUN_SLASH_COMMAND` opens the sheet
-- Modified (tugcode): enrich the emitted skill descriptors with `scope`, `source`, per-skill token estimate, and `locked` (tugcode already enumerates + tokenizes the skills dirs for the context breakdown)
+**Set (as built):** the **plugin + user** skills only — the on-disk,
+user-manageable set, matching CC's own `/skills`. Built-in skills (claude-api,
+loop, simplify…) live inside the claude package, are not on disk where tugcode
+can read them, and CC excludes them from `/skills` too (they surface in
+`/context`). So there is no data gap and no guessing — every column is sourced
+by tugcode from each skill's `SKILL.md`.
+
+**Transport (as built):** a single-shot **request/response through tugcode**,
+mirroring `/diff`'s `GitDiffStore` and matching `/context`'s precedent of
+talking to the layer that owns the data. The sheet sends a
+`skills_inventory_query` CODE_INPUT; tugcode reads `<plugin>/skills/*` +
+`~/.claude/skills/*` and answers with a single `skills_inventory` frame
+correlated by `request_id`. tugcast relays both verbatim (CODE_INPUT → stdin,
+stdout → CODE_OUTPUT) — **zero Rust changes, no ledger persistence**, and
+always fresh across a card rebind / HMR reload.
+
+**Artifacts (as built):**
+- New (tugcode): `skills-inventory.ts` (builder + frontmatter field parser);
+  `SkillInventoryEntry` / `SkillsInventory` / `SkillsInventoryQuery` wire types
+  in `types.ts`; `skills_inventory_query` dispatch branch in `main.ts`.
+- New (tugdeck): `skills-inventory-store.ts` (standalone request/response store,
+  mirroring `GitDiffStore`; CODE_OUTPUT feed filtered to `type ===
+  "skills_inventory"` for the session); `skills-sheet.tsx` + `.css`.
+- Modified: `card-services-store.ts` (per-card `skillsInventoryStore` +
+  filtered feed); register `/skills` in `slash-commands.ts`; dev-card
+  `RUN_SLASH_COMMAND` surface opens the sheet.
 
 **Tasks:**
-- [ ] tugcode emits per-skill metadata (name, description, scope, source, token estimate, locked).
-- [ ] `SkillsSheet`: `TugListView` over `SessionMetadataStore` skills; rich columns; read-only (built-in skills have no editable backing file). Search/sort optional.
+- [x] tugcode emits per-skill metadata (name, description, source, token estimate, locked) on request.
+- [x] `SkillsSheet`: read-only `TugListView` of skill rows (name · source · `~N tok` · lock), composing `TugSheetScaffold`; refresh + Done.
 
 **Tests:**
-- [ ] Pure-logic: skill projection (filter + column derivation) from the metadata snapshot.
-- [ ] Real-app: open `/skills`, assert row count + a known row's columns against a fixture session.
+- [x] Pure-logic: tugcode `buildSkillsInventory` + `readFrontmatterField` (9 tests); tugdeck store helpers + `parseSkillsInventoryPayload` + `_ingestForTest` (9 tests).
+- [ ] Real-app: folded into the grouped `just app-test listing-sheets` checkpoint (needs a tugcode rebuild — `just app-debug` — to exercise the live round-trip).
 
 ---
 

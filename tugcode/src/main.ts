@@ -16,11 +16,13 @@ import {
   isRequestReplay,
   isRewindPreview,
   isSessionRewind,
+  isSkillsInventoryQuery,
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
+import { buildSkillsInventory } from "./skills-inventory.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -399,6 +401,20 @@ async function main() {
           ipc_version: 2,
         });
       });
+    } else if (isSkillsInventoryQuery(msg)) {
+      // `/skills` listing ([#step-12d]). Read the plugin + user skill dirs and
+      // answer with a single `skills_inventory` frame correlated by
+      // `request_id`. Synchronous, idle-time, best-effort (a missing dir just
+      // contributes no entries); tugcast relays the response verbatim on
+      // CODE_OUTPUT — no Rust routing, no persistence.
+      writeLine(
+        buildSkillsInventory({
+          sessionId,
+          requestId: msg.request_id,
+          homeDir: homedir(),
+          pluginDir: join(projectDir, "tugplug"),
+        }),
+      );
     } else if (isSessionCommand(msg)) {
       if (sessionManager) {
         sessionManager.handleSessionCommand(msg.command).catch((err) => {

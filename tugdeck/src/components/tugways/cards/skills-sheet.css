@@ -1,0 +1,113 @@
+/* @tug-pairings: none — layout + inherited foreground only (no
+   color-setting rules, so no @tug-renders-on [L16]). The panel surface comes
+   from the composed TugSheet; rows come from the composed TugListView /
+   TugListRow; buttons from TugPushButton. Composed children keep their own
+   tokens [L20]. */
+
+/* Layout (fixed header → scrolling list → fixed Done) comes from the composed
+   TugSheetScaffold; the skills sheet only adds the header→body gap and the
+   skill-specific row trimmings below. */
+.skills-sheet .tug-sheet-scaffold-header {
+  margin-bottom: 0.5rem;
+}
+
+/* Header: "Skills" + summary on the left, Refresh on the right. */
+.skills-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.skills-sheet-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.skills-sheet-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.skills-sheet-summary {
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+/* The "managed via /plugin" tail reads quieter than the count. */
+.skills-sheet-managed {
+  opacity: 0.7;
+}
+
+/* Single centered notice for the loading / empty / error states. */
+.skills-sheet-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  margin: 0;
+  font-size: 0.875rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+/* The list view is `height: 100%` by default (it expects a bounded flex
+   parent). Here the composed TugSheetScaffold body is the single scroll
+   region, so size the inline list to its content and let the body scroll. */
+.tug-list-view.skills-sheet-list {
+  height: auto;
+}
+
+/* A skill row's description is the full SKILL.md summary — let the subtitle
+   wrap to as many lines as it needs rather than truncating. Top-align the
+   row's leading glyph / title / trailing meta so they sit on the first line
+   when the description spans several. */
+.skills-sheet-list .tug-list-row {
+  align-items: flex-start;
+}
+.skills-sheet-list .tug-list-row-subtitle {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Leading lock glyph — fixed-width holder so titles align whether or not a
+   row is locked (empty for unlocked user skills). */
+.skills-sheet-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  opacity: 0.6;
+}
+
+/* Trailing cluster: source · ~N tok. The token figure sits in a fixed-width,
+   right-aligned, tabular-nums column so the `~N tok` reading lines up down the
+   list regardless of digit count; the source reads right-aligned against it. */
+.skills-sheet-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.skills-sheet-source {
+  text-align: right;
+}
+
+.skills-sheet-sep {
+  opacity: 0.5;
+}
+
+.skills-sheet-tokens {
+  font-family: var(--tug-font-mono, monospace);
+  min-width: 5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

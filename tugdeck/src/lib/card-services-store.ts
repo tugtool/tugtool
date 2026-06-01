@@ -37,6 +37,7 @@ import { ResponseSettingsStore } from "./response-settings-store";
 import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
 import { GitDiffStore } from "./git-diff-store";
+import { SkillsInventoryStore } from "./skills-inventory-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
@@ -73,6 +74,14 @@ export interface CardServices {
    */
   readonly gitDiffStore: GitDiffStore;
   readonly gitDiffFeedStore: FeedStore;
+  /**
+   * Single-shot `/skills` request/response store ([#step-12d]) and its
+   * CODE_OUTPUT feed (filtered to `type === "skills_inventory"` for this
+   * session). Fires `skills_inventory_query` and resolves the matching
+   * tugcode response — not a continuous subscription.
+   */
+  readonly skillsInventoryStore: SkillsInventoryStore;
+  readonly skillsInventoryFeedStore: FeedStore;
   /**
    * The `@` file-completion provider. Captured once at construction
    * because each call to `FileTreeStore.getFileCompletionProvider()`
@@ -285,6 +294,29 @@ class CardServicesStore {
       binding.projectDir,
     );
 
+    // `/skills` ([#step-12d]): a CODE_OUTPUT feed narrowed to this session's
+    // `skills_inventory` frames (so the high-traffic stream only wakes the
+    // store on its own response), plus the single-shot request/response store.
+    // The response rides tugcode's stdout (relayed verbatim on CODE_OUTPUT),
+    // so there is no dedicated feed id — the filter does the narrowing.
+    const skillsInventoryFilter: FeedStoreFilter = (_feedId, decoded) =>
+      typeof decoded === "object" &&
+      decoded !== null &&
+      (decoded as { type?: unknown }).type === "skills_inventory" &&
+      (decoded as { tug_session_id?: unknown }).tug_session_id ===
+        binding.tugSessionId;
+    const skillsInventoryFeedStore = new FeedStore(
+      connection,
+      [FeedId.CODE_OUTPUT],
+      undefined,
+      skillsInventoryFilter,
+    );
+    const skillsInventoryStore = new SkillsInventoryStore(
+      skillsInventoryFeedStore,
+      FeedId.CODE_OUTPUT,
+      binding.tugSessionId,
+    );
+
     // Bind success → prepend this card's project path to the dev
     // recent-projects list (dedup, cap). Done here rather than in a
     // React effect so the side effect is co-located with services
@@ -365,6 +397,8 @@ class CardServicesStore {
       fileTreeFeedStore,
       gitDiffStore,
       gitDiffFeedStore,
+      skillsInventoryStore,
+      skillsInventoryFeedStore,
       fileCompletionProvider,
     };
   }
@@ -382,6 +416,8 @@ class CardServicesStore {
     services.fileTreeFeedStore.dispose();
     services.gitDiffStore.dispose();
     services.gitDiffFeedStore.dispose();
+    services.skillsInventoryStore.dispose();
+    services.skillsInventoryFeedStore.dispose();
   }
 
   // ── Public API ───────────────────────────────────────────────────────────

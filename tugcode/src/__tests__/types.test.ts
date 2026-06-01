@@ -35,6 +35,9 @@ describe("types.ts type guards", () => {
     expect(isInboundMessage({ type: "session_command", command: "fork" })).toBe(true);
     // stop_task per §2e
     expect(isInboundMessage({ type: "stop_task", task_id: "task-1" })).toBe(true);
+    expect(
+      isInboundMessage({ type: "skills_inventory_query", request_id: "si-1" }),
+    ).toBe(true);
   });
 
   test("isProtocolInit discriminates protocol_init", () => {
