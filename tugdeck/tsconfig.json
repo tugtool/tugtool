@@ -15,7 +15,8 @@
     "jsxImportSource": "react",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@tugproto/*": ["../tugproto/src/*"]
     },
     "types": ["bun-types"],
     "allowImportingTsExtensions": true

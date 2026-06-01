@@ -930,7 +930,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.B.2 | `/help` sheet | ✅ DONE | two-tab `TugSheet` (General: shortcuts + unsupported-doc link; Commands: built-in list). `projectHelpCommands` (`help-content.ts`): `local`-category, hidden filtered, help-text-required; skills/agents left to popup + `/agents`. Custom tab dropped by decision. Non-interactive `TugListView`; `permission-rules-editor` tab idiom |
 | 13.B.3 | `/clear` (mini spike → implement) | ✅ DONE | `/clear` = fresh session in card (reuse spawn path); old subprocess closed, stays resumable. Core fix: `cardServicesStore._reconcile` now rebuilds on `tugSessionId` change (also repairs latent `/resume`-different + resume-"New session" gap). `sendCloseSessionKeepingBinding`; no picker flash |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ✅ DONE | `/export`: `transcript-export.ts` (md+jsonl) → `os-export.ts` → new `exportSession` `NSSavePanel` host bridge w/ Format popup. `/add-dir`: reuse `choosePath` `NSOpenPanel` → real `add_directory` CODE_INPUT verb (claude rejects `/add-dir` headless) → tugcode respawns w/ `--add-dir`+`--resume` (mirrors effort; no Rust change). Swift `BUILD SUCCEEDED`; tugcode recompiled; needs `just app-debug` to take effect |
-| 13.C.1 | `tugproto` shared verb contract + registry | 📝 PLANNED | Author inbound wire-verb contract once in a source-only `tugproto/` dir (both bundlers resolve); replace tugcode's twice-authored union + 3-place allowlist/guard + 16-way `if/else` dispatch with one `INBOUND_HANDLERS` registry. Spike bundler resolution first. Inbound only; outbound + other mirrored files deferred. **Awaiting review** |
+| 13.C.1 | `tugproto` shared verb contract + registry | ✅ DONE | Inbound wire-verb contract authored once in source-only `tugproto/` (`@tugproto/*` alias; resolves in tugcode bun-compile, tugdeck tsc/vite). `isInboundMessage` derived from `INBOUND_VERBS` (allowlist footgun gone); `INBOUND_HANDLERS` registry replaces the 16-way `if/else`. Unions had drifted → shared with sender-permissive types + 2 one-line tugcode narrowings; guards kept (a test uses them); protocol_init/user_message stay special. Suites 555 + 3275 green |
 | 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
 | 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
@@ -2485,10 +2485,30 @@ groups them.
 
 **References:** [D23] local dispatch, the `add_directory` build ([#step-13c]) as the motivating pain, the `reference_tugcode_inbound_allowlist` footgun (a missed allowlist edit → `Invalid message type`, sheet hangs).
 
-> **Status: PLANNED — awaiting review before implementation.** This is a
-> cross-cutting refactor of tugcode's hottest path (the IPC message loop) plus
-> new shared-source infra; it earns its own step and the full suite as the
-> guardrail. Do **not** fold it into a feature step.
+> **Status: ✅ DONE.** Built as planned, with two as-built refinements the
+> investigation forced (below). Resolution proven on all three bundler paths;
+> both suites green.
+>
+> **As-built deltas from the plan:**
+> - **The two unions had drifted** — tugdeck's was the client *send-subset* (12
+>   verbs, sender-permissive payloads), tugcode's the *receive-superset* (16,
+>   incl. `protocol_init`/`request_replay`/`skills`/`hooks`), and `ContentBlock`
+>   was defined in both. Resolved by authoring the **full** contract once in
+>   `tugproto` with **sender-permissive types for the 3 fields that diverged**
+>   (`mode: string`, `answers: Record<string, unknown>`, `updatedInput: unknown`)
+>   and **narrowing at tugcode's handler boundary** — exactly two one-line
+>   adjustments (`formatQuestionAnswer` param; a `setMode(... as PermissionMode)`
+>   cast + an `updatedInput as …` cast). Neither side's call sites changed.
+> - **Per-type guards kept.** A dedicated `types.test.ts` exercises them, and
+>   they're harmless one-liners. The win is `isInboundMessage` **derived from
+>   `INBOUND_VERBS`** (the silent-allowlist footgun is gone) + the registry
+>   replacing the `if/else`. A new verb no longer *needs* a guard.
+> - **`protocol_init` + `user_message` stay special-cased** in `main.ts` (the
+>   handshake + the hot turn path); the registry owns the other 14 verbs.
+> - **Resolution:** repo-root `tugproto/`, `@tugproto/*` tsconfig path (both
+>   packages) + a Vite `resolve.alias` (tugdeck). Vite's default `fs.allow`
+>   already covers a repo-root sibling via its `.git` workspace-root detection,
+>   so no `server.fs` change was needed.
 
 **Why.** Adding one CODE_INPUT verb (`add_directory`, [#step-13c]) touched ~6
 sites, of which only three are real work (client send-intent, server handler,
@@ -2548,13 +2568,13 @@ contract once, derive the rest from a registry.
 - Build wiring: tugdeck vite/tsconfig alias; tugcode tsconfig/`bun build` resolution.
 
 **Tests:**
-- [ ] Resolution proof: both `bun build --compile tugcode` and tugdeck `bun run build` succeed importing a `tugproto` type (the spike's executable artifact).
-- [ ] Pure-logic: `isInboundMessage` accepts every registered verb and rejects an unknown `type` (replaces the hand-allowlist; now derived from `INBOUND_VERB_NAMES`).
-- [ ] Pure-logic: dispatch registry routes each verb to its handler (a table-driven test over `INBOUND_HANDLERS`), incl. the unknown-verb path.
-- [ ] Regression: full tugcode suite (549) + tugdeck suite green — the dispatch loop is the hot path; this is the guardrail.
+- ✅ Resolution proof: `bun build --compile tugcode`, tugdeck `bun run build` (vite/rollup), AND both `tsc` all resolve `@tugproto/inbound`.
+- ✅ Pure-logic (`inbound-dispatch.test.ts`): `isInboundMessage` accepts every `INBOUND_VERBS` entry and rejects unknown verbs / non-objects.
+- ✅ Pure-logic: registry coverage — `INBOUND_HANDLERS` has exactly one handler per non-special verb (catches a contract verb with no dispatch). The dispatch-routing-by-mock test was **not** written (it would hand-roll a `SessionManager` to assert call counts — the banned mock-store pattern); coverage + the type-level `Extract` mapping carry it instead.
+- ✅ Regression: full tugcode suite (555) + tugdeck suite (3275) green.
 
 **Checkpoint:**
-- [ ] tugdeck + tugcode `tsc` clean; both suites green; `bun build --compile tugcode` succeeds; `just app-debug` boots and a round-trip verb (e.g. `/model`) still works.
+- ✅ tugdeck + tugcode `tsc` clean; both suites green; `bun build --compile tugcode` succeeds; tugdeck vite build succeeds. `just app-debug` to confirm a live round-trip verb (e.g. `/model`) is the user's to run (Swift/tugcode have no HMR).
 
 **Deferred (out of scope — flag, don't build):** the **outbound** IPC contract
 (tugcode → tugdeck events) and the other hand-mirrored files

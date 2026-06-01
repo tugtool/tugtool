@@ -9,7 +9,11 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["bun-types"]
+    "types": ["bun-types"],
+    "baseUrl": ".",
+    "paths": {
+      "@tugproto/*": ["../tugproto/src/*"]
+    }
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts", "probe*.ts"]
 }

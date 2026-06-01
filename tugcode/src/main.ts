@@ -2,30 +2,12 @@
 // Tugcode: Claude Code bridge — stream-json IPC between Claude Code and tugcast
 
 import { readLine, writeLine, writeLineAndExit } from "./ipc.ts";
-import {
-  isProtocolInit,
-  isUserMessage,
-  isToolApproval,
-  isQuestionAnswer,
-  isInterrupt,
-  isPermissionMode,
-  isModelChange,
-  isEffortChange,
-  isAddDirectory,
-  isSessionCommand,
-  isStopTask,
-  isRequestReplay,
-  isRewindPreview,
-  isSessionRewind,
-  isSkillsInventoryQuery,
-  isHooksQuery,
-} from "./types.ts";
+import { isProtocolInit, isUserMessage } from "./types.ts";
+import { dispatchInbound } from "./inbound-dispatch.ts";
 import { SessionManager } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
-import { buildSkillsInventory } from "./skills-inventory.ts";
-import { buildHooksInventory } from "./hooks-inventory.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { realpathSync } from "node:fs";
@@ -345,134 +327,16 @@ async function main() {
       } else {
         console.error("User message received before session initialized");
       }
-    } else if (isToolApproval(msg)) {
-      sessionManager?.handleToolApproval(msg);
-    } else if (isQuestionAnswer(msg)) {
-      sessionManager?.handleQuestionAnswer(msg);
-    } else if (isInterrupt(msg)) {
-      sessionManager?.handleInterrupt();
-    } else if (isPermissionMode(msg)) {
-      sessionManager?.handlePermissionMode(msg);
-    } else if (isModelChange(msg)) {
-      sessionManager?.handleModelChange(msg.model);
-    } else if (isEffortChange(msg)) {
-      // Reasoning-effort change ([#step-4]). Respawn-with-resume (no live
-      // control verb in 2.1.158, [R07]) — fire-and-forget like
-      // session_command: awaiting here would block the IPC loop while
-      // killAndCleanup drains the old process.
-      sessionManager?.handleEffortChange(msg.effort).catch((err) => {
-        console.error("Effort change failed:", err);
-        writeLine({
-          type: "error",
-          message: `Effort change failed: ${err}`,
-          recoverable: true,
-          ipc_version: 2,
-        });
+    } else {
+      // Every other inbound verb dispatches through the registry
+      // ([#step-13c1]). Unknown verbs can't reach here — `isInboundMessage`
+      // gated `readLine`, and protocol_init / user_message are handled above.
+      dispatchInbound(msg, {
+        sessionManager,
+        sessionId,
+        projectDir,
+        writeLine,
       });
-    } else if (isAddDirectory(msg)) {
-      // Add a working directory ([#step-13c]). Like effort, claude has no live
-      // add-directory control verb over the bridge — respawn-with-resume so the
-      // new `--add-dir` applies. Fire-and-forget for the same reason: awaiting
-      // would block the IPC loop while killAndCleanup drains the old process.
-      sessionManager?.handleAddDirectory(msg.directory).catch((err) => {
-        console.error("Add directory failed:", err);
-        writeLine({
-          type: "error",
-          message: `Add directory failed: ${err}`,
-          recoverable: true,
-          ipc_version: 2,
-        });
-      });
-    } else if (isStopTask(msg)) {
-      sessionManager?.handleStopTask(msg.task_id);
-    } else if (isRequestReplay(msg)) {
-      // Phase A-R1 / [D12]. Tugdeck dispatched a request_replay
-      // CONTROL frame on services construction for a resume binding;
-      // tugcast forwarded it here. Fire-and-forget: runReplay's
-      // re-entrancy guard drops a request that arrives while another
-      // replay is in flight, and the iterator is async — awaiting it
-      // here would block the IPC loop from reading subsequent frames
-      // (a user_message that lands during replay would queue behind
-      // the replay tail).
-      if (sessionManager) {
-        console.log(`[dev::replay::request] session_id=${sessionId}`);
-        sessionManager.runReplay().catch((err) => {
-          console.error("request_replay failed:", err);
-        });
-      } else {
-        console.error("request_replay received before session initialized");
-      }
-    } else if (isRewindPreview(msg)) {
-      // `/rewind` diff-stat preview ([#step-7-1]). Synchronous send +
-      // correlate (the `control_response` is caught turn-free in
-      // `handleClaudeLine`); no IPC-loop-blocking await.
-      sessionManager?.handleRewindPreview(msg).catch((err) => {
-        console.error("Rewind preview failed:", err);
-        writeLine({
-          type: "rewind_preview_result",
-          promptUuid: msg.promptUuid,
-          canRewind: false,
-          error: `Rewind preview failed: ${err}`,
-          ipc_version: 2,
-        });
-      });
-    } else if (isSessionRewind(msg)) {
-      // `/rewind` apply. Code dimension reverts the working tree via
-      // `rewind_files` ([#step-7-1]); the conversation dimension truncates
-      // the session JSONL + silent-respawns `--resume` ([#step-7-2]). The
-      // handler is async (file I/O + respawn) and emits its own
-      // `rewind_result`; surface any unexpected throw as a failed ack rather
-      // than an unhandled rejection.
-      sessionManager?.handleSessionRewind(msg).catch((err) => {
-        console.error("Session rewind failed:", err);
-        writeLine({
-          type: "rewind_result",
-          promptUuid: msg.promptUuid,
-          scope: msg.scope,
-          canRewind: false,
-          error: `Session rewind failed: ${err}`,
-          ipc_version: 2,
-        });
-      });
-    } else if (isSkillsInventoryQuery(msg)) {
-      // `/skills` listing ([#step-12d]). Read the plugin + user skill dirs and
-      // answer with a single `skills_inventory` frame correlated by
-      // `request_id`. Synchronous, idle-time, best-effort (a missing dir just
-      // contributes no entries); tugcast relays the response verbatim on
-      // CODE_OUTPUT — no Rust routing, no persistence.
-      writeLine(
-        buildSkillsInventory({
-          sessionId,
-          requestId: msg.request_id,
-          homeDir: homedir(),
-          pluginDir: join(projectDir, "tugplug"),
-        }),
-      );
-    } else if (isHooksQuery(msg)) {
-      // `/hooks` listing ([#step-12c]). Read the hook config from the user /
-      // project / local settings.json files and answer with a single
-      // `hooks_inventory` frame correlated by `request_id`. Synchronous,
-      // idle-time, best-effort; tugcast relays the response verbatim.
-      writeLine(
-        buildHooksInventory({
-          sessionId,
-          requestId: msg.request_id,
-          homeDir: homedir(),
-          cwd: projectDir,
-        }),
-      );
-    } else if (isSessionCommand(msg)) {
-      if (sessionManager) {
-        sessionManager.handleSessionCommand(msg.command).catch((err) => {
-          console.error("Session command failed:", err);
-          writeLine({
-            type: "error",
-            message: `Session command failed: ${err}`,
-            recoverable: true,
-            ipc_version: 2,
-          });
-        });
-      }
     }
   }
 }

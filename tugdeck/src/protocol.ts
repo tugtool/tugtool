@@ -13,6 +13,8 @@
  * - Length: big-endian u32, max MAX_PAYLOAD_SIZE.
  */
 
+import type { InboundMessage } from "@tugproto/inbound";
+
 /** Feed identifiers for different data streams (open u8 namespace) */
 export const FeedId = {
   // Terminal
@@ -278,27 +280,15 @@ export function encodeCodeInput(msg: object, tugSessionId: string): ArrayBuffer 
  * Per [Spec S01](roadmap/dev-atoms.md#s01-attachment-wire-type)
  * (retired wire-shape `Attachment`) and [Step 5c](roadmap/dev-atoms.md#step-5c).
  */
-export type ContentBlock = ContentBlockText | ContentBlockImage;
-
-export interface ContentBlockText {
-  type: "text";
-  /** Raw text — atoms with no associated bytes substitute their value
-   *  into this run; `U+FFFC` is not emitted. */
-  text: string;
-}
-
-export interface ContentBlockImage {
-  type: "image";
-  source: ContentBlockImageSourceBase64;
-}
-
-export interface ContentBlockImageSourceBase64 {
-  type: "base64";
-  /** RFC 6838 media type — `image/png`, `image/jpeg`, etc. */
-  media_type: string;
-  /** Base64-encoded image bytes (no `data:` prefix). */
-  data: string;
-}
+// Content-block wire shapes now live in the shared client→tugcode contract
+// ([#step-13c1]); re-exported so tugdeck call sites keep importing them from
+// `@/protocol`.
+export type {
+  ContentBlock,
+  ContentBlockText,
+  ContentBlockImage,
+  ContentBlockImageSourceBase64,
+} from "@tugproto/inbound";
 
 /**
  * Subscription-quota status, mirroring tugcode's `RateLimitInfo`
@@ -335,53 +325,12 @@ export interface RateLimitEvent {
 }
 
 /**
- * Client-to-server message shapes for the CODE_INPUT feed. The union mirrors
- * the stream-json inbound messages tugcode accepts. T3.4.a only emits the
- * first four variants; the remaining entries are forward-compat placeholders
- * so later phases can extend without re-opening the union.
+ * Client → tugcode CODE_INPUT message contract — authored once in
+ * `@tugproto/inbound` ([#step-13c1]) and re-exported here; `encodeCodeInputPayload`
+ * below types its `msg` against it. tugdeck only ever constructs the subset of
+ * verbs it sends, but the union is the full receiver contract.
  */
-export type InboundMessage =
-  | { type: "user_message"; content: ContentBlock[] }
-  | { type: "interrupt" }
-  | {
-      type: "tool_approval";
-      request_id: string;
-      decision: "allow" | "deny";
-      updatedInput?: unknown;
-      message?: string;
-      // On allow: the SDK `PermissionUpdate[]` (the scope suggestion the
-      // user picked, round-tripped back) the CLI records as a durable
-      // rule at its chosen destination. Carried opaquely — the store is
-      // a dumb conduit; only the dialog and the CLI introspect it.
-      updatedPermissions?: unknown[];
-    }
-  | {
-      type: "question_answer";
-      request_id: string;
-      answers: Record<string, unknown>;
-    }
-  | { type: "permission_mode"; mode: string }
-  | { type: "model_change"; model: string }
-  | { type: "effort_change"; effort: string }
-  // `/add-dir` ([#step-13c]). Adds a working directory to the live session;
-  // tugcode respawns claude with the dir in `--add-dir` (+ `--resume`), the
-  // same respawn-to-apply shape as `effort_change` — claude exposes no live
-  // add-directory control verb over the bridge.
-  | { type: "add_directory"; directory: string }
-  | { type: "session_command"; command: "new" | "continue" | "fork" }
-  | { type: "stop_task"; task_id: string }
-  // `/rewind` bridge ([#step-7-1]/[#step-7-2]). `promptUuid` is claude's
-  // user-prompt-record uuid (the rewind anchor), surfaced additively by
-  // tugcode — NOT the dev-card `msgId`. `rewind_preview` requests the per-turn
-  // diff-stat (dry-run); `session_rewind` applies the chosen dimension(s),
-  // `fork` selecting a forked copy (default) over destructive in-place.
-  | { type: "rewind_preview"; promptUuid: string }
-  | {
-      type: "session_rewind";
-      promptUuid: string;
-      scope: "conversation" | "code" | "both";
-      fork?: boolean;
-    };
+export type { InboundMessage };
 
 /**
  * Encode an InboundMessage as the raw JSON payload bytes (no frame header).

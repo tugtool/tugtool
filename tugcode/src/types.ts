@@ -1,31 +1,56 @@
 // IPC message type definitions (tugcast ↔ tugcode stdin/stdout)
 
-/**
- * Anthropic content-block wire shape — carried verbatim on the
- * `user_message` IPC frame post-Step-5c. Tugcode forwards `content`
- * to the Anthropic SDK with no construction step (the inbound shape
- * IS the API shape).
- *
- * Per tugdeck's `protocol.ts`'s `ContentBlock` — keep field names in
- * lockstep.
- */
-export type ContentBlock = ContentBlockText | ContentBlockImage;
-
-export interface ContentBlockText {
-  type: "text";
-  text: string;
-}
-
-export interface ContentBlockImage {
-  type: "image";
-  source: ContentBlockImageSourceBase64;
-}
-
-export interface ContentBlockImageSourceBase64 {
-  type: "base64";
-  media_type: string;
-  data: string;
-}
+// The inbound client → tugcode contract ([#step-13c1]) is authored once in
+// `@tugproto/inbound` and re-exported here so tugcode call sites keep importing
+// these from `./types.ts`. ContentBlock is the Anthropic content-block shape
+// carried verbatim on `user_message`. Per-type guards below derive from the
+// imported types; `isInboundMessage` derives from the shared verb list.
+import type {
+  ContentBlock,
+  ProtocolInit,
+  UserMessage,
+  ToolApproval,
+  QuestionAnswer,
+  Interrupt,
+  PermissionModeMessage,
+  ModelChange,
+  EffortChange,
+  AddDirectory,
+  SessionCommand,
+  StopTask,
+  RequestReplay,
+  RewindPreview,
+  SessionRewind,
+  SkillsInventoryQuery,
+  HooksQuery,
+  InboundMessage,
+} from "@tugproto/inbound";
+export type {
+  ContentBlock,
+  ProtocolInit,
+  UserMessage,
+  ToolApproval,
+  QuestionAnswer,
+  Interrupt,
+  PermissionModeMessage,
+  ModelChange,
+  EffortChange,
+  AddDirectory,
+  SessionCommand,
+  StopTask,
+  RequestReplay,
+  RewindPreview,
+  SessionRewind,
+  SkillsInventoryQuery,
+  HooksQuery,
+  InboundMessage,
+};
+export type {
+  ContentBlockText,
+  ContentBlockImage,
+  ContentBlockImageSourceBase64,
+} from "@tugproto/inbound";
+export { isInboundMessage } from "@tugproto/inbound";
 
 /**
  * Legacy wire-shape attachment — used only on the journal-projection
@@ -48,202 +73,6 @@ export interface QuestionDef {
   type: "single_choice" | "multi_choice" | "text";
   options?: Array<{ label: string; description?: string }>;
 }
-
-// Inbound message types (tugcast → tugcode stdin)
-export interface ProtocolInit {
-  type: "protocol_init";
-  version: number;
-}
-
-export interface UserMessage {
-  type: "user_message";
-  /**
-   * Anthropic-API content-block array — forwarded to the Anthropic
-   * SDK verbatim. Tugcast forwards inbound `user_message` frames
-   * without reshape; the journal's legacy `text` + `attachments`
-   * columns are derived from this via
-   * `derive_legacy_journal_view`. Per Step 5c.
-   */
-  content: ContentBlock[];
-}
-
-export interface ToolApproval {
-  type: "tool_approval";
-  request_id: string;
-  decision: "allow" | "deny";
-  // Present when decision === "allow"; caller may override tool input.
-  updatedInput?: Record<string, unknown>;
-  // Present when decision === "deny"; human-readable reason.
-  message?: string;
-  // Present when decision === "allow" and the user picked a durable
-  // scope ("Allow for this project", etc.): the SDK `PermissionUpdate[]`
-  // (a `permission_suggestions` entry, round-tripped back) the CLI
-  // records as a rule at its `destination`. Carried opaquely.
-  updatedPermissions?: unknown[];
-}
-
-export interface QuestionAnswer {
-  type: "question_answer";
-  request_id: string;
-  answers: Record<string, string>;
-}
-
-export interface Interrupt {
-  type: "interrupt";
-}
-
-export interface PermissionModeMessage {
-  type: "permission_mode";
-  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "auto" | "dontAsk" | "delegate";
-}
-
-export interface ModelChange {
-  type: "model_change";
-  model: string;
-}
-
-export interface SessionCommand {
-  type: "session_command";
-  command: "fork" | "continue" | "new";
-}
-
-/**
- * Inbound `effort_change` verb ([#step-4]). Unlike `permission_mode` /
- * `model_change`, claude has no live control subtype for reasoning effort in
- * 2.1.158 (the only subtypes are `initialize`, `can_use_tool`,
- * `set_permission_mode`, `set_model`) — effort is set ONLY via the `--effort`
- * spawn flag. So tugcode applies this by respawning claude with the new
- * `--effort` + `--resume`, preserving the transcript via tugcast's
- * resume/replay ([R07]).
- */
-export interface EffortChange {
-  type: "effort_change";
-  effort: string;
-}
-
-/**
- * Inbound `add_directory` verb ([#step-13c]). Adds a working directory to the
- * session. Like `effort_change`, claude exposes no live add-directory control
- * subtype over the stream-json bridge, so tugcode applies it by respawning
- * claude with the dir appended to `--add-dir` (+ `--resume`), preserving the
- * transcript via tugcast's resume/replay.
- */
-export interface AddDirectory {
-  type: "add_directory";
-  directory: string;
-}
-
-export interface StopTask {
-  type: "stop_task";
-  task_id: string;
-}
-
-/**
- * Inbound `request_replay` verb per [D12]. Tugdeck dispatches a
- * CONTROL frame on services construction for a resume binding;
- * tugcast forwards the verb to tugcode's stdin as this shape;
- * tugcode invokes its existing `runReplay()` so a freshly-mounted
- * `CodeSessionStore` receives the JSONL bracket without needing a
- * tugcode respawn. Idempotent at the reducer via [D04] msg_id dedupe;
- * the receiving side's re-entrancy guard drops a request that arrives
- * while a replay is already in flight (the in-flight replay's events
- * satisfy the request).
- */
-export interface RequestReplay {
-  type: "request_replay";
-}
-
-/**
- * Inbound `rewind_preview` verb ([#step-7-1]). Asks tugcode for the
- * diff-stat the picker shows on a `/rewind` row — what code would be
- * reverted if the user rewound to the turn anchored at `promptUuid`.
- *
- * Maps to a `rewind_files{dry_run:true, user_message_id:promptUuid}`
- * control request against claude (the code-restore half of `/rewind`;
- * see transport-exploration.md#rewind-files-control-request). The
- * `control_response` is correlated by `request_id` and relayed back as
- * an outbound {@link RewindPreviewResult}. `dry_run` means claude
- * reports `{canRewind, filesChanged, insertions, deletions}` WITHOUT
- * touching the working tree.
- *
- * `promptUuid` is claude's user-prompt-record uuid — the anchor the
- * dev-card carries on the opening user `Message` (surfaced additively
- * via {@link PromptAnchor} / {@link AddUserMessage.promptUuid}), NOT
- * the assistant `msg_id`.
- */
-export interface RewindPreview {
-  type: "rewind_preview";
-  promptUuid: string;
-}
-
-/**
- * Inbound `session_rewind` verb ([#step-7-1]/[#step-7-2]). Applies a
- * `/rewind` to the turn anchored at `promptUuid`.
- *
- * `scope`:
- *   - `"code"` — revert the working-tree files claude edited since the
- *     anchor turn (`rewind_files{dry_run:false}` control request).
- *   - `"conversation"` — truncate the session JSONL at the anchor and
- *     respawn (lands in [#step-7-2]; the conversation branch is a seam
- *     in 7b.1).
- *   - `"both"` — code restore on the live session FIRST, then the
- *     conversation rewind ([#step-7-2] ordering).
- *
- * `fork` (conversation/both only, [#step-7-2]) selects `--fork-session`
- * over destructive in-place `--resume`.
- */
-export interface SessionRewind {
-  type: "session_rewind";
-  promptUuid: string;
-  scope: "conversation" | "code" | "both";
-  fork?: boolean;
-}
-
-/**
- * Client → tugcode request for the `/skills` inventory ([#step-12d]). The
- * graphical `/skills` sheet sends this when it opens; tugcode reads the
- * plugin + user skill dirs and answers with a single {@link SkillsInventory}
- * carrying the matching `request_id`. A request/response (rather than a
- * session-init push) keeps the listing fresh across a card rebind / HMR
- * reload without any ledger persistence.
- */
-export interface SkillsInventoryQuery {
-  type: "skills_inventory_query";
-  /** Correlation id echoed back on the {@link SkillsInventory} response. */
-  request_id: string;
-}
-
-/**
- * Client → tugcode request for the `/hooks` inventory ([#step-12c]). The
- * graphical `/hooks` sheet sends this when it opens; tugcode reads the hook
- * config from the user / project / local `settings.json` files and answers
- * with a single {@link HooksInventory} carrying the matching `request_id`.
- * Request/response keeps the listing fresh (settings edits are picked up on
- * the next open) with no persistence.
- */
-export interface HooksQuery {
-  type: "hooks_query";
-  /** Correlation id echoed back on the {@link HooksInventory} response. */
-  request_id: string;
-}
-
-export type InboundMessage =
-  | ProtocolInit
-  | UserMessage
-  | ToolApproval
-  | QuestionAnswer
-  | Interrupt
-  | PermissionModeMessage
-  | ModelChange
-  | EffortChange
-  | AddDirectory
-  | SessionCommand
-  | StopTask
-  | RequestReplay
-  | RewindPreview
-  | SessionRewind
-  | SkillsInventoryQuery
-  | HooksQuery;
 
 // Outbound message types (tugcode stdout → tugcast)
 // ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
@@ -1193,30 +1022,9 @@ export type OutboundMessage =
   | HooksInventory
   | PromptAnchor;
 
-// Type guards
-export function isInboundMessage(msg: unknown): msg is InboundMessage {
-  if (typeof msg !== "object" || msg === null) return false;
-  const typed = msg as { type?: string };
-  return (
-    typed.type === "protocol_init" ||
-    typed.type === "user_message" ||
-    typed.type === "tool_approval" ||
-    typed.type === "question_answer" ||
-    typed.type === "interrupt" ||
-    typed.type === "permission_mode" ||
-    typed.type === "model_change" ||
-    typed.type === "effort_change" ||
-    typed.type === "add_directory" ||
-    typed.type === "session_command" ||
-    typed.type === "stop_task" ||
-    typed.type === "request_replay" ||
-    typed.type === "rewind_preview" ||
-    typed.type === "session_rewind" ||
-    typed.type === "skills_inventory_query" ||
-    typed.type === "hooks_query"
-  );
-}
-
+// Type guards. `isInboundMessage` is the shared, verb-list-derived guard
+// (re-exported at the top of this file from `@tugproto/inbound`); the per-type
+// guards below narrow a known `InboundMessage` to a specific verb.
 export function isProtocolInit(msg: InboundMessage): msg is ProtocolInit {
   return msg.type === "protocol_init";
 }

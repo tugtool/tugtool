@@ -473,6 +473,11 @@ export default (defineConfig as any)(() => {
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
+        // Shared client→tugcode message contract ([#step-13c1]). Lives at the
+        // repo root (sibling of tugdeck); Vite's default `server.fs.allow`
+        // covers it via the `.git` workspace-root detection, so only the alias
+        // is needed.
+        "@tugproto": path.resolve(__dirname, "../tugproto/src"),
         // lucide@0.564 predates the exports field; point Vite at its ESM entry directly
         lucide: path.resolve(
           __dirname,
