@@ -20,6 +20,12 @@ prefix = "tugplan-"
 
 # Allowed name pattern (regex)
 name_pattern = "^[a-z][a-z0-9-]{1,49}$"
+
+[tugtool.dash]
+# Commands run from a new dash worktree to hydrate it (deps, etc.).
+# A git worktree never inherits gitignored files, so these install what a
+# fresh checkout lacks. A non-zero exit rolls the worktree back.
+post_create = ["bun install --cwd tugdeck"]
 "#;
 
 /// Empty implementation log template

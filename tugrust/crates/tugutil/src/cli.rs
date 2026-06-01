@@ -155,6 +155,14 @@ pub enum Commands {
     /// Subcommands: list, stop, current, remove, prune.
     #[command(subcommand)]
     Instance(InstanceCommands),
+
+    /// Print the per-project runtime-state directory
+    ///
+    /// Resolves the out-of-repo directory for per-user runtime state.
+    #[command(
+        long_about = "Print the per-project runtime-state directory.\n\nResolves <data_dir>/Tug/projects/<slug>/ for the current repository — the\nout-of-repo home for per-user runtime state (the dash-log, the code-sign\nsentinel, future side-command output). Creates the directory if absent, so\nshell consumers (the Justfile, the host) can write into it without re-deriving\nthe path."
+    )]
+    StateDir,
 }
 
 /// Get the command args for use in the application

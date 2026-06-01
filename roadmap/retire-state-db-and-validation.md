@@ -402,7 +402,7 @@ the step that orphans it.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | pending | — |
+| #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | done | `14e67a2f` |
 | #step-2 | Delete `validator.rs` + the `validate` command | pending | — |
 | #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | pending | — |
 | #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | pending | — |
@@ -426,37 +426,40 @@ the step that orphans it.
 - Deleted `tugutil-core/src/state.rs` and the `impl StateDb` block in `dash.rs`.
 
 **Tasks:**
-- [ ] Add `project_state_dir(repo_root) -> PathBuf` to `tugutil-core` ([P08]): `dirs::data_dir()`
+- [x] Add `project_state_dir(repo_root) -> PathBuf` to `tugutil-core` ([P08]): `dirs::data_dir()`
       (fallback `$HOME/.local/share` if `None`) `/Tug/projects/<slug>`; slug = the **main** repo
       root path flattened `/` → `-` (`find_repo_root` resolves a worktree's `.git` to the main root).
-- [ ] Add a `tugutil state-dir` subcommand printing `project_state_dir(find_repo_root())`, for the
-      shell/host consumers in [#step-5] ([P08]).
-- [ ] Rewrite `run_dash_create` on `git worktree add` + `git config` ([P03]); drop `StateDb`.
-- [ ] On real creation only, run `[tugtool.dash].post_create` from the worktree root; **on a
+      *(New `paths.rs`; honors a `TUG_DATA_DIR` override for hermetic tests/host control.)*
+- [x] Add a `tugutil state-dir` subcommand printing `project_state_dir(find_repo_root())`, for the
+      shell/host consumers in [#step-5] ([P08]). *(Creates the dir so consumers can write into it.)*
+- [x] Rewrite `run_dash_create` on `git worktree add` + `git config` ([P03]); drop `StateDb`.
+- [x] On real creation only, run `[tugtool.dash].post_create` from the worktree root; **on a
       non-zero exit, remove the just-added worktree and branch, then fail** so a retry re-creates
       clean ([P07], #worktree-hydration-spec). Add the field to `config.rs` and seed `DEFAULT_CONFIG`.
-- [ ] Rewrite `run_dash_commit` to append a log line ([P04]) instead of `record_round`; **trim
+- [x] Rewrite `run_dash_commit` to append a log line ([P04]) instead of `record_round`; **trim
       `DashRoundMeta`** to the fields the log uses (`instruction`, `summary`) — drop the now-unused
       `files_created`/`files_modified` rather than accept and discard them.
-- [ ] Rewrite `run_dash_join` / `run_dash_release` to read base from git config; drop status flip.
-- [ ] Rewrite `run_dash_list` / `run_dash_show` to read git ([P02]); **drop the now-vestigial
+- [x] Rewrite `run_dash_join` / `run_dash_release` to read base from git config; drop status flip.
+- [x] Rewrite `run_dash_list` / `run_dash_show` to read git ([P02]); **drop the now-vestigial
       `list --all` / `show --all-rounds` flags** (no DB graveyard left to show).
-- [ ] Delete `state.rs` + the `impl crate::state::StateDb` block; drop `state` from `lib.rs`;
-      keep `DashStatus`/`DashInfo` only if a command still needs them as plain structs.
-- [ ] Prune `TugError::StateDb*` variants; delete the on-disk `.tugtool/state.db*`.
+- [x] Delete `state.rs` + the `impl crate::state::StateDb` block; drop `state` from `lib.rs`;
+      `DashStatus`/`DashInfo`/`DashRound` dropped entirely (commands use plain strings/git output).
+- [x] Prune `TugError::StateDb*` variants; delete the on-disk `.tugtool/state.db*`.
 
 **Tests:**
-- [ ] Update `tugutil-core/tests/integration_tests.rs` dash cases to assert git state + log lines.
-- [ ] `post_create` runs once on creation, **not** on idempotent resume; and on a **failing** hook,
+- [x] Dash command tests rewritten to assert git state + dash-log lines (in `commands/dash.rs`'s
+      inline suite — the actual home of the dash tests; `tugutil-core/tests/integration_tests.rs`
+      holds only parser/validator cases).
+- [x] `post_create` runs once on creation, **not** on idempotent resume; and on a **failing** hook,
       leaves **no** worktree/branch behind (rollback) so a re-run succeeds.
-- [ ] Explicit `join` (squash-merge to base, base read from git config, worktree+branch removed) and
+- [x] Explicit `join` (squash-merge to base, base read from git config, worktree+branch removed) and
       `release` (worktree+branch removed, `released` log line) cases.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugutil -p tugutil-core`
-- [ ] Manual: `create → commit → show → join` on a throwaway dash; confirm the `tugdash(...)`
-      commit on base, the dash-log lines under `tugutil state-dir`, and a hydrated
-      `tugdeck/node_modules`.
+- [x] `cd tugrust && cargo nextest run -p tugutil -p tugutil-core` (205 passed)
+- [x] Manual: `create → commit → show → join` on a throwaway dash confirmed the `tugdash(...)`
+      commit on base, the dash-log lines under `tugutil state-dir`; a real `dash create` on this
+      repo hydrated `tugdeck/node_modules` (208 entries) via `bun install`.
 
 ---
 

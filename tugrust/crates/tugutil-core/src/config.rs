@@ -28,6 +28,22 @@ pub struct TugConfig {
     /// Naming settings
     #[serde(default)]
     pub naming: NamingConfig,
+
+    /// Dash settings
+    #[serde(default)]
+    pub dash: DashConfig,
+}
+
+/// Dash configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DashConfig {
+    /// Shell commands run from the new worktree root immediately after
+    /// `dash create` adds it — e.g. `bun install --cwd tugdeck`. A git
+    /// worktree never inherits gitignored files, so deps are always absent in
+    /// a fresh worktree; this hydrates it. A non-zero exit rolls the new
+    /// worktree+branch back and fails `create`.
+    #[serde(default)]
+    pub post_create: Vec<String>,
 }
 
 /// Naming configuration
@@ -60,6 +76,7 @@ impl Default for TugConfig {
             validation_level: default_validation_level(),
             show_info: false,
             naming: NamingConfig::default(),
+            dash: DashConfig::default(),
         }
     }
 }

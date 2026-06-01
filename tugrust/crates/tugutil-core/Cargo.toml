@@ -18,6 +18,7 @@ thiserror.workspace = true
 regex.workspace = true
 rusqlite.workspace = true
 sha2.workspace = true
+dirs.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

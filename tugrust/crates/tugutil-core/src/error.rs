@@ -153,15 +153,7 @@ pub enum TugError {
     #[error("E037: Init failed: {reason}")]
     InitFailed { reason: String },
 
-    // === State errors (E046-E053) ===
-    /// E046: Failed to open state.db
-    #[error("E046: Failed to open state database: {reason}")]
-    StateDbOpen { reason: String },
-
-    /// E047: SQL query failed
-    #[error("E047: State database query failed: {reason}")]
-    StateDbQuery { reason: String },
-
+    // === State errors (E048-E053) ===
     /// E048: Plan file changed since init
     #[error("E048: Plan hash mismatch: plan file has changed since state init")]
     StatePlanHashMismatch { plan_id: String },
@@ -263,8 +255,6 @@ impl TugError {
             TugError::WorktreeCreationFailed { .. } => "E033",
             TugError::WorktreeCleanupFailed { .. } => "E034",
             TugError::InitFailed { .. } => "E037",
-            TugError::StateDbOpen { .. } => "E046",
-            TugError::StateDbQuery { .. } => "E047",
             TugError::StatePlanHashMismatch { .. } => "E048",
             TugError::StateOwnershipViolation { .. } => "E049",
             TugError::StateStepNotClaimed { .. } => "E050",
@@ -340,8 +330,6 @@ impl TugError {
             TugError::WorktreeCreationFailed { .. } => 1, // Worktree creation failed
             TugError::WorktreeCleanupFailed { .. } => 1, // Worktree cleanup failed
             TugError::InitFailed { .. } => 12,    // Init failed (exit code 12)
-            TugError::StateDbOpen { .. } => 14,   // State DB open failed
-            TugError::StateDbQuery { .. } => 14,  // State DB query failed
             TugError::StatePlanHashMismatch { .. } => 14, // Plan hash mismatch
             TugError::StateOwnershipViolation { .. } => 14, // Ownership violation
             TugError::StateStepNotClaimed { .. } => 14, // Step not claimed

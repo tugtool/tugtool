@@ -2373,6 +2373,7 @@ dependencies = [
 name = "tugutil-core"
 version = "0.8.0"
 dependencies = [
+ "dirs",
  "regex",
  "rusqlite",
  "serde",

@@ -1,7 +1,7 @@
-//! `tugutil-core` — core library for tugutil: parsing, validation, state, and types
+//! `tugutil-core` — core library for tugutil: parsing, validation, and types
 //!
 //! This crate provides the foundational types and logic for tugplan management,
-//! worktree operations, state tracking, and plan validation.
+//! worktree operations, and plan validation.
 
 /// Core error types for tug operations
 pub mod error;
@@ -27,19 +27,19 @@ pub mod worktree;
 /// Plan resolution logic
 pub mod resolve;
 
-/// Embedded SQLite state management
-pub mod state;
+/// Per-project runtime-state directory resolution
+pub mod paths;
 
-/// Dash state management
+/// Dash helpers (git-derived)
 pub mod dash;
 
 // Re-exports — exactly the surface consumed by the `tugutil` binary.
 pub use config::{Config, find_project_root, find_tugplans, tugplan_name_from_path};
-pub use dash::{DashRoundMeta, DashStatus, detect_default_branch, validate_dash_name};
+pub use dash::{DashRoundMeta, append_dash_log, detect_default_branch, validate_dash_name};
 pub use error::TugError;
 pub use parser::parse_tugplan;
+pub use paths::project_state_dir;
 pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
-pub use state::StateDb;
 pub use types::{ParseDiagnostic, TugPlan};
 pub use validator::{
     Severity, ValidationConfig, ValidationIssue, ValidationLevel, ValidationResult,

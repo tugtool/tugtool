@@ -45,12 +45,11 @@ fn main() -> ExitCode {
                 commands::run_dash_join(name, message, cli.json, cli.quiet)
             }
             DashCommands::Release { name } => commands::run_dash_release(name, cli.json, cli.quiet),
-            DashCommands::List { all } => commands::run_dash_list(all, cli.json, cli.quiet),
-            DashCommands::Show { name, all_rounds } => {
-                commands::run_dash_show(name, all_rounds, cli.json, cli.quiet)
-            }
+            DashCommands::List => commands::run_dash_list(cli.json, cli.quiet),
+            DashCommands::Show { name } => commands::run_dash_show(name, cli.json, cli.quiet),
         },
         Some(Commands::Instance(cmd)) => commands::run_instance(cmd),
+        Some(Commands::StateDir) => commands::run_state_dir(cli.json, cli.quiet),
         None => {
             // No subcommand - show splash screen
             if !cli.quiet {
