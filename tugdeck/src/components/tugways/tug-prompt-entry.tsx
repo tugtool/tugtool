@@ -583,6 +583,14 @@ export interface TugPromptEntryProps {
    */
   returnAction?: "submit" | "newline";
   /**
+   * Numpad-Enter key action — the policy for the separate numpad Enter
+   * key, independent of the main Return key. `"submit"` (Enter submits,
+   * Shift+Enter inserts a newline) or `"newline"` (the inverse).
+   * Forwarded to `TugTextEditor`'s `numpadEnterAction`; when omitted the
+   * editor's default (`"submit"`) applies.
+   */
+  numpadEnterAction?: "submit" | "newline";
+  /**
    * Per-route placeholder text for the embedded editor, keyed by the
    * route value (`❯` Code / `$` Shell — see
    * `ROUTE_ITEMS`). The entry looks up the active route and forwards
@@ -653,6 +661,7 @@ export const TugPromptEntry = React.forwardRef<
     lineNumbers,
     highlightActiveLineGutter,
     returnAction: returnActionOverride,
+    numpadEnterAction,
     placeholderByRoute,
   } = props;
 
@@ -1648,6 +1657,7 @@ export const TugPromptEntry = React.forwardRef<
               returnAction={
                 returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"
               }
+              numpadEnterAction={numpadEnterAction}
               lineWrap={lineWrap}
               lineNumbers={lineNumbers}
               highlightActiveLineGutter={highlightActiveLineGutter}

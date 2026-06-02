@@ -203,6 +203,13 @@ export interface EditorSettings {
   /** Whether the editor highlights the gutter cell of the line containing
    *  the cursor. Independent of `lineNumbers`. */
   highlightActiveLineGutter: boolean;
+  /** Main Return-key submit policy. `"newline"` (default) → Return
+   *  inserts a newline, Shift+Return submits; `"submit"` → the inverse. */
+  returnKeyAction: "submit" | "newline";
+  /** Numpad-Enter submit policy, independent of the Return key.
+   *  `"submit"` (default) → Enter submits, Shift+Enter inserts a newline;
+   *  `"newline"` → the inverse. */
+  numpadEnterAction: "submit" | "newline";
 }
 
 /**

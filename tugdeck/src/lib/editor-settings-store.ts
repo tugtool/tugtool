@@ -39,6 +39,10 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   lineWrap: true,
   lineNumbers: false,
   highlightActiveLineGutter: false,
+  // Return inserts a newline (prompts are long-form); Shift+Return
+  // submits. Numpad Enter submits. Both overridable in the settings sheet.
+  returnKeyAction: "newline",
+  numpadEnterAction: "submit",
 };
 
 /** Font stacks keyed by font ID. */

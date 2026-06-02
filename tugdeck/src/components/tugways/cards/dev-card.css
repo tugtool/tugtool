@@ -1009,3 +1009,51 @@
   gap: var(--tug-space-md);
 }
 
+/* Submit-key option groups — a label + choice-group pair per physical
+   key, stacked above the live legend. Offset from the switch column
+   above so the Editor box reads as one rhythm. */
+.dev-card-settings-keys {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--tug-space-lg);
+}
+
+/* 2-column grid: a fixed label column and a `max-content` control
+   column. The control column sizes to the WIDEST group (the one holding
+   the longest label); both groups then fill it (grid stretch + the
+   `width:auto` override below), so the two components are width-stable
+   against each other and every segment is just as wide as the longest of
+   the four choices — not the full row. */
+.dev-card-settings-key-grid {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: center;
+  justify-content: start;
+  column-gap: var(--tug-space-md);
+  row-gap: var(--tug-space-md);
+}
+
+.dev-card-settings-key-label {
+  min-width: 5rem;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* Override the choice group's intrinsic `fit-content` so the grid cell
+   stretches it to the (max-content) control-column width. */
+.dev-card-settings-key-choice.tug-choice-group {
+  width: auto;
+  min-width: 0;
+}
+
+/* Live legend — four muted lines, one per key combination, inset to sit
+   under the choice groups (past the label column). Outside the grid so
+   its longer lines never widen the control column. */
+.dev-card-settings-key-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  margin-top: var(--tug-space-md);
+  margin-left: calc(5rem + var(--tug-space-md));
+}
+

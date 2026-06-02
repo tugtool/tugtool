@@ -31,7 +31,10 @@
 
 import React, { useLayoutEffect, useMemo, useRef } from "react";
 
-import { useTugSheet } from "@/components/tugways/tug-sheet";
+import {
+  useTugSheet,
+  type TugSheetDisplayWidth,
+} from "@/components/tugways/tug-sheet";
 import {
   cardSettingsStore,
   type CardSettingsController,
@@ -45,6 +48,9 @@ export interface UseCardSettingsOptions {
   title: string;
   /** Render the sheet body. `close` dismisses the sheet. */
   render: (close: () => void) => React.ReactNode;
+  /** Resting width of the sheet panel. Forwarded to {@link useTugSheet}.
+   *  Defaults to the sheet's own default (`"sm"`) when omitted. */
+  displayWidth?: TugSheetDisplayWidth;
   /** Optional override of the sheet's mount autofocus. */
   onOpenAutoFocus?: (event: Event) => void;
 }
@@ -98,6 +104,7 @@ export function useCardSettings(
       void showSheetRef
         .current({
           title: optionsRef.current.title,
+          displayWidth: optionsRef.current.displayWidth,
           content: (close) => {
             sheetCloseFnRef.current = close;
             return optionsRef.current.render(close);

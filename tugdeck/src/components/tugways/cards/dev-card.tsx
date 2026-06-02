@@ -78,6 +78,7 @@ import {
 import { TugPopupButton } from "../tug-popup-button";
 import type { TugPopupButtonItem } from "../tug-popup-button";
 import { TugSwitch } from "../tug-switch";
+import { TugChoiceGroup } from "../tug-choice-group";
 import { TugSlider } from "../tug-slider";
 import {
   TugListView,
@@ -2617,6 +2618,8 @@ export function DevCardBody({
   const lineWrapId = useId();
   const lineNumbersId = useId();
   const activeLineGutterId = useId();
+  const returnKeyId = useId();
+  const enterKeyId = useId();
   const responseEntryMarginSliderId = useId();
   const responseMagnificationSliderId = useId();
 
@@ -2631,6 +2634,7 @@ export function DevCardBody({
   const cardSettings = useCardSettings({
     cardId,
     title: "Settings",
+    displayWidth: "lg",
     render: (close) => (
       <SettingsSheetBody
         editorStore={editorStore}
@@ -2642,6 +2646,8 @@ export function DevCardBody({
         lineWrapId={lineWrapId}
         lineNumbersId={lineNumbersId}
         activeLineGutterId={activeLineGutterId}
+        returnKeyId={returnKeyId}
+        enterKeyId={enterKeyId}
         responseEntryMarginSliderId={responseEntryMarginSliderId}
         responseMagnificationSliderId={responseMagnificationSliderId}
         onClose={close}
@@ -3143,6 +3149,12 @@ export function DevCardBody({
       [activeLineGutterId]: (v: boolean) =>
         editorStore.set({ highlightActiveLineGutter: v }),
     },
+    selectValue: {
+      [returnKeyId]: (v: string) =>
+        editorStore.set({ returnKeyAction: v as "submit" | "newline" }),
+      [enterKeyId]: (v: string) =>
+        editorStore.set({ numpadEnterAction: v as "submit" | "newline" }),
+    },
   });
 
   // --- Status row + tools panel content. ---
@@ -3434,6 +3446,8 @@ export function DevCardBody({
                 lineWrap={editorSettings.lineWrap}
                 lineNumbers={editorSettings.lineNumbers}
                 highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
+                returnAction={editorSettings.returnKeyAction}
+                numpadEnterAction={editorSettings.numpadEnterAction}
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
                 placeholderByRoute={DEV_PROMPT_PLACEHOLDER_BY_ROUTE}
@@ -3488,6 +3502,8 @@ interface SettingsSheetBodyProps {
   lineWrapId: string;
   lineNumbersId: string;
   activeLineGutterId: string;
+  returnKeyId: string;
+  enterKeyId: string;
   responseEntryMarginSliderId: string;
   responseMagnificationSliderId: string;
   /** Dismiss callback supplied by `useTugSheet`'s render closure. */
@@ -3497,6 +3513,30 @@ interface SettingsSheetBodyProps {
 function letterSpacingLabel(value: number): string {
   if (value === 0) return "Normal";
   return `${value > 0 ? "+" : ""}${value.toFixed(2)} px`;
+}
+
+/**
+ * Plain-language legend for the submit-key option groups — one line per
+ * combination (Return, Shift+Return, Enter, Shift+Enter) describing
+ * exactly what it does under the current `returnKeyAction` /
+ * `numpadEnterAction`. Shift always inverts the unshifted action, so a
+ * single boolean per key drives both of its lines. Recomputed on every
+ * render so the legend tracks the choice groups live.
+ */
+function submitKeyLegend(
+  returnKeyAction: "submit" | "newline",
+  numpadEnterAction: "submit" | "newline",
+): { key: string; effect: string }[] {
+  const SUBMIT = "submits";
+  const NEWLINE = "inserts a newline";
+  const returnSubmits = returnKeyAction === "submit";
+  const enterSubmits = numpadEnterAction === "submit";
+  return [
+    { key: "Return", effect: returnSubmits ? SUBMIT : NEWLINE },
+    { key: "Shift+Return", effect: returnSubmits ? NEWLINE : SUBMIT },
+    { key: "Enter", effect: enterSubmits ? SUBMIT : NEWLINE },
+    { key: "Shift+Enter", effect: enterSubmits ? NEWLINE : SUBMIT },
+  ];
 }
 
 /**
@@ -3521,6 +3561,8 @@ function SettingsSheetBody({
   lineWrapId,
   lineNumbersId,
   activeLineGutterId,
+  returnKeyId,
+  enterKeyId,
   responseEntryMarginSliderId,
   responseMagnificationSliderId,
   onClose,
@@ -3636,6 +3678,58 @@ function SettingsSheetBody({
             senderId={activeLineGutterId}
             size="md"
           />
+        </div>
+
+        {/* Submit-key policy. One option group per physical key; the
+            default (today's behavior) is the first option in each.
+            `returnKeyAction` / `numpadEnterAction` are the editor's
+            `InputAction`s straight through — shift inverts each. */}
+        <div className="dev-card-settings-keys">
+          {/* Label + choice-group pairs in a 2-column grid. The control
+              column is `max-content` (sized to the widest group), and each
+              group fills it (`width:auto` + grid stretch) — so both groups
+              are equal width and every segment is just as wide as the
+              longest of the four choices, never the whole row. */}
+          <div className="dev-card-settings-key-grid">
+            <span className="dev-card-settings-key-label">Return key</span>
+            <TugChoiceGroup
+              className="dev-card-settings-key-choice"
+              size="sm"
+              senderId={returnKeyId}
+              value={editorSettings.returnKeyAction}
+              aria-label="Return key submit behavior"
+              items={[
+                { value: "newline", label: "Shift+Return submits" },
+                { value: "submit", label: "Return submits" },
+              ]}
+            />
+            <span className="dev-card-settings-key-label">Enter key</span>
+            <TugChoiceGroup
+              className="dev-card-settings-key-choice"
+              size="sm"
+              senderId={enterKeyId}
+              value={editorSettings.numpadEnterAction}
+              aria-label="Enter key submit behavior"
+              items={[
+                { value: "submit", label: "Enter submits" },
+                { value: "newline", label: "Shift+Enter submits" },
+              ]}
+            />
+          </div>
+
+          {/* Live legend: exactly what each key combination does under the
+              current choices. Updates as the groups change (driven off the
+              same `editorSettings` snapshot). */}
+          <div className="dev-card-settings-key-legend">
+            {submitKeyLegend(
+              editorSettings.returnKeyAction,
+              editorSettings.numpadEnterAction,
+            ).map(({ key, effect }) => (
+              <TugLabel key={key} size="sm" emphasis="calm">
+                {`• ${key} ${effect}`}
+              </TugLabel>
+            ))}
+          </div>
         </div>
       </TugBox>
 
