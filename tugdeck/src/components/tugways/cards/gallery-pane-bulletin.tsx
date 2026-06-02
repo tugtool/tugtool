@@ -109,6 +109,28 @@ function GalleryPaneBulletinControls(): React.ReactElement {
         >
           Long duration
         </TugPushButton>
+        <TugPushButton
+          emphasis="outlined"
+          size="sm"
+          role="action"
+          onClick={() =>
+            paneBulletin.success("Session compacted", { sticky: true })
+          }
+        >
+          Sticky (OK)
+        </TugPushButton>
+        <TugPushButton
+          emphasis="outlined"
+          size="sm"
+          onClick={() =>
+            paneBulletin("Update installed", {
+              sticky: true,
+              okLabel: "Got it",
+            })
+          }
+        >
+          Sticky (custom label)
+        </TugPushButton>
       </div>
     </div>
   );

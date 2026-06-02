@@ -67,7 +67,7 @@ describe("reducer — handleCompactBoundary", () => {
     expect(note).toBeDefined();
     if (note && note.kind === "system_note") {
       expect(note.source).toBe("compact");
-      expect(note.text).toBe("Conversation compacted · ~48k tokens");
+      expect(note.text).toBe("Session compacted · ~48k tokens");
     }
     // The opening user_message is still at the head, undisturbed.
     expect(entry!.messages[0]?.kind).toBe("user_message");

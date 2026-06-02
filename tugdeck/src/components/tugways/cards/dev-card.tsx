@@ -2842,10 +2842,7 @@ export function DevCardBody({
     }
     const notify = paneBulletinRef.current;
     if (compactionProgress.outcome === "succeeded") {
-      notify?.success("Conversation compacted", {
-        duration: Infinity,
-        action: { label: "Dismiss", onClick: () => {} },
-      });
+      notify?.success("Session compacted", { sticky: true });
     } else if (compactionProgress.outcome === "canceled") {
       notify?.caution("Compaction canceled — session left intact");
     } else {

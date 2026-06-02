@@ -81,6 +81,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { TugLabel } from "@/components/tugways/tug-label";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugProgressRing } from "./internal/tug-progress-ring";
 import { TugProgressBar } from "./internal/tug-progress-bar";
@@ -495,12 +496,30 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
     // value via `aria-valuenow`, so the visible text is decorative
     // (`aria-hidden`) to avoid a double announcement. For the `bar` variant
     // the track flexes and this trails it on the same row [L06].
+    //
+    // Width-stabilized: a hidden ghost of the full-scale value (`max`, e.g.
+    // "100%") reserves the slot's width so the readout — and therefore the
+    // flexing bar — never re-layouts as the live value's digit count grows
+    // (CSS-only, same grid-stack trick as the centered label) [L06].
     const valueText =
       showValue && value !== undefined ? formatValue(value, max) : undefined;
     const valueSlot =
       valueText !== undefined ? (
         <span className="tug-progress-indicator-value" aria-hidden="true">
-          {valueText}
+          <TugLabel
+            size="sm"
+            emphasis="calm"
+            className="tug-progress-indicator-value-ghost"
+          >
+            {formatValue(max, max)}
+          </TugLabel>
+          <TugLabel
+            size="sm"
+            emphasis="calm"
+            className="tug-progress-indicator-value-active"
+          >
+            {valueText}
+          </TugLabel>
         </span>
       ) : null;
 

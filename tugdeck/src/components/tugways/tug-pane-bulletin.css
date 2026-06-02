@@ -61,11 +61,41 @@ body {
   box-sizing: border-box;
   padding: var(--tugx-pane-bulletin-space-a) var(--tugx-pane-bulletin-space-b)
     var(--tugx-pane-bulletin-space-a) var(--tugx-pane-bulletin-space-a);
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--tugx-pane-bulletin-space-a) * 0.5);
+  /* Two columns: the (optional) icon, then the content. The icon shares the
+     title's line; the description and any button live in the content column
+     so they left-align under the title. The column gap comes from the icon's
+     own margin, so a bulletin with no icon has no phantom left indent. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0;
+  row-gap: calc(var(--tugx-pane-bulletin-space-a) * 0.5);
+  align-items: start;
   cursor: default;
   user-select: none;
+}
+
+/* ---- Icon: column 1, on the title's line ---- */
+
+.tug-pane-bulletin [data-icon] {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  /* Optical nudge so the glyph centers on the title's first line. */
+  margin-top: 0.125rem;
+  /* The inter-column gap lives here so it vanishes when there's no icon. */
+  margin-right: calc(var(--tugx-pane-bulletin-space-a) * 0.75);
+}
+
+/* ---- Content: column 2, stacks title + description ---- */
+
+.tug-pane-bulletin [data-content] {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--tugx-pane-bulletin-space-a) * 0.25);
+  min-width: 0;
 }
 
 /* ---- Tone variants — Sonner adds data-type to the toast element ---- */
@@ -99,10 +129,13 @@ body {
 /* ---- Action button ---- */
 
 .tug-pane-bulletin [data-button] {
+  /* Sits in the content column (row 2) so it indents under the title; an
+     inline action stays left, the sticky OK button right-aligns (below). */
+  grid-column: 2;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: flex-start;
   padding: 0.25rem 0.75rem;
   margin-top: calc(var(--tugx-pane-bulletin-space-a) * 0.25);
   border: 1px solid var(--tugx-pane-bulletin-border);
@@ -113,6 +146,12 @@ body {
   font-weight: 500;
   line-height: 1.4;
   cursor: pointer;
+}
+
+/* Sticky bulletins (persist-until-dismissed) right-align their OK button to
+   the bulletin's bottom-right corner. */
+.tug-pane-bulletin-sticky [data-button] {
+  justify-self: end;
 }
 
 .tug-pane-bulletin [data-button]:hover {

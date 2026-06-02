@@ -107,7 +107,7 @@ describe.skipIf(!SHOULD_RUN)(
           const label = await app.evalJS<string>(
             `(document.querySelector(${JSON.stringify(DIVIDER_LABEL)})||{}).textContent || ""`,
           );
-          expect(label).toBe("Conversation compacted · ~48k tokens");
+          expect(label).toBe("Session compacted · ~48k tokens");
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

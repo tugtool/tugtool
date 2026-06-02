@@ -20,11 +20,11 @@ function formatTokensApprox(tokens: number): string {
 /**
  * Divider text for a compaction `system_note`. Includes the
  * pre-compaction context size when claude reported it; a bare
- * "Conversation compacted" otherwise.
+ * "Session compacted" otherwise.
  */
 export function compactionNoteText(preTokens?: number): string {
   if (typeof preTokens === "number" && preTokens > 0) {
-    return `Conversation compacted · ${formatTokensApprox(preTokens)}`;
+    return `Session compacted · ${formatTokensApprox(preTokens)}`;
   }
-  return "Conversation compacted";
+  return "Session compacted";
 }

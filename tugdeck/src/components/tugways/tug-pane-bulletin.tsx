@@ -39,6 +39,18 @@ export interface PaneBulletinOptions {
   /** Auto-dismiss delay in ms (Sonner default when omitted). */
   duration?: number;
   action?: { label: string; onClick: () => void };
+  /**
+   * Persist until the user dismisses it (no auto-dismiss), showing a
+   * bottom-right dismiss button. Use for outcomes the user should
+   * acknowledge rather than glance at. Composes with any tone helper
+   * (`success`/`danger`/…). Overrides `duration` / `action`.
+   */
+  sticky?: boolean;
+  /**
+   * Label for the sticky dismiss button.
+   * @default "OK"
+   */
+  okLabel?: string;
 }
 
 function mapOptions(
@@ -47,12 +59,21 @@ function mapOptions(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { toasterId };
   if (options?.description !== undefined) result.description = options.description;
-  if (options?.duration !== undefined) result.duration = options.duration;
-  if (options?.action !== undefined) {
-    result.action = {
-      label: options.action.label,
-      onClick: options.action.onClick,
-    };
+  if (options?.sticky === true) {
+    // Persist-until-dismissed: never auto-dismiss, and render an OK button.
+    // Sonner dismisses the toast itself when its action is clicked, so the
+    // handler is a no-op. The marker class right-aligns the button (CSS).
+    result.duration = Infinity;
+    result.className = "tug-pane-bulletin-sticky";
+    result.action = { label: options.okLabel ?? "OK", onClick: () => {} };
+  } else {
+    if (options?.duration !== undefined) result.duration = options.duration;
+    if (options?.action !== undefined) {
+      result.action = {
+        label: options.action.label,
+        onClick: options.action.onClick,
+      };
+    }
   }
   return result;
 }

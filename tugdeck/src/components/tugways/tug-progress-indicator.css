@@ -1,6 +1,5 @@
 /* @tug-pairings {
   --tugx-progress-indicator-label-color | --tugx-progress-indicator-surface | content
-  --tugx-progress-indicator-value-color | --tugx-progress-indicator-surface | content
 } */
 
 /**
@@ -10,7 +9,6 @@
  * | Element                                | Surface                              | Role    | Context                                                   |
  * |----------------------------------------|--------------------------------------|---------|-----------------------------------------------------------|
  * | --tugx-progress-indicator-label-color  | --tugx-progress-indicator-surface    | content | .tug-progress-indicator-label-active (color)              |
- * | --tugx-progress-indicator-value-color  | --tugx-progress-indicator-surface    | content | .tug-progress-indicator-value (color)                     |
  *
  * The glyph's fill / stroke pairings live in the internal variant CSS
  * files [L20]. This file declares only the label pairing — every other
@@ -48,10 +46,6 @@ body {
 
   /* Visible-label text color — paired against the host surface. */
   --tugx-progress-indicator-label-color: var(--tug7-element-global-text-normal-default-rest);
-
-  /* Value-readout text color — muted, so the percentage reads as a
-     secondary annotation of the glyph rather than a heading. */
-  --tugx-progress-indicator-value-color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ============================================================================
@@ -151,20 +145,35 @@ body {
 
 /* ============================================================================
    Value readout (showValue)
-   The determinate value rendered as text at the trailing end of the row.
-   `flex: 0 0 auto` keeps it intrinsic-width so the bar variant's flexing
-   track shrinks to leave room and the readout sits to its right on one row
-   (the canonical labeled-bar layout). Muted, tabular figures so the digits
-   don't shift width as the percentage climbs.
+   The determinate value, rendered as a calm TugLabel at the trailing end of
+   the row (TugLabel owns the text appearance [L20]). `flex: 0 0 auto` keeps
+   the slot intrinsic-width so the bar variant's flexing track shrinks to
+   leave room and the readout sits to its right on one row (the canonical
+   labeled-bar layout). This rule owns only layout + numeric stability.
    ========================================================================= */
 
 .tug-progress-indicator-value {
   flex: 0 0 auto;
-  font-size: var(--tug-font-size-sm, 0.8125rem);
-  line-height: 1.4;
-  white-space: nowrap;
+  /* A touch more breathing room than the row gap between glyph and readout. */
+  margin-left: var(--tug-space-xs, 4px);
   user-select: none;
+  /* Tabular figures (inherited by the TugLabel text) so equal digit counts
+     don't jitter; the ghost below reserves width for the full-scale value so
+     digit-count growth (e.g. 9% → 100%) never resizes the slot or hops the
+     bar [L06]. The two TugLabels stack in one grid cell sized to the widest
+     (the ghost); the live value right-aligns within it. */
   font-variant-numeric: tabular-nums;
-  /* @tug-renders-on var(--tugx-progress-indicator-surface) */
-  color: var(--tugx-progress-indicator-value-color);
+  display: grid;
+  grid-template-areas: "stack";
+  justify-items: end;
+}
+
+.tug-progress-indicator-value > .tug-progress-indicator-value-ghost,
+.tug-progress-indicator-value > .tug-progress-indicator-value-active {
+  grid-area: stack;
+}
+
+.tug-progress-indicator-value-ghost {
+  visibility: hidden;
+  pointer-events: none;
 }
