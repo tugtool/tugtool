@@ -1869,11 +1869,18 @@ mod tests {
 
         // Set a name (trimmed by the parser; the ledger stores verbatim).
         l.rename("s1", Some("My session")).unwrap();
-        assert_eq!(l.get("s1").unwrap().unwrap().name.as_deref(), Some("My session"));
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().name.as_deref(),
+            Some("My session")
+        );
 
         // A re-spawn (resume) must NOT clear the name.
-        l.record_spawn("s1", WS_A, "/proj", "card-1", now + 1_000).unwrap();
-        assert_eq!(l.get("s1").unwrap().unwrap().name.as_deref(), Some("My session"));
+        l.record_spawn("s1", WS_A, "/proj", "card-1", now + 1_000)
+            .unwrap();
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().name.as_deref(),
+            Some("My session")
+        );
 
         // Clearing sets it back to NULL.
         l.rename("s1", None).unwrap();
