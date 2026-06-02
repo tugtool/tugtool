@@ -16,6 +16,7 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_LIST_ROW_VARIANT,
   resolveListRowContentMode,
+  resolveListRowSelectedGlyph,
   resolveListRowVariant,
 } from "../tug-list-row";
 
@@ -77,5 +78,22 @@ describe("resolveListRowContentMode", () => {
     expect(resolveListRowContentMode(null, "Title", undefined)).toBe(
       "structured",
     );
+  });
+});
+
+describe("resolveListRowSelectedGlyph", () => {
+  test('"check" + selected shows the mark', () => {
+    expect(resolveListRowSelectedGlyph("check", true)).toBe("shown");
+  });
+
+  test('"check" + unselected reserves the column (empty)', () => {
+    expect(resolveListRowSelectedGlyph("check", false)).toBe("reserved");
+    expect(resolveListRowSelectedGlyph("check", undefined)).toBe("reserved");
+  });
+
+  test('"none" / omitted renders no column regardless of selection', () => {
+    expect(resolveListRowSelectedGlyph("none", true)).toBe("none");
+    expect(resolveListRowSelectedGlyph("none", false)).toBe("none");
+    expect(resolveListRowSelectedGlyph(undefined, true)).toBe("none");
   });
 });

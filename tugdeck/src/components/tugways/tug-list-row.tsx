@@ -29,7 +29,10 @@
  *
  * Content:
  *  - `title` plus optional `subtitle` render the common two-line
- *    column — the `UITableViewCellStyle.subtitle` shape.
+ *    column — the `UITableViewCellStyle.subtitle` shape. Both render
+ *    through `TugLabel` (title at `titleSize`, default `md`; a string
+ *    subtitle muted via `emphasis="calm"`, wrapping to
+ *    `subtitleMaxLines`) so row text matches the rest of the app.
  *  - `children`, when provided, owns the content column outright and
  *    `title` / `subtitle` are ignored — the escape hatch for rows
  *    whose content is not a plain title / subtitle stack.
@@ -39,6 +42,10 @@
  *    `imageView` / trailing `accessoryView`). `trailingReveal="hover"`
  *    keeps the trailing accessory hidden until row hover /
  *    focus-within.
+ *  - `selectedGlyph="check"` reserves a fixed-width leading checkmark
+ *    column (UIKit's `.checkmark` accessory) — shown when `selected`,
+ *    empty otherwise so titles align. It sits leading-most and coexists
+ *    with an independent `leading` accessory.
  *
  * The default `variant` is read from the enclosing `TugListView`'s
  * `rowLayout` through `TugListRowLayoutContext` when present, so a
@@ -56,8 +63,10 @@
 import "./tug-list-row.css";
 
 import React from "react";
+import { Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { TugLabel, type TugLabelSize } from "./tug-label";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +80,9 @@ export type TugListRowVariant = "flush" | "pill";
 
 /** Reveal policy for the trailing accessory. */
 export type TugListRowTrailingReveal = "always" | "hover";
+
+/** Leading single-select checkmark column mode. */
+export type TugListRowSelectedGlyph = "check" | "none";
 
 export interface TugListRowProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "title"> {
@@ -98,15 +110,33 @@ export interface TugListRowProps
 
   /**
    * Primary row text — sentence-case, single line, truncates with an
-   * ellipsis. Ignored when `children` is provided.
+   * ellipsis. Rendered through `TugLabel` so row text matches the rest
+   * of the app. Ignored when `children` is provided.
    */
   title?: string;
 
   /**
-   * Optional secondary text rendered muted below the title. Ignored
-   * when `children` is provided.
+   * Title size override. Defaults to `"md"` — the legible row title
+   * size. Drop to `"sm"` (or smaller) for a denser row. Forwarded to
+   * the title `TugLabel`.
+   */
+  titleSize?: TugLabelSize;
+
+  /**
+   * Optional secondary text rendered muted below the title. A string
+   * subtitle renders through `TugLabel` (muted, truncating); a
+   * non-string node renders as-is. Ignored when `children` is
+   * provided.
    */
   subtitle?: React.ReactNode;
+
+  /**
+   * Maximum lines for a string `subtitle` before truncation. `1`
+   * (default) keeps today's single-line ellipsis; a larger value lets
+   * the subtitle wrap to a multi-line description. Forwarded to the
+   * subtitle `TugLabel`'s `maxLines`.
+   */
+  subtitleMaxLines?: number;
 
   /**
    * Free-form content column. When provided it owns the content
@@ -126,29 +156,60 @@ export interface TugListRowProps
    * @selector [data-disabled="true"]
    */
   disabled?: boolean;
+
+  /**
+   * Draw an accent-colored border around the row when it is selected.
+   * `flush` paints an inset `box-shadow` (no box-model change, so
+   * selection moving never reflows the list); `pill` swaps its border
+   * color. When omitted, falls back to the enclosing `TugListView`'s
+   * `selectedAccent` (via `TugListRowLayoutContext`), then to off.
+   * Inert unless the row is also `selected`.
+   * @selector [data-selected="true"][data-selected-accent="true"]
+   */
+  selectedAccent?: boolean;
+
+  /**
+   * Leading single-select checkmark column. `"check"` reserves a
+   * fixed-width column on every row — showing a check when `selected`,
+   * empty otherwise — so titles align whether or not a row carries the
+   * mark. The check inherits the row's text color. Coexists with an
+   * independent `leading` accessory (the check sits leading-most).
+   * `"none"` (default) renders no column.
+   * @selector .tug-list-row-check[data-state="shown"|"reserved"]
+   * @default "none"
+   */
+  selectedGlyph?: TugListRowSelectedGlyph;
 }
 
 // ---------------------------------------------------------------------------
-// Layout context — published by TugListView's `rowLayout`
+// Layout context — published by TugListView's `rowLayout` / `selectedAccent`
 // ---------------------------------------------------------------------------
 
 /**
- * Default variant published to a `TugListRow` by an enclosing
- * `TugListView` via its `rowLayout` prop. `null` means "no list-view
- * ancestor" — a standalone `TugListRow` then falls back to its own
- * `variant` prop, defaulting to `flush`.
+ * Row presentation published to a `TugListRow` by an enclosing
+ * `TugListView`: the default `variant` (from `rowLayout`) and whether
+ * selected rows draw an accent border (from `selectedAccent`). `null`
+ * means "no list-view ancestor" — a standalone `TugListRow` then falls
+ * back to its own props (`variant` defaulting to `flush`,
+ * `selectedAccent` to off).
  *
- * Internal to the row/list-view pair; app code never reads it
- * directly. `TugListView` (in `rowLayout` mode) is the only provider.
+ * Internal to the row/list-view pair; app code never reads it directly.
+ * `TugListView` is the only provider.
  */
-const TugListRowLayoutContext = React.createContext<TugListRowVariant | null>(
+export interface TugListRowLayout {
+  variant: TugListRowVariant | null;
+  selectedAccent: boolean;
+}
+
+const TugListRowLayoutContext = React.createContext<TugListRowLayout | null>(
   null,
 );
 
 /**
  * Provider for the row-layout context. `TugListView` wraps its
- * rendered window with this when `rowLayout` is set, so descendant
- * `TugListRow`s inherit the variant without each cell repeating it.
+ * rendered window with this when `rowLayout` / `selectedAccent` is set,
+ * so descendant `TugListRow`s inherit the variant and accent intent
+ * without each cell repeating them.
  */
 export const TugListRowLayoutProvider = TugListRowLayoutContext.Provider;
 
@@ -169,6 +230,28 @@ export function resolveListRowVariant(
   contextVariant: TugListRowVariant | null,
 ): TugListRowVariant {
   return propVariant ?? contextVariant ?? DEFAULT_LIST_ROW_VARIANT;
+}
+
+/**
+ * Render state of the leading checkmark column.
+ *  - `"shown"` — `selectedGlyph="check"` and the row is selected; the
+ *    check renders.
+ *  - `"reserved"` — `selectedGlyph="check"` and the row is unselected;
+ *    the column reserves its fixed width but renders empty, so titles
+ *    align with the selected row.
+ *  - `"none"` — no checkmark column at all.
+ */
+export type TugListRowGlyphState = "shown" | "reserved" | "none";
+
+/**
+ * Resolve the checkmark column's render state. Pure; exported for tests.
+ */
+export function resolveListRowSelectedGlyph(
+  glyph: TugListRowSelectedGlyph | undefined,
+  selected: boolean | undefined,
+): TugListRowGlyphState {
+  if (glyph !== "check") return "none";
+  return selected === true ? "shown" : "reserved";
 }
 
 /**
@@ -220,18 +303,26 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
       trailing,
       trailingReveal = "always",
       title,
+      titleSize,
       subtitle,
+      subtitleMaxLines,
       selected,
       disabled,
+      selectedAccent,
+      selectedGlyph,
       children,
       className,
       ...rest
     },
     ref,
   ) {
-    const contextVariant = React.useContext(TugListRowLayoutContext);
-    const resolvedVariant = resolveListRowVariant(variant, contextVariant);
+    const layout = React.useContext(TugListRowLayoutContext);
+    const resolvedVariant = resolveListRowVariant(variant, layout?.variant ?? null);
     const contentMode = resolveListRowContentMode(children, title, subtitle);
+    // Accent border: explicit prop wins; otherwise inherit the
+    // enclosing list view's `selectedAccent`; otherwise off.
+    const resolvedAccent = selectedAccent ?? layout?.selectedAccent ?? false;
+    const glyphState = resolveListRowSelectedGlyph(selectedGlyph, selected);
 
     const hasLeading = isRenderable(leading);
     const hasTrailing = isRenderable(trailing);
@@ -243,9 +334,20 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
         data-variant={resolvedVariant}
         data-selected={selected ? "true" : undefined}
         data-disabled={disabled ? "true" : undefined}
+        data-selected-accent={resolvedAccent ? "true" : undefined}
         className={cn("tug-list-row", className)}
         {...rest}
       >
+        {glyphState !== "none" ? (
+          <span
+            className="tug-list-row-check"
+            data-slot="tug-list-row-check"
+            data-state={glyphState}
+            aria-hidden="true"
+          >
+            {glyphState === "shown" ? <Check /> : null}
+          </span>
+        ) : null}
         {hasLeading ? (
           <span
             className="tug-list-row-leading"
@@ -260,10 +362,26 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
           ) : contentMode === "structured" ? (
             <>
               {title !== undefined && title !== "" ? (
-                <span className="tug-list-row-title">{title}</span>
+                <TugLabel
+                  className="tug-list-row-title"
+                  size={titleSize ?? "md"}
+                  maxLines={1}
+                >
+                  {title}
+                </TugLabel>
               ) : null}
               {isRenderable(subtitle) ? (
-                <span className="tug-list-row-subtitle">{subtitle}</span>
+                typeof subtitle === "string" ? (
+                  <TugLabel
+                    size="sm"
+                    emphasis="calm"
+                    maxLines={subtitleMaxLines ?? 1}
+                  >
+                    {subtitle}
+                  </TugLabel>
+                ) : (
+                  <span className="tug-list-row-subtitle">{subtitle}</span>
+                )
               ) : null}
             </>
           ) : null}

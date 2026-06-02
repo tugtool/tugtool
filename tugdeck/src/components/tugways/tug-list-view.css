@@ -51,6 +51,9 @@ body {
   /* Row-layout slots — consumed only when `rowLayout` is set. */
   --tugx-list-view-pill-row-gap:       var(--tug-space-sm);
   --tugx-list-view-divider-color:      var(--tug7-element-global-border-normal-muted-rest);
+  /* Divider thickness — hairline default; `rowSeparator` overwrites it
+     on the container for `thin` / `medium`. */
+  --tugx-list-view-divider-thickness:  1px;
 }
 
 /* ---- Scroll container ---- */
@@ -180,14 +183,28 @@ body {
   --tugx-list-view-row-gap: 0;
 }
 
-/* A 1px hairline below every cell but the last. `:not(:last-child)`
-   keys off the rendered window's cell order — adequate for the
-   non-windowed / small-list cases `flush` targets, and the same
-   pattern in-list dividers have always used. */
+/* A divider below every cell but the last. `:not(:last-child)` keys
+   off the rendered window's cell order — adequate for the non-windowed
+   / small-list cases this targets, and the same pattern in-list
+   dividers have always used. Drawn for the `flush` layout (the default,
+   unchanged) and for any layout when `rowSeparator` is set to an object
+   (`data-row-separator="on"`). Thickness + color come from the
+   `--tugx-list-view-divider-*` tokens — hairline by default; the
+   `rowSeparator` prop overwrites them on the container. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-list-view[data-row-layout="flush"]
+.tug-list-view[data-row-layout="flush"] .tug-list-view-cell:not(:last-child),
+.tug-list-view[data-row-separator="on"] .tug-list-view-cell:not(:last-child) {
+  border-bottom: var(--tugx-list-view-divider-thickness) solid
+    var(--tugx-list-view-divider-color);
+}
+
+/* `rowSeparator="none"` suppresses the divider, even under
+   `rowLayout="flush"`. Matched specificity (two attribute selectors +
+   the cell class + `:not(:last-child)`) and placed after the draw rule
+   so it wins source-order over the flush default. */
+.tug-list-view[data-row-separator="none"]
   .tug-list-view-cell:not(:last-child) {
-  border-bottom: 1px solid var(--tugx-list-view-divider-color);
+  border-bottom: none;
 }
 
 /* `pill` — discrete rounded rows: a small inter-row gap separates

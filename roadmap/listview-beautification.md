@@ -315,17 +315,17 @@ Pure function `resolveRowSeparator(prop)` → `{ thickness: string; color: strin
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Selection token family (both themes + row aliases) | pending | — |
-| #step-2 | TugLabel-driven row text + title size bump | pending | — |
-| #step-3 | Four-state selection ramp (selected-hover) | pending | — |
-| #step-4 | Phase A gallery + integration checkpoint | pending | — |
-| #step-5 | `rowSeparator` prop on TugListView | pending | — |
-| #step-6 | Accent selection border (`selectedAccent`) | pending | — |
-| #step-7 | Phase B gallery + integration checkpoint | pending | — |
-| #step-8 | `selectedGlyph` column + multiline subtitle | pending | — |
-| #step-9 | Row-types gallery section | pending | — |
-| #step-10 | Migrate model + effort pickers to `selectedGlyph` | pending | — |
-| #step-11 | Phase C integration checkpoint | pending | — |
+| #step-1 | Selection token family (both themes + row aliases) | done | 324f73f2 |
+| #step-2 | TugLabel-driven row text + title size bump | done | c58ab362 |
+| #step-3 | Four-state selection ramp (selected-hover) | done | 09fb6cc4 |
+| #step-4 | Phase A gallery + integration checkpoint | done | 55b9a028 |
+| #step-5 | `rowSeparator` prop on TugListView | done | 110d3f9f |
+| #step-6 | Accent selection border (`selectedAccent`) | done | 1896dda8 |
+| #step-7 | Phase B gallery + integration checkpoint | done | b90028fd |
+| #step-8 | `selectedGlyph` column + multiline subtitle | done | 151d141f |
+| #step-9 | Row-types gallery section | done | 728d03b9 |
+| #step-10 | Migrate model + effort pickers to `selectedGlyph` | done | 48bcfa83 |
+| #step-11 | Phase C integration checkpoint | done | N/A (verification only) |
 
 ---
 

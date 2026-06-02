@@ -32,8 +32,10 @@
  * | --tugx-list-row-subtitle-color       | --tugx-list-row-pill-rest-bg         | content | .tug-list-row-subtitle (color)                   |
  * | --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg        | content | .tug-list-row[data-variant="pill"]:hover (color) |
  * | --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg        | control | .tug-list-row[data-variant="pill"]:hover (border)|
- * | --tugx-list-row-text                 | --tugx-list-row-pill-selected-bg     | content | .tug-list-row[data-variant="pill"][data-selected] (color)  |
- * | --tugx-list-row-pill-selected-border | --tugx-list-row-pill-selected-bg     | control | .tug-list-row[data-variant="pill"][data-selected] (border) |
+ * | --tugx-list-row-selected-text        | --tugx-list-row-selected-bg          | content | .tug-list-row[data-selected="true"] (color)      |
+ * | --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg    | content | .tug-list-row[data-selected="true"]:hover (color)|
+ * | --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg          | control | .tug-list-row[data-variant="pill"][data-selected] (border) |
+ * | --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg        | control | .tug-list-row[data-selected][data-selected-accent] (accent border) |
  *
  * The `flush` variant is transparent and paints no foreground of its
  * own — its text color is inherited from the host surface — so it
@@ -41,13 +43,15 @@
  */
 
 /* @tug-pairings {
-  --tugx-list-row-text                 | --tugx-list-row-pill-rest-bg     | content
-  --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg     | control
-  --tugx-list-row-subtitle-color       | --tugx-list-row-pill-rest-bg     | content
-  --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg    | content
-  --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg    | control
-  --tugx-list-row-text                 | --tugx-list-row-pill-selected-bg | content
-  --tugx-list-row-pill-selected-border | --tugx-list-row-pill-selected-bg | control
+  --tugx-list-row-text                 | --tugx-list-row-pill-rest-bg      | content
+  --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg      | control
+  --tugx-list-row-subtitle-color       | --tugx-list-row-pill-rest-bg      | content
+  --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg     | content
+  --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg     | control
+  --tugx-list-row-selected-text        | --tugx-list-row-selected-bg       | content
+  --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg | content
+  --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg       | control
+  --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg     | control
 } */
 
 /* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
@@ -60,25 +64,33 @@ body {
   --tugx-list-row-content-gap:       var(--tug-space-2xs);
   --tugx-list-row-pill-radius:       var(--tug-radius-md);
 
-  /* Typography */
-  --tugx-list-row-title-size:        var(--tug-font-size-sm);
+  /* Typography — title + string subtitle sizes are set via the
+     `TugLabel` `size` prop; only the non-string subtitle fallback
+     reads this token. */
   --tugx-list-row-subtitle-size:     var(--tug-font-size-xs);
 
   /* Text */
   --tugx-list-row-text:              var(--tug7-element-global-text-normal-default-rest);
   --tugx-list-row-subtitle-color:    var(--tug7-element-global-text-normal-muted-rest);
 
-  /* flush variant — transparent rest; tinted hover / selected fills */
+  /* flush variant — transparent rest; tinted hover fill. */
   --tugx-list-row-flush-hover-bg:    var(--tug7-surface-control-primary-ghost-action-hover);
-  --tugx-list-row-flush-selected-bg: var(--tug7-surface-selection-primary-normal-plain-rest);
 
   /* pill variant — outlined-action lineage, shared with TugDialogButton */
-  --tugx-list-row-pill-rest-bg:         var(--tug7-surface-control-primary-outlined-action-rest);
-  --tugx-list-row-pill-rest-border:     var(--tug7-element-control-border-outlined-action-rest);
-  --tugx-list-row-pill-hover-bg:        var(--tug7-surface-control-primary-outlined-action-hover);
-  --tugx-list-row-pill-hover-border:    var(--tug7-element-control-border-outlined-action-hover);
-  --tugx-list-row-pill-selected-bg:     var(--tug7-surface-tone-primary-normal-active-rest);
-  --tugx-list-row-pill-selected-border: var(--tug7-element-tone-border-normal-active-rest);
+  --tugx-list-row-pill-rest-bg:      var(--tug7-surface-control-primary-outlined-action-rest);
+  --tugx-list-row-pill-rest-border:  var(--tug7-element-control-border-outlined-action-rest);
+  --tugx-list-row-pill-hover-bg:     var(--tug7-surface-control-primary-outlined-action-hover);
+  --tugx-list-row-pill-hover-border: var(--tug7-element-control-border-outlined-action-hover);
+
+  /* Selection ramp — the list owns its own selection family (the blue
+     selection tokens), shared by both variants and distinct from the
+     popup-menu selection tokens. `-hover` is a stronger step over `-rest`
+     so a hovered selected row reads apart from a resting selected one. */
+  --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-plain-rest);
+  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-plain-hover);
+  --tugx-list-row-selected-text:          var(--tug7-element-selection-text-normal-plain-rest);
+  --tugx-list-row-selected-accent-border: var(--tug7-element-tone-border-normal-accent-rest);
+  --tugx-list-row-accent-border-width:    1.5px;
 }
 
 /* ---- Base ---- */
@@ -104,6 +116,24 @@ body {
   align-items: center;
 }
 
+/* Leading single-select checkmark column. Fixed width, reserved on
+   every row (empty when unselected) so titles align whether or not a
+   row carries the mark. The check inherits the row's text color
+   (currentColor), so a selected row's `--tugx-list-row-selected-text`
+   tints it. */
+.tug-list-row-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+}
+
+.tug-list-row-check svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 /* The content column flexes to fill the row; `min-width: 0` lets a
    long title truncate instead of forcing the row wider than its
    container. */
@@ -121,18 +151,22 @@ body {
   align-items: center;
 }
 
-/* ---- Title / subtitle ---- */
-
-/* Title inherits `color` from the row (pill sets it explicitly;
-   flush inherits from the host surface). Single line, ellipsis. */
-.tug-list-row-title {
-  font-size: var(--tugx-list-row-title-size);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* ---- Title / subtitle ----
+   Title and string subtitles render through `TugLabel`, which owns
+   their font-size (via the `size` prop) and truncation (via
+   `maxLines`). The row only re-asserts the title's `color`: `TugLabel`
+   would otherwise paint its own field-label color, but a row title
+   must inherit the row's resolved color so `pill` uses its explicit
+   text color and `flush` inherits the host surface — and so a selected
+   row's `--tugx-list-row-selected-text` cascades down. The descendant
+   selector outranks `.tug-label`'s own color rule. */
+.tug-list-row .tug-list-row-title {
+  color: inherit;
 }
 
+/* Fallback styling for a non-string `subtitle` node (the string path
+   renders through `TugLabel emphasis="calm"`, which carries the muted
+   color and size itself). */
 /* @tug-renders-on: --tugx-list-row-pill-rest-bg */
 .tug-list-row-subtitle {
   font-size: var(--tugx-list-row-subtitle-size);
@@ -159,7 +193,17 @@ body {
 }
 
 .tug-list-row[data-variant="flush"][data-selected="true"] {
-  background-color: var(--tugx-list-row-flush-selected-bg);
+  background-color: var(--tugx-list-row-selected-bg);
+  color: var(--tugx-list-row-selected-text);
+}
+
+/* Selected + hover — a distinct, stronger fill so a hovered selected
+   row reads apart from a resting selected one. The extra
+   `:not([data-disabled])` lifts this above the plain `:hover` rule's
+   specificity, so hovering a selected row never falls back to the
+   unselected hover fill. */
+.tug-list-row[data-variant="flush"][data-selected="true"]:hover:not([data-disabled="true"]) {
+  background-color: var(--tugx-list-row-selected-hover-bg);
 }
 
 /* ---- Variant: pill ----
@@ -179,8 +223,33 @@ body {
 }
 
 .tug-list-row[data-variant="pill"][data-selected="true"] {
-  background-color: var(--tugx-list-row-pill-selected-bg);
-  border-color: var(--tugx-list-row-pill-selected-border);
+  background-color: var(--tugx-list-row-selected-bg);
+  border-color: var(--tugx-list-row-pill-rest-border);
+  color: var(--tugx-list-row-selected-text);
+}
+
+/* Selected + hover — see the `flush` counterpart for the specificity
+   rationale. */
+.tug-list-row[data-variant="pill"][data-selected="true"]:hover:not([data-disabled="true"]) {
+  background-color: var(--tugx-list-row-selected-hover-bg);
+}
+
+/* ---- Accent selection border (opt-in via `selectedAccent`) ----
+   Drawn only on a selected row carrying `data-selected-accent="true"`.
+   `flush` has no border of its own, so it paints an inset `box-shadow`
+   — it sits inside the row's box and so never changes row height,
+   keeping selection moves reflow-free. `pill` already has a border, so
+   it simply swaps the border color. The three-attribute selectors
+   outrank the plain selected rules. */
+/* @tug-renders-on: --tugx-list-row-selected-bg */
+.tug-list-row[data-variant="flush"][data-selected="true"][data-selected-accent="true"] {
+  box-shadow: inset 0 0 0 var(--tugx-list-row-accent-border-width)
+    var(--tugx-list-row-selected-accent-border);
+}
+
+/* @tug-renders-on: --tugx-list-row-selected-bg */
+.tug-list-row[data-variant="pill"][data-selected="true"][data-selected-accent="true"] {
+  border-color: var(--tugx-list-row-selected-accent-border);
 }
 
 /* ---- Disabled ----

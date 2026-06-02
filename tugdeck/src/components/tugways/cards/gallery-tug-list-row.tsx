@@ -28,6 +28,13 @@ import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugListRow } from "@/components/tugways/tug-list-row";
+import {
+  TugListView,
+  type TugListViewCellProps,
+  type TugListViewCellRenderer,
+  type TugListViewDataSource,
+  type TugListViewRowSeparator,
+} from "@/components/tugways/tug-list-view";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
@@ -78,6 +85,16 @@ const labelColumnStyle: React.CSSProperties = {
   gap: "0.375rem",
 };
 
+/** Bounded-height frame for a separator-demo `TugListView`. */
+const separatorHostStyle: React.CSSProperties = {
+  width: "100%",
+  maxWidth: "15rem",
+  height: "9.5rem",
+  border: "1px solid var(--tug7-element-global-border-normal-muted-rest)",
+  borderRadius: "var(--tug-radius-md)",
+  overflow: "hidden",
+};
+
 const variantsRowStyle: React.CSSProperties = {
   display: "flex",
   gap: "1.5rem",
@@ -95,6 +112,79 @@ const RECENTS: ReadonlyArray<string> = [
 ];
 
 // ---------------------------------------------------------------------------
+// Separator demo — a tiny static `TugListView` so the real divider CSS
+// (which targets `.tug-list-view ... .tug-list-view-cell`) is exercised
+// rather than faked. Read-only, four flush rows per list.
+// ---------------------------------------------------------------------------
+
+const SEPARATOR_ROWS: ReadonlyArray<string> = [
+  "First row",
+  "Second row",
+  "Third row",
+  "Fourth row",
+];
+
+/** Minimal read-only data source over `SEPARATOR_ROWS`. */
+class SeparatorDemoDataSource implements TugListViewDataSource {
+  numberOfItems(): number {
+    return SEPARATOR_ROWS.length;
+  }
+  idForIndex(index: number): string {
+    return `sep-${index}`;
+  }
+  kindForIndex(): string {
+    return "row";
+  }
+  titleAt(index: number): string {
+    return SEPARATOR_ROWS[index];
+  }
+  subscribe(): () => void {
+    return () => {};
+  }
+  getVersion(): unknown {
+    return 0;
+  }
+}
+
+const SeparatorDemoCell: TugListViewCellRenderer<SeparatorDemoDataSource> =
+  function SeparatorDemoCell({
+    index,
+    dataSource,
+  }: TugListViewCellProps<SeparatorDemoDataSource>): React.ReactElement {
+    return <TugListRow title={dataSource.titleAt(index)} />;
+  };
+
+const SEPARATOR_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<SeparatorDemoDataSource>
+> = { row: SeparatorDemoCell };
+
+/** One bounded-height list demoing a single `rowSeparator` value. */
+function SeparatorDemoList({
+  label,
+  rowSeparator,
+  dataSource,
+}: {
+  label: string;
+  rowSeparator?: TugListViewRowSeparator;
+  dataSource: SeparatorDemoDataSource;
+}): React.ReactElement {
+  return (
+    <div style={labelColumnStyle}>
+      <TugLabel className="cg-section-title">{label}</TugLabel>
+      <div style={separatorHostStyle}>
+        <TugListView<SeparatorDemoDataSource>
+          dataSource={dataSource}
+          cellRenderers={SEPARATOR_CELL_RENDERERS}
+          rowLayout="flush"
+          rowSeparator={rowSeparator}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GalleryTugListRow
 // ---------------------------------------------------------------------------
 
@@ -108,6 +198,16 @@ export function GalleryTugListRow(): React.ReactElement {
   // Section 4 — a result line so the hover-revealed icon button is
   // demonstrably live, not just decorative.
   const [revealResult, setRevealResult] = React.useState<string>("—");
+
+  // Separator demo — one read-only data source shared across the four
+  // demo lists (they only read it). Stable for the card's lifetime.
+  const separatorDataSourceRef = React.useRef<SeparatorDemoDataSource | null>(
+    null,
+  );
+  if (separatorDataSourceRef.current === null) {
+    separatorDataSourceRef.current = new SeparatorDemoDataSource();
+  }
+  const separatorDataSource = separatorDataSourceRef.current;
 
   return (
     <div className="cg-content" data-testid="gallery-tug-list-row">
@@ -158,6 +258,46 @@ export function GalleryTugListRow(): React.ReactElement {
             variant="pill"
             title="Repair the capture pipeline"
             subtitle="Last opened yesterday"
+          />
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 2b. Standard row types ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Row types</TugLabel>
+        <div style={captionStyle}>
+          The common layouts fall out of <code>title</code> +{" "}
+          <code>subtitle</code> + <code>subtitleMaxLines</code>, composed
+          with a leading icon and the <code>selectedGlyph</code> check
+          column. Single-line, two-line, and a multiline description that
+          wraps instead of truncating.
+        </div>
+        <div style={flushPanelStyle}>
+          <TugListRow title="Single line" />
+          <TugListRow
+            leading={<Folder size={16} aria-hidden="true" />}
+            title="Single line with a leading icon"
+          />
+          <TugListRow
+            selectedGlyph="check"
+            selected
+            title="Checked single line"
+          />
+          <TugListRow
+            selectedGlyph="check"
+            title="Unchecked — column reserved, title aligns"
+          />
+          <TugListRow
+            leading={<GitBranch size={16} aria-hidden="true" />}
+            title="Two line with icon"
+            subtitle="A muted secondary line below the title"
+          />
+          <TugListRow
+            title="Multiline description"
+            subtitle="A longer subtitle that wraps across multiple lines instead of truncating, for rows that carry a real description rather than a one-line caption — useful for skills, agents, and other catalog rows."
+            subtitleMaxLines={3}
           />
         </div>
       </div>
@@ -233,26 +373,134 @@ export function GalleryTugListRow(): React.ReactElement {
 
       <TugSeparator />
 
-      {/* ---- 5. States ---- */}
+      {/* ---- 5. States — the four-state selection ramp ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">States</TugLabel>
         <div style={captionStyle}>
+          The list owns its own selection family (the blue selection
+          tokens), distinct from the popup-button menus. The ramp is
+          four states: <strong>rest → hover → selected → selected +
+          hover</strong>. <em>Hover the rows below</em> — a hovered
+          selected row paints a stronger fill than a resting selected
+          row, and differs from a hovered unselected row.{" "}
           <code>selected</code> and <code>disabled</code> are inputs the
           consumer feeds — the row reflects them, it does not own them.
         </div>
-        <div style={pillStackStyle}>
-          <TugListRow variant="pill" title="Rest" subtitle="The resting row" />
-          <TugListRow
-            variant="pill"
-            title="Selected"
-            subtitle="Fed selected={true}"
-            selected
+        <div style={variantsRowStyle}>
+          <div style={labelColumnStyle}>
+            <TugLabel className="cg-section-title">flush</TugLabel>
+            <div style={flushPanelStyle}>
+              <TugListRow variant="flush" title="Rest" subtitle="Hover me" />
+              <TugListRow
+                variant="flush"
+                title="Selected"
+                subtitle="Hover me — stronger fill"
+                selected
+              />
+              <TugListRow
+                variant="flush"
+                title="Disabled"
+                subtitle="Fed disabled={true}"
+                disabled
+              />
+            </div>
+          </div>
+          <div style={labelColumnStyle}>
+            <TugLabel className="cg-section-title">pill</TugLabel>
+            <div style={pillStackStyle}>
+              <TugListRow variant="pill" title="Rest" subtitle="Hover me" />
+              <TugListRow
+                variant="pill"
+                title="Selected"
+                subtitle="Hover me — stronger fill"
+                selected
+              />
+              <TugListRow
+                variant="pill"
+                title="Disabled"
+                subtitle="Fed disabled={true}"
+                disabled
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 5b. Accent selection border ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">
+          Accent selection border
+        </TugLabel>
+        <div style={captionStyle}>
+          <code>selectedAccent</code> draws an accent-colored border on
+          the selected row. <code>flush</code> paints an inset shadow (no
+          row-height change, so moving the selection never reflows);{" "}
+          <code>pill</code> swaps its border color.
+        </div>
+        <div style={variantsRowStyle}>
+          <div style={labelColumnStyle}>
+            <TugLabel className="cg-section-title">flush</TugLabel>
+            <div style={flushPanelStyle}>
+              <TugListRow variant="flush" title="Rest row" />
+              <TugListRow
+                variant="flush"
+                title="Selected + accent"
+                selected
+                selectedAccent
+              />
+              <TugListRow variant="flush" title="Another row" />
+            </div>
+          </div>
+          <div style={labelColumnStyle}>
+            <TugLabel className="cg-section-title">pill</TugLabel>
+            <div style={pillStackStyle}>
+              <TugListRow variant="pill" title="Rest row" />
+              <TugListRow
+                variant="pill"
+                title="Selected + accent"
+                selected
+                selectedAccent
+              />
+              <TugListRow variant="pill" title="Another row" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 5c. Row separators (a TugListView prop) ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Row separators</TugLabel>
+        <div style={captionStyle}>
+          <code>rowSeparator</code> on <code>TugListView</code> tunes the
+          divider drawn between cells: <code>hairline</code> (1px, the
+          default), <code>thin</code> (1.5px), <code>medium</code> (2px),
+          or <code>"none"</code>. A <code>color</code> override is also
+          accepted. These are real <code>TugListView</code> instances so
+          the divider CSS is exercised, not faked.
+        </div>
+        <div style={variantsRowStyle}>
+          <SeparatorDemoList
+            label="hairline (default)"
+            dataSource={separatorDataSource}
           />
-          <TugListRow
-            variant="pill"
-            title="Disabled"
-            subtitle="Fed disabled={true}"
-            disabled
+          <SeparatorDemoList
+            label="thin"
+            rowSeparator={{ thickness: "thin" }}
+            dataSource={separatorDataSource}
+          />
+          <SeparatorDemoList
+            label="medium"
+            rowSeparator={{ thickness: "medium" }}
+            dataSource={separatorDataSource}
+          />
+          <SeparatorDemoList
+            label="none"
+            rowSeparator="none"
+            dataSource={separatorDataSource}
           />
         </div>
       </div>

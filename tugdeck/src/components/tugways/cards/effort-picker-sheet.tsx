@@ -31,7 +31,6 @@
 import "./effort-picker-sheet.css";
 
 import React, { useCallback, useMemo, useState } from "react";
-import { Check } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
@@ -185,9 +184,10 @@ class EffortPickerDataSource implements TugListViewDataSource {
 /**
  * One effort-level row. A flush `TugListRow` whose title is the formatted level
  * label over a brief description; the row paints selected (with a leading
- * checkmark) when its level matches the sheet-open-time current level. Every
- * row renders the fixed-width check holder — empty when unselected — so the
- * titles align whether or not a row carries the mark.
+ * checkmark) when its level matches the sheet-open-time current level.
+ * `selectedGlyph="check"` reserves the fixed-width check column on every row —
+ * empty when unselected — so the titles align whether or not a row carries the
+ * mark.
  */
 const EffortPickerCell: TugListViewCellRenderer<EffortPickerDataSource> =
   function EffortPickerCell({
@@ -202,11 +202,7 @@ const EffortPickerCell: TugListViewCellRenderer<EffortPickerDataSource> =
         title={formatEffortLabel(level)}
         subtitle={EFFORT_SUBTITLES[level]}
         selected={selected}
-        leading={
-          <span className="effort-picker-check" aria-hidden="true">
-            {selected ? <Check /> : null}
-          </span>
-        }
+        selectedGlyph="check"
         data-effort={level}
       />
     );

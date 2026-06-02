@@ -32,7 +32,6 @@
 import "./model-picker-sheet.css";
 
 import React, { useCallback, useMemo, useState } from "react";
-import { Check } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
@@ -175,9 +174,10 @@ class ModelPickerDataSource implements TugListViewDataSource {
  * One model-option row. A flush `TugListRow` whose title is the model's
  * display name over its optional description; the row paints selected (with a
  * leading checkmark) when its value matches the sheet-open-time active model.
- * Every row renders the fixed-width check holder — empty when unselected — so
- * the titles align whether or not a row carries the mark. Presentational —
- * activation is the enclosing `TugListView` cell wrapper's job.
+ * `selectedGlyph="check"` reserves the fixed-width check column on every row —
+ * empty when unselected — so the titles align whether or not a row carries the
+ * mark. Presentational — activation is the enclosing `TugListView` cell
+ * wrapper's job.
  */
 const ModelPickerCell: TugListViewCellRenderer<ModelPickerDataSource> =
   function ModelPickerCell({
@@ -192,11 +192,7 @@ const ModelPickerCell: TugListViewCellRenderer<ModelPickerDataSource> =
         title={model.displayName}
         subtitle={model.description}
         selected={selected}
-        leading={
-          <span className="model-picker-check" aria-hidden="true">
-            {selected ? <Check /> : null}
-          </span>
-        }
+        selectedGlyph="check"
         data-model={model.value}
       />
     );

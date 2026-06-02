@@ -96,6 +96,18 @@ import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
 import { ScrollerProvider, type Scroller } from "./internal/scroller-context";
 import { useSavedRegionScroll } from "./use-component-state-preservation";
 import { TugListRowLayoutProvider, type TugListRowVariant } from "./tug-list-row";
+import {
+  resolveRowSeparator,
+  type TugListViewRowSeparator,
+} from "./internal/list-view-separator";
+
+// Re-export the `rowSeparator` prop types so consumers import them
+// alongside `TugListView` rather than reaching into the internal path.
+export type {
+  TugListViewRowSeparator,
+  TugListViewRowSeparatorConfig,
+  TugListViewSeparatorThickness,
+} from "./internal/list-view-separator";
 
 // ---------------------------------------------------------------------------
 // Row roles — structural classification of an item in the list
@@ -536,6 +548,41 @@ export interface TugListViewProps<
   rowLayout?: TugListRowVariant;
 
   /**
+   * Row-divider control. Lifts the hardcoded `flush` hairline into a
+   * tunable prop:
+   *
+   *  - omitted ⇒ today's behavior exactly — the `flush` layout draws a
+   *    hairline below each cell but the last; other layouts draw none.
+   *  - `{ thickness?, color? }` ⇒ draw a divider below each cell but
+   *    the last (in any layout) at the named thickness (`"hairline"` =
+   *    1px, `"thin"` = 1.5px, `"medium"` = 2px) and optional color
+   *    override. Publishes `data-row-separator="on"`.
+   *  - `"none"` ⇒ no divider, even under `rowLayout="flush"`. Publishes
+   *    `data-row-separator="none"`.
+   *
+   * The resolved thickness / color are written to the
+   * `--tugx-list-view-divider-*` tokens on the scroll container ([L06]).
+   *
+   * @selector [data-row-separator="on"] | [data-row-separator="none"]
+   */
+  rowSeparator?: TugListViewRowSeparator;
+
+  /**
+   * Draw an accent-colored border around the selected row(s). Published
+   * to descendant `TugListRow`s through `TugListRowLayoutContext`, so a
+   * cell renderer's row picks it up without repeating it. A row may
+   * still override with its own `selectedAccent` prop. Default `false`.
+   *
+   * `flush` rows paint an inset `box-shadow` (no box-model change, so
+   * moving the selection never reflows the list); `pill` rows swap their
+   * border color.
+   *
+   * @default false
+   * @selector .tug-list-row[data-selected="true"][data-selected-accent="true"]
+   */
+  selectedAccent?: boolean;
+
+  /**
    * Opt into PageUp / PageDown keyboard navigation by *entry*, where
    * each cell is one entry. When `true`, the list view installs a
    * keyboard handler so PageUp / PageDown — and the macOS
@@ -765,6 +812,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       inline,
       interactive = true,
       rowLayout,
+      rowSeparator,
+      selectedAccent = false,
       pageByEntry,
       selectionRequired = false,
       onSelectionChange,
@@ -2153,16 +2202,47 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       return callbacks;
     }
 
+    // Row-layout context payload published to descendant `TugListRow`s.
+    // Memoized on its fields so the object identity is stable across
+    // scroll-tick re-renders — the context value churning would re-render
+    // every row needlessly.
+    const rowLayoutValue = React.useMemo(
+      () => ({ variant: rowLayout ?? null, selectedAccent }),
+      [rowLayout, selectedAccent],
+    );
+
+    // Resolve `rowSeparator` into the divider's CSS custom-property
+    // values + the `data-row-separator` mode. Omitting the prop leaves
+    // both unset, so the flush divider renders exactly as before ([L06]).
+    const resolvedSeparator = resolveRowSeparator(rowSeparator);
+    const rowSeparatorMode =
+      rowSeparator === undefined
+        ? undefined
+        : resolvedSeparator === null
+          ? "none"
+          : "on";
+    const separatorStyle: React.CSSProperties | undefined =
+      resolvedSeparator !== null && rowSeparator !== undefined
+        ? ({
+            "--tugx-list-view-divider-thickness": resolvedSeparator.thickness,
+            ...(resolvedSeparator.color !== null
+              ? { "--tugx-list-view-divider-color": resolvedSeparator.color }
+              : {}),
+          } as React.CSSProperties)
+        : undefined;
+
     return (
       <div
         ref={setScrollContainerRef}
         data-slot="tug-list-view"
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
         data-row-layout={rowLayout}
+        data-row-separator={rowSeparatorMode}
         data-interactive={interactive ? undefined : "false"}
         className={
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
+        style={separatorStyle}
         role="list"
         tabIndex={0}
       >
@@ -2173,7 +2253,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         />
         <OuterScrollportProvider scrollport={scrollportEl}>
         <ScrollerProvider scroller={scrollerFacadeRef.current}>
-        <TugListRowLayoutProvider value={rowLayout ?? null}>
+        <TugListRowLayoutProvider value={rowLayoutValue}>
         <div className="tug-list-view-window">
           {renderedRange.map(({ index, id, kind, role }) => {
             // Role-aware wrapper attributes:
