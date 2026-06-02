@@ -98,7 +98,11 @@ export interface TugPaneBannerProps {
   detailTitle?: string;
   /** Detail panel body content (error variant only). */
   children?: React.ReactNode;
-  /** Pinned footer content for the detail panel (error variant only). */
+  /**
+   * Footer controls. In the `error` variant they pin to the detail
+   * panel; in the `status` variant they sit on their own row below the
+   * strip (e.g. a Dismiss button for a soft, non-blocking notice).
+   */
   footer?: React.ReactNode;
   /**
    * Disables the `inert` application on `.tug-pane-body` — for gallery demos
@@ -582,7 +586,12 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
         aria-live="polite"
         className={cn("tug-pane-banner", className)}
       >
-        <div className="tug-pane-banner-clip">{strip}</div>
+        <div className="tug-pane-banner-clip">
+          {strip}
+          {r.footer !== undefined && (
+            <div className="tug-pane-banner-status-actions">{r.footer}</div>
+          )}
+        </div>
       </div>
     );
 

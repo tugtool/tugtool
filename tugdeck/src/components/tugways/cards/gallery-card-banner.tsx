@@ -3,8 +3,9 @@
  *
  * Shows TugPaneBanner in all modes: error variant with TugAlert-style detail
  * panel (icon + title + message + dismiss action) across the three tones
- * (danger, caution, default), and status variant as a strip-only attention
- * bar.
+ * (danger, caution, default), status variant as a strip-only attention bar,
+ * and status variant with a soft Dismiss footer (a non-blocking notice the
+ * user acknowledges — e.g. the forward-compat unknown-event banner).
  *
  * All demos use the `contained` prop so the banner renders inline inside
  * the mini-viewport instead of portaling into the gallery card's body and
@@ -66,6 +67,7 @@ export function GalleryCardBanner() {
   const [cautionVisible, setCautionVisible] = React.useState(false);
   const [defaultVisible, setDefaultVisible] = React.useState(false);
   const [statusVisible, setStatusVisible] = React.useState(false);
+  const [statusDismissVisible, setStatusDismissVisible] = React.useState(false);
 
   return (
     <div className="cg-content" data-testid="gallery-card-banner">
@@ -235,6 +237,48 @@ export function GalleryCardBanner() {
             label="Reconnecting"
             message="attempting to restore the session..."
             icon="refresh-cw"
+          />
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 5. Status variant — soft Dismiss footer ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Status — Dismissible</TugLabel>
+        <div style={labelStyle}>
+          variant="status" + footer — a non-blocking notice with a
+          left-aligned Dismiss row below the strip (no focus trap, no
+          backdrop). Used by the forward-compat unknown-event banner.
+        </div>
+        <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+          <TugPushButton
+            size="sm"
+            emphasis="outlined"
+            onClick={() => setStatusDismissVisible((v) => !v)}
+          >
+            {statusDismissVisible ? "Hide Banner" : "Show Banner"}
+          </TugPushButton>
+        </div>
+        <div style={miniViewportShort}>
+          <MiniContent />
+          <TugPaneBanner
+            contained
+            visible={statusDismissVisible}
+            variant="status"
+            tone="caution"
+            icon="alert-triangle"
+            label="Unsupported event"
+            message={'This dev-card build doesn’t understand event "future_telemetry" yet. The session is unaffected.'}
+            footer={
+              <TugPushButton
+                size="sm"
+                emphasis="outlined"
+                onClick={() => setStatusDismissVisible(false)}
+              >
+                Dismiss
+              </TugPushButton>
+            }
           />
         </div>
       </div>

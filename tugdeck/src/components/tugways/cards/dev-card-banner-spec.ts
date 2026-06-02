@@ -88,16 +88,30 @@ export type DevCardBannerSpec =
       kind: "transport";
       state: "offline" | "restoring";
     }
-  | { kind: "replay-timeout" };
+  | { kind: "replay-timeout" }
+  | {
+      /**
+       * tugcode forwarded an `unknown_event` — claude streamed a top-level
+       * event type this build doesn't translate. The lowest-precedence,
+       * forward-compat soft warn; dismissible by `at` (a fresh unknown type
+       * re-raises). `originalType` names the untranslated event in the copy.
+       */
+      kind: "unknown-event";
+      originalType: string;
+      at: number;
+    };
 
 /**
  * UI-local context the helper needs in addition to the snapshot.
- * Today only `dismissedAt` (the `at` timestamp of the last-dismissed
- * error). Future fields stay in this object so the helper signature
- * doesn't churn each time we surface a new transient banner state.
+ * `dismissedAt` is the `at` of the last-dismissed error;
+ * `unknownDismissedAt` is the same for the unknown-event notice (tracked
+ * separately so dismissing one surface never suppresses the other). Future
+ * fields stay in this object so the helper signature doesn't churn each
+ * time we surface a new transient banner state.
  */
 export interface DevCardBannerCtx {
   dismissedAt: number | null;
+  unknownDismissedAt: number | null;
 }
 
 /**
@@ -108,6 +122,8 @@ export interface DevCardBannerCtx {
  * - transport wins when no error is showing and the wire is not online
  * - replay-timeout wins when the most-recent replay timed out and the
  *   dwell window is still active
+ * - unknown-event is the lowest-precedence surface: a forward-compat FYI
+ *   shown only when nothing more urgent is, and only until dismissed
  * - none otherwise
  *
  * The cold-restore loading window is NOT a banner — it is the
@@ -146,6 +162,16 @@ export function deriveDevCardBannerSpec(
   }
   if (snap.replayTimeoutDwellActive) {
     return { kind: "replay-timeout" };
+  }
+  if (
+    snap.unknownEvent !== null &&
+    snap.unknownEvent.at !== ctx.unknownDismissedAt
+  ) {
+    return {
+      kind: "unknown-event",
+      originalType: snap.unknownEvent.originalType,
+      at: snap.unknownEvent.at,
+    };
   }
   return { kind: "none" };
 }

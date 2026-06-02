@@ -481,6 +481,20 @@ export interface CompactBoundaryEvent {
 }
 
 /**
+ * `unknown_event` — tugcode's forward-compat catch-all: claude streamed a
+ * top-level event type this build doesn't translate. Display-only, like
+ * {@link ApiRetryEvent}: the reducer folds it into `unknownEvent` (no
+ * phase change) so the card can surface a soft warn banner. The wire
+ * fields are snake_case (`original_type`, `payload_hex_preview`),
+ * normalized to camelCase here.
+ */
+export interface UnknownEventEvent {
+  type: "unknown_event";
+  originalType: string;
+  payloadHexPreview: string;
+}
+
+/**
  * `error` — a wire-level error frame distinct from SESSION_STATE
  * errored and from transport close. Listed in the outbound event table
  * (design doc) but never captured in v2.1.105 fixtures, so tests
@@ -913,6 +927,7 @@ export type CodeSessionEvent =
   | ContextBreakdownEvent
   | ApiRetryEvent
   | CompactBoundaryEvent
+  | UnknownEventEvent
   | WireErrorEvent
   | SessionStateErroredEvent
   | SessionUnknownEvent

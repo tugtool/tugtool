@@ -236,6 +236,22 @@ body {
   min-width: 5rem;
 }
 
+/* ---- Status-variant footer — soft Dismiss row below the strip ---- */
+
+/* The status variant has no backdrop below the strip (pointer-events pass
+   through to the card body), so a footer row gets its own neutral overlay
+   surface to stay legible. Left-aligned for a low-key, non-blocking notice
+   (e.g. the forward-compat unknown-event banner). [L16] surface declared. */
+.tug-pane-banner-status-actions {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 20px;
+  box-sizing: border-box;
+  background-color: var(--tugx-pane-banner-detail-bg);
+}
+
 /* ---- Tone variants — override strip aliases per tone ---- */
 
 /* danger (default, already set on body) */

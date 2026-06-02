@@ -2026,6 +2026,7 @@ function RetryCountdown({ deadline }: { deadline: number }): React.ReactElement 
 function renderDevCardBanner(
   spec: ReturnType<typeof deriveDevCardBannerSpec>,
   setDismissedAt: (at: number) => void,
+  setUnknownDismissedAt: (at: number) => void,
 ): React.ReactElement {
   if (spec.kind === "api-retry") {
     // Claude's SDK is backing off and retrying; we only mirror it.
@@ -2115,6 +2116,31 @@ function renderDevCardBanner(
         icon="alert-triangle"
         label="Session history unavailable"
         message="Resuming with empty transcript"
+      />
+    );
+  }
+  if (spec.kind === "unknown-event") {
+    // Forward-compat soft warn: a newer claude streamed an event type this
+    // build doesn't understand. Low-key (caution tone), and dismissible —
+    // it's an FYI, not a failure. The session keeps working; we just
+    // couldn't render this one event.
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="status"
+        tone="caution"
+        minMountedMs={0}
+        icon="alert-triangle"
+        label="Unsupported event"
+        message={`This dev-card build doesn't understand event "${spec.originalType}" yet. The session is unaffected.`}
+        footer={
+          <TugPushButton
+            emphasis="outlined"
+            onClick={() => setUnknownDismissedAt(spec.at)}
+          >
+            Dismiss
+          </TugPushButton>
+        }
       />
     );
   }
@@ -2214,7 +2240,11 @@ export function DevCardBody({
   // `useDevCardObserver` is about to clear the binding and route that
   // cause through the picker.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const bannerSpec = deriveDevCardBannerSpec(codeSnap, { dismissedAt });
+  const [unknownDismissedAt, setUnknownDismissedAt] = useState<number | null>(null);
+  const bannerSpec = deriveDevCardBannerSpec(codeSnap, {
+    dismissedAt,
+    unknownDismissedAt,
+  });
 
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
@@ -3516,7 +3546,7 @@ export function DevCardBody({
         false`; the component runs its exit animation and then
         unmounts via its internal `mounted` state.
       */}
-      {renderDevCardBanner(bannerSpec, setDismissedAt)}
+      {renderDevCardBanner(bannerSpec, setDismissedAt, setUnknownDismissedAt)}
       </div>
     </CardContentResponderScope>
   );

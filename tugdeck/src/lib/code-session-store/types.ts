@@ -449,6 +449,22 @@ export interface ApiRetryState {
 }
 
 /**
+ * The most recent `unknown_event` tugcode forwarded — claude streamed a
+ * top-level event type this build doesn't translate. Drives a soft warn
+ * banner so a forward-incompatible stream is visible rather than silently
+ * dropped. `at` is the reducer-stamped `Date.now()` of receipt, keyed by
+ * the banner's Dismiss so a click suppresses this exact notice while a
+ * fresh unknown type (new `at`) re-raises. `originalType` is the raw type
+ * claude sent; `payloadHexPreview` is tugcode's bounded hex peek at the
+ * payload, surfaced for operator diagnosis.
+ */
+export interface UnknownEventState {
+  originalType: string;
+  payloadHexPreview: string;
+  at: number;
+}
+
+/**
  * The four-token `usage` shape carried by a `streaming_usage` /
  * `cost_update` frame, decoded to camelCase. Mirrors {@link TurnCost}
  * minus the dollar cost — dollars are cumulative-per-session and only
@@ -752,6 +768,12 @@ export interface CodeSessionSnapshot {
    * The dev-card banner derives its tone + countdown from this.
    */
   apiRetry: ApiRetryState | null;
+  /**
+   * The most recent forward-incompatible `unknown_event`, or `null` when
+   * none has arrived. Drives the lowest-precedence soft warn banner;
+   * dismissed by `at`, so a fresh unknown type re-raises.
+   */
+  unknownEvent: UnknownEventState | null;
   /**
    * Set once on a fresh session born from `/compact`: the transcript
    * renders a compaction divider header (`preTokens` labels it). `null`

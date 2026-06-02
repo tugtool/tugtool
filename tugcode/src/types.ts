@@ -515,6 +515,24 @@ export interface CompactBoundary {
 }
 
 /**
+ * Forward-compat catch-all. Emitted by `routeTopLevelEvent`'s default
+ * branch when claude streams a top-level event type this tugcode build
+ * doesn't translate, instead of silently dropping it. The frame carries
+ * the raw `original_type` and a short hex preview of the payload so the
+ * frontend can surface a soft warn banner without tugcode having to model
+ * the unknown shape. The default-branch console log stays alongside for
+ * operator visibility.
+ */
+export interface UnknownEvent {
+  type: "unknown_event";
+  /** The raw `type` claude sent that no case handled (`"unknown"` if absent). */
+  original_type: string;
+  /** First 64 bytes of the JSON-serialized payload, hex-encoded. */
+  payload_hex_preview: string;
+  ipc_version: number;
+}
+
+/**
  * Category identities the `context_breakdown` wire frame carries —
  * the *static* half of the `/context`-style breakdown.
  *
@@ -1028,7 +1046,8 @@ export type OutboundMessage =
   | RewindResult
   | SkillsInventory
   | HooksInventory
-  | PromptAnchor;
+  | PromptAnchor
+  | UnknownEvent;
 
 // Type guards. `isInboundMessage` is the shared, verb-list-derived guard
 // (re-exported at the top of this file from `@tugproto/inbound`); the per-type

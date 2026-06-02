@@ -36,6 +36,7 @@ import type {
   AddUserMessageEvent,
   ApiRetryEvent,
   CompactBoundaryEvent,
+  UnknownEventEvent,
   MarkCompactionSeedActionEvent,
   AssistantTextEvent,
   AttachmentRejectedEvent,
@@ -72,6 +73,7 @@ import type {
 import type {
   ActiveTurnSnapshot,
   ApiRetryState,
+  UnknownEventState,
   AssistantText,
   AssistantThinking,
   CardSessionMode,
@@ -417,6 +419,13 @@ export interface CodeSessionState {
    */
   apiRetry: ApiRetryState | null;
   /**
+   * The most recent forward-incompatible `unknown_event` tugcode
+   * forwarded, or `null`. Set by `handleUnknownEvent`; not cleared at the
+   * turn boundary (a forward-compat notice outlives a turn — the user
+   * dismisses it, or a fresh unknown type with a new `at` overwrites it).
+   */
+  unknownEvent: UnknownEventState | null;
+  /**
    * Set once on a fresh session born from `/compact` (via
    * `mark_compaction_seed`): the transcript renders a compaction divider
    * header, and `preTokens` labels it with the pre-compaction context
@@ -717,6 +726,7 @@ export function createInitialState(
     lastError: null,
     lastCost: null,
     apiRetry: null,
+    unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],
     liveTurnUsage: null,
@@ -2910,6 +2920,26 @@ function handleApiRetry(
 }
 
 /**
+ * `unknown_event` reducer handler — display-only, like {@link
+ * handleApiRetry}. Records tugcode's forward-compat catch-all on
+ * `unknownEvent` (stamping `at` for Dismiss keying) with no phase change;
+ * a later unknown type overwrites it. Not cleared at the turn boundary —
+ * the notice is a forward-compat signal the user acknowledges, not
+ * per-turn telemetry.
+ */
+function handleUnknownEvent(
+  state: CodeSessionState,
+  event: UnknownEventEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const unknownEvent: UnknownEventState = {
+    originalType: event.originalType,
+    payloadHexPreview: event.payloadHexPreview,
+    at: Date.now(),
+  };
+  return { state: { ...state, unknownEvent }, effects: [] };
+}
+
+/**
  * `mark_compaction_seed` — flag a fresh `/compact`-born session so the
  * transcript renders a compaction divider header. Set once; never
  * cleared (session-lived).
@@ -4055,6 +4085,8 @@ export function reduce(
       return handleApiRetry(state, event);
     case "compact_boundary":
       return handleCompactBoundary(state, event);
+    case "unknown_event":
+      return handleUnknownEvent(state, event);
     case "streaming_usage":
       return handleStreamingUsage(state, event);
     case "context_breakdown":

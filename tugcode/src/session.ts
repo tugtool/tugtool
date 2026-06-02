@@ -817,6 +817,29 @@ export interface TopLevelRoutingResult {
 }
 
 /**
+ * Hex-encode the first `maxBytes` bytes of an event's JSON serialization,
+ * for the `unknown_event` frame's `payload_hex_preview`. A short, bounded
+ * peek at an untranslated payload — enough for an operator to recognize
+ * the shape without forwarding (and bloating the wire with) the whole
+ * thing. Serialization failures (e.g. a cyclic payload) yield an empty
+ * preview rather than throwing. Pure; exported for unit testing.
+ */
+export function payloadHexPreview(payload: unknown, maxBytes = 64): string {
+  let json: string;
+  try {
+    json = JSON.stringify(payload) ?? "";
+  } catch {
+    json = "";
+  }
+  const bytes = new TextEncoder().encode(json).subarray(0, maxBytes);
+  let hex = "";
+  for (const b of bytes) {
+    hex += b.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+/**
  * Route a single top-level stdout message to IPC outbound messages.
  * Handles all 8+ top-level message types per D03.
  * Exported for unit testing.
@@ -1329,7 +1352,18 @@ export function routeTopLevelEvent(
     }
 
     default: {
-      console.log(`Unhandled top-level event type=${eventType ?? "unknown"}`);
+      const originalType = eventType ?? "unknown";
+      // Forward-compat: keep the operator-visible log AND emit an
+      // `unknown_event` IPC frame instead of silently dropping, so a
+      // newer claude that streams an event type this build doesn't
+      // translate still surfaces a soft warn banner downstream.
+      console.log(`Unhandled top-level event type=${originalType}`);
+      messages.push({
+        type: "unknown_event",
+        original_type: originalType,
+        payload_hex_preview: payloadHexPreview(event),
+        ipc_version: 2,
+      });
       break;
     }
   }

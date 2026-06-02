@@ -144,6 +144,10 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // Claude compacted its context (auto-compaction at capacity). The
   // reducer appends a compaction `system_note` to the active turn.
   "compact_boundary",
+  // tugcode's forward-compat catch-all: claude streamed a top-level event
+  // type this build doesn't translate. The reducer folds it into
+  // `unknownEvent`, driving a soft warn banner; no phase change.
+  "unknown_event",
   // Live intra-turn token usage — high-frequency telemetry frame the
   // reducer folds into `liveTurnUsage`; no phase change, no persist.
   "streaming_usage",
@@ -496,6 +500,11 @@ export class CodeSessionStore {
       // at turn boundaries, so the reference is `Object.is`-stable across
       // quiescent rebuilds ([L02]).
       apiRetry: this.state.apiRetry,
+      // Most recent forward-incompatible `unknown_event` (or null). The
+      // reducer assigns a fresh object only on an `unknown_event` frame,
+      // so the reference is `Object.is`-stable across quiescent rebuilds
+      // ([L02]).
+      unknownEvent: this.state.unknownEvent,
       // Set once on a `/compact`-born session (drives the divider header);
       // session-lived, so the reference is trivially stable ([L02]).
       compactionSeed: this.state.compactionSeed,
@@ -1136,6 +1145,20 @@ export class CodeSessionStore {
           ...(typeof ev.pre_tokens === "number"
             ? { preTokens: ev.pre_tokens }
             : {}),
+        } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "unknown_event") {
+        // Normalize tugcode's snake_case forward-compat frame to the
+        // reducer event's camelCase. The reducer stamps `at` itself
+        // (time-free wire, like the error path).
+        return {
+          type: "unknown_event",
+          originalType:
+            typeof ev.original_type === "string" ? ev.original_type : "unknown",
+          payloadHexPreview:
+            typeof ev.payload_hex_preview === "string"
+              ? ev.payload_hex_preview
+              : "",
         } as unknown as CodeSessionEvent;
       }
       return ev as unknown as CodeSessionEvent;

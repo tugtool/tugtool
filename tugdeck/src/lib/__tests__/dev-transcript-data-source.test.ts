@@ -102,6 +102,7 @@ function snapshotWith(args: {
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,
+    unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],
     liveTurnUsage: null,

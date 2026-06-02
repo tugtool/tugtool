@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { ActiveTurn, SessionManager, buildClaudeArgs, buildContentBlocksFromLegacyJournal, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
+import { ActiveTurn, SessionManager, buildClaudeArgs, buildContentBlocksFromLegacyJournal, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent, payloadHexPreview } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 import type { ContentBlock, ContentBlockText, StreamingUsage } from "../types.ts";
 
@@ -338,6 +338,33 @@ describe("stdin message format", () => {
 
 const baseCtx: EventMappingContext = { msgId: "msg-1", seq: 0, rev: 0 };
 
+describe("payloadHexPreview", () => {
+  test("encodes a short payload in full", () => {
+    const hex = payloadHexPreview({ a: 1 });
+    expect(Buffer.from(hex, "hex").toString("utf8")).toBe('{"a":1}');
+  });
+
+  test("truncates to the first 64 bytes", () => {
+    const big = { blob: "x".repeat(500) };
+    const hex = payloadHexPreview(big);
+    // 64 bytes → 128 hex chars, no matter how large the payload.
+    expect(hex).toHaveLength(128);
+    const json = JSON.stringify(big);
+    const expected = Buffer.from(json, "utf8").subarray(0, 64).toString("hex");
+    expect(hex).toBe(expected);
+  });
+
+  test("honors a custom byte budget", () => {
+    expect(payloadHexPreview({ a: 1 }, 3)).toHaveLength(6);
+  });
+
+  test("yields an empty preview for an unserializable payload", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(payloadHexPreview(cyclic)).toBe("");
+  });
+});
+
 describe("routeTopLevelEvent", () => {
   test("system/init captures session_id and metadata", () => {
     const event = {
@@ -380,6 +407,29 @@ describe("routeTopLevelEvent", () => {
     expect(marker.type).toBe("compact_boundary");
     expect(marker.trigger).toBe("auto");
     expect(marker.pre_tokens).toBe(48000);
+  });
+
+  test("unrecognized top-level type emits an unknown_event frame", () => {
+    const event = { type: "future_telemetry", payload: { foo: 1 } };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(1);
+    const frame = result.messages[0] as any;
+    expect(frame.type).toBe("unknown_event");
+    expect(frame.original_type).toBe("future_telemetry");
+    expect(frame.ipc_version).toBe(2);
+    // The preview is the JSON payload, hex-encoded — decodes back to the
+    // serialized event (short enough to fit in 64 bytes here).
+    const decoded = Buffer.from(frame.payload_hex_preview, "hex").toString("utf8");
+    expect(decoded).toBe(JSON.stringify(event));
+    expect(result.gotResult).toBe(false);
+  });
+
+  test("event with no type falls into unknown_event with original_type 'unknown'", () => {
+    const event = { payload: "no type field" } as Record<string, unknown>;
+    const result = routeTopLevelEvent(event, baseCtx);
+    const frame = result.messages[0] as any;
+    expect(frame.type).toBe("unknown_event");
+    expect(frame.original_type).toBe("unknown");
   });
 
   test("assistant text content no longer emits assistant_text (delivered via streaming)", () => {

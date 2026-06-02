@@ -47,6 +47,7 @@ function baseSnap(
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,
+    unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],
     liveTurnUsage: null,
@@ -69,7 +70,7 @@ function baseSnap(
 
 describe("deriveDevCardBannerSpec — precedence chain", () => {
   it("returns kind=none when nothing of interest is true", () => {
-    const spec = deriveDevCardBannerSpec(baseSnap(), { dismissedAt: null });
+    const spec = deriveDevCardBannerSpec(baseSnap(), { dismissedAt: null, unknownDismissedAt: null });
     expect(spec).toEqual({ kind: "none" } satisfies DevCardBannerSpec);
   });
 
@@ -83,7 +84,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
           at,
         },
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "error",
@@ -104,7 +105,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
         },
         transportState: "offline",
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("error");
   });
@@ -120,7 +121,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
         },
         transportState: "offline",
       }),
-      { dismissedAt: at },
+      { dismissedAt: at, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "transport", state: "offline" });
   });
@@ -135,7 +136,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
           at,
         },
       }),
-      { dismissedAt: at },
+      { dismissedAt: at, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "none" });
   });
@@ -151,7 +152,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
           at: newAt,
         },
       }),
-      { dismissedAt },
+      { dismissedAt, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("error");
     if (spec.kind === "error") {
@@ -176,7 +177,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
           at,
         },
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "error",
@@ -195,7 +196,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
           at: 1_700_000_000_000,
         },
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("none");
   });
@@ -203,7 +204,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
   it("transport offline surfaces the transport spec when no error is set", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ transportState: "offline" }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "transport", state: "offline" });
   });
@@ -211,7 +212,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
   it("transport restoring surfaces the transport spec when no error is set", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ transportState: "restoring" }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "transport", state: "restoring" });
   });
@@ -219,7 +220,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
   it("replay-timeout surfaces while the dwell window is active", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ replayTimeoutDwellActive: true }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "replay-timeout" });
   });
@@ -231,7 +232,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
         replayTimeoutDwellActive: true,
         lastError: { cause: "wire_error", message: "boom", at },
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("error");
   });
@@ -239,7 +240,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
   it("transport outranks an active replay-timeout dwell", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ replayTimeoutDwellActive: true, transportState: "offline" }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "transport", state: "offline" });
   });
@@ -257,7 +258,7 @@ describe("deriveDevCardBannerSpec — api-retry", () => {
   it("surfaces a classified api-retry spec when apiRetry is set", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ apiRetry: retry }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "api-retry",
@@ -274,7 +275,7 @@ describe("deriveDevCardBannerSpec — api-retry", () => {
       baseSnap({
         apiRetry: { ...retry, error: "authentication_failed", errorStatus: 401 },
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("api-retry");
     if (spec.kind === "api-retry") {
@@ -290,7 +291,7 @@ describe("deriveDevCardBannerSpec — api-retry", () => {
         apiRetry: retry,
         lastError: { cause: "wire_error", message: "boom", at },
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("error");
   });
@@ -302,7 +303,7 @@ describe("deriveDevCardBannerSpec — api-retry", () => {
         transportState: "offline",
         replayTimeoutDwellActive: true,
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("api-retry");
   });
@@ -314,9 +315,76 @@ describe("deriveDevCardBannerSpec — api-retry", () => {
         apiRetry: retry,
         lastError: { cause: "wire_error", message: "boom", at },
       }),
-      { dismissedAt: at },
+      { dismissedAt: at, unknownDismissedAt: null },
     );
     expect(spec.kind).toBe("api-retry");
+  });
+});
+
+describe("deriveDevCardBannerSpec — unknown-event", () => {
+  const unknown = {
+    originalType: "future_telemetry",
+    payloadHexPreview: "7b7d",
+    at: 1_700_000_005_000,
+  };
+
+  it("surfaces the unknown-event spec when nothing else is showing", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({ unknownEvent: unknown }),
+      { dismissedAt: null, unknownDismissedAt: null },
+    );
+    expect(spec).toEqual({
+      kind: "unknown-event",
+      originalType: "future_telemetry",
+      at: 1_700_000_005_000,
+    } satisfies DevCardBannerSpec);
+  });
+
+  it("is the lowest precedence — a transport blip outranks it", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({ unknownEvent: unknown, transportState: "offline" }),
+      { dismissedAt: null, unknownDismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "transport", state: "offline" });
+  });
+
+  it("a replay-timeout dwell outranks it", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({ unknownEvent: unknown, replayTimeoutDwellActive: true }),
+      { dismissedAt: null, unknownDismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "replay-timeout" });
+  });
+
+  it("dismissing by at falls through to kind=none", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({ unknownEvent: unknown }),
+      { dismissedAt: null, unknownDismissedAt: unknown.at },
+    );
+    expect(spec).toEqual({ kind: "none" });
+  });
+
+  it("a fresh unknown type (different at) re-raises after a dismiss", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({
+        unknownEvent: { ...unknown, originalType: "newer_thing", at: unknown.at + 1000 },
+      }),
+      { dismissedAt: null, unknownDismissedAt: unknown.at },
+    );
+    expect(spec.kind).toBe("unknown-event");
+    if (spec.kind === "unknown-event") {
+      expect(spec.originalType).toBe("newer_thing");
+    }
+  });
+
+  it("the unknown-event dismiss is independent of the error dismiss", () => {
+    // Dismissing an error (shared-looking ctx) must not suppress a
+    // later unknown-event notice — the two timestamps are tracked apart.
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({ unknownEvent: unknown }),
+      { dismissedAt: unknown.at, unknownDismissedAt: null },
+    );
+    expect(spec.kind).toBe("unknown-event");
   });
 });
 
@@ -334,7 +402,7 @@ describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
   it("replayPreflightActive alone produces no banner", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ replayPreflightActive: true }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "none" });
   });
@@ -342,7 +410,7 @@ describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
   it("phase=replaying in resume mode produces no banner", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ phase: "replaying", sessionMode: "resume" }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "none" });
   });
@@ -350,7 +418,7 @@ describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
   it("phase=replaying in new mode produces no banner", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ phase: "replaying", sessionMode: "new" }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "none" });
   });
@@ -367,7 +435,7 @@ describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
         replayPreflightActive: true,
         lastError: { cause: "session_state_errored", message: "boom", at },
       }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "error",
@@ -380,7 +448,7 @@ describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
   it("preflight no longer masks a transport blip — the transport banner surfaces", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({ replayPreflightActive: true, transportState: "offline" }),
-      { dismissedAt: null },
+      { dismissedAt: null, unknownDismissedAt: null },
     );
     expect(spec).toEqual({ kind: "transport", state: "offline" });
   });
