@@ -459,7 +459,8 @@ useKeybindings([
 |------|---------|
 | `tugdeck/src/components/tugways/focus-manager.ts` | `FocusManager`: key view, focusable registry, focus-mode stack, default-action resolution |
 | `tugdeck/src/components/tugways/use-focusable.tsx` | `useFocusable` hook (sibling to `useResponder`) |
-| `tugdeck/src/components/tugways/__tests__/focus-walk.test.ts` | pure-logic bun:test for walk ordering / mode trapping / policy filtering |
+| `tugdeck/src/components/tugways/use-focus-trap.tsx` | `useFocusTrap` hook: push/pop a trapped focus mode for a floating surface + `FocusModeScope` provider ([#step-4]) |
+| `tugdeck/src/components/tugways/__tests__/focus-walk.test.ts` | pure-logic bun:test for walk ordering / mode trapping / policy filtering / key-view capture-restore |
 | `tugdeck/styles/focus-ring.css` (or token block in theme files) | `--tugx-focus-ring` primitive + Tier-1/Tier-2 selectors |
 | `tugdeck/src/components/tugways/use-keybindings.tsx` | `useKeybindings` hook + dynamic, context-scoped keybinding registration |
 
@@ -518,7 +519,7 @@ useKeybindings([
 | #step-1 | FocusManager core + registry + useFocusable (inert) | done | ce7d8256 |
 | #step-2 | Keyboard-access mode state + persistence | done | 80da10a4 |
 | #step-3 | Tab pipeline: focus-next/previous + editor precedence | done | 188a976e |
-| #step-4 | Floating-surface focus traps (CFRunLoop modes) | pending | — |
+| #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | (uncommitted) |
 | #step-5 | Dynamic context-scoped keybinding registry | pending | — |
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | pending | — |
 | #step-7 | Recolor UI-selection → accent/orange | pending | — |
@@ -619,17 +620,17 @@ useKeybindings([
 **References:** [P03] CFRunLoop traps, (#cfrunloop-model), Risk R01
 
 **Artifacts:**
-- `pushFocusMode`/`popFocusMode` wired into floating-surface open/close; Tab cycles within; key-view restore on dismiss.
+- `pushFocusMode`/`popFocusMode` capture/restore the key view; `FocusModeContext` + mode-aware `useFocusable`; `useFocusTrap` hook; `data-focus-mode` DOM projection; wired into `TugSheet`.
 
 **Tasks:**
-- [ ] Push a trapped mode on open (menu, completion, popover, sheet, alert); pop on close; restore prior key view.
-- [ ] Tab/Shift-Tab wrap within the active mode.
+- [x] Push a trapped mode on open; pop on close; restore prior key view. Wired into `TugSheet` (covers `TugAlertSheet`, which composes it). The popup-class surfaces (`TugPopover`, `TugContextMenu`, `internal/tug-popup-menu`) and the Radix `TugAlert` push/pop land in their taming steps [#step-17]–[#step-21], which replace Radix `FocusScope` with `useFocusTrap` — wiring them here, alongside the still-active `FocusScope`, would be churn those steps rework. The completion popup uses the key-consume model ([#step-3] `data-tug-tab-consume`), not a mode trap.
+- [x] Tab/Shift-Tab wrap within the active mode — the trapped walk + wrap is the mechanism, pinned in `focus-walk.test.ts`. Becomes app-observable per surface as its contents register as focusables (taming); `useFocusable` now registers into the surrounding `FocusModeContext`.
 
 **Tests:**
-- [ ] app-test: open a menu, Tab past the last item → wraps to first; Escape/dismiss → key view restored to opener.
+- [x] app-test (`at0106`): opening the permission sheet (a `TugSheet`) pushes `data-focus-mode`; Escape pops it and restores the key view to the card. Pure-logic `focus-walk.test.ts` pins capture/restore, nested LIFO restore, buried-pop no-op, and `focusFirstInMode`. The menu-specific "Tab past last → wraps" assertion lands with menu taming, when items become focusables in the pushed mode.
 
 **Checkpoint:**
-- [ ] `just app-test` trap scenario `VERDICT: PASS`.
+- [x] `just app-test at0106-sheet-focus-trap` `VERDICT: PASS`; `tsc` clean; `bun test` green; sheet/completion regression suite (at0100/at0103/at0104/at0105) green.
 
 #### Step 5: Dynamic context-scoped keybinding registry {#step-5}
 

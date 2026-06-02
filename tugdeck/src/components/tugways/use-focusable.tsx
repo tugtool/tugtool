@@ -23,7 +23,7 @@
  */
 
 import React, { useCallback, useContext, useLayoutEffect, useRef } from "react";
-import { FocusManagerContext } from "./focus-manager";
+import { FocusManagerContext, FocusModeContext } from "./focus-manager";
 import type { FocusPolicy } from "./focus-manager";
 
 // ---- Options / result ----
@@ -63,6 +63,11 @@ export interface UseFocusableResult {
  */
 export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   const manager = useContext(FocusManagerContext);
+  // The focus mode this focusable belongs to: the surrounding surface's pushed
+  // mode (via `useFocusTrap` → `FocusModeContext`), or the base mode in the app
+  // shell. A trapped surface's contents thus join its mode and the Tab walk
+  // cycles within them ([#cfrunloop-model]).
+  const focusMode = useContext(FocusModeContext);
 
   // Latest options, read by the live `consumesTab` proxy without
   // re-registering. Same shape as `useOptionalResponder`'s `optionsRef`.
@@ -85,12 +90,13 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
       group,
       order,
       policy,
+      modes: [focusMode],
       consumesTab: () => optionsRef.current.consumesTab?.() ?? false,
     });
     return () => {
       manager.unregisterFocusable(id);
     };
-  }, [manager, id, group, order, policy]);
+  }, [manager, id, group, order, policy, focusMode]);
 
   // Stable ref callback that writes `data-tug-focusable` only when a manager
   // is in scope. Mirrors `useOptionalResponder`'s `responderRef`: the DOM

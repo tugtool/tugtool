@@ -47,6 +47,16 @@ import type { ResponderChainManager } from "./responder-chain";
 export const BASE_FOCUS_MODE = "base";
 
 /**
+ * DOM projection of the current (top) focus mode, stamped on the document root.
+ * Absent when the base mode is current; set to the active trap's scope id while
+ * a floating surface's mode is pushed. The appearance/structure projection of
+ * the mode stack ([L24]) — useful for CSS that scopes to "a modal trap is
+ * active", for devtools, and for app-tests. Mirrors `data-key-view` /
+ * `data-keyboard-access`.
+ */
+export const FOCUS_MODE_ATTRIBUTE = "data-focus-mode";
+
+/**
  * DOM marker a focused text surface sets on (or within) itself to advertise
  * "I own Tab right now" -- e.g. a text editor with an open completion popup,
  * which accepts the completion on Tab instead of yielding to the focus walk.
@@ -70,6 +80,15 @@ export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
 export interface FocusMode {
   scopeId: string;
   trapped: boolean;
+}
+
+/**
+ * Internal mode-stack entry. Adds `restoreKeyView`: the key view that was
+ * current when this mode was pushed, restored when it is popped — the
+ * CFRunLoop "pop restores the prior key view" semantic ([#cfrunloop-model]).
+ */
+interface FocusModeEntry extends FocusMode {
+  restoreKeyView: string | null;
 }
 
 // ---- Focusables ----
@@ -143,7 +162,7 @@ export interface FocusableRecord {
 
 export class FocusManager {
   private focusables: Map<string, FocusableRecord> = new Map();
-  private modeStack: FocusMode[] = [];
+  private modeStack: FocusModeEntry[] = [];
   private groupOrder: string[] = [];
   private defaultActions: Map<string, TugAction> = new Map();
   private keyViewId: string | null = null;
@@ -315,29 +334,63 @@ export class FocusManager {
 
   /**
    * Push a focus mode. The pushed mode becomes current; the Tab walk services
-   * only its focusables (when `trapped`). Pushing a `scopeId` already on the
-   * stack moves it to the top.
+   * only its focusables (when `trapped`). Captures the current key view so it
+   * can be restored on pop ([#cfrunloop-model]). Pushing a `scopeId` already on
+   * the stack moves it to the top (re-capturing the key view at that point).
    */
   pushFocusMode(scopeId: string, opts: { trapped: boolean }): void {
     const existing = this.modeStack.findIndex((m) => m.scopeId === scopeId);
     if (existing !== -1) {
       this.modeStack.splice(existing, 1);
     }
-    this.modeStack.push({ scopeId, trapped: opts.trapped });
+    this.modeStack.push({
+      scopeId,
+      trapped: opts.trapped,
+      restoreKeyView: this.keyViewId,
+    });
+    this.syncFocusModeDomAttribute();
     this.touch();
   }
 
   /**
-   * Pop the named focus mode off the stack. No-op if it is not present.
-   * `pushFocusMode` keeps scope ids unique on the stack, so a single index
-   * search is sufficient.
+   * Pop the named focus mode off the stack and restore the key view that was
+   * current when it was pushed. No-op if it is not present. `pushFocusMode`
+   * keeps scope ids unique on the stack, so a single index search is
+   * sufficient.
+   *
+   * Restore fires only when popping the **top** mode (the common dismiss case);
+   * popping a buried mode leaves the key view alone, since a mode still above
+   * it owns the current scope.
    */
   popFocusMode(scopeId: string): void {
     const at = this.modeStack.findIndex((m) => m.scopeId === scopeId);
-    if (at !== -1) {
-      this.modeStack.splice(at, 1);
+    if (at === -1) return;
+    const wasTop = at === this.modeStack.length - 1;
+    const [entry] = this.modeStack.splice(at, 1);
+    this.syncFocusModeDomAttribute();
+    if (wasTop) {
+      // Restore the prior key view. A no-op when unchanged; harmless when the
+      // captured target has since unmounted (the chain's first-responder
+      // seeding will re-resolve the key view on the next chain change).
+      this.setKeyView(entry.restoreKeyView);
+    } else {
       this.touch();
     }
+  }
+
+  /**
+   * Move the key view to the first focusable in the current mode (authored
+   * order) and return its id, or `null` if the mode has no focusables. The
+   * engine's "set initial focus when a surface opens" primitive — a floating
+   * surface calls this after pushing its mode so keyboard entry lands inside
+   * the trap. Does not move DOM focus; pair with `focusKeyView` for that.
+   */
+  focusFirstInMode(): string | null {
+    const order = this.walkOrder();
+    if (order.length === 0) return null;
+    const id = order[0].id;
+    this.setKeyView(id);
+    return id;
   }
 
   /** The current (top) focus mode id, or `BASE_FOCUS_MODE` when none pushed. */
@@ -494,6 +547,21 @@ export class FocusManager {
     );
     el?.setAttribute("data-key-view", id);
   }
+
+  /**
+   * Project the current (top) focus mode onto the document root: set
+   * `data-focus-mode="<scopeId>"` while a trap is current, remove it at base.
+   * Guarded for DOM-free environments. Mirrors `syncKeyViewDomAttribute`.
+   */
+  private syncFocusModeDomAttribute(): void {
+    if (typeof document === "undefined") return;
+    const mode = this.currentFocusMode();
+    if (mode === BASE_FOCUS_MODE) {
+      document.documentElement.removeAttribute(FOCUS_MODE_ATTRIBUTE);
+    } else {
+      document.documentElement.setAttribute(FOCUS_MODE_ATTRIBUTE, mode);
+    }
+  }
 }
 
 // ---- React context ----
@@ -505,3 +573,13 @@ export class FocusManager {
  * circular dependency -- the same arrangement as `ResponderChainContext`.
  */
 export const FocusManagerContext = createContext<FocusManager | null>(null);
+
+/**
+ * React context carrying the focus-mode scope id that `useFocusable` callers in
+ * the subtree register into. Default `BASE_FOCUS_MODE` (the app shell). A
+ * floating surface that pushes a trap provides its scope id here (via
+ * `useFocusTrap`), so its focusable contents join the trap's mode and the Tab
+ * walk cycles within them — the "a surface's contents register into the mode it
+ * pushes" half of [#cfrunloop-model].
+ */
+export const FocusModeContext = createContext<string>(BASE_FOCUS_MODE);

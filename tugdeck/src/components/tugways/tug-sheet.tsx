@@ -88,6 +88,7 @@ import { group } from "@/components/tugways/tug-animator";
 import { useTugPaneScrim } from "@/components/tugways/use-tug-pane-scrim";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
+import { useFocusTrap } from "./use-focus-trap";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import {
@@ -562,6 +563,14 @@ export function TugSheetContent({
     [responderRef],
   );
 
+  // Engine focus trap ([P03]/[#cfrunloop-model]): push a trapped focus mode
+  // while the sheet is open so the Tab walk is scoped to the sheet and the key
+  // view is restored to the opener on dismiss. Additive to the Radix
+  // `FocusScope` below, which traps DOM focus today; the sheet-taming step
+  // removes Radix and leaves this the sole trap. The sheet body is wrapped in
+  // `FocusModeScope` so any focusable inside it joins this mode.
+  const { FocusModeScope } = useFocusTrap({ active: open });
+
   // Presence: keep the portal mounted during the exit animation.
   // `mounted` becomes true when open goes true, and false only after the exit animation completes.
   const [mounted, setMounted] = useState(false);
@@ -972,8 +981,11 @@ export function TugSheetContent({
                 <p id={descriptionId} className="tug-sheet-description">{description}</p>
               )}
 
-              {/* Sheet body: arbitrary content */}
-              <div className="tug-sheet-body">{children}</div>
+              {/* Sheet body: arbitrary content. Wrapped in the trap's focus
+                  mode so focusables inside join this sheet's mode. */}
+              <div className="tug-sheet-body">
+                <FocusModeScope>{children}</FocusModeScope>
+              </div>
             </ResponderScope>
 
             {/* Drag-resize handles (pane-style edge/corner strips). Absolutely

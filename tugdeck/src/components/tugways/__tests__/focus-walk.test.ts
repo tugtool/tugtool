@@ -144,6 +144,76 @@ describe("FocusManager focus modes", () => {
   });
 });
 
+describe("FocusManager key-view capture / restore on push / pop", () => {
+  test("popping the top mode restores the key view captured at push", () => {
+    const m = new FocusManager();
+    m.setKeyView("opener");
+    m.pushFocusMode("sheet", { trapped: true });
+    m.setKeyView("inside-sheet");
+    expect(m.keyView()).toBe("inside-sheet");
+    m.popFocusMode("sheet");
+    expect(m.keyView()).toBe("opener");
+  });
+
+  test("nested modes restore their own captured key view in LIFO order", () => {
+    const m = new FocusManager();
+    m.setKeyView("kv0");
+    m.pushFocusMode("a", { trapped: true });
+    m.setKeyView("kvA");
+    m.pushFocusMode("b", { trapped: true });
+    m.setKeyView("kvB");
+    m.popFocusMode("b");
+    expect(m.keyView()).toBe("kvA");
+    m.popFocusMode("a");
+    expect(m.keyView()).toBe("kv0");
+  });
+
+  test("popping a buried (non-top) mode leaves the key view alone", () => {
+    const m = new FocusManager();
+    m.setKeyView("kv0");
+    m.pushFocusMode("a", { trapped: true });
+    m.pushFocusMode("b", { trapped: true });
+    m.setKeyView("kvB");
+    // 'a' is buried under 'b'; popping it must not steal the key view from
+    // the still-current 'b'.
+    m.popFocusMode("a");
+    expect(m.keyView()).toBe("kvB");
+    expect(m.currentFocusMode()).toBe("b");
+  });
+
+  test("a null key view at push restores to null on pop", () => {
+    const m = new FocusManager();
+    expect(m.keyView()).toBeNull();
+    m.pushFocusMode("sheet", { trapped: true });
+    m.setKeyView("inside");
+    m.popFocusMode("sheet");
+    expect(m.keyView()).toBeNull();
+  });
+});
+
+describe("FocusManager focusFirstInMode", () => {
+  test("moves the key view to the first focusable in the current mode", () => {
+    const m = new FocusManager();
+    m.setGroupOrder(["g"]);
+    register(m, [
+      { id: "base1", group: "g", order: 0 },
+      { id: "sheet1", group: "g", order: 0, modes: ["sheet"] },
+      { id: "sheet2", group: "g", order: 1, modes: ["sheet"] },
+    ]);
+    m.pushFocusMode("sheet", { trapped: true });
+    expect(m.focusFirstInMode()).toBe("sheet1");
+    expect(m.keyView()).toBe("sheet1");
+  });
+
+  test("returns null and leaves the key view when the mode is empty", () => {
+    const m = new FocusManager();
+    m.setKeyView("x");
+    m.pushFocusMode("empty", { trapped: true });
+    expect(m.focusFirstInMode()).toBeNull();
+    expect(m.keyView()).toBe("x");
+  });
+});
+
 describe("FocusManager Tab walk + wrap", () => {
   test("focusNext advances and wraps past the last to the first", () => {
     const m = new FocusManager();
