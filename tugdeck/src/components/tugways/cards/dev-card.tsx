@@ -3022,7 +3022,7 @@ export function DevCardBody({
       compactionProgressStore.begin(cardId);
       void cardPickerSheet
         .showSheet({
-          title: "Compacting conversation",
+          title: "Compacting",
           content: (close) => (
             <CompactionProgressSheet close={close} onCancel={onCancel} />
           ),

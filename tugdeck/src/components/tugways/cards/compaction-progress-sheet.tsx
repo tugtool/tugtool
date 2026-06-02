@@ -36,7 +36,7 @@ import "./compaction-progress-sheet.css";
 
 /** Phase → the line shown above the bar while the run is in flight. */
 const PHASE_LABEL: Record<CompactionRunPhase, string> = {
-  summarizing: "Compacting",
+  summarizing: "Summarizing…",
   respawning: "Preparing session…",
 };
 
@@ -69,7 +69,6 @@ export function CompactionProgressSheet({
 
   const settled = progress.outcome !== null;
   const label = settled ? "Done" : PHASE_LABEL[progress.phase];
-  const percent = Math.round(progress.value * 100);
   // Cancel only during summarizing: once the fresh session is spawning
   // (respawning) there is nothing left to interrupt.
   const cancelable = !settled && progress.phase === "summarizing";
@@ -84,13 +83,11 @@ export function CompactionProgressSheet({
         value={progress.value}
         max={1}
         size={8}
+        showValue
         state={settled ? "completed" : "running"}
         className="compaction-progress-sheet-bar"
         aria-label="Compaction progress"
       />
-      <p className="compaction-progress-sheet-percent" aria-hidden="true">
-        {percent}%
-      </p>
       {cancelable ? (
         <div className="tug-sheet-actions">
           <TugPushButton onClick={onCancel} data-testid="compaction-cancel">

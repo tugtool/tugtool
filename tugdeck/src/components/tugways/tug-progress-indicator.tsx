@@ -140,6 +140,16 @@ export interface TugProgressIndicatorPhaseVisual {
   readonly state?: TugProgressIndicatorState;
 }
 
+/**
+ * Default {@link TugProgressIndicatorProps.formatValue} — a whole-number
+ * percentage of `max`, e.g. `0.42 → "42%"`. Exported so consumers can reuse
+ * the canonical format (and so it is unit-testable on its own).
+ */
+export function defaultProgressValueLabel(value: number, max: number): string {
+  const pct = max > 0 ? (value / max) * 100 : 0;
+  return `${Math.round(pct)}%`;
+}
+
 // ---------------------------------------------------------------------------
 // Role → token resolution
 // ---------------------------------------------------------------------------
@@ -259,6 +269,25 @@ export interface TugProgressIndicatorProps
   max?: number;
 
   /**
+   * Show the determinate value as a text readout alongside the glyph. Only
+   * meaningful when `value` is set (determinate); ignored otherwise. The
+   * readout sits at the trailing end of the row — for the `bar` variant the
+   * track flexes and the readout sits to its right (the canonical labeled-
+   * bar layout); for `ring` / `pie` it trails the glyph. Formatted by
+   * {@link formatValue}.
+   * @selector [data-slot="tug-progress-indicator"] .tug-progress-indicator-value
+   * @default false
+   */
+  showValue?: boolean;
+
+  /**
+   * Formatter for the {@link showValue} readout. Receives the current
+   * `value` and `max`; defaults to a whole-number percentage
+   * ({@link defaultProgressValueLabel}, e.g. `42%`).
+   */
+  formatValue?: (value: number, max: number) => string;
+
+  /**
    * Geometric size in CSS px. Applied as `--tugx-progress-indicator-size`.
    * @default 16
    */
@@ -365,6 +394,8 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
       disabled = false,
       value,
       max = 1,
+      showValue = false,
+      formatValue = defaultProgressValueLabel,
       size = 16,
       phase,
       phaseLabels,
@@ -460,6 +491,19 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
       </span>
     ) : null;
 
+    // Determinate value readout. The `progressbar` role already exposes the
+    // value via `aria-valuenow`, so the visible text is decorative
+    // (`aria-hidden`) to avoid a double announcement. For the `bar` variant
+    // the track flexes and this trails it on the same row [L06].
+    const valueText =
+      showValue && value !== undefined ? formatValue(value, max) : undefined;
+    const valueSlot =
+      valueText !== undefined ? (
+        <span className="tug-progress-indicator-value" aria-hidden="true">
+          {valueText}
+        </span>
+      ) : null;
+
     const root = (
       <span
         ref={ref}
@@ -482,6 +526,7 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
         {leftGlyph && <span className="tug-progress-indicator-glyph">{leftGlyph}</span>}
         {labelSlot}
         {rightGlyph && <span className="tug-progress-indicator-glyph">{rightGlyph}</span>}
+        {valueSlot}
       </span>
     );
 

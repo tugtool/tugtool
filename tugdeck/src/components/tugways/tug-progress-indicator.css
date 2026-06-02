@@ -1,5 +1,6 @@
 /* @tug-pairings {
   --tugx-progress-indicator-label-color | --tugx-progress-indicator-surface | content
+  --tugx-progress-indicator-value-color | --tugx-progress-indicator-surface | content
 } */
 
 /**
@@ -9,6 +10,7 @@
  * | Element                                | Surface                              | Role    | Context                                                   |
  * |----------------------------------------|--------------------------------------|---------|-----------------------------------------------------------|
  * | --tugx-progress-indicator-label-color  | --tugx-progress-indicator-surface    | content | .tug-progress-indicator-label-active (color)              |
+ * | --tugx-progress-indicator-value-color  | --tugx-progress-indicator-surface    | content | .tug-progress-indicator-value (color)                     |
  *
  * The glyph's fill / stroke pairings live in the internal variant CSS
  * files [L20]. This file declares only the label pairing — every other
@@ -46,6 +48,10 @@ body {
 
   /* Visible-label text color — paired against the host surface. */
   --tugx-progress-indicator-label-color: var(--tug7-element-global-text-normal-default-rest);
+
+  /* Value-readout text color — muted, so the percentage reads as a
+     secondary annotation of the glyph rather than a heading. */
+  --tugx-progress-indicator-value-color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ============================================================================

@@ -10,6 +10,7 @@
  *  - Roles     — eight role tones in a wrapping card grid (ring variant)
  *  - States    — a 3 × 5 matrix (variant rows × state columns)
  *  - Determinate — a 3 × 5 matrix (variant rows × value columns)
+ *  - Value readout — showValue percentage on bar / ring / pie + labeled bar
  *  - Phase     — phase picker + live indicator using phaseLabels/phaseVisual
  *  - Layout    — glyphPosition picker + labelAlign="center" demo with
  *                width-stabilize so phase changes don't shift layout
@@ -256,6 +257,55 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
               ))}
             </React.Fragment>
           ))}
+        </div>
+      </section>
+
+      <TugSeparator />
+
+      {/* Value readout ---------------------------------------------- */}
+      <section className="cg-section">
+        <TugLabel className="cg-section-title">
+          Value readout — showValue (determinate)
+        </TugLabel>
+        <TugLabel size="2xs" emphasis="calm">
+          `showValue` renders the determinate value as a muted percentage at
+          the trailing end of the row. For the bar it sits to the right of the
+          flexing track; pair with `label` for the canonical labeled bar.
+          Override the text via `formatValue`.
+        </TugLabel>
+        <div className="gpi-readout-frame">
+          <TugProgressIndicator
+            variant="bar"
+            size={8}
+            role="action"
+            value={0.42}
+            showValue
+          />
+          <TugProgressIndicator
+            variant="bar"
+            size={8}
+            role="action"
+            value={0.42}
+            showValue
+            label="Summarizing…"
+            glyphPosition="right"
+          />
+          <div className="gpi-readout-glyphs">
+            <TugProgressIndicator
+              variant="ring"
+              size={22}
+              role="action"
+              value={0.42}
+              showValue
+            />
+            <TugProgressIndicator
+              variant="pie"
+              size={22}
+              role="action"
+              value={0.75}
+              showValue
+            />
+          </div>
         </div>
       </section>
 
