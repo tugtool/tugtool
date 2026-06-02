@@ -142,3 +142,23 @@ body {
   /* In start-align mode the label is a plain inline span; in center-align
      mode it overlays the ghosts via grid stacking. */
 }
+
+/* ============================================================================
+   Value readout (showValue)
+   The determinate value rendered as text at the trailing end of the row.
+   `flex: 0 0 auto` keeps it intrinsic-width so the bar variant's flexing
+   track shrinks to leave room and the readout sits to its right on one row
+   (the canonical labeled-bar layout). Muted, tabular figures so the digits
+   don't shift width as the percentage climbs.
+   ========================================================================= */
+
+.tug-progress-indicator-value {
+  flex: 0 0 auto;
+  font-size: var(--tug-font-size-sm, 0.8125rem);
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  /* @tug-renders-on var(--tugx-progress-indicator-surface) */
+  color: var(--tugx-progress-indicator-value-color);
+}

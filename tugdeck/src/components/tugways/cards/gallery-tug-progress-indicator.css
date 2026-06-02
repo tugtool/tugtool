@@ -123,3 +123,24 @@
   border-radius: var(--tug-radius-md, 8px);
   background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
 }
+
+/* ============================================================================
+   Value-readout demo — vertical stack of full-width bars plus a row of
+   glyphs, each carrying a showValue percentage readout.
+   ========================================================================= */
+
+.gpi-readout-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  border-radius: var(--tug-radius-md, 8px);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+}
+
+.gpi-readout-glyphs {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
