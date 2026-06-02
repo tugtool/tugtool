@@ -673,7 +673,7 @@ Each option can clear planning context. The UI should present these choices when
 
 1. **Process lifecycle management.** Tugcode processes outlive tugcast. 137 zombies after 2 weeks. Tugcast must SIGTERM children on shutdown and use process groups. Card close must kill associated tugcode.
 2. **Session command readiness.** After `session_command: "new"` or `"fork"`, `session_init` fires with pending ID before new process is ready. Need clear readiness signal.
-3. **`api_retry` event forwarding.** Tugcode drops these. Add forwarding in `routeTopLevelEvent`. Audit for other dropped `system` subtypes.
+3. **`api_retry` event forwarding.** ✅ DONE — tugcode now forwards `subtype: "api_retry"` from `routeTopLevelEvent` as the `api_retry` IPC message. (Still worth auditing for other dropped `system` subtypes.) UI surfacing tracked separately as the dev-card `api_retry` banner.
 4. **`--no-auth` CLI flag for tugcast.** Skip session cookie and origin validation for local development/testing. Needed to test the full WebSocket path.
 5. **Slash command invocation mechanism.** ALL slash commands (both built-in and plugin) are consumed by Claude Code's client-side dispatcher with no stream-json output. This affects every command — `/cost`, `/model`, `/compact`, `/dash`, `/plan`, etc. The graphical UI needs a new inbound message type (e.g., `{ type: "slash_command", command, args }`) that tugcode routes to Claude Code's slash command handler, with output forwarded to the stream. This is the single biggest transport gap.
 6. **`@` file reference handling.** Terminal injects file content client-side. Tugcode/tugcast need either: (a) a mechanism for the UI to send file content with messages, or (b) the UI handles this entirely client-side via attachments.
@@ -1103,19 +1103,31 @@ Claude then pivoted to `EnterPlanMode` and spawned two Explore agents that read 
 
 ---
 
-## `api_retry` — Confirmed Gap
+## `api_retry` — Forwarding RESOLVED (UI pending)
 
-**Tugcode drops `api_retry` events.** Verified by reading `session.ts` `routeTopLevelEvent`:
+> **Update (2026-06-01): the forwarding gap below is CLOSED.** Tugcode's
+> `routeTopLevelEvent` now routes `subtype: "api_retry"` to an `api_retry` IPC
+> message (`session.ts`), the `ApiRetry` type is defined and in the outbound union
+> (`tugcode/src/types.ts`), and tugcast relays CODE_OUTPUT generically. What
+> remains is **tugdeck-side rendering only** — the dev-card `api_retry` banner
+> (decode → reducer snapshot state → banner spec → DOM-ticked countdown),
+> distinguishing transient (`rate_limit`/`overloaded`/5xx) from likely-fatal
+> (`authentication_failed`/`billing_error`) categories. Tracked as the dev-card
+> parity `api_retry` banner step. The original finding is preserved below for the
+> record.
 
-The `system` event handler only routes two subtypes:
+**Original finding (HISTORICAL — now resolved).** Tugcode dropped `api_retry`
+events. Verified at the time by reading `session.ts` `routeTopLevelEvent`:
+
+The `system` event handler only routed two subtypes:
 - `subtype: "init"` → `session_init`
 - `subtype: "compact_boundary"` → `compact_boundary`
 
-All other `system` subtypes — including `api_retry` — fall through with no output. The UI would see nothing during rate limits or API errors.
+All other `system` subtypes — including `api_retry` — fell through with no output, so the UI saw nothing during rate limits or API errors.
 
-**Impact:** During API failures, the user sees a spinner with no explanation. No retry count, no delay indicator, no error type. Bad UX.
+**Impact (at the time):** during API failures, the user saw a spinner with no explanation. No retry count, no delay indicator, no error type.
 
-**Fix (Phase 2):** Add `api_retry` forwarding in tugcode's `routeTopLevelEvent`:
+**Fix (since landed):** `api_retry` forwarding in tugcode's `routeTopLevelEvent`:
 ```typescript
 } else if (subtype === "api_retry") {
   messages.push({
@@ -1130,7 +1142,7 @@ All other `system` subtypes — including `api_retry` — fall through with no o
 }
 ```
 
-Also audit for other dropped `system` subtypes we might care about.
+Still worth auditing for other dropped `system` subtypes we might care about.
 
 ---
 

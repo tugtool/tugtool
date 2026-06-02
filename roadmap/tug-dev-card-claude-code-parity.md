@@ -2803,21 +2803,60 @@ never escapes the card), [L19] (component authoring + gallery card), [L20]
 
 > **Retargeted (2026-05-30): a card-level banner, NOT a Z4B chip.** `api_retry` is a transient, per-turn, per-session signal ("retrying after a transient API failure") — the wrong shape for the Z4B chip row, which is the *permanent, ambient* session-state cluster (Claude Code / Project / Session / Mode / Model / Effort — now final). Surface it as a **banner inside the dev card** instead, reusing the card's existing single `TugPaneBanner` surface (`deriveDevCardBannerSpec` → `renderDevCardBanner`). Per-card (not app-level like the rate-limit banner — a retry belongs to one card's session, and two retrying cards each show their own).
 
+> **Build-state correction (2026-06-01).** The upstream plumbing already
+> exists — the transport-exploration "Confirmed Gap" note is **stale**. Tugcode
+> forwards the event (`session.ts` `routeTopLevelEvent`, `subtype: "api_retry"` →
+> `api_retry` IPC message), the `ApiRetry` type is defined and in the outbound
+> union (`tugcode/src/types.ts`), and tugcast relays CODE_OUTPUT generically. **The
+> entire remaining step is tugdeck-only**: decode → reducer snapshot state → banner
+> spec → DOM-ticked countdown. Nothing decides to retry — claude's SDK already does
+> (≤10 attempts, exponential backoff); we only mirror its announcements.
+
+**Distinguish every error category.** The event's `error` (category string) +
+`error_status` (nullable HTTP status) classify the failure into two severities,
+because they are *not* equivalent: a `rate_limit` / `overloaded` / 5xx will
+plausibly recover, but `authentication_failed` / `billing_error` will exhaust all
+10 attempts and then fail. A pure `classifyApiRetry(error, errorStatus)` maps the
+raw category to a `{ label, severity }`, and the banner varies tone + copy by
+severity so the user can tell "wait, this'll clear" from "this is going to die":
+
+| `error` category | `error_status` | label | severity | banner tone |
+|---|---|---|---|---|
+| `rate_limit` | 429 | "Rate limited" | transient | caution |
+| `overloaded` | 529 | "Servers overloaded" | transient | caution |
+| `api_error` / other 5xx | 5xx | "Server error" | transient | caution |
+| `timeout` | — | "Request timed out" | transient | caution |
+| `authentication_failed` | 401 | "Authentication failed" | likely-fatal | danger |
+| `billing_error` | 402/403 | "Billing problem" | likely-fatal | danger |
+| `permission_error` | 403 | "Permission denied" | likely-fatal | danger |
+| (unrecognized) | any/null | "API error" | transient | caution |
+
+Unrecognized categories default to **transient/caution** (optimistic — claude *is*
+retrying), and `classifyApiRetry` is the single seam where a future claude
+category is slotted in. Copy: transient → `Retrying — <label>, attempt n/max ·
+<countdown>`; likely-fatal → `<label> — retrying n/max, may not recover ·
+<countdown>`.
+
 **Artifacts:**
-- Modified: `dev-card-banner-spec.ts` — `deriveDevCardBannerSpec` gains an `api_retry` case (tone `caution`), derived from a retry-state field on the `CodeSessionStore` snapshot. Highest-priority transient banner while a retry is in flight; cleared on `cost_update` / `turn_complete`.
-- Modified: `code-session-store` reducer threads `api_retry` events (attempt, max_retries, retry_delay_ms, error) onto the snapshot, and clears them on `cost_update` / `turn_complete`.
+- New (pure): `classifyApiRetry(error, errorStatus)` → `{ label, severity: "transient" | "likely-fatal" }` — the category taxonomy table above; the only place category→presentation mapping lives.
+- Modified: `dev-card-banner-spec.ts` — `DevCardBannerSpec` gains a `kind: "api-retry"` variant carrying `{ severity, label, attempt, maxRetries, deadline }`; `deriveDevCardBannerSpec` returns it just under the hard-`error` check and above `transport` / `replay-timeout` (a retry is mid-turn with the wire still online). The JSX maps `severity` → caution/danger tone. Cleared on `cost_update` / `turn_complete`.
+- Modified: `protocol.ts` — decode the `api_retry` CODE_OUTPUT frame (`attempt`, `max_retries`, `retry_delay_ms`, `error_status`, `error`); permissive, mirrors the existing outbound decoders.
+- Modified: `code-session-store` reducer threads `api_retry` onto the snapshot as `{ attempt, maxRetries, deadline, error, errorStatus }` ([L02]); clears it on `cost_update` / `turn_complete`. `deadline = arrivalNow + retryDelayMs` is computed in the impure store wrapper (time stays out of the reducer).
 - New: pure-logic countdown helper `formatRetryCountdown(deadline, now)`.
 
 **Tasks:**
-- [ ] Reducer: handle the `api_retry` IPC event — store `{ attempt, maxRetries, retryDelayMs, deadline, error }` as structural snapshot state ([L02]); clear it on `cost_update` / `turn_complete`.
-- [ ] `deriveDevCardBannerSpec`: add the `api_retry` banner spec (tone `caution`, message `Retrying — attempt n/max in <countdown> · <error_label>`). The banner shell (mount/unmount + the static attempt/error text) is React-rendered from the spec.
+- [ ] `protocol.ts`: decode the `api_retry` frame into a typed event for the store.
+- [ ] Reducer: handle the `api_retry` IPC event — store `{ attempt, maxRetries, deadline, error, errorStatus }` as structural snapshot state ([L02]); clear it on `cost_update` / `turn_complete`.
+- [ ] Pure `classifyApiRetry(error, errorStatus)` — the taxonomy table; exhaustive over known categories, transient/caution fallback for the unknown.
+- [ ] `deriveDevCardBannerSpec`: add the `kind: "api-retry"` spec (calls `classifyApiRetry`), placed just under the hard-`error` check. The banner shell (mount/unmount + the static label/attempt text) is React-rendered from the spec; the JSX picks caution vs danger tone from `severity`.
 - [ ] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state, mirroring the rate-limit countdown precedent: a `useLayoutEffect` mounts a `setInterval` that reads the deadline from a ref and writes the countdown `<span>`'s `textContent` directly. The tick never re-enters React's render cycle; the spec only re-renders on arrival + clear.
 - [ ] Cleanup the interval on unmount / clear-event.
 - [ ] Pure-logic `formatRetryCountdown(deadline, now)` returns the text the DOM mutation writes.
 
 **Tests:**
-- [ ] Pure-logic: `formatRetryCountdown`; `deriveDevCardBannerSpec` api_retry case + priority + clear-on-event logic.
-- [ ] Real-app: inject `api_retry` via probe; observe the card banner mounts, ticks via DOM, and clears on `cost_update`.
+- [ ] Pure-logic: `classifyApiRetry` — every category row maps to the right `{ label, severity }`; unknown → transient/"API error"; severity drives tone in the spec.
+- [ ] Pure-logic: `formatRetryCountdown`; `deriveDevCardBannerSpec` api-retry case + priority (under hard-error, over transport) + clear-on-event logic.
+- [ ] Real-app: inject `api_retry` (transient + likely-fatal) via probe; observe the card banner mounts with the right tone/copy, ticks via DOM, and clears on `cost_update`.
 - [ ] Real-app: verify React's commit count over the retry window — commits only on api_retry arrival + clear, not per tick.
 
 **Checkpoint:**
