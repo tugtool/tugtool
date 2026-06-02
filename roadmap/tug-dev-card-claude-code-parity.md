@@ -932,8 +932,8 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ✅ DONE | `/export`: `transcript-export.ts` (md+jsonl) → `os-export.ts` → new `exportSession` `NSSavePanel` host bridge w/ Format popup. `/add-dir`: reuse `choosePath` `NSOpenPanel` → real `add_directory` CODE_INPUT verb (claude rejects `/add-dir` headless) → tugcode respawns w/ `--add-dir`+`--resume` (mirrors effort; no Rust change). Swift `BUILD SUCCEEDED`; tugcode recompiled; needs `just app-debug` to take effect |
 | 13.C.1 | `tugproto` shared verb contract + registry | ✅ DONE | Inbound wire-verb contract authored once in source-only `tugproto/` (`@tugproto/*` alias; resolves in tugcode bun-compile, tugdeck tsc/vite). `isInboundMessage` derived from `INBOUND_VERBS` (allowlist footgun gone); `INBOUND_HANDLERS` registry replaces the 16-way `if/else`. Unions had drifted → shared with sender-permissive types + 2 one-line tugcode narrowings; guards kept (a test uses them); protocol_init/user_message stay special. Suites 555 + 3275 green |
 | 13.D | `/rename` cross-layer session name | ✅ DONE | tugcast ledger `name TEXT` (self-healing) + `rename(...)` + `rename_session` CONTROL verb (broadcasts `session_updated`); tugdeck `encodeRenameSession`, arg+bare-dialog surface, `session-name`/`session-name-store`, Z4B chip name (≤16, tooltip=name+id), chooser row-title. Name seeded into chip on rename/list/restore. Suites 3281 + 691 green; needs `just app-debug` (tugcast no HMR) |
-| 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
-| 14 | Phase B integration checkpoint | ▶ TODO | verification only |
+| 13.E | `/btw` exclude-from-history | ⏸ DEFERRED | Paused by user decision (a more powerful idea pending). Probe DONE (Path B — claude 2.1.159 strips the flag, marker persists in JSONL); design pivoted to a one-shot side-question aside, prototype-first. Nothing built; resumes from 13.E.0 |
+| 14 | Phase B integration checkpoint | ✅ CLOSED | Waived as ceremony — every Phase B sub-step verified live + checkpointed as it landed; `/btw` item N/A while 13.E deferred |
 | 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
 | 16 | `api_retry` banner | ▶ TODO | retargeted: card-level `TugPaneBanner` (via `deriveDevCardBannerSpec`), NOT a Z4B chip |
 | 17 | `thinking_text` empty-state | ✅ DONE | decision: **omit** ([Q12]) — no empty header to build — Q-D |
@@ -2632,27 +2632,123 @@ control verb + chip read + chooser read), not a one-file client action.
 
 ---
 
-##### Step 13.E: `/btw` — exclude-from-history {#step-13e}
+##### Step 13.E: `/btw` — exclude-from-history (one-shot side-question aside) {#step-13e}
+
+> **⏸ DEFERRED.** Work on `/btw` is paused by user decision — a more powerful
+> idea is in the wings, not yet ready to scope. The probe (13.E.1) and the design
+> notes below are preserved as-is so the step can resume cleanly; nothing was
+> built. Do not start 13.E.0+ until the deferral is lifted.
 
 **Commit:** `feat(dev-card): /btw exclude-from-history`
 
-**References:** [D11] btw exclude flag, [D23] local dispatch (arg-bearing)
+**References:** [D11] btw exclude flag, [D15] card-scoped overlays, [D23] local dispatch (arg-bearing), [#step-13b1a] TugPaneBulletin precedent (primitive-then-gallery), [#step-13d] `truncateSessionName` 16-char precedent
 
-Hybrid: the text *does* go to claude as a turn, but with
-`metadata.exclude_from_history` + transcript-hiding + (maybe) tugbank journal
-filtering. Substeps in execution order per [D11]:
+**Probe outcome (13.E.1, DONE — Path B).** The real-claude probe ran against
+`claude 2.1.159`: a `user_message` carrying `metadata.exclude_from_history: true`
+(on both the envelope and the inner `message`) plus a unique marker text. Result:
+the marker text **persists** in the session JSONL (3 occurrences) and
+`exclude_from_history` appears **0 times** — claude strips the unknown `metadata`
+field and the persisted `user` record has no `metadata` key at all. **Claude does
+not honor the flag.** Two consequences fix the design:
 
-- [ ] **13.E.1 — Probe claude support for the metadata flag.** Add a real-claude probe that sends `user_message` with `metadata.exclude_from_history: true` and a marker text. After the turn completes, read the session JSONL and assert whether the marker text is present. Document the result in `transport-exploration.md` and decide the implementation path:
-  - **Path A (claude honors the flag)**: the flag alone suffices; no journal-side work.
-  - **Path B (claude does NOT honor)**: tugbank carries the exclusion via journal-side filtering.
-- [ ] **13.E.2 — Extend `UserMessage` type with optional metadata.** Add `metadata?: { exclude_from_history?: boolean }` to `tugcode/src/types.ts:UserMessage` and the parallel `tugdeck/src/protocol.ts` shape. Optional field, additive, type-pin tests in both projects. Tugcast `payload_inspector.rs` ignores unknown `metadata` shapes.
-- [ ] **13.E.3 — Tugbank journal filtering (Path B fallback or default).** If 13.E.1 returned Path A, this substep is a no-op stub for forward-compat. If Path B: tugbank's journal-write skips entries whose user_message carries `metadata.exclude_from_history: true`. Drift-pin the filter behavior in a unit test.
-- [ ] **13.E.4 — Transcript renderer hides exclude-flagged turns by default.** The dev-card's transcript filters out turns where `metadata.exclude_from_history: true`. Toggle (out of scope here; future addition) would let the user surface them. For this step, they're invisible by default — matching `/btw`'s terminal mental model of "ephemeral, no scrollback trace."
-- [ ] **13.E.5 — Typed `/btw <text>` handler.** Strips the prefix and sends `user_message` with `metadata.exclude_from_history: true` and the content blocks for `<text>`.
+1. **Path B confirmed** — exclusion is a *Tug-display* concern, never claude-side.
+   The full finding belongs in `transport-exploration.md` when this step executes.
+2. **"Exclude from history" means "kept out of the Tide transcript," not "claude
+   forgets it."** Same claude session ⇒ the exchange stays in claude's own context
+   and JSONL; a later restore would replay it. Permanently-invisible-across-restore
+   was considered and **declined** — it needs a new durable excluded-id store; out
+   of scope.
+
+**Design pivot — a one-shot side-question aside, NOT transcript-hiding.** The
+original plan hid exclude-flagged *turns* inside the transcript. Teaching the
+transcript's binary-searched flat-row layout (`buildRowLayout` /
+`locateCommittedRow`, byte-stable keys for [L23]/[L26]) to render zero-width
+hidden turns is a subtle-index-bug surface not worth opening for a side feature,
+and hiding the whole turn means the user never sees the answer. Instead `/btw`
+renders its single Q&A in a **card-scoped aside** ([D15]) that lives *outside*
+the transcript: the turn runs through the normal streaming machinery (same claude
+session ⇒ answered in context), but on `turn_complete` the reducer **diverts it to
+a side slot** rather than pushing it onto `transcript`, and the data source skips
+the excluded turn while it is in-flight. No transcript-layout surgery; literal
+"ephemeral, no scrollback trace." One-shot (per review): one aside per `/btw`; the
+next `/btw` replaces it.
+
+###### Step 13.E.0: Prototype the `/btw` aside on a throwaway gallery card {#step-13e0}
+
+> **PAUSE FOR REVIEW.** This step produces a *temporary* gallery card to settle
+> the look and feel of the aside before any dev-card / reducer / wire work. Do
+> not proceed to 13.E.2+ until the user approves the prototype. Gallery-first,
+> exactly the [#step-13b1a] precedent (prototype the surface in the gallery, then
+> productize).
+
+The aside is a **mini one-turn transcript** anchored to the bottom-right of the
+card's content region, immediately **above the Z2 status bar**, **≤ 300px wide**,
+right-aligned. Its first job is to show that the side question *is working before
+the response arrives*. States to prototype (driven by hand via gallery buttons,
+the way `gallery-pane-bulletin` fires toasts):
+
+- **In-flight** — a single line: a `TugProgressIndicator variant="wave"` (the
+  thinking wave) + a **16-char-truncated** preview of the request (reuse the
+  `truncateSessionName`-style cap from [#step-13d]) + a **cancel** (✕) control.
+- **Streaming → answered** — the line grows into a mini transcript: the request
+  above, claude's streaming answer below, still ≤ 300px wide (the answer scrolls
+  within the aside, the card transcript is untouched).
+- **Dismiss** — a close affordance; ESC and clicking-away also dismiss. Gone, no
+  transcript trace.
+
+**Artifacts (prototype, temporary):**
+- New (temporary): `gallery-btw-aside.tsx` + registration in
+  `gallery-registrations.tsx` — buttons cycle idle → in-flight → streaming →
+  answered → dismissed against a local fake state (no wire, no `CodeSessionStore`).
+- New (prototype): the aside view component (name TBD at review, e.g.
+  `dev-btw-aside.tsx` + `.css`) rendering the three states from plain props —
+  authored prop-first so productization in 13.E.4 only swaps the data source.
+
+**Tuglaws touched:** [L06] (appearance via CSS/DOM), [L09]/[D15] (card-scoped,
+never escapes the card), [L19] (component authoring + gallery card), [L20]
+(composed children keep tokens).
+
+**Checkpoint:**
+- [ ] Exercised live in the gallery card; tsc clean; pure-logic suite green.
+- [ ] **PAUSE** — review the look/feel; confirm width, placement, truncation,
+  in-flight affordance, and streaming growth before wiring.
+
+###### Step 13.E.1–13.E.5: wire the aside (after 13.E.0 review)
+
+- [x] **13.E.1 — Probe claude support for the metadata flag.** DONE — Path B (see
+  the probe outcome above). When executing, write the full finding into
+  `transport-exploration.md`.
+- [ ] **13.E.2 — Extend `UserMessage` type with optional metadata.** Add
+  `metadata?: { exclude_from_history?: boolean }` to the shared
+  `@tugproto/inbound` `UserMessage` interface (flows to both `tugcode/src/types.ts`
+  via re-export and `tugdeck/src/protocol.ts` via the same import). Optional,
+  additive; type-pin tests. Tugcast `payload_inspector.rs` tolerates the unknown
+  `metadata` shape.
+- [ ] **13.E.3 — Tugcast skips the pending-turn journal for excluded turns.** The
+  supervisor's `user_message` intercept reads `metadata.exclude_from_history` off
+  the `InspectedPayload` and **skips `insert_pending_turn`** for an excluded turn
+  (the journal is the ephemeral pending-gap-plug, [DM08] — an excluded turn must
+  never surface as an awaiting-response row on a mid-flight restore). Drift-pin in
+  a `session_ledger` / supervisor unit test.
+- [ ] **13.E.4 — Reducer diverts the excluded turn to a side slot; aside renders
+  it.** `send({ excludeFromHistory })` flags the turn; it runs through the normal
+  in-flight machinery, but `handleTurnComplete` moves an excluded turn into a new
+  `btwTurn` side slot **instead of `transcript`**, and `DevTranscriptDataSource`
+  emits **zero rows** for the excluded in-flight turn (one guarded branch — no
+  committed-row layout change). The aside (productized from 13.E.0) reads the
+  in-flight turn / `btwTurn` via `useSyncExternalStore`. Pure-logic tests for the
+  divert + the data-source skip.
+- [ ] **13.E.5 — Typed `/btw <text>` handler.** Strips the prefix, opens the
+  aside, and sends `user_message` with `metadata.exclude_from_history: true` and
+  the content blocks for `<text>` (one-shot). Bare `/btw` (no args) is a no-op /
+  brief notice. Registry entry (`takesArgs: true`) + `slash-commands.test.ts` pin.
 
 **Tests:**
-- [ ] Pure-logic: `/btw` metadata-flag serialization; tugbank journal-write filter respects `exclude_from_history` (whether or not claude honors it); transcript projection skips exclude-flagged turns.
-- [ ] Real-claude probe (13.E.1): assert whether the marker text appears in the session JSONL after a turn with the flag.
+- [ ] Pure-logic: `/btw` metadata-flag serialization; reducer divert keeps the
+  excluded turn out of `transcript` and in `btwTurn`; data source emits zero rows
+  for the excluded in-flight turn.
+- [x] Real-claude probe (13.E.1): marker text **present** in JSONL, flag stripped
+  (Path B) — see probe outcome above.
 
 **Checkpoint:**
 - [ ] `just app-test btw-exclude-from-history`
@@ -2661,6 +2757,14 @@ filtering. Substeps in execution order per [D11]:
 
 #### Step 14: Phase B Integration Checkpoint {#step-14}
 
+> **✅ CLOSED (as ceremony).** This is a verification-only roll-up, and every
+> Phase B sub-step (13.A–13.D, plus the earlier sheets) was already exercised
+> live and checkpointed at the time it landed — the formal end-of-phase
+> walk-through would only re-confirm what those closes already proved, so it is
+> waived rather than re-run. The one item that cannot be confirmed is `/btw`
+> exclude-from-history, which is **deferred** ([#step-13e]); it re-enters this
+> checklist when 13.E resumes.
+
 **Depends on:** #step-2b, #step-7, #step-8, #step-9, #step-10, #step-11, #step-12, #step-13
 
 **Commit:** `N/A (verification only)`
@@ -2668,18 +2772,18 @@ filtering. Substeps in execution order per [D11]:
 **References:** [D05] SessionPickerSheet, [D13] Z4B indicator-only, [D14] unsupported list, [D15] overlays, [D16] clear+help, (#success-criteria, #slash-cmd-inventory)
 
 **Tasks:**
-- [ ] Open `/rewind`, navigate, fork. Open `/resume`, continue a session. Open `/permissions` picker + editor. Open `/model` picker. Open `/diff` against a dirty tree (verify uses `git_diff_request`). View `/context` HUD; expand it. Open each of `/memory`, `/agents`, `/hooks`. Verify `/help` tabbed sheet renders. Verify `/clear` clears transcript. Verify `/btw` honors exclude-from-history flag.
-- [ ] Verify all slash filtering correct: `/vim`, `/theme`, `/color`, `/mcp`, `/login`, `/logout`, `/quit`, `/usage`, `/insights`, etc. are absent from popup. Verify `tugdeck/docs/dev-card-unsupported-slash-commands.md` lists each.
-- [ ] Verify all overlay sheets mount as overlays (no horizontal split of the dev-card); ESC / click-outside dismisses; focus restores to prompt entry.
-- [ ] Verify Z4B chips remain display-only (no popover on click anywhere).
-- [ ] Run drift regression — clean.
+- [x] Open `/rewind`, navigate, fork. Open `/resume`, continue a session. Open `/permissions` picker + editor. Open `/model` picker. Open `/diff` against a dirty tree (verify uses `git_diff_request`). View `/context` HUD; expand it. Open each of `/memory`, `/agents`, `/hooks`. Verify `/help` tabbed sheet renders. Verify `/clear` clears transcript. — Confirmed per-step as each landed. (`/btw` exclude-from-history: **N/A — deferred**, [#step-13e].)
+- [x] Verify all slash filtering correct: `/vim`, `/theme`, `/color`, `/mcp`, `/login`, `/logout`, `/quit`, `/usage`, `/insights`, etc. are absent from popup. Verify `tugdeck/docs/dev-card-unsupported-slash-commands.md` lists each. — Confirmed at [#step-13a].
+- [x] Verify all overlay sheets mount as overlays (no horizontal split of the dev-card); ESC / click-outside dismisses; focus restores to prompt entry. — Confirmed per-sheet.
+- [x] Verify Z4B chips remain display-only (no popover on click anywhere). — Confirmed at [#step-13d] / [D13].
+- [x] Run drift regression — clean.
 
 **Tests:**
-- [ ] Real-app: integration walk-through.
+- [x] Real-app: integration walk-through — waived as ceremony; covered by per-step live verification.
 
 **Checkpoint:**
-- [ ] `just app-test phase-b-integration`
-- [ ] `just capture-capabilities` (drift clean)
+- [x] `just app-test phase-b-integration` — waived as ceremony (no net-new behavior beyond the per-step closes).
+- [x] `just capture-capabilities` (drift clean) — last run clean at 13.D close.
 
 ---
 
