@@ -185,6 +185,14 @@ body {
   --tug7-element-selection-text-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
   --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(yellow, i: 0, t: 30, a: 25);
   --tug7-surface-selection-primary-normal-plain-rest: --tug-color(blue, i: 50, t: 50, a: 40);
+  /* List-row selection (role `selected`) — a calmer cousin of the menus'
+     transient `control-filled-action` highlight: the same blue, toned a
+     step down in intensity because a row selection sits there persistently
+     rather than flashing for one interaction. Hover steps back up toward
+     the menu intensity. Selected text is near-white for legibility. */
+  --tug7-surface-selection-primary-normal-selected-rest: --tug-color(blue, i: 34, t: 44);
+  --tug7-surface-selection-primary-normal-selected-hover: --tug-color(blue, i: 46, t: 42);
+  --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, i: 2, t: 100);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind
      the editable surface. tug-input and other native-::selection-driven

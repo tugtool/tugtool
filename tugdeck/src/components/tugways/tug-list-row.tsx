@@ -36,6 +36,9 @@
  *  - `children`, when provided, owns the content column outright and
  *    `title` / `subtitle` are ignored — the escape hatch for rows
  *    whose content is not a plain title / subtitle stack.
+ *  - `mono` switches the content column to the monospace family at a
+ *    compact, dense line — the standard row type for paths, ids, and
+ *    code-ish text — applying to a title / subtitle stack or `children`.
  *
  * Accessories:
  *  - `leading` / `trailing` are arbitrary nodes (UIKit's leading
@@ -167,6 +170,16 @@ export interface TugListRowProps
    * @selector [data-selected="true"][data-selected-accent="true"]
    */
   selectedAccent?: boolean;
+
+  /**
+   * Render the content column in the monospace family at a compact,
+   * dense line (the standard row type for paths, ids, and code-ish
+   * text). Applies to a `title` / `subtitle` stack or free-form
+   * `children` alike. `false` (default) keeps the comfortable sans row.
+   * @selector [data-mono="true"]
+   * @default false
+   */
+  mono?: boolean;
 
   /**
    * Leading single-select checkmark column. `"check"` reserves a
@@ -310,6 +323,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
       disabled,
       selectedAccent,
       selectedGlyph,
+      mono,
       children,
       className,
       ...rest
@@ -335,6 +349,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
         data-selected={selected ? "true" : undefined}
         data-disabled={disabled ? "true" : undefined}
         data-selected-accent={resolvedAccent ? "true" : undefined}
+        data-mono={mono ? "true" : undefined}
         className={cn("tug-list-row", className)}
         {...rest}
       >

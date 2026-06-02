@@ -216,6 +216,7 @@ export const PathRecentCell: TugListViewCellRenderer<DevRecentsDataSource> = ({
   const pathShort = row.path.split("/").filter(Boolean).slice(-1)[0] ?? row.path;
   return (
     <TugListRow
+      mono
       selected={isSelected}
       trailingReveal="hover"
       data-recent-path={row.path}

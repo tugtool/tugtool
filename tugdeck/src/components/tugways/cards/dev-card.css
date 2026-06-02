@@ -762,28 +762,19 @@
   --tugx-list-view-padding-inline: 0;
 }
 
-/* path-recent — the path text inside a `flush` `TugListRow`. The row
-   chrome — padding, hover and selected fills — belongs to
-   `TugListRow`; this rule owns only the content-level treatment: the
-   mono family, Finder-style ellipsis-at-start truncation, and the
-   `-webkit/-moz-font-smoothing` pin that keeps the macOS text-
-   rendering mode stable as the row background shifts between rest and
-   selected (without it the OS recalculates subpixel anti-aliasing and
-   the path appears to shift fractionally). The text color is left to
-   `TugListRow`'s cascade — the path inherits it. */
+/* path-recent — the path text inside a `mono` `flush` `TugListRow`. The
+   row type (`mono`) owns the mono family, the compact `xs` size that
+   matches the size="sm" `Project path` input, the dense padding, and the
+   macOS smoothing pin. This rule owns only the path-display nicety the
+   row type does not: Finder-style ellipsis-at-START truncation (RTL), so
+   the meaningful tail of a long path stays visible. Text color is left
+   to `TugListRow`'s cascade — the path inherits it (selected → white). */
 .dev-card-picker-recents-list .dev-card-picker-path-recent {
-  font-family: var(--tug-font-family-mono);
-  /* Match the `Project path` input above (a size="sm" TugFileChooser,
-     which renders at `--tug-font-size-xs`) so the typed path and the
-     recent paths read at one size. */
-  font-size: var(--tug-font-size-xs, 0.75rem);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   direction: rtl;
   unicode-bidi: plaintext;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 /* The whole recent row is a click target — the `TugListView` cell
@@ -803,6 +794,15 @@
   background: var(--tug7-surface-global-data-tinted-default-rest);
   color: var(--tug7-element-global-text-normal-default-rest);
   border-radius: var(--tug-radius-2xs, 2px);
+}
+
+/* Uniform session-row height. The `New session` row is single-line
+   while the resume rows carry a title + subtitle (two lines), so a min
+   height keeps every session row the same comfortable size — the short
+   row fills to it, centered. Tune by eye; it is a floor, never clips a
+   taller row. */
+.dev-card-picker-sessions-list .tug-list-row {
+  --tugx-list-row-min-height: 3.5rem;
 }
 
 /* Trailing affordance — the trash icon button lives in the row's

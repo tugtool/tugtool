@@ -85,18 +85,18 @@ body {
   --tugx-list-row-pill-hover-bg:     var(--tug7-surface-control-primary-outlined-action-hover);
   --tugx-list-row-pill-hover-border: var(--tug7-element-control-border-outlined-action-hover);
 
-  /* Selection ramp — a selected row matches the highlighted item in the
-     popup menus, the completion menu, and the editor context menu, which
-     all paint `--tug7-surface-control-primary-filled-action-*` (a solid
-     accent fill with near-white text). Selected takes the `-hover` step
-     (the menus' resting highlight); selected-hover steps up to `-active`
-     so a hovered selected row reads apart from a resting selected one.
-     This is deliberately NOT the `--tug7-surface-selection-*` family —
-     that family is the caret text-selection highlight (text editor, code
-     view, markdown, pane), a different concept. [L17] one-hop aliases. */
-  --tugx-list-row-selected-bg:            var(--tug7-surface-control-primary-filled-action-hover);
-  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-control-primary-filled-action-active);
-  --tugx-list-row-selected-text:          var(--tug7-element-control-text-filled-action-hover);
+  /* Selection ramp — the list row owns the `selection` component's
+     `selected` role: the same accent blue the popup menus highlight with,
+     toned a step down in intensity because a row selection sits there
+     persistently (a menu highlight only flashes for one interaction, so
+     it can be hotter). `-hover` steps back up toward the menu intensity.
+     Distinct from the `selection ... plain` family (the caret
+     text-selection highlight in editor / code / markdown / pane) and from
+     the menus' `control ... filled-action` transient highlight.
+     [L17] one-hop aliases. */
+  --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-selected-rest);
+  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-selected-hover);
+  --tugx-list-row-selected-text:          var(--tug7-element-selection-text-normal-selected-rest);
   --tugx-list-row-selected-accent-border: var(--tug7-element-tone-border-normal-accent-rest);
   --tugx-list-row-accent-border-width:    1.5px;
 }
@@ -109,6 +109,11 @@ body {
   gap: var(--tugx-list-row-gap);
   width: 100%;
   box-sizing: border-box;
+  /* Rows size to their content by default (`auto`). A consumer that
+     wants uniform row heights across a list — e.g. a single-line row
+     standing alongside two-line rows — sets `--tugx-list-row-min-height`
+     on the list; shorter rows then fill to it, center-aligned. */
+  min-height: var(--tugx-list-row-min-height, auto);
   padding: var(--tugx-list-row-padding-block) var(--tugx-list-row-padding-inline);
   /* Color + background are set per-variant so each variant declares a
      complete foreground-on-surface context. State transitions are
@@ -182,6 +187,38 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A selected row recolors its ENTIRE content column — title, subtitle,
+   and any meta — to the selected-text color, so every line stays legible
+   on the selection fill. Without this the muted subtitle / meta keep
+   their own `TugLabel` color and read poorly on the fill (acutely in the
+   light theme, where a dark muted subtitle sits on the blue). The
+   two-class + attribute selector outranks `TugLabel`'s own
+   `.tug-label-emphasis-calm` color rule. */
+.tug-list-row[data-selected="true"] .tug-list-row-content,
+.tug-list-row[data-selected="true"] .tug-list-row-content .tug-label,
+.tug-list-row[data-selected="true"] .tug-list-row-subtitle {
+  color: var(--tugx-list-row-selected-text);
+}
+
+/* ---- Monospace, dense content row (`mono`) ----
+   A standard row type for monospace text — file paths, ids, code-ish
+   strings. Tighter block padding than the default comfortable row, the
+   mono family, and a compact `xs` line, with the macOS smoothing pin so
+   glyphs don't shift as the row background changes between rest and
+   selected. The content column inherits all of it, whether it renders a
+   `title` / `subtitle` or free-form `children`. */
+.tug-list-row[data-mono="true"] {
+  --tugx-list-row-padding-block: 4px;
+}
+
+.tug-list-row[data-mono="true"] .tug-list-row-content,
+.tug-list-row[data-mono="true"] .tug-list-row-content .tug-label {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ---- Variant: flush ----
