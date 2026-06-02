@@ -69,8 +69,13 @@ export interface TugPaneBannerProps {
   tone?: "danger" | "caution" | "default";
   /** Short high-contrast strip label (e.g. "Connection lost"). Rendered bold, left of the message. */
   label?: string;
-  /** Strip message text. */
-  message: string;
+  /**
+   * Strip message content. Usually a plain string; accepts any node so a
+   * banner can embed a live element — e.g. a DOM-ticked countdown span
+   * ([L22]) — inline in the message without round-tripping each tick
+   * through React.
+   */
+  message: React.ReactNode;
   /** Optional Lucide icon name for the strip (most useful for status variant). */
   icon?: string;
   /**

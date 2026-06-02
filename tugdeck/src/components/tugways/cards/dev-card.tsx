@@ -100,6 +100,7 @@ import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import { deriveDevCardBannerSpec } from "./dev-card-banner-spec";
+import { formatRetryCountdown } from "./api-retry";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -1982,10 +1983,65 @@ interface DevCardBodyProps {
  * losing the `lastVisiblePropsRef` hold that keeps content stable
  * during exit.
  */
+/**
+ * The api-retry banner's live countdown. Ticks the remaining-backoff
+ * text via direct DOM mutation ([L22]/[L06]) — a `useLayoutEffect`
+ * `setInterval` writes the span's `textContent` and never re-enters
+ * React's render cycle. A new `api_retry` arrival changes `deadline`,
+ * which re-runs the effect (re-ticks immediately + restarts the
+ * interval); between arrivals there are zero React commits. The effect
+ * is the only place a deadline becomes text, so the span starts empty
+ * and is painted synchronously on mount before the browser draws.
+ */
+function RetryCountdown({ deadline }: { deadline: number }): React.ReactElement {
+  const spanRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const tick = (): void => {
+      const el = spanRef.current;
+      if (el !== null) {
+        el.textContent = formatRetryCountdown(deadline, Date.now());
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => window.clearInterval(id);
+  }, [deadline]);
+  return <span ref={spanRef} className="dev-card-retry-countdown" />;
+}
+
 function renderDevCardBanner(
   spec: ReturnType<typeof deriveDevCardBannerSpec>,
   setDismissedAt: (at: number) => void,
 ): React.ReactElement {
+  if (spec.kind === "api-retry") {
+    // Claude's SDK is backing off and retrying; we only mirror it.
+    // Transient categories read as caution ("this'll clear"); likely-
+    // fatal categories read as danger ("this is going to die"). The
+    // countdown ticks via DOM, the static text re-renders only on a new
+    // attempt (deadline/attempt change) or on clear.
+    const isFatal = spec.severity === "likely-fatal";
+    // Transient: the category is the detail ("Retrying" leads).
+    // Likely-fatal: the category IS the headline; the message warns it
+    // probably won't recover.
+    const lead = isFatal
+      ? `retrying ${spec.attempt}/${spec.maxRetries}, may not recover · `
+      : `${spec.label} · attempt ${spec.attempt}/${spec.maxRetries} · `;
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="status"
+        tone={isFatal ? "danger" : "caution"}
+        iconSlot={<TugProgressIndicator variant="spinner" size={14} aria-hidden={true} />}
+        label={isFatal ? spec.label : "Retrying"}
+        message={
+          <>
+            {lead}
+            <RetryCountdown deadline={spec.deadline} />
+          </>
+        }
+      />
+    );
+  }
   if (spec.kind === "error") {
     return (
       <TugPaneBanner

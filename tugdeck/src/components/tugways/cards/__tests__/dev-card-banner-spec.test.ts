@@ -46,6 +46,7 @@ function baseSnap(
     wakeTrigger: null,
     pendingDraftRestore: null,
     lastCost: null,
+    apiRetry: null,
     permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,
@@ -240,6 +241,81 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
       { dismissedAt: null },
     );
     expect(spec).toEqual({ kind: "transport", state: "offline" });
+  });
+});
+
+describe("deriveDevCardBannerSpec — api-retry", () => {
+  const retry = {
+    attempt: 3,
+    maxRetries: 10,
+    deadline: 1_700_000_010_000,
+    error: "rate_limit",
+    errorStatus: 429,
+  };
+
+  it("surfaces a classified api-retry spec when apiRetry is set", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({ apiRetry: retry }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({
+      kind: "api-retry",
+      severity: "transient",
+      label: "Rate limited",
+      attempt: 3,
+      maxRetries: 10,
+      deadline: 1_700_000_010_000,
+    } satisfies DevCardBannerSpec);
+  });
+
+  it("classifies a likely-fatal category as fatal severity", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({
+        apiRetry: { ...retry, error: "authentication_failed", errorStatus: 401 },
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec.kind).toBe("api-retry");
+    if (spec.kind === "api-retry") {
+      expect(spec.severity).toBe("likely-fatal");
+      expect(spec.label).toBe("Authentication failed");
+    }
+  });
+
+  it("a hard error outranks an api-retry", () => {
+    const at = 1_700_000_000_000;
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({
+        apiRetry: retry,
+        lastError: { cause: "wire_error", message: "boom", at },
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec.kind).toBe("error");
+  });
+
+  it("api-retry outranks a transport blip and a replay-timeout dwell", () => {
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({
+        apiRetry: retry,
+        transportState: "offline",
+        replayTimeoutDwellActive: true,
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec.kind).toBe("api-retry");
+  });
+
+  it("a dismissed error falls through to the api-retry banner", () => {
+    const at = 1_700_000_000_000;
+    const spec = deriveDevCardBannerSpec(
+      baseSnap({
+        apiRetry: retry,
+        lastError: { cause: "wire_error", message: "boom", at },
+      }),
+      { dismissedAt: at },
+    );
+    expect(spec.kind).toBe("api-retry");
   });
 });
 

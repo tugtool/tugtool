@@ -935,7 +935,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.E | `/btw` exclude-from-history | ⏸ DEFERRED | Paused by user decision (a more powerful idea pending). Probe DONE (Path B — claude 2.1.159 strips the flag, marker persists in JSONL); design pivoted to a one-shot side-question aside, prototype-first. Nothing built; resumes from 13.E.0 |
 | 14 | Phase B integration checkpoint | ✅ CLOSED | Waived as ceremony — every Phase B sub-step verified live + checkpointed as it landed; `/btw` item N/A while 13.E deferred |
 | 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
-| 16 | `api_retry` banner | ▶ TODO | retargeted: card-level `TugPaneBanner` (via `deriveDevCardBannerSpec`), NOT a Z4B chip |
+| 16 | `api_retry` banner | ✅ DONE | tugdeck-only (forwarding/type already existed). Pure `classifyApiRetry` (every category → label + transient/likely-fatal severity) + `formatRetryCountdown`; `apiRetry` snapshot state (`deadline` stamped in the impure wrapper), cleared on `cost_update`/`turn_complete`; `kind:"api-retry"` banner spec under hard-error, over transport; DOM-ticked countdown ([L22]); `TugPaneBanner.message` widened to ReactNode. tsc clean, 3296 pure tests green; `at0105` authored + passed warm (cold single-file run races the harness Vite-compile gate, not the code) |
 | 17 | `thinking_text` empty-state | ✅ DONE | decision: **omit** ([Q12]) — no empty header to build — Q-D |
 | 18 | `@`-file completion | ✅ DONE | `services.fileCompletionProvider` wired to prompt entry |
 | 19 | Image drag/paste | ✅ DONE | `image-downsample.ts`, `atom-bytes-store.ts`, `synthesize-user-message.ts` |
@@ -2840,27 +2840,28 @@ category is slotted in. Copy: transient → `Retrying — <label>, attempt n/max
 **Artifacts:**
 - New (pure): `classifyApiRetry(error, errorStatus)` → `{ label, severity: "transient" | "likely-fatal" }` — the category taxonomy table above; the only place category→presentation mapping lives.
 - Modified: `dev-card-banner-spec.ts` — `DevCardBannerSpec` gains a `kind: "api-retry"` variant carrying `{ severity, label, attempt, maxRetries, deadline }`; `deriveDevCardBannerSpec` returns it just under the hard-`error` check and above `transport` / `replay-timeout` (a retry is mid-turn with the wire still online). The JSX maps `severity` → caution/danger tone. Cleared on `cost_update` / `turn_complete`.
-- Modified: `protocol.ts` — decode the `api_retry` CODE_OUTPUT frame (`attempt`, `max_retries`, `retry_delay_ms`, `error_status`, `error`); permissive, mirrors the existing outbound decoders.
-- Modified: `code-session-store` reducer threads `api_retry` onto the snapshot as `{ attempt, maxRetries, deadline, error, errorStatus }` ([L02]); clears it on `cost_update` / `turn_complete`. `deadline = arrivalNow + retryDelayMs` is computed in the impure store wrapper (time stays out of the reducer).
-- New: pure-logic countdown helper `formatRetryCountdown(deadline, now)`.
+- Modified: `code-session-store.ts` — `frameToEvent` decodes the `api_retry` CODE_OUTPUT frame (the codebase's actual per-type decode seam; there is no per-type decoder in `protocol.ts`). Normalizes snake→camel and stamps `deadline = Date.now() + retry_delay_ms` here (the impure wrapper), so the reducer stays time-free; `"api_retry"` added to `KNOWN_CODE_OUTPUT_TYPES`; `apiRetry` added to the snapshot.
+- Modified: `code-session-store` reducer threads `api_retry` onto the snapshot as `{ attempt, maxRetries, deadline, error, errorStatus }` ([L02]); clears it on `cost_update` and via `resetPerTurnTelemetry` (every `turn_complete` path spreads it).
+- Modified: `tug-pane-banner.tsx` — `message` prop widened `string` → `React.ReactNode` so the banner can embed the live DOM-ticked countdown span inline (string ⊂ ReactNode; backward-compatible).
+- New: pure-logic `classifyApiRetry` + `formatRetryCountdown` (`cards/api-retry.ts`); `RetryCountdown` component (`dev-card.tsx`).
 
-**Tasks:**
-- [ ] `protocol.ts`: decode the `api_retry` frame into a typed event for the store.
-- [ ] Reducer: handle the `api_retry` IPC event — store `{ attempt, maxRetries, deadline, error, errorStatus }` as structural snapshot state ([L02]); clear it on `cost_update` / `turn_complete`.
-- [ ] Pure `classifyApiRetry(error, errorStatus)` — the taxonomy table; exhaustive over known categories, transient/caution fallback for the unknown.
-- [ ] `deriveDevCardBannerSpec`: add the `kind: "api-retry"` spec (calls `classifyApiRetry`), placed just under the hard-`error` check. The banner shell (mount/unmount + the static label/attempt text) is React-rendered from the spec; the JSX picks caution vs danger tone from `severity`.
-- [ ] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state, mirroring the rate-limit countdown precedent: a `useLayoutEffect` mounts a `setInterval` that reads the deadline from a ref and writes the countdown `<span>`'s `textContent` directly. The tick never re-enters React's render cycle; the spec only re-renders on arrival + clear.
-- [ ] Cleanup the interval on unmount / clear-event.
-- [ ] Pure-logic `formatRetryCountdown(deadline, now)` returns the text the DOM mutation writes.
+**Tasks (as built):**
+- [x] Decode the `api_retry` frame into a typed event — in `frameToEvent` (the real decode seam), not `protocol.ts`; `deadline` stamped here.
+- [x] Reducer: `handleApiRetry` stores `{ attempt, maxRetries, deadline, error, errorStatus }` ([L02]); cleared on `cost_update` + `resetPerTurnTelemetry`.
+- [x] Pure `classifyApiRetry(error, errorStatus)` — exhaustive over known categories, transient/"API error" fallback (5xx → "Server error").
+- [x] `deriveDevCardBannerSpec`: `kind: "api-retry"` spec (calls `classifyApiRetry`), under the hard-`error` check, over transport/replay-timeout; JSX picks caution vs danger from `severity`.
+- [x] **Countdown ticks via direct DOM mutation ([L22])** — `RetryCountdown`'s `useLayoutEffect` `setInterval` writes the span's `textContent`; never re-enters React's render cycle. (Note: the rate-limit banner is *not* a tick precedent — it renders statically; this is a fresh DOM-tick.)
+- [x] Interval cleaned up on unmount / deadline change (effect cleanup).
+- [x] Pure-logic `formatRetryCountdown(deadline, now)`.
 
 **Tests:**
-- [ ] Pure-logic: `classifyApiRetry` — every category row maps to the right `{ label, severity }`; unknown → transient/"API error"; severity drives tone in the spec.
-- [ ] Pure-logic: `formatRetryCountdown`; `deriveDevCardBannerSpec` api-retry case + priority (under hard-error, over transport) + clear-on-event logic.
-- [ ] Real-app: inject `api_retry` (transient + likely-fatal) via probe; observe the card banner mounts with the right tone/copy, ticks via DOM, and clears on `cost_update`.
-- [ ] Real-app: verify React's commit count over the retry window — commits only on api_retry arrival + clear, not per tick.
+- [x] Pure-logic: `classifyApiRetry` — every category → `{ label, severity }`; unknown → transient/"API error"; 5xx fallback (`api-retry.test.ts`).
+- [x] Pure-logic: `formatRetryCountdown`; `deriveDevCardBannerSpec` api-retry case + priority + dismissed-error fall-through (`dev-card-banner-spec.test.ts`); reducer set/replace + clear-on-`cost_update`/`turn_complete` (`reducer.api-retry.test.ts`).
+- [x] Real-app: `at0105` injects transient + likely-fatal frames; asserts tone/copy/countdown + clear-on-`cost_update`. Passed warm (DOM captured: `Rate limited · attempt 3/10 · 8s`, caution).
+- [ ] React commit-count assertion over the retry window — NOT authored: the no-commit-per-tick guarantee is structural (`RetryCountdown` uses no React state; the spec only re-renders on arrival/clear), and an app-test commit counter is brittle. Deferred unless a real regression appears.
 
 **Checkpoint:**
-- [ ] `just app-test api-retry-banner`
+- [x] `just app-test at0105-api-retry-banner` — green warm / in-sweep. A cold single-file run races the harness's fixed 10s `window.__tug` page-load gate against the tugdeck Vite first-compile (environmental; hits any single-file run, not this code).
 
 ---
 

@@ -429,6 +429,26 @@ export interface CostSnapshot {
 }
 
 /**
+ * Live retry state, set from an `api_retry` frame and cleared at the
+ * next turn boundary (`cost_update` / `turn_complete`). Claude's SDK
+ * owns the retry loop; this is purely the in-flight announcement the
+ * dev-card banner mirrors.
+ *
+ * `deadline` is epoch-ms (`arrival + retry_delay_ms`), computed in the
+ * impure store wrapper so the reducer stays time-free. `error` is the
+ * raw category string from claude (`rate_limit`, `overloaded`,
+ * `authentication_failed`, …); `errorStatus` is the nullable HTTP
+ * status. Both feed `classifyApiRetry` at the banner-spec layer.
+ */
+export interface ApiRetryState {
+  attempt: number;
+  maxRetries: number;
+  deadline: number;
+  error: string;
+  errorStatus: number | null;
+}
+
+/**
  * The four-token `usage` shape carried by a `streaming_usage` /
  * `cost_update` frame, decoded to camelCase. Mirrors {@link TurnCost}
  * minus the dollar cost — dollars are cumulative-per-session and only
@@ -721,6 +741,12 @@ export interface CodeSessionSnapshot {
   } | null;
 
   lastCost: CostSnapshot | null;
+  /**
+   * Live API-retry announcement, or `null` when no retry is in flight.
+   * Set from an `api_retry` frame and cleared at the next turn boundary.
+   * The dev-card banner derives its tone + countdown from this.
+   */
+  apiRetry: ApiRetryState | null;
   /**
    * Tool calls denied during this session — by a permission rule or the
    * auto-mode classifier — accumulated across turns from each `cost_update`'s

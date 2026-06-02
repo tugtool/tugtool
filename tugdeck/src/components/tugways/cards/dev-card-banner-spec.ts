@@ -42,6 +42,7 @@
  */
 
 import type { CodeSessionSnapshot } from "@/lib/code-session-store";
+import { classifyApiRetry, type ApiRetrySeverity } from "./api-retry";
 
 /**
  * Subset of `LastErrorCause` that the card banner-routes. The full
@@ -70,6 +71,20 @@ export type DevCardBannerSpec =
       at: number;
     }
   | {
+      /**
+       * Claude's SDK is backing off on a retryable API failure. The
+       * category is already classified (via `classifyApiRetry`) into a
+       * `label` + `severity` so the renderer picks tone + copy without
+       * re-classifying. `deadline` is epoch-ms for the countdown.
+       */
+      kind: "api-retry";
+      severity: ApiRetrySeverity;
+      label: string;
+      attempt: number;
+      maxRetries: number;
+      deadline: number;
+    }
+  | {
       kind: "transport";
       state: "offline" | "restoring";
     }
@@ -88,6 +103,8 @@ export interface DevCardBannerCtx {
 /**
  * Pure derivation. Mutually exclusive by construction:
  * - error wins when present and not dismissed
+ * - api-retry wins next — it is mid-turn, the wire is still online, and
+ *   it should outrank a transient transport blip / replay dwell
  * - transport wins when no error is showing and the wire is not online
  * - replay-timeout wins when the most-recent replay timed out and the
  *   dwell window is still active
@@ -111,6 +128,17 @@ export function deriveDevCardBannerSpec(
       cause: snap.lastError.cause as BannerErrorCause,
       message: snap.lastError.message,
       at: snap.lastError.at,
+    };
+  }
+  if (snap.apiRetry !== null) {
+    const cls = classifyApiRetry(snap.apiRetry.error, snap.apiRetry.errorStatus);
+    return {
+      kind: "api-retry",
+      severity: cls.severity,
+      label: cls.label,
+      attempt: snap.apiRetry.attempt,
+      maxRetries: snap.apiRetry.maxRetries,
+      deadline: snap.apiRetry.deadline,
     };
   }
   if (snap.transportState !== "online") {

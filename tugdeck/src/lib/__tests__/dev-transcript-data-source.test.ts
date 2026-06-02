@@ -101,6 +101,7 @@ function snapshotWith(args: {
     activeTurn: args.activeTurn ?? null,
     pendingDraftRestore: null,
     lastCost: null,
+    apiRetry: null,
     permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,

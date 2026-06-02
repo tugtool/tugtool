@@ -138,6 +138,9 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "system_metadata",
   "control_request_forward",
   "cost_update",
+  // Claude's SDK is backing off and retrying a retryable API failure.
+  // Display-only: the reducer folds it into `apiRetry`, no phase change.
+  "api_retry",
   // Live intra-turn token usage — high-frequency telemetry frame the
   // reducer folds into `liveTurnUsage`; no phase change, no persist.
   "streaming_usage",
@@ -485,6 +488,11 @@ export class CodeSessionStore {
       // snapshot rebuild that touches an unrelated field.
       pendingDraftRestore: this.state.pendingDraftRestore,
       lastCost: this.state.lastCost,
+      // Live API-retry announcement (or null). The reducer assigns a
+      // fresh object only on an `api_retry` frame and clears it to null
+      // at turn boundaries, so the reference is `Object.is`-stable across
+      // quiescent rebuilds ([L02]).
+      apiRetry: this.state.apiRetry,
       // Accumulated denials for the Recently-denied tab. `mergeDenials`
       // preserves the reference when nothing new lands, so this is
       // `Object.is`-stable across quiescent rebuilds ([L02]).
@@ -1079,6 +1087,25 @@ export class CodeSessionStore {
         // threads it onto the dispatched event so the reducer stays
         // pure. See `roadmap/tugplan-dev-session-wake.md` [D02].
         return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "api_retry") {
+        // The wire carries `retry_delay_ms` (a duration); the banner
+        // wants an absolute `deadline` to count down toward. Stamping
+        // `Date.now() + delay` HERE — in the impure wrapper, like
+        // `add_user_message` mints its turnKey — keeps the reducer
+        // time-free. Wire fields are snake_case; normalize to camelCase
+        // for the reducer event.
+        const delayMs =
+          typeof ev.retry_delay_ms === "number" ? ev.retry_delay_ms : 0;
+        return {
+          type: "api_retry",
+          attempt: typeof ev.attempt === "number" ? ev.attempt : 0,
+          maxRetries: typeof ev.max_retries === "number" ? ev.max_retries : 0,
+          deadline: Date.now() + delayMs,
+          error: typeof ev.error === "string" ? ev.error : "unknown",
+          errorStatus:
+            typeof ev.error_status === "number" ? ev.error_status : null,
+        } as unknown as CodeSessionEvent;
       }
       return ev as unknown as CodeSessionEvent;
     }

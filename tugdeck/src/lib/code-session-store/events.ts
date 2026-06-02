@@ -430,6 +430,24 @@ export interface StreamingUsageEvent {
 }
 
 /**
+ * `api_retry` — claude's SDK is backing off and retrying a retryable API
+ * failure. Display-only telemetry, like `cost_update`: the reducer folds
+ * it into `apiRetry` with no phase change, and clears it at the next turn
+ * boundary. `deadline` (epoch ms) is stamped by the store wrapper
+ * (`arrival + retry_delay_ms`) so the reducer stays time-free; the raw
+ * wire fields are snake_case (`max_retries`, `retry_delay_ms`,
+ * `error_status`), normalized to camelCase here.
+ */
+export interface ApiRetryEvent {
+  type: "api_retry";
+  attempt: number;
+  maxRetries: number;
+  deadline: number;
+  error: string;
+  errorStatus: number | null;
+}
+
+/**
  * `error` — a wire-level error frame distinct from SESSION_STATE
  * errored and from transport close. Listed in the outbound event table
  * (design doc) but never captured in v2.1.105 fixtures, so tests
@@ -859,6 +877,7 @@ export type CodeSessionEvent =
   | CostUpdateEvent
   | StreamingUsageEvent
   | ContextBreakdownEvent
+  | ApiRetryEvent
   | WireErrorEvent
   | SessionStateErroredEvent
   | SessionUnknownEvent

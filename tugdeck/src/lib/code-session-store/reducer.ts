@@ -34,6 +34,7 @@ import type { ContentBlock } from "../../protocol";
 import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
+  ApiRetryEvent,
   AssistantTextEvent,
   AttachmentRejectedEvent,
   CancelQueuedSendActionEvent,
@@ -68,6 +69,7 @@ import type {
 } from "./events";
 import type {
   ActiveTurnSnapshot,
+  ApiRetryState,
   AssistantText,
   AssistantThinking,
   CardSessionMode,
@@ -399,6 +401,12 @@ export interface CodeSessionState {
   } | null;
   lastCost: CostSnapshot | null;
   /**
+   * Live API-retry announcement, or `null` when none is in flight. Set by
+   * `handleApiRetry`; cleared at the next turn boundary (`cost_update` and
+   * `resetPerTurnTelemetry`, which every `turn_complete` path spreads).
+   */
+  apiRetry: ApiRetryState | null;
+  /**
    * Tool calls denied this session, accumulated from each `cost_update`'s
    * `permission_denials`, deduped by `toolUseId`, most-recent last. Surfaced on
    * the snapshot for the `/permissions` Recently-denied tab. See {@link
@@ -691,6 +699,7 @@ export function createInitialState(
     queuedSends: [],
     lastError: null,
     lastCost: null,
+    apiRetry: null,
     permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,
@@ -1853,6 +1862,7 @@ function resetPerTurnTelemetry(): Pick<
   | "costAtSubmit"
   | "interruptInFlight"
   | "liveTurnUsage"
+  | "apiRetry"
 > {
   return {
     awaitingApprovalSince: null,
@@ -1869,6 +1879,10 @@ function resetPerTurnTelemetry(): Pick<
     // accumulation is dropped so the cells fall back to the just-
     // committed turn's figures with no double-count.
     liveTurnUsage: null,
+    // A retry banner is per-turn-transient: the turn it was retrying has
+    // ended, so the announcement is stale. Cleared on every turn_complete
+    // path (each spreads this) and at wake start.
+    apiRetry: null,
   };
 }
 
@@ -2835,6 +2849,10 @@ function handleCostUpdate(
     state: {
       ...state,
       lastCost,
+      // A `cost_update` lands at turn end (and only mid-turn after a
+      // successful resolution). Either way the retry the banner mirrored
+      // has resolved — clear the announcement.
+      apiRetry: null,
       permissionDenials,
       sessionInitTokens: captureSessionInit(
         state.sessionInitTokens,
@@ -2843,6 +2861,26 @@ function handleCostUpdate(
     },
     effects: [],
   };
+}
+
+/**
+ * `api_retry` reducer handler — display-only, like {@link
+ * handleCostUpdate}. Records the retry announcement on `apiRetry` with no
+ * phase change; a subsequent attempt overwrites it. Cleared at the next
+ * turn boundary (`handleCostUpdate` + `resetPerTurnTelemetry`).
+ */
+function handleApiRetry(
+  state: CodeSessionState,
+  event: ApiRetryEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const apiRetry: ApiRetryState = {
+    attempt: event.attempt,
+    maxRetries: event.maxRetries,
+    deadline: event.deadline,
+    error: event.error,
+    errorStatus: event.errorStatus,
+  };
+  return { state: { ...state, apiRetry }, effects: [] };
 }
 
 /**
@@ -3927,6 +3965,8 @@ export function reduce(
       return handleCancelQueuedSend(state, event);
     case "cost_update":
       return handleCostUpdate(state, event);
+    case "api_retry":
+      return handleApiRetry(state, event);
     case "streaming_usage":
       return handleStreamingUsage(state, event);
     case "context_breakdown":
