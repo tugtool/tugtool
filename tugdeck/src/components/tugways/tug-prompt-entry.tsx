@@ -1167,6 +1167,12 @@ export const TugPromptEntry = React.forwardRef<
       ROUTE_PREFIX_ALIAS,
     );
     const stripped = strippedText !== captured.text;
+    // Trim whitespace from both ends of the submitted command. Atoms
+    // ride as `￼` placeholder characters — never whitespace — so
+    // trimming only removes surrounding spaces / newlines and never
+    // touches an atom, keeping the placeholder count aligned with
+    // `sendAtoms`.
+    const submitText = strippedText.trim();
     // Atom positions shift left by 1 when the leading prefix is stripped.
     // The prefix character is plain text — never an atom — so the
     // filter on `position >= 1` only matters defensively.
@@ -1176,7 +1182,10 @@ export const TugPromptEntry = React.forwardRef<
         .map((a) => ({ position: a.position - 1, segment: a.segment }))
       : positionedAtoms;
     const sendAtoms: AtomSegment[] = atomsAdjusted.map((a) => a.segment);
-    codeSessionStore.send(strippedText, sendAtoms);
+    // A whitespace-only draft (no atoms) trims to nothing — treat it like
+    // the empty-input guard and don't send a blank turn.
+    if (submitText.length === 0 && sendAtoms.length === 0) return;
+    codeSessionStore.send(submitText, sendAtoms);
     // Record the submission in per-session history, keyed by the
     // session's id. The route field is what lets
     // `RouteHistoryProvider` filter this entry into the current

@@ -490,7 +490,7 @@ export function GalleryBadge() {
 /** Component Gallery (multi-tab entry point): large enough to show content. */
 const GALLERY_ENTRY_SIZE: CardSizePolicy = {
   min: { width: 450, height: 350 },
-  preferred: { width: 900, height: 720 },
+  preferred: { width: 900, height: 1000 },
 };
 
 /** Standard gallery component card (most variant grids, form demos). */
