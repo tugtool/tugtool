@@ -796,6 +796,18 @@
   border-radius: var(--tug-radius-2xs, 2px);
 }
 
+/* On a selected recents row the path equals the typed path, so the
+   matcher marks the whole string — its own tinted fill + dark text
+   would stack on the selection fill and defeat the row's color swap
+   (the path would stay dark on the blue). Drop the mark's fill and let
+   it inherit the row's selected-text color like the rest of the row. */
+.dev-card-picker-recents-list
+  .tug-list-row[data-selected="true"]
+  .dev-card-picker-match {
+  background: transparent;
+  color: inherit;
+}
+
 /* Uniform session-row height. The `New session` row is single-line
    while the resume rows carry a title + subtitle (two lines), so a min
    height keeps every session row the same comfortable size — the short

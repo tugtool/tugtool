@@ -190,7 +190,7 @@ body {
      step down in intensity because a row selection sits there persistently
      rather than flashing for one interaction. Hover steps back up toward
      the menu intensity. Selected text is near-white for legibility. */
-  --tug7-surface-selection-primary-normal-selected-rest: --tug-color(blue, i: 34, t: 44);
+  --tug7-surface-selection-primary-normal-selected-rest: --tug-color(blue, i: 46, t: 37);
   --tug7-surface-selection-primary-normal-selected-hover: --tug-color(blue, i: 46, t: 42);
   --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, i: 2, t: 100);
 
