@@ -1169,6 +1169,17 @@ export async function launchTugApp(
       subprocess,
     );
   } catch (err) {
+    // The socket never came up, so we never learned the GUI `hostPid`.
+    // Kill the spawned wrapper; if the app did spawn but hung before
+    // opening its test socket (rare — the socket binds early in boot),
+    // the recipe's per-run `apptest-*` instance-registry teardown is the
+    // backstop. Killing the wrapper here at least prevents an orphaned
+    // `open -n -W` from lingering.
+    try {
+      subprocess.kill("SIGKILL");
+    } catch {
+      // already dead
+    }
     detachSignals();
     try {
       logStream?.end();
@@ -1235,9 +1246,13 @@ export async function launchTugApp(
   // while the WKWebView is still at about:blank. Wait for tugdeck's
   // main.tsx to execute and attach `window.__tug` before returning,
   // so the first post-launch RPC doesn't race the page load. Wire
-  // params are flat; no `params` envelope. On failure we kill the
-  // subprocess ourselves — the caller never received an App and
-  // therefore has no `close()` path.
+  // params are flat; no `params` envelope. On failure we tear down the
+  // app ourselves — the caller never received an App and therefore has
+  // no `close()` path. The app is launched via `open -n -W`, so
+  // `subprocess` is the wrapper, NOT the GUI process; killing only the
+  // wrapper would orphan Tug.app (and its tugcast / tugcode children).
+  // So kill the captured `hostPid` first, mirroring the version-skew
+  // teardown above.
   try {
     await rpc.call<boolean>({
       method: "waitForCondition",
@@ -1245,6 +1260,9 @@ export async function launchTugApp(
       timeoutMs: resolved.connectTimeoutMs,
     });
   } catch (err) {
+    if (hostPid > 0) {
+      try { processKillNative(hostPid, "SIGKILL"); } catch { /* already dead */ }
+    }
     try {
       subprocess.kill("SIGKILL");
     } catch {
@@ -1662,6 +1680,25 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
       });
     } catch {
       // ignore — the fallback below still runs
+    }
+    // Reclaim the instance's tmux session. tugcast hosts each instance's
+    // session in the shared tmux server as `cc-<instanceId>`; it is NOT a
+    // child of Tug.app, so killing the app (via `instance stop` above)
+    // leaves the session — and the PTY it pins — alive. Across many runs
+    // these accumulate and exhaust the macOS pseudo-terminal pool, which
+    // then surfaces as `fork failed: Device not configured` and a launch
+    // that restart-storms forever. Every teardown path (App.close plus
+    // the launch-failure paths) routes through this wrapped kill, so
+    // killing the session here is the single place that reclaims it.
+    try {
+      spawnSync?.({
+        cmd: ["tmux", "kill-session", "-t", `cc-${instanceId}`],
+        stdout: "ignore",
+        stderr: "ignore",
+        stdin: "ignore",
+      });
+    } catch {
+      // no such session / no tmux server — nothing to reclaim
     }
     // Also signal the `open -W` wrapper so its `.exited` resolves
     // promptly on the harness side.
