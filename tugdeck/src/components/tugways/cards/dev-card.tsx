@@ -1838,6 +1838,7 @@ function DevProjectPickerForm({
                 delegate={sessionsDelegate}
                 cellRenderers={SESSIONS_CELL_RENDERERS}
                 scrollKey="dev-card-picker-sessions"
+                rowLayout="flush"
                 className="dev-card-picker-sessions-list dev-card-picker-list-view"
               />
             ) : sessionsPending ? (

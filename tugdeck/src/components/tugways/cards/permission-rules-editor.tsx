@@ -193,6 +193,10 @@ const RuleCell: TugListViewCellRenderer<FilteredTugListViewDataSource> =
           </TugPushButton>
         }
       >
+        {/* Sanctioned `children` escape hatch (list-view-usage.md): the
+            rule pattern is monospace content with a full-text tooltip,
+            not a prose title — `.permission-rule-matcher` supplies the
+            consistent mono typography. */}
         <span className="permission-rule-matcher" title={rule.raw}>
           {rule.raw}
         </span>
@@ -571,6 +575,9 @@ function RecentlyDeniedPanel({
               </span>
             }
           >
+            {/* Sanctioned `children` escape hatch (list-view-usage.md):
+                monospace matcher pattern with a full-text tooltip, not a
+                prose title. */}
             <span className="permission-rule-matcher" title={matcher}>
               {matcher}
             </span>

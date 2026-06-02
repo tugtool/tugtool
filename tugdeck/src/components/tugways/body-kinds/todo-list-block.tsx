@@ -334,6 +334,13 @@ function TaskRowIcon({
  * `description` is present, the row is wrapped in a `TugTooltip` so
  * the longer prose surfaces on hover; the row body stays
  * single-line.
+ *
+ * Sanctioned custom cell (not `TugListRow`) per the list-view house
+ * rules (`tuglaws/list-view-usage.md`): the per-status background band,
+ * strikethrough-on-completed decoration, live progress-ring icon, and
+ * per-status wrap behavior are not the title/subtitle row model, and
+ * expressing them through `TugListRow` would mean overriding the
+ * primitive's internals ([L20]) and losing the checklist's density.
  */
 const TaskCell: TugListViewCellRenderer<TaskListDataSource> = ({
   index,

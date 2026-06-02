@@ -184,12 +184,15 @@ function renderHighlighted(
 // ---------------------------------------------------------------------------
 
 /**
- * Path-recent cell. Composes a `TugListRow` — `variant` inherited as
- * `pill` from the Recents list's `rowLayout` — and renders the path
- * text with `<mark>` highlights at the matcher's match ranges as the
- * row's `children`. RTL middle-ellipsis path text is not a plain
- * title, so it rides the `children` escape hatch, not the `title`
- * prop.
+ * Path-recent cell. Composes a `TugListRow` — `flush` variant inherited
+ * from the Recents list's `rowLayout` — and renders the path text with
+ * `<mark>` highlights at the matcher's match ranges as the row's
+ * `children`. This is a sanctioned `children` escape hatch per the
+ * list-view house rules ([list-view-usage.md]): the content is not a
+ * plain string but monospace, RTL middle-ellipsis path text carrying
+ * inline `<mark>` search highlights, which `TugLabel`'s string `title`
+ * cannot express. The `.dev-card-picker-path-recent` rule supplies the
+ * consistent (mono) typography.
  *
  * Selection mirrors the typed project path: the row highlights exactly when
  * its path equals `currentPath` (from `PickerCellContext`), and none highlight
@@ -260,17 +263,11 @@ export const SessionNewCell: TugListViewCellRenderer<DevSessionsDataSource> =
     const { selection } = usePickerCellContext();
     const isSelected = selection?.kind === "session-new";
     return (
-      <div
-        className="dev-card-picker-session-option"
+      <TugListRow
+        title="New session"
+        selected={isSelected}
         data-testid="dev-card-picker-session-new"
-        data-selected={isSelected ? "true" : undefined}
-      >
-        <div className="dev-card-picker-session-option-text">
-          <span className="dev-card-picker-session-option-title">
-            New session
-          </span>
-        </div>
-      </div>
+      />
     );
   };
 
@@ -314,60 +311,58 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
 
   const idShort = row.session_id.slice(0, 8);
 
+  // Trailing accessory: a live/failed status badge, a trash action, or
+  // both (a failed row can still be trashed). The trash reveals on row
+  // hover/focus-within for the plain case; when a badge is present the
+  // trailing stays visible.
+  const badge = isLive ? (
+    <TugBadge emphasis="tinted" role="action">
+      live
+    </TugBadge>
+  ) : isFailed ? (
+    <TugBadge emphasis="tinted" role="danger">
+      failed
+    </TugBadge>
+  ) : null;
+  const trash = !isLive ? (
+    <TugIconButton
+      icon={<Trash2 size={14} aria-hidden="true" />}
+      aria-label={`Move session ${idShort} to Trash`}
+      title={`Move session ${idShort} to Trash`}
+      tone="danger"
+      className="dev-card-picker-session-trash"
+      dispatch={{
+        action: TUG_ACTIONS.REQUEST_TRASH_SESSION,
+        value: { sessionId: row.session_id },
+        phase: "discrete",
+      }}
+    />
+  ) : null;
+  const trailing =
+    badge !== null || trash !== null ? (
+      <>
+        {badge}
+        {trash}
+      </>
+    ) : undefined;
+
   // The row carries `data-session-id` so the form's anchor-resolution
-  // layout effect can locate this row's trash button when the user
-  // dispatches `request-trash-session` for this session — see
-  // `dev-card.tsx` `pendingTrashAnchorEl` resolution.
+  // layout effect can locate this row's trash button (a descendant
+  // `[data-slot="tug-icon-button"]`) when the user dispatches
+  // `request-trash-session` — see `dev-card.tsx` `pendingTrashAnchorEl`.
   return (
-    <div
-      className="dev-card-picker-session-option"
+    <TugListRow
+      title={snippet ?? "No prompts yet"}
+      subtitle={subtitleText}
+      selected={isSelected}
+      disabled={isLive}
+      trailing={trailing}
+      trailingReveal={badge !== null ? "always" : "hover"}
       data-testid="dev-card-picker-session-resume"
       data-state={row.state}
-      data-selected={isSelected ? "true" : undefined}
-      data-disabled={isLive ? "true" : undefined}
       data-session-id={row.session_id}
       data-pending-trash={isPendingTrash ? "true" : undefined}
-    >
-      <div className="dev-card-picker-session-option-text">
-        <span
-          className="dev-card-picker-session-option-title"
-          title={titleText.length > 0 ? titleText : undefined}
-          aria-label={titleText.length > 0 ? titleText : undefined}
-        >
-          {snippet ?? <em>No prompts yet</em>}
-        </span>
-        <span
-          className="dev-card-picker-session-option-subtitle"
-          data-testid="dev-card-picker-resume-subtitle"
-        >
-          {subtitleText}
-        </span>
-      </div>
-      {!isLive && (
-        <TugIconButton
-          icon={<Trash2 size={14} aria-hidden="true" />}
-          aria-label={`Move session ${idShort} to Trash`}
-          title={`Move session ${idShort} to Trash`}
-          tone="danger"
-          className="dev-card-picker-session-trash"
-          dispatch={{
-            action: TUG_ACTIONS.REQUEST_TRASH_SESSION,
-            value: { sessionId: row.session_id },
-            phase: "discrete",
-          }}
-        />
-      )}
-      {isLive && (
-        <TugBadge emphasis="tinted" role="action">
-          live
-        </TugBadge>
-      )}
-      {isFailed && (
-        <TugBadge emphasis="tinted" role="danger">
-          failed
-        </TugBadge>
-      )}
-    </div>
+    />
   );
 };
 

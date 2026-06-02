@@ -49,6 +49,7 @@ import React, {
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugListRow } from "@/components/tugways/tug-list-row";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import {
   TugChoiceGroup,
@@ -165,32 +166,22 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
         ? `Current · ${stat}`
         : "Current"
       : stat;
-    // Reuse the session-picker option visual ([L20] cascade-scoped) so the
-    // two pickers read the same.
+    // A reserved non-breaking space keeps stat-less rows the same height
+    // as rows that carry a subtitle, so the turn list reads as an even stack.
+    const subtitleText = blocked
+      ? "Can't rewind past a /compact"
+      : subtitle.length > 0
+        ? subtitle
+        : " ";
     return (
-      <div
-        className="dev-card-picker-session-option"
+      <TugListRow
+        title={title}
+        subtitle={subtitleText}
+        selected={selected}
+        disabled={blocked}
         data-testid="rewind-turn-row"
-        data-selected={selected ? "true" : undefined}
-        data-disabled={blocked ? "true" : undefined}
         data-prompt-uuid={row.promptUuid}
-      >
-        <div className="dev-card-picker-session-option-text">
-          <span
-            className="dev-card-picker-session-option-title"
-            title={row.preview.length > 0 ? row.preview : undefined}
-          >
-            {title}
-          </span>
-          <span className="dev-card-picker-session-option-subtitle">
-            {blocked
-              ? "Can't rewind past a /compact"
-              : subtitle.length > 0
-                ? subtitle
-                : " "}
-          </span>
-        </div>
-      </div>
+      />
     );
   };
 
@@ -405,6 +396,7 @@ function RewindSheetBody({
                   delegate={delegate}
                   cellRenderers={REWIND_CELL_RENDERERS}
                   scrollKey="rewind-turns"
+                  rowLayout="flush"
                   className="dev-card-picker-sessions-list dev-card-picker-list-view"
                 />
               ) : (

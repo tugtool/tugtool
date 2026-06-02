@@ -418,6 +418,12 @@ class SearchResultDataSource implements TugListViewDataSource {
  * Clicking the row toggles the file's collapse state. Mirrors
  * `JsonTreeBlock`'s container line: a plain click on an inert row, no
  * role / tabindex.
+ *
+ * Sanctioned custom cell (not `TugListRow`) per the list-view house
+ * rules (`tuglaws/list-view-usage.md`): a dense tool-output row with a
+ * twist chevron, monospace path, and trailing match-count layout, not a
+ * title/subtitle row. No selection; its only state affordance is a
+ * `:hover` background from the shared `--tugx-block-row-hover-bg` token.
  */
 const FileHeaderCell: TugListViewCellRenderer<SearchResultDataSource> = ({
   index,

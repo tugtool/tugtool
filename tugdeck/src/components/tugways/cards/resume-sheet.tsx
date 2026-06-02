@@ -170,6 +170,7 @@ function ResumeSheetBody({
             delegate={delegate}
             cellRenderers={SESSIONS_CELL_RENDERERS}
             scrollKey="resume-sheet-sessions"
+            rowLayout="flush"
             className="dev-card-picker-sessions-list dev-card-picker-list-view"
           />
         </div>

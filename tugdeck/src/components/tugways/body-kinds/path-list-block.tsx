@@ -320,6 +320,12 @@ const ICON_BY_KIND: Readonly<
  * `MiddleEllipsisPath`: it fills the row, shows whole when it fits,
  * and collapses in the middle (filename pinned) only when genuinely
  * too wide.
+ *
+ * Sanctioned custom cell (not `TugListRow`) per the list-view house
+ * rules (`tuglaws/list-view-usage.md`): a dense, monospace, middle-
+ * ellipsis tool-output row, not a title/subtitle row. It holds no
+ * selection; its only state affordance is a `:hover` background from
+ * the shared `--tugx-block-row-hover-bg` token.
  */
 const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
   index,

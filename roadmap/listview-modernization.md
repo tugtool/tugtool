@@ -100,9 +100,9 @@ Explicit kebab-case anchors; steps cite `[P01]`, specs `S01`, tables `T01`, and 
 
 **Options:** (a) migrate to `TugListRow` with `children` + shared tokens; (b) keep custom but route their colors through `--tugx-list-row-*`-aligned tokens and document the exemption.
 
-**Plan to resolve:** Spike one block (`todo-list-block`) onto `TugListRow children` in Step 7 and compare density/diff size before committing the other two.
+**Plan to resolve:** Evaluate `todo-list-block` against `TugListRow` and compare cost before committing the other two.
 
-**Resolution:** OPEN — decided during Step 7 spike; the other two follow the spike's verdict ([P06]).
+**Resolution:** DECIDED — **exempt (option b)**. `todo-list-block`'s rows carry a per-status background band, strikethrough-on-completed text decoration, a live `TugProgressIndicator` ring icon, and per-status single-line-vs-wrap behavior; `path-list`/`search-result` are monospace paths and match-count layouts. Expressing these through `TugListRow` would require pervasive overrides into the primitive's title `TugLabel`, padding, and background — an [L20] violation — and regress the compact density these tool-output checklists depend on. They render `inline`, hold no selection (no ramp duplication), and their only state affordance is a `:hover` background from the shared `--tugx-block-row-hover-bg` token. Recorded as a sanctioned exception in `list-view-usage.md`. A throwaway migration spike was judged unnecessary — the status-band / strikethrough / live-ring / density evidence in the existing CSS is conclusive.
 
 #### [Q02] `rowLayout` house style — flush everywhere, or keep pill for recents? (DECIDED) {#q02-rowlayout}
 
@@ -277,14 +277,14 @@ Explicit kebab-case anchors; steps cite `[P01]`, specs `S01`, tables `T01`, and 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | House-rules doc + component-authoring link | pending | — |
-| #step-2 | Migrate session picker cells to TugListRow | pending | — |
-| #step-3 | Migrate rewind cell + delete duplicated selection CSS | pending | — |
-| #step-4 | Reclaim escape-hatch cells (recents, matcher) | pending | — |
-| #step-5 | Tier 1 consistency sweep (knobs uniform) | pending | — |
-| #step-6 | Body-kinds spike + decision (todo-list-block) | pending | — |
-| #step-7 | Apply body-kinds decision to remaining blocks | pending | — |
-| #step-8 | Document transcript exception + final integration | pending | — |
+| #step-1 | House-rules doc + component-authoring link | done | fc55a368 |
+| #step-2 | Migrate session picker cells to TugListRow | done | 2395ac74 (folded w/ #step-3) |
+| #step-3 | Migrate rewind cell + delete duplicated selection CSS | done | 2395ac74 |
+| #step-4 | Reclaim escape-hatch cells (recents, matcher) | done | 40e467a7 |
+| #step-5 | Tier 1 consistency sweep (knobs uniform) | done | e0e5d8b3 |
+| #step-6 | Body-kinds spike + decision (todo-list-block) | done | 63adc8ab (verdict: exempt) |
+| #step-7 | Apply body-kinds decision to remaining blocks | done | a513d957 |
+| #step-8 | Document transcript exception + final integration | done | (transcript doc in fc55a368; verification only) |
 
 ---
 

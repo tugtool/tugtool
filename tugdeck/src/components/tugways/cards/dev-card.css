@@ -677,55 +677,6 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Session-option layout inside each TugRadioItem.
-   The radio circle is owned by TugRadioGroup; this block only shapes
-   the per-row title + subtitle stack that we pass as the item's
-   children. */
-.dev-card-picker-session-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--tug-space-xxs, 2px);
-}
-
-.dev-card-picker-session-option-title {
-  font-size: var(--tug-font-size-sm, 0.875rem);
-  font-weight: 500;
-}
-
-/* @tug-renders-on: surface.global.neutral.default */
-.dev-card-picker-session-option-subtitle {
-  font-size: var(--tug-font-size-xs, 0.75rem);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* Rich resume row: snippet title + subtitle take the leading edge,
-   the Trash icon button (or state pill) anchors to the trailing
-   edge. The trash control is a TugIconButton, which owns its hit
-   target, border, hover/focus token treatment, and focus refusal —
-   see [tugplan-dev-picker-redesign §D16]. This rule only adds
-   layout (trailing-edge alignment) and the hover-reveal opacity
-   pattern; visual chrome is delegated to tug-button.css. */
-.dev-card-picker-session-trash {
-  margin-inline-start: auto;
-  /* Hidden by default so closed-state rows read as clean snippets;
-     surfaced on row hover/focus-within and on direct icon focus. */
-  opacity: 0;
-}
-
-/* Reveal Trash on row hover or focus-within. The form-owned popover
-   does not need a CSS hook here: while the popover is open the user's
-   pointer is on the popover itself (portaled outside the row), but
-   the trash icon is already visible from the originating click and
-   the popover sits directly to its left (`side="left"`). */
-.dev-card-picker-form [role="radio"]:hover .dev-card-picker-session-trash,
-.dev-card-picker-form [role="radio"]:focus-within .dev-card-picker-session-trash,
-.dev-card-picker-session-trash:focus,
-.dev-card-picker-session-trash:focus-within,
-.dev-card-picker-session-trash:hover {
-  opacity: 1;
-}
-
 /* ----------------------------------------------------------------------------
    .dev-card-picker — master/detail picker body (Recents + Sessions)
    ----------------------------------------------------------------------------
@@ -801,19 +752,6 @@
   height: 100%;
 }
 
-/* iOS UITableView-style row dividers — every cell except the last
-   gets a 1px bottom border so the list reads as a proper table.
-   Applies to the Sessions list; the Recents list moved to `pill`
-   `TugListRow`s, which carry their own borders. */
-.dev-card-picker-list-view .tug-list-view-cell {
-  border-bottom:
-    1px solid var(--tug7-element-global-border-normal-muted-rest);
-}
-
-.dev-card-picker-list-view .tug-list-view-cell:last-child {
-  border-bottom: none;
-}
-
 /* The Recents list fills its host edge-to-edge — zero block + inline
    padding so the rows sit flush to the bordered host on every side.
    (The Sessions list gets the same from `.dev-card-picker-list-view`
@@ -864,133 +802,37 @@
   border-radius: var(--tug-radius-2xs, 2px);
 }
 
-/* session-new / session-resume — detail rows. Horizontal layout:
-   text column on the leading edge, trailing affordance (trash
-   icon, live/failed badge) on the trailing edge. Same font-smoothing
-   pin as path-recent so text doesn't subpixel-shift when the row's
-   background changes between selected and not-selected. */
-.dev-card-picker-sessions-list .dev-card-picker-session-option {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--tug-space-sm, 8px);
-  padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
-  /* Two-line cells (session-resume) set the standard row cadence.
-     The session-new cell renders shorter per the rule below. */
-  min-height: 3rem;
-  cursor: pointer;
-  background: transparent;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* New session — the common-case row, intentionally shorter than the
-   two-line resume rows so it reads as a quick action rather than
-   visually competing with the rich resume rows beneath. ~80% of the
-   standard row height. */
+/* Trailing affordance — the trash icon button lives in the row's
+   TugListRow trailing slot, which hides it until row hover /
+   focus-within (`trailingReveal="hover"`). The only extra behavior
+   this scope adds: keep the trash visible while THIS row's confirm
+   popover is open — the pointer is then on the portaled popover, off
+   the row, so the primitive's hover reveal wouldn't fire. */
 .dev-card-picker-sessions-list
-  [data-testid="dev-card-picker-session-new"] {
-  min-height: 2.4rem;
-}
-
-/* Title + subtitle column — flexes to fill the leading edge so the
-   trailing affordance is pushed to the right. `min-width: 0` lets
-   long titles truncate instead of forcing the row wider than the
-   list. */
-.dev-card-picker-session-option-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-2xs, 2px);
-}
-
-.dev-card-picker-session-option-title {
-  font-size: var(--tug-font-size-sm, 0.875rem);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dev-card-picker-session-option-subtitle {
-  font-size: var(--tug-font-size-xs, 0.75rem);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dev-card-picker-sessions-list
-  .dev-card-picker-session-option:hover {
-  background: var(--tug7-surface-control-primary-ghost-action-hover);
-}
-
-.dev-card-picker-sessions-list
-  .dev-card-picker-session-option[data-selected="true"] {
-  background: var(--tug7-surface-selection-primary-normal-plain-rest);
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-.dev-card-picker-sessions-list
-  .dev-card-picker-session-option[data-disabled="true"] {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* Trailing affordance — trash icon button or state badge. Anchored
-   to the trailing edge by the `flex: 1` text column above. The
-   icon hides until row hover / focus-within so closed-state rows
-   read clean. The TugIconButton owns its visual chrome (border,
-   hit target, hover/active token treatment); this scope only adds
-   `flex-shrink: 0` and the hover-reveal opacity gate. */
-.dev-card-picker-sessions-list .dev-card-picker-session-trash {
-  flex-shrink: 0;
-  opacity: 0;
-}
-
-.dev-card-picker-sessions-list
-  .dev-card-picker-session-option:hover
-  .dev-card-picker-session-trash,
-.dev-card-picker-sessions-list
-  .dev-card-picker-session-option:focus-within
-  .dev-card-picker-session-trash,
-.dev-card-picker-sessions-list
-  .dev-card-picker-session-option[data-pending-trash="true"]
-  .dev-card-picker-session-trash,
-.dev-card-picker-sessions-list .dev-card-picker-session-trash:focus,
-.dev-card-picker-sessions-list .dev-card-picker-session-trash:focus-within,
-.dev-card-picker-sessions-list .dev-card-picker-session-trash:hover {
+  .tug-list-row[data-pending-trash="true"]
+  .tug-list-row-trailing[data-reveal="hover"] {
   opacity: 1;
 }
 
-/* Mac-menu-open style: while the form-owned confirm popover is up
-   for THIS row, paint the trash button with the danger-active
-   token so it reads as "this is the affordance whose menu is
-   open." The button stays at full opacity (above) and gets the
-   active visual treatment regardless of cursor position — even
-   when the cursor moves off onto the popover. TugIconButton
-   composes `.dev-card-picker-session-trash` directly onto the
-   `<button>` element (no inner wrapper), so the selector targets
-   the button itself; the active-token overrides apply on top of
-   TugButton's `.tug-button-ghost-danger` rest classes. */
+/* Mac-menu-open style: while THIS row's confirm popover is up, paint
+   the trash button with the danger-active token so it reads as "this
+   is the affordance whose menu is open" — regardless of cursor
+   position. TugIconButton composes `.dev-card-picker-session-trash`
+   onto the `<button>`, so the selector targets the button itself; the
+   active-token overrides apply on top of TugButton's
+   `.tug-button-ghost-danger` rest classes. */
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-danger-active */
 .dev-card-picker-sessions-list
-  .dev-card-picker-session-option[data-pending-trash="true"]
+  .tug-list-row[data-pending-trash="true"]
   .dev-card-picker-session-trash {
   background-color: var(--tug7-surface-control-primary-ghost-danger-active);
   border-color: var(--tug7-element-control-border-ghost-danger-active);
   color: var(--tug7-element-control-text-ghost-danger-active);
 }
 .dev-card-picker-sessions-list
-  .dev-card-picker-session-option[data-pending-trash="true"]
+  .tug-list-row[data-pending-trash="true"]
   .dev-card-picker-session-trash svg {
   color: var(--tug7-element-control-icon-ghost-danger-active);
-}
-
-.dev-card-picker-sessions-list
-  .dev-card-picker-session-option > .tug-badge {
-  flex-shrink: 0;
 }
 
 /* Trash-all button container — centered below the Sessions box.

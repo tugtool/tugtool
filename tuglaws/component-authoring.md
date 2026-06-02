@@ -830,6 +830,16 @@ Content blocks render no text-entry UI of their own — no per-block Find row. A
 
 ## Component Patterns
 
+### List rows — compose `TugListRow`
+
+Any component that renders a `TugListView` (a picker, a listing sheet, a
+tool-output block) follows the [list-view-usage.md](list-view-usage.md) house
+rules: cell renderers compose `TugListRow` (never hand-rolled row `<div>`s),
+consumers never reimplement the selection / hover / disabled ramp in their own
+CSS, single-select lists use `selectedGlyph`, and read-only listings pass
+`interactive={false}`. That doc carries the consumer inventory, the
+selection-ownership matrix, and the list of sanctioned custom-cell exceptions.
+
 ### Controlled feedback states (e.g. async confirmation)
 
 For UI feedback whose validity depends on an asynchronous outcome — Copy showing "Copied" only after the clipboard actually accepted the write, Save flashing "Saved" only after the server returned 2xx, Delete confirming only after the row is gone. The component exposes a controlled prop that the parent flips after the operation resolves. False-positive feedback is the bug this pattern exists to prevent: a button that flashes "Copied" on every click — even when permission was denied — silently lies about state, and the user trusts the lie.

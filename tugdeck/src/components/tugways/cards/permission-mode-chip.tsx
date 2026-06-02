@@ -36,7 +36,7 @@
 import "./permission-mode-chip.css";
 
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import { Check, ShieldCogCorner } from "lucide-react";
+import { ShieldCogCorner } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
@@ -286,11 +286,11 @@ class PermissionModeDataSource implements TugListViewDataSource {
 
 /**
  * One behavior-option row. A flush `TugListRow` whose title is the formatted
- * mode label over a brief description; the row paints selected (with a leading
- * checkmark) when its mode matches the sheet-open-time current mode. Every row
- * renders the fixed-width check holder — empty when unselected — so the titles
- * align whether or not a row carries the mark. Presentational — activation is
- * the enclosing `TugListView` cell wrapper's job (it fires `delegate.onSelect`).
+ * mode label over a brief description; `selectedGlyph="check"` reserves the
+ * fixed-width check column on every row — showing the mark when its mode
+ * matches the sheet-open-time current mode, empty otherwise so the titles
+ * align. Presentational — activation is the enclosing `TugListView` cell
+ * wrapper's job (it fires `delegate.onSelect`).
  */
 const PermissionModeCell: TugListViewCellRenderer<PermissionModeDataSource> =
   function PermissionModeCell({
@@ -305,11 +305,7 @@ const PermissionModeCell: TugListViewCellRenderer<PermissionModeDataSource> =
         title={formatPermissionMode(mode)}
         subtitle={PERMISSION_MODE_SUBTITLES[mode]}
         selected={selected}
-        leading={
-          <span className="permission-mode-check" aria-hidden="true">
-            {selected ? <Check /> : null}
-          </span>
-        }
+        selectedGlyph="check"
         data-mode={mode}
       />
     );
