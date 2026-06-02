@@ -53,7 +53,41 @@ class ProcessManager {
     /// by launching the user's actual login shell (from /etc/passwd via dscl) in login-interactive
     /// mode and asking it to print $PATH. Blocks for ~1s — call after the window is visible.
     static func resolveShellPATH() {
-        _shellPATH = {
+        // Fast path: a previously-cached PATH that still locates tmux.
+        //
+        // The only thing the app strictly needs from the shell PATH is to
+        // find tmux (and the sibling child-process tools — git, bun/node —
+        // which live alongside it). A user's PATH is effectively constant
+        // launch-to-launch, so re-deriving it every time is wasted work:
+        // the login-INTERACTIVE shell spawn below sources the full `.zshrc`
+        // (prompt, plugins, completions…) just to print `$PATH`, blocking
+        // launch for ~250ms.
+        //
+        // Instead: trust the cached PATH and validate it with a filesystem
+        // stat for tmux. If tmux is still there, we're done — no subprocess
+        // at all. We only pay the shell spawn when tmux is NOT locatable on
+        // the cached PATH (first run, tmux moved / uninstalled, or the PATH
+        // genuinely changed), and we refresh the cache when we do.
+        //
+        // Trade-off: a tool newly installed into a PATH dir that the cache
+        // doesn't yet contain (but tmux still resolves) won't be picked up
+        // until the next cache miss. For Tug's stable toolchain that never
+        // bites in practice; if it ever does, deleting the cache file forces
+        // a re-resolve.
+        if let cached = readCachedShellPATH(), which("tmux", onPath: cached) != nil {
+            _shellPATH = cached
+            return
+        }
+
+        let resolved = resolveShellPATHViaLoginShell()
+        _shellPATH = resolved
+        writeCachedShellPATH(resolved)
+    }
+
+    /// Derive the user's fully-configured PATH by spawning their login
+    /// shell. The slow path behind {@link resolveShellPATH}'s cache — runs
+    /// only on a cache miss.
+    private static func resolveShellPATHViaLoginShell() -> String {
         // Step 1: Find the user's login shell via Directory Services
         var loginShell = "/bin/zsh" // sensible default
         let dscl = Process()
@@ -99,7 +133,34 @@ class ProcessManager {
 
         // Step 3: Last resort — use whatever the app inherited
         return ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-    }()
+    }
+
+    /// Location of the cached shell-PATH file under the Tug app-support dir.
+    private static var shellPATHCacheURL: URL {
+        let appSupport = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Library/Application Support")
+        return appSupport
+            .appendingPathComponent("Tug", isDirectory: true)
+            .appendingPathComponent("shell-path.cache")
+    }
+
+    private static func readCachedShellPATH() -> String? {
+        guard let data = try? Data(contentsOf: shellPATHCacheURL),
+              let raw = String(data: data, encoding: .utf8) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func writeCachedShellPATH(_ path: String) {
+        let url = shellPATHCacheURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? Data(path.utf8).write(to: url, options: .atomic)
     }
 
     /// Check if tmux is available using the user's shell PATH
@@ -107,9 +168,16 @@ class ProcessManager {
         return which("tmux") != nil
     }
 
-    /// Find a binary on the user's shell PATH
+    /// Find a binary on the user's resolved shell PATH.
     static func which(_ name: String) -> String? {
-        for dir in shellPATH.components(separatedBy: ":") {
+        return which(name, onPath: shellPATH)
+    }
+
+    /// Find a binary on an explicit `:`-separated PATH. Used by
+    /// {@link resolveShellPATH} to validate a cached PATH before it is
+    /// adopted as `_shellPATH`.
+    private static func which(_ name: String, onPath pathList: String) -> String? {
+        for dir in pathList.components(separatedBy: ":") {
             let path = (dir as NSString).appendingPathComponent(name)
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
