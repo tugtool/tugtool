@@ -22,6 +22,175 @@ private final class DevInfoOverlayView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// WaveProgressView — Swift port of tugdeck's TugProgressWave glyph (the
+/// three-bar "wave" that TugProgressIndicator renders in its `wave` variant).
+///
+/// Three vertical bars pulse in a staggered cycle. The rest pose is
+/// short-long-short (outer bars at 0.5, middle bar at 1.0); each bar scales
+/// toward the inverse pose at its pulse peak, producing the wave silhouette.
+/// Geometry and motion mirror
+/// `tugdeck/src/components/tugways/internal/tug-progress-wave.{tsx,css}`
+/// exactly, parameterized by `size` (bar height in pt) so the call site can
+/// pick any scale.
+///
+/// The web glyph runs as a WAAPI animation whose effect easing (`ease-in-out`)
+/// is applied to the cycle progress, then the per-bar keyframes are
+/// interpolated linearly. That exact curve is baked here into a densely
+/// sampled `CAKeyframeAnimation`, so Core Animation reproduces the same motion
+/// (GPU-driven, no display-link bookkeeping).
+private final class WaveProgressView: NSView {
+    // Mirror of the TSX module constants.
+    private static let barCount = 3
+    private static let barWidthRatio: CGFloat = 0.15
+    private static let gapToWidthRatio: CGFloat = 0.8
+    private static let sideBarRatio = 0.5            // outer bars' rest scale
+    private static let shrinkTo = 0.5                // middle bar's peak scale
+    private static let cycleSeconds: CFTimeInterval = 0.96
+    private static let pulseWindowRatio = 600.0 / 960.0
+    private static let pulseStaggerRatio = 180.0 / 960.0
+    private static let sampleCount = 120
+
+    private let size: CGFloat
+    private let barColor: NSColor
+    private var barLayers: [CALayer] = []
+
+    init(size: CGFloat, color: NSColor) {
+        self.size = size
+        self.barColor = color
+        super.init(frame: NSRect(origin: .zero, size: WaveProgressView.intrinsicSize(for: size)))
+        wantsLayer = true
+        buildBars()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var intrinsicContentSize: NSSize { WaveProgressView.intrinsicSize(for: size) }
+
+    private static func intrinsicSize(for size: CGFloat) -> NSSize {
+        let barWidth = size * barWidthRatio
+        let gap = barWidth * gapToWidthRatio
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * gap
+        return NSSize(width: totalWidth, height: size)
+    }
+
+    // MARK: Geometry
+
+    private func buildBars() {
+        let barWidth = size * Self.barWidthRatio
+        // CSS uses a fixed 1px radius at the canonical 16px size; scale it so
+        // the corner softness reads the same at any size (capped at half-width).
+        let radius = min(barWidth / 2, size / 16.0)
+        let cg = barColor.cgColor
+        for i in 0..<Self.barCount {
+            let bar = CALayer()
+            bar.backgroundColor = cg
+            bar.cornerRadius = radius
+            bar.bounds = CGRect(x: 0, y: 0, width: barWidth, height: size)
+            bar.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            // Seed the rest pose so the silhouette is correct before the
+            // animation's first frame and after it is removed.
+            bar.setValue(Self.barScales(i).rest, forKeyPath: "transform.scale.y")
+            layer?.addSublayer(bar)
+            barLayers.append(bar)
+        }
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let barWidth = size * Self.barWidthRatio
+        let gap = barWidth * Self.gapToWidthRatio
+        let totalWidth = CGFloat(Self.barCount) * barWidth + CGFloat(Self.barCount - 1) * gap
+        let startX = (bounds.width - totalWidth) / 2
+        let centerY = bounds.height / 2
+        for (i, bar) in barLayers.enumerated() {
+            let centerX = startX + CGFloat(i) * (barWidth + gap) + barWidth / 2
+            bar.position = CGPoint(x: centerX, y: centerY)
+        }
+    }
+
+    // MARK: Motion
+
+    func startAnimating() {
+        let n = Self.sampleCount
+        for (i, bar) in barLayers.enumerated() {
+            var values: [CGFloat] = []
+            var keyTimes: [NSNumber] = []
+            values.reserveCapacity(n)
+            keyTimes.reserveCapacity(n)
+            for k in 0..<n {
+                let p = Double(k) / Double(n - 1)
+                // WAAPI applies the effect easing to cycle progress first, then
+                // interpolates the keyframes linearly at that transformed time.
+                values.append(CGFloat(Self.waveValue(i, Self.easeInOut(p))))
+                keyTimes.append(NSNumber(value: p))
+            }
+            let anim = CAKeyframeAnimation(keyPath: "transform.scale.y")
+            anim.values = values
+            anim.keyTimes = keyTimes
+            anim.calculationMode = .linear
+            anim.duration = Self.cycleSeconds
+            anim.repeatCount = .infinity
+            anim.isRemovedOnCompletion = false
+            bar.add(anim, forKey: "wave")
+        }
+    }
+
+    func stopAnimating() {
+        for bar in barLayers { bar.removeAnimation(forKey: "wave") }
+    }
+
+    // MARK: Wave math (faithful to tug-progress-wave.tsx)
+
+    /// Per-bar (rest, peak) scaleY pair. The middle bar sits tall and dips at
+    /// the peak; the outer bars sit short and grow — the inverse motion is the
+    /// wave.
+    private static func barScales(_ index: Int) -> (rest: Double, peak: Double) {
+        if index == 1 { return (1.0, shrinkTo) }
+        return (sideBarRatio, 1.0)
+    }
+
+    /// scaleY for bar `index` at transformed (eased) cycle progress `q`.
+    private static func waveValue(_ index: Int, _ q: Double) -> Double {
+        let offset = Double(index) * pulseStaggerRatio
+        let start = clamp01(offset)
+        let mid = clamp01(offset + pulseWindowRatio / 2)
+        let end = clamp01(offset + pulseWindowRatio)
+        let s = barScales(index)
+        if q <= start { return s.rest }
+        if q < mid { return lerp(s.rest, s.peak, (q - start) / (mid - start)) }
+        if q < end { return lerp(s.peak, s.rest, (q - mid) / (end - mid)) }
+        return s.rest
+    }
+
+    private static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double { a + (b - a) * t }
+
+    private static func clamp01(_ n: Double) -> Double { min(1, max(0, n)) }
+
+    /// CSS `ease-in-out` == cubic-bezier(0.42, 0, 0.58, 1). Returns y for the
+    /// given x via Newton-Raphson on the curve's x(t).
+    private static func easeInOut(_ x: Double) -> Double {
+        if x <= 0 { return 0 }
+        if x >= 1 { return 1 }
+        let x1 = 0.42, y1 = 0.0, x2 = 0.58, y2 = 1.0
+        let cx = 3 * x1, bx = 3 * (x2 - x1) - 3 * x1, ax = 1 - 3 * x2 + 3 * x1
+        let cy = 3 * y1, by = 3 * (y2 - y1) - 3 * y1, ay = 1 - 3 * y2 + 3 * y1
+        func curveX(_ t: Double) -> Double { ((ax * t + bx) * t + cx) * t }
+        func curveY(_ t: Double) -> Double { ((ay * t + by) * t + cy) * t }
+        func dCurveX(_ t: Double) -> Double { (3 * ax * t + 2 * bx) * t + cx }
+        var t = x
+        for _ in 0..<8 {
+            let err = curveX(t) - x
+            if abs(err) < 1e-6 { break }
+            let d = dCurveX(t)
+            if abs(d) < 1e-6 { break }
+            t -= err / d
+        }
+        return curveY(t)
+    }
+}
+
 /// Main window containing the WKWebView for tugdeck dashboard
 class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
@@ -167,20 +336,24 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         iconView.image = icon
         iconView.imageScaling = .scaleNone
 
-        let spinner = NSProgressIndicator()
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.style = .spinning
-        spinner.controlSize = .regular
-
         // Determine light/dark appearance from the startup background color
-        // so the spinner renders with the correct vibrancy.
+        // so the wave renders with a fill that reads against the splash.
         let bgHex = MainWindow.resolveStartupBackgroundHex()
         let bgColor = NSColor(hexString: bgHex) ?? NSColor.black
         var brightness: CGFloat = 0
         bgColor.usingColorSpace(.sRGB)?.getHue(nil, saturation: nil, brightness: &brightness, alpha: nil)
         splashView.appearance = NSAppearance(named: brightness < 0.5 ? .darkAqua : .aqua)
 
-        let stack = NSStackView(views: [iconView, spinner])
+        // Swift port of tugdeck's TugProgressWave (the in-app `wave` glyph),
+        // scaled up for the launch interstitial in place of the stock spinner.
+        let waveSize: CGFloat = 32
+        let waveColor: NSColor = brightness < 0.5
+            ? NSColor.white.withAlphaComponent(0.85)
+            : NSColor.black.withAlphaComponent(0.85)
+        let wave = WaveProgressView(size: waveSize, color: waveColor)
+        wave.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [iconView, wave])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .vertical
         stack.alignment = .centerX
@@ -190,11 +363,13 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         NSLayoutConstraint.activate([
             iconView.widthAnchor.constraint(equalToConstant: iconSize),
             iconView.heightAnchor.constraint(equalToConstant: iconSize),
+            wave.widthAnchor.constraint(equalToConstant: wave.intrinsicContentSize.width),
+            wave.heightAnchor.constraint(equalToConstant: waveSize),
             stack.centerXAnchor.constraint(equalTo: splashView.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: splashView.centerYAnchor),
         ])
 
-        spinner.startAnimation(nil)
+        wave.startAnimating()
         containerView.addSubview(splashView, positioned: .below, relativeTo: webView)
         self.spinnerView = splashView
 
