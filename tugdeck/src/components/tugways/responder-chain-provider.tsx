@@ -26,7 +26,6 @@ import { ResponderChainContext, ResponderChainManager } from "./responder-chain"
 import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { matchKeybinding } from "./keybinding-map";
-import { TUG_ACTIONS } from "./action-vocabulary";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
@@ -190,43 +189,33 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     // ---- Focus walk: Tab / Shift-Tab ([P04]) ----
     // Tab owns app-authored focus movement and is handled here, ahead of the
-    // static keybinding map, so one code path resolves the whole precedence
-    // ladder:
-    //   1. ⇧⇥ → the dev card's `cycle-permission-mode`, consumed ONLY when a
-    //      dev card claims it (Risk R02), folding the old standalone ⇧⇥
-    //      keybinding into this model.
-    //   2. A focused text surface that is consuming Tab right now (an editor
+    // static keybinding map, so one code path resolves the precedence:
+    //   1. A focused text surface that is consuming Tab right now (an editor
     //      with an open completion advertises `data-tug-tab-consume`): leave
     //      the event untouched so the surface's own keymap accepts the
     //      completion ([Q02] flag resolution).
-    //   3. The focus walk advances the key view and lands DOM focus on it.
+    //   2. The focus walk advances the key view and lands DOM focus on it.
     // While no component has registered as a focusable yet, an empty walk
     // yields to the browser's native Tab so focus is never dead mid-migration.
+    //
+    // Tab and Shift-Tab are symmetric here: forward and reverse focus
+    // navigation, the universal GUI convention. Tug deliberately departs from
+    // the Claude Code TUI, where Shift-Tab cycles the permission mode — in a
+    // GUI, Shift-Tab must move focus to the previous control. Permission-mode
+    // cycling lives on ⇧⌘P (key-card scope, in the keybinding map) plus the
+    // dev card's Mode chip / sheet and the /permissions command.
     function focusWalkListener(event: KeyboardEvent): void {
       if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
-      // (1) ⇧⇥ dev-card permission cycle.
-      if (event.shiftKey) {
-        const { handled, continuation } = manager.sendToKeyCardForContinuation({
-          action: TUG_ACTIONS.CYCLE_PERMISSION_MODE,
-          phase: "discrete",
-        });
-        if (handled) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          continuation?.();
-          return;
-        }
-      }
-      // (2) A text surface consuming Tab keeps it.
+      // (1) A text surface consuming Tab keeps it.
       const active = document.activeElement;
       const surfaceConsumes =
         (active instanceof Element &&
           active.closest(`[${TAB_CONSUME_ATTRIBUTE}="true"]`) !== null) ||
         focusManager.keyViewConsumesTab();
       if (surfaceConsumes) return;
-      // (3) Advance the walk. Non-null = the key view moved; land focus and
+      // (2) Advance the walk. Non-null = the key view moved; land focus and
       // swallow the key. Null = nothing to move to; yield to native Tab.
       const moved = event.shiftKey
         ? focusManager.focusPrevious()

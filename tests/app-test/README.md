@@ -211,6 +211,39 @@ Step-by-step:
    reject. Flatten modifier sets (`["cmd", "shift"]`) instead of
    nesting scopes.
 
+10. **Keybinding chords: dispatch a synthetic `KeyboardEvent`, not
+    `nativeKey`.** This is the one place item 8 inverts. A keybinding is
+    defined purely by `event.code` + modifier flags — `matchKeybinding`
+    reads nothing else and does not check `isTrusted` — so a synthetic
+    keydown exercises the exact Stage-1 capture-listener → keybinding →
+    chain-dispatch path a real keystroke would. Dispatch it on the
+    focused element so it reaches the document-level capture listeners:
+
+    ```ts
+    // ⇧⌘P — a key-card-scoped keybinding chord.
+    await app.evalJS(`(function(){
+      var t = document.activeElement || document;
+      return t.dispatchEvent(new KeyboardEvent("keydown", {
+        code: "KeyP", key: "P", metaKey: true, shiftKey: true,
+        bubbles: true, cancelable: true, composed: true,
+      }));
+    })()`);
+    ```
+
+    **Why not `nativeKey` for a chord.** A native `CGEvent` for a
+    `⌘`-modified chord (especially two-modifier, e.g. `⇧⌘P`) is routed
+    through windowserver, where the OS can intercept it as a menu
+    key-equivalent or drop a modifier flag on the timing seam before it
+    reaches the WKWebView. Single-modifier chords like `⌘A` usually
+    survive; two-modifier ones are unreliable. Reserve `nativeKey` for
+    what genuinely needs the trusted input stack — typing into a field,
+    `Escape`/arrows during a drag, focus-moving Tab — and drive
+    accelerator chords synthetically. (The focus-walk stage that owns
+    `Tab` / `Shift-Tab` also reads only `event.key` + modifiers, so the
+    same synthetic dispatch drives it.) See `at0085` (route `⇧⌘C`) and
+    `at0105` (permission `⇧⌘P`); the binding's static contract is
+    additionally pinned by `keybinding-map.test.ts` (pure-logic).
+
 ## Lint: no raw timers
 
 `tests/app-test/` forbids `setTimeout` and `setInterval` in test code

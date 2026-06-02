@@ -172,8 +172,8 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 **Risk R02: Tab overload regressions** {#r02-tab-overload}
 
-- **Risk:** Global Tab interception steals Tab from text-editing/completion or from the dev card's `⇧⇥` permission-mode cycle.
-- **Mitigation:** Editor consume-precedence ([Q02]); `cycle-permission-mode` migrates into the same precedence model rather than a parallel `Prec.highest` keymap.
+- **Risk:** Global Tab interception steals Tab from text-editing/completion.
+- **Mitigation:** Editor consume-precedence ([Q02], the `data-tug-tab-consume` flag). `Shift+Tab` is pure `focus-previous`; permission-mode cycling does **not** ride Tab — it moved to `⇧⌘P` (see [P04]'s GUI deviation), so there is no Tab/cycle contention to reconcile.
 - **Residual risk:** Future editor sub-modes must remember to declare Tab consumption.
 
 ---
@@ -222,12 +222,14 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 **Decision:** Tab / Shift-Tab are intercepted in the keyboard pipeline and dispatched as `focus-next` / `focus-previous`. The walk starts at the key view; a text editor advertising a Tab-consuming sub-state handles them first ([Q02]).
 
 **Rationale:**
-- Single code path for inter-control movement, mode switching, and editor precedence; no per-component Tab wiring.
-- Replaces the editor's `Prec.highest` Tab keymap *as the owner* of Tab and folds the dev card's `⇧⇥` into the same precedence model.
+- Single code path for inter-control movement and editor precedence; no per-component Tab wiring.
+- Replaces the editor's `Prec.highest` Tab keymap *as the owner* of Tab.
 
 **Implications:**
 - New `TUG_ACTIONS.FOCUS_NEXT` / `FOCUS_PREVIOUS`; new pipeline stage in `responder-chain-provider.tsx`.
-- `keybinding-map.ts` adds Tab / Shift-Tab; the existing `⇧⇥ cycle-permission-mode` is reconciled (it remains a key-card action but yields to the focus walk when no dev card consumes it).
+- The focus-walk stage owns Tab / Shift-Tab. Both are symmetric — forward / reverse focus navigation, the universal GUI convention.
+
+**GUI deviation from the Claude Code TUI (amended after [#step-3]):** the Claude Code terminal cycles the permission mode on `⇧⇥`. In a GUI, `⇧⇥` must move focus to the previous control, so Tug **does not** put permission cycling on `⇧⇥`. The earlier "fold the dev card's `⇧⇥` into the focus walk, consumed only when a dev card claims it" approach was wrong: a dev card's `card-content` responder *always* claims `cycle-permission-mode`, so `⇧⇥` inside a dev card would never reach `focus-previous` — silently flipping the permission mode instead of navigating focus. The cycle now lives on **`⇧⌘P`** (a static key-card-scoped keybinding, mnemonic for the chip's `/PERMISSIONS` caption, forward-only); the `PermissionModeChip` + sheet and the `/permissions` command remain the pick-a-mode affordances. `Shift+Tab` is pure `focus-previous` everywhere.
 
 #### [P05] One focus-ring primitive; two-tier key-view indication (DECIDED) {#p05-focus-ring}
 
@@ -468,7 +470,7 @@ useKeybindings([
 | `FocusManager` | class | `focus-manager.ts` | new |
 | `useFocusable` | hook | `use-focusable.tsx` | new |
 | `FOCUS_NEXT` / `FOCUS_PREVIOUS` / `DEFAULT_ACTION` / `CANCEL_ACTION` | const | `action-vocabulary.ts` | new actions |
-| Tab / Shift-Tab + reconcile `⇧⇥` | entries | `keybinding-map.ts` | new bindings + precedence |
+| `⇧⌘P` → `cycle-permission-mode` (key-card) | entry | `keybinding-map.ts` | Tab/Shift-Tab owned by the focus-walk stage, not this map; `⇧⇥` no longer cycles ([P04] GUI deviation) |
 | Stage for `focus-next`/`focus-previous`/`default-action` | code | `responder-chain-provider.tsx` | replaces Stage 2 default-button click |
 | `pushDefaultButton`/`popDefaultButton`/`peekDefaultButton*` | removal | `responder-chain.ts` | deleted |
 | `--tugx-focus-ring-*`, `--tug7-surface-selection-*` reassignments | tokens | `brio.css` / `harmony.css` | recolor + ring |
