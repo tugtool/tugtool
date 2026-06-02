@@ -66,8 +66,6 @@ body {
   --tugx-menu-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-menu-border: var(--tug7-element-global-border-normal-default-rest);
   --tugx-menu-shadow: var(--tug7-element-global-shadow-normal-overlay-rest);
-  --tugx-menu-item-bg-hover: var(--tug7-surface-control-primary-ghost-action-hover);
-  --tugx-menu-item-bg-selected: var(--tug7-element-global-fill-normal-accentSubtle-rest);
   --tugx-menu-item-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-menu-item-fg-disabled: var(--tug7-element-global-text-normal-plain-disabled);
   --tugx-menu-item-fg-danger: var(--tug7-element-tone-fill-normal-danger-rest);

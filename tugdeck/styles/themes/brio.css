@@ -185,7 +185,6 @@ body {
   --tug7-element-selection-text-normal-plain-rest: --tug-color(indigo, i: 3, t: 94);
   --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(yellow, i: 0, t: 30, a: 25);
   --tug7-surface-selection-primary-normal-plain-rest: --tug-color(blue, i: 50, t: 50, a: 40);
-  --tug7-surface-selection-primary-normal-plain-hover: --tug-color(blue, i: 50, t: 50, a: 55);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind
      the editable surface. tug-input and other native-::selection-driven

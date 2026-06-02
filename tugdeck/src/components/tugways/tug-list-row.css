@@ -57,10 +57,13 @@
 /* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
 
 body {
-  /* Layout */
+  /* Layout. The two padding tokens are the by-eye density knob for every
+     row type — raise them to loosen rows, lower them to tighten. Authored
+     as explicit px (not `--tug-space-*` steps) precisely so they can be
+     nudged a pixel at a time during visual tuning. */
   --tugx-list-row-gap:               var(--tug-space-sm);
-  --tugx-list-row-padding-block:     var(--tug-space-sm);
-  --tugx-list-row-padding-inline:    var(--tug-space-md);
+  --tugx-list-row-padding-block:     8px;
+  --tugx-list-row-padding-inline:    14px;
   --tugx-list-row-content-gap:       var(--tug-space-2xs);
   --tugx-list-row-pill-radius:       var(--tug-radius-md);
 
@@ -82,13 +85,18 @@ body {
   --tugx-list-row-pill-hover-bg:     var(--tug7-surface-control-primary-outlined-action-hover);
   --tugx-list-row-pill-hover-border: var(--tug7-element-control-border-outlined-action-hover);
 
-  /* Selection ramp — the list owns its own selection family (the blue
-     selection tokens), shared by both variants and distinct from the
-     popup-menu selection tokens. `-hover` is a stronger step over `-rest`
-     so a hovered selected row reads apart from a resting selected one. */
-  --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-plain-rest);
-  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-plain-hover);
-  --tugx-list-row-selected-text:          var(--tug7-element-selection-text-normal-plain-rest);
+  /* Selection ramp — a selected row matches the highlighted item in the
+     popup menus, the completion menu, and the editor context menu, which
+     all paint `--tug7-surface-control-primary-filled-action-*` (a solid
+     accent fill with near-white text). Selected takes the `-hover` step
+     (the menus' resting highlight); selected-hover steps up to `-active`
+     so a hovered selected row reads apart from a resting selected one.
+     This is deliberately NOT the `--tug7-surface-selection-*` family —
+     that family is the caret text-selection highlight (text editor, code
+     view, markdown, pane), a different concept. [L17] one-hop aliases. */
+  --tugx-list-row-selected-bg:            var(--tug7-surface-control-primary-filled-action-hover);
+  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-control-primary-filled-action-active);
+  --tugx-list-row-selected-text:          var(--tug7-element-control-text-filled-action-hover);
   --tugx-list-row-selected-accent-border: var(--tug7-element-tone-border-normal-accent-rest);
   --tugx-list-row-accent-border-width:    1.5px;
 }

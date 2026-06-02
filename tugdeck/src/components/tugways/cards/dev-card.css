@@ -773,7 +773,10 @@
    `TugListRow`'s cascade — the path inherits it. */
 .dev-card-picker-recents-list .dev-card-picker-path-recent {
   font-family: var(--tug-font-family-mono);
-  font-size: var(--tug-font-size-sm, 0.875rem);
+  /* Match the `Project path` input above (a size="sm" TugFileChooser,
+     which renders at `--tug-font-size-xs`) so the typed path and the
+     recent paths read at one size. */
+  font-size: var(--tug-font-size-xs, 0.75rem);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
