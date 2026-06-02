@@ -286,6 +286,14 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
   border-bottom: 1px solid var(--tugx-sheet-border);
 }
 
+/* `hideHeaderRule`: keep the title, drop the divider beneath it and the
+   padding the divider needed — the title then reads as part of a compact
+   body, separated only by the bottom margin. */
+.tug-sheet-header-no-rule {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
 /* ---- Sheet title ---- */
 
 .tug-sheet-title {

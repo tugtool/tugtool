@@ -469,6 +469,12 @@ export interface TugSheetContentProps {
    * See {@link ShowSheetOptions.hideHeader}.
    */
   hideHeader?: boolean;
+  /**
+   * Keep the title but drop the divider rule beneath it (and its extra
+   * spacing). For compact sheets whose body reads as one unit with the
+   * title. Defaults to `false`. See {@link ShowSheetOptions.hideHeaderRule}.
+   */
+  hideHeaderRule?: boolean;
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -497,6 +503,7 @@ export function TugSheetContent({
   displayWidth = "sm",
   resizable = false,
   hideHeader = false,
+  hideHeaderRule = false,
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -949,7 +956,13 @@ export function TugSheetContent({
                   Suppressed when `hideHeader` (e.g. TugAlertSheet owns the panel);
                   the title still labels the dialog via aria-label above. */}
               {!hideHeader && (
-                <div className="tug-sheet-header">
+                <div
+                  className={
+                    hideHeaderRule
+                      ? "tug-sheet-header tug-sheet-header-no-rule"
+                      : "tug-sheet-header"
+                  }
+                >
                   <h2 id={titleId} className="tug-sheet-title">{title}</h2>
                 </div>
               )}
@@ -1077,6 +1090,12 @@ export interface ShowSheetOptions {
    * `false`.
    */
   hideHeader?: boolean;
+  /**
+   * Keep the title but drop the divider rule beneath it (and its extra
+   * spacing), so the title reads as part of a compact body. Unlike
+   * {@link hideHeader} the title row still renders. Defaults to `false`.
+   */
+  hideHeaderRule?: boolean;
   /**
    * Cascade-target responder id captured at sheet-open time.
    *
@@ -1429,6 +1448,7 @@ export function useTugSheet(): {
           displayWidth={options.displayWidth}
           resizable={options.resizable}
           hideHeader={options.hideHeader}
+          hideHeaderRule={options.hideHeaderRule}
         >
           {options.content(close)}
         </TugSheetContent>

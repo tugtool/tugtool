@@ -2843,11 +2843,26 @@ export function DevCardBody({
     const notify = paneBulletinRef.current;
     if (compactionProgress.outcome === "succeeded") {
       notify?.success("Session compacted", { sticky: true });
-    } else if (compactionProgress.outcome === "canceled") {
+      // The fresh session has already swapped in behind the (still-steady)
+      // scrim. Hold the sheet for a couple of frames so the new transcript
+      // paints and settles before we dismiss — otherwise the scrim lifts in
+      // the same beat the session swaps, and the swap reads as a flash.
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => compactionProgressStore.clear());
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        if (raf2 !== 0) cancelAnimationFrame(raf2);
+      };
+    }
+    if (compactionProgress.outcome === "canceled") {
       notify?.caution("Compaction canceled — session left intact");
     } else {
       notify?.danger(compactionProgress.failureReason ?? "Compaction failed");
     }
+    // Cancel / failure leave the session unchanged — no swap to mask, so
+    // dismiss immediately.
     compactionProgressStore.clear();
   }, [compactionProgress, cardId]);
 
@@ -3020,6 +3035,7 @@ export function DevCardBody({
       void cardPickerSheet
         .showSheet({
           title: "Compacting",
+          hideHeaderRule: true,
           content: (close) => (
             <CompactionProgressSheet close={close} onCancel={onCancel} />
           ),
