@@ -35,6 +35,7 @@ import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
   ApiRetryEvent,
+  CompactBoundaryEvent,
   AssistantTextEvent,
   AttachmentRejectedEvent,
   CancelQueuedSendActionEvent,
@@ -83,6 +84,7 @@ import type {
   PermissionDenial,
   RewindResultAck,
   RewindTurnPreview,
+  SystemNote,
   ToolUseMessage,
   TransportState,
   TurnEndReason,
@@ -90,6 +92,7 @@ import type {
   UserMessage,
   WakeTrigger,
 } from "./types";
+import { compactionNoteText } from "./compaction";
 import { decodePermissionDenials, mergeDenials } from "./denials";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import {
@@ -2884,6 +2887,48 @@ function handleApiRetry(
 }
 
 /**
+ * `compact_boundary` reducer handler — appends a compaction `system_note`
+ * (`source: "compact"`) to the active turn's scratch, rendered as a soft
+ * divider. Auto-compaction fires mid-turn, so a turn is in flight; with
+ * no active turn (idle) there is nothing to attach the divider to, so the
+ * boundary is dropped (a typed `/compact` is client-dispatched and never
+ * reaches the bridge anyway). The note uses the per-turn `systemNoteSeq`
+ * for its `messageKey`, mirroring the wire-message mint discipline.
+ */
+function handleCompactBoundary(
+  state: CodeSessionState,
+  event: CompactBoundaryEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) {
+    return { state, effects: [] };
+  }
+  const entry = state.scratch.get(turnKey);
+  if (entry === undefined) {
+    return { state, effects: [] };
+  }
+  const note: SystemNote = {
+    kind: "system_note",
+    messageKey: systemNoteKey(turnKey, entry.systemNoteSeq),
+    createdAt: Date.now(),
+    text: compactionNoteText(event.preTokens),
+    source: "compact",
+  };
+  const nextEntry: ScratchEntry = {
+    ...entry,
+    messages: [...entry.messages, note],
+    systemNoteSeq: entry.systemNoteSeq + 1,
+  };
+  return {
+    state: {
+      ...state,
+      scratch: withScratchEntry(state.scratch, turnKey, nextEntry),
+    },
+    effects: [],
+  };
+}
+
+/**
  * `streaming_usage` reducer handler — live intra-turn token telemetry,
  * phase-tolerant like {@link handleCostUpdate}.
  *
@@ -3967,6 +4012,8 @@ export function reduce(
       return handleCostUpdate(state, event);
     case "api_retry":
       return handleApiRetry(state, event);
+    case "compact_boundary":
+      return handleCompactBoundary(state, event);
     case "streaming_usage":
       return handleStreamingUsage(state, event);
     case "context_breakdown":

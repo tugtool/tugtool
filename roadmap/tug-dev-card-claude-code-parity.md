@@ -940,7 +940,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 18 | `@`-file completion | ✅ DONE | `services.fileCompletionProvider` wired to prompt entry |
 | 19 | Image drag/paste | ✅ DONE | `image-downsample.ts`, `atom-bytes-store.ts`, `synthesize-user-message.ts` |
 | 20 | Interrupt visibility | ✅ DONE | `tug-prompt-entry.tsx` primary `Stop` button + `canInterrupt` |
-| 21 | `compact_boundary` divider | ▶ TODO | **rescoped (Q-E):** nothing exists today; render the compact summary content the way the terminal does — in-step wire-check for what we actually receive |
+| 21 | `compact_boundary` divider | ✅ DONE | Wire-check: the summary is NOT on the bridge (never sent live — client-dispatched `/compact`; deliberately skipped on replay; the terminal hides it too). Only the bare `compact_boundary` marker is reachable (live auto-compaction). Landed a **soft divider** (Q-E follow-up — user chose divider-only): tugcode forwards `compactMetadata` (trigger + pre_tokens); tugdeck accepts `compact_boundary`, `handleCompactBoundary` appends a `system_note{source:"compact"}` to the active turn, rendered as a CSS-only `─── Conversation compacted · ~Nk tokens ───` separator. tsc clean (tugdeck+tugcode), 3309 pure tests green; `at0106` authored |
 | 22 | `unknown_event` IPC frame | ▶ TODO | |
 | 23 | Phase C integration checkpoint | ▶ TODO | verification only |
 
@@ -2899,21 +2899,34 @@ category is slotted in. Copy: transient → `Retrying — <label>, attempt n/max
 
 > **Rescoped (Q-E).** Nothing renders for compaction today. The terminal shows the compaction **content** (the summary), not just a divider line — so the goal is to surface that same content the same way **when it is available**. The first task is an empirical wire-check (what does `/compact` actually deliver over our bridge — a `compact_boundary` marker only, or summary content too?); the render is designed to match the terminal against whatever the check finds.
 
-**Artifacts:**
-- New: compaction transcript renderer (divider + summary content as the wire provides)
-- Modified: transcript renderer to insert it at the boundary
+**Wire-check result (Q-E).** Drove the question to ground: the compaction
+**summary is not available over the bridge** — a typed `/compact` is
+client-dispatched (the documented transport gap, emits only
+`system_metadata`→`cost_update`→`turn_complete`), tugcode's replay translator
+**deliberately skips** the `isCompactSummary` block (`replay.ts` — "CLI-internal
+continuation context, hidden in Claude Code's own UI"), and tugdeck didn't even
+accept `compact_boundary`. The one reachable signal is the bare `compact_boundary`
+marker from **live auto-compaction** (`compactMetadata: { trigger, preTokens }`).
+Since the terminal/Claude Code itself hides the summary block, the truest
+"match the terminal" is a **soft divider**, not the raw summary — landed as such
+(user-confirmed divider-only).
+
+**Artifacts (as built):**
+- Modified: `tugcode` — `CompactBoundary` type + emit forward `compactMetadata` (`trigger` + `pre_tokens`).
+- Modified: `tugdeck` — `compact_boundary` added to `KNOWN_CODE_OUTPUT_TYPES`; `frameToEvent` normalizes `pre_tokens`→`preTokens`; `CompactBoundaryEvent`; `handleCompactBoundary` appends a `system_note{source:"compact"}` to the active turn; `dev-card-transcript.tsx` renders the `compact` note as a soft divider; `dev-card.css` CSS-only separator ([L06], `currentColor`/opacity per the ghost-row precedent).
+- New (pure): `compactionNoteText(preTokens)` (`code-session-store/compaction.ts`).
 
 **Tasks:**
-- [ ] **Wire-check first:** drive `/compact` over the bridge and capture exactly what arrives (`compact_boundary` fields, and whether the summary content is carried). Pin the shape before designing the render.
-- [ ] Render to match the terminal: the compaction marker plus the summary content when present (`"Conversation compacted… <N> tokens summarized"` + the summary body if delivered).
-- [ ] Style as a soft separator, not an error.
+- [x] **Wire-check first** — see result above; summary not on the wire, only the marker (live auto-compaction).
+- [x] Render to match the terminal — a soft `─── Conversation compacted · ~Nk tokens ───` divider (summary body intentionally omitted; the terminal hides it).
+- [x] Style as a soft separator, not an error (inherited color + opacity).
 
 **Tests:**
-- [ ] Pure-logic: render props from the captured `compact_boundary` payload.
-- [ ] Real-app: drive `/compact`, observe the compaction render (divider + summary if available) in the transcript.
+- [x] Pure-logic: `compactionNoteText` from the payload (`compaction.test.ts`); reducer `handleCompactBoundary` appends the note mid-turn / inert when idle (`reducer.compact-boundary.test.ts`); tugcode emit forwards `compactMetadata` (`session.test.ts`).
+- [x] Real-app: `at0106` opens a turn, injects a `compact_boundary`, asserts the divider text. Authored; runs in the sweep (warm). Same cold single-file Vite-compile caveat as `at0105`.
 
 **Checkpoint:**
-- [ ] `just app-test compact-boundary-divider`
+- [x] `just app-test at0106-compact-boundary-divider` (authored; green warm / in-sweep).
 
 ---
 

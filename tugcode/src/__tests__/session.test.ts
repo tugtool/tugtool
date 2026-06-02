@@ -368,6 +368,19 @@ describe("routeTopLevelEvent", () => {
     expect(result.gotResult).toBe(false);
   });
 
+  test("system/compact_boundary forwards compactMetadata (trigger + pre_tokens)", () => {
+    const event = {
+      type: "system",
+      subtype: "compact_boundary",
+      compactMetadata: { trigger: "auto", preTokens: 48000 },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const marker = result.messages[0] as any;
+    expect(marker.type).toBe("compact_boundary");
+    expect(marker.trigger).toBe("auto");
+    expect(marker.pre_tokens).toBe(48000);
+  });
+
   test("assistant text content no longer emits assistant_text (delivered via streaming)", () => {
     const event = {
       type: "assistant",

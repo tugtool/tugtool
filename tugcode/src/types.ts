@@ -499,10 +499,18 @@ export interface StreamingUsage {
 }
 
 /**
- * Compact context boundary marker.
+ * Compact context boundary marker. Emitted when claude's live stream
+ * reports a `system`/`compact_boundary` (in practice: auto-compaction at
+ * capacity — a typed `/compact` is client-dispatched and never reaches the
+ * bridge). `trigger` / `pre_tokens` carry claude's `compactMetadata` when
+ * present so the dev-card divider can show the pre-compaction context size.
  */
 export interface CompactBoundary {
   type: "compact_boundary";
+  /** `"auto"` (capacity) | `"manual"` (/compact); absent if claude omits it. */
+  trigger?: string;
+  /** Context token count just before compaction, when claude reports it. */
+  pre_tokens?: number;
   ipc_version: number;
 }
 

@@ -911,7 +911,19 @@ export function routeTopLevelEvent(
         };
         messages.push(sysMsg);
       } else if (subtype === "compact_boundary") {
-        const marker: CompactBoundary = { type: "compact_boundary", ipc_version: 2 };
+        // Forward claude's `compactMetadata` (trigger + pre-compaction
+        // token count) when present so the dev-card divider can show it;
+        // the bare marker stands alone otherwise.
+        const meta = (event.compactMetadata ?? {}) as {
+          trigger?: unknown;
+          preTokens?: unknown;
+        };
+        const marker: CompactBoundary = {
+          type: "compact_boundary",
+          ...(typeof meta.trigger === "string" ? { trigger: meta.trigger } : {}),
+          ...(typeof meta.preTokens === "number" ? { pre_tokens: meta.preTokens } : {}),
+          ipc_version: 2,
+        };
         messages.push(marker);
       } else if (subtype === "api_retry") {
         messages.push({

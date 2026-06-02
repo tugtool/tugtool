@@ -676,9 +676,26 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       continue;
     }
     if (message.kind === "system_note") {
-      // Step 8 will land the renderer. Today: no instances exist; if
-      // one shows up early via a future tugcode emit, skip silently
-      // rather than crashing.
+      if (message.source === "compact") {
+        // Compaction divider — a soft separator matching the terminal's
+        // compaction indicator (the raw summary block stays hidden, as
+        // in Claude Code's own UI). Appearance is CSS-only ([L06]).
+        elements.push(
+          <div
+            key={message.messageKey}
+            className="dev-card-transcript-compaction"
+            role="separator"
+            data-slot="compaction-divider"
+          >
+            <span className="dev-card-transcript-compaction-label">
+              {message.text}
+            </span>
+          </div>,
+        );
+        continue;
+      }
+      // Other system_note sources (`scheduled` / `other`) have no
+      // renderer yet — skip silently rather than crashing.
       continue;
     }
     if (message.kind === "assistant_thinking") {

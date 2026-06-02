@@ -141,6 +141,9 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // Claude's SDK is backing off and retrying a retryable API failure.
   // Display-only: the reducer folds it into `apiRetry`, no phase change.
   "api_retry",
+  // Claude compacted its context (auto-compaction at capacity). The
+  // reducer appends a compaction `system_note` to the active turn.
+  "compact_boundary",
   // Live intra-turn token usage — high-frequency telemetry frame the
   // reducer folds into `liveTurnUsage`; no phase change, no persist.
   "streaming_usage",
@@ -1105,6 +1108,18 @@ export class CodeSessionStore {
           error: typeof ev.error === "string" ? ev.error : "unknown",
           errorStatus:
             typeof ev.error_status === "number" ? ev.error_status : null,
+        } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "compact_boundary") {
+        // Normalize the wire's snake_case `pre_tokens` to the reducer
+        // event's `preTokens`; both fields are optional (claude omits
+        // `compactMetadata` on some boundaries).
+        return {
+          type: "compact_boundary",
+          ...(typeof ev.trigger === "string" ? { trigger: ev.trigger } : {}),
+          ...(typeof ev.pre_tokens === "number"
+            ? { preTokens: ev.pre_tokens }
+            : {}),
         } as unknown as CodeSessionEvent;
       }
       return ev as unknown as CodeSessionEvent;

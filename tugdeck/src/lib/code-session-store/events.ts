@@ -448,6 +448,19 @@ export interface ApiRetryEvent {
 }
 
 /**
+ * `compact_boundary` — claude compacted its context (in practice:
+ * auto-compaction at capacity; a typed `/compact` is client-dispatched
+ * and never reaches the bridge). Display-only: the reducer appends a
+ * `system_note` (`source: "compact"`) to the active turn, rendered as a
+ * soft divider. `preTokens` is normalized from the wire's `pre_tokens`.
+ */
+export interface CompactBoundaryEvent {
+  type: "compact_boundary";
+  trigger?: string;
+  preTokens?: number;
+}
+
+/**
  * `error` — a wire-level error frame distinct from SESSION_STATE
  * errored and from transport close. Listed in the outbound event table
  * (design doc) but never captured in v2.1.105 fixtures, so tests
@@ -878,6 +891,7 @@ export type CodeSessionEvent =
   | StreamingUsageEvent
   | ContextBreakdownEvent
   | ApiRetryEvent
+  | CompactBoundaryEvent
   | WireErrorEvent
   | SessionStateErroredEvent
   | SessionUnknownEvent

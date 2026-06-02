@@ -412,6 +412,36 @@
   opacity: 0.5;
 }
 
+/* Compaction divider — a soft, centered separator marking where claude
+   auto-compacted its context. Appearance only ([L06]); the raw summary
+   block stays hidden, matching Claude Code's own UI. Color is inherited
+   and opacity carries the de-emphasis (the ghost-row precedent), so it
+   reads as ambient, not as an error; the flanking rules draw from
+   `currentColor` to track the theme without a bespoke token. */
+.dev-card-transcript-compaction {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  width: 100%;
+  margin-block: var(--tug-space-xs);
+  font-size: 0.85em;
+  opacity: 0.55;
+  user-select: none;
+}
+.dev-card-transcript-compaction::before,
+.dev-card-transcript-compaction::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
+}
+.dev-card-transcript-compaction-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
    wraps inside the row column. The default `--tugx-md-block-padding-x`
    is `1rem` (a soft default for stand-alone consumers); inside a
