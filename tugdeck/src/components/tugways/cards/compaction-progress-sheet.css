@@ -1,0 +1,24 @@
+/**
+ * compaction-progress-sheet.css — layout for the `/compact` progress sheet.
+ *
+ * A short message line, a full-width determinate bar, and (while running)
+ * the standard sheet actions row carrying Cancel. Appearance is token-driven
+ * [L06]; the bar and button keep their own tokens [L20].
+ */
+
+.compaction-progress-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-sheet-space-b);
+}
+
+.compaction-progress-sheet-message {
+  margin: 0;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* The bar variant already stretches to its host's full width; this just
+   guarantees the row participates in the column's full measure. */
+.compaction-progress-sheet-bar {
+  width: 100%;
+}

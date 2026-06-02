@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  assistantProseFromMessages,
   lastAssistantCopyText,
   turnEntryToMarkdown,
 } from "../turn-entry-markdown";
@@ -15,6 +16,15 @@ let seq = 0;
 function assistantText(text: string): Message {
   seq += 1;
   return { kind: "assistant_text", text, messageKey: `a${seq}`, createdAt: seq };
+}
+function thinking(text: string): Message {
+  seq += 1;
+  return {
+    kind: "assistant_thinking",
+    text,
+    messageKey: `t${seq}`,
+    createdAt: seq,
+  } as unknown as Message;
 }
 function userMessage(text: string): Message {
   seq += 1;
@@ -64,5 +74,31 @@ describe("lastAssistantCopyText", () => {
   test("returns null when no turn has assistant content", () => {
     const transcript = [turn(userMessage("only a prompt"))];
     expect(lastAssistantCopyText(transcript)).toBeNull();
+  });
+});
+
+describe("assistantProseFromMessages", () => {
+  test("returns '' for no messages", () => {
+    expect(assistantProseFromMessages([])).toBe("");
+  });
+
+  test("joins assistant_text blocks in arrival order", () => {
+    const messages = [assistantText("first"), assistantText("second")];
+    expect(assistantProseFromMessages(messages)).toBe("first\n\nsecond");
+  });
+
+  test("drops non-assistant_text messages (user, thinking)", () => {
+    const messages = [
+      userMessage("the prompt"),
+      thinking("reasoning that should not leak"),
+      assistantText("the recap"),
+    ];
+    expect(assistantProseFromMessages(messages)).toBe("the recap");
+  });
+
+  test("trims surrounding whitespace", () => {
+    expect(assistantProseFromMessages([assistantText("  padded  ")])).toBe(
+      "padded",
+    );
   });
 });

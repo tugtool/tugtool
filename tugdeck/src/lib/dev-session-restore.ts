@@ -76,6 +76,7 @@ import { logSessionLifecycle } from "./session-lifecycle-log";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { cardServicesStore } from "./card-services-store";
 import { pendingCompactionStore } from "./pending-compaction-store";
+import { compactionProgressStore } from "./compaction-progress-store";
 import { buildCompactionSeed } from "./compaction-request";
 import { pickerNoticeStore } from "./picker-notice-store";
 import { subscribeToListCardBindingsOk } from "./dev-session-ledger-events";
@@ -312,6 +313,11 @@ function installRegistrySubscriptions(connection: TugConnection): void {
               [],
               { suppress: true },
             );
+            // The fresh session is live and seeded — the compaction
+            // succeeded. This settles the progress sheet (it dismisses) and
+            // tells the card to raise the sticky "Conversation compacted"
+            // bulletin.
+            compactionProgressStore.succeed();
           }
         }
       }

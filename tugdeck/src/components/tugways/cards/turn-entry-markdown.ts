@@ -41,7 +41,7 @@
  * @module components/tugways/cards/turn-entry-markdown
  */
 
-import type { ToolUseMessage, TurnEntry } from "@/lib/code-session-store/types";
+import type { Message, ToolUseMessage, TurnEntry } from "@/lib/code-session-store/types";
 
 // ---------------------------------------------------------------------------
 // Fenced-code helpers
@@ -231,4 +231,21 @@ export function lastAssistantCopyText(
     if (markdown.length > 0) return markdown;
   }
   return null;
+}
+
+/**
+ * The assistant prose from a turn's messages — every `assistant_text`
+ * block joined in arrival order, tool sections dropped. Used to capture
+ * `/compact`'s summary off the *in-flight* (suppressed) summarization
+ * turn's live `ActiveTurnSnapshot.messages`, where the turn never commits
+ * to the transcript. Pure; returns `""` when there is no prose yet.
+ */
+export function assistantProseFromMessages(
+  messages: ReadonlyArray<Message>,
+): string {
+  const chunks: string[] = [];
+  for (const m of messages) {
+    if (m.kind === "assistant_text") chunks.push(m.text);
+  }
+  return chunks.join("\n\n").trim();
 }
