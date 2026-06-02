@@ -45,6 +45,8 @@ This phase names the three axes, builds an app-owned **focus engine** (a "key vi
 - No reference to `pushDefaultButton` / `peekDefaultButton` / `peekDefaultButtonInScope` / a `defaultButton` prop remains; Enter-outside-text still presses the active scope's default. (grep returns nothing; app-test dialog Enter still confirms)
 - `data-keyboard-access` toggles `standard` ↔ `accessibility`; in `accessibility` mode every interactive affordance marked `skip` becomes Tab-reachable. (app-test asserts a `skip` control is unreachable in standard, reachable in accessibility)
 - A component-registered keybinding fires only while that component is in context and is gone after it unmounts; an in-context binding overrides a global one; the static global shortcuts still fire. (app-test mounts/unmounts a component and asserts binding activation and precedence)
+- From a focused list inside a sheet, Return fires the sheet's **default action** without moving focus to OK; Escape/⌘. fires cancel; a focused text editor still gets Return for submit/newline. (app-test asserts scope-routed commit keys with editor precedence intact)
+- A primary CTA button stays blue (default-action affordance); UI selection is orange; text/character selection stays blue. (app-test/visual asserts the three roles resolve distinctly)
 - `bunx tsc --noEmit` and `bun test` are clean; the workspace builds with `-D warnings`.
 
 #### Scope {#scope}
@@ -56,7 +58,7 @@ This phase names the three axes, builds an app-owned **focus engine** (a "key vi
 5. A single `--tugx-focus-ring` focus-ring primitive + two-tier key-view indication; deletion of all per-component ring rules.
 6. Color re-target: selection → accent/orange; focus → action/blue; rolled across list rows, menus, popovers, tab bars (option/radio already accent).
 7. Radix focus-management taming across the focus-sensitive components.
-8. Default-button stack retirement → chain-dispatched `default-action`.
+8. Semantic commit keys (Return/Escape/⌘.) → scope `default-action` / `cancel-action`, independent of the key view; default-button stack retired.
 9. First-responder / `refuse` audit and reclassification (split `refuse` into its two real meanings).
 10. Accessibility-mode ARIA pass (interactive affordances only), AT-ready.
 11. Dynamic, context-scoped keybinding registry: components attach/detach key→action bindings as they mount/unmount, resolved by responder/focus context.
@@ -159,6 +161,8 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 | Tab interception double-handles editor Tab (completion + walk) | med | med | Single precedence rule resolved in [Q02]; app-test both states | completion accept stops working |
 | Mode state races boot (DEFAULTS feed arrives late) | low | med | Default `standard` until feed resolves; apply via `data-keyboard-access` on first paint like theme | flash of wrong mode |
 | Dynamic keybinding shadows a global shortcut unexpectedly | med | low | Documented precedence (innermost-in-context → global); dev-warn on same-scope duplicate chords; registry queryable for conflict inspection | a known global stops firing in some context |
+| Return ambiguous between editor submit and scope default-action | med | med | Text-context precedence: editor claims Return only when its key view owns it ([P12]/[Q02]); app-test both paths | editor submit or sheet default-action stops working |
+| Selection recolor sweeps in text-selection or CTA blue | high | low | [P06]/Step 7 explicitly exclude `selection … plain` and keep `control-filled-action` CTA blue; app-test asserts text selection + CTA stay blue | text highlight or CTA turns orange |
 
 **Risk R01: Radix taming regressions** {#r01-radix-taming}
 
@@ -237,15 +241,18 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 - Delete per-component ring rules (indigo `accentCool` on checkbox/option-group/input, `link`-colored `--tugx-dialog-button-focus-ring` / `--tugx-idialog-focus-ring`, cue `accent`).
 - New tokens authored in both `brio.css` and `harmony.css`.
 
-#### [P06] Color contract: accent = selection, action = focus (DECIDED) {#p06-color-contract}
+#### [P06] Color contract: accent = selection, action = keyboard-active (DECIDED) {#p06-color-contract}
 
-**Decision:** Re-point selection/selected/highlighted **surface** tokens from blue to **accent/orange**, and reserve **action/blue** for the focus ring and focus indication. Roll across list rows, menus, popovers, and tab bars (option/radio already accent).
+**Decision:** **accent/orange = selection** (the chosen item). **action/blue = the keyboard-active axis** — the surface the keyboard is currently empowering, expressed two ways: the **focus ring** (typing/arrows land here) and the **default-action affordance** (the CTA button Return fires, see [P12]). Re-point **UI-selection** surfaces (`selected`, `highlighted`, and the menus' *selection* usage of the shared `control-filled-action`) from blue to accent/orange across list rows, menus, popovers, and tab bars (option/radio already accent). **Text/character selection stays blue** — the `surface-selection-primary … plain` tokens are out of scope (see below).
 
 **Rationale:**
-- Today blue does double duty (selection *and* action), so selected ≠ focused is invisible. Splitting the colors makes a selected-and-focused element legible and gives focus its own unmistakable signal.
+- Today blue does double duty (UI selection *and* action), so selected ≠ focused is invisible. Moving UI selection to orange makes a selected-and-focused element legible, while blue gains a single sharp meaning — *the keyboard acts on this* — whether via focus (typing/arrows) or as the Return target ([P12]). This is why the CTA button stays blue.
+- **Text selection is a different concept and must not move.** `surface-selection-primary-normal-plain-rest` (blue) / `-plain-inactive` (yellow) are the OS character-highlight, consumed by `tug-code-view.css`, `tug-markdown-view.css`, `tug-text-editor.css`, and `tug-pane.css`'s `::highlight(card-selection)`. WebKit substitutes the OS color on focused fields; recoloring it would be wrong and fights [L12].
 
 **Implications:**
-- Edit `--tug7-surface-selection-primary-normal-selected-*`, the menus' transient `control-filled-action` highlight, and related list/menu tokens.
+- Edit `--tug7-surface-selection-primary-normal-selected-*` and the menus' *selection* highlight; introduce an accent-based selection token for menus/lists rather than blanket-recoloring `control-filled-action`.
+- **`control-filled-action` is shared** (CTA fill + menu transient): keep it blue for the CTA/activation use ([P12]); route the menu *selection* use to the accent selection token.
+- Leave `surface-selection-primary-normal-plain-*` (text selection) at its current values.
 - `bun run audit:tokens pairings` must pass; adjust tone/intensity within the role, not the role assignment ([L20]).
 
 #### [P07] Default button retired for a chain-dispatched `default-action` (DECIDED) {#p07-default-action}
@@ -259,6 +266,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 **Implications:**
 - New `TUG_ACTIONS.DEFAULT_ACTION`; modal scaffolds (`TugConfirmPopover`, `TugAlert`, sheets) declare their default on the focus mode.
 - Pipeline Stage 2 dispatches `default-action` instead of clicking a peeked element.
+- **Extended by [P12]:** `default-action` is one of the *semantic commit keys* (Return/Escape/⌘.); the **blue CTA keeps `control-…-filled-action`** as its default-action affordance; non-modal default/cancel are pane-scoped via the chain walk from the first responder (correcting the "scoping falls out of the mode stack for free" overstatement, which holds only for modal scopes).
 
 #### [P08] `standard` default; `accessibility` opt-in and comprehensive (DECIDED) {#p08-modes}
 
@@ -311,6 +319,24 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ---
 
+#### [P12] Semantic commit keys; action color = keyboard-active affordance (DECIDED) {#p12-semantic-keys}
+
+**Decision:** Treat **Return**, **Escape**, and **⌘.** as *semantic commit keys* that resolve to the active scope's declared **default action** (Return) and **cancel action** (Escape / ⌘.), **independent of which control holds the key view**. The `action`/blue color is **kept** on CTA buttons and defined as the **keyboard-active** affordance: blue marks where the keyboard is empowered — the focus ring (typing/arrows) and the default-action button (Return).
+
+**Rationale:**
+- A user arrow-navigating a list inside a sheet must be able to press Return to submit without moving focus to "OK." Routing Return to the scope's default action (not the key view) delivers exactly that — the Cocoa default-button / key-equivalent model.
+- Keeping blue on CTA buttons preserves the learned "Return activates this" signal and unifies blue under one idea — *the keyboard is engaged with this control* — whether via focus or as the Return target. Orange stays purely about content choice.
+- Dovetails with the CFRunLoop focus-mode stack ([P03]): a mode already scopes Tab; extending it to carry `defaultAction` + `cancelAction` makes Return/Escape resolve against the current mode for free, and removes the need for any default-button element stack.
+
+**Implications:**
+- Each focus mode (and the base/pane context) declares `defaultAction` and `cancelAction`; a pipeline stage routes Return → default and Escape/⌘. → cancel **against the active mode**, not the key view.
+- **Text-context precedence** (same shape as Tab/[Q02]): when the key view is a text surface that owns Return (newline/submit) or Escape (dismiss completion), it claims the key first; otherwise the key falls through to the scope action.
+- **Scoping (resolves F4):** modal scopes own these via the mode stack; a non-modal pane resolves default/cancel via the chain walk from the first responder's pane — not the global base mode.
+- New actions `TUG_ACTIONS.DEFAULT_ACTION` and `CANCEL_ACTION`; the existing Escape/⌘. → `CANCEL_DIALOG` bindings fold into `cancel-action`. The CTA button keeps `control-…-filled-action` (blue) and registers itself as its scope's default-action affordance.
+- Supersedes [P07]'s element-stack mechanism: there is no default-button registry; the scope declares an action and the blue CTA is its visual.
+
+---
+
 ### Deep Dives (Optional) {#deep-dives}
 
 #### The three axes, named {#three-axes}
@@ -339,7 +365,7 @@ This gives nesting (a popover inside a sheet pushes a mode atop the sheet's), an
 
 - **Radix-focus components to tame (~14):** radio-group, accordion, switch, popover, slider, checkbox, context-menu, tab-bar, sheet, alert, tooltip, label, internal/tug-button, internal/tug-popup-menu.
 - **Per-component focus-ring rules to delete:** checkbox, option-group, input, dialog-button, inline-dialog, cue, tab-bar, choice-group, list-row, textarea, value-input, code-view, markdown-view, slider, menu, prompt-entry, split-pane, hue-strip, popover.
-- **Selection-token recolor sites:** list-row, menu, editor-context-menu, list-view, plus the `--tug7-surface-selection-*` and `control-filled-action` tokens in both theme files.
+- **Selection-token recolor sites:** list-row, menu, editor-context-menu, list-view (the `selected`/`highlighted` surfaces → accent). **Excluded from recolor:** `surface-selection-primary-normal-plain-*` (text/character selection: code-view, markdown-view, text-editor, `::highlight(card-selection)`) stays blue; `control-…-filled-action` stays blue for the CTA/activation use ([P06], [P12]). `control-filled-action` is *shared* (CTA fill + menu transient) — only the menu *selection* use moves to the accent token.
 - **Default-button sites:** `internal/tug-button.tsx`, `responder-chain-provider.tsx` (Stage 2), `responder-chain.ts` (stack), `tug-text-editor.tsx` + `tug-text-editor/keymap.ts` (submit-Enter defer), `cards/gallery-default-button.tsx`, `chrome/dev-question-dialog.tsx`.
 
 #### Dynamic keybinding resolution {#keybinding-registry}
@@ -394,7 +420,8 @@ useKeybindings([
 
 - `useFocusable({ id, group, order, policy?, consumesTab? })` → `{ focusableRef }`.
 - `FocusManager`: `setKeyView(id)`, `keyView()`, `focusNext()`, `focusPrevious()`, `pushFocusMode(scopeId, opts)`, `popFocusMode(scopeId)`, `registerFocusable(record)`, `unregisterFocusable(id)`, `setDefaultAction(scopeId, action)`, `resolveDefaultAction()`.
-- New actions: `TUG_ACTIONS.FOCUS_NEXT`, `FOCUS_PREVIOUS`, `DEFAULT_ACTION`.
+- New actions: `TUG_ACTIONS.FOCUS_NEXT`, `FOCUS_PREVIOUS`, `DEFAULT_ACTION`, `CANCEL_ACTION`.
+- Scopes declare `defaultAction` / `cancelAction` (Return / Escape·⌘. targets) on their focus mode or pane. See [P12].
 - `useKeybindings(bindings)` → registers/unregisters context-scoped bindings; manager `registerKeybinding` / `unregisterKeybinding` / `resolveKeybinding` / `activeKeybindings`. See [#keybinding-registry].
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
@@ -407,7 +434,7 @@ useKeybindings([
 | Keyboard-access mode (`standard`/`accessibility`) | structure | tugbank DEFAULTS feed → `useSyncExternalStore`; `data-keyboard-access` on root | [L02], [L24] |
 | Tier-1 hairline + Tier-2 ring rendering | appearance | CSS `:focus-visible` + `[data-key-view]`; `--tugx-focus-ring` token | [L06], [L24] |
 | Selection color (accent/orange) | appearance | CSS tokens on `[data-selected]`/`[aria-selected]` | [L06], [L20] |
-| Default action of active scope | structure | FocusManager per-mode; dispatched as a chain action | [L11], [L24] |
+| Default / cancel action of active scope (Return / Escape·⌘. targets) | structure | FocusManager per mode/pane; declared at mount; dispatched as a chain action | [L11], [L24] |
 
 ---
 
@@ -436,7 +463,7 @@ useKeybindings([
 |--------|------|----------|-------|
 | `FocusManager` | class | `focus-manager.ts` | new |
 | `useFocusable` | hook | `use-focusable.tsx` | new |
-| `FOCUS_NEXT` / `FOCUS_PREVIOUS` / `DEFAULT_ACTION` | const | `action-vocabulary.ts` | new actions |
+| `FOCUS_NEXT` / `FOCUS_PREVIOUS` / `DEFAULT_ACTION` / `CANCEL_ACTION` | const | `action-vocabulary.ts` | new actions |
 | Tab / Shift-Tab + reconcile `⇧⇥` | entries | `keybinding-map.ts` | new bindings + precedence |
 | Stage for `focus-next`/`focus-previous`/`default-action` | code | `responder-chain-provider.tsx` | replaces Stage 2 default-button click |
 | `pushDefaultButton`/`popDefaultButton`/`peekDefaultButton*` | removal | `responder-chain.ts` | deleted |
@@ -452,7 +479,7 @@ useKeybindings([
 - [ ] New tuglaw: `tuglaws/focus-engine.md` — the three axes, the key view, the CFRunLoop mode model, the two modes, the focus-ring primitive. (Important doc → tuglaws/, per project policy.)
 - [ ] Update `tuglaws/responder-chain.md` — replace the "default button stack" section with the `default-action` model; cross-link the focus engine; note key view vs first responder.
 - [ ] Update `tuglaws/token-naming.md` / `tuglaws/theme-engine.md` — record accent=selection / action=focus and the `--tugx-focus-ring` alias.
-- [ ] Update `tuglaws/action-naming.md` — document the dynamic keybinding registry: bindings register/unregister in context, still cite `TUG_ACTIONS.*`; the activation-context vs. dispatch-routing distinction.
+- [ ] Update `tuglaws/action-naming.md` — document the dynamic keybinding registry (register/unregister in context, still cite `TUG_ACTIONS.*`; activation-context vs. dispatch-routing) and the semantic commit keys `default-action` / `cancel-action` (Return / Escape·⌘. routed to scope, with text-context precedence).
 
 ---
 
@@ -488,8 +515,8 @@ useKeybindings([
 | #step-4 | Floating-surface focus traps (CFRunLoop modes) | pending | — |
 | #step-5 | Dynamic context-scoped keybinding registry | pending | — |
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | pending | — |
-| #step-7 | Recolor selection → accent/orange | pending | — |
-| #step-8 | Reserve action/blue for focus | pending | — |
+| #step-7 | Recolor UI-selection → accent/orange | pending | — |
+| #step-8 | Confine blue to the keyboard-active axis | pending | — |
 | #step-9 | Tame internal/tug-button (base control focus) | pending | — |
 | #step-10 | Tame TugCheckbox | pending | — |
 | #step-11 | Tame TugSwitch | pending | — |
@@ -504,7 +531,7 @@ useKeybindings([
 | #step-20 | Tame TugSheet (modal trap + restore) | pending | — |
 | #step-21 | Tame TugAlert (modal dialog) | pending | — |
 | #step-22 | Radix-taming integration checkpoint | pending | — |
-| #step-23 | Retire default-button stack → default-action | pending | — |
+| #step-23 | Semantic commit keys + scope default/cancel actions | pending | — |
 | #step-24 | First-responder + refuse audit & reclassification | pending | — |
 | #step-25 | Accessibility-mode ARIA pass + dual mode toggle | pending | — |
 | #step-26 | Integration checkpoint | pending | — |
@@ -520,7 +547,7 @@ useKeybindings([
 
 **Tasks:**
 - [ ] Implement `FocusManager` (key view, registry, focus-mode stack, default-action map) with no document Tab listener.
-- [ ] `useFocusable({ id, group, order, policy?, consumesTab? })` registering via `useLayoutEffect` ([L03]); stamp `data-tug-focusable`.
+- [ ] `useFocusable({ id, group, order, policy?, consumesTab? })` registering via `useLayoutEffect` ([L03]); stamp `data-tug-focusable`. Tolerant pattern — silent no-op outside a provider, stable mount identity, like `useOptionalResponder` ([L26]).
 - [ ] Manager stamps `data-key-view` on the current key view (seed from first responder / focusin).
 - [ ] Expose via the existing provider context (sibling to `useResponderChain`).
 
@@ -611,7 +638,7 @@ useKeybindings([
 
 **Tasks:**
 - [ ] Add the keybinding registry (`register` / `unregister` / `resolve` / `active`) keyed by responder scope id and focus mode.
-- [ ] `useKeybindings([...])` registering via `useLayoutEffect` ([L03]); entries cite `TUG_ACTIONS.*` constants (never raw strings, per action-naming.md); cleanup unregisters.
+- [ ] `useKeybindings([...])` registering via `useLayoutEffect` ([L03]); entries cite `TUG_ACTIONS.*` constants (never raw strings, per action-naming.md); cleanup unregisters. Tolerant pattern (no-op outside a provider, stable identity, like `useOptionalResponder` — [L26]).
 - [ ] Stage 1 resolution: match dynamic bindings along the key-view→root walk (innermost-first), then fall back to `matchKeybinding` on the static map; honor `preventDefaultOnMatch`.
 - [ ] Mode-local bindings register into the active focus mode and deactivate on pop ([P03]).
 - [ ] Dev-mode warn on a duplicate chord at the same scope.
@@ -648,44 +675,45 @@ useKeybindings([
 **Checkpoint:**
 - [ ] `bun run audit:tokens pairings` passes; no per-component `outline:`/`focus-ring` rule remains (grep).
 
-#### Step 7: Recolor selection → accent/orange {#step-7}
+#### Step 7: Recolor UI-selection → accent/orange {#step-7}
 
 **Depends on:** #step-6
 
-**Commit:** `theme(selection): accent (orange) becomes the color of selection`
+**Commit:** `theme(selection): accent (orange) becomes the color of UI selection`
 
-**References:** [P06] color contract, (#affected-inventory), [L20]
+**References:** [P06] color contract, [P12] semantic keys, [L12], [L20], (#affected-inventory)
 
 **Artifacts:**
-- `--tug7-surface-selection-*` and menu `control-filled-action` highlight re-pointed to accent; rolled to list rows, menus, popovers, tab bars.
+- UI-selection surfaces (`selected`, `highlighted`) re-pointed to accent; an accent selection token for menus/lists. **Text/character selection (`selection … plain`) stays blue.** Shared `control-filled-action` keeps blue for CTA/activation; the menu *selection* use moves to the accent token.
 
 **Tasks:**
-- [ ] Re-point selected/highlighted selection surfaces to accent in both themes.
-- [ ] Apply accent==selection to list-row, menu, editor-context-menu, list-view (option/radio already accent).
+- [ ] Re-point `selected`/`highlighted` selection surfaces to accent in both themes; roll to list-row, menu, editor-context-menu, list-view (option/radio already accent).
+- [ ] Leave `surface-selection-primary-normal-plain-*` (text/character selection: code-view, markdown-view, text-editor, `::highlight(card-selection)`) at its current blue ([L12]).
+- [ ] Where `control-filled-action` is shared (CTA fill + menu transient), move the menu *selection* usage to the accent selection token and keep CTA/activation blue ([P12]).
 
 **Tests:**
-- [ ] app-test: a selected list row resolves the accent selection token.
+- [ ] app-test: a selected list row resolves the accent token; an editor text selection stays blue.
 
 **Checkpoint:**
-- [ ] `bun run audit:tokens pairings` clean; selected rows render orange in the running app.
+- [ ] `bun run audit:tokens pairings` clean; selected rows orange, text selection blue in the running app.
 
-#### Step 8: Reserve action/blue for focus {#step-8}
+#### Step 8: Confine blue to the keyboard-active axis {#step-8}
 
 **Depends on:** #step-6, #step-7
 
-**Commit:** `theme(focus): action (blue) reserved for focus indication`
+**Commit:** `theme(focus): blue = keyboard-active (focus ring + default-action), not selection`
 
-**References:** [P06] color contract, [P05] focus ring
+**References:** [P06] color contract, [P12] semantic keys, [P05] focus ring
 
 **Artifacts:**
-- Remove residual blue selection fills now superseded by accent; confirm action/blue appears only as focus.
+- Blue removed from *selection* usages (now orange); blue retained for the focus ring and the default-action (CTA) affordance.
 
 **Tasks:**
-- [ ] Sweep for blue-as-selection remnants; ensure the only action/blue surface is the focus ring.
-- [ ] Verify a selected-and-focused row reads orange fill + blue ring.
+- [ ] Sweep for blue-as-*selection* remnants; ensure blue surfaces are only the focus ring and the `filled-action` CTA/default-action.
+- [ ] Verify a selected-and-focused row reads orange fill + blue ring; a default CTA button stays blue.
 
 **Tests:**
-- [ ] app-test: selected+focused row carries both tokens distinguishably.
+- [ ] app-test: selected+focused row carries both tokens distinguishably; the CTA button remains blue.
 
 **Checkpoint:**
 - [ ] `bun run audit:tokens pairings` clean; visual check both themes.
@@ -818,10 +846,10 @@ useKeybindings([
 **References:** [P01] FocusManager, [P02] authored order, Risk R01, (#affected-inventory)
 
 **Artifacts:**
-- Radix `RovingFocus` disabled; the group is a single focus stop; arrows select-and-move locally.
+- Radix's built-in roving replaced by the manual `tabIndex` roving pattern already used in `tug-option-group.tsx` (Radix exposes no public knob to disable roving); the group is a single focus stop; Radix value/state semantics retained.
 
 **Tasks:**
-- [ ] Register the group as one focusable; arrows local; keep Radix value semantics.
+- [ ] Replace the Radix roving layer with manual roving (option-group pattern); the group registers as one focusable; arrows select-and-move locally; keep Radix value semantics.
 
 **Tests:**
 - [ ] app-test: Tab treats the group as one stop; arrows move/select; ring on keyboard focus.
@@ -840,10 +868,10 @@ useKeybindings([
 **References:** [P01] FocusManager, [P02] authored order, Risk R01, (#affected-inventory)
 
 **Artifacts:**
-- Radix accordion roving disabled; headers are reachable via the walk; arrows move between headers locally.
+- Radix accordion's built-in roving replaced by manual roving (option-group pattern; no public knob to disable Radix roving); headers reachable via the walk; arrows move between headers locally; expand/collapse semantics retained.
 
 **Tasks:**
-- [ ] Register accordion headers per the authored order; arrows local; keep expand/collapse semantics.
+- [ ] Replace the Radix roving layer with manual roving; register accordion headers per the authored order; arrows local; keep expand/collapse semantics.
 
 **Tests:**
 - [ ] app-test: headers reachable; arrows move; expand/collapse via Space/Enter; ring on keyboard focus.
@@ -1006,27 +1034,30 @@ useKeybindings([
 
 ---
 
-#### Step 23: Retire default-button stack → `default-action` {#step-23}
+#### Step 23: Semantic commit keys + scope default/cancel actions {#step-23}
 
 **Depends on:** #step-3, #step-4
 
-**Commit:** `focus(default): retire default-button stack for chain default-action`
+**Commit:** `focus(keys): semantic commit keys (Return/Escape/⌘.) → scope default/cancel actions`
 
-**References:** [P07] default-action, [P03] traps, (#affected-inventory)
+**References:** [P12] semantic keys, [P07] default-action (superseded), [P03] traps, [Q02] text-context precedence, (#affected-inventory, #cfrunloop-model)
 
 **Artifacts:**
-- `DEFAULT_ACTION` action; per-mode default declaration; Stage 2 dispatches it; deletion of `pushDefaultButton`/`popDefaultButton`/`peekDefaultButton*` and the `defaultButton` prop.
+- `DEFAULT_ACTION` + `CANCEL_ACTION` actions; each focus mode / pane declares `defaultAction` + `cancelAction`; a pipeline stage routes Return → default and Escape/⌘. → cancel against the active mode (text-context precedence first); deletion of `pushDefaultButton`/`popDefaultButton`/`peekDefaultButton*` and the `defaultButton` prop.
 
 **Tasks:**
-- [ ] Add `DEFAULT_ACTION`; modals (`TugConfirmPopover`, `TugAlert`, sheets) declare their default on the active focus mode.
-- [ ] Replace Stage 2 default-button click with `default-action` dispatch (pane scope via the mode stack).
+- [ ] Add `DEFAULT_ACTION` / `CANCEL_ACTION`; modes (`TugSheet`, `TugAlert`, `TugConfirmPopover`) and non-modal panes declare default/cancel on their scope.
+- [ ] Route Return → default-action and Escape/⌘. → cancel-action against the active focus mode; non-modal resolves via the chain walk from the first responder's pane ([P12], resolves F4).
+- [ ] Text-context precedence: editors keep Return (newline/submit) and Escape (dismiss completion) when the key view owns them; otherwise the key falls through to the scope action ([Q02] pattern).
+- [ ] Fold the existing Escape/⌘. → `CANCEL_DIALOG` bindings into `cancel-action`; keep the CTA button's blue `control-…-filled-action` as its default-action affordance ([P12]).
 - [ ] Delete the default-button stack API + `defaultButton` prop; update `tug-text-editor`/`keymap.ts` submit-Enter defer and `gallery-default-button.tsx`, `dev-question-dialog.tsx`.
 
 **Tests:**
-- [ ] app-test: Enter outside a text input presses the active dialog's default; cross-pane Enter does not press another pane's default.
+- [ ] app-test: arrow-navigate a list in a sheet, press Return → the sheet's default action fires (focus need not move to OK); Escape/⌘. cancels; cross-pane Return does not fire another pane's default.
+- [ ] app-test: Return in a focused text editor still submits/newlines per its config (precedence holds).
 
 **Checkpoint:**
-- [ ] grep for `pushDefaultButton|peekDefaultButton|defaultButton` returns nothing; `just app-test` dialog Enter `VERDICT: PASS`.
+- [ ] grep for `pushDefaultButton|peekDefaultButton|defaultButton` returns nothing; `just app-test` commit-keys scenario `VERDICT: PASS`.
 
 #### Step 24: First-responder + `refuse` audit & reclassification {#step-24}
 
@@ -1099,6 +1130,8 @@ useKeybindings([
 - [ ] Every criterion in [#success-criteria] verified.
 - [ ] No per-component focus-ring rule, no default-button stack API, no blue-as-selection token remains (grep).
 - [ ] A context-scoped keybinding activates only in context and detaches on unmount; in-context overrides global; static globals still fire (app-test).
+- [ ] Return/Escape/⌘. resolve to the active scope's default/cancel action independent of the key view, with editor precedence intact (app-test).
+- [ ] Blue = keyboard-active only (focus ring + CTA default-action); UI selection orange; text selection unchanged-blue (audit + app-test).
 - [ ] `bunx tsc --noEmit`, `bun test`, `bun run audit:tokens pairings`, and the `just app-test` focus suite are all green.
 - [ ] `tuglaws/focus-engine.md` written; `responder-chain.md` / `token-naming.md` updated.
 
