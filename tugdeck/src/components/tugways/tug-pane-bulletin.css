@@ -148,12 +148,6 @@ body {
   cursor: pointer;
 }
 
-/* Sticky bulletins (persist-until-dismissed) right-align their OK button to
-   the bulletin's bottom-right corner. */
-.tug-pane-bulletin-sticky [data-button] {
-  justify-self: end;
-}
-
 .tug-pane-bulletin [data-button]:hover {
   background-color: var(--tug7-surface-control-primary-ghost-action-hover);
 }

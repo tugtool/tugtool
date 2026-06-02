@@ -1,20 +1,16 @@
 /**
  * compaction-progress-sheet.css — layout for the `/compact` progress sheet.
  *
- * A short message line, a full-width determinate bar, and (while running)
- * the standard sheet actions row carrying Cancel. Appearance is token-driven
- * [L06]; the bar and button keep their own tokens [L20].
+ * A full-width determinate bar with its own percentage readout, and (while
+ * summarizing) the standard sheet actions row carrying Cancel. Compact: the
+ * bar + readout carry the progress, so there is no caption. Appearance is
+ * token-driven [L06]; the bar and button keep their own tokens [L20].
  */
 
 .compaction-progress-sheet {
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-sheet-space-b);
-}
-
-.compaction-progress-sheet-message {
-  margin: 0;
-  color: var(--tug7-element-global-text-normal-default-rest);
+  gap: var(--tugx-sheet-space-a);
 }
 
 /* The bar variant already stretches to its host's full width; this just
@@ -22,4 +18,10 @@
    percentage readout (showValue) is the indicator's own trailing element. */
 .compaction-progress-sheet-bar {
   width: 100%;
+}
+
+/* The column gap already separates the bar from the actions row — drop the
+   shared actions top-margin so the Cancel button sits close to the bar. */
+.compaction-progress-sheet .tug-sheet-actions {
+  margin-top: 0;
 }

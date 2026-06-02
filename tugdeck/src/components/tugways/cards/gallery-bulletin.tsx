@@ -153,6 +153,33 @@ export function GalleryBulletin() {
         </div>
       </div>
 
+      <TugSeparator />
+
+      {/* ---- 6. Sticky (persist until dismissed) ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Sticky</TugLabel>
+        <div style={labelStyle}>bulletin(message, &#123; sticky &#125;) — persists until dismissed, with an OK button (label via okLabel)</div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            role="action"
+            onClick={() => bulletin.success("Session compacted", { sticky: true })}
+          >
+            Sticky (OK)
+          </TugPushButton>
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            onClick={() =>
+              bulletin("Update installed", { sticky: true, okLabel: "Got it" })
+            }
+          >
+            Sticky (custom label)
+          </TugPushButton>
+        </div>
+      </div>
+
     </div>
   );
 }

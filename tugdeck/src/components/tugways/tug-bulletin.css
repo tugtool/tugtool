@@ -44,16 +44,45 @@ body {
   box-sizing: border-box;
   /* Padding: A top/bottom (compact), B right, A left (stripe already adds visual weight) */
   padding: var(--tugx-bulletin-space-a) var(--tugx-bulletin-space-b) var(--tugx-bulletin-space-a) var(--tugx-bulletin-space-a);
-  /* Layout */
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--tugx-bulletin-space-a) * 0.5);
+  /* Two columns: the (optional) icon, then the content. The icon shares the
+     title's line; the description and any button live in the content column
+     so they left-align under the title. The column gap comes from the icon's
+     own margin, so a bulletin with no icon has no phantom left indent. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0;
+  row-gap: calc(var(--tugx-bulletin-space-a) * 0.5);
+  align-items: start;
   /* Left accent stripe — contrasting gray by default, colored by tone variants */
   border-left: 4px solid var(--tugx-bulletin-accent-default);
   /* Cursor */
   cursor: default;
   /* Prevent text selection on rapid clicks */
   user-select: none;
+}
+
+/* ---- Icon: column 1, on the title's line ---- */
+
+.tug-bulletin [data-icon] {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  /* Optical nudge so the glyph centers on the title's first line. */
+  margin-top: 0.125rem;
+  /* The inter-column gap lives here so it vanishes when there's no icon. */
+  margin-right: calc(var(--tugx-bulletin-space-a) * 0.75);
+}
+
+/* ---- Content: column 2, stacks title + description ---- */
+
+.tug-bulletin [data-content] {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--tugx-bulletin-space-a) * 0.25);
+  min-width: 0;
 }
 
 /* ---- Tone variants — Sonner adds data-type to the toast element ---- */
@@ -92,6 +121,10 @@ body {
 /* ---- Action button ---- */
 
 .tug-bulletin [data-button] {
+  /* Sits in the content column (row 2) so it indents under the title and
+     left-aligns on its own row — inline actions and the sticky OK alike. */
+  grid-column: 2;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -104,8 +137,6 @@ body {
   border: 1px solid var(--tugx-bulletin-border);
   background-color: transparent;
   color: var(--tugx-bulletin-fg);
-  /* Align to the left */
-  align-self: flex-start;
   /* Spacing from description if present */
   margin-top: calc(var(--tugx-bulletin-space-a) * 0.25);
 }

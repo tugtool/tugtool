@@ -60,11 +60,11 @@ function mapOptions(
   const result: Record<string, unknown> = { toasterId };
   if (options?.description !== undefined) result.description = options.description;
   if (options?.sticky === true) {
-    // Persist-until-dismissed: never auto-dismiss, and render an OK button.
-    // Sonner dismisses the toast itself when its action is clicked, so the
-    // handler is a no-op. The marker class right-aligns the button (CSS).
+    // Persist-until-dismissed: never auto-dismiss, and render an OK button
+    // (left-aligned on its own row, like any bulletin action). Sonner
+    // dismisses the toast itself when its action is clicked, so the handler
+    // is a no-op.
     result.duration = Infinity;
-    result.className = "tug-pane-bulletin-sticky";
     result.action = { label: options.okLabel ?? "OK", onClick: () => {} };
   } else {
     if (options?.duration !== undefined) result.duration = options.duration;

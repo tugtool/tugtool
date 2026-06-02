@@ -27,18 +27,9 @@ import React, { useEffect, useSyncExternalStore } from "react";
 
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import {
-  compactionProgressStore,
-  type CompactionRunPhase,
-} from "@/lib/compaction-progress-store";
+import { compactionProgressStore } from "@/lib/compaction-progress-store";
 
 import "./compaction-progress-sheet.css";
-
-/** Phase → the line shown above the bar while the run is in flight. */
-const PHASE_LABEL: Record<CompactionRunPhase, string> = {
-  summarizing: "Summarizing…",
-  respawning: "Preparing session…",
-};
 
 export interface CompactionProgressSheetProps {
   /** Dismiss the host sheet (from `useTugSheet`'s content callback). */
@@ -68,16 +59,14 @@ export function CompactionProgressSheet({
   if (progress === null) return null;
 
   const settled = progress.outcome !== null;
-  const label = settled ? "Done" : PHASE_LABEL[progress.phase];
   // Cancel only during summarizing: once the fresh session is spawning
   // (respawning) there is nothing left to interrupt.
   const cancelable = !settled && progress.phase === "summarizing";
 
   return (
     <div className="compaction-progress-sheet" data-slot="compaction-progress">
-      <p className="compaction-progress-sheet-message" aria-live="polite">
-        {label}
-      </p>
+      {/* The determinate bar + its percentage readout carry the progress on
+          their own — no phase caption needed. */}
       <TugProgressIndicator
         variant="bar"
         value={progress.value}

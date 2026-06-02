@@ -39,12 +39,21 @@ function mapPosition(position: TugBulletinProviderProps["position"]): SonnerPosi
 function mapOptions(options?: BulletinOptions): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   if (options?.description !== undefined) result.description = options.description;
-  if (options?.duration !== undefined) result.duration = options.duration;
-  if (options?.action !== undefined) {
-    result.action = {
-      label: options.action.label,
-      onClick: options.action.onClick,
-    };
+  if (options?.sticky === true) {
+    // Persist-until-dismissed: never auto-dismiss, and render an OK button
+    // (left-aligned on its own row, like any bulletin action). Sonner
+    // dismisses the toast itself when its action is clicked, so the handler
+    // is a no-op.
+    result.duration = Infinity;
+    result.action = { label: options.okLabel ?? "OK", onClick: () => {} };
+  } else {
+    if (options?.duration !== undefined) result.duration = options.duration;
+    if (options?.action !== undefined) {
+      result.action = {
+        label: options.action.label,
+        onClick: options.action.onClick,
+      };
+    }
   }
   return result;
 }
@@ -125,6 +134,18 @@ export interface BulletinOptions {
   description?: string;
   duration?: number;
   action?: { label: string; onClick: () => void };
+  /**
+   * Persist until the user dismisses it (no auto-dismiss), showing an OK
+   * button on its own row. Use for outcomes the user should acknowledge
+   * rather than glance at. Composes with any tone helper. Overrides
+   * `duration` / `action`.
+   */
+  sticky?: boolean;
+  /**
+   * Label for the sticky dismiss button.
+   * @default "OK"
+   */
+  okLabel?: string;
 }
 
 /* ---------------------------------------------------------------------------
@@ -145,13 +166,7 @@ export interface BulletinOptions {
  * ```
  */
 export function bulletin(message: string, options?: BulletinOptions): void {
-  toast(message, {
-    description: options?.description,
-    duration: options?.duration,
-    action: options?.action
-      ? { label: options.action.label, onClick: options.action.onClick }
-      : undefined,
-  });
+  toast(message, { ...mapOptions(options) });
 }
 
 bulletin.success = (message: string, options?: BulletinOptions): void => {
