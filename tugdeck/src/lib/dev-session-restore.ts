@@ -74,6 +74,7 @@ import type { TugConnection } from "../connection";
 import { sendSpawnSession } from "./session-lifecycle";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { cardSessionBindingStore } from "./card-session-binding-store";
+import type { CardSessionBinding } from "./card-session-binding-store";
 import { cardServicesStore } from "./card-services-store";
 import { pendingCompactionStore } from "./pending-compaction-store";
 import { compactionProgressStore } from "./compaction-progress-store";
@@ -299,29 +300,14 @@ function installRegistrySubscriptions(connection: TugConnection): void {
         devRestoreRegistry._clear(cardId);
         const services = cardServicesStore.getServices(cardId);
         services?.codeSessionStore.notifyTransportSettled();
-        // `/compact` seed delivery: if this freshly-bound session was born
-        // from a compaction, flag it for the divider header and send the
-        // summary as a suppressed seed (in claude's context, not the
-        // transcript). `take` is single-use, so this fires exactly once.
-        const tugSessionId = bindings.get(cardId)?.tugSessionId;
-        if (services !== null && tugSessionId !== undefined) {
-          const pending = pendingCompactionStore.take(tugSessionId);
-          if (pending !== null) {
-            services.codeSessionStore.markCompactionSeed(pending.preTokens);
-            services.codeSessionStore.send(
-              buildCompactionSeed(pending.summary),
-              [],
-              { suppress: true },
-            );
-            // The fresh session is live and seeded — the compaction
-            // succeeded. This settles the progress sheet (it dismisses) and
-            // tells the card to raise the sticky "Conversation compacted"
-            // bulletin.
-            compactionProgressStore.succeed();
-          }
-        }
       }
     }
+    // `/compact` seed delivery runs for *any* freshly-bound card, not only
+    // the restore-registry ones above. A `/compact` fresh session is
+    // spawned without a restore hold, so gating delivery on that loop would
+    // never seed it — the divider would never show and the progress sheet
+    // would hang waiting for `succeed()`.
+    deliverPendingCompactionSeeds(bindings);
   });
 
   // When tugcast reports an errored SESSION_STATE for a restoring
@@ -349,6 +335,41 @@ function installRegistrySubscriptions(connection: TugConnection): void {
       break;
     }
   });
+}
+
+/**
+ * Deliver any pending `/compact` seed for the cards in `bindings`.
+ *
+ * When a `/compact` fresh session binds, flag it for the divider header
+ * ({@link CodeSessionStore.markCompactionSeed}) and send the captured
+ * summary as a *suppressed* seed turn (it runs in claude's context but
+ * never enters the transcript), then settle the progress sheet
+ * ({@link compactionProgressStore.succeed}).
+ *
+ * Runs for every bound card, independent of the restore registry, because
+ * a `/compact` spawn carries no restore hold. `take` is single-use, so a
+ * given session is seeded exactly once even though this runs on every
+ * binding-store change. Peeks `services` before `take` so a not-yet-ready
+ * store doesn't consume the pending seed; if the card has no pending seed
+ * (the overwhelmingly common case) `take` returns `null` and this is a
+ * no-op.
+ */
+function deliverPendingCompactionSeeds(
+  bindings: ReadonlyMap<string, CardSessionBinding>,
+): void {
+  for (const [cardId, binding] of bindings) {
+    const services = cardServicesStore.getServices(cardId);
+    if (services === null) continue;
+    const pending = pendingCompactionStore.take(binding.tugSessionId);
+    if (pending === null) continue;
+    services.codeSessionStore.markCompactionSeed(pending.preTokens);
+    services.codeSessionStore.send(
+      buildCompactionSeed(pending.summary),
+      [],
+      { suppress: true },
+    );
+    compactionProgressStore.succeed();
+  }
 }
 
 // SESSION_STATE payload shape lives in tugcast's `build_session_state_frame`:

@@ -233,6 +233,14 @@ const ENTRY_PANEL_MAX_PCT = 90;
 const SHEET_EXIT_ANIMATION_MS = 220;
 
 /**
+ * Backstop for `/compact`'s respawn phase: the summarization finished but
+ * the fresh session must still spawn, bind, and seed. That handshake is
+ * normally milliseconds; if it never lands, fail the run after this long so
+ * the progress sheet can't hang (the phase has no Cancel).
+ */
+const COMPACTION_RESPAWN_TIMEOUT_MS = 15_000;
+
+/**
  * Placeholder copy for the prompt entry, keyed by the active route
  * value (`❯` Code / `$` Shell — see `ROUTE_ITEMS` in
  * `tug-prompt-entry.tsx`). Forwarded as `placeholderByRoute`; the
@@ -2986,11 +2994,31 @@ export function DevCardBody({
         });
         sendSpawnSession(connection, cardId, newSessionId, projectDir, "new");
         sendCloseSessionKeepingBinding(connection, cardId, oldTugSessionId);
+        // Watchdog: the fresh session must still spawn, bind, and seed
+        // (the `dev-session-restore` hook calls `succeed()`). This phase
+        // can't be canceled, so if that handshake never lands, fail rather
+        // than leave the sheet spinning forever. Cleared the instant this
+        // run settles.
+        const watchdog = setTimeout(() => {
+          if (compactionProgressStore.getSnapshot()?.outcome === null) {
+            compactionProgressStore.fail(
+              "Compaction failed — could not start a fresh session",
+            );
+          }
+        }, COMPACTION_RESPAWN_TIMEOUT_MS);
+        const unsubWatchdog = compactionProgressStore.subscribe(() => {
+          const st = compactionProgressStore.getSnapshot();
+          if (st === null || st.outcome !== null) {
+            clearTimeout(watchdog);
+            unsubWatchdog();
+          }
+        });
       });
 
       // Open the run, present the modal sheet, then send the suppressed
-      // turn. If the sheet is dismissed (Escape / Cmd-.) while the run is
-      // still in flight, treat that as Cancel.
+      // turn. If the sheet is dismissed (Escape / Cmd-.) while still
+      // *summarizing*, treat that as Cancel. Once respawning there is
+      // nothing to cancel — let the run finish and surface its own bulletin.
       compactionProgressStore.begin(cardId);
       void cardPickerSheet
         .showSheet({
@@ -3001,7 +3029,9 @@ export function DevCardBody({
         })
         .then(() => {
           const st = compactionProgressStore.getSnapshot();
-          if (st !== null && st.outcome === null) onCancel();
+          if (st !== null && st.outcome === null && st.phase === "summarizing") {
+            onCancel();
+          }
         });
       codeSessionStore.send(
         buildSummarizationPrompt(focus.length > 0 ? focus : undefined),

@@ -22,3 +22,14 @@
 .compaction-progress-sheet-bar {
   width: 100%;
 }
+
+/* Running percentage, tucked just under the bar: muted, small, right-aligned
+   so it reads as a readout of the bar rather than a second heading. The
+   half-gap pull-up associates it with the bar above it. */
+.compaction-progress-sheet-percent {
+  margin: calc(var(--tugx-sheet-space-b) * -0.5) 0 0;
+  text-align: right;
+  font-size: var(--tug-font-size-sm, 0.85em);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-variant-numeric: tabular-nums;
+}
