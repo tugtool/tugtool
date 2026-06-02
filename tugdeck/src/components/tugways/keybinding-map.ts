@@ -235,15 +235,29 @@ export const KEYBINDINGS: KeyBinding[] = [
  */
 export function matchKeybinding(event: KeyboardEvent): KeyBinding | null {
   for (const binding of KEYBINDINGS) {
-    if (
-      event.code === binding.key &&
-      !!event.ctrlKey === (binding.ctrl ?? false) &&
-      !!event.metaKey === (binding.meta ?? false) &&
-      !!event.shiftKey === (binding.shift ?? false) &&
-      !!event.altKey === (binding.alt ?? false)
-    ) {
+    if (keyBindingMatchesEvent(event, binding)) {
       return binding;
     }
   }
   return null;
+}
+
+/**
+ * Whether a `KeyboardEvent` matches one binding's chord: exact `code` plus
+ * exact state of all four modifier flags. The single matching rule, shared by
+ * the static `matchKeybinding` and the dynamic, context-scoped registry
+ * (`ResponderChainManager.resolveKeybinding`) so both layers agree on what
+ * "this chord" means ([P11]).
+ */
+export function keyBindingMatchesEvent(
+  event: KeyboardEvent,
+  binding: KeyBinding,
+): boolean {
+  return (
+    event.code === binding.key &&
+    !!event.ctrlKey === (binding.ctrl ?? false) &&
+    !!event.metaKey === (binding.meta ?? false) &&
+    !!event.shiftKey === (binding.shift ?? false) &&
+    !!event.altKey === (binding.alt ?? false)
+  );
 }

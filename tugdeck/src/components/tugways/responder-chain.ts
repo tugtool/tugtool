@@ -65,6 +65,8 @@
 
 import { createContext } from "react";
 import type { TugAction } from "./action-vocabulary";
+import type { KeyBinding } from "./keybinding-map";
+import { keyBindingMatchesEvent } from "./keybinding-map";
 
 export type { TugAction, GalleryAction } from "./action-vocabulary";
 
@@ -278,6 +280,15 @@ export type DispatchObserver = (event: ActionEvent, handled: boolean) => void;
 export type KeyResponderObserver = (responderId: string | null) => void;
 
 /**
+ * A live source of dynamic keybindings for one scope, read at resolve time so a
+ * component's current-render bindings are always seen without re-registering
+ * (the same live-read pattern `useResponder` uses for its actions map). A scope
+ * is an opaque id — a responder id (responder-scoped) or a focus-mode id
+ * (mode-local); the registry never interprets it. See [P11] / [#keybinding-registry].
+ */
+export type KeybindingSource = () => readonly KeyBinding[];
+
+/**
  * Internal subscription record for `observeKeyResponder`. Stores the
  * tier the observer is interested in, the callback to invoke, and the
  * last value the observer was notified about so we can dedupe to
@@ -352,6 +363,10 @@ export class ResponderChainManager {
   private dispatchObservers: Set<DispatchObserver> = new Set();
   private keyResponderSubscriptions: Set<KeyResponderSubscription> = new Set();
   private defaultButtonStack: HTMLButtonElement[] = [];
+  // Dynamic, context-scoped keybindings ([P11]): scope id → live sources. A
+  // scope is a responder id or a focus-mode id; resolution checks the active
+  // focus mode then the first-responder parentId walk, innermost-first.
+  private keybindingSources: Map<string, Set<KeybindingSource>> = new Map();
 
   // ---- Registration ----
 
@@ -1111,6 +1126,113 @@ export class ResponderChainManager {
       if (scope.contains(button)) return button;
     }
     return null;
+  }
+
+  // ---- Dynamic context-scoped keybindings ([P11], #keybinding-registry) ----
+
+  /**
+   * Register a live source of keybindings under `scopeId` (a responder id for
+   * responder-scoped bindings, or a focus-mode id for mode-local ones).
+   * Returns an unregister thunk for the caller's cleanup. Dev-warns if the
+   * scope ends up with two bindings on the same chord (otherwise the first
+   * found would silently shadow the other).
+   */
+  registerKeybinding(scopeId: string, source: KeybindingSource): () => void {
+    let set = this.keybindingSources.get(scopeId);
+    if (set === undefined) {
+      set = new Set();
+      this.keybindingSources.set(scopeId, set);
+    }
+    set.add(source);
+    this.warnDuplicateChords(scopeId);
+    return () => {
+      const current = this.keybindingSources.get(scopeId);
+      if (current === undefined) return;
+      current.delete(source);
+      if (current.size === 0) {
+        this.keybindingSources.delete(scopeId);
+      }
+    };
+  }
+
+  /**
+   * Resolve a keyboard event against the dynamic registry, innermost-first:
+   * first the `extraScopes` (the active focus mode, passed by the provider —
+   * the innermost context, reachable even when DOM focus is elsewhere, e.g. an
+   * inline dialog's accelerators while the prompt holds focus), then the
+   * first-responder `parentId` walk from innermost responder up to the root.
+   * Returns the first matching binding, or `null` so the caller falls through
+   * to the static global map. The matched binding is dispatched by the caller
+   * exactly like a static one (its `scope` field still picks dispatch routing).
+   */
+  resolveKeybinding(
+    event: KeyboardEvent,
+    extraScopes: readonly string[] = [],
+  ): KeyBinding | null {
+    for (const scopeId of extraScopes) {
+      const match = this.matchKeybindingInScope(event, scopeId);
+      if (match !== null) return match;
+    }
+    let currentId: string | null = this.firstResponderId;
+    while (currentId !== null) {
+      const match = this.matchKeybindingInScope(event, currentId);
+      if (match !== null) return match;
+      const node = this.nodes.get(currentId);
+      if (!node) break;
+      currentId = node.parentId;
+    }
+    return null;
+  }
+
+  /**
+   * The bindings registered at `scopeId` (or every registered binding when
+   * omitted). For a discoverability surface / command palette and accessibility
+   * enumeration. Not in-context-filtered — callers that want "live right now"
+   * intersect with the current scope walk.
+   */
+  activeKeybindings(scopeId?: string): KeyBinding[] {
+    const collect = (set: Set<KeybindingSource> | undefined): KeyBinding[] =>
+      set === undefined ? [] : [...set].flatMap((source) => [...source()]);
+    if (scopeId !== undefined) {
+      return collect(this.keybindingSources.get(scopeId));
+    }
+    const all: KeyBinding[] = [];
+    for (const set of this.keybindingSources.values()) {
+      all.push(...collect(set));
+    }
+    return all;
+  }
+
+  /** First binding at `scopeId` matching the event, or null. */
+  private matchKeybindingInScope(
+    event: KeyboardEvent,
+    scopeId: string,
+  ): KeyBinding | null {
+    const set = this.keybindingSources.get(scopeId);
+    if (set === undefined) return null;
+    for (const source of set) {
+      for (const binding of source()) {
+        if (keyBindingMatchesEvent(event, binding)) return binding;
+      }
+    }
+    return null;
+  }
+
+  /** Dev-only: warn when one scope has two bindings on the same chord. */
+  private warnDuplicateChords(scopeId: string): void {
+    if (typeof process !== "undefined" && process.env?.NODE_ENV === "production") return;
+    const bindings = this.activeKeybindings(scopeId);
+    const seen = new Set<string>();
+    for (const b of bindings) {
+      const chord = `${b.key}|${!!b.ctrl}|${!!b.meta}|${!!b.shift}|${!!b.alt}`;
+      if (seen.has(chord)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[responder-chain] duplicate keybinding chord "${chord}" registered at scope "${scopeId}" — the first match shadows the rest.`,
+        );
+      }
+      seen.add(chord);
+    }
   }
 
   // ---- Subscription (for useSyncExternalStore) ----

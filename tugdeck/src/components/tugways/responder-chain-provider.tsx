@@ -23,7 +23,7 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
-import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
+import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, BASE_FOCUS_MODE } from "./focus-manager";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { matchKeybinding } from "./keybinding-map";
 import { selectionGuard } from "./selection-guard";
@@ -229,7 +229,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {
-      const binding = matchKeybinding(event);
+      // Resolve dynamic, context-scoped bindings first ([P11],
+      // #keybinding-registry): the active focus mode (innermost — a floating
+      // surface's accelerators, reachable even when focus is elsewhere, e.g. an
+      // inline dialog while the prompt holds focus) then the first-responder
+      // walk, innermost-first. Fall back to the static global map. Both layers
+      // share one match rule and one dispatch path below.
+      const mode = focusManager.currentFocusMode();
+      const binding =
+        manager.resolveKeybinding(event, mode === BASE_FOCUS_MODE ? [] : [mode]) ??
+        matchKeybinding(event);
       if (binding === null) return;
       // [D06] preventDefaultOnMatch: suppress browser default on match (e.g.
       // Cmd+A native select-all) before dispatching to the responder chain.

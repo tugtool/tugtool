@@ -13,6 +13,7 @@
 import React, { useState } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
+import { useKeybindings } from "@/components/tugways/use-keybindings";
 import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS, TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugButton } from "@/components/tugways/internal/tug-button";
@@ -97,6 +98,76 @@ function ActionEventDemo() {
 }
 
 // ---------------------------------------------------------------------------
+// KeybindingDemo
+// ---------------------------------------------------------------------------
+
+/**
+ * KeybindingDemo -- demonstrates a dynamic, context-scoped keybinding ([P11]).
+ *
+ * A responder (`keybinding-demo`) registers a `useKeybindings` chord (⇧⌘Y →
+ * `submit`, handled locally to bump a counter) that is live **only while this
+ * panel's responder is in context** — i.e. while it (or a descendant) is the
+ * first responder. Click the panel to make it first responder, then ⇧⌘Y bumps
+ * the count; with focus elsewhere the same chord resolves to nothing. The
+ * panel carries `tabIndex={0}` + `responderRef` so a pointer/keyboard focus
+ * promotes it to first responder.
+ *
+ * The `useKeybindings` call lives inside the `ResponderScope` so it registers
+ * under this responder's id (its `ResponderParentContext`).
+ */
+function KeybindingDemo() {
+  const [fired, setFired] = useState(0);
+  const { ResponderScope, responderRef } = useResponder({
+    id: "keybinding-demo",
+    actions: {
+      [TUG_ACTIONS.SUBMIT]: () => {
+        setFired((n) => n + 1);
+      },
+    },
+  });
+  return (
+    <div className="cg-section" data-testid="keybinding-demo">
+      <TugLabel className="cg-section-title">Dynamic Keybinding</TugLabel>
+      <TugLabel size="2xs" emphasis="calm">
+        Focus this panel and press ⇧⌘Y — the binding is live via useKeybindings
+        only while this panel&apos;s responder is in context.
+      </TugLabel>
+      <div
+        ref={responderRef}
+        tabIndex={0}
+        data-testid="keybinding-demo-target"
+        className="cg-variant-row"
+      >
+        <ResponderScope>
+          <KeybindingDemoBinding />
+        </ResponderScope>
+        <TugLabel size="2xs" emphasis="calm" data-testid="keybinding-demo-count">
+          {String(fired)}
+        </TugLabel>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The `useKeybindings` registrant. Separated so it sits inside
+ * KeybindingDemo's `ResponderScope` and registers under the `keybinding-demo`
+ * responder id. Renders nothing.
+ */
+function KeybindingDemoBinding() {
+  useKeybindings([
+    {
+      key: "KeyY",
+      meta: true,
+      shift: true,
+      action: TUG_ACTIONS.SUBMIT,
+      preventDefaultOnMatch: true,
+    },
+  ]);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // GalleryChainActions
 // ---------------------------------------------------------------------------
 
@@ -127,6 +198,10 @@ export function GalleryChainActions() {
       <TugSeparator />
 
       <ActionEventDemo />
+
+      <TugSeparator />
+
+      <KeybindingDemo />
     </div>
   );
 }

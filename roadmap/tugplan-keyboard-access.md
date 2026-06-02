@@ -537,7 +537,7 @@ useKeybindings([
 | #step-2 | Keyboard-access mode state + persistence | done | 80da10a4 |
 | #step-3 | Tab pipeline: focus-next/previous + editor precedence | done | 188a976e |
 | #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | 662bca98 |
-| #step-5 | Dynamic context-scoped keybinding registry | pending | — |
+| #step-5 | Dynamic context-scoped keybinding registry | done | (uncommitted) |
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | pending | — |
 | #step-7 | Recolor UI-selection → accent/orange | pending | — |
 | #step-8 | Confine blue to the keyboard-active axis | pending | — |
@@ -661,18 +661,18 @@ useKeybindings([
 - `use-keybindings.tsx`; a dynamic keybinding registry on the manager keyed by scope id and focus mode; Stage 1 resolves in-context bindings before the static `KEYBINDINGS` fallback.
 
 **Tasks:**
-- [ ] Add the keybinding registry (`register` / `unregister` / `resolve` / `active`) keyed by responder scope id and focus mode.
-- [ ] `useKeybindings([...])` registering via `useLayoutEffect` ([L03]); entries cite `TUG_ACTIONS.*` constants (never raw strings, per action-naming.md); cleanup unregisters. Tolerant pattern (no-op outside a provider, stable identity, like `useOptionalResponder` — [L26]).
-- [ ] Stage 1 resolution: match dynamic bindings along the key-view→root walk (innermost-first), then fall back to `matchKeybinding` on the static map; honor `preventDefaultOnMatch`.
-- [ ] Mode-local bindings register into the active focus mode and deactivate on pop ([P03]). This is the mechanism the inline dialogs' wizard accelerators use ([P13]): `PermissionDialog` / `QuestionDialog` register `←`/`→` (Back/Next), `1`–`9` (option select), and `⌘.` (cancel) as mode-local bindings on the non-trapped mode they push while pending, replacing their document-level capture listener.
-- [ ] Dev-mode warn on a duplicate chord at the same scope.
+- [x] Add the keybinding registry on `ResponderChainManager` (`registerKeybinding` returns an unregister thunk / `resolveKeybinding` / `activeKeybindings`) keyed by scope id (responder id or focus-mode id) via live `KeybindingSource` getters. `keyBindingMatchesEvent` extracted from `matchKeybinding` so static + dynamic share one match rule.
+- [x] `useKeybindings([...])` registering via `useLayoutEffect` ([L03]); entries cite `TUG_ACTIONS.*` constants; cleanup unregisters; live-read source so handler/chord changes need no re-register. Tolerant pattern (no-op outside a provider / with no scope, like `useOptionalResponder` — [L26]).
+- [x] Stage 1 resolution: `responder-chain-provider` resolves dynamic in-context bindings (active focus mode as innermost `extraScopes`, then the first-responder walk, innermost-first) before `matchKeybinding`; the matched binding flows through the one existing dispatch path (`preventDefaultOnMatch`, `scope` routing, continuation).
+- [x] Mode-local bindings (`useKeybindings(..., { mode: true })`) register under the surrounding `FocusModeContext` id and resolve only while that mode is current ([P03]). This is the mechanism the inline dialogs' wizard accelerators use ([P13]): `PermissionDialog` / `QuestionDialog` register `←`/`→`, `1`–`9`, `⌘.` as mode-local bindings — that wiring lands with [#step-23]; the mechanism is in place here.
+- [x] Dev-mode warn (`warnDuplicateChords`) on a duplicate chord at the same scope.
 
 **Tests:**
-- [ ] `focus-walk.test.ts` (or sibling): precedence — innermost-in-context beats ancestor beats global; an out-of-context binding does not match.
-- [ ] app-test: a component-registered shortcut fires only while that component is in context and is gone after unmount; a static global shortcut still fires.
+- [x] `keybinding-registry.test.ts` (11): innermost-in-context beats ancestor; off-walk doesn't match; modifier match is exact; focus-mode (extraScopes) wins and is reachable when DOM focus is elsewhere (inline-dialog case); unregister removes it; live source; `activeKeybindings`; dispatch-routing `scope` preserved.
+- [x] app-test `at0107`: ⇧⌘Y (gallery `Dynamic Keybinding` panel) fires only when the panel's responder is in context — count stays 0 with focus elsewhere, bumps after the panel is clicked into first responder. "Gone after unmount" is the unit-tested unregister (the hook cleanup calls exactly it); "static global still fires" is the still-green static-chord suite (at0085 ⇧⌘C, at0105 ⇧⌘P, at0043 ⌘A/⌘C) after the dynamic layer was added.
 
 **Checkpoint:**
-- [ ] `just app-test` keybinding scenario `VERDICT: PASS`; `bunx tsc --noEmit` clean.
+- [x] `just app-test at0107-dynamic-keybinding` `VERDICT: PASS`; `bunx tsc --noEmit` clean; `bun test` 3389 pass; static-chord + trap regression suite green.
 
 ---
 
