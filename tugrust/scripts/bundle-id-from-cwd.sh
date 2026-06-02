@@ -21,6 +21,17 @@ if [ -z "$PROFILE" ]; then
     exit 1
 fi
 
+# Override hook — mirrors assign-bundle-id.sh. When TUG_FORCE_BUNDLE_ID
+# is set, the build phase stamps that ID verbatim, so every consumer
+# that needs to know "what bundle ID will this build have" (quit /
+# launch / instance bookkeeping) must agree. Returning it here keeps
+# those paths aligned with the forced identity. See
+# tuglaws/code-signing-mac.md ("The app-test identity").
+if [ -n "${TUG_FORCE_BUNDLE_ID:-}" ]; then
+    echo "$TUG_FORCE_BUNDLE_ID"
+    exit 0
+fi
+
 if BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && [ "$BRANCH" != "HEAD" ]; then
     :
 else

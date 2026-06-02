@@ -61,6 +61,35 @@ if [ ! -f "$PLIST" ]; then
     exit 1
 fi
 
+# Override hook for the app-test / unattended-build path.
+#
+# When TUG_FORCE_BUNDLE_ID is set, stamp it verbatim and skip the
+# (profile, branch) mapping entirely. A worktree on a non-main branch
+# would otherwise get a fresh per-branch CFBundleIdentifier
+# (dev.tugtool.app.debug-<slug>) — a brand-new designated requirement
+# and therefore a brand-new TCC Accessibility entry that has never been
+# granted. Forcing a single stable bundle ID gives every worktree the
+# same DR, so an AX grant given once carries across all of them, which
+# is what makes unattended app-test runs (e.g. inside `tugplug:implement`)
+# possible. See tuglaws/code-signing-mac.md ("The app-test identity").
+#
+# Code-signing runs after this phase and reads CFBundleIdentifier from
+# the bundle's Info.plist directly, so the forced value propagates into
+# the signed binary's designated requirement automatically.
+if [ -n "${TUG_FORCE_BUNDLE_ID:-}" ]; then
+    plutil -replace CFBundleIdentifier -string "$TUG_FORCE_BUNDLE_ID" "$PLIST"
+    # System Settings → Privacy & Security → Accessibility lists apps by
+    # display name, not bundle id. Without a distinct name this build
+    # shows up as a second, identical "Tug" row next to the interactive
+    # debug instance — invisible by collision, which is exactly the
+    # "I granted it but nothing appeared" trap. Stamp a name derived
+    # from the forced id's last component (e.g. "Tug (apptest)").
+    FORCE_SUFFIX="${TUG_FORCE_BUNDLE_ID##*.}"
+    plutil -replace CFBundleDisplayName -string "Tug ($FORCE_SUFFIX)" "$PLIST"
+    echo "==> assign-bundle-id: $TUG_FORCE_BUNDLE_ID (forced) — display name 'Tug ($FORCE_SUFFIX)'"
+    exit 0
+fi
+
 read_key() {
     local key="$1"
     local value

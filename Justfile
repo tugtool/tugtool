@@ -695,6 +695,20 @@ app-test *FILES:
         exit 1
     fi
 
+    # Surface the identity we're about to drive. The Accessibility (AX)
+    # grant is keyed on this bundle ID's designated requirement; an
+    # unattended run against an un-granted per-branch ID fails the
+    # native-event preflight. For worktree / unattended runs (e.g.
+    # tugplug:implement), build with
+    # TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest so the AX grant — given
+    # once — carries across every worktree. See tuglaws/code-signing-mac.md.
+    BUILT_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP_DIR/Contents/Info.plist" 2>/dev/null || echo '?')"
+    echo "==> app-test bundle id: $BUILT_BUNDLE_ID"
+    if [ -n "${TUG_FORCE_BUNDLE_ID:-}" ] && [ "$BUILT_BUNDLE_ID" != "$TUG_FORCE_BUNDLE_ID" ]; then
+        echo "[warn] TUG_FORCE_BUNDLE_ID=$TUG_FORCE_BUNDLE_ID but the built bundle is $BUILT_BUNDLE_ID." >&2
+        echo "       Re-run 'just build-app' with TUG_FORCE_BUNDLE_ID set so the AX grant matches." >&2
+    fi
+
     # Refresh tugdeck/dist so the harness (which loads prod-built
     # static files via tugcast's ServeDir, not Vite — see the
     # TUGAPP_APP_TEST branch in AppDelegate.loadPreferences)
@@ -859,6 +873,44 @@ app-test *FILES:
             "$files_passed" "$files_run" $((files_failed + files_errored)) "$tests_passed_total" "$tests_total"
         exit 1
     fi
+
+# One-time, reliable Accessibility grant for the app-test identity.
+#
+# macOS has no scripted way to grant Accessibility (the system TCC
+# database is SIP-protected; `tccutil` only resets). Exactly one human
+# gesture is required — but only ONCE, ever, because the grant is keyed
+# on the bundle's designated requirement (identifier + team), which is
+# path-independent. After this, every worktree build with the same
+# TUG_FORCE_BUNDLE_ID inherits the grant, so unattended app-test runs
+# (e.g. inside tugplug:implement) work without prompting.
+#
+# This builds the pinned-identity app, reveals it in Finder, and opens
+# the Accessibility pane. Drag the revealed app into the list (or use
+# "+"), and toggle it on. The entry is named "Tug (apptest)" so it's
+# distinct from the interactive "Tug" debug instance.
+app-test-grant:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export TUG_FORCE_BUNDLE_ID="${TUG_FORCE_BUNDLE_ID:-dev.tugtool.app.apptest}"
+    echo "==> Building Tug.app pinned to $TUG_FORCE_BUNDLE_ID"
+    just build-app
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' \
+        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
+    FORCE_SUFFIX="${TUG_FORCE_BUNDLE_ID##*.}"
+    echo "==> Revealing the app in Finder and opening the Accessibility pane"
+    open -R "$APP_DIR"
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    echo
+    echo "    One-time Accessibility grant:"
+    echo "      1. In System Settings -> Privacy & Security -> Accessibility,"
+    echo "         click \"+\" (or drag the Finder-highlighted Tug.app into the list)."
+    echo "      2. Toggle \"Tug ($FORCE_SUFFIX)\" ON."
+    echo
+    echo "    That's it -- forever. Every worktree build pinned to"
+    echo "    $TUG_FORCE_BUNDLE_ID matches the same designated requirement"
+    echo "    and inherits this grant."
+    echo "      Verify with:  just app-test harness-smoke/smoke-native.test.ts"
 
 # Three-file smoke: bridge basics + handshake + one AT scenario.
 # Useful after a Swift / harness change or right after `just build-app`
