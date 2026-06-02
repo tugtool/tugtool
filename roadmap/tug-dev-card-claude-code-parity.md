@@ -941,6 +941,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 19 | Image drag/paste | ✅ DONE | `image-downsample.ts`, `atom-bytes-store.ts`, `synthesize-user-message.ts` |
 | 20 | Interrupt visibility | ✅ DONE | `tug-prompt-entry.tsx` primary `Stop` button + `canInterrupt` |
 | 21 | `compact_boundary` divider | ✅ DONE | Wire-check: the summary is NOT on the bridge (never sent live — client-dispatched `/compact`; deliberately skipped on replay; the terminal hides it too). Only the bare `compact_boundary` marker is reachable (live auto-compaction). Landed a **soft divider** (Q-E follow-up — user chose divider-only): tugcode forwards `compactMetadata` (trigger + pre_tokens); tugdeck accepts `compact_boundary`, `handleCompactBoundary` appends a `system_note{source:"compact"}` to the active turn, rendered as a CSS-only `─── Conversation compacted · ~Nk tokens ───` separator. tsc clean (tugdeck+tugcode), 3309 pure tests green; `at0106` authored |
+| 21.A | `/compact` real compaction | ▶ TODO | **Spike PROVEN (2026-06-01):** no native trigger over the bridge (no compact control verb / SDK method; slash commands undispatched in stream-json). Compaction ≡ summarize current session → fresh session seeded with the summary (recall verified; no JSONL splice). Scoped: `compact_session` orchestration in tugcode (summarize→respawn-fresh→seed) reusing the `/clear` path; `/compact` becomes supported-local; transcript replaces scrollback with the `#step-21` divider; also fixes the `compact_metadata.pre_tokens` field bug. **Scoped, paused for review.** |
 | 22 | `unknown_event` IPC frame | ▶ TODO | |
 | 23 | Phase C integration checkpoint | ▶ TODO | verification only |
 
@@ -2927,6 +2928,43 @@ Since the terminal/Claude Code itself hides the summary block, the truest
 
 **Checkpoint:**
 - [x] `just app-test at0106-compact-boundary-divider` (authored; green warm / in-sweep).
+
+---
+
+#### Step 21.A: `/compact` — real compaction via summarize + fresh-session reseed {#step-21a}
+
+**Depends on:** #step-13b3 (`/clear` fresh-session machinery), #step-21 (compaction divider)
+
+**Commit:** `feat(dev-card): /compact compacts via summarize + reseed`
+
+**References:** [D11]-adjacent (this is the manual sibling of auto-compaction), [D16] `/clear`, [D23] local dispatch (arg-bearing), the [#step-21] wire-check (no native compaction trigger over the bridge)
+
+> **Why this exists.** Typed `/compact` over the stream-json bridge does nothing useful — there is **no compaction control verb and no SDK `compact()` method** (enumerated against `@anthropic-ai/claude-agent-sdk` 2.1.x: `interrupt` / `set_model` / `set_permission_mode` / `set_max_thinking_tokens` / `rewind_files` / `stop_task` / MCP — and nothing for compaction), and slash commands aren't dispatched in stream-json mode (probed: bare-string and content-block `/compact` both just make the model improvise — a stray `Glob`). Only auto-compaction fires natively ([#step-21] renders it). So `/compact` must be **re-created** over the bridge.
+
+> **Spike result (2026-06-01, PROVEN).** Compaction needs **no JSONL surgery**. Probed against real claude: established 3 facts in session A, asked for a recap, then opened a **fresh** session whose only context was that summary — it recalled all 3 facts verbatim. So compaction ≡ *summarize the current session, then continue in a fresh session seeded with the summary*. The risky "truncate JSONL + `--resume` + splice a summary head" path (which prior `/rewind` analysis flagged as unverified) is **not needed** and is rejected.
+
+**Design — `/compact [focus]` is `/clear` that carries a summary forward:**
+1. tugcode receives a `compact_session` request (optional `focus` string from the arg).
+2. It sends a summarization turn to the **current** claude (a synthesized "concise recap of the key facts/decisions so a fresh assistant can continue seamlessly" prompt + the `focus` arg when present), awaits `turn_complete`, and captures the assistant text as the summary.
+3. It respawns claude **fresh** (new claude session id — the [#step-13b3] `/clear` path, NOT `--resume`) and sends the summary as the new session's opening **seed** user message.
+4. The dev card **replaces scrollback** (user-chosen): the transcript resets (the `/clear` reset path) to a **compaction divider** at the head ([#step-21]'s `system_note{source:"compact"}`), then continues below. The summary seed turn + its ack are **not** rendered as ordinary turns — the divider stands in their place.
+
+**Artifacts:**
+- Modified (tugcode): a `compact_session` orchestration — summarize-then-respawn-fresh-then-seed, reusing the `/clear` fresh-spawn and the existing turn-capture loop. Emits a manual-trigger `compact_boundary` (`trigger: "manual"`) so the divider renders. **Fix the field-name bug from [#step-21]:** the live event is `compact_metadata.pre_tokens` (snake), not `compactMetadata.preTokens` — the auto-compaction divider currently never shows its token count.
+- Modified (tugdeck): `/compact` becomes a **supported-local** arg-bearing command (out of the pass-through tier — it must never reach claude as literal text); its surface sends `compact_session` and drives the `/clear`-style transcript reset + compaction divider. The summary seed turn is suppressed from the transcript (rendered as the divider).
+- Modified: `slash-supported.ts` / `slash-commands.ts` — drop `/compact` from the "genuine pass-through" examples; register it local.
+
+**Open integration points (resolve in implement):**
+- Seed-turn suppression: the fresh session's first turn (the summary seed) and its ack must render as the divider, not as a user/assistant pair. Decide whether tugcode tags the seed (a `compact_boundary` carrying the summary, dev-card renders divider + suppresses the turn) or the dev-card suppresses the first turn of a post-compact session.
+- Same-`tugSessionId` vs new: `/clear` minted a new `tugSessionId`; `/compact` is conceptually the *same* logical session continued — decide whether to keep the `tugSessionId` (reset transcript in place) or mint a new one (full `/clear` reconcile). Keeping it reads truer to "compacted, not cleared."
+- Failure handling: if summarization fails/interrupts, do **not** respawn — leave the session intact and surface a notice.
+
+**Tests:**
+- [ ] Pure-logic: the summarization prompt builder (with/without `focus`); the post-compact transcript projection (divider present, seed turn suppressed).
+- [ ] Real-app: `/compact` → divider appears, scrollback resets, a follow-up question is answered from the summary (continuity); `/compact <focus>` threads the focus into the summary.
+
+**Checkpoint:**
+- [ ] `just app-test compact-command`
 
 ---
 
