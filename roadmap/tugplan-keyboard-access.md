@@ -343,6 +343,23 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ---
 
+#### [P13] Inline dialogs are non-trapped focus scopes (DECIDED) {#p13-inline-dialogs}
+
+**Decision:** Inline, in-transcript dialogs — `TugInlineDialog` and its consumers `PermissionDialog` (`chrome/dev-permission-dialog.tsx`) and `QuestionDialog` (`chrome/dev-question-dialog.tsx`) — are **non-modal** affordances handled distinctly from floating surfaces. While one is pending it pushes a **non-trapped focus mode** ([P03] `trapped: false`) that **carries `defaultAction` / `cancelAction`** ([P12]) and hosts its wizard accelerators as **mode-local keybindings** ([P11]). It does **not** call `useFocusTrap` and does **not** trap Tab: the prompt entry keeps the key view and inter-control Tab is unaffected. `Return` / `Escape` / `⌘.` resolve against the dialog's mode because it is top-of-stack, so the user answers the dialog from the prompt without focus moving.
+
+**Rationale:**
+- These render inline in the transcript flow, not as overlays, and the prompt entry holds DOM focus while a request is pending — so a focus *trap* (which steals focus and cycles Tab within a surface) is exactly wrong for them. The CFRunLoop model already has the right tool: a **non-trapped mode** unions the base focusables (prompt keeps the key view, Tab flows normally) while still being the *current* scope, so commit keys and mode-local accelerators resolve to the dialog.
+- It replaces all three pillars these dialogs lean on today — the default-button stack (`pushDefaultButton`/`peekDefaultButton`, Enter→click in Stage 2, the editor's `peekDefaultButton` Enter-defer), the document-level capture listener for `←`/`→`/`⌘.`, and the prompt entry's `CANCEL_DIALOG` — with one coherent scope, exactly as [P07]/[P12]/[P11] retire those pillars elsewhere. Without this decision an implementer might wrongly reach for `useFocusTrap` (steals the prompt's focus) or leave them stranded on the deleted default-button stack.
+- A pending dialog's `default-action` must win over the prompt's own `submit`; being the top mode delivers that precedence for free (it is the inline analog of a modal mode owning default-action).
+
+**Implications:**
+- `TugInlineDialog` (or its chrome consumers) pushes a non-trapped mode while pending and declares `DEFAULT_ACTION` (confirm / Next / submit the highlighted option) + `CANCEL_ACTION` (cancel ≡ `popInteractive()`) on it. Folded into [#step-23]'s commit-key work, with `chrome/dev-permission-dialog.tsx` added alongside `chrome/dev-question-dialog.tsx`.
+- The wizard accelerators (`←`/`→` Back/Next, `1`–`9` option select, `⌘.` cancel) become mode-local `useKeybindings` registered while the dialog is pending, deactivating on pop. Folded into [#step-5].
+- The dialog's buttons (`TugDialogButton` / `TugPushButton`) take no-steal-on-click + an explicit Tab policy from the `refuse` split ([P10], [#step-24]); the `options` radio group is a single roving focus stop (the `tug-option-group` pattern, [P02]).
+- Distinct from a floating surface: no `useFocusTrap`, no `data-key-view` move to the dialog, no Tab cycling within it. The mode is a *scope*, not a *trap*. The session's `pushInteractive`/`popInteractive` stack (the request queue) stays the source of truth for *which* dialog is pending; the focus mode is pushed/popped in lockstep with it.
+
+---
+
 ### Deep Dives (Optional) {#deep-dives}
 
 #### The three axes, named {#three-axes}
@@ -372,7 +389,7 @@ This gives nesting (a popover inside a sheet pushes a mode atop the sheet's), an
 - **Radix-focus components to tame (~14):** radio-group, accordion, switch, popover, slider, checkbox, context-menu, tab-bar, sheet, alert, tooltip, label, internal/tug-button, internal/tug-popup-menu.
 - **Per-component focus-ring rules to delete:** checkbox, option-group, input, dialog-button, inline-dialog, cue, tab-bar, choice-group, list-row, textarea, value-input, code-view, markdown-view, slider, menu, prompt-entry, split-pane, hue-strip, popover.
 - **Selection-token recolor sites:** list-row, menu, editor-context-menu, list-view (the `selected`/`highlighted` surfaces → accent). **Excluded from recolor:** `surface-selection-primary-normal-plain-*` (text/character selection: code-view, markdown-view, text-editor, `::highlight(card-selection)`) stays blue; `control-…-filled-action` stays blue for the CTA/activation use ([P06], [P12]). `control-filled-action` is *shared* (CTA fill + menu transient) — only the menu *selection* use moves to the accent token.
-- **Commit-key sites (default-action / cancel-action):** `internal/tug-button.tsx`, `responder-chain-provider.tsx` (Stage 2), `responder-chain.ts` (stack), `tug-text-editor.tsx` + `tug-text-editor/keymap.ts` (`peekDefaultButton` submit-Enter defer — G3), `cards/gallery-default-button.tsx`, `chrome/dev-question-dialog.tsx`. **Escape-ladder consumers to reconcile (G2):** `card-drag-coordinator.ts` (document-level drag-cancel Escape listener, kept), `cards/dev-card.tsx` (in-flight interrupt → pane card `cancelAction`), and the `keybinding-map.ts` Escape/⌘. → `CANCEL_DIALOG` entries (fold into `cancel-action`).
+- **Commit-key sites (default-action / cancel-action):** `internal/tug-button.tsx`, `responder-chain-provider.tsx` (Stage 2), `responder-chain.ts` (stack), `tug-text-editor.tsx` + `tug-text-editor/keymap.ts` (`peekDefaultButton` submit-Enter defer — G3), `cards/gallery-default-button.tsx`, and the inline dialogs `chrome/dev-question-dialog.tsx` + `chrome/dev-permission-dialog.tsx` (non-trapped focus scopes per [P13]: declare default/cancel on a pushed non-trapped mode, retiring their default-button + document-listener handling). **Escape-ladder consumers to reconcile (G2):** `card-drag-coordinator.ts` (document-level drag-cancel Escape listener, kept), `cards/dev-card.tsx` (in-flight interrupt → pane card `cancelAction`), and the `keybinding-map.ts` Escape/⌘. → `CANCEL_DIALOG` entries (fold into `cancel-action`).
 
 #### Dynamic keybinding resolution {#keybinding-registry}
 
@@ -519,7 +536,7 @@ useKeybindings([
 | #step-1 | FocusManager core + registry + useFocusable (inert) | done | ce7d8256 |
 | #step-2 | Keyboard-access mode state + persistence | done | 80da10a4 |
 | #step-3 | Tab pipeline: focus-next/previous + editor precedence | done | 188a976e |
-| #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | (uncommitted) |
+| #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | 662bca98 |
 | #step-5 | Dynamic context-scoped keybinding registry | pending | — |
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | pending | — |
 | #step-7 | Recolor UI-selection → accent/orange | pending | — |
@@ -647,7 +664,7 @@ useKeybindings([
 - [ ] Add the keybinding registry (`register` / `unregister` / `resolve` / `active`) keyed by responder scope id and focus mode.
 - [ ] `useKeybindings([...])` registering via `useLayoutEffect` ([L03]); entries cite `TUG_ACTIONS.*` constants (never raw strings, per action-naming.md); cleanup unregisters. Tolerant pattern (no-op outside a provider, stable identity, like `useOptionalResponder` — [L26]).
 - [ ] Stage 1 resolution: match dynamic bindings along the key-view→root walk (innermost-first), then fall back to `matchKeybinding` on the static map; honor `preventDefaultOnMatch`.
-- [ ] Mode-local bindings register into the active focus mode and deactivate on pop ([P03]).
+- [ ] Mode-local bindings register into the active focus mode and deactivate on pop ([P03]). This is the mechanism the inline dialogs' wizard accelerators use ([P13]): `PermissionDialog` / `QuestionDialog` register `←`/`→` (Back/Next), `1`–`9` (option select), and `⌘.` (cancel) as mode-local bindings on the non-trapped mode they push while pending, replacing their document-level capture listener.
 - [ ] Dev-mode warn on a duplicate chord at the same scope.
 
 **Tests:**
@@ -1047,7 +1064,7 @@ useKeybindings([
 
 **Commit:** `focus(keys): semantic commit keys (Return/Escape/⌘.) → scope default/cancel actions`
 
-**References:** [P12] semantic keys, [P07] default-action (superseded), [P03] traps, [Q02] text-context precedence, (#affected-inventory, #cfrunloop-model)
+**References:** [P12] semantic keys, [P07] default-action (superseded), [P03] traps, [P13] inline dialogs, [Q02] text-context precedence, (#affected-inventory, #cfrunloop-model)
 
 **Artifacts:**
 - `DEFAULT_ACTION` + `CANCEL_ACTION` actions; each focus mode (and each non-modal pane's card responder) declares `defaultAction` + `cancelAction` by registering those handlers; a pipeline stage routes Return → default and Escape/⌘. → cancel **via `sendToTarget` to the active scope anchor** (text-context precedence first); deletion of `pushDefaultButton`/`popDefaultButton`/`peekDefaultButton*` and the `defaultButton` prop.
@@ -1058,13 +1075,15 @@ useKeybindings([
 - [ ] **G2 — cancel ladder:** preserve priority `top focus-mode cancelAction → drag-cancel (card-drag-coordinator's Escape listener, kept outside the mode stack) → originating-pane cancelAction`; confirm the dev-card interrupt (`codeSessionStore.interrupt()`) becomes the pane card's `cancelAction` when no modal mode is active.
 - [ ] **G3 — editor Return defer:** migrate `keymap.ts`'s existing `peekDefaultButton` defer to a `default-action` dispatch (origin = editor's pane scope), preserving `returnAction`/`numpadEnterAction`/forced-`Cmd-Enter`. `newline` editors keep Return; `submit`-with-defer editors fall through to scope `default-action`. One mechanism, not a parallel precedence ([Q02]).
 - [ ] **G4 — empty cases:** no active scope / no declared action → silent no-op, suppress the beep; unfocused Return resolves against the deck's focused pane (global fallback in gallery/standalone).
+- [ ] **G5 — inline dialogs ([P13]):** `PermissionDialog` (`chrome/dev-permission-dialog.tsx`) and `QuestionDialog` (`chrome/dev-question-dialog.tsx`) push a **non-trapped** focus mode while pending and declare `DEFAULT_ACTION` (confirm / Next / submit the highlighted option) + `CANCEL_ACTION` (`popInteractive()`) on it. Because the mode is top-of-stack, Return/Escape/⌘. resolve to the dialog while the prompt entry keeps the key view (no trap, Tab unaffected) — and a pending dialog's default-action takes precedence over the prompt's `submit` via G3. Retires their reliance on the default-button stack + Stage-2 Enter→click.
 - [ ] Fold the existing Escape/⌘. → `CANCEL_DIALOG` bindings into `cancel-action` (preserving the G2 ladder); keep the CTA button's blue `control-…-filled-action` as its default-action affordance ([P12]).
-- [ ] Delete the default-button stack API + `defaultButton` prop; update `tug-text-editor`/`keymap.ts` submit-Enter defer and `gallery-default-button.tsx`, `dev-question-dialog.tsx`.
+- [ ] Delete the default-button stack API + `defaultButton` prop; update `tug-text-editor`/`keymap.ts` submit-Enter defer and `gallery-default-button.tsx`, `dev-question-dialog.tsx`, `dev-permission-dialog.tsx`.
 
 **Tests:**
 - [ ] app-test: arrow-navigate a list in a sheet, press Return → the sheet's default action fires (focus need not move to OK); Escape/⌘. cancels; **cross-pane Return in pane A does not fire pane B's default** (G1).
 - [ ] app-test: Return in a focused text editor still submits/newlines per its config (G3 precedence holds).
 - [ ] app-test: **Escape ladder** — Escape dismisses an open popover first; with a drag in progress Escape cancels the drag (not the card); with neither, Escape fires the pane's cancel/interrupt (G2).
+- [ ] app-test (G5): with a `QuestionDialog` / `PermissionDialog` pending and the prompt entry focused, Return confirms/advances the dialog (not a prompt submit) and Escape cancels it (`popInteractive`), with the key view never leaving the prompt.
 
 **Checkpoint:**
 - [ ] grep for `pushDefaultButton|peekDefaultButton|defaultButton` returns nothing; grep confirms commit-key dispatch uses `sendToTarget`, not `sendToFirstResponder`; `just app-test` commit-keys scenario `VERDICT: PASS`.
