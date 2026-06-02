@@ -539,7 +539,7 @@ useKeybindings([
 | #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | 662bca98 |
 | #step-5 | Dynamic context-scoped keybinding registry | done | 03a08ab5 |
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done | — |
-| #step-7 | Recolor UI-selection → accent/orange | pending | — |
+| #step-7 | Recolor UI-selection → accent/orange | done | — |
 | #step-8 | Confine blue to the keyboard-active axis | pending | — |
 | #step-9 | Tame internal/tug-button (base control focus) | pending | — |
 | #step-10 | Tame TugCheckbox | pending | — |
@@ -711,15 +711,15 @@ useKeybindings([
 - UI-selection surfaces (`selected`, `highlighted`) re-pointed to accent; an accent selection token for menus/lists. **Text/character selection (`selection … plain`) stays blue.** Shared `control-filled-action` keeps blue for CTA/activation; the menu *selection* use moves to the accent token.
 
 **Tasks:**
-- [ ] Re-point `selected`/`highlighted` selection surfaces to accent in both themes; roll to list-row, menu, editor-context-menu, list-view (option/radio already accent).
-- [ ] Leave `surface-selection-primary-normal-plain-*` (text/character selection: code-view, markdown-view, text-editor, `::highlight(card-selection)`) at its current blue ([L12]).
-- [ ] Where `control-filled-action` is shared (CTA fill + menu transient), move the menu *selection* usage to the accent selection token and keep CTA/activation blue ([P12]).
+- [x] Re-point `selected`/`highlighted` selection surfaces to accent in both themes; roll to list-row, menu, editor-context-menu, list-view (option/radio already accent). Recolored `selection-primary-normal-selected-{rest,hover}`, the `control-…-normal-{selected-*,highlighted}` surfaces+borders (tree/table row selection via `control-primary-normal-highlighted`), keeping selection foregrounds neutral. list-row (`selected`) and code/data tree+table (`highlighted`) auto-update; option/radio use the role-injected `segment` accent already; tab-bar active underline was already accent.
+- [x] Leave `surface-selection-primary-normal-plain-*` (text/character selection: code-view, markdown-view, text-editor, `::highlight(card-selection)`) at its current blue ([L12]). Untouched — verified blue (oklch hue 230) by app-test.
+- [x] Where `control-filled-action` is shared (CTA fill + menu transient), move the menu *selection* usage to the accent selection token and keep CTA/activation blue ([P12]). Re-pointed the menu item `[data-highlighted]`/hover, sub-trigger-open (tug-menu.css), completion-menu hover, and editor-context-menu highlight from `filled-action-hover` → `selection-primary-normal-selected-rest` + `selection-text-…-selected-rest`; moved the activation double-blink (tug-menu-item-blink.ts, internal/tug-popup-menu.tsx) to `selection-…-selected-hover` so the flash stays in the selection hue. `filled-action` stays blue for CTA/activation and the menu trigger open-state keeps `outlined-action-active`. Updated the `@tug-pairings`/`@tug-renders-on` annotations to match.
 
 **Tests:**
-- [ ] app-test: a selected list row resolves the accent token; an editor text selection stays blue.
+- [x] app-test: a selected list row resolves the accent token; an editor text selection stays blue. `at0110-selection-accent` — `selection-primary-normal-selected-rest` and the `--tugx-list-row-selected-bg` alias resolve to orange (oklch hue 55); `selection-primary-normal-plain-rest` stays blue (hue 230). PASS.
 
 **Checkpoint:**
-- [ ] `bun run audit:tokens pairings` clean; selected rows orange, text selection blue in the running app.
+- [x] `bun run audit:tokens pairings` clean; selected rows orange, text selection blue in the running app. `audit:tokens pairings` EXIT=0 (new selection pairing resolves); `tsc --noEmit` clean; hues verified orange/blue by app-test.
 
 #### Step 8: Confine blue to the keyboard-active axis {#step-8}
 

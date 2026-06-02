@@ -4,9 +4,10 @@
  * TugEditorContextMenu so every menu in the suite flashes identically.
  *
  * The animation is a four-keyframe "double-blink": highlight, off,
- * highlight, highlight. Colors are read from the filled-action token
- * pair at runtime — WAAPI cannot interpolate CSS variable references,
- * so we resolve to concrete values before calling animate().
+ * highlight, highlight. Colors are read from the accent/orange selection
+ * pair at runtime (matching the item's resting highlight, so the flash
+ * stays in the selection hue) — WAAPI cannot interpolate CSS variable
+ * references, so we resolve to concrete values before calling animate().
  *
  * Laws: [L06] appearance via CSS/DOM, never React state,
  *       [L13] motion — duration resolved from --tug-motion-duration-slow
@@ -30,10 +31,10 @@ export function playMenuItemBlink(target: HTMLElement): Promise<void> {
   // leading whitespace per spec, hence the trim().
   const computed = getComputedStyle(target);
   const blinkBg =
-    computed.getPropertyValue("--tug7-surface-control-primary-filled-action-active").trim() ||
+    computed.getPropertyValue("--tug7-surface-selection-primary-normal-selected-hover").trim() ||
     "transparent";
   const blinkFg =
-    computed.getPropertyValue("--tug7-element-control-text-filled-action-active").trim() ||
+    computed.getPropertyValue("--tug7-element-selection-text-normal-selected-rest").trim() ||
     "inherit";
   const easing =
     computed.getPropertyValue("--tug-motion-easing-standard").trim() ||

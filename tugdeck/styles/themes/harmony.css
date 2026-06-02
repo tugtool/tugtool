@@ -198,14 +198,14 @@ body {
   --tug7-element-selection-text-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
   --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(sapphire-cobalt, i: 8, t: 80, a: 30);
   --tug7-surface-selection-primary-normal-plain-rest: --tug-color(blue, i: 50, t: 50, a: 40);
-  /* List-row selection (role `selected`) — a calmer cousin of the menus'
-     transient `control-filled-action` highlight: the same blue, toned a
-     step down because a row selection persists rather than flashing for
-     one interaction (the old hover reused `filled-action-active`, a
-     glaring near-cyan). Selected text is white so every line — title,
-     subtitle, meta — stays legible on the fill in this light theme. */
-  --tug7-surface-selection-primary-normal-selected-rest: --tug-color(blue, i: 46, t: 42);
-  --tug7-surface-selection-primary-normal-selected-hover: --tug-color(blue, i: 56, t: 39);
+  /* UI selection (role `selected`) — accent/orange marks the chosen item, the
+     one shared selection surface for list rows and the menus' transient item
+     highlight. The orange keeps the old blue's intensity/tone so white selected
+     text stays legible on the fill in this light theme; only the hue changed,
+     separating selection (orange) from the keyboard-active axis (blue).
+     Text/character selection (`plain`, above) stays blue. */
+  --tug7-surface-selection-primary-normal-selected-rest: --tug-color(orange, i: 64, t: 44);
+  --tug7-surface-selection-primary-normal-selected-hover: --tug-color(orange, i: 70, t: 41);
   --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, i: 3, t: 100);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind
@@ -633,20 +633,23 @@ body {
   --tug7-element-control-border-ghost-caution-hover: --tug-color(yellow, i: 100, t: 38);
   --tug7-element-control-border-ghost-caution-active: --tug-color(yellow, i: 100, t: 32);
 
-  /* Control — Surface / Selected / Highlighted */
-  --tug7-element-control-border-normal-highlighted-rest: --tug-color(blue, i: 50, t: 50, a: 25);
+  /* Control — Surface / Selected / Highlighted.
+     UI-selection surfaces + borders carry accent/orange (the chosen item);
+     selection foregrounds stay neutral. Text/character selection is elsewhere
+     (`selection … plain`) and stays blue. */
+  --tug7-element-control-border-normal-highlighted-rest: --tug-color(orange, i: 50, t: 50, a: 25);
   --tug7-element-control-border-normal-plain-disabled: --tug-color(indigo, i: 6, t: 72);
-  --tug7-element-control-border-normal-selected-rest: --tug-color(blue);
+  --tug7-element-control-border-normal-selected-rest: --tug-color(orange);
   --tug7-element-control-icon-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 52);
   --tug7-element-control-shadow-normal-plain-disabled: none;
   --tug7-element-control-text-normal-highlighted-rest: --tug-color(indigo, i: 4, t: 8);
   --tug7-element-control-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 52);
   --tug7-element-control-text-normal-selected-rest: --tug-color(indigo, i: 4, t: 8);
-  --tug7-surface-control-primary-normal-highlighted-rest: --tug-color(blue, i: 50, t: 50, a: 10);
+  --tug7-surface-control-primary-normal-highlighted-rest: --tug-color(orange, i: 50, t: 50, a: 10);
   --tug7-surface-control-primary-normal-plain-disabled: --tug-color(violet, i: 4, t: 78);
-  --tug7-surface-control-primary-normal-selected-disabled: --tug-color(blue, i: 50, t: 50, a: 10);
-  --tug7-surface-control-primary-normal-selected-hover: --tug-color(blue, i: 50, t: 50, a: 24);
-  --tug7-surface-control-primary-normal-selected-rest: --tug-color(blue, i: 50, t: 50, a: 18);
+  --tug7-surface-control-primary-normal-selected-disabled: --tug-color(orange, i: 50, t: 50, a: 10);
+  --tug7-surface-control-primary-normal-selected-hover: --tug-color(orange, i: 50, t: 50, a: 24);
+  --tug7-surface-control-primary-normal-selected-rest: --tug-color(orange, i: 50, t: 50, a: 18);
 
   /* Field */
   --tug7-element-field-border-normal-danger-rest: --tug-color(red, i: 100, t: 50);

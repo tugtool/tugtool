@@ -277,16 +277,17 @@ export function TugPopupMenu({
 
     const target = event.currentTarget as HTMLElement;
 
-    // Read the computed filled-action colors for WAAPI keyframes.
-    // getPropertyValue() returns a string with leading whitespace per CSS spec;
-    // .trim() is required. WAAPI cannot interpolate CSS variable references
-    // directly, so we must resolve to concrete color values. [D01]
+    // Read the computed accent/orange selection colors for WAAPI keyframes —
+    // the flash matches the item's resting highlight so it stays in the
+    // selection hue. getPropertyValue() returns a string with leading
+    // whitespace per CSS spec; .trim() is required. WAAPI cannot interpolate
+    // CSS variable references directly, so we resolve to concrete values. [D01]
     const computed = getComputedStyle(target);
     const blinkBg = computed
-      .getPropertyValue("--tug7-surface-control-primary-filled-action-active")
+      .getPropertyValue("--tug7-surface-selection-primary-normal-selected-hover")
       .trim() || "transparent";
     const blinkFg = computed
-      .getPropertyValue("--tug7-element-control-text-filled-action-active")
+      .getPropertyValue("--tug7-element-selection-text-normal-selected-rest")
       .trim() || "inherit";
 
     // Read the standard easing value at runtime -- WAAPI does not resolve
@@ -296,7 +297,7 @@ export function TugPopupMenu({
       .trim() || "cubic-bezier(0.2, 0, 0, 1)";
 
     // Double-blink keyframes: highlight -> transparent -> highlight -> highlight.
-    // Uses filled-action colors for strong visual feedback. [D01]
+    // Uses the accent/orange selection colors for strong visual feedback. [D01]
     const blinkKeyframes = [
       { backgroundColor: blinkBg, color: blinkFg },
       { backgroundColor: "transparent", color: "inherit" },
