@@ -75,6 +75,8 @@ import { sendSpawnSession } from "./session-lifecycle";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { cardServicesStore } from "./card-services-store";
+import { pendingCompactionStore } from "./pending-compaction-store";
+import { buildCompactionSeed } from "./compaction-request";
 import { pickerNoticeStore } from "./picker-notice-store";
 import { subscribeToListCardBindingsOk } from "./dev-session-ledger-events";
 import { CONTROL_ACTION_LIST_CARD_BINDINGS, FeedId } from "../protocol";
@@ -296,6 +298,22 @@ function installRegistrySubscriptions(connection: TugConnection): void {
         devRestoreRegistry._clear(cardId);
         const services = cardServicesStore.getServices(cardId);
         services?.codeSessionStore.notifyTransportSettled();
+        // `/compact` seed delivery: if this freshly-bound session was born
+        // from a compaction, flag it for the divider header and send the
+        // summary as a suppressed seed (in claude's context, not the
+        // transcript). `take` is single-use, so this fires exactly once.
+        const tugSessionId = bindings.get(cardId)?.tugSessionId;
+        if (services !== null && tugSessionId !== undefined) {
+          const pending = pendingCompactionStore.take(tugSessionId);
+          if (pending !== null) {
+            services.codeSessionStore.markCompactionSeed(pending.preTokens);
+            services.codeSessionStore.send(
+              buildCompactionSeed(pending.summary),
+              [],
+              { suppress: true },
+            );
+          }
+        }
       }
     }
   });

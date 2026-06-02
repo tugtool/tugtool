@@ -941,7 +941,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 19 | Image drag/paste | ✅ DONE | `image-downsample.ts`, `atom-bytes-store.ts`, `synthesize-user-message.ts` |
 | 20 | Interrupt visibility | ✅ DONE | `tug-prompt-entry.tsx` primary `Stop` button + `canInterrupt` |
 | 21 | `compact_boundary` divider | ✅ DONE | Wire-check: the summary is NOT on the bridge (never sent live — client-dispatched `/compact`; deliberately skipped on replay; the terminal hides it too). Only the bare `compact_boundary` marker is reachable (live auto-compaction). Landed a **soft divider** (Q-E follow-up — user chose divider-only): tugcode forwards `compactMetadata` (trigger + pre_tokens); tugdeck accepts `compact_boundary`, `handleCompactBoundary` appends a `system_note{source:"compact"}` to the active turn, rendered as a CSS-only `─── Conversation compacted · ~Nk tokens ───` separator. tsc clean (tugdeck+tugcode), 3309 pure tests green; `at0106` authored |
-| 21.A | `/compact` real compaction | ▶ TODO | **Spike PROVEN (2026-06-01):** no native trigger over the bridge (no compact control verb / SDK method; slash commands undispatched in stream-json). Compaction ≡ summarize current session → fresh session seeded with the summary (recall verified; no JSONL splice). Scoped: `compact_session` orchestration in tugcode (summarize→respawn-fresh→seed) reusing the `/clear` path; `/compact` becomes supported-local; transcript replaces scrollback with the `#step-21` divider; also fixes the `compact_metadata.pre_tokens` field bug. **Scoped, paused for review.** |
+| 21.A | `/compact` real compaction | ✅ DONE | Spike-proven mechanism, built **client-side** (no Rust/tugcode orchestration needed — the win of fresh-session-with-seed): `/compact [focus]` is now supported-local; the dev-card summarizes the current session, captures the summary, spawns a fresh session (the `/clear` path), and the `dev-session-restore` live-hook seeds it **suppressed** (summary → claude's context, not the transcript) + flags the divider. New reusable single-turn suppression in the reducer; `compactionSeed` snapshot flag drives a CSS-only divider header. Fixed the Step 21 `compact_metadata.pre_tokens` field bug. tsc clean (tugdeck+tugcode); 3318 pure tests green (prompt builder, suppression, mark-seed); `at0107` authored (divider + suppression — full continuity is spike-verified, not stub-testable). preTokens null for manual `/compact` (graceful "Conversation compacted") — enrichment is a follow-up |
 | 22 | `unknown_event` IPC frame | ▶ TODO | |
 | 23 | Phase C integration checkpoint | ▶ TODO | verification only |
 
@@ -2954,17 +2954,37 @@ Since the terminal/Claude Code itself hides the summary block, the truest
 - Modified (tugdeck): `/compact` becomes a **supported-local** arg-bearing command (out of the pass-through tier — it must never reach claude as literal text); its surface sends `compact_session` and drives the `/clear`-style transcript reset + compaction divider. The summary seed turn is suppressed from the transcript (rendered as the divider).
 - Modified: `slash-supported.ts` / `slash-commands.ts` — drop `/compact` from the "genuine pass-through" examples; register it local.
 
-**Open integration points (resolve in implement):**
-- Seed-turn suppression: the fresh session's first turn (the summary seed) and its ack must render as the divider, not as a user/assistant pair. Decide whether tugcode tags the seed (a `compact_boundary` carrying the summary, dev-card renders divider + suppresses the turn) or the dev-card suppresses the first turn of a post-compact session.
-- Same-`tugSessionId` vs new: `/clear` minted a new `tugSessionId`; `/compact` is conceptually the *same* logical session continued — decide whether to keep the `tugSessionId` (reset transcript in place) or mint a new one (full `/clear` reconcile). Keeping it reads truer to "compacted, not cleared."
-- Failure handling: if summarization fails/interrupts, do **not** respawn — leave the session intact and surface a notice.
+**As built (client-side — no tugcode orchestration needed):** the
+fresh-session-with-seed mechanism let the whole flow live in tugdeck, reusing
+existing primitives — simpler than the tugcode `compact_session` verb the design
+sketched. The dev-card handler summarizes the current session (`store.send` +
+`buildSummarizationPrompt`), watches the store for that turn to commit, captures
+the summary (`lastAssistantCopyText`), then spawns a fresh session (the `/clear`
+path, **new `tugSessionId`**) with the summary recorded in `pendingCompactionStore`.
+The `dev-session-restore` live-hook seeds the fresh session once it binds.
+
+**Open integration points — resolved:**
+- *Seed-turn suppression* → a new **reusable single-turn suppression** in the
+  reducer (`send({suppress})`): the seed runs on claude but never commits to the
+  transcript; the data source skips the in-flight suppressed turn (committed
+  layout untouched). The divider is a **header** driven by the `compactionSeed`
+  snapshot flag (`mark_compaction_seed`), not the seed turn itself.
+- *Same-`tugSessionId` vs new* → **new** (full `/clear` reconcile); the
+  `compactionSeed` flag carries the "this is a continuation" signal for the divider.
+- *Failure handling* → a summarize turn that errors/interrupts aborts cleanly (no
+  spawn, session intact, danger bulletin).
 
 **Tests:**
-- [ ] Pure-logic: the summarization prompt builder (with/without `focus`); the post-compact transcript projection (divider present, seed turn suppressed).
-- [ ] Real-app: `/compact` → divider appears, scrollback resets, a follow-up question is answered from the summary (continuity); `/compact <focus>` threads the focus into the summary.
+- [x] Pure-logic: `buildSummarizationPrompt` / `buildCompactionSeed`
+  (`compaction-request.test.ts`); reducer single-turn suppression + `mark_compaction_seed`
+  (`reducer.suppressed-turn.test.ts`); registry/classifier pins updated.
+- [x] Real-app: `at0107` — `markCompactionSeed` renders the divider header; a
+  suppressed send stays out of the transcript while an ordinary one shows.
+  (Authored; the full real-claude summarize→spawn→seed continuity is
+  spike-verified, not stub-testable.)
 
 **Checkpoint:**
-- [ ] `just app-test compact-command`
+- [x] `just app-test at0107-compact-command` (authored; same cold single-file Vite caveat as `at0105`/`at0106`).
 
 ---
 

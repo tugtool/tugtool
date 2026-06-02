@@ -496,6 +496,9 @@ export class CodeSessionStore {
       // at turn boundaries, so the reference is `Object.is`-stable across
       // quiescent rebuilds ([L02]).
       apiRetry: this.state.apiRetry,
+      // Set once on a `/compact`-born session (drives the divider header);
+      // session-lived, so the reference is trivially stable ([L02]).
+      compactionSeed: this.state.compactionSeed,
       // Accumulated denials for the Recently-denied tab. `mergeDenials`
       // preserves the reference when nothing new lands, so this is
       // `Object.is`-stable across quiescent rebuilds ([L02]).
@@ -559,7 +562,7 @@ export class CodeSessionStore {
    * leading atom in `atoms`; `tug-prompt-entry` (T3.4.b) owns route
    * extraction and the store is route-oblivious.
    */
-  send(text: string, atoms: AtomSegment[]): void {
+  send(text: string, atoms: AtomSegment[], opts?: { suppress?: boolean }): void {
     if (this._disposed) return;
     // `turnKey` is generated in the impure wrapper layer (not in the
     // reducer) so the reducer remains pure and time-independent —
@@ -590,7 +593,20 @@ export class CodeSessionStore {
       atoms: synth.atoms,
       content: wire.content,
       turnKey: mintTurnKey(),
+      suppress: opts?.suppress === true,
     });
+  }
+
+  /**
+   * Flag this fresh, `/compact`-born session so the transcript renders a
+   * compaction divider header (`preTokens` labels it). Paired with a
+   * suppressed seed send by the `dev-session-restore` live-hook. Public
+   * because the dispatch source lives outside this class — same precedent
+   * as {@link notifyTransportSettled}.
+   */
+  markCompactionSeed(preTokens: number | null): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "mark_compaction_seed", preTokens });
   }
 
   /**

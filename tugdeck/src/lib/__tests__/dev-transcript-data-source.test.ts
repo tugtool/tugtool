@@ -74,7 +74,7 @@ function activeTurn(args: {
   if (args.withText !== undefined && args.isWake) {
     messages.push(assistantText({ msgId: "live", blockIndex: 0, text: args.withText }));
   }
-  return { turnKey: args.turnKey, submitAt: 0, isWake: args.isWake, messages };
+  return { turnKey: args.turnKey, submitAt: 0, isWake: args.isWake, suppressed: false, messages };
 }
 
 function snapshotWith(args: {
@@ -102,6 +102,7 @@ function snapshotWith(args: {
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,
+    compactionSeed: null,
     permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,

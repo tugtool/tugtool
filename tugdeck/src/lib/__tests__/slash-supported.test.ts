@@ -27,7 +27,7 @@ describe("classifySlashCommand", () => {
 
   test("a genuine pass-through is pass-through", () => {
     // prompt-type + backend-effecting locals that run a real turn verbatim.
-    for (const name of ["init", "insights", "compact", "recap"]) {
+    for (const name of ["init", "insights", "recap"]) {
       expect(classifySlashCommand(name)).toBe("pass-through");
     }
   });

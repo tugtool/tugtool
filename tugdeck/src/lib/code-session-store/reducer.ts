@@ -36,6 +36,7 @@ import type {
   AddUserMessageEvent,
   ApiRetryEvent,
   CompactBoundaryEvent,
+  MarkCompactionSeedActionEvent,
   AssistantTextEvent,
   AttachmentRejectedEvent,
   CancelQueuedSendActionEvent,
@@ -147,6 +148,12 @@ export interface PendingTurn {
   turnKey: string;
   submitAt: number;
   isWake: boolean;
+  /**
+   * When true, this turn is suppressed from the transcript: its in-flight
+   * rows are skipped and `turn_complete` drops the transcript append (the
+   * turn still runs on claude). The `/compact` seed sets this.
+   */
+  suppressed?: boolean;
   /**
    * Claude's user-prompt-record `uuid` — the `/rewind` anchor ([#step-7-1]).
    * Set from `add_user_message.promptUuid` (replay) at turn open, or from a
@@ -409,6 +416,13 @@ export interface CodeSessionState {
    * `resetPerTurnTelemetry`, which every `turn_complete` path spreads).
    */
   apiRetry: ApiRetryState | null;
+  /**
+   * Set once on a fresh session born from `/compact` (via
+   * `mark_compaction_seed`): the transcript renders a compaction divider
+   * header, and `preTokens` labels it with the pre-compaction context
+   * size. `null` for ordinary sessions. Session-lived (never cleared).
+   */
+  compactionSeed: { preTokens: number | null } | null;
   /**
    * Tool calls denied this session, accumulated from each `cost_update`'s
    * `permission_denials`, deduped by `toolUseId`, most-recent last. Surfaced on
@@ -703,6 +717,7 @@ export function createInitialState(
     lastError: null,
     lastCost: null,
     apiRetry: null,
+    compactionSeed: null,
     permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,
@@ -767,6 +782,7 @@ function handleSend(
         turnKey: event.turnKey,
         submitAt,
         isWake: false,
+        suppressed: event.suppress === true,
       },
       // Seed the scratch with the opening user_message so the
       // substrate carries the user submission as its first Message
@@ -2364,11 +2380,18 @@ function handleTurnComplete(
       ...closedPauseSegments,
     },
     effects: [
-      { kind: "append-transcript", entry },
+      // A suppressed turn (the `/compact` seed) ran on claude but never
+      // enters the transcript — drop the append and its telemetry. The
+      // in-flight document is still cleared.
+      ...(state.pendingTurn?.suppressed === true
+        ? []
+        : [{ kind: "append-transcript" as const, entry }]),
       { kind: "clear-inflight" },
       // Persist per-turn telemetry via the supervisor's SessionLedger
       // on the live path. See note above in the queue-flush branch.
-      ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry, sessionInitTokens)] : []),
+      ...(state.pendingTurn?.suppressed !== true && event.telemetry === undefined
+        ? [buildRecordTelemetryEffect(entry, sessionInitTokens)]
+        : []),
     ],
   };
 }
@@ -2884,6 +2907,21 @@ function handleApiRetry(
     errorStatus: event.errorStatus,
   };
   return { state: { ...state, apiRetry }, effects: [] };
+}
+
+/**
+ * `mark_compaction_seed` — flag a fresh `/compact`-born session so the
+ * transcript renders a compaction divider header. Set once; never
+ * cleared (session-lived).
+ */
+function handleMarkCompactionSeed(
+  state: CodeSessionState,
+  event: MarkCompactionSeedActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state: { ...state, compactionSeed: { preTokens: event.preTokens } },
+    effects: [],
+  };
 }
 
 /**
@@ -3955,6 +3993,7 @@ export function deriveActiveTurnSnapshot(
     turnKey: pending.turnKey,
     submitAt: pending.submitAt,
     isWake: pending.isWake,
+    suppressed: pending.suppressed === true,
     messages,
   };
 }
@@ -3974,6 +4013,8 @@ export function reduce(
   switch (event.type) {
     case "send":
       return handleSend(state, event);
+    case "mark_compaction_seed":
+      return handleMarkCompactionSeed(state, event);
     case "session_init":
       return handleSessionInit(state, event);
     case "content_block_start":

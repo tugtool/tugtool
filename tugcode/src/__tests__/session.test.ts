@@ -368,11 +368,12 @@ describe("routeTopLevelEvent", () => {
     expect(result.gotResult).toBe(false);
   });
 
-  test("system/compact_boundary forwards compactMetadata (trigger + pre_tokens)", () => {
+  test("system/compact_boundary forwards compact_metadata (trigger + pre_tokens)", () => {
+    // The real SDK shape is snake_case `compact_metadata.pre_tokens`.
     const event = {
       type: "system",
       subtype: "compact_boundary",
-      compactMetadata: { trigger: "auto", preTokens: 48000 },
+      compact_metadata: { trigger: "auto", pre_tokens: 48000 },
     };
     const result = routeTopLevelEvent(event, baseCtx);
     const marker = result.messages[0] as any;

@@ -545,6 +545,11 @@ export interface ActiveTurnSnapshot {
   submitAt: number;
   isWake: boolean;
   /**
+   * When true, this in-flight turn is suppressed from the transcript (the
+   * `/compact` seed) — the data source emits zero rows for it.
+   */
+  suppressed: boolean;
+  /**
    * Live, mutates as wire events land. Per [D07] copy-on-write: a
    * mutation shallow-clones the affected Message + the messages array
    * slot; other Messages stay reference-identical so downstream
@@ -747,6 +752,12 @@ export interface CodeSessionSnapshot {
    * The dev-card banner derives its tone + countdown from this.
    */
   apiRetry: ApiRetryState | null;
+  /**
+   * Set once on a fresh session born from `/compact`: the transcript
+   * renders a compaction divider header (`preTokens` labels it). `null`
+   * for ordinary sessions.
+   */
+  compactionSeed: { preTokens: number | null } | null;
   /**
    * Tool calls denied during this session — by a permission rule or the
    * auto-mode classifier — accumulated across turns from each `cost_update`'s

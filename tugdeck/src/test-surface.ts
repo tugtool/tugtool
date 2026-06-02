@@ -244,11 +244,15 @@ export interface SeedDeckStateArgs {
  *    overlay without touching the real shared connection.
  */
 export type DevSessionDriveAction =
-  | { op: "send"; text: string; atoms?: AtomSegment[] }
+  | { op: "send"; text: string; atoms?: AtomSegment[]; suppress?: boolean }
   | { op: "ingestFrame"; feedId: number; decoded: unknown }
   | { op: "interrupt" }
   | { op: "transportClose" }
-  | { op: "transportReconnect" };
+  | { op: "transportReconnect" }
+  // Flag the session as `/compact`-born so the transcript renders the
+  // compaction divider header (exercises the render without the full
+  // real-claude summarize→spawn→seed flow, which the stub harness can't run).
+  | { op: "markCompactionSeed"; preTokens: number | null };
 
 /**
  * Viewport-relative DOMRect shape returned by
@@ -1435,7 +1439,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       const store = services.codeSessionStore;
       switch (action.op) {
         case "send":
-          store.send(action.text, action.atoms ?? []);
+          store.send(action.text, action.atoms ?? [], { suppress: action.suppress === true });
+          return;
+        case "markCompactionSeed":
+          store.markCompactionSeed(action.preTokens);
           return;
         case "ingestFrame":
           store._ingestFrameForTest(action.feedId, action.decoded);

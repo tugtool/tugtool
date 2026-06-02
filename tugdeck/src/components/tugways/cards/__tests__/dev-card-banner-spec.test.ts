@@ -47,6 +47,7 @@ function baseSnap(
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,
+    compactionSeed: null,
     permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,

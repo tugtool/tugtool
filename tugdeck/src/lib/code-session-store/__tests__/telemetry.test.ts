@@ -412,6 +412,7 @@ describe("deriveInflightActiveMs", () => {
       pendingDraftRestore: null,
       lastCost: null,
       apiRetry: null,
+      compactionSeed: null,
       permissionDenials: [],
       liveTurnUsage: null,
     sessionInitTokens: null,
@@ -433,7 +434,7 @@ describe("deriveInflightActiveMs", () => {
   }
 
   function inflight(submitAt: number): CodeSessionSnapshot["activeTurn"] {
-    return { turnKey: "k", submitAt, isWake: false, messages: [] };
+    return { turnKey: "k", submitAt, isWake: false, suppressed: false, messages: [] };
   }
 
   it("returns null when no turn is in flight", () => {
@@ -544,6 +545,7 @@ describe("deriveTimeCellMs", () => {
       pendingDraftRestore: null,
       lastCost: null,
       apiRetry: null,
+      compactionSeed: null,
       permissionDenials: [],
       liveTurnUsage: null,
     sessionInitTokens: null,
@@ -564,7 +566,7 @@ describe("deriveTimeCellMs", () => {
     };
   }
   function inflight(submitAt: number): CodeSessionSnapshot["activeTurn"] {
-    return { turnKey: "k", submitAt, isWake: false, messages: [] };
+    return { turnKey: "k", submitAt, isWake: false, suppressed: false, messages: [] };
   }
 
   it("falls back to the post-commit value when no turn is in flight", () => {

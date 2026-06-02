@@ -106,6 +106,7 @@ import {
   dispatchToolCallState,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
+import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -1144,6 +1145,14 @@ export const DevTranscriptHost = forwardRef<
   const lifecycle = useLifecycleState(codeSessionStore);
   const isReplaying = lifecycle.state === "replaying";
 
+  // Compaction divider header — present iff this session was born from
+  // `/compact` (the seed flagged it). Subscribed via [L02]; appearance is
+  // CSS-only ([L06]).
+  const compactionSeed = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () => codeSessionStore.getSnapshot().compactionSeed,
+  );
+
   // One renderer per kind ([L26] — renderer reference is the third
   // identity input React reconciles against; distinct lambdas count
   // as distinct component types). With the data source unified to a
@@ -1290,6 +1299,17 @@ export const DevTranscriptHost = forwardRef<
       data-testid="dev-card-transcript"
       data-replaying={isReplaying || undefined}
     >
+      {compactionSeed !== null ? (
+        <div
+          className="dev-card-transcript-compaction"
+          role="separator"
+          data-slot="compaction-divider"
+        >
+          <span className="dev-card-transcript-compaction-label">
+            {compactionNoteText(compactionSeed.preTokens ?? undefined)}
+          </span>
+        </div>
+      ) : null}
       <TugListView
         ref={listViewRef}
         dataSource={dataSource}

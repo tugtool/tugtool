@@ -62,6 +62,26 @@ export interface SendActionEvent {
    * cell-stability invariant this drives.
    */
   turnKey: string;
+  /**
+   * When true, the turn is sent to claude (it runs a real turn and
+   * answers in context) but is **never committed to the transcript** —
+   * the in-flight rows are skipped and `turn_complete` drops the append.
+   * Used for the `/compact` seed: the summary must enter claude's context
+   * without showing as a turn (the compaction divider stands in its
+   * place). A single-use, single-turn suppression.
+   */
+  suppress?: boolean;
+}
+
+/**
+ * `mark_compaction_seed` — flags this (fresh, `/compact`-born) session so
+ * the transcript renders a compaction divider header. Carries the
+ * pre-compaction context size for the divider label. Dispatched by the
+ * `dev-session-restore` live-hook alongside the suppressed seed send.
+ */
+export interface MarkCompactionSeedActionEvent {
+  type: "mark_compaction_seed";
+  preTokens: number | null;
 }
 
 /** `session_init` frame — carries Claude's `session_id` (for `--resume`). */
@@ -869,6 +889,7 @@ export interface TickPreflightDoneEvent {
 /** Discriminated union of events the reducer accepts. */
 export type CodeSessionEvent =
   | SendActionEvent
+  | MarkCompactionSeedActionEvent
   | SessionInitEvent
   | AssistantTextEvent
   | ThinkingTextEvent

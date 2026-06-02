@@ -2,8 +2,8 @@
  * slash-commands.ts — registry + matcher for locally-handled slash
  * commands.
  *
- * Some slash commands are *claude's* (`/commit`, `/compact`, skills,
- * agents): typing one sends it to claude, which runs it and streams a
+ * Some slash commands are *claude's* (`/commit`, skills, agents): typing
+ * one sends it to claude, which runs it and streams a
  * real turn. Others are *terminal-rendered-locally* (`/permissions`,
  * `/model`, `/rewind`, …): the terminal handles them itself and claude
  * never sees them. In stream-json / print mode claude has no interactive
@@ -127,6 +127,11 @@ export const LOCAL_SLASH_COMMANDS = [
   {
     name: "rename",
     description: "Name this session (shown in the chip and session chooser)",
+    takesArgs: true,
+  },
+  {
+    name: "compact",
+    description: "Summarize and compact the conversation to free up context",
     takesArgs: true,
   },
 ] as const satisfies readonly LocalSlashCommandSpec[];

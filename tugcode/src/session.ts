@@ -911,17 +911,26 @@ export function routeTopLevelEvent(
         };
         messages.push(sysMsg);
       } else if (subtype === "compact_boundary") {
-        // Forward claude's `compactMetadata` (trigger + pre-compaction
+        // Forward claude's `compact_metadata` (trigger + pre-compaction
         // token count) when present so the dev-card divider can show it;
-        // the bare marker stands alone otherwise.
-        const meta = (event.compactMetadata ?? {}) as {
+        // the bare marker stands alone otherwise. The SDK shape is
+        // snake_case (`compact_metadata.pre_tokens`); tolerate a camelCase
+        // variant defensively.
+        const meta = (event.compact_metadata ?? event.compactMetadata ?? {}) as {
           trigger?: unknown;
+          pre_tokens?: unknown;
           preTokens?: unknown;
         };
+        const preTokens =
+          typeof meta.pre_tokens === "number"
+            ? meta.pre_tokens
+            : typeof meta.preTokens === "number"
+              ? meta.preTokens
+              : undefined;
         const marker: CompactBoundary = {
           type: "compact_boundary",
           ...(typeof meta.trigger === "string" ? { trigger: meta.trigger } : {}),
-          ...(typeof meta.preTokens === "number" ? { pre_tokens: meta.preTokens } : {}),
+          ...(preTokens !== undefined ? { pre_tokens: preTokens } : {}),
           ipc_version: 2,
         };
         messages.push(marker);

@@ -168,6 +168,8 @@ import {
   type TugPaneBulletinApi,
 } from "../tug-pane-bulletin";
 import { lastAssistantCopyText } from "./turn-entry-markdown";
+import { buildSummarizationPrompt } from "@/lib/compaction-request";
+import { pendingCompactionStore } from "@/lib/pending-compaction-store";
 import {
   useDevRecentsDataSource,
   useDevSessionsDataSource,
@@ -2856,6 +2858,56 @@ export function DevCardBody({
         "new",
       );
       sendCloseSessionKeepingBinding(connection, cardId, binding.tugSessionId);
+    },
+    // `/compact [focus]` — real compaction over the bridge (claude exposes
+    // no native trigger). Summarize the current session, then continue in
+    // a *fresh* session seeded with the summary (spike-verified). The seed
+    // is sent suppressed (in claude's context, not the transcript) by the
+    // `dev-session-restore` live-hook once the fresh session binds; the
+    // transcript shows a compaction divider instead. Reads live ([L07]).
+    compact: (args) => {
+      const notify = paneBulletinRef.current;
+      const binding = cardSessionBindingStore.getBinding(cardId);
+      const connection = getConnection();
+      if (binding === undefined || connection === null) return;
+      const snap0 = codeSessionStore.getSnapshot();
+      if (!snap0.canSubmit) {
+        notify?.caution("Can't compact while a turn is in flight");
+        return;
+      }
+      const focus = args.trim();
+      const oldTugSessionId = binding.tugSessionId;
+      const projectDir = binding.projectDir;
+      const baseTurnCount = snap0.transcript.length;
+      // Watch the summarization turn; when it commits, capture the summary
+      // and compact into a fresh session. A turn that ends without
+      // committing (error / interrupt) aborts cleanly — the session is
+      // left intact.
+      const unsubscribe = codeSessionStore.subscribe(() => {
+        const snap = codeSessionStore.getSnapshot();
+        if (snap.activeTurn !== null) return;
+        if (snap.transcript.length <= baseTurnCount) {
+          if (snap.lastError !== null || snap.phase === "errored") {
+            unsubscribe();
+            notify?.danger("Compaction failed — session left intact");
+          }
+          return;
+        }
+        unsubscribe();
+        const summary = lastAssistantCopyText(snap.transcript);
+        if (summary === null || summary.length === 0) {
+          notify?.danger("Compaction failed — no summary produced");
+          return;
+        }
+        const newSessionId = crypto.randomUUID();
+        pendingCompactionStore.set(newSessionId, { summary, preTokens: null });
+        sendSpawnSession(connection, cardId, newSessionId, projectDir, "new");
+        sendCloseSessionKeepingBinding(connection, cardId, oldTugSessionId);
+      });
+      codeSessionStore.send(
+        buildSummarizationPrompt(focus.length > 0 ? focus : undefined),
+        [],
+      );
     },
     // Export the committed transcript ([#step-13c]). The content (both
     // Markdown + JSON Lines renderings) is built client-side from the

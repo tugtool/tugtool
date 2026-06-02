@@ -248,7 +248,12 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
     turnHasUserPerTurn[i] = hasUser;
     cursor += hasUser ? 2 : 1;
   }
-  const active = snap.activeTurn;
+  // A suppressed in-flight turn (the `/compact` seed) contributes zero
+  // rows — it streams to claude but never shows in the transcript.
+  const active =
+    snap.activeTurn !== null && snap.activeTurn.suppressed
+      ? null
+      : snap.activeTurn;
   const activeHasUser = activeTurnHasUserMessage(active);
   let activeStartRow = -1;
   if (active !== null) {

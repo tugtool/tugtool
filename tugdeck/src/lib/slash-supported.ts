@@ -13,7 +13,7 @@
  *   alone this is the default, so a new/unknown command is never *silently*
  *   swallowed. At submit, the dev card refines it against claude's reported
  *   command catalog (see {@link isUnknownRemoteCommand}): a pass-through name
- *   claude actually reports (`/init`, `/insights`, `/compact`, a skill or
+ *   claude actually reports (`/init`, `/insights`, `/recap`, a skill or
  *   agent command) is **sent to claude verbatim** and runs a real turn; a
  *   pass-through name claude does *not* report is a genuine unknown (a typo)
  *   and is reported to the user client-side instead of burning a turn.
@@ -62,7 +62,7 @@ const SUPPORTED_LOCAL: ReadonlySet<string> = new Set(
  * the leading slash.
  *
  * Not in this set and not a local command ⇒ `pass-through` (sent to claude),
- * so genuine pass-throughs (`/init`, `/insights`, `/compact`, `/recap`),
+ * so genuine pass-throughs (`/init`, `/insights`, `/recap`),
  * skill/agent commands, and unknown names are all visible and reach claude.
  */
 export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
