@@ -87,9 +87,6 @@ body {
   /* Options block (radio stack) — centered, fixed max width. */
   --tugx-idialog-options-gap:       0.25rem;
   --tugx-idialog-options-max-width: 435px;
-
-  /* Focus ring — for keyboard navigation. */
-  --tugx-idialog-focus-ring: var(--tug7-element-global-text-normal-link-rest);
 }
 
 /* ---- Frame ---- */
@@ -260,8 +257,5 @@ body {
   --tugx-dialog-button-description-size: 0.75rem;
 }
 
-/* ---- Focus styling ---- */
-
-.tug-inline-dialog .tug-button:focus-visible {
-  outline-color: var(--tugx-idialog-focus-ring);
-}
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css);
+   the dialog's buttons no longer override the base ring color. */

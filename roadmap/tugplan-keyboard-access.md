@@ -106,7 +106,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Tier-1 key-view marker visual weight (OPEN) {#q01-tier1-weight}
+#### [Q01] Tier-1 key-view marker visual weight (RESOLVED) {#q01-tier1-weight}
 
 **Question:** Is a 1px hairline (and in what token / color — neutral border vs faint action tint) the right always-on key-view treatment across both brio and harmony, or does it need a different weight per theme?
 
@@ -119,7 +119,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 **Plan to resolve:** Prototype 2–3 treatments against both themes during [#step-6]; pick by eye, lock the token. Start from 1px hairline per [P05].
 
-**Resolution:** OPEN → resolve in [#step-6].
+**Resolution:** RESOLVED in [#step-6] — **1px faint action-tinted hairline** (option 2). The Tier-1 marker reads `--tugx-focus-ring-hairline-color: var(--tug7-surface-tone-primary-normal-active-rest)` (a faint, ~15%-alpha blue) at 1px; Tier-2 is the solid `tone-border-active` blue at 2px. Rationale: tying the always-on marker to the same keyboard-active blue keeps the focus story to one color (selection owns orange), and the faint translucent fill is clearly distinct from the full-strength Tier-2 ring. A per-theme weight override proved unnecessary because the hairline and ring already resolve through each theme's own `tone-…-active` values (brio blue t:47, harmony blue t:35), so each theme tunes itself; the single token set stays shared. Verified against both themes via the live build and pinned by `at0109-focus-ring-tiers` (1px hairline on click, 2px ring on keyboard nav).
 
 #### [Q02] Editor Tab-consume handshake shape (OPEN) {#q02-editor-tab-handshake}
 
@@ -537,8 +537,8 @@ useKeybindings([
 | #step-2 | Keyboard-access mode state + persistence | done | 80da10a4 |
 | #step-3 | Tab pipeline: focus-next/previous + editor precedence | done | 188a976e |
 | #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | 662bca98 |
-| #step-5 | Dynamic context-scoped keybinding registry | done | (uncommitted) |
-| #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | pending | — |
+| #step-5 | Dynamic context-scoped keybinding registry | done | 03a08ab5 |
+| #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done | — |
 | #step-7 | Recolor UI-selection → accent/orange | pending | — |
 | #step-8 | Confine blue to the keyboard-active axis | pending | — |
 | #step-9 | Tame internal/tug-button (base control focus) | pending | — |
@@ -688,16 +688,16 @@ useKeybindings([
 - `--tugx-focus-ring` tokens in both themes; Tier-1 `[data-key-view]` 1px hairline; Tier-2 `:focus-visible` blue ring; deletion of all per-component ring rules.
 
 **Tasks:**
-- [ ] Author `--tugx-focus-ring-{color,width,offset}` (color = action/blue) in `brio.css` + `harmony.css`.
-- [ ] Add the shared mechanism (single selector/attribute) and Tier-1 hairline on `[data-key-view]`.
-- [ ] Delete per-component ring rules (indigo `accentCool`, `link`-colored dialog/inline-dialog rings, cue accent, etc.).
-- [ ] Resolve [Q01] by eye against both themes; lock the token.
+- [x] Author `--tugx-focus-ring-{color,width,offset}` (color = action/blue) in `brio.css` + `harmony.css`. Added `--tugx-focus-ring-{color,width,offset}` plus `--tugx-focus-ring-hairline-{color,width}`; color/hairline reference the per-theme `tone-…-active` (blue) tokens so each theme tunes weight via its own values.
+- [x] Add the shared mechanism (single selector/attribute) and Tier-1 hairline on `[data-key-view]`. New `styles/focus-ring.css` (imported in `globals.css`): Tier-1 `[data-key-view]` hairline + Tier-2 `:focus-visible` ring, equal-specificity, Tier-2 authored last so it wins on overlap.
+- [x] Delete per-component ring rules (indigo `accentCool`, `link`-colored dialog/inline-dialog rings, cue accent, etc.). Removed the scattered focus *rings* on checkbox, switch, accordion, option-group, choice-group, cue, link, markdown-view copy, dialog-button, inline-dialog, input/textarea (`data-focus-style="ring"`), text-editor (outline lines), slider thumb, attachment-strip; dropped the now-orphan `--tugx-{cue-focus-outline,dialog-button-focus-ring,idialog-focus-ring}` tokens. Field border/bg affordances, drag/error/match outlines, list-row reveal, popover/in-sheet-tab/sash `outline:none` suppressions, and selection accents (Step 7) were kept by design. Dev-chrome (`dev-thinking-block`) and body-kind block focus rings are outside the focus-engine inventory and left for their own taming.
+- [x] Resolve [Q01] by eye against both themes; lock the token. Locked the faint action-tinted hairline (option 2): Tier-1 reads `--tug7-surface-tone-primary-normal-active-rest` (faint blue, a:15), Tier-2 the solid `tone-border-active` blue. Each theme's own active-tone value supplies the per-theme weight, so no per-theme override was needed.
 
 **Tests:**
-- [ ] app-test: after a click the key view shows the hairline (Tier 1); after Tab it shows the blue ring (Tier 2).
+- [x] app-test: after a click the key view shows the hairline (Tier 1); after Tab it shows the blue ring (Tier 2). `at0109-focus-ring-tiers` — click → `data-key-view`, not `:focus-visible`, computed `outline-width: 1px`; keyboard round-trip → `:focus-visible`, `outline-width: 2px`. PASS in the real WKWebView.
 
 **Checkpoint:**
-- [ ] `bun run audit:tokens pairings` passes; no per-component `outline:`/`focus-ring` rule remains (grep).
+- [x] `bun run audit:tokens pairings` passes; no per-component `outline:`/`focus-ring` rule remains (grep). `audit:tokens pairings` EXIT=0; `tsc --noEmit` clean; grep confirms no scattered focus-ring outline remains in the product tugways CSS and the three deleted tokens have zero references.
 
 #### Step 7: Recolor UI-selection → accent/orange {#step-7}
 

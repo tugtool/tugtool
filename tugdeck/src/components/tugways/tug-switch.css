@@ -81,12 +81,7 @@
   border-color: var(--tugx-toggle-on-hover-color);
 }
 
-/* ---- Focus ---- */
-
-.tug-switch:focus-visible {
-  outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
-  outline-offset: 2px;
-}
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
 
 /* ---- Disabled ---- */
 

@@ -138,15 +138,14 @@ body {
 
 /* ---- Focus: ring ----
  * Ring style keeps the surface at rest and signals focus with an
- * accent-colored border + outline. The companion bg override below
- * keeps the inner CM6 surface from shifting under the ring.
+ * accent-colored border. The companion bg override keeps the inner CM6
+ * surface from shifting under the focused state. The keyboard-active ring
+ * itself is the app-owned primitive (focus-ring.css).
  */
 
 .tug-text-editor[data-focused][data-focus-style="ring"] {
   background-color: var(--tug7-surface-field-primary-normal-plain-rest);
   border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
-  outline-offset: -1px;
 }
 
 .tug-text-editor[data-focus-style="ring"] > .cm-editor.cm-focused {

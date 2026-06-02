@@ -89,14 +89,9 @@
   outline: none;
 }
 
-/* ---- Focus: ring ---- */
-
-.tug-textarea[data-focus-style="ring"]:focus {
-  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
-  border-color: var(--tug7-element-global-fill-normal-accentCool-rest);
-  outline: 2px solid var(--tug7-element-global-fill-normal-accentCool-rest);
-  outline-offset: -1px;
-}
+/* The field signals focus through its own border-color + background shift
+   (above); the keyboard-active ring is the app-owned primitive (focus-ring.css).
+   There is no longer a separate ring focus-style. */
 
 /* ---- Borderless ---- */
 

@@ -80,15 +80,7 @@ body {
   text-decoration: var(--tugx-link-decoration);
 }
 
-/* `:focus-visible` rather than `:focus` so the ring shows only for
- * keyboard navigation — not for mouse clicks (which would paint a
- * ring on every clicked link). Matches the rest of the design
- * system's focus convention. */
-.tug-link:focus-visible {
-  outline: 2px solid var(--tugx-link-color-hover);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
 
 /* The external-link glyph is `align-items: baseline` on the parent;
  * lucide icons render with `display: inline-block` at the baseline,

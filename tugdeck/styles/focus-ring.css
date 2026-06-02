@@ -1,0 +1,45 @@
+/**
+ * focus-ring.css — the single app-owned focus-ring primitive.
+ *
+ * One ring, two tiers, replacing the scatter of per-component `:focus` /
+ * `:focus-visible` outlines (indigo `accentCool`, the link color, the accent
+ * color, each at its own width/offset). Both tiers read the `--tugx-focus-ring-*`
+ * tokens authored in the theme files (brio.css / harmony.css), so the color is
+ * theme-aware and the whole treatment is tuned from one place.
+ *
+ * The contract: **action/blue marks the keyboard-active axis** — the surface
+ * the keyboard is currently empowering — while accent/orange is reserved for
+ * selection. The ring is `outline`-based: layout-free (it never shifts boxes)
+ * and it follows each element's `border-radius` on WebKit, so no per-component
+ * radius bookkeeping is needed.
+ *
+ *  - **Tier 1 — key view (always on).** The focus engine stamps `data-key-view`
+ *    on the single element the keyboard targets. A faint hairline marks it at
+ *    rest so "where do keys go?" is answerable without first pressing a key —
+ *    including right after a mouse click, when the browser withholds
+ *    `:focus-visible`.
+ *  - **Tier 2 — keyboard navigation.** Whenever the browser deems focus visible
+ *    (Tab / arrow navigation, not a click), the full action/blue ring paints.
+ *    This covers the key view and any control the browser focuses natively that
+ *    the focus engine has not yet adopted, so keyboard focus is visible
+ *    uniformly across the app.
+ *
+ * The two selectors carry equal specificity (one attribute vs one pseudo-class);
+ * Tier 2 is authored last so the full ring wins when an element is both the key
+ * view and keyboard-focused. Surfaces that are their own focus affordance
+ * (a portalled popover, a cropped in-sheet tab bar, a caret-bearing text
+ * editor) keep their existing higher-specificity `outline: none` suppression and
+ * are unaffected.
+ */
+
+/* Tier 1 — always-on key-view marker. */
+[data-key-view] {
+  outline: var(--tugx-focus-ring-hairline-width) solid var(--tugx-focus-ring-hairline-color);
+  outline-offset: var(--tugx-focus-ring-offset);
+}
+
+/* Tier 2 — keyboard-active ring (authored after Tier 1 so it wins on overlap). */
+:focus-visible {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
+  outline-offset: var(--tugx-focus-ring-offset);
+}

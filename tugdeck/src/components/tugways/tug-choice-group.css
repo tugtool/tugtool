@@ -149,16 +149,7 @@
   transition: background-color 80ms ease, color 80ms ease;
 }
 
-.tug-choice-group-segment:focus {
-  outline: none;
-}
-
-.tug-choice-group-segment:focus-visible {
-  outline: 2px solid var(--tug7-element-global-outline-normal-accentCool-rest);
-  outline-offset: -2px;
-  border-radius: inherit;
-  z-index: 2;
-}
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
 
 /* Segment size padding + font */
 

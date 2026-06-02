@@ -144,6 +144,19 @@ body {
   --tug7-element-global-outline-normal-accentCool-rest: --tug-color(indigo, i: 100, t: 10);
   --tug7-element-global-fill-normal-accentSubtle-rest: --tug-color(orange, t: 45, a: 10);
 
+  /* Focus ring (key-view indication) — the single app-owned focus-ring
+     primitive. action/blue is the keyboard-active axis: the surface the
+     keyboard is currently empowering. Tier 1 is an always-on faint hairline
+     marking the current key view at rest; Tier 2 is the full ring on keyboard
+     navigation (:focus-visible). One width, one offset, outline-based so it
+     follows border-radius on WebKit. The active-tone references carry
+     harmony's own blue, so each theme tunes the weight via its own values. */
+  --tugx-focus-ring-color: var(--tug7-element-tone-border-normal-active-rest);
+  --tugx-focus-ring-width: 2px;
+  --tugx-focus-ring-offset: 2px;
+  --tugx-focus-ring-hairline-color: var(--tug7-surface-tone-primary-normal-active-rest);
+  --tugx-focus-ring-hairline-width: 1px;
+
   /* Tone */
   --tug7-element-tone-border-normal-accent-rest: --tug-color(orange, i: 100, t: 45);
   --tug7-element-tone-border-normal-active-rest: --tug-color(blue, t: 35);

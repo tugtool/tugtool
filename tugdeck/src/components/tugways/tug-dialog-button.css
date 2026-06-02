@@ -129,9 +129,6 @@ body {
 
   /* ---- Disabled (shared across roles) ---- */
   --tugx-dialog-button-disabled-opacity: var(--tugx-control-disabled-opacity);
-
-  /* ---- Focus ring ---- */
-  --tugx-dialog-button-focus-ring: var(--tug7-element-global-text-normal-link-rest);
 }
 
 /* ---- Root ---- */
@@ -379,7 +376,4 @@ body {
    Focus
    ========================================================================= */
 
-.tug-dialog-button:focus-visible {
-  outline: 2px solid var(--tugx-dialog-button-focus-ring);
-  outline-offset: 2px;
-}
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
