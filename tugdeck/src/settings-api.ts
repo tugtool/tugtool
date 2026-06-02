@@ -48,6 +48,20 @@ export function readTheme(client: TugbankClient): string | null {
 }
 
 /**
+ * Read the keyboard-access mode (`standard` / `accessibility`) from the
+ * TugbankClient cache. Returns the raw string, or null if unset; the caller
+ * normalizes it. Stored under `dev.tugtool.app` / `keyboardAccess`, the same
+ * domain as the theme.
+ */
+export function readKeyboardAccess(client: TugbankClient): string | null {
+  const entry = client.get("dev.tugtool.app", "keyboardAccess");
+  if (entry && entry.kind === "string" && typeof entry.value === "string") {
+    return entry.value;
+  }
+  return null;
+}
+
+/**
  * Read the focused card ID from the TugbankClient cache.
  * Returns the string value, or null if not stored.
  */
@@ -137,6 +151,20 @@ export function putTheme(theme: string): void {
     body: JSON.stringify({ kind: "string", value: theme }),
   }).catch((err) => {
     console.warn("[settings] PUT theme failed:", err);
+  });
+}
+
+/**
+ * Persist the keyboard-access mode to tugbank under
+ * `dev.tugtool.app` / `keyboardAccess`. Fire-and-forget, mirroring `putTheme`.
+ */
+export function putKeyboardAccess(mode: string): void {
+  fetch("/api/defaults/dev.tugtool.app/keyboardAccess", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: mode }),
+  }).catch((err) => {
+    console.warn("[settings] PUT keyboardAccess failed:", err);
   });
 }
 

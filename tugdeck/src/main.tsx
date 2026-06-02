@@ -20,7 +20,8 @@ import {
   ConnectionLifecycle,
   registerConnectionLifecycle,
 } from "./lib/connection-lifecycle";
-import { readLayout, readTheme, readCardStates, readDeckState } from "./settings-api";
+import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess } from "./settings-api";
+import { keyboardAccessStore, normalizeKeyboardAccessMode } from "./keyboard-access-store";
 import { getThemeSetter } from "./action-dispatch";
 import {
   sendCanvasColor,
@@ -153,6 +154,14 @@ if (!container) {
   const focusedCardId = readDeckState(tugbankClient);
 
   const initialTheme = theme ?? BASE_THEME_NAME;
+
+  // Seed the keyboard-access mode from the DEFAULTS snapshot and stamp
+  // `data-keyboard-access` on the document root before first render, so the
+  // mode is correct from first paint (no flash of the wrong mode) — the same
+  // before-paint discipline as the theme.
+  keyboardAccessStore.initialize(
+    normalizeKeyboardAccessMode(readKeyboardAccess(tugbankClient)),
+  );
 
   // Production startup: apply saved non-base override before first render so
   // the app does not flash brio and then restyle.
@@ -340,6 +349,16 @@ if (!container) {
           const setter = getThemeSetter();
           if (setter) setter(currentTheme);
         }
+      }
+      // Keyboard-access mode pushed from another process (e.g. the Swift host
+      // menu, or `tugbank write … keyboardAccess accessibility`). Apply with
+      // persist:false to avoid echoing the write back through tugbank.
+      const kbEntry = entries["keyboardAccess"];
+      if (kbEntry && kbEntry.kind === "string" && typeof kbEntry.value === "string") {
+        keyboardAccessStore.setMode(
+          normalizeKeyboardAccessMode(kbEntry.value),
+          { persist: false },
+        );
       }
     }
   });

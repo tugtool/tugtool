@@ -210,14 +210,13 @@ export const KEYBINDINGS: KeyBinding[] = [
   // shortcut is owned by the responder chain regardless of focus.
   { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "❯", preventDefaultOnMatch: true },
   { key: "KeyS", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "$", preventDefaultOnMatch: true },
-  // ⇧⇥ cycles the dev card's permission mode, matching the Claude Code
-  // terminal. `scope: "key-card"` routes to the active card's
-  // `card-content` responder; only the dev card registers a handler. No
-  // `preventDefaultOnMatch` — when no dev card claims the action the
-  // capture listener leaves the event alone and ⇧⇥ bubbles to normal
-  // reverse-tab navigation (Risk R02: consume only when a dev card is
-  // focused).
-  { key: "Tab", shift: true, action: TUG_ACTIONS.CYCLE_PERMISSION_MODE, scope: "key-card" },
+  // Tab / ⇧⇥ are NOT in this static map. They are owned by the focus-walk
+  // stage in `responder-chain-provider.tsx`, which folds the dev card's
+  // ⇧⇥ permission-mode cycle into one precedence model: ⇧⇥ first tries
+  // `cycle-permission-mode` on the key card (consumed only when a dev card
+  // claims it — Risk R02), then falls through to the focus walk's
+  // `focus-previous`. Plain Tab is `focus-next`. Keeping them out of the
+  // static map avoids a second, parallel owner of the Tab key.
 ];
 
 // ---- matchKeybinding ----

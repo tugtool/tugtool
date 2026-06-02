@@ -513,9 +513,9 @@ useKeybindings([
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | FocusManager core + registry + useFocusable (inert) | pending | — |
-| #step-2 | Keyboard-access mode state + persistence | pending | — |
-| #step-3 | Tab pipeline: focus-next/previous + editor precedence | pending | — |
+| #step-1 | FocusManager core + registry + useFocusable (inert) | done | ce7d8256 |
+| #step-2 | Keyboard-access mode state + persistence | done | 80da10a4 |
+| #step-3 | Tab pipeline: focus-next/previous + editor precedence | done | 188a976e |
 | #step-4 | Floating-surface focus traps (CFRunLoop modes) | pending | — |
 | #step-5 | Dynamic context-scoped keybinding registry | pending | — |
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | pending | — |

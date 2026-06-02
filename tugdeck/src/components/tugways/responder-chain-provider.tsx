@@ -23,7 +23,10 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
+import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
+import { keyboardAccessStore } from "../../keyboard-access-store";
 import { matchKeybinding } from "./keybinding-map";
+import { TUG_ACTIONS } from "./action-vocabulary";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
@@ -118,6 +121,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
   }
   const manager = managerRef.current;
 
+  // The focus engine rides this same provider ([P01]): one manager, created
+  // once, exposed as a sibling context. In this inert cut it only seeds its
+  // key view from the chain's first responder (via `attach` below) and stamps
+  // `data-key-view` — no Tab interception yet.
+  const focusManagerRef = useRef<FocusManager | null>(null);
+  if (focusManagerRef.current === null) {
+    focusManagerRef.current = new FocusManager();
+  }
+  const focusManager = focusManagerRef.current;
+
   // L03: install registrations that events depend on in
   // `useLayoutEffect`, not `useEffect`. This effect installs six
   // document-level listeners (keydown capture + bubble, pointerdown,
@@ -159,6 +172,71 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // `activeCardId` transitions. ([D02])
     const appLifecycle = getAppLifecycle();
     selectionGuard.attach(appLifecycle);
+
+    // ---- FocusManager lifecycle ----
+    // Bind the focus engine to the chain so the key view tracks the first
+    // responder. Installed here (not useEffect) for the same reason as the
+    // listeners below — registrations events depend on must be live before
+    // paint ([L03]). Detached in cleanup.
+    focusManager.attach(manager);
+
+    // Keep the focus walk's keyboard-access mode in sync with the store. The
+    // store is the source of truth (structure zone, [L02]); the manager holds
+    // a mirror its pure walk reads. Seed now, then track changes.
+    focusManager.setKeyboardAccessMode(keyboardAccessStore.getMode());
+    const unsubscribeKeyboardAccess = keyboardAccessStore.subscribe(() => {
+      focusManager.setKeyboardAccessMode(keyboardAccessStore.getMode());
+    });
+
+    // ---- Focus walk: Tab / Shift-Tab ([P04]) ----
+    // Tab owns app-authored focus movement and is handled here, ahead of the
+    // static keybinding map, so one code path resolves the whole precedence
+    // ladder:
+    //   1. ⇧⇥ → the dev card's `cycle-permission-mode`, consumed ONLY when a
+    //      dev card claims it (Risk R02), folding the old standalone ⇧⇥
+    //      keybinding into this model.
+    //   2. A focused text surface that is consuming Tab right now (an editor
+    //      with an open completion advertises `data-tug-tab-consume`): leave
+    //      the event untouched so the surface's own keymap accepts the
+    //      completion ([Q02] flag resolution).
+    //   3. The focus walk advances the key view and lands DOM focus on it.
+    // While no component has registered as a focusable yet, an empty walk
+    // yields to the browser's native Tab so focus is never dead mid-migration.
+    function focusWalkListener(event: KeyboardEvent): void {
+      if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      // (1) ⇧⇥ dev-card permission cycle.
+      if (event.shiftKey) {
+        const { handled, continuation } = manager.sendToKeyCardForContinuation({
+          action: TUG_ACTIONS.CYCLE_PERMISSION_MODE,
+          phase: "discrete",
+        });
+        if (handled) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          continuation?.();
+          return;
+        }
+      }
+      // (2) A text surface consuming Tab keeps it.
+      const active = document.activeElement;
+      const surfaceConsumes =
+        (active instanceof Element &&
+          active.closest(`[${TAB_CONSUME_ATTRIBUTE}="true"]`) !== null) ||
+        focusManager.keyViewConsumesTab();
+      if (surfaceConsumes) return;
+      // (3) Advance the walk. Non-null = the key view moved; land focus and
+      // swallow the key. Null = nothing to move to; yield to native Tab.
+      const moved = event.shiftKey
+        ? focusManager.focusPrevious()
+        : focusManager.focusNext();
+      if (moved !== null) {
+        focusManager.focusKeyView();
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }
 
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {
@@ -407,6 +485,9 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       fallbackMenuRef.current?.({ x: event.clientX, y: event.clientY });
     }
 
+    // focusWalkListener is registered before captureListener so it owns Tab
+    // in the capture phase ahead of the global-shortcut dispatch.
+    document.addEventListener("keydown", focusWalkListener, { capture: true });
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
@@ -415,6 +496,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("contextmenu", fallbackContextMenu);
 
     return () => {
+      document.removeEventListener("keydown", focusWalkListener, { capture: true });
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
@@ -422,8 +504,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("focusin", promoteOnFocusIn, { capture: true });
       document.removeEventListener("contextmenu", fallbackContextMenu);
       selectionGuard.detach();
+      unsubscribeKeyboardAccess();
+      focusManager.detach();
     };
-  }, [manager]);
+  }, [manager, focusManager]);
 
   // Fallback "No Actions" context menu state. The document-level
   // contextmenu handler calls the ref'd setter to open it.
@@ -434,7 +518,9 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
   return (
     <ResponderChainContext.Provider value={manager}>
-      {children}
+      <FocusManagerContext.Provider value={focusManager}>
+        {children}
+      </FocusManagerContext.Provider>
       {fallbackMenu && createPortal(
         <FallbackContextMenu
           x={fallbackMenu.x}

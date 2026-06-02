@@ -155,6 +155,7 @@ import { useCardId } from "./use-card-state-preservation";
 import { useCompanionPopupBinding } from "./use-companion-popup-binding";
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
+import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type {
@@ -2141,9 +2142,33 @@ function CompletionOverlay({
     // identity on real changes (the field's `update` reducer
     // returns `value` unchanged for non-events), so we only repaint
     // when something actually changed.
+    // Advertise Tab-consumption to the focus engine: while the typeahead popup
+    // is interactive, the editor owns Tab (it accepts the completion) and the
+    // document-level focus walk must yield to it. The marker rides on the
+    // contentDOM (the active element while editing), so the Tab pipeline's
+    // `closest([data-tug-tab-consume])` check sees it. Appearance-zone DOM
+    // write per [L06] — never React state.
+    const applyTabConsumeMarker = (): void => {
+      const snap = getCompletionState(view);
+      const interactive = completionPopupIsInteractive({
+        active: snap.active,
+        itemCount: snap.filtered.length,
+      });
+      // Explicit "true"/absent (not toggleAttribute, which sets an empty
+      // value) so the marker matches the `[data-tug-tab-consume="true"]`
+      // selector the focus-walk pipeline reads.
+      if (interactive) {
+        view.contentDOM.setAttribute(TAB_CONSUME_ATTRIBUTE, "true");
+      } else {
+        view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
+      }
+    };
+    applyTabConsumeMarker();
+
     const unsubscribe = subscribeCompletionState(view, () => {
       paintCompletionPopup(view, popup, completionDirectionRef.current);
       const snap = getCompletionState(view);
+      applyTabConsumeMarker();
       onTypeaheadChangeRef.current?.(
         snap.active,
         snap.filtered,
@@ -2186,6 +2211,7 @@ function CompletionOverlay({
     return () => {
       unsubscribe();
       resizeObserver?.disconnect();
+      view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
     };
     // `view` is the externally-changing input; the refs are stable
     // for the component's lifetime by construction. Re-running on
