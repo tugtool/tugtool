@@ -329,10 +329,14 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 - Dovetails with the CFRunLoop focus-mode stack ([P03]): a mode already scopes Tab; extending it to carry `defaultAction` + `cancelAction` makes Return/Escape resolve against the current mode for free, and removes the need for any default-button element stack.
 
 **Implications:**
-- Each focus mode (and the base/pane context) declares `defaultAction` and `cancelAction`; a pipeline stage routes Return → default and Escape/⌘. → cancel **against the active mode**, not the key view.
-- **Text-context precedence** (same shape as Tab/[Q02]): when the key view is a text surface that owns Return (newline/submit) or Escape (dismiss completion), it claims the key first; otherwise the key falls through to the scope action.
-- **Scoping (resolves F4):** modal scopes own these via the mode stack; a non-modal pane resolves default/cancel via the chain walk from the first responder's pane — not the global base mode.
-- New actions `TUG_ACTIONS.DEFAULT_ACTION` and `CANCEL_ACTION`; the existing Escape/⌘. → `CANCEL_DIALOG` bindings fold into `cancel-action`. The CTA button keeps `control-…-filled-action` (blue) and registers itself as its scope's default-action affordance.
+- A scope **declares** `defaultAction` / `cancelAction` by registering ordinary chain-action handlers (`DEFAULT_ACTION` / `CANCEL_ACTION`) on its responder. For a non-modal scope that responder is the **pane's card / card-content responder**, not the pane chrome ([L09]) — "pane declares" is shorthand for "the card of that pane declares."
+- **Dispatch origin is the scope anchor, never the key view (G1, load-bearing).** A commit key resolves via `sendToTarget(anchorId, …)` — `anchorId` is the **active modal mode's anchor responder** (modal) or the **originating pane's card responder** (non-modal). It is **never** `sendToFirstResponder`. The key view (or keydown event target) is used *only* to pick the **originating pane** — exactly as today's `peekDefaultButtonInScope` walks the first responder's `.tug-pane`. After that, resolution is at the pane/mode scope, not the leaf responder. Dispatching from the key view would reintroduce the historical cross-pane `Return` bug (a `Return` in pane A pressing pane B's default).
+- **Cancel ladder (G2).** `Escape`/`⌘.` resolve in priority order: (1) top focus-mode `cancelAction` (an open popover/sheet/menu cancels first); (2) **drag-cancel** — `card-drag-coordinator.ts`'s document-level Escape listener stays *outside* the mode stack and keeps winning over card-level cancel; (3) the originating pane's `cancelAction` — e.g. the dev-card in-flight **interrupt** (`codeSessionStore.interrupt()`), which becomes the pane card's `cancelAction` when no modal mode is active. The fold of the old `CANCEL_DIALOG` binding must preserve this ladder, not flatten it.
+- **Return precedence migrates the editor's existing defer (G3).** `keymap.ts` already takes `returnAction: "submit" | "newline"` + a `peekDefaultButton` callback and defers `Return` to the default button when configured `submit`. Migrate that `peekDefaultButton` defer to a `default-action` dispatch (origin = the editor's pane scope), preserving `returnAction` / `numpadEnterAction` / forced-`Cmd-Enter`. An editor configured `newline` keeps `Return`; one configured `submit`-with-defer falls through to the scope `default-action`. This is one mechanism, not a parallel precedence.
+- **Text-context precedence** (same shape as Tab/[Q02]): when the key view is a text surface that owns `Return` (newline/submit) or `Escape` (dismiss completion), it claims the key first; otherwise the key falls through to the scope action per G1.
+- **Empty cases (G4).** No active scope, or a scope that declares no default/cancel → silent no-op, suppress the macOS beep. An unfocused `Return` resolves against the **deck's focused pane** (global fallback in gallery/standalone, matching today's `peekDefaultButton` fallback).
+- **Scoping (resolves F4):** modal scopes own these via the mode stack; a non-modal pane resolves default/cancel via the scope-anchored dispatch above — not the global base mode.
+- New actions `TUG_ACTIONS.DEFAULT_ACTION` and `CANCEL_ACTION`; the existing Escape/⌘. → `CANCEL_DIALOG` bindings fold into `cancel-action` (preserving the G2 ladder). The CTA button keeps `control-…-filled-action` (blue) and registers itself as its scope's default-action affordance.
 - Supersedes [P07]'s element-stack mechanism: there is no default-button registry; the scope declares an action and the blue CTA is its visual.
 
 ---
@@ -366,7 +370,7 @@ This gives nesting (a popover inside a sheet pushes a mode atop the sheet's), an
 - **Radix-focus components to tame (~14):** radio-group, accordion, switch, popover, slider, checkbox, context-menu, tab-bar, sheet, alert, tooltip, label, internal/tug-button, internal/tug-popup-menu.
 - **Per-component focus-ring rules to delete:** checkbox, option-group, input, dialog-button, inline-dialog, cue, tab-bar, choice-group, list-row, textarea, value-input, code-view, markdown-view, slider, menu, prompt-entry, split-pane, hue-strip, popover.
 - **Selection-token recolor sites:** list-row, menu, editor-context-menu, list-view (the `selected`/`highlighted` surfaces → accent). **Excluded from recolor:** `surface-selection-primary-normal-plain-*` (text/character selection: code-view, markdown-view, text-editor, `::highlight(card-selection)`) stays blue; `control-…-filled-action` stays blue for the CTA/activation use ([P06], [P12]). `control-filled-action` is *shared* (CTA fill + menu transient) — only the menu *selection* use moves to the accent token.
-- **Default-button sites:** `internal/tug-button.tsx`, `responder-chain-provider.tsx` (Stage 2), `responder-chain.ts` (stack), `tug-text-editor.tsx` + `tug-text-editor/keymap.ts` (submit-Enter defer), `cards/gallery-default-button.tsx`, `chrome/dev-question-dialog.tsx`.
+- **Commit-key sites (default-action / cancel-action):** `internal/tug-button.tsx`, `responder-chain-provider.tsx` (Stage 2), `responder-chain.ts` (stack), `tug-text-editor.tsx` + `tug-text-editor/keymap.ts` (`peekDefaultButton` submit-Enter defer — G3), `cards/gallery-default-button.tsx`, `chrome/dev-question-dialog.tsx`. **Escape-ladder consumers to reconcile (G2):** `card-drag-coordinator.ts` (document-level drag-cancel Escape listener, kept), `cards/dev-card.tsx` (in-flight interrupt → pane card `cancelAction`), and the `keybinding-map.ts` Escape/⌘. → `CANCEL_DIALOG` entries (fold into `cancel-action`).
 
 #### Dynamic keybinding resolution {#keybinding-registry}
 
@@ -1043,21 +1047,24 @@ useKeybindings([
 **References:** [P12] semantic keys, [P07] default-action (superseded), [P03] traps, [Q02] text-context precedence, (#affected-inventory, #cfrunloop-model)
 
 **Artifacts:**
-- `DEFAULT_ACTION` + `CANCEL_ACTION` actions; each focus mode / pane declares `defaultAction` + `cancelAction`; a pipeline stage routes Return → default and Escape/⌘. → cancel against the active mode (text-context precedence first); deletion of `pushDefaultButton`/`popDefaultButton`/`peekDefaultButton*` and the `defaultButton` prop.
+- `DEFAULT_ACTION` + `CANCEL_ACTION` actions; each focus mode (and each non-modal pane's card responder) declares `defaultAction` + `cancelAction` by registering those handlers; a pipeline stage routes Return → default and Escape/⌘. → cancel **via `sendToTarget` to the active scope anchor** (text-context precedence first); deletion of `pushDefaultButton`/`popDefaultButton`/`peekDefaultButton*` and the `defaultButton` prop.
 
 **Tasks:**
-- [ ] Add `DEFAULT_ACTION` / `CANCEL_ACTION`; modes (`TugSheet`, `TugAlert`, `TugConfirmPopover`) and non-modal panes declare default/cancel on their scope.
-- [ ] Route Return → default-action and Escape/⌘. → cancel-action against the active focus mode; non-modal resolves via the chain walk from the first responder's pane ([P12], resolves F4).
-- [ ] Text-context precedence: editors keep Return (newline/submit) and Escape (dismiss completion) when the key view owns them; otherwise the key falls through to the scope action ([Q02] pattern).
-- [ ] Fold the existing Escape/⌘. → `CANCEL_DIALOG` bindings into `cancel-action`; keep the CTA button's blue `control-…-filled-action` as its default-action affordance ([P12]).
+- [ ] Add `DEFAULT_ACTION` / `CANCEL_ACTION`; modes (`TugSheet`, `TugAlert`, `TugConfirmPopover`) and non-modal **pane card responders** (`[L09]`: the card, not the pane chrome) declare default/cancel by registering the handlers.
+- [ ] **G1 — dispatch origin:** route Return/Escape/⌘. via `sendToTarget(anchorId, …)` where `anchorId` is the active modal mode's anchor (modal) or the originating pane's card responder (non-modal); **never `sendToFirstResponder`**. The key view / event target selects only the originating pane (via its `.tug-pane`, like `peekDefaultButtonInScope`); resolution is at the pane/mode scope, not the leaf responder ([P12], resolves F4 + cross-pane regression).
+- [ ] **G2 — cancel ladder:** preserve priority `top focus-mode cancelAction → drag-cancel (card-drag-coordinator's Escape listener, kept outside the mode stack) → originating-pane cancelAction`; confirm the dev-card interrupt (`codeSessionStore.interrupt()`) becomes the pane card's `cancelAction` when no modal mode is active.
+- [ ] **G3 — editor Return defer:** migrate `keymap.ts`'s existing `peekDefaultButton` defer to a `default-action` dispatch (origin = editor's pane scope), preserving `returnAction`/`numpadEnterAction`/forced-`Cmd-Enter`. `newline` editors keep Return; `submit`-with-defer editors fall through to scope `default-action`. One mechanism, not a parallel precedence ([Q02]).
+- [ ] **G4 — empty cases:** no active scope / no declared action → silent no-op, suppress the beep; unfocused Return resolves against the deck's focused pane (global fallback in gallery/standalone).
+- [ ] Fold the existing Escape/⌘. → `CANCEL_DIALOG` bindings into `cancel-action` (preserving the G2 ladder); keep the CTA button's blue `control-…-filled-action` as its default-action affordance ([P12]).
 - [ ] Delete the default-button stack API + `defaultButton` prop; update `tug-text-editor`/`keymap.ts` submit-Enter defer and `gallery-default-button.tsx`, `dev-question-dialog.tsx`.
 
 **Tests:**
-- [ ] app-test: arrow-navigate a list in a sheet, press Return → the sheet's default action fires (focus need not move to OK); Escape/⌘. cancels; cross-pane Return does not fire another pane's default.
-- [ ] app-test: Return in a focused text editor still submits/newlines per its config (precedence holds).
+- [ ] app-test: arrow-navigate a list in a sheet, press Return → the sheet's default action fires (focus need not move to OK); Escape/⌘. cancels; **cross-pane Return in pane A does not fire pane B's default** (G1).
+- [ ] app-test: Return in a focused text editor still submits/newlines per its config (G3 precedence holds).
+- [ ] app-test: **Escape ladder** — Escape dismisses an open popover first; with a drag in progress Escape cancels the drag (not the card); with neither, Escape fires the pane's cancel/interrupt (G2).
 
 **Checkpoint:**
-- [ ] grep for `pushDefaultButton|peekDefaultButton|defaultButton` returns nothing; `just app-test` commit-keys scenario `VERDICT: PASS`.
+- [ ] grep for `pushDefaultButton|peekDefaultButton|defaultButton` returns nothing; grep confirms commit-key dispatch uses `sendToTarget`, not `sendToFirstResponder`; `just app-test` commit-keys scenario `VERDICT: PASS`.
 
 #### Step 24: First-responder + `refuse` audit & reclassification {#step-24}
 
