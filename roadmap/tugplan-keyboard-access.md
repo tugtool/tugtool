@@ -31,7 +31,7 @@ This phase names the three axes, builds an app-owned **focus engine** (a "key vi
 - **Model floating-surface focus traps on CFRunLoop modes.** The FocusManager holds a **stack of focus modes (scopes)**; the Tab walk only services focusables registered in the currently-active mode. Opening a sheet/alert/popover/menu/completion pushes a trapped mode; dismissing pops it. This subsumes the old default-button LIFO scoping. See [CFRunLoop mode model](#cfrunloop-model).
 - **App-owned Tab walk, not native tabindex.** Intercept Tab / Shift-Tab as `focus-next` / `focus-previous` chain actions and advance the key view via the registry, honoring authored **order/group** and per-component **policy** (`accept` / `skip`). Text editors declare a transient "I consume Tab now" state (open completion / typeahead) that takes precedence.
 - **Tame Radix, don't replace it.** Disable Radix focus management per primitive and drive focus from the FocusManager; modal trapping becomes a FocusManager scope, so there is one trap implementation.
-- **One focus ring.** A single `--tugx-focus-ring` token (action/blue, one width, one offset, `outline`-based) painting **one ring on the keyboard-active control** — shown on keyboard focus, never on a mouse click. It is the live "Return acts here" affordance ([P12]); there is **no** separate always-on marker (`filled+action` carries the standing default-button identity). Delete every per-component ring rule.
+- **One focus ring.** A single `--tugx-focus-ring` token (action/blue, one width, one offset, `outline`-based) painting **one ring on the keyboard-active control** — shown on keyboard focus, never on a mouse click. It is the live **commit-key** affordance — the keyboard-active control it marks gets first claim on Return / Escape / ⌘. ([P12]); there is **no** separate always-on marker (`filled+action` carries the standing default-button identity). Delete every per-component ring rule.
 - **Flip the color contract.** Re-point selection/selected/highlighted surfaces from blue to accent/orange across list rows, menus, popovers, and tab bars; reserve action/blue for focus. Validate with the token contrast audit.
 - **Audit last.** Reclassify every first-responder / `refuse` site against the named axes once the engine exists, and finish with the accessibility-mode ARIA pass and the dual mode toggle (in-app setting + Swift host menu).
 
@@ -224,7 +224,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 #### [P05] One focus ring on the keyboard-active control (DECIDED; revised in [#step-9]) {#p05-focus-ring}
 
-**Decision:** A single `--tugx-focus-ring` token set (color = action/blue, **1px**, one offset, `outline`-based, clipping to `border-radius`) painting **one ring on the keyboard-active control** — the control the keyboard is currently driving. It shows on **keyboard** focus and **never on a mouse click**. There is **no** separate always-on key-view marker. The ring is the live **"Return acts here"** affordance ([P12]); `filled+action` is the standing *identity* of the primary/default button (the ring's home base), not the live Return signal.
+**Decision:** A single `--tugx-focus-ring` token set (color = action/blue, **1px**, one offset, `outline`-based, clipping to `border-radius`) painting **one ring on the keyboard-active control** — the control the keyboard is currently driving. It shows on **keyboard** focus and **never on a mouse click**. There is **no** separate always-on key-view marker. The ring is the live **commit-key** affordance — the keyboard-active control it marks gets first claim on Return / Escape / ⌘. ([P12]); `filled+action` is the standing *identity* of the primary/default button (the ring's home base), not the live signal.
 
 **Two triggers, one ring:**
 - `:focus-visible` — the browser's keyboard-focus heuristic, for native and Radix-managed controls.
@@ -318,14 +318,16 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ---
 
-#### [P12] Semantic commit keys; the ring owns Return (DECIDED; revised in [#step-9]) {#p12-semantic-keys}
+#### [P12] Semantic commit keys; the keyboard-active control owns the commit keys (DECIDED; revised in [#step-9]) {#p12-semantic-keys}
 
-**Decision:** **Return**, **Escape**, **⌘.** are *semantic commit keys*, and the activation model is:
+**Decision:** **Return**, **Escape**, **⌘.** are *semantic commit keys*. The unifying rule: **the keyboard-active control (the one wearing the focus ring) gets first claim on all three.** What "unclaimed" delegates to differs per key, but the claim-first half is identical.
 
-- **The keyboard-active control (the one wearing the focus ring) owns Return.** A control that *claims* Return handles it — a **button** (including the default) **activates**; a **multiline editor** inserts a **newline**. A control that does **not** claim Return — a checkbox, radio, list, single-line field — **delegates** it to the active scope's declared **default action**. (So arrow-navigating a list and pressing Return still submits, via delegation — the Cocoa default-button behavior — while a Tab to *Cancel* makes Return fire Cancel.)
-- **Space activates the keyboard-active control** — the universal "operate this" (toggle a checkbox, select a radio, open a popup button, click a button). Return never substitutes for Space on a non-button control.
-- **Escape / ⌘.** resolve to the scope's **cancel action**.
-- **The ring is the definitive Return affordance.** A surface **seeds the ring to its declared default button on open** ([P07]), so the default is the Tab anchor and Return fires it until the keyboard moves. **Once you Tab, you have taken control of Return** — to fire the default by keyboard you Tab (back) to it. The **mouse never moves the ring off the default** (mouse focus is not keyboard-active), so no amount of clicking can disarm it. `filled+action` is the default button's *standing identity* (the ring's home base), **not** the live Return signal — that is the ring.
+- **Return.** A control that *claims* it handles it — a **button** (including the default) **activates**; a **multiline editor** inserts a **newline**. Unclaimed — a checkbox, radio, list, single-line field — it **delegates to the active scope's declared default action**. (So arrow-navigating a list and pressing Return still submits, via delegation — the Cocoa default-button behavior — while a Tab to *Cancel* makes Return fire Cancel.)
+- **Escape / ⌘. (symmetric with Return on the claim half).** A control that *claims* it handles it — a **text editor dismisses its open completion**, a self-managing surface backs out its own transient state. Unclaimed, Escape/⌘. **delegate to the cancel ladder** (G2): the **top focus-mode's cancelAction** first (an open menu/popover/sheet dismisses, no commit), then drag-cancel, then the originating pane's cancelAction. The claim-first order is load-bearing: an editor with an open completion inside a sheet dismisses the *completion* on the first Escape and closes the *sheet* on the second — because the keyboard-active control gets first crack before the ladder.
+- **Space activates the keyboard-active control** — the universal "operate this" (toggle a checkbox, select a radio, open a popup button, click a button). Space always belongs to the keyboard-active control and never delegates. Return never substitutes for Space on a non-button control.
+- **The ring is the definitive commit-key affordance.** A surface **seeds the ring to its declared default button on open** ([P07]), so the default is the Tab anchor and Return fires it until the keyboard moves. **Once you Tab, you have taken control of the commit keys** — to fire the default by keyboard you Tab (back) to it. The **mouse never moves the ring off the default** (mouse focus is not keyboard-active), so no amount of clicking can disarm it. `filled+action` is the default button's *standing identity* (the ring's home base), **not** the live signal — that is the ring.
+
+**Worked example (popup button + Escape).** Tab to a `TugPopupButton` → ring on it. **Return** (button claims) opens its menu, which pushes a **trapped focus mode** carrying a `cancelAction`. **Arrows** move the highlight (no commit — the popup's value changes only on Return/Space on an item). **Escape** → cancel ladder → the menu mode's `cancelAction` dismisses it with **no commit**; focus returns to the popup button (ring intact), the prior value unchanged. The keyboard-active surface (the open menu) is also the top mode, so claim and ladder converge — no conflict.
 
 **Rationale:**
 - A user arrow-navigating a list inside a sheet must be able to press Return to submit without moving focus to "OK." Delegation (a non-claiming control sends Return to the scope default) delivers exactly that, while a focused button claiming Return delivers the equally-universal "Enter on a focused button activates *it*." One model covers both.
@@ -445,7 +447,7 @@ useKeybindings([
 - **Key view** — the single element (or none) that receives keystrokes; carries `data-key-view`.
 - **Focusable** — an element registered via `useFocusable` with a group, order, and policy.
 - **Focus mode (scope)** — a stack entry; only its focusables participate in the Tab walk while it is current.
-- **Focus ring** — one blue ring on the keyboard-active control, shown on keyboard focus only (never on a click); the live "Return acts here" affordance.
+- **Focus ring** — one blue ring on the keyboard-active control, shown on keyboard focus only (never on a click); the live commit-key affordance (the marked control gets first claim on Return / Escape / ⌘.).
 - **`policy`** — `accept` (in the standard-mode walk) | `skip` (pointer-focusable, excluded from standard walk, included in accessibility).
 
 #### Modes / Policies {#modes-policies}
@@ -1177,7 +1179,7 @@ useKeybindings([
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** An app-owned focus engine with a single keyboard key view ringed on keyboard focus, app-authored two-mode Tab navigation with CFRunLoop-style floating-surface traps, a dynamic context-scoped keybinding registry, a single crisp focus-ring primitive (the ring owns Return), the accent=selection / action=focus color contract, a retired default-button stack, and an audited first-responder/refuse model — Radix tamed, accessibility mode in-app and AT-ready.
+**Deliverable:** An app-owned focus engine with a single keyboard key view ringed on keyboard focus, app-authored two-mode Tab navigation with CFRunLoop-style floating-surface traps, a dynamic context-scoped keybinding registry, a single crisp focus-ring primitive (the ring marks the control that owns the commit keys), the accent=selection / action=focus color contract, a retired default-button stack, and an audited first-responder/refuse model — Radix tamed, accessibility mode in-app and AT-ready.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 

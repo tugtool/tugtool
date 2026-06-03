@@ -145,7 +145,7 @@ body {
   --tug7-element-global-fill-normal-accentSubtle-rest: --tug-color(orange, t: 45, a: 10);
 
   /* Focus ring — the single app-owned ring on the keyboard-active control, the
-     live "Return acts here" affordance ([P12]). action/blue is the
+     live commit-key affordance ([P12]). action/blue is the
      keyboard-active axis. One width, one offset, outline-based so it follows
      border-radius on WebKit; the active-tone reference carries harmony's own
      blue so each theme tunes it via its own value. */

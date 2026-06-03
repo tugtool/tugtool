@@ -8,13 +8,15 @@
  * tokens authored in the theme files (brio.css / harmony.css), so the color is
  * theme-aware and tuned from one place.
  *
- * **The ring is the definitive "Return acts here" affordance** ([P12]). The
- * keyboard-active control is also the live target of Return: a surface seeds
- * the ring to its declared default button on open ([P07]), Tab moves it, and a
- * focused button claims Return while it holds the ring. `filled+action` is the
- * standing *identity* of the primary button (the ring's home base), not the
- * live Return signal — so a Tab to a non-default button moves the ring (and
- * Return) onto it, while the unfocused primary keeps only its fill.
+ * **The ring is the definitive commit-key affordance** ([P12]): the
+ * keyboard-active control it marks gets first claim on Return, Escape, and ⌘.
+ * (unclaimed, Return delegates to the scope default, Escape/⌘. to the cancel
+ * ladder). A surface seeds the ring to its declared default button on open
+ * ([P07]), Tab moves it, and a focused button claims Return while it holds the
+ * ring. `filled+action` is the standing *identity* of the primary button (the
+ * ring's home base), not the live signal — so a Tab to a non-default button
+ * moves the ring (and the commit keys) onto it, while the unfocused primary
+ * keeps only its fill.
  *
  * It shows on **keyboard** focus, never on a mouse click — a click leaves no
  * ring, and the mouse never moves the ring off the default ([P12]). action/blue,
