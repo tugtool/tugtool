@@ -160,6 +160,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 - **Risk:** Disabling Radix focus management in a primitive removes a behavior (focus trap, roving arrows, Escape close) the FocusManager hasn't yet supplied.
 - **Mitigation:** Per-component, behind app-test coverage; the FocusManager's mode scopes ([#cfrunloop-model]) provide trapping before Radix's is removed; arrows stay component-local.
 - **Residual risk:** Subtle WebKit focus-restore timing in portaled surfaces may still need `safari-focus-shift`-style patches.
+- **⚠ Watch — `data-key-view-kbd` ring flag vs. chain re-seed (latent since [#step-9]).** The focus ring on engine-driven keyboard focus rides `data-key-view-kbd`, which `FocusManager.setKeyView(id, keyboard=true)` stamps from the Tab walk. But `focusKeyView()` calls `el.focus()`, whose `focusin` runs the provider's promotion path → if the focused element is a responder, the chain re-seeds the key view via `setKeyView(id, /*keyboard*/false)`, **clearing `-kbd` and dropping the ring on landing.** It does **not** bite today because every engine-walked focusable so far carries `data-tug-focus="refuse"` (buttons, `TugCheckbox`, the toggles) and `refuse` makes `promoteOnFocusIn` bail before any re-seed. **The first time a *non-`refuse`* focusable that is also a responder is engine-walked** (a roving composite or a text editor, later steps), the ring can blink off — fix it then, against a real app-test: make the chain re-seed preserve the current keyboard modality when the key-view id is unchanged (or have `focusKeyView` suppress the loop). Do not fix speculatively; just don't rediscover it.
 
 **Risk R02: Tab overload regressions** {#r02-tab-overload}
 
@@ -556,10 +557,10 @@ useKeybindings([
 | #step-3 | Tab pipeline: focus-next/previous + editor precedence | done | 188a976e |
 | #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | 662bca98 |
 | #step-5 | Dynamic context-scoped keybinding registry | done | 03a08ab5 |
-| #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done | — |
-| #step-7 | Recolor UI-selection → accent/orange | done | — |
-| #step-8 | Confine blue to the keyboard-active axis | done | — |
-| #step-9 | Tame internal/tug-button (base control focus) | done | — |
+| #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done | 1575f73f |
+| #step-7 | Recolor UI-selection → accent/orange | done | 889a5e1d |
+| #step-8 | Confine blue to the keyboard-active axis | done | 8a2a2ec4 |
+| #step-9 | Tame internal/tug-button (base control focus) | done | 7ca484af |
 | #step-10 | Tame TugCheckbox | pending | — |
 | #step-11 | Tame TugSwitch | pending | — |
 | #step-12 | Tame TugSlider | pending | — |
