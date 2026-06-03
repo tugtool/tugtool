@@ -358,6 +358,19 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 - The dialog's buttons (`TugDialogButton` / `TugPushButton`) take no-steal-on-click + an explicit Tab policy from the `refuse` split ([P10], [#step-24]); the `options` radio group is a single roving focus stop (the `tug-option-group` pattern, [P02]).
 - Distinct from a floating surface: no `useFocusTrap`, no `data-key-view` move to the dialog, no Tab cycling within it. The mode is a *scope*, not a *trap*. The session's `pushInteractive`/`popInteractive` stack (the request queue) stays the source of truth for *which* dialog is pending; the focus mode is pushed/popped in lockstep with it.
 
+#### [P14] `role="action"` controls keep the blue "active" on/selected tone (DECIDED) {#p14-action-role-blue}
+
+**Decision:** The accent-vs-blue contract ([P06]) governs **generic UI selection** — the chosen item in lists, menus, trees/tables, and the default/accent-role toggles, radios, and options — which is now orange. It does **not** override the **role-based control tone system**: a control carrying `role="action"` (mapped by `ROLE_TOKEN_MAP` to the `active` token suffix) keeps its **blue** on/selected fill — switches, checkboxes, radios, and choice-mode `TugDialogButton` (which defaults to `role="action"`). Blue there reads as the **active-role** semantic, a sibling of the focus ring and the `filled-action` CTA, not as generic selection. `role="danger"` likewise keeps red; `role="accent"` / default is orange.
+
+**Rationale:**
+- The role tone system is a deliberate, systematic mapping (role → token suffix) shared across checkbox/switch/radio/option/choice. Recoloring `action`→orange would erase the action-vs-accent distinction on these controls and diverge them from the rest of the role family for no contract win: these are *role-typed controls*, not the generic "selected item in a collection" surfaces [P06] set out to disambiguate.
+- The genuine selected-vs-focused legibility problem [P06] names is already solved where it bites — list rows, menus, trees/tables now paint orange and take the blue focus ring, so a selected-and-focused row reads as both (pinned by `at0111`).
+- An action-role choice that is *selected and focused* shows blue fill + blue ring, but that pairing is rare, role-scoped, and acceptable as the action semantic; making every action-role on-state orange is a larger redesign than the contract requires. (Revisit per-control if it proves confusing in practice.)
+
+**Implications:**
+- No recolor of `toggle-primary-…-active`, the `tug-dialog-button` `action`/default selection fills, or `ROLE_TOKEN_MAP` in this phase. The Step 8 sweep treats these as the intended active-role tone, not blue-as-selection remnants.
+- Blue's "single sharp meaning" from [P06] is scoped to *generic* surfaces + the keyboard-active axis; role-typed control tones (action/blue, danger/red, accent/orange) are an orthogonal, pre-existing axis that stands.
+
 ---
 
 ### Deep Dives (Optional) {#deep-dives}
@@ -540,7 +553,7 @@ useKeybindings([
 | #step-5 | Dynamic context-scoped keybinding registry | done | 03a08ab5 |
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done | — |
 | #step-7 | Recolor UI-selection → accent/orange | done | — |
-| #step-8 | Confine blue to the keyboard-active axis | pending | — |
+| #step-8 | Confine blue to the keyboard-active axis | done | — |
 | #step-9 | Tame internal/tug-button (base control focus) | pending | — |
 | #step-10 | Tame TugCheckbox | pending | — |
 | #step-11 | Tame TugSwitch | pending | — |
@@ -733,14 +746,14 @@ useKeybindings([
 - Blue removed from *selection* usages (now orange); blue retained for the focus ring and the default-action (CTA) affordance.
 
 **Tasks:**
-- [ ] Sweep for blue-as-*selection* remnants; ensure blue surfaces are only the focus ring and the `filled-action` CTA/default-action.
-- [ ] Verify a selected-and-focused row reads orange fill + blue ring; a default CTA button stays blue.
+- [x] Sweep for blue-as-*selection* remnants; ensure blue surfaces are only the focus ring and the `filled-action` CTA/default-action. Swept every blue token in both themes: generic UI selection (`selection-primary-selected`, `control-normal-selected/highlighted`, menus, tree/table) is orange from [#step-7]; the remaining blues are the focus ring (`tone-active`), the `filled-action`/outlined/ghost/tinted action controls, focused-field borders, links, syntax/ANSI, drag-drop/inspector/snap overlays, and text/character selection — including editor atoms (`getAtomsInRange` scopes them to the character-selection range, so blue is correct per [L12]). No generic blue-as-selection remnant remained. The `role="action"` control tone (blue `active` for switches/checkboxes/radios/choice `TugDialogButton`) is retained by design — see [P14].
+- [x] Verify a selected-and-focused row reads orange fill + blue ring; a default CTA button stays blue. Verified by token resolution: `--tugx-list-row-selected-bg` (selected fill) = orange, `--tugx-focus-ring-color` (ring) = blue, `filled-action-rest` (CTA) = blue, with the selection/focus hues >100° apart.
 
 **Tests:**
-- [ ] app-test: selected+focused row carries both tokens distinguishably; the CTA button remains blue.
+- [x] app-test: selected+focused row carries both tokens distinguishably; the CTA button remains blue. `at0111-blue-keyboard-active` — selected fill orange (hue ~55), focus ring + CTA blue (hue ~230), |Δhue| > 100. PASS.
 
 **Checkpoint:**
-- [ ] `bun run audit:tokens pairings` clean; visual check both themes.
+- [x] `bun run audit:tokens pairings` clean; visual check both themes. `audit:tokens pairings` EXIT=0; `tsc --noEmit` clean. No theme recolor was needed ([#step-7] already moved generic selection to orange; [P14] keeps role=action blue), so this step is the sweep confirmation + `at0111` + the new [P14] decision.
 
 > **Steps 9–22 — Radix taming, one primitive per step.** Each disables the
 > primitive's borrowed Radix focus management and drives focus from the engine, behind

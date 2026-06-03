@@ -198,14 +198,17 @@ body {
   --tug7-element-selection-text-normal-plain-rest: --tug-color(indigo, i: 4, t: 8);
   --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(sapphire-cobalt, i: 8, t: 80, a: 30);
   --tug7-surface-selection-primary-normal-plain-rest: --tug-color(blue, i: 50, t: 50, a: 40);
-  /* UI selection (role `selected`) — accent/orange marks the chosen item, the
-     one shared selection surface for list rows and the menus' transient item
-     highlight. The orange keeps the old blue's intensity/tone so white selected
-     text stays legible on the fill in this light theme; only the hue changed,
-     separating selection (orange) from the keyboard-active axis (blue).
-     Text/character selection (`plain`, above) stays blue. */
+  /* UI selection — accent/orange marks the chosen item, separating selection
+     (orange) from the keyboard-active axis (blue). Two intensities for two
+     contexts: `selected` is the vibrant fill for a *transient*, small target
+     (the menus' highlighted item); `quiet` is the calmer cousin for a
+     *persistent*, large fill (list/flush rows) where the vibrant orange would
+     glare. Both carry white selected text, legible on the fill in this light
+     theme. Text/character selection (`plain`, above) stays blue. */
   --tug7-surface-selection-primary-normal-selected-rest: --tug-color(orange, i: 64, t: 44);
   --tug7-surface-selection-primary-normal-selected-hover: --tug-color(orange, i: 70, t: 41);
+  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(orange, i: 55, t: 42);
+  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(orange, i: 56, t: 39);
   --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, i: 3, t: 100);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind

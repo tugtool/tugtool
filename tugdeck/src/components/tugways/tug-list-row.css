@@ -85,17 +85,15 @@ body {
   --tugx-list-row-pill-hover-bg:     var(--tug7-surface-control-primary-outlined-action-hover);
   --tugx-list-row-pill-hover-border: var(--tug7-element-control-border-outlined-action-hover);
 
-  /* Selection ramp — the list row owns the `selection` component's
-     `selected` role: the same accent blue the popup menus highlight with,
-     toned a step down in intensity because a row selection sits there
-     persistently (a menu highlight only flashes for one interaction, so
-     it can be hotter). `-hover` steps back up toward the menu intensity.
-     Distinct from the `selection ... plain` family (the caret
-     text-selection highlight in editor / code / markdown / pane) and from
-     the menus' `control ... filled-action` transient highlight.
-     [L17] one-hop aliases. */
-  --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-selected-rest);
-  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-selected-hover);
+  /* Selection ramp — the list row uses the `selection` component's accent
+     orange in its calmer `quiet` intensity: a row selection sits there
+     persistently across a large fill, so the vibrant `selected` orange (which
+     the popup menus use for their small, transient highlight) would glare.
+     `-hover` steps up within the quiet ramp. Distinct from the `selection ...
+     plain` family (the caret text-selection highlight in editor / code /
+     markdown / pane). [L17] one-hop aliases. */
+  --tugx-list-row-selected-bg:            var(--tug7-surface-selection-primary-normal-quiet-rest);
+  --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-quiet-hover);
   --tugx-list-row-selected-text:          var(--tug7-element-selection-text-normal-selected-rest);
   --tugx-list-row-selected-accent-border: var(--tug7-element-tone-border-normal-accent-rest);
   --tugx-list-row-accent-border-width:    1.5px;
