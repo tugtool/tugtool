@@ -24,22 +24,44 @@
  * element's `border-radius` on WebKit, so no per-component radius bookkeeping is
  * needed.
  *
- * Two triggers, one ring:
- *  - `:focus-visible` — the browser's keyboard-focus heuristic, for native and
- *    Radix-managed controls (still the bulk of the app mid-migration).
- *  - `[data-key-view-kbd]` — the focus engine's own signal that it moved the key
- *    view by keyboard (the Tab walk / surface entry). WebKit does not reliably
- *    grant `:focus-visible` to a programmatic `.focus()`, so the engine marks
- *    its keyboard navigation itself rather than depending on the browser. (A
- *    pointer-reached key view carries `data-key-view` without `-kbd`, so a click
- *    never rings.)
+ * **One trigger: `[data-key-view-kbd]`** — the focus engine's own signal that it
+ * moved the key view by keyboard (the Tab walk, surface entry, default-seed on
+ * open, arrow-roving within a group). A pointer-reached key view carries
+ * `data-key-view` *without* `-kbd`, so a click never rings.
+ *
+ * `:focus-visible` is deliberately **not** a trigger ([P05] revised). The
+ * browser's heuristic is unreliable in both directions for the engine's purpose:
+ * WebKit withholds it from a programmatic `.focus()` (the reason the engine marks
+ * its own keyboard navigation), and — worse — WebKit *grants* it to native form
+ * controls (`<button>` checkbox/switch/radio, `<input>`, `<a>`) on a plain mouse
+ * **click**, which would paint a ring on a clicked control and split native vs.
+ * custom controls (a leaked implementation detail). The engine's
+ * `data-key-view-kbd` is modality-accurate and native-agnostic, so the ring is
+ * driven by it alone — which also makes the ring *truthful*: it marks exactly the
+ * control the engine routes the commit keys to ([P12]), never a control WebKit
+ * merely focused. The cost is that the ring's coverage equals the engine's: an
+ * element rings on keyboard focus only when it is a registered focusable or a
+ * responder the engine tracks as key view — the audit/ARIA steps close the long
+ * tail (links, arbitrary focusable content).
+ *
+ * Because the engine owns the ring, the browser's own focus outline is
+ * suppressed (`:focus-visible { outline: none }`) — otherwise WebKit's native
+ * ring would paint on a mouse-clicked control (it matches `:focus-visible` on
+ * native form controls even on click) and double-up with ours on keyboard
+ * focus. The engine's `[data-key-view-kbd]` rule is authored last so it wins on
+ * equal specificity when a keyboard-focused control is both `:focus-visible` and
+ * key-view-kbd. A component that wants its own focus affordance overrides with a
+ * higher-specificity rule (e.g. `.foo:focus-visible`).
  *
  * Surfaces that are their own focus affordance (a portalled popover container,
  * a cropped in-sheet tab bar, a caret-bearing text editor) keep their existing
  * higher-specificity `outline: none` and are unaffected.
  */
 
-:focus-visible,
+:focus-visible {
+  outline: none;
+}
+
 [data-key-view-kbd] {
   outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
   outline-offset: var(--tugx-focus-ring-offset);

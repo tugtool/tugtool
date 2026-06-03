@@ -129,6 +129,90 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   return { focusableRef };
 }
 
+// ---- useRovingFocusable ----
+
+export interface UseRovingFocusableResult {
+  /**
+   * Point the group's single focusable at the member that currently holds
+   * roving focus (the `tabIndex=0` element), or `null`. Moves the engine's
+   * `data-tug-focusable` onto it and, when the group holds the key view,
+   * re-projects the ring onto it. Pass `keyboard: true` for arrow-roving (the
+   * ring follows the arrows), `false` for a pointer-driven move within the group
+   * (the ring clears), or omit to preserve the current modality. Call it
+   * whenever the roved member changes.
+   */
+  setRovedElement: (el: Element | null, keyboard?: boolean) => void;
+}
+
+/**
+ * Register a **roving group** as a single stop in the Tab walk. Where
+ * `useFocusable` projects the key view onto one fixed element, a roving group
+ * (tab bar, radio / option / choice group, accordion, list) is one Tab stop
+ * whose *projected element* moves under arrow navigation. The group registers
+ * one focusable id; `setRovedElement` carries that id's `data-tug-focusable`
+ * (and, when the group holds the key view, the focus ring) onto whichever member
+ * currently has roving focus, via the manager's `refreshKeyViewProjection`.
+ *
+ * Tolerant by design like `useFocusable` ([L26]): a silent no-op outside a
+ * `FocusManagerContext`. Registration runs in `useLayoutEffect` ([L03]) so the
+ * focusable is in the registry before any Tab handler walks it. The ring
+ * tracking is pure DOM mutation through the manager — no React state, no
+ * re-render ([L06] appearance via DOM, [L22] observe/mutate without round-trip);
+ * current options are read live through a ref ([L07]).
+ */
+export function useRovingFocusable(options: UseFocusableOptions): UseRovingFocusableResult {
+  const manager = useContext(FocusManagerContext);
+  const focusMode = useContext(FocusModeContext);
+
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  // The element that currently carries this group's `data-tug-focusable`.
+  const rovedElementRef = useRef<Element | null>(null);
+
+  const { id, group, order, policy, register = true } = options;
+  useLayoutEffect(() => {
+    if (manager === null || !register) return;
+    manager.registerFocusable({
+      id,
+      group,
+      order,
+      policy,
+      modes: [focusMode],
+      consumesTab: () => optionsRef.current.consumesTab?.() ?? false,
+    });
+    return () => {
+      manager.unregisterFocusable(id);
+      const el = rovedElementRef.current;
+      if (el) {
+        el.removeAttribute("data-tug-focusable");
+        rovedElementRef.current = null;
+      }
+    };
+  }, [manager, id, group, order, policy, register, focusMode]);
+
+  const setRovedElement = useCallback(
+    (el: Element | null, keyboard?: boolean) => {
+      const prev = rovedElementRef.current;
+      if (prev !== el) {
+        if (prev) prev.removeAttribute("data-tug-focusable");
+        if (el && manager !== null && register) {
+          el.setAttribute("data-tug-focusable", id);
+        }
+        rovedElementRef.current = el;
+      }
+      // When this group holds the key view, chase the projection onto the new
+      // member so the ring follows the arrows — appearance-zone DOM only ([L06]).
+      if (manager !== null && manager.keyView() === id) {
+        manager.refreshKeyViewProjection(keyboard);
+      }
+    },
+    [id, manager, register],
+  );
+
+  return { setRovedElement };
+}
+
 /**
  * Returns the nearest `FocusManager`, or `null` outside a provider. Sibling of
  * `useResponderChain`.

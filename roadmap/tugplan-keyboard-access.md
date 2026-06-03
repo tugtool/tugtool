@@ -183,7 +183,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 **Implications:**
 - New `useFocusable` hook (sibling to `useResponder`) registers via `useLayoutEffect` ([L03]) and writes `data-tug-focusable` + ordering metadata.
-- The manager stamps `data-key-view` on exactly one element at a time (structure zone) as internal plumbing for the Tab walk and to seed focus; when it moves the key view by keyboard it adds `data-key-view-kbd`, which the focus ring reads (alongside `:focus-visible`) since WebKit withholds `:focus-visible` from a programmatic `.focus()`.
+- The manager stamps `data-key-view` on exactly one element at a time (structure zone) as internal plumbing for the Tab walk and to seed focus; when it moves the key view by keyboard it adds `data-key-view-kbd`, which is the **sole** focus-ring trigger ([P05] revised in [#step-10]). The browser's own `:focus-visible` outline is suppressed, because WebKit grants `:focus-visible` to native controls even on a mouse click (it would ring a clicked control) and withholds it from a programmatic `.focus()`.
 
 #### [P02] Tab order is group-level authored, not DOM-derived (DECIDED) {#p02-authored-order}
 
@@ -223,21 +223,24 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 **GUI deviation from the Claude Code TUI (amended after [#step-3]):** the Claude Code terminal cycles the permission mode on `⇧⇥`. In a GUI, `⇧⇥` must move focus to the previous control, so Tug **does not** put permission cycling on `⇧⇥`. The earlier "fold the dev card's `⇧⇥` into the focus walk, consumed only when a dev card claims it" approach was wrong: a dev card's `card-content` responder *always* claims `cycle-permission-mode`, so `⇧⇥` inside a dev card would never reach `focus-previous` — silently flipping the permission mode instead of navigating focus. The cycle now lives on **`⇧⌘P`** (a static key-card-scoped keybinding, mnemonic for the chip's `/PERMISSIONS` caption, forward-only); the `PermissionModeChip` + sheet and the `/permissions` command remain the pick-a-mode affordances. `Shift+Tab` is pure `focus-previous` everywhere.
 
-#### [P05] One focus ring on the keyboard-active control (DECIDED; revised in [#step-9]) {#p05-focus-ring}
+#### [P05] One focus ring on the keyboard-active control (DECIDED; revised in [#step-9], [#step-10]) {#p05-focus-ring}
 
 **Decision:** A single `--tugx-focus-ring` token set (color = action/blue, **1px**, one offset, `outline`-based, clipping to `border-radius`) painting **one ring on the keyboard-active control** — the control the keyboard is currently driving. It shows on **keyboard** focus and **never on a mouse click**. There is **no** separate always-on key-view marker. The ring is the live **commit-key** affordance — the keyboard-active control it marks gets first claim on Return / Escape / ⌘. ([P12]); `filled+action` is the standing *identity* of the primary/default button (the ring's home base), not the live signal.
 
-**Two triggers, one ring:**
-- `:focus-visible` — the browser's keyboard-focus heuristic, for native and Radix-managed controls.
-- `[data-key-view-kbd]` — the focus engine's own signal that it moved the key view by keyboard (the Tab walk / surface entry). WebKit does not reliably grant `:focus-visible` to a programmatic `.focus()`, so the engine marks its keyboard navigation itself. A pointer-reached key view carries `data-key-view` *without* `-kbd`, so a click never rings.
+**One trigger: `[data-key-view-kbd]`** — the focus engine's own signal that it moved the key view by keyboard (the Tab walk, surface entry, default-seed on open, arrow-roving within a group). A pointer-reached key view carries `data-key-view` *without* `-kbd`, so a click never rings. The browser's default focus outline is **suppressed** (`:focus-visible { outline: none }`, authored before the key-view-kbd rule so the engine ring wins on equal specificity).
+
+**`:focus-visible` is deliberately NOT a trigger (revised in [#step-10]).** It was the original second trigger ("for native and Radix-managed controls"), but it is unreliable in both directions for the engine's purpose: WebKit *withholds* it from a programmatic `.focus()` (the reason `data-key-view-kbd` exists), and — discovered taming TugCheckbox — WebKit *grants* it to native form controls (`<button>` checkbox/switch/radio, `<input>`, `<a>`) on a plain mouse **click**, painting a ring on a clicked control. Keeping it would split native vs. custom controls (a leaked implementation detail users can't see the logic of) and make the ring *lie* — marking a control WebKit merely focused rather than the one the engine routes the commit keys to. So the ring is driven by the app-owned `data-key-view-kbd` alone: modality-accurate, native-agnostic, and truthful to [P12]. **Cost:** the ring's coverage equals the engine's — an element rings on keyboard focus only when it is a registered focusable or a responder the engine tracks as key view; the audit/ARIA steps ([#step-27]/[#step-28]) close the long tail (links, arbitrary focusable content), and mid-migration an un-tamed control is ring-less on keyboard until its step lands (a useful "not yet tamed" signal, not a regression).
 
 **Rationale:**
 - Crisp 1px border, not a fuzzy bloated glow; `outline` is layout-free and follows radius on WebKit.
 - **The two-tier model (this decision's original form) was retired.** A focus ring already persists on the focused control until focus moves, so there is no "at rest" gap for an always-on marker to fill — "where am I" is the ring, "what does Return do" is the ring (and the default button's fill). The marker answered a question nothing asked; one ring is simpler and conventional. (See [Q01], superseded.)
+- **One signal, not the browser's guess.** Folding the ring onto `data-key-view-kbd` makes "the keyboard is here" a single app-owned fact rather than a per-element-type WebKit heuristic — consistent across native and custom controls, and identical to the commit-key routing target ([P12]).
 
 **Implications:**
 - Delete per-component ring rules (indigo `accentCool` on checkbox/option-group/input, `link`-colored `--tugx-dialog-button-focus-ring` / `--tugx-idialog-focus-ring`, cue `accent`). Done in [#step-6].
 - `--tugx-focus-ring-{color,width,offset}` authored in both `brio.css` and `harmony.css`; the short-lived `--tugx-focus-ring-hairline-*` tokens were removed when the model collapsed to one ring.
+- `focus-ring.css` suppresses the UA outline (`:focus-visible { outline: none }`) and paints the ring on `[data-key-view-kbd]` only; the `:focus-visible` trigger was retired in [#step-10].
+- Every keyboard focus move must flow through the engine so it sets `keyboard=true` (the Tab walk, surface entry, and — added in the roving steps — component-local arrow-roving). A keyboard-reachable affordance must be a registered focusable or a tracked responder to ring.
 - The engine seeds the key view (hence the ring) to a surface's declared default button on open ([P07]); the ring is the Tab anchor from there.
 
 #### [P06] Color contract: accent = selection, action = keyboard-active (DECIDED) {#p06-color-contract}
@@ -475,7 +478,7 @@ useKeybindings([
 | Focus-mode stack (CFRunLoop scopes) | structure | FocusManager; `useLayoutEffect` push/pop on surface open/close | [L24], [L03] |
 | Focusable records (group/order/policy/consumesTab) | structure | `useFocusable` + `useLayoutEffect`; `data-tug-focusable` attr | [L24], [L03] |
 | Keyboard-access mode (`standard`/`accessibility`) | structure | tugbank DEFAULTS feed → `useSyncExternalStore`; `data-keyboard-access` on root | [L02], [L24] |
-| Focus-ring rendering | appearance | CSS `:focus-visible` + `[data-key-view-kbd]`; `--tugx-focus-ring` token | [L06], [L24] |
+| Focus-ring rendering | appearance | CSS `[data-key-view-kbd]` only (UA `:focus-visible` outline suppressed); `--tugx-focus-ring` token | [L06], [L24] |
 | Selection color (accent/orange) | appearance | CSS tokens on `[data-selected]`/`[aria-selected]` | [L06], [L20] |
 | Default / cancel action of active scope (Return / Escape·⌘. targets) | structure | FocusManager per mode/pane; declared at mount; dispatched as a chain action | [L11], [L24] |
 
@@ -498,7 +501,7 @@ useKeybindings([
 | `tugdeck/src/components/tugways/use-focusable.tsx` | `useFocusable` hook (sibling to `useResponder`) |
 | `tugdeck/src/components/tugways/use-focus-trap.tsx` | `useFocusTrap` hook: push/pop a trapped focus mode for a floating surface + `FocusModeScope` provider ([#step-4]) |
 | `tugdeck/src/components/tugways/__tests__/focus-walk.test.ts` | pure-logic bun:test for walk ordering / mode trapping / policy filtering / key-view capture-restore |
-| `tugdeck/styles/focus-ring.css` (or token block in theme files) | `--tugx-focus-ring` primitive + the `:focus-visible` / `[data-key-view-kbd]` ring selector |
+| `tugdeck/styles/focus-ring.css` (or token block in theme files) | `--tugx-focus-ring` primitive; ring on `[data-key-view-kbd]`, UA `:focus-visible` outline suppressed |
 | `tugdeck/src/components/tugways/use-keybindings.tsx` | `useKeybindings` hook + dynamic, context-scoped keybinding registration |
 
 #### Symbols to add / modify {#symbols}
@@ -562,11 +565,11 @@ useKeybindings([
 | #step-7 | Recolor UI-selection → accent/orange | done | 889a5e1d |
 | #step-8 | Confine blue to the keyboard-active axis | done | 8a2a2ec4 |
 | #step-9 | Tame internal/tug-button (base control focus) | done | 7ca484af |
-| #step-10 | Tame TugCheckbox | pending | — |
-| #step-11 | Tame TugSwitch | pending | — |
-| #step-12 | Tame TugSlider | pending | — |
-| #step-13 | Tame TugTabBar (roving) | pending | — |
-| #step-14 | Tame TugRadioGroup (roving) | pending | — |
+| #step-10 | Tame TugCheckbox | done | (dash kbd-taming) |
+| #step-11 | Tame TugSwitch | done | (dash kbd-taming) |
+| #step-12 | Tame TugSlider | done | (dash kbd-taming) |
+| #step-13 | Tame TugTabBar (roving) | done | (dash kbd-taming) |
+| #step-14 | Tame TugRadioGroup (roving) | done | (dash kbd-taming) |
 | #step-15 | Tame TugAccordion (roving) | pending | — |
 | #step-16 | Tame TugChoiceGroup (roving) | pending | — |
 | #step-17 | Tame TugOptionGroup (roving, multi-select) | pending | — |
@@ -707,8 +710,11 @@ useKeybindings([
 > **one ring on the keyboard-active control** (1px, keyboard-focus only). The
 > per-component-ring deletions and the `--tugx-focus-ring-{color,width,offset}`
 > primitive below all stand; the `[data-key-view]` hairline rule and the
-> `--tugx-focus-ring-hairline-*` tokens were removed. See revised [P05]/[P12]
-> and superseded [Q01]. The done-record below is left as the historical account.
+> `--tugx-focus-ring-hairline-*` tokens were removed. **[#step-10] further retired
+> the `:focus-visible` ring trigger** (WebKit paints it on native controls even on
+> a mouse click): the ring is now driven by `[data-key-view-kbd]` alone, with the
+> UA `:focus-visible` outline suppressed. See revised [P05]/[P12] and superseded
+> [Q01]. The done-record below is left as the historical account.
 
 **Depends on:** #step-1
 
@@ -817,13 +823,14 @@ useKeybindings([
 - Radix checkbox focus deferred to the engine; Space toggles locally; Radix toggle semantics intact.
 
 **Tasks:**
-- [ ] Register focusable; key view + ring from the engine; keep Radix checked/indeterminate semantics.
+- [x] Register focusable; key view + ring from the engine; keep Radix checked/indeterminate semantics. `TugCheckbox` gained `focusGroup`/`focusOrder`/`focusPolicy` and calls `useFocusable` (registers only when authored into a group, `register: focusGroup !== undefined`); `focusableRef` merges into a `setRefs` forwarded to `CheckboxPrimitive.Root`. Keeps `data-tug-focus="refuse"` (click dispatches `toggle` without moving the key view). Space toggles natively; Return delegates to the scope default ([P12]). Upholds [L03] (registration in `useLayoutEffect` via `useFocusable`), [L06] (ring is CSS/DOM, not React state), [P01]/[P02].
+- [x] **[P05] revised — `:focus-visible` ring trigger retired.** Taming the checkbox surfaced that WebKit grants `:focus-visible` to native form-control `<button>`s on a plain mouse click, so the primitive's `:focus-visible` trigger painted a ring on click. `focus-ring.css` now suppresses the UA `:focus-visible` outline and paints the ring on `[data-key-view-kbd]` alone — modality-accurate, native-agnostic, and truthful to the commit-key model. See revised [P05].
 
 **Tests:**
-- [ ] app-test: Tab reaches it; Space toggles; ring shows on keyboard focus only.
+- [x] app-test: Tab reaches it; Space toggles; ring shows on keyboard focus only. `at0113-checkbox-focus` (gallery `Focus Walk` panel, two checkboxes authored into one group): a fresh mouse click toggles (`data-state` flips) with **no** ring (outline 0, no `data-key-view-kbd`); Tab lands the key view and paints the ring (outline > 0, `data-key-view-kbd`); Space toggles; a second Tab walks to the next stop. PASS.
 
 **Checkpoint:**
-- [ ] `just app-test` checkbox scenario `VERDICT: PASS`.
+- [x] `just app-test` checkbox scenario `VERDICT: PASS`. `at0113` PASS; ring regressions `at0109`/`at0112` still PASS after the primitive change; `tsc --noEmit` clean.
 
 ---
 
@@ -839,13 +846,13 @@ useKeybindings([
 - Radix switch focus deferred to the engine; Space/Enter toggle local.
 
 **Tasks:**
-- [ ] Register focusable; engine ring/key view; keep Radix toggle semantics.
+- [x] Register focusable; engine ring/key view; keep Radix toggle semantics. `TugSwitch` gained `focusGroup`/`focusOrder`/`focusPolicy` and the same `useFocusable` + `setRefs` wiring as the checkbox, forwarded to `SwitchPrimitive.Root`; keeps `data-tug-focus="refuse"`. Space/Enter toggle natively; the ring is the engine's `[data-key-view-kbd]` (the [P05] revision from [#step-10] applies). Upholds [L03], [L06], [P01]/[P02].
 
 **Tests:**
-- [ ] app-test: Tab reaches it; Space toggles; ring on keyboard focus.
+- [x] app-test: Tab reaches it; Space toggles; ring on keyboard focus. `at0114-switch-focus` (gallery `Focus Walk`, two switches in one group): click toggles with no ring; Tab rings (outline > 0, `data-key-view-kbd`); Space toggles; Tab walks to the next stop. PASS.
 
 **Checkpoint:**
-- [ ] `just app-test` switch scenario `VERDICT: PASS`.
+- [x] `just app-test` switch scenario `VERDICT: PASS`. `at0114` PASS; `tsc --noEmit` clean.
 
 ---
 
@@ -861,13 +868,13 @@ useKeybindings([
 - Radix slider focus deferred to engine; arrow-key steps stay discrete, pointer drag stays continuous (the existing phase contract is unchanged).
 
 **Tasks:**
-- [ ] Register the thumb as a single focusable; arrows step locally; engine owns ring/key view.
+- [x] Register the thumb as a single focusable; arrows step locally; engine owns ring/key view. `TugSlider` gained `focusGroup`/`focusOrder`/`focusPolicy` and calls `useFocusable`; the returned `focusableRef` is attached to `SliderPrimitive.Thumb` (the keyboard target), not the wrapper. The Root keeps `data-tug-focus="refuse"`. Removed `.tug-slider-thumb { outline: none }` so the engine ring (`[data-key-view-kbd]`) paints on the thumb — the global `:focus-visible { outline: none }` from [#step-10] handles UA suppression. Arrow-step / drag phase logic untouched. Upholds [L03], [L06], [P01]/[P02].
 
 **Tests:**
-- [ ] app-test: Tab reaches the thumb; arrows step; ring on keyboard focus; drag unaffected.
+- [x] app-test: Tab reaches the thumb; arrows step; ring on keyboard focus; drag unaffected. `at0115-slider-focus` (gallery `Focus Walk`, one slider min 0/max 100/step 5): no ring at rest; Tab lands the key view on the thumb and rings (outline > 0, `data-key-view-kbd`); ArrowRight steps `aria-valuenow` by one step. PASS.
 
 **Checkpoint:**
-- [ ] `just app-test` slider scenario `VERDICT: PASS`.
+- [x] `just app-test` slider scenario `VERDICT: PASS`. `at0115` PASS; `tsc --noEmit` clean.
 
 ---
 
@@ -881,15 +888,16 @@ useKeybindings([
 
 **Artifacts:**
 - The custom `tabIndex` roving becomes a single focus stop in the walk; arrows move within; the engine owns Tab between stops.
+- **New shared roving primitive** (foundation for the roving steps that follow): `FocusManager.refreshKeyViewProjection(keyboard?)` re-projects the current key view onto the DOM element that now carries its `data-tug-focusable` (`setKeyView` early-returns on an unchanged id, so it can't chase a moved element); `useRovingFocusable` registers one focusable for a group and exposes `setRovedElement(el, keyboard?)`, which moves `data-tug-focusable` (and, when the group holds the key view, the ring) onto the roved member. Appearance-zone DOM only ([L06]/[L22]); registration in `useLayoutEffect` ([L03]).
 
 **Tasks:**
-- [ ] Register the tab bar as one focusable; keep component-local arrow roving; remove reliance on native inter-control Tab.
+- [x] Register the tab bar as one focusable; keep component-local arrow roving; remove reliance on native inter-control Tab. The tab bar had no arrow roving (every tab was `tabIndex=0`); added it — roving `tabIndex` (active/focused member `0`, others `-1`), Arrow/Home/End move the cursor over the visible tabs and the engine ring follows via `useRovingFocusable.setRovedElement(el, true)`. `TugTabBar` gained `focusGroup`/`focusOrder`/`focusPolicy`; a pointer interaction marks the next move pointer-driven so a click doesn't ring. Tabs keep `data-tug-focus="refuse"`. Upholds [L03], [L06], [L11] (the bar stays a control), [P01]/[P02].
 
 **Tests:**
-- [ ] app-test: Tab enters/exits the bar as one stop; arrows move between tabs; ring on keyboard focus.
+- [x] app-test: Tab enters/exits the bar as one stop; arrows move between tabs; ring on keyboard focus. `at0116-tab-bar-focus` (gallery demo authored into one focus group): no ring at rest; Tab lands the key view on the active tab and rings it (only it has `tabIndex=0`); ArrowRight roves to the next tab, the ring follows and clears from the first, and the roving `tabIndex` moves with it. PASS. (The test waits on `document.hasFocus()` before Tab — this heavier card needs the focus hand-off confirmed, not a fixed delay.)
 
 **Checkpoint:**
-- [ ] `just app-test` tab-bar scenario `VERDICT: PASS`.
+- [x] `just app-test` tab-bar scenario `VERDICT: PASS`. `at0116` PASS; `at0112` (button-focus engine regression) still PASS; `tsc --noEmit` clean; `bun test` (3389) green.
 
 ---
 
@@ -902,16 +910,16 @@ useKeybindings([
 **References:** [P01] FocusManager, [P02] authored order, Risk R01, (#affected-inventory)
 
 **Artifacts:**
-- Radix's built-in roving replaced by the manual `tabIndex` roving pattern already used in `tug-option-group.tsx` (Radix exposes no public knob to disable roving); the group is a single focus stop; Radix value/state semantics retained.
+- **Radix `RadioGroupPrimitive` removed entirely** (decision revised from "disable Radix roving" to a full hand-roll): its `RovingFocusGroup` can't be disabled and would fight the engine for focus/`tabIndex`; its native-form `BubbleInput` is unused (selection flows through the chain, [L11], not HTML forms — verified no consumer wraps a group in a `<form>`). The group is now a hand-rolled single-select (the TugChoiceGroup shape): one engine roving stop via `useRovingFocusable`, hand-authored ARIA (`role="radiogroup"`/`role="radio"`/`aria-checked`), roving `tabIndex`, arrows rove-and-select. Value/state machinery was already ours (`internalValue` mirror + `handleValueChange` + state preservation) and is retained.
 
 **Tasks:**
-- [ ] Replace the Radix roving layer with manual roving (option-group pattern); the group registers as one focusable; arrows select-and-move locally; keep Radix value semantics.
+- [x] Replace the Radix roving layer with manual roving; the group registers as one focusable; arrows select-and-move locally; keep value semantics. Removed `RadioGroupPrimitive`; `TugRadioGroup` gained `focusGroup`/`focusOrder`/`focusPolicy` and registers via `useRovingFocusable`; arrow/Home/End rove over the enabled items (DOM-query order) and select (focus = selection); a layout effect keeps the cursor on the checked-or-first-enabled item and projects the ring. `TugRadioItem` is a `TugButton` carrying `role="radio"` + `aria-checked` + a `value` attribute (Radix's contract, which the at0030 state-preservation test reads off the checked item) + `data-state` (the CSS keys on `[data-state="checked"]`) + roving `tabIndex`; clicking selects without stealing the key view (`data-tug-focus="refuse"`). Widened `TugButton`'s `role` type to `TugButtonRole | (string & {})` to match its documented ARIA-role pass-through (formerly only reachable via a Radix Slot merge). Upholds [L03], [L06], [L11], [L20], [P01]/[P02].
 
 **Tests:**
-- [ ] app-test: Tab treats the group as one stop; arrows move/select; ring on keyboard focus.
+- [x] app-test: Tab treats the group as one stop; arrows move/select; ring on keyboard focus. `at0117-radio-group-focus` (gallery `Focus Walk`, three items, `a` checked): no ring at rest; Tab lands the key view on the checked item and rings it (only it has `tabIndex=0`); ArrowDown roves to `b`, the ring follows and clears from `a`, and selection follows (`b` → `data-state="checked"`, `a` unchecked). PASS.
 
 **Checkpoint:**
-- [ ] `just app-test` radio-group scenario `VERDICT: PASS`.
+- [x] `just app-test` radio-group scenario `VERDICT: PASS`. `at0117` PASS; radio-consumer regression all green: `at0090` permissions-rules-editor, `at0093` buckets, `at0094` scope-routing PASS; `at0030` virtual-focus state preservation PASS (after restoring the item's `value` attribute the test reads). `at0092` workspace-dirs surfaced a **pre-existing** failure (verified failing on the pre-code base) — diagnosed as a stale test expectation: the file chooser's close-normalizer commits the canonical `alphabet` (no trailing slash) but the test asserted `alphabet/`; fixed the test to the canonical form (menu *labels* keep their display slash). `tsc --noEmit` clean; `bun test` (3389) green.
 
 ---
 

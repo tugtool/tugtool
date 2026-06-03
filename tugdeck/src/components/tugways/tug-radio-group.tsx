@@ -1,40 +1,47 @@
 /**
  * TugRadioGroup — Mutually exclusive selection from a set of options.
  *
- * Wraps @radix-ui/react-radio-group. Each item is a TugButton (ghost emphasis,
- * icon-text subtype) hosting a radio circle indicator in the icon slot. Size and
- * disabled state propagate from group to items via React context. Supports
- * horizontal and vertical orientation, optional visible group label, and
- * role-based color injection for the selected indicator.
+ * Hand-rolled single-select group (no Radix): the same shape as TugChoiceGroup /
+ * TugOptionGroup, rendering each item as a TugButton (ghost emphasis, icon-text
+ * subtype) hosting a radio circle indicator in the icon slot. Keyboard focus is
+ * **app-owned** ([P01]): the group is a single roving stop in the engine Tab walk
+ * (`useRovingFocusable`), arrows move the roving cursor *and* select (the WAI-ARIA
+ * radio convention: focus = selection), and the focus ring follows the arrows via
+ * the engine's key-view projection. Radix's `RadioGroupPrimitive` was removed —
+ * its built-in `RovingFocusGroup` cannot be disabled and would fight the engine
+ * for focus/`tabIndex` ownership; the native-form `BubbleInput` it provided is
+ * unused here (selection flows through the responder chain, [L11], not HTML
+ * forms), so nothing of substance is lost.
  *
- * Control semantics (L11): user activation (click or Radix-managed arrow keys)
- * dispatches a `selectValue` action through the responder chain with the newly
- * selected item id as `value` and a stable `sender` id for parent
- * disambiguation. Parent responders register a `selectValue` action handler via
- * `useResponder` that switches on `event.sender` to route updates to the right
- * state. There is no `onValueChange` callback prop — the chain is the sole
- * mechanism for communicating selection changes outward.
+ * Control semantics (L11): user activation (click, Space/Enter on the focused
+ * item, or arrow navigation) dispatches a `selectValue` action through the
+ * responder chain with the newly selected item id as `value` and a stable
+ * `sender` id. Parent responders register a `selectValue` handler via
+ * `useResponder` and switch on `event.sender`. There is no `onValueChange`
+ * callback prop — the chain is the sole mechanism for communicating selection
+ * changes outward.
  *
  * Composed children: TugButton (each item's click target and visual rendering) [L20].
  * Radio indicator appearance is owned by this component via radio-scoped tokens.
  * TugButton keeps its own tokens, tunable independently per theme.
  *
- * Laws: [L06] appearance via CSS, [L11] controls emit actions,
- *       [L16] pairings declared, [L19] component authoring guide,
- *       [L20] token sovereignty
+ * Laws: [L03] registrations in useLayoutEffect, [L06] appearance via CSS/DOM,
+ *       [L11] controls emit actions, [L16] pairings declared,
+ *       [L19] component authoring guide, [L20] token sovereignty
  * Decisions: [D05] component token naming
  */
 
 import "./tug-radio-group.css";
 
-import React, { useCallback, useId, useState } from "react";
-import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
+import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
 import type { TugButtonSize } from "./internal/tug-button";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugGroupRole, buildRoleStyle } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
+import { useRovingFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import {
   useComponentStatePreservation,
@@ -61,11 +68,20 @@ export type TugRadioRole = TugGroupRole;
 interface TugRadioGroupContextValue {
   size: TugRadioGroupSize;
   disabled: boolean;
+  /** The currently selected value (drives each item's checked indicator). */
+  selectedValue: string;
+  /** The roving-focus cursor value (drives each item's `tabIndex`). */
+  focusedValue: string;
+  /** Select an item (click or Space/Enter on the focused item). */
+  onSelect: (value: string) => void;
 }
 
 const TugRadioGroupContext = React.createContext<TugRadioGroupContextValue>({
   size: "md",
   disabled: false,
+  selectedValue: "",
+  focusedValue: "",
+  onSelect: () => {},
 });
 
 // ---- TugRadioGroupProps ----
@@ -108,7 +124,7 @@ export interface TugRadioGroupProps
    * @selector [data-role="<role>"]
    */
   role?: TugRadioRole;
-  /** Form field name for native form submission. */
+  /** Identifier used to derive the group's `aria-labelledby` target id. */
   name?: string;
   /**
    * Disables all items.
@@ -124,16 +140,36 @@ export interface TugRadioGroupProps
    * `bag.components[componentStatePreservationKey]` at every save
    * trigger and reapplied on the next mount. Controlled mode dispatches
    * `selectValue` on restore (best-effort, parent owns truth);
-   * uncontrolled mode mirrors Radix's value in `useState` so restore
+   * uncontrolled mode mirrors the value in `useState` so restore
    * can update it directly.
    */
   componentStatePreservationKey?: string;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this radio group is authored into ([P02]). When set, the group
+   * registers as a **single roving stop** in the engine's Tab walk: Tab lands on
+   * the checked (or first enabled) item and arrows move between items locally;
+   * when omitted, the items stay plain native focus stops. Supplied by the
+   * surface that owns the Tab order.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 /** Serialized shape of `TugRadioGroup`'s preserved state. */
 interface TugRadioGroupState {
   value: string;
 }
+
+const ARROW_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"]);
 
 // ---- TugRadioGroup ----
 
@@ -155,6 +191,9 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       children,
       dir,
       componentStatePreservationKey,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
@@ -163,21 +202,16 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
     const effectiveDisabled = disabled || boxDisabled;
 
     // Role injection — on-state color uses toggle-primary tokens (shared with checkbox/switch). [L06]
-    // No role prop = accent. Single path, zero branches.
     const roleStyle = buildRoleStyle("radio", role);
 
-    const ctx: TugRadioGroupContextValue = { size, disabled: effectiveDisabled };
-
-    // Chain dispatch [L11]: targeted dispatch of `selectValue` to
-    // the parent responder with the newly selected item id as `value`
-    // and a stable sender id. No-op outside a provider.
+    // Chain dispatch [L11]: targeted dispatch of `selectValue` to the parent
+    // responder with the newly selected item id as `value`. No-op outside a provider.
     const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
 
-    // Mirror Radix's value in `useState` for the uncontrolled path
-    // so `useComponentStatePreservation` can read/write it. Same shape
-    // as the tug-checkbox / tug-accordion opt-ins.
+    // Controlled/uncontrolled value, mirrored in `useState` for the uncontrolled
+    // path so state preservation can read/write it.
     const isExternallyControlled = value !== undefined;
     const savedRadioGroupState = useSavedComponentState<TugRadioGroupState>(
       componentStatePreservationKey,
@@ -205,25 +239,153 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       [controlDispatch, effectiveSenderId, isExternallyControlled],
     );
 
-    // Opt-in Component State Preservation Protocol. Hook no-ops when
-    // `componentStatePreservationKey` is undefined. The mount-in-saved-
-    // state half lives above in `useState`'s initializer. [D13] / [A9].
     useComponentStatePreservation<TugRadioGroupState>({
       componentStatePreservationKey,
       captureState: () => ({ value: effectiveValue ?? "" }),
     });
 
+    // ---- Roving focus ([P01], [P02]) ----
+    //
+    // The group is a single stop in the engine Tab walk; arrows move between
+    // items locally (roving `tabIndex`) and the engine ring follows the cursor
+    // via `setRovedElement`. One focusable id is registered for the whole group.
+    const autoFocusId = useId();
+    const { setRovedElement } = useRovingFocusable({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
+
+    // Roving cursor: which item carries `tabIndex=0`. Local data ([L24]).
+    const [focusedValue, setFocusedValue] = useState<string>(defaultValue ?? "");
+    // Whether the last focus-moving interaction was the keyboard (arrows) vs a
+    // pointer — so the projection effect picks the right ring modality.
+    const lastKeyboardRef = useRef(false);
+
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const setRootRef = useCallback(
+      (node: HTMLDivElement | null) => {
+        rootRef.current = node;
+        if (typeof ref === "function") ref(node);
+        else if (ref !== null && ref !== undefined) {
+          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }
+      },
+      [ref],
+    );
+
+    // Ordered radio-item buttons in DOM order (all / enabled only).
+    const allItems = useCallback((): HTMLElement[] => {
+      const root = rootRef.current;
+      if (!root) return [];
+      return Array.from(root.querySelectorAll<HTMLElement>('[data-slot="tug-radio-item"]'));
+    }, []);
+    const enabledItems = useCallback(
+      (): HTMLElement[] => allItems().filter((el) => !el.hasAttribute("disabled")),
+      [allItems],
+    );
+    const valueOf = (el: HTMLElement): string => el.getAttribute("data-radio-value") ?? "";
+
+    // Select an item (click or Space/Enter on the focused item) — pointer-modality.
+    const onSelect = useCallback(
+      (next: string) => {
+        lastKeyboardRef.current = false;
+        setFocusedValue(next);
+        handleValueChange(next);
+      },
+      [handleValueChange],
+    );
+
+    // Arrow / Home / End roving over the enabled items. The radio convention is
+    // focus = selection, so a move also selects. Tab itself is the engine walk's
+    // job (this group is one stop); arrows move within.
+    const handleKeyDown = useCallback(
+      (e: React.KeyboardEvent) => {
+        if (!ARROW_KEYS.has(e.key)) return;
+        const items = enabledItems();
+        if (items.length === 0) return;
+        const values = items.map(valueOf);
+        const cur = values.indexOf(focusedValue);
+        let nextIdx: number;
+        switch (e.key) {
+          case "ArrowUp":
+          case "ArrowLeft":
+            nextIdx = cur <= 0 ? values.length - 1 : cur - 1;
+            break;
+          case "ArrowDown":
+          case "ArrowRight":
+            nextIdx = cur >= values.length - 1 ? 0 : cur + 1;
+            break;
+          case "Home":
+            nextIdx = 0;
+            break;
+          case "End":
+            nextIdx = values.length - 1;
+            break;
+          default:
+            return;
+        }
+        e.preventDefault();
+        const nextValue = values[nextIdx];
+        lastKeyboardRef.current = true;
+        setFocusedValue(nextValue);
+        items[nextIdx].focus();
+        if (nextValue !== effectiveValue) {
+          handleValueChange(nextValue);
+        }
+      },
+      [enabledItems, focusedValue, effectiveValue, handleValueChange],
+    );
+
+    // Keep the roving cursor on a real enabled item and project the engine ring
+    // onto it. Appearance-zone DOM only ([L06]); the keyboard flag picks whether
+    // the ring follows (arrow) or clears (pointer). Resolution order: the current
+    // cursor if still valid, else the checked item, else the first enabled item.
+    const childCount = React.Children.count(children);
+    useLayoutEffect(() => {
+      const items = allItems();
+      if (items.length === 0) {
+        setRovedElement(null, lastKeyboardRef.current);
+        return;
+      }
+      const values = items.map(valueOf);
+      let target = focusedValue;
+      if (!values.includes(target)) {
+        const enabledVals = enabledItems().map(valueOf);
+        target =
+          effectiveValue && enabledVals.includes(effectiveValue)
+            ? effectiveValue
+            : (enabledVals[0] ?? "");
+      }
+      if (target !== focusedValue) {
+        setFocusedValue(target);
+        return; // re-run after the cursor state settles
+      }
+      const el = items.find((e) => valueOf(e) === target) ?? null;
+      setRovedElement(el, lastKeyboardRef.current);
+    }, [focusedValue, effectiveValue, childCount, setRovedElement, allItems, enabledItems]);
+
+    const ctx: TugRadioGroupContextValue = {
+      size,
+      disabled: effectiveDisabled,
+      selectedValue: effectiveValue ?? "",
+      focusedValue,
+      onSelect,
+    };
+
+    const labelId = `tug-radio-label-${name ?? "group"}`;
+
     return (
       <TugRadioGroupContext.Provider value={ctx}>
-        <RadioGroupPrimitive.Root
-          ref={ref}
+        <div
+          ref={setRootRef}
           data-slot="tug-radio-group"
-          value={effectiveValue}
-          onValueChange={handleValueChange}
-          name={name}
-          disabled={effectiveDisabled}
+          role="radiogroup"
           aria-label={!label ? ariaLabel : undefined}
-          aria-labelledby={label ? `tug-radio-label-${name ?? "group"}` : undefined}
+          aria-labelledby={label ? labelId : undefined}
+          aria-disabled={effectiveDisabled || undefined}
           data-role={role}
           className={cn(
             "tug-radio-group",
@@ -235,20 +397,16 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
           )}
           dir={dir as "ltr" | "rtl" | undefined}
           style={{ ...roleStyle, ...style }}
+          onKeyDown={handleKeyDown}
           {...rest}
         >
           {label && (
-            <span
-              id={`tug-radio-label-${name ?? "group"}`}
-              className="tug-radio-group-label"
-            >
+            <span id={labelId} className="tug-radio-group-label">
               {label}
             </span>
           )}
-          <div className="tug-radio-group-items">
-            {children}
-          </div>
-        </RadioGroupPrimitive.Root>
+          <div className="tug-radio-group-items">{children}</div>
+        </div>
       </TugRadioGroupContext.Provider>
     );
   },
@@ -279,53 +437,58 @@ export interface TugRadioItemProps {
 
 export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProps>(
   function TugRadioItem({ value, children, description, disabled }, ref) {
-    const { size, disabled: groupDisabled } = React.useContext(TugRadioGroupContext);
+    const { size, disabled: groupDisabled, selectedValue, focusedValue, onSelect } =
+      React.useContext(TugRadioGroupContext);
 
     const isDisabled = disabled ?? groupDisabled;
+    const isChecked = value === selectedValue;
+    const isFocused = value === focusedValue;
 
     // Map TugRadioGroupSize → TugButtonSize (same union values)
     const buttonSize = size as TugButtonSize;
 
-    // Do NOT pass an explicit `role` prop to TugButton here. The parent
-    // Radix `RadioGroupPrimitive.Item` merges `role="radio"` onto the
-    // child via Slot, and an explicit child `role` would override that
-    // ARIA role (Radix's Slot `mergeProps` has child precedence). The
-    // semantic theming role falls through to TugButton's default
-    // (`"action"`), which is what every existing radio item used before
-    // this deliberate removal. Runtime disambiguation lives in
-    // `tug-button.tsx`: ARIA values (`"radio"`, `"tab"`, …) pass through
-    // to the DOM, while semantic values (`"action"`, `"data"`, …) drive
-    // classname theming.
+    // Hand-rolled radio item: the button carries the ARIA radio semantics
+    // (`role="radio"` flows through TugButton's ARIA-role pass-through, since
+    // "radio" is not one of TugButton's semantic theming roles), the checked
+    // `data-state` the CSS keys on, and the roving `tabIndex` (the focused
+    // member is the only Tab stop; the group's engine focusable lands the key
+    // view here). TugButton already emits `data-tug-focus="refuse"`, so clicking
+    // an item selects without stealing the key view. Selection on click /
+    // Space / Enter funnels through `onSelect` (native `<button>` activation
+    // fires `onClick` for Space and Enter).
     return (
-      <RadioGroupPrimitive.Item
+      <TugButton
+        ref={ref}
+        role="radio"
+        aria-checked={isChecked}
         value={value}
+        data-slot="tug-radio-item"
+        data-radio-value={value}
+        data-state={isChecked ? "checked" : "unchecked"}
+        data-has-description={description !== undefined ? "" : undefined}
+        tabIndex={isFocused ? 0 : -1}
+        emphasis="ghost"
+        size={buttonSize}
+        subtype="icon-text"
         disabled={isDisabled}
-        asChild
+        onClick={() => {
+          if (!isDisabled) onSelect(value);
+        }}
+        icon={
+          <span className="tug-radio-indicator" aria-hidden="true">
+            <span className="tug-radio-dot" />
+          </span>
+        }
       >
-        <TugButton
-          ref={ref}
-          data-slot="tug-radio-item"
-          data-has-description={description !== undefined ? "" : undefined}
-          emphasis="ghost"
-          size={buttonSize}
-          subtype="icon-text"
-          disabled={isDisabled}
-          icon={
-            <span className="tug-radio-indicator" aria-hidden="true">
-              <span className="tug-radio-dot" />
-            </span>
-          }
-        >
-          {description !== undefined ? (
-            <span className="tug-radio-item-text">
-              <span className="tug-radio-item-label">{children}</span>
-              <span className="tug-radio-item-description">{description}</span>
-            </span>
-          ) : (
-            children
-          )}
-        </TugButton>
-      </RadioGroupPrimitive.Item>
+        {description !== undefined ? (
+          <span className="tug-radio-item-text">
+            <span className="tug-radio-item-label">{children}</span>
+            <span className="tug-radio-item-description">{description}</span>
+          </span>
+        ) : (
+          children
+        )}
+      </TugButton>
     );
   },
 );

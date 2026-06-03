@@ -125,6 +125,8 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
+import { useFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
 
@@ -236,6 +238,23 @@ export interface TugSliderProps
    * owns `value` and is the source of truth.
    */
   componentStatePreservationKey?: string;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this slider is authored into ([P02]). When set, the slider's
+   * **thumb** registers as a focusable and becomes a single stop in the engine's
+   * Tab walk; when omitted, the thumb stays a plain native focus stop. Supplied
+   * by the surface that owns the Tab order.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 /** Serialized shape of `TugSlider`'s preserved state. */
@@ -267,12 +286,30 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       className,
       style,
       componentStatePreservationKey,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
   ) {
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
+
+    // Focus-engine registration ([P01]): the slider's thumb is the keyboard
+    // target, so it (not the wrapper) registers as the focusable when a surface
+    // authors the slider into a focus group ([P02]). The engine lands the key
+    // view on the thumb and the ring paints on keyboard focus ([P05]); arrow
+    // keys step the value natively (Radix). The Root keeps `data-tug-focus="refuse"`
+    // so clicking the track/thumb doesn't move the key view.
+    const autoFocusId = useId();
+    const { focusableRef } = useFocusable({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
 
     // ---- Chain dispatch [L11] ----
     //
@@ -532,6 +569,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
               <SliderPrimitive.Range className="tug-slider-range" />
             </SliderPrimitive.Track>
             <SliderPrimitive.Thumb
+              ref={focusableRef}
               className={cn("tug-slider-thumb", showTicks && "tug-slider-thumb-diamond")}
               onKeyDown={handleThumbKeyDown}
             />

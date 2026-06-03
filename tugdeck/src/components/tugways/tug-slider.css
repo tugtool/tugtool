@@ -149,7 +149,9 @@ body {
   background-color: var(--tugx-slider-thumb-bg);
   transition: background-color var(--tug-motion-duration-fast),
               border-color var(--tug-motion-duration-fast);
-  outline: none;
+  /* No local outline reset: the focus ring is the app-owned engine ring
+     (focus-ring.css paints on [data-key-view-kbd] and suppresses the UA
+     :focus-visible outline), so the thumb must not pre-empt it. */
   cursor: pointer;
 }
 

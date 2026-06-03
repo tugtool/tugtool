@@ -271,6 +271,29 @@ export class FocusManager {
     this.touch();
   }
 
+  /**
+   * Re-project the current key view onto the DOM element that now carries its
+   * `data-tug-focusable` — for a **roving single-stop focusable** (a tab bar,
+   * radio / option / choice group, accordion, or list) whose key-view *id* stays
+   * the same while the projected element moves under arrow navigation.
+   * `setKeyView` early-returns when `(id, keyboard)` is unchanged, so it cannot
+   * chase a moved element; this re-runs the DOM projection directly.
+   *
+   * `keyboard` sets the modality the ring reads: `true` (arrow-roving) keeps the
+   * ring on the newly-roved member; `false` (a pointer move within the group)
+   * clears it; omit to preserve the current modality.
+   *
+   * Appearance-zone DOM mutation only ([L06], [L22]): it writes `data-key-view`
+   * / `data-key-view-kbd` and notifies no React subscriber — the key-view id is
+   * unchanged and the ring is driven by the DOM attribute, not React state, so
+   * there is nothing to `touch()`.
+   */
+  refreshKeyViewProjection(keyboard?: boolean): void {
+    if (this.keyViewId === null) return;
+    if (keyboard !== undefined) this.keyViewKeyboard = keyboard;
+    this.syncKeyViewDomAttribute();
+  }
+
   /** The current key-view id, or `null` if none. */
   keyView(): string | null {
     return this.keyViewId;

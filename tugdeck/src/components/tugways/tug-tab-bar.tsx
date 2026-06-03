@@ -29,6 +29,8 @@ import { TugPopupMenu } from "./internal/tug-popup-menu";
 import type { TugPopupMenuEntry, TugPopupMenuItem } from "./internal/tug-popup-menu";
 import { TugTooltip } from "./tug-tooltip";
 import { useControlDispatch } from "./use-control-dispatch";
+import { useRovingFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 import { cardDragCoordinator, exceedsDragThreshold } from "@/card-drag-coordinator";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import {
@@ -81,6 +83,24 @@ export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div
    * no `addTab` dispatch ever fires.
    */
   addable?: boolean;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this tab bar is authored into ([P02]). When set, the bar
+   * registers as a **single roving stop** in the engine's Tab walk: Tab lands on
+   * the active tab and arrows move between tabs locally; when omitted, the tabs
+   * stay plain native focus stops. Supplied by the surface that owns the Tab
+   * order (e.g. the enclosing pane).
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 // ---- Helpers ----
@@ -343,11 +363,17 @@ function useTabOverflow(
 interface TabViewProps {
   tab: CardState;
   isActive: boolean;
+  /** Whether this tab is the roving-focus member (tabIndex 0; others -1). */
+  isFocused: boolean;
   iconNode: React.ReactNode;
   stackId: string;
   totalTabs: number;
   onSelect: (cardId: string) => void;
   onClose: (cardId: string) => void;
+  /** Sync the roving cursor when focus enters this tab (click or programmatic). */
+  onFocusTab: (cardId: string) => void;
+  /** Mark the next focus move as pointer-driven (so the ring doesn't follow a click). */
+  onPointerInteraction: () => void;
 }
 
 /**
@@ -372,11 +398,14 @@ function suppressTabTooltip(trigger: Element): boolean {
 function TabView({
   tab,
   isActive,
+  isFocused,
   iconNode,
   stackId,
   totalTabs,
   onSelect,
   onClose,
+  onFocusTab,
+  onPointerInteraction,
 }: TabViewProps) {
   const handleTabClick = () => {
     onSelect(tab.id);
@@ -404,6 +433,9 @@ function TabView({
    */
   const handleTabPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
+
+    // A pointer-driven focus move: the ring must not follow a click.
+    onPointerInteraction();
 
     // Drag-start focus save. Fires
     // unconditionally — even sub-threshold clicks save, since saves
@@ -448,8 +480,9 @@ function TabView({
         data-active={isActive ? "true" : undefined}
         data-testid={`tug-tab-${tab.id}`}
         aria-selected={isActive}
-        tabIndex={0}
+        tabIndex={isFocused ? 0 : -1}
         onClick={handleTabClick}
+        onFocus={() => onFocusTab(tab.id)}
         onPointerDown={handleTabPointerDown}
         data-tug-focus="refuse"
         onKeyDown={(e) => {
@@ -516,6 +549,9 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     acceptedFamilies,
     onOverflowChange,
     addable = true,
+    focusGroup,
+    focusOrder = 0,
+    focusPolicy,
     className,
     ...rest
   }: TugTabBarProps,
@@ -577,6 +613,115 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   // Overflow hook: attaches ResizeObserver, applies appearance-zone DOM
   // attributes, returns structural-zone overflowTabs for dropdown rendering.
   const { overflowTabs } = useTabOverflow(barRef, cards, activeCardId, onOverflowChange);
+
+  // ---- Roving focus ([P01], [P02]) ----
+  //
+  // The bar is a single stop in the engine Tab walk; arrows move between tabs
+  // locally (roving `tabIndex`). One focusable id is registered for the whole
+  // bar; `setRovedElement` carries `data-tug-focusable` (and the focus ring,
+  // when the bar holds the key view) onto the focused tab. Ring tracking is DOM
+  // mutation through the manager — never React state ([L06]).
+  const autoFocusId = useId();
+  const { setRovedElement } = useRovingFocusable({
+    id: autoFocusId,
+    group: focusGroup ?? "",
+    order: focusOrder,
+    policy: focusPolicy,
+    register: focusGroup !== undefined,
+  });
+
+  // Roving cursor: which tab carries `tabIndex=0`. Local data ([L24]) — it
+  // drives the roving attribute and the engine projection, not external state.
+  // Falls back to the active card if the cursor points at a closed tab.
+  const [focusedCardId, setFocusedCardId] = useState<string>(activeCardId);
+  const effectiveFocusedId = cards.some((c) => c.id === focusedCardId)
+    ? focusedCardId
+    : activeCardId;
+
+  // Whether the last focus-moving interaction was the keyboard (arrow roving) vs
+  // a pointer. Set before the focus change so the projection effect picks the
+  // right modality: keyboard keeps the ring on the new tab, pointer clears it.
+  const lastKeyboardRef = useRef(false);
+
+  // Resolve a tab's DOM element by card id within this bar.
+  const resolveTabElement = useCallback(
+    (cardId: string): HTMLElement | null => {
+      const bar = barRef.current;
+      if (!bar) return null;
+      const tabs = bar.querySelectorAll<HTMLElement>(".tug-tab");
+      for (const tab of tabs) {
+        if (tab.getAttribute("data-testid") === `tug-tab-${cardId}`) return tab;
+      }
+      return null;
+    },
+    [],
+  );
+
+  // Project the engine focusable onto the currently-focused tab whenever the
+  // cursor moves. Appearance-zone DOM only ([L06]); the keyboard flag picks
+  // whether the ring follows (arrow) or clears (pointer).
+  useLayoutEffect(() => {
+    setRovedElement(resolveTabElement(effectiveFocusedId), lastKeyboardRef.current);
+  }, [effectiveFocusedId, setRovedElement, resolveTabElement, cards.length]);
+
+  // Arrow / Home / End roving over the visible (non-overflow) tabs. Tab itself
+  // is handled by the engine walk (this bar is one stop); arrows move within.
+  const handleTablistKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (
+        e.key !== "ArrowLeft" &&
+        e.key !== "ArrowRight" &&
+        e.key !== "Home" &&
+        e.key !== "End"
+      ) {
+        return;
+      }
+      const bar = barRef.current;
+      if (!bar) return;
+      const tabs = Array.from(bar.querySelectorAll<HTMLElement>(".tug-tab")).filter(
+        (t) => t.getAttribute("data-overflow") !== "hidden",
+      );
+      if (tabs.length === 0) return;
+      const curIdx = tabs.findIndex(
+        (t) => t.getAttribute("data-testid") === `tug-tab-${effectiveFocusedId}`,
+      );
+      let nextIdx: number;
+      switch (e.key) {
+        case "ArrowLeft":
+          nextIdx = curIdx <= 0 ? tabs.length - 1 : curIdx - 1;
+          break;
+        case "ArrowRight":
+          nextIdx = curIdx >= tabs.length - 1 ? 0 : curIdx + 1;
+          break;
+        case "Home":
+          nextIdx = 0;
+          break;
+        case "End":
+          nextIdx = tabs.length - 1;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      const nextTab = tabs[nextIdx];
+      const nextId = nextTab.getAttribute("data-testid")?.slice("tug-tab-".length) ?? "";
+      lastKeyboardRef.current = true;
+      setFocusedCardId(nextId);
+      nextTab.focus();
+    },
+    [effectiveFocusedId],
+  );
+
+  // Pointer interaction on a tab marks the next focus move as pointer-driven so
+  // the ring does not follow a click.
+  const handleTabPointerInteraction = useCallback(() => {
+    lastKeyboardRef.current = false;
+  }, []);
+
+  // Sync the roving cursor when focus enters a tab (click or programmatic).
+  const handleFocusTab = useCallback((cardId: string) => {
+    setFocusedCardId(cardId);
+  }, []);
 
   // Resolve effective families: default to ["standard"] when prop is omitted.
   const effectiveFamilies = acceptedFamilies ?? ["standard"];
@@ -687,6 +832,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       data-slot="tug-tab-bar"
       data-testid="tug-tab-bar"
       data-pane-id={stackId}
+      onKeyDown={handleTablistKeyDown}
       {...rest}
     >
       {cards.map((card) => {
@@ -697,11 +843,14 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
             key={card.id}
             tab={card}
             isActive={card.id === activeCardId}
+            isFocused={card.id === effectiveFocusedId}
             iconNode={iconNode}
             stackId={stackId}
             totalTabs={cards.length}
             onSelect={dispatchSelectTab}
             onClose={dispatchCloseTab}
+            onFocusTab={handleFocusTab}
+            onPointerInteraction={handleTabPointerInteraction}
           />
         );
       })}

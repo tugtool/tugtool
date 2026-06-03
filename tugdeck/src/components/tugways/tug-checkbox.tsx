@@ -33,6 +33,8 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "./use-component-state-preservation";
+import { useFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
 
@@ -157,6 +159,23 @@ export interface TugCheckboxProps {
    * unaffected.
    */
   componentStatePreservationKey?: string;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this checkbox is authored into ([P02]). When set, the checkbox
+   * registers as a focusable and becomes a stop in the engine's Tab walk; when
+   * omitted, it stays a plain native focus stop (the global ring still paints on
+   * keyboard focus). Supplied by the surface that owns the Tab order.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 /** Serialized shape of `TugCheckbox`'s preserved state. */
@@ -182,6 +201,9 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
       "aria-label": ariaLabel,
       role,
       componentStatePreservationKey,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
@@ -195,6 +217,32 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
     const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
+
+    // Focus-engine registration ([P01]): the checkbox joins the Tab walk only
+    // when a surface authors it into a focus group ([P02]); otherwise it stays a
+    // native focus stop. The engine lands the key view on the Radix Root and the
+    // global ring paints on keyboard focus ([P05]). Space toggles natively
+    // (Radix); Return delegates to the scope default — the checkbox never claims
+    // it ([P12]). The checkbox keeps `data-tug-focus="refuse"`: clicking it
+    // dispatches `toggle` without moving the key view.
+    const autoFocusId = useId();
+    const { focusableRef } = useFocusable({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
+    const setRefs = useCallback(
+      (node: HTMLButtonElement | null) => {
+        focusableRef(node);
+        if (typeof ref === "function") ref(node);
+        else if (ref !== null && ref !== undefined) {
+          (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node;
+        }
+      },
+      [ref, focusableRef],
+    );
 
     // When the parent supplies `checked`, it owns the source of truth
     // (classic controlled mode). When it doesn't, Radix normally owns
@@ -263,7 +311,7 @@ export const TugCheckbox = React.forwardRef<HTMLButtonElement, TugCheckboxProps>
 
     const checkboxNode = (
       <CheckboxPrimitive.Root
-        ref={ref}
+        ref={setRefs}
         data-slot="tug-checkbox"
         checked={effectiveChecked}
         onCheckedChange={handleCheckedChange}

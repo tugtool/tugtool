@@ -153,8 +153,16 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * Color domain. Controls accent/action/data/danger hue. [D02]
    * @selector .tug-button-{emphasis}-{role}
    * @default "action"
+   *
+   * Accepts an arbitrary string in addition to the semantic {@link TugButtonRole}
+   * values: a non-semantic string is treated as an **ARIA role** and passed
+   * through to the DOM (`role="radio"`, `role="tab"`, …), while theming falls
+   * back to `action`. This matches the runtime disambiguation below — formerly
+   * only reachable via a Radix `asChild` Slot merge, now also usable directly by
+   * hand-rolled controls (e.g. TugRadioItem). The `(string & {})` keeps
+   * autocomplete for the semantic values.
    */
-  role?: TugButtonRole;
+  role?: TugButtonRole | (string & {});
   /**
    * Size variant.
    * @selector .tug-button-size-2xs | .tug-button-size-xs | .tug-button-size-sm | .tug-button-size-md | .tug-button-size-lg

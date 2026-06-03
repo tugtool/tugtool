@@ -54,6 +54,8 @@ export function GalleryRadioGroup() {
   const [vertValue, setVertValue] = useState("option-2");
   const [labeledValue, setLabeledValue] = useState("email");
   const [disabledGroupValue, setDisabledGroupValue] = useState("b");
+  // Focus Walk: a radio group authored into a focus group so the engine drives Tab.
+  const [focusValue, setFocusValue] = useState("a");
 
   // L11 migration via useResponderForm — see gallery-checkbox.tsx for the
   // annotated reference. Gensym'd sender ids for every radio group.
@@ -64,9 +66,11 @@ export function GalleryRadioGroup() {
   const radioVertId = useId();
   const radioLabeledId = useId();
   const radioDisabledId = useId();
+  const radioFocusId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
+      [radioFocusId]: setFocusValue,
       [radioSmId]: setSizeSmValue,
       [radioMdId]: setSizeMdValue,
       [radioLgId]: setSizeLgValue,
@@ -84,6 +88,28 @@ export function GalleryRadioGroup() {
       data-testid="gallery-radio-group"
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
+
+      {/* ---- Focus Walk ---- */}
+      {/* First section so the items sit above the fold for native clicks. The
+          group is authored into a focus group, so the engine drives Tab in this
+          card: Tab lands the key view on the checked item (ring on keyboard
+          focus), and arrows rove + select locally. */}
+      <div className="cg-section" data-testid="radio-focus-demo">
+        <TugLabel className="cg-section-title" data-testid="radio-focus-title">Focus Walk</TugLabel>
+        <TugRadioGroup
+          value={focusValue}
+          senderId={radioFocusId}
+          aria-label="Focus walk radio group"
+          focusGroup="gallery-radio-focus"
+          focusOrder={0}
+        >
+          <TugRadioItem value="a">Alpha</TugRadioItem>
+          <TugRadioItem value="b">Beta</TugRadioItem>
+          <TugRadioItem value="c">Gamma</TugRadioItem>
+        </TugRadioGroup>
+      </div>
+
+      <TugSeparator />
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">

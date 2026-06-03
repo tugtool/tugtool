@@ -178,7 +178,7 @@ describe.skipIf(!SHOULD_RUN)(
             "alphabet/",
           ]);
 
-          expect(workspaceDirs(), "no dir before add").not.toContain("alphabet/");
+          expect(workspaceDirs(), "no dir before add").not.toContain("alphabet");
 
           // Arrow-key behavior: ↓ moves the highlight from alpha/ (index 0) to
           // alphabet/ (index 1); Enter accepts it into the field. Selecting that
@@ -192,8 +192,13 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
           await app.nativeKey("Return");
+          // Enter commits the highlighted match and closes the menu; the
+          // close-normalizer strips the transient trailing slash, so the field
+          // settles at the canonical path `alphabet` (menu labels keep their
+          // display slash; the committed value does not — `/x/` and `/x` must
+          // not produce duplicate entries downstream).
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(ADD_INPUT)}).value === "alphabet/"`,
+            `document.querySelector(${JSON.stringify(ADD_INPUT)}).value === "alphabet"`,
             { timeoutMs: 4000 },
           );
 
@@ -207,13 +212,13 @@ describe.skipIf(!SHOULD_RUN)(
           );
 
           await waitForDirs(
-            (dirs) => dirs.includes("alphabet/"),
+            (dirs) => dirs.includes("alphabet"),
             "Add must write the directory to additionalDirectories",
           );
 
           // The added directory appears as a row in the list.
           await app.waitForCondition<boolean>(
-            `Array.from(document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-rule-matcher`)})).some(function(el){return el.textContent.trim() === "alphabet/";})`,
+            `Array.from(document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-rule-matcher`)})).some(function(el){return el.textContent.trim() === "alphabet";})`,
             { timeoutMs: 4000 },
           );
 

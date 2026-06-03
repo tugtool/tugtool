@@ -31,6 +31,8 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "./use-component-state-preservation";
+import { useFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
 
@@ -145,6 +147,23 @@ export interface TugSwitchProps {
    * tests that render the switch outside a card stay unaffected.
    */
   componentStatePreservationKey?: string;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this switch is authored into ([P02]). When set, the switch
+   * registers as a focusable and becomes a stop in the engine's Tab walk; when
+   * omitted, it stays a plain native focus stop (the global ring still paints on
+   * keyboard focus). Supplied by the surface that owns the Tab order.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 /** Serialized shape of `TugSwitch`'s preserved state. */
@@ -170,6 +189,9 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
       "aria-label": ariaLabel,
       role,
       componentStatePreservationKey,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
@@ -183,6 +205,31 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     const { dispatch: controlDispatch } = useControlDispatch();
     const fallbackId = useId();
     const effectiveSenderId = senderId ?? fallbackId;
+
+    // Focus-engine registration ([P01]): the switch joins the Tab walk only
+    // when a surface authors it into a focus group ([P02]); otherwise it stays a
+    // native focus stop. The engine lands the key view on the Radix Root and the
+    // global ring paints on keyboard focus ([P05]). Space/Enter toggle natively
+    // (Radix). The switch keeps `data-tug-focus="refuse"`: clicking it dispatches
+    // `toggle` without moving the key view.
+    const autoFocusId = useId();
+    const { focusableRef } = useFocusable({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
+    const setRefs = useCallback(
+      (node: HTMLButtonElement | null) => {
+        focusableRef(node);
+        if (typeof ref === "function") ref(node);
+        else if (ref !== null && ref !== undefined) {
+          (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node;
+        }
+      },
+      [ref, focusableRef],
+    );
 
     // Mirror Radix's checked state in `useState` for the uncontrolled
     // path so `useComponentStatePreservation` can read/write it. When
@@ -239,7 +286,7 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
 
     const switchNode = (
       <SwitchPrimitive.Root
-        ref={ref}
+        ref={setRefs}
         data-slot="tug-switch"
         checked={effectiveChecked}
         onCheckedChange={handleCheckedChange}

@@ -60,6 +60,32 @@ export function GallerySwitch() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
 
+      {/* ---- Focus Walk ---- */}
+      {/* First section so the focusables sit above the fold for native clicks.
+          Two switches authored into one focus group drive the engine Tab walk
+          in this card. The app-test Tabs to reach them (ring on keyboard focus),
+          presses Space to toggle (data-state flips), and confirms a mouse click
+          leaves no ring. */}
+      <div className="cg-section" data-testid="switch-focus-demo">
+        <TugLabel className="cg-section-title" data-testid="switch-focus-title">Focus Walk</TugLabel>
+        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+          <TugSwitch
+            aria-label="Focus A"
+            focusGroup="gallery-switch-focus"
+            focusOrder={0}
+            data-testid="switch-focus-a"
+          />
+          <TugSwitch
+            aria-label="Focus B"
+            focusGroup="gallery-switch-focus"
+            focusOrder={1}
+            data-testid="switch-focus-b"
+          />
+        </div>
+      </div>
+
+      <TugSeparator />
+
       {/* ---- Size Variants ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Size Variants</TugLabel>

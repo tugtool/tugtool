@@ -63,6 +63,9 @@ export function GallerySlider() {
   const [ticksValue, setTicksValue] = useState(4);
   const [volumeValue, setVolumeValue] = useState(6);
 
+  // Focus Walk: a slider authored into a focus group so the engine drives Tab.
+  const [focusValue, setFocusValue] = useState(30);
+
   // ---- Gensym'd sender ids ----
   const smId = useId();
   const mdId = useId();
@@ -75,9 +78,11 @@ export function GallerySlider() {
   const noValueId = useId();
   const ticksId = useId();
   const volumeId = useId();
+  const focusId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     setValueNumber: {
+      [focusId]: setFocusValue,
       [smId]: setSmValue,
       [mdId]: setMdValue,
       [lgId]: setLgValue,
@@ -99,6 +104,28 @@ export function GallerySlider() {
       data-testid="gallery-slider"
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
+
+      {/* ---- Focus Walk ---- */}
+      {/* First section so the thumb sits above the fold for native clicks. The
+          slider is authored into a focus group, so the engine drives Tab in this
+          card: Tab lands the key view on the thumb (ring on keyboard focus), and
+          arrows step the value locally (Radix). */}
+      <div className="cg-section" data-testid="slider-focus-demo">
+        <TugLabel className="cg-section-title" data-testid="slider-focus-title">Focus Walk</TugLabel>
+        <TugSlider
+          size="md"
+          value={focusValue}
+          senderId={focusId}
+          min={0}
+          max={100}
+          step={5}
+          label="Focus"
+          focusGroup="gallery-slider-focus"
+          focusOrder={0}
+        />
+      </div>
+
+      <TugSeparator />
 
       {/* ---- Section 1: Sizes ---- */}
       <div className="cg-section">

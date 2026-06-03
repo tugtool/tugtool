@@ -150,6 +150,8 @@ export function TugTabBarDemo() {
         activeCardId={activeTabId}
         senderId={tabBarId}
         onOverflowChange={handleOverflowChange}
+        focusGroup="gallery-tabbar-focus"
+        focusOrder={0}
       />
       <div className="cg-demo-controls">
         <TugPushButton size="sm" onClick={handleAddFive}>
@@ -177,7 +179,7 @@ export function GalleryTabBar() {
   return (
     <div className="cg-content" data-testid="gallery-tabbar">
       <div className="cg-section">
-        <TugLabel className="cg-section-title">TugTabBar — Interactive Demo</TugLabel>
+        <TugLabel className="cg-section-title" data-testid="tabbar-demo-title">TugTabBar — Interactive Demo</TugLabel>
         <TugTabBarDemo />
       </div>
     </div>
