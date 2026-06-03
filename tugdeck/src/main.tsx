@@ -20,8 +20,9 @@ import {
   ConnectionLifecycle,
   registerConnectionLifecycle,
 } from "./lib/connection-lifecycle";
-import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess } from "./settings-api";
+import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality } from "./settings-api";
 import { keyboardAccessStore, normalizeKeyboardAccessMode } from "./keyboard-access-store";
+import { focusRingModalityStore, normalizeFocusRingModality } from "./focus-ring-modality-store";
 import { getThemeSetter } from "./action-dispatch";
 import {
   sendCanvasColor,
@@ -161,6 +162,12 @@ if (!container) {
   // before-paint discipline as the theme.
   keyboardAccessStore.initialize(
     normalizeKeyboardAccessMode(readKeyboardAccess(tugbankClient)),
+  );
+
+  // Seed the focus-ring modality from the DEFAULTS snapshot so the ring policy
+  // is correct from the first key-view projection (no flash of the wrong ring).
+  focusRingModalityStore.initialize(
+    normalizeFocusRingModality(readFocusRingModality(tugbankClient)),
   );
 
   // Production startup: apply saved non-base override before first render so
@@ -357,6 +364,16 @@ if (!container) {
       if (kbEntry && kbEntry.kind === "string" && typeof kbEntry.value === "string") {
         keyboardAccessStore.setMode(
           normalizeKeyboardAccessMode(kbEntry.value),
+          { persist: false },
+        );
+      }
+      // Focus-ring modality pushed from another process (e.g.
+      // `tugbank write … focusRingModality pointer`). Apply with persist:false
+      // to avoid echoing the write back through tugbank.
+      const ringEntry = entries["focusRingModality"];
+      if (ringEntry && ringEntry.kind === "string" && typeof ringEntry.value === "string") {
+        focusRingModalityStore.setMode(
+          normalizeFocusRingModality(ringEntry.value),
           { persist: false },
         );
       }

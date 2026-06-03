@@ -40,6 +40,7 @@ import { DEV_PANEL_INSPECTOR_COMPONENT_IDS } from "./inspector-tab-registrations
 import { ResizeHandle } from "./resize-handle";
 import { TabStrip, type TabDescriptor } from "./tab-strip";
 import { LogInspector } from "./inspectors/log-inspector";
+import { SettingsInspector } from "./inspectors/settings-inspector";
 import { TelemetryInspector } from "./inspectors/telemetry-inspector";
 
 const TABS: ReadonlyArray<TabDescriptor> = [
@@ -52,6 +53,11 @@ const TABS: ReadonlyArray<TabDescriptor> = [
     id: "log",
     label: "Log",
     componentId: DEV_PANEL_INSPECTOR_COMPONENT_IDS.log,
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    componentId: DEV_PANEL_INSPECTOR_COMPONENT_IDS.settings,
   },
 ];
 
@@ -136,6 +142,8 @@ export const TugDevPanel: React.FC = () => {
           <TelemetryInspector selectedCardId={snapshot.selectedCardId} />
         ) : snapshot.activeTab === "log" ? (
           <LogInspector />
+        ) : snapshot.activeTab === "settings" ? (
+          <SettingsInspector />
         ) : null}
       </div>
     </div>

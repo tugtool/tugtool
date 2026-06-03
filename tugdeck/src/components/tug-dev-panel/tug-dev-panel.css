@@ -296,6 +296,18 @@ body {
   gap: var(--tugx-devpanel-row-gap);
 }
 
+/* Settings tab: stacked sections with a touch more breathing room between
+   an explanatory hint and the control it describes. */
+.tug-devpanel-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-devpanel-section-gap);
+}
+
+.tug-devpanel-settings-hint {
+  line-height: 1.4;
+}
+
 .tug-devpanel-field-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);

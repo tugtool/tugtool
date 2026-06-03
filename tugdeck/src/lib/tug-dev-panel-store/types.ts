@@ -28,7 +28,7 @@ export const DEV_PANEL_DOMAIN = "dev.tugtool.dev-panel";
  * replay, propertystore tree) extend this union without re-architecting
  * the framework.
  */
-export type TugDevPanelTabId = "telemetry" | "log";
+export type TugDevPanelTabId = "telemetry" | "log" | "settings";
 
 /**
  * Default tab landed on when no persisted value is present.
@@ -42,6 +42,7 @@ export const DEFAULT_DEV_PANEL_TAB: TugDevPanelTabId = "telemetry";
 export const VALID_DEV_PANEL_TABS: ReadonlySet<TugDevPanelTabId> = new Set<TugDevPanelTabId>([
   "telemetry",
   "log",
+  "settings",
 ]);
 
 /**

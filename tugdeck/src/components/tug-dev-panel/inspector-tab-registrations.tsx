@@ -33,6 +33,7 @@ import { registerCard } from "@/card-registry";
 export const DEV_PANEL_INSPECTOR_COMPONENT_IDS = {
   telemetry: "_devpanel_inspector_telemetry",
   log: "_devpanel_inspector_log",
+  settings: "_devpanel_inspector_settings",
 } as const;
 
 /** Lucide icon name used for the Telemetry tab. */
@@ -40,6 +41,9 @@ const TELEMETRY_TAB_ICON = "RadioTower";
 
 /** Lucide icon name used for the Log tab. */
 const LOG_TAB_ICON = "Logs";
+
+/** Lucide icon name used for the Settings tab. */
+const SETTINGS_TAB_ICON = "SlidersHorizontal";
 
 /**
  * Register the inspector tabs. Idempotent — `registerCard` warns and
@@ -67,6 +71,16 @@ export function registerDevPanelInspectorTabs(): void {
     defaultMeta: {
       title: "Log",
       icon: LOG_TAB_ICON,
+      closable: false,
+    },
+  });
+  registerCard({
+    componentId: DEV_PANEL_INSPECTOR_COMPONENT_IDS.settings,
+    family: "_devpanel_inspector",
+    contentFactory: () => null,
+    defaultMeta: {
+      title: "Settings",
+      icon: SETTINGS_TAB_ICON,
       closable: false,
     },
   });

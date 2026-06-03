@@ -172,6 +172,13 @@ export class FocusManager {
   // unreliable for the engine's programmatic `.focus()`, so the engine marks
   // its own keyboard navigation rather than depending on the browser.
   private keyViewKeyboard = false;
+  // When true, the focus ring also follows *pointer*-driven key-view changes —
+  // not just keyboard navigation. This is the "keyboard + pointer" ring policy:
+  // a click that lands on a registered focusable paints the ring, so the ring
+  // is consistent whether you Tab to a control or click it. When false (the
+  // default), the ring paints on keyboard navigation only. Orthogonal to
+  // {@link accessMode}; driven by the focus-ring-modality store.
+  private ringFollowsPointer = false;
   private accessMode: KeyboardAccessMode = "standard";
   private seqCounter = 0;
   private version = 0;
@@ -362,6 +369,30 @@ export class FocusManager {
   /** The current keyboard-access mode. */
   keyboardAccessMode(): KeyboardAccessMode {
     return this.accessMode;
+  }
+
+  // ---- Ring modality ----
+
+  /**
+   * Set whether the focus ring follows pointer-driven key-view changes in
+   * addition to keyboard navigation. `false` (default) = ring on keyboard
+   * navigation only; `true` = ring also paints when a click lands on a
+   * registered focusable.
+   *
+   * Repaints immediately: the key-view id is unchanged, so this re-runs the
+   * DOM projection directly (appearance-zone DOM only — no React notify, the
+   * ring is driven by the `data-key-view-kbd` attribute, not React state
+   * [L06]/[L22]).
+   */
+  setRingFollowsPointer(value: boolean): void {
+    if (this.ringFollowsPointer === value) return;
+    this.ringFollowsPointer = value;
+    this.refreshKeyViewProjection();
+  }
+
+  /** Whether the ring currently follows pointer-driven key-view changes. */
+  ringFollowsPointerMode(): boolean {
+    return this.ringFollowsPointer;
   }
 
   // ---- Focus-mode stack ----
@@ -583,8 +614,10 @@ export class FocusManager {
     if (!el) return;
     el.setAttribute("data-key-view", id);
     // The focus ring paints on a keyboard-reached key view (the engine's own
-    // signal, since `:focus-visible` is unreliable for programmatic focus).
-    if (this.keyViewKeyboard) {
+    // signal, since `:focus-visible` is unreliable for programmatic focus) —
+    // and, when the ring-follows-pointer policy is on, on any pointer-driven
+    // key-view change too, so the ring is consistent across Tab and click.
+    if (this.keyViewKeyboard || this.ringFollowsPointer) {
       el.setAttribute("data-key-view-kbd", "");
     }
   }

@@ -25,6 +25,7 @@ import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
 import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, BASE_FOCUS_MODE } from "./focus-manager";
 import { keyboardAccessStore } from "../../keyboard-access-store";
+import { focusRingModalityStore } from "../../focus-ring-modality-store";
 import { matchKeybinding } from "./keybinding-map";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
@@ -185,6 +186,13 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     focusManager.setKeyboardAccessMode(keyboardAccessStore.getMode());
     const unsubscribeKeyboardAccess = keyboardAccessStore.subscribe(() => {
       focusManager.setKeyboardAccessMode(keyboardAccessStore.getMode());
+    });
+
+    // Ring modality: the store owns the policy ([L02]); the manager mirrors it
+    // and repaints the ring on change. Seed now, then track changes.
+    focusManager.setRingFollowsPointer(focusRingModalityStore.ringFollowsPointer());
+    const unsubscribeRingModality = focusRingModalityStore.subscribe(() => {
+      focusManager.setRingFollowsPointer(focusRingModalityStore.ringFollowsPointer());
     });
 
     // ---- Focus walk: Tab / Shift-Tab ([P04]) ----
@@ -503,6 +511,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("contextmenu", fallbackContextMenu);
       selectionGuard.detach();
       unsubscribeKeyboardAccess();
+      unsubscribeRingModality();
       focusManager.detach();
     };
   }, [manager, focusManager]);
