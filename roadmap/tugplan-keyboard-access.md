@@ -2,7 +2,7 @@
 
 ## Keyboard Access, Focus, and the Key-View Engine {#keyboard-access}
 
-**Purpose:** Replace the app's tangled mix of borrowed-Radix focus, suppressed browser focus, and ad-hoc first-responder conventions with one app-owned focus engine — a "key view" that is always visible, an explicit app-authored Tab order with two modes (`standard` / `accessibility`), a single crisp focus-ring primitive, and a color contract where **accent (orange) = selection** and **action (blue) = focus**.
+**Purpose:** Replace the app's tangled mix of borrowed-Radix focus, suppressed browser focus, and ad-hoc first-responder conventions with one app-owned focus engine — a "key view" (the single keyboard target) marked by one focus ring on keyboard focus, an explicit app-authored Tab order with two modes (`standard` / `accessibility`), a single crisp focus-ring primitive, and a color contract where **accent (orange) = selection** and **action (blue) = focus**.
 
 ---
 
@@ -31,14 +31,14 @@ This phase names the three axes, builds an app-owned **focus engine** (a "key vi
 - **Model floating-surface focus traps on CFRunLoop modes.** The FocusManager holds a **stack of focus modes (scopes)**; the Tab walk only services focusables registered in the currently-active mode. Opening a sheet/alert/popover/menu/completion pushes a trapped mode; dismissing pops it. This subsumes the old default-button LIFO scoping. See [CFRunLoop mode model](#cfrunloop-model).
 - **App-owned Tab walk, not native tabindex.** Intercept Tab / Shift-Tab as `focus-next` / `focus-previous` chain actions and advance the key view via the registry, honoring authored **order/group** and per-component **policy** (`accept` / `skip`). Text editors declare a transient "I consume Tab now" state (open completion / typeahead) that takes precedence.
 - **Tame Radix, don't replace it.** Disable Radix focus management per primitive and drive focus from the FocusManager; modal trapping becomes a FocusManager scope, so there is one trap implementation.
-- **One ring, two tiers.** A single `--tugx-focus-ring` token (action/blue, one width, one offset, `outline`-based) plus a Tier-1 always-on 1px hairline key-view marker. Delete every per-component ring rule.
+- **One focus ring.** A single `--tugx-focus-ring` token (action/blue, one width, one offset, `outline`-based) painting **one ring on the keyboard-active control** — shown on keyboard focus, never on a mouse click. It is the live "Return acts here" affordance ([P12]); there is **no** separate always-on marker (`filled+action` carries the standing default-button identity). Delete every per-component ring rule.
 - **Flip the color contract.** Re-point selection/selected/highlighted surfaces from blue to accent/orange across list rows, menus, popovers, and tab bars; reserve action/blue for focus. Validate with the token contrast audit.
 - **Audit last.** Reclassify every first-responder / `refuse` site against the named axes once the engine exists, and finish with the accessibility-mode ARIA pass and the dual mode toggle (in-app setting + Swift host menu).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - Pressing Tab / Shift-Tab moves the key view through an **app-authored order** (not DOM order); reordering a group in the focusable registry changes Tab order with no DOM move. (app-test: `just app-test` focus-walk scenario asserts visit order)
-- The key view is **always** marked by a 1px hairline (Tier 1) regardless of pointer vs keyboard; keyboard navigation additionally shows the blue Tier-2 ring. (app-test asserts `data-key-view` present after both a click and a Tab)
+- The keyboard-active control shows **one blue focus ring** on keyboard focus and **no ring on a mouse click**; the ring is the live Return target. (app-test asserts no ring after a click, a ring after a Tab)
 - Opening a floating surface **traps** Tab within it; Tab from the last focusable cycles to the first; dismissing restores the prior key view. (app-test: open menu, Tab past end, assert wrap; close, assert key-view restored)
 - A selected-and-focused list row renders **orange fill + blue ring** simultaneously and distinguishably. (app-test/visual: assert both tokens resolve on the row)
 - `bun run audit:tokens pairings` passes after the selection→accent recolor with zero new contrast failures.
@@ -55,7 +55,7 @@ This phase names the three axes, builds an app-owned **focus engine** (a "key vi
 2. A Tab / Shift-Tab pipeline stage dispatching `focus-next` / `focus-previous`, with editor Tab-consume precedence.
 3. Floating-surface focus traps modeled on CFRunLoop modes.
 4. Keyboard-access mode state (`standard` / `accessibility`), persisted via tugbank defaults, plus an in-app setting and a Swift host menu item.
-5. A single `--tugx-focus-ring` focus-ring primitive + two-tier key-view indication; deletion of all per-component ring rules.
+5. A single `--tugx-focus-ring` focus-ring primitive — one ring on the keyboard-active control, shown on keyboard focus and never on a click; deletion of all per-component ring rules.
 6. Color re-target: selection → accent/orange; focus → action/blue; rolled across list rows, menus, popovers, tab bars (option/radio already accent).
 7. Radix focus-management taming across the focus-sensitive components.
 8. Semantic commit keys (Return/Escape/⌘.) → scope `default-action` / `cancel-action`, independent of the key view; default-button stack retired.
@@ -93,7 +93,7 @@ This phase names the three axes, builds an app-owned **focus engine** (a "key vi
 - `standard` is the default mode; `accessibility` is opt-in and changes behavior comprehensively ([P08]).
 - Tab order is **group-level authored** (named groups + ordinals), not merely per-component `skip` ([P02]).
 - Floating surfaces (menus, completion, popovers, sheets, alerts) **trap** focus and exit only on dismiss ([P03]).
-- The 1px hairline is the Tier-1 starting treatment, expected to be tuned during implementation ([P05]).
+- There is one focus ring (1px, action/blue) on the keyboard-active control; no separate always-on marker — `filled+action` carries the default-button identity ([P05]).
 - A `selected`/`focused` element legibly carries both colors at once; this is the motivating win of the split.
 
 ---
@@ -106,20 +106,11 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Tier-1 key-view marker visual weight (RESOLVED) {#q01-tier1-weight}
+#### [Q01] Tier-1 key-view marker visual weight (SUPERSEDED) {#q01-tier1-weight}
 
-**Question:** Is a 1px hairline (and in what token / color — neutral border vs faint action tint) the right always-on key-view treatment across both brio and harmony, or does it need a different weight per theme?
+**Question (historical):** What weight should the always-on key-view hairline carry across both themes?
 
-**Why it matters:** Too subtle and "where do keys go?" is unanswered at rest; too strong and it competes with the Tier-2 ring and with selection. It affects the focus-ring token set and the key-view CSS.
-
-**Options (if known):**
-- 1px neutral hairline (default), Tier-2 blue ring on keyboard nav.
-- 1px faint action-tinted hairline.
-- Per-theme weight via token override.
-
-**Plan to resolve:** Prototype 2–3 treatments against both themes during [#step-6]; pick by eye, lock the token. Start from 1px hairline per [P05].
-
-**Resolution:** RESOLVED in [#step-6] — **1px faint action-tinted hairline** (option 2). The Tier-1 marker reads `--tugx-focus-ring-hairline-color: var(--tug7-surface-tone-primary-normal-active-rest)` (a faint, ~15%-alpha blue) at 1px; Tier-2 is the solid `tone-border-active` blue at 2px. Rationale: tying the always-on marker to the same keyboard-active blue keeps the focus story to one color (selection owns orange), and the faint translucent fill is clearly distinct from the full-strength Tier-2 ring. A per-theme weight override proved unnecessary because the hairline and ring already resolve through each theme's own `tone-…-active` values (brio blue t:47, harmony blue t:35), so each theme tunes itself; the single token set stays shared. Verified against both themes via the live build and pinned by `at0109-focus-ring-tiers` (1px hairline on click, 2px ring on keyboard nav).
+**Superseded by the revised [P05].** The two-tier model — an always-on hairline plus a louder ring — was retired during [#step-9]. Working through the actual interaction model showed the always-on marker was answering a question nothing asks: a focus ring already persists on the focused control until focus moves, so "where am I at rest" is answered by the ring itself, and "what does Return do" is answered by `filled+action`. So there is **one ring**, on the keyboard-active control, and **no separate marker** — which dissolves this question entirely. Step 6 briefly shipped the hairline (then a 1px faint action-tint); the `--tugx-focus-ring-hairline-*` tokens and the `[data-key-view]` hairline rule were removed when the model collapsed to one ring. See revised [P05] and [P12].
 
 #### [Q02] Editor Tab-consume handshake shape (OPEN) {#q02-editor-tab-handshake}
 
@@ -191,7 +182,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 **Implications:**
 - New `useFocusable` hook (sibling to `useResponder`) registers via `useLayoutEffect` ([L03]) and writes `data-tug-focusable` + ordering metadata.
-- The manager stamps `data-key-view` on exactly one element at a time (structure zone), which CSS reads for Tier-1 indication.
+- The manager stamps `data-key-view` on exactly one element at a time (structure zone) as internal plumbing for the Tab walk and to seed focus; when it moves the key view by keyboard it adds `data-key-view-kbd`, which the focus ring reads (alongside `:focus-visible`) since WebKit withholds `:focus-visible` from a programmatic `.focus()`.
 
 #### [P02] Tab order is group-level authored, not DOM-derived (DECIDED) {#p02-authored-order}
 
@@ -231,17 +222,22 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 **GUI deviation from the Claude Code TUI (amended after [#step-3]):** the Claude Code terminal cycles the permission mode on `⇧⇥`. In a GUI, `⇧⇥` must move focus to the previous control, so Tug **does not** put permission cycling on `⇧⇥`. The earlier "fold the dev card's `⇧⇥` into the focus walk, consumed only when a dev card claims it" approach was wrong: a dev card's `card-content` responder *always* claims `cycle-permission-mode`, so `⇧⇥` inside a dev card would never reach `focus-previous` — silently flipping the permission mode instead of navigating focus. The cycle now lives on **`⇧⌘P`** (a static key-card-scoped keybinding, mnemonic for the chip's `/PERMISSIONS` caption, forward-only); the `PermissionModeChip` + sheet and the `/permissions` command remain the pick-a-mode affordances. `Shift+Tab` is pure `focus-previous` everywhere.
 
-#### [P05] One focus-ring primitive; two-tier key-view indication (DECIDED) {#p05-focus-ring}
+#### [P05] One focus ring on the keyboard-active control (DECIDED; revised in [#step-9]) {#p05-focus-ring}
 
-**Decision:** A single `--tugx-focus-ring` token set (color = action/blue, one width, one offset, `outline`-based, clipping to `border-radius`) applied by one shared mechanism. **Tier 1**: an always-on 1px hairline on the key view (`data-key-view`). **Tier 2**: the blue ring on keyboard nav (`:focus-visible`).
+**Decision:** A single `--tugx-focus-ring` token set (color = action/blue, **1px**, one offset, `outline`-based, clipping to `border-radius`) painting **one ring on the keyboard-active control** — the control the keyboard is currently driving. It shows on **keyboard** focus and **never on a mouse click**. There is **no** separate always-on key-view marker. The ring is the live **"Return acts here"** affordance ([P12]); `filled+action` is the standing *identity* of the primary/default button (the ring's home base), not the live Return signal.
+
+**Two triggers, one ring:**
+- `:focus-visible` — the browser's keyboard-focus heuristic, for native and Radix-managed controls.
+- `[data-key-view-kbd]` — the focus engine's own signal that it moved the key view by keyboard (the Tab walk / surface entry). WebKit does not reliably grant `:focus-visible` to a programmatic `.focus()`, so the engine marks its keyboard navigation itself. A pointer-reached key view carries `data-key-view` *without* `-kbd`, so a click never rings.
 
 **Rationale:**
-- Crisp border/highlight, not a fuzzy bloated glow; `outline` is layout-free and follows radius on WebKit.
-- Two tiers distinguish "where keys go" (always) from "I'm tabbing" (active), satisfying "focused element visible at all times" without a heavy ring after every click.
+- Crisp 1px border, not a fuzzy bloated glow; `outline` is layout-free and follows radius on WebKit.
+- **The two-tier model (this decision's original form) was retired.** A focus ring already persists on the focused control until focus moves, so there is no "at rest" gap for an always-on marker to fill — "where am I" is the ring, "what does Return do" is the ring (and the default button's fill). The marker answered a question nothing asked; one ring is simpler and conventional. (See [Q01], superseded.)
 
 **Implications:**
-- Delete per-component ring rules (indigo `accentCool` on checkbox/option-group/input, `link`-colored `--tugx-dialog-button-focus-ring` / `--tugx-idialog-focus-ring`, cue `accent`).
-- New tokens authored in both `brio.css` and `harmony.css`.
+- Delete per-component ring rules (indigo `accentCool` on checkbox/option-group/input, `link`-colored `--tugx-dialog-button-focus-ring` / `--tugx-idialog-focus-ring`, cue `accent`). Done in [#step-6].
+- `--tugx-focus-ring-{color,width,offset}` authored in both `brio.css` and `harmony.css`; the short-lived `--tugx-focus-ring-hairline-*` tokens were removed when the model collapsed to one ring.
+- The engine seeds the key view (hence the ring) to a surface's declared default button on open ([P07]); the ring is the Tab anchor from there.
 
 #### [P06] Color contract: accent = selection, action = keyboard-active (DECIDED) {#p06-color-contract}
 
@@ -259,16 +255,17 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 #### [P07] Default button retired for a chain-dispatched `default-action` (DECIDED) {#p07-default-action}
 
-**Decision:** Remove the default-button element stack (`pushDefaultButton` / `popDefaultButton` / `peekDefaultButton` / `peekDefaultButtonInScope` and the `defaultButton` prop). The active focus mode declares a **default action**; Enter-outside-text dispatches `default-action`, resolved against the active scope.
+**Decision:** Remove the default-button element stack (`pushDefaultButton` / `popDefaultButton` / `peekDefaultButton` / `peekDefaultButtonInScope` and the `defaultButton` prop). The active focus mode declares a **default action**; Return resolves to it through the keyboard-active control per the activation model ([P12]). A surface **seeds its key view (and thus the focus ring) to its declared default button on open** — so the ring is on the default, the default is the Tab anchor, and Return fires it until the keyboard moves elsewhere.
 
 **Rationale:**
 - The grep-and-poke stack is exactly what the project wants retired; scoping already falls out of the focus-mode stack ([P03]).
 - Aligns the "primary action of the active surface" with the chain instead of a side-channel element registry.
+- The default button **must carry the focus ring** (it is the live Return target on open) — the ring, not `filled+action` alone, is the definitive Return affordance ([P05]/[P12]).
 
 **Implications:**
-- New `TUG_ACTIONS.DEFAULT_ACTION`; modal scaffolds (`TugConfirmPopover`, `TugAlert`, sheets) declare their default on the focus mode.
+- New `TUG_ACTIONS.DEFAULT_ACTION`; modal scaffolds (`TugConfirmPopover`, `TugAlert`, sheets) declare their default on the focus mode **and** seed the key view to the default button when they open (`focusFirstInMode` / an explicit default-seed), so the ring lands there. Wired as the dialog/sheet surfaces are tamed.
 - Pipeline Stage 2 dispatches `default-action` instead of clicking a peeked element.
-- **Extended by [P12]:** `default-action` is one of the *semantic commit keys* (Return/Escape/⌘.); the **blue CTA keeps `control-…-filled-action`** as its default-action affordance; non-modal default/cancel are pane-scoped via the chain walk from the first responder (correcting the "scoping falls out of the mode stack for free" overstatement, which holds only for modal scopes).
+- **Extended by [P12]:** Return resolves through the keyboard-active control; the **blue CTA keeps `control-…-filled-action`** as its default-button *identity*; non-modal default/cancel are pane-scoped via the chain walk from the first responder (correcting the "scoping falls out of the mode stack for free" overstatement, which holds only for modal scopes).
 
 #### [P08] `standard` default; `accessibility` opt-in and comprehensive (DECIDED) {#p08-modes}
 
@@ -321,25 +318,31 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ---
 
-#### [P12] Semantic commit keys; action color = keyboard-active affordance (DECIDED) {#p12-semantic-keys}
+#### [P12] Semantic commit keys; the ring owns Return (DECIDED; revised in [#step-9]) {#p12-semantic-keys}
 
-**Decision:** Treat **Return**, **Escape**, and **⌘.** as *semantic commit keys* that resolve to the active scope's declared **default action** (Return) and **cancel action** (Escape / ⌘.), **independent of which control holds the key view**. The `action`/blue color is **kept** on CTA buttons and defined as the **keyboard-active** affordance: blue marks where the keyboard is empowered — the focus ring (typing/arrows) and the default-action button (Return).
+**Decision:** **Return**, **Escape**, **⌘.** are *semantic commit keys*, and the activation model is:
+
+- **The keyboard-active control (the one wearing the focus ring) owns Return.** A control that *claims* Return handles it — a **button** (including the default) **activates**; a **multiline editor** inserts a **newline**. A control that does **not** claim Return — a checkbox, radio, list, single-line field — **delegates** it to the active scope's declared **default action**. (So arrow-navigating a list and pressing Return still submits, via delegation — the Cocoa default-button behavior — while a Tab to *Cancel* makes Return fire Cancel.)
+- **Space activates the keyboard-active control** — the universal "operate this" (toggle a checkbox, select a radio, open a popup button, click a button). Return never substitutes for Space on a non-button control.
+- **Escape / ⌘.** resolve to the scope's **cancel action**.
+- **The ring is the definitive Return affordance.** A surface **seeds the ring to its declared default button on open** ([P07]), so the default is the Tab anchor and Return fires it until the keyboard moves. **Once you Tab, you have taken control of Return** — to fire the default by keyboard you Tab (back) to it. The **mouse never moves the ring off the default** (mouse focus is not keyboard-active), so no amount of clicking can disarm it. `filled+action` is the default button's *standing identity* (the ring's home base), **not** the live Return signal — that is the ring.
 
 **Rationale:**
-- A user arrow-navigating a list inside a sheet must be able to press Return to submit without moving focus to "OK." Routing Return to the scope's default action (not the key view) delivers exactly that — the Cocoa default-button / key-equivalent model.
-- Keeping blue on CTA buttons preserves the learned "Return activates this" signal and unifies blue under one idea — *the keyboard is engaged with this control* — whether via focus or as the Return target. Orange stays purely about content choice.
-- Dovetails with the CFRunLoop focus-mode stack ([P03]): a mode already scopes Tab; extending it to carry `defaultAction` + `cancelAction` makes Return/Escape resolve against the current mode for free, and removes the need for any default-button element stack.
+- A user arrow-navigating a list inside a sheet must be able to press Return to submit without moving focus to "OK." Delegation (a non-claiming control sends Return to the scope default) delivers exactly that, while a focused button claiming Return delivers the equally-universal "Enter on a focused button activates *it*." One model covers both.
+- Tying Return to the ring makes it predictable — Return acts where your eyes already are (the ring), or, for non-actionable controls, at the surface's one declared default. The mouse-can't-disarm rule prevents clicking around from ever silently re-routing Return.
+- Keeping blue on CTA buttons preserves the learned "this is the primary action" signal and unifies blue under one idea — *the keyboard is engaged with this control* — whether via the ring or as the Return target. Orange stays purely about content choice.
+- Dovetails with the CFRunLoop focus-mode stack ([P03]): a mode already scopes Tab; extending it to carry `defaultAction` + `cancelAction` makes the delegation/cancel resolution work against the current mode for free, and removes the need for any default-button element stack.
 
 **Implications:**
 - A scope **declares** `defaultAction` / `cancelAction` by registering ordinary chain-action handlers (`DEFAULT_ACTION` / `CANCEL_ACTION`) on its responder. For a non-modal scope that responder is the **pane's card / card-content responder**, not the pane chrome ([L09]) — "pane declares" is shorthand for "the card of that pane declares."
-- **Dispatch origin is the scope anchor, never the key view (G1, load-bearing).** A commit key resolves via `sendToTarget(anchorId, …)` — `anchorId` is the **active modal mode's anchor responder** (modal) or the **originating pane's card responder** (non-modal). It is **never** `sendToFirstResponder`. The key view (or keydown event target) is used *only* to pick the **originating pane** — exactly as today's `peekDefaultButtonInScope` walks the first responder's `.tug-pane`. After that, resolution is at the pane/mode scope, not the leaf responder. Dispatching from the key view would reintroduce the historical cross-pane `Return` bug (a `Return` in pane A pressing pane B's default).
+- **Delegation origin is the scope anchor, never the key view (G1, load-bearing).** *When the key view does not claim the key* (G5 delegation path), the commit key resolves via `sendToTarget(anchorId, …)` — `anchorId` is the **active modal mode's anchor responder** (modal) or the **originating pane's card responder** (non-modal). It is **never** `sendToFirstResponder`. The key view (or keydown event target) is used *only* to pick the **originating pane** — exactly as today's `peekDefaultButtonInScope` walks the first responder's `.tug-pane`. After that, resolution is at the pane/mode scope, not the leaf responder. Dispatching from the key view would reintroduce the historical cross-pane `Return` bug (a `Return` in pane A pressing pane B's default). (A *claiming* control — a focused button activating on Return — handles the key itself and never reaches this path.)
 - **Cancel ladder (G2).** `Escape`/`⌘.` resolve in priority order: (1) top focus-mode `cancelAction` (an open popover/sheet/menu cancels first); (2) **drag-cancel** — `card-drag-coordinator.ts`'s document-level Escape listener stays *outside* the mode stack and keeps winning over card-level cancel; (3) the originating pane's `cancelAction` — e.g. the dev-card in-flight **interrupt** (`codeSessionStore.interrupt()`), which becomes the pane card's `cancelAction` when no modal mode is active. The fold of the old `CANCEL_DIALOG` binding must preserve this ladder, not flatten it.
 - **Return precedence migrates the editor's existing defer (G3).** `keymap.ts` already takes `returnAction: "submit" | "newline"` + a `peekDefaultButton` callback and defers `Return` to the default button when configured `submit`. Migrate that `peekDefaultButton` defer to a `default-action` dispatch (origin = the editor's pane scope), preserving `returnAction` / `numpadEnterAction` / forced-`Cmd-Enter`. An editor configured `newline` keeps `Return`; one configured `submit`-with-defer falls through to the scope `default-action`. This is one mechanism, not a parallel precedence.
-- **Text-context precedence** (same shape as Tab/[Q02]): when the key view is a text surface that owns `Return` (newline/submit) or `Escape` (dismiss completion), it claims the key first; otherwise the key falls through to the scope action per G1.
+- **Claim precedence (G5, the activation model's core).** Resolution is two-step: first, does the **keyboard-active control claim the key**? A **button** claims `Return` (activates itself) and `Space` (also activates); a **multiline editor / text surface** claims `Return` (newline/submit per `returnAction`) and `Escape` (dismiss completion); a **checkbox / radio / list / segmented control** claims `Space`/arrows (operate locally) but **not** `Return`. If the key view claims the key, it handles it. **Otherwise** the key **delegates** to the scope action per G1 (Return → `default-action`; Escape → the cancel ladder). This is the single rule behind "a focused button activates on Return, but arrow-navigating a list and pressing Return submits." `Space` is always the claim of the keyboard-active control and never delegates.
 - **Empty cases (G4).** No active scope, or a scope that declares no default/cancel → silent no-op, suppress the macOS beep. An unfocused `Return` resolves against the **deck's focused pane** (global fallback in gallery/standalone, matching today's `peekDefaultButton` fallback).
 - **Scoping (resolves F4):** modal scopes own these via the mode stack; a non-modal pane resolves default/cancel via the scope-anchored dispatch above — not the global base mode.
-- New actions `TUG_ACTIONS.DEFAULT_ACTION` and `CANCEL_ACTION`; the existing Escape/⌘. → `CANCEL_DIALOG` bindings fold into `cancel-action` (preserving the G2 ladder). The CTA button keeps `control-…-filled-action` (blue) and registers itself as its scope's default-action affordance.
-- Supersedes [P07]'s element-stack mechanism: there is no default-button registry; the scope declares an action and the blue CTA is its visual.
+- New actions `TUG_ACTIONS.DEFAULT_ACTION` and `CANCEL_ACTION`; the existing Escape/⌘. → `CANCEL_DIALOG` bindings fold into `cancel-action` (preserving the G2 ladder). The CTA button keeps `control-…-filled-action` (blue) as its standing identity and registers itself as its scope's default-action handler; the surface seeds the focus ring to it on open ([P05]/[P07]) so the ring — not the fill — is the live Return affordance.
+- Supersedes [P07]'s element-stack mechanism: there is no default-button registry; the scope declares an action, the blue CTA is its standing identity, and the focus ring on it is the live Return target.
 
 ---
 
@@ -380,7 +383,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 | Axis | Owner after this plan | DOM signal | Visual |
 |---|---|---|---|
 | **Responder scope** (action routing) | `ResponderChainManager` (unchanged) | `data-responder-id`, `data-first-responder` | none directly |
-| **Key view** (keyboard target) | `FocusManager` (new) | `data-key-view` (one at a time) | Tier-1 hairline + Tier-2 ring |
+| **Key view** (keyboard target) | `FocusManager` (new) | `data-key-view` (one at a time; `-kbd` when keyboard-reached) | one focus ring, on keyboard focus |
 | **Selection** (chosen content) | components (CSS) | `aria-selected` / `data-selected` | accent/orange |
 
 The key insight: first responder (chain) and key view (focus) usually agree but are independent — a focus-refusing control click keeps the key view put while routing an action. Naming them separately is what untangles the mess.
@@ -442,7 +445,7 @@ useKeybindings([
 - **Key view** — the single element (or none) that receives keystrokes; carries `data-key-view`.
 - **Focusable** — an element registered via `useFocusable` with a group, order, and policy.
 - **Focus mode (scope)** — a stack entry; only its focusables participate in the Tab walk while it is current.
-- **Tier 1 / Tier 2** — always-on hairline marker / keyboard-nav blue ring.
+- **Focus ring** — one blue ring on the keyboard-active control, shown on keyboard focus only (never on a click); the live "Return acts here" affordance.
 - **`policy`** — `accept` (in the standard-mode walk) | `skip` (pointer-focusable, excluded from standard walk, included in accessibility).
 
 #### Modes / Policies {#modes-policies}
@@ -468,7 +471,7 @@ useKeybindings([
 | Focus-mode stack (CFRunLoop scopes) | structure | FocusManager; `useLayoutEffect` push/pop on surface open/close | [L24], [L03] |
 | Focusable records (group/order/policy/consumesTab) | structure | `useFocusable` + `useLayoutEffect`; `data-tug-focusable` attr | [L24], [L03] |
 | Keyboard-access mode (`standard`/`accessibility`) | structure | tugbank DEFAULTS feed → `useSyncExternalStore`; `data-keyboard-access` on root | [L02], [L24] |
-| Tier-1 hairline + Tier-2 ring rendering | appearance | CSS `:focus-visible` + `[data-key-view]`; `--tugx-focus-ring` token | [L06], [L24] |
+| Focus-ring rendering | appearance | CSS `:focus-visible` + `[data-key-view-kbd]`; `--tugx-focus-ring` token | [L06], [L24] |
 | Selection color (accent/orange) | appearance | CSS tokens on `[data-selected]`/`[aria-selected]` | [L06], [L20] |
 | Default / cancel action of active scope (Return / Escape·⌘. targets) | structure | FocusManager per mode/pane; declared at mount; dispatched as a chain action | [L11], [L24] |
 
@@ -491,7 +494,7 @@ useKeybindings([
 | `tugdeck/src/components/tugways/use-focusable.tsx` | `useFocusable` hook (sibling to `useResponder`) |
 | `tugdeck/src/components/tugways/use-focus-trap.tsx` | `useFocusTrap` hook: push/pop a trapped focus mode for a floating surface + `FocusModeScope` provider ([#step-4]) |
 | `tugdeck/src/components/tugways/__tests__/focus-walk.test.ts` | pure-logic bun:test for walk ordering / mode trapping / policy filtering / key-view capture-restore |
-| `tugdeck/styles/focus-ring.css` (or token block in theme files) | `--tugx-focus-ring` primitive + Tier-1/Tier-2 selectors |
+| `tugdeck/styles/focus-ring.css` (or token block in theme files) | `--tugx-focus-ring` primitive + the `:focus-visible` / `[data-key-view-kbd]` ring selector |
 | `tugdeck/src/components/tugways/use-keybindings.tsx` | `useKeybindings` hook + dynamic, context-scoped keybinding registration |
 
 #### Symbols to add / modify {#symbols}
@@ -527,7 +530,7 @@ useKeybindings([
 | Category | Purpose | When to use |
 |----------|---------|-------------|
 | **Unit (bun:test, pure-logic)** | Focus-walk ordering, mode trapping/wrap, policy filtering, default-action resolution | `focus-walk.test.ts` |
-| **Integration (app-test, real app)** | Tab navigation, trap+restore, two-tier ring presence, selection+focus colors, default-action via Enter, mode toggle | `just app-test` |
+| **Integration (app-test, real app)** | Tab navigation, trap+restore, focus-ring presence, selection+focus colors, default-action via Enter, mode toggle | `just app-test` |
 | **Contract (token audit)** | Contrast pairings after recolor | `bun run audit:tokens pairings` |
 
 #### What stays out of tests {#test-non-goals}
@@ -554,7 +557,7 @@ useKeybindings([
 | #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done | — |
 | #step-7 | Recolor UI-selection → accent/orange | done | — |
 | #step-8 | Confine blue to the keyboard-active axis | done | — |
-| #step-9 | Tame internal/tug-button (base control focus) | pending | — |
+| #step-9 | Tame internal/tug-button (base control focus) | done | — |
 | #step-10 | Tame TugCheckbox | pending | — |
 | #step-11 | Tame TugSwitch | pending | — |
 | #step-12 | Tame TugSlider | pending | — |
@@ -691,6 +694,15 @@ useKeybindings([
 
 #### Step 6: Focus-ring primitive + two-tier indication; delete per-component rings {#step-6}
 
+> **Model revised in [#step-9].** This step shipped the original two-tier
+> treatment (always-on hairline + keyboard ring). Working through the activation
+> model showed the always-on marker was redundant, so the model collapsed to
+> **one ring on the keyboard-active control** (1px, keyboard-focus only). The
+> per-component-ring deletions and the `--tugx-focus-ring-{color,width,offset}`
+> primitive below all stand; the `[data-key-view]` hairline rule and the
+> `--tugx-focus-ring-hairline-*` tokens were removed. See revised [P05]/[P12]
+> and superseded [Q01]. The done-record below is left as the historical account.
+
 **Depends on:** #step-1
 
 **Commit:** `focus(ring): single --tugx-focus-ring primitive + two-tier key-view marker`
@@ -707,7 +719,7 @@ useKeybindings([
 - [x] Resolve [Q01] by eye against both themes; lock the token. Locked the faint action-tinted hairline (option 2): Tier-1 reads `--tug7-surface-tone-primary-normal-active-rest` (faint blue, a:15), Tier-2 the solid `tone-border-active` blue. Each theme's own active-tone value supplies the per-theme weight, so no per-theme override was needed.
 
 **Tests:**
-- [x] app-test: after a click the key view shows the hairline (Tier 1); after Tab it shows the blue ring (Tier 2). `at0109-focus-ring-tiers` — click → `data-key-view`, not `:focus-visible`, computed `outline-width: 1px`; keyboard round-trip → `:focus-visible`, `outline-width: 2px`. PASS in the real WKWebView.
+- [x] app-test: focus-ring behavior in the real WKWebView. *(Originally `at0109-focus-ring-tiers`: click→1px hairline, Tab→2px ring. Rewritten as `at0109-focus-ring` for the revised one-ring model — click→no ring, keyboard→1px ring — when the two tiers collapsed in [#step-9].)*
 
 **Checkpoint:**
 - [x] `bun run audit:tokens pairings` passes; no per-component `outline:`/`focus-ring` rule remains (grep). `audit:tokens pairings` EXIT=0; `tsc --noEmit` clean; grep confirms no scattered focus-ring outline remains in the product tugways CSS and the three deleted tokens have zero references.
@@ -775,14 +787,14 @@ useKeybindings([
 - The base button (underlying push/popup/icon buttons) registers as a focusable and maps its `data-tug-focus` bundle to explicit no-steal-on-click + focus policy; Radix `Slot` (`asChild`) pass-through retained.
 
 **Tasks:**
-- [ ] Register the base button as a focusable; split `data-tug-focus` into no-steal-on-click + explicit policy ([P10]).
-- [ ] Confirm `asChild`/Slot composition and disabled handling unaffected.
+- [x] Register the base button as a focusable; split `data-tug-focus` into no-steal-on-click + explicit policy ([P10]). `TugButton` now calls `useFocusable` and registers when a surrounding surface authors it into a focus group (`focusGroup`/`focusOrder`/`focusPolicy`); `useFocusable` gained a `register` flag so an un-authored button stays a native focus stop and never makes the engine walk non-empty for its siblings (the end-state model: a control joins the walk when its surface authors a group, [P02]). The `data-tug-focus` bundle split into the explicit `stealsFocusOnClick` (default `false` → emits `data-tug-focus="refuse"`, the no-steal half) and the walk `focusPolicy` (`accept`/`skip`). Removed the legacy `.tug-button:focus-visible { outline: none }` suppression so focus indication is the app-owned single ring on keyboard focus ([P05] revised). Also in this step the focus model collapsed from two tiers to **one ring on the keyboard-active control** (1px, keyboard-focus only; engine marks `data-key-view-kbd` so its programmatic Tab focus rings reliably) — the always-on hairline and the `--tugx-focus-ring-hairline-*` tokens were removed and [P05]/[P12]/[Q01] revised. `at0109` was rewritten to the one-ring behavior.
+- [x] Confirm `asChild`/Slot composition and disabled handling unaffected. `focusableRef` merges into the existing `setRefs` (Slot/`asChild` ref forwarding intact); `disabled`/`effectiveDisabled` and the confirmation lifecycle untouched; new focus props are destructured so they never leak to the DOM via `...rest`. Full unit suite (3389) green.
 
 **Tests:**
-- [ ] app-test: a button click does not move the key view; the button is reachable per its policy; the ring shows on keyboard focus.
+- [x] app-test: a button click does not move the key view; the button is reachable per its policy; the ring shows on keyboard focus. `at0112-button-focus` (gallery `Focus Walk` panel: Alpha/Beta `accept`, Gamma `skip`) — engine Tab walks Alpha→Beta and wraps, never landing on Gamma in standard mode; the key view paints an outline on keyboard focus; clicking a refusing button while the key view sits on Beta leaves it on Beta. PASS.
 
 **Checkpoint:**
-- [ ] `just app-test` button scenario `VERDICT: PASS`; `bunx tsc --noEmit` clean.
+- [x] `just app-test` button scenario `VERDICT: PASS`; `bunx tsc --noEmit` clean. `at0112` PASS; `tsc --noEmit` clean; `audit:tokens pairings` EXIT 0; full `bun test` (3389) green.
 
 ---
 
@@ -1153,7 +1165,7 @@ useKeybindings([
 **References:** (#success-criteria), all [P01]–[P11]
 
 **Tasks:**
-- [ ] Verify Tab order, traps, two-tier ring, selection vs focus colors, default-action, and both modes work together.
+- [ ] Verify Tab order, traps, the focus ring (default-seeded on open; ring follows the keyboard-active control; no ring on click), Return/Space activation per the [P12] claim/delegate model, selection vs focus colors, and both modes work together.
 
 **Tests:**
 - [ ] Full `just app-test` focus suite green; `bun run audit:tokens pairings` clean; `bunx tsc --noEmit` + `bun test` green.
@@ -1165,7 +1177,7 @@ useKeybindings([
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** An app-owned focus engine with an always-visible key view, app-authored two-mode Tab navigation with CFRunLoop-style floating-surface traps, a dynamic context-scoped keybinding registry, a single crisp focus-ring primitive, the accent=selection / action=focus color contract, a retired default-button stack, and an audited first-responder/refuse model — Radix tamed, accessibility mode in-app and AT-ready.
+**Deliverable:** An app-owned focus engine with a single keyboard key view ringed on keyboard focus, app-authored two-mode Tab navigation with CFRunLoop-style floating-surface traps, a dynamic context-scoped keybinding registry, a single crisp focus-ring primitive (the ring owns Return), the accent=selection / action=focus color contract, a retired default-button stack, and an audited first-responder/refuse model — Radix tamed, accessibility mode in-app and AT-ready.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
@@ -1181,12 +1193,12 @@ useKeybindings([
 
 - [ ] OS/VoiceOver accessibility-tree integration and auto-engage of `accessibility` mode from a host signal ([Q03]).
 - [ ] Keyboard-navigation of non-interactive content (reading cursor) — out of scope per [P09].
-- [ ] Per-theme Tier-1 marker tuning if [Q01]'s single token proves insufficient.
+- [ ] Per-theme / per-mode focus-ring weight tuning (e.g. a heavier ring in `accessibility` mode) if 1px proves hard to spot on busy surfaces.
 
 | Checkpoint | Verification |
 |------------|--------------|
 | Tab order is app-authored | app-test asserts visit order independent of DOM order |
-| Key view always visible | app-test asserts `data-key-view` + hairline after click and Tab |
+| Focus ring on keyboard focus | app-test asserts no ring after a click, one ring after a Tab; ring follows the keyboard-active control |
 | Traps work | app-test wrap + restore on a floating surface |
 | Selection ≠ focus | app-test selected+focused row carries accent fill + blue ring |
 | Default-button retired | grep clean; Enter still confirms the active dialog |

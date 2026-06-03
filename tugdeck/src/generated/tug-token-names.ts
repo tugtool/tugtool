@@ -758,8 +758,6 @@ export const TUG_TOKEN_NAMES: readonly string[] = [
   "--tug7-surface-tone-primary-normal-success-rest",
   "--tugx-control-disabled-opacity",
   "--tugx-focus-ring-color",
-  "--tugx-focus-ring-hairline-color",
-  "--tugx-focus-ring-hairline-width",
   "--tugx-focus-ring-offset",
   "--tugx-focus-ring-width",
   "--tugx-host-canvas-color",

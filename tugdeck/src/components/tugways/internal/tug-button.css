@@ -270,9 +270,9 @@
   border-color: var(--tug7-element-control-border-outlined-action-active);
 }
 
-.tug-button:focus-visible {
-  outline: none;
-}
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css):
+   the Tier-1 hairline on the engine's key view and the Tier-2 ring on keyboard
+   focus. The base button no longer suppresses its own outline. */
 
 .tug-button:disabled {
   pointer-events: none;

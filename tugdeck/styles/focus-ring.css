@@ -1,45 +1,44 @@
 /**
- * focus-ring.css — the single app-owned focus-ring primitive.
+ * focus-ring.css — the single app-owned focus ring.
  *
- * One ring, two tiers, replacing the scatter of per-component `:focus` /
+ * One ring, on the keyboard-active control — the control the keyboard is
+ * currently driving. It replaces the old scatter of per-component `:focus` /
  * `:focus-visible` outlines (indigo `accentCool`, the link color, the accent
- * color, each at its own width/offset). Both tiers read the `--tugx-focus-ring-*`
+ * color, each at its own width/offset) and reads the `--tugx-focus-ring-*`
  * tokens authored in the theme files (brio.css / harmony.css), so the color is
- * theme-aware and the whole treatment is tuned from one place.
+ * theme-aware and tuned from one place.
  *
- * The contract: **action/blue marks the keyboard-active axis** — the surface
- * the keyboard is currently empowering — while accent/orange is reserved for
- * selection. The ring is `outline`-based: layout-free (it never shifts boxes)
- * and it follows each element's `border-radius` on WebKit, so no per-component
- * radius bookkeeping is needed.
+ * **The ring is the definitive "Return acts here" affordance** ([P12]). The
+ * keyboard-active control is also the live target of Return: a surface seeds
+ * the ring to its declared default button on open ([P07]), Tab moves it, and a
+ * focused button claims Return while it holds the ring. `filled+action` is the
+ * standing *identity* of the primary button (the ring's home base), not the
+ * live Return signal — so a Tab to a non-default button moves the ring (and
+ * Return) onto it, while the unfocused primary keeps only its fill.
  *
- *  - **Tier 1 — key view (always on).** The focus engine stamps `data-key-view`
- *    on the single element the keyboard targets. A faint hairline marks it at
- *    rest so "where do keys go?" is answerable without first pressing a key —
- *    including right after a mouse click, when the browser withholds
- *    `:focus-visible`.
- *  - **Tier 2 — keyboard navigation.** Whenever the browser deems focus visible
- *    (Tab / arrow navigation, not a click), the full action/blue ring paints.
- *    This covers the key view and any control the browser focuses natively that
- *    the focus engine has not yet adopted, so keyboard focus is visible
- *    uniformly across the app.
+ * It shows on **keyboard** focus, never on a mouse click — a click leaves no
+ * ring, and the mouse never moves the ring off the default ([P12]). action/blue,
+ * `outline`-based: layout-free (it never shifts boxes) and it follows each
+ * element's `border-radius` on WebKit, so no per-component radius bookkeeping is
+ * needed.
  *
- * The two selectors carry equal specificity (one attribute vs one pseudo-class);
- * Tier 2 is authored last so the full ring wins when an element is both the key
- * view and keyboard-focused. Surfaces that are their own focus affordance
- * (a portalled popover, a cropped in-sheet tab bar, a caret-bearing text
- * editor) keep their existing higher-specificity `outline: none` suppression and
- * are unaffected.
+ * Two triggers, one ring:
+ *  - `:focus-visible` — the browser's keyboard-focus heuristic, for native and
+ *    Radix-managed controls (still the bulk of the app mid-migration).
+ *  - `[data-key-view-kbd]` — the focus engine's own signal that it moved the key
+ *    view by keyboard (the Tab walk / surface entry). WebKit does not reliably
+ *    grant `:focus-visible` to a programmatic `.focus()`, so the engine marks
+ *    its keyboard navigation itself rather than depending on the browser. (A
+ *    pointer-reached key view carries `data-key-view` without `-kbd`, so a click
+ *    never rings.)
+ *
+ * Surfaces that are their own focus affordance (a portalled popover container,
+ * a cropped in-sheet tab bar, a caret-bearing text editor) keep their existing
+ * higher-specificity `outline: none` and are unaffected.
  */
 
-/* Tier 1 — always-on key-view marker. */
-[data-key-view] {
-  outline: var(--tugx-focus-ring-hairline-width) solid var(--tugx-focus-ring-hairline-color);
-  outline-offset: var(--tugx-focus-ring-offset);
-}
-
-/* Tier 2 — keyboard-active ring (authored after Tier 1 so it wins on overlap). */
-:focus-visible {
+:focus-visible,
+[data-key-view-kbd] {
   outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
   outline-offset: var(--tugx-focus-ring-offset);
 }

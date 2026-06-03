@@ -38,6 +38,16 @@ export interface UseFocusableOptions {
   /** Walk policy. Defaults to `accept`. */
   policy?: FocusPolicy;
   /**
+   * Whether to actually register. Defaults to `true`. A control that is only
+   * *authored* into the Tab walk by its surrounding surface passes `false`
+   * until that surface supplies a group — keeping it a plain native focus stop
+   * (the global ring still paints on keyboard focus) without making the app's
+   * walk non-empty and thereby suppressing native Tab for its un-authored
+   * siblings. The end-state model: a control joins the walk when its surface
+   * authors a focus group for it ([P02]).
+   */
+  register?: boolean;
+  /**
    * Transient "I consume Tab right now" predicate (e.g. an editor with an open
    * completion). Held by reference and read live, so toggling it does not
    * re-register the focusable.
@@ -82,9 +92,9 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   // Structural fields are in the dep array so a change re-registers; the
   // function-typed `consumesTab` is intentionally NOT, to avoid thrashing the
   // effect on every render -- it is read live through `optionsRef`.
-  const { id, group, order, policy } = options;
+  const { id, group, order, policy, register = true } = options;
   useLayoutEffect(() => {
-    if (manager === null) return;
+    if (manager === null || !register) return;
     manager.registerFocusable({
       id,
       group,
@@ -96,7 +106,7 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
     return () => {
       manager.unregisterFocusable(id);
     };
-  }, [manager, id, group, order, policy, focusMode]);
+  }, [manager, id, group, order, policy, register, focusMode]);
 
   // Stable ref callback that writes `data-tug-focusable` only when a manager
   // is in scope. Mirrors `useOptionalResponder`'s `responderRef`: the DOM
@@ -108,12 +118,12 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
       if (prev && prev !== el) {
         prev.removeAttribute("data-tug-focusable");
       }
-      if (el && manager !== null) {
+      if (el && manager !== null && register) {
         el.setAttribute("data-tug-focusable", id);
       }
       currentElementRef.current = el;
     },
-    [id, manager],
+    [id, manager, register],
   );
 
   return { focusableRef };

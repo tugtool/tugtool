@@ -168,6 +168,63 @@ function KeybindingDemoBinding() {
 }
 
 // ---------------------------------------------------------------------------
+// FocusWalkDemo
+// ---------------------------------------------------------------------------
+
+/**
+ * FocusWalkDemo -- exercises the base button's focus-engine integration
+ * ([P01], [P10]). Three buttons are authored into one focus group: two
+ * `accept` stops and one `skip`. Because they register as focusables, Tab in
+ * this card is engine-driven and walks Alpha → Beta (Gamma is skipped in
+ * standard mode), wrapping. Each button keeps the default no-steal-on-click
+ * (`data-tug-focus="refuse"`), so clicking one never moves the key view.
+ *
+ * This is the controlled scenario for the Step-9 app-test: authoring focusables
+ * here makes the walk non-empty for this card only, which is exactly the
+ * end-state model — a control joins the Tab walk when its surface authors a
+ * focus group for it.
+ */
+function FocusWalkDemo() {
+  return (
+    <div className="cg-section" data-testid="focus-walk-demo">
+      <TugLabel className="cg-section-title">Focus Walk</TugLabel>
+      <TugLabel size="2xs" emphasis="calm">
+        Three buttons authored into one focus group. Tab walks the two
+        `accept` stops (Gamma is `skip`); clicking a button never moves the key
+        view.
+      </TugLabel>
+      <div className="cg-variant-row">
+        <TugButton
+          onClick={() => {}}
+          focusGroup="gallery-focus-walk"
+          focusOrder={0}
+          data-testid="focus-walk-alpha"
+        >
+          Alpha
+        </TugButton>
+        <TugButton
+          onClick={() => {}}
+          focusGroup="gallery-focus-walk"
+          focusOrder={1}
+          data-testid="focus-walk-beta"
+        >
+          Beta
+        </TugButton>
+        <TugButton
+          onClick={() => {}}
+          focusGroup="gallery-focus-walk"
+          focusOrder={2}
+          focusPolicy="skip"
+          data-testid="focus-walk-gamma"
+        >
+          Gamma
+        </TugButton>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GalleryChainActions
 // ---------------------------------------------------------------------------
 
@@ -202,6 +259,10 @@ export function GalleryChainActions() {
       <TugSeparator />
 
       <KeybindingDemo />
+
+      <TugSeparator />
+
+      <FocusWalkDemo />
     </div>
   );
 }

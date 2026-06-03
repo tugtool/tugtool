@@ -166,6 +166,12 @@ export class FocusManager {
   private groupOrder: string[] = [];
   private defaultActions: Map<string, TugAction> = new Map();
   private keyViewId: string | null = null;
+  // Whether the current key view was reached by *keyboard* (the Tab walk /
+  // surface entry) vs by pointer (click promotion). The focus ring shows on a
+  // keyboard-reached key view; WebKit's `:focus-visible` heuristic is
+  // unreliable for the engine's programmatic `.focus()`, so the engine marks
+  // its own keyboard navigation rather than depending on the browser.
+  private keyViewKeyboard = false;
   private accessMode: KeyboardAccessMode = "standard";
   private seqCounter = 0;
   private version = 0;
@@ -250,12 +256,17 @@ export class FocusManager {
 
   /**
    * Set the key view to `id` (or `null` to clear). Writes the `data-key-view`
-   * DOM attribute on exactly one element. No-op (other than DOM clear) when
-   * the value is unchanged.
+   * DOM attribute on exactly one element, plus `data-key-view-kbd` when the key
+   * view was reached by keyboard (so the focus ring paints). No-op (other than
+   * DOM clear) when neither the value nor the modality changed.
+   *
+   * `keyboard` defaults to `false` (pointer / chain reflection); the Tab walk
+   * and surface entry pass `true`.
    */
-  setKeyView(id: string | null): void {
-    if (this.keyViewId === id) return;
+  setKeyView(id: string | null, keyboard = false): void {
+    if (this.keyViewId === id && this.keyViewKeyboard === keyboard) return;
     this.keyViewId = id;
+    this.keyViewKeyboard = keyboard;
     this.syncKeyViewDomAttribute();
     this.touch();
   }
@@ -389,7 +400,7 @@ export class FocusManager {
     const order = this.walkOrder();
     if (order.length === 0) return null;
     const id = order[0].id;
-    this.setKeyView(id);
+    this.setKeyView(id, true);
     return id;
   }
 
@@ -479,7 +490,7 @@ export class FocusManager {
     const base = current === -1 ? (step === 1 ? -1 : 0) : current;
     const nextIndex = (base + step + order.length) % order.length;
     const nextId = order[nextIndex].id;
-    this.setKeyView(nextId);
+    this.setKeyView(nextId, true);
     return nextId;
   }
 
@@ -535,6 +546,7 @@ export class FocusManager {
     if (typeof document === "undefined") return;
     document.querySelectorAll<HTMLElement>("[data-key-view]").forEach((el) => {
       el.removeAttribute("data-key-view");
+      el.removeAttribute("data-key-view-kbd");
     });
     if (this.keyViewId === null) return;
     const id = this.keyViewId;
@@ -545,7 +557,13 @@ export class FocusManager {
     const el = document.querySelector<HTMLElement>(
       `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
     );
-    el?.setAttribute("data-key-view", id);
+    if (!el) return;
+    el.setAttribute("data-key-view", id);
+    // The focus ring paints on a keyboard-reached key view (the engine's own
+    // signal, since `:focus-visible` is unreliable for programmatic focus).
+    if (this.keyViewKeyboard) {
+      el.setAttribute("data-key-view-kbd", "");
+    }
   }
 
   /**

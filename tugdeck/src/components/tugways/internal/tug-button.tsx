@@ -19,6 +19,8 @@ import type { TugAction } from "../action-vocabulary";
 import { useTugBoxDisabled } from "./tug-box-context";
 import { useControlDispatch } from "../use-control-dispatch";
 import { ResponderParentContext } from "../responder-chain";
+import { useFocusable } from "../use-focusable";
+import type { FocusPolicy } from "../focus-manager";
 import { TugStableOverlay } from "./tug-stable-overlay";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
@@ -306,6 +308,43 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * When true, the single child element becomes the button's DOM root.
    */
   asChild?: boolean;
+
+  // ---- Focus engine ([P01], [P10]) ----
+  //
+  // The base button's focus has two independent axes, separated here (the
+  // old `data-tug-focus="refuse"` fused them):
+  //
+  //   (a) no-steal-on-click — does clicking the button promote the responder
+  //       chain / move browser focus? Buttons dispatch actions and should
+  //       keep focus where it is, so this defaults to "no" (`stealsFocusOnClick`
+  //       false → the button carries `data-tug-focus="refuse"`).
+  //   (b) walk policy — is the button a stop in the app-authored Tab walk?
+  //       It joins the walk only when a surrounding surface *authors* it into
+  //       a focus group ([P02]); `focusGroup` is that opt-in. Until then it is
+  //       a plain native focus stop (the global ring still paints on keyboard
+  //       focus) and does not make the engine walk non-empty for its siblings.
+
+  /**
+   * Focus group this button is authored into ([P02]). When set, the button
+   * registers as a focusable and participates in the engine's Tab walk; when
+   * omitted, the button is a native focus stop only. Supplied by the surface
+   * that owns the Tab order, not hand-set per call site in app code.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
+  /**
+   * Whether clicking promotes the responder chain and moves browser focus to
+   * the button. Default `false` — the button dispatches its action and leaves
+   * focus undisturbed (the no-steal-on-click half of the old `refuse` bundle).
+   * Set `true` for the rare button that should itself become first responder.
+   */
+  stealsFocusOnClick?: boolean;
 }
 
 // ---- Border-radius tokens (rem-based, Tailwind-proportional) ----
@@ -382,6 +421,10 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   "aria-label": ariaLabel,
   className,
   asChild = false,
+  focusGroup,
+  focusOrder = 0,
+  focusPolicy,
+  stealsFocusOnClick = false,
   ...rest
 }: TugButtonProps, ref) {
   // `role` is overloaded. For 99% of call sites it's a semantic theming
@@ -496,6 +539,24 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   const confirmingRef = React.useRef(false);
   const timerRef = React.useRef<number | null>(null);
 
+  // ---- Focus-engine registration ([P01], [P10]) ----
+  //
+  // A stable auto-id identifies this button to the focus engine. It registers
+  // as a focusable only when a surrounding surface has authored it into a focus
+  // group ([P02]); `register: false` otherwise leaves it a plain native focus
+  // stop so an un-authored button never makes the engine's Tab walk non-empty
+  // (which would suppress native Tab for its un-authored siblings). The
+  // returned `focusableRef` writes `data-tug-focusable` so the engine can land
+  // the key view on this button and paint the ring on keyboard focus.
+  const autoFocusId = React.useId();
+  const { focusableRef } = useFocusable({
+    id: autoFocusId,
+    group: focusGroup ?? "",
+    order: focusOrder,
+    policy: focusPolicy,
+    register: focusGroup !== undefined,
+  });
+
   // ---- Default-button registration ([L03]) ----
   //
   // A `filled` + `action` button is, by visual contract, the
@@ -535,12 +596,14 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   const setRefs = React.useCallback(
     (node: HTMLButtonElement | null) => {
       internalButtonRef.current = node;
+      // Project the focusable's DOM attribute (no-op when not registered).
+      focusableRef(node);
       if (typeof ref === "function") ref(node);
       else if (ref !== null && ref !== undefined) {
         (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node;
       }
     },
-    [ref],
+    [ref, focusableRef],
   );
 
   // Controlled-mode discriminator. When `isConfirming` is provided
@@ -878,7 +941,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     <Comp
       ref={setRefs}
       data-slot="tug-button"
-      data-tug-focus="refuse"
+      data-tug-focus={stealsFocusOnClick ? undefined : "refuse"}
       disabled={effectiveDisabled}
       role={htmlRole}
       aria-label={ariaLabel}
