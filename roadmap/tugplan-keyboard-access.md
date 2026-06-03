@@ -136,7 +136,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 - In-app setting + Swift menu toggle only (this phase).
 - Add a reserved host→web signal channel now, consume later.
 
-**Plan to resolve:** Ship the explicit toggle in [#step-25]; reserve a channel name but defer auto-engage to the AT-integration follow-on.
+**Plan to resolve:** Ship the explicit toggle in [#step-28]; reserve a channel name but defer auto-engage to the AT-integration follow-on.
 
 **Resolution:** DEFERRED — explicit toggle this phase; OS auto-engage in the AT follow-on (see [#roadmap]).
 
@@ -298,7 +298,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 - The two were fused because they happened to co-occur on button-class controls, but they are different axes; the new engine needs them separable (a control can be click-inert for first responder yet still Tab-reachable, and vice versa).
 
 **Implications:**
-- The audit ([#step-24]) reclassifies all 28 `data-tug-focus` sites; `TugIconButton` and friends keep no-steal-on-click but gain explicit focus policy.
+- The audit ([#step-27]) reclassifies all 28 `data-tug-focus` sites; `TugIconButton` and friends keep no-steal-on-click but gain explicit focus policy.
 
 #### [P11] Dynamic, context-scoped keybinding registry (DECIDED) {#p11-dynamic-keybindings}
 
@@ -359,9 +359,9 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 - A pending dialog's `default-action` must win over the prompt's own `submit`; being the top mode delivers that precedence for free (it is the inline analog of a modal mode owning default-action).
 
 **Implications:**
-- `TugInlineDialog` (or its chrome consumers) pushes a non-trapped mode while pending and declares `DEFAULT_ACTION` (confirm / Next / submit the highlighted option) + `CANCEL_ACTION` (cancel ≡ `popInteractive()`) on it. Folded into [#step-23]'s commit-key work, with `chrome/dev-permission-dialog.tsx` added alongside `chrome/dev-question-dialog.tsx`.
+- `TugInlineDialog` (or its chrome consumers) pushes a non-trapped mode while pending and declares `DEFAULT_ACTION` (confirm / Next / submit the highlighted option) + `CANCEL_ACTION` (cancel ≡ `popInteractive()`) on it. Folded into [#step-26]'s commit-key work, with `chrome/dev-permission-dialog.tsx` added alongside `chrome/dev-question-dialog.tsx`.
 - The wizard accelerators (`←`/`→` Back/Next, `1`–`9` option select, `⌘.` cancel) become mode-local `useKeybindings` registered while the dialog is pending, deactivating on pop. Folded into [#step-5].
-- The dialog's buttons (`TugDialogButton` / `TugPushButton`) take no-steal-on-click + an explicit Tab policy from the `refuse` split ([P10], [#step-24]); the `options` radio group is a single roving focus stop (the `tug-option-group` pattern, [P02]).
+- The dialog's buttons (`TugDialogButton` / `TugPushButton`) take no-steal-on-click + an explicit Tab policy from the `refuse` split ([P10], [#step-27]); the `options` radio group is a single roving focus stop (the `tug-option-group` pattern, [P02]).
 - Distinct from a floating surface: no `useFocusTrap`, no `data-key-view` move to the dialog, no Tab cycling within it. The mode is a *scope*, not a *trap*. The session's `pushInteractive`/`popInteractive` stack (the request queue) stays the source of truth for *which* dialog is pending; the focus mode is pushed/popped in lockstep with it.
 
 #### [P14] `role="action"` controls keep the blue "active" on/selected tone (DECIDED) {#p14-action-role-blue}
@@ -406,6 +406,7 @@ This gives nesting (a popover inside a sheet pushes a mode atop the sheet's), an
 #### Affected components inventory {#affected-inventory}
 
 - **Radix-focus components to tame (~14):** radio-group, accordion, switch, popover, slider, checkbox, context-menu, tab-bar, sheet, alert, tooltip, label, internal/tug-button, internal/tug-popup-menu.
+- **Hand-rolled roving / keyboard groups to tame (engine registration, not Radix):** choice-group, option-group, list-view — each registers as a single focus stop and keeps its component-local arrow/row navigation (the `tug-group-utils` roving pattern), paralleling tab-bar's taming ([#step-16]–[#step-18]).
 - **Per-component focus-ring rules to delete:** checkbox, option-group, input, dialog-button, inline-dialog, cue, tab-bar, choice-group, list-row, textarea, value-input, code-view, markdown-view, slider, menu, prompt-entry, split-pane, hue-strip, popover.
 - **Selection-token recolor sites:** list-row, menu, editor-context-menu, list-view (the `selected`/`highlighted` surfaces → accent). **Excluded from recolor:** `surface-selection-primary-normal-plain-*` (text/character selection: code-view, markdown-view, text-editor, `::highlight(card-selection)`) stays blue; `control-…-filled-action` stays blue for the CTA/activation use ([P06], [P12]). `control-filled-action` is *shared* (CTA fill + menu transient) — only the menu *selection* use moves to the accent token.
 - **Commit-key sites (default-action / cancel-action):** `internal/tug-button.tsx`, `responder-chain-provider.tsx` (Stage 2), `responder-chain.ts` (stack), `tug-text-editor.tsx` + `tug-text-editor/keymap.ts` (`peekDefaultButton` submit-Enter defer — G3), `cards/gallery-default-button.tsx`, and the inline dialogs `chrome/dev-question-dialog.tsx` + `chrome/dev-permission-dialog.tsx` (non-trapped focus scopes per [P13]: declare default/cancel on a pushed non-trapped mode, retiring their default-button + document-listener handling). **Escape-ladder consumers to reconcile (G2):** `card-drag-coordinator.ts` (document-level drag-cancel Escape listener, kept), `cards/dev-card.tsx` (in-flight interrupt → pane card `cancelAction`), and the `keybinding-map.ts` Escape/⌘. → `CANCEL_DIALOG` entries (fold into `cancel-action`).
@@ -567,17 +568,20 @@ useKeybindings([
 | #step-13 | Tame TugTabBar (roving) | pending | — |
 | #step-14 | Tame TugRadioGroup (roving) | pending | — |
 | #step-15 | Tame TugAccordion (roving) | pending | — |
-| #step-16 | Tame TugTooltip | pending | — |
-| #step-17 | Tame TugPopover (FocusScope → engine trap) | pending | — |
-| #step-18 | Tame TugContextMenu | pending | — |
-| #step-19 | Tame internal/tug-popup-menu | pending | — |
-| #step-20 | Tame TugSheet (modal trap + restore) | pending | — |
-| #step-21 | Tame TugAlert (modal dialog) | pending | — |
-| #step-22 | Radix-taming integration checkpoint | pending | — |
-| #step-23 | Semantic commit keys + scope default/cancel actions | pending | — |
-| #step-24 | First-responder + refuse audit & reclassification | pending | — |
-| #step-25 | Accessibility-mode ARIA pass + dual mode toggle | pending | — |
-| #step-26 | Integration checkpoint | pending | — |
+| #step-16 | Tame TugChoiceGroup (roving) | pending | — |
+| #step-17 | Tame TugOptionGroup (roving, multi-select) | pending | — |
+| #step-18 | Tame TugListView (roving rows) | pending | — |
+| #step-19 | Tame TugTooltip | pending | — |
+| #step-20 | Tame TugPopover (FocusScope → engine trap) | pending | — |
+| #step-21 | Tame TugContextMenu (+ editor context menu) | pending | — |
+| #step-22 | Tame internal/tug-popup-menu | pending | — |
+| #step-23 | Tame TugSheet (modal trap + restore) | pending | — |
+| #step-24 | Tame TugAlert (modal dialog) | pending | — |
+| #step-25 | Radix-taming integration checkpoint | pending | — |
+| #step-26 | Semantic commit keys + scope default/cancel actions | pending | — |
+| #step-27 | First-responder + refuse audit & reclassification | pending | — |
+| #step-28 | Accessibility-mode ARIA pass + dual mode toggle | pending | — |
+| #step-29 | Integration checkpoint | pending | — |
 
 #### Step 1: FocusManager core + registry + `useFocusable` (inert) {#step-1}
 
@@ -659,7 +663,7 @@ useKeybindings([
 - `pushFocusMode`/`popFocusMode` capture/restore the key view; `FocusModeContext` + mode-aware `useFocusable`; `useFocusTrap` hook; `data-focus-mode` DOM projection; wired into `TugSheet`.
 
 **Tasks:**
-- [x] Push a trapped mode on open; pop on close; restore prior key view. Wired into `TugSheet` (covers `TugAlertSheet`, which composes it). The popup-class surfaces (`TugPopover`, `TugContextMenu`, `internal/tug-popup-menu`) and the Radix `TugAlert` push/pop land in their taming steps [#step-17]–[#step-21], which replace Radix `FocusScope` with `useFocusTrap` — wiring them here, alongside the still-active `FocusScope`, would be churn those steps rework. The completion popup uses the key-consume model ([#step-3] `data-tug-tab-consume`), not a mode trap.
+- [x] Push a trapped mode on open; pop on close; restore prior key view. Wired into `TugSheet` (covers `TugAlertSheet`, which composes it). The popup-class surfaces (`TugPopover`, `TugContextMenu`, `internal/tug-popup-menu`) and the Radix `TugAlert` push/pop land in their taming steps [#step-20]–[#step-24], which replace Radix `FocusScope` with `useFocusTrap` — wiring them here, alongside the still-active `FocusScope`, would be churn those steps rework. The completion popup uses the key-consume model ([#step-3] `data-tug-tab-consume`), not a mode trap.
 - [x] Tab/Shift-Tab wrap within the active mode — the trapped walk + wrap is the mechanism, pinned in `focus-walk.test.ts`. Becomes app-observable per surface as its contents register as focusables (taming); `useFocusable` now registers into the surrounding `FocusModeContext`.
 
 **Tests:**
@@ -683,7 +687,7 @@ useKeybindings([
 - [x] Add the keybinding registry on `ResponderChainManager` (`registerKeybinding` returns an unregister thunk / `resolveKeybinding` / `activeKeybindings`) keyed by scope id (responder id or focus-mode id) via live `KeybindingSource` getters. `keyBindingMatchesEvent` extracted from `matchKeybinding` so static + dynamic share one match rule.
 - [x] `useKeybindings([...])` registering via `useLayoutEffect` ([L03]); entries cite `TUG_ACTIONS.*` constants; cleanup unregisters; live-read source so handler/chord changes need no re-register. Tolerant pattern (no-op outside a provider / with no scope, like `useOptionalResponder` — [L26]).
 - [x] Stage 1 resolution: `responder-chain-provider` resolves dynamic in-context bindings (active focus mode as innermost `extraScopes`, then the first-responder walk, innermost-first) before `matchKeybinding`; the matched binding flows through the one existing dispatch path (`preventDefaultOnMatch`, `scope` routing, continuation).
-- [x] Mode-local bindings (`useKeybindings(..., { mode: true })`) register under the surrounding `FocusModeContext` id and resolve only while that mode is current ([P03]). This is the mechanism the inline dialogs' wizard accelerators use ([P13]): `PermissionDialog` / `QuestionDialog` register `←`/`→`, `1`–`9`, `⌘.` as mode-local bindings — that wiring lands with [#step-23]; the mechanism is in place here.
+- [x] Mode-local bindings (`useKeybindings(..., { mode: true })`) register under the surrounding `FocusModeContext` id and resolve only while that mode is current ([P03]). This is the mechanism the inline dialogs' wizard accelerators use ([P13]): `PermissionDialog` / `QuestionDialog` register `←`/`→`, `1`–`9`, `⌘.` as mode-local bindings — that wiring lands with [#step-26]; the mechanism is in place here.
 - [x] Dev-mode warn (`warnDuplicateChords`) on a duplicate chord at the same scope.
 
 **Tests:**
@@ -770,13 +774,13 @@ useKeybindings([
 **Checkpoint:**
 - [x] `bun run audit:tokens pairings` clean; visual check both themes. `audit:tokens pairings` EXIT=0; `tsc --noEmit` clean. No theme recolor was needed ([#step-7] already moved generic selection to orange; [P14] keeps role=action blue), so this step is the sweep confirmation + `at0111` + the new [P14] decision.
 
-> **Steps 9–22 — Radix taming, one primitive per step.** Each disables the
+> **Steps 9–25 — Radix taming, one primitive per step.** Each disables the
 > primitive's borrowed Radix focus management and drives focus from the engine, behind
 > its own commit and app-test checkpoint so a regression is isolated to one primitive.
 > Risk-ordered: simple controls first, roving composites next, non-modal traps, then
 > modal surfaces. Common references for all: [P01] FocusManager, Risk R01,
 > (#affected-inventory). `internal/tug-label` (Radix Label — `htmlFor` association only,
-> no focus management) carries no taming work and is covered by the ARIA step ([#step-25]).
+> no focus management) carries no taming work and is covered by the ARIA step ([#step-28]).
 
 #### Step 9: Tame internal/tug-button (base control focus) {#step-9}
 
@@ -933,7 +937,73 @@ useKeybindings([
 
 ---
 
-#### Step 16: Tame TugTooltip {#step-16}
+#### Step 16: Tame TugChoiceGroup (roving) {#step-16}
+
+**Depends on:** #step-3
+
+**Commit:** `focus(radix): TugChoiceGroup — single focus stop, arrows local`
+
+**References:** [P01] FocusManager, [P02] authored order, Risk R01, (#affected-inventory)
+
+**Artifacts:**
+- The hand-rolled `tabIndex` roving (`tug-group-utils`) becomes a single focus stop in the walk; arrows move/select within; the engine owns Tab between stops; single-select value semantics retained.
+
+**Tasks:**
+- [ ] Register the group as one focusable; keep component-local arrow roving (`tug-group-utils`); remove reliance on native inter-control Tab; keep single-select value semantics.
+
+**Tests:**
+- [ ] app-test: Tab enters/exits the group as one stop; arrows move/select; ring on keyboard focus.
+
+**Checkpoint:**
+- [ ] `just app-test` choice-group scenario `VERDICT: PASS`.
+
+---
+
+#### Step 17: Tame TugOptionGroup (roving, multi-select) {#step-17}
+
+**Depends on:** #step-3
+
+**Commit:** `focus(radix): TugOptionGroup — single focus stop, Space toggles member`
+
+**References:** [P01] FocusManager, [P02] authored order, Risk R01, (#affected-inventory)
+
+**Artifacts:**
+- The canonical roving `tabIndex` pattern (the one TugRadioGroup / TugAccordion borrow) becomes a single focus stop; arrows move within; Space/Enter toggles the active member; multi-select value semantics retained.
+
+**Tasks:**
+- [ ] Register the group as one focusable; keep component-local arrow roving; Space toggles the active member; remove reliance on native Tab; keep multi-select semantics.
+
+**Tests:**
+- [ ] app-test: Tab treats the group as one stop; arrows move; Space toggles a member; ring on keyboard focus.
+
+**Checkpoint:**
+- [ ] `just app-test` option-group scenario `VERDICT: PASS`.
+
+---
+
+#### Step 18: Tame TugListView (roving rows) {#step-18}
+
+**Depends on:** #step-3
+
+**Commit:** `focus(radix): TugListView — single focus stop, row nav local`
+
+**References:** [P01] FocusManager, [P02] authored order, Risk R01, (#affected-inventory)
+
+**Artifacts:**
+- The list container is one focus stop; its arrow / Page / Home-End row navigation stays component-local; rows stay non-focusable (`tabIndex=-1`); the engine owns Tab between stops; row-selection semantics retained.
+
+**Tasks:**
+- [ ] Register the list container as one focusable; keep component-local row keyboard navigation; the engine owns ring/key view and Tab between stops; keep selection semantics.
+
+**Tests:**
+- [ ] app-test: Tab enters/exits the list as one stop; arrow/Page keys move the active row; ring on keyboard focus.
+
+**Checkpoint:**
+- [ ] `just app-test` list-view scenario `VERDICT: PASS`.
+
+---
+
+#### Step 19: Tame TugTooltip {#step-19}
 
 **Depends on:** #step-3
 
@@ -955,7 +1025,7 @@ useKeybindings([
 
 ---
 
-#### Step 17: Tame TugPopover (FocusScope → engine trap) {#step-17}
+#### Step 20: Tame TugPopover (FocusScope → engine trap) {#step-20}
 
 **Depends on:** #step-3, #step-4
 
@@ -977,7 +1047,7 @@ useKeybindings([
 
 ---
 
-#### Step 18: Tame TugContextMenu {#step-18}
+#### Step 21: Tame TugContextMenu (+ editor context menu) {#step-21}
 
 **Depends on:** #step-3, #step-4
 
@@ -987,19 +1057,22 @@ useKeybindings([
 
 **Artifacts:**
 - Radix `FocusScope` replaced by a pushed focus mode; Escape close via the chain; key view restored on close.
+- `tug-editor-context-menu` (hand-rolled portal + own `keydown`, shares `tug-menu.css`) brought under the same engine focus mode rather than its own ad-hoc handling: push/pop on open/close, arrows local, Escape via the chain, key view restored.
 
 **Tasks:**
 - [ ] Push/pop the focus mode; arrows move items locally; Escape dismisses via the chain; restore key view.
+- [ ] Route `tug-editor-context-menu` through the same focus mode (drop its ad-hoc `keydown` ownership where the engine now covers it); confirm parity with the Radix context menu.
 
 **Tests:**
 - [ ] app-test: Tab/arrows stay within the menu; Escape closes; key view restored.
+- [ ] app-test: the editor context menu opens under the engine focus mode — arrows move, Escape closes, key view restored to the editor.
 
 **Checkpoint:**
-- [ ] `just app-test` context-menu scenario `VERDICT: PASS`.
+- [ ] `just app-test` context-menu scenario `VERDICT: PASS` (covers both the Radix and editor context menus).
 
 ---
 
-#### Step 19: Tame internal/tug-popup-menu {#step-19}
+#### Step 22: Tame internal/tug-popup-menu {#step-22}
 
 **Depends on:** #step-3, #step-4
 
@@ -1021,7 +1094,7 @@ useKeybindings([
 
 ---
 
-#### Step 20: Tame TugSheet (modal trap + restore) {#step-20}
+#### Step 23: Tame TugSheet (modal trap + restore) {#step-23}
 
 **Depends on:** #step-3, #step-4
 
@@ -1043,7 +1116,7 @@ useKeybindings([
 
 ---
 
-#### Step 21: Tame TugAlert (modal dialog) {#step-21}
+#### Step 24: Tame TugAlert (modal dialog) {#step-24}
 
 **Depends on:** #step-3, #step-4
 
@@ -1052,7 +1125,7 @@ useKeybindings([
 **References:** [P01] FocusManager, [P03] traps, Risk R01, (#affected-inventory, #cfrunloop-model)
 
 **Artifacts:**
-- Radix `alert-dialog` FocusScope replaced by an engine modal focus mode; default-action wiring deferred to [#step-23].
+- Radix `alert-dialog` FocusScope replaced by an engine modal focus mode; default-action wiring deferred to [#step-26].
 
 **Tasks:**
 - [ ] Push/pop a modal focus mode; engine initial focus + restore; keep alert semantics.
@@ -1065,9 +1138,9 @@ useKeybindings([
 
 ---
 
-#### Step 22: Radix-taming integration checkpoint {#step-22}
+#### Step 25: Radix-taming integration checkpoint {#step-25}
 
-**Depends on:** #step-9, #step-10, #step-11, #step-12, #step-13, #step-14, #step-15, #step-16, #step-17, #step-18, #step-19, #step-20, #step-21
+**Depends on:** #step-9, #step-10, #step-11, #step-12, #step-13, #step-14, #step-15, #step-16, #step-17, #step-18, #step-19, #step-20, #step-21, #step-22, #step-23, #step-24
 
 **Commit:** `N/A (verification only)`
 
@@ -1076,7 +1149,7 @@ useKeybindings([
 **Tasks:**
 - [ ] Verify every tamed primitive runs under the engine (no Radix `RovingFocus`/`FocusScope`/guards still driving focus).
 - [ ] Re-evaluate `internal/safari-focus-shift.ts`; delete if the engine made it obsolete, or document why it remains.
-- [ ] Confirm `internal/tug-label` and `tug-pane-banner` carry no orphaned focus behavior (deferred to [#step-24]/[#step-25]).
+- [ ] Confirm `internal/tug-label` and `tug-pane-banner` carry no orphaned focus behavior (deferred to [#step-27]/[#step-28]).
 
 **Tests:**
 - [ ] Full `just app-test` primitive suite green across all tamed components.
@@ -1086,7 +1159,7 @@ useKeybindings([
 
 ---
 
-#### Step 23: Semantic commit keys + scope default/cancel actions {#step-23}
+#### Step 26: Semantic commit keys + scope default/cancel actions {#step-26}
 
 **Depends on:** #step-3, #step-4
 
@@ -1116,7 +1189,7 @@ useKeybindings([
 **Checkpoint:**
 - [ ] grep for `pushDefaultButton|peekDefaultButton|defaultButton` returns nothing; grep confirms commit-key dispatch uses `sendToTarget`, not `sendToFirstResponder`; `just app-test` commit-keys scenario `VERDICT: PASS`.
 
-#### Step 24: First-responder + `refuse` audit & reclassification {#step-24}
+#### Step 27: First-responder + `refuse` audit & reclassification {#step-27}
 
 **Depends on:** #step-1, #step-3
 
@@ -1137,9 +1210,9 @@ useKeybindings([
 **Checkpoint:**
 - [ ] `bunx tsc --noEmit` clean; `just app-test` audit scenario `VERDICT: PASS`.
 
-#### Step 25: Accessibility-mode ARIA pass + dual mode toggle {#step-25}
+#### Step 28: Accessibility-mode ARIA pass + dual mode toggle {#step-28}
 
-**Depends on:** #step-2, #step-3, #step-24
+**Depends on:** #step-2, #step-3, #step-27
 
 **Commit:** `a11y(mode): interactive ARIA pass + in-app setting & Swift menu toggle`
 
@@ -1149,7 +1222,7 @@ useKeybindings([
 - ARIA roles/states on interactive affordances; `accessibility` mode ignores `skip`; in-app setting UI + Swift host menu item (additive); reserved host→web channel name (unused).
 
 **Tasks:**
-- [ ] Assert interactive ARIA roles/states across the affordances enumerated in [#step-24] (AT-ready foundation).
+- [ ] Assert interactive ARIA roles/states across the affordances enumerated in [#step-27] (AT-ready foundation).
 - [ ] In `accessibility` mode, include `skip` focusables in the walk.
 - [ ] Add the in-app settings toggle (use existing Tug components) and a Swift menu item wired to the `keyboardAccess` default.
 
@@ -1159,9 +1232,9 @@ useKeybindings([
 **Checkpoint:**
 - [ ] `just app-test` mode scenario `VERDICT: PASS`; toggle works from both surfaces.
 
-#### Step 26: Integration Checkpoint {#step-26}
+#### Step 29: Integration Checkpoint {#step-29}
 
-**Depends on:** #step-3, #step-4, #step-5, #step-6, #step-7, #step-8, #step-22, #step-23, #step-24, #step-25
+**Depends on:** #step-3, #step-4, #step-5, #step-6, #step-7, #step-8, #step-25, #step-26, #step-27, #step-28
 
 **Commit:** `N/A (verification only)`
 
