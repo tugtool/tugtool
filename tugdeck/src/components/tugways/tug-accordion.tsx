@@ -50,29 +50,36 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "./use-component-state-preservation";
-import { useRovingFocusable } from "./use-focusable";
+import { useItemGroupKeyboard } from "./use-item-group-keyboard";
+import { useFocusManager } from "./use-focusable";
+import { FocusModeContext } from "./focus-manager";
 import type { FocusPolicy } from "./focus-manager";
 
 // ---- Focus engine context ([P01], [P02]) ----
 
 /**
- * Threads the roving-focus cursor from `TugAccordion` (which owns the engine
- * registration and the Tab-walk arrow handler) down to each `TugAccordionItem`
- * trigger, mirroring the `TugRadioGroup`/`TugRadioItem` split. Inert (engine
- * off) unless the accordion was authored into a `focusGroup`.
+ * Threads the engine state from `TugAccordion` (which owns the registration, the
+ * movement cursor, and the descend wiring) down to each `TugAccordionItem`. The
+ * accordion is one item-container stop ([P01]): Tab lands the ring on the
+ * accordion, arrows move a cursor over headers, Space toggles the cursor
+ * section, and Enter **descends** into an open section's content (a pushed
+ * non-trapped scope). Each item's content is wrapped in the section's own focus
+ * **mode** (`scopeIdFor(value)`) so its inner controls become reachable once the
+ * user descends. Inert (engine off) unless the accordion was authored into a
+ * `focusGroup`.
  */
 interface AccordionFocusContextValue {
   /** True when the accordion is registered as an engine focus stop. */
   focusEngineActive: boolean;
-  /** Item value carrying the roving cursor (`tabIndex=0`); others are `-1`. */
-  focusedValue: string;
-  /** Move the cursor (e.g. a pointer click on a header). */
-  notifyCursor: (value: string, keyboard: boolean) => void;
+  /** The pushed-scope id for a section value (so its content joins that mode). */
+  scopeIdFor: (value: string) => string;
+  /** Move the cursor to a header (e.g. a pointer click). */
+  notifyCursor: (value: string) => void;
 }
 
 const AccordionFocusContext = React.createContext<AccordionFocusContextValue>({
   focusEngineActive: false,
-  focusedValue: "",
+  scopeIdFor: () => "",
   notifyCursor: () => {},
 });
 
@@ -169,11 +176,13 @@ export interface TugAccordionSharedProps {
 
   /**
    * Focus group this accordion is authored into ([P02]). When set, the accordion
-   * registers as a **single roving stop** in the engine's Tab walk: Tab lands on
-   * the cursor header and Up/Down/Home/End move between headers locally (the
-   * engine's arrow handling replaces Radix's built-in version); Space/Enter still
-   * expand/collapse. When omitted, the headers stay plain native Tab stops with
-   * Radix's own arrow roving. Supplied by the surface that owns the Tab order.
+   * registers as a **single item-container stop** in the engine's Tab walk: Tab
+   * lands the ring on the accordion with the movement cursor on the first header,
+   * Up/Down/Home/End move the cursor (replacing Radix's built-in arrow roving),
+   * Space toggles the cursor section, and Enter **descends** into an open
+   * section's content (a non-trapped scope; Escape ascends). When omitted, the
+   * headers stay plain native Tab stops with Radix's own arrow roving. Supplied
+   * by the surface that owns the Tab order.
    */
   focusGroup?: string;
   /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
@@ -302,40 +311,23 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
       captureState: () => ({ value: effectiveValue }),
     });
 
-    // ---- Roving focus ([P01], [P02]) ----
+    // ---- Item-container keyboard ([P01], [P02], [P03]) ----
     //
     // When authored into a focus group, the accordion is one stop in the engine
-    // Tab walk: a single header carries `tabIndex=0` (the cursor), Up/Down/Home/
-    // End move it locally, and the engine ring follows. Radix accordion has no
-    // roving `tabIndex` (every trigger would be a Tab stop) and runs its own
-    // arrow handler on the root; we add the roving cursor and replace the arrow
-    // handler — `preventDefault()` on a handled key skips Radix's composed
-    // handler. Expand/collapse stays Radix's job — we never touch Space/Enter.
+    // Tab walk: the ring stays on the accordion (never a header), a movement
+    // cursor traverses the headers under Up/Down/Home/End, Space toggles the
+    // cursor section, and Enter **descends** into an open section's content. The
+    // descended content lives in the section's own focus mode (`scopeIdFor`), so
+    // pushing that scope makes its inner controls the walk. `preventDefault()` on
+    // a handled arrow key skips Radix's composed arrow handler.
     const focusEngineActive = focusGroup !== undefined;
     const autoFocusId = useId();
-    const { setRovedElement } = useRovingFocusable({
-      id: autoFocusId,
-      group: focusGroup ?? "",
-      order: focusOrder,
-      policy: focusPolicy,
-      register: focusEngineActive,
-    });
-    // Roving cursor: which header carries `tabIndex=0`. Local data ([L24]).
-    const [focusedValue, setFocusedValue] = useState<string>("");
-    // Whether the last cursor move was the keyboard (arrows) vs a pointer
-    // (header click), so the projection effect picks the right ring modality.
-    const lastKeyboardRef = useRef(false);
-
     const rootRef = useRef<HTMLDivElement | null>(null);
-    const setRootRef = useCallback(
-      (node: HTMLDivElement | null) => {
-        rootRef.current = node;
-        if (typeof ref === "function") ref(node);
-        else if (ref !== null && ref !== undefined) {
-          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
-        }
-      },
-      [ref],
+    const manager = useFocusManager();
+
+    const scopeIdFor = useCallback(
+      (value: string): string => `${autoFocusId}-section-${value}`,
+      [autoFocusId],
     );
 
     // Enabled trigger headers in DOM order (each carries `data-accordion-value`).
@@ -350,85 +342,127 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
           el.getAttribute("aria-disabled") !== "true",
       );
     }, []);
-    const valueOf = (el: HTMLElement): string =>
-      el.getAttribute("data-accordion-value") ?? "";
+    const valueOf = (el: Element | null): string =>
+      el?.getAttribute("data-accordion-value") ?? "";
 
-    // Up/Down/Home/End roving over the enabled headers. `preventDefault()` on a
-    // handled key both stops page scroll AND skips Radix's own arrow handler
-    // (Radix composes `props.onKeyDown` ahead of its handler with
-    // `checkForDefaultPrevented`). Space/Enter fall through to the native
-    // trigger so expand/collapse is unchanged.
-    const handleFocusKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        if (!focusEngineActive) return;
-        const key = e.key;
-        if (key !== "ArrowUp" && key !== "ArrowDown" && key !== "Home" && key !== "End") {
-          return;
+    // Toggle the section's open state — the same effect as a header click,
+    // routed through the chain so the controlled `value` owner updates.
+    const isSectionOpen = useCallback(
+      (value: string): boolean =>
+        props.type === "single"
+          ? effectiveValue === value
+          : (effectiveValue as string[]).includes(value),
+      [props.type, effectiveValue],
+    );
+    const toggleSection = useCallback(
+      (value: string) => {
+        if (props.type === "single") {
+          handleSingleValueChange(effectiveValue === value ? "" : value);
+        } else {
+          const arr = effectiveValue as string[];
+          handleMultiValueChange(
+            arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value],
+          );
         }
-        const items = enabledTriggers();
-        if (items.length === 0) return;
-        const values = items.map(valueOf);
-        const cur = values.indexOf(focusedValue);
-        let nextIdx: number;
-        switch (key) {
-          case "ArrowUp":
-            nextIdx = cur <= 0 ? values.length - 1 : cur - 1;
-            break;
-          case "ArrowDown":
-            nextIdx = cur >= values.length - 1 ? 0 : cur + 1;
-            break;
-          case "Home":
-            nextIdx = 0;
-            break;
-          case "End":
-            nextIdx = values.length - 1;
-            break;
-          default:
-            return;
-        }
-        e.preventDefault();
-        lastKeyboardRef.current = true;
-        setFocusedValue(values[nextIdx]);
-        items[nextIdx].focus();
       },
-      [focusEngineActive, focusedValue, enabledTriggers],
+      [props.type, effectiveValue, handleSingleValueChange, handleMultiValueChange],
     );
 
-    // A pointer click on a header moves the cursor. Supplied to items via
-    // context; the engine clears the ring in keyboard-only modality.
-    const notifyCursor = useCallback((value: string, keyboard: boolean) => {
-      lastKeyboardRef.current = keyboard;
-      setFocusedValue(value);
+    // The section content's first engine focusable (only present when open).
+    const sectionFirstFocusable = useCallback((triggerEl: Element | null): Element | null => {
+      const item = triggerEl?.closest('[data-slot="tug-accordion-item"]');
+      return item?.querySelector("[data-tug-focusable]") ?? null;
     }, []);
 
-    // Keep the cursor on a real enabled header and project the engine ring onto
-    // it. Appearance-zone DOM only ([L06]); the keyboard flag picks whether the
-    // ring follows (arrow) or clears (pointer). Resolution: the current cursor
-    // if still valid, else the first enabled header.
+    // Carry an Enter-press through an expand into the descend once the content
+    // has mounted (a completed effect below). Holds the pending section value.
+    const pendingDescendRef = useRef<string | null>(null);
+    const completeDescend = useCallback(
+      (value: string) => {
+        if (manager === null) return;
+        const trigger = enabledTriggers().find((el) => valueOf(el) === value) ?? null;
+        const inner = sectionFirstFocusable(trigger);
+        const innerId = inner?.getAttribute("data-tug-focusable");
+        if (!innerId) return; // no navigable content — stay on the headers
+        manager.pushFocusMode(scopeIdFor(value), { trapped: false });
+        manager.setKeyView(innerId, true);
+        manager.focusKeyView();
+        pendingDescendRef.current = null;
+      },
+      [manager, enabledTriggers, sectionFirstFocusable, scopeIdFor],
+    );
+
+    const {
+      attachRoot,
+      onKeyDown: focusKeyDown,
+      syncItems,
+      setCursor,
+      cursorElement,
+    } = useItemGroupKeyboard({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusEngineActive,
+      collectItems: enabledTriggers,
+      initialIndex: () => 0,
+      // Descendable when the cursor section is open and has navigable content.
+      currentItemDescendable: () => {
+        const el = cursorElement();
+        return el?.getAttribute("data-state") === "open" && sectionFirstFocusable(el) !== null;
+      },
+      // Space, and Enter on a non-descendable section: toggle expand/collapse.
+      onSelect: (element) => toggleSection(valueOf(element)),
+      // Enter on an open section with content: descend into it.
+      onDescend: (element) => {
+        const value = valueOf(element);
+        if (!isSectionOpen(value)) {
+          toggleSection(value); // expand first; the effect completes the descend
+        }
+        pendingDescendRef.current = value;
+        completeDescend(value);
+      },
+    });
+
+    // Complete a pending descend once the expanded content (and its focusables)
+    // have mounted — re-runs whenever the open set changes.
+    useLayoutEffect(() => {
+      const pending = pendingDescendRef.current;
+      if (pending !== null && isSectionOpen(pending)) {
+        completeDescend(pending);
+      }
+    }, [effectiveValue, isSectionOpen, completeDescend]);
+
+    // Keep the cursor's range current as the children change.
     const childCount = React.Children.count(children);
     useLayoutEffect(() => {
-      if (!focusEngineActive) return;
-      const items = enabledTriggers();
-      if (items.length === 0) {
-        setRovedElement(null, lastKeyboardRef.current);
-        return;
-      }
-      const values = items.map(valueOf);
-      let target = focusedValue;
-      if (!values.includes(target)) {
-        target = values[0] ?? "";
-        if (target !== focusedValue) {
-          setFocusedValue(target);
-          return; // re-run after the cursor state settles
+      if (focusEngineActive) syncItems();
+    }, [focusEngineActive, childCount, syncItems]);
+
+    const setRootRef = useCallback(
+      (node: HTMLDivElement | null) => {
+        rootRef.current = node;
+        attachRoot(node);
+        if (typeof ref === "function") ref(node);
+        else if (ref !== null && ref !== undefined) {
+          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
         }
-      }
-      const el = items.find((e) => valueOf(e) === target) ?? null;
-      setRovedElement(el, lastKeyboardRef.current);
-    }, [focusEngineActive, focusedValue, childCount, setRovedElement, enabledTriggers]);
+      },
+      [ref, attachRoot],
+    );
+
+    // A pointer click on a header parks the cursor on it (Radix toggles).
+    const notifyCursor = useCallback(
+      (value: string) => {
+        const idx = enabledTriggers().findIndex((el) => valueOf(el) === value);
+        if (idx >= 0) setCursor(idx);
+      },
+      [enabledTriggers, setCursor],
+    );
 
     const focusCtx: AccordionFocusContextValue = {
       focusEngineActive,
-      focusedValue,
+      scopeIdFor,
       notifyCursor,
     };
 
@@ -484,10 +518,13 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
           className,
         )}
         {...rootProps}
+        // The accordion root is the single Tab stop and the ring target when the
+        // engine owns the Tab order ([P03]); the cursor moves over the headers.
+        tabIndex={focusEngineActive ? 0 : rootProps.tabIndex}
         // When the engine owns the Tab order, our handler replaces Radix's arrow
         // roving (it `preventDefault`s, which skips Radix's composed handler);
         // otherwise Radix's own keydown handler is left untouched.
-        onKeyDown={focusEngineActive ? handleFocusKeyDown : rootProps.onKeyDown}
+        onKeyDown={focusEngineActive ? focusKeyDown : rootProps.onKeyDown}
       >
         <AccordionFocusContext.Provider value={focusCtx}>
           {children}
@@ -526,25 +563,28 @@ export interface TugAccordionItemProps {
 
 export const TugAccordionItem = React.forwardRef<HTMLDivElement, TugAccordionItemProps>(
   function TugAccordionItem({ value, trigger, children, disabled, className, ...rest }, ref) {
-    // Roving focus, when the parent accordion is engine-driven. The trigger
-    // carries `data-accordion-value` for the parent's DOM-query roving, a roving
-    // `tabIndex` (the cursor header is `0`, the rest `-1` — making the accordion
-    // one Tab stop), and `data-tug-focus="refuse"` so a click toggles without
-    // stealing the key view. A click also moves the cursor. Inert when the
-    // accordion was not authored into a focus group.
-    const { focusEngineActive, focusedValue, notifyCursor } = useContext(
+    // Engine wiring, when the parent accordion is engine-driven. The trigger
+    // carries `data-accordion-value` for the parent's DOM-query cursor, is never
+    // a Tab stop (`tabIndex=-1` — the accordion root is the one stop), and keeps
+    // `data-tug-focus="refuse"` so a click toggles without stealing the key view.
+    // A click parks the cursor on the header. The content is wrapped in the
+    // section's own focus **mode** so its inner controls become the walk once the
+    // user descends ([P02]). Inert when the accordion is not in a focus group.
+    const { focusEngineActive, scopeIdFor, notifyCursor } = useContext(
       AccordionFocusContext,
     );
     const triggerFocusProps = focusEngineActive
       ? {
           "data-accordion-value": value,
           "data-tug-focus": "refuse" as const,
-          tabIndex: value === focusedValue ? 0 : -1,
+          tabIndex: -1,
           onClick: () => {
-            if (!disabled) notifyCursor(value, false);
+            if (!disabled) notifyCursor(value);
           },
         }
       : {};
+
+    const content = <div className="tug-accordion-content-inner">{children}</div>;
 
     return (
       <Accordion.Item
@@ -565,7 +605,13 @@ export const TugAccordionItem = React.forwardRef<HTMLDivElement, TugAccordionIte
           </Accordion.Trigger>
         </Accordion.Header>
         <Accordion.Content className="tug-accordion-content">
-          <div className="tug-accordion-content-inner">{children}</div>
+          {focusEngineActive ? (
+            <FocusModeContext.Provider value={scopeIdFor(value)}>
+              {content}
+            </FocusModeContext.Provider>
+          ) : (
+            content
+          )}
         </Accordion.Content>
       </Accordion.Item>
     );

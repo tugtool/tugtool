@@ -1,22 +1,22 @@
 /**
- * at0117-radio-group-focus.test.ts — TugRadioGroup is a hand-rolled single
- * roving stop.
+ * at0117-radio-group-focus.test.ts — TugRadioGroup is a single item-container
+ * stop in the Tug keyboard model ([P01]/[P03]).
  *
  * The radio group (no Radix) registers one focusable for the whole group
- * ([P02]) via `useRovingFocusable`: Tab lands the key view on the checked item,
- * arrows rove between items locally **and select** (the WAI-ARIA radio
- * convention: focus = selection), and the ring follows the arrows
- * (`refreshKeyViewProjection`). The ring is driven by `data-key-view-kbd` alone
- * ([P05]).
+ * ([P02]) via `useItemGroupKeyboard`: Tab lands the ring on the *group* (never
+ * on a member), a movement cursor (`data-key-cursor`) traverses the items under
+ * the arrows **without committing**, and Space checks the cursor item (deferred
+ * commit). Tab-into lands the cursor on the checked item.
  *
  * The gallery `Focus Walk` panel authors a three-item group (value `a` checked).
  * The test proves:
- *   - **no ring at rest:** before keyboard focus the checked item has no ring;
- *   - **Tab → one stop, ring on the checked item:** Tab lands the key view on
- *     `a` and rings it;
- *   - **arrows rove and select:** ArrowDown moves the ring to `b`, clears it
- *     from `a`, and selection follows (`b` becomes `data-state="checked"`, `a`
- *     unchecked).
+ *   - **no ring at rest:** before keyboard focus the group has no ring;
+ *   - **Tab → one stop, ring on the group, cursor on the checked item:** Tab
+ *     rings the group and parks the cursor on `a`;
+ *   - **arrows move the cursor, not the selection:** ArrowDown moves the cursor
+ *     to `b` (clears it from `a`) while `a` stays checked and the ring stays on
+ *     the group;
+ *   - **Space commits:** Space checks the cursor item `b` (and unchecks `a`).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -27,8 +27,10 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const TITLE = `${CARD} [data-testid="radio-focus-title"]`;
-const RADIO_A = `${CARD} [data-testid="radio-focus-demo"] [data-radio-value="a"]`;
-const RADIO_B = `${CARD} [data-testid="radio-focus-demo"] [data-radio-value="b"]`;
+const DEMO = `${CARD} [data-testid="radio-focus-demo"]`;
+const GROUP = `${DEMO} [data-slot="tug-radio-group"]`;
+const RADIO_A = `${DEMO} [data-radio-value="a"]`;
+const RADIO_B = `${DEMO} [data-radio-value="b"]`;
 
 function deckShape() {
   return {
@@ -49,35 +51,45 @@ function deckShape() {
   };
 }
 
-// data-radio-value of the item currently carrying the key view, or null.
-const KEY_VIEW_RADIO = `(function(){
-  var el = document.querySelector("[data-radio-value][data-key-view]");
-  return el ? el.getAttribute("data-radio-value") : null;
-})()`;
-
-// Per-item snapshot: ring + keyboard marker + checked state.
-const PROBE = (selector) => `(function(){
-  var el = document.querySelector(${JSON.stringify(selector)});
+// The group's ring marker + outline (the ring is on the component, [P03]).
+const GROUP_PROBE = `(function(){
+  var el = document.querySelector(${JSON.stringify(GROUP)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
-    state: el.getAttribute("data-state"),
-    tabIndex: el.getAttribute("tabindex"),
   };
 })()`;
 
-interface RadioProbe {
+// data-radio-value of the item currently wearing the movement cursor, or null.
+const CURSOR_RADIO = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-radio-value][data-key-cursor]");
+  return el ? el.getAttribute("data-radio-value") : null;
+})()`;
+
+// Per-item snapshot: cursor + checked state.
+const PROBE = (selector) => `(function(){
+  var el = document.querySelector(${JSON.stringify(selector)});
+  if (!el) return null;
+  return {
+    cursor: el.hasAttribute("data-key-cursor"),
+    state: el.getAttribute("data-state"),
+  };
+})()`;
+
+interface GroupProbe {
   outline: string;
   keyboardReached: boolean;
+}
+interface ItemProbe {
+  cursor: boolean;
   state: string | null;
-  tabIndex: string | null;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single roving stop", () => {
+describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single item-container stop", () => {
   test(
-    "no ring at rest; Tab rings the checked item; arrows rove and select",
+    "no ring at rest; Tab rings the group + cursors the checked item; arrows move the cursor; Space commits",
     async () => {
       const app = await launchTugApp({ testName: "at0117-radio-group-focus" });
       try {
@@ -101,32 +113,41 @@ describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single roving stop", () =
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) No ring at rest on the checked item; it is the checked one.
-        const atRest = await app.evalJS<RadioProbe>(PROBE(RADIO_A));
-        expect(atRest?.state).toBe("checked");
+        // (1) No ring at rest on the group; `a` is the checked item.
+        const atRest = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(atRest?.keyboardReached).toBe(false);
         expect(parseFloat(atRest?.outline ?? "0")).toBe(0);
+        const aRest = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
+        expect(aRest?.state).toBe("checked");
 
-        // (2) Tab → the bar is one stop: the key view lands on the checked item
-        // and the ring paints there; only it is a Tab stop.
+        // (2) Tab → one stop: the ring lands on the GROUP and the cursor parks
+        // on the checked item `a`.
         await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_RADIO} === "a"`, { timeoutMs: 6000 });
-        const onA = await app.evalJS<RadioProbe>(PROBE(RADIO_A));
-        expect(onA?.keyboardReached).toBe(true);
-        expect(parseFloat(onA?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onA?.tabIndex).toBe("0");
+        await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "a"`, { timeoutMs: 6000 });
+        const onGroup = await app.evalJS<GroupProbe>(GROUP_PROBE);
+        expect(onGroup?.keyboardReached).toBe(true);
+        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(0);
 
-        // (3) ArrowDown → roves to the second item; the ring follows and the
-        // selection follows (focus = selection for radios).
+        // (3) ArrowDown → the cursor moves to `b`; the selection does NOT follow
+        // (`a` stays checked) and the ring stays on the group.
         await app.nativeKey("ArrowDown");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_RADIO} === "b"`, { timeoutMs: 6000 });
-        const onB = await app.evalJS<RadioProbe>(PROBE(RADIO_B));
-        expect(onB?.keyboardReached).toBe(true);
-        expect(parseFloat(onB?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onB?.state).toBe("checked");
-        const aAfter = await app.evalJS<RadioProbe>(PROBE(RADIO_A));
-        expect(aAfter?.keyboardReached).toBe(false);
-        expect(aAfter?.state).toBe("unchecked");
+        await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "b"`, { timeoutMs: 6000 });
+        const aAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
+        expect(aAfterMove?.cursor).toBe(false);
+        expect(aAfterMove?.state).toBe("checked");
+        const bAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_B));
+        expect(bAfterMove?.state).toBe("unchecked");
+        const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
+        expect(ringStill?.keyboardReached).toBe(true);
+
+        // (4) Space → commits the cursor item: `b` becomes checked, `a` unchecks.
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(RADIO_B)});return b && b.getAttribute("data-state")==="checked";})()`,
+          { timeoutMs: 6000 },
+        );
+        const aFinal = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
+        expect(aFinal?.state).toBe("unchecked");
       } finally {
         await app.close();
       }

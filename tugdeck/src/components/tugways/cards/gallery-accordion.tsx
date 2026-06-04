@@ -17,6 +17,7 @@ import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicato
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useFocusable } from "@/components/tugways/use-focusable";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -33,6 +34,35 @@ const labelStyle: React.CSSProperties = {
   color: "var(--tug7-element-field-text-normal-label-rest)",
   marginBottom: "4px",
 };
+
+/**
+ * A navigable inner control for the Focus Walk section content — proves the
+ * accordion's Enter-descend ([P02]): once the user descends into the open
+ * section, this button becomes the key view and Space/Enter act on it. It
+ * registers into the section's pushed focus mode (supplied by TugAccordionItem
+ * via FocusModeContext), so it is unreachable until the user descends.
+ */
+function AccordionInnerAction() {
+  const id = useId();
+  const [count, setCount] = useState(0);
+  const { focusableRef } = useFocusable({
+    id,
+    group: "gallery-accordion-inner",
+    order: 0,
+    register: true,
+  });
+  return (
+    <button
+      ref={(el) => focusableRef(el)}
+      type="button"
+      data-testid="accordion-inner-button"
+      data-count={count}
+      onClick={() => setCount((c) => c + 1)}
+    >
+      Inner action (count: {count})
+    </button>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // GalleryAccordion
@@ -91,6 +121,7 @@ export function GalleryAccordion() {
           >
             <TugAccordionItem value="first" trigger="First section">
               <p style={paraStyle}>First section body.</p>
+              <AccordionInnerAction />
             </TugAccordionItem>
             <TugAccordionItem value="second" trigger="Second section">
               <p style={paraStyle}>Second section body.</p>

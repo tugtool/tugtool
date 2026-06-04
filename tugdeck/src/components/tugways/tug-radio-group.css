@@ -128,7 +128,9 @@
 /* ---- States: rest → hover → disabled ---- */
 
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
-[data-slot="tug-radio-item"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
+/* The keyboard movement cursor ([P03]/[Q01]) reuses the hover treatment: the
+ * current item under the arrows reads exactly as a pointer hover. */
+[data-slot="tug-radio-item"]:is(:hover, [data-key-cursor]):not(:disabled):not([data-disabled]) .tug-radio-indicator {
   border-color: var(--tug7-element-radio-border-normal-off-hover);
 }
 
@@ -139,7 +141,7 @@
   border-color: var(--tugx-radio-on-color);
 }
 
-[data-state="checked"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
+[data-state="checked"]:is(:hover, [data-key-cursor]):not(:disabled):not([data-disabled]) .tug-radio-indicator {
   background-color: var(--tugx-radio-on-hover-color);
   border-color: var(--tugx-radio-on-hover-color);
 }

@@ -1,21 +1,20 @@
 /**
- * at0119-option-group-focus.test.ts — TugOptionGroup is a single roving stop.
+ * at0119-option-group-focus.test.ts — TugOptionGroup is a single item-container
+ * stop in the Tug keyboard model ([P01]/[P03]).
  *
  * The option group registers one focusable for the whole group ([P02]) via
- * `useRovingFocusable`: Tab lands the key view on the focused item, arrows rove
- * focus between items locally, and Space/Enter toggles the focused item — focus
- * is **separate** from selection here (multi-select). The ring follows the
- * arrows (`refreshKeyViewProjection`) and is driven by `data-key-view-kbd`
- * alone ([P05]).
+ * `useItemGroupKeyboard`: Tab lands the ring on the *group* (never on an item),
+ * a movement cursor (`data-key-cursor`) traverses the items under the arrows,
+ * and Space toggles the cursor item — focus is **separate** from selection here
+ * (multi-select). Tab-into lands the cursor on the first item.
  *
  * The gallery `Focus Walk` panel authors a three-item group (nothing toggled).
  * The test proves:
- *   - **Tab → one stop, ring on the focused item:** Tab lands the key view on
- *     `alpha` and rings it;
- *   - **arrows rove without selecting:** ArrowDown moves the ring to `beta` and
- *     clears it from `alpha`; `beta` is focused but still `data-state="off"`;
- *   - **Space toggles the focused item:** Space turns `beta` on
- *     (`data-state="on"`) while the ring stays on `beta`.
+ *   - **Tab → one stop, ring on the group, cursor on the first item:** Tab
+ *     rings the group and parks the cursor on `alpha`;
+ *   - **arrows move the cursor without selecting:** ArrowDown moves the cursor
+ *     to `beta`; `beta` is still `data-state="off"`, the ring stays on the group;
+ *   - **Space toggles the cursor item:** Space turns `beta` on (`data-state="on"`).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -26,8 +25,10 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const TITLE = `${CARD} [data-testid="option-focus-title"]`;
-const OPT_ALPHA = `${CARD} [data-testid="option-focus-demo"] [data-option-value="alpha"]`;
-const OPT_BETA = `${CARD} [data-testid="option-focus-demo"] [data-option-value="beta"]`;
+const DEMO = `${CARD} [data-testid="option-focus-demo"]`;
+const GROUP = `${DEMO} [data-slot="tug-option-group"]`;
+const OPT_ALPHA = `${DEMO} [data-option-value="alpha"]`;
+const OPT_BETA = `${DEMO} [data-option-value="beta"]`;
 
 function deckShape() {
   return {
@@ -48,37 +49,47 @@ function deckShape() {
   };
 }
 
-// data-option-value of the item currently carrying the key view, or null.
-const KEY_VIEW_OPTION = `(function(){
-  var el = document.querySelector("[data-option-value][data-key-view]");
-  return el ? el.getAttribute("data-option-value") : null;
-})()`;
-
-// Per-item snapshot: ring + keyboard marker + on/off state + tab stop.
-const PROBE = (selector) => `(function(){
-  var el = document.querySelector(${JSON.stringify(selector)});
+// The group's ring marker + outline (the ring is on the component, [P03]).
+const GROUP_PROBE = `(function(){
+  var el = document.querySelector(${JSON.stringify(GROUP)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
-    state: el.getAttribute("data-state"),
-    pressed: el.getAttribute("aria-pressed"),
-    tabIndex: el.getAttribute("tabindex"),
   };
 })()`;
 
-interface OptionProbe {
+// data-option-value of the item currently wearing the movement cursor, or null.
+const CURSOR_OPTION = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-option-value][data-key-cursor]");
+  return el ? el.getAttribute("data-option-value") : null;
+})()`;
+
+// Per-item snapshot: cursor + on/off state + aria-pressed.
+const PROBE = (selector) => `(function(){
+  var el = document.querySelector(${JSON.stringify(selector)});
+  if (!el) return null;
+  return {
+    cursor: el.hasAttribute("data-key-cursor"),
+    state: el.getAttribute("data-state"),
+    pressed: el.getAttribute("aria-pressed"),
+  };
+})()`;
+
+interface GroupProbe {
   outline: string;
   keyboardReached: boolean;
+}
+interface OptionProbe {
+  cursor: boolean;
   state: string | null;
   pressed: string | null;
-  tabIndex: string | null;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0119: option group is a single roving stop", () => {
+describe.skipIf(!SHOULD_RUN)("AT0119: option group is a single item-container stop", () => {
   test(
-    "Tab rings the focused item; arrows rove without selecting; Space toggles",
+    "Tab rings the group + cursors the first item; arrows move the cursor without selecting; Space toggles",
     async () => {
       const app = await launchTugApp({ testName: "at0119-option-group-focus" });
       try {
@@ -102,27 +113,26 @@ describe.skipIf(!SHOULD_RUN)("AT0119: option group is a single roving stop", () 
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) Tab → the group is one stop: the key view lands on the focused
-        // item (first enabled = alpha) and the ring paints there.
+        // (1) Tab → one stop: the ring lands on the GROUP and the cursor parks
+        // on the first item `alpha`.
         await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_OPTION} === "alpha"`, { timeoutMs: 6000 });
-        const onAlpha = await app.evalJS<OptionProbe>(PROBE(OPT_ALPHA));
-        expect(onAlpha?.keyboardReached).toBe(true);
-        expect(parseFloat(onAlpha?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onAlpha?.tabIndex).toBe("0");
+        await app.waitForCondition<boolean>(`${CURSOR_OPTION} === "alpha"`, { timeoutMs: 6000 });
+        const onGroup = await app.evalJS<GroupProbe>(GROUP_PROBE);
+        expect(onGroup?.keyboardReached).toBe(true);
+        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(0);
 
-        // (2) ArrowDown → roves focus to beta; the ring follows but selection
-        // does NOT (multi-select: focus is separate from selection).
+        // (2) ArrowDown → the cursor moves to `beta`; selection does NOT follow
+        // (multi-select: cursor is separate from selection), ring stays on group.
         await app.nativeKey("ArrowDown");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_OPTION} === "beta"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(`${CURSOR_OPTION} === "beta"`, { timeoutMs: 6000 });
         const onBeta = await app.evalJS<OptionProbe>(PROBE(OPT_BETA));
-        expect(onBeta?.keyboardReached).toBe(true);
-        expect(parseFloat(onBeta?.outline ?? "0")).toBeGreaterThan(0);
         expect(onBeta?.state).toBe("off");
         const alphaAfter = await app.evalJS<OptionProbe>(PROBE(OPT_ALPHA));
-        expect(alphaAfter?.keyboardReached).toBe(false);
+        expect(alphaAfter?.cursor).toBe(false);
+        const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
+        expect(ringStill?.keyboardReached).toBe(true);
 
-        // (3) Space → toggles the focused item (beta) on; the ring stays on beta.
+        // (3) Space → toggles the cursor item (beta) on; the cursor stays on beta.
         await app.nativeKey(" ");
         await app.waitForCondition<boolean>(
           `(function(){ var el = document.querySelector(${JSON.stringify(OPT_BETA)}); return el && el.getAttribute("data-state") === "on"; })()`,
@@ -131,7 +141,7 @@ describe.skipIf(!SHOULD_RUN)("AT0119: option group is a single roving stop", () 
         const betaToggled = await app.evalJS<OptionProbe>(PROBE(OPT_BETA));
         expect(betaToggled?.state).toBe("on");
         expect(betaToggled?.pressed).toBe("true");
-        expect(betaToggled?.keyboardReached).toBe(true);
+        expect(betaToggled?.cursor).toBe(true);
       } finally {
         await app.close();
       }

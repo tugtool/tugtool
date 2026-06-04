@@ -8,14 +8,14 @@
  * variants (sm/md/lg), individual and group-level disable, and role-based color
  * injection for the indicator pill (same pattern as checkbox/switch/radio).
  *
- * Control semantics (L11): user activation (click or arrow key) dispatches a
- * `selectValue` action through the responder chain with the newly selected
- * segment value and a stable `sender` id. Because focus and selection are
- * coupled in this component (arrow keys move selection, not just focus),
- * arrow keys dispatch `selectValue` — no separate `focusNext`/`focusPrevious`
- * actions. Parent responders register a `selectValue` handler via
- * `useResponder` and switch on `event.sender`. There is no `onValueChange`
- * callback prop.
+ * Control semantics (L11): user activation dispatches a `selectValue` action
+ * through the responder chain with the newly selected segment value and a stable
+ * `sender` id. Keyboard follows the Tug model ([P01]): the group is one stop, a
+ * movement cursor traverses the segments under the arrows *without* committing,
+ * and Space/Enter dispatch `selectValue` for the cursor segment (deferred
+ * commit). A pointer click dispatches directly. Parent responders register a
+ * `selectValue` handler via `useResponder` and switch on `event.sender`. There
+ * is no `onValueChange` callback prop.
  *
  * NOT a tab bar — this is a value picker, not a view switcher. See roadmap doc.
  *
@@ -33,13 +33,12 @@ import { useTugBoxDisabled } from "./internal/tug-box-context";
 import {
   TugGroupRole,
   buildRoleStyle,
-  useGroupKeyboardNav,
   renderGroupItemContent,
 } from "./internal/tug-group-utils";
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
-import { useRovingFocusable } from "./use-focusable";
+import { useItemGroupKeyboard } from "./use-item-group-keyboard";
 import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
@@ -178,10 +177,11 @@ export interface TugChoiceGroupProps
 
   /**
    * Focus group this choice group is authored into ([P02]). When set, the group
-   * registers as a **single roving stop** in the engine's Tab walk: Tab lands on
-   * the selected segment and arrows move/select between segments locally; when
-   * omitted, the segments stay plain `tabIndex`-roving stops outside the engine.
-   * Supplied by the surface that owns the Tab order.
+   * registers as a **single item-container stop** in the engine's Tab walk: Tab
+   * lands the ring on the group with the movement cursor on the selected segment,
+   * arrows move the cursor and Space/Enter select; when omitted, the segments
+   * stay plain native stops outside the engine. Supplied by the surface that owns
+   * the Tab order.
    */
   focusGroup?: string;
   /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
@@ -244,24 +244,6 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
     // resize callbacks fired between renders.
     const itemsRef = React.useRef(items);
     itemsRef.current = items;
-
-    // ---- Roving focus ([P01], [P02]) ----
-    //
-    // The group is a single stop in the engine Tab walk; arrows move between
-    // segments locally and — since this control couples focus and selection —
-    // also select. The engine ring follows the selected segment via
-    // `setRovedElement`. One focusable id is registered for the whole group.
-    const autoFocusId = useId();
-    const { setRovedElement } = useRovingFocusable({
-      id: autoFocusId,
-      group: focusGroup ?? "",
-      order: focusOrder,
-      policy: focusPolicy,
-      register: focusGroup !== undefined,
-    });
-    // Whether the last selection-moving interaction was the keyboard (arrows) vs
-    // a pointer (click), so the projection effect picks the right ring modality.
-    const lastKeyboardRef = React.useRef(false);
 
     // Imperative measure: read the active segment's offsetLeft/Width
     // and write the indicator's transform + width. Pulled out so both
@@ -339,32 +321,60 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       captureState: () => ({ value }),
     });
 
-    // ---- Keyboard navigation ----
+    // ---- Item-container keyboard ([P01], [P03]) ----
+    //
+    // One stop in the engine Tab walk; arrows move a movement cursor over the
+    // enabled segments (the ring stays on the group), Space/Enter dispatch
+    // `selectValue` for the cursor segment. Tab-into lands the cursor on the
+    // selected segment.
+    const autoFocusId = useId();
+    // The enabled segments, in cursor order, paired with their values.
+    const enabledSegments = useCallback((): { el: HTMLButtonElement; value: string }[] => {
+      const out: { el: HTMLButtonElement; value: string }[] = [];
+      itemsRef.current.forEach((item, index) => {
+        if (effectiveDisabled || item.disabled) return;
+        const el = segmentRefs.current[index];
+        if (el) out.push({ el, value: item.value });
+      });
+      return out;
+    }, [effectiveDisabled]);
 
-    const handleKeyDown = useGroupKeyboardNav({
-      items,
-      focusedValue: value,
-      onFocusChange: (nextValue) => {
-        lastKeyboardRef.current = true;
-        dispatchSelectValue(nextValue);
+    const { attachRoot, onKeyDown, syncItems, setCursor } = useItemGroupKeyboard({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+      collectItems: () => enabledSegments().map((s) => s.el),
+      initialIndex: () => {
+        const idx = enabledSegments().findIndex((s) => s.value === value);
+        return idx >= 0 ? idx : 0;
       },
-      disabled: effectiveDisabled,
-      itemRefs: segmentRefs,
+      onSelect: (element) => {
+        const next = element?.getAttribute("data-choice-value");
+        if (next != null && next !== value) dispatchSelectValue(next);
+      },
     });
 
-    // Project the engine ring onto the selected segment (the `tabIndex=0` one).
-    // Appearance-zone DOM only ([L06]); the keyboard flag picks whether the ring
-    // follows the arrows or clears on a pointer move. Re-runs whenever the
-    // selection or the item set changes.
+    // Re-sync the cursor's range when the item set changes.
     React.useLayoutEffect(() => {
-      const activeIndex = items.findIndex((item) => item.value === value);
-      const el = activeIndex >= 0 ? segmentRefs.current[activeIndex] : null;
-      setRovedElement(el ?? null, lastKeyboardRef.current);
-    }, [value, items, setRovedElement]);
+      syncItems();
+    }, [items, syncItems]);
+
+    const setRootRef = useCallback(
+      (node: HTMLDivElement | null) => {
+        attachRoot(node);
+        if (typeof ref === "function") ref(node);
+        else if (ref !== null && ref !== undefined) {
+          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }
+      },
+      [ref, attachRoot],
+    );
 
     return (
       <div
-        ref={ref}
+        ref={setRootRef}
         data-slot="tug-choice-group"
         role="radiogroup"
         aria-label={ariaLabel}
@@ -380,7 +390,8 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
           className,
         )}
         style={{ ...roleStyle, ...style }}
-        onKeyDown={handleKeyDown}
+        tabIndex={focusGroup !== undefined ? 0 : undefined}
+        onKeyDown={onKeyDown}
         {...rest}
       >
         {/* Sliding indicator pill — positioned imperatively via ref [L06] */}
@@ -411,12 +422,13 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
                 "tug-choice-group-segment",
                 isIconOnly && "tug-choice-group-segment-icon-only",
               )}
-              tabIndex={isActive ? 0 : -1}
+              tabIndex={-1}
               data-tug-focus="refuse"
               onClick={() => {
-                if (!isDisabled && !isActive) {
-                  lastKeyboardRef.current = false;
-                  dispatchSelectValue(item.value);
+                if (!isDisabled) {
+                  const idx = enabledSegments().findIndex((s) => s.value === item.value);
+                  if (idx >= 0) setCursor(idx);
+                  if (!isActive) dispatchSelectValue(item.value);
                 }
               }}
             >

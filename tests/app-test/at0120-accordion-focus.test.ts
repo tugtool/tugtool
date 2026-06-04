@@ -1,23 +1,23 @@
 /**
- * at0120-accordion-focus.test.ts — TugAccordion is a single roving stop.
+ * at0120-accordion-focus.test.ts — TugAccordion is a single item-container stop
+ * with Enter-descend in the Tug keyboard model ([P01]/[P02]/[P03]).
  *
- * Radix accordion has no roving `tabIndex` (every header would be a Tab stop)
- * and runs its own arrow handler on the root. When authored into a `focusGroup`,
- * TugAccordion registers one engine focusable ([P02]) via `useRovingFocusable`,
- * gives exactly one header `tabIndex=0` (the cursor), and replaces Radix's arrow
- * handler with its own (Up/Down/Home/End) — `preventDefault` on a handled key
- * skips Radix's composed handler. Expand/collapse (Space/Enter) stays Radix's
- * job. The ring follows the arrows and is driven by `data-key-view-kbd` alone
- * ([P05]).
+ * When authored into a `focusGroup`, TugAccordion registers one engine focusable
+ * via `useItemGroupKeyboard`: Tab lands the ring on the *accordion* (never a
+ * header), a movement cursor (`data-key-cursor`) traverses the headers under
+ * Up/Down/Home/End, Space toggles the cursor section, and Enter **descends** into
+ * an open section's content (a pushed non-trapped scope). The descended content
+ * gets the key view; the accordion gets `data-key-within`; Escape ascends.
  *
  * The gallery `Focus Walk` panel authors a three-section single-mode accordion,
- * fully collapsed. The test proves:
- *   - **Tab → one stop, ring on the cursor header:** Tab lands the key view on
- *     `first` and rings it (tabIndex 0);
- *   - **arrows rove between headers:** ArrowDown moves the ring to `second` and
- *     clears it from `first`, without expanding anything;
- *   - **Space expands the focused header:** Space opens `second`
- *     (`data-state="open"`) with the ring still on `second`.
+ * fully collapsed; the first section's content holds a navigable inner control.
+ * The test proves:
+ *   - **Tab → one stop, ring on the accordion, cursor on the first header;**
+ *   - **arrows move the cursor without expanding;**
+ *   - **Space expands the cursor section;**
+ *   - **Enter descends** into the open section's inner control (key view leaves
+ *     the accordion; the accordion shows `data-key-within`), Space acts on it,
+ *     and **Escape ascends** back to the accordion (ring returns, within clears).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -28,8 +28,11 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const TITLE = `${CARD} [data-testid="accordion-focus-title"]`;
-const HDR_FIRST = `${CARD} [data-testid="accordion-focus-demo"] [data-accordion-value="first"]`;
-const HDR_SECOND = `${CARD} [data-testid="accordion-focus-demo"] [data-accordion-value="second"]`;
+const DEMO = `${CARD} [data-testid="accordion-focus-demo"]`;
+const ACC = `${DEMO} [data-slot="tug-accordion"]`;
+const HDR_FIRST = `${DEMO} [data-accordion-value="first"]`;
+const HDR_SECOND = `${DEMO} [data-accordion-value="second"]`;
+const INNER = `${DEMO} [data-testid="accordion-inner-button"]`;
 
 function deckShape() {
   return {
@@ -50,35 +53,54 @@ function deckShape() {
   };
 }
 
-// data-accordion-value of the header currently carrying the key view, or null.
-const KEY_VIEW_HEADER = `(function(){
-  var el = document.querySelector("[data-accordion-value][data-key-view]");
-  return el ? el.getAttribute("data-accordion-value") : null;
-})()`;
-
-// Per-header snapshot: ring + keyboard marker + open/closed state + tab stop.
-const PROBE = (selector) => `(function(){
-  var el = document.querySelector(${JSON.stringify(selector)});
+// The accordion's ring marker + visible :focus-within mark (the ring is on the
+// component, [P03]; `data-key-within` is set while a descended scope is active).
+const ACC_PROBE = `(function(){
+  var el = document.querySelector(${JSON.stringify(ACC)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
-    state: el.getAttribute("data-state"),
-    tabIndex: el.getAttribute("tabindex"),
+    within: el.hasAttribute("data-key-within"),
   };
 })()`;
 
-interface HeaderProbe {
+// data-accordion-value of the header currently wearing the movement cursor.
+const CURSOR_HEADER = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-accordion-value][data-key-cursor]");
+  return el ? el.getAttribute("data-accordion-value") : null;
+})()`;
+
+// Per-header snapshot: open/closed state.
+const STATE = (selector) => `(function(){
+  var el = document.querySelector(${JSON.stringify(selector)});
+  return el ? el.getAttribute("data-state") : null;
+})()`;
+
+// The inner button's key-view marker + click count.
+const INNER_PROBE = `(function(){
+  var el = document.querySelector(${JSON.stringify(INNER)});
+  if (!el) return null;
+  return {
+    keyboardReached: el.hasAttribute("data-key-view-kbd"),
+    count: el.getAttribute("data-count"),
+  };
+})()`;
+
+interface AccProbe {
   outline: string;
   keyboardReached: boolean;
-  state: string | null;
-  tabIndex: string | null;
+  within: boolean;
+}
+interface InnerProbe {
+  keyboardReached: boolean;
+  count: string | null;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single roving stop", () => {
+describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop (descend)", () => {
   test(
-    "Tab rings the cursor header; arrows rove between headers; Space expands",
+    "ring on the accordion; arrows move the cursor; Space expands; Enter descends; Escape ascends",
     async () => {
       const app = await launchTugApp({ testName: "at0120-accordion-focus" });
       try {
@@ -96,43 +118,63 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single roving stop", () => 
           { timeoutMs: 6000 },
         );
 
-        // Activate the webview and wait until the document holds key focus
-        // before driving Tab.
         await app.nativeClickAtElement(TITLE);
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) Tab → the accordion is one stop: the key view lands on the cursor
-        // header (first enabled = first) and the ring paints there.
+        // (1) Tab → one stop: the ring lands on the ACCORDION and the cursor
+        // parks on the first header; nothing is expanded.
         await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_HEADER} === "first"`, { timeoutMs: 6000 });
-        const onFirst = await app.evalJS<HeaderProbe>(PROBE(HDR_FIRST));
-        expect(onFirst?.keyboardReached).toBe(true);
-        expect(parseFloat(onFirst?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onFirst?.tabIndex).toBe("0");
-        // Nothing expanded yet.
-        expect(onFirst?.state).toBe("closed");
+        await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "first"`, { timeoutMs: 6000 });
+        const onAcc = await app.evalJS<AccProbe>(ACC_PROBE);
+        expect(onAcc?.keyboardReached).toBe(true);
+        expect(parseFloat(onAcc?.outline ?? "0")).toBeGreaterThan(0);
+        expect(await app.evalJS<string>(STATE(HDR_FIRST))).toBe("closed");
 
-        // (2) ArrowDown → roves to the second header; the ring follows and the
-        // first header loses it. No expansion from navigation alone.
+        // (2) ArrowDown → cursor moves to `second` without expanding; ArrowUp →
+        // back to `first`. The ring stays on the accordion throughout.
         await app.nativeKey("ArrowDown");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_HEADER} === "second"`, { timeoutMs: 6000 });
-        const onSecond = await app.evalJS<HeaderProbe>(PROBE(HDR_SECOND));
-        expect(onSecond?.keyboardReached).toBe(true);
-        expect(parseFloat(onSecond?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onSecond?.state).toBe("closed");
-        const firstAfter = await app.evalJS<HeaderProbe>(PROBE(HDR_FIRST));
-        expect(firstAfter?.keyboardReached).toBe(false);
+        await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "second"`, { timeoutMs: 6000 });
+        expect(await app.evalJS<string>(STATE(HDR_SECOND))).toBe("closed");
+        await app.nativeKey("ArrowUp");
+        await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "first"`, { timeoutMs: 6000 });
 
-        // (3) Space → expands the focused header (second); the ring stays on it.
+        // (3) Space → expands the cursor section `first`.
         await app.nativeKey(" ");
         await app.waitForCondition<boolean>(
-          `(function(){ var el = document.querySelector(${JSON.stringify(HDR_SECOND)}); return el && el.getAttribute("data-state") === "open"; })()`,
+          `(function(){var h=document.querySelector(${JSON.stringify(HDR_FIRST)});return h && h.getAttribute("data-state")==="open";})()`,
           { timeoutMs: 6000 },
         );
-        const secondOpen = await app.evalJS<HeaderProbe>(PROBE(HDR_SECOND));
-        expect(secondOpen?.state).toBe("open");
-        expect(secondOpen?.keyboardReached).toBe(true);
+
+        // (4) Enter → descends into the open section: the inner control becomes
+        // the key view and the accordion shows `data-key-within`.
+        await app.nativeKey("Enter");
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(INNER)});return b && b.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 6000 },
+        );
+        const descended = await app.evalJS<AccProbe>(ACC_PROBE);
+        expect(descended?.within).toBe(true);
+        expect(descended?.keyboardReached).toBe(false);
+
+        // (5) Space → acts on the inner control (the counter increments).
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(INNER)});return b && b.getAttribute("data-count")==="1";})()`,
+          { timeoutMs: 6000 },
+        );
+
+        // (6) Escape → ascends back to the accordion: the ring returns to the
+        // accordion and `data-key-within` clears.
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `(function(){var a=document.querySelector(${JSON.stringify(ACC)});return a && a.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 6000 },
+        );
+        const ascended = await app.evalJS<AccProbe>(ACC_PROBE);
+        expect(ascended?.within).toBe(false);
+        const innerAfter = await app.evalJS<InnerProbe>(INNER_PROBE);
+        expect(innerAfter?.keyboardReached).toBe(false);
       } finally {
         await app.close();
       }

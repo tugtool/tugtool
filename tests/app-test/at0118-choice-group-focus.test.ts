@@ -1,21 +1,21 @@
 /**
- * at0118-choice-group-focus.test.ts — TugChoiceGroup is a single roving stop.
+ * at0118-choice-group-focus.test.ts — TugChoiceGroup is a single item-container
+ * stop in the Tug keyboard model ([P01]/[P03]).
  *
  * The choice group (no Radix) registers one focusable for the whole group
- * ([P02]) via `useRovingFocusable`: Tab lands the key view on the selected
- * segment, arrows rove between segments locally **and select** (this control
- * couples focus and selection), and the ring follows the arrows
- * (`refreshKeyViewProjection`). The ring is driven by `data-key-view-kbd` alone
- * ([P05]).
+ * ([P02]) via `useItemGroupKeyboard`: Tab lands the ring on the *group* (never
+ * on a segment), a movement cursor (`data-key-cursor`) traverses the segments
+ * under the arrows **without committing**, and Space selects the cursor segment
+ * (deferred commit). Tab-into lands the cursor on the selected segment.
  *
  * The gallery `Focus Walk` panel authors a three-segment group (value `alpha`
  * selected). The test proves:
- *   - **no ring at rest:** before keyboard focus the selected segment has no ring;
- *   - **Tab → one stop, ring on the selected segment:** Tab lands the key view on
- *     `alpha` and rings it;
- *   - **arrows rove and select:** ArrowDown moves the ring to `beta`, clears it
- *     from `alpha`, and selection follows (`beta` becomes `data-state="active"`,
- *     `alpha` inactive).
+ *   - **no ring at rest:** before keyboard focus the group has no ring;
+ *   - **Tab → one stop, ring on the group, cursor on the selected segment:**
+ *     Tab rings the group and parks the cursor on `alpha`;
+ *   - **arrows move the cursor, not the selection:** ArrowDown moves the cursor
+ *     to `beta` while `alpha` stays active and the ring stays on the group;
+ *   - **Space commits:** Space selects the cursor segment `beta`.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -26,8 +26,10 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const TITLE = `${CARD} [data-testid="choice-focus-title"]`;
-const SEG_ALPHA = `${CARD} [data-testid="choice-focus-demo"] [data-choice-value="alpha"]`;
-const SEG_BETA = `${CARD} [data-testid="choice-focus-demo"] [data-choice-value="beta"]`;
+const DEMO = `${CARD} [data-testid="choice-focus-demo"]`;
+const GROUP = `${DEMO} [data-slot="tug-choice-group"]`;
+const SEG_ALPHA = `${DEMO} [data-choice-value="alpha"]`;
+const SEG_BETA = `${DEMO} [data-choice-value="beta"]`;
 
 function deckShape() {
   return {
@@ -48,35 +50,45 @@ function deckShape() {
   };
 }
 
-// data-choice-value of the segment currently carrying the key view, or null.
-const KEY_VIEW_SEGMENT = `(function(){
-  var el = document.querySelector("[data-choice-value][data-key-view]");
-  return el ? el.getAttribute("data-choice-value") : null;
-})()`;
-
-// Per-segment snapshot: ring + keyboard marker + active state + tab stop.
-const PROBE = (selector) => `(function(){
-  var el = document.querySelector(${JSON.stringify(selector)});
+// The group's ring marker + outline (the ring is on the component, [P03]).
+const GROUP_PROBE = `(function(){
+  var el = document.querySelector(${JSON.stringify(GROUP)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
-    state: el.getAttribute("data-state"),
-    tabIndex: el.getAttribute("tabindex"),
   };
 })()`;
 
-interface SegmentProbe {
+// data-choice-value of the segment currently wearing the movement cursor, or null.
+const CURSOR_SEGMENT = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-choice-value][data-key-cursor]");
+  return el ? el.getAttribute("data-choice-value") : null;
+})()`;
+
+// Per-segment snapshot: cursor + active state.
+const PROBE = (selector) => `(function(){
+  var el = document.querySelector(${JSON.stringify(selector)});
+  if (!el) return null;
+  return {
+    cursor: el.hasAttribute("data-key-cursor"),
+    state: el.getAttribute("data-state"),
+  };
+})()`;
+
+interface GroupProbe {
   outline: string;
   keyboardReached: boolean;
+}
+interface SegmentProbe {
+  cursor: boolean;
   state: string | null;
-  tabIndex: string | null;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0118: choice group is a single roving stop", () => {
+describe.skipIf(!SHOULD_RUN)("AT0118: choice group is a single item-container stop", () => {
   test(
-    "no ring at rest; Tab rings the selected segment; arrows rove and select",
+    "no ring at rest; Tab rings the group + cursors the selected segment; arrows move the cursor; Space commits",
     async () => {
       const app = await launchTugApp({ testName: "at0118-choice-group-focus" });
       try {
@@ -100,32 +112,39 @@ describe.skipIf(!SHOULD_RUN)("AT0118: choice group is a single roving stop", () 
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) No ring at rest on the selected segment; it is the active one.
-        const atRest = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
-        expect(atRest?.state).toBe("active");
+        // (1) No ring at rest on the group; `alpha` is the active segment.
+        const atRest = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(atRest?.keyboardReached).toBe(false);
         expect(parseFloat(atRest?.outline ?? "0")).toBe(0);
+        const alphaRest = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
+        expect(alphaRest?.state).toBe("active");
 
-        // (2) Tab → the group is one stop: the key view lands on the selected
-        // segment and the ring paints there; only it is a Tab stop.
+        // (2) Tab → one stop: the ring lands on the GROUP and the cursor parks
+        // on the active segment `alpha`.
         await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_SEGMENT} === "alpha"`, { timeoutMs: 6000 });
-        const onAlpha = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
-        expect(onAlpha?.keyboardReached).toBe(true);
-        expect(parseFloat(onAlpha?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onAlpha?.tabIndex).toBe("0");
+        await app.waitForCondition<boolean>(`${CURSOR_SEGMENT} === "alpha"`, { timeoutMs: 6000 });
+        const onGroup = await app.evalJS<GroupProbe>(GROUP_PROBE);
+        expect(onGroup?.keyboardReached).toBe(true);
+        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(0);
 
-        // (3) ArrowDown → roves to the second segment; the ring follows and the
-        // selection follows (focus = selection for this control).
+        // (3) ArrowDown → the cursor moves to `beta`; the selection does NOT
+        // follow (`alpha` stays active) and the ring stays on the group.
         await app.nativeKey("ArrowDown");
-        await app.waitForCondition<boolean>(`${KEY_VIEW_SEGMENT} === "beta"`, { timeoutMs: 6000 });
-        const onBeta = await app.evalJS<SegmentProbe>(PROBE(SEG_BETA));
-        expect(onBeta?.keyboardReached).toBe(true);
-        expect(parseFloat(onBeta?.outline ?? "0")).toBeGreaterThan(0);
-        expect(onBeta?.state).toBe("active");
-        const alphaAfter = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
-        expect(alphaAfter?.keyboardReached).toBe(false);
-        expect(alphaAfter?.state).toBe("inactive");
+        await app.waitForCondition<boolean>(`${CURSOR_SEGMENT} === "beta"`, { timeoutMs: 6000 });
+        const alphaAfterMove = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
+        expect(alphaAfterMove?.cursor).toBe(false);
+        expect(alphaAfterMove?.state).toBe("active");
+        const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
+        expect(ringStill?.keyboardReached).toBe(true);
+
+        // (4) Space → commits the cursor segment: `beta` becomes active.
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(SEG_BETA)});return b && b.getAttribute("data-state")==="active";})()`,
+          { timeoutMs: 6000 },
+        );
+        const alphaFinal = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
+        expect(alphaFinal?.state).toBe("inactive");
       } finally {
         await app.close();
       }
