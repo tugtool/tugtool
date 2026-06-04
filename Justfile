@@ -226,6 +226,7 @@ app-debug: build wasm
     set -euo pipefail
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
     echo "==> Quitting prior $INSTANCE_ID, if running"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     # Debug bundles serve the frontend via Vite HMR — no `bun run build`
@@ -234,8 +235,10 @@ app-debug: build wasm
     # build before xcodebuild.
     # Touch Swift sources so xcodebuild detects changes on this mount.
     find tugapp/Sources -name '*.swift' -exec touch {} +
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' build
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    # PRODUCT_NAME gives each variant its own `.app` (Tug-debug.app /
+    # Tug-worktree.app) so builds never clobber or re-sign each other.
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' PRODUCT_NAME="$PRODUCT_NAME" build
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
     echo "==> Re-signing with Developer ID for stable AX grant"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     # Non-blocking orphan-detection preamble so users get a nudge to
@@ -259,6 +262,7 @@ app-release: build wasm
     set -euo pipefail
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
     echo "==> Quitting prior $INSTANCE_ID, if running"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     echo "==> Building tugdeck static assets for the release bundle"
@@ -270,8 +274,8 @@ app-release: build wasm
     (cd tugrust && cargo build --release -p tugcast -p tugexec -p tugutil -p tugrelaunch)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode
     find tugapp/Sources -name '*.swift' -exec touch {} +
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' build
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' PRODUCT_NAME="$PRODUCT_NAME" build
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
     echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     # Seed source-tree-path for the release instance too. AppDelegate
@@ -287,9 +291,10 @@ app-release: build wasm
 launch-debug:
     #!/usr/bin/env bash
     set -euo pipefail
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
-        echo "error: Tug.app not built at $APP_DIR" >&2
+        echo "error: ${PRODUCT_NAME}.app not built at $APP_DIR" >&2
         echo "       Run 'just app-debug' first." >&2
         exit 1
     fi
@@ -302,9 +307,10 @@ launch-debug:
 launch-release:
     #!/usr/bin/env bash
     set -euo pipefail
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
-        echo "error: Tug.app not built at $APP_DIR" >&2
+        echo "error: ${PRODUCT_NAME}.app not built at $APP_DIR" >&2
         echo "       Run 'just app-release' first." >&2
         exit 1
     fi
@@ -584,7 +590,11 @@ build-app:
     echo "==> [3/5] tests/app-test deps"
     (cd tests/app-test && bun install)
 
-    echo "==> [4/5] Build Tug.app (Debug)"
+    # PRODUCT_NAME names the built `.app` per variant (Tug-apptest under
+    # TUG_FORCE_BUNDLE_ID=…apptest) so each variant is its own bundle file
+    # that never clobbers or re-signs another. Matches bundle-id-from-cwd.sh.
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    echo "==> [4/5] Build ${PRODUCT_NAME}.app (Debug)"
     find tugapp/Sources -name '*.swift' -exec touch {} +
     # xcodebuild is very noisy (~800 lines of SwiftDriver/SwiftCompile
     # phase headers + indented invocations) even on a clean build.
@@ -593,7 +603,8 @@ build-app:
     # can diagnose.
     XCODE_LOG="$(mktemp -t tugapp-xcode.XXXX.log)"
     if xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-        -configuration Debug -destination 'platform=macOS,arch=arm64' build \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' \
+        PRODUCT_NAME="$PRODUCT_NAME" build \
         > "$XCODE_LOG" 2>&1; then
         grep -E '^\*\*|warning:|error:|^ld: |^clang: |^Undefined' "$XCODE_LOG" || true
         grep -q '^\*\* BUILD' "$XCODE_LOG" || echo "** BUILD SUCCEEDED **"
@@ -607,9 +618,9 @@ build-app:
     fi
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
-    APP_BIN="$APP_DIR/Contents/MacOS/Tug"
-    [ -x "$APP_BIN" ] || { echo "Tug.app binary missing: $APP_BIN"; exit 1; }
+        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
+    APP_BIN="$APP_DIR/Contents/MacOS/${PRODUCT_NAME}"
+    [ -x "$APP_BIN" ] || { echo "${PRODUCT_NAME}.app binary missing: $APP_BIN"; exit 1; }
 
     # Re-sign inside-out with Developer ID per [D16]. The script
     # walks the bundle, signs each Rust helper with default hardened
@@ -644,7 +655,7 @@ build-app:
         echo "    Sentinel: $SENTINEL_FILE"
     fi
 
-    echo "    Tug.app binary: $APP_BIN"
+    echo "    ${PRODUCT_NAME}.app binary: $APP_BIN"
     echo
     echo "==> Built. Now run 'just app-test' to run tests."
 
@@ -685,13 +696,14 @@ app-test *FILES:
     # file failures so the summary captures every file's status.
     set -uo pipefail
 
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
-    APP_BIN="$APP_DIR/Contents/MacOS/Tug"
+        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
+    APP_BIN="$APP_DIR/Contents/MacOS/${PRODUCT_NAME}"
     if [ ! -x "$APP_BIN" ]; then
-        echo "error: Tug.app not built at $APP_BIN" >&2
-        echo "       Run 'just app-debug' first." >&2
+        echo "error: ${PRODUCT_NAME}.app not built at $APP_BIN" >&2
+        echo "       Run 'just build-app' first." >&2
         exit 1
     fi
 
@@ -892,20 +904,20 @@ app-test-grant:
     #!/usr/bin/env bash
     set -euo pipefail
     export TUG_FORCE_BUNDLE_ID="${TUG_FORCE_BUNDLE_ID:-dev.tugtool.app.apptest}"
-    echo "==> Building Tug.app pinned to $TUG_FORCE_BUNDLE_ID"
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    echo "==> Building ${PRODUCT_NAME}.app pinned to $TUG_FORCE_BUNDLE_ID"
     just build-app
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Tug.app"
-    FORCE_SUFFIX="${TUG_FORCE_BUNDLE_ID##*.}"
+        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
     echo "==> Revealing the app in Finder and opening the Accessibility pane"
     open -R "$APP_DIR"
     open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
     echo
     echo "    One-time Accessibility grant:"
     echo "      1. In System Settings -> Privacy & Security -> Accessibility,"
-    echo "         click \"+\" (or drag the Finder-highlighted Tug.app into the list)."
-    echo "      2. Toggle \"Tug ($FORCE_SUFFIX)\" ON."
+    echo "         click \"+\" (or drag the Finder-highlighted ${PRODUCT_NAME}.app into the list)."
+    echo "      2. Toggle \"${PRODUCT_NAME}\" ON."
     echo
     echo "    That's it -- forever. Every worktree build pinned to"
     echo "    $TUG_FORCE_BUNDLE_ID matches the same designated requirement"

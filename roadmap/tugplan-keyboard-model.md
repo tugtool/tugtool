@@ -212,9 +212,9 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Engine: movement cursor + the three visual states (ring / `data-key-within` / hover) | pending | — |
-| #step-2 | Engine: act dispatch (Space/Enter/Escape → select/act/descend/ascend) + live-vs-deferred + per-component key-capture set | pending | — |
-| #step-3 | Text editors: key-capture set ([P04]) — TugInput, prompt, code/markdown editors | pending | — |
+| #step-1 | Engine: movement cursor + the three visual states (ring / `data-key-within` / hover) | done | d51a2227 |
+| #step-2 | Engine: act dispatch (Space/Enter/Escape → select/act/descend/ascend) + live-vs-deferred + per-component key-capture set | done | cdf721ea |
+| #step-3 | Text editors: key-capture set ([P04]) — TugInput, prompt, code/markdown editors | done | c59c1a79 |
 | #step-4 | Redo deferred item-groups — TugRadioGroup, TugChoiceGroup, TugOptionGroup | pending | — |
 | #step-5 | Redo live components — TugTabBar (switch-live), TugSlider review | pending | — |
 | #step-6 | Redo TugAccordion — item container + Enter-descend | pending | — |

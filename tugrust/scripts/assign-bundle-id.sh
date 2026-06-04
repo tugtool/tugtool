@@ -79,14 +79,21 @@ fi
 if [ -n "${TUG_FORCE_BUNDLE_ID:-}" ]; then
     plutil -replace CFBundleIdentifier -string "$TUG_FORCE_BUNDLE_ID" "$PLIST"
     # System Settings → Privacy & Security → Accessibility lists apps by
-    # display name, not bundle id. Without a distinct name this build
-    # shows up as a second, identical "Tug" row next to the interactive
-    # debug instance — invisible by collision, which is exactly the
-    # "I granted it but nothing appeared" trap. Stamp a name derived
-    # from the forced id's last component (e.g. "Tug (apptest)").
-    FORCE_SUFFIX="${TUG_FORCE_BUNDLE_ID##*.}"
-    plutil -replace CFBundleDisplayName -string "Tug ($FORCE_SUFFIX)" "$PLIST"
-    echo "==> assign-bundle-id: $TUG_FORCE_BUNDLE_ID (forced) — display name 'Tug ($FORCE_SUFFIX)'"
+    # display name, not bundle id (CFBundleName here is the literal
+    # "Tug"). Without a distinct CFBundleDisplayName every variant shows
+    # up as an identical "Tug" row — invisible by collision, the "I
+    # granted it but nothing appeared" trap. Stamp the PRODUCT_NAME the
+    # build was invoked with (e.g. Tug-apptest), so the row matches the
+    # `.app` filename. Falls back to the forced suffix if PRODUCT_NAME
+    # is somehow unset.
+    DISPLAY_NAME="${PRODUCT_NAME:-Tug-${TUG_FORCE_BUNDLE_ID##*.}}"
+    # Stamp BOTH name keys: System Settings → Accessibility lists by
+    # CFBundleName (the menu-bar name, literal "Tug" by default), and
+    # falls back to it when CFBundleDisplayName is absent — so the row
+    # only de-collides when CFBundleName itself is per-variant.
+    plutil -replace CFBundleName -string "$DISPLAY_NAME" "$PLIST"
+    plutil -replace CFBundleDisplayName -string "$DISPLAY_NAME" "$PLIST"
+    echo "==> assign-bundle-id: $TUG_FORCE_BUNDLE_ID (forced) — name '$DISPLAY_NAME'"
     exit 0
 fi
 
@@ -130,4 +137,13 @@ esac
 
 plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$PLIST"
 
-echo "==> assign-bundle-id: $BUNDLE_ID"
+# Stamp BOTH name keys to match PRODUCT_NAME (Tug / Tug-debug /
+# Tug-worktree) so each variant is its own legible row in System
+# Settings → Accessibility, instead of identical "Tug" rows. The list
+# reads CFBundleName (the literal "Tug" by default); CFBundleDisplayName
+# alone does not de-collide it.
+DISPLAY_NAME="${PRODUCT_NAME:-Tug}"
+plutil -replace CFBundleName -string "$DISPLAY_NAME" "$PLIST"
+plutil -replace CFBundleDisplayName -string "$DISPLAY_NAME" "$PLIST"
+
+echo "==> assign-bundle-id: $BUNDLE_ID — name '$DISPLAY_NAME'"

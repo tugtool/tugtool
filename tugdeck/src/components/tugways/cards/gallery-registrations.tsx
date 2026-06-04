@@ -71,6 +71,8 @@ import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
+import { GalleryFocusStates } from "./gallery-focus-states";
+import { GalleryFocusNested } from "./gallery-focus-nested";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
@@ -981,6 +983,33 @@ export function registerGalleryCards(): void {
     componentId: "gallery-list-view-focus",
     contentFactory: (_cardId) => <GalleryListViewFocus />,
     defaultMeta: { title: "TugListView (focus)", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Proof of the three keyboard visual states ([P03]): ring on the group
+  // container (`data-key-view-kbd`), movement cursor on the current item
+  // (`data-key-cursor`), with the cursor mutated as appearance — no re-render.
+  registerCard({
+    componentId: "gallery-focus-states",
+    contentFactory: (_cardId) => <GalleryFocusStates />,
+    defaultMeta: { title: "Focus states", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Proof of Enter-descend / Escape-ascend over scopes ([P02]): the act dispatch
+  // resolves keys against the outer container's declared behavior; descend pushes
+  // a scope + lands the key view inside, the outer gets data-key-within, Escape
+  // ascends + restores.
+  registerCard({
+    componentId: "gallery-focus-nested",
+    contentFactory: (_cardId) => <GalleryFocusNested />,
+    defaultMeta: { title: "Focus nested", icon: "List", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

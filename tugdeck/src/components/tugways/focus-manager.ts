@@ -34,7 +34,26 @@
 
 import { createContext } from "react";
 import type { TugAction } from "./action-vocabulary";
+import type { ComponentKeyDeclaration, FocusKey } from "./focus-act";
 import type { ResponderChainManager } from "./responder-chain";
+
+/**
+ * The behavior a key-view component declares to the engine ([P01]): the pure
+ * decision fields the act resolver reads ({@link ComponentKeyDeclaration}) plus
+ * the callbacks the engine invokes to carry an act out. The engine owns the
+ * scope mechanics (ascend = pop); the component supplies the rest, so behavior
+ * follows from the declaration rather than a bespoke per-component keymap.
+ */
+export interface KeyViewBehavior extends ComponentKeyDeclaration {
+  /** Space (and Enter-act on an item container): select / toggle the current item. */
+  onSelect?: () => void;
+  /** Enter on a non-descendable item, or a plain act. */
+  onAct?: () => void;
+  /** Enter on a descendable item: the component pushes its inner scope + lands the key view inside it. */
+  onDescend?: () => void;
+  /** Optional cleanup when the engine ascends out of this component's descended scope. */
+  onAscend?: () => void;
+}
 
 // ---- Focus modes ----
 
@@ -55,6 +74,18 @@ export const BASE_FOCUS_MODE = "base";
  * `data-keyboard-access`.
  */
 export const FOCUS_MODE_ATTRIBUTE = "data-focus-mode";
+
+/**
+ * DOM marker for the **immediate container** of the key view (depth 1 only):
+ * the element one level up the key path that *contains* the active component.
+ * The engine's visible `:focus-within` — a quiet "contains active" mark, distinct
+ * from the focus ring (`data-key-view-kbd`, on the component itself) and the
+ * movement cursor (`data-key-cursor`, on the current item). Projected from the
+ * scope stack: when a scope is descended into (pushed), the key view captured at
+ * push time (`restoreKeyView` — the container we descended *from*) wears it.
+ * Only the top scope's container is marked; no ancestor chain renders.
+ */
+export const KEY_WITHIN_ATTRIBUTE = "data-key-within";
 
 /**
  * DOM marker a focused text surface sets on (or within) itself to advertise
@@ -136,6 +167,13 @@ export interface FocusableInput {
    */
   consumesTab?: () => boolean;
   /**
+   * The component's key-view behavior ([P01]), held by reference and read live at
+   * dispatch time so a component can change what its current item descends to (or
+   * which keys it captures) without re-registering. Absent for plain focus stops
+   * that need no model dispatch.
+   */
+  behavior?: () => KeyViewBehavior | null;
+  /**
    * The focus modes this focusable participates in. Defaults to
    * `[BASE_FOCUS_MODE]`. Floating surfaces register their contents into the
    * mode they push.
@@ -154,6 +192,7 @@ export interface FocusableRecord {
   order: number;
   policy: FocusPolicy;
   consumesTab?: () => boolean;
+  behavior?: () => KeyViewBehavior | null;
   modes: string[];
   seq: number;
 }
@@ -234,6 +273,7 @@ export class FocusManager {
       order: input.order,
       policy: input.policy ?? "accept",
       consumesTab: input.consumesTab,
+      behavior: input.behavior,
       modes: input.modes ?? [BASE_FOCUS_MODE],
       seq: this.seqCounter++,
     };
@@ -315,6 +355,45 @@ export class FocusManager {
   keyViewConsumesTab(): boolean {
     if (this.keyViewId === null) return false;
     return this.focusables.get(this.keyViewId)?.consumesTab?.() ?? false;
+  }
+
+  /**
+   * The behavior declared by the current key view's component ([P01]), or `null`
+   * when the key view declares none (a plain focus stop). The act-dispatch reads
+   * this to resolve Space/Enter/Escape against the focused component.
+   */
+  keyViewBehavior(): KeyViewBehavior | null {
+    if (this.keyViewId === null) return null;
+    return this.focusables.get(this.keyViewId)?.behavior?.() ?? null;
+  }
+
+  /**
+   * Whether the current key view captures `key` for itself (an editor leaf's
+   * typing / caret) — the generalization of `keyViewConsumesTab` to any key
+   * ([P04]). When true the act-dispatch leaves the key to the component. Falls
+   * back to the `consumesTab` predicate for the Tab key so the two stay in sync.
+   */
+  keyViewCaptures(key: FocusKey): boolean {
+    const captured = this.keyViewBehavior()?.captures?.(key) ?? false;
+    if (captured) return true;
+    return key.key === "Tab" ? this.keyViewConsumesTab() : false;
+  }
+
+  /**
+   * Ascend one scope level: pop the current (top) focus mode, restoring the key
+   * view captured when it was pushed, and move DOM focus to it. The engine half
+   * of Escape ([P02]); a no-op (returns `false`) at the base mode, so a bare
+   * Escape with nothing descended falls through to the cancel ladder ([R04]).
+   */
+  ascend(): boolean {
+    const mode = this.currentFocusMode();
+    if (mode === BASE_FOCUS_MODE) return false;
+    this.popFocusMode(mode);
+    // `popFocusMode` restores the prior key view with `keyboard=false`; we
+    // ascended by keyboard, so re-stamp the ring onto the restored container.
+    this.refreshKeyViewProjection(true);
+    this.focusKeyView();
+    return true;
   }
 
   /**
@@ -414,6 +493,7 @@ export class FocusManager {
       restoreKeyView: this.keyViewId,
     });
     this.syncFocusModeDomAttribute();
+    this.syncKeyWithinDomAttribute();
     this.touch();
   }
 
@@ -433,6 +513,7 @@ export class FocusManager {
     const wasTop = at === this.modeStack.length - 1;
     const [entry] = this.modeStack.splice(at, 1);
     this.syncFocusModeDomAttribute();
+    this.syncKeyWithinDomAttribute();
     if (wasTop) {
       // Restore the prior key view. A no-op when unchanged; harmless when the
       // captured target has since unmounted (the chain's first-responder
@@ -462,6 +543,17 @@ export class FocusManager {
   currentFocusMode(): string {
     const top = this.modeStack[this.modeStack.length - 1];
     return top ? top.scopeId : BASE_FOCUS_MODE;
+  }
+
+  /**
+   * Whether the current (top) focus mode is trapped (modal). `false` at the base
+   * mode. The act dispatch ascends only **non-trapped** scopes ([P02]); a trapped
+   * (modal) scope's Escape is the surface's to handle (cancel), so the engine does
+   * not pop it from under a sheet / alert ([R04]).
+   */
+  currentFocusModeTrapped(): boolean {
+    const top = this.modeStack[this.modeStack.length - 1];
+    return top ? top.trapped : false;
   }
 
   // ---- Default-action resolution ----
@@ -620,6 +712,34 @@ export class FocusManager {
     if (this.keyViewKeyboard || this.ringFollowsPointer) {
       el.setAttribute("data-key-view-kbd", "");
     }
+  }
+
+  /**
+   * Project the **immediate container** of the key view onto the DOM (depth 1):
+   * clear `data-key-within` from any element that carries it, then — when a scope
+   * is descended into — stamp it on the element whose `data-tug-focusable` /
+   * `data-responder-id` matches the top scope's `restoreKeyView` (the container we
+   * descended *from*). At base (no pushed scope) nothing is marked: a flat
+   * component is its own key view and has no "within". Only the top scope's
+   * container renders — no ancestor chain ([Q02]). Appearance-zone DOM only
+   * ([L06]/[L22]); guarded for DOM-free environments.
+   */
+  private syncKeyWithinDomAttribute(): void {
+    if (typeof document === "undefined") return;
+    document
+      .querySelectorAll<HTMLElement>(`[${KEY_WITHIN_ATTRIBUTE}]`)
+      .forEach((el) => el.removeAttribute(KEY_WITHIN_ATTRIBUTE));
+    const top = this.modeStack[this.modeStack.length - 1];
+    const withinId = top?.restoreKeyView ?? null;
+    if (withinId === null) return;
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(withinId)
+        : withinId;
+    const el = document.querySelector<HTMLElement>(
+      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
+    );
+    el?.setAttribute(KEY_WITHIN_ATTRIBUTE, "");
   }
 
   /**

@@ -24,7 +24,7 @@
 
 import React, { useCallback, useContext, useLayoutEffect, useRef } from "react";
 import { FocusManagerContext, FocusModeContext } from "./focus-manager";
-import type { FocusPolicy } from "./focus-manager";
+import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
 
 // ---- Options / result ----
 
@@ -53,6 +53,13 @@ export interface UseFocusableOptions {
    * re-register the focusable.
    */
   consumesTab?: () => boolean;
+  /**
+   * The component's key-view behavior ([P01]) — container kind, commit mode,
+   * descend/select/act callbacks, and a key-capture predicate. Read live at
+   * dispatch time (held by reference), so a component may vary what its current
+   * item descends to without re-registering. Omit for a plain focus stop.
+   */
+  behavior?: () => KeyViewBehavior | null;
 }
 
 export interface UseFocusableResult {
@@ -102,6 +109,7 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
       policy,
       modes: [focusMode],
       consumesTab: () => optionsRef.current.consumesTab?.() ?? false,
+      behavior: () => optionsRef.current.behavior?.() ?? null,
     });
     return () => {
       manager.unregisterFocusable(id);
@@ -180,6 +188,7 @@ export function useRovingFocusable(options: UseFocusableOptions): UseRovingFocus
       policy,
       modes: [focusMode],
       consumesTab: () => optionsRef.current.consumesTab?.() ?? false,
+      behavior: () => optionsRef.current.behavior?.() ?? null,
     });
     return () => {
       manager.unregisterFocusable(id);

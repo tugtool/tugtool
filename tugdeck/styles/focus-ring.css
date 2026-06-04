@@ -66,3 +66,29 @@
   outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
   outline-offset: var(--tugx-focus-ring-offset);
 }
+
+/**
+ * The second of the three keyboard visual states: `data-key-within` — the
+ * immediate container of the key view (depth 1), the engine's visible
+ * `:focus-within`. A *quiet* "contains the active component" mark, deliberately
+ * fainter than the ring so the eye reads the ring as the live target and the
+ * within as ambient context. Outline-based like the ring (layout-free, radius-
+ * following); the color defaults to a dimmed mix of the ring color and is theme-
+ * tunable via `--tugx-key-within-*`.
+ */
+[data-key-within] {
+  outline: var(--tugx-key-within-width, var(--tugx-focus-ring-width)) solid
+    var(--tugx-key-within-color, color-mix(in srgb, var(--tugx-focus-ring-color) 32%, transparent));
+  outline-offset: var(--tugx-key-within-offset, var(--tugx-focus-ring-offset));
+}
+
+/**
+ * The third keyboard visual state: `data-key-cursor` — the movement cursor on
+ * the current item inside a deferred component. It reuses the component's
+ * **mouse-hover** treatment ([Q01]); this is the quiet neutral baseline (a
+ * hover-weight surface tint) that components refine with their own hover token.
+ * Distinct from committed selection (`data-selected`, accent) and from the ring.
+ */
+[data-key-cursor] {
+  background-color: var(--tugx-key-cursor-surface, rgba(128, 128, 128, 0.12));
+}

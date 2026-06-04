@@ -24,6 +24,7 @@ import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, use
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
 import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, BASE_FOCUS_MODE } from "./focus-manager";
+import { resolveFocusAct } from "./focus-act";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
 import { matchKeybinding } from "./keybinding-map";
@@ -288,6 +289,90 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       }
     }
 
+    // ---- Act dispatch: Space / Enter / Escape ([P01]) ----
+    // The model's act tier, resolved against the focused component's declared
+    // behavior. Capture phase, sited AFTER the keybinding listener (a matched
+    // binding wins and stops propagation before this runs) and AFTER a key-capture
+    // leaf (an editor keeps its keys), but ahead of the bubble default-button
+    // stage. Every branch is GUARDED so it is non-interfering: Space/Enter act
+    // only when the key view declares an item/component behavior (a leaf falls
+    // through to native / the default-button stage), and Escape ascends only when
+    // an engine scope is descended — otherwise it falls through to the cancel
+    // ladder ([R04]).
+    function actDispatchListener(event: KeyboardEvent): void {
+      if (event.metaKey || event.ctrlKey) return;
+      const key = event.key;
+      if (key !== " " && key !== "Spacebar" && key !== "Enter" && key !== "Escape") {
+        return;
+      }
+      const focusKey = {
+        key,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+      };
+      // An editor leaf owns its keys ([P04]) — never act on a captured key.
+      if (focusManager.keyViewCaptures(focusKey)) return;
+      // An editor advertising it owns keys *right now* (an open completion sets
+      // `data-tug-tab-consume`) keeps Escape too — [P04]'s "Tab/Escape are
+      // captured only transiently by an open completion": Escape closes the
+      // completion first rather than ascending a scope. (Tab is already deferred
+      // by the focus-walk listener via the same marker.)
+      if (key === "Escape") {
+        const active = document.activeElement;
+        if (
+          active instanceof Element &&
+          active.closest(`[${TAB_CONSUME_ATTRIBUTE}="true"]`) !== null
+        ) {
+          return;
+        }
+      }
+
+      const behavior = focusManager.keyViewBehavior();
+      const act = resolveFocusAct(focusKey, behavior ?? { container: "none" });
+      switch (act) {
+        case "select":
+          behavior?.onSelect?.();
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          break;
+        case "descend":
+          behavior?.onDescend?.();
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          break;
+        case "act":
+          // Intercept only for a container that declares an act; a leaf's
+          // Space/Enter stays with the existing pipeline (native button press,
+          // bubble default-button), so leaf act-consistency is unchanged.
+          if (behavior && behavior.container !== "none" && behavior.onAct) {
+            behavior.onAct();
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+          break;
+        case "ascend":
+        case "cancel":
+          // Ascend only a NON-trapped descended scope. A trapped (modal) scope —
+          // a sheet / alert still owned by Radix until its step lands — keeps its
+          // own Escape (cancel); the engine must not pop it from under the surface
+          // ([R04]). At the base mode there is nothing to ascend.
+          if (
+            focusManager.currentFocusMode() !== BASE_FOCUS_MODE &&
+            !focusManager.currentFocusModeTrapped()
+          ) {
+            focusManager.ascend();
+            behavior?.onAscend?.();
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+          break;
+        default:
+          break; // move / passthrough / capture — leave to the component / browser
+      }
+    }
+
     // ---- Stages 2-4: bubble-phase listener ----
     function bubbleListener(event: KeyboardEvent): void {
       // Stage 2: keyboard navigation -- Enter-key default-button activation.
@@ -495,6 +580,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // in the capture phase ahead of the global-shortcut dispatch.
     document.addEventListener("keydown", focusWalkListener, { capture: true });
     document.addEventListener("keydown", captureListener, { capture: true });
+    document.addEventListener("keydown", actDispatchListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
     document.addEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
@@ -504,6 +590,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     return () => {
       document.removeEventListener("keydown", focusWalkListener, { capture: true });
       document.removeEventListener("keydown", captureListener, { capture: true });
+      document.removeEventListener("keydown", actDispatchListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
       document.removeEventListener("mousedown", preventFocusOnMouseDown, { capture: true });

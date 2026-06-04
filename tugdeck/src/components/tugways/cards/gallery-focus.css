@@ -1,0 +1,21 @@
+/**
+ * gallery-focus.css — visuals for the keyboard-model demo cards
+ * (`gallery-focus-states`, `gallery-focus-nested`).
+ *
+ * The movement cursor (`data-key-cursor`) and the focus ring/within are painted
+ * by `focus-ring.css`. This file adds only the committed-**selection** mark for
+ * the demo rows: selection is the accent role ([predecessor P06]: accent =
+ * selection, action = focus), distinct from the action-blue ring. Appearance via
+ * CSS keyed on the `data-selected` attribute the component sets from its data
+ * ([L06]: selection is semantic data → attribute → CSS, not React-driven style).
+ */
+
+.cg-focus-row {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.cg-focus-row[data-selected="true"] {
+  background-color: var(--tug7-surface-tone-primary-normal-accent-rest);
+}
