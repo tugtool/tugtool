@@ -152,6 +152,10 @@ body {
   --tugx-focus-ring-color: var(--tug7-element-tone-border-normal-active-rest);
   --tugx-focus-ring-width: 1px;
   --tugx-focus-ring-offset: 2px;
+  /* Movement cursor / row hover for item-groups ([P03]/[Q01]) — a clearly
+     visible neutral overlay, distinct from the selection accent. Brio overlays
+     light on a dark surface. */
+  --tugx-key-cursor-surface: --tug-color(white, i: 0, t: 100, a: 14);
 
   /* Tone */
   --tug7-element-tone-border-normal-accent-rest: --tug-color(blue, t: 47);

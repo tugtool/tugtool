@@ -189,7 +189,7 @@
 /* `[data-key-cursor]` is the keyboard movement cursor ([P03]/[Q01]); it reuses
  * the unselected-hover treatment so the cursor segment reads as a hover. */
 .tug-choice-group-segment:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
-  background-color: var(--tug7-surface-segment-primary-normal-plain-hover, rgba(128, 128, 128, 0.1));
+  background-color: var(--tugx-key-cursor-surface);
   color: var(--tug7-element-segment-text-normal-plain-hover);
 }
 
@@ -434,8 +434,8 @@
  * Match the default-emphasis hover exclusion list (don't fire on
  * disabled / active segments). */
 .tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
-  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
-  color: var(--tug7-element-control-text-ghost-action-hover);
+  background-color: var(--tugx-key-cursor-surface);
+  color: var(--tug7-element-segment-text-normal-plain-hover);
 }
 
 /* Pipe between adjacent segments — a 1px vertical line drawn between

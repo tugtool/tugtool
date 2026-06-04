@@ -135,7 +135,7 @@
 /* `[data-key-cursor]` is the keyboard movement cursor ([P03]/[Q01]); it reuses
  * the off-state hover so the cursor item reads as a hover. */
 .tug-option-group-item:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
-  background-color: var(--tug7-surface-segment-primary-normal-plain-hover, rgba(128, 128, 128, 0.1));
+  background-color: var(--tugx-key-cursor-surface);
   color: var(--tug7-element-segment-text-normal-plain-hover);
 }
 
@@ -351,8 +351,8 @@
  * the state. Same surface/text pair as on, so the user reads "this is what
  * toggling on feels like." */
 .tug-option-group[data-emphasis="ghost"] .tug-option-group-item:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
-  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
-  color: var(--tug7-element-control-text-ghost-action-hover);
+  background-color: var(--tugx-key-cursor-surface);
+  color: var(--tug7-element-segment-text-normal-plain-hover);
 }
 
 /* Pipe between adjacent items — a 1px vertical line, ~60% of the item

@@ -33,6 +33,14 @@
   gap: var(--tug-space-xs);
 }
 
+/* When the group is an engine focus stop it wears the ring on its own bounds;
+   inset the rows so the hover / keyboard-cursor row fill has breathing room and
+   doesn't smash into the ring ([P03]). Scoped to focus stops so radio groups in
+   forms keep flush-left alignment. */
+.tug-radio-group[data-tug-focusable] {
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+}
+
 /* ---- Orientation variants ---- */
 
 .tug-radio-group-horizontal .tug-radio-group-items {
@@ -129,7 +137,12 @@
 
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
 /* The keyboard movement cursor ([P03]/[Q01]) reuses the hover treatment: the
- * current item under the arrows reads exactly as a pointer hover. */
+ * current item under the arrows reads exactly as a pointer hover. A clearly
+ * visible row fill (not just the indicator border) marks the hovered/cursor
+ * row — the bare indicator-border change read far too faintly. */
+.tug-radio-group [data-slot="tug-radio-item"]:is(:hover, [data-key-cursor]):not(:disabled):not([data-disabled]) {
+  background-color: var(--tugx-key-cursor-surface);
+}
 [data-slot="tug-radio-item"]:is(:hover, [data-key-cursor]):not(:disabled):not([data-disabled]) .tug-radio-indicator {
   border-color: var(--tug7-element-radio-border-normal-off-hover);
 }
