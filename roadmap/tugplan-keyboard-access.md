@@ -579,7 +579,7 @@ useKeybindings([
 | #step-15 | Tame TugAccordion (roving) | done | (dash kbd-roving) |
 | #step-16 | Tame TugChoiceGroup (roving) | done | (dash kbd-roving) |
 | #step-17 | Tame TugOptionGroup (roving, multi-select) | done | (dash kbd-roving) |
-| #step-18 | Tame TugListView (roving rows) | pending | — |
+| #step-18 | Tame TugListView (roving rows) | done | (dash kbd-listview) |
 | #step-19 | Tame TugTooltip | pending | — |
 | #step-20 | Tame TugPopover (FocusScope → engine trap) | pending | — |
 | #step-21 | Tame TugContextMenu (+ editor context menu) | pending | — |
@@ -1005,31 +1005,52 @@ useKeybindings([
 
 **Depends on:** #step-3
 
-**Commit:** `focus(radix): TugListView — single focus stop, row nav local`
+**Commit:** `focus(list): TugListView — ring on the focused component, selection on the row`
 
-**References:** [P01] FocusManager, [P02] authored order, Risk R01, (#affected-inventory)
+**References:** [P01] FocusManager, [P02] authored order, [P05] ring, Risk R01, (#affected-inventory)
 
 **Artifacts:**
-- The list container is one focus stop; its arrow / Page / Home-End row navigation stays component-local; rows stay non-focusable (`tabIndex=-1`); the engine owns Tab between stops; row-selection semantics retained.
+- Under the focus engine, `TugListView` rows are never individual Tab stops (`tabIndex=-1`); the list contributes exactly one stop (or zero, when an owning input is the stop). The ring lives on the focused **component**; **selection** lives on the **row** (existing `selectionRequired` / `data-selected`). No roving-ring-onto-a-row, so windowing is not a ring problem.
+
+**Design note (resolved).** Organizing principle: **focus ring on the focused component, selection on the row.** This dissolves the seed's three complications:
+- **Focus ≠ ring decoupling → gone.** Ring on the component = `useFocusable` on the container (the ordinary fixed-focusable path), *not* `useRovingFocusable`. No ring is ever projected onto a moving/virtualized row.
+- **Virtualization → not a ring problem.** Selection is *data* (`selectedIndex`), not DOM focus; a selected row that scrolls out and remounts re-renders with `data-selected` for free. The ring never chases an unmounted row.
+- **The pattern already exists.** `dev-card` (recent-projects picker) and `model-picker-sheet` already do "type in the input, Arrow moves the list's selection, `scrollToIndex` into view" at the form level. The principle is the model the pickers already use.
+
+Three tamed shapes (everything else follows):
+1. **Input + list pickers** (model/effort/memory/rewind/resume sheets, dev-card recent, permission-rules): the **input** is the focused component → ring on the input (the persistent text-entry destination, [feedback_persistent_text_entry]). The list contributes **zero** Tab stops (container *and* rows `tabIndex=-1`). Selection shows on the row; the form's existing Arrow handler moves `selectedIndex` + `scrollToIndex` — net change is mostly the tabIndex flip.
+2. **Non-selection surfaces** (read-only sheets `interactive={false}`: help/agents/skills; transcript `pageByEntry`): the container is **one** engine stop via `useFocusable` → ring on the container. **Scroll only** — Arrow/Page scroll, **no row cursor** (no selection ⇒ no cursor). `pageByEntry` Page nav and the cell `Enter`/`Space` → `onSelect` paths are untouched.
+3. **Nested in-transcript body-kind blocks** (file/diff/path-list/search-result/todo) — **deferred** to a follow-on (nested list-inside-a-list stops + a selection model they lack). Unregistered, unchanged.
+
+Out of scope: nested blocks; full `listbox`/`option` + `aria-activedescendant` ARIA (the [#step-28] accessibility pass). Selection rendering, `scrollToIndex`, `selectionRequired`, `onSelectionChange` already exist and are reused.
+
+**API — participation declared at the point of usage (DECIDED, diverges from the 15–17 components).** `TugListView` imports **nothing** from the focus engine. Unlike the simpler controls (which take `focusGroup` and call `useFocusable` internally), the list is a heavyweight, scroll-sensitive primitive, so the surface declares participation and hands the list a binding through three **dumb passthrough props**:
+- `containerRef?: (el) => void` — the surface's own `useFocusable(...).focusableRef`, composed onto the scroll container (stamps `data-tug-focusable` so the engine resolves it as the stop / key view).
+- `containerTabIndex?: number` (default `0`) — `-1` for an input-subordinate list that adds no stop.
+- `rowsFocusable?: boolean` (default `true`) — `false` flips cell wrappers to `tabIndex=-1` so the list is one stop, not one-per-row.
+
+The two shapes are then expressed entirely at the call site: **container stop** = surface `useFocusable` → `containerRef={focusableRef} containerTabIndex={0} rowsFocusable={false}` (ring on the container via [P05]); **input-subordinate** = `containerTabIndex={-1} rowsFocusable={false}` (no `containerRef`, no registration). No new keyboard handler in either shape — container-stop is native scroll on a focused container; subordinate's Arrow→selection is the owning input/form's job. Default (no props) is **byte-identical** to today. CSS: `.tug-list-view:not([data-key-view-kbd])` keeps the historical `outline: none`, yielding so the ring paints when the engine makes the container the key view.
+
+**Why call-site, not in-component (the 15–17 pattern):** baking `useFocusable` into `TugListView`'s render subscribes this 2300-line virtualized component to the focus contexts and adds an effect to its delicate before-first-paint scroll-restore sequence — risk for zero benefit on the >90% of lists that aren't focus stops. The call-site model keeps the component dumb and the cost where it's used. (This raises a consistency question for the simpler components — see the open note below.)
+
+**Scope of this step (capability + gallery proof).** The primitive gains the passthrough props and both shapes are proven end-to-end in the gallery. **Real consumer adoption rides surface taming**: the read-only sheets and pickers live inside `TugSheet` (still Radix-`FocusScope`-trapped until [#step-23]); a surface registers its list once the surface itself is engine-managed. Nested body-kind blocks stay a deferred follow-on.
+
+**Open — consistency follow-up (for the user to decide):** the simpler controls ([#step-10]–[#step-17]) take `focusGroup` and call `useFocusable` internally; this step's call-site model is cleaner (no engine import in the component). Decide whether to migrate the simpler controls to the same call-site model for uniformity, or keep the list view as the deliberate exception.
 
 **Tasks:**
-- [ ] Register the list container as one focusable; keep component-local row keyboard navigation; the engine owns ring/key view and Tab between stops; keep selection semantics.
+- [x] Add three dumb passthrough props to `TugListView` (`containerRef` / `containerTabIndex` / `rowsFocusable`); no focus-engine import. Compose `containerRef` onto the scroll container; rows `-1` when `rowsFocusable={false}`. Default byte-identical to today.
+- [x] Gallery proof card (`gallery-list-view-focus`): the card (surface) calls `useFocusable` and hands the binding to a container-stop list and an input-subordinate list.
+- [x] Leave real sheet/picker consumers and nested body-kind blocks for their own taming steps (noted above).
 
 **Tests:**
-- [ ] app-test: Tab enters/exits the list as one stop; arrow/Page keys move the active row; ring on keyboard focus.
+- [x] app-test: container-stop list — Tab lands one stop with the ring on the container; rows `tabIndex=-1`. (`at0121-list-view-container-focus`)
+- [x] app-test: input-subordinate list — contributes no Tab stop (container + rows `-1`, no registration); selection on the row. (`at0122-list-view-subordinate-focus`)
+- [x] regress: untamed `TugListView` (`at0060-list-view-content-settled`) byte-unchanged. (Note: `at0069-outer-transcript-first-paint` fails `923` on **pristine `main`** independent of this step — a pre-existing transcript scroll-restore issue, unchanged by these dumb props; flagged for separate investigation.)
 
 **Checkpoint:**
-- [ ] `just app-test` list-view scenario `VERDICT: PASS`.
+- [x] `just app-test` list-view scenarios `VERDICT: PASS` (at0121, at0122, at0060).
 
-**Deferred — own run (design note first).** During the [#step-15]–[#step-18] batch this step was split out: unlike the non-windowed groups (15–17), `TugListView` breaks the assumptions the shared roving primitive rests on, so it needs a design pass before code. Seed findings from reading the primitive:
-- **Virtualized.** Rows mount/unmount with the scroll window (`computeWindow` + overscan), so an active row can be unmounted; the ring can only project onto a mounted row, so arrow-nav must `scrollToIndex` the cursor into view before projecting.
-- **Focus ≠ ring target.** DOM focus wants to stay on the scroll **container** (its capture-phase `pageByEntry` keydown listener and the cell keydown handlers depend on it), while the active-row indication is a **row** — a decoupling `useRovingFocusable` does not model (it focuses the same element it rings). Likely answer: `useFocusable` on the container (container holds focus + ring) and move row indication via the existing `data-selected`/selection highlight, not the focus ring.
-- **Two opposite consumer shapes share the primitive.** Picker lists (`selectionRequired`: session picker) want Arrow→select with a row cursor; scroll/read lists (`pageByEntry`: dev transcript) have no "selected row" and must NOT gain one. Today every interactive cell wrapper is its own `tabIndex=0` Tab stop (`wrapperTabIndex`), so flipping all rows to `-1` *without* a cursor is a keyboard regression, and a *uniform* row cursor changes the transcript UX. So the taming is conditional per shape (likely gated on `selectionRequired`/a new opt-in), not one transformation.
-- **Compose with existing keyboard machinery:** the `pageByEntry` capture listener (Page / Opt+Arrow), the cell-wrapper `Enter`/`Space` → `delegate.onSelect`, and `selectionRequired`'s owned `selectedIndex` + `onSelectionChange` mirror. Decide whether the arrow cursor *is* `selectedIndex` (selectionRequired) or a separate focus cursor (non-selecting interactive lists), and where its highlight comes from.
-- Regress the real consumers: dev transcript (`pageByEntry`, `inline`) and the session picker (`selectionRequired`).
-
-**Tasks:**
-- [ ] Write the design note resolving the above (cursor vs selection; which shapes get single-stop; windowing/scroll-into-view), then implement against it.
+**Done-note:** `TugListView` stays focus-engine-agnostic; participation is declared by the surface via `useFocusable` + three passthrough props. Proven in `gallery-list-view-focus`. The earlier in-component attempt was reverted after confirming (a) it offered no benefit for the fragile component and (b) the scroll-restore failure I chased was pre-existing on `main`, not caused by the change.
 
 ---
 

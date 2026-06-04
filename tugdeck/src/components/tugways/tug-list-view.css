@@ -95,10 +95,16 @@ body {
      the container's edge (e.g. against an entry pane below). */
   scroll-padding-block-end: var(--tugx-list-view-scroll-padding-end);
 
-  /* Smooth focus-ring suppression on the scroll container itself —
-     `tabindex="0"` makes it focusable for native arrow / page key
-     scroll, but we don't want a visible ring on the surface. Cell
-     content owns its own focus visuals. */
+}
+
+/* Focus-ring suppression on the scroll container. `tabindex="0"` makes it
+   focusable for native arrow / page key scroll, but an ordinary (non-key-view)
+   container shows no ring — cell content owns its own focus visuals. When a
+   surface has declared the list a focus stop and the engine has made the
+   container the keyboard key view (`data-key-view-kbd`), the `:not(...)` guard
+   yields so `focus-ring.css` paints the ring on the container (ring on the
+   component, selection on the row). */
+.tug-list-view:not([data-key-view-kbd]) {
   outline: none;
 }
 

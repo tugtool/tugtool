@@ -645,6 +645,41 @@ export interface TugListViewProps<
    * `selectionRequired` is `false`.
    */
   onSelectionChange?: (index: number) => void;
+
+  // ---- Focus participation (declared at the point of usage) ----
+  //
+  // TugListView imports nothing from the focus engine. A surface that wants the
+  // list to take part in the app-owned Tab walk declares that itself — it calls
+  // `useFocusable` and hands the binding down through these dumb passthrough
+  // props. The list only attaches what it's given. ("Ring on the focused
+  // component, selection on the row": the surface registers the container so the
+  // engine paints the ring on it; selection stays the list's own
+  // `selectionRequired`/`data-selected`.)
+
+  /**
+   * Ref callback attached to the scroll **container**, composed with the list's
+   * own internal ref. A surface passes the `focusableRef` from its own
+   * `useFocusable(...)` call here, which stamps `data-tug-focusable` on the
+   * container so the engine can resolve it as a Tab stop / key view. Omit for an
+   * ordinary list. Pass a STABLE callback (the one `useFocusable` returns is
+   * stable) so the container isn't detached/reattached every render.
+   */
+  containerRef?: (el: HTMLElement | null) => void;
+  /**
+   * `tabIndex` for the scroll container. Default `0` (a native focus stop for
+   * arrow/page scroll, as today). A surface whose list is **subordinate** to an
+   * external focus owner (a filter input) passes `-1` so the list adds no Tab
+   * stop of its own.
+   */
+  containerTabIndex?: number;
+  /**
+   * Whether cell wrappers are individual Tab stops. Default `true` (today's
+   * per-row behavior). A surface that makes the list one stop — container-stop
+   * or input-subordinate — passes `false` so rows are `tabIndex=-1` and the list
+   * is never one-stop-per-row; the active row is shown by selection, not Tab
+   * focus.
+   */
+  rowsFocusable?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -818,6 +853,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       selectionRequired = false,
       onSelectionChange,
       onFollowBottomChange,
+      containerRef,
+      containerTabIndex = 0,
+      rowsFocusable = true,
     },
     ref,
   ) {
@@ -841,8 +879,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       (el: HTMLDivElement | null) => {
         scrollContainerRef.current = el;
         setScrollportEl(el);
+        // Dumb passthrough: a surface that declared this list a focus stop hands
+        // its `useFocusable` ref down via `containerRef`; we just attach it to
+        // the scroll container alongside our own bookkeeping. No focus-engine
+        // knowledge in the list — see the prop docs. Stable as long as the
+        // surface passes a stable callback (the one `useFocusable` returns).
+        containerRef?.(el);
       },
-      [],
+      [containerRef],
     );
 
     // Map<index, HTMLElement> populated by cell-wrapper ref callbacks.
@@ -2244,7 +2288,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         }
         style={separatorStyle}
         role="list"
-        tabIndex={0}
+        tabIndex={containerTabIndex}
       >
         <div
           ref={topSpacerRef}
@@ -2260,11 +2304,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //  - `tabIndex` is `0` for cells (focusable, in tab order)
             //    and `-1` for headers/footers (not focusable). See
             //    "Row roles" in the top-of-file docstring.
+            //  - When the surface declared the list one stop
+            //    (`rowsFocusable={false}`), rows are NEVER individual Tab
+            //    stops (`-1`); the active row is shown by selection, not
+            //    Tab focus.
             //  - `data-list-cell-role` is set only for non-default
             //    roles, keeping the existing default-cell DOM shape
             //    byte-identical for backwards-compatible CSS
             //    selectors that don't yet know about roles.
-            const wrapperTabIndex = interactive && role === "cell" ? 0 : -1;
+            const wrapperTabIndex =
+              rowsFocusable && interactive && role === "cell" ? 0 : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
             // `selectionRequired` mode — the owned selected row.
             // Surfaced two ways from the one source: `data-selected`

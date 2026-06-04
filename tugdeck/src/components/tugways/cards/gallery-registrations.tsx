@@ -70,6 +70,7 @@ import { GalleryPaneBulletin } from "./gallery-pane-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
+import { GalleryListViewFocus } from "./gallery-list-view-focus";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
@@ -966,6 +967,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-list-view-filter",
     contentFactory: (_cardId) => <GalleryListViewFilter />,
     defaultMeta: { title: "TugListView (filter)", icon: "Search", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Focus-engine proof for `TugListView` — the container-stop (`focusGroup`,
+  // ring on the list) and input-subordinate (`keyboardSubordinate`, list adds
+  // no Tab stop) shapes of the "ring on the component, selection on the row"
+  // model.
+  registerCard({
+    componentId: "gallery-list-view-focus",
+    contentFactory: (_cardId) => <GalleryListViewFocus />,
+    defaultMeta: { title: "TugListView (focus)", icon: "List", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
