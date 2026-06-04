@@ -144,15 +144,27 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ---
 
-#### [Q04] Text-editing key capture under [P15] (OPEN) {#q04-text-editing-capture}
+#### [Q04] Text-editing key capture under [P15] (RESOLVED) {#q04-text-editing-capture}
 
 **Question:** When the key view is a text-editing component (`TugInput`, the prompt editor, code / markdown editors), it wants nearly every key the [P15] model reserves — printables and **Space** type, **arrows** move the caret, **Enter** is newline-or-submit, **Tab** may indent or accept a completion. How do the model's keys (Tab/arrows/Space/Enter/Escape) and typing coexist, and how does the user always get *out*?
 
 **Why it matters:** [P15] is clean for widgets but editors invert it — most "navigation" keys become "typing." Get the precedence wrong and either the user can't type (model eats the keys) or can't leave (editor eats Tab/Escape). This also drives the [P13] interplay (a pending inline dialog vs. the prompt still holding the caret).
 
-**Sketch of the resolution (to be settled in discussion, then written here):** an editor is a **leaf** that declares a transient *key-capture set* (generalizing [Q02]'s `consumesTab`): while focused it captures printables + Space (type), arrows (caret), and editor-defined Enter (newline/submit); Tab and Escape stay navigation (leave / ascend) **except** when a transient editor mode claims them (open completion → Tab accepts, Escape closes — then the next Escape ascends). The [P13] split: typing + caret stay with the prompt while a dialog is pending; only the commit keys (Enter/Escape) route to the dialog scope.
+**Resolution.** A text editor is a **`none`-container leaf** ([P15]) — you *focus* it, you never *descend* into it — that declares a **key-capture set** (the generalization of [Q02]'s `consumesTab` to the whole keyboard). While it is the key view, keys in the set are editing; every other key falls through to the [P15] engine as navigation. The set:
 
-**Plan to resolve:** Discussion in progress; fold the outcome into [P15] + [Q02], and into [#step-30] (the engine's per-component key-capture declaration) and the editor-touching steps.
+| Key | In the editor | Falls through to [P15]? |
+|---|---|---|
+| printables, **Space** | type the character (Space is *not* "select" here) | no — captured |
+| ←→↑↓, Home/End, Opt/⌘+arrows | caret / word / line movement — **always caret, never escape-at-boundary** | no — captured |
+| **Enter** | single-line = submit (the model's "act"); **multi-line = the same Enter-vs-Shift+Enter submit/newline preference prompt-entry uses, applied library-wide to every multi-line editor** | editor policy |
+| **Tab / ⇧Tab** | — | **yes → leave to next/prev component**, *unless* a completion is open → Tab accepts it (transient capture) |
+| **Escape** | — | **yes → ascend / blur**, *unless* a completion/typeahead is open → Escape closes that first; the *next* Escape ascends |
+
+So **Tab and Escape stay reliable "get out" keys at rest**, borrowed only transiently by an open completion. The editor never becomes a descend target.
+
+**[P13] coexistence split** — when an editor (the prompt) holds the caret while an inline dialog is the *logical* key view: typing + Space → the prompt; plain arrows → the prompt caret; **Enter → the dialog's default-action** (per [P13], the pending scope claims the commit keys, not a prompt submit); **Escape → cancel the dialog**; the dialog's **wizard accelerators (`1`–`9`, `←`/`→` Back/Next)** pick its options — *distinct keys*, so plain arrows stay caret. The dialog borrows only commit keys + accelerators; typing and the caret stay with the prompt.
+
+**Folds into:** [P15] (text editors named as `none`-leaves with a key-capture set), [Q02] (`consumesTab` becomes one transient entry in that set), [#step-30] (the engine's per-component key-capture declaration), and the editor-touching steps. The multi-line Enter preference reuses the existing prompt-entry submit setting — no new per-editor knob.
 
 ---
 
@@ -429,6 +441,7 @@ The two policies differ **only** in ring painting — the key view, Tab walk, re
 - **Space / Enter** get **split code paths but one mapped "act"** for now; the split is the seam where Enter already means *descend* and where the two may diverge per component later if experience demands it.
 - **Scopes — one stack, `trapped` per container** ([P03]/[P13]). Non-trapped containers (accordion content, inline dialogs): `Escape` ascends, `Tab` can exit. Trapped containers (sheets, alerts): `Escape` cancels, `Tab` is contained. The stack is now also driven by Enter-descend / Escape-ascend.
 - **Logical key view ≠ DOM focus.** A pushed scope can be the active key target while DOM focus stays elsewhere — an inline Permission/Question dialog is operable (arrows pick, Enter answers, Escape cancels) while the prompt keeps the caret.
+- **Text editors invert the model (see [Q04]).** A text editor is a `none`-leaf that declares a **key-capture set**: while it is the key view, printables + Space type, arrows are the caret (always — never escape-at-boundary), Enter is submit/newline (multi-line follows the prompt-entry Enter-vs-Shift+Enter preference, library-wide), and **Tab / Escape stay navigation at rest** — captured only transiently by an open completion. `consumesTab` ([Q02]) is one entry in that set.
 
 **Two container flavors** (each component declares which it is):
 - **Item container** (list, accordion, radio, option, choice, tab bar, menu): children are *items*, navigated with **arrows**; one is the cursor.
@@ -470,7 +483,7 @@ Each component's declaration against [P15]. **Container?** = item / component / 
 | TugAccordion | item **+ descend** | move hover over headers; Home/End | Space toggles expand; **Enter expands + descends** into content | deferred |
 | TugListView | item **+ descend** | move hover over rows; Pg = page; Home/End; scrolls into view | Space selects row; **Enter descends** into row content (else activates) | deferred |
 | TugContextMenu · internal/tug-popup-menu | item *(trapped scope)* | move hover over items; Home/End | activate current item; Escape closes | deferred |
-| TugInput · editor | none | arrows = caret (its "move"); editor `consumesTab` while completing | typing edits; Enter = submit / scope default-action | live (caret) |
+| TugInput · editor | none *(key-capture leaf, [Q04])* | arrows = caret (always); printables + Space type; `consumesTab` while completing | Enter = submit (single-line) / prompt Enter-pref (multi-line); Tab/Escape navigate at rest | live (caret) |
 | TugTooltip | none *(passive)* | — *(not a focus stop; opens on trigger focus)* | — | — |
 | TugPopover | component *(scope)* | — *(Tab cycles inner components)* | inner act; Enter = scope default-action; Escape ascends / closes | per inner |
 | TugSheet | component *(trapped scope)* | — *(Tab contained)* | inner act; Enter = default-action; Escape cancels | per inner |
@@ -690,7 +703,7 @@ useKeybindings([
 | #step-27 | First-responder + refuse audit & reclassification | pending | — |
 | #step-28 | Accessibility-mode ARIA pass + dual mode toggle | pending | — |
 | #step-29 | Integration checkpoint | pending | — |
-| #step-30 | [P15] engine foundation: movement-cursor (hover) state, `data-key-within` rendering, Enter-descend / Escape-ascend on the scope stack, live-vs-deferred + Space/Enter act dispatch | pending | — |
+| #step-30 | [P15] engine foundation: movement-cursor (hover) state, `data-key-within` rendering, Enter-descend / Escape-ascend on the scope stack, live-vs-deferred + Space/Enter act dispatch, and the per-component **key-capture set** ([Q04]; `consumesTab` becomes one entry) | pending | — |
 | #step-31 | Redo deferred item-groups vs [P15] — TugRadioGroup, TugChoiceGroup, TugOptionGroup (arrows move hover; Space/Enter act; ring stays on the group) | pending | — |
 | #step-32 | Redo live components vs [P15] — TugTabBar (move = switch live) + TugSlider review (ring on the component, never a sub-item) | pending | — |
 | #step-33 | Redo TugAccordion vs [P15] — item container + Enter-descend into expanded content | pending | — |
