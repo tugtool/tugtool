@@ -228,6 +228,12 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// excludes the menu bar and dock so 80% remains breathable.
     static let defaultScreenFraction: CGFloat = 0.8
 
+    /// Breathing room left between the window and the edges of the
+    /// visible frame when the window has to be sized/positioned to fit
+    /// the display. Avoids a window pinned flush against the screen
+    /// edge, which reads as a layout glitch rather than a deliberate fit.
+    static let screenEdgeMargin: CGFloat = 3
+
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
@@ -812,12 +818,17 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
     /// Apply the dev/prod canvas sizing policy: first launch sizes
     /// to 80% of the main screen's visible frame and centers; every
-    /// subsequent launch caps the restored frame to 80% of the
-    /// current main screen so a "saved on big monitor, opened on
-    /// laptop" frame is brought back on-screen.
+    /// subsequent launch caps the restored frame to that same target
+    /// so a "saved on big monitor, opened on laptop" frame is brought
+    /// back on-screen.
     ///
-    /// The target size is floored at `minWindowSize` so even tiny
-    /// displays don't shrink the window below the usable minimum.
+    /// The target is floored at `minWindowSize` but then capped to the
+    /// visible frame, so a display smaller than `minWindowSize` still
+    /// yields a window that fits entirely on-screen rather than one
+    /// forced larger than the display. The window's resize minimum
+    /// (`minSize`) is lowered to match for the same reason. Finally the
+    /// origin is clamped into the visible frame so no edge — top, bottom,
+    /// or side — overhangs the display.
     static func applyScreenFitConstraints(to window: NSWindow, restored: Bool) {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else {
             if !restored {
@@ -826,23 +837,47 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
             return
         }
         let visible = screen.visibleFrame
-        let targetW = max(visible.width * defaultScreenFraction, minWindowSize.width)
-        let targetH = max(visible.height * defaultScreenFraction, minWindowSize.height)
+        // The region the window is allowed to occupy: the visible frame
+        // inset by `screenEdgeMargin` on every side, so a fitted window
+        // keeps a small gap from the screen edges instead of sitting flush.
+        let fit = visible.insetBy(dx: screenEdgeMargin, dy: screenEdgeMargin)
 
+        // The resize minimum must never exceed the fit region, or the window
+        // could not be made to fit a laptop smaller than `minWindowSize`.
+        let minW = min(minWindowSize.width, fit.width)
+        let minH = min(minWindowSize.height, fit.height)
+        window.minSize = NSSize(width: minW, height: minH)
+
+        // 80% of the visible frame, floored at the (already display-capped)
+        // minimum and capped at the inset fit region.
+        let targetW = min(fit.width, max(visible.width * defaultScreenFraction, minW))
+        let targetH = min(fit.height, max(visible.height * defaultScreenFraction, minH))
+
+        var frame = window.frame
         if restored {
-            var frame = window.frame
-            let clampedW = min(frame.size.width, targetW)
-            let clampedH = min(frame.size.height, targetH)
-            if clampedW != frame.size.width || clampedH != frame.size.height {
-                frame.size = NSSize(width: clampedW, height: clampedH)
-                window.setFrame(frame, display: false)
-            }
+            frame.size.width = min(frame.size.width, targetW)
+            frame.size.height = min(frame.size.height, targetH)
+            frame.origin = clampOrigin(frame: frame, into: fit)
+            window.setFrame(frame, display: false)
         } else {
-            var frame = window.frame
             frame.size = NSSize(width: targetW, height: targetH)
             window.setFrame(frame, display: false)
             window.center()
         }
+    }
+
+    /// Shift `frame`'s origin so the whole rect lies within `region`.
+    /// `frame` is assumed no larger than `region` in either dimension
+    /// (the caller caps the size first), so the clamp can always satisfy
+    /// both edges.
+    private static func clampOrigin(frame: NSRect, into region: NSRect) -> NSPoint {
+        var x = frame.origin.x
+        var y = frame.origin.y
+        x = min(x, region.maxX - frame.width)
+        x = max(x, region.minX)
+        y = min(y, region.maxY - frame.height)
+        y = max(y, region.minY)
+        return NSPoint(x: x, y: y)
     }
 }
 

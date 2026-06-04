@@ -165,7 +165,9 @@ describe("serialize and deserialize (v4 wire)", () => {
     };
     const pane: TugPaneState = {
       id: "w1",
-      position: { x: 0, y: 0 },
+      // An in-bounds position (the fit clamp leaves panes that already fit
+      // untouched) so the round-trip is genuinely a no-op.
+      position: { x: 100, y: 100 },
       size: { width: 400, height: 300 },
       cardIds: ["c1"],
       activeCardId: "c1",
@@ -188,6 +190,70 @@ describe("serialize and deserialize (v4 wire)", () => {
     const result = deserialize("not-valid-json{{{", 1200, 800);
     expect(result.cards.length).toBe(0);
     expect(result.panes.length).toBe(0);
+  });
+
+  test("restore fits an oversized pane to a smaller canvas", () => {
+    // A pane saved on a large display (900×1200 at 700,500) restored on a
+    // 1280×800 laptop canvas must be capped to the canvas (less an 8px margin
+    // per side) and pulled fully on-screen so its bottom (the prompt) does
+    // not fall below the display.
+    const card: CardState = {
+      id: "card-big",
+      componentId: "terminal",
+      title: "Dev",
+      closable: true,
+    };
+    const pane: TugPaneState = {
+      id: "pane-big",
+      position: { x: 700, y: 500 },
+      size: { width: 900, height: 1200 },
+      cardIds: ["card-big"],
+      activeCardId: "card-big",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
+    const restored = deserialize(json, 1280, 800);
+    const r = restored.panes[0];
+    // Width (900) already fits the 1280 canvas; height (1200) is capped to the
+    // canvas less an 8px margin per side (800 − 16 = 784).
+    expect(r.size.width).toBe(900);
+    expect(r.size.height).toBe(784);
+    // x pulled in to keep the right edge within the margin (1280 − 8 − 900);
+    // the capped height forces y to the top margin (800 − 8 − 784 = 8).
+    expect(r.position.x).toBe(1280 - 8 - 900);
+    expect(r.position.y).toBe(8);
+    // Both edges keep an 8px margin from the canvas bounds.
+    expect(r.position.x + r.size.width).toBeLessThanOrEqual(1280 - 8);
+    expect(r.position.y + r.size.height).toBeLessThanOrEqual(800 - 8);
+  });
+
+  test("restore pulls an off-bottom pane up so it stays fully visible", () => {
+    // A pane that fits the canvas but was saved near the bottom of a taller
+    // display is shifted up so its bottom edge stays within the canvas.
+    const card: CardState = {
+      id: "card-low",
+      componentId: "terminal",
+      title: "Dev",
+      closable: true,
+    };
+    const pane: TugPaneState = {
+      id: "pane-low",
+      position: { x: 40, y: 700 },
+      size: { width: 400, height: 600 },
+      cardIds: ["card-low"],
+      activeCardId: "card-low",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
+    const restored = deserialize(json, 1280, 800);
+    const r = restored.panes[0];
+    expect(r.size.width).toBe(400);
+    expect(r.size.height).toBe(600);
+    expect(r.position.x).toBe(40);
+    // y pulled from 700 to 192 (800 − 8 − 600) so the bottom keeps an 8px margin.
+    expect(r.position.y).toBe(192);
   });
 });
 
@@ -537,7 +603,7 @@ describe("deserialize edge cases", () => {
     expect(result.panes.length).toBe(0);
   });
 
-  test("deserialize clamps stack positions with Finder-style rules", () => {
+  test("deserialize pulls an off-canvas pane fully on-screen", () => {
     const v2 = {
       version: 2,
       cards: [{ id: "c1", componentId: "hello", title: "C", closable: true }],
@@ -553,8 +619,10 @@ describe("deserialize edge cases", () => {
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
     expect(restored.panes.length).toBe(1);
-    expect(restored.panes[0].position.x).toBe(1920 - 100);
-    expect(restored.panes[0].position.y).toBe(1080 - 36);
+    // Position is clamped so the whole pane (not just its title bar) fits,
+    // keeping an 8px margin from the right and bottom edges.
+    expect(restored.panes[0].position.x).toBe(1920 - 8 - 400);
+    expect(restored.panes[0].position.y).toBe(1080 - 8 - 300);
   });
 
   test("deserialize enforces 100px minimum sizes", () => {

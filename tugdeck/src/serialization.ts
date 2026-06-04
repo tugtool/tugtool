@@ -32,8 +32,51 @@ import {
 
 // ---- Constants ----
 
-const TITLE_BAR_VISIBLE_MIN_X = 100;
-const TITLE_BAR_HEIGHT = 36;
+/** Floor for a restored pane's width and height. */
+const MIN_PANE_SIZE = 100;
+
+/**
+ * Breathing room left between a pane and the canvas edges when the pane has
+ * to be sized/positioned to fit. Keeps a fitted pane from sitting flush
+ * against the edge, which reads as a glitch rather than a deliberate fit.
+ */
+const FIT_MARGIN = 8;
+
+// ---- Geometry fitting ----
+
+/**
+ * Fit a restored pane's geometry to the live canvas.
+ *
+ * Floors each dimension at {@link MIN_PANE_SIZE}, then — when the canvas size
+ * is known (both dimensions positive) — caps width/height to the canvas (less
+ * a {@link FIT_MARGIN} gap on each side) and pulls the position in so no edge
+ * overhangs. This brings a pane that was saved on a larger display fully
+ * on-screen when the layout is restored on a smaller one, so neither the pane
+ * body nor its bottom prompt falls outside the visible canvas, and a fitted
+ * pane keeps a small margin from the edges rather than sitting flush.
+ *
+ * The card-id harvest path (`main.tsx`) passes a 0×0 canvas because it
+ * discards geometry; in that case coordinates are returned floored but
+ * unclamped.
+ */
+function fitPaneGeometry(
+  pos: { x: number; y: number },
+  sz: { width: number; height: number },
+  canvasWidth: number,
+  canvasHeight: number,
+): { x: number; y: number; width: number; height: number } {
+  let width = Math.max(MIN_PANE_SIZE, sz.width);
+  let height = Math.max(MIN_PANE_SIZE, sz.height);
+  let x = pos.x;
+  let y = pos.y;
+  if (canvasWidth > 0 && canvasHeight > 0) {
+    width = Math.min(width, Math.max(MIN_PANE_SIZE, canvasWidth - 2 * FIT_MARGIN));
+    height = Math.min(height, Math.max(MIN_PANE_SIZE, canvasHeight - 2 * FIT_MARGIN));
+    x = Math.max(FIT_MARGIN, Math.min(x, canvasWidth - FIT_MARGIN - width));
+    y = Math.max(FIT_MARGIN, Math.min(y, canvasHeight - FIT_MARGIN - height));
+  }
+  return { x, y, width, height };
+}
 
 // ---- Serialize ----
 
@@ -70,7 +113,10 @@ export function serialize(deckState: DeckState): object {
  * model. Any blob the parser cannot make sense of falls back to
  * {@link buildDefaultLayout}.
  *
- * Enforces 100px minimum sizes and clamps pane positions to canvas bounds.
+ * Enforces 100px minimum sizes and fits panes to the canvas: a pane saved on
+ * a larger display is capped to the current canvas and pulled fully on-screen
+ * so neither it nor its contents overhang the visible bounds. See
+ * {@link fitPaneGeometry}.
  */
 export function deserialize(
   json: string,
@@ -196,15 +242,12 @@ function parseV4(
     );
     if (cardIds.length === 0) continue;
 
-    const width = Math.max(100, sz.width);
-    const height = Math.max(100, sz.height);
-    let x = pos.x;
-    let y = pos.y;
-    x = Math.max(
-      -(width - TITLE_BAR_VISIBLE_MIN_X),
-      Math.min(x, canvasWidth - TITLE_BAR_VISIBLE_MIN_X),
+    const { x, y, width, height } = fitPaneGeometry(
+      pos,
+      sz,
+      canvasWidth,
+      canvasHeight,
     );
-    y = Math.max(0, Math.min(y, canvasHeight - TITLE_BAR_HEIGHT));
 
     const rawActiveCardId = win["activeCardId"];
     const activeCardId: string =
@@ -347,15 +390,12 @@ function migrateV1ToDeckState(
 
     if (cardIds.length === 0) continue;
 
-    const width = Math.max(100, sz.width);
-    const height = Math.max(100, sz.height);
-    let x = pos.x;
-    let y = pos.y;
-    x = Math.max(
-      -(width - TITLE_BAR_VISIBLE_MIN_X),
-      Math.min(x, canvasWidth - TITLE_BAR_VISIBLE_MIN_X),
+    const { x, y, width, height } = fitPaneGeometry(
+      pos,
+      sz,
+      canvasWidth,
+      canvasHeight,
     );
-    y = Math.max(0, Math.min(y, canvasHeight - TITLE_BAR_HEIGHT));
 
     const rawActiveTabId = legacy["activeTabId"];
     const activeCardId: string =
