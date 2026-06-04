@@ -227,6 +227,14 @@ export class FocusManager {
   // `attach`, cleared by `detach`.
   private chain: ResponderChainManager | null = null;
   private chainUnsubscribe: (() => void) | null = null;
+  // Set while `focusKeyView` moves DOM focus. The walk has just chosen a
+  // specific focusable as the key view (keyboard=true); the `focusin` that
+  // `el.focus()` fires synchronously promotes that element's nearest *responder*
+  // (often a coarser container — a card root), which would otherwise re-seed the
+  // key view back to that responder with keyboard=false, dropping the ring on
+  // the first Tab into a freshly-revealed card. Suppress the chain re-seed for
+  // the duration of that programmatic focus so the walk's choice stands.
+  private suppressChainSeed = false;
 
   // ---- Chain attachment (key-view seeding) ----
 
@@ -245,6 +253,10 @@ export class FocusManager {
     this.detach();
     this.chain = chain;
     this.chainUnsubscribe = chain.subscribe(() => {
+      // Yield to the walk while it is imperatively landing focus on a chosen
+      // key view: the `focusin` from that programmatic `.focus()` must not
+      // re-seed (and downgrade) the key view it just set.
+      if (this.suppressChainSeed) return;
       this.setKeyView(chain.getFirstResponder());
     });
     // Seed immediately so the key view reflects whatever the chain already
@@ -422,18 +434,25 @@ export class FocusManager {
       el instanceof HTMLSelectElement ||
       el instanceof HTMLAnchorElement;
     const hasFocusableTabIndex = tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
-    if (intrinsicallyFocusable || hasFocusableTabIndex) {
-      el.focus();
-      return true;
+    // Suppress the chain re-seed for the synchronous `focusin` this `.focus()`
+    // fires (see `suppressChainSeed`), so the walk's keyboard key view survives.
+    this.suppressChainSeed = true;
+    try {
+      if (intrinsicallyFocusable || hasFocusableTabIndex) {
+        el.focus();
+        return true;
+      }
+      const tabbable = el.querySelector<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (tabbable) {
+        tabbable.focus();
+        return true;
+      }
+      return false;
+    } finally {
+      this.suppressChainSeed = false;
     }
-    const tabbable = el.querySelector<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    if (tabbable) {
-      tabbable.focus();
-      return true;
-    }
-    return false;
   }
 
   // ---- Keyboard-access mode ----
@@ -618,10 +637,38 @@ export class FocusManager {
         (!trapped && record.modes.includes(BASE_FOCUS_MODE));
       if (!inMode) continue;
       if (this.accessMode === "standard" && record.policy === "skip") continue;
+      // A focusable in a hidden subtree is not a reachable Tab target. Card
+      // panes keep inactive tab cards mounted as `display: none` (only the
+      // active card is laid out), so without this filter the walk would step
+      // through every background card's focusables before reaching the
+      // frontmost one — Tab-ing N times for the Nth tab. Skip records whose
+      // element renders no box. A no-op without a DOM (pure-logic walk tests)
+      // and when the element can't be resolved, so neither is excluded.
+      if (!this.isRecordRendered(record)) continue;
       records.push(record);
     }
     records.sort((a, b) => this.compareFocusables(a, b));
     return records;
+  }
+
+  /**
+   * Whether a focusable's element is currently rendered (lays out a box). Used
+   * by the walk to exclude focusables inside a `display: none` subtree (an
+   * inactive tab card). Returns `true` when there is no document or the element
+   * can't be resolved, so the in-memory walk (tests / SSR) is never narrowed by
+   * a DOM that isn't there.
+   */
+  private isRecordRendered(record: FocusableRecord): boolean {
+    if (typeof document === "undefined") return true;
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(record.id)
+        : record.id;
+    const el = document.querySelector<HTMLElement>(
+      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
+    );
+    if (el === null) return true;
+    return el.getClientRects().length > 0;
   }
 
   private advance(step: 1 | -1): string | null {
