@@ -27,6 +27,8 @@ This phase names the three axes, builds an app-owned **focus engine** (a "key vi
 
 #### Strategy {#strategy}
 
+> **The governing keyboard model is [[P15]](#p15-keyboard-model) + the [Keyboard Behavior Matrix](#keyboard-matrix).** It was settled after steps 6–18 shipped and supersedes the piecemeal conception in the bullets below (one ring that *moves*, arrow-selects, etc.). Read [P15] first: **Tab** picks the component, **arrows** move a cursor within it, **Space** selects / **Enter** acts-or-descends / **Escape** ascends — over a stack of nested scopes. The bullets here remain accurate for the engine substrate (the FocusManager, the authored Tab walk, the scope stack); where they describe ring/selection *behavior*, [P15] governs.
+
 - **Name the axes, then build the engine.** Introduce a `FocusManager` co-located with the responder chain that owns the **key view** (the single keyboard-target element) and an explicit focusable registry — *before* changing any Tab behavior, so the foundation lands without a visible regression.
 - **Model floating-surface focus traps on CFRunLoop modes.** The FocusManager holds a **stack of focus modes (scopes)**; the Tab walk only services focusables registered in the currently-active mode. Opening a sheet/alert/popover/menu/completion pushes a trapped mode; dismissing pops it. This subsumes the old default-button LIFO scoping. See [CFRunLoop mode model](#cfrunloop-model).
 - **App-owned Tab walk, not native tabindex.** Intercept Tab / Shift-Tab as `focus-next` / `focus-previous` chain actions and advance the key view via the registry, honoring authored **order/group** and per-component **policy** (`accept` / `skip`). Text editors declare a transient "I consume Tab now" state (open completion / typeahead) that takes precedence.
@@ -142,6 +144,18 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 ---
 
+#### [Q04] Text-editing key capture under [P15] (OPEN) {#q04-text-editing-capture}
+
+**Question:** When the key view is a text-editing component (`TugInput`, the prompt editor, code / markdown editors), it wants nearly every key the [P15] model reserves — printables and **Space** type, **arrows** move the caret, **Enter** is newline-or-submit, **Tab** may indent or accept a completion. How do the model's keys (Tab/arrows/Space/Enter/Escape) and typing coexist, and how does the user always get *out*?
+
+**Why it matters:** [P15] is clean for widgets but editors invert it — most "navigation" keys become "typing." Get the precedence wrong and either the user can't type (model eats the keys) or can't leave (editor eats Tab/Escape). This also drives the [P13] interplay (a pending inline dialog vs. the prompt still holding the caret).
+
+**Sketch of the resolution (to be settled in discussion, then written here):** an editor is a **leaf** that declares a transient *key-capture set* (generalizing [Q02]'s `consumesTab`): while focused it captures printables + Space (type), arrows (caret), and editor-defined Enter (newline/submit); Tab and Escape stay navigation (leave / ascend) **except** when a transient editor mode claims them (open completion → Tab accepts, Escape closes — then the next Escape ascends). The [P13] split: typing + caret stay with the prompt while a dialog is pending; only the commit keys (Enter/Escape) route to the dialog scope.
+
+**Plan to resolve:** Discussion in progress; fold the outcome into [P15] + [Q02], and into [#step-30] (the engine's per-component key-capture declaration) and the editor-touching steps.
+
+---
+
 ### Risks and Mitigations {#risks}
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
@@ -223,7 +237,9 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P##]`; global de
 
 **GUI deviation from the Claude Code TUI (amended after [#step-3]):** the Claude Code terminal cycles the permission mode on `⇧⇥`. In a GUI, `⇧⇥` must move focus to the previous control, so Tug **does not** put permission cycling on `⇧⇥`. The earlier "fold the dev card's `⇧⇥` into the focus walk, consumed only when a dev card claims it" approach was wrong: a dev card's `card-content` responder *always* claims `cycle-permission-mode`, so `⇧⇥` inside a dev card would never reach `focus-previous` — silently flipping the permission mode instead of navigating focus. The cycle now lives on **`⇧⌘P`** (a static key-card-scoped keybinding, mnemonic for the chip's `/PERMISSIONS` caption, forward-only); the `PermissionModeChip` + sheet and the `/permissions` command remain the pick-a-mode affordances. `Shift+Tab` is pure `focus-previous` everywhere.
 
-#### [P05] One focus ring on the keyboard-active control (DECIDED; revised in [#step-9], [#step-10]) {#p05-focus-ring}
+#### [P05] One focus ring on the keyboard-active control (DECIDED; revised in [#step-9], [#step-10]; **partly superseded by [P15]**) {#p05-focus-ring}
+
+> **Superseded in part by [P15].** The ring marks the **component** (the key view) and is correct as below — but [P15] forbids it ever *moving onto a sub-item*: a deferred component's current item gets the **movement-cursor (hover)** look, not the ring, and the immediate container gets `data-key-within`. The roving-ring-onto-member behavior shipped in steps 13–17 is retired.
 
 **Decision:** A single `--tugx-focus-ring` token set (color = action/blue, **1px**, one offset, `outline`-based, clipping to `border-radius`) painting **one ring on the keyboard-active control** — the control the keyboard is currently driving. It shows on **keyboard** focus and **never on a mouse click**. There is **no** separate always-on key-view marker. The ring is the live **commit-key** affordance — the keyboard-active control it marks gets first claim on Return / Escape / ⌘. ([P12]); `filled+action` is the standing *identity* of the primary/default button (the ring's home base), not the live signal.
 
@@ -249,7 +265,9 @@ The two policies differ **only** in ring painting — the key view, Tab walk, re
 - Every keyboard focus move must flow through the engine so it sets `keyboard=true` (the Tab walk, surface entry, and — added in the roving steps — component-local arrow-roving). A keyboard-reachable affordance must be a registered focusable or a tracked responder to ring.
 - The engine seeds the key view (hence the ring) to a surface's declared default button on open ([P07]); the ring is the Tab anchor from there.
 
-#### [P06] Color contract: accent = selection, action = keyboard-active (DECIDED) {#p06-color-contract}
+#### [P06] Color contract: accent = selection, action = keyboard-active (DECIDED; **extended by [P15]**) {#p06-color-contract}
+
+> **Extended by [P15].** This contract stands (accent = selection, action/blue = the keyboard-active axis / ring). [P15] adds a **third** visual state between them — the **movement cursor**, painted as **mouse-hover** — so a deferred component now shows up to three at once: ring (component focused), hover (current item), accent (selected item).
 
 **Decision:** **accent/orange = selection** (the chosen item). **action/blue = the keyboard-active axis** — the surface the keyboard is currently empowering, expressed two ways: the **focus ring** (typing/arrows land here) and the **default-action affordance** (the CTA button Return fires, see [P12]). Re-point **UI-selection** surfaces (`selected`, `highlighted`, and the menus' *selection* usage of the shared `control-filled-action`) from blue to accent/orange across list rows, menus, popovers, and tab bars (option/radio already accent). **Text/character selection stays blue** — the `surface-selection-primary … plain` tokens are out of scope (see below).
 
@@ -328,7 +346,9 @@ The two policies differ **only** in ring painting — the key view, Tab walk, re
 
 ---
 
-#### [P12] Semantic commit keys; the keyboard-active control owns the commit keys (DECIDED; revised in [#step-9]) {#p12-semantic-keys}
+#### [P12] Semantic commit keys; the keyboard-active control owns the commit keys (DECIDED; revised in [#step-9]; **refined by [P15]**) {#p12-semantic-keys}
+
+> **Refined by [P15].** The claim-first rule stands. [P15] settles the per-key semantics into the five-key model: **Space** = select/toggle (in place), **Enter** (Return *and* numpad) = act / **descend** a container, **Escape** = **ascend** one scope level (cancel at a modal scope). "Ascend" and "cancel" are unified.
 
 **Decision:** **Return**, **Escape**, **⌘.** are *semantic commit keys*. The unifying rule: **the keyboard-active control (the one wearing the focus ring) gets first claim on all three.** What "unclaimed" delegates to differs per key, but the claim-first half is identical.
 
@@ -385,6 +405,83 @@ The two policies differ **only** in ring painting — the key view, Tab walk, re
 **Implications:**
 - No recolor of `toggle-primary-…-active`, the `tug-dialog-button` `action`/default selection fills, or `ROLE_TOKEN_MAP` in this phase. The Step 8 sweep treats these as the intended active-role tone, not blue-as-selection remnants.
 - Blue's "single sharp meaning" from [P06] is scoped to *generic* surfaces + the keyboard-active axis; role-typed control tones (action/blue, danger/red, accent/orange) are an orthogonal, pre-existing axis that stands.
+
+---
+
+#### [P15] The Tug keyboard model — Focus / Move / Act over hierarchical scopes (DECIDED; GOVERNING) {#p15-keyboard-model}
+
+**Status — GOVERNING.** This is the keyboard-interaction model for the whole component library. It **supersedes the conflicting parts** of [P05] (the ring marks the *component* and never moves onto a sub-item — retiring the roving-ring shipped in steps 13–17), [P06] (adds the *movement-cursor* visual), and [P12] (refines the commit keys into the five-key model below). [P01]–[P04], [P07]–[P11], and [P13] stand — this builds on them (the FocusManager, the authored Tab walk, the focus-mode/scope stack, the keybinding registry). Building steps 6–18 under a piecemeal, web-convention conception revealed that conception to be wrong for Tug; this replaces it.
+
+**The model — five keys, any depth.** Three tiers — *which component*, *where within it*, *act on it* — extended with *descend / ascend* so containers nest arbitrarily:
+
+| Key | Tier | Meaning |
+|---|---|---|
+| `Tab` / `⇧Tab` | **focus** | move the ring between components **at the current scope level** |
+| arrows · `Home` · `End` · `PgUp/Dn` · `Opt`+arrows | **move** | move the cursor **within** the focused component (its primary axis) |
+| `Space` | **act — select** | select / toggle the current item — never changes level |
+| `Enter` (Return **and** numpad — identical, no distinction) | **act — activate / descend** | act; if the current item is a container **with navigable content**, **descend** (push a scope); else a plain act |
+| `Escape` | **ascend / cancel** | pop one scope level (ascend); at a modal scope, cancel it |
+
+**Rules:**
+- **Move vs act split.** *Live* components (TugSlider, TugTabBar) commit as you move — moving *is* acting. *Deferred* components (radio, choice, option, list, accordion) move a **hover cursor** and commit only on Space/Enter.
+- **Descend is always Enter, never automatic.** Space selects in place; Enter descends when there's navigable content inside, otherwise acts.
+- **Tab-into** a component lands its cursor on its **selected** item (not reset to first).
+- **Space / Enter** get **split code paths but one mapped "act"** for now; the split is the seam where Enter already means *descend* and where the two may diverge per component later if experience demands it.
+- **Scopes — one stack, `trapped` per container** ([P03]/[P13]). Non-trapped containers (accordion content, inline dialogs): `Escape` ascends, `Tab` can exit. Trapped containers (sheets, alerts): `Escape` cancels, `Tab` is contained. The stack is now also driven by Enter-descend / Escape-ascend.
+- **Logical key view ≠ DOM focus.** A pushed scope can be the active key target while DOM focus stays elsewhere — an inline Permission/Question dialog is operable (arrows pick, Enter answers, Escape cancels) while the prompt keeps the caret.
+
+**Two container flavors** (each component declares which it is):
+- **Item container** (list, accordion, radio, option, choice, tab bar, menu): children are *items*, navigated with **arrows**; one is the cursor.
+- **Component container** (dialog, popover, sheet, a descended sub-form): children are *components*, navigated with **Tab**; arrows are unused there — Tab is the move, Enter/Escape are the depth.
+
+**Visual states — three, named:**
+- **key view** — the active component, wearing the focus ring ([P05] token). The ring marks the **component**; it **never** moves onto a sub-item. *(Retires the roving-ring-onto-member behavior in steps 13–17.)*
+- **`data-key-within`** — the **immediate** container of the key view (only one level rendered), a *quiet* "contains active" mark: the engine's visible `:focus-within`.
+- **movement cursor** — the current item inside a *deferred* component, painted with the **mouse-hover** treatment (keyboard-current == hover). Distinct from the ring and from **selected** (committed `data-selected`, [P06] accent).
+- **key path** — the root→leaf chain of scopes; only the key view and its immediate `data-key-within` render.
+
+**Naming:** active = **key view** (`data-key-view` / `-kbd`, exists); immediate container = **`data-key-within`** (new); chain = **key path**. Extends the engine vocabulary and the CSS `:focus-within` mental model. (Public alias `focus-active` / `focus-container` was considered; `key view` / `key-within` chosen to match the existing engine and CSS.)
+
+**Rationale:**
+- One rule everywhere beats per-component web conventions. Every component answers only: *what is my move, what is my act, am I a container.*
+- Separating move from act (hover, then Space/Enter) is the deliberate Tug departure from native — consistent across the library, and the precondition for nesting, since it frees **Enter** to also mean *descend*.
+- Nesting reuses the existing scope stack; **ascend unifies with cancel**; the logical-key-view decoupling already exists, so inline dialogs fall out for free.
+
+**Implications — rework (tracked in the ledger):**
+- Ring stays on the component; sub-items get the hover cursor (undo the ring-moves-to-member of steps 13–17).
+- Arrow-selects (radio / choice) → arrow-moves-cursor + Space/Enter-selects.
+- New shared engine pieces, built once before the per-component redo: the **movement-cursor / hover** state, **`data-key-within`** rendering, **Enter-descend / Escape-ascend** on the scope stack, and the **live-vs-deferred + Space/Enter** act dispatch.
+- Steps **6, 13–18** are superseded and redone; **9–12** (button / checkbox / switch / slider) are reviewed — largely consistent already as leaves + a live value control — touch-ups only.
+
+#### Keyboard Behavior Matrix {#keyboard-matrix}
+
+Each component's declaration against [P15]. **Container?** = item / component / none. **Move** = arrows · Home/End · Pg · Opt+arrows. **Act** = Space / Enter (one "act" for now; Enter additionally descends a container). **Commit** = live (on move) or deferred (on Space/Enter).
+
+| Component | Container? | Move | Act (Space / Enter) | Commit |
+|---|---|---|---|---|
+| internal/tug-button · TugPushButton | none | — | press / activate | — |
+| TugCheckbox | none | — | toggle checked | — |
+| TugSwitch | none | — | toggle on/off | — |
+| TugSlider | none | move value; Home/End = min/max; Pg/Opt = larger step | — *(no act; value commits live)* | **live** |
+| TugTabBar | item | move cursor over tabs; Home/End | *(current tab already switched)* | **live** — switches as you move |
+| TugRadioGroup | item | move hover over radios; Home/End | check current radio | deferred |
+| TugChoiceGroup | item | move hover over segments | select current segment | deferred |
+| TugOptionGroup | item | move hover over options | toggle current option | deferred |
+| TugAccordion | item **+ descend** | move hover over headers; Home/End | Space toggles expand; **Enter expands + descends** into content | deferred |
+| TugListView | item **+ descend** | move hover over rows; Pg = page; Home/End; scrolls into view | Space selects row; **Enter descends** into row content (else activates) | deferred |
+| TugContextMenu · internal/tug-popup-menu | item *(trapped scope)* | move hover over items; Home/End | activate current item; Escape closes | deferred |
+| TugInput · editor | none | arrows = caret (its "move"); editor `consumesTab` while completing | typing edits; Enter = submit / scope default-action | live (caret) |
+| TugTooltip | none *(passive)* | — *(not a focus stop; opens on trigger focus)* | — | — |
+| TugPopover | component *(scope)* | — *(Tab cycles inner components)* | inner act; Enter = scope default-action; Escape ascends / closes | per inner |
+| TugSheet | component *(trapped scope)* | — *(Tab contained)* | inner act; Enter = default-action; Escape cancels | per inner |
+| TugAlert | component *(trapped scope)* | — *(Tab contained)* | inner act; Enter = default; Escape cancels | per inner |
+| TugPermissionDialog · TugQuestionDialog | component *(non-trapped scope; logical key view ≠ DOM focus)* | arrows pick the option (Question) while the prompt keeps the caret | Enter = confirm / Next / submit highlighted; Escape = cancel (`popInteractive`) | deferred |
+
+**Notes on the tricky rows:**
+- **TugTabBar / TugSlider are *live*:** moving commits, so "Act" is a no-op (the current value/tab is already chosen). They use only the focus + move tiers.
+- **TugAccordion / TugListView are the *descend* cases:** Space acts in place (expand / select), Enter descends into the revealed content when it has navigable components — the content becomes a non-trapped child scope; Escape ascends.
+- **Menus** are item containers living in a trapped scope: arrows move the item cursor, Enter activates, Escape closes (= ascend the menu's scope).
+- **Inline dialogs** are the model's sharpest test: a non-trapped scope that is the *logical* key view while DOM focus and the caret stay on the prompt ([P13]); the model accommodates it because the key view is projected, not DOM-bound.
 
 ---
 
@@ -560,6 +657,8 @@ useKeybindings([
 
 #### Step Status Ledger {#step-status-ledger}
 
+> **[P15] rework (governing).** The keyboard model was settled *after* steps 6–18 shipped, and it supersedes the piecemeal conception they were built on. Steps marked **`done → rework`** below are superseded by [P15] and the [Keyboard Behavior Matrix](#keyboard-matrix): their *engine wiring* (registration, the Tab walk, scopes) stays, but their *behavior* changes (ring stays on the component; arrows move a hover cursor, not selection; Space selects / Enter descends). The new `#step-30`–`#step-35` rows carry the redo: build the shared engine pieces once, then re-declare each component against the matrix. Steps 9–12 (button / checkbox / switch / slider) are **kept** — leaves and a live value control are already consistent with [P15] — pending a light review in `#step-35`. Steps 19–29 are authored against [P15] from the start.
+
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | FocusManager core + registry + useFocusable (inert) | done | ce7d8256 |
@@ -567,19 +666,19 @@ useKeybindings([
 | #step-3 | Tab pipeline: focus-next/previous + editor precedence | done | 188a976e |
 | #step-4 | Floating-surface focus traps (CFRunLoop modes) | done | 662bca98 |
 | #step-5 | Dynamic context-scoped keybinding registry | done | 03a08ab5 |
-| #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done | 1575f73f |
+| #step-6 | Focus-ring primitive + two-tier indication; delete per-component rings | done → rework | 1575f73f |
 | #step-7 | Recolor UI-selection → accent/orange | done | 889a5e1d |
 | #step-8 | Confine blue to the keyboard-active axis | done | 8a2a2ec4 |
 | #step-9 | Tame internal/tug-button (base control focus) | done | 7ca484af |
 | #step-10 | Tame TugCheckbox | done | (dash kbd-taming) |
 | #step-11 | Tame TugSwitch | done | (dash kbd-taming) |
 | #step-12 | Tame TugSlider | done | (dash kbd-taming) |
-| #step-13 | Tame TugTabBar (roving) | done | (dash kbd-taming) |
-| #step-14 | Tame TugRadioGroup (roving) | done | (dash kbd-taming) |
-| #step-15 | Tame TugAccordion (roving) | done | (dash kbd-roving) |
-| #step-16 | Tame TugChoiceGroup (roving) | done | (dash kbd-roving) |
-| #step-17 | Tame TugOptionGroup (roving, multi-select) | done | (dash kbd-roving) |
-| #step-18 | Tame TugListView (roving rows) | done | (dash kbd-listview) |
+| #step-13 | Tame TugTabBar (roving) | done → rework | (dash kbd-taming) |
+| #step-14 | Tame TugRadioGroup (roving) | done → rework | (dash kbd-taming) |
+| #step-15 | Tame TugAccordion (roving) | done → rework | (dash kbd-roving) |
+| #step-16 | Tame TugChoiceGroup (roving) | done → rework | (dash kbd-roving) |
+| #step-17 | Tame TugOptionGroup (roving, multi-select) | done → rework | (dash kbd-roving) |
+| #step-18 | Tame TugListView (roving rows) | done → rework | (dash kbd-listview) |
 | #step-19 | Tame TugTooltip | pending | — |
 | #step-20 | Tame TugPopover (FocusScope → engine trap) | pending | — |
 | #step-21 | Tame TugContextMenu (+ editor context menu) | pending | — |
@@ -591,6 +690,12 @@ useKeybindings([
 | #step-27 | First-responder + refuse audit & reclassification | pending | — |
 | #step-28 | Accessibility-mode ARIA pass + dual mode toggle | pending | — |
 | #step-29 | Integration checkpoint | pending | — |
+| #step-30 | [P15] engine foundation: movement-cursor (hover) state, `data-key-within` rendering, Enter-descend / Escape-ascend on the scope stack, live-vs-deferred + Space/Enter act dispatch | pending | — |
+| #step-31 | Redo deferred item-groups vs [P15] — TugRadioGroup, TugChoiceGroup, TugOptionGroup (arrows move hover; Space/Enter act; ring stays on the group) | pending | — |
+| #step-32 | Redo live components vs [P15] — TugTabBar (move = switch live) + TugSlider review (ring on the component, never a sub-item) | pending | — |
+| #step-33 | Redo TugAccordion vs [P15] — item container + Enter-descend into expanded content | pending | — |
+| #step-34 | Redo TugListView vs [P15] — item container, hover-cursor rows, Space selects, Enter descends/activates | pending | — |
+| #step-35 | Review leaves + ring primitive vs [P15] — TugButton/Checkbox/Switch confirmation, [#step-6] ring extension (movement-cursor + `data-key-within` visuals) | pending | — |
 
 #### Step 1: FocusManager core + registry + `useFocusable` (inert) {#step-1}
 
