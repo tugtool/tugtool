@@ -44,6 +44,8 @@ import {
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
+import { useRovingFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
 
@@ -165,6 +167,24 @@ export interface TugOptionGroupProps
    * Controlled-only — no internal mirror.
    */
   componentStatePreservationKey?: string;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this option group is authored into ([P02]). When set, the group
+   * registers as a **single roving stop** in the engine's Tab walk: Tab lands on
+   * the focused item and arrows move focus between items locally (Space/Enter
+   * toggles); when omitted, the items stay plain `tabIndex`-roving stops outside
+   * the engine. Supplied by the surface that owns the Tab order.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 /** Serialized shape of `TugOptionGroup`'s preserved state. */
@@ -189,6 +209,9 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       style,
       "aria-label": ariaLabel,
       componentStatePreservationKey,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
@@ -201,6 +224,24 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
 
     // Refs for each item button — indexed to match items array.
     const itemRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
+
+    // ---- Roving focus ([P01], [P02]) ----
+    //
+    // The group is a single stop in the engine Tab walk; arrows move focus
+    // between items locally and Space/Enter toggles the focused item (focus is
+    // separate from selection here — multi-select). The engine ring follows the
+    // focused item via `setRovedElement`. One focusable id for the whole group.
+    const autoFocusId = useId();
+    const { setRovedElement } = useRovingFocusable({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
+    // Whether the last focus-moving interaction was the keyboard (arrows) vs a
+    // pointer (click), so the projection effect picks the right ring modality.
+    const lastKeyboardRef = React.useRef(false);
 
     // Roving tabIndex: track which item currently has tabIndex=0.
     // Initialize to the first enabled item, or first item if all disabled.
@@ -278,6 +319,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       items,
       focusedValue,
       onFocusChange: (newValue, _index, direction) => {
+        lastKeyboardRef.current = true;
         setFocusedValue(newValue);
         dispatchFocusDirection(direction);
       },
@@ -287,6 +329,16 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       disabled: effectiveDisabled,
       itemRefs,
     });
+
+    // Project the engine ring onto the focused item (the `tabIndex=0` one).
+    // Appearance-zone DOM only ([L06]); the keyboard flag picks whether the ring
+    // follows the arrows or clears on a pointer move. Re-runs whenever the
+    // focused item or the item set changes.
+    React.useLayoutEffect(() => {
+      const idx = items.findIndex((item) => item.value === focusedValue);
+      const el = idx >= 0 ? itemRefs.current[idx] : null;
+      setRovedElement(el ?? null, lastKeyboardRef.current);
+    }, [focusedValue, items, setRovedElement]);
 
     return (
       <div
@@ -322,6 +374,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
               aria-pressed={isOn}
               aria-label={item["aria-label"]}
               disabled={isDisabled}
+              data-option-value={item.value}
               data-state={isOn ? "on" : "off"}
               className={cn(
                 "tug-option-group-item",
@@ -331,6 +384,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
               data-tug-focus="refuse"
               onClick={() => {
                 if (!isDisabled) {
+                  lastKeyboardRef.current = false;
                   setFocusedValue(item.value);
                   toggleItem(item.value);
                 }

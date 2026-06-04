@@ -67,6 +67,10 @@ export function GalleryOptionGroup() {
         : ["bold"],
   );
 
+  // Focus Walk section — authored into a focus group so the engine drives Tab.
+  // Starts empty so the test can prove Space toggles the focused item on.
+  const [focusValue, setFocusValue] = useState<string[]>([]);
+
   // Section 2: Icon + Label — alignment toolbar
   const [alignValue, setAlignValue] = useState<string[]>(["left"]);
 
@@ -107,6 +111,7 @@ export function GalleryOptionGroup() {
   // TugOptionGroup also dispatches `focusNext`/`focusPrevious` on
   // arrow-key roving focus. This card doesn't handle those — they
   // flow through the chain unhandled, which is fine.
+  const focusId = useId();
   const formatId = useId();
   const alignId = useId();
   const xsId = useId();
@@ -126,6 +131,7 @@ export function GalleryOptionGroup() {
   );
 
   const setValueStringArrayBindings: Record<string, (v: string[]) => void> = {
+    [focusId]: setFocusValue,
     [formatId]: setFormatValue,
     [alignId]: setAlignValue,
     [xsId]: setXsValue,
@@ -156,6 +162,30 @@ export function GalleryOptionGroup() {
       data-testid="gallery-option-group"
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
+
+      {/* ---- Focus Walk ---- */}
+      {/* First section so the items sit above the fold for native clicks. The
+          group is authored into a focus group, so the engine drives Tab in this
+          card: Tab lands the key view on the focused item (ring on keyboard
+          focus), arrows rove focus locally, and Space/Enter toggles the focused
+          item (focus is separate from selection — multi-select). */}
+      <div className="cg-section" data-testid="option-focus-demo">
+        <TugLabel className="cg-section-title" data-testid="option-focus-title">Focus Walk</TugLabel>
+        <TugOptionGroup
+          value={focusValue}
+          senderId={focusId}
+          aria-label="Focus walk option group"
+          focusGroup="gallery-option-focus"
+          focusOrder={0}
+          items={[
+            { value: "alpha", label: "Alpha" },
+            { value: "beta",  label: "Beta" },
+            { value: "gamma", label: "Gamma" },
+          ]}
+        />
+      </div>
+
+      <TugSeparator />
 
       {/* ---- Icon Only (Text Formatting) ---- */}
       <div className="cg-section">

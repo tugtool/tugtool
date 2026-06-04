@@ -47,11 +47,20 @@ export function GalleryAccordion() {
   const [chainSingle, setChainSingle] = useState<string>("docs");
   const [chainMulti, setChainMulti] = useState<string[]>(["alerts", "privacy"]);
 
+  // Focus Walk section — a collapsible single-mode accordion authored into a
+  // focus group so the engine drives Tab. Starts fully collapsed so the test
+  // can prove Space expands the focused header.
+  const [focusOpen, setFocusOpen] = useState<string>("");
+
   const chainSingleId = useId();
   const chainMultiId = useId();
+  const focusAccordionId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
-    toggleSectionSingle: { [chainSingleId]: setChainSingle },
+    toggleSectionSingle: {
+      [chainSingleId]: setChainSingle,
+      [focusAccordionId]: setFocusOpen,
+    },
     toggleSectionMulti: { [chainMultiId]: setChainMulti },
   });
 
@@ -62,6 +71,38 @@ export function GalleryAccordion() {
       data-testid="gallery-accordion"
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
+
+      {/* ---- Focus Walk ---- */}
+      {/* First section so the headers sit above the fold for native clicks. The
+          accordion is authored into a focus group, so the engine drives Tab in
+          this card: Tab lands the key view on the cursor header (ring on
+          keyboard focus), Up/Down rove between headers locally, and Space/Enter
+          expand/collapse the focused header. */}
+      <div className="cg-section" data-testid="accordion-focus-demo">
+        <TugLabel className="cg-section-title" data-testid="accordion-focus-title">Focus Walk</TugLabel>
+        <div style={{ maxWidth: "480px" }}>
+          <TugAccordion
+            type="single"
+            collapsible
+            value={focusOpen}
+            senderId={focusAccordionId}
+            focusGroup="gallery-accordion-focus"
+            focusOrder={0}
+          >
+            <TugAccordionItem value="first" trigger="First section">
+              <p style={paraStyle}>First section body.</p>
+            </TugAccordionItem>
+            <TugAccordionItem value="second" trigger="Second section">
+              <p style={paraStyle}>Second section body.</p>
+            </TugAccordionItem>
+            <TugAccordionItem value="third" trigger="Third section">
+              <p style={paraStyle}>Third section body.</p>
+            </TugAccordionItem>
+          </TugAccordion>
+        </div>
+      </div>
+
+      <TugSeparator />
 
       {/* ---- 1. Single Mode ---- */}
       <div className="cg-section">

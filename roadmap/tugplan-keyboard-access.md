@@ -576,9 +576,9 @@ useKeybindings([
 | #step-12 | Tame TugSlider | done | (dash kbd-taming) |
 | #step-13 | Tame TugTabBar (roving) | done | (dash kbd-taming) |
 | #step-14 | Tame TugRadioGroup (roving) | done | (dash kbd-taming) |
-| #step-15 | Tame TugAccordion (roving) | pending | — |
-| #step-16 | Tame TugChoiceGroup (roving) | pending | — |
-| #step-17 | Tame TugOptionGroup (roving, multi-select) | pending | — |
+| #step-15 | Tame TugAccordion (roving) | done | (dash kbd-roving) |
+| #step-16 | Tame TugChoiceGroup (roving) | done | (dash kbd-roving) |
+| #step-17 | Tame TugOptionGroup (roving, multi-select) | done | (dash kbd-roving) |
 | #step-18 | Tame TugListView (roving rows) | pending | — |
 | #step-19 | Tame TugTooltip | pending | — |
 | #step-20 | Tame TugPopover (FocusScope → engine trap) | pending | — |
@@ -941,13 +941,15 @@ useKeybindings([
 - Radix accordion's built-in roving replaced by manual roving (option-group pattern; no public knob to disable Radix roving); headers reachable via the walk; arrows move between headers locally; expand/collapse semantics retained.
 
 **Tasks:**
-- [ ] Replace the Radix roving layer with manual roving; register accordion headers per the authored order; arrows local; keep expand/collapse semantics.
+- [x] Replace the Radix roving layer with manual roving; register accordion headers per the authored order; arrows local; keep expand/collapse semantics.
 
 **Tests:**
-- [ ] app-test: headers reachable; arrows move; expand/collapse via Space/Enter; ring on keyboard focus.
+- [x] app-test: headers reachable; arrows move; expand/collapse via Space/Enter; ring on keyboard focus. (`at0120-accordion-focus`)
 
 **Checkpoint:**
-- [ ] `just app-test` accordion scenario `VERDICT: PASS`.
+- [x] `just app-test` accordion scenario `VERDICT: PASS`.
+
+**Done-note:** Radix accordion turned out to use a `Collection` + a root-level `onKeyDown` (composed via `composeEventHandlers`), **not** `RovingFocusGroup` — so every header was a `tabIndex=0` Tab stop and the arrow handler is replaceable. `TugAccordion` gained `focusGroup`/`focusOrder`/`focusPolicy`; when set it registers one engine stop (`useRovingFocusable`), threads a roving cursor to each `TugAccordionItem` trigger via a small `AccordionFocusContext` (cursor header `tabIndex=0`, rest `-1`, `data-tug-focus="refuse"`, `data-accordion-value` for DOM-query roving), and supplies its own Up/Down/Home/End handler whose `preventDefault()` skips Radix's composed handler. Space/Enter are never intercepted, so expand/collapse stays Radix's. All gated on `focusGroup` — existing consumers (permission editors, diff sheet) are byte-unchanged.
 
 ---
 
@@ -963,13 +965,15 @@ useKeybindings([
 - The hand-rolled `tabIndex` roving (`tug-group-utils`) becomes a single focus stop in the walk; arrows move/select within; the engine owns Tab between stops; single-select value semantics retained.
 
 **Tasks:**
-- [ ] Register the group as one focusable; keep component-local arrow roving (`tug-group-utils`); remove reliance on native inter-control Tab; keep single-select value semantics.
+- [x] Register the group as one focusable; keep component-local arrow roving (`tug-group-utils`); remove reliance on native inter-control Tab; keep single-select value semantics.
 
 **Tests:**
-- [ ] app-test: Tab enters/exits the group as one stop; arrows move/select; ring on keyboard focus.
+- [x] app-test: Tab enters/exits the group as one stop; arrows move/select; ring on keyboard focus. (`at0118-choice-group-focus`)
 
 **Checkpoint:**
-- [ ] `just app-test` choice-group scenario `VERDICT: PASS`.
+- [x] `just app-test` choice-group scenario `VERDICT: PASS`.
+
+**Done-note:** `TugChoiceGroup` gained `focusGroup`/`focusOrder`/`focusPolicy`; `useRovingFocusable` registers the group as one stop and a layout effect projects the engine ring onto the selected segment (focus = selection), with a `lastKeyboardRef` picking the ring modality (arrows follow, click clears). Added `data-choice-value` for addressability and a gallery `Focus Walk` panel.
 
 ---
 
@@ -985,13 +989,15 @@ useKeybindings([
 - The canonical roving `tabIndex` pattern (the one TugRadioGroup / TugAccordion borrow) becomes a single focus stop; arrows move within; Space/Enter toggles the active member; multi-select value semantics retained.
 
 **Tasks:**
-- [ ] Register the group as one focusable; keep component-local arrow roving; Space toggles the active member; remove reliance on native Tab; keep multi-select semantics.
+- [x] Register the group as one focusable; keep component-local arrow roving; Space toggles the active member; remove reliance on native Tab; keep multi-select semantics.
 
 **Tests:**
-- [ ] app-test: Tab treats the group as one stop; arrows move; Space toggles a member; ring on keyboard focus.
+- [x] app-test: Tab treats the group as one stop; arrows move; Space toggles a member; ring on keyboard focus. (`at0119-option-group-focus`)
 
 **Checkpoint:**
-- [ ] `just app-test` option-group scenario `VERDICT: PASS`.
+- [x] `just app-test` option-group scenario `VERDICT: PASS`.
+
+**Done-note:** `TugOptionGroup` gained `focusGroup`/`focusOrder`/`focusPolicy`; `useRovingFocusable` registers the group as one stop and a layout effect projects the engine ring onto the focused item (focus is separate from selection — Space/Enter toggles), with a `lastKeyboardRef` picking the ring modality. Added `data-option-value` for addressability and a gallery `Focus Walk` panel.
 
 ---
 
@@ -1014,6 +1020,16 @@ useKeybindings([
 
 **Checkpoint:**
 - [ ] `just app-test` list-view scenario `VERDICT: PASS`.
+
+**Deferred — own run (design note first).** During the [#step-15]–[#step-18] batch this step was split out: unlike the non-windowed groups (15–17), `TugListView` breaks the assumptions the shared roving primitive rests on, so it needs a design pass before code. Seed findings from reading the primitive:
+- **Virtualized.** Rows mount/unmount with the scroll window (`computeWindow` + overscan), so an active row can be unmounted; the ring can only project onto a mounted row, so arrow-nav must `scrollToIndex` the cursor into view before projecting.
+- **Focus ≠ ring target.** DOM focus wants to stay on the scroll **container** (its capture-phase `pageByEntry` keydown listener and the cell keydown handlers depend on it), while the active-row indication is a **row** — a decoupling `useRovingFocusable` does not model (it focuses the same element it rings). Likely answer: `useFocusable` on the container (container holds focus + ring) and move row indication via the existing `data-selected`/selection highlight, not the focus ring.
+- **Two opposite consumer shapes share the primitive.** Picker lists (`selectionRequired`: session picker) want Arrow→select with a row cursor; scroll/read lists (`pageByEntry`: dev transcript) have no "selected row" and must NOT gain one. Today every interactive cell wrapper is its own `tabIndex=0` Tab stop (`wrapperTabIndex`), so flipping all rows to `-1` *without* a cursor is a keyboard regression, and a *uniform* row cursor changes the transcript UX. So the taming is conditional per shape (likely gated on `selectionRequired`/a new opt-in), not one transformation.
+- **Compose with existing keyboard machinery:** the `pageByEntry` capture listener (Page / Opt+Arrow), the cell-wrapper `Enter`/`Space` → `delegate.onSelect`, and `selectionRequired`'s owned `selectedIndex` + `onSelectionChange` mirror. Decide whether the arrow cursor *is* `selectedIndex` (selectionRequired) or a separate focus cursor (non-selecting interactive lists), and where its highlight comes from.
+- Regress the real consumers: dev transcript (`pageByEntry`, `inline`) and the session picker (`selectionRequired`).
+
+**Tasks:**
+- [ ] Write the design note resolving the above (cursor vs selection; which shapes get single-stop; windowing/scroll-into-view), then implement against it.
 
 ---
 

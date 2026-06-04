@@ -39,6 +39,8 @@ import {
 import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
+import { useRovingFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
 
@@ -171,6 +173,24 @@ export interface TugChoiceGroupProps
    * there is no internal mirror — the parent IS the source of truth.
    */
   componentStatePreservationKey?: string;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this choice group is authored into ([P02]). When set, the group
+   * registers as a **single roving stop** in the engine's Tab walk: Tab lands on
+   * the selected segment and arrows move/select between segments locally; when
+   * omitted, the segments stay plain `tabIndex`-roving stops outside the engine.
+   * Supplied by the surface that owns the Tab order.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 /** Serialized shape of `TugChoiceGroup`'s preserved state. */
@@ -196,6 +216,9 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       style,
       "aria-label": ariaLabel,
       componentStatePreservationKey,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
@@ -221,6 +244,24 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
     // resize callbacks fired between renders.
     const itemsRef = React.useRef(items);
     itemsRef.current = items;
+
+    // ---- Roving focus ([P01], [P02]) ----
+    //
+    // The group is a single stop in the engine Tab walk; arrows move between
+    // segments locally and — since this control couples focus and selection —
+    // also select. The engine ring follows the selected segment via
+    // `setRovedElement`. One focusable id is registered for the whole group.
+    const autoFocusId = useId();
+    const { setRovedElement } = useRovingFocusable({
+      id: autoFocusId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
+    // Whether the last selection-moving interaction was the keyboard (arrows) vs
+    // a pointer (click), so the projection effect picks the right ring modality.
+    const lastKeyboardRef = React.useRef(false);
 
     // Imperative measure: read the active segment's offsetLeft/Width
     // and write the indicator's transform + width. Pulled out so both
@@ -304,11 +345,22 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       items,
       focusedValue: value,
       onFocusChange: (nextValue) => {
+        lastKeyboardRef.current = true;
         dispatchSelectValue(nextValue);
       },
       disabled: effectiveDisabled,
       itemRefs: segmentRefs,
     });
+
+    // Project the engine ring onto the selected segment (the `tabIndex=0` one).
+    // Appearance-zone DOM only ([L06]); the keyboard flag picks whether the ring
+    // follows the arrows or clears on a pointer move. Re-runs whenever the
+    // selection or the item set changes.
+    React.useLayoutEffect(() => {
+      const activeIndex = items.findIndex((item) => item.value === value);
+      const el = activeIndex >= 0 ? segmentRefs.current[activeIndex] : null;
+      setRovedElement(el ?? null, lastKeyboardRef.current);
+    }, [value, items, setRovedElement]);
 
     return (
       <div
@@ -353,6 +405,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
               aria-disabled={isDisabled || undefined}
               aria-label={isIconOnly ? item["aria-label"] : undefined}
               disabled={isDisabled}
+              data-choice-value={item.value}
               data-state={isActive ? "active" : "inactive"}
               className={cn(
                 "tug-choice-group-segment",
@@ -362,6 +415,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
               data-tug-focus="refuse"
               onClick={() => {
                 if (!isDisabled && !isActive) {
+                  lastKeyboardRef.current = false;
                   dispatchSelectValue(item.value);
                 }
               }}

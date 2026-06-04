@@ -62,6 +62,9 @@ export function GalleryChoiceGroup() {
   // would overwrite the saved value when captureState fires.
   const savedChoiceMd = useSavedComponentState<{ value?: string }>("choice-md");
 
+  // Focus Walk section — authored into a focus group so the engine drives Tab.
+  const [focusValue, setFocusValue] = useState("alpha");
+
   const [xsValue, setXsValue] = useState("beta");
   const [smValue, setSmValue] = useState("beta");
   const [mdValue, setMdValue] = useState<string>(
@@ -109,6 +112,7 @@ export function GalleryChoiceGroup() {
   // with the role name at bind time. The base id is opaque; role names
   // are static constants, so the resulting keys are stable per mount
   // and guaranteed unique across cards.
+  const focusId = useId();
   const xsId = useId();
   const smId = useId();
   const mdId = useId();
@@ -132,6 +136,7 @@ export function GalleryChoiceGroup() {
   );
 
   const selectValueBindings: Record<string, (v: string) => void> = {
+    [focusId]: setFocusValue,
     [xsId]: setXsValue,
     [smId]: setSmValue,
     [mdId]: setMdValue,
@@ -166,6 +171,29 @@ export function GalleryChoiceGroup() {
       data-testid="gallery-choice-group"
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
+
+      {/* ---- Focus Walk ---- */}
+      {/* First section so the segments sit above the fold for native clicks. The
+          group is authored into a focus group, so the engine drives Tab in this
+          card: Tab lands the key view on the selected segment (ring on keyboard
+          focus), and arrows rove + select locally. */}
+      <div className="cg-section" data-testid="choice-focus-demo">
+        <TugLabel className="cg-section-title" data-testid="choice-focus-title">Focus Walk</TugLabel>
+        <TugChoiceGroup
+          value={focusValue}
+          senderId={focusId}
+          aria-label="Focus walk choice group"
+          focusGroup="gallery-choice-focus"
+          focusOrder={0}
+          items={[
+            { value: "alpha", label: "Alpha" },
+            { value: "beta",  label: "Beta" },
+            { value: "gamma", label: "Gamma" },
+          ]}
+        />
+      </div>
+
+      <TugSeparator />
 
       {/* ---- Sizes ---- */}
       <div className="cg-section">
