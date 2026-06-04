@@ -1,5 +1,9 @@
 <!-- devise-skeleton v4 -->
 
+> # ⚠ SUPERSEDED — kept for history
+>
+> This plan built the focus engine (steps 1–5: FocusManager, registry, authored Tab walk, scope stack, keybinding registry) and a **first, web-convention pass** at component keyboard support (steps 6–18), then the keyboard model was reconceived. The governing model now lives in **[`tugplan-keyboard-model.md`](../tugplan-keyboard-model.md)** (`[P15]` + the Keyboard Behavior Matrix + `[Q04]`, restated clean there). This document is retained as the **historical record** — how we reasoned to that model, and every superseded decision and why. **Do not execute from here.** The engine substrate it built is a dependency of the successor plan; the component-behavior steps (6, 13–18) are redone there.
+
 ## Keyboard Access, Focus, and the Key-View Engine {#keyboard-access}
 
 **Purpose:** Replace the app's tangled mix of borrowed-Radix focus, suppressed browser focus, and ad-hoc first-responder conventions with one app-owned focus engine — a "key view" (the single keyboard target) marked by one focus ring on keyboard focus, an explicit app-authored Tab order with two modes (`standard` / `accessibility`), a single crisp focus-ring primitive, and a color contract where **accent (orange) = selection** and **action (blue) = focus**.

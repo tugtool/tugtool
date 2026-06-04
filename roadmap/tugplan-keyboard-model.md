@@ -172,7 +172,7 @@ The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop sc
 |---|---|---|
 | key view (active component id) | structure/appearance | FocusManager + `data-key-view`/`-kbd` (exists; DOM via manager, [L06]/[L22]) |
 | `data-key-within` (immediate container) | appearance | DOM attribute projected by the manager from the scope stack ([L06]) |
-| movement cursor (current item per component) | local-data ([L24]) | React state in the component ("current item in a list" is sanctioned); projected to the hover DOM attribute ([L06]) |
+| movement cursor (current item per component) | appearance ([L06]/[L22]) | **ref-owned, projected directly to the hover DOM attribute** — same shape as the manager's key-view projection (`refreshKeyViewProjection`: mutate DOM, notify no subscriber). **Not React render state** — moving the cursor must not re-render to change appearance ([L06]). The committed *selection* it may land on is the separate per-component row below. |
 | scope stack (descend/ascend) | structure | FocusManager `pushFocusMode`/`popFocusMode` (exists) |
 | per-component key-capture set | config / live | predicate held by ref ([L07]); generalizes `keyViewConsumesTab` |
 | committed selection (selected/checked/value) | per component (often [L23]/[A9] preserved) | unchanged from each component's existing model |
@@ -226,7 +226,7 @@ The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop sc
 **Depends on:** — (substrate exists)
 
 **Tasks:**
-- Add the **movement-cursor** concept: a shared hook (`useFocusItems` / extend `useFocusable`) by which an item-container declares its ordered items and current cursor; project the cursor to a DOM attribute styled with the **mouse-hover** treatment ([L06]/[L22]).
+- Add the **movement-cursor** concept: a shared hook (`useFocusItems` / extend `useFocusable`) by which an item-container declares its ordered items and current cursor. Hold the cursor **ref-owned** and **project it directly to a DOM attribute** styled with the **mouse-hover** treatment — mirror the manager's key-view projection (mutate DOM, notify no React subscriber). **The cursor is appearance, not render state**: moving it must not trigger a re-render to change the visual ([L06]/[L22]).
 - Project **`data-key-within`** onto the immediate container of the key view (depth 1) from the scope stack; author its quiet "contains active" CSS.
 - Confirm the ring stays on the component only; remove any residual ring-on-sub-item CSS hooks from the predecessor steps.
 - Resolve [Q01] (reuse the hover token unless it reads weak).
@@ -246,6 +246,7 @@ The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop sc
 
 **Tasks:**
 - Add the **act dispatch**: a window/scope-level handler resolving `Space`→select, `Enter`→act-or-**descend** (`pushFocusMode` when the current item is a navigable container), `Escape`→**ascend** (`popFocusMode`) / cancel-at-modal — routed by the focused component's declaration. Split Space/Enter code paths, mapped to one "act" for now.
+- **Precedence and default-suppression (get this right in the first handler):** site the act dispatch alongside the existing pipeline in `responder-chain-provider` — it runs **after** the capture-phase keybinding listener (a matched global/scope binding wins and the dispatch never sees the key) and **after** a key-capture leaf has consumed the key (editors keep their keys), but **ahead of** native element behavior for the focused component. It must `preventDefault` on `Space` and `PgUp/PgDn` when the key view is a `tabIndex=0` container (otherwise the browser page-scrolls). **Escape coexistence during the redo (R04):** Radix surfaces still own Escape-to-close until their step lands — the engine's Escape=ascend must only fire when the current scope is engine-owned, so it does not double-fire against a still-Radix-trapped surface.
 - Add **live-vs-deferred** routing (live components commit on move; deferred on act).
 - Add the per-component **key-capture set** (generalize `keyViewConsumesTab`): a predicate the key view declares; captured keys go to the component, the rest to the engine.
 - Confirm leaf act consistency: `Space` **and** `Enter` both act on TugButton/Checkbox/Switch.
@@ -267,7 +268,7 @@ The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop sc
 **Tasks:**
 - Declare the editor key-capture set on `TugInput`, the prompt editor, and the code/markdown editors: printables + Space + arrows (caret) + completing-`consumesTab` captured; Tab/Escape navigation at rest.
 - Wire multi-line `Enter` to the shared prompt-entry Enter-vs-Shift+Enter preference (library-wide); single-line `Enter` = submit.
-- Implement the [P04] prompt+dialog coexistence split (commit keys + accelerators to the dialog; typing/caret to the prompt).
+- **Editor side of the [P04] coexistence split only:** define the prompt editor's fall-through contract so typing/caret stay captured while commit keys (Enter/Escape) and option accelerators fall through to a pending dialog's scope. The dialog-side wiring (default/cancel action, `1`–`9`/`←`·`→` accelerators, the routing that makes the two coexist) is owned by [#step-14] — do not build it here.
 
 **Tests:**
 - app-test: focused editor — typing works, arrows are caret, `Tab` leaves, `Escape` blurs; with a completion open, `Tab` accepts and `Escape` closes (then next `Escape` ascends).
@@ -438,7 +439,7 @@ The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop sc
 
 **Depends on:** #step-3
 
-**Tasks:** Pending Permission/Question dialogs push a **non-trapped** scope that becomes the **logical key view** while the prompt keeps the caret; implement the [P04] split (typing/caret → prompt; Enter/Escape → dialog; `1`–`9`/`←`·`→` accelerators pick options); declare `default-action` / `cancel-action` on the scope.
+**Tasks:** Pending Permission/Question dialogs push a **non-trapped** scope that becomes the **logical key view** while the prompt keeps the caret. **This step owns the dialog side of the [P04] coexistence split** (the editor's fall-through contract landed in [#step-3]): declare `default-action` / `cancel-action` on the scope, register the `1`–`9`/`←`·`→` option accelerators, and wire the routing so that — with the dialog pending and the prompt focused — typing/caret → prompt, Enter/Escape → dialog, accelerators pick options.
 
 **Tests:** app-test: with a dialog pending and the prompt focused — typing stays in the prompt, Enter answers/advances, Escape cancels, accelerators pick options; key view never leaves the prompt's caret.
 
