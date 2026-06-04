@@ -195,6 +195,19 @@ The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop sc
 
 ### Execution Steps {#execution-steps}
 
+#### Implementation Batches {#implementation-batches}
+
+Each batch is one `/tugplug:implement` run — a dependency-clean cut whose steps all rest on earlier batches. Walk them in order; never start a batch whose steps' `Depends on:` are not yet `done`.
+
+| Batch | Steps | Theme | Rests on |
+|---|---|---|---|
+| **A — Engine + editors** | [#step-1]–[#step-3] | The model's machinery: movement cursor + the three visual states, the Space/Enter/Escape act dispatch + key-capture set, then text editors as capture leaves. Nothing else can be redone until this lands. | substrate (the [#dependencies] Givens) |
+| **B — Component redos** | [#step-4]–[#step-7] | Declare the model on the components built under the old conception: deferred groups (radio/choice/option), live (tab bar/slider), accordion, list view. All four rest only on the [#step-2] dispatch. | Batch A |
+| **C — Surfaces** | [#step-8]–[#step-14] | The not-yet-built floating/trap surfaces and inline dialogs: tooltip, popover, context menu (+ editor menu), popup-menu, sheet, alert, Permission/Question dialogs. (Internal order: [#step-11] rests on [#step-10]; [#step-13] on [#step-12]; [#step-14] on [#step-3].) | Batch A |
+| **D — Audit + a11y + integration** | [#step-15]–[#step-17] | `refuse` / first-responder reclassification, the accessibility-mode ARIA pass + dual-mode toggle, and the end-to-end composed-surface checkpoint. | Batches B + C |
+
+Batches are **run** boundaries, not commit boundaries — each step still commits individually on the dash. A long batch may be split across conversations (e.g. C as 8–11 then 12–14); the ledger is the resume point either way.
+
 #### Step Status Ledger {#step-status-ledger}
 
 | Step | Title | Status | Commit |
