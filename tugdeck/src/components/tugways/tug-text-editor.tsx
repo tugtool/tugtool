@@ -80,7 +80,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
 import {
@@ -105,6 +105,7 @@ import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
 } from "@/lib/tug-native-clipboard";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { tugTheme } from "./tug-text-editor/theme";
 import { hostFocusMirror } from "./tug-text-editor/host-state";
 import {
@@ -737,6 +738,24 @@ function buildExtensions(
 ): readonly Extension[] {
   return [
     history(),
+    // TEMP rclk probe ([#investigation]): catch the exact transaction that
+    // collapses a ranged selection and dump a stack trace naming the clobberer.
+    EditorView.updateListener.of((update) => {
+      if (!update.selectionSet) return;
+      const before = update.startState.selection.main;
+      const after = update.state.selection.main;
+      if (before.from !== before.to && after.from === after.to) {
+        tugDevLogStore.warn("rclk", "CM6 SELECTION CLOBBERED", {
+          before: `${before.from}-${before.to}`,
+          after: `${after.from}-${after.to}`,
+          focused: update.view.hasFocus,
+          userEvents: update.transactions.map(
+            (t) => t.annotation(Transaction.userEvent) ?? "(none)",
+          ),
+          stack: new Error().stack,
+        });
+      }
+    }),
     // Host-supplied extensions are layered first so they sit BELOW the
     // substrate's keymap / theme precedence. A compound component that
     // wants its own keymap or `Prec.highest` rules can wrap them in
@@ -1516,6 +1535,13 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const handleCopy = useCallback((): ActionHandlerResult => {
       const view = viewRef.current;
       if (view === null) return;
+      // TEMP rclk probe ([#investigation]): the selection the copy actually reads.
+      const sel = view.state.selection.main;
+      tugDevLogStore.info("rclk", "CM6 handleCopy", {
+        from: sel.from,
+        to: sel.to,
+        text: view.state.sliceDoc(sel.from, sel.to),
+      });
       view.focus();
       document.execCommand("copy");
     }, []);

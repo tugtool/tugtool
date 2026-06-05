@@ -101,6 +101,7 @@ import {
   type TextEditingMenuCapabilities,
 } from "./text-editing-menu";
 import type { TextSelectionAdapter } from "./text-selection-adapter";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -204,11 +205,23 @@ export function useTextSurfaceContextMenu(
     setMenuState(null);
   }, []);
 
-  // Pointerdown — only acts on right-button. Capture pre-click state
-  // so the contextmenu handler can restore.
+  // Pointerdown — snapshot the pre-click selection so the contextmenu handler
+  // can restore it. [P01]: capture on EVERY pointerdown, not just button-2. The
+  // gesture that opens a context menu is not always a button-2 right-click — a
+  // macOS Control-click / trackpad secondary-tap arrives as button 0, and gating
+  // on `button === 2` skipped the snapshot for those, so nothing restored the
+  // selection and it collapsed/word-expanded before Copy ran. The snapshot is
+  // only *consumed* by a following `contextmenu`, so capturing on an ordinary
+  // click is harmless: the next pointerdown overwrites it and it is never read
+  // unless a context menu follows.
+  // TEMP rclk probe ([#investigation]): record the gesture.
   const onPointerDown = useCallback(
     (event: PointerEvent) => {
-      if (event.button !== 2) return;
+      tugDevLogStore.info("rclk", "hook.onPointerDown", {
+        button: event.button,
+        ctrlKey: event.ctrlKey,
+        adapterPresent: adapter != null,
+      });
       adapter?.capturePreRightClick();
     },
     [adapter],
@@ -220,12 +233,20 @@ export function useTextSurfaceContextMenu(
     (event: MouseEvent) => {
       event.preventDefault();
       let hasSelection = false;
+      const selBefore = adapter?.getSelectedText?.() ?? "(no adapter)";
       if (adapter !== null) {
         hasSelection = adapter.prepareSelectionForRightClick(
           event.clientX,
           event.clientY,
         );
       }
+      // TEMP rclk probe ([#investigation]): what the adapter pipeline produced.
+      tugDevLogStore.info("rclk", "hook.onContextMenu", {
+        adapterPresent: adapter != null,
+        selBefore,
+        selAfter: adapter?.getSelectedText?.() ?? "(no adapter)",
+        hasSelection,
+      });
       // Override hook: markdown view's CSS-visual select-all is
       // hasSelection-true even when no DOM range exists.
       if (hasSelectionOverride !== undefined) {
