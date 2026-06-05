@@ -42,6 +42,13 @@ import { initThemeTokens } from "./theme-tokens";
 import { deserialize } from "./serialization";
 import { attachTugTestSurface } from "./test-surface";
 import { installHmrBridge } from "./hmr-bridge";
+import { installDevErrorOverlay } from "./dev-error-overlay";
+
+// Replace Vite's built-in HMR error overlay (disabled via
+// `server.hmr.overlay = false`) with a viewport-fitting one. Installed
+// at module scope, before the async boot IIFE, so a compile error that
+// fires during startup is still reported. No-op in production.
+installDevErrorOverlay();
 
 /**
  * `window.tugdeck` — the single namespace the native Swift host uses

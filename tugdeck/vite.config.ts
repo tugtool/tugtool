@@ -508,6 +508,13 @@ export default (defineConfig as any)(() => {
       hmr: {
         host: "127.0.0.1",
         protocol: "ws",
+        // Suppress Vite's built-in `vite-error-overlay`. Its shadow-DOM
+        // window grows unbounded with the babel/rollup stack trace and
+        // overflows the laptop viewport with no internal scroll, so the
+        // message and code frame scroll off-screen. We render our own
+        // viewport-fitting overlay from the same `vite:error` payload —
+        // see `src/dev-error-overlay.ts`.
+        overlay: false,
       },
     },
     preview: {
