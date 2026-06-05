@@ -100,6 +100,10 @@ import {
   resolveRowSeparator,
   type TugListViewRowSeparator,
 } from "./internal/list-view-separator";
+import { useFocusable, useFocusManager } from "./use-focusable";
+import { FocusModeContext } from "./focus-manager";
+import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
+import { KEY_CURSOR_ATTRIBUTE } from "./use-focus-cursor";
 
 // Re-export the `rowSeparator` prop types so consumers import them
 // alongside `TugListView` rather than reaching into the internal path.
@@ -646,40 +650,44 @@ export interface TugListViewProps<
    */
   onSelectionChange?: (index: number) => void;
 
-  // ---- Focus participation (declared at the point of usage) ----
+  // ---- Focus participation — the listbox model ([P01]/[P03]) ----
   //
-  // TugListView imports nothing from the focus engine. A surface that wants the
-  // list to take part in the app-owned Tab walk declares that itself — it calls
-  // `useFocusable` and hands the binding down through these dumb passthrough
-  // props. The list only attaches what it's given. ("Ring on the focused
-  // component, selection on the row": the surface registers the container so the
-  // engine paints the ring on it; selection stays the list's own
-  // `selectionRequired`/`data-selected`.)
+  // When authored into a `focusGroup`, the list is ONE item-container stop in the
+  // engine Tab walk (like TugAccordion / TugRadioGroup): Tab lands the ring on
+  // the scroll container, Up/Down/Home/End/Page move a **movement cursor**
+  // (`data-key-cursor`) over the cell rows — scrolling each into view — Space
+  // **selects** the cursor row (`data-selected`), and Enter **descends** into a
+  // row whose content has navigable focusables (a non-trapped scope; Escape
+  // ascends) or else **activates** it (`delegate.onSelect`). The ring stays on
+  // the list and never moves onto a row; the cursor is appearance-only, projected
+  // straight to the DOM ([L06]/[L22]). When omitted, the list is a plain scroll
+  // container with native per-row focus stops (today's un-authored behavior).
 
   /**
-   * Ref callback attached to the scroll **container**, composed with the list's
-   * own internal ref. A surface passes the `focusableRef` from its own
-   * `useFocusable(...)` call here, which stamps `data-tug-focusable` on the
-   * container so the engine can resolve it as a Tab stop / key view. Omit for an
-   * ordinary list. Pass a STABLE callback (the one `useFocusable` returns is
-   * stable) so the container isn't detached/reattached every render.
+   * Focus group this list is authored into ([P02]). When set, the list registers
+   * the scroll container as a single item-container stop and engages the cursor /
+   * Space-select / Enter-descend model above. Supplied by the surface that owns
+   * the Tab order. Mutually exclusive with {@link keyboardSubordinate} (which
+   * wins — a subordinate list never self-registers).
    */
-  containerRef?: (el: HTMLElement | null) => void;
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
   /**
-   * `tabIndex` for the scroll container. Default `0` (a native focus stop for
-   * arrow/page scroll, as today). A surface whose list is **subordinate** to an
-   * external focus owner (a filter input) passes `-1` so the list adds no Tab
-   * stop of its own.
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
    */
-  containerTabIndex?: number;
+  focusPolicy?: FocusPolicy;
   /**
-   * Whether cell wrappers are individual Tab stops. Default `true` (today's
-   * per-row behavior). A surface that makes the list one stop — container-stop
-   * or input-subordinate — passes `false` so rows are `tabIndex=-1` and the list
-   * is never one-stop-per-row; the active row is shown by selection, not Tab
-   * focus.
+   * Make the list **subordinate** to an external focus owner (a filter input that
+   * owns the key view + ring). The list contributes ZERO Tab stops — the scroll
+   * container and every cell wrapper are `tabIndex=-1` and the container registers
+   * no engine focusable — while selection still lives on the row
+   * (`selectionRequired` / `data-selected`). The picker shape. Wins over
+   * {@link focusGroup} if both are set.
+   * @default false
    */
-  rowsFocusable?: boolean;
+  keyboardSubordinate?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -853,12 +861,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       selectionRequired = false,
       onSelectionChange,
       onFollowBottomChange,
-      containerRef,
-      containerTabIndex = 0,
-      rowsFocusable = true,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
+      keyboardSubordinate = false,
     },
     ref,
   ) {
+    // The listbox model engages only when the surface authored a `focusGroup`
+    // and the list is not subordinate to an external focus owner ([P01]/[P03]).
+    // A subordinate list (picker filter input owns focus) never self-registers.
+    const focusEngineActive = focusGroup !== undefined && !keyboardSubordinate;
     const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
     const topSpacerRef = React.useRef<HTMLDivElement | null>(null);
     const bottomSpacerRef = React.useRef<HTMLDivElement | null>(null);
@@ -875,18 +888,25 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // `internal/outer-scrollport-context.tsx` for the consumer hook.
     const [scrollportEl, setScrollportEl] =
       React.useState<HTMLDivElement | null>(null);
+    // The engine's `focusableRef` from `useFocusable` (declared below, since it
+    // depends on the cursor/behavior helpers). Held in a ref so the container
+    // ref callback — created earlier in render order — can call the latest one
+    // without re-creating itself. The `useFocusable` ref is itself stable, so
+    // this indirection never churns the attachment.
+    const engineFocusableRef = React.useRef<
+      ((el: Element | null) => void) | null
+    >(null);
     const setScrollContainerRef = React.useCallback(
       (el: HTMLDivElement | null) => {
         scrollContainerRef.current = el;
         setScrollportEl(el);
-        // Dumb passthrough: a surface that declared this list a focus stop hands
-        // its `useFocusable` ref down via `containerRef`; we just attach it to
-        // the scroll container alongside our own bookkeeping. No focus-engine
-        // knowledge in the list — see the prop docs. Stable as long as the
-        // surface passes a stable callback (the one `useFocusable` returns).
-        containerRef?.(el);
+        // Stamp the engine focusable onto the scroll container when the list is
+        // authored into a focus group ([P01]). A no-op (no `data-tug-focusable`)
+        // for un-authored / subordinate lists, since `useFocusable` only stamps
+        // when `register` is true.
+        engineFocusableRef.current?.(el);
       },
-      [containerRef],
+      [],
     );
 
     // Map<index, HTMLElement> populated by cell-wrapper ref callbacks.
@@ -1144,9 +1164,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // re-runs the body on every data-source tick), so a row leaving
     // the data source or changing role is caught here. `null` when the
     // feature is off or no selectable row exists.
+    // `selectionRequired` seeds the first selectable row and never goes null;
+    // a `focusGroup` listbox starts unselected and commits on Space/Enter, so
+    // its `data-selected` tracks the raw owned index. Both surface through the
+    // same `data-selected` / `selected` cell-prop path below.
     const effectiveSelectedIndex = selectionRequired
       ? resolveSelectionIndex(selectedIndex, dataSource)
-      : null;
+      : focusEngineActive
+        ? selectedIndex
+        : null;
     // Reconcile owned state to the resolved value and mirror genuine
     // changes out through `onSelectionChange`. `useLayoutEffect` keeps
     // the seed in the same paint as mount so the first frame already
@@ -2071,6 +2097,323 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const dataSourceRef = React.useRef(dataSource);
     dataSourceRef.current = dataSource;
 
+    // -----------------------------------------------------------------------
+    // Focus engine — the listbox model ([P01]/[P03])
+    //
+    // When authored into a `focusGroup`, the list is ONE item-container stop:
+    // the scroll container registers as the engine focusable (the ring lands on
+    // it, never on a row), a movement cursor (`data-key-cursor`) traverses the
+    // cell rows under Up/Down/Home/End/Page — scrolling each into view — Space
+    // **selects** the cursor row, and Enter **descends** into a row whose content
+    // holds navigable focusables (a non-trapped scope; Escape ascends) or else
+    // **activates** it. The cursor is appearance-only, projected straight to the
+    // DOM with no re-render ([L06]/[L22]); the committed selection is the
+    // existing `selectedIndex` / `data-selected` path. Inert (no registration,
+    // no cursor) for un-authored / subordinate lists.
+    // -----------------------------------------------------------------------
+    const manager = useFocusManager();
+    const focusableId = React.useId();
+    const focusEngineActiveRef = React.useRef(focusEngineActive);
+    focusEngineActiveRef.current = focusEngineActive;
+    // Live `selectedIndex` for the key-view-gain seed (read at subscription
+    // fire time, not closure-capture time) [L07].
+    const selectedIndexRef = React.useRef<number | null>(null);
+    selectedIndexRef.current = selectedIndex;
+
+    // The movement cursor's data index (`-1` = unlanded). A ref, not React
+    // state — moving it must not re-render ([L06]).
+    const cursorIndexRef = React.useRef<number>(-1);
+
+    // Cursorable-row helpers — the cursor lands only on `"cell"`-role rows
+    // (headers / footers are inert dividers, skipped during movement).
+    const roleOfRow = React.useCallback(
+      (i: number): TugListViewCellRole =>
+        dataSourceRef.current.roleForIndex?.(i) ?? DEFAULT_CELL_ROLE,
+      [],
+    );
+    const isCursorableRow = React.useCallback(
+      (i: number): boolean => {
+        const total = dataSourceRef.current.numberOfItems();
+        return i >= 0 && i < total && roleOfRow(i) === "cell";
+      },
+      [roleOfRow],
+    );
+    const firstCursorableRow = React.useCallback((): number => {
+      const total = dataSourceRef.current.numberOfItems();
+      for (let i = 0; i < total; i += 1) if (isCursorableRow(i)) return i;
+      return -1;
+    }, [isCursorableRow]);
+    const lastCursorableRow = React.useCallback((): number => {
+      const total = dataSourceRef.current.numberOfItems();
+      for (let i = total - 1; i >= 0; i -= 1) if (isCursorableRow(i)) return i;
+      return -1;
+    }, [isCursorableRow]);
+    // Step from `from` toward `dir` to the next cursorable row; clamp (no wrap).
+    const stepCursorableRow = React.useCallback(
+      (from: number, dir: 1 | -1): number => {
+        const total = dataSourceRef.current.numberOfItems();
+        let i = from + dir;
+        while (i >= 0 && i < total) {
+          if (isCursorableRow(i)) return i;
+          i += dir;
+        }
+        return isCursorableRow(from) ? from : -1;
+      },
+      [isCursorableRow],
+    );
+    // Resolve `target` to the nearest cursorable row, preferring `dir` then the
+    // opposite — the snap a Page step lands on.
+    const cursorableNear = React.useCallback(
+      (target: number, dir: 1 | -1): number => {
+        const total = dataSourceRef.current.numberOfItems();
+        if (total === 0) return -1;
+        const clamped = Math.max(0, Math.min(total - 1, target));
+        if (isCursorableRow(clamped)) return clamped;
+        const forward = stepCursorableRow(clamped, dir);
+        if (forward >= 0) return forward;
+        return stepCursorableRow(clamped, dir === 1 ? -1 : 1);
+      },
+      [isCursorableRow, stepCursorableRow],
+    );
+
+    // Project / clear `data-key-cursor` directly onto the rendered cell wrappers
+    // ([L06]/[L22]) — mirrors `useFocusCursor`'s projection, but index-keyed off
+    // `cellElementMapRef` so it composes with windowing (a cursor row scrolled
+    // into view mounts, then the per-commit re-projection effect below stamps it).
+    const projectCursor = React.useCallback((): void => {
+      const target = cursorIndexRef.current;
+      for (const [i, el] of cellElementMapRef.current) {
+        if (i === target) el.setAttribute(KEY_CURSOR_ATTRIBUTE, "");
+        else el.removeAttribute(KEY_CURSOR_ATTRIBUTE);
+      }
+    }, []);
+    const clearCursorVisual = React.useCallback((): void => {
+      for (const el of cellElementMapRef.current.values()) {
+        el.removeAttribute(KEY_CURSOR_ATTRIBUTE);
+      }
+    }, []);
+
+    // Bring row `index` into view, reusing the imperative handle's
+    // rendered-vs-estimated two-pass logic ([D03]). `nearest` for cursor moves
+    // so an already-visible row doesn't jump to the viewport top.
+    const scrollIndexIntoView = React.useCallback(
+      (index: number, block: ScrollLogicalPosition): void => {
+        const total = dataSourceRef.current.numberOfItems();
+        if (total === 0) return;
+        const ss = smartScrollRef.current;
+        if (ss === null) return;
+        const clamped = Math.max(0, Math.min(total - 1, Math.floor(index)));
+        const renderedEl = cellElementMapRef.current.get(clamped);
+        if (renderedEl !== undefined) {
+          ss.scrollToElement(renderedEl, { animated: false, block });
+          pendingScrollCorrectionRef.current = null;
+          return;
+        }
+        const estimatedTop = heightIndexRef.current.offsetForIndex(
+          clamped,
+          estimatedHeightForKindOnly,
+        );
+        ss.scrollTo({ top: estimatedTop, animated: false });
+        pendingScrollCorrectionRef.current = { index: clamped, estimatedTop };
+      },
+      [estimatedHeightForKindOnly],
+    );
+
+    // Move the cursor to `index`, project it, and optionally scroll it in.
+    const moveCursorTo = React.useCallback(
+      (index: number, scroll: boolean): void => {
+        if (index < 0) return;
+        cursorIndexRef.current = index;
+        projectCursor();
+        if (scroll) scrollIndexIntoView(index, "nearest");
+      },
+      [projectCursor, scrollIndexIntoView],
+    );
+
+    // The engine focusable id carried by the cursor row's first inner focusable,
+    // or `null` when the row holds none — Enter descends only when present.
+    const rowFirstFocusableId = React.useCallback((i: number): string | null => {
+      const el = cellElementMapRef.current.get(i);
+      const inner = el?.querySelector("[data-tug-focusable]") ?? null;
+      return inner?.getAttribute("data-tug-focusable") ?? null;
+    }, []);
+    const rowScopeId = React.useCallback(
+      (i: number): string => `${focusableId}-row-${i}`,
+      [focusableId],
+    );
+
+    // Space / Enter-act: commit selection on the cursor row (`data-selected`)
+    // and fire `delegate.onSelect`. Enter-descend: push the row's non-trapped
+    // scope and land the key view on its first inner focusable.
+    const selectCursorRow = React.useCallback((): void => {
+      const i = cursorIndexRef.current;
+      if (!isCursorableRow(i)) return;
+      setSelectedIndex(i);
+      delegateRef.current?.onSelect?.(i);
+      scrollIndexIntoView(i, "nearest");
+    }, [isCursorableRow, scrollIndexIntoView]);
+    const descendCursorRow = React.useCallback((): void => {
+      if (manager === null) return;
+      const i = cursorIndexRef.current;
+      const innerId = rowFirstFocusableId(i);
+      if (innerId === null) {
+        selectCursorRow();
+        return;
+      }
+      manager.pushFocusMode(rowScopeId(i), { trapped: false });
+      manager.setKeyView(innerId, true);
+      manager.focusKeyView();
+    }, [manager, rowFirstFocusableId, rowScopeId, selectCursorRow]);
+
+    // The thin declaration the engine's act dispatch reads at Space/Enter/Escape
+    // ([P01]) — `currentItemDescendable` is evaluated live against the cursor row.
+    const behavior = React.useCallback(
+      (): KeyViewBehavior => ({
+        container: "item",
+        commit: "deferred",
+        currentItemDescendable: rowFirstFocusableId(cursorIndexRef.current) !== null,
+        onSelect: selectCursorRow,
+        onAct: selectCursorRow,
+        onDescend: descendCursorRow,
+      }),
+      [rowFirstFocusableId, selectCursorRow, descendCursorRow],
+    );
+
+    // Register the scroll container as the single item-container stop. The
+    // returned ref is stamped onto the container by `setScrollContainerRef`
+    // (above) via `engineFocusableRef`. `register: false` for un-authored /
+    // subordinate lists leaves the container a plain native stop.
+    const { focusableRef: engineFocusable } = useFocusable({
+      id: focusableId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusEngineActive,
+      behavior,
+    });
+    engineFocusableRef.current = engineFocusable;
+
+    // Land / clear the cursor as the container gains or loses the keyboard key
+    // view. On gain, seed the cursor on the selected row (else the first
+    // cursorable row) only when unlanded — so a descend → ascend round-trip
+    // preserves the cursor position. On loss, drop the visual but keep the index.
+    const wasKbdRef = React.useRef(false);
+    React.useLayoutEffect(() => {
+      if (manager === null || !focusEngineActive) return;
+      const onChange = (): void => {
+        const el = scrollContainerRef.current;
+        if (el === null) return;
+        const kbd = el.hasAttribute("data-key-view-kbd");
+        if (kbd && !wasKbdRef.current) {
+          if (cursorIndexRef.current < 0) {
+            const saved = selectedIndexRef.current ?? -1;
+            const seed = isCursorableRow(saved) ? saved : firstCursorableRow();
+            if (seed >= 0) moveCursorTo(seed, true);
+          } else {
+            projectCursor();
+          }
+        } else if (!kbd && wasKbdRef.current) {
+          clearCursorVisual();
+        }
+        wasKbdRef.current = kbd;
+      };
+      const unsubscribe = manager.subscribe(onChange);
+      onChange();
+      return unsubscribe;
+    }, [
+      manager,
+      focusEngineActive,
+      isCursorableRow,
+      firstCursorableRow,
+      moveCursorTo,
+      projectCursor,
+      clearCursorVisual,
+    ]);
+
+    // Re-project the cursor every commit while the container holds the key view,
+    // so a row that mounts as the cursor scrolls into view picks up
+    // `data-key-cursor` on the next paint. Cheap null/attribute check otherwise.
+    React.useLayoutEffect(() => {
+      if (!focusEngineActive) return;
+      const el = scrollContainerRef.current;
+      if (
+        el !== null &&
+        el.hasAttribute("data-key-view-kbd") &&
+        cursorIndexRef.current >= 0
+      ) {
+        projectCursor();
+      }
+    });
+
+    // Movement keys (capture phase, so this runs ahead of SmartScroll's own
+    // bubble keydown and the `pageByEntry` handler — `stopImmediatePropagation`
+    // claims a handled key). Arrows / Home / End move one row; Page moves a
+    // viewport of rows and snaps to the nearest cursorable row. Space / Enter /
+    // Escape are NOT handled here — the engine's act dispatch owns them.
+    React.useLayoutEffect(() => {
+      if (!focusEngineActive) return;
+      const scrollEl = scrollContainerRef.current;
+      if (scrollEl === null) return;
+      const handler = (e: KeyboardEvent): void => {
+        if (e.defaultPrevented || e.metaKey || e.ctrlKey) return;
+        if (isEditableEventTarget(e.target)) return;
+        // Move the cursor only while the container itself holds the keyboard key
+        // view. After Enter descends onto an inner focusable the container is no
+        // longer the key view — arrows then belong to the descended component,
+        // not the list cursor.
+        if (!scrollEl.hasAttribute("data-key-view-kbd")) return;
+        const total = dataSourceRef.current.numberOfItems();
+        if (total === 0) return;
+        const cur = cursorIndexRef.current;
+        const pageStep = (): number =>
+          Math.max(
+            1,
+            Math.floor(
+              (scrollEl.clientHeight || 0) /
+                Math.max(1, heightForIndex(Math.max(0, cur))),
+            ) - 1,
+          );
+        let next = -1;
+        switch (e.key) {
+          case "ArrowDown":
+            next = cur < 0 ? firstCursorableRow() : stepCursorableRow(cur, 1);
+            break;
+          case "ArrowUp":
+            next = cur < 0 ? lastCursorableRow() : stepCursorableRow(cur, -1);
+            break;
+          case "Home":
+            next = firstCursorableRow();
+            break;
+          case "End":
+            next = lastCursorableRow();
+            break;
+          case "PageDown":
+            next = cursorableNear((cur < 0 ? firstCursorableRow() : cur) + pageStep(), 1);
+            break;
+          case "PageUp":
+            next = cursorableNear((cur < 0 ? lastCursorableRow() : cur) - pageStep(), -1);
+            break;
+          default:
+            return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (next >= 0 && next !== cur) moveCursorTo(next, true);
+        else if (next >= 0) scrollIndexIntoView(next, "nearest");
+      };
+      scrollEl.addEventListener("keydown", handler, true);
+      return () => scrollEl.removeEventListener("keydown", handler, true);
+    }, [
+      focusEngineActive,
+      heightForIndex,
+      firstCursorableRow,
+      lastCursorableRow,
+      stepCursorableRow,
+      cursorableNear,
+      moveCursorTo,
+      scrollIndexIntoView,
+    ]);
+
     // PageUp / PageDown by entry ([L02] DOM event listener installed
     // in a `useLayoutEffect` per [L03]; no React state crosses the
     // scroll write). Opt-in via `pageByEntry` — omitted means the
@@ -2088,7 +2431,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // SmartScroll so the [D07] follow-bottom intent stays coherent:
     // PageUp disengages, PageDown onto the last cell re-engages.
     React.useLayoutEffect(() => {
-      if (pageByEntry !== true) return;
+      // The listbox cursor handler ([P01]) owns Page keys when the list is
+      // authored into a focus group — don't also install the scroll-only pager.
+      if (pageByEntry !== true || focusEngineActive) return;
       const scrollEl = scrollContainerRef.current;
       if (scrollEl === null) return;
 
@@ -2162,7 +2507,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       return () => {
         scrollEl.removeEventListener("keydown", handleNavKey, true);
       };
-    }, [pageByEntry]);
+    }, [pageByEntry, focusEngineActive]);
 
     interface CellCallbacks {
       readonly ref: (el: HTMLDivElement | null) => void;
@@ -2202,8 +2547,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         delegateRef.current?.onSelect?.(index);
         // `selectionRequired` mode — the list view owns the selected
         // index; a cell activation moves it. `delegate.onSelect` above
-        // still fires, so consumers that want both keep both.
-        if (selectionRequiredRef.current) setSelectedIndex(index);
+        // still fires, so consumers that want both keep both. A
+        // `focusGroup` listbox commits selection on pointer activation
+        // too, and parks the movement cursor on the clicked row.
+        if (selectionRequiredRef.current || focusEngineActiveRef.current) {
+          setSelectedIndex(index);
+        }
+        if (focusEngineActiveRef.current) moveCursorTo(index, false);
       };
       // Keyboard activation per [Q06] — cell wrappers are
       // `tabIndex={0}` and `role="listitem"` (see render below), so
@@ -2275,6 +2625,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           } as React.CSSProperties)
         : undefined;
 
+    // Rows are native per-row Tab stops only for an un-authored, non-subordinate
+    // list (today's default). A `focusGroup` listbox is one container stop with a
+    // movement cursor; a subordinate list contributes no stops.
+    const rowsAreNativeStops = !focusEngineActive && !keyboardSubordinate;
+
     return (
       <div
         ref={setScrollContainerRef}
@@ -2288,7 +2643,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         }
         style={separatorStyle}
         role="list"
-        tabIndex={containerTabIndex}
+        // A subordinate list adds no Tab stop of its own (the filter input owns
+        // focus); every other list is a native / engine focus stop at `0`.
+        tabIndex={keyboardSubordinate ? -1 : 0}
       >
         <div
           ref={topSpacerRef}
@@ -2304,16 +2661,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //  - `tabIndex` is `0` for cells (focusable, in tab order)
             //    and `-1` for headers/footers (not focusable). See
             //    "Row roles" in the top-of-file docstring.
-            //  - When the surface declared the list one stop
-            //    (`rowsFocusable={false}`), rows are NEVER individual Tab
-            //    stops (`-1`); the active row is shown by selection, not
-            //    Tab focus.
+            //  - Rows are individual native Tab stops ONLY for an
+            //    un-authored, non-subordinate list. A `focusGroup` listbox
+            //    is one stop with a movement cursor; a subordinate list adds
+            //    no stops — both make rows `-1`, with the active row shown by
+            //    the cursor / selection, not Tab focus.
             //  - `data-list-cell-role` is set only for non-default
             //    roles, keeping the existing default-cell DOM shape
             //    byte-identical for backwards-compatible CSS
             //    selectors that don't yet know about roles.
             const wrapperTabIndex =
-              rowsFocusable && interactive && role === "cell" ? 0 : -1;
+              rowsAreNativeStops && interactive && role === "cell" ? 0 : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
             // `selectionRequired` mode — the owned selected row.
             // Surfaced two ways from the one source: `data-selected`
@@ -2380,13 +2738,27 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 onKeyDown={getCellCallbacks(index).keyDown}
                 style={cellWrapperStyle}
               >
-                <Renderer
-                  index={index}
-                  id={id}
-                  kind={kind}
-                  dataSource={dataSource}
-                  selected={cellSelected}
-                />
+                {focusEngineActive ? (
+                  // The row's content joins the row's own focus mode, so its
+                  // inner focusables become the walk once Enter descends ([P02]).
+                  <FocusModeContext.Provider value={`${focusableId}-row-${index}`}>
+                    <Renderer
+                      index={index}
+                      id={id}
+                      kind={kind}
+                      dataSource={dataSource}
+                      selected={cellSelected}
+                    />
+                  </FocusModeContext.Provider>
+                ) : (
+                  <Renderer
+                    index={index}
+                    id={id}
+                    kind={kind}
+                    dataSource={dataSource}
+                    selected={cellSelected}
+                  />
+                )}
               </div>
             );
           })}

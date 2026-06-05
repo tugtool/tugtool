@@ -1,26 +1,24 @@
 /**
- * GalleryListViewFocus — focus-engine proof for `TugListView`.
+ * GalleryListViewFocus — focus-engine proof for `TugListView` (the listbox model).
  *
- * Demonstrates that focus participation is declared **at the point of usage**:
- * `TugListView` imports nothing from the focus engine; the surface (this card)
- * calls `useFocusable` itself and hands the binding down through the list's dumb
- * passthrough props (`containerRef` / `containerTabIndex` / `rowsFocusable`).
+ * `TugListView` is one **item-container** stop ([P01]/[P03]): a surface authors
+ * it into a `focusGroup` and the list owns the rest — Tab lands the ring on the
+ * scroll container, a movement cursor (`data-key-cursor`) traverses the rows
+ * under the arrows, Space **selects** the cursor row (`data-selected`), and Enter
+ * **descends** into a row whose content holds a focusable (Escape ascends).
  *
- * Two shapes of the "ring on the focused component, selection on the row" model:
+ * Two shapes of the "ring on the component, cursor / selection on the row" model:
  *
- *  - **Container stop**: the surface registers the list's scroll container as one
- *    engine Tab stop (`useFocusable` → `containerRef`); the ring paints on the
- *    container ([P05]) and cell wrappers drop out of the Tab order
- *    (`rowsFocusable={false}`). Used for surfaces where the list itself is the
- *    keyboard target (read-only listings, a transcript). Tab lands one stop on
- *    the container; Arrow/Page scroll natively — no row cursor.
+ *  - **Container stop** (`focusGroup`): the list registers its scroll container
+ *    as one engine stop; the ring paints on it ([P05]) and cell wrappers drop out
+ *    of the Tab order. Each row here carries an inner focusable button, so Enter
+ *    descends onto it and Escape ascends back to the cursor.
  *
- *  - **Input-subordinate**: the list contributes ZERO Tab stops
- *    (`containerTabIndex={-1}` + `rowsFocusable={false}`, no registration),
- *    deferring the key view + ring to an external owner (a filter input). The
- *    list shows selection on the row.
+ *  - **Input-subordinate** (`keyboardSubordinate`): the list contributes ZERO Tab
+ *    stops, deferring the key view + ring to an external owner (a filter input).
+ *    Selection still lives on the row.
  *
- * Synthetic fixed data; the point is the focus/tabIndex contract, not content.
+ * Synthetic fixed data; the point is the focus / tabIndex contract, not content.
  *
  * Laws:
  *  - [L02] data source enters React via `useSyncExternalStore` (TugListView's
@@ -67,7 +65,46 @@ class FocusDemoDataSource implements TugListViewDataSource {
 
 const ROWS = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"];
 
-function FocusRowCell({
+// Container-stop row: a label plus a focusable "Open" button. The list wraps the
+// cell in the row's focus mode, so this button registers into it and becomes the
+// descend target — Enter on the cursor row lands the key view here.
+function DescendRowCell({
+  index,
+  dataSource,
+}: TugListViewCellProps<FocusDemoDataSource>): React.ReactElement {
+  const innerId = React.useId();
+  const { focusableRef } = useFocusable({
+    id: innerId,
+    group: `lv-focus-row-${index}`,
+    order: 0,
+    register: true,
+  });
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "8px 12px",
+        fontSize: "0.875rem",
+      }}
+    >
+      <span>{dataSource.labelAt(index)}</span>
+      <button
+        ref={focusableRef as (el: HTMLButtonElement | null) => void}
+        type="button"
+        tabIndex={-1}
+        data-testid={`lv-focus-row-btn-${index}`}
+        style={{ fontSize: "0.75rem", padding: "2px 8px" }}
+      >
+        Open
+      </button>
+    </div>
+  );
+}
+
+// Subordinate row: a plain label (no descend target).
+function PlainRowCell({
   index,
   dataSource,
 }: TugListViewCellProps<FocusDemoDataSource>): React.ReactElement {
@@ -78,46 +115,35 @@ function FocusRowCell({
   );
 }
 
-const CELL_RENDERERS = { row: FocusRowCell };
+const CONTAINER_CELL_RENDERERS = { row: DescendRowCell };
+const SUBORDINATE_CELL_RENDERERS = { row: PlainRowCell };
 
 export function GalleryListViewFocus(): React.ReactElement {
   const containerSource = React.useMemo(() => new FocusDemoDataSource(ROWS), []);
   const subordinateSource = React.useMemo(() => new FocusDemoDataSource(ROWS), []);
 
-  // The surface declares the container-stop list's participation in the Tab
-  // walk — it registers the focusable and hands the ref to the list. The list
-  // itself knows nothing about the focus engine.
-  const containerStopId = React.useId();
-  const { focusableRef } = useFocusable({
-    id: containerStopId,
-    group: "gallery-listview-focus",
-    order: 0,
-    register: true,
-  });
-
   return (
     <div className="cg-content" data-testid="gallery-list-view-focus">
-      {/* ---- Container stop (ring on the component) ---- */}
+      {/* ---- Container stop — ring on the list, cursor + descend ---- */}
       <div className="cg-section" data-testid="lv-focus-container-demo">
         <TugLabel className="cg-section-title" data-testid="lv-focus-container-title">
-          Container stop — ring on the list
+          Container stop — ring on the list, arrows move the cursor
         </TugLabel>
         <div style={{ height: "180px" }}>
           <TugListView<FocusDemoDataSource>
             dataSource={containerSource}
-            cellRenderers={CELL_RENDERERS}
+            cellRenderers={CONTAINER_CELL_RENDERERS}
             inline
             scrollKey="lv-focus-container"
-            containerRef={focusableRef}
-            containerTabIndex={0}
-            rowsFocusable={false}
+            focusGroup="gallery-listview-focus"
+            focusOrder={0}
           />
         </div>
       </div>
 
       <TugSeparator />
 
-      {/* ---- Input-subordinate (list contributes no stop) ---- */}
+      {/* ---- Input-subordinate — list contributes no Tab stop ---- */}
       <div className="cg-section" data-testid="lv-focus-subordinate-demo">
         <TugLabel className="cg-section-title" data-testid="lv-focus-subordinate-title">
           Input-subordinate — list adds no Tab stop
@@ -125,12 +151,11 @@ export function GalleryListViewFocus(): React.ReactElement {
         <div style={{ height: "180px" }}>
           <TugListView<FocusDemoDataSource>
             dataSource={subordinateSource}
-            cellRenderers={CELL_RENDERERS}
+            cellRenderers={SUBORDINATE_CELL_RENDERERS}
             inline
             scrollKey="lv-focus-subordinate"
             selectionRequired
-            containerTabIndex={-1}
-            rowsFocusable={false}
+            keyboardSubordinate
           />
         </div>
       </div>

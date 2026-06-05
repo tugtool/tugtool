@@ -1,17 +1,20 @@
 /**
  * at0121-list-view-container-focus.test.ts — TugListView container-stop shape.
  *
- * "Ring on the focused component, selection on the row." When a list is authored
- * into a `focusGroup`, the scroll **container** registers as one engine stop
- * (`useFocusable`) and carries the focus ring ([P05]); cell wrappers drop out of
- * the Tab order (`tabIndex=-1`), so the list is one stop, not one-per-row. No row
- * cursor — a focused container scrolls natively.
+ * "Ring on the component, cursor on the row." When a list is authored into a
+ * `focusGroup`, the scroll **container** registers as one item-container engine
+ * stop and carries the focus ring ([P05]); cell wrappers drop out of the Tab
+ * order (`tabIndex=-1`), so the list is one stop, not one-per-row. On Tab the
+ * movement cursor lands on the first row (`data-key-cursor`) — the ring stays on
+ * the container and never moves onto a row ([P01]/[P03]).
  *
  * The gallery `TugListView (focus)` card mounts a container-stop list. The test
  * proves:
  *   - **rows are not Tab stops:** every cell wrapper is `tabIndex=-1`;
  *   - **Tab → one stop, ring on the container:** Tab lands the key view on the
- *     scroll container and paints the ring there.
+ *     scroll container and paints the ring there;
+ *   - **cursor lands on the first row:** the first cell carries `data-key-cursor`
+ *     while the ring stays on the container.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -113,6 +116,17 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         expect(onContainer?.keyboardReached).toBe(true);
         expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
         expect(onContainer?.tabIndex).toBe("0");
+
+        // (3) The movement cursor lands on the first row — the ring stays on the
+        // container ([P03]), the cursor marks the current row.
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(`${DEMO} [data-tug-list-cell-index="0"]`)}).hasAttribute("data-key-cursor")`,
+          { timeoutMs: 6000 },
+        );
+        const cursorOnFirst = await app.evalJS<boolean>(
+          `document.querySelector(${JSON.stringify(`${DEMO} [data-tug-list-cell-index="0"]`)}).hasAttribute("data-key-cursor")`,
+        );
+        expect(cursorOnFirst).toBe(true);
       } finally {
         await app.close();
       }

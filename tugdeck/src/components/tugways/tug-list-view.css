@@ -162,6 +162,28 @@ body {
   display: block;
 }
 
+/* ---- Movement cursor ([P03]/[Q01]) ----
+   The keyboard movement cursor reuses the row hover treatment so the row under
+   the arrows reads exactly as a pointer hover. `data-key-cursor` is projected by
+   the engine onto the cursor row's cell wrapper (appearance-only, [L06]/[L22]).
+   The fill is painted on the wrapper so it works whether or not the cell composes
+   a `TugListRow` — and it uses the same ghost-action-hover token the `flush`
+   `TugListRow` hover uses, so a hovered and a cursored row are indistinguishable.
+   `pill` rows light the inner row instead (the wrapper carries the inter-row gap). */
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-hover */
+.tug-list-view-cell[data-key-cursor] {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+.tug-list-view[data-row-layout="pill"] .tug-list-view-cell[data-key-cursor] {
+  background-color: transparent;
+}
+.tug-list-view[data-row-layout="pill"]
+  .tug-list-view-cell[data-key-cursor]
+  .tug-list-row:not([data-disabled="true"]) {
+  background-color: var(--tugx-list-row-pill-hover-bg);
+  border-color: var(--tugx-list-row-pill-hover-border);
+}
+
 /* ---- Read-only mode (`interactive={false}`) ----
    A read-only listing's rows are inert: the wrappers are already out of the
    tab order (the component forces `tabIndex={-1}`), and these rules drop the
