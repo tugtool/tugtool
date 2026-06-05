@@ -213,7 +213,7 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 | Sub-run | Steps | Scope flavor | Cohesion |
 |---|---|---|---|
 | **C1** | [#step-8]–[#step-9] | non-trapped floating | Tooltip is trivial (confirm it never takes the key view); Popover is the **first** Radix→engine component-scope migration — establishes the pattern the later sub-runs reuse. |
-| **C2** | [#step-10]–[#step-11] | trapped menu scope | TugContextMenu (+ editor context menu); popup-menu rests on it (11→10). Same item-cursor-in-trapped-scope shape. |
+| **C2** | [#step-10]–[#step-11] | trapped menu scope | **Resolved as no-op:** the menus are already keyboard-complete (Radix native for context + popup; the editor menu owns its own keys as a refuse-focus overlay). A trial engine scope added only cosmetics and broke the editor's text selection, so it was abandoned — see [#step-10]/[#step-11]. |
 | **C3** | [#step-12]–[#step-13] | modal trapped scope | TugSheet, then TugAlert rests on it (13→12). Same modal + initial-focus + restore shape. |
 | **C4** | [#step-14] | inline-dialog [P04] split | The prompt/dialog key-split (logical key view ≠ DOM focus); rests on [#step-3] (done). Stands alone. |
 
@@ -230,8 +230,8 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 | #step-7 | Redo TugListView — listbox: hover rows, Space selects, Enter descends/activates | done | 557b8638 |
 | #step-8 | Tame TugTooltip — focus-trigger only, no capture | done | b931481e |
 | #step-9 | Tame TugPopover — Radix FocusScope → engine component-scope | done | b931481e |
-| #step-10 | Tame TugContextMenu (+ editor context menu) — item-in-trapped-scope | pending | — |
-| #step-11 | Tame internal/tug-popup-menu | pending | — |
+| #step-10 | Tame TugContextMenu (+ editor context menu) — item-in-trapped-scope | done (no change) | — |
+| #step-11 | Tame internal/tug-popup-menu | done (no change) | — |
 | #step-12 | Tame TugSheet — modal scope + restore | pending | — |
 | #step-13 | Tame TugAlert — modal scope | pending | — |
 | #step-14 | Inline dialogs (Permission/Question) — logical key view + prompt split ([P04]) | pending | — |
@@ -405,11 +405,11 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 **Depends on:** #step-2
 
-**Tasks:** Replace Radix `FocusScope` with a trapped scope; arrows move the item cursor; Enter activates; Escape closes (ascend). Route `tug-editor-context-menu` through the same scope.
+**RESOLVED — no change needed.** The menus are already keyboard-complete and need no engine scope. `TugContextMenu` is a Radix context menu: arrows / Home·End / Enter / Escape, the focus trap, and restore-to-trigger are all native. `tug-editor-context-menu` is a hand-built **focus-refusing overlay** (`data-tug-focus="refuse"`) with its own window-capture keydown (arrows / typeahead / Enter / Escape) that deliberately leaves DOM focus *and the editor's live text selection* in place so Cut / Copy operate on the right-clicked selection. An engine `useFocusTrap` scope buys only a cosmetic `data-key-within` mark plus a `data-focus-mode` projection that is redundant with Radix's own focus management — and on the editor menu it actively breaks the selection. A trial migration (since abandoned) confirmed both: zero functional gain on the Radix menu, regression on the editor menu. The editor menu's classification as a refuse-focus leaf is recorded for [#step-15]; nothing here changes the menus.
 
-**Tests:** app-test: arrows move items; Enter activates; Escape closes + restores key view (covers Radix + editor menus).
+**Tasks:** *(none — menus unchanged.)*
 
-**Checkpoint:** `just app-test` context-menu scenario `VERDICT: PASS`.
+**Checkpoint:** menu files unchanged; right-click → Copy still operates on the live selection.
 
 #### Step 11: Tame internal/tug-popup-menu {#step-11}
 
@@ -419,11 +419,11 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 **Depends on:** #step-10
 
-**Tasks:** The shared dropdown surface: trapped scope; arrows move the item cursor; Enter activates; Escape restores the trigger's key view.
+**RESOLVED — no change needed.** `internal/tug-popup-menu` is a Radix dropdown menu: arrows / Home·End / Enter / typeahead / Escape, the focus trap, and restore-to-trigger are all native (same reasoning as [#step-10]). No engine scope added.
 
-**Tests:** app-test: open via a popup button → arrows + Enter + Escape behave; key view restored.
+**Tasks:** *(none — menu unchanged.)*
 
-**Checkpoint:** `just app-test` popup-menu scenario `VERDICT: PASS`.
+**Checkpoint:** menu file unchanged.
 
 #### Step 12: Tame TugSheet {#step-12}
 
