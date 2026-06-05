@@ -42,7 +42,8 @@ export type TugSwitchSize = "xs" | "sm" | "md" | "lg";
 /**
  * Semantic role for the switch on-state color.
  *
- * Omit the role prop (or leave undefined) for the theme's accent color.
+ * Omit the role prop (or leave undefined) for the selection axis (blue) — the
+ * on-state color, independent of the accent/action roles.
  * Explicit roles override with a semantic signal color.
  *
  * @selector [data-role="<role>"]
@@ -60,7 +61,7 @@ export type TugSwitchRole =
  * Maps role prop values to toggle-track token suffixes.
  * The prop API uses "action" but the token system uses "active"
  * (e.g., --tug7-surface-toggle-track-normal-active-rest).
- * "accent" is not in this map — it's the implicit default when no role is provided.
+ * "on" is not in this map — it's the implicit default (the selection axis) when no role is provided.
  *
  * NOTE: the `action` key here is a role-prop value, not a chain-action
  * name from `TUG_ACTIONS`. The two `action` namespaces are unrelated;
@@ -123,7 +124,7 @@ export interface TugSwitchProps {
   /** Accessibility label when no visible label is provided. */
   "aria-label"?: string;
   /**
-   * Semantic role for the on-state track color. Omit for the theme's accent color.
+   * Semantic role for the on-state track color. Omit for the selection axis (blue).
    * Injects --tugx-toggle-on-color, --tugx-toggle-on-hover-color, and
    * --tugx-toggle-disabled-color as inline CSS custom properties.
    *
@@ -276,8 +277,9 @@ export const TugSwitch = React.forwardRef<HTMLButtonElement, TugSwitchProps>(
     });
 
     // Role injection — every path injects surface-toggle-track tokens. [L06]
-    // No role prop = accent. Single path, zero branches.
-    const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
+    // No role prop = the `on` role (the selection axis, blue) — decoupled from
+    // the accent role so a role recolor never moves the on color.
+    const tokenSuffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "on";
     const roleStyle = {
       "--tugx-toggle-on-color": `var(--tug7-surface-toggle-track-normal-${tokenSuffix}-rest)`,
       "--tugx-toggle-on-hover-color": `var(--tug7-surface-toggle-track-normal-${tokenSuffix}-hover)`,

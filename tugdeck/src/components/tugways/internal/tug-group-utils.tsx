@@ -16,7 +16,8 @@ import React from "react";
 /**
  * Semantic role for group component on-state color.
  *
- * Omit the role prop (or leave undefined) for the theme's accent color.
+ * Omit the role prop (or leave undefined) for the selection axis (blue) — the
+ * chosen-item color, independent of the accent/action roles.
  * Explicit roles override with a semantic signal color.
  */
 export type TugGroupRole =
@@ -32,7 +33,8 @@ export type TugGroupRole =
  * Maps role prop values to toggle-primary token suffixes.
  * The prop API uses "action" but the token system uses "active"
  * (e.g., --tug7-surface-toggle-primary-normal-active-rest).
- * "accent" is not in this map — it's the implicit default when no role is provided.
+ * "on" is not in this map — it's the implicit default when no role is provided
+ * (the selection axis; see below).
  *
  * NOTE: the `action` key here is a role-prop value, not a chain-action
  * name from `TUG_ACTIONS`. The two `action` namespaces are unrelated;
@@ -51,10 +53,14 @@ export const ROLE_TOKEN_MAP: Record<string, string> = {
 
 /**
  * Returns the token suffix for a given role.
- * Falls back to "accent" when no role is provided (the theme's default accent color).
+ *
+ * Falls back to the `on` role when no role is given — the **selection axis**,
+ * a fixed theme color (blue) independent of the accent/action roles. This is
+ * the disentanglement: a group's chosen-item indicator is "selected," not the
+ * accent brand color, so swapping the accent role never recolors it.
  */
 export function getRoleTokenSuffix(role?: TugGroupRole): string {
-  if (!role) return "accent";
+  if (!role) return "on";
   return ROLE_TOKEN_MAP[role] ?? role;
 }
 
@@ -62,7 +68,7 @@ export function getRoleTokenSuffix(role?: TugGroupRole): string {
  * Builds the CSS custom property object for role color injection.
  *
  * @param prefix - Component-specific CSS variable prefix (e.g., "radio", "segment", "option")
- * @param role - Optional semantic role; omit for accent color
+ * @param role - Optional semantic role; omit for the selection axis (blue)
  *
  * @example
  * buildRoleStyle("radio", "success")
