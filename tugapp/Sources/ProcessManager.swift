@@ -306,6 +306,12 @@ class ProcessManager {
         var viteEnv = ProcessInfo.processInfo.environment
         viteEnv["PATH"] = ProcessManager.shellPATH
         viteEnv["TUGCAST_PORT"] = String(tugcastPort)
+        // Vite's theme plugin shells out to `tugbank read dev.tugtool.app theme`
+        // (vite.config.ts) to build tug-active-theme.css. Without TUG_INSTANCE_ID
+        // that read falls through to the legacy default DB (~/.tugbank.db) instead
+        // of this app's per-instance DB, so the dev-rendered theme silently
+        // diverges from the splash and the rest of the app (per [D12]).
+        viteEnv[InstanceConfig.envInstanceID] = InstanceConfig.instanceId
         viteProc.environment = viteEnv
 
         viteProc.standardOutput = FileHandle.standardOutput

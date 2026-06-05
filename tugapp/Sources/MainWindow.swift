@@ -450,6 +450,14 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// Reads the theme name and source tree path from tugbank, then parses
     /// --tugx-host-canvas-color directly from the theme's CSS on disk.
     /// Falls back to the tugbank-cached value, then to brio's hardcoded color.
+    ///
+    /// `theme` is the single source of truth for which theme is active;
+    /// `window-background` is only a derived color cache for the native splash
+    /// in builds where the theme CSS isn't on disk (shipped production, no
+    /// source tree). To keep the two keys from ever disagreeing, whenever we
+    /// can read the authoritative color from the theme's CSS we write it back
+    /// to the cache — so a stale cache (e.g. from an external `tugbank write`
+    /// of `theme` while the app was closed) self-corrects at every startup.
     static func resolveStartupBackgroundHex() -> String {
         // 1. Try to derive from the theme's CSS file on disk
         if let theme = ProcessManager.readTugbank(domain: TugConfig.domain, key: "theme"),
@@ -458,6 +466,9 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
                 .appendingPathComponent("tugdeck/styles/themes/\(theme).css")
             if let css = try? String(contentsOfFile: cssPath, encoding: .utf8),
                let color = parseHostCanvasColor(css) {
+                // Refresh the derived cache so it always tracks `theme`.
+                ProcessManager.writeTugbank(
+                    domain: TugConfig.domain, key: TugConfig.keyWindowBackground, value: color)
                 return color
             }
         }
