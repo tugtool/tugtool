@@ -218,9 +218,9 @@ body {
    entry's input area dims and pointer events are blocked so the user
    can't start a second prompt in parallel. The toolbar remains visible
    and interactive — its buttons are gated separately by `snap.canSubmit`
-   on the submit button. `:first-child` targets the TugPromptInput wrapper
-   (the input is authored as the first child of the entry's root per
-   Spec S03); no new tokens per [D11].
+   on the submit button. The rule below dims `.tug-prompt-entry-input-area`
+   (the editor's wrapper, authored as the first child of the entry's root
+   per Spec S03); no new tokens per [D11].
    ----------------------------------------------------------------------------- */
 
 .tug-prompt-entry[data-phase="awaiting_approval"] .tug-prompt-entry-input-area {

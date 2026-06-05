@@ -673,7 +673,9 @@ build-app:
 # Usage:
 #   just app-test                          # full sweep
 #   just app-test at0001-tab-switch-fc.test.ts
-#                                          # single file
+#                                          # single file (bare name)
+#   just app-test tests/app-test/at0001-tab-switch-fc.test.ts
+#                                          # repo-relative path also works
 #   just app-test harness-smoke/smoke.test.ts at0003-pane-activation.test.ts
 #                                          # specific files in order
 #
@@ -771,6 +773,17 @@ app-test *FILES:
         read -r -a FILES <<< "$FILES_INPUT"
         SWEEP_LABEL="explicit-files"
     fi
+
+    # Normalize paths so a repo-root-relative path (e.g. the
+    # `tests/app-test/at0001-...` form tab-completion produces) works the same as
+    # a bare filename. The suite runs from tests/app-test/, so strip that prefix
+    # (and any leading `./`) from each entry before bun sees it.
+    for i in "${!FILES[@]}"; do
+        f="${FILES[$i]}"
+        f="${f#./}"
+        f="${f#tests/app-test/}"
+        FILES[$i]="$f"
+    done
 
     declare -a RESULT_ROWS=()
     declare -a FAILURE_BLOCKS=()
