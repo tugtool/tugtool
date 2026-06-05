@@ -793,6 +793,20 @@ export function TugSheetContent({
   // by the `data-scrim` attribute toggled in the show/hide effect below).
   // Both transitions use `--tug-motion-duration-moderate`, so they finish
   // visually together without explicit synchronization. [L13, D18]
+  //
+  // `paneFrameEl` is a dependency for a specific reason: the panel's *visible*
+  // state is held imperatively by this WAAPI animation (the CSS resting state
+  // for every presentation is the pre-enter / hidden geometry — opacity 0 for
+  // `scale-fade`, off-screen for `top`/`bottom` — so the panel is invisible
+  // until this runs). When the host card is re-hosted into another pane (e.g.
+  // dragged onto its tab bar), `createPortal`'s target changes and React
+  // rebuilds the panel node in the new frame; the rebuilt node has lost the
+  // animation that was holding it visible and would otherwise snap back to its
+  // hidden resting state. Re-running the entrance on the recreated node
+  // (keyed on the new `paneFrameEl`) re-establishes the shown state so the
+  // sheet survives the move instead of vanishing. The sheet stays open and
+  // usable in its new pane; its modality (scrim + `inert`) and geometry
+  // re-bind via their own `paneFrameEl`-keyed effects. ([D15] pane-modal.)
   useLayoutEffect(() => {
     if (!open || !mounted) return;
     const contentEl = sheetContentRef.current;
@@ -817,7 +831,7 @@ export function TugSheetContent({
       // didn't complete; subscribers will hear about the next
       // transition (will-hide / did-hide) instead.
     });
-  }, [open, mounted, cardIdForLifecycle, sheetLifecycle, presentation]);
+  }, [open, mounted, cardIdForLifecycle, sheetLifecycle, presentation, paneFrameEl]);
 
   // Exit animation: runs when !open && mounted (DOM still present for animation).
   useLayoutEffect(() => {
