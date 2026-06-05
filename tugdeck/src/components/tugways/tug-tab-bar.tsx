@@ -680,7 +680,10 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   // category so the top-level menu stays compact.
   const typePickerItems: TugPopupMenuEntry[] = (() => {
     const regs = Array.from(getAllRegistrations().values())
-      .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"));
+      .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"))
+      // `hidden` registrations stay in the registry (seedable by app-tests,
+      // resolvable by id) but never appear in the human-facing [+] menu.
+      .filter((reg) => reg.hidden !== true);
 
     // Group registrations by their declared `category` (see
     // CardRegistration.category in card-registry.ts). Sections and items

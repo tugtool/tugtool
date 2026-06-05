@@ -133,6 +133,16 @@ export interface CardRegistration {
    */
   category?: { label: string; icon?: string };
   /**
+   * Hide this registration from the type-picker [+] menu while keeping it
+   * fully registered (seedable by `componentId`, resolvable by
+   * `getRegistration`). For cards that exist only as app-test fixtures or
+   * narrow internal demos — they clutter the human-facing gallery menu but
+   * must stay in the registry so tests can seed them. The menu builder in
+   * `tug-tab-bar` filters these out; everything else treats them normally.
+   * @default false
+   */
+  hidden?: boolean;
+  /**
    * Engine classification for the activation pipeline.
    *
    * When set to `"em"` (engine-managed), the card's content factory

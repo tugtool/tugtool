@@ -967,6 +967,7 @@ export function registerGalleryCards(): void {
   // and the primitive consumes the derived data source.
   registerCard({
     componentId: "gallery-list-view-filter",
+    hidden: true,
     contentFactory: (_cardId) => <GalleryListViewFilter />,
     defaultMeta: { title: "TugListView (filter)", icon: "Search", closable: true },
     family: "developer",
@@ -994,6 +995,7 @@ export function registerGalleryCards(): void {
   // (`data-key-cursor`), with the cursor mutated as appearance — no re-render.
   registerCard({
     componentId: "gallery-focus-states",
+    hidden: true,
     contentFactory: (_cardId) => <GalleryFocusStates />,
     defaultMeta: { title: "Focus states", icon: "List", closable: true },
     family: "developer",
@@ -1008,6 +1010,7 @@ export function registerGalleryCards(): void {
   // ascends + restores.
   registerCard({
     componentId: "gallery-focus-nested",
+    hidden: true,
     contentFactory: (_cardId) => <GalleryFocusNested />,
     defaultMeta: { title: "Focus nested", icon: "List", closable: true },
     family: "developer",
@@ -1024,6 +1027,7 @@ export function registerGalleryCards(): void {
   // `tugplan-dev-picker-redesign`.
   registerCard({
     componentId: "gallery-list-view-headers",
+    hidden: true,
     contentFactory: (_cardId) => <GalleryListViewHeaders />,
     defaultMeta: { title: "TugListView (headers)", icon: "List", closable: true },
     family: "developer",
@@ -1043,6 +1047,7 @@ export function registerGalleryCards(): void {
   // `at0061-region-scroll-anchor-apply.test.ts`) drive this card.
   registerCard({
     componentId: "gallery-list-view-scroll-keyed",
+    hidden: true,
     contentFactory: (_cardId) => (
       <GalleryListView
         scrollKey="gallery-list-view-scroll"
