@@ -19,10 +19,11 @@
  * keeps only its fill.
  *
  * It shows on **keyboard** focus, never on a mouse click — a click leaves no
- * ring, and the mouse never moves the ring off the default ([P12]). action/blue,
- * `outline`-based: layout-free (it never shifts boxes) and it follows each
- * element's `border-radius` on WebKit, so no per-component radius bookkeeping is
- * needed.
+ * ring, and the mouse never moves the ring off the default ([P12]). The orange
+ * focus axis (`--tugx-focus-ring-color`), `outline`-based: layout-free (it never
+ * shifts boxes) and it follows each element's `border-radius`, with a default
+ * ring radius applied below so flat container key-views round too — no
+ * per-component radius bookkeeping.
  *
  * **One trigger: `[data-key-view-kbd]`** — the focus engine's own signal that it
  * moved the key view by keyboard (the Tab walk, surface entry, default-seed on
@@ -58,6 +59,16 @@
  * higher-specificity `outline: none` and are unaffected.
  */
 
+/* Ring geometry — the single source for the ring's thickness, gap, and corner
+   radius. These are theme-independent knobs (only the color is per-theme, the
+   orange focus axis `--tugx-focus-ring-color`). Tune the ring's WIDTH here, in
+   one place — it is no longer duplicated in the theme files. */
+:root {
+  --tugx-focus-ring-width: 1.5px;
+  --tugx-focus-ring-offset: 2px;
+  --tugx-focus-ring-radius: 6px;
+}
+
 :focus-visible {
   outline: none;
 }
@@ -65,6 +76,18 @@
 [data-key-view-kbd] {
   outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
   outline-offset: var(--tugx-focus-ring-offset);
+}
+
+/* Rounded corners on every ring, comprehensively. The ring is an `outline`,
+   which follows the key-view element's own `border-radius` — most controls
+   (buttons, inputs) already carry one and round naturally, but flat container
+   key-views (radio / choice / option / list / accordion roots) are square and
+   the ring reads harsh. `:where()` holds this at zero specificity, so a
+   component's own radius always wins; only the square container key-views pick
+   up the default ring radius. No per-component bookkeeping, no clobbering.
+   Applied to the key-within mark too so it matches. */
+:where([data-key-view-kbd], [data-key-within]) {
+  border-radius: var(--tugx-focus-ring-radius);
 }
 
 /**

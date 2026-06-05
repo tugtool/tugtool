@@ -149,10 +149,9 @@ body {
      theme color independent of the accent/action roles — a literal, not a role
      reference, so a future role recolor never drags the ring with it. (Selection
      is the other decoupled axis — the toggle `on` role + the selection surfaces
-     below.) One width, one offset, outline-based so it follows border-radius. */
+     below.) Ring width / offset / radius are single-sourced in focus-ring.css
+     (:root) — theme-independent; only the color (here) is per-theme. */
   --tugx-focus-ring-color: --tug-color(orange, t: 47);
-  --tugx-focus-ring-width: 1px;
-  --tugx-focus-ring-offset: 2px;
   /* Movement cursor / row hover for item-groups ([P03]/[Q01]) — a clearly
      visible neutral overlay, distinct from the selection accent. Brio overlays
      light on a dark surface. */
