@@ -69,26 +69,36 @@ describe.skipIf(!SHOULD_RUN)(
         );
         await app.type(inputSel("A"), "hello world");
 
-        // Select the whole value, then drive a button-0 secondary-click
-        // (pointerdown + contextmenu) on the field and report the resulting
-        // selection. This runs the real shared-hook + native-input-adapter
-        // right-click pipeline.
-        const result = await app.evalJS<{ start: number; end: number; value: string }>(
+        // Select the whole value, then dispatch a secondary-click (button 0 +
+        // ctrlKey = macOS Control-click) mousedown over the selection. The fix
+        // stops the clobber at the source: the surface's mousedown handler calls
+        // preventDefault for a secondary-click over a ranged selection, which is
+        // what keeps the browser from collapsing the selection to the click
+        // point. We assert the event was preventDefaulted (a cancelable
+        // synthetic MouseEvent reports defaultPrevented deterministically) and
+        // the selection is intact.
+        const result = await app.evalJS<{
+          defaultPrevented: boolean;
+          start: number;
+          end: number;
+          value: string;
+        }>(
           `(() => {
             const el = document.querySelector(${JSON.stringify(inputSel("A"))});
             el.focus();
             el.setSelectionRange(0, el.value.length);
             const r = el.getBoundingClientRect();
             const x = Math.round(r.left + 25), y = Math.round(r.top + r.height / 2);
-            el.dispatchEvent(new PointerEvent("pointerdown", { button: 0, ctrlKey: true, bubbles: true, clientX: x, clientY: y }));
-            el.dispatchEvent(new MouseEvent("contextmenu", { button: 0, ctrlKey: true, bubbles: true, cancelable: true, clientX: x, clientY: y }));
-            return { start: el.selectionStart, end: el.selectionEnd, value: el.value };
+            const e = new MouseEvent("mousedown", { button: 0, ctrlKey: true, bubbles: true, cancelable: true, clientX: x, clientY: y });
+            el.dispatchEvent(e);
+            return { defaultPrevented: e.defaultPrevented, start: el.selectionStart, end: el.selectionEnd, value: el.value };
           })()`,
         );
 
-        process.stderr.write(`\n[at0128] post-click selection: ${JSON.stringify(result)}\n`);
+        process.stderr.write(`\n[at0128] result: ${JSON.stringify(result)}\n`);
 
-        // The whole "hello world" selection must survive the secondary-click.
+        // preventDefault on the secondary-click mousedown is the stop-the-clobber.
+        expect(result.defaultPrevented, "secondary-click mousedown must be preventDefaulted").toBe(true);
         expect(result.value).toBe("hello world");
         expect(result).toMatchObject({ start: 0, end: 11 });
       } finally {

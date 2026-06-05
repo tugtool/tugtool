@@ -2,52 +2,42 @@
  * useTextSurfaceContextMenu — single source of truth for right-click
  * context menus on text-bearing surfaces.
  *
- * Consolidates the menu-state, pointerdown capture, contextmenu
- * pipeline, and `TugEditorContextMenu` render that previously lived
- * inline (and slightly differently) in four places: the editor host
- * (`tug-text-editor`), the markdown view (`tug-markdown-view`), the
- * native-input responder (`use-text-input-responder`), and the
- * transcript cells (`dev-card-transcript`). Selection mechanics
- * (CM6 transactions, native input setSelectionRange, DOM
- * setBaseAndExtent) live in the consumer's `TextSelectionAdapter`;
- * this hook owns the React-side wiring that's identical across them.
+ * Consolidates the menu-state, the secondary-click guard, the contextmenu
+ * pipeline, and the `TugEditorContextMenu` render across four surfaces: the
+ * editor host (`tug-text-editor`), the markdown view (`tug-markdown-view`), the
+ * native-input responder (`use-text-input-responder`), and the transcript cells
+ * (`dev-card-transcript`). The consumer's `TextSelectionAdapter` is query-only
+ * (`hasRangedSelection` / `getSelectedText` / `selectAll`); this hook owns the
+ * React-side wiring that's identical across them.
  *
  * Each consumer:
- *   - Constructs an adapter for its surface.
- *   - Calls `useTextSurfaceContextMenu({ adapter, capabilities, ... })`.
- *   - Attaches the returned `onPointerDown` / `onContextMenu` to its
- *     surface element (via React event props or a native listener,
- *     depending on the consumer's existing pattern).
+ *   - Constructs an adapter for its surface and passes it by ref.
+ *   - Calls `useTextSurfaceContextMenu({ adapterRef, capabilities, ... })`.
+ *   - Attaches the returned `onMouseDown` / `onContextMenu` to its surface
+ *     element (React event props or a native listener).
  *   - Renders the returned `menu` somewhere in its tree (it portals).
- *   - Registers its own action handlers on the responder chain — the
- *     hook does not own COPY/CUT/PASTE/SELECT_ALL implementations,
- *     because those are surface-specific (CodeMirror's clipboardExt,
- *     native execCommand, virtualized select-all CSS visual, etc.).
+ *   - Registers its own COPY/CUT/PASTE/SELECT_ALL handlers on the responder
+ *     chain (surface-specific: CodeMirror's clipboardExt, native execCommand,
+ *     virtualized select-all CSS visual, etc.).
  *
- * Right-click pipeline (adapter-driven):
+ * Right-click pipeline:
  *
- *   1. `onPointerDown(event)` — when `event.button === 2` and the
- *      adapter is non-null, calls `adapter.capturePreRightClick()` so
- *      the contextmenu handler can restore from a snapshot taken
- *      *before* the browser's mousedown ran.
+ *   1. `onMouseDown(event)` — **stop the secondary-click selection clobber at
+ *      the source.** For a secondary-click (right-click or macOS Control-click =
+ *      button 0 + ctrlKey) over a *ranged* selection it calls `preventDefault`,
+ *      so the surface never moves the caret to the click point on mousedown
+ *      (which would collapse the selection). No snapshot, no restore — the
+ *      selection simply isn't disturbed. (The CM6 editor stops its own pointer
+ *      selection with an equivalent guard in its `domEventHandlers.mousedown`.)
  *
- *   2. `onContextMenu(event)` — calls `event.preventDefault` to
- *      suppress the system menu, then asks the adapter to run the
- *      right-click pipeline (`prepareSelectionForRightClick`). The
- *      adapter restores its snapshot, classifies the click, and
- *      either keeps the restored range (`within-range`/`near-caret`)
- *      or expands to a fresh word at the click point (`elsewhere`).
- *      The result is committed via the surface's native API (CM6
- *      transaction, `setSelectionRange`, DOM `setBaseAndExtent`),
- *      which is what makes the selection survive the
- *      `preventDefault` — WebKit reverts only its own tentative
- *      smart-click, not JS-driven commits.
+ *   2. `onContextMenu(event)` — `preventDefault` (suppress the system menu),
+ *      sample `hasSelection` from the live selection
+ *      (`adapterRef.current.hasRangedSelection()`), open the menu at the click
+ *      point. The selection is already intact from step 1.
  *
- *   3. The adapter returns the resulting `hasSelection`. The hook
- *      stores it on `menuState` and rebuilds the menu's items via
- *      `buildTextEditingMenuItems({ hasSelection, canEdit })` so
- *      Cut / Copy / Paste / Select All enablement is consistent
- *      across every surface.
+ *   3. `hasSelection` drives `buildTextEditingMenuItems({ hasSelection, canEdit
+ *      })` so Cut / Copy / Paste / Select All enablement is consistent across
+ *      every surface.
  *
  * Optional `hasSelectionOverride`: a consumer can provide a function
  * that the hook calls *instead of* sampling from the adapter. The
@@ -101,7 +91,6 @@ import {
   type TextEditingMenuCapabilities,
 } from "./text-editing-menu";
 import type { TextSelectionAdapter } from "./text-selection-adapter";
-import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -118,15 +107,16 @@ export type TextSurfaceCapabilities = Omit<TextEditingMenuCapabilities, "hasSele
 
 export interface UseTextSurfaceContextMenuOptions {
   /**
-   * Selection adapter for the surface. The hook calls
-   * `capturePreRightClick` on right-button pointerdown and
-   * `prepareSelectionForRightClick` on contextmenu.
-   *
-   * `null` is supported for surfaces that have no selection model
-   * (the menu still opens via the contextmenu listener; `hasSelection`
-   * defaults to `false` unless `hasSelectionOverride` is supplied).
+   * **Ref** to the surface's selection adapter, dereferenced live at event time
+   * ([L07]) — the adapter is created in a layout effect after the surface mounts,
+   * so a render-time snapshot can be stale in the event handlers. The hook reads
+   * `adapterRef.current.hasRangedSelection()` to (a) decide whether a
+   * secondary-click `mousedown` should `preventDefault` (so the surface never
+   * collapses a ranged selection — the menu acts on the live selection), and (b)
+   * gate the menu's Cut / Copy. `null` for surfaces with no selection model (the
+   * markdown view), which rely on `hasSelectionOverride`.
    */
-  adapter: TextSelectionAdapter | null;
+  adapterRef: React.RefObject<TextSelectionAdapter | null> | null;
 
   /**
    * Whether the surface accepts text mutations (Cut, Paste). Read-only
@@ -137,30 +127,29 @@ export interface UseTextSurfaceContextMenuOptions {
   capabilities: TextSurfaceCapabilities;
 
   /**
-   * Optional override of the `hasSelection` sample taken from the
-   * adapter. When supplied, the hook calls this function instead of
-   * `adapter.prepareSelectionForRightClick`'s return value (the
-   * adapter's selection work still runs; only the menu-enablement
-   * sample is overridden). Used by `tug-markdown-view` to fold its
-   * `selectAllActiveRef` (CSS-visual select-all flag) into Copy
-   * enablement.
+   * Optional override of the `hasSelection` sample. When supplied, the hook
+   * calls this instead of `adapterRef.current.hasRangedSelection()` for menu
+   * enablement. Used by `tug-markdown-view` to fold its `selectAllActiveRef`
+   * (CSS-visual select-all flag) into Copy enablement.
    */
   hasSelectionOverride?: () => boolean;
 }
 
 export interface UseTextSurfaceContextMenuResult {
   /**
-   * Pointerdown handler. Attach to the surface element (via a
-   * `pointerdown` native listener inside `useLayoutEffect`, or via a
-   * React `onPointerDown` prop). On `event.button === 2`, calls
-   * `adapter.capturePreRightClick()`.
+   * Mousedown handler. Attach to the surface element (native listener or React
+   * prop). For a secondary-click (right-click or macOS Control-click) over a
+   * ranged selection it calls `preventDefault`, which stops the surface from
+   * collapsing the selection on the click — the context menu then acts on the
+   * live selection. A no-op for ordinary clicks and for collapsed-caret clicks
+   * (so a plain secondary-click still positions the caret for Paste).
    */
-  onPointerDown: (event: PointerEvent) => void;
+  onMouseDown: (event: MouseEvent) => void;
 
   /**
-   * Contextmenu handler. Attach to the surface element. Calls
-   * `preventDefault`, runs the adapter's right-click pipeline,
-   * computes `hasSelection`, opens the menu at the click point.
+   * Contextmenu handler. Attach to the surface element. Calls `preventDefault`
+   * (suppress the system menu), computes `hasSelection`, opens the menu at the
+   * click point.
    */
   onContextMenu: (event: MouseEvent) => void;
 
@@ -193,7 +182,7 @@ interface MenuState {
 export function useTextSurfaceContextMenu(
   options: UseTextSurfaceContextMenuOptions,
 ): UseTextSurfaceContextMenuResult {
-  const { adapter, capabilities, hasSelectionOverride } = options;
+  const { adapterRef, capabilities, hasSelectionOverride } = options;
 
   // The single piece of React state the hook owns: open/closed +
   // anchor + hasSelection sample. `null` means closed. Open is
@@ -205,56 +194,38 @@ export function useTextSurfaceContextMenu(
     setMenuState(null);
   }, []);
 
-  // Pointerdown — snapshot the pre-click selection so the contextmenu handler
-  // can restore it. [P01]: capture on EVERY pointerdown, not just button-2. The
-  // gesture that opens a context menu is not always a button-2 right-click — a
-  // macOS Control-click / trackpad secondary-tap arrives as button 0, and gating
-  // on `button === 2` skipped the snapshot for those, so nothing restored the
-  // selection and it collapsed/word-expanded before Copy ran. The snapshot is
-  // only *consumed* by a following `contextmenu`, so capturing on an ordinary
-  // click is harmless: the next pointerdown overwrites it and it is never read
-  // unless a context menu follows.
-  // TEMP rclk probe ([#investigation]): record the gesture.
-  const onPointerDown = useCallback(
-    (event: PointerEvent) => {
-      tugDevLogStore.info("rclk", "hook.onPointerDown", {
-        button: event.button,
-        ctrlKey: event.ctrlKey,
-        adapterPresent: adapter != null,
-      });
-      adapter?.capturePreRightClick();
+  // Mousedown — stop the secondary-click selection clobber at the source. A
+  // secondary-click (right-click or macOS Control-click = button 0 + ctrlKey)
+  // over a ranged selection otherwise lets the surface move the caret to the
+  // click point on mousedown, collapsing the selection before the menu's
+  // Cut / Copy can act. preventDefault keeps the selection intact; the OS
+  // contextmenu still fires, so the menu opens. Guarded on a live ranged
+  // selection so a plain-caret secondary-click still positions the caret.
+  const onMouseDown = useCallback(
+    (event: MouseEvent) => {
+      const adapter = adapterRef?.current ?? null;
+      const isSecondaryClick =
+        event.button === 2 || (event.button === 0 && event.ctrlKey);
+      if (isSecondaryClick && (adapter?.hasRangedSelection() ?? false)) {
+        event.preventDefault();
+      }
     },
-    [adapter],
+    [adapterRef],
   );
 
-  // Contextmenu — preventDefault, run adapter pipeline, compute
-  // hasSelection, open the menu.
+  // Contextmenu — suppress the system menu, sample hasSelection from the live
+  // selection, open the menu. No snapshot/restore: the mousedown above already
+  // kept the selection from collapsing.
   const onContextMenu = useCallback(
     (event: MouseEvent) => {
       event.preventDefault();
-      let hasSelection = false;
-      const selBefore = adapter?.getSelectedText?.() ?? "(no adapter)";
-      if (adapter !== null) {
-        hasSelection = adapter.prepareSelectionForRightClick(
-          event.clientX,
-          event.clientY,
-        );
-      }
-      // TEMP rclk probe ([#investigation]): what the adapter pipeline produced.
-      tugDevLogStore.info("rclk", "hook.onContextMenu", {
-        adapterPresent: adapter != null,
-        selBefore,
-        selAfter: adapter?.getSelectedText?.() ?? "(no adapter)",
-        hasSelection,
-      });
-      // Override hook: markdown view's CSS-visual select-all is
-      // hasSelection-true even when no DOM range exists.
+      let hasSelection = adapterRef?.current?.hasRangedSelection() ?? false;
       if (hasSelectionOverride !== undefined) {
         hasSelection = hasSelectionOverride();
       }
       setMenuState({ x: event.clientX, y: event.clientY, hasSelection });
     },
-    [adapter, hasSelectionOverride],
+    [adapterRef, hasSelectionOverride],
   );
 
   // Build the menu items via the shared builder so every surface
@@ -288,7 +259,7 @@ export function useTextSurfaceContextMenu(
     ) : null;
 
   return {
-    onPointerDown,
+    onMouseDown,
     onContextMenu,
     menu,
     closeMenu,

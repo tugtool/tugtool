@@ -212,27 +212,17 @@ function stripUserBodyPrefix(text: string): string {
  * THIS cell's `COPY` / `SELECT_ALL` handlers — no
  * `makeFirstResponder` boilerplate needed.
  *
- * The cell uses a `HighlightSelectionAdapter` scoped to its body
- * element. The adapter handles the smart-click pipeline that fixed
- * the "right-click selects a word but Copy then fails" bug —
- * `prepareSelectionForRightClick` JS-commits the selection so it
- * survives the contextmenu's `preventDefault`, regardless of whether
- * the user had a prior selection or relied on WebKit's smart-click.
- *
- * `useTextSurfaceContextMenu` requires a non-null adapter at
- * hook-call time to set up the right-click pipeline, but our cell's
- * body element isn't available until after the cell mounts. We hold
- * the adapter in a ref that a layout-effect populates from the body
- * ref, and pass `adapterRef.current` to the hook. On the first
- * render the adapter is `null` (no body yet) — `useTextSurfaceContextMenu`
- * tolerates that and skips the pipeline; by the time the user can
- * right-click, the body has rendered and the layout-effect has
- * filled the adapter ref.
+ * The cell uses a query-only `HighlightSelectionAdapter` scoped to its body
+ * element (for the menu's Cut / Copy enablement). Selection preservation on a
+ * secondary-click is handled by the hook's `onMouseDown` preventDefault guard
+ * (wired to the cell's `onMouseDown`), so the selection is never collapsed and
+ * there is no capture/restore. The adapter is held in a ref the hook reads
+ * live; it is `null` until the body mounts (the hook tolerates that).
  */
 interface TranscriptCellProps {
   ref: (node: Element | null) => void;
   onContextMenu: (event: React.MouseEvent) => void;
-  onPointerDown: (event: React.PointerEvent) => void;
+  onMouseDown: (event: React.MouseEvent) => void;
   /**
    * `tabIndex={-1}` makes the cell click-focusable (programmatically
    * focusable, not in the tab order). This matters because the
@@ -322,18 +312,19 @@ function useTranscriptCellMenu(): {
   // land on this cell's handlers regardless of first-responder
   // state. Same canonical L11 shape every other tugway control uses.
   const {
-    onPointerDown: hookPointerDown,
+    onMouseDown: hookMouseDown,
     onContextMenu: hookContextMenu,
     menu,
   } = useTextSurfaceContextMenu({
-    adapter: adapterRef.current,
+    adapterRef,
     capabilities: { canEdit: false },
   });
 
   // The hook returns native-event handlers; the cell wires them
   // through React event props. `onContextMenu` calls
   // `event.preventDefault` inside, so the system menu is suppressed
-  // even when no adapter is attached yet.
+  // even when no adapter is attached yet. `onMouseDown` preventDefaults a
+  // secondary-click over a range so the selection isn't collapsed.
   const handleContextMenu = useCallback(
     (event: React.MouseEvent) => {
       hookContextMenu(event.nativeEvent);
@@ -341,11 +332,11 @@ function useTranscriptCellMenu(): {
     [hookContextMenu],
   );
 
-  const handlePointerDown = useCallback(
-    (event: React.PointerEvent) => {
-      hookPointerDown(event.nativeEvent);
+  const handleMouseDown = useCallback(
+    (event: React.MouseEvent) => {
+      hookMouseDown(event.nativeEvent);
     },
-    [hookPointerDown],
+    [hookMouseDown],
   );
 
   return {
@@ -353,7 +344,7 @@ function useTranscriptCellMenu(): {
     cellProps: {
       ref: responderRef as (node: Element | null) => void,
       onContextMenu: handleContextMenu,
-      onPointerDown: handlePointerDown,
+      onMouseDown: handleMouseDown,
       tabIndex: -1,
     },
     bodyRef,

@@ -169,7 +169,6 @@ import {
 } from "@/lib/tug-native-clipboard";
 import {
   type TextSelectionAdapter,
-  type RightClickClassification,
   findWordBoundaries,
 } from "./text-selection-adapter";
 import { matchEditingKeybinding } from "./text-editing-keybindings";
@@ -252,92 +251,23 @@ export type TextInputLikeElement = HTMLInputElement | HTMLTextAreaElement;
 // ---------------------------------------------------------------------------
 
 /**
- * Factory that wraps a native `<input>` or `<textarea>` element in a
- * `TextSelectionAdapter`.
- *
- * Pre-right-click capture lives on the unified
- * `TextSelectionAdapter.capturePreRightClick` API; the right-click
- * pipeline (restore-or-expand-and-commit) is encapsulated in
- * `prepareSelectionForRightClick` and consumed by
- * `useTextSurfaceContextMenu`. Native inputs use offset comparison
- * (not geometry) to classify the click, since the browser's
- * mousedown has already placed the caret at the click point.
+ * Factory that wraps a native `<input>` or `<textarea>` element in a query-only
+ * `TextSelectionAdapter` (`hasRangedSelection` / `getSelectedText` / `selectAll`)
+ * for the right-click context menu. Selection *preservation* on a secondary-click
+ * is handled by the input's `mousedown` preventDefault guard
+ * (`useTextSurfaceContextMenu`'s `onMouseDown`), not by this adapter.
  *
  * @param el  The host `<input>` or `<textarea>` DOM element.
  */
 export function createNativeInputAdapter(
   el: TextInputLikeElement,
 ): TextSelectionAdapter {
-  // Snapshot of the selection state captured at pointerdown (button === 2).
-  // `classifyRightClick` reads this to compare against the post-mousedown
-  // browser-placed caret. Initialized to null — `capturePreRightClick`
-  // must be called before `classifyRightClick` for a meaningful result.
-  let preRightClickStart: number | null = null;
-  let preRightClickEnd: number | null = null;
-
   function hasRangedSelection(): boolean {
     return (
       el.selectionStart !== null &&
       el.selectionEnd !== null &&
       el.selectionStart !== el.selectionEnd
     );
-  }
-
-  function expandToWord(): void {
-    const offset = el.selectionStart ?? 0;
-    const { start, end } = findWordBoundaries(el.value, offset);
-    el.setSelectionRange(start, end);
-  }
-
-  function classifyRightClick(
-    _clientX: number,
-    _clientY: number,
-  ): RightClickClassification {
-    const newOffset = el.selectionStart;
-    if (newOffset === null) return "elsewhere";
-
-    const capturedStart = preRightClickStart;
-    const capturedEnd = preRightClickEnd;
-
-    // No snapshot — treat as "elsewhere".
-    if (capturedStart === null || capturedEnd === null) return "elsewhere";
-
-    const capturedIsCollapsed = capturedStart === capturedEnd;
-
-    if (capturedIsCollapsed) {
-      // Case 1: collapsed selection — click is near the caret if the
-      // browser placed the new caret within the same word. Pixel
-      // distance isn't available for native inputs (no DOM Range for
-      // their internal text layout), so word boundaries are the best
-      // geometric proxy — they scale naturally with font size and
-      // character width.
-      const word = findWordBoundaries(el.value, capturedStart);
-      const inSameWord = word.start !== word.end
-        && newOffset >= word.start
-        && newOffset <= word.end;
-      return inSameWord ? "near-caret" : "elsewhere";
-    }
-
-    // Case 2: ranged selection — click is within the range if the browser
-    // placed the caret inside [capturedStart, capturedEnd).
-    if (newOffset >= capturedStart && newOffset < capturedEnd) {
-      return "within-range";
-    }
-
-    // Case 3: click fell outside the selection.
-    return "elsewhere";
-  }
-
-  /**
-   * Restore the captured pre-right-click range via `setSelectionRange`.
-   * Internal helper for `prepareSelectionForRightClick`'s
-   * `"within-range"` / `"near-caret"` branches; no longer part of the
-   * adapter's external API now that `prepareSelectionForRightClick`
-   * encapsulates the full pipeline.
-   */
-  function restoreFromSnapshot(): void {
-    if (preRightClickStart === null || preRightClickEnd === null) return;
-    el.setSelectionRange(preRightClickStart, preRightClickEnd);
   }
 
   return {
@@ -350,52 +280,6 @@ export function createNativeInputAdapter(
 
     selectAll(): void {
       el.select();
-    },
-
-    expandToWord,
-
-    classifyRightClick,
-
-    selectWordAtPoint(_clientX: number, _clientY: number): void {
-      // The browser already placed the caret via mousedown; expand to
-      // word from there. Native inputs don't expose the geometric
-      // `caretPositionFromPoint` API.
-      expandToWord();
-    },
-
-    capturePreRightClick(): void {
-      preRightClickStart = el.selectionStart;
-      preRightClickEnd = el.selectionEnd;
-    },
-
-    /**
-     * Right-click pipeline:
-     *
-     *   1. The browser's mousedown has already moved the caret to the
-     *      click point and (for native inputs) discarded any prior
-     *      ranged selection. Classify against the snapshot.
-     *   2. On `"elsewhere"`, leave the browser-placed caret and expand
-     *      to word — `selectWordAtPoint` is `expandToWord` for native
-     *      inputs.
-     *   3. On `"within-range"` or `"near-caret"`, restore the snapshot
-     *      via `setSelectionRange` (the JS-driven commit that survives
-     *      `preventDefault`).
-     *
-     * Returns `hasRangedSelection()` for the menu's Cut / Copy gates.
-     */
-    prepareSelectionForRightClick(
-      clientX: number,
-      clientY: number,
-    ): boolean {
-      const classification = classifyRightClick(clientX, clientY);
-      if (classification === "elsewhere") {
-        expandToWord();
-      } else {
-        restoreFromSnapshot();
-      }
-      preRightClickStart = null;
-      preRightClickEnd = null;
-      return hasRangedSelection();
     },
   };
 }
@@ -828,12 +712,10 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
 
   // ---- Right-click context menu via shared hook ----
   //
-  // A single `TextSelectionAdapter` instance lives in a ref for the
-  // input's lifetime; the hook calls `capturePreRightClick` on
-  // right-button pointerdown and `prepareSelectionForRightClick` on
-  // contextmenu. Both flows operate against the same `el`, so
-  // creating the adapter once per element (rather than per click) is
-  // sufficient.
+  // A single query-only `TextSelectionAdapter` instance lives in a ref for the
+  // input's lifetime; the hook reads it live (via the ref) to gate the menu's
+  // Cut / Copy and to decide whether a secondary-click mousedown should
+  // preventDefault. Creating it once per element is sufficient.
   const adapterRef = useRef<TextSelectionAdapter | null>(null);
   useLayoutEffect(() => {
     const el = inputRef.current;
@@ -841,30 +723,29 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   }, [inputRef]);
 
   const {
-    onPointerDown: hookPointerDown,
+    onMouseDown: hookMouseDown,
     onContextMenu: hookContextMenu,
     menu: hookMenu,
   } = useTextSurfaceContextMenu({
-    adapter: adapterRef.current,
+    adapterRef,
     capabilities: { canEdit: true },
   });
 
-  // Native pointerdown listener so the hook's `capturePreRightClick`
-  // runs *before* the browser's mousedown moves the caret. The hook
-  // returns a stable React-style handler; we wrap it to dispatch as
-  // a native PointerEvent.
+  // Native mousedown listener: stop the secondary-click selection clobber at the
+  // source. The hook's onMouseDown preventDefaults a right-click / Control-click
+  // over a ranged selection, so the browser never collapses the selection — the
+  // context menu then acts on the live selection.
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    const onPointerDown = (e: Event) => {
-      if (!(e instanceof PointerEvent)) return;
-      hookPointerDown(e);
+    const onMouseDown = (e: Event) => {
+      if (e instanceof MouseEvent) hookMouseDown(e);
     };
-    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("mousedown", onMouseDown);
     return () => {
-      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("mousedown", onMouseDown);
     };
-  }, [inputRef, hookPointerDown]);
+  }, [inputRef, hookMouseDown]);
 
   // ---- Editing keystroke listener ----
   //
@@ -872,7 +753,7 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   // `matchEditingKeybinding` per [DM01]. Registration uses
   // `useLayoutEffect` per [L03] so the listener is in place before
   // any user keystroke can reach the element after mount — same
-  // pattern as the pointerdown registration above.
+  // pattern as the mousedown registration above.
   //
   // On a null match the listener returns immediately (no
   // `preventDefault`), so AppKit's field editor still handles the

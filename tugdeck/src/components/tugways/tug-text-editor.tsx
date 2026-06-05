@@ -80,7 +80,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
 import {
@@ -105,7 +105,6 @@ import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
 } from "@/lib/tug-native-clipboard";
-import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { tugTheme } from "./tug-text-editor/theme";
 import { hostFocusMirror } from "./tug-text-editor/host-state";
 import {
@@ -751,13 +750,12 @@ function buildExtensions(
     // [P02] A secondary-click (right-click or macOS Control-click) over a ranged
     // selection must NOT move the caret — it opens the context menu, which acts on
     // the existing selection. CodeMirror's built-in pointer selection otherwise
-    // dispatches a `select.pointer` transaction that collapses the selection to
-    // the click point (even after the shared hook's capture/restore runs, so
-    // restoring-after is the wrong shape here). This handler runs before CM6's
-    // built-in mouse handling; returning `true` suppresses CM6's pointer selection
-    // for this click. The OS-level `contextmenu` still fires, so the menu opens.
-    // Only guards when a range exists — a plain-caret secondary-click still
-    // positions the caret (Paste-at-click).
+    // dispatches a `select.pointer` transaction on mouseup that collapses the
+    // selection to the click point. This handler runs before CM6's built-in mouse
+    // handling; returning `true` suppresses CM6's pointer selection for this
+    // click. The OS-level `contextmenu` still fires, so the menu opens. Only
+    // guards when a range exists — a plain-caret secondary-click still positions
+    // the caret (Paste-at-click).
     EditorView.domEventHandlers({
       mousedown(event, view) {
         const sel = view.state.selection.main;
@@ -766,24 +764,6 @@ function buildExtensions(
           event.button === 2 || (event.button === 0 && event.ctrlKey);
         return hasRange && isSecondaryClick;
       },
-    }),
-    // TEMP rclk probe ([#investigation]): catch the exact transaction that
-    // collapses a ranged selection and dump a stack trace naming the clobberer.
-    EditorView.updateListener.of((update) => {
-      if (!update.selectionSet) return;
-      const before = update.startState.selection.main;
-      const after = update.state.selection.main;
-      if (before.from !== before.to && after.from === after.to) {
-        tugDevLogStore.warn("rclk", "CM6 SELECTION CLOBBERED", {
-          before: `${before.from}-${before.to}`,
-          after: `${after.from}-${after.to}`,
-          focused: update.view.hasFocus,
-          userEvents: update.transactions.map(
-            (t) => t.annotation(Transaction.userEvent) ?? "(none)",
-          ),
-          stack: new Error().stack,
-        });
-      }
     }),
     // Host-supplied extensions are layered first so they sit BELOW the
     // substrate's keymap / theme precedence. A compound component that
@@ -1467,55 +1447,35 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const cmAdapterRef = useRef<TextSelectionAdapter | null>(null);
     useLayoutEffect(() => {
       cmAdapterRef.current = view !== null ? createCMSelectionAdapter(view) : null;
-      // Test-only: expose the EditorView on its contentDOM so app-tests can seed
-      // text + selection via a transaction. Native keystrokes don't land in an
-      // unattended (non-key-window) test run, so JS seeding is the only reliable
-      // path; gated on `__tugTestMode` so it never ships to normal builds.
-      if (
-        view !== null &&
-        typeof window !== "undefined" &&
-        (window as Window & { __tugTestMode?: boolean }).__tugTestMode === true
-      ) {
-        (view.contentDOM as unknown as { __tugEditorView?: EditorView }).__tugEditorView = view;
-      }
     }, [view]);
 
     const {
-      onPointerDown: onContextMenuPointerDown,
       onContextMenu: onContextMenuOpen,
       menu: contextMenu,
     } = useTextSurfaceContextMenu({
-      adapter: cmAdapterRef.current,
+      adapterRef: cmAdapterRef,
       capabilities: { canEdit: true },
     });
 
-    // Attach the hook's listeners only when the click lands inside the
-    // editor's own contentDOM — clicks on host padding fall through to
-    // the browser's native menu, matching the legacy behavior. The
-    // listeners themselves are stable (returned by the hook); this
-    // effect handles the wiring + the contentDOM-membership gate.
+    // Attach the contextmenu listener only when the click lands inside the
+    // editor's own contentDOM — clicks on host padding fall through to the
+    // browser's native menu. The selection clobber itself is stopped by the CM6
+    // `domEventHandlers.mousedown` in buildExtensions (CM6's own pointer
+    // selection), so no mousedown wiring is needed here.
     useLayoutEffect(() => {
       const host = hostRef.current;
       if (host === null) return;
-      const handlePointerDown = (e: PointerEvent) => {
-        const v = viewRef.current;
-        if (v === null) return;
-        if (!v.dom.contains(e.target as Node)) return;
-        onContextMenuPointerDown(e);
-      };
       const handleContextMenu = (e: MouseEvent) => {
         const v = viewRef.current;
         if (v === null) return;
         if (!v.dom.contains(e.target as Node)) return;
         onContextMenuOpen(e);
       };
-      host.addEventListener("pointerdown", handlePointerDown);
       host.addEventListener("contextmenu", handleContextMenu);
       return () => {
-        host.removeEventListener("pointerdown", handlePointerDown);
         host.removeEventListener("contextmenu", handleContextMenu);
       };
-    }, [onContextMenuPointerDown, onContextMenuOpen]);
+    }, [onContextMenuOpen]);
 
     // ---------------------------------------------------------------
     // Responder-chain action handlers
@@ -1575,13 +1535,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const handleCopy = useCallback((): ActionHandlerResult => {
       const view = viewRef.current;
       if (view === null) return;
-      // TEMP rclk probe ([#investigation]): the selection the copy actually reads.
-      const sel = view.state.selection.main;
-      tugDevLogStore.info("rclk", "CM6 handleCopy", {
-        from: sel.from,
-        to: sel.to,
-        text: view.state.sliceDoc(sel.from, sel.to),
-      });
       view.focus();
       document.execCommand("copy");
     }, []);

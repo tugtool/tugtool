@@ -1208,7 +1208,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     onContextMenu: hookContextMenu,
     menu: contextMenuNode,
   } = useTextSurfaceContextMenu({
-    adapter: null,
+    adapterRef: null,
     capabilities: { canEdit: false },
     hasSelectionOverride: () => {
       if (selectAllActiveRef.current) return true;
