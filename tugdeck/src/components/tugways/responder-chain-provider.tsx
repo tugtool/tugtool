@@ -23,7 +23,7 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
-import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, BASE_FOCUS_MODE } from "./focus-manager";
+import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager } from "./focus-manager";
 import { resolveFocusAct } from "./focus-act";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
@@ -180,6 +180,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // listeners below — registrations events depend on must be live before
     // paint ([L03]). Detached in cleanup.
     focusManager.attach(manager);
+
+    // Expose the engine to the single-channel focus dispatcher (`applyBagFocus`)
+    // so a focus-axis restore can re-light the keyboard ring. Cleared on unmount.
+    registerFocusManager(focusManager);
 
     // Keep the focus walk's keyboard-access mode in sync with the store. The
     // store is the source of truth (structure zone, [L02]); the manager holds
@@ -545,7 +549,12 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // dispatch and need the first responder to stay on the
       // editor, so skipping promotion here is correct for both.
       if (isFocusRefusing(event.target)) return;
-      promoteFromTarget(event.target as Node | null);
+      // Mark this promotion pointer-driven so the key-view seeding coarsens to
+      // the promoted responder and clears the ring (click-to-focus). Programmatic
+      // promotions (focusin from `.focus()`, boot restore) are not wrapped, so
+      // they yield to an established finer focusable key view instead of dropping
+      // its ring.
+      focusManager.runPointerPromotion(() => promoteFromTarget(event.target as Node | null));
     }
 
     function preventFocusOnMouseDown(event: MouseEvent): void {
@@ -599,6 +608,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       selectionGuard.detach();
       unsubscribeKeyboardAccess();
       unsubscribeRingModality();
+      registerFocusManager(null);
       focusManager.detach();
     };
   }, [manager, focusManager]);

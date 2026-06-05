@@ -317,7 +317,9 @@ export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
 
   const focusKey = active.getAttribute("data-tug-focus-key");
   if (focusKey !== null && focusKey !== "") {
-    return { kind: "dom", focusKey };
+    // Carry the engine's keyboard-ring modality so it resumes on restore
+    // (`data-key-view-kbd` is projected onto the key-view focusable).
+    return { kind: "dom", focusKey, keyboard: active.hasAttribute("data-key-view-kbd") };
   }
 
   for (const selector of COMPONENT_OWNED_SELECTORS) {

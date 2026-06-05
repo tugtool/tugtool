@@ -116,22 +116,32 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
     };
   }, [manager, id, group, order, policy, register, focusMode]);
 
-  // Stable ref callback that writes `data-tug-focusable` only when a manager
-  // is in scope. Mirrors `useOptionalResponder`'s `responderRef`: the DOM
-  // element is never replaced across a provider transition, only the
-  // attribute flips.
+  // A stop authored into a focus group opts into the focus-preservation axis
+  // ([card-state-model]): a stable `data-tug-focus-key` (its authored
+  // `group:order`, identical every mount — unlike the per-render `useId()`)
+  // lets `captureFocus` record it as `{ kind: "dom" }` and `applyBagFocus`
+  // resolve the same element on cold-boot restore, carrying the keyboard ring
+  // with it. Un-authored stops (no `group`) are not restorable and stay out.
+  const focusKey = register && group !== "" ? `${group}:${order}` : null;
+
+  // Stable ref callback that writes `data-tug-focusable` (and the focus-key)
+  // only when a manager is in scope. Mirrors `useOptionalResponder`'s
+  // `responderRef`: the DOM element is never replaced across a provider
+  // transition, only the attribute flips.
   const focusableRef = useCallback(
     (el: Element | null) => {
       const prev = currentElementRef.current;
       if (prev && prev !== el) {
         prev.removeAttribute("data-tug-focusable");
+        prev.removeAttribute("data-tug-focus-key");
       }
       if (el && manager !== null && register) {
         el.setAttribute("data-tug-focusable", id);
+        if (focusKey !== null) el.setAttribute("data-tug-focus-key", focusKey);
       }
       currentElementRef.current = el;
     },
-    [id, manager, register],
+    [id, manager, register, focusKey],
   );
 
   return { focusableRef };

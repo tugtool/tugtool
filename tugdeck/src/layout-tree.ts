@@ -221,7 +221,10 @@ export interface DomSelectionSnapshot {
 export type FocusSnapshot =
   | { kind: "none" }
   | { kind: "form-control"; componentStatePreservationKey: string }
-  | { kind: "dom"; focusKey: string }
+  // `keyboard` records whether this focusable was the engine's *keyboard* key
+  // view (wearing the focus ring, `data-key-view-kbd`) at save. Restored so the
+  // ring resumes across reload / relaunch on exactly the element focus lands on.
+  | { kind: "dom"; focusKey: string; keyboard?: boolean }
   | { kind: "engine" };
 
 /**

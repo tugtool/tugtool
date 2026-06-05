@@ -1,16 +1,16 @@
 /**
- * at0111-blue-keyboard-active.test.ts — blue is confined to the keyboard-active
+ * at0111-blue-keyboard-active.test.ts — orange is confined to the keyboard-active
  * axis, not selection.
  *
- * The color contract, end state: a **selected-and-focused** element must read as
- * two distinct things at once — an **orange** selection fill and a **blue**
- * focus ring — and a default **CTA** button must stay **blue**. This pins the
- * three tokens such an element (and a CTA) actually paint, and proves the two
- * selection-vs-focus hues are far apart (so "selected" and "keyboard-active" are
- * no longer the same color):
- *   - `--tugx-list-row-selected-bg` (the fill a selected row paints) → orange;
- *   - `--tugx-focus-ring-color` (the ring a focused element paints) → blue;
- *   - `--tug7-surface-control-primary-filled-action-rest` (the CTA) → blue.
+ * The color contract, end state (after the accent/action role swap): a
+ * **selected-and-focused** element must read as two distinct things at once — a
+ * **blue** selection fill and an **orange** focus ring — and a default **CTA**
+ * button must stay **orange**. This pins the three tokens such an element (and a
+ * CTA) actually paint, and proves the two selection-vs-focus hues are far apart
+ * (so "selected" and "keyboard-active" are not the same color):
+ *   - `--tugx-list-row-selected-bg` (the fill a selected row paints) → blue;
+ *   - `--tugx-focus-ring-color` (the ring a focused element paints) → orange;
+ *   - `--tug7-surface-control-primary-filled-action-rest` (the CTA) → orange.
  *
  * Hue is read from each token's build-expanded `oklch(L C H …)` value — robust
  * against tone/intensity tuning and theme differences, since orange and blue sit
@@ -61,9 +61,9 @@ const ORANGE_HI = 110;
 const BLUE_LO = 200;
 const BLUE_HI = 290;
 
-describe.skipIf(!SHOULD_RUN)("AT0111: blue is the keyboard-active axis, not selection", () => {
+describe.skipIf(!SHOULD_RUN)("AT0111: orange is the keyboard-active axis, not selection", () => {
   test(
-    "selected fill is orange, focus ring is blue, CTA is blue — selection and focus are distinguishable",
+    "selected fill is blue, focus ring is orange, CTA is orange — selection and focus are distinguishable",
     async () => {
       const app = await launchTugApp({ testName: "at0111-blue-keyboard-active" });
       try {
@@ -87,20 +87,20 @@ describe.skipIf(!SHOULD_RUN)("AT0111: blue is the keyboard-active axis, not sele
         const focusRingHue = oklchHue(focusRingRaw);
         const ctaHue = oklchHue(ctaRaw);
 
-        // A selected row's fill is orange.
+        // A selected row's fill is blue (the selection axis).
         expect(selectedHue).not.toBeNull();
-        expect(selectedHue).toBeGreaterThan(ORANGE_LO);
-        expect(selectedHue).toBeLessThan(ORANGE_HI);
+        expect(selectedHue).toBeGreaterThan(BLUE_LO);
+        expect(selectedHue).toBeLessThan(BLUE_HI);
 
-        // The focus ring (keyboard-active axis) is blue.
+        // The focus ring (keyboard-active axis) is orange.
         expect(focusRingHue).not.toBeNull();
-        expect(focusRingHue).toBeGreaterThan(BLUE_LO);
-        expect(focusRingHue).toBeLessThan(BLUE_HI);
+        expect(focusRingHue).toBeGreaterThan(ORANGE_LO);
+        expect(focusRingHue).toBeLessThan(ORANGE_HI);
 
-        // The default CTA stays blue.
+        // The default CTA stays on the keyboard-active axis — orange.
         expect(ctaHue).not.toBeNull();
-        expect(ctaHue).toBeGreaterThan(BLUE_LO);
-        expect(ctaHue).toBeLessThan(BLUE_HI);
+        expect(ctaHue).toBeGreaterThan(ORANGE_LO);
+        expect(ctaHue).toBeLessThan(ORANGE_HI);
 
         // Selection and keyboard-active are no longer the same color: the two
         // hues are far apart, so a selected-and-focused element reads as both.

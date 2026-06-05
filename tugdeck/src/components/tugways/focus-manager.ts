@@ -235,6 +235,17 @@ export class FocusManager {
   // the first Tab into a freshly-revealed card. Suppress the chain re-seed for
   // the duration of that programmatic focus so the walk's choice stands.
   private suppressChainSeed = false;
+  // Set while a *pointer*-driven first-responder promotion runs (see
+  // `runPointerPromotion`). A pointer interaction re-seeds the key view to the
+  // promoted responder and clears the ring (click-to-focus); any other chain
+  // reflection is programmatic and yields to a finer focusable key view rather
+  // than coarsening it — the boot-restore protection in `seedKeyViewFromChain`.
+  private pointerPromotionActive = false;
+  // Focus keys (`group:order`) of keyboard key views whose focusable had not
+  // mounted when the focus axis restored ([focus-transfer] `deferred-dom`). The
+  // ring re-lights the moment a matching focusable registers — the late-mount
+  // retry for the keyboard ring across reload / relaunch.
+  private pendingKeyboardRestore = new Set<string>();
 
   // ---- Chain attachment (key-view seeding) ----
 
@@ -257,11 +268,66 @@ export class FocusManager {
       // key view: the `focusin` from that programmatic `.focus()` must not
       // re-seed (and downgrade) the key view it just set.
       if (this.suppressChainSeed) return;
-      this.setKeyView(chain.getFirstResponder());
+      this.seedKeyViewFromChain();
     });
     // Seed immediately so the key view reflects whatever the chain already
     // promoted before this subscription was installed.
-    this.setKeyView(chain.getFirstResponder());
+    this.seedKeyViewFromChain();
+  }
+
+  /**
+   * Reflect the chain's first responder onto the key view — the chain-seeding
+   * path. The key view is the most *specific* focus target: when the Tab walk or
+   * the focus-axis restore ([focus-transfer]) has already set the key view to a
+   * registered focusable, a chain reflection that merely re-promotes that
+   * focusable's coarser *container* (its card-root responder) must not coarsen
+   * the key view back to the container or drop its keyboard ring — it yields.
+   * This is what lets a keyboard ring survive the wave of programmatic
+   * promotions that fire during cold-boot focus restore (the boot bug). Only a
+   * genuine pointer interaction (run through {@link runPointerPromotion}, which
+   * re-seeds and clears the ring — click-to-focus) or a reflection that moves to
+   * a different subtree changes an established finer key view.
+   */
+  private seedKeyViewFromChain(): void {
+    if (this.chain === null) return;
+    const frId = this.chain.getFirstResponder();
+    if (!this.pointerPromotionActive && this.keyViewIsFinerThan(frId)) return;
+    this.setKeyView(frId);
+  }
+
+  /**
+   * Whether the current key view is a registered focusable whose element lives
+   * inside the element of `responderId` — i.e. the key view is *finer* than the
+   * responder the chain just promoted. DOM-free environments and unmatched ids
+   * resolve to `false` (no yield), preserving the bare-reflection behavior.
+   */
+  private keyViewIsFinerThan(responderId: string | null): boolean {
+    if (responderId === null || this.keyViewId === null) return false;
+    if (!this.focusables.has(this.keyViewId)) return false;
+    if (typeof document === "undefined") return false;
+    const esc = (s: string) =>
+      typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(s) : s;
+    const kvEl = document.querySelector(`[data-tug-focusable="${esc(this.keyViewId)}"]`);
+    const rEl = document.querySelector(`[data-responder-id="${esc(responderId)}"]`);
+    if (kvEl === null || rEl === null) return false;
+    return rEl.contains(kvEl);
+  }
+
+  /**
+   * Run `fn` (a first-responder promotion) marked as pointer-driven, so the
+   * chain reflection it triggers coarsens the key view and clears the ring — the
+   * click-to-focus path. Outside this wrapper, chain reflections are treated as
+   * programmatic and yield to a finer focusable key view ({@link
+   * seedKeyViewFromChain}). Synchronous: `makeFirstResponder` notifies the chain
+   * within `fn`, so the flag need only span the call.
+   */
+  runPointerPromotion(fn: () => void): void {
+    this.pointerPromotionActive = true;
+    try {
+      fn();
+    } finally {
+      this.pointerPromotionActive = false;
+    }
   }
 
   /** Unsubscribe from the chain. Safe to call when not attached. */
@@ -291,6 +357,44 @@ export class FocusManager {
     };
     this.focusables.set(record.id, record);
     this.touch();
+    // Late-mount keyboard-ring resume: if this focusable's stable `group:order`
+    // is the saved key view whose element wasn't in the DOM when the focus axis
+    // restored ([focus-transfer] `armKeyboardRestore`), re-light the ring on it
+    // now. `focusKeyView` runs under `suppressChainSeed`, so the `focusin` it
+    // fires can't re-seed the key view back to keyboard=false.
+    if (record.group !== "" && this.pendingKeyboardRestore.size > 0) {
+      const focusKey = `${record.group}:${record.order}`;
+      if (this.pendingKeyboardRestore.has(focusKey) && this.isRecordRendered(record)) {
+        this.pendingKeyboardRestore.delete(focusKey);
+        this.setKeyView(record.id, true);
+        this.focusKeyView();
+      }
+    }
+  }
+
+  /**
+   * Arm a late-mount keyboard-ring resume for the focusable with this stable
+   * `group:order` focus key ([focus-transfer]). Called when the focus axis
+   * restored a keyboard key view whose element had not yet mounted; the ring
+   * re-lights when that focusable registers.
+   */
+  armKeyboardRestore(focusKey: string): void {
+    // The focusable often *already* registered by the time the focus axis
+    // dispatches: an item-group stop mounts on a deep layout effect that fires
+    // before the card's host root registers, so `resolveBagFocus` bails to
+    // `deferred-dom` (host root not yet found) even though the focusable is in
+    // the DOM. Waiting for a future registration would hang forever — it already
+    // happened. Complete immediately against the live registry when a rendered
+    // focusable carries this `group:order`; only arm for a genuinely-late mount.
+    for (const record of this.focusables.values()) {
+      if (`${record.group}:${record.order}` === focusKey && this.isRecordRendered(record)) {
+        this.pendingKeyboardRestore.delete(focusKey);
+        this.setKeyView(record.id, true);
+        this.focusKeyView();
+        return;
+      }
+    }
+    this.pendingKeyboardRestore.add(focusKey);
   }
 
   /** Remove a focusable. No-op if it is not registered. */
@@ -814,6 +918,26 @@ export class FocusManager {
  * circular dependency -- the same arrangement as `ResponderChainContext`.
  */
 export const FocusManagerContext = createContext<FocusManager | null>(null);
+
+// ---- Global handle ----
+//
+// Last-registration-wins module singleton so framework code outside the React
+// tree can reach the engine — the same arrangement as
+// `registerResponderChainManager`. Used by the single-channel focus dispatcher
+// (`applyBagFocus` in `focus-transfer.ts`) to re-light the keyboard ring as
+// part of a focus-axis restore. Set by `responder-chain-provider` on mount.
+
+let activeFocusManager: FocusManager | null = null;
+
+/** Register the active FocusManager. Called by the provider on mount. */
+export function registerFocusManager(manager: FocusManager | null): void {
+  activeFocusManager = manager;
+}
+
+/** The active FocusManager, or `null` outside a mounted provider. */
+export function getFocusManager(): FocusManager | null {
+  return activeFocusManager;
+}
 
 /**
  * React context carrying the focus-mode scope id that `useFocusable` callers in

@@ -125,6 +125,7 @@ import { flushSync } from "react-dom";
 
 import { isEngineManagedCard } from "./card-registry";
 import { applyFormControlSnapshot } from "./components/chrome/card-host";
+import { getFocusManager } from "./components/tugways/focus-manager";
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deckTrace, formatElement } from "./deck-trace";
 import { traceApplyDefaultFocus } from "./default-focus";
@@ -285,10 +286,10 @@ export type FocusTransferStore = Pick<
  *     retrying.
  */
 export type BagFocusResolution =
-  | { kind: "framework"; el: HTMLElement; sourceKind: "dom" | "form-control" }
+  | { kind: "framework"; el: HTMLElement; sourceKind: "dom" | "form-control"; keyboard?: boolean }
   | { kind: "engine"; cardId: string }
   | { kind: "default-focus"; cardRoot: HTMLElement }
-  | { kind: "deferred-dom"; cardId: string; focusKind: "dom" | "form-control"; key: string }
+  | { kind: "deferred-dom"; cardId: string; focusKind: "dom" | "form-control"; key: string; keyboard?: boolean }
   | { kind: "deferred-engine"; cardId: string }
   | { kind: "none" };
 
@@ -345,12 +346,15 @@ export function resolveBagFocus(
   // concrete element via the host-root-scoped selector. Reachable
   // only by non-engine cards — a content-owning + engine card never
   // carries a `dom` / `form-control` `bag.focus`.
+  const deferredKeyboard = focus.kind === "dom" ? focus.keyboard === true : false;
   if (hostRoot === null || !hostRoot.isConnected) {
-    // No host root yet. `deferred-dom` is a graceful no-focus
-    // outcome — the one-shot callers accept it without retrying.
+    // No host root yet. `deferred-dom` is a graceful no-focus outcome for the
+    // one-shot callers; the `keyboard` flag arms a late-mount ring resume in
+    // `applyBagFocus` (an item-group focusable in a Radix/portal subtree can
+    // mount after this dispatch).
     const key =
       focus.kind === "dom" ? focus.focusKey : focus.componentStatePreservationKey;
-    return { kind: "deferred-dom", cardId, focusKind: focus.kind, key };
+    return { kind: "deferred-dom", cardId, focusKind: focus.kind, key, keyboard: deferredKeyboard };
   }
   const selector =
     focus.kind === "dom"
@@ -360,9 +364,14 @@ export function resolveBagFocus(
   if (el === null || !el.isConnected) {
     const key =
       focus.kind === "dom" ? focus.focusKey : focus.componentStatePreservationKey;
-    return { kind: "deferred-dom", cardId, focusKind: focus.kind, key };
+    return { kind: "deferred-dom", cardId, focusKind: focus.kind, key, keyboard: deferredKeyboard };
   }
-  return { kind: "framework", el, sourceKind: focus.kind };
+  return {
+    kind: "framework",
+    el,
+    sourceKind: focus.kind,
+    keyboard: focus.kind === "dom" ? focus.keyboard === true : false,
+  };
 }
 
 /**
@@ -422,6 +431,14 @@ export function applyBagFocus(
     resolution.kind === "deferred-dom" ||
     resolution.kind === "deferred-engine"
   ) {
+    // The saved focusable isn't in the DOM yet (an item-group stop inside a
+    // Radix/portal subtree that late-mounts). If it wore the keyboard ring, arm
+    // the engine to re-light it the moment that focusable registers — the
+    // late-mount retry for the focus axis ([state-preservation]). Focus itself
+    // is not retried (the one-shot contract); only the ring resumes.
+    if (resolution.kind === "deferred-dom" && resolution.keyboard === true) {
+      getFocusManager()?.armKeyboardRestore(resolution.key);
+    }
     return "deferred";
   }
 
@@ -439,7 +456,7 @@ export function applyBagFocus(
     // WebKit during a mount commit — it can interfere with React
     // reconciliation's focus-restoration heuristics and drop focus
     // to body. Yield instead: record the trace event for coherence
-    // and return `"applied"` without re-calling `.focus()`.
+    // without re-calling `.focus()`.
     if (doc.activeElement === el) {
       deckTrace.record({
         kind: "focus-call",
@@ -450,24 +467,35 @@ export function applyBagFocus(
         activeAfter: activeBefore,
         hidden: isElementHidden(el),
       });
-      return "applied";
+    } else {
+      measureFocusClaim(`${site}:framework`, cardId, doc, () => {
+        el.focus(
+          options?.preventScroll === true ? { preventScroll: true } : undefined,
+        );
+      });
+      deckTrace.record({
+        kind: "focus-call",
+        site,
+        cardId,
+        targetSelector,
+        activeBefore,
+        activeAfter: formatElement(doc.activeElement),
+        hidden: isElementHidden(el),
+      });
     }
-
-    measureFocusClaim(`${site}:framework`, cardId, doc, () => {
-      el.focus(
-        options?.preventScroll === true ? { preventScroll: true } : undefined,
-      );
-    });
-    const activeAfter = formatElement(doc.activeElement);
-    deckTrace.record({
-      kind: "focus-call",
-      site,
-      cardId,
-      targetSelector,
-      activeBefore,
-      activeAfter,
-      hidden: isElementHidden(el),
-    });
+    // Resume the keyboard focus ring on the restored focusable, through the
+    // engine, as part of this single focus claim — so a reload / relaunch
+    // re-lights the ring on exactly the element focus landed on, and nothing
+    // re-seeds it afterward ([state-preservation] focus axis). The `.focus()`
+    // above fires a `focusin` that re-seeds the key view to the card with
+    // `keyboard=false`; this set runs after, so it wins. No-op when the saved
+    // focus was not keyboard-active.
+    if (resolution.keyboard === true) {
+      const focusableId = el.getAttribute("data-tug-focusable");
+      if (focusableId !== null) {
+        getFocusManager()?.setKeyView(focusableId, true);
+      }
+    }
     return "applied";
   }
 
