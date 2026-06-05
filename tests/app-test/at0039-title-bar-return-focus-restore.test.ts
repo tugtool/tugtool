@@ -31,11 +31,11 @@
  *   - **Activation gesture is title bar.** The click target is
  *     `[data-testid="tug-pane-title-bar"]` inside the destination
  *     pane, NOT a `[data-tug-state-key]` input. Pane-focus-controller's
- *     pointerdown classifies this as a chrome activation. The
- *     subsequent `installFormControlReapplyOnNextMousedown` listener
- *     (registered by `transferFocusForActivation`) does NOT match
- *     a non-input mousedown target, so any re-apply that listener
- *     would have done is skipped.
+ *     pointerdown classifies this as a chrome activation. Focus and
+ *     selection restore here through `bag.focus` resolution
+ *     (`transferFocusForActivation` → `applyBagFocus`), not through any
+ *     click-time snapshot re-apply — form-control values are only ever
+ *     written back at mount (cold boot / reload / remount).
  *
  *   - **Focus is in the OUTGOING (B) card's form-control at the
  *     moment of return.** When the user clicks A's title bar,

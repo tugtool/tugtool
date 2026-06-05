@@ -978,16 +978,16 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       }
     }
 
-    // Form-control apply is a ONE-SHOT at mount.
-    // Historically it lived inside the MutationObserver-driven
-    // `apply()` loop, gated by a `WeakSet` to keep observer fires
-    // from clobbering user typing. With activation-time re-apply
-    // owned by `transferFocusForActivation` (m36's
-    // `installFormControlReapplyOnNextMousedown`), the observer no
-    // longer needs to handle form-controls — apply once at mount
-    // for cold-boot, then trust the activation-transition path for
-    // every subsequent re-apply. Cleanup: no WeakSet, no observer
-    // dependency.
+    // Form-control apply is a ONE-SHOT at mount — and the ONLY place
+    // a saved value snapshot is written back into a live field. This
+    // is what preserves uncontrolled input/textarea values across
+    // remount: cold boot, reload/relaunch, HMR, and tab unmount/remount.
+    // It runs once when the card subtree mounts; from then on the live
+    // DOM is the sole authority — no observer loop, no activation-time
+    // or click-time re-apply re-writes a field the user is editing.
+    // Historically it lived inside a MutationObserver-driven `apply()`
+    // loop gated by a `WeakSet` to keep observer fires from clobbering
+    // user typing; that machinery is gone.
     const formSnapshots = bag.formControls;
     if (formSnapshots) {
       const cardRoot = findCardRoot(hostContentEl, cardId);
