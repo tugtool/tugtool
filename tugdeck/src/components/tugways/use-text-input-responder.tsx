@@ -213,13 +213,24 @@ export function applyPastedText(
   if (!node) return;
   // Focus the node so execCommand targets it.
   node.focus();
+  // Re-establish the editing selection on this element before inserting.
+  // After a prior execCommand("delete") empties the field (the Cut path),
+  // the WKWebView field editor leaves "insertText" disabled until the
+  // selection is explicitly set on the element again — so a paste into a
+  // just-cut field silently no-ops (execCommand returns false, nothing is
+  // inserted). Setting the range re-points WebKit's frame selection at this
+  // element and re-enables the command. Harmless for the already-valid case.
+  const caret = node.selectionStart ?? node.value.length;
+  try {
+    node.setSelectionRange(caret, caret);
+  } catch {
+    // setSelectionRange throws on input types that don't support selection
+    // (e.g. type="email"); the insert below still targets the caret.
+  }
   // Insert via execCommand("insertText") so the edit routes through
   // the browser's native editing pipeline. This pushes onto the undo
   // stack (so Cmd+Z can revert a paste) and fires the input event
-  // natively — no synthetic event dispatch needed. The previous
-  // approach (setRangeText + synthetic input event) bypassed the
-  // editing pipeline entirely, which left paste invisible to the
-  // WKWebView's NSUndoManager.
+  // natively — no synthetic event dispatch needed.
   document.execCommand("insertText", false, text);
 }
 
