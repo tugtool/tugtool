@@ -214,7 +214,7 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 |---|---|---|---|
 | **C1** | [#step-8]–[#step-9] | non-trapped floating | Tooltip is trivial (confirm it never takes the key view); Popover is the **first** Radix→engine component-scope migration — establishes the pattern the later sub-runs reuse. |
 | **C2** | [#step-10]–[#step-11] | trapped menu scope | **Resolved as no-op:** the menus are already keyboard-complete (Radix native for context + popup; the editor menu owns its own keys as a refuse-focus overlay). A trial engine scope added only cosmetics and broke the editor's text selection, so it was abandoned — see [#step-10]/[#step-11]. |
-| **C3** | [#step-12]–[#step-13] | modal trapped scope | TugSheet, then TugAlert rests on it (13→12). Same modal + initial-focus + restore shape. |
+| **C3** | [#step-12]–[#step-13] | modal trapped scope | **Resolved additive / no-op:** both surfaces keep Radix for DOM-focus plumbing. TugSheet already runs the engine trap (logical key view / ring / Tab walk) *alongside* Radix's auto-focus + restore — that split is the intended resting state, not a way station ([#step-12]). TugAlert is app-modal *through* Radix (overlay block, document-global trap, Enter-to-confirm, restore) and gains nothing from an engine scope — audited no-op like [#step-10]/[#step-11] ([#step-13]). The full Radix→engine removal would relocate initial-DOM-focus + restore-on-close into the engine for zero UX gain and real regression risk on the text-focus paths; deferred, not adopted. |
 | **C4** | [#step-14] | inline-dialog [P04] split | The prompt/dialog key-split (logical key view ≠ DOM focus); rests on [#step-3] (done). Stands alone. |
 
 #### Step Status Ledger {#step-status-ledger}
@@ -232,8 +232,8 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 | #step-9 | Tame TugPopover — Radix FocusScope → engine component-scope | done | b931481e |
 | #step-10 | Tame TugContextMenu (+ editor context menu) — item-in-trapped-scope | done (no change) | — |
 | #step-11 | Tame internal/tug-popup-menu | done (no change) | — |
-| #step-12 | Tame TugSheet — modal scope + restore | pending | — |
-| #step-13 | Tame TugAlert — modal scope | pending | — |
+| #step-12 | Tame TugSheet — modal scope + restore | done (additive) | — |
+| #step-13 | Tame TugAlert — modal scope | done (no change) | — |
 | #step-14 | Inline dialogs (Permission/Question) — logical key view + prompt split ([P04]) | pending | — |
 | #step-15 | Audit: `refuse` / first-responder reclassification against [P01] | pending | — |
 | #step-16 | Accessibility-mode ARIA pass + dual-mode toggle | pending | — |
@@ -433,11 +433,11 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 **Depends on:** #step-2
 
-**Tasks:** Replace Radix focus scope with an engine **modal** (trapped) scope; engine sets initial focus; Tab contained; Escape cancels; pop + restore on close; pane-modal scoping preserved.
+**RESOLVED — additive, Radix retained.** The sheet already runs the engine trap (`useFocusTrap({ active: open })` + `FocusModeScope`) for the logical key view, ring, and Tab walk over registered focusables, *alongside* a Radix `FocusScope` (`trapped={false}`) that owns the DOM-focus plumbing: auto-focus the first tabbable on open, restore DOM focus to the opener on close, and `loop`-contain Tab. That split is the **intended resting state**, not a way station. The sheet's *modality* is already engine/DOM-native (`inert` on `.tug-pane-body`), never Radix. Fully removing Radix would relocate two behaviors the engine does not do on the sheet's close path today — initial DOM focus on open, and DOM-focus restore on the non-`ascend` close path (the sheet closes via `cancelDialog`, which pops the mode and restores only the *logical* key view) — plus accept a Tab-leak for input-bearing sheets (`TugInput` is a key-capture leaf, not an engine focusable). Net-new engine surface with real regression risk on the text-focus paths (`at0051`, editor refocus via `sheetDidHide`) for zero UX gain; not adopted. The only change here is making the in-code docstring honest about the deliberate division of labor.
 
-**Tests:** app-test: Tab trapped within the sheet; close restores the prior key view; peer panes unaffected.
+**Tasks:** *(none — sheet behavior unchanged; trap docstring corrected to describe the additive split as the resting state.)*
 
-**Checkpoint:** `just app-test` sheet scenario `VERDICT: PASS`.
+**Checkpoint:** `bunx tsc --noEmit` clean; no behavior change to verify (the engine trap + Radix DOM-focus split is unchanged).
 
 #### Step 13: Tame TugAlert {#step-13}
 
@@ -447,11 +447,11 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 **Depends on:** #step-12
 
-**Tasks:** Radix alert-dialog focus scope → engine modal scope; initial focus + restore; Enter = default-action; Escape cancels.
+**RESOLVED — no change needed.** TugAlert is app-modal *through* Radix `AlertDialog`: the overlay physically blocks outside clicks, Radix owns the document-global focus trap, initial focus on the action button, Enter-to-confirm, and Escape-to-cancel via DismissableLayer, with focus restored to the opener on close. The keyboard model governs moving the ring between/within components at a scope; a two-button alert gains nothing from an engine scope, and removing Radix would mean re-implementing correct app-modal behavior for zero UX benefit. Opening an alert already does not strand the ring (app-modal + restore-on-close). Audited as Radix-native-is-correct, exactly like [#step-10]/[#step-11]. The alert's classification stands for the [#step-15] `refuse`/first-responder audit; nothing here changes the alert.
 
-**Tests:** app-test: Tab trapped within the alert; Enter fires default; Escape cancels + restores.
+**Tasks:** *(none — alert unchanged.)*
 
-**Checkpoint:** `just app-test` alert scenario `VERDICT: PASS`.
+**Checkpoint:** alert files unchanged; app-modal confirm/cancel + Escape/Enter still behave per Radix.
 
 #### Step 14: Inline dialogs (Permission/Question) {#step-14}
 

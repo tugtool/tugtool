@@ -565,10 +565,17 @@ export function TugSheetContent({
 
   // Engine focus trap ([P03]/[#cfrunloop-model]): push a trapped focus mode
   // while the sheet is open so the Tab walk is scoped to the sheet and the key
-  // view is restored to the opener on dismiss. Additive to the Radix
-  // `FocusScope` below, which traps DOM focus today; the sheet-taming step
-  // removes Radix and leaves this the sole trap. The sheet body is wrapped in
-  // `FocusModeScope` so any focusable inside it joins this mode.
+  // view is captured at open and restored to the opener on dismiss. This is the
+  // engine's logical scope, and it works *alongside* the Radix `FocusScope`
+  // below — the split is deliberate and is the intended resting state, not a
+  // way station. The engine owns the logical key view, the focus ring, and the
+  // Tab walk over registered focusables; Radix owns the DOM-focus plumbing it
+  // does well: auto-focusing the first tabbable on open, restoring DOM focus to
+  // the opener on close, and `loop`-containing Tab for any focusable the engine
+  // walk does not register (text inputs are key-capture leaves, not engine
+  // focusables, so a form sheet relies on Radix to keep Tab inside it). The
+  // sheet body is wrapped in `FocusModeScope` so any engine focusable inside it
+  // joins this mode.
   const { FocusModeScope } = useFocusTrap({ active: open });
 
   // Presence: keep the portal mounted during the exit animation.
