@@ -228,8 +228,8 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 | #step-5 | Redo live components — TugTabBar (switch-live), TugSlider review | done | 38705e98 |
 | #step-6 | Redo TugAccordion — item container + Enter-descend | done | 6e629ef7 |
 | #step-7 | Redo TugListView — listbox: hover rows, Space selects, Enter descends/activates | done | 557b8638 |
-| #step-8 | Tame TugTooltip — focus-trigger only, no capture | pending | — |
-| #step-9 | Tame TugPopover — Radix FocusScope → engine component-scope | pending | — |
+| #step-8 | Tame TugTooltip — focus-trigger only, no capture | done | b931481e |
+| #step-9 | Tame TugPopover — Radix FocusScope → engine component-scope | done | b931481e |
 | #step-10 | Tame TugContextMenu (+ editor context menu) — item-in-trapped-scope | pending | — |
 | #step-11 | Tame internal/tug-popup-menu | pending | — |
 | #step-12 | Tame TugSheet — modal scope + restore | pending | — |

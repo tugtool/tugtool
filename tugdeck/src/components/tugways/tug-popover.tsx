@@ -174,6 +174,7 @@ import { useServicePopupBinding } from "./use-service-popup-binding";
 import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
+import { useFocusTrap } from "./use-focus-trap";
 
 /* ---------------------------------------------------------------------------
  * TugPopoverHandle
@@ -196,6 +197,14 @@ export interface TugPopoverHandle {
 interface TugPopoverInternalContextValue {
   /** Close the popover. Called by chain action handlers and observeDispatch. */
   close: () => void;
+  /**
+   * The popover's effective open state. The content shell drives its engine
+   * focus mode ([P02]) off this — pushing while open and popping the instant it
+   * flips false, so the opener's key view is restored promptly on close rather
+   * than waiting for the exit animation to unmount the shell (the same
+   * `active: open` shape `TugSheet` uses for its trap).
+   */
+  open: boolean;
   /** Stable sender id used by the root when re-emitting dismissPopover from Radix dismissal. */
   senderId: string;
   /** When false, the inner shell skips its `observeDispatch` subscription —
@@ -436,12 +445,13 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     const contextValue = React.useMemo<TugPopoverInternalContextValue>(
       () => ({
         close,
+        open: effectiveOpen,
         senderId,
         dismissOnChainActivity,
         onCloseAutoFocus,
         triggerElRef,
       }),
-      [close, senderId, dismissOnChainActivity, onCloseAutoFocus],
+      [close, effectiveOpen, senderId, dismissOnChainActivity, onCloseAutoFocus],
     );
 
     return (
@@ -730,6 +740,20 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
   const manager = useResponderChain();
   const responderId = React.useId();
 
+  // Engine focus mode ([P02]/[#cfrunloop-model]): while the popover is open, push
+  // a trapped focus mode so Tab cycles the popover's own focusables and the
+  // opener's key view is captured at open and restored on close. `trapped` (the
+  // `useFocusTrap` default) is what keeps the engine from ascending the scope on
+  // Escape — the popover's existing light-dismiss (Radix DismissableLayer →
+  // `handleOpenChange` → `close`) owns Escape / click-outside, and this mode pops
+  // and restores the opener's key view as the shell releases it ([R04]). Additive
+  // to Radix's own `FocusScope`, which a non-modal popover uses only for DOM
+  // auto-focus (it never trapped Tab); the engine is now the authoritative scope.
+  // `FocusModeScope` wraps the content so any `useFocusable` inside joins this
+  // mode. Upholds [L03] (push in a layout effect, inside the hook) and [L06]
+  // (the mode projection is DOM, not React state).
+  const { FocusModeScope } = useFocusTrap({ active: ctx?.open ?? false });
+
   // Local ref to the shell's root div. Used by observeDispatch to
   // check whether the currently focused element is inside the
   // popover before dismissing — dispatches originating from form
@@ -881,7 +905,7 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
       onMouseDown={suppressButtonFocusShift}
       style={{ display: "contents" }}
     >
-      {children}
+      <FocusModeScope>{children}</FocusModeScope>
     </div>
   );
 }

@@ -6,6 +6,17 @@
  * rendered inside the tooltip bubble). Supports truncation-aware mode where
  * the tooltip is suppressed when the trigger content is not actually clipped.
  *
+ * ## Keyboard model — passive, never a focus stop
+ *
+ * Per the keyboard model ([P01]/[P03]), the tooltip is purely passive: it
+ * **never takes the key view** and is **not a Tab stop**. The bubble is Radix
+ * tooltip content — non-interactive, no `tabIndex`, no `useFocusable`
+ * registration — so the engine never routes keystrokes to it and the ring never
+ * moves onto it. It opens on the *trigger's* focus (Radix's focus/hover open
+ * path); the trigger is the real focusable and keeps the key view and the ring
+ * the whole time the tooltip is showing. There is nothing to trap, descend
+ * into, or restore — the surface is display-only.
+ *
  * ## Chain-reactive dismissal via observeDispatch
  *
  * While the tooltip is open, TugTooltip subscribes to
