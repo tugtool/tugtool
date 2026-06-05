@@ -206,7 +206,16 @@ Each batch is one `/tugplug:implement` run — a dependency-clean cut whose step
 | **C — Surfaces** | [#step-8]–[#step-14] | The not-yet-built floating/trap surfaces and inline dialogs: tooltip, popover, context menu (+ editor menu), popup-menu, sheet, alert, Permission/Question dialogs. (Internal order: [#step-11] rests on [#step-10]; [#step-13] on [#step-12]; [#step-14] on [#step-3].) | Batch A |
 | **D — Audit + a11y + integration** | [#step-15]–[#step-17] | `refuse` / first-responder reclassification, the accessibility-mode ARIA pass + dual-mode toggle, and the end-to-end composed-surface checkpoint. | Batches B + C |
 
-Batches are **run** boundaries, not commit boundaries — each step still commits individually on the dash. A long batch may be split across conversations (e.g. C as 8–11 then 12–14); the ledger is the resume point either way.
+Batches are **run** boundaries, not commit boundaries — each step still commits individually on the dash. A long batch may be split across conversations; the ledger is the resume point either way.
+
+**Batch C is split into four sub-runs.** C's surfaces are the worst case for verification in an unattended session — every step's checkpoint is a portal / focus-trap / Escape behavior (`just app-test … VERDICT: PASS`) that can't be observed by a synthetic-key probe the way leaf controls can, so the real verification loop is a hands-on pass over a live `just app-debug` build between sub-runs. Steps 9 / 10 / 12 / 13 are each a Radix `FocusScope` → engine-scope migration (R04: two focus systems coexisting), so the discipline is: land one scope-flavor, confirm it on the live build, then reuse the established pattern for its siblings. Each sub-run is one `/tugplug:implement` invocation on the same dash; the internal `Depends on:` deps (11→10, 13→12, 14→3) already cluster the steps by scope flavor:
+
+| Sub-run | Steps | Scope flavor | Cohesion |
+|---|---|---|---|
+| **C1** | [#step-8]–[#step-9] | non-trapped floating | Tooltip is trivial (confirm it never takes the key view); Popover is the **first** Radix→engine component-scope migration — establishes the pattern the later sub-runs reuse. |
+| **C2** | [#step-10]–[#step-11] | trapped menu scope | TugContextMenu (+ editor context menu); popup-menu rests on it (11→10). Same item-cursor-in-trapped-scope shape. |
+| **C3** | [#step-12]–[#step-13] | modal trapped scope | TugSheet, then TugAlert rests on it (13→12). Same modal + initial-focus + restore shape. |
+| **C4** | [#step-14] | inline-dialog [P04] split | The prompt/dialog key-split (logical key view ≠ DOM focus); rests on [#step-3] (done). Stands alone. |
 
 #### Step Status Ledger {#step-status-ledger}
 
