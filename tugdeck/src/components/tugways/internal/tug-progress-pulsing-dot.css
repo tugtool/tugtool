@@ -20,7 +20,8 @@
  *  - [L06] dot color is set via a CSS custom property; the ring's
  *    `display` is set imperatively at pulse boundaries.
  *  - [L13] motion via TugAnimator (WAAPI), not CSS keyframes.
- *  - [L16] dot's `background-color` is self-paired (same rule).
+ *  - [L16] dot's `background-color` and the static outer ring's
+ *    (`::after`) `border-color` are self-paired (same rule).
  *  - [L19] file pair, `data-slot="tug-progress-pulsing-dot"`.
  *  - [L20] owns its `--tugx-progress-pulsing-dot-*` sub-family; reads
  *    `--tugx-progress-indicator-fill` from the parent indicator.
@@ -64,6 +65,26 @@
   box-sizing: border-box;
   display: none;
   transform: translate(-50%, -50%);
+}
+
+/* Static outer ring for the settled / held states (everything but
+   `running`, whose ring is the animated pulse). A fixed 1px border at the
+   box edge, tinted with the state's fill. */
+.tug-progress-pulsing-dot::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--tugx-progress-pulsing-dot-size);
+  height: var(--tugx-progress-pulsing-dot-size);
+  border-radius: 999px;
+  border: 1px solid var(--tugx-progress-indicator-fill, currentColor);
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+}
+
+.tug-progress-pulsing-dot[data-state="running"]::after {
+  display: none;
 }
 
 .tug-progress-pulsing-dot-disabled {
