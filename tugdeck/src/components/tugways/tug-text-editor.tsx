@@ -738,6 +738,35 @@ function buildExtensions(
 ): readonly Extension[] {
   return [
     history(),
+    // [P02] A secondary-click (right-click or macOS Control-click) over a ranged
+    // selection must NOT move the caret — it opens the context menu, which acts on
+    // the existing selection. CodeMirror's built-in pointer selection otherwise
+    // dispatches a `select.pointer` transaction on mouseup that collapses the
+    // selection to the click point (even after the shared hook's capture/restore
+    // runs, so restoring-after is the wrong shape here). This handler runs before
+    // CM6's built-in mouse handling; returning `true` suppresses CM6's pointer
+    // selection for this click. The OS-level `contextmenu` still fires, so the
+    // menu opens. Only guards when a range exists — a plain-caret secondary-click
+    // still positions the caret (Paste-at-click). Confirmed working by hand.
+    // [P02] A secondary-click (right-click or macOS Control-click) over a ranged
+    // selection must NOT move the caret — it opens the context menu, which acts on
+    // the existing selection. CodeMirror's built-in pointer selection otherwise
+    // dispatches a `select.pointer` transaction that collapses the selection to
+    // the click point (even after the shared hook's capture/restore runs, so
+    // restoring-after is the wrong shape here). This handler runs before CM6's
+    // built-in mouse handling; returning `true` suppresses CM6's pointer selection
+    // for this click. The OS-level `contextmenu` still fires, so the menu opens.
+    // Only guards when a range exists — a plain-caret secondary-click still
+    // positions the caret (Paste-at-click).
+    EditorView.domEventHandlers({
+      mousedown(event, view) {
+        const sel = view.state.selection.main;
+        const hasRange = sel.from !== sel.to;
+        const isSecondaryClick =
+          event.button === 2 || (event.button === 0 && event.ctrlKey);
+        return hasRange && isSecondaryClick;
+      },
+    }),
     // TEMP rclk probe ([#investigation]): catch the exact transaction that
     // collapses a ranged selection and dump a stack trace naming the clobberer.
     EditorView.updateListener.of((update) => {
@@ -1438,6 +1467,17 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const cmAdapterRef = useRef<TextSelectionAdapter | null>(null);
     useLayoutEffect(() => {
       cmAdapterRef.current = view !== null ? createCMSelectionAdapter(view) : null;
+      // Test-only: expose the EditorView on its contentDOM so app-tests can seed
+      // text + selection via a transaction. Native keystrokes don't land in an
+      // unattended (non-key-window) test run, so JS seeding is the only reliable
+      // path; gated on `__tugTestMode` so it never ships to normal builds.
+      if (
+        view !== null &&
+        typeof window !== "undefined" &&
+        (window as Window & { __tugTestMode?: boolean }).__tugTestMode === true
+      ) {
+        (view.contentDOM as unknown as { __tugEditorView?: EditorView }).__tugEditorView = view;
+      }
     }, [view]);
 
     const {
