@@ -297,12 +297,36 @@
 }
 
 /* ============================================================
-   4 — CONTINUOUS / SLIDER  (RING branch — commits live, cursor=value)
+   4 — CONTINUOUS / SLIDER  (the COMPLETE control = label + track + value)
+   Keyboard focus = a RING around the WHOLE component AND a FILLED thumb.
+   No separate "selected" — the value (the fill length) is the state.
    ============================================================ */
+
+/* The component as a whole — label row + track. The ring goes here. */
+.cg-focus-language .fl-slider-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 210px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.cg-focus-language .fl-slider-field[data-fl-state="cursor"] {
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
+.cg-focus-language .fl-slider-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+}
+.cg-focus-language .fl-slider-value {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
 
 .cg-focus-language .fl-track {
   position: relative;
-  width: 170px;
   height: 6px;
   border-radius: 3px;
   background: color-mix(
@@ -313,25 +337,28 @@
 }
 .cg-focus-language .fl-track .fl-fill {
   position: absolute;
-  inset: 0 55% 0 0;
+  top: 0;
+  bottom: 0;
+  left: 0;
   border-radius: 3px;
   background: var(--fl-kbd);
 }
 .cg-focus-language .fl-track .fl-thumb {
   position: absolute;
   top: 50%;
-  left: 45%;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
+  /* at rest the thumb is hollow (surface centre, coloured rim) */
   background: var(--tug7-surface-field-primary-normal-plain-rest);
   border: 2px solid var(--fl-kbd);
 }
-/* keyboard cursor → thumb ring (the value itself is the "selection") */
-.cg-focus-language .fl-track[data-fl-state="cursor"] .fl-thumb {
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
-  outline-offset: var(--fl-ring-offset);
+/* keyboard focus → FILL the thumb solid (in addition to the whole-component
+   ring above) */
+.cg-focus-language .fl-slider-field[data-fl-state="cursor"] .fl-thumb {
+  background: var(--fl-on);
+  border-color: var(--fl-on);
 }
 
 /* ============================================================

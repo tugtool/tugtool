@@ -223,20 +223,14 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="4 · Continuous / slider"
           branch="ring"
-          note="Commits live (cursor = value), continuous, no act. Can't fill a 'state' — the value IS the fill. Cursor = a ring on the thumb. Covers TugSlider, TugHueStrip, TugColorStrip, the SplitPane divider."
+          note="The COMPLETE control is the label + track + value readout. Keyboard focus rings the WHOLE component and FILLS the thumb solid (hollow at rest). There is no separate 'selected' — the value (the fill length) is the state; it just commits live as you move. Covers TugSlider, TugHueStrip, TugColorStrip, the SplitPane divider."
         />
         <div className="fl-grid">
           <Cell label="rest">
-            <span className="fl-track">
-              <span className="fl-fill" />
-              <span className="fl-thumb" />
-            </span>
+            <SliderField label="Volume" value="45%" pct={45} />
           </Cell>
-          <Cell label="kbd-cursor (thumb ring)">
-            <span className="fl-track" data-fl-state="cursor">
-              <span className="fl-fill" />
-              <span className="fl-thumb" />
-            </span>
+          <Cell label="kbd-focus (ring + filled thumb)">
+            <SliderField label="Volume" value="45%" pct={45} kbd />
           </Cell>
         </div>
       </div>
@@ -423,6 +417,33 @@ function SwitchField({
     <span className="fl-toggle-field" data-fl-state={kbd ? "cursor" : undefined}>
       <span className="fl-switch" data-checked={checked ? "true" : undefined} />
       <span>{label}</span>
+    </span>
+  );
+}
+
+/** A complete slider control — label + track + value readout — ringed as a
+ *  whole on keyboard focus, with the thumb filled solid when focused. */
+function SliderField({
+  label,
+  value,
+  pct,
+  kbd,
+}: {
+  label: string;
+  value: string;
+  pct: number;
+  kbd?: boolean;
+}): React.ReactElement {
+  return (
+    <span className="fl-slider-field" data-fl-state={kbd ? "cursor" : undefined}>
+      <span className="fl-slider-head">
+        <span>{label}</span>
+        <span className="fl-slider-value">{value}</span>
+      </span>
+      <span className="fl-track">
+        <span className="fl-fill" style={{ width: `${pct}%` }} />
+        <span className="fl-thumb" style={{ left: `${pct}%` }} />
+      </span>
     </span>
   );
 }
