@@ -749,10 +749,30 @@ export class FocusManager {
       // element renders no box. A no-op without a DOM (pure-logic walk tests)
       // and when the element can't be resolved, so neither is excluded.
       if (!this.isRecordRendered(record)) continue;
+      // A disabled / pointer-inert control is not a reachable Tab target — the
+      // walk skips it so, e.g., the prompt submit drops out of the cycle while
+      // the editor is empty (its empty-input gate) and the seed lands on the
+      // next live stop instead.
+      if (!this.isRecordInteractive(record)) continue;
       records.push(record);
     }
     records.sort((a, b) => this.compareFocusables(a, b));
     return records;
+  }
+
+  /**
+   * Resolve a focusable record's live DOM element (the responder container or
+   * the focusable element carrying its id), or `null` if absent / no document.
+   */
+  private resolveFocusableElement(record: FocusableRecord): HTMLElement | null {
+    if (typeof document === "undefined") return null;
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(record.id)
+        : record.id;
+    return document.querySelector<HTMLElement>(
+      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
+    );
   }
 
   /**
@@ -764,15 +784,36 @@ export class FocusManager {
    */
   private isRecordRendered(record: FocusableRecord): boolean {
     if (typeof document === "undefined") return true;
-    const escaped =
-      typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(record.id)
-        : record.id;
-    const el = document.querySelector<HTMLElement>(
-      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
-    );
+    const el = this.resolveFocusableElement(record);
     if (el === null) return true;
     return el.getClientRects().length > 0;
+  }
+
+  /**
+   * Whether a focusable's element is currently *interactive* — the walk must
+   * never land the key view on a control that cannot be activated. Excludes
+   * native-`disabled` and `aria-disabled` elements and elements made
+   * pointer-inert by CSS (`pointer-events: none` — e.g. the prompt submit's
+   * empty-input gate, which disables the button visually + for the pointer
+   * without a `disabled` attribute). Reads the DOM at walk time, exactly like
+   * {@link isRecordRendered}: the "is the control actionable" signal stays
+   * appearance/DOM state ([L06]), and this structure consumer observes it
+   * directly rather than round-tripping it through React ([L22]/[L24]).
+   * Permissive without a DOM (returns `true`) so the pure-logic walk tests are
+   * never narrowed.
+   */
+  private isRecordInteractive(record: FocusableRecord): boolean {
+    if (typeof document === "undefined") return true;
+    const el = this.resolveFocusableElement(record);
+    if (el === null) return true;
+    if (el.matches(':disabled, [aria-disabled="true"]')) return false;
+    if (
+      typeof window !== "undefined" &&
+      window.getComputedStyle(el).pointerEvents === "none"
+    ) {
+      return false;
+    }
+    return true;
   }
 
   private advance(step: 1 | -1): string | null {

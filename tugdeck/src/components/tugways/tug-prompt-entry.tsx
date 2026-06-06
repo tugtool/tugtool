@@ -610,6 +610,33 @@ export interface TugPromptEntryProps {
    * reactivates (and the host re-focuses it) when the flag clears.
    */
   deactivated?: boolean;
+  /**
+   * Authors the `Z5` submit button into a focus group ([P02]) — the
+   * existing `TugPushButton.focusGroup` opt-in, surfaced on the entry so
+   * the host that owns the Tab order can register the submit as a walk
+   * stop without the entry knowing why. Omitted by default: the submit is
+   * a plain native focus stop (the editor owns Tab) and never joins a walk.
+   *
+   * The Dev card supplies this (under its keyboard-focus-cycling
+   * `CycleScope`, so the registration lands in that mode, not the base
+   * one) to make the submit the cycle's commit-home; the gallery and
+   * card-host hosts omit it, so their submit behaves exactly as before.
+   */
+  submitFocusGroup?: string;
+  /** Order of the submit within {@link submitFocusGroup}. Defaults to 0. */
+  submitFocusOrder?: number;
+  /**
+   * Authors the `Z4A` route choice-group into a focus group ([P02]) — the
+   * `TugChoiceGroup.focusGroup` opt-in, surfaced on the entry like
+   * {@link submitFocusGroup}. The route is a roving item-group: one Tab
+   * stop, arrows switch Code / Shell within it. Omitted by default (the
+   * route is not a walk stop). Supplied by the Dev card under its
+   * `CycleScope` so the route joins the cycle as the stop after the
+   * commit-home.
+   */
+  routeFocusGroup?: string;
+  /** Order of the route within {@link routeFocusGroup}. Defaults to 0. */
+  routeFocusOrder?: number;
 }
 
 /**
@@ -675,6 +702,10 @@ export const TugPromptEntry = React.forwardRef<
     numpadEnterAction,
     placeholderByRoute,
     deactivated = false,
+    submitFocusGroup,
+    submitFocusOrder,
+    routeFocusGroup,
+    routeFocusOrder,
   } = props;
 
   // [L02] external store state enters React through useSyncExternalStore only.
@@ -1720,6 +1751,8 @@ export const TugPromptEntry = React.forwardRef<
               size="xs"
               sidePadding="sm"
               aria-label="Route"
+              focusGroup={routeFocusGroup}
+              focusOrder={routeFocusOrder}
             />
             {/*
               Z4B — centred-floating slot; currently the indicator
@@ -1773,6 +1806,8 @@ export const TugPromptEntry = React.forwardRef<
               subtype="icon"
               size="lg"
               emphasis="filled"
+              focusGroup={submitFocusGroup}
+              focusOrder={submitFocusOrder}
               role={submitView.danger ? "danger" : "action"}
               disabled={submitView.disabled}
               aria-label={submitView.ariaLabel}

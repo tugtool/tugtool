@@ -432,7 +432,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle | Step 2.5 — Keyboard-focus-cycling mode (umbrella) | pending | — |
 | #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | 62228934 |
 | #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | done | (main) |
-| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | pending | — |
+| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | core done (Slices 1+2, uncommitted); Slice 3 optional/deferred | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
@@ -622,9 +622,17 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 #### Step 2.5.3: Dev card joins the cycle; per-state default focus {#step-cycle-devcard}
 
-**STATUS — next up. RESUME NOTES (post-compaction; read this whole block first).**
+**STATUS — Slices 1 + 2 done (uncommitted on `main`); Slice 3 optional/deferred. RESUME NOTES.**
 
-*Where we are.* Working **on `main`** (the user commits; I edit + run checkpoints). Done + committed: 2.5.1 trigger chord `62228934`; 2.5.2 mechanism `fad9abc6`; refinements `8d382f2b`. The at0088 fix is `6e2c8a83`; the Step 2.5 authoring is `73b4784c`.
+*Slice 1 — DONE (uncommitted).* The dev card cycles end-to-end: `useCycleMode({ enabled: !sessionErrored })` in `DevCardBody`; `CYCLE_FOCUS_MODE → cycle.toggle()` on the card-content responder; `data-cycling` on the `dev-card` root; the prompt entry wrapped in `cycle.CycleScope`; the **Z5 submit authored as the commit-home** via new neutral `submitFocusGroup`/`submitFocusOrder` props on `TugPromptEntry` (group `dev-prompt-cycle`, order 0); **Connected → editor on exit** via a layout effect on the engine-derived `cycling` snapshot (the editor is a responder, not a key-view, so the card owns the restore — `pushFocusMode`'s `restoreKeyView` is null); the **fill-suppression CSS** (`[data-cycling="true"] .tug-prompt-entry-submit-button.tug-button-filled-{action,danger}:not([data-key-view-kbd]):not([data-key-cursor])` → outlined tokens) in `tug-prompt-entry.css`.
+
+*Slice 2 — DONE (uncommitted).* Z4A route as the second cycle stop: new neutral `routeFocusGroup`/`routeFocusOrder` props on `TugPromptEntry` → the route `TugChoiceGroup` (group `dev-prompt-cycle`, order 1). The route is an **item-group** — one Tab stop, arrows within — and its **root** carries `data-key-view-kbd` when it holds the cycle key view (the arrow cursor `data-key-cursor` rides a child), so the cycle tours submit(0) → route(1) → wrap. **Picker → Open** default focus via a **smart latch** in `DevProjectPickerForm` (user-chosen): on mount/settle, focus Open when it is enabled (a valid path seeded) else the path field; a user edit (`onChange`) claims the field so the latch never yanks focus mid-typing; `autoFocus` removed from `TugFileChooser`, `openButtonRef` added to the Open button. Verified: `bunx tsc --noEmit` clean; **at0140** (submit seed → Tab tour submit→route→wrap → exit restores editor) green; regressions green — at0138/at0139 (cycle primitive), at0088/at0092/at0093/at0099/at0102 (dev/picker incl. default-button pane scope), at0051/at0080/at0081 (dev focus), at0085/at0118 (route/choice-group), at0103/at0104 (submit/tab completion), at0020/at0024/at0025/at0100/at0105/at0106 (roundtrip/sheet/permission-keys). NB: **at0038** (deactivation inactive-paint) fails its two *dev* cases on `getActiveCardId()==="B"` — **pre-existing**, reproduced on a clean baseline build with these changes stashed; unrelated to focus language.
+
+*Post-review fixes (uncommitted).* (1) **Disabled controls are no longer Tab targets** — `FocusManager.walkOrder` now skips a focusable whose element is `:disabled` / `[aria-disabled="true"]` / computed `pointer-events: none` (new `isRecordInteractive`, reading the DOM at walk time like `isRecordRendered`). So the submit drops out of the cycle while the editor is empty (its empty-input gate) and the seed lands on the route instead — **no React state**, the empty-ness stays DOM/appearance state and the structure consumer (the walk) observes it directly ([L06]/[L22]/[L24]; L02 forbids mirroring editor empty-ness into `useState`). at0140 extended to assert empty→submit-skipped and typed→submit-seeded. (2) **Choice-group double-ring** (selected-value ring + cycle group/cursor ring) is a Step 3 cleanup — note added to [#step-3].
+
+*Slice 3 — DEFERRED (optional per scope advice).* Z2 status-bar item-group + Z4B permission chip as stops (additional `cycle.CycleScope`s sharing the **same mode id** — render `cycle.CycleScope` again around the Z2 status row / chip; orders renumber top→bottom: Z2 cells lowest after the seed, then Z4A route, submit stays order 0 = commit-home). Roles: chip = agent (already). This rounds out the full top→bottom tour but the cycle is already useful with submit + route.
+
+*Where we are.* Working **on `main`** (the user commits; I edit + run checkpoints). Done + committed: 2.5.1 trigger chord `62228934`; 2.5.2 mechanism `fad9abc6`; refinements `8d382f2b`. The at0088 fix is `6e2c8a83`; the Step 2.5 authoring is `73b4784c`. Slice 1 above is **uncommitted**.
 
 *Build / test (CRITICAL — from the repo root, one invocation):* `export TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest && just build-app && just app-test <files>`. Without the env var the app-test fails the macOS AX preflight (the grant lives on `dev.tugtool.app.apptest`). `bunx tsc --noEmit` from `tugdeck/`. tsc + app-tests are the gates; appearance is by-eye in both themes. Next AT number: **at0140** (the `app-test-inventory.md` is stale at AT0083 — number by filename; do **not** add a lone inventory entry).
 
@@ -655,11 +663,11 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 **Artifacts:** dev-card / prompt-entry registration of the Z-zones (Z2 status group, Z4A route, Z4B indicators incl. the permission chip, Z5 submit) as cycle stops; the per-state default-focus declaration + transition migration.
 
 **Tasks:**
-- Register the chrome zones as cycle stops — each a leaf or item-group per [P10] (Tab between zones, arrow within); seed at Z5; forward Tab wraps top→bottom, Shift+Tab reverses ([P10]).
-- Declare per-state default focus ([P12]): Picker → Open, Connected → editor; migrate focus deliberately on spawn / end transitions.
-- Apply per-control roles ([P12]): submit = action (danger while stopping), route = action, permission chip = agent.
-- Add the `[data-cycling]` fill-suppression rule ([P12]): while cycling, the submit's standing `filled` is relaxed to outlined so the fill follows focus (one filled+ringed stop at a time); on exit it reverts to its identity fill. Pure CSS on the card's `data-cycling` signal — no change to the submit button's component / props.
-- Z1 transcript excluded ([P10]).
+- Register the chrome zones as cycle stops — each a leaf or item-group per [P10] (Tab between zones, arrow within); seed at Z5; forward Tab wraps top→bottom, Shift+Tab reverses ([P10]). *(Done: Z5 submit = commit-home (order 0), Z4A route item-group (order 1) — submit → route → wrap. Deferred to optional Slice 3: Z2 / Z4B.)*
+- [x] Declare per-state default focus ([P12]): Picker → Open, Connected → editor; migrate focus deliberately on spawn / end transitions. *(Connected → editor via the cycle-exit layout effect; Picker → Open via the smart latch — focus Open when settled enabled, else the field, never interrupting typing.)*
+- Apply per-control roles ([P12]): submit = action (danger while stopping), route = action, permission chip = agent. *(Done: submit = action/danger (unchanged), route = action (TugChoiceGroup default). Chip = agent lands with optional Slice 3.)*
+- [x] Add the `[data-cycling]` fill-suppression rule ([P12]): while cycling, the submit's standing `filled` is relaxed to outlined so the fill follows focus (one filled+ringed stop at a time); on exit it reverts to its identity fill. Pure CSS on the card's `data-cycling` signal — no change to the submit button's component / props.
+- [x] Z1 transcript excluded ([P10]).
 
 **Tests:**
 - Behavior: app-tests — Picker seeds Open; Connected seeds the editor; spawn / end migrates focus; the cycle tours Z5 → (top→bottom) → Z5 and wraps.
@@ -718,6 +726,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 **Tasks:**
 - Project the behind-tint from `[data-key-view-kbd]` on the group; the ring from `[data-key-cursor]` on the item (offset to survive atop a fill); native fill from the checked/active state (dot / pill / fill) in the role color.
 - Remove the old orange-cursor/selection CSS these files carry today.
+- **Resolve the double-ring observed on the dev card's route group in cycling** ([#step-cycle-devcard] by-eye): today the selected segment carries its own ring AND, when the group is a cycle stop, the group root carries `[data-key-view-kbd]` + the seeded `[data-key-cursor]` promotes the segment — two rings stacked. The [P02] model is the fix: behind-tint on the group, a single ring on the cursor item only. Verify in the dev card's cycle tour, both themes.
 
 **Tests:**
 - Behavior: each group's existing app-tests + `at0030` component-state-preservation green.

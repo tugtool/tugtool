@@ -158,6 +158,43 @@ body {
   cursor: not-allowed;
 }
 
+/* Keyboard-focus-cycling fill suppression ([P12]).
+ *
+ * Outside cycling the submit is `filled` — its standing identity as the
+ * card's primary action, unchanged. During cycling, `filled` instead
+ * becomes the focus convention: exactly one stop is filled + ringed at a
+ * time, and that fill must follow the focused stop. So while an ancestor
+ * card carries `data-cycling="true"`, the submit's standing fill stands
+ * down to the outlined look UNLESS it currently holds the key view — then
+ * it keeps its fill (and gains the role ring) like any other promoted
+ * stop. On exit the attribute drops and the submit reverts to its
+ * identity fill. Pure CSS on the card's `data-cycling` signal; the
+ * button's component / props never change ([L06], user-confirmed). The
+ * `outlined → filled` promotion of the focused stop is the shared rule in
+ * `internal/tug-button.css`; this only removes the standing fill so that
+ * promotion is what shows. Roles: action (default) and danger (while
+ * stopping). */
+[data-cycling="true"]
+  .tug-prompt-entry-submit-button.tug-button-filled-action:not([data-key-view-kbd]):not([data-key-cursor]) {
+  background-color: var(--tug7-surface-control-primary-outlined-action-rest);
+  color: var(--tug7-element-control-text-outlined-action-rest);
+  border-color: var(--tug7-element-control-border-outlined-action-rest);
+}
+[data-cycling="true"]
+  .tug-prompt-entry-submit-button.tug-button-filled-action:not([data-key-view-kbd]):not([data-key-cursor]) svg {
+  color: var(--tug7-element-control-icon-outlined-action-rest);
+}
+[data-cycling="true"]
+  .tug-prompt-entry-submit-button.tug-button-filled-danger:not([data-key-view-kbd]):not([data-key-cursor]) {
+  background-color: var(--tug7-surface-control-primary-outlined-danger-rest);
+  color: var(--tug7-element-control-text-outlined-danger-rest);
+  border-color: var(--tug7-element-control-border-outlined-danger-rest);
+}
+[data-cycling="true"]
+  .tug-prompt-entry-submit-button.tug-button-filled-danger:not([data-key-view-kbd]):not([data-key-cursor]) svg {
+  color: var(--tug7-element-control-icon-outlined-danger-rest);
+}
+
 /* The indicator slot — the toolbar's `indicatorsContent` cluster.
    Content-sized (`flex: 0 0 auto`); the two spacers do the centring.
    Currently the `Z4B` (centred) occupant. The host owns only the layout

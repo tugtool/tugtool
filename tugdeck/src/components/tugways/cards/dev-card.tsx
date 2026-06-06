@@ -90,6 +90,7 @@ import { useCardSettings } from "../use-card-settings";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
+import { useCycleMode } from "../use-cycle-mode";
 import type { ActionEvent } from "../responder-chain";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { deckTrace } from "@/deck-trace";
@@ -255,6 +256,17 @@ const DEV_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
 
 /** Shell route value — mirrors `ROUTE_ITEMS` in `tug-prompt-entry.tsx`. */
 const ROUTE_SHELL = "$";
+
+/**
+ * Focus group the dev card authors its keyboard-focus-cycling stops
+ * into ([P02]/[P10]). One group per card mode — the per-card
+ * `CycleScope` keys each card's stops into its own focus mode, so a
+ * constant group string is safe across mounts. The lowest order is the
+ * commit-home (the submit), what `focusFirstInMode` seeds on entry.
+ */
+const DEV_CYCLE_GROUP = "dev-prompt-cycle";
+const DEV_CYCLE_ORDER_SUBMIT = 0;
+const DEV_CYCLE_ORDER_ROUTE = 1;
 
 /** Max characters the Z4B Project chip shows before it falls back to the
  *  leaf directory name. */
@@ -1251,6 +1263,15 @@ function DevProjectPickerForm({
   onRetryRestore,
 }: DevProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Per-state default focus for the picker ([P12] Picker → Open). The
+  // Open button is the destination so Return opens the seeded path — but
+  // Open is `disabled` until a valid path settles, and the path seed is
+  // async, so the placement is a deliberate smart latch (below), not a
+  // mount-time `autoFocus`: focus Open once it settles enabled, else the
+  // path field; never yank focus once the user has engaged the field.
+  const openButtonRef = useRef<HTMLButtonElement | null>(null);
+  const defaultFocusPlacedRef = useRef(false);
+  const userTouchedFieldRef = useRef(false);
   // True while the path field's completion menu is open — the Recent Project
   // Paths list steps aside (keeps its layout space) so the floating overlay
   // never visually collides with it.
@@ -1774,6 +1795,30 @@ function DevProjectPickerForm({
   const dirMissing = sessionsDataSource.dirExists() === false;
   const openDisabled = trimmedPath.length === 0 || dirMissing;
 
+  // Smart-latch default focus ([P12] Picker → Open). Re-evaluated as the
+  // async path seed settles `openDisabled`:
+  //   - Open enabled → focus Open (Return opens the seeded path); latch.
+  //   - Open disabled → keep the caret in the path field so typing starts
+  //     immediately; do NOT latch, so a seed that later enables Open
+  //     (before the user types) promotes focus to it on the next run.
+  //   - The user has touched the field → that field is the default;
+  //     latch without moving so typing is never interrupted.
+  // [L03] layout effect (focus before paint); the editor-vs-engine focus
+  // axes are untouched — this is plain DOM focus on the picker form.
+  useLayoutEffect(() => {
+    if (defaultFocusPlacedRef.current) return;
+    if (userTouchedFieldRef.current) {
+      defaultFocusPlacedRef.current = true;
+      return;
+    }
+    if (!openDisabled) {
+      defaultFocusPlacedRef.current = true;
+      openButtonRef.current?.focus();
+    } else {
+      inputRef.current?.focus();
+    }
+  }, [openDisabled]);
+
   return (
     <PickerFormResponderScope>
       <div
@@ -1807,13 +1852,18 @@ function DevProjectPickerForm({
         <TugFileChooser
           ref={inputRef}
           value={path}
-          onChange={setPath}
+          onChange={(next) => {
+            // A user edit (typing / completion pick) — not the programmatic
+            // seed, which calls `setPath` directly — claims the field as the
+            // default focus so the smart latch never yanks it to Open.
+            userTouchedFieldRef.current = true;
+            setPath(next);
+          }}
           base={path !== "" ? path : "/"}
           kind="directory"
           onSubmit={submit}
           onOpenChange={setPathMenuOpen}
           placeholder="/path/to/project"
-          autoFocus
         />
       </label>
       <PickerCellProvider value={cellContextValue}>
@@ -1917,6 +1967,7 @@ function DevProjectPickerForm({
           Cancel
         </TugPushButton>
         <TugPushButton
+          ref={openButtonRef}
           emphasis="filled"
           role="action"
           onClick={submit}
@@ -2281,6 +2332,31 @@ export function DevCardBody({
     codeSnap.lastError !== null &&
     codeSnap.lastError.cause !== "resume_failed" &&
     codeSnap.lastError.cause !== "attachment_rejected";
+
+  // Keyboard-focus-cycling ([P09]/[P10]). ⌥⇥ trades the editor's Tab for
+  // a trapped tour of the card's chrome zones (the submit is the
+  // commit-home seed). Only the connected body cycles — the picker never
+  // mounts this — and a dead session is ineligible so the toggle can't
+  // strand a useless ring. `cycling` is engine-derived in the hook
+  // ([L02]); the toggle is wired to `CYCLE_FOCUS_MODE` on the
+  // card-content responder below, `CycleScope` wraps the prompt entry,
+  // and `data-cycling` rides the card root for the fill-suppression CSS.
+  const cycle = useCycleMode({ enabled: !sessionErrored });
+
+  // Connected → editor on cycle exit ([P12]). The engine pop restores its
+  // captured key view, but a connected card's resting focus is the editor
+  // — a responder (caret), not a focus-group stop — so there is no key
+  // view to restore. The card owns this seed: when cycling ends, return
+  // DOM focus to the prompt, the card's single focus destination (the same
+  // move it makes when an inline dialog clears). Driven off the
+  // engine-derived `cycling` snapshot ([L02]) in a layout effect ([L03]).
+  const prevCyclingRef = useRef(false);
+  useLayoutEffect(() => {
+    if (prevCyclingRef.current && !cycle.cycling) {
+      entryDelegateRef.current?.focus();
+    }
+    prevCyclingRef.current = cycle.cycling;
+  }, [cycle.cycling, entryDelegateRef]);
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
@@ -3171,6 +3247,12 @@ export function DevCardBody({
       [TUG_ACTIONS.FOCUS_PROMPT]: (_event: ActionEvent) => {
         entryDelegateRef.current?.focus();
       },
+      // ⌥⇥ toggles keyboard-focus-cycling: the editor's Tab gives way to a
+      // trapped tour of the card's chrome zones, seeded on the submit
+      // commit-home; toggling again restores the editor caret ([P09]).
+      [TUG_ACTIONS.CYCLE_FOCUS_MODE]: (_event: ActionEvent) => {
+        cycle.toggle();
+      },
       // ⇧⇥ cycles the permission mode. Only the dev card registers this
       // handler, so on any other card ⇧⇥ falls through to reverse-tab
       // navigation (Risk R02). `cycle` reads the current mode fresh from
@@ -3345,6 +3427,12 @@ export function DevCardBody({
         className="dev-card"
         data-slot="dev-card"
         data-testid="dev-card"
+        // Keyboard-focus-cycling signal ([P12]). Set while the card's
+        // cycle mode is on; the fill-suppression CSS keys on this ancestor
+        // so the submit's standing fill stands down to outlined and the
+        // promoted fill follows the focused stop instead. Engine-derived
+        // ([L02]); appearance via the attribute, never React state ([L06]).
+        data-cycling={cycle.cycling ? "true" : "false"}
       >
       <TugSplitPane
         orientation="horizontal"
@@ -3491,10 +3579,24 @@ export function DevCardBody({
               disabled={sessionErrored}
               className="dev-card-entry-pane"
             >
+              {/*
+                CycleScope keys the prompt entry's authored focus stops
+                into this card's cycle mode (not the base mode), so the
+                submit registers as a cycle stop that is inert while typing
+                and walked only while cycling ([P09]/[P10]). The editor
+                itself is a responder (caret), not a focus-group stop, so
+                it is untouched. Z2 / Z4A stops join in later slices via
+                additional `CycleScope`s sharing this same mode id.
+              */}
+              <cycle.CycleScope>
               <TugPromptEntry
                 ref={entryDelegateRef}
                 id={`${cardId}-entry`}
                 deactivated={inlineDialogPending}
+                submitFocusGroup={DEV_CYCLE_GROUP}
+                submitFocusOrder={DEV_CYCLE_ORDER_SUBMIT}
+                routeFocusGroup={DEV_CYCLE_GROUP}
+                routeFocusOrder={DEV_CYCLE_ORDER_ROUTE}
                 localCommandTargetId={`${cardId}-card-content`}
                 codeSessionStore={codeSessionStore}
                 sessionMetadataStore={sessionMetadataStore}
@@ -3545,6 +3647,7 @@ export function DevCardBody({
                 onMaximizeChange={setMaximized}
                 placeholderByRoute={DEV_PROMPT_PLACEHOLDER_BY_ROUTE}
               />
+              </cycle.CycleScope>
             </TugBox>
             {renderSheet()}
             {cardPickerSheet.renderSheet()}
