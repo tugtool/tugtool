@@ -15,17 +15,16 @@
  * The walk:
  *   1. **rest:** clicking the editor puts the caret there (base mode); the card
  *      reads `data-cycling="false"` and the submit holds no key view.
- *   2. **empty editor → submit is skipped:** the submit's empty-input gate
- *      disables it, so ⌥⇥ does NOT seed it — the walk skips the disabled
- *      control and seeds the next live stop (the route). ⌥⇥ off restores the
- *      caret.
- *   3. **typed editor → submit seeds:** with content, the submit is actionable;
- *      ⌥⇥ seeds the submit commit-home.
- *   4. **Tab tours the stops:** Tab moves submit → route (Z4A) → Mode → Model →
- *      Effort (the Z4B chips), then wraps back to the submit commit-home
- *      (trapped — only the card's stops are walked).
- *   5. **toggle off (⌥⇥):** the mode pops, `data-cycling="false"`, the submit
- *      drops the key view, and DOM focus returns to the editor caret.
+ *   2. **empty editor → submit is skipped:** ⌥⇥ seeds the route; touring the
+ *      live stops (route → Mode → Model → Effort → wrap) never lands on the
+ *      submit, because its empty-input gate disables it. ⌥⇥ off restores caret.
+ *   3. **typed editor → route seeds:** with content, ⌥⇥ seeds the route (the
+ *      first stop in the revised order).
+ *   4. **Tab tours the stops:** route → Mode → Model → Effort → submit, then
+ *      wraps back to the route (trapped — only the card's stops are walked).
+ *      (Z2 and the editor text-stop join in later slices.)
+ *   5. **toggle off (⌥⇥):** the mode pops, `data-cycling="false"`, and DOM
+ *      focus returns to the editor caret.
  *
  * Mode keys (Return / Space) are a later step; this gates the dev-card
  * push/seed/wrap/restore + the `data-cycling` signal. The Picker → Open default
@@ -107,7 +106,7 @@ const EDITOR_FOCUSED = `(function(){
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () => {
   test(
-    "⌥⇥ skips the disabled (empty) submit, seeds it once typed, Tab tours submit → route → wrap, ⌥⇥ restores the editor caret",
+    "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → wrap, skips the disabled submit when empty, ⌥⇥ restores the editor caret",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard" });
       try {
@@ -141,11 +140,20 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         expect(await app.evalJS<string | null>(CYCLING)).toBe("false");
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
 
-        // (2) Empty editor → the submit is disabled (its empty-input gate), so
-        // it is NOT a Tab target: ⌥⇥ skips it and seeds the next live stop, the
-        // route. The disabled submit never takes the key view.
+        // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
+        // empty-input gate), so it is NOT a Tab target — touring the live stops
+        // (route → Mode → Model → Effort → wrap) never lands the key view on the
+        // submit.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(MODEL_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
         // ⌥⇥ off → back to the editor caret.
@@ -165,29 +173,30 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
           { timeoutMs: 6000 },
         );
 
-        // (3) Non-empty editor → ⌥⇥ seeds the submit commit-home.
+        // (3) Non-empty editor → ⌥⇥ seeds the route (the first stop, [P10]
+        // revised order — the cycle now seeds at the route, not the submit).
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
-
-        // (4) Tab tours the stops in toolbar order, then wraps back to the
-        // submit commit-home (trapped to the card's stops): submit → route →
-        // Mode → Model → Effort → submit.
-        await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
+
+        // (4) Tab tours the stops left→right, then wraps back to the route
+        // (trapped): route → Mode → Model → Effort → submit → route. (Z2 and the
+        // editor text-stop join in later slices.)
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(MODEL_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
 
-        // (5) ⌥⇥ → cycling off; the submit drops the key view and the caret
-        // returns to the editor ([P12] Connected → editor).
+        // (5) ⌥⇥ → cycling off; the caret returns to the editor
+        // ([P12] Connected → editor).
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);

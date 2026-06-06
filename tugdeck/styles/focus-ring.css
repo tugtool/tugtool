@@ -151,6 +151,16 @@ body {
   outline-offset: var(--tugx-key-within-offset, var(--tugx-focus-ring-offset));
 }
 
+/* Keyboard-focus-cycling suppresses the within-container mark. While a context
+   is cycling ([P12]/[#step-cycle-devcard]), the stops are spread across zones
+   and the "container of the focused stop" outline reads as a spurious outer
+   ring around the toolbar / prompt-entry section — the focused-stop ring plus
+   the input blur are the mode's signal, the container mark is noise. Scoped to
+   the cycling ancestor so non-cycling contexts keep their within mark. */
+[data-cycling="true"] [data-key-within] {
+  outline: none;
+}
+
 /**
  * The third keyboard visual state: `data-key-cursor` — the movement cursor on
  * the current item inside a group. Under the focus-language model it is an

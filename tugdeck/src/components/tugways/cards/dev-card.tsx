@@ -261,21 +261,25 @@ const ROUTE_SHELL = "$";
  * Focus group the dev card authors its keyboard-focus-cycling stops
  * into ([P02]/[P10]). One group per card mode — the per-card
  * `CycleScope` keys each card's stops into its own focus mode, so a
- * constant group string is safe across mounts. The lowest order is the
- * commit-home (the submit), what `focusFirstInMode` seeds on entry.
+ * constant group string is safe across mounts. The lowest order (the
+ * route) is what `focusFirstInMode` seeds on entry.
  */
 const DEV_CYCLE_GROUP = "dev-prompt-cycle";
-// Cycle order ([P10]): the submit is the commit-home (order 0) the cycle seeds
-// on entry; forward Tab then reads the toolbar left→right — route (Z4A), then
-// the interactive Z4B chips (Mode / Model / Effort) — and wraps back to the
-// submit. Each chip is its own leaf stop (they are independent controls, not
-// one item-group). A disabled stop (the empty submit, or the chips on the Shell
-// route) drops out of the walk via the engine's interactivity filter.
-const DEV_CYCLE_ORDER_SUBMIT = 0;
-const DEV_CYCLE_ORDER_ROUTE = 1;
-const DEV_CYCLE_ORDER_MODE = 2;
-const DEV_CYCLE_ORDER_MODEL = 3;
-const DEV_CYCLE_ORDER_EFFORT = 4;
+// Cycle order ([P10], revised): the cycle reads the card bottom toolbar
+// left→right, then up to the status row, then into the editor, and **seeds at
+// the route** (order 0). Forward Tab: route → Mode → Model → Effort → submit →
+// Z2 status row → editor → wrap; Shift+Tab reverses. The Z4B chips are
+// independent leaf stops; the Z2 row is one item-group stop; the editor is the
+// last stop (a text stop — Return resumes typing). A disabled stop (the empty
+// submit, or the chips on the Shell route) drops out of the walk via the
+// engine's interactivity filter, so the seed lands on the next live stop.
+const DEV_CYCLE_ORDER_ROUTE = 0;
+const DEV_CYCLE_ORDER_MODE = 1;
+const DEV_CYCLE_ORDER_MODEL = 2;
+const DEV_CYCLE_ORDER_EFFORT = 3;
+const DEV_CYCLE_ORDER_SUBMIT = 4;
+// Orders 5 (Z2 status row) and 6 (editor text stop) are wired in their own
+// slices ([P10] revised order).
 
 /** Max characters the Z4B Project chip shows before it falls back to the
  *  leaf directory name. */
@@ -3601,7 +3605,12 @@ export function DevCardBody({
               <TugPromptEntry
                 ref={entryDelegateRef}
                 id={`${cardId}-entry`}
-                deactivated={inlineDialogPending}
+                // The editor stands down (read-only + caret off + dimmed) both
+                // while an inline dialog owns the keyboard AND while cycling —
+                // the latter is the cycling-mode indicator ([P12] revised:
+                // reuse the deactivated path as the "blur"). It reactivates when
+                // cycling ends (the Connected → editor effect re-focuses it).
+                deactivated={inlineDialogPending || cycle.cycling}
                 submitFocusGroup={DEV_CYCLE_GROUP}
                 submitFocusOrder={DEV_CYCLE_ORDER_SUBMIT}
                 routeFocusGroup={DEV_CYCLE_GROUP}
