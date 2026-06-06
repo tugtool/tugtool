@@ -45,6 +45,7 @@ import { FocusManagerContext } from "./focus-manager";
 import { useResponderChain } from "./responder-chain-provider";
 import { useItemGroupKeyboard } from "./use-item-group-keyboard";
 import { useOptionalResponder } from "./use-responder";
+import { useScroller } from "./internal/scroller-context";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 export interface InlineDialogModalOptions {
@@ -80,6 +81,9 @@ export interface InlineDialogModalResult {
   onKeyDown: (event: ReactKeyboardEvent) => void;
   /** Re-sync the cursor's item range (call when the rendered choices change). */
   syncItems: () => void;
+  /** Move the cursor to an absolute index (e.g. reset to the default highlight
+   *  when a wizard step changes the choice set). */
+  setCursor: (index: number) => number;
 }
 
 export function useInlineDialogModal(
@@ -87,6 +91,8 @@ export function useInlineDialogModal(
 ): InlineDialogModalResult {
   const manager = useContext(FocusManagerContext);
   const chain = useResponderChain();
+  // The enclosing scrolling host's follow-bottom façade (no-op outside a list).
+  const scroller = useScroller();
   // One id for both axes: the scope root carries `data-tug-focusable` AND
   // `data-responder-id` under this id, so the key view, the cursor projection,
   // and the first-responder promotion all resolve to the same element.
@@ -94,7 +100,7 @@ export function useInlineDialogModal(
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
-  const { attachRoot: attachFocusable, onKeyDown, syncItems } =
+  const { attachRoot: attachFocusable, onKeyDown, syncItems, setCursor } =
     useItemGroupKeyboard({
       id,
       group: id,
@@ -139,10 +145,27 @@ export function useInlineDialogModal(
   //    + cursor show) — last, so a focusin re-seed cannot leave it elsewhere.
   useLayoutEffect(() => {
     if (manager === null) return;
+    // Release the enclosing list's follow-bottom while the dialog is shown:
+    // a dialog is often taller than the viewport, and a host pinned to the
+    // live edge would push the "Claude has questions / Permission requested"
+    // header off the top. Disengaging *before* the dialog's growth would pin
+    // (this layout effect runs ahead of the host's growth-pin) keeps the
+    // header reachable; re-engage on resolve so later output follows again.
+    scroller.disengage("inline-dialog");
     rootElRef.current?.focus();
     chain?.focusResponder(id);
     manager.setKeyView(id, true);
-  }, [manager, chain, id]);
+    // Keep the dialog's header in view when it appears, regardless of the
+    // transcript's prior scroll position — scroll the header row (short, at the
+    // top) minimally into view. Falls back to the scope root.
+    const root = rootElRef.current;
+    const header =
+      root?.querySelector('[data-slot="tug-inline-dialog-row"]') ?? root;
+    header?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    return () => {
+      scroller.engage("inline-dialog");
+    };
+  }, [manager, chain, id, scroller]);
 
-  return { attachRoot, onKeyDown, syncItems };
+  return { attachRoot, onKeyDown, syncItems, setCursor };
 }

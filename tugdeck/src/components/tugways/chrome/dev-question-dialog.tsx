@@ -136,6 +136,8 @@ import {
 } from "@/components/tugways/tug-confirm-popover";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useFocusTrap } from "@/components/tugways/use-focus-trap";
+import { useInlineDialogModal } from "@/components/tugways/use-inline-dialog-scope";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -759,6 +761,144 @@ function QuestionRow(
 }
 
 // ---------------------------------------------------------------------------
+// Keyboard modal shell
+// ---------------------------------------------------------------------------
+
+interface QuestionDialogModalProps {
+  cancelRef: React.RefObject<HTMLButtonElement | null>;
+  submitRef: React.RefObject<HTMLButtonElement | null>;
+  backRef: React.RefObject<HTMLButtonElement | null>;
+  nextRef: React.RefObject<HTMLButtonElement | null>;
+  onCancel: () => void;
+  onSubmit: () => void;
+  onBack: () => void;
+  onNext: () => void;
+  /** Activate the cursor'd option — index among the current question's rows. */
+  onActivateOption: (optionIndex: number) => void;
+  /** Re-sync the cursor range when the wizard advances (the option set changes). */
+  syncKey: number;
+  /** The composed `TugInlineDialog` (built by the parent with full types). */
+  children: React.ReactNode;
+}
+
+/**
+ * The modal-for-keys shell ([P06]) for the question wizard. Wraps the dialog in
+ * a focusable scope root, registers its choices — the enabled action / nav
+ * buttons (Cancel / Submit / Back / Next) plus the current question's option
+ * rows — as one item-container so arrows move the highlight and Return activates
+ * it, and declares Cancel (`popInteractive`) as the cancel-action (Escape /
+ * Cmd-.). The hidden measurement helper's option clones are excluded. Rendered
+ * inside the parent's `FocusModeScope`.
+ */
+const QuestionDialogModal: React.FC<QuestionDialogModalProps> = ({
+  cancelRef,
+  submitRef,
+  backRef,
+  nextRef,
+  onCancel,
+  onSubmit,
+  onBack,
+  onNext,
+  onActivateOption,
+  syncKey,
+  children,
+}) => {
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+
+  const isEnabled = (el: Element): boolean =>
+    !el.hasAttribute("disabled") &&
+    el.getAttribute("aria-disabled") !== "true";
+
+  // The current question's *live* option rows — excludes the hidden
+  // `.dev-question-dialog-measure` clones.
+  const liveOptionEls = React.useCallback((): Element[] => {
+    const root = rootRef.current;
+    if (root === null) return [];
+    return Array.from(
+      root.querySelectorAll('[data-slot="tug-dialog-button"]'),
+    ).filter((el) => el.closest(".dev-question-dialog-measure") === null);
+  }, []);
+
+  // Cursor order, visual top to bottom: enabled action/nav buttons (header
+  // Cancel/Submit, then nav Back/Next) followed by the current question's
+  // option rows.
+  const collectItems = React.useCallback((): Element[] => {
+    const root = rootRef.current;
+    if (root === null) return [];
+    const buttons = Array.from(
+      root.querySelectorAll('[data-slot="tug-push-button"]'),
+    ).filter(isEnabled);
+    const options = liveOptionEls().filter(isEnabled);
+    return [...buttons, ...options];
+  }, [liveOptionEls]);
+
+  // Land on the first option (answering is the task); fall back to the primary
+  // action (Submit) when there are no options (review / no questions).
+  const computeInitialIndex = React.useCallback((): number => {
+    const items = collectItems();
+    const firstOption = items.findIndex(
+      (el) => el.getAttribute("data-slot") === "tug-dialog-button",
+    );
+    if (firstOption >= 0) return firstOption;
+    const submitIdx = items.indexOf(submitRef.current as Element);
+    return submitIdx >= 0 ? submitIdx : 0;
+  }, [collectItems, submitRef]);
+
+  const { attachRoot, onKeyDown, syncItems, setCursor } = useInlineDialogModal({
+    collectItems,
+    initialIndex: computeInitialIndex,
+    onActivate: (el) => {
+      if (el === null) return;
+      if (el === cancelRef.current) return onCancel();
+      if (el === submitRef.current) return onSubmit();
+      if (el === backRef.current) return onBack();
+      if (el === nextRef.current) return onNext();
+      const optionIndex = liveOptionEls().indexOf(el);
+      if (optionIndex >= 0) onActivateOption(optionIndex);
+    },
+    // Questions commit only on explicit activate — the cursor moving over a
+    // row does not pick it (multi-select especially).
+    onCancel,
+  });
+
+  const setRoot = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      attachRoot(el);
+    },
+    [attachRoot],
+  );
+
+  // Keep the cursor's item range fresh on every render (the choice set shifts
+  // as options toggle and Back/Next/Submit enable). Reset the cursor to the new
+  // step's default highlight ONLY when the wizard actually changes step — never
+  // on a same-step re-render (e.g. a multi-select toggle), which must leave the
+  // cursor where it is. The initial mount is seeded by the scope activation, so
+  // it does not reset here either.
+  const prevSyncKeyRef = React.useRef<number | null>(null);
+  React.useLayoutEffect(() => {
+    syncItems();
+    if (prevSyncKeyRef.current !== syncKey) {
+      const isInitial = prevSyncKeyRef.current === null;
+      prevSyncKeyRef.current = syncKey;
+      if (!isInitial) setCursor(computeInitialIndex());
+    }
+  }, [syncItems, setCursor, computeInitialIndex, syncKey]);
+
+  return (
+    <div
+      ref={setRoot}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      data-slot="dev-question-dialog-scope"
+      className="dev-question-dialog-scope"
+    >
+      {children}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -975,129 +1115,23 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     session.popInteractive();
   }, [session]);
 
-  // Keyboard handler — `1`..`9` selects option N (1-indexed) in the
-  // current question. Bound on the questions wrapper, so it only
-  // fires when focus is inside the dialog (we don't steal digit
-  // typing from the prompt entry below the transcript).
-  //
-  // Enter is handled separately at the document level — see the
-  // capture-phase listener below — because the prompt entry usually
-  // holds focus while a question is pending, and we want Enter
-  // pressed there to advance the wizard rather than submit a new
-  // prompt.
-  //
-  // Escape is NOT intercepted: it bubbles up to the prompt entry's
-  // `CANCEL_DIALOG` action which calls `popInteractive()` — same
-  // gesture our `handleCancel` invokes — so letting it bubble keeps
-  // Cancel ≡ Esc through one code path.
-  const handleKeyDown = React.useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (questions.length === 0) return;
-      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      const target = e.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (e.key.length !== 1) return;
-      const digit = e.key.charCodeAt(0) - 48; // "0".charCodeAt(0) === 48
-      if (digit < 1 || digit > 9) return;
-      const current = questions[currentIndex];
-      if (current === undefined) return;
-      const option = current.options[digit - 1];
-      if (option === undefined) return;
-      e.preventDefault();
-      handleSelect(currentIndex, option.label);
-    },
-    [questions, currentIndex, handleSelect],
-  );
+  // Inline dialogs are modal for keys ([P06]): push a focus mode while pending
+  // so the dialog owns the keyboard — the inner `QuestionDialogModal` shell
+  // becomes the key view + first responder, arrows move the cursor over the
+  // choices (options + Back / Next / Cancel / Submit), Return activates the
+  // highlight, and Escape / Cmd-. cancel via the scope's CANCEL_DIALOG handler.
+  // The prompt entry deactivates off the session's pending state (see
+  // `DevCardBody`). Declared above the `!isPending` early return so hook order
+  // is stable across renders. No bespoke digit / arrow handlers and no
+  // focus-steal — the engine scope owns navigation now.
+  const { FocusModeScope } = useFocusTrap({ active: isPending });
 
-  // Document-level capture-phase handler for wizard navigation and
-  // system cancel.
-  //
-  //  - Cmd-.            → Cancel, mirroring Esc. Bypasses the
-  //                       Cancel popover (which is for mouse clicks)
-  //                       and goes straight to `popInteractive` —
-  //                       same path Esc walks through the chain.
-  //  - ArrowLeft        → Back (no modifiers).
-  //  - ArrowRight       → Next (no modifiers).
-  //
-  // Enter is NOT handled here — `TugPushButton` auto-registers as
-  // the responder chain's default button when painted filled-action
-  // (Submit at review, Next during wizard), and the chain's
-  // Stage-2 bubble-phase listener owns Enter→click + press visual.
-  // The editor's keymap defers Enter to the same default button via
-  // `peekDefaultButton`, so Return from the prompt entry advances
-  // the wizard without any custom hijacking here.
-  //
-  // Arrows are dialog-specific gestures (wizard nav), not "default
-  // button" gestures, so they stay at the dialog level. While the
-  // dialog is pending these shadow the prompt entry's cursor-
-  // movement arrows — answering the question is the active task.
-  React.useEffect(() => {
-    if (!isPending) return;
-    if (questions.length === 0) return;
-    const onDialogKey = (e: KeyboardEvent): void => {
-      // Cmd-. — Cancel.
-      if (
-        e.key === "." &&
-        e.metaKey &&
-        !e.altKey &&
-        !e.ctrlKey &&
-        !e.shiftKey
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleCancel();
-        return;
-      }
-      // Arrows are no-modifier-only.
-      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.key === "ArrowLeft") {
-        if (currentIndex > 0) {
-          e.preventDefault();
-          e.stopPropagation();
-          handleBack();
-        }
-        return;
-      }
-      if (e.key === "ArrowRight") {
-        if (currentIndex < questions.length) {
-          e.preventDefault();
-          e.stopPropagation();
-          handleAdvance();
-        }
-        return;
-      }
-    };
-    document.addEventListener("keydown", onDialogKey, true);
-    return () => {
-      document.removeEventListener("keydown", onDialogKey, true);
-    };
-  }, [
-    isPending,
-    questions.length,
-    currentIndex,
-    handleAdvance,
-    handleBack,
-    handleCancel,
-  ]);
-
-  // Mount-time focus on the primary action so a Return key submits.
-  // `TugInlineDialog` is a stateless presentation surface — callers
-  // own focus management for whatever buttons they pass in `actions`.
-  // Declared HERE, before the `!isPending` early return, so every
-  // render of this component calls the same set of hooks in the same
-  // order ([L02] / [L24] structure zone). A genuinely new request
-  // remounts the whole component (keyed by `request_id` upstream).
+  // Refs to the fixed wizard buttons so the modal shell can map a cursor
+  // activation back to its handler.
+  const cancelRef = React.useRef<HTMLButtonElement | null>(null);
   const submitRef = React.useRef<HTMLButtonElement | null>(null);
-  React.useLayoutEffect(() => {
-    if (isPending) submitRef.current?.focus();
-  }, [isPending]);
+  const backRef = React.useRef<HTMLButtonElement | null>(null);
+  const nextRef = React.useRef<HTMLButtonElement | null>(null);
 
   // Cancel guards itself with a confirmation popover: a stray click
   // shouldn't tear the AI's question down without a second beat. The
@@ -1167,6 +1201,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         side="bottom"
       >
         <TugPushButton
+          ref={cancelRef}
           emphasis="outlined"
           role="danger"
           size="xs"
@@ -1177,7 +1212,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       </TugConfirmPopover>
       <TugPushButton
         ref={submitRef}
-        emphasis={isAtReview ? "filled" : "outlined"}
+        emphasis="outlined"
         role="action"
         size="xs"
         disabled={!allAnswered}
@@ -1189,7 +1224,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   ) : (
     <TugPushButton
       ref={submitRef}
-      emphasis="filled"
+      emphasis="outlined"
       role="action"
       size="xs"
       onClick={handleSubmit}
@@ -1207,12 +1242,29 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // mutates, but stable across question advances so the button
   // never moves under the mouse.
   //
-  // The dialog mounts inside a host `<div>` so `handleKeyDown` (Enter
-  // = advance / submit; digit = option-pick) catches events from
-  // anywhere in the dialog — including when the disabled `Submit`
-  // button holds focus at the start of the wizard.
+  // The dialog mounts inside the modal-for-keys shell ([P06]): it owns the
+  // keyboard while pending — arrows move the cursor over the choices (options +
+  // Cancel / Submit / Back / Next), Return activates the highlight, Escape /
+  // Cmd-. cancel. `FocusModeScope` (from `useFocusTrap` above) wraps it so its
+  // focusable joins the pushed mode.
   return (
-    <div onKeyDown={handleKeyDown}>
+    <FocusModeScope>
+      <QuestionDialogModal
+        cancelRef={cancelRef}
+        submitRef={submitRef}
+        backRef={backRef}
+        nextRef={nextRef}
+        onCancel={handleCancel}
+        onSubmit={handleSubmit}
+        onBack={handleBack}
+        onNext={handleAdvance}
+        onActivateOption={(optionIndex) => {
+          const question = questions[currentIndex];
+          const option = question?.options[optionIndex];
+          if (option) handleSelect(currentIndex, option.label);
+        }}
+        syncKey={currentIndex}
+      >
     <TugInlineDialog
       icon={<MessageCircleQuestion />}
       iconRole="info"
@@ -1231,6 +1283,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           </span>
           <div className="dev-question-dialog-nav-buttons">
             <TugPushButton
+              ref={backRef}
               emphasis="outlined"
               role="action"
               size="xs"
@@ -1240,7 +1293,8 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               <ArrowLeft size={14} aria-hidden="true" /> Back
             </TugPushButton>
             <TugPushButton
-              emphasis={isAtReview ? "outlined" : "filled"}
+              ref={nextRef}
+              emphasis="outlined"
               role="action"
               size="xs"
               disabled={isAtReview}
@@ -1323,7 +1377,8 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         </div>
       ) : null}
     </TugInlineDialog>
-    </div>
+      </QuestionDialogModal>
+    </FocusModeScope>
   );
 };
 

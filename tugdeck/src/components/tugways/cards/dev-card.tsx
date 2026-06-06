@@ -2201,10 +2201,10 @@ export function DevCardBody({
   // An inline dialog is modal for keys ([P06]): while one is pending the prompt
   // entry deactivates (read-only + blurred, no caret) so the dialog owns the
   // keyboard and the prompt visibly stands down. Derived from real store state
-  // ([L06]); reactivates when the dialog resolves. Scoped to permission dialogs
-  // for now — the question dialog's modal keyboard scope lands next, and its
-  // deactivation switches on with it.
-  const inlineDialogPending = Boolean(codeSnap.pendingApproval);
+  // ([L06]); reactivates when the dialog resolves. Both Permission and Question
+  // dialogs are modal-for-keys.
+  const inlineDialogPending =
+    Boolean(codeSnap.pendingApproval) || Boolean(codeSnap.pendingQuestion);
 
   // When the dialog resolves, return focus to the prompt — the card's single
   // focus destination, which reactivates the instant `deactivated` clears.
