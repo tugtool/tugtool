@@ -51,6 +51,7 @@ The keyboard-model spike (now closed out) settled a richer language on the galle
 
 1. The token foundation: real focus-language tokens (ring / behind-tint / selection-fill resolved from a role axis) authored in `styles/focus-ring.css` + `styles/themes/brio.css` + `styles/themes/harmony.css`, re-pointing the global `[data-key-view-kbd]` rule ([#step-1]).
 2. TugPushButton keyboard-promoted state; unify the inline dialogs onto it ([#step-2]).
+2.5. Keyboard-focus-cycling mode (Opt-Tab) for text-first cards — a per-card cycle focus-scope toggled by a trigger, with the dev card as first consumer; the surface that exercises the whole focus language end-to-end ([#step-cycle]).
 3. Item-groups: TugRadioGroup, TugChoiceGroup, TugOptionGroup ([#step-3]).
 4. Live / continuous: TugSlider, TugTabBar (→ commit-on-act) ([#step-4]).
 5. Descendable rows: TugListView/TugListRow, TugAccordion ([#step-5]).
@@ -67,6 +68,7 @@ The keyboard-model spike (now closed out) settled a richer language on the galle
 - The accessibility-mode ARIA pass + standard/accessibility dual-mode toggle (a keyboard-model follow-on); this plan must not *break* it, but a dedicated high-contrast focus variant is deferred ([Q03]).
 - New component-level user-facing `role` props where none exist — the role axis defaults to `action` and components opt into richer roles over time ([P03]); only `TugInput`'s existing `validation` is mapped this phase ([P07]).
 - The deferred `refuse`/first-responder audit (keyboard-model `#step-15`).
+- **Z1 transcript cycling / message selection** — the first cut of the cycling mode ([P10]) circulates the chrome zones (Z2 / Z4 / Z5) only; tabbing into the transcript to scroll or select messages is deferred (possibly indefinitely).
 
 #### Dependencies / Prerequisites {#dependencies}
 
@@ -135,6 +137,16 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Plan to resolve:** Decide at [#step-10] once the rollout is real. **Lean:** keep it (retitle "Focus language reference") but stop it from drifting by having it consume the real tokens, not its private `--fl-*`. **Resolution:** OPEN.
 
+#### [Q05] The cycle trigger chord (OPEN → resolve in #step-cycle-trigger-spike) {#q05-cycle-trigger}
+
+**Question:** Which chord toggles the keyboard-focus-cycling mode ([P09])? The mnemonic candidate is **Opt-Tab** (⌥⇥ — "Tab, but navigation"), but macOS full-keyboard-access / WebKit may intercept Tab-family chords before they reach the WebView — the same reason ⇧⇥ is eaten and `at0088` dispatches its chord synthetically.
+
+**Why it matters:** If the chord never reaches the document keybinding stage, the mode is unreachable; the trigger must be confirmed *before* the mechanism is wired to it.
+
+**Options:** (a) **Opt-Tab** (⌥⇥) — most mnemonic; (b) a **non-Tab chord** if Opt-Tab is eaten (⌃Tab is OS-reserved; candidates: a function chord, ⌥Esc, or a card-scoped leader); (c) a two-key leader.
+
+**Plan to resolve:** Spike in [#step-cycle-trigger-spike] — a temporary capture-phase probe / app-test that posts the chord and asserts the document listener receives it; take the first reliable option. **Lean:** Opt-Tab if it lands, else the simplest non-conflicting chord. **Resolution:** OPEN.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -146,12 +158,20 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 | Silent visual regressions (pixels not app-tested) | med | med | By-eye gallery review per theme/mode is a required checkpoint; behavior app-tests guard that attributes/behavior didn't move | Reviewer can't tell focus from rest |
 | Role-axis adoption balloons into prop churn | med | low | Default `action` means no prop changes for most; only focus CSS moves ([P03]) | A step needs new props on many components |
 | Theme contrast: filled role on light vs dark flips text legibility | med | med | Keep the spike's retuned intensities; verify white-on-fill in both themes per step | Text unreadable on a filled selection |
+| Cycle trigger chord eaten by OS/WebKit | high | med | Spike the chord first ([#step-cycle-trigger-spike]); fall back to a non-Tab chord ([Q05]) | A posted chord never reaches the document listener |
+| Cycling mode regresses the editor's typing / Tab semantics | high | low | Mode is opt-in + trapped; behavior app-tests for enter/cycle/act/exit AND editor-Tab-still-completes | Tab in the editor stops doing completion |
 
 **Risk R01: Mixed-language window during rollout** {#r01-mixed-window}
 
 - **Risk:** Between [#step-1] and the last component step, migrated and un-migrated focusables could show two different focus looks.
 - **Mitigation:** [#step-1] re-points the *global* `[data-key-view-kbd]` rule to the new ring axis, so every un-migrated focusable already rings in the new language; per-component steps then add the behind-tint + native-fill refinements. There is never an orange-vs-new split — only "ring only" vs "ring + refinements".
 - **Residual risk:** Un-migrated groups show the component ring rather than the cursor-item ring until their step lands; acceptable and self-evidently in-progress.
+
+**Risk R02: The cycle trigger is unreachable** {#r02-trigger-eaten}
+
+- **Risk:** macOS / WebKit may intercept Opt-Tab (a Tab-family chord) before it reaches the WebView, exactly as it eats ⇧⇥ — leaving the cycling mode with no way in.
+- **Mitigation:** confirm reachability in [#step-cycle-trigger-spike] *before* building the mechanism; [Q05] carries a non-Tab fallback chord.
+- **Residual risk:** the fallback chord is less mnemonic than Opt-Tab.
 
 ---
 
@@ -198,7 +218,7 @@ No engine touch; stays in the appearance zone ([L06]).
 
 **Rationale:** The de-risker — behavior app-tests (which assert attributes/behavior, not pixels) stay green and prove nothing behavioral moved; the work is contained to the appearance zone ([L06]).
 
-**Implications:** Every step's checkpoint includes the relevant behavior app-tests still `VERDICT: PASS` plus `tsc` clean; appearance is the by-eye add-on. The leaf-vs-group differentiation ([P02]) is handled by per-component CSS overrides, **not** a new engine-projected attribute, to keep this decision intact. (The one deliberate exception across the plan is [P08] TugTabBar commit-on-act — a scoped behavior change, carried with its own app-test.)
+**Implications:** Every step's checkpoint includes the relevant behavior app-tests still `VERDICT: PASS` plus `tsc` clean; appearance is the by-eye add-on. The leaf-vs-group differentiation ([P02]) is handled by per-component CSS overrides, **not** a new engine-projected attribute, to keep this decision intact. (Deliberate behavior exceptions, each carried with its own app-tests: [P08] TugTabBar commit-on-act, and [P09] the keyboard-focus-cycling mode — a new, opt-in mode that gives the focus language its home on text-first cards, built on the engine's existing focus-mode stack rather than a new projection.)
 
 #### [P05] Token architecture — promote the spike's `--fl-*` knobs to real tokens (DECIDED; shape in [Q01]) {#p05-tokens}
 
@@ -231,6 +251,64 @@ No engine touch; stays in the appearance zone ([L06]).
 **Rationale:** Removes the one live-commit special case; lets the tab bar use the identical item-group focus signature (behind-tint + cursor ring + native pill fill).
 
 **Implications:** A small behavior change (not pure appearance) — its step carries an app-test for arrow-moves-without-committing + act-commits, and updates the keyboard-model matrix row.
+
+#### [P09] Keyboard-focus-cycling mode for text-first cards (DECIDED; behavior addition) {#p09-cycle-mode}
+
+**Decision:** Text-first cards — whose resting key view is a text editor that owns Tab — gain a **keyboard-focus-cycling mode**: a per-card, **trapped** engine focus-scope, toggled by a dedicated trigger ([Q05]), within which Tab circulates the card's chrome zones (the [D97] `Z`-areas) while the editor's typing semantics are suspended. The resting state after connection is **typing** (caret in editor); the trigger flips to **cycling**. The mechanism is **general** (any text-first card opts in); the **dev card is the first consumer**.
+
+**Rationale:**
+- The editor needs Tab (completion / indent, `at0104`) and the chrome needs Tab (reach the `Z`-zones) — irreconcilable on one Tab. A *mode* resolves it (the modal-editor move).
+- Cycling is the surface that finally exercises the whole focus language on a real card — one Tab tour shows every archetype — so it is feature and end-to-end vetting surface at once.
+- The deferred a11y mode ([Q03]) likely falls out for free ("always-on cycling" = the cycle scope is the base mode).
+
+**Implications:** A scoped **behavior** addition — the [P04] carve-out — built on the engine's existing focus-mode stack (`pushFocusMode` / `popFocusMode` / `focusFirstInMode`), adding **no** new engine projection. Carried with its own app-tests. A reusable hook + dev-card wiring; the *visuals* come from [#step-1]–[#step-8]. See [#cycle-model].
+
+#### [P10] Cycle topology — zones are the focus-language item-groups (DECIDED) {#p10-cycle-topology}
+
+**Decision:** In cycling mode, **Tab moves between zones; arrows rove within a zone.** A multi-control zone is an **item-group** (behind-tint on the zone, ring on the cursor item, per [P02]); a single-control zone (Z5 submit) is a **leaf** (whole ring). The cycle **seeds at the commit-home (Z5 submit)**; forward Tab **wraps to the top and reads top→bottom** (matching the [D97] spatial numbering), Shift+Tab reverses; the cycle is **trapped** (wraps within the card). The **Z1 transcript is excluded** from the first cut.
+
+**Rationale:** Zone-granular cycling keeps the Tab count to ~5 (not ~15) and maps the card's zones 1:1 onto the focus-language's leaf/group archetypes — so cycling *is* the language's showcase. Seeding at submit answers the original "submit, not route choice": the ring lands on the nearest actionable control, then fans out.
+
+**Implications:** Each consumer registers its zones as cycle stops (`focusGroup` into the card's cycle scope); the existing item-group focus CSS ([#step-3], [#step-5]) renders the within-zone roving for free.
+
+#### [P11] Mode keys — Return is text-entry-only; Space acts; trigger / Escape exit (DECIDED) {#p11-cycle-keys}
+
+**Decision:** While cycling: the **trigger toggles the mode off** anywhere (restoring the caret to the editor); **Escape exits** (caret to editor); **Return is reserved for text-entry contexts only** — landing the cycle ring on the prompt-entry (or any text-input) zone and pressing Return **drops into the field** (resume typing), where the route's own Return semantics apply (Prompt: Shift+Return submits; Shell: Return submits), and on a **non-text** control Return is inert; **Space acts** on the focused control (the engine act tier). Dedicated chords stay live throughout (routes ⇧⌘C / ⇧⌘S, permission ⇧⌘P, and the per-zone Z2 chords Cmd-1…N).
+
+**Rationale:** "Return = enter / commit text" is the one universal expectation; reserving it to text contexts keeps "land in prompt-entry + Return → typing" coherent and removes the ambiguous Return-activates-button-vs-submit case. Space-acts matches the existing act tier. The chords are the fast path; cycling is the discoverable / accessible path; they coexist.
+
+**Implications:** The cycle scope's key handling routes Return only to text-input stops, dispatches act on Space, and pops on trigger / Escape. The Z2 cells gain Cmd-1…N popup-toggle chords ([#step-cycle-keys]).
+
+#### [P12] Per-state default focus + per-control roles for the dev card (DECIDED) {#p12-devcard-focus}
+
+**Decision:** The dev card declares its default (resting) key view **per state** — **Picker → the Open (submit) button; Connected → the editor** — and focus **migrates deliberately on state transition** (spawn picker→connected seeds the editor; end connected→picker seeds Open), never landing wherever React happens to mount. Per-control roles: **submit = action** (danger while stopping), **route choice = action**, **permission chip = agent**.
+
+**Rationale:** Matches the single-text-entry rule (the editor is the connected card's persistent destination) and the commit-home convention (Open is the picker's primary action). The roles make the cycle tour role-resolved per [P03].
+
+**Implications:** A per-state default-focus declaration on the card's seed path + the transition migration; the roles feed the focus-language visuals during the cycle tour.
+
+---
+
+### Deep Dives {#deep-dives}
+
+#### Keyboard-focus-cycling model {#cycle-model}
+
+A text-first card has one irreducible conflict: the **editor wants Tab** (completion / indent, `at0104`) and the **chrome wants Tab** (reach the [D97] `Z`-zones). One Tab can't mean both. The resolution is a **mode** ([P09]):
+
+- **Typing** (resting, after connection): caret in the editor; Tab = completion. The chrome is reachable only by dedicated chords (routes ⇧⌘C / ⇧⌘S, permission ⇧⌘P, Z2 Cmd-1…N).
+- **Cycling** (trigger-toggled): the editor's typing is suspended; **Tab circulates the zones, arrows rove within a zone.**
+
+**Mapping to engine primitives (no new projection — the [P09] carve-out reuses the existing stack):**
+
+- the trigger **pushes a trapped per-card focus mode** (`pushFocusMode`) and **seeds the key view at the commit-home** (`focusFirstInMode` → Z5 submit);
+- Tab walks the mode's focusables (the registered `Z`-zones); each zone is a **leaf** (Z5) or an **item-group** (Z2 / Z4) — so the focus-language's [P02] leaf-vs-group visuals render the tour for free;
+- the trigger / Escape **pop the mode** (`popFocusMode`), restoring the editor caret (the captured prior key view).
+
+**Cycle order ([P10]):** seed Z5; forward Tab wraps to the top and reads top→bottom (Z2 → Z4 → Z5 → wrap), Shift+Tab reverses; trapped within the card; Z1 transcript excluded (first cut).
+
+**Why this is the focus language's home:** one Tab tour of the dev card exercises every archetype in the matrix — leaf ring on submit; group tint + cursor ring on the status bar and route; role colors (submit = action / danger, permission = agent). Cycling is simultaneously the feature and the end-to-end vetting surface.
+
+**a11y ([Q03]):** "always-on cycling" is just "the cycle scope is the base mode" — design the mechanism so the toggle can be removed without restructuring, so the a11y mode falls out. Assessed at [#step-cycle-vet].
 
 ---
 
@@ -267,6 +345,8 @@ Replaces the orange axis. Exact names settle in [Q01]; shape:
 | committed selection fill | appearance (from committed data) | `data-selected` / native checked-active state → CSS | [L06] |
 | role (per component) | config | prop / validation class → role token; default `action` | [L06], [L24] |
 | (engine: key view, cursor, scope stack) | structure | **unchanged** — FocusManager owns it | [L22] |
+| cycling-mode active (per card, [P09]) | structure | engine focus-mode push/pop (`pushFocusMode` / `popFocusMode`); no React state | [L22], [L06] |
+| cycle stop registration (the Z-zones, [P10]) | structure | `focusGroup` into the card's cycle scope; one leaf/item-group per zone | [L22], [L03] |
 
 No new store-backed state; no `useState` for appearance ([L06]).
 
@@ -287,6 +367,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | File | Purpose |
 |------|---------|
 | `tuglaws/focus-language.md` | The documented focus-language law + governing decision ([#step-9]) |
+| `use-cycle-mode.ts` (or similar; name settled in impl) | The reusable keyboard-focus-cycling hook a text-first card opts into — push/seed/pop a trapped cycle scope ([#step-cycle-mechanism]) |
 
 #### Files to modify {#files-modified}
 
@@ -302,6 +383,8 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | `tug-popover/sheet/alert` + inline-dialog shell CSS | Box ring + within ([#step-7]) |
 | `tug-link.css` + app-chrome focus CSS | Link + app-wide focusables ([#step-8]) |
 | `dev-permission-dialog.css`, `dev-question-dialog.css` | Shrink to layout; consume the shared button state ([#step-2]) |
+| `keybinding-map.ts` + `action-vocabulary.ts` | The cycle-toggle trigger chord + action ([#step-cycle-trigger-spike], [#step-cycle-keys]) |
+| `cards/dev-card.tsx`, `tug-prompt-entry.tsx` | Register the dev-card Z-zones as cycle stops; per-state default focus + transition migration; Z2 Cmd-1…N chords ([#step-cycle-devcard], [#step-cycle-keys]) |
 | `tugplan-keyboard-model.md` (matrix) | Visual-column annotation ([#step-9]) |
 | `gallery-focus-language.{tsx,css}` | Repoint at real tokens / decide fate ([#step-10]) |
 
@@ -344,6 +427,12 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-1 | Token foundation + re-point the global focus rule | done | 950337d5 (+ ring-scope fix d1dbaf12) |
 | #step-gallery | Gallery rename + enrichment policy (ring-scope bug fixed) | done | d1dbaf12 + rename |
 | #step-2 | TugPushButton keyboard-promoted state; unify inline dialogs | done | (dash focus-button) |
+| #step-cycle | Step 2.5 — Keyboard-focus-cycling mode (umbrella) | pending | — |
+| #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | pending | — |
+| #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | pending | — |
+| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | pending | — |
+| #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
+| #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -468,6 +557,115 @@ yet get one added as their step lands.
 - By-eye: focused Allow/Deny/Save/Delete promote correctly per role, both themes; dialogs match the gallery.
 
 **Checkpoint:** `tsc` clean; dialog app-tests green; dialogs visually unchanged or better.
+
+#### Step 2.5: Keyboard-focus-cycling mode for text-first cards (umbrella) {#step-cycle}
+
+**Depends on:** #step-1, #step-2
+
+**Commit:** `N/A (umbrella — the substeps carry the commits)`
+
+**References:** [P09], [P10], [P11], [P12], [Q05], Risk R02, (#cycle-model, #language-contract)
+
+Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior** addition in this plan (the [P04] carve-out). Substeps [#step-cycle-trigger-spike] → [#step-cycle-vet] build the general mechanism (a reusable hook over the engine's focus-mode stack) and wire the dev card as the first consumer. This is what gives the focus language its home on text-first cards: one Tab tour exercises every archetype. Design write-up in the deep dive ([#cycle-model]); the *visuals* it displays come from [#step-1]–[#step-8].
+
+#### Step 2.5.1: Trigger spike — confirm the chord reaches the webview {#step-cycle-trigger-spike}
+
+**Depends on:** #step-1
+
+**Commit:** `focus(cycle): cycle-toggle trigger chord + action`
+
+**References:** [Q05], [P09], Risk R02, (#cycle-model)
+
+**Artifacts:** a cycle-toggle action in `action-vocabulary.ts`; its trigger chord in `keybinding-map.ts`; [Q05] resolved in this plan.
+
+**Tasks:**
+- Spike the candidate chord (Opt-Tab, ⌥⇥) reachability: a temporary capture-phase probe / app-test that posts the chord and asserts the document keybinding stage receives it (mirrors the ⇧⇥ lesson from `at0088`).
+- If eaten, take the first reliable non-Tab fallback; record the choice + rationale in [Q05].
+- Wire the chosen chord to the cycle-toggle action (handler stubbed; the mechanism lands in [#step-cycle-mechanism]).
+
+**Tests:**
+- Behavior: an app-test asserting the chord reaches the document keybinding stage (received + matched), per `just app-test`.
+
+**Checkpoint:** `bunx tsc --noEmit` clean; the chord is confirmed reachable; [Q05] resolved (chord chosen + recorded).
+
+#### Step 2.5.2: Cycle-mode scope primitive (push/seed/pop) {#step-cycle-mechanism}
+
+**Depends on:** #step-cycle-trigger-spike
+
+**Commit:** `focus(cycle): per-card cycle focus-scope primitive`
+
+**References:** [P09], [P10], [P11], (#cycle-model, #state-zone-mapping)
+
+**Artifacts:** a reusable hook (e.g. `use-cycle-mode.ts`) a text-first card opts into, built on `pushFocusMode` / `popFocusMode` / `focusFirstInMode`.
+
+**Tasks:**
+- Implement the cycle scope: the toggle action pushes a **trapped** per-card focus mode, seeds the key view at the declared commit-home, and pops on toggle / Escape — restoring the captured prior key view (the editor caret) ([P10], [P11]).
+- Keep it **general**: the hook takes the card's cycle stops + commit-home + restore target; no dev-card specifics.
+- No new engine projection — reuse the focus-mode stack ([P04] carve-out via [P09]).
+
+**Tests:**
+- Behavior: a harness scenario — toggle on → key view at commit-home; Tab wraps within the scope; toggle off → prior key view restored.
+
+**Checkpoint:** `bunx tsc --noEmit` clean; the primitive pushes/seeds/pops a trapped cycle scope; no existing app-test regresses.
+
+#### Step 2.5.3: Dev card joins the cycle; per-state default focus {#step-cycle-devcard}
+
+**Depends on:** #step-cycle-mechanism
+
+**Commit:** `focus(cycle): dev-card zones + per-state default focus`
+
+**References:** [P10], [P12], [P09], (#cycle-model)
+
+**Artifacts:** dev-card / prompt-entry registration of the Z-zones (Z2 status group, Z4A route, Z4B indicators incl. the permission chip, Z5 submit) as cycle stops; the per-state default-focus declaration + transition migration.
+
+**Tasks:**
+- Register the chrome zones as cycle stops — each a leaf or item-group per [P10] (Tab between zones, arrow within); seed at Z5; forward Tab wraps top→bottom, Shift+Tab reverses ([P10]).
+- Declare per-state default focus ([P12]): Picker → Open, Connected → editor; migrate focus deliberately on spawn / end transitions.
+- Apply per-control roles ([P12]): submit = action (danger while stopping), route = action, permission chip = agent.
+- Z1 transcript excluded ([P10]).
+
+**Tests:**
+- Behavior: app-tests — Picker seeds Open; Connected seeds the editor; spawn / end migrates focus; the cycle tours Z5 → (top→bottom) → Z5 and wraps.
+- By-eye: the cycle tour shows the focus language (ring / tint / role) across zones, both themes.
+
+**Checkpoint:** `bunx tsc --noEmit` clean; default-focus + cycle app-tests green; by-eye tour clean in brio + harmony.
+
+#### Step 2.5.4: Mode keys + Z2 dedicated chords {#step-cycle-keys}
+
+**Depends on:** #step-cycle-devcard
+
+**Commit:** `focus(cycle): mode keys + Z2 popup chords`
+
+**References:** [P11], [P12], (#cycle-model)
+
+**Artifacts:** the cycle scope's key handling (Return text-entry-only; Space acts; Escape + trigger exit); Cmd-1…N popup-toggle chords for the Z2 status-bar cells.
+
+**Tasks:**
+- Wire the three exit gestures + the Return / Space semantics ([P11]): trigger toggles off anywhere; Escape exits; Return drops into a text-input stop (resume typing) and is inert on non-text controls; Space acts on the focused control.
+- Add Cmd-1…N chords toggling each Z2 cell's popup; confirm they coexist with the existing routes (⇧⌘C / ⇧⌘S) and permission (⇧⌘P) chords.
+
+**Tests:**
+- Behavior: app-tests — Return on the prompt-entry stop drops into typing (no submit); Space acts on a non-text control; Escape / trigger restore the caret; Cmd-N toggles the Nth Z2 popup.
+
+**Checkpoint:** `bunx tsc --noEmit` clean; mode-key + chord app-tests green.
+
+#### Step 2.5.5: Integration checkpoint + a11y assessment {#step-cycle-vet}
+
+**Depends on:** #step-cycle-trigger-spike, #step-cycle-mechanism, #step-cycle-devcard, #step-cycle-keys
+
+**Commit:** `N/A (verification only)`
+
+**References:** [P09], [P10], [P11], [P12], [Q03], (#success-criteria, #cycle-model)
+
+**Tasks:**
+- End-to-end pass: enter (trigger) → cycle (Tab / arrow) → act (Space / dedicated chord) → exit (Return-in-prompt / Escape / trigger), in both card states, both themes.
+- Assess whether "always-on cycling" (cycle scope = base mode) yields the deferred a11y mode ([Q03]); record the finding for the a11y follow-on.
+
+**Tests:**
+- Behavior: full `just app-test` keyboard sweep green (incl. the new cycle tests); the editor's Tab still completes (no regression — Risk R02 row).
+- By-eye: the cycle tour reads as the focus-language showcase on the dev card.
+
+**Checkpoint:** all cycle gates green; the a11y assessment is recorded.
 
 #### Step 3: Item-groups — radio / choice / option {#step-3}
 
