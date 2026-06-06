@@ -73,6 +73,7 @@ import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
 import { GalleryFocusStates } from "./gallery-focus-states";
 import { GalleryFocusNested } from "./gallery-focus-nested";
+import { GalleryFocusLanguage } from "./gallery-focus-language";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
@@ -1013,6 +1014,20 @@ export function registerGalleryCards(): void {
     hidden: true,
     contentFactory: (_cardId) => <GalleryFocusNested />,
     defaultMeta: { title: "Focus nested", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Focus-language modernization SPIKE — a static design canvas for the proposed
+  // keyboard-focus treatment across the archetype taxonomy (fill-promotion for
+  // role buttons, a keyboard-coloured double border for everything else), judged
+  // by eye in both themes. Throwaway / deletable.
+  registerCard({
+    componentId: "gallery-focus-language",
+    contentFactory: (_cardId) => <GalleryFocusLanguage />,
+    defaultMeta: { title: "Focus language (spike)", icon: "List", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

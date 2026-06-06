@@ -1,0 +1,489 @@
+/**
+ * gallery-focus-language.css — the focus-language modernization SPIKE.
+ *
+ * A throwaway design canvas (deletable) for settling the new keyboard-focus
+ * visual language BY EYE, across the full taxonomy of component archetypes, in
+ * both themes (brio / harmony). It replaces nothing yet — every rule here is
+ * scoped under `.cg-focus-language` so it cannot leak into the app.
+ *
+ * The proposed language is TWO BRANCHES, keyed on a self-contained
+ * `data-fl-state` attribute (NOT the engine's `data-key-*` — this is a static
+ * mockup so all states show at once for comparison):
+ *
+ *   FILL branch  — pure actionable ROLE controls (buttons). Keyboard cursor
+ *                  PROMOTES to the filled role style + a role-coloured double
+ *                  border (fill body + offset ring). Safe because a button has
+ *                  no separate "selected" fill to collide with.
+ *   RING branch  — anything role-less, or carrying its own committed-selection
+ *                  fill (inputs, toggles, sliders, group items, rows, boxes,
+ *                  links). Keyboard cursor = a DOUBLE BORDER in the keyboard
+ *                  colour (`--fl-kbd`), so FILL stays reserved for selection.
+ *
+ * The whole point of the spike is that the two branches are TUNABLE from the
+ * token block below and judged side by side. Real `--tug7-*` theme tokens are
+ * used throughout so both themes are faithful.
+ */
+
+.cg-focus-language {
+  /* --- the spike's tunable knobs (retune these to taste, both themes pick up) --- */
+
+  /* Role-less keyboard-cursor promotion colour. Candidate: the action blue,
+     deliberately DISTINCT from the accent/selection colour (orange) so a cursor
+     and a selection read apart. Swap to an accent or a bespoke "keyboard" hue
+     here to compare. */
+  --fl-kbd: var(--tug7-element-control-border-outlined-action-rest);
+
+  /* The double-border ring geometry (mirrors the live `--tugx-focus-ring-*`). */
+  --fl-ring-w: 1.5px;
+  --fl-ring-offset: 2px;
+  --fl-radius: 6px;
+
+  /* Shared neutral hover / selection tints (real tokens). */
+  --fl-hover: var(--tug7-surface-tone-primary-normal-active-rest);
+  --fl-selected: var(--tug7-surface-tone-primary-normal-accent-rest);
+  --fl-selected-solid: var(--tug7-surface-control-primary-filled-accent-rest);
+
+  /* Quiet "contains the active component" mark (the data-key-within analogue). */
+  --fl-within: color-mix(in srgb, var(--fl-kbd) 32%, transparent);
+
+  font-size: 0.875rem;
+}
+
+/* ---------- layout scaffolding ---------- */
+
+.cg-focus-language .fl-section {
+  padding: 12px 4px 16px;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+.cg-focus-language .fl-section:first-of-type {
+  border-top: none;
+}
+.cg-focus-language .fl-section-head {
+  margin-bottom: 10px;
+}
+.cg-focus-language .fl-section-title {
+  font-weight: 600;
+}
+.cg-focus-language .fl-branch-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.cg-focus-language .fl-branch-tag[data-branch="fill"] {
+  background: var(--tug7-surface-control-primary-filled-action-rest);
+  color: var(--tug7-element-control-text-filled-action-rest);
+}
+.cg-focus-language .fl-branch-tag[data-branch="ring"] {
+  border: var(--fl-ring-w) solid var(--fl-kbd);
+  color: var(--fl-kbd);
+}
+.cg-focus-language .fl-note {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  opacity: 0.62;
+  max-width: 60ch;
+  line-height: 1.4;
+}
+.cg-focus-language .fl-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  align-items: flex-end;
+}
+.cg-focus-language .fl-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.cg-focus-language .fl-cell-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.cg-focus-language .fl-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+
+/* ============================================================
+   1 — ROLE BUTTON  (FILL branch)
+   ============================================================ */
+
+.cg-focus-language .fl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 16px;
+  border-radius: var(--fl-radius);
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* outlined identity at rest (per role) */
+.cg-focus-language .fl-btn[data-role="action"] {
+  color: var(--tug7-element-control-text-outlined-action-rest);
+  border-color: var(--tug7-element-control-border-outlined-action-rest);
+}
+.cg-focus-language .fl-btn[data-role="danger"] {
+  color: var(
+    --tug7-element-control-text-outlined-danger-rest,
+    var(--tug7-element-control-border-outlined-danger-rest)
+  );
+  border-color: var(--tug7-element-control-border-outlined-danger-rest);
+}
+.cg-focus-language .fl-btn[data-role="accent"] {
+  color: var(
+    --tug7-element-control-text-outlined-accent-rest,
+    var(--tug7-element-control-border-outlined-accent-rest)
+  );
+  border-color: var(--tug7-element-control-border-outlined-accent-rest);
+}
+
+.cg-focus-language .fl-btn[data-fl-state="hover"] {
+  background: var(--fl-hover);
+}
+
+/* keyboard cursor → FILL promotion + role-coloured double border */
+.cg-focus-language .fl-btn[data-role="action"][data-fl-state="cursor"] {
+  background: var(--tug7-surface-control-primary-filled-action-rest);
+  color: var(--tug7-element-control-text-filled-action-rest);
+  border-color: var(--tug7-element-control-border-filled-action-rest);
+  outline: var(--fl-ring-w) solid var(--tug7-element-control-border-filled-action-rest);
+  outline-offset: var(--fl-ring-offset);
+}
+.cg-focus-language .fl-btn[data-role="danger"][data-fl-state="cursor"] {
+  background: var(--tug7-surface-control-primary-filled-danger-rest);
+  color: var(--tug7-element-control-text-filled-danger-rest);
+  border-color: var(--tug7-element-control-border-filled-danger-rest);
+  outline: var(--fl-ring-w) solid var(--tug7-element-control-border-filled-danger-rest);
+  outline-offset: var(--fl-ring-offset);
+}
+.cg-focus-language .fl-btn[data-role="accent"][data-fl-state="cursor"] {
+  background: var(--tug7-surface-control-primary-filled-accent-rest);
+  color: var(--tug7-element-control-text-filled-accent-rest);
+  border-color: var(--tug7-element-control-border-filled-accent-rest);
+  outline: var(--fl-ring-w) solid var(--tug7-element-control-border-filled-accent-rest);
+  outline-offset: var(--fl-ring-offset);
+}
+
+/* button group — shows the demotion (focused promotes, siblings stay outlined) */
+.cg-focus-language .fl-btn-group {
+  display: inline-flex;
+  gap: 12px;
+}
+
+/* ============================================================
+   2 — TEXT INPUT  (RING branch — can't fill, legibility)
+   ============================================================ */
+
+.cg-focus-language .fl-input {
+  min-width: 130px;
+  padding: 6px 10px;
+  border-radius: var(--fl-radius);
+  border: 1px solid var(--tug7-element-field-border-normal-plain-rest);
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  color: var(--tug7-element-field-text-normal-plain-rest);
+  font-size: 0.82rem;
+}
+.cg-focus-language .fl-input[data-fl-state="hover"] {
+  border-color: color-mix(
+    in srgb,
+    var(--tug7-element-field-border-normal-plain-rest) 60%,
+    currentColor
+  );
+}
+/* keyboard cursor → DOUBLE border: own border recoloured + offset outer ring */
+.cg-focus-language .fl-input[data-fl-state="cursor"] {
+  border-color: var(--fl-kbd);
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
+
+/* ============================================================
+   3 — SMALL TOGGLE  (RING branch — fill reserved for "checked")
+   ============================================================ */
+
+.cg-focus-language .fl-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.cg-focus-language .fl-check[data-checked="true"] {
+  background: var(--fl-selected-solid);
+  border-color: var(--fl-selected-solid);
+  color: var(--tug7-element-control-text-filled-accent-rest);
+}
+.cg-focus-language .fl-check[data-fl-state="hover"] {
+  border-color: color-mix(
+    in srgb,
+    var(--tug7-element-field-border-normal-plain-rest) 50%,
+    currentColor
+  );
+}
+/* keyboard cursor → ring in the keyboard colour (distinct from the accent fill) */
+.cg-focus-language .fl-check[data-fl-state="cursor"],
+.cg-focus-language .fl-check[data-fl-state="both"] {
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
+
+.cg-focus-language .fl-switch {
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  position: relative;
+}
+.cg-focus-language .fl-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+  transition: none;
+}
+.cg-focus-language .fl-switch[data-checked="true"] {
+  background: var(--fl-selected-solid);
+  border-color: var(--fl-selected-solid);
+}
+.cg-focus-language .fl-switch[data-checked="true"]::after {
+  left: auto;
+  right: 2px;
+  background: var(--tug7-element-control-text-filled-accent-rest);
+  opacity: 1;
+}
+.cg-focus-language .fl-switch[data-fl-state="cursor"],
+.cg-focus-language .fl-switch[data-fl-state="both"] {
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
+
+/* ============================================================
+   4 — CONTINUOUS / SLIDER  (RING branch — commits live, cursor=value)
+   ============================================================ */
+
+.cg-focus-language .fl-track {
+  position: relative;
+  width: 170px;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(
+    in srgb,
+    var(--tug7-element-field-border-normal-plain-rest) 70%,
+    transparent
+  );
+}
+.cg-focus-language .fl-track .fl-fill {
+  position: absolute;
+  inset: 0 55% 0 0;
+  border-radius: 3px;
+  background: var(--fl-kbd);
+}
+.cg-focus-language .fl-track .fl-thumb {
+  position: absolute;
+  top: 50%;
+  left: 45%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  border: 2px solid var(--fl-kbd);
+}
+/* keyboard cursor → thumb ring (the value itself is the "selection") */
+.cg-focus-language .fl-track[data-fl-state="cursor"] .fl-thumb {
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
+
+/* ============================================================
+   5 — DEFERRED ITEM-GROUP  (RING branch — the cursor≠selected collision)
+   ============================================================ */
+
+.cg-focus-language .fl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 8px;
+  min-width: 150px;
+}
+.cg-focus-language .fl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--fl-radius);
+  border: 1.5px solid transparent;
+}
+.cg-focus-language .fl-item .fl-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
+  flex: none;
+}
+.cg-focus-language .fl-item[data-fl-hover="true"] {
+  background: var(--fl-hover);
+}
+/* committed selection → accent fill (the radio dot fills) */
+.cg-focus-language .fl-item[data-fl-selected="true"] {
+  background: var(--fl-selected);
+}
+.cg-focus-language .fl-item[data-fl-selected="true"] .fl-dot {
+  background: var(--fl-selected-solid);
+  border-color: var(--fl-selected-solid);
+  box-shadow: inset 0 0 0 2.5px var(--tug7-surface-field-primary-normal-plain-rest);
+}
+/* keyboard cursor → ring in the keyboard colour — coexists with selection */
+.cg-focus-language .fl-item[data-fl-cursor="true"] {
+  border-color: var(--fl-kbd);
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: -1px;
+}
+
+/* ============================================================
+   6 — LIVE ITEM-GROUP / TAB BAR  (cursor = selected; commits on move)
+   ============================================================ */
+
+.cg-focus-language .fl-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: color-mix(
+    in srgb,
+    var(--tug7-element-field-border-normal-plain-rest) 30%,
+    transparent
+  );
+}
+.cg-focus-language .fl-tab {
+  padding: 5px 14px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.cg-focus-language .fl-tab[data-fl-selected="true"] {
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  font-weight: 600;
+}
+/* cursor and selection are the SAME element here → ring on the active tab */
+.cg-focus-language .fl-tab[data-fl-cursor="true"] {
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
+
+/* ============================================================
+   7 — DESCENDABLE ROWS  (RING branch + descend/within mark)
+   ============================================================ */
+
+.cg-focus-language .fl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  min-width: 180px;
+  border: 1.5px solid transparent;
+}
+/* container becomes "contains active" when descended */
+.cg-focus-language .fl-list[data-fl-within="true"] {
+  outline: var(--fl-ring-w) solid var(--fl-within);
+  outline-offset: var(--fl-ring-offset);
+}
+.cg-focus-language .fl-list-row {
+  padding: 6px 10px;
+  border-radius: var(--fl-radius);
+  border: 1.5px solid transparent;
+  font-size: 0.82rem;
+}
+.cg-focus-language .fl-list-row[data-fl-selected="true"] {
+  background: var(--fl-selected);
+}
+.cg-focus-language .fl-list-row[data-fl-cursor="true"] {
+  border-color: var(--fl-kbd);
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: -1px;
+}
+
+/* ============================================================
+   8 — COMPONENT BOX-SCOPE  (RING branch — popover / sheet / alert box)
+   ============================================================ */
+
+.cg-focus-language .fl-box {
+  width: 190px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--tug7-element-field-border-normal-plain-rest);
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  font-size: 0.8rem;
+}
+/* keyboard key-view on the box → box-shadow ring (hugs radius, no reflow) */
+.cg-focus-language .fl-box[data-fl-state="cursor"] {
+  box-shadow: 0 0 0 var(--fl-ring-w) var(--fl-kbd);
+  border-color: var(--fl-kbd);
+}
+.cg-focus-language .fl-box[data-fl-state="within"] {
+  box-shadow: 0 0 0 var(--fl-ring-w) var(--fl-within);
+}
+
+/* ============================================================
+   9 — INLINE LINK  (RING branch — long-tail, non-box focusable)
+   ============================================================ */
+
+.cg-focus-language .fl-link {
+  color: var(--tug7-element-control-border-outlined-action-rest);
+  text-decoration: none;
+  border-radius: 3px;
+  padding: 1px 2px;
+}
+.cg-focus-language .fl-link[data-fl-state="hover"] {
+  text-decoration: underline;
+}
+.cg-focus-language .fl-link[data-fl-state="cursor"] {
+  text-decoration: underline;
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
+
+/* ============================================================
+   Legend — current (orange) vs proposed, side by side
+   ============================================================ */
+
+.cg-focus-language .fl-legend {
+  display: flex;
+  gap: 22px;
+  align-items: flex-end;
+}
+.cg-focus-language .fl-current-ring {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
+  outline-offset: var(--tugx-focus-ring-offset);
+}

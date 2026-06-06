@@ -310,7 +310,7 @@ body {
   /* Control — Emphasis×Role */
 
   /* Filled Accent */
-  --tug7-surface-control-primary-filled-accent-rest: --tug-color(orange, t: 47);
+  --tug7-surface-control-primary-filled-accent-rest: --tug-color(orange, i: 65, t: 45);
   --tug7-surface-control-primary-filled-accent-hover: --tug-color(orange, i: 55, t: 52);
   --tug7-surface-control-primary-filled-accent-active: --tug-color(orange, i: 90, t: 57);
   --tug7-element-control-text-filled-accent-rest: --tug-color(indigo, i: 2, t: 100);
@@ -319,7 +319,7 @@ body {
   --tug7-element-control-icon-filled-accent-rest: --tug-color(indigo, i: 2, t: 100);
   --tug7-element-control-icon-filled-accent-hover: --tug-color(indigo, i: 2, t: 100);
   --tug7-element-control-icon-filled-accent-active: --tug-color(indigo, i: 2, t: 100);
-  --tug7-element-control-border-filled-accent-rest: --tug-color(orange, t: 47);
+  --tug7-element-control-border-filled-accent-rest: --tug-color(orange, i: 65, t: 45);
   --tug7-element-control-border-filled-accent-hover: --tug-color(orange, i: 55, t: 52);
   --tug7-element-control-border-filled-accent-active: --tug-color(orange, i: 90, t: 57);
 
@@ -338,7 +338,7 @@ body {
   --tug7-element-control-border-filled-action-active: --tug-color(blue, i: 96, t: 58);
 
   /* Filled Danger */
-  --tug7-surface-control-primary-filled-danger-rest: --tug-color(red, t: 47);
+  --tug7-surface-control-primary-filled-danger-rest: --tug-color(red, i: 50, t: 47);
   --tug7-surface-control-primary-filled-danger-hover: --tug-color(red, i: 55, t: 52);
   --tug7-surface-control-primary-filled-danger-active: --tug-color(red, i: 90, t: 57);
   --tug7-element-control-text-filled-danger-rest: --tug-color(indigo, i: 2, t: 100);
@@ -347,7 +347,7 @@ body {
   --tug7-element-control-icon-filled-danger-rest: --tug-color(indigo, i: 2, t: 100);
   --tug7-element-control-icon-filled-danger-hover: --tug-color(indigo, i: 2, t: 100);
   --tug7-element-control-icon-filled-danger-active: --tug-color(indigo, i: 2, t: 100);
-  --tug7-element-control-border-filled-danger-rest: --tug-color(red, t: 47);
+  --tug7-element-control-border-filled-danger-rest: --tug-color(red, i: 50, t: 47);
   --tug7-element-control-border-filled-danger-hover: --tug-color(red, i: 55, t: 52);
   --tug7-element-control-border-filled-danger-active: --tug-color(red, i: 90, t: 57);
 
