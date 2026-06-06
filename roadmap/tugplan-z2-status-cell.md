@@ -270,8 +270,8 @@ holds no store subscription of its own.
 
 | Step | Title | Status | Commit |
 |------|-------|--------|--------|
-| #step-extract-cell | Author `TugStatusCell` + co-located CSS | pending | — |
-| #step-migrate-row | Migrate `DevTelemetryStatusRow`; relocate CSS | pending | — |
+| #step-extract-cell | Author `TugStatusCell` + co-located CSS | done | dash ea02a783 → squashed to main |
+| #step-migrate-row | Migrate `DevTelemetryStatusRow`; relocate CSS | done | dash 603be61b → squashed to main |
 
 ---
 

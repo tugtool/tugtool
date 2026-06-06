@@ -37,12 +37,8 @@ import React, {
 } from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
-import {
-  TugPopover,
-  TugPopoverContent,
-  TugPopoverTrigger,
-  type TugPopoverHandle,
-} from "@/components/tugways/tug-popover";
+import { type TugPopoverHandle } from "@/components/tugways/tug-popover";
+import { TugStatusCell } from "@/components/tugways/tug-status-cell";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorState,
@@ -418,36 +414,6 @@ export const DevTelemetryPhase: React.FC<DevTelemetryProps> = ({
 };
 
 /**
- * IBM-1620-style endcap-rule label apparatus — letterspaced uppercase
- * label inset into a horizontal rule terminated by short perpendicular
- * ticks at each end. The label visually divides one section from the
- * next without explicit row dividers; the ticks point toward the
- * value (down when label is above, up when label is below).
- *
- * Internal component for `DevTelemetryStatusRow`. The apparatus
- * width is fixed by the row (via the `--tugx-dev-status-cell-width`
- * CSS variable, which the STATE cell overrides wider), so this
- * component just fills whatever width its container provides.
- */
-const DevTelemetryEndcapRuleLabel: React.FC<{
-  label: string;
-  /** Direction the endcap ticks extend (toward the value). */
-  ticksDirection: "down" | "up";
-}> = ({ label, ticksDirection }) => (
-  <span
-    className="dev-telemetry-endcap-rule"
-    data-ticks={ticksDirection}
-    aria-hidden="true"
-  >
-    <span className="dev-telemetry-endcap-tick dev-telemetry-endcap-tick-left" />
-    <span className="dev-telemetry-endcap-rule-fill" />
-    <span className="dev-telemetry-endcap-label">{label}</span>
-    <span className="dev-telemetry-endcap-rule-fill" />
-    <span className="dev-telemetry-endcap-tick dev-telemetry-endcap-tick-right" />
-  </span>
-);
-
-/**
  * Combined session status row — production Z2 surface promoted from
  * the workshop gallery. Layout:
  *
@@ -710,137 +676,75 @@ export const DevTelemetryStatusRow = React.forwardRef<
       className="dev-telemetry-status-row"
       data-slot="dev-telemetry-status-row"
     >
-      <TugPopover>
-        <TugPopoverTrigger>
-          <span
-            className="dev-telemetry-status-cell dev-telemetry-status-anchor"
-            data-priority="state"
-          >
-            <DevTelemetryEndcapRuleLabel label="STATE" ticksDirection="down" />
-            <span className="dev-telemetry-status-value-wrap">
-              <TugProgressIndicator
-                variant="pulsing-dot"
-                size={12}
-                phase={statePhaseKey}
-                phaseVisual={devSessionPhaseVisual}
-                aria-hidden
-              />
-              <span className="dev-telemetry-status-value">
-                {stateLabelText}
-              </span>
-              <TugProgressIndicator
-                variant="pulsing-dot"
-                size={12}
-                phase={statePhaseKey}
-                phaseVisual={devSessionPhaseVisual}
-                aria-hidden
-              />
-            </span>
+      <TugStatusCell priority="state" label="STATE" popover={statePopover}>
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          size={12}
+          phase={statePhaseKey}
+          phaseVisual={devSessionPhaseVisual}
+          aria-hidden
+        />
+        <span className="dev-telemetry-status-value">{stateLabelText}</span>
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          size={12}
+          phase={statePhaseKey}
+          phaseVisual={devSessionPhaseVisual}
+          aria-hidden
+        />
+      </TugStatusCell>
+      <TugStatusCell priority="time" label="TIME" popover={timePopover}>
+        <span className="dev-telemetry-status-value">
+          {formatTimeMinutesSeconds(perTurnActiveMs)}
+        </span>
+      </TugStatusCell>
+      <TugStatusCell priority="tokens" label="TOKENS" popover={tokensPopover}>
+        <span className="dev-telemetry-status-value">
+          {formatTokensCaps(tokensCellValue)}
+        </span>
+      </TugStatusCell>
+      <TugStatusCell
+        priority="context"
+        label="CONTEXT"
+        popover={contextPopover}
+        popoverRef={contextPopoverRef}
+      >
+        <span
+          className="dev-telemetry-status-value dev-telemetry-status-value-context"
+          data-context-threshold={contextThreshold}
+        >
+          <span className="dev-telemetry-status-context-numerator">
+            {formatTokensCaps(contextTotal)}
           </span>
-        </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-          {statePopover}
-        </TugPopoverContent>
-      </TugPopover>
-      <TugPopover>
-        <TugPopoverTrigger>
-          <span
-            className="dev-telemetry-status-cell dev-telemetry-status-anchor"
-            data-priority="time"
-          >
-            <DevTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
-            <span className="dev-telemetry-status-value-wrap">
-              <span className="dev-telemetry-status-value">
-                {formatTimeMinutesSeconds(perTurnActiveMs)}
-              </span>
-            </span>
+          <span className="dev-telemetry-status-context-denominator">
+            {`/ ${formatTokensCaps(contextMax)}`}
           </span>
-        </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-          {timePopover}
-        </TugPopoverContent>
-      </TugPopover>
-      <TugPopover>
-        <TugPopoverTrigger>
-          <span
-            className="dev-telemetry-status-cell dev-telemetry-status-anchor"
-            data-priority="tokens"
-          >
-            <DevTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
-            <span className="dev-telemetry-status-value-wrap">
-              <span className="dev-telemetry-status-value">
-                {formatTokensCaps(tokensCellValue)}
-              </span>
-            </span>
-          </span>
-        </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-          {tokensPopover}
-        </TugPopoverContent>
-      </TugPopover>
-      <TugPopover ref={contextPopoverRef}>
-        <TugPopoverTrigger>
-          <span
-            className="dev-telemetry-status-cell dev-telemetry-status-anchor"
-            data-priority="context"
-          >
-            <DevTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
-            <span className="dev-telemetry-status-value-wrap">
-              <span
-                className="dev-telemetry-status-value dev-telemetry-status-value-context"
-                data-context-threshold={contextThreshold}
-              >
-                <span className="dev-telemetry-status-context-numerator">
-                  {formatTokensCaps(contextTotal)}
-                </span>
-                <span className="dev-telemetry-status-context-denominator">
-                  {`/ ${formatTokensCaps(contextMax)}`}
-                </span>
-              </span>
-            </span>
-          </span>
-        </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-          {contextPopover}
-        </TugPopoverContent>
-      </TugPopover>
-      <TugPopover>
-        <TugPopoverTrigger>
-          <span
-            className="dev-telemetry-status-cell dev-telemetry-status-anchor"
-            data-priority="tasks"
-          >
-            <DevTelemetryEndcapRuleLabel label="TASKS" ticksDirection="down" />
-            <span
-              className="dev-telemetry-status-value-wrap"
-              data-empty={hasTasks ? undefined : "true"}
-            >
-              <TugProgressIndicator
-                variant="pulsing-dot"
-                glyphPosition="both"
-                size={10}
-                state={tasksIndicatorState}
-                label={tasksLabelText}
-                labelAlign="center"
-                phaseLabels={{
-                  none: "None",
-                  max: hasTasks
-                    ? `${taskCounts.total}/${taskCounts.total}`
-                    : "0/0",
-                }}
-                aria-label={
-                  hasTasks
-                    ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
-                    : "No tasks"
-                }
-              />
-            </span>
-          </span>
-        </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-          {tasksPopover}
-        </TugPopoverContent>
-      </TugPopover>
+        </span>
+      </TugStatusCell>
+      <TugStatusCell
+        priority="tasks"
+        label="TASKS"
+        popover={tasksPopover}
+        valueEmpty={!hasTasks}
+      >
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          glyphPosition="both"
+          size={10}
+          state={tasksIndicatorState}
+          label={tasksLabelText}
+          labelAlign="center"
+          phaseLabels={{
+            none: "None",
+            max: hasTasks ? `${taskCounts.total}/${taskCounts.total}` : "0/0",
+          }}
+          aria-label={
+            hasTasks
+              ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
+              : "No tasks"
+          }
+        />
+      </TugStatusCell>
     </div>
   );
 });
