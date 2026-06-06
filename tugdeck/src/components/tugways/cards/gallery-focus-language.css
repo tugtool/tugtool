@@ -527,8 +527,11 @@
   background: var(--tug7-surface-field-primary-normal-plain-rest);
   font-size: 0.8rem;
 }
-/* keyboard key-view on the box → box-shadow ring (hugs radius, no reflow) */
+/* keyboard key-view on the box → faint behind-tint + box-shadow ring (hugs the
+   radius, no reflow). Matches the item-group focus signature: tint + ring. */
 .cg-focus-language .fl-box[data-fl-state="cursor"] {
+  background: linear-gradient(var(--fl-focus-bg), var(--fl-focus-bg)),
+    var(--tug7-surface-field-primary-normal-plain-rest);
   box-shadow: 0 0 0 var(--fl-ring-w) var(--fl-kbd);
   border-color: var(--fl-kbd);
 }
@@ -550,6 +553,7 @@
   text-decoration: underline;
 }
 .cg-focus-language .fl-link[data-fl-state="cursor"] {
+  background: var(--fl-focus-bg);
   text-decoration: underline;
   outline: var(--fl-ring-w) solid var(--fl-kbd);
   outline-offset: var(--fl-ring-offset);
