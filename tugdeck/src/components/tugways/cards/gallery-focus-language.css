@@ -43,6 +43,15 @@
   --fl-selected: var(--tug7-surface-tone-primary-normal-accent-rest);
   --fl-selected-solid: var(--tug7-surface-control-primary-filled-accent-rest);
 
+  /* The committed-selection axis for toggle-family controls (checkbox, switch,
+     radio, option) — the BLUE "on" axis the real components use, NOT accent
+     orange. Note this is the same hue family as `--fl-kbd`, so the cursor ring
+     and a checked fill sit close: a thing to judge in §3/§5. */
+  --fl-on: var(--tug7-surface-toggle-primary-normal-on-rest);
+  --fl-on-track: var(--tug7-surface-toggle-track-normal-on-rest);
+  --fl-thumb-on: var(--tug7-element-toggle-thumb-normal-on-rest);
+  --fl-thumb-off: var(--tug7-element-toggle-thumb-normal-plain-rest);
+
   /* Quiet "contains the active component" mark (the data-key-within analogue). */
   --fl-within: color-mix(in srgb, var(--fl-kbd) 32%, transparent);
 
@@ -232,9 +241,9 @@
   font-weight: 700;
 }
 .cg-focus-language .fl-check[data-checked="true"] {
-  background: var(--fl-selected-solid);
-  border-color: var(--fl-selected-solid);
-  color: var(--tug7-element-control-text-filled-accent-rest);
+  background: var(--fl-on);
+  border-color: var(--fl-on);
+  color: var(--fl-thumb-on);
 }
 .cg-focus-language .fl-check[data-fl-state="hover"] {
   border-color: color-mix(
@@ -266,19 +275,17 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.5;
+  background: var(--fl-thumb-off);
   transition: none;
 }
 .cg-focus-language .fl-switch[data-checked="true"] {
-  background: var(--fl-selected-solid);
-  border-color: var(--fl-selected-solid);
+  background: var(--fl-on-track);
+  border-color: var(--fl-on-track);
 }
 .cg-focus-language .fl-switch[data-checked="true"]::after {
   left: auto;
   right: 2px;
-  background: var(--tug7-element-control-text-filled-accent-rest);
-  opacity: 1;
+  background: var(--fl-thumb-on);
 }
 .cg-focus-language .fl-switch[data-fl-state="cursor"],
 .cg-focus-language .fl-switch[data-fl-state="both"] {
@@ -354,14 +361,12 @@
 .cg-focus-language .fl-item[data-fl-hover="true"] {
   background: var(--fl-hover);
 }
-/* committed selection → accent fill (the radio dot fills) */
-.cg-focus-language .fl-item[data-fl-selected="true"] {
-  background: var(--fl-selected);
-}
+/* committed selection → the BLUE radio dot fills (the selection axis these
+   groups actually use). There is NO selected-row background: real radio/choice/
+   option groups tint the row only on hover/cursor, never on selection. */
 .cg-focus-language .fl-item[data-fl-selected="true"] .fl-dot {
-  background: var(--fl-selected-solid);
-  border-color: var(--fl-selected-solid);
-  box-shadow: inset 0 0 0 2.5px var(--tug7-surface-field-primary-normal-plain-rest);
+  border-color: var(--fl-on);
+  background: radial-gradient(circle, var(--fl-thumb-on) 0 28%, var(--fl-on) 30%);
 }
 /* keyboard cursor → ring in the keyboard colour — coexists with selection */
 .cg-focus-language .fl-item[data-fl-cursor="true"] {

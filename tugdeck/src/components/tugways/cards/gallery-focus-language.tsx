@@ -189,7 +189,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="3 · Small toggle"
           branch="ring"
-          note="A 16–20px box where FILL already means 'checked' (accent). The cursor must NOT reuse fill — it's a keyboard-coloured ring, distinct from the accent fill, so checked-vs-focused stay legible at small size. Covers TugCheckbox, TugSwitch."
+          note="A 16–20px box where FILL means 'checked' = the BLUE selection axis these controls actually use (TugCheckbox/TugSwitch/TugRadio/TugOption, never accent-orange). The cursor adds a keyboard-coloured ring — but that ring is also blue, so checked and focused sit in the same hue family here: judge whether they stay distinct at small size, or whether the cursor needs a different treatment. Covers TugCheckbox, TugSwitch."
         />
         <div className="fl-grid">
           <Cell label="unchecked · rest">
@@ -246,7 +246,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="5 · Deferred item-group — the collision case"
           branch="ring"
-          note="The crux: cursor and selection are DIFFERENT items at the same time, and both are role-less. Selection = accent fill; cursor = keyboard-coloured ring. The last cell shows all combinations coexisting (A selected, B cursored, C both). Covers TugRadioGroup, TugChoiceGroup, TugOptionGroup."
+          note="The crux: cursor and selection are DIFFERENT items at the same time, and both are role-less. Selection = the blue dot filling (no selected-row background — these groups tint the row only on hover/cursor); cursor = a keyboard-coloured ring around the row. Because selection is a small dot and the cursor is a row outline, the two stay distinct even though both are blue. The last cell shows all combinations coexisting (A selected, B cursored, C both). Covers TugRadioGroup, TugChoiceGroup, TugOptionGroup."
         />
         <div className="fl-grid">
           <Cell label="rest">
