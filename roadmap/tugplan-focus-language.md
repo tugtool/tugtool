@@ -630,6 +630,15 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 **Artifacts:** dev-card / prompt-entry registration of the Z-zones (Z2 status group, Z4A route, Z4B indicators incl. the permission chip, Z5 submit) as cycle stops; the per-state default-focus declaration + transition migration.
 
+**Resume context (post-compaction — the active resume point).** Prior substeps are on `main`: 2.5.1 trigger (`62228934`), 2.5.2 mechanism (`fad9abc6`), refinements (`8d382f2b`). All cycle work is being done **on `main`** (the user commits each substep). Concrete pointers for this step:
+- **The hook** — `useCycleMode()` from `@/components/tugways/use-cycle-mode` → `{ cycling, toggle, exit, CycleScope }`. The **proven pattern** is `cards/gallery-cycle-demo.tsx` (+ `at0139`): wire `toggle` to `CYCLE_FOCUS_MODE` on the card-content responder; wrap the cycle-able zones in `CycleScope`; render `data-cycling={cycling}` on the card root; order the commit-home `focusOrder={0}` (it is what the seed lands on).
+- **Dev card** — `cards/dev-card.tsx`. The `card-content` responder already exists (`useResponder({ id: \`${cardId}-card-content\`, kind: "card-content", actions: {…} })`, ~the `CYCLE_PERMISSION_MODE` handler block): add `[TUG_ACTIONS.CYCLE_FOCUS_MODE]: () => toggle()` there. `enabled` = **connected** (DevCardBody, not DevProjectPicker) so the picker never cycles.
+- **The zones live in the SHARED `tug-prompt-entry.tsx`** (route choice ~`Z4A`, submit ~`Z5`) and the Z2 status row — *not* dev-card-local. **Key design call:** make the submit/route cycle stops **without coupling the shared prompt-entry to the cycle concept** — e.g. the dev card wraps the entry in `CycleScope` and passes `focusGroup`/`focusOrder` to the entry's controls via props, rather than hardcoding a cycle group inside the shared component. Start minimal: **Z5 submit as the commit-home** (`focusOrder 0`), then Z4A route, then Z2 status (each an item-group per [P10]).
+- **Per-state default focus ([P12]):** Connected → editor (already `paintMirrorAsActive`); Picker → the Open button; migrate on spawn/end transitions.
+- **Fill suppression ([P12]):** add the `[data-cycling="true"]` CSS rule relaxing the submit's standing `filled` → outlined during cycling (fill follows focus; restore on exit). No change to the submit button's component/props.
+- **Z1 transcript excluded** ([P10]). Text-input cycle stop + Return/Space mode-keys are **2.5.4**, not here.
+- **Tests:** `just app-test` with `TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest` (worktree/main both — see the use-bun/app-test memory). The dev-card harness needs `bindDevSession` + `awaitEngineReady` (see `at0088`).
+
 **Tasks:**
 - Register the chrome zones as cycle stops — each a leaf or item-group per [P10] (Tab between zones, arrow within); seed at Z5; forward Tab wraps top→bottom, Shift+Tab reverses ([P10]).
 - Declare per-state default focus ([P12]): Picker → Open, Connected → editor; migrate focus deliberately on spawn / end transitions.
