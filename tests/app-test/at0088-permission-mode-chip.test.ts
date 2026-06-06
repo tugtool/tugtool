@@ -1,6 +1,6 @@
 /**
  * at0088-permission-mode-chip.test.ts — the Z4B permission-mode chip cycles
- * with `Shift+Tab` and via its behavior sheet ([AT0088]).
+ * with `⇧⌘P` and via its behavior sheet ([AT0088]).
  *
  * ## Why this exists
  *
@@ -9,7 +9,7 @@
  * a control_response only), so the chip reflects the change optimistically via
  * `SessionMetadataStore.applyPermissionMode`. Two user paths drive it:
  *
- *   1. **`Shift+Tab`** — the `CYCLE_PERMISSION_MODE` key-card binding →
+ *   1. **`⇧⌘P`** — the `CYCLE_PERMISSION_MODE` key-card binding →
  *      the dev card's card-content responder → `cycle()`. The chip's value
  *      line must advance through default → acceptEdits → plan → auto.
  *   2. **Behavior sheet** — clicking the chip opens a `TugSheet` listing the
@@ -27,13 +27,18 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
-// The shown value only — the width-stabilizer sizers also live under
-// .tug-button-content, so read the dedicated shown span.
-const CHIP_CONTENT = `${CHIP} [data-slot="permission-mode-value"]`;
+// The shown value only. The value is a `TugStableOverlay`: the visible label
+// lives in the `active` variant, while hidden width-sizer `alternate` variants
+// (one per menu mode) share the `permission-mode-value` wrapper to reserve the
+// widest label. Read the active variant so `textContent` is the shown label
+// alone, not the wrapper's value+sizers concatenation.
+const CHIP_CONTENT = `${CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
 const CHIP_ICON = `${CHIP} svg`;
 // Behavior sheet + its option rows (rendered into the pane frame portal).
 const SHEET = '[data-slot="tug-sheet"]';
 const AUTO_OPTION = `${SHEET} [data-mode="auto"]`;
+// The sheet commits on OK, not on row click (two-step select-then-confirm).
+const SHEET_OK = `${SHEET} [data-testid="permission-mode-ok"]`;
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 function deckShape() {
@@ -78,10 +83,10 @@ async function chipWidth(app: App): Promise<number | null> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0088: permission-mode chip cycles via Shift+Tab and the behavior sheet",
+  "AT0088: permission-mode chip cycles via ⇧⌘P and the behavior sheet",
   () => {
     test(
-      "Shift+Tab advances the mode; the behavior sheet sets it explicitly",
+      "⇧⌘P advances the mode; the behavior sheet sets it explicitly",
       async () => {
         const app = await launchTugApp({ testName: "at0088-permission-mode-chip" });
         try {
@@ -112,20 +117,23 @@ describe.skipIf(!SHOULD_RUN)(
 
           const initialMode = await chipMode(app);
 
-          // 1. Shift+Tab advances the mode (focus the editor first so the
-          //    dev card is the key card the binding routes to). From an
-          //    unknown ("…") state the cycle resets to Default; from a known
-          //    mode it steps to the next.
+          // 1. ⇧⌘P advances the mode (focus the editor first so the dev card
+          //    is the key card the binding routes to). From an unknown ("…")
+          //    state the cycle resets to Default; from a known mode it steps to
+          //    the next. Tug deliberately departs from the Claude Code TUI: the
+          //    terminal cycles on Shift+Tab, but in a GUI Shift+Tab must move
+          //    focus, so the cycle lives on ⇧⌘P (mnemonic: the chip's
+          //    /PERMISSIONS caption) — see `keybinding-map.ts`.
           //
           //    The chord is dispatched as a synthetic capture-phase keydown
-          //    rather than a native CGEvent: macOS full-keyboard-access eats a
-          //    posted ⇧⇥ for focus-ring navigation before it reaches the
-          //    WebView, whereas a real user's keystroke reaches the document
-          //    listener normally. The synthetic event drives the exact same
-          //    capture-phase pipeline (`matchKeybinding` → key-card dispatch).
+          //    rather than a native CGEvent: a posted ⌘ chord can be intercepted
+          //    by macOS before it reaches the WebView, whereas a real user's
+          //    keystroke reaches the document listener normally. The synthetic
+          //    event drives the exact same capture-phase pipeline
+          //    (`matchKeybinding` → key-card dispatch).
           await app.nativeClickAtElement(PROMPT_INPUT);
           await app.evalJS<void>(
-            `document.dispatchEvent(new KeyboardEvent("keydown", { code: "Tab", key: "Tab", shiftKey: true, bubbles: true, cancelable: true }))`,
+            `document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", key: "P", metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))`,
           );
           await app.waitForCondition<boolean>(
             `(function(){
@@ -143,8 +151,10 @@ describe.skipIf(!SHOULD_RUN)(
           const widthAtCycle = await chipWidth(app);
 
           // 2. Behavior sheet sets the mode explicitly. Click the chip to open
-          //    the sheet, then pick "Auto" via a real click so the full
-          //    button → onClick → setMode path runs.
+          //    the sheet, then pick "Auto" by clicking its row (which moves the
+          //    in-sheet checkmark) and committing with OK — the sheet is a
+          //    two-step select-then-confirm, so the full row → select → OK →
+          //    onConfirm → setMode path runs.
           await app.nativeClickAtElement(CHIP);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(AUTO_OPTION)}) !== null`,
@@ -172,12 +182,15 @@ describe.skipIf(!SHOULD_RUN)(
           ]);
 
           // Every row reserves a leading check holder (so titles align), and
-          // exactly the current mode shows a checkmark inside it.
+          // exactly the current mode shows a checkmark inside it. The rows are
+          // `TugListRow selectedGlyph="check"`: each reserves a
+          // `.tug-list-row-check` column, and only the selected row renders the
+          // check svg inside it (`data-state="shown"`).
           const checks = await app.evalJS<{ holders: number; marks: number }>(
             `(function(){
               return {
-                holders: document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-mode-check`)}).length,
-                marks: document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-mode-check svg`)}).length,
+                holders: document.querySelectorAll(${JSON.stringify(`${SHEET} .tug-list-row-check`)}).length,
+                marks: document.querySelectorAll(${JSON.stringify(`${SHEET} .tug-list-row-check svg`)}).length,
               };
             })()`,
           );
@@ -185,6 +198,14 @@ describe.skipIf(!SHOULD_RUN)(
           expect(checks.marks, "exactly the current mode is checkmarked").toBe(1);
 
           await app.nativeClickAtElement(AUTO_OPTION);
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var r = document.querySelector(${JSON.stringify(`${SHEET} [data-mode="auto"]`)});
+              return r !== null && r.getAttribute('data-selected') === 'true';
+            })()`,
+            { timeoutMs: 4000 },
+          );
+          await app.nativeClickAtElement(SHEET_OK);
           await app.waitForCondition<boolean>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});

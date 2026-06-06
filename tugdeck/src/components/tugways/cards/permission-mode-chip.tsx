@@ -393,8 +393,14 @@ function PermissionModeSheetBody({
         </div>
       </PermissionModeListContext.Provider>
       <div className="tug-sheet-actions">
-        <TugPushButton onClick={onCancel}>Cancel</TugPushButton>
-        <TugPushButton emphasis="filled" onClick={confirm}>
+        <TugPushButton onClick={onCancel} data-testid="permission-mode-cancel">
+          Cancel
+        </TugPushButton>
+        <TugPushButton
+          emphasis="filled"
+          onClick={confirm}
+          data-testid="permission-mode-ok"
+        >
           OK
         </TugPushButton>
       </div>
