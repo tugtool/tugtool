@@ -189,31 +189,31 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="3 · Small toggle"
           branch="ring"
-          note="A 16–20px box where FILL means 'checked' = the BLUE selection axis these controls actually use (TugCheckbox/TugSwitch/TugRadio/TugOption, never accent-orange). The cursor adds a keyboard-coloured ring — but that ring is also blue, so checked and focused sit in the same hue family here: judge whether they stay distinct at small size, or whether the cursor needs a different treatment. Covers TugCheckbox, TugSwitch."
+          note="The COMPLETE control is the glyph PLUS its label — so keyboard focus rings the WHOLE component (box and label together), never just the box. Checked is a FILL on the box (the blue selection axis). The two are orthogonal: a ring says 'the keyboard is here', a fill says 'this is on'. Covers TugCheckbox, TugSwitch."
         />
         <div className="fl-grid">
           <Cell label="unchecked · rest">
-            <span className="fl-check" />
+            <CheckField label="Enable telemetry" />
           </Cell>
-          <Cell label="unchecked · kbd">
-            <span className="fl-check" data-fl-state="cursor" />
+          <Cell label="unchecked · kbd (ring on whole)">
+            <CheckField label="Enable telemetry" kbd />
           </Cell>
           <Cell label="checked · rest">
-            <span className="fl-check" data-checked="true">
-              ✓
-            </span>
+            <CheckField label="Enable telemetry" checked />
           </Cell>
-          <Cell label="checked · kbd (collision)">
-            <span className="fl-check" data-checked="true" data-fl-state="both">
-              ✓
-            </span>
+          <Cell label="checked · kbd">
+            <CheckField label="Enable telemetry" checked kbd />
           </Cell>
-          <Cell label="switch · off / on / on+kbd">
-            <span style={{ display: "inline-flex", gap: "10px", alignItems: "center" }}>
-              <span className="fl-switch" />
-              <span className="fl-switch" data-checked="true" />
-              <span className="fl-switch" data-checked="true" data-fl-state="both" />
-            </span>
+        </div>
+        <div className="fl-grid" style={{ marginTop: "16px" }}>
+          <Cell label="off · rest">
+            <SwitchField label="Wrap lines" />
+          </Cell>
+          <Cell label="on · rest">
+            <SwitchField label="Wrap lines" checked />
+          </Cell>
+          <Cell label="on · kbd (ring on whole)">
+            <SwitchField label="Wrap lines" checked kbd />
           </Cell>
         </div>
       </div>
@@ -241,58 +241,78 @@ export function GalleryFocusLanguage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ---------- 5. Deferred item-group ---------- */}
+      {/* ---------- 5. Single-select item-group (radio) ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="5 · Deferred item-group — the collision case"
+          title="5 · Single-select item-group — RadioGroup"
           branch="ring"
-          note="The crux: cursor and selection are DIFFERENT items at the same time, and both are role-less. Selection = the blue dot filling (no selected-row background — these groups tint the row only on hover/cursor); cursor = a keyboard-coloured ring around the row. Because selection is a small dot and the cursor is a row outline, the two stay distinct even though both are blue. The last cell shows all combinations coexisting (A selected, B cursored, C both). Covers TugRadioGroup, TugChoiceGroup, TugOptionGroup."
+          note="Exclusive selection shown as the blue dot (no selected-row background — these groups tint the row only on hover/cursor). The keyboard cursor reuses the hover tint and roams independently of the selected dot, so the two stay distinct: dot = committed, tint = where the keyboard is. Covers TugRadioGroup."
         />
         <div className="fl-grid">
           <Cell label="rest">
             <Group />
           </Cell>
-          <Cell label="mouse-hover (item B)">
-            <Group hover={1} />
+          <Cell label="A selected (dot)">
+            <Group selected={0} />
           </Cell>
-          <Cell label="kbd-cursor on B (A selected)">
+          <Cell label="cursor on B (A still selected)">
             <Group selected={0} cursor={1} />
           </Cell>
-          <Cell label="cursor lands on selection (B)">
-            <Group selected={1} cursor={1} />
-          </Cell>
-          <Cell label="all combos coexisting">
-            <Group selected={0} cursor={2} />
+          <Cell label="cursor lands on the selection (A)">
+            <Group selected={0} cursor={0} />
           </Cell>
         </div>
       </div>
 
-      {/* ---------- 6. Live item-group / tab bar ---------- */}
+      {/* ---------- 6. Exclusive segmented (choice / tab) ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="6 · Live item-group / tab bar"
+          title="6 · Exclusive segmented — ChoiceGroup / TabBar"
           branch="ring"
-          note="Derived from the deferred group, but cursor = selection (it switches live as you move). One element carries both: accent-active tab + keyboard ring. Covers TugTabBar."
+          note="One selection at a time, shown as a SOLID blue filled segment (the real TugChoiceGroup indicator). The keyboard cursor reuses the hover tint and roams SEPARATELY from the selection: the solid-blue pill stays put as the cursor moves, then commits on act. Watch the progression Alpha → Beta → Gamma → act. (TugTabBar is the live variant where selection simply follows the cursor as it moves.)"
         />
         <div className="fl-grid">
-          <Cell label="rest (Files active)">
+          <Cell label="rest — Alpha selected">
             <Tabs selected={0} />
           </Cell>
-          <Cell label="kbd on active tab">
-            <Tabs selected={0} cursor={0} />
+          <Cell label="cursor → Beta (Alpha still selected)">
+            <Tabs selected={0} cursor={1} />
           </Cell>
-          <Cell label="moved → Search now active+cursor">
-            <Tabs selected={1} cursor={1} />
+          <Cell label="cursor → Gamma">
+            <Tabs selected={0} cursor={2} />
+          </Cell>
+          <Cell label="act → Gamma selected">
+            <Tabs selected={2} cursor={2} />
           </Cell>
         </div>
       </div>
 
-      {/* ---------- 7. Descendable rows ---------- */}
+      {/* ---------- 7. Multi-select option group ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="7 · Descendable rows + descend mark"
+          title="7 · Multi-select item-group — OptionGroup"
           branch="ring"
-          note="Like a deferred group (row cursor = ring, row selection = accent) plus the descend story: when keyboard descends INTO a row, the container wears a quiet 'contains active' mark (the data-key-within analogue). Covers TugListView, TugListRow, TugAccordion, transcript/body-kind blocks."
+          note="The case that forces the split: MANY items can be checked (solid blue) while the cursor is on exactly one. Here the cursor is a RING, not the tint — because it must stay visible even when it lands on an already-checked item, where a tint would vanish under the solid fill. That single constraint is why multi-select gets a different cursor affordance from the single-select groups above. Covers TugOptionGroup."
+        />
+        <div className="fl-grid">
+          <Cell label="A + C checked">
+            <OptionSet selected={[0, 2]} />
+          </Cell>
+          <Cell label="cursor on unchecked B">
+            <OptionSet selected={[0, 2]} cursor={1} />
+          </Cell>
+          <Cell label="cursor on a checked item (A)">
+            <OptionSet selected={[0, 2]} cursor={0} />
+          </Cell>
+        </div>
+      </div>
+
+      {/* ---------- 8. Descendable rows ---------- */}
+      <div className="fl-section">
+        <SectionHead
+          title="8 · Descendable rows + descend mark"
+          branch="ring"
+          note="A list DOES tint its selected row — using the shared action-blue tint (not accent-orange) — and its row cursor is a RING (lists can be multi-select, so the cursor follows the OptionGroup rule above). Plus the descend story: when keyboard descends INTO a row, the container wears a quiet 'contains active' mark (the data-key-within analogue). Covers TugListView, TugListRow, TugAccordion, transcript/body-kind blocks."
         />
         <div className="fl-grid">
           <Cell label="cursor on row 2 (row 1 selected)">
@@ -304,10 +324,10 @@ export function GalleryFocusLanguage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ---------- 8. Component box-scope ---------- */}
+      {/* ---------- 9. Component box-scope ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="8 · Component box-scope"
+          title="9 · Component box-scope"
           branch="ring"
           note="A whole container becomes the key view (popover / sheet / alert / inline-dialog box). It can't fill. Proposal: a box-shadow ring that hugs the radius with no reflow (the treatment the dialogs already use), and the quiet 'within' variant when it merely contains the active control. Covers TugPopover, TugSheet, TugAlert, the inline-dialog shell."
         />
@@ -328,10 +348,10 @@ export function GalleryFocusLanguage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ---------- 9. Inline link ---------- */}
+      {/* ---------- 10. Inline link ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="9 · Inline link (long tail)"
+          title="10 · Inline link (long tail)"
           branch="ring"
           note="The app-wide long tail focus-ring.css flags: inline, non-box focusables that can't ring cleanly or fill. Proposal: underline on hover, underline + a keyboard-coloured ring on cursor. Covers TugLink and arbitrary focusable content."
         />
@@ -367,6 +387,46 @@ export function GalleryFocusLanguage(): React.ReactElement {
 
 /* ---------- mockup sub-components ---------- */
 
+/** A complete checkbox control — box + label — with the keyboard ring around
+ *  the whole field (not just the box). */
+function CheckField({
+  label,
+  checked,
+  kbd,
+}: {
+  label: string;
+  checked?: boolean;
+  kbd?: boolean;
+}): React.ReactElement {
+  return (
+    <span className="fl-toggle-field" data-fl-state={kbd ? "cursor" : undefined}>
+      <span className="fl-check" data-checked={checked ? "true" : undefined}>
+        {checked ? "✓" : ""}
+      </span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/** A complete switch control — track + label — ringed as a whole on keyboard
+ *  focus. */
+function SwitchField({
+  label,
+  checked,
+  kbd,
+}: {
+  label: string;
+  checked?: boolean;
+  kbd?: boolean;
+}): React.ReactElement {
+  return (
+    <span className="fl-toggle-field" data-fl-state={kbd ? "cursor" : undefined}>
+      <span className="fl-switch" data-checked={checked ? "true" : undefined} />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 const GROUP_ITEMS = ["Allow once", "Allow always", "Allow for session"];
 
 function Group({
@@ -396,7 +456,7 @@ function Group({
   );
 }
 
-const TAB_ITEMS = ["Files", "Search", "Git"];
+const TAB_ITEMS = ["Alpha", "Beta", "Gamma"];
 
 function Tabs({
   selected,
@@ -414,6 +474,32 @@ function Tabs({
           data-fl-selected={selected === i ? "true" : undefined}
           data-fl-cursor={cursor === i ? "true" : undefined}
         >
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const OPTION_ITEMS = ["Logs", "Telemetry", "Network"];
+
+function OptionSet({
+  selected,
+  cursor,
+}: {
+  selected: readonly number[];
+  cursor?: number;
+}): React.ReactElement {
+  return (
+    <div className="fl-optset">
+      {OPTION_ITEMS.map((label, i) => (
+        <span
+          key={label}
+          className="fl-opt"
+          data-fl-selected={selected.includes(i) ? "true" : undefined}
+          data-fl-cursor={cursor === i ? "true" : undefined}
+        >
+          <span className="fl-opt-check">✓</span>
           {label}
         </span>
       ))}

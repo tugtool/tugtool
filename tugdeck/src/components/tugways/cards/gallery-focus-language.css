@@ -38,10 +38,10 @@
   --fl-ring-offset: 2px;
   --fl-radius: 6px;
 
-  /* Shared neutral hover / selection tints (real tokens). */
+  /* The single shared "tint" affordance — a soft action-blue fill that marks a
+     row/segment as hovered, cursored, or active/selected-in-a-list. ONE colour
+     across §1/§5/§6/§7 (was: action-blue in §5, gray in §6, accent-orange in §7). */
   --fl-hover: var(--tug7-surface-tone-primary-normal-active-rest);
-  --fl-selected: var(--tug7-surface-tone-primary-normal-accent-rest);
-  --fl-selected-solid: var(--tug7-surface-control-primary-filled-accent-rest);
 
   /* The committed-selection axis for toggle-family controls (checkbox, switch,
      radio, option) — the BLUE "on" axis the real components use, NOT accent
@@ -224,12 +224,30 @@
 }
 
 /* ============================================================
-   3 — SMALL TOGGLE  (RING branch — fill reserved for "checked")
+   3 — SMALL TOGGLE  (the COMPLETE control = glyph + label)
+   Keyboard focus = a RING around the WHOLE component (box AND label).
+   Checked = a FILL on the box. The two are orthogonal.
    ============================================================ */
+
+/* The component as a whole — glyph + label. The ring goes here, never on the
+   bare glyph. */
+.cg-focus-language .fl-toggle-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.cg-focus-language .fl-toggle-field[data-fl-state="cursor"] {
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: var(--fl-ring-offset);
+}
 
 .cg-focus-language .fl-check {
   width: 20px;
   height: 20px;
+  flex: none;
   border-radius: 6px;
   border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
   background: var(--tug7-surface-field-primary-normal-plain-rest);
@@ -240,28 +258,17 @@
   font-size: 0.8rem;
   font-weight: 700;
 }
+/* checked = FILL on the box */
 .cg-focus-language .fl-check[data-checked="true"] {
   background: var(--fl-on);
   border-color: var(--fl-on);
   color: var(--fl-thumb-on);
 }
-.cg-focus-language .fl-check[data-fl-state="hover"] {
-  border-color: color-mix(
-    in srgb,
-    var(--tug7-element-field-border-normal-plain-rest) 50%,
-    currentColor
-  );
-}
-/* keyboard cursor → ring in the keyboard colour (distinct from the accent fill) */
-.cg-focus-language .fl-check[data-fl-state="cursor"],
-.cg-focus-language .fl-check[data-fl-state="both"] {
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
-  outline-offset: var(--fl-ring-offset);
-}
 
 .cg-focus-language .fl-switch {
   width: 40px;
   height: 22px;
+  flex: none;
   border-radius: 999px;
   border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
   background: var(--tug7-surface-field-primary-normal-plain-rest);
@@ -278,6 +285,7 @@
   background: var(--fl-thumb-off);
   transition: none;
 }
+/* on = FILL on the track */
 .cg-focus-language .fl-switch[data-checked="true"] {
   background: var(--fl-on-track);
   border-color: var(--fl-on-track);
@@ -286,11 +294,6 @@
   left: auto;
   right: 2px;
   background: var(--fl-thumb-on);
-}
-.cg-focus-language .fl-switch[data-fl-state="cursor"],
-.cg-focus-language .fl-switch[data-fl-state="both"] {
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
-  outline-offset: var(--fl-ring-offset);
 }
 
 /* ============================================================
@@ -368,15 +371,15 @@
   border-color: var(--fl-on);
   background: radial-gradient(circle, var(--fl-thumb-on) 0 28%, var(--fl-on) 30%);
 }
-/* keyboard cursor → ring in the keyboard colour — coexists with selection */
+/* keyboard cursor → the shared action-blue tint (reuses hover). Single-select,
+   so the cursor and the small selected dot stay distinct without a ring. */
 .cg-focus-language .fl-item[data-fl-cursor="true"] {
-  border-color: var(--fl-kbd);
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
-  outline-offset: -1px;
+  background: var(--fl-hover);
 }
 
 /* ============================================================
-   6 — LIVE ITEM-GROUP / TAB BAR  (cursor = selected; commits on move)
+   6 — EXCLUSIVE SEGMENTED  (ChoiceGroup / TabBar) — solid-blue selection,
+       cursor = tint, roaming SEPARATELY from the selection
    ============================================================ */
 
 .cg-focus-language .fl-tabs {
@@ -396,18 +399,60 @@
   font-size: 0.78rem;
   font-weight: 500;
 }
+/* Segmented/tab active = SOLID blue filled segment (matches the real
+   TugChoiceGroup indicator pill), not the soft tint. The soft tint stays for
+   hover/cursor on unselected segments. */
 .cg-focus-language .fl-tab[data-fl-selected="true"] {
-  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  background: var(--fl-on);
+  color: var(--fl-thumb-on);
   font-weight: 600;
 }
-/* cursor and selection are the SAME element here → ring on the active tab */
-.cg-focus-language .fl-tab[data-fl-cursor="true"] {
+/* cursor reuses the hover tint and roams independently of the solid-blue
+   selection (different segments while navigating). On the committed segment the
+   cursor coincides with the selection, so the solid fill simply wins. */
+.cg-focus-language .fl-tab[data-fl-cursor="true"]:not([data-fl-selected="true"]) {
+  background: var(--fl-hover);
+}
+
+/* ============================================================
+   7 — MULTI-SELECT OPTION GROUP  (many checked; cursor = RING so it stays
+       visible atop an already-checked, solid-blue item)
+   ============================================================ */
+
+.cg-focus-language .fl-optset {
+  display: inline-flex;
+  gap: 8px;
+}
+.cg-focus-language .fl-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
+  font-size: 0.8rem;
+}
+.cg-focus-language .fl-opt .fl-opt-check {
+  width: 12px;
+  text-align: center;
+  opacity: 0;
+}
+.cg-focus-language .fl-opt[data-fl-selected="true"] {
+  background: var(--fl-on);
+  border-color: var(--fl-on);
+  color: var(--fl-thumb-on);
+}
+.cg-focus-language .fl-opt[data-fl-selected="true"] .fl-opt-check {
+  opacity: 1;
+}
+/* cursor = a RING (not the tint) so it reads even on a checked solid-blue item */
+.cg-focus-language .fl-opt[data-fl-cursor="true"] {
   outline: var(--fl-ring-w) solid var(--fl-kbd);
   outline-offset: var(--fl-ring-offset);
 }
 
 /* ============================================================
-   7 — DESCENDABLE ROWS  (RING branch + descend/within mark)
+   8 — DESCENDABLE ROWS  (RING branch + descend/within mark)
    ============================================================ */
 
 .cg-focus-language .fl-list {
@@ -431,7 +476,7 @@
   font-size: 0.82rem;
 }
 .cg-focus-language .fl-list-row[data-fl-selected="true"] {
-  background: var(--fl-selected);
+  background: var(--fl-hover);
 }
 .cg-focus-language .fl-list-row[data-fl-cursor="true"] {
   border-color: var(--fl-kbd);
@@ -440,7 +485,7 @@
 }
 
 /* ============================================================
-   8 — COMPONENT BOX-SCOPE  (RING branch — popover / sheet / alert box)
+   9 — COMPONENT BOX-SCOPE  (RING branch — popover / sheet / alert box)
    ============================================================ */
 
 .cg-focus-language .fl-box {
@@ -461,7 +506,7 @@
 }
 
 /* ============================================================
-   9 — INLINE LINK  (RING branch — long-tail, non-box focusable)
+   10 — INLINE LINK  (RING branch — long-tail, non-box focusable)
    ============================================================ */
 
 .cg-focus-language .fl-link {
