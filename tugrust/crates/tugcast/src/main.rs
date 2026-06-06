@@ -7,7 +7,6 @@ mod dev;
 mod feeds;
 mod fs_complete;
 mod host;
-mod migration;
 mod permissions;
 mod resources;
 mod router;
@@ -209,26 +208,6 @@ async fn main() {
         );
     }
 
-    // One-time legacy ~/.tugbank.db migration into release-main.
-    // Runs before TugbankClient::open so the copied DB is the one
-    // opened. Skipped silently for non-release-main instances or
-    // when the legacy file is absent. Errors are non-fatal — tugcast
-    // continues with an empty per-instance DB on failure.
-    if let Some(id) = tug_instance::instance_id()
-        && let Some(parent) = bank_path.parent()
-    {
-        let legacy_path = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()))
-            .join(".tugbank.db");
-        match migration::migrate_legacy_tugbank(Some(&id), &legacy_path, parent) {
-            Ok(migration::LegacyMigration::Migrated) => {
-                info!(legacy = %legacy_path.display(), "copied legacy ~/.tugbank.db into release-main")
-            }
-            Ok(_) => {}
-            Err(e) => warn!(error = %e, "legacy tugbank migration failed (non-fatal)"),
-        }
-    }
-
     info!(
         session = %cli.session,
         port = actual_port,
@@ -326,18 +305,6 @@ async fn main() {
             None
         }
     };
-
-    // Run the one-time flat-file-to-tugbank migration synchronously, before the
-    // TCP listener binds, so no frontend fetch can race the migration writes [D05].
-    // Dev-only: production Tug.app has no legacy `.tugtool/deck-settings.json`
-    // to migrate (the file only ever existed on developer machines during the
-    // pre-tugbank transition).
-    #[cfg(debug_assertions)]
-    if let Some(ref client) = bank_client {
-        if let Err(e) = migration::migrate_settings_to_tugbank(&resources::source_tree(), client) {
-            warn!(error = %e, "settings migration encountered an error (non-fatal)");
-        }
-    }
 
     let notify_socket_path = tugbank_notify::socket_path();
 

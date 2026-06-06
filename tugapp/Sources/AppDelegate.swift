@@ -1021,12 +1021,15 @@ extension AppDelegate: NSMenuDelegate {
         guard menu === themeMenu else { return }
         menu.removeAllItems()
 
-        // Read active theme from tugbank if not yet known.
-        if activeThemeName == nil {
-            activeThemeName =
-                ProcessManager.readTugbank(domain: "dev.tugtool.app", key: "theme")
-                ?? baseThemeName
-        }
+        // Read the active theme from tugbank on every menu open. tugbank
+        // is the single source of truth, and the web layer changes the
+        // theme on its own (keyboard Next Theme, etc.) without routing
+        // through `selectTheme` — so a cached value would leave the
+        // checkmark stale. Re-reading keeps it correct regardless of how
+        // the theme was last changed.
+        activeThemeName =
+            ProcessManager.readTugbank(domain: TugConfig.domain, key: "theme")
+            ?? baseThemeName
 
         // Read theme names directly from shipped CSS files on disk.
         // sourceTreePath is the tugtool repo root; override themes are at
