@@ -41,7 +41,7 @@ The keyboard-model spike (now closed out) settled a richer language on the galle
 #### Success Criteria (Measurable) {#success-criteria}
 
 - Every component in the keyboard-model [Keyboard Behavior Matrix](tugplan-keyboard-model.md#keyboard-matrix) shows the new focus signature — ring + faint behind-tint on focus, native fill on selection — verified by eye in **both** brio and harmony. (gallery review checklist per component)
-- The orange `--tugx-focus-ring-color` axis is gone from the focus path; the ring color resolves from the role axis defaulting to `action`. (grep: no remaining `--tugx-focus-ring-color` consumers in the focus path)
+- The orange `--tugx-focus-ring-color` axis is gone from the focus path; the ring color resolves from the role axis defaulting to `action`. (grep: no `--tugx-focus-ring-color` consumers in component/chrome focus CSS; the spike-card legend may retain an explicit orange swatch for contrast)
 - Role-bearing controls (button, checkbox, switch, radio, choice, option) ring + fill + tint in their role color; role-less controls render `action`. (gallery danger/accent cells per component)
 - `TugInput` invalid state focuses in the danger role; `TugTabBar` commits on act. (gallery + live build)
 - All existing `just app-test` keyboard scenarios still `VERDICT: PASS` (behavior unchanged); `bunx tsc --noEmit` clean; `bun test` green. (CI commands)
@@ -55,7 +55,7 @@ The keyboard-model spike (now closed out) settled a richer language on the galle
 4. Live / continuous: TugSlider, TugTabBar (→ commit-on-act) ([#step-4]).
 5. Descendable rows: TugListView/TugListRow, TugAccordion ([#step-5]).
 6. Leaf controls: TugCheckbox, TugSwitch, TugInput (validation→role), TugTextarea, TugValueInput ([#step-6]).
-7. Surfaces / boxes: TugPopover, TugSheet, TugAlert, inline-dialog shell ([#step-7]).
+7. Surfaces / boxes: TugPopover, TugSheet, TugAlert, the inline-dialog shell **and its option rows**, plus a menus audit (TugContextMenu, internal/tug-popup-menu) ([#step-7]).
 8. Links + the app-wide long tail the global rule touches: TugLink, title bars, toolbars, prompt entry, dev panel ([#step-8]).
 9. Governance: `tuglaws/focus-language.md`, the governing decision superseding [P03], and the Keyboard Behavior Matrix visual-column annotation ([#step-9]).
 10. Integration checkpoint + decide the spike card's fate ([#step-10]).
@@ -174,7 +174,15 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Rationale:** Resolves the multi-select crux (a tint vanishes under a fill; an outline ring does not) with no added checkmark, while keeping a single signature.
 
-**Implications:** Group CSS projects the tint from `[data-key-view-kbd]` on the container and the ring from `[data-key-cursor]` on the item; leaf CSS projects both from `[data-key-view-kbd]` on the component.
+**Mechanism — the inversion, and how CSS tells a leaf from a group.** Today the global focus rule maps `[data-key-view-kbd]` → an outline **ring** and `[data-key-cursor]` → a background **tint**. This model **inverts that for groups**: a group key-view becomes a behind-**tint** and the cursor item becomes a **ring**. The engine does **not** project a container-kind attribute (verified: `use-focusable` sets only `data-tug-focusable` / `data-tug-focus-key`; the `container: "item"` kind never reaches the DOM), and this plan **adds none** ([P04]). So differentiation is **pure CSS, per component**:
+
+- the global rule keeps `[data-key-view-kbd]` → ring — correct for a **leaf** control;
+- `[data-key-cursor]` is changed **globally** to an outline **ring** (role-resolved) — correct for every cursor item;
+- each **group** component, in its own step, **overrides the global ring on its `[data-key-view-kbd]` root to `outline: none` + the behind-tint**, keyed on its own `data-slot` / `role` (e.g. `[data-slot="tug-radio-group"]`, `role="radiogroup"`).
+
+No engine touch; stays in the appearance zone ([L06]).
+
+**Implications:** the leaf-vs-group split is owned by each group's CSS overriding the global ring; [#step-1] globalizes only the ring recolor + the cursor→ring flip; the behind-tint is applied **per archetype** (steps 2–8), never globally. Until a group's step lands it shows the leaf ring on its container — a benign in-progress state (Risk R01).
 
 #### [P03] One role axis, default `action`; no role-less branch (DECIDED) {#p03-role-axis}
 
@@ -190,7 +198,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Rationale:** The de-risker — behavior app-tests (which assert attributes/behavior, not pixels) stay green and prove nothing behavioral moved; the work is contained to the appearance zone ([L06]).
 
-**Implications:** Every step's checkpoint includes the relevant behavior app-tests still `VERDICT: PASS` plus `tsc` clean; appearance is the by-eye add-on.
+**Implications:** Every step's checkpoint includes the relevant behavior app-tests still `VERDICT: PASS` plus `tsc` clean; appearance is the by-eye add-on. The leaf-vs-group differentiation ([P02]) is handled by per-component CSS overrides, **not** a new engine-projected attribute, to keep this decision intact. (The one deliberate exception across the plan is [P08] TugTabBar commit-on-act — a scoped behavior change, carried with its own app-test.)
 
 #### [P05] Token architecture — promote the spike's `--fl-*` knobs to real tokens (DECIDED; shape in [Q01]) {#p05-tokens}
 
@@ -339,7 +347,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
 | #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | pending | — |
-| #step-7 | Surfaces / boxes — popover, sheet, alert, inline-dialog shell | pending | — |
+| #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | pending | — |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -348,20 +356,23 @@ No new store-backed state; no `useState` for appearance ([L06]).
 
 **Commit:** `focus(lang): role-resolved focus tokens; re-point the global ring`
 
-**References:** [P01], [P03], [P04], [P05], [Q01], [Q02], (#token-surface, #language-contract)
+**References:** [P01], [P02], [P03], [P04], [P05], [Q01], [Q02], Risk R01, (#token-surface, #language-contract, #p02-leaf-vs-group)
 
-**Artifacts:** new focus token surface in `styles/focus-ring.css` + `brio.css`/`harmony.css`; the global `[data-key-view-kbd]`/`[data-key-cursor]`/`[data-key-within]` rules re-pointed.
+**Artifacts:** new focus token surface in `styles/focus-ring.css` + `brio.css`/`harmony.css`; the global `[data-key-view-kbd]` / `[data-key-cursor]` / `[data-key-within]` rules re-pointed.
 
 **Tasks:**
-- Define the role-resolved focus tokens ([P05]); resolve [Q01]'s shape against two real components and [Q02]'s tint-layering technique; keep the spike's retuned filled-accent/danger intensities.
-- Re-point the global `focus-ring.css` rules from the orange axis to the role axis (default `action`), so every focusable app-wide rings in the new language immediately (R01).
-- Keep `--tugx-focus-ring-width/offset/radius`; retire `--tugx-focus-ring-color` from the focus path.
+- Define the role-resolved focus tokens ([P05]); resolve [Q01]'s token shape against two real components and [Q02]'s tint-layering technique; keep the spike's retuned filled-accent/danger intensities.
+- Re-point the global `[data-key-view-kbd]` rule from the orange axis to the role-axis **ring** (default `action`) — this is the **leaf** treatment; groups override it in their own steps ([P02]).
+- **Flip the global `[data-key-cursor]` rule from a background tint to an outline ring** (role-resolved) — the item cursor for every group ([P02]).
+- Restyle the `[data-key-within]` mark into the new tint family.
+- **Do NOT globalize the behind-tint** — leaf / group / chrome differ, so it is applied per archetype in steps 2–8 ([P02], Risk R01).
+- Keep `--tugx-focus-ring-width/offset/radius`; retire `--tugx-focus-ring-color` from the component/chrome focus path (the spike-card legend may keep an explicit orange swatch for contrast — out of the focus path, settled at [#step-10]).
 
 **Tests:**
 - Behavior: full `just app-test` keyboard sweep still `VERDICT: PASS` (nothing behavioral moved).
-- By-eye: a focusable in each archetype rings in the new default-action language, both themes; orange is gone.
+- By-eye: a **leaf** focusable rings in the new default-action language; a **cursor item** in a group now shows a ring (not the old tint); groups still ring their container until [#step-3]+ land (expected, Risk R01); both themes; orange gone from the focus path.
 
-**Checkpoint:** `bunx tsc --noEmit` clean; app-test sweep green; gallery shows the new default ring in brio + harmony.
+**Checkpoint:** `bunx tsc --noEmit` clean; app-test sweep green; gallery shows the new default ring + cursor ring in brio + harmony.
 
 #### Step 2: TugPushButton keyboard-promoted state; unify inline dialogs {#step-2}
 
@@ -463,24 +474,26 @@ No new store-backed state; no `useState` for appearance ([L06]).
 
 **Checkpoint:** `tsc` clean; app-tests green; gallery parity.
 
-#### Step 7: Surfaces / boxes — popover, sheet, alert, inline-dialog shell {#step-7}
+#### Step 7: Surfaces / boxes — popover, sheet, alert, inline dialogs, menus {#step-7}
 
-**Depends on:** #step-1, #step-2
+**Depends on:** #step-1, #step-2, #step-3
 
-**Commit:** `focus(surfaces): box ring + within for popover/sheet/alert/dialog`
+**Commit:** `focus(surfaces): box ring + within; dialog option-rows; menus audit`
 
-**References:** [P01], [P04], (#language-contract)
+**References:** [P01], [P02], [P04], (#language-contract)
 
-**Artifacts:** popover/sheet/alert + inline-dialog shell focus CSS.
+**Artifacts:** popover/sheet/alert + inline-dialog shell focus CSS; the inline-dialog **option rows**; a menus audit note.
 
 **Tasks:**
 - Box-scope ring (box-shadow hugging the radius, no reflow) + the quiet within variant; behind-tint where the surface allows ([Q02]).
+- **Inline-dialog option rows** (the scope/question choices — item-group *items* inside the modal, distinct from the Deny/Allow/Next buttons handled in [#step-2]): give them the item-group treatment from [#step-3] (cursor ring + native fill, role-resolved), replacing the bespoke `[data-key-cursor]` border-recolor in `dev-permission-dialog.css` / `dev-question-dialog.css`.
+- **Menus audit (`TugContextMenu`, `internal/tug-popup-menu`):** confirm they are Radix-highlighted and do **not** carry the engine `[data-key-cursor]` attribute, so the global cursor→ring flip ([#step-1]) does not reach them — record this as no-change, or add a scoped override only if the audit finds otherwise.
 
 **Tests:**
-- Behavior: surface app-tests green (Escape/trap/restore unchanged — engine untouched).
-- Live-build pass: open each surface, confirm the box focus reads in both themes.
+- Behavior: surface + dialog + menu app-tests green (Escape/trap/restore unchanged — engine untouched).
+- Live-build pass: open each surface and both menus; confirm the box focus + dialog option-row cursor read in both themes; menu highlight unchanged.
 
-**Checkpoint:** `tsc` clean; surface app-tests green; live-build confirmation.
+**Checkpoint:** `tsc` clean; surface/dialog/menu app-tests green; live-build confirmation; menus audit recorded.
 
 #### Step 8: Links + app-wide focusables {#step-8}
 
