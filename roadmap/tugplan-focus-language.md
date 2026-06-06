@@ -267,6 +267,8 @@ No engine touch; stays in the appearance zone ([L06]).
 
 **Decision:** In cycling mode, **Tab moves between zones; arrows rove within a zone.** A multi-control zone is an **item-group** (behind-tint on the zone, ring on the cursor item, per [P02]); a single-control zone (Z5 submit) is a **leaf** (whole ring). The cycle **seeds at the commit-home (Z5 submit)**; forward Tab **wraps to the top and reads top→bottom** (matching the [D97] spatial numbering), Shift+Tab reverses; the cycle is **trapped** (wraps within the card). The **Z1 transcript is excluded** from the first cut.
 
+**Refinement (impl, [#step-cycle-devcard]):** "multi-control zone = item-group" applies only to a zone that is a **semantic group** — one control with sub-items (the Z4A route choice = Code/Shell). A zone that is a **cluster of independent controls** (Z4B = Mode / Model / Effort, three unrelated settings) is **not** one item-group; each control is its own **leaf** Tab stop. Arrow-within is for true groups; independent controls each get a Tab stop. A **disabled** stop (the empty submit; the Z4B chips on the Shell route) is dropped from the walk by the engine's interactivity filter (`FocusManager.isRecordInteractive`), so the seed/lands on the next live stop.
+
 **Rationale:** Zone-granular cycling keeps the Tab count to ~5 (not ~15) and maps the card's zones 1:1 onto the focus-language's leaf/group archetypes — so cycling *is* the language's showcase. Seeding at submit answers the original "submit, not route choice": the ring lands on the nearest actionable control, then fans out.
 
 **Implications:** Each consumer registers its zones as cycle stops (`focusGroup` into the card's cycle scope); the existing item-group focus CSS ([#step-3], [#step-5]) renders the within-zone roving for free.
@@ -432,9 +434,10 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle | Step 2.5 — Keyboard-focus-cycling mode (umbrella) | pending | — |
 | #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | 62228934 |
 | #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | done | (main) |
-| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | core done (Slices 1+2, uncommitted); Slice 3 optional/deferred | — |
+| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | done (Slices 1+2+3 Z4B, uncommitted); Z2 status row deferred | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
+| #step-picker-keys | Step 2.6 — Session-picker keyboard navigation | to design + implement | — |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -630,7 +633,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 *Post-review fixes (uncommitted).* (1) **Disabled controls are no longer Tab targets** — `FocusManager.walkOrder` now skips a focusable whose element is `:disabled` / `[aria-disabled="true"]` / computed `pointer-events: none` (new `isRecordInteractive`, reading the DOM at walk time like `isRecordRendered`). So the submit drops out of the cycle while the editor is empty (its empty-input gate) and the seed lands on the route instead — **no React state**, the empty-ness stays DOM/appearance state and the structure consumer (the walk) observes it directly ([L06]/[L22]/[L24]; L02 forbids mirroring editor empty-ness into `useState`). at0140 extended to assert empty→submit-skipped and typed→submit-seeded. (2) **Choice-group double-ring** (selected-value ring + cycle group/cursor ring) is a Step 3 cleanup — note added to [#step-3].
 
-*Slice 3 — DEFERRED (optional per scope advice).* Z2 status-bar item-group + Z4B permission chip as stops (additional `cycle.CycleScope`s sharing the **same mode id** — render `cycle.CycleScope` again around the Z2 status row / chip; orders renumber top→bottom: Z2 cells lowest after the seed, then Z4A route, submit stays order 0 = commit-home). Roles: chip = agent (already). This rounds out the full top→bottom tour but the cycle is already useful with submit + route.
+*Slice 3 — Z4B chips DONE (uncommitted); Z2 status row still deferred.* The interactive Z4B chips — **Mode** (`PermissionModeChip`), **Model** (`ModelChip`), **Effort** (`EffortChip`) — now take `focusGroup`/`focusOrder` props and join the cycle as **leaf stops** at orders 2 / 3 / 4. Tour: submit(0, seed) → route(1) → Mode(2) → Model(3) → Effort(4) → wrap. They are independent controls, so each is its **own leaf Tab stop** (NOT a single arrow-within item-group — a [P10] refinement: "multi-control zone = item-group" applies to a *semantic* group like the route choice; a cluster of independent controls is a run of leaf stops). On the Shell route the chips are `disabled` and the engine's interactivity filter drops them from the walk for free. The chips are `tinted agent`, so the role-ring axis in `internal/tug-button.css` was extended to cover `tinted` (was filled/outlined only) — a focused chip now rings in its agent role colour. at0140 tours all five stops. **Still deferred:** Z2 status-bar cells (STATE/TIME/TOKENS/TASKS/CONTEXT) as an item-group stop — render `cycle.CycleScope` again around the Z2 row (same mode id), orders renumber so Z2 reads top-of-tour. The non-interactive Z4B badges (CLAUDE CODE / PROJECT / SESSION) are display-only and intentionally not stops.
 
 *Where we are.* Working **on `main`** (the user commits; I edit + run checkpoints). Done + committed: 2.5.1 trigger chord `62228934`; 2.5.2 mechanism `fad9abc6`; refinements `8d382f2b`. The at0088 fix is `6e2c8a83`; the Step 2.5 authoring is `73b4784c`. Slice 1 above is **uncommitted**.
 
@@ -663,9 +666,9 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 **Artifacts:** dev-card / prompt-entry registration of the Z-zones (Z2 status group, Z4A route, Z4B indicators incl. the permission chip, Z5 submit) as cycle stops; the per-state default-focus declaration + transition migration.
 
 **Tasks:**
-- Register the chrome zones as cycle stops — each a leaf or item-group per [P10] (Tab between zones, arrow within); seed at Z5; forward Tab wraps top→bottom, Shift+Tab reverses ([P10]). *(Done: Z5 submit = commit-home (order 0), Z4A route item-group (order 1) — submit → route → wrap. Deferred to optional Slice 3: Z2 / Z4B.)*
+- Register the chrome zones as cycle stops — each a leaf or item-group per [P10] (Tab between zones, arrow within); seed at Z5; forward Tab wraps top→bottom, Shift+Tab reverses ([P10]). *(Done: Z5 submit = commit-home (0), Z4A route item-group (1), Z4B Mode/Model/Effort leaf stops (2/3/4) — submit → route → chips → wrap. Deferred: Z2 status cells.)*
 - [x] Declare per-state default focus ([P12]): Picker → Open, Connected → editor; migrate focus deliberately on spawn / end transitions. *(Connected → editor via the cycle-exit layout effect; Picker → Open via the smart latch — focus Open when settled enabled, else the field, never interrupting typing.)*
-- Apply per-control roles ([P12]): submit = action (danger while stopping), route = action, permission chip = agent. *(Done: submit = action/danger (unchanged), route = action (TugChoiceGroup default). Chip = agent lands with optional Slice 3.)*
+- [x] Apply per-control roles ([P12]): submit = action (danger while stopping), route = action, permission chip = agent. *(submit = action/danger (unchanged), route = action, the Z4B chips = agent; the role-ring axis now covers `tinted` so a focused chip rings agent.)*
 - [x] Add the `[data-cycling]` fill-suppression rule ([P12]): while cycling, the submit's standing `filled` is relaxed to outlined so the fill follows focus (one filled+ringed stop at a time); on exit it reverts to its identity fill. Pure CSS on the card's `data-cycling` signal — no change to the submit button's component / props.
 - [x] Z1 transcript excluded ([P10]).
 
@@ -712,6 +715,30 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 - By-eye: the cycle tour reads as the focus-language showcase on the dev card.
 
 **Checkpoint:** all cycle gates green; the a11y assessment is recorded.
+
+#### Step 2.6: Session-picker keyboard navigation {#step-picker-keys}
+
+**STATUS — to design + implement (new, surfaced 2026-06-06).** The connected card cycles (Step 2.5); the **picker** (`DevProjectPicker` / `DevProjectPickerForm`, the "Choose Session" sheet) has **no keyboard navigation** — ⌥⇥ correctly does nothing there (the cycle is the connected card's editor-Tab-reclaim mechanism; the picker is an ordinary form), but plain Tab/arrow reachability across the picker's controls is missing and must be designed + built. This is a **standalone step**, not a cycle: the picker is a form, so it wants ordinary form navigation, not the trapped cycle.
+
+**Depends on:** #step-3 (the recents / sessions lists are the item-group archetype; reuse that focus CSS rather than re-inventing it).
+
+**Commit:** `focus(picker): keyboard navigation for the session picker`
+
+**References:** [P02], [P12], (#cycle-model — for the per-state contrast: Picker = plain nav, Connected = cycle)
+
+**Design (to settle in a devise/vet pass before building):**
+- **Tab order:** Project-path field → Recent Project Paths list → Sessions list → trash-all → Cancel → Open. Each list is one Tab stop with **arrow-roving within** (the [P02]/[#step-3] item-group model — these are `TugListView`s, the list archetype).
+- **Default focus / seed:** Picker → **Open** when a valid path is seeded (the smart latch already added in [#step-cycle-devcard]); else the path field. Return on Open submits ([P12]).
+- **Within-list keys:** ↑/↓ rove; Return opens the roved session (or commits the roved recent into the path field); the per-row trash affordance reachable (Delete key? or a roved trash button) — **open question**.
+- **Escape:** Cancel (the sheet's cancel ladder) — confirm against the inline-dialog Escape model.
+- **Open question:** is the picker a focus-trap (sheet-modal) so Tab wraps inside it? Likely yes (it's pane-modal). Reuse the sheet focus-trap machinery (at0106).
+
+**Tasks:** (to expand after the design pass)
+- Author the picker's focus-group registration (path field, the two lists, the action buttons) so Tab walks them and arrows rove the lists.
+- Wire Return/Escape per the design; reach the trash affordances by keyboard.
+- App-test: Tab order + arrow-rove + Return-opens-session + Escape-cancels, both themes.
+
+**Checkpoint:** `tsc` clean; picker keyboard app-test green; full keyboard reachability of the picker by-eye.
 
 #### Step 3: Item-groups — radio / choice / option {#step-3}
 

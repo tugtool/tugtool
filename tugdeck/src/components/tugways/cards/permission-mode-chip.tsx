@@ -74,6 +74,12 @@ export interface PermissionModeChipProps {
   /** Dim + disable the chip (e.g. on the Shell route, where permission mode
    *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
   disabled?: boolean;
+  /** Author the chip into a focus group ([P02]) — forwarded to the composed
+   *  {@link TugPushButton}. The dev card passes its cycle group so the chip
+   *  becomes a keyboard-focus-cycling stop; omitted elsewhere. */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
 }
 
 /**
@@ -87,6 +93,8 @@ export function PermissionModeChip({
   sessionMetadataStore,
   onOpenSheet,
   disabled,
+  focusGroup,
+  focusOrder,
 }: PermissionModeChipProps): React.ReactElement {
   const liveMode = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -126,6 +134,8 @@ export function PermissionModeChip({
           : `Permission mode: ${formatPermissionMode(mode)}`
       }
       disabled={disabled}
+      focusGroup={focusGroup}
+      focusOrder={focusOrder}
       onClick={onOpenSheet}
     >
       {/* Width-stabilized value: the shown label plus a hidden sizer per menu

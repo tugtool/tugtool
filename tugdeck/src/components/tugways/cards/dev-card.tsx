@@ -265,8 +265,17 @@ const ROUTE_SHELL = "$";
  * commit-home (the submit), what `focusFirstInMode` seeds on entry.
  */
 const DEV_CYCLE_GROUP = "dev-prompt-cycle";
+// Cycle order ([P10]): the submit is the commit-home (order 0) the cycle seeds
+// on entry; forward Tab then reads the toolbar left→right — route (Z4A), then
+// the interactive Z4B chips (Mode / Model / Effort) — and wraps back to the
+// submit. Each chip is its own leaf stop (they are independent controls, not
+// one item-group). A disabled stop (the empty submit, or the chips on the Shell
+// route) drops out of the walk via the engine's interactivity filter.
 const DEV_CYCLE_ORDER_SUBMIT = 0;
 const DEV_CYCLE_ORDER_ROUTE = 1;
+const DEV_CYCLE_ORDER_MODE = 2;
+const DEV_CYCLE_ORDER_MODEL = 3;
+const DEV_CYCLE_ORDER_EFFORT = 4;
 
 /** Max characters the Z4B Project chip shows before it falls back to the
  *  leaf directory name. */
@@ -3621,16 +3630,22 @@ export function DevCardBody({
                             sessionMetadataStore={sessionMetadataStore}
                             onOpenSheet={permissionSheet.openPermissionSheet}
                             disabled={isShell}
+                            focusGroup={DEV_CYCLE_GROUP}
+                            focusOrder={DEV_CYCLE_ORDER_MODE}
                           />
                           <ModelChip
                             sessionMetadataStore={sessionMetadataStore}
                             onOpenPicker={modelPicker.openModelPicker}
                             disabled={isShell}
+                            focusGroup={DEV_CYCLE_GROUP}
+                            focusOrder={DEV_CYCLE_ORDER_MODEL}
                           />
                           <EffortChip
                             sessionMetadataStore={sessionMetadataStore}
                             onOpenPicker={effortPicker.openEffortPicker}
                             disabled={isShell}
+                            focusGroup={DEV_CYCLE_GROUP}
+                            focusOrder={DEV_CYCLE_ORDER_EFFORT}
                           />
                         </>
                       )}

@@ -61,6 +61,12 @@ export interface EffortChipProps {
   /** Dim + disable the chip (e.g. on the Shell route, where reasoning effort
    *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
   disabled?: boolean;
+  /** Author the chip into a focus group ([P02]) — forwarded to the composed
+   *  {@link TugPushButton}. The dev card passes its cycle group so the chip
+   *  becomes a keyboard-focus-cycling stop; omitted elsewhere. */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
 }
 
 /**
@@ -72,6 +78,8 @@ export function EffortChip({
   sessionMetadataStore,
   onOpenPicker,
   disabled,
+  focusGroup,
+  focusOrder,
 }: EffortChipProps): React.ReactElement {
   const snapshot = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -111,6 +119,8 @@ export function EffortChip({
       aria-label="Reasoning effort"
       title={title}
       disabled={disabled}
+      focusGroup={focusGroup}
+      focusOrder={focusOrder}
       onClick={onOpenPicker}
     >
       <TugStableOverlay

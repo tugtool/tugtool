@@ -1609,25 +1609,34 @@ body {
    copies so every TugPushButton gets it.
    ========================================================================== */
 
-/* 1 — role ring axis (resolves the global ring to the button's role colour). */
+/* 1 — role ring axis (resolves the global ring to the button's role colour).
+   All three emphases (filled / outlined / tinted) point the same axis at the
+   role's filled border colour, so a keyboard-focused button rings in its role
+   colour regardless of emphasis — e.g. a `tinted` `agent` chip (the dev card's
+   Mode / Model / Effort cycle stops) rings agent, not the action default. */
 .tug-button-filled-action,
-.tug-button-outlined-action {
+.tug-button-outlined-action,
+.tug-button-tinted-action {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-action-rest);
 }
 .tug-button-filled-danger,
-.tug-button-outlined-danger {
+.tug-button-outlined-danger,
+.tug-button-tinted-danger {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-danger-rest);
 }
 .tug-button-filled-accent,
-.tug-button-outlined-accent {
+.tug-button-outlined-accent,
+.tug-button-tinted-accent {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-accent-rest);
 }
 .tug-button-filled-data,
-.tug-button-outlined-data {
+.tug-button-outlined-data,
+.tug-button-tinted-data {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-data-rest);
 }
 .tug-button-filled-agent,
-.tug-button-outlined-agent {
+.tug-button-outlined-agent,
+.tug-button-tinted-agent {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-agent-rest);
 }
 

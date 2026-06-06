@@ -21,8 +21,9 @@
  *      caret.
  *   3. **typed editor → submit seeds:** with content, the submit is actionable;
  *      ⌥⇥ seeds the submit commit-home.
- *   4. **Tab tours the stops:** Tab moves submit → route (Z4A), then wraps back
- *      to the submit commit-home (trapped — only the card's stops are walked).
+ *   4. **Tab tours the stops:** Tab moves submit → route (Z4A) → Mode → Model →
+ *      Effort (the Z4B chips), then wraps back to the submit commit-home
+ *      (trapped — only the card's stops are walked).
  *   5. **toggle off (⌥⇥):** the mode pops, `data-cycling="false"`, the submit
  *      drops the key view, and DOM focus returns to the editor caret.
  *
@@ -44,7 +45,20 @@ const CARD = '[data-card-id="A"]';
 const ROOT = `${CARD} [data-testid="dev-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
 const ROUTE = `${CARD} [data-slot="tug-choice-group"][aria-label="Route"]`;
+const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
+const MODEL_CHIP = `${CARD} [data-slot="model-chip"]`;
+const EFFORT_CHIP = `${CARD} [data-slot="effort-chip"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
+
+// Expression: does the element at `selector` hold the keyboard key view? Works
+// for leaf stops (submit, chips — the element carries `data-key-view-kbd`) and
+// item-group stops (the route — its group root carries it).
+function hasKeyView(selector: string): string {
+  return `(function(){
+    var el = document.querySelector(${JSON.stringify(selector)});
+    return el ? el.hasAttribute("data-key-view-kbd") : false;
+  })()`;
+}
 
 function deckShape() {
   return {
@@ -156,11 +170,18 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
-        // (4) Tab tours the stops: submit → route, then wraps back to the
-        // submit commit-home (trapped to the card's two stops).
+        // (4) Tab tours the stops in toolbar order, then wraps back to the
+        // submit commit-home (trapped to the card's stops): submit → route →
+        // Mode → Model → Effort → submit.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(MODEL_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
