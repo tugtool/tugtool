@@ -243,6 +243,7 @@
   font-size: 0.85rem;
 }
 .cg-focus-language .fl-toggle-field[data-fl-state="cursor"] {
+  background: var(--fl-focus-bg);
   outline: var(--fl-ring-w) solid var(--fl-kbd);
   outline-offset: var(--fl-ring-offset);
 }
@@ -315,6 +316,7 @@
   border-radius: 8px;
 }
 .cg-focus-language .fl-slider-field[data-fl-state="cursor"] {
+  background: var(--fl-focus-bg);
   outline: var(--fl-ring-w) solid var(--fl-kbd);
   outline-offset: var(--fl-ring-offset);
 }
