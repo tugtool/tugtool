@@ -189,7 +189,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="3 · Small toggle"
           branch="ring"
-          note="The COMPLETE control is the glyph PLUS its label — so keyboard focus rings the WHOLE component (box and label together), never just the box. Checked is a FILL on the box (the blue selection axis). The two are orthogonal: a ring says 'the keyboard is here', a fill says 'this is on'. Covers TugCheckbox, TugSwitch."
+          note="The COMPLETE control is the glyph PLUS its label — so keyboard focus rings the WHOLE component (box and label together), never just the box. Checked is a FILL on the box. The two are orthogonal: a ring says 'the keyboard is here', a fill says 'this is on'. These controls support ROLES, so both the fill and the focus ring take the role colour (bottom row: danger / accent); role-less controls fall back to action-blue. Covers TugCheckbox, TugSwitch."
         />
         <div className="fl-grid">
           <Cell label="unchecked · rest">
@@ -216,6 +216,14 @@ export function GalleryFocusLanguage(): React.ReactElement {
             <SwitchField label="Wrap lines" checked kbd />
           </Cell>
         </div>
+        <div className="fl-grid" style={{ marginTop: "16px" }}>
+          <Cell label="danger role · checked · kbd">
+            <CheckField label="Delete on quit" checked kbd role="danger" />
+          </Cell>
+          <Cell label="accent role · on · kbd">
+            <SwitchField label="Pin to top" checked kbd role="accent" />
+          </Cell>
+        </div>
       </div>
 
       {/* ---------- 4. Continuous / slider ---------- */}
@@ -240,7 +248,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="One model for item-groups (§5–§9)"
           branch="ring"
-          note="Every group below obeys the same rule: keyboard focus tints BEHIND the whole component; the roving cursor is a RING around the current item (it sits just outside the item, so it survives on top of a selection fill — no extra checkmark); committing sets the NATIVE selection fill. The only thing that varies is cardinality — exclusive (one) vs multiple — and each component keeps its decades-old selection convention (dot / pill / fill)."
+          note="Every group below obeys the same rule: keyboard focus tints BEHIND the whole component; the roving cursor is a RING around the current item (it sits just outside the item, so it survives on top of a selection fill — no extra checkmark); committing sets the NATIVE selection fill. What varies: cardinality — exclusive (one) vs multiple — and ROLE. Role-bearing components (checkbox/switch/radio/choice/option) colour BOTH the fill and the focus ring with the role (see the danger/accent cells); role-less components fall back to action-blue. Each component keeps its decades-old selection convention (dot / pill / fill)."
         />
       </div>
 
@@ -260,6 +268,9 @@ export function GalleryFocusLanguage(): React.ReactElement {
           </Cell>
           <Cell label="focused — cursor roamed to B (A still selected)">
             <Group focus selected={0} cursor={1} />
+          </Cell>
+          <Cell label="danger role — fill + ring follow the role">
+            <Group focus selected={0} cursor={0} role="danger" />
           </Cell>
         </div>
       </div>
@@ -281,6 +292,9 @@ export function GalleryFocusLanguage(): React.ReactElement {
           <Cell label="focused — act → Gamma selected">
             <Tabs focus selected={2} cursor={2} />
           </Cell>
+          <Cell label="accent role — fill + ring follow the role">
+            <Tabs focus selected={0} cursor={1} role="accent" />
+          </Cell>
         </div>
       </div>
 
@@ -300,6 +314,9 @@ export function GalleryFocusLanguage(): React.ReactElement {
           </Cell>
           <Cell label="focused — cursor on a checked item (C)">
             <OptionSet focus selected={[1, 2]} cursor={2} />
+          </Cell>
+          <Cell label="danger role — fill + ring follow the role">
+            <OptionSet focus selected={[1, 2]} cursor={2} role="danger" />
           </Cell>
         </div>
       </div>
@@ -401,19 +418,29 @@ export function GalleryFocusLanguage(): React.ReactElement {
 
 /* ---------- mockup sub-components ---------- */
 
+/** A role applied to a role-bearing control — colours its fill AND its focus
+ *  ring. Omit for the default (the blue selection axis / action ring). */
+type FlRole = "danger" | "accent";
+
 /** A complete checkbox control — box + label — with the keyboard ring around
  *  the whole field (not just the box). */
 function CheckField({
   label,
   checked,
   kbd,
+  role,
 }: {
   label: string;
   checked?: boolean;
   kbd?: boolean;
+  role?: FlRole;
 }): React.ReactElement {
   return (
-    <span className="fl-toggle-field" data-fl-state={kbd ? "cursor" : undefined}>
+    <span
+      className="fl-toggle-field"
+      data-fl-state={kbd ? "cursor" : undefined}
+      data-fl-role={role}
+    >
       <span className="fl-check" data-checked={checked ? "true" : undefined}>
         {checked ? "✓" : ""}
       </span>
@@ -428,13 +455,19 @@ function SwitchField({
   label,
   checked,
   kbd,
+  role,
 }: {
   label: string;
   checked?: boolean;
   kbd?: boolean;
+  role?: FlRole;
 }): React.ReactElement {
   return (
-    <span className="fl-toggle-field" data-fl-state={kbd ? "cursor" : undefined}>
+    <span
+      className="fl-toggle-field"
+      data-fl-state={kbd ? "cursor" : undefined}
+      data-fl-role={role}
+    >
       <span className="fl-switch" data-checked={checked ? "true" : undefined} />
       <span>{label}</span>
     </span>
@@ -477,13 +510,19 @@ function Group({
   focus,
   selected,
   cursor,
+  role,
 }: {
   focus?: boolean;
   selected?: number;
   cursor?: number;
+  role?: FlRole;
 }): React.ReactElement {
   return (
-    <div className="fl-group" data-fl-focus={focus ? "true" : undefined}>
+    <div
+      className="fl-group"
+      data-fl-focus={focus ? "true" : undefined}
+      data-fl-role={role}
+    >
       {GROUP_ITEMS.map((label, i) => (
         <div
           key={label}
@@ -505,13 +544,19 @@ function Tabs({
   focus,
   selected,
   cursor,
+  role,
 }: {
   focus?: boolean;
   selected: number;
   cursor?: number;
+  role?: FlRole;
 }): React.ReactElement {
   return (
-    <div className="fl-tabs" data-fl-focus={focus ? "true" : undefined}>
+    <div
+      className="fl-tabs"
+      data-fl-focus={focus ? "true" : undefined}
+      data-fl-role={role}
+    >
       {TAB_ITEMS.map((label, i) => (
         <span
           key={label}
@@ -532,13 +577,19 @@ function OptionSet({
   focus,
   selected,
   cursor,
+  role,
 }: {
   focus?: boolean;
   selected: readonly number[];
   cursor?: number;
+  role?: FlRole;
 }): React.ReactElement {
   return (
-    <div className="fl-optset" data-fl-focus={focus ? "true" : undefined}>
+    <div
+      className="fl-optset"
+      data-fl-focus={focus ? "true" : undefined}
+      data-fl-role={role}
+    >
       {OPTION_ITEMS.map((label, i) => (
         <span
           key={label}
