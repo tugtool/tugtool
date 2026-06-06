@@ -127,7 +127,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Why it matters:** Double-borders are colourblind-robust, but a single faint tint + thin ring may be too subtle at high-contrast settings.
 
-**Resolution:** DEFERRED to the keyboard-model a11y follow-on (`#roadmap`). This plan must not regress accessibility mode; a dedicated variant is out of scope.
+**Resolution:** DEFERRED to the keyboard-model a11y follow-on (`#roadmap`). This plan must not regress accessibility mode; a dedicated variant is out of scope. **Framing from [P13]:** the *navigation* half of an a11y keyboard mode is "always-on cycling" = making a toggleable context **persistent** (drop the toggle, push at mount), assessed at [#step-cycle-vet]; this question is now specifically about the *visual* high-contrast treatment, which remains deferred.
 
 #### [Q04] Fate of the spike card (OPEN → decide in #step-10) {#q04-spike-card}
 
@@ -291,6 +291,26 @@ No engine touch; stays in the appearance zone ([L06]).
 
 **Implications:** A per-state default-focus declaration on the card's seed path + the transition migration; the roles feed the focus-language visuals; the `[data-cycling]` fill-suppression rule lands with the dev-card wiring ([#step-cycle-devcard]). The `gallery-cycle-demo` already models the target (all stops outlined → fill follows focus); the suppression matters only where a cycle stop is `filled` at rest (the dev-card submit).
 
+#### [P13] Every focus context is persistent-cycling or toggleable-cycling (DECIDED) {#p13-context-cycling-type}
+
+**Decision:** Every focus context — pane / card / sheet / alert / dialog — relates to keyboard-focus-cycling (the trapped Tab-walk over its controls) in exactly one of two ways, and the context **knows which**:
+
+- **Persistent cycling** — the trapped walk **is** the context's base mode. It is pushed when the context opens and never turned off; there is no editor monopolizing Tab, so Tab circulating the controls is simply how the context works. Examples: `PermissionDialog`, `QuestionDialog`, the Model / permission / effort sheets — any surface with **no Tab-owning text surface**.
+- **Toggleable cycling** — the context's base mode is **text-first**: a Tab-owning editor rests with the keyboard, and cycling is a mode **pushed on the trigger (⌥⇥)** and **popped back to the editor caret**. Example: the connected dev card.
+
+**The discriminator is a single question: does the context contain a Tab-owning surface?** A *Tab-owning surface* is a **multi-line editor** (the CodeMirror prompt / code editor) where Tab means indent / completion. A **single-line** text input (a path field, a search box, a rename field) does **not** own Tab — Tab should leave it — so its presence does **not** make a context toggleable. No Tab-owner → **persistent**; a Tab-owner → **toggleable** (the editor is the resting home, cycling is the escape hatch).
+
+**The type is a property of (context × state), not of a component — it can flip as the UI evolves.** The dev card is **persistent in its Picker state** (no editor — the picker is a form whose only text field is single-line) and **toggleable in its Connected state** (the prompt editor owns Tab). The type changes at the Picker→Connected transition; a context must re-derive its type as its state changes, and seed/expose the trigger accordingly. (This is the concretized form of "track these states as the UI and user interaction evolve.")
+
+**Rationale:** This is a *classification over a mechanism we already have*, not a new mechanism. Persistent cycling is exactly `useFocusTrap` (push a `{ trapped: true }` mode at open, pop on unmount, no toggle); toggleable cycling is exactly `useCycleMode` (push on ⌥⇥, capture+restore the editor key view, expose a toggle) — `useCycleMode` is `useFocusTrap` + a toggle + key-view capture/restore. Naming the two as one axis (a) gives a decision rule for every new context instead of ad-hoc per-surface keyboard wiring, (b) lets the two hooks converge (toggleable builds on persistent), and (c) **dissolves the deferred a11y question [Q03]**: "always-on cycling" for accessibility is just *making a toggleable context persistent* — drop the toggle, push at mount — same mechanism, no separate feature.
+
+**Implications:**
+- Each context **declares or derives** its cycling type (from the discriminator), and the type is **reactive to the context's state** where the state changes the composition (dev card). Persistent contexts push their trapped mode at open (`useFocusTrap`) and never expose ⌥⇥; toggleable contexts rest on the editor and expose ⌥⇥ (`useCycleMode`).
+- **The session picker is *persistent*, not toggleable** ([#step-picker-keys]): its only text input is the single-line path field, which does not own Tab. (Reclassifies the earlier tentative read.)
+- **Convergence (not required now, enabled):** refactor `useCycleMode` to build on `useFocusTrap` so both express the one mechanism; the a11y mode ([Q03], assessed at [#step-cycle-vet]) becomes "persistent variant of an otherwise-toggleable context."
+- **Governance:** this axis is enshrined in the focus-language tuglaws doc ([#step-9]) alongside the leaf/group/cycle model; until then this decision is the reference.
+- Keep it **lightweight** — a naming + decision rule + hook convergence, **not** a new "focus-context manager." The engine's focus-mode stack already is the manager; this decision only says how each context should use it.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -437,7 +457,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | done (Slices 1+2+3 Z4B, uncommitted); Z2 status row deferred | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
-| #step-picker-keys | Step 2.6 — Session-picker keyboard navigation | to design + implement | — |
+| #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | to design + implement | — |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -704,11 +724,11 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 **Commit:** `N/A (verification only)`
 
-**References:** [P09], [P10], [P11], [P12], [Q03], (#success-criteria, #cycle-model)
+**References:** [P09], [P10], [P11], [P12], [P13], [Q03], (#success-criteria, #cycle-model)
 
 **Tasks:**
 - End-to-end pass: enter (trigger) → cycle (Tab / arrow) → act (Space / dedicated chord) → exit (Return-into-text / trigger), in both card states, both themes.
-- Assess whether "always-on cycling" (cycle scope = base mode) yields the deferred a11y mode ([Q03]); record the finding for the a11y follow-on.
+- Assess the [P13] a11y corollary: "always-on cycling" = making a toggleable context **persistent** (drop the toggle, push at mount — the [P13] persistent type), which resolves the deferred [Q03]. Record the finding for the a11y follow-on.
 
 **Tests:**
 - Behavior: full `just app-test` keyboard sweep green (incl. the new cycle tests); the editor's Tab still completes (no regression — Risk R02 row).
@@ -716,25 +736,26 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 **Checkpoint:** all cycle gates green; the a11y assessment is recorded.
 
-#### Step 2.6: Session-picker keyboard navigation {#step-picker-keys}
+#### Step 2.6: Session-picker keyboard navigation (persistent cycling) {#step-picker-keys}
 
-**STATUS — to design + implement (new, surfaced 2026-06-06).** The connected card cycles (Step 2.5); the **picker** (`DevProjectPicker` / `DevProjectPickerForm`, the "Choose Session" sheet) has **no keyboard navigation** — ⌥⇥ correctly does nothing there (the cycle is the connected card's editor-Tab-reclaim mechanism; the picker is an ordinary form), but plain Tab/arrow reachability across the picker's controls is missing and must be designed + built. This is a **standalone step**, not a cycle: the picker is a form, so it wants ordinary form navigation, not the trapped cycle.
+**STATUS — to design + implement (new, surfaced 2026-06-06).** The connected card cycles (Step 2.5); the **picker** (`DevProjectPicker` / `DevProjectPickerForm`, the "Choose Session" sheet) has **no keyboard navigation** — ⌥⇥ correctly does nothing there, and that stays true. Per [P13] the picker is a **persistent-cycling** context: its only text input is the **single-line** path field, which does not own Tab, so there is no Tab-owner to suspend — the trapped Tab-walk **is** the picker's base mode (always on, no toggle). It is *not* a toggleable cycle like the connected card. The walk is missing today and must be designed + built.
 
 **Depends on:** #step-3 (the recents / sessions lists are the item-group archetype; reuse that focus CSS rather than re-inventing it).
 
-**Commit:** `focus(picker): keyboard navigation for the session picker`
+**Commit:** `focus(picker): persistent keyboard navigation for the session picker`
 
-**References:** [P02], [P12], (#cycle-model — for the per-state contrast: Picker = plain nav, Connected = cycle)
+**References:** [P02], [P12], [P13], (#cycle-model — for the per-state contrast: Picker = persistent cycling, Connected = toggleable cycling)
 
 **Design (to settle in a devise/vet pass before building):**
-- **Tab order:** Project-path field → Recent Project Paths list → Sessions list → trash-all → Cancel → Open. Each list is one Tab stop with **arrow-roving within** (the [P02]/[#step-3] item-group model — these are `TugListView`s, the list archetype).
+- **Mechanism ([P13] persistent):** the picker pushes a trapped focus mode at open via **`useFocusTrap`** (the persistent-cycling primitive — the same `pushFocusMode({ trapped: true })` the cycle uses, minus the toggle and the editor key-view restore). Its controls register into that mode as cycle stops; there is no ⌥⇥ toggle and no base/editor to return to.
+- **Tab order:** Project-path field → Recent Project Paths list → Sessions list → trash-all → Cancel → Open. Each list is one Tab stop with **arrow-roving within** (the [P02]/[#step-3] item-group model — these are `TugListView`s, the list archetype). The single-line path field is an ordinary stop (Tab leaves it; it does not consume Tab).
 - **Default focus / seed:** Picker → **Open** when a valid path is seeded (the smart latch already added in [#step-cycle-devcard]); else the path field. Return on Open submits ([P12]).
 - **Within-list keys:** ↑/↓ rove; Return opens the roved session (or commits the roved recent into the path field); the per-row trash affordance reachable (Delete key? or a roved trash button) — **open question**.
 - **Escape:** Cancel (the sheet's cancel ladder) — confirm against the inline-dialog Escape model.
-- **Open question:** is the picker a focus-trap (sheet-modal) so Tab wraps inside it? Likely yes (it's pane-modal). Reuse the sheet focus-trap machinery (at0106).
+- **Focus-trap modality:** the picker is pane-modal, so the persistent trap should wrap Tab inside it — reuse the sheet focus-trap machinery (at0106), which is the same `useFocusTrap` mechanism.
 
 **Tasks:** (to expand after the design pass)
-- Author the picker's focus-group registration (path field, the two lists, the action buttons) so Tab walks them and arrows rove the lists.
+- Push the picker's persistent trapped mode at open (`useFocusTrap`); register its controls (path field, the two lists, the action buttons) as stops in that mode so Tab walks them and arrows rove the lists.
 - Wire Return/Escape per the design; reach the trash affordances by keyboard.
 - App-test: Tab order + arrow-rove + Return-opens-session + Escape-cancels, both themes.
 
