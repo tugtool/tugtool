@@ -145,7 +145,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Options:** (a) **Opt-Tab** (⌥⇥) — most mnemonic; (b) a **non-Tab chord** if Opt-Tab is eaten (⌃Tab is OS-reserved; candidates: a function chord, ⌥Esc, or a card-scoped leader); (c) a two-key leader.
 
-**Plan to resolve:** Spike in [#step-cycle-trigger-spike] — a temporary capture-phase probe / app-test that posts the chord and asserts the document listener receives it; take the first reliable option. **Lean:** Opt-Tab if it lands, else the simplest non-conflicting chord. **Resolution:** OPEN.
+**Plan to resolve:** Spike in [#step-cycle-trigger-spike] — a temporary capture-phase probe / app-test that posts the chord and asserts the document listener receives it; take the first reliable option. **Lean:** Opt-Tab if it lands, else the simplest non-conflicting chord. **Resolution:** DECIDED — **Opt-Tab (⌥⇥)**. Confirmed by `at0138`: a native ⌥⇥ reaches the document keydown listeners (it is *not* eaten by macOS full-keyboard-access the way plain Tab / ⇧⇥ are) and matches the `CYCLE_FOCUS_MODE` binding (`preventDefaultOnMatch` fires). The engine side is clear too — the focus-walk stage bails on any modifier (`responder-chain-provider.tsx`), so ⌥⇥ is never consumed as a reverse-tab. No fallback chord needed.
 
 ---
 
@@ -428,7 +428,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-gallery | Gallery rename + enrichment policy (ring-scope bug fixed) | done | d1dbaf12 + rename |
 | #step-2 | TugPushButton keyboard-promoted state; unify inline dialogs | done | (dash focus-button) |
 | #step-cycle | Step 2.5 — Keyboard-focus-cycling mode (umbrella) | pending | — |
-| #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | pending | — |
+| #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | (main, uncommitted) |
 | #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | pending | — |
 | #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | pending | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
@@ -570,23 +570,28 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 #### Step 2.5.1: Trigger spike — confirm the chord reaches the webview {#step-cycle-trigger-spike}
 
+**STATUS — done.** Opt-Tab (⌥⇥) confirmed reachable + matched ([Q05] DECIDED); the action + binding are wired; `at0138` guards it. The mechanism (the handler) lands in [#step-cycle-mechanism].
+
 **Depends on:** #step-1
 
 **Commit:** `focus(cycle): cycle-toggle trigger chord + action`
 
 **References:** [Q05], [P09], Risk R02, (#cycle-model)
 
-**Artifacts:** a cycle-toggle action in `action-vocabulary.ts`; its trigger chord in `keybinding-map.ts`; [Q05] resolved in this plan.
+**Artifacts:** `CYCLE_FOCUS_MODE` action in `action-vocabulary.ts`; the ⌥⇥ trigger chord in `keybinding-map.ts`; `at0138-cycle-trigger-chord.test.ts`; [Q05] resolved in this plan.
 
 **Tasks:**
-- Spike the candidate chord (Opt-Tab, ⌥⇥) reachability: a temporary capture-phase probe / app-test that posts the chord and asserts the document keybinding stage receives it (mirrors the ⇧⇥ lesson from `at0088`).
-- If eaten, take the first reliable non-Tab fallback; record the choice + rationale in [Q05].
-- Wire the chosen chord to the cycle-toggle action (handler stubbed; the mechanism lands in [#step-cycle-mechanism]).
+- [x] Spike the candidate chord (Opt-Tab, ⌥⇥) reachability: an app-test that posts a native ⌥⇥ and asserts the document keybinding stage receives + matches it. → **reaches + matches** (not eaten by macOS, unlike ⇧⇥).
+- [x] If eaten, take the first reliable non-Tab fallback; record the choice + rationale in [Q05]. → **not eaten; Opt-Tab kept** ([Q05] DECIDED).
+- [x] Wire the chosen chord to the `CYCLE_FOCUS_MODE` action (handler deferred to the mechanism step). Also fixed the stale `⇧⇥` comment on `CYCLE_PERMISSION_MODE` (now ⇧⌘P) while in `action-vocabulary.ts`.
 
 **Tests:**
-- Behavior: an app-test asserting the chord reaches the document keybinding stage (received + matched), per `just app-test`.
+- [x] Behavior: `at0138` posts a native ⌥⇥ and asserts it reaches the document (not OS-eaten) AND `defaultPrevented === true` (the binding matched). `VERDICT: PASS`.
 
-**Checkpoint:** `bunx tsc --noEmit` clean; the chord is confirmed reachable; [Q05] resolved (chord chosen + recorded).
+**Checkpoint:**
+- [x] `bunx tsc --noEmit` clean.
+- [x] the chord is confirmed reachable (`at0138` green).
+- [x] [Q05] resolved (Opt-Tab chosen + recorded).
 
 #### Step 2.5.2: Cycle-mode scope primitive (push/seed/pop) {#step-cycle-mechanism}
 

@@ -218,11 +218,22 @@ export const TUG_ACTIONS = {
   //                 Card-level: switch to the Nth tab. Used by ⌘1..9.
   // CYCLE_PERMISSION_MODE: payload — none. Advance the dev-card's
   //                 permission mode one step (default → acceptEdits →
-  //                 plan → auto → default). Bound to ⇧⇥, scoped
+  //                 plan → auto → default). Bound to ⇧⌘P, scoped
   //                 `scope: "key-card"`, handled by the dev card's
   //                 card-content responder. Non-dev cards register no
-  //                 handler, so the dispatch is a silent no-op and ⇧⇥
-  //                 falls through to normal reverse-tab navigation.
+  //                 handler, so the dispatch is a silent no-op
+  //                 (`preventDefaultOnMatch` suppresses the macOS beep).
+  // CYCLE_FOCUS_MODE: payload — none. Toggle a text-first card's
+  //                 keyboard-focus-cycling mode on/off — the mode in which
+  //                 Tab circulates the card's chrome zones instead of feeding
+  //                 the editor (the dev card is the first consumer). Bound to
+  //                 ⌥⇥, scoped `scope: "key-card"`; the trigger / Escape exit
+  //                 back to the editor caret. The handler (a per-card cycle
+  //                 focus-scope) lands with the cycle-mode mechanism; until then
+  //                 the binding matches and suppresses the native default, but
+  //                 the dispatch is a silent no-op. The focus-walk stage bails
+  //                 on any modifier, so ⌥⇥ reaches this binding rather than
+  //                 being consumed as a reverse-tab.
   // RUN_SLASH_COMMAND: payload — `value: { name, args }` (a matched local
   //                 slash command + any trailing args). The prompt entry
   //                 dispatches it key-card-scoped when a typed `/command`
@@ -251,6 +262,7 @@ export const TUG_ACTIONS = {
   FOCUS_PROMPT:   "focus-prompt",
   JUMP_TO_TAB:    "jump-to-tab",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
+  CYCLE_FOCUS_MODE: "cycle-focus-mode",
   RUN_SLASH_COMMAND: "run-slash-command",
   SHOW_SLASH_COMMAND_NOTICE: "show-slash-command-notice",
 

@@ -221,6 +221,17 @@ export const KEYBINDINGS: KeyBinding[] = [
   // pick-a-mode affordances. Tab / Shift-Tab are NOT in this map — the
   // focus-walk stage in `responder-chain-provider.tsx` owns them.
   { key: "KeyP", meta: true, shift: true, action: TUG_ACTIONS.CYCLE_PERMISSION_MODE, scope: "key-card", preventDefaultOnMatch: true },
+  // ⌥⇥ toggles a text-first card's keyboard-focus-cycling mode — the mode in
+  // which Tab circulates the card's chrome zones (the [D97] Z-areas) instead of
+  // feeding the editor. `scope: "key-card"` routes to the active card's
+  // `card-content` responder; only a text-first card (the dev card first)
+  // registers a handler, and the cycle focus-scope itself lands with the
+  // mechanism. `preventDefaultOnMatch` suppresses the native default + the
+  // macOS beep when no card claims it. ⌥⇥ is free here: the focus-walk stage in
+  // `responder-chain-provider.tsx` bails on any modifier (it owns only the
+  // unmodified Tab / Shift-Tab walk), so a modified Tab falls through to this
+  // map rather than being consumed as a focus move.
+  { key: "Tab", alt: true, action: TUG_ACTIONS.CYCLE_FOCUS_MODE, scope: "key-card", preventDefaultOnMatch: true },
 ];
 
 // ---- matchKeybinding ----
