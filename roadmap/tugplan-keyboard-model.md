@@ -22,7 +22,7 @@ The focus engine exists and works: an app-owned `FocusManager` co-located with t
 - **Keep the engine, redo behavior.** Reuse `registerFocusable`, the Tab walk, and the scope stack verbatim. The new engine work is the **movement cursor**, the **`data-key-within`** visual, **Enter-descend / Escape-ascend** wiring onto the existing scope stack, the **act dispatch** (Space/Enter/Escape → select/act/descend/ascend), and the per-component **key-capture set** (generalizing `consumesTab`).
 - **One ring, three states.** The ring marks the *component* (never a sub-item); the immediate container shows a quiet `data-key-within` mark; the current item inside a deferred component wears the *mouse-hover* look. See [P03].
 - **Text editors invert the model.** They are leaves that capture most keys for editing; the engine routes only what they don't capture. See [P04].
-- **Land deferred groups first, surfaces last.** Redo the simple item-groups (radio/choice/option) to shake out the engine pieces, then live components, then the descend cases (accordion/list), then the never-built floating/trap surfaces and inline dialogs, then audit + ARIA.
+- **Land deferred groups first, surfaces last.** Redo the simple item-groups (radio/choice/option) to shake out the engine pieces, then live components, then the descend cases (accordion/list), then the never-built floating/trap surfaces and inline dialogs, then the (deferred) `refuse` audit.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -39,7 +39,8 @@ The focus engine exists and works: an app-owned `FocusManager` co-located with t
 - Text-editing key capture ([#step-3]).
 - Redo of components built under the old conception: deferred groups (radio/choice/option), live (tab bar/slider), accordion, list view.
 - The not-yet-built surfaces: tooltip, popover, context menu (+ editor context menu), popup menu, sheet, alert, inline dialogs.
-- `refuse`/first-responder audit and the accessibility-mode ARIA pass + dual-mode toggle, against the new model.
+- `refuse`/first-responder audit against the new model (deferred — see [#step-15]).
+- The focus-language modernization spike — settle the new keyboard-focus indicator language in the gallery ([#focus-language-modernization]).
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -216,7 +217,7 @@ Each batch is one `/tugplug:implement` run — a dependency-clean cut whose step
 | **A — Engine + editors** | [#step-1]–[#step-3] | The model's machinery: movement cursor + the three visual states, the Space/Enter/Escape act dispatch + key-capture set, then text editors as capture leaves. Nothing else can be redone until this lands. | substrate (the [#dependencies] Givens) |
 | **B — Component redos** | [#step-4]–[#step-7] | Declare the model on the components built under the old conception: deferred groups (radio/choice/option), live (tab bar/slider), accordion, list view. All four rest only on the [#step-2] dispatch. | Batch A |
 | **C — Surfaces** | [#step-8]–[#step-14] | The not-yet-built floating/trap surfaces and inline dialogs: tooltip, popover, context menu (+ editor menu), popup-menu, sheet, alert, Permission/Question dialogs. (Internal order: [#step-11] rests on [#step-10]; [#step-13] on [#step-12]; [#step-14] on [#step-3].) | Batch A |
-| **D — Audit + a11y + integration** | [#step-15]–[#step-17] | `refuse` / first-responder reclassification, the accessibility-mode ARIA pass + dual-mode toggle, and the end-to-end composed-surface checkpoint. | Batches B + C |
+| **D — Audit (deferred)** | [#step-15] | `refuse` / first-responder reclassification against the model. Deferred. | Batches B + C |
 
 Batches are **run** boundaries, not commit boundaries — each step still commits individually on the dash. A long batch may be split across conversations; the ledger is the resume point either way.
 
@@ -246,10 +247,8 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 | #step-11 | Tame internal/tug-popup-menu | done (no change) | — |
 | #step-12 | Tame TugSheet — modal scope + restore | done (additive) | — |
 | #step-13 | Tame TugAlert — modal scope | done (no change) | — |
-| #step-14 | Inline dialogs (Permission/Question) — modal-for-keys scope ([P06]) | in progress (Permission done; Question + button-focus generalization deferred) | — |
-| #step-15 | Audit: `refuse` / first-responder reclassification against [P01] | pending | — |
-| #step-16 | Accessibility-mode ARIA pass + dual-mode toggle | pending | — |
-| #step-17 | Integration checkpoint | pending | — |
+| #step-14 | Inline dialogs (Permission/Question) — modal-for-keys scope ([P06]) | done | 5ca6f4b3 |
+| #step-15 | Audit: `refuse` / first-responder reclassification against [P01] | deferred | — |
 
 #### Step 1: Engine — movement cursor + the three visual states {#step-1}
 
@@ -473,7 +472,7 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 **Depends on:** #step-3
 
-**STATUS — in progress (PermissionDialog landed; QuestionDialog + a button-focus generalization deferred).** What landed and verified hands-on: the prompt entry genuinely deactivates while a dialog is pending (read-only + blurred, no caret), and **PermissionDialog** is a working modal-for-keys scope — arrows move the cursor over `[Deny, Allow, scope options…]`, Return activates the highlight (Allow / Deny / allow-with-scope), Escape/Cmd-. = Deny (cancel-action), and the prompt re-focuses on resolve. The visual language settled on something better than the orange ring: the keyboard cursor **promotes** the focused action button to its **filled, role-coloured** style + a role-coloured outline and **demotes** the others to outlined (the default-button emphasis follows the cursor); scope options recolour their **own border** to the focus colour. Deferred to follow-ons: (1) **QuestionDialog** (same scope, Back/Next/Submit + per-question options; deactivation extends to `pendingQuestion` when it lands); (2) **generalize the keyboard-focus visual into TugPushButton** as a first-class "keyboard-promoted" state (currently dialog-scoped CSS in `dev-permission-dialog.css` reacting to `[data-key-cursor]`) — and, more broadly, **reconsider the engine's focus-indicator language** (double-border + filled-promotion vs. the orange `[data-key-view-kbd]`/`[data-key-cursor]` rings) across the component library. That redesign gets its own scoping pass; this step's PermissionDialog work is joined to `main` as a checkpoint.
+**STATUS — done (both dialogs landed; the focus-language generalization spun out to [#focus-language-modernization]).** What landed and verified hands-on: the prompt entry genuinely deactivates while a dialog is pending (read-only + blurred, no caret), and **both PermissionDialog and QuestionDialog** are working modal-for-keys scopes — arrows move the cursor over the dialog's items (Permission: `[Deny, Allow, scope options…]`; Question: per-question options + Back/Next/Submit), Return activates the highlight, Escape/Cmd-. cancel (Deny / `session.n()`), and the prompt re-focuses on resolve. The visual language settled on something better than the orange ring: the keyboard cursor **promotes** the focused action button to its **filled, role-coloured** style + a role-coloured outline and **demotes** the others to outlined (the default-button emphasis follows the cursor); option rows recolour their **own border** to the focus colour. That visual treatment — currently bespoke, dialog-scoped CSS in `dev-permission-dialog.css` / `dev-question-dialog.css` reacting to `[data-key-cursor]` — is the prototype for the engine-wide **[#focus-language-modernization]** below: lifting the "keyboard-promoted" state into TugPushButton as a first-class capability and reconsidering the whole focus-indicator language (filled-promotion + double-border vs. the orange `[data-key-view-kbd]`/`[data-key-cursor]` rings). Both dialogs are joined to `main`.
 
 **Tasks:** Realize [P06] — a pending Permission/Question dialog is a CFRunLoop-style **modal-for-keys** scope:
 - **Push a scope** while the dialog is pending and **pop it** on resolve (`useLayoutEffect`, in lockstep with the session's pending state). Register the dialog's choices as an **item-container key view**, seeding the cursor on the default highlight (Allow / first option) so arrows move the selection, Return activates the highlight, Escape cancels.
@@ -494,39 +493,13 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 **Depends on:** #step-7, #step-14
 
+**DEFERRED.** The component redos and surfaces are all landed; this cleanup audit is real but not blocking, and is deferred while the focus-language modernization ([#focus-language-modernization]) takes priority. Pick it up once the modernization rollout settles, since reclassifying `refuse` sites is cleaner against a finalized focus-indicator language.
+
 **Tasks:** Walk every `data-tug-focus="refuse"` and first-responder site; reclassify against the model (component focus stop vs item vs leaf); remove now-redundant `refuse` hacks the engine supersedes.
 
 **Tests:** app-test: a representative sweep that no control is unreachable and no click steals the key view incorrectly.
 
 **Checkpoint:** `just app-test` audit sweep `VERDICT: PASS`.
-
-#### Step 16: Accessibility-mode ARIA pass + dual-mode toggle {#step-16}
-
-**Commit:** `focus(a11y): ARIA pass + standard/accessibility toggle`
-
-**References:** [P01], [P05]
-
-**Depends on:** #step-15
-
-**Tasks:** Assert the fuller ARIA contract per component (roles/`aria-activedescendant` where the model implies it); wire the `standard`/`accessibility` mode toggle (in-app + host menu) to the walk's `skip` policy.
-
-**Tests:** app-test: in accessibility mode every interactive affordance is reachable; ARIA reflects the cursor/selection.
-
-**Checkpoint:** `just app-test` a11y scenario `VERDICT: PASS`.
-
-#### Step 17: Integration checkpoint {#step-17}
-
-**Commit:** `focus(model): integration checkpoint`
-
-**References:** [P01]–[P04], [Keyboard Behavior Matrix](#keyboard-matrix)
-
-**Depends on:** #step-16
-
-**Tasks:** End-to-end pass across a composed surface (a sheet containing a list, a form, and an editor); confirm the model holds across nesting, traps, and the editor; fix any seams.
-
-**Tests:** app-test: a composed nesting scenario exercising focus → move → act → descend → editor → ascend.
-
-**Checkpoint:** full `just app-test` sweep green; `bun test` green; `bunx tsc --noEmit` clean.
 
 ### Deliverables and Checkpoints {#deliverables}
 
@@ -542,4 +515,97 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 - Nested in-transcript body-kind blocks as keyboard-navigable lists.
 - OS-signal auto-engage of accessibility mode.
+- The accessibility-mode ARIA pass + standard/accessibility dual-mode toggle (was an in-plan step; now a follow-on).
+- An end-to-end composed-surface integration checkpoint (was an in-plan step; now a follow-on).
 - Splitting Space vs Enter into distinct ops if experience shows it's needed (the code paths are already separate).
+
+---
+
+### Focus-Language Modernization {#focus-language-modernization}
+
+The successor effort that grows out of [#step-14]: replace the engine's focus-visual
+**language** — today the orange ring — with the **filled-promotion + double-border**
+language proven in the inline dialogs, generalized across the component library. This
+section drives a **gallery spike** to settle the language by eye; the rollout itself is
+authored as its own separate `/tugplug:devise` plan once the spike resolves the open
+forks. We begin working here.
+
+#### What it is {#flm-what}
+
+Replace the orange `[data-key-view-kbd]` / `[data-key-cursor]` rings with a
+**"ringed-fill" / filled-promotion + double-border** language. Crucially this is a
+**re-skin over stable DOM attributes, not an engine change**: focus state is already
+projected as `[data-key-view-kbd]` (focused component), `[data-key-cursor]` (cursor
+item), `[data-key-within]` (immediate container), `data-selected` (committed). So
+behavior + most app-tests survive — the work is CSS/tokens + a few resting-style render
+tweaks. This is the de-risker: the engine, the scopes, and the app-tests (which assert
+attributes/behavior, not pixels) don't move.
+
+#### The proven treatment (shipped in the inline dialogs) {#flm-proven}
+
+The keyboard cursor **promotes** the focused control to its **filled, role-coloured**
+style + a role-coloured outline ring, and **demotes** the others to outlined (the
+default-button emphasis follows focus: action→filled-blue, danger→filled-red).
+Non-button choices (option rows) recolour their **own border** to the focus colour. All
+via `[data-key-cursor]` in CSS — appearance-only, no re-render ([L06]).
+
+- **Reference code (currently bespoke, dialog-scoped):** `dev-permission-dialog.css` +
+  `dev-question-dialog.css` — rules like
+  `.dev-*-dialog-scope .tug-button-outlined-action[data-key-cursor] { background/color/border = filled-action tokens; outline = filled-action border token }`,
+  the `-danger` variant, the option-border recolour, and a `box-shadow` ring on
+  `.tug-inline-dialog` for the dialog box.
+- **Tokens used:** `--tug7-surface-control-primary-filled-{action,danger}-rest`,
+  `--tug7-element-control-{text,border,icon}-filled-{action,danger}-rest`,
+  `--tugx-focus-ring-color` / `-width`. Core focus system: `styles/focus-ring.css`.
+
+#### Rollout targets {#flm-targets}
+
+- **A.** Lift the treatment into **TugPushButton** as a first-class "keyboard-promoted"
+  state (`internal/tug-button.css` reacting to `[data-key-cursor]`).
+- **B / C.** PermissionDialog options / QuestionDialog questions (already done bespoke —
+  unify onto A).
+- **D.** All matrix components (radio/choice/option, tab bar, slider, accordion, list,
+  menus, popover, sheet, alert, inputs).
+- **Bigger than A–D.** `[data-key-view-kbd]` is a **global** rule (every focusable
+  app-wide — title bars, toolbars, prompt, dev panel), so a true language change is
+  app-wide, not just matrix components.
+
+#### The central fork + risks (must settle before rolling out) {#flm-risks}
+
+1. **"Filled" is already taken** (= primary/emphasis for mouse users). Overloading it
+   for keyboard-focus either makes every primary button outlined-at-rest (mouse users
+   lose the primary cue) or creates filled-at-rest vs filled-when-focused ambiguity. **No
+   free answer** — this is the fork the spike must resolve by eye.
+2. **Two-branch language:** *fill* for promotable leaf/role controls; *double-border
+   ring* for the unfillable — text inputs can't be filled (legibility), slider
+   (continuous), tiny checkbox/switch, and the component-level key-view.
+3. **Role-less controls have no promotion colour** (radio row, list row, slider) → need
+   a decided palette (accent? a dedicated keyboard colour?).
+4. **Vocabulary collision:** five states share surfaces — hover / keyboard-cursor /
+   selected / key-view / key-within. In a *deferred* group the cursor item ≠ the
+   selected item simultaneously, so they must stay visually distinct.
+5. **Theme × mode × contrast:** tokens are hand-authored in `brio.css` + `harmony.css`;
+   filling flips text/bg contrast — verify both themes + accessibility mode.
+   (Double-border is colourblind-robust — a point in favour.)
+6. **Governance:** supersedes [P03] (ring-on-component / hover-for-cursor) → needs a new
+   governing `[P0x]`, a [Keyboard Behavior Matrix](#keyboard-matrix) visual-column
+   rewrite, and a `tuglaws/` focus-language doc. Define it as shared tokens/primitives,
+   not bespoke per-component CSS (the dialogs are bespoke today — to be unified).
+
+#### Sequence {#flm-sequence}
+
+1. **Gallery language-spike (a spike, NOT a plan — start here).** Build the new
+   treatment on ~5 representative cases in the Component Gallery — a **role button**
+   (fill branch), a **text input** (double-border branch — can't fill), a **radio group**
+   (cursor ≠ selected simultaneously; role-less promotion colour), a **list row**
+   (role-less), and a **component-level key-view** — viewable in **both themes**
+   (brio/harmony) and **keyboard vs mouse**. Judge by eye; answer the filled-overload
+   fork ([#flm-risks] item 1) and the role-less colour (item 3). Cheap, reversible,
+   high-information.
+2. **Dedicated `/tugplug:devise` plan** for the rollout (its own plan, separate from
+   this one — this plan is *behavior*, that one is the *visual language*). Defines the
+   tokens + the two-branch rule (fill vs double-border) + the new governing `[P0x]`
+   decision superseding [P03]; lifts the dialog-scoped CSS into a first-class
+   TugPushButton "keyboard-promoted" state; steps component-by-component as a re-skin
+   (A+B+C+D + the app-wide focusables), gallery-verified per theme/mode.
+3. A+B+C+D + the app-wide focusables fall out of that plan.
