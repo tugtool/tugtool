@@ -1,0 +1,133 @@
+/**
+ * gallery-cycle-demo.tsx — exercises the keyboard-focus-cycling mode primitive
+ * (`useCycleMode`) on a minimal surface, decoupled from the dev card's stateful
+ * picker/connected machinery.
+ *
+ * The card stands in for a text-first card: a **resting** focusable (the
+ * "editor" stand-in, in the base mode) plus three **cycle stops** wrapped in the
+ * hook's `CycleScope` (so they register into this card's cycle mode, not the
+ * base mode). ⌥⇥ (the `CYCLE_FOCUS_MODE` action, routed to this card's
+ * `card-content` responder) toggles cycling:
+ *
+ *   - ON  → the mode is pushed (trapped); the key view seeds on the commit-home
+ *     (the lowest-`focusOrder` cycle stop) and Tab wraps within the stops;
+ *   - OFF → the mode pops and the key view returns to the resting focusable.
+ *
+ * This is the permanent showcase + app-test surface for the mechanism
+ * ([#step-cycle-mechanism]); the real consumer (the dev card, with per-state
+ * default focus + roles) lands in [#step-cycle-devcard]. Escape / Return / Space
+ * mode-key semantics land in [#step-cycle-keys].
+ *
+ * Laws: [L02] cycling is engine-derived (in the hook); [L06] appearance is the
+ *       engine ring via CSS, no React state; [L19] gallery-card authoring.
+ *
+ * @module components/tugways/cards/gallery-cycle-demo
+ */
+
+import "./gallery.css";
+
+import React from "react";
+
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSeparator } from "@/components/tugways/tug-separator";
+import { useResponder } from "@/components/tugways/use-responder";
+import { useCycleMode } from "@/components/tugways/use-cycle-mode";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+
+const CYCLE_GROUP = "gallery-cycle-stops";
+
+export function GalleryCycleDemo({ cardId }: { cardId: string }): React.ReactElement {
+  const { cycling, toggle, CycleScope } = useCycleMode();
+
+  // The ⌥⇥ trigger is `scope: "key-card"` — it routes to the active card's
+  // `card-content` responder, where this handler toggles the mode.
+  const { ResponderScope, responderRef } = useResponder({
+    id: `${cardId}-card-content`,
+    kind: "card-content",
+    actions: {
+      [TUG_ACTIONS.CYCLE_FOCUS_MODE]: () => toggle(),
+    },
+  });
+
+  return (
+    <ResponderScope>
+      <div
+        className="cg-content"
+        data-testid="gallery-cycle-demo"
+        data-cycling={cycling ? "true" : "false"}
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+      >
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Keyboard-focus-cycling</TugLabel>
+          <TugLabel size="2xs" emphasis="calm">
+            Click “Resting” to put the key view on it, then press ⌥⇥. Cycling
+            seeds the ring on the commit-home; Tab wraps the stops; ⌥⇥ again
+            returns the key view to “Resting”.
+          </TugLabel>
+        </div>
+
+        <TugSeparator />
+
+        {/* Resting key view — the "editor" stand-in, in the BASE mode (no
+            CycleScope), so it is not a cycle stop. */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Resting (base mode)</TugLabel>
+          <div className="cg-variant-row">
+            <TugPushButton
+              focusGroup="gallery-cycle-rest"
+              focusOrder={0}
+              data-testid="cycle-rest"
+              onClick={() => {}}
+            >
+              Resting
+            </TugPushButton>
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* Cycle stops — wrapped in CycleScope so they register into this card's
+            cycle mode. The commit-home is the lowest focusOrder, so it is what
+            the mode seeds on entry; the rest follow in cycle order. */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Cycle stops</TugLabel>
+          <CycleScope>
+            <div className="cg-variant-row">
+              <TugPushButton
+                emphasis="filled"
+                role="action"
+                focusGroup={CYCLE_GROUP}
+                focusOrder={0}
+                data-testid="cycle-home"
+                onClick={() => {}}
+              >
+                Commit-home
+              </TugPushButton>
+              <TugPushButton
+                emphasis="outlined"
+                role="action"
+                focusGroup={CYCLE_GROUP}
+                focusOrder={1}
+                data-testid="cycle-a"
+                onClick={() => {}}
+              >
+                Stop A
+              </TugPushButton>
+              <TugPushButton
+                emphasis="outlined"
+                role="action"
+                focusGroup={CYCLE_GROUP}
+                focusOrder={2}
+                data-testid="cycle-b"
+                onClick={() => {}}
+              >
+                Stop B
+              </TugPushButton>
+            </div>
+          </CycleScope>
+        </div>
+      </div>
+    </ResponderScope>
+  );
+}

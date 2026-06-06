@@ -428,8 +428,8 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-gallery | Gallery rename + enrichment policy (ring-scope bug fixed) | done | d1dbaf12 + rename |
 | #step-2 | TugPushButton keyboard-promoted state; unify inline dialogs | done | (dash focus-button) |
 | #step-cycle | Step 2.5 — Keyboard-focus-cycling mode (umbrella) | pending | — |
-| #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | (main, uncommitted) |
-| #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | pending | — |
+| #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | 62228934 |
+| #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | done | (main) |
 | #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | pending | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
@@ -595,23 +595,28 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 #### Step 2.5.2: Cycle-mode scope primitive (push/seed/pop) {#step-cycle-mechanism}
 
+**STATUS — done.** `useCycleMode` built (general, engine-derived `cycling`, no new projection); proven on a permanent `gallery-cycle-demo` card; `at0139` guards push/seed/wrap/restore. The real consumer (dev card) is [#step-cycle-devcard].
+
 **Depends on:** #step-cycle-trigger-spike
 
 **Commit:** `focus(cycle): per-card cycle focus-scope primitive`
 
 **References:** [P09], [P10], [P11], (#cycle-model, #state-zone-mapping)
 
-**Artifacts:** a reusable hook (e.g. `use-cycle-mode.ts`) a text-first card opts into, built on `pushFocusMode` / `popFocusMode` / `focusFirstInMode`.
+**Artifacts:** `use-cycle-mode.tsx` (the hook); `cards/gallery-cycle-demo.tsx` + its registration (the showcase / test surface); `at0139-cycle-mode-scope.test.ts`.
 
 **Tasks:**
-- Implement the cycle scope: the toggle action pushes a **trapped** per-card focus mode, seeds the key view at the declared commit-home, and pops on toggle / Escape — restoring the captured prior key view (the editor caret) ([P10], [P11]).
-- Keep it **general**: the hook takes the card's cycle stops + commit-home + restore target; no dev-card specifics.
-- No new engine projection — reuse the focus-mode stack ([P04] carve-out via [P09]).
+- [x] Implement the cycle scope: the toggle pushes a **trapped** per-card focus mode, seeds the key view at the commit-home (the lowest-`focusOrder` stop, via `focusFirstInMode`), and pops on toggle — restoring the captured prior key view (the resting key view / editor caret) ([P10]). `cycling` is **engine-derived** (`useSyncExternalStore` on `currentFocusMode() === scopeId`, [L02]), not a parallel React boolean. `exit` is exposed for the Escape wiring in [#step-cycle-keys].
+- [x] Keep it **general**: the hook owns only push/seed/pop + the `CycleScope` wrapper; the consumer supplies the stops (via `focusGroup` inside `CycleScope`) and orders the commit-home first. No dev-card specifics.
+- [x] No new engine projection — reuse the focus-mode stack (`pushFocusMode` / `popFocusMode` / `focusFirstInMode` / `focusKeyView`) — the [P04] carve-out via [P09].
 
 **Tests:**
-- Behavior: a harness scenario — toggle on → key view at commit-home; Tab wraps within the scope; toggle off → prior key view restored.
+- [x] Behavior: `at0139` — ⌥⇥ seeds the commit-home; Tab wraps home → A → B → home (trapped; the resting control never takes the key view); ⌥⇥ restores the resting key view. `VERDICT: PASS`.
 
-**Checkpoint:** `bunx tsc --noEmit` clean; the primitive pushes/seeds/pops a trapped cycle scope; no existing app-test regresses.
+**Checkpoint:**
+- [x] `bunx tsc --noEmit` clean.
+- [x] the primitive pushes/seeds/pops a trapped cycle scope (`at0139` green).
+- [x] no existing app-test regresses (the hook + demo card are additive; the keybinding/focus-walk are untouched).
 
 #### Step 2.5.3: Dev card joins the cycle; per-state default focus {#step-cycle-devcard}
 

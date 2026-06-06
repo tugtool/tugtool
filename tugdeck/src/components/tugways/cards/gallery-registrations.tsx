@@ -72,6 +72,7 @@ import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
 import { GalleryFocusLanguage } from "./gallery-focus-language";
+import { GalleryCycleDemo } from "./gallery-cycle-demo";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
@@ -997,6 +998,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-focus-language",
     contentFactory: (_cardId) => <GalleryFocusLanguage />,
     defaultMeta: { title: "Focus Language", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Keyboard-focus-cycling mode demo — the showcase + app-test surface for the
+  // `useCycleMode` primitive (⌥⇥ toggles a trapped cycle scope; Tab wraps the
+  // stops; toggle off restores the resting key view). The real consumer is the
+  // dev card; this card exercises the mechanism in isolation. A permanent card.
+  registerCard({
+    componentId: "gallery-cycle-demo",
+    contentFactory: (cardId) => <GalleryCycleDemo cardId={cardId} />,
+    defaultMeta: { title: "Cycle Mode", icon: "List", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
