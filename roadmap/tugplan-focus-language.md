@@ -470,10 +470,12 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle | Step 2.5 — Keyboard-focus-cycling mode (umbrella) | pending | — |
 | #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | 62228934 |
 | #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | done | (main) |
-| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | redesigned ([P10]r): route-seed + blur + no outer ring committed `6a27148f`; editor text-stop done (uncommitted); Z2 status-row stop pending | — |
+| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | done ([P10]r): route-seed + blur + no outer ring `6a27148f`; editor text-stop `bd9e44b0`; Z2 carved to #step-z2-cycle | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
 | #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | to design + implement | — |
+| #step-z2-components | Step 2.7 — Componentize the Z2 status cells (prereq for Z2 cycling) | to devise + implement | — |
+| #step-z2-cycle | Step 2.8 — Z2 status row joins the cycle (was Slice 3) | pending (depends on #step-z2-components) | — |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -669,7 +671,9 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 *Post-review fixes (uncommitted).* (1) **Disabled controls are no longer Tab targets** — `FocusManager.walkOrder` now skips a focusable whose element is `:disabled` / `[aria-disabled="true"]` / computed `pointer-events: none` (new `isRecordInteractive`, reading the DOM at walk time like `isRecordRendered`). So the submit drops out of the cycle while the editor is empty (its empty-input gate) and the seed lands on the route instead — **no React state**, the empty-ness stays DOM/appearance state and the structure consumer (the walk) observes it directly ([L06]/[L22]/[L24]; L02 forbids mirroring editor empty-ness into `useState`). at0140 extended to assert empty→submit-skipped and typed→submit-seeded. (2) **Choice-group double-ring** (selected-value ring + cycle group/cursor ring) is a Step 3 cleanup — note added to [#step-3].
 
-*Slice 3 — Z4B chips DONE (uncommitted); Z2 status row still deferred.* The interactive Z4B chips — **Mode** (`PermissionModeChip`), **Model** (`ModelChip`), **Effort** (`EffortChip`) — now take `focusGroup`/`focusOrder` props and join the cycle as **leaf stops** at orders 2 / 3 / 4. Tour: submit(0, seed) → route(1) → Mode(2) → Model(3) → Effort(4) → wrap. They are independent controls, so each is its **own leaf Tab stop** (NOT a single arrow-within item-group — a [P10] refinement: "multi-control zone = item-group" applies to a *semantic* group like the route choice; a cluster of independent controls is a run of leaf stops). On the Shell route the chips are `disabled` and the engine's interactivity filter drops them from the walk for free. The chips are `tinted agent`, so the role-ring axis in `internal/tug-button.css` was extended to cover `tinted` (was filled/outlined only) — a focused chip now rings in its agent role colour. at0140 tours all five stops. **Still deferred:** Z2 status-bar cells (STATE/TIME/TOKENS/TASKS/CONTEXT) as an item-group stop — render `cycle.CycleScope` again around the Z2 row (same mode id), orders renumber so Z2 reads top-of-tour. The non-interactive Z4B badges (CLAUDE CODE / PROJECT / SESSION) are display-only and intentionally not stops.
+*Slice 3 — Z4B chips DONE (uncommitted); Z2 status row still deferred.* The interactive Z4B chips — **Mode** (`PermissionModeChip`), **Model** (`ModelChip`), **Effort** (`EffortChip`) — now take `focusGroup`/`focusOrder` props and join the cycle as **leaf stops** at orders 2 / 3 / 4. Tour: submit(0, seed) → route(1) → Mode(2) → Model(3) → Effort(4) → wrap. They are independent controls, so each is its **own leaf Tab stop** (NOT a single arrow-within item-group — a [P10] refinement: "multi-control zone = item-group" applies to a *semantic* group like the route choice; a cluster of independent controls is a run of leaf stops). On the Shell route the chips are `disabled` and the engine's interactivity filter drops them from the walk for free. The chips are `tinted agent`, so the role-ring axis in `internal/tug-button.css` was extended to cover `tinted` (was filled/outlined only) — a focused chip now rings in its agent role colour. at0140 tours all five stops. The non-interactive Z4B badges (CLAUDE CODE / PROJECT / SESSION) are display-only and intentionally not stops.
+
+> **NOTE — this Slice-3 note predates the 2026-06-06 redesign.** The orders above (submit=0 seed) are SUPERSEDED by [P10] revised: the cycle now seeds the **route** and runs route(0) → Mode(1) → Model(2) → Effort(3) → submit(4) → Z2(5) → editor(6) → wrap. The **Z2 status-row stop has been carved out** into its own steps: [#step-z2-components] (componentize the cells first — the prerequisite) then [#step-z2-cycle] (author the row into the cycle as the order-5 item-group stop). This step (#step-cycle-devcard) is DONE for the route / Z4B / submit / editor stops + the visuals.
 
 *Where we are.* Working **on `main`** (the user commits; I edit + run checkpoints). Done + committed: 2.5.1 trigger chord `62228934`; 2.5.2 mechanism `fad9abc6`; refinements `8d382f2b`. The at0088 fix is `6e2c8a83`; the Step 2.5 authoring is `73b4784c`. Slice 1 above is **uncommitted**.
 
@@ -776,6 +780,49 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 - App-test: Tab order + arrow-rove + Return-opens-session + Escape-cancels, both themes.
 
 **Checkpoint:** `tsc` clean; picker keyboard app-test green; full keyboard reachability of the picker by-eye.
+
+#### Step 2.7: Componentize the Z2 status cells {#step-z2-components}
+
+**STATUS — to devise + implement (new, surfaced 2026-06-06).** The Z2 telemetry status cells (STATE / TIME / TOKENS / CONTEXT, + TASKS) are the card's **one bespoke holdout**: hand-assembled inline in `dev-card-telemetry-renderers.tsx` as `<span className="dev-telemetry-status-cell">` wrapped in a `TugPopoverTrigger`, with ad-hoc CSS — *not* proper components. Every other zone the focus language plugs into is a real component (route = `TugChoiceGroup`, chips = `TugPushButton`) that joins the cycle via one `focusGroup` prop. Retrofitting focus/keyboard onto the bespoke spans is the "invasive" part of Z2 cycling (a `<span>` trigger is not keyboard-activatable; the ring / arrow-rove / popover-on-Space all hand-rolled). **Componentize the cells first**, so [#step-z2-cycle] becomes the same trivial "author into the cycle" as the chips.
+
+This step is **devised separately** (`/tugplug:devise`) — it is a real refactor with its own design questions — then implemented and rejoined before [#step-z2-cycle].
+
+**Depends on:** —  *(stands alone; the focus treatment it inherits is defined by [#step-3] / [#step-5], but the component extraction does not block on them)*
+
+**Commit:** `feat(devcard): proper Z2 status-cell component(s)`
+
+**References:** [P02], [P13], [D100] (TASKS popover), (#cycle-model)
+
+**Design (to settle in the devise pass):**
+- **Primitive choice:** the cell is "a focusable control that opens a surface on activate" — the same interaction as the Z4B chips (which open sheets). Decide: a `TugPushButton`-with-popover variant (max consistency, focus-ready) vs a dedicated `TugStatusCell` component. Either way the **activatable element is a button, not a span**, so keyboard activation + the focus ring come for free.
+- **Faithful extraction — preserve:** the per-cell popover (STATE/TIME/TOKENS/CONTEXT) + the `/context` programmatic popover ref; the TASKS cell ([D100]); width stabilization ([R01]); the `data-priority` + endcap-rule-label visuals; the STATE pulsing-dot indicators; the placement-experiment slot usage.
+- **Token sovereignty ([L20]):** move the cell's ad-hoc CSS into the component's own scoped tokens; the row keeps only layout.
+
+**Tasks:** (expand after the devise pass)
+- Extract the status cell into a proper component (per the primitive choice); migrate `dev-card-telemetry-renderers.tsx` to it without behavior loss.
+- Keep all existing Z2 app-tests green (telemetry/popover/`/context`).
+
+**Checkpoint:** `tsc` clean; Z2 telemetry + popover + `/context` app-tests green; the row renders identically by-eye, both themes.
+
+#### Step 2.8: Z2 status row joins the cycle (was Slice 3) {#step-z2-cycle}
+
+**Depends on:** #step-cycle-devcard, #step-z2-components
+
+**Commit:** `focus(cycle): Z2 status row joins the dev-card cycle`
+
+**References:** [P10] (revised order — Z2 = one item-group stop), [P02], (#cycle-model)
+
+**Artifacts:** the Z2 status row authored as the cycle's order-5 **item-group** stop (Tab to it, ←/→ rove the cells, blue ring on the roved cell, Space/Enter opens that cell's popover), wrapped in a second `cycle.CycleScope` sharing the card's mode id.
+
+**Tasks:**
+- With the cells now proper components ([#step-z2-components]), author the Z2 row into `DEV_CYCLE_GROUP` at order 5 (between submit (4) and the editor (6)); wrap the status-bar region in `cycle.CycleScope`.
+- Confirm the tour: route → Mode → Model → Effort → submit → **Z2 (arrow-rove cells)** → editor → wrap; the blue ring on the roved cell; Space/Enter opens its popover.
+
+**Tests:**
+- Behavior: extend at0140 — the cycle includes the Z2 row at order 5; arrow-rove within; the ring lands on a cell.
+- By-eye: the Z2 ring + rove reads as the focus language, both themes.
+
+**Checkpoint:** `bunx tsc --noEmit` clean; at0140 (with Z2) green; by-eye tour clean in brio + harmony.
 
 #### Step 3: Item-groups — radio / choice / option {#step-3}
 
