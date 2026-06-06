@@ -70,11 +70,14 @@ export function GalleryCycleDemo({ cardId }: { cardId: string }): React.ReactEle
         <TugSeparator />
 
         {/* Resting key view — the "editor" stand-in, in the BASE mode (no
-            CycleScope), so it is not a cycle stop. */}
+            CycleScope), so it is not a cycle stop. Ghost emphasis so it carries
+            no resting border: a bordered button reads as focus-decorated even
+            when it is not, which is misleading next to the real cycle ring. */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Resting (base mode)</TugLabel>
           <div className="cg-variant-row">
             <TugPushButton
+              emphasis="ghost"
               focusGroup="gallery-cycle-rest"
               focusOrder={0}
               data-testid="cycle-rest"
@@ -94,8 +97,15 @@ export function GalleryCycleDemo({ cardId }: { cardId: string }): React.ReactEle
           <TugLabel className="cg-section-title">Cycle stops</TugLabel>
           <CycleScope>
             <div className="cg-variant-row">
+              {/* All stops are OUTLINED so the keyboard-promoted fill is the
+                  live signal: only the focused stop promotes to filled + ring,
+                  and the fill MOVES with Tab — it is taken off the prior stop.
+                  (A permanently `filled` button would keep its fill when tabbed
+                  off, which reads as a stuck decoration.) The commit-home is
+                  just the seed target — distinguished by being seeded on entry,
+                  not by a standing fill. */}
               <TugPushButton
-                emphasis="filled"
+                emphasis="outlined"
                 role="action"
                 focusGroup={CYCLE_GROUP}
                 focusOrder={0}

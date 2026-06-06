@@ -271,13 +271,13 @@ No engine touch; stays in the appearance zone ([L06]).
 
 **Implications:** Each consumer registers its zones as cycle stops (`focusGroup` into the card's cycle scope); the existing item-group focus CSS ([#step-3], [#step-5]) renders the within-zone roving for free.
 
-#### [P11] Mode keys — Return is text-entry-only; Space acts; trigger / Escape exit (DECIDED) {#p11-cycle-keys}
+#### [P11] Mode keys — Return is text-entry-only; Space acts; trigger exits (DECIDED) {#p11-cycle-keys}
 
-**Decision:** While cycling: the **trigger toggles the mode off** anywhere (restoring the caret to the editor); **Escape exits** (caret to editor); **Return is reserved for text-entry contexts only** — landing the cycle ring on the prompt-entry (or any text-input) zone and pressing Return **drops into the field** (resume typing), where the route's own Return semantics apply (Prompt: Shift+Return submits; Shell: Return submits), and on a **non-text** control Return is inert; **Space acts** on the focused control (the engine act tier). Dedicated chords stay live throughout (routes ⇧⌘C / ⇧⌘S, permission ⇧⌘P, and the per-zone Z2 chords Cmd-1…N).
+**Decision:** While cycling: the **trigger toggles the mode off** anywhere (restoring the caret to the editor); **Return is reserved for text-entry contexts only** — landing the cycle ring on the prompt-entry (or any text-input) zone and pressing Return **drops into the field** (resume typing — which also exits cycling), where the route's own Return semantics apply (Prompt: Shift+Return submits; Shell: Return submits), and on a **non-text** control Return is inert; **Space acts** on the focused control (the engine act tier). Dedicated chords stay live throughout (routes ⇧⌘C / ⇧⌘S, permission ⇧⌘P, and the per-zone Z2 chords Cmd-1…N). **Escape is deliberately NOT bound** to exit cycling in the first cut — the trigger already toggles off, and Escape is kept free for future per-stop / cancel-ladder semantics; revisit only if exiting via Escape proves a real need.
 
 **Rationale:** "Return = enter / commit text" is the one universal expectation; reserving it to text contexts keeps "land in prompt-entry + Return → typing" coherent and removes the ambiguous Return-activates-button-vs-submit case. Space-acts matches the existing act tier. The chords are the fast path; cycling is the discoverable / accessible path; they coexist.
 
-**Implications:** The cycle scope's key handling routes Return only to text-input stops, dispatches act on Space, and pops on trigger / Escape. The Z2 cells gain Cmd-1…N popup-toggle chords ([#step-cycle-keys]).
+**Implications:** The cycle scope's key handling routes Return only to text-input stops, dispatches act on Space, and pops on the trigger (and on Return dropping into a text stop). The Z2 cells gain Cmd-1…N popup-toggle chords ([#step-cycle-keys]).
 
 #### [P12] Per-state default focus + per-control roles for the dev card (DECIDED) {#p12-devcard-focus}
 
@@ -285,7 +285,9 @@ No engine touch; stays in the appearance zone ([L06]).
 
 **Rationale:** Matches the single-text-entry rule (the editor is the connected card's persistent destination) and the commit-home convention (Open is the picker's primary action). The roles make the cycle tour role-resolved per [P03].
 
-**Implications:** A per-state default-focus declaration on the card's seed path + the transition migration; the roles feed the focus-language visuals during the cycle tour.
+**Cycling suppresses the standing fill; fill follows focus; restore on exit.** Outside cycling, the submit button is `filled` as its standing identity (the ring's home base) — unchanged; we do **not** touch the submit button. *During* cycling, `filled` means a different thing — the keyboard-focus convention (filled = "the keyboard is here") — so the submit's standing fill is **suppressed** so the fill follows the cursor (exactly one filled+ringed stop at a time), and **restored on exit**. The two meanings never co-occur, and the seed lands the fill on the commit-home on entry, so nothing flickers. Mechanism (pure CSS, [L06] — **no change to the submit button's component or props, no React-state emphasis swap**): a rule keyed on the card's `[data-cycling="true"]` signal (rendered from `useCycleMode`'s engine-derived `cycling`) relaxes the standing fill on cycle-stop buttons to outlined while cycling; the existing promotion rules (`[data-key-view-kbd]` / `[data-key-cursor]`) fill the focused one; on exit `data-cycling` drops and the submit reverts to its identity fill. This refines the keyboard-model "primary keeps its fill, ring moves" reading for the cycling context — in cycling, **filled === focused, everywhere**.
+
+**Implications:** A per-state default-focus declaration on the card's seed path + the transition migration; the roles feed the focus-language visuals; the `[data-cycling]` fill-suppression rule lands with the dev-card wiring ([#step-cycle-devcard]). The `gallery-cycle-demo` already models the target (all stops outlined → fill follows focus); the suppression matters only where a cycle stop is `filled` at rest (the dev-card submit).
 
 ---
 
@@ -302,7 +304,7 @@ A text-first card has one irreducible conflict: the **editor wants Tab** (comple
 
 - the trigger **pushes a trapped per-card focus mode** (`pushFocusMode`) and **seeds the key view at the commit-home** (`focusFirstInMode` → Z5 submit);
 - Tab walks the mode's focusables (the registered `Z`-zones); each zone is a **leaf** (Z5) or an **item-group** (Z2 / Z4) — so the focus-language's [P02] leaf-vs-group visuals render the tour for free;
-- the trigger / Escape **pop the mode** (`popFocusMode`), restoring the editor caret (the captured prior key view).
+- the trigger (or Return dropping into a text stop) **pops the mode** (`popFocusMode`), restoring the editor caret (the captured prior key view). Escape is deferred ([P11]).
 
 **Cycle order ([P10]):** seed Z5; forward Tab wraps to the top and reads top→bottom (Z2 → Z4 → Z5 → wrap), Shift+Tab reverses; trapped within the card; Z1 transcript excluded (first cut).
 
@@ -606,7 +608,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 **Artifacts:** `use-cycle-mode.tsx` (the hook); `cards/gallery-cycle-demo.tsx` + its registration (the showcase / test surface); `at0139-cycle-mode-scope.test.ts`.
 
 **Tasks:**
-- [x] Implement the cycle scope: the toggle pushes a **trapped** per-card focus mode, seeds the key view at the commit-home (the lowest-`focusOrder` stop, via `focusFirstInMode`), and pops on toggle — restoring the captured prior key view (the resting key view / editor caret) ([P10]). `cycling` is **engine-derived** (`useSyncExternalStore` on `currentFocusMode() === scopeId`, [L02]), not a parallel React boolean. `exit` is exposed for the Escape wiring in [#step-cycle-keys].
+- [x] Implement the cycle scope: the toggle pushes a **trapped** per-card focus mode, seeds the key view at the commit-home (the lowest-`focusOrder` stop, via `focusFirstInMode`), and pops on toggle — restoring the captured prior key view (the resting key view / editor caret) ([P10]). `cycling` is **engine-derived** (`useSyncExternalStore` on `currentFocusMode() === scopeId`, [L02]), not a parallel React boolean. `exit` is exposed for [#step-cycle-keys] (the Return-into-text exit).
 - [x] Keep it **general**: the hook owns only push/seed/pop + the `CycleScope` wrapper; the consumer supplies the stops (via `focusGroup` inside `CycleScope`) and orders the commit-home first. No dev-card specifics.
 - [x] No new engine projection — reuse the focus-mode stack (`pushFocusMode` / `popFocusMode` / `focusFirstInMode` / `focusKeyView`) — the [P04] carve-out via [P09].
 
@@ -632,6 +634,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 - Register the chrome zones as cycle stops — each a leaf or item-group per [P10] (Tab between zones, arrow within); seed at Z5; forward Tab wraps top→bottom, Shift+Tab reverses ([P10]).
 - Declare per-state default focus ([P12]): Picker → Open, Connected → editor; migrate focus deliberately on spawn / end transitions.
 - Apply per-control roles ([P12]): submit = action (danger while stopping), route = action, permission chip = agent.
+- Add the `[data-cycling]` fill-suppression rule ([P12]): while cycling, the submit's standing `filled` is relaxed to outlined so the fill follows focus (one filled+ringed stop at a time); on exit it reverts to its identity fill. Pure CSS on the card's `data-cycling` signal — no change to the submit button's component / props.
 - Z1 transcript excluded ([P10]).
 
 **Tests:**
@@ -648,14 +651,15 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 **References:** [P11], [P12], (#cycle-model)
 
-**Artifacts:** the cycle scope's key handling (Return text-entry-only; Space acts; Escape + trigger exit); Cmd-1…N popup-toggle chords for the Z2 status-bar cells.
+**Artifacts:** the cycle scope's key handling (Return text-entry-only; Space acts; trigger exit); Cmd-1…N popup-toggle chords for the Z2 status-bar cells. A text-input cycle stop in `gallery-cycle-demo` to exercise the Return-into-text exit.
 
 **Tasks:**
-- Wire the three exit gestures + the Return / Space semantics ([P11]): trigger toggles off anywhere; Escape exits; Return drops into a text-input stop (resume typing) and is inert on non-text controls; Space acts on the focused control.
+- Wire the exit + Return / Space semantics ([P11]): trigger toggles off anywhere; Return drops into a text-input stop (resume typing — also exits cycling) and is inert on non-text controls; Space acts on the focused control. Escape is deferred ([P11]).
+- Add a text-input cycle stop to `gallery-cycle-demo` (a `focusGroup` stop wrapping a caret surface) so the Return-into-text exit is exercisable.
 - Add Cmd-1…N chords toggling each Z2 cell's popup; confirm they coexist with the existing routes (⇧⌘C / ⇧⌘S) and permission (⇧⌘P) chords.
 
 **Tests:**
-- Behavior: app-tests — Return on the prompt-entry stop drops into typing (no submit); Space acts on a non-text control; Escape / trigger restore the caret; Cmd-N toggles the Nth Z2 popup.
+- Behavior: app-tests — Return on a text stop drops into typing (no submit) and exits cycling; Space acts on a non-text control; the trigger restores the caret; Cmd-N toggles the Nth Z2 popup.
 
 **Checkpoint:** `bunx tsc --noEmit` clean; mode-key + chord app-tests green.
 
@@ -668,7 +672,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 **References:** [P09], [P10], [P11], [P12], [Q03], (#success-criteria, #cycle-model)
 
 **Tasks:**
-- End-to-end pass: enter (trigger) → cycle (Tab / arrow) → act (Space / dedicated chord) → exit (Return-in-prompt / Escape / trigger), in both card states, both themes.
+- End-to-end pass: enter (trigger) → cycle (Tab / arrow) → act (Space / dedicated chord) → exit (Return-into-text / trigger), in both card states, both themes.
 - Assess whether "always-on cycling" (cycle scope = base mode) yields the deferred a11y mode ([Q03]); record the finding for the a11y follow-on.
 
 **Tests:**
@@ -854,6 +858,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 - [ ] High-contrast / accessibility-mode focus variant ([Q03]) — with the keyboard-model a11y pass.
 - [ ] Broaden component-level `role` props beyond `TugInput`'s validation as real semantic needs arise.
 - [ ] The deferred keyboard-model `refuse`/first-responder audit (its `#step-15`).
+- [ ] Escape-to-exit cycling mode ([P11]) — deliberately left out of the first cut; add if the trigger / Return-into-text exits prove insufficient.
 
 | Checkpoint | Verification |
 |------------|--------------|
