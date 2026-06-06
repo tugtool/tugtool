@@ -168,7 +168,7 @@ body {
    wraps the track, value input, and label — and suppress the ring on the thumb.
    Geometry comes from the same `--tugx-focus-ring-*` knobs as every other ring. */
 .tug-slider:has(.tug-slider-thumb[data-key-view-kbd]) {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
   outline-offset: var(--tugx-focus-ring-offset);
   border-radius: var(--tugx-focus-ring-radius);
 }

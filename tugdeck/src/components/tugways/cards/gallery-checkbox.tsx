@@ -107,14 +107,14 @@ export function GalleryCheckbox() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
 
-      {/* ---- Focus Walk ---- */}
+      {/* ---- Focus Language ---- */}
       {/* First section so the focusables sit above the fold for native clicks.
           Two checkboxes authored into one focus group drive the engine Tab walk
           in this card. The app-test Tabs to reach them (ring on keyboard focus),
           presses Space to toggle (data-state flips), and confirms a mouse click
           leaves no ring. */}
       <div className="cg-section" data-testid="checkbox-focus-demo">
-        <TugLabel className="cg-section-title" data-testid="checkbox-focus-title">Focus Walk</TugLabel>
+        <TugLabel className="cg-section-title" data-testid="checkbox-focus-title">Focus Language</TugLabel>
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
           <TugCheckbox
             aria-label="Focus A"

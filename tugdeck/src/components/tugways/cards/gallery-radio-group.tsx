@@ -54,7 +54,7 @@ export function GalleryRadioGroup() {
   const [vertValue, setVertValue] = useState("option-2");
   const [labeledValue, setLabeledValue] = useState("email");
   const [disabledGroupValue, setDisabledGroupValue] = useState("b");
-  // Focus Walk: a radio group authored into a focus group so the engine drives Tab.
+  // Focus Language: a radio group authored into a focus group so the engine drives Tab.
   const [focusValue, setFocusValue] = useState("a");
 
   // L11 migration via useResponderForm — see gallery-checkbox.tsx for the
@@ -89,17 +89,17 @@ export function GalleryRadioGroup() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
 
-      {/* ---- Focus Walk ---- */}
+      {/* ---- Focus Language ---- */}
       {/* First section so the items sit above the fold for native clicks. The
           group is authored into a focus group, so the engine drives Tab in this
           card: Tab lands the key view on the checked item (ring on keyboard
           focus), and arrows rove + select locally. */}
       <div className="cg-section" data-testid="radio-focus-demo">
-        <TugLabel className="cg-section-title" data-testid="radio-focus-title">Focus Walk</TugLabel>
+        <TugLabel className="cg-section-title" data-testid="radio-focus-title">Focus Language</TugLabel>
         <TugRadioGroup
           value={focusValue}
           senderId={radioFocusId}
-          aria-label="Focus walk radio group"
+          aria-label="Focus language radio group"
           focusGroup="gallery-radio-focus"
           focusOrder={0}
         >

@@ -36,7 +36,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 /**
- * A navigable inner control for the Focus Walk section content — proves the
+ * A navigable inner control for the Focus Language section content — proves the
  * accordion's Enter-descend ([P02]): once the user descends into the open
  * section, this button becomes the key view and Space/Enter act on it. It
  * registers into the section's pushed focus mode (supplied by TugAccordionItem
@@ -77,7 +77,7 @@ export function GalleryAccordion() {
   const [chainSingle, setChainSingle] = useState<string>("docs");
   const [chainMulti, setChainMulti] = useState<string[]>(["alerts", "privacy"]);
 
-  // Focus Walk section — a collapsible single-mode accordion authored into a
+  // Focus Language section — a collapsible single-mode accordion authored into a
   // focus group so the engine drives Tab. Starts fully collapsed so the test
   // can prove Space expands the focused header.
   const [focusOpen, setFocusOpen] = useState<string>("");
@@ -102,14 +102,14 @@ export function GalleryAccordion() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
 
-      {/* ---- Focus Walk ---- */}
+      {/* ---- Focus Language ---- */}
       {/* First section so the headers sit above the fold for native clicks. The
           accordion is authored into a focus group, so the engine drives Tab in
           this card: Tab lands the key view on the cursor header (ring on
           keyboard focus), Up/Down rove between headers locally, and Space/Enter
           expand/collapse the focused header. */}
       <div className="cg-section" data-testid="accordion-focus-demo">
-        <TugLabel className="cg-section-title" data-testid="accordion-focus-title">Focus Walk</TugLabel>
+        <TugLabel className="cg-section-title" data-testid="accordion-focus-title">Focus Language</TugLabel>
         <div style={{ maxWidth: "480px" }}>
           <TugAccordion
             type="single"

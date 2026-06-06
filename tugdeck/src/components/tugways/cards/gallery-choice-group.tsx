@@ -62,7 +62,7 @@ export function GalleryChoiceGroup() {
   // would overwrite the saved value when captureState fires.
   const savedChoiceMd = useSavedComponentState<{ value?: string }>("choice-md");
 
-  // Focus Walk section — authored into a focus group so the engine drives Tab.
+  // Focus Language section — authored into a focus group so the engine drives Tab.
   const [focusValue, setFocusValue] = useState("alpha");
 
   const [xsValue, setXsValue] = useState("beta");
@@ -172,17 +172,17 @@ export function GalleryChoiceGroup() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
 
-      {/* ---- Focus Walk ---- */}
+      {/* ---- Focus Language ---- */}
       {/* First section so the segments sit above the fold for native clicks. The
           group is authored into a focus group, so the engine drives Tab in this
           card: Tab lands the key view on the selected segment (ring on keyboard
           focus), and arrows rove + select locally. */}
       <div className="cg-section" data-testid="choice-focus-demo">
-        <TugLabel className="cg-section-title" data-testid="choice-focus-title">Focus Walk</TugLabel>
+        <TugLabel className="cg-section-title" data-testid="choice-focus-title">Focus Language</TugLabel>
         <TugChoiceGroup
           value={focusValue}
           senderId={focusId}
-          aria-label="Focus walk choice group"
+          aria-label="Focus language choice group"
           focusGroup="gallery-choice-focus"
           focusOrder={0}
           items={[

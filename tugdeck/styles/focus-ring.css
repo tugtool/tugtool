@@ -71,26 +71,37 @@
    radius. Theme-independent knobs (the color is the role axis below). Tune the
    ring's WIDTH here, in one place — it is no longer duplicated in the theme
    files. */
+/* Ring geometry is theme-independent, so it lives on `:root`. The role axis
+   below must live on `body`, not here — see the note on that block. */
 :root {
   --tugx-focus-ring-width: 1.5px;
   --tugx-focus-ring-offset: 2px;
   --tugx-focus-ring-radius: 6px;
+}
 
-  /* The focus-language ROLE AXIS. The ring, the behind-tint, and the native
-     selection fill all resolve from these three; they DEFAULT to `action` (the
-     neutral interactive blue) and a role-bearing component overrides them at the
-     same site it injects its existing on-color (no engine attribute — pure CSS,
-     per component). They alias the per-theme `--tug7-*` tokens, so one
-     definition here resolves correctly in both brio and harmony ([L17] one-hop).
+/* The focus-language ROLE AXIS. The ring, the behind-tint, and the native
+   selection fill all resolve from these three; they DEFAULT to `action` (the
+   neutral interactive blue) and a role-bearing component overrides them at the
+   same site it injects its existing on-color (no engine attribute — pure CSS,
+   per component). They alias the per-theme `--tug7-*` tokens, so one definition
+   resolves correctly in both brio and harmony ([L17] one-hop).
 
-     Token shape decision ([Q01]): a small shared `--tugx-focus-*` set with
-     per-component overrides — the closest lift of the proven gallery spike.
-     Behind-tint layering decision ([Q02]): components paint `--tugx-focus-tint`
-     as a gradient overlay over their own background
-     (`background: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint)), <own-bg>`)
-     so it composes with any surface; trackless groups may set it directly.
-     The behind-tint is NOT applied by the global rules below — leaf / group /
-     chrome differ, so each archetype applies it in its own step. */
+   These are declared on `body`, NOT `:root`: the `--tug7-*` theme tokens are
+   themselves scoped to `body`, so a `var(--tug7-*)` evaluated at `:root` (the
+   `<html>` element, above the theme scope) resolves to the guaranteed-invalid
+   value — which inherits down and collapses every `outline: … var(--tugx-focus-ring)`
+   to `none`. Declaring them on `body` keeps the alias one hop from its source
+   in the same scope.
+
+   Token shape decision ([Q01]): a small shared `--tugx-focus-*` set with
+   per-component overrides — the closest lift of the proven gallery spike.
+   Behind-tint layering decision ([Q02]): components paint `--tugx-focus-tint`
+   as a gradient overlay over their own background
+   (`background: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint)), <own-bg>`)
+   so it composes with any surface; trackless groups may set it directly.
+   The behind-tint is NOT applied by the global rules below — leaf / group /
+   chrome differ, so each archetype applies it in its own step. */
+body {
   --tugx-focus-ring: var(--tug7-element-control-border-outlined-action-rest);
   --tugx-focus-tint: color-mix(
     in srgb,

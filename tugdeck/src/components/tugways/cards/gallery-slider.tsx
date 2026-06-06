@@ -63,7 +63,7 @@ export function GallerySlider() {
   const [ticksValue, setTicksValue] = useState(4);
   const [volumeValue, setVolumeValue] = useState(6);
 
-  // Focus Walk: a slider authored into a focus group so the engine drives Tab.
+  // Focus Language: a slider authored into a focus group so the engine drives Tab.
   const [focusValue, setFocusValue] = useState(30);
 
   // ---- Gensym'd sender ids ----
@@ -105,13 +105,13 @@ export function GallerySlider() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
 
-      {/* ---- Focus Walk ---- */}
+      {/* ---- Focus Language ---- */}
       {/* First section so the thumb sits above the fold for native clicks. The
           slider is authored into a focus group, so the engine drives Tab in this
           card: Tab lands the key view on the thumb (ring on keyboard focus), and
           arrows step the value locally (Radix). */}
       <div className="cg-section" data-testid="slider-focus-demo">
-        <TugLabel className="cg-section-title" data-testid="slider-focus-title">Focus Walk</TugLabel>
+        <TugLabel className="cg-section-title" data-testid="slider-focus-title">Focus Language</TugLabel>
         <TugSlider
           size="md"
           value={focusValue}

@@ -67,7 +67,7 @@ export function GalleryOptionGroup() {
         : ["bold"],
   );
 
-  // Focus Walk section — authored into a focus group so the engine drives Tab.
+  // Focus Language section — authored into a focus group so the engine drives Tab.
   // Starts empty so the test can prove Space toggles the focused item on.
   const [focusValue, setFocusValue] = useState<string[]>([]);
 
@@ -163,18 +163,18 @@ export function GalleryOptionGroup() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
 
-      {/* ---- Focus Walk ---- */}
+      {/* ---- Focus Language ---- */}
       {/* First section so the items sit above the fold for native clicks. The
           group is authored into a focus group, so the engine drives Tab in this
           card: Tab lands the key view on the focused item (ring on keyboard
           focus), arrows rove focus locally, and Space/Enter toggles the focused
           item (focus is separate from selection — multi-select). */}
       <div className="cg-section" data-testid="option-focus-demo">
-        <TugLabel className="cg-section-title" data-testid="option-focus-title">Focus Walk</TugLabel>
+        <TugLabel className="cg-section-title" data-testid="option-focus-title">Focus Language</TugLabel>
         <TugOptionGroup
           value={focusValue}
           senderId={focusId}
-          aria-label="Focus walk option group"
+          aria-label="Focus language option group"
           focusGroup="gallery-option-focus"
           focusOrder={0}
           items={[

@@ -187,7 +187,7 @@ function KeybindingDemoBinding() {
 function FocusWalkDemo() {
   return (
     <div className="cg-section" data-testid="focus-walk-demo">
-      <TugLabel className="cg-section-title">Focus Walk</TugLabel>
+      <TugLabel className="cg-section-title">Focus Language</TugLabel>
       <TugLabel size="2xs" emphasis="calm">
         Three buttons authored into one focus group. Tab walks the two
         `accept` stops (Gamma is `skip`); clicking a button never moves the key

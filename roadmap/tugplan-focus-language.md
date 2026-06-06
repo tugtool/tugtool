@@ -341,8 +341,8 @@ No new store-backed state; no `useState` for appearance ([L06]).
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Token foundation + re-point the global focus rule | done | 950337d5 |
-| #step-gallery | Gallery as a keyboard-focus vetting surface (Focus Language sections) | in progress | — |
+| #step-1 | Token foundation + re-point the global focus rule | done | 950337d5 (+ ring-scope fix d1dbaf12) |
+| #step-gallery | Gallery rename + enrichment policy (ring-scope bug fixed) | done | d1dbaf12 + rename |
 | #step-2 | TugPushButton keyboard-promoted state; unify inline dialogs | pending | — |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
@@ -375,43 +375,79 @@ No new store-backed state; no `useState` for appearance ([L06]).
 
 **Checkpoint:** `bunx tsc --noEmit` clean; app-test sweep green; gallery shows the new default ring + cursor ring in brio + harmony.
 
-#### Step (gallery): Make the gallery a keyboard-focus vetting surface {#step-gallery}
+> **Step 1 follow-up — the ring-scope bug (fixed `d1dbaf12`).** Step 1 originally
+> declared the role-axis aliases (`--tugx-focus-ring` / `-tint` / `-fill`) on
+> `:root`, but the `--tug7-*` theme tokens are scoped to **`body`**. A
+> `var(--tug7-*)` evaluated at `:root` (the `<html>` element, above the theme
+> scope) resolves to the *guaranteed-invalid value*, which inherits down and
+> collapses every `outline: … var(--tugx-focus-ring)` to `none` — so **the focus
+> ring was invisible app-wide** (the "Tabbing does nothing" / "I can't see the
+> changes" report). Fix: the three role-axis aliases moved to `body` (geometry
+> literals stay on `:root`). Also repointed `tug-slider.css`'s whole-component
+> ring from the retired `--tugx-focus-ring-color` to `--tugx-focus-ring` (orphaned
+> by Step 1), and updated `at0115` to assert the ring on the slider root (the
+> component rings; the thumb stays the key-view target). The whole focus suite was
+> red before this fix (Step 1's "green sweep" claim was wrong); 10/10 focus
+> app-tests green after. Upholds [L06], [L17] (one-hop alias, now in the right
+> scope).
 
-**Commit:** `focus(gallery): keyboard-drivable Focus Language sections`
+#### Step (gallery): Gallery rename + enrichment policy {#step-gallery}
 
-**References:** [P01], [P02], [P03], (#success-criteria, #test-categories)
+**Commit:** `focus(gallery): rename Focus Walk → Focus Language; enrichment is per-component`
+
+**References:** [P01], [P02], [P03], [P04], (#success-criteria, #test-categories)
 
 **Depends on:** #step-1
 
-**STATUS — in progress.** Runs after [#step-1], before [#step-2]. This is the **active resume point** (post-compaction, work from this section + the carry-over). Two of three parts landed on `main`; the per-component conversion remains.
+**STATUS — done.** This step was originally scoped as "make the gallery keyboard-drivable
+by building a shared trapped `<FocusLanguageSection>`." **That premise was wrong, and the
+trap helper was both unnecessary and harmful** — see below. It collapses to a rename + a
+policy note; the real fix was the Step 1 ring-scope bug above.
 
-**Why this step exists.** The whole plan verifies "by eye in the gallery," but **regular component gallery cards are not keyboard-focus surfaces.** The existing `Focus Walk` section on each card renders the real component with `focusGroup="…"` + `focusOrder={…}` props (so the component *registers* into a focus group), **but the card never activates a focus scope**, so the engine's Tab-walk has nothing to drive — pressing Tab on the card does nothing, and the focus language can't be exercised on the real component. Without fixing this, Steps 2–8 are not by-eye verifiable. So: make the gallery the real vetting surface FIRST.
+**Why the original premise was wrong.** The diagnosis "regular gallery cards aren't
+keyboard-focus surfaces, so Tab does nothing" was a *symptom of the invisible-ring bug*,
+not a missing focus scope. Driving the engine directly proved it: the existing `Focus Walk`
+sections register their component into the base focus mode via `focusGroup`/`focusOrder`,
+and the **base mode already drives the Tab-walk** — click into a card (or its pane title
+bar) → Tab → the key view walks into the component and rings. This is exactly what the
+existing focus app-tests (`at0118`, `at0119`, `at0125`, `at0112`, …) exercise, and they
+pass. Once the ring actually paints (Step 1 fix), the gallery is a perfectly good
+keyboard-focus vetting surface as-is.
 
-**Done (on `main`):**
-- ✅ **Deleted the unintelligible demo cards** `gallery-focus-states` + `gallery-focus-nested`, their shared `gallery-focus.css`, their registrations/imports in `gallery-registrations.tsx`, and the `at0123`/`at0124` app-tests that targeted them (the pre-existing `at0124` red is thereby moot).
-- ✅ **De-spiked** `gallery-focus-language` into a permanent gallery card titled **"Focus Language"** (registration `componentId: "gallery-focus-language"`, no longer `hidden`). Header comment, in-card intro, and registration comment all de-spiked. It is the canonical **static OVERVIEW** of the whole language. NOTE: it is a *mockup* — it forces states via private `--fl-*` tokens in `gallery-focus-language.css`, NOT driven by the real engine. Follow-on (fold into [#step-10]): repoint those `--fl-*` at the real `--tugx-focus-*` tokens so the overview tracks the rollout.
+**Why a trapped `<FocusLanguageSection>` is rejected.** A per-card trap active on mount
+would have **broken two passing app-tests**: every mounted card (including hidden
+background tab-cards) would push a trapped focus mode, breaking `at0125`'s
+background-tab isolation; and seeding `focusFirstInMode` on mount would light the ring at
+rest, breaking `at0118`'s "no ring at rest" assertion. The engine already isolates hidden
+cards and lands one Tab on the active card's first focusable — no trap needed. **Do not
+add one.**
 
-**Remaining (the work to resume):** convert each card's **`Focus Walk` → `Focus Language`** section and make it **keyboard-drivable** on the real engine.
+**Done (on `main`, earlier):**
+- ✅ Deleted the unintelligible demo cards `gallery-focus-states` + `gallery-focus-nested`, their `gallery-focus.css`, their registrations, and the `at0123`/`at0124` app-tests.
+- ✅ De-spiked `gallery-focus-language` into a permanent **"Focus Language"** card — the static OVERVIEW of the whole language (a `--fl-*` mockup; repoint at the real tokens in [#step-10]).
 
-- **Build a shared helper** — `cards/focus-language-section.tsx` exporting `<FocusLanguageSection>` (one scope mechanism, reused; do NOT wire each card by hand). It wraps its children in an **active engine focus scope** so Tab lands the key view inside and arrows rove, lighting the *real* `[data-key-view-kbd]` / `[data-key-cursor]` / `data-selected` treatments from [#step-1]. The proven pattern (from the now-deleted `gallery-focus-states.tsx`): `const { FocusModeScope } = useFocusTrap({ active: true, trapped: true })` (from `@/components/tugways/use-focus-trap`), render `<FocusModeScope>…children…</FocusModeScope>`, and seed the key view on mount with `focusFirstInMode` (via `useFocusManager()` from `@/components/tugways/use-focusable`) in a `useLayoutEffect` ([L03]). `trapped: true` bounds Tab to the section — fine for a vetting card.
-- **Rename the section label** in each card: the `<TugLabel className="cg-section-title" data-testid="…-focus-title">Focus Walk</TugLabel>` → `Focus Language` (and the `data-testid`/comment `Focus Walk` mentions). The component inside already has `focusGroup`/`focusOrder` — keep those; just wrap the section in `<FocusLanguageSection>`.
-- **Cards carrying a `Focus Walk` section today** (grep `"Focus Walk"`): `gallery-choice-group`, `gallery-radio-group`, `gallery-option-group`, `gallery-checkbox`, `gallery-switch`, `gallery-slider`, `gallery-accordion`, `gallery-chain-actions`, and `dev-card-transcript`. Start with **choice-group + radio-group** (prove the helper), then roll across the rest. Components without a Focus Walk section get a Focus Language section added as their component step lands.
-- Each section should exercise the **complete model** for its component: rest, keyboard focus (ring + behind-tint), cursor (group → ring on the cursor item), selection (native fill), and role variants — the per-component echo of the overview card.
+**Done (this step):**
+- ✅ **Ring-scope bug fixed** (`d1dbaf12`) — the real cause of the gallery looking broken (see the Step 1 follow-up box above).
+- ✅ **Renamed** every card's `Focus Walk` → `Focus Language` (label text + comments + aria-labels) across `gallery-choice-group / -radio-group / -option-group / -checkbox / -switch / -slider / -accordion / -chain-actions`. **Testids kept** (`*-focus-title`, `focus-walk-*`) — they back `at0112/at0118/at0125`; renaming them would break those tests.
 
-**Carry-over: the real tokens this & later steps consume** (from [#step-1], in `styles/focus-ring.css :root`, default `action`, per-theme via `--tug7-*` aliases):
-- `--tugx-focus-ring` = `var(--tug7-element-control-border-outlined-action-rest)` — the ring/cursor color.
-- `--tugx-focus-tint` = `color-mix(in srgb, var(--tug7-surface-tone-primary-normal-active-rest) 65%, transparent)` — the faint behind-tint (applied per-archetype, NOT globally).
-- `--tugx-focus-fill` = `var(--tug7-surface-toggle-primary-normal-on-rest)` — the native selection fill.
-- Global rules already re-pointed: `[data-key-view-kbd]` → ring (leaf); `[data-key-cursor]` → ring (was a background tint); `[data-key-within]` → tint-family. Per [P02], a **group** key-view overrides the global ring to a behind-tint in its own CSS (that override is later, per-component step 3); for *this* gallery step the components just need to be keyboard-drivable so we can SEE whatever treatment is current.
-- Role override convention ([P03]): a role-bearing component sets `--tugx-focus-ring` / `--tugx-focus-fill` (and tint) at the same site it injects its existing on-color; role-less rides the `action` default. No engine attribute, pure CSS.
-
-**Open question to settle during impl:** whether `<FocusLanguageSection>` should **trap** (Tab cycles within the section — simplest, and seeds focus on mount which steals focus when the card opens, as the old demo did) or be merely **Tab-reachable** without seizing focus on open. Lean: trap + seed (matches the proven demo; acceptable for a dev gallery). Revisit if focus-stealing-on-open is annoying.
+**Enrichment policy (folded into the component steps, not a separate step).** The gallery is
+the **example + vetting surface for the focus language**, not just look-and-feel. As each
+component step ([#step-2]–[#step-8]) lands, it **enriches that component's Focus Language
+section** into a real vetting surface:
+- show the component's **role variants** (action default + danger/accent/… where the
+  component supports roles) so the role-resolved ring/fill/tint are visible side by side;
+- where it makes sense, include **multiple components in the section so Tab moves between
+  them** (proving the ring travels and the within-mark reads);
+- exercise the **complete progression** — rest → keyboard focus (ring + behind-tint) →
+  cursor (group → ring on the cursor item) → committed selection (native fill).
+No shared trap helper; the base mode drives it. Components without a Focus Language section
+yet get one added as their step lands.
 
 **Tests:**
-- Behavior: `tsc` clean; existing card/app-tests green (no banned tests — pixels are by-eye).
-- By-eye: open a component card, **Tab into its Focus Language section and arrow** — the real component rings/cursors/selects per the model, both themes. This is the surface every later step is vetted on.
+- Behavior: `tsc` clean; the focus app-test sweep green (`at0104/0106/0109/0112/0113/0114/0115/0118/0119/0125` — 10/10 after the ring-scope fix). No banned tests — pixels are by-eye.
+- By-eye: open a component card, click in, **Tab** — the real component rings/cursors/selects per the model, both themes.
 
-**Checkpoint:** `bunx tsc --noEmit` clean; the shared `<FocusLanguageSection>` exists; keyboard-drive at least **choice-group + radio-group** Focus Language sections by eye in both themes; the two demo cards are gone and the **Focus Language** reference card is permanent.
+**Checkpoint:** `bunx tsc --noEmit` clean; focus app-test sweep green; ring visible in brio + harmony; the rename landed with testids preserved; the two demo cards are gone and the **Focus Language** reference card is permanent. **No `<FocusLanguageSection>` helper exists (by design).**
 
 #### Step 2: TugPushButton keyboard-promoted state; unify inline dialogs {#step-2}
 

@@ -26,6 +26,11 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const TITLE = `${CARD} [data-testid="slider-focus-title"]`;
 const THUMB = `${CARD} [data-testid="slider-focus-demo"] .tug-slider-thumb`;
+// The ring marks the whole component, not the thumb: the thumb stays the
+// keyboard key-view target (Radix arrow-stepping), but the app ring paints on
+// the slider root that wraps the track/value/label. So keyboard markers are
+// read on the THUMB and the ring outline is read on the SLIDER root.
+const SLIDER = `${CARD} [data-testid="slider-focus-demo"] .tug-slider`;
 
 function deckShape() {
   return {
@@ -92,13 +97,15 @@ describe.skipIf(!SHOULD_RUN)("AT0115: slider focus is engine-driven", () => {
         await app.nativeClickAtElement(TITLE);
         await new Promise((resolve) => setTimeout(resolve, 200));
 
-        // (1) No ring at rest: the thumb carries no keyboard marker and no ring.
+        // (1) No ring at rest: the thumb carries no keyboard marker, and the
+        // slider component carries no ring.
         const atRest = await app.evalJS<SliderProbe>(PROBE(THUMB));
         expect(atRest?.keyboardReached).toBe(false);
-        expect(parseFloat(atRest?.outline ?? "0")).toBe(0);
+        const sliderAtRest = await app.evalJS<SliderProbe>(PROBE(SLIDER));
+        expect(parseFloat(sliderAtRest?.outline ?? "0")).toBe(0);
 
         // (2) Tab → the engine lands the key view on the thumb and the ring
-        // paints (outline > 0, data-key-view-kbd set).
+        // paints on the whole component (the slider root, not the thumb).
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `(function(){ var el = document.querySelector(${JSON.stringify(THUMB)}); return el && el.hasAttribute("data-key-view-kbd"); })()`,
@@ -106,7 +113,8 @@ describe.skipIf(!SHOULD_RUN)("AT0115: slider focus is engine-driven", () => {
         );
         const focused = await app.evalJS<SliderProbe>(PROBE(THUMB));
         expect(focused?.isKeyView).toBe(true);
-        expect(parseFloat(focused?.outline ?? "0")).toBeGreaterThan(0);
+        const sliderFocused = await app.evalJS<SliderProbe>(PROBE(SLIDER));
+        expect(parseFloat(sliderFocused?.outline ?? "0")).toBeGreaterThan(0);
         const before = parseFloat(focused?.valueNow ?? "NaN");
         expect(Number.isNaN(before)).toBe(false);
 
