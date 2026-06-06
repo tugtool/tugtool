@@ -158,6 +158,18 @@ body {
   cursor: not-allowed;
 }
 
+/* Editor text-stop ring ([P10]/[P11]). When the keyboard-focus cycle lands on
+   the input area (its last stop), ring it in the focus-ring colour while the
+   editor itself stays blurred (the `deactivated` stand-down). Inset offset so
+   the ring reads as a border *inside* the input region rather than extending
+   under the toolbar / pane edge. Return then "descends" into the editor
+   (resume typing). Overrides the default `[data-key-view-kbd]` offset. */
+.tug-prompt-entry-input-area[data-key-view-kbd] {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--tugx-focus-ring-radius);
+}
+
 /* Keyboard-focus-cycling fill suppression ([P12]).
  *
  * Outside cycling the submit is `filled` — its standing identity as the

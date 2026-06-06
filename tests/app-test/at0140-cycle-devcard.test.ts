@@ -20,11 +20,12 @@
  *      submit, because its empty-input gate disables it. ⌥⇥ off restores caret.
  *   3. **typed editor → route seeds:** with content, ⌥⇥ seeds the route (the
  *      first stop in the revised order).
- *   4. **Tab tours the stops:** route → Mode → Model → Effort → submit, then
- *      wraps back to the route (trapped — only the card's stops are walked).
- *      (Z2 and the editor text-stop join in later slices.)
- *   5. **toggle off (⌥⇥):** the mode pops, `data-cycling="false"`, and DOM
- *      focus returns to the editor caret.
+ *   4. **Tab tours the stops:** route → Mode → Model → Effort → submit →
+ *      editor → wrap (trapped). The editor is the last stop — a text stop: the
+ *      input area takes the ring while the editor stays blurred (no caret).
+ *      (Z2 joins in a later slice.)
+ *   5. **Return on the editor stop resumes typing ([P11]):** it descends into
+ *      the editor, exiting cycling and returning the caret. (⌥⇥ also exits.)
  *
  * Mode keys (Return / Space) are a later step; this gates the dev-card
  * push/seed/wrap/restore + the `data-cycling` signal. The Picker → Open default
@@ -47,6 +48,7 @@ const ROUTE = `${CARD} [data-slot="tug-choice-group"][aria-label="Route"]`;
 const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
 const MODEL_CHIP = `${CARD} [data-slot="model-chip"]`;
 const EFFORT_CHIP = `${CARD} [data-slot="effort-chip"]`;
+const INPUT_AREA = `${CARD} .tug-prompt-entry-input-area`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 // Expression: does the element at `selector` hold the keyboard key view? Works
@@ -106,7 +108,7 @@ const EDITOR_FOCUSED = `(function(){
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → wrap, skips the disabled submit when empty, ⌥⇥ restores the editor caret",
+    "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → editor → wrap, skips the disabled submit when empty, Return on the editor stop resumes typing",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard" });
       try {
@@ -142,8 +144,8 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
 
         // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
         // empty-input gate), so it is NOT a Tab target — touring the live stops
-        // (route → Mode → Model → Effort → wrap) never lands the key view on the
-        // submit.
+        // (route → Mode → Model → Effort → editor → wrap) skips it: Tab steps
+        // from Effort straight to the editor, never landing on the submit.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
@@ -154,8 +156,11 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        // Effort → editor (the disabled submit is skipped).
+        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
         // ⌥⇥ off → back to the editor caret.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
@@ -179,9 +184,11 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
-        // (4) Tab tours the stops left→right, then wraps back to the route
-        // (trapped): route → Mode → Model → Effort → submit → route. (Z2 and the
-        // editor text-stop join in later slices.)
+        // (4) Tab tours the stops left→right, up to the editor, then wraps back
+        // to the route (trapped): route → Mode → Model → Effort → submit →
+        // editor → route. (Z2 joins in a later slice.) The editor is the last
+        // stop — a text stop: the input area takes the ring while the editor
+        // stays blurred.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
@@ -192,14 +199,26 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
         await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
+        // The editor text-stop holds the ring but the caret is NOT active (the
+        // editor is blurred during cycling).
+        expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
+        await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
 
-        // (5) ⌥⇥ → cycling off; the caret returns to the editor
-        // ([P12] Connected → editor).
-        await app.nativeKey("Tab", ["alt"]);
+        // (5) Return on the editor text-stop resumes typing ([P11]): it descends
+        // into the editor, which exits cycling and returns the caret. First Tab
+        // back onto the editor stop, then Return.
+        await app.nativeKey("Tab", ["alt"]); // exit cycling (back to editor)
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
+        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+        // Re-enter, walk to the editor stop, and Return to resume typing.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        for (let i = 0; i < 5; i++) await app.nativeKey("Tab"); // route→…→submit→editor
+        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
+        await app.nativeKey("Return");
+        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
       } catch (err) {
         const tail = app.tailLog(200);

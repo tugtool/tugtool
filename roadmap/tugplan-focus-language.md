@@ -470,7 +470,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle | Step 2.5 — Keyboard-focus-cycling mode (umbrella) | pending | — |
 | #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | 62228934 |
 | #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | done | (main) |
-| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | done (Slices 1+2+3 Z4B, uncommitted); Z2 status row deferred | — |
+| #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | redesigned ([P10]r): route-seed + blur + no outer ring committed `6a27148f`; editor text-stop done (uncommitted); Z2 status-row stop pending | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
 | #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | to design + implement | — |

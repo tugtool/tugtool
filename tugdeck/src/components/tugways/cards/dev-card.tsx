@@ -278,8 +278,8 @@ const DEV_CYCLE_ORDER_MODE = 1;
 const DEV_CYCLE_ORDER_MODEL = 2;
 const DEV_CYCLE_ORDER_EFFORT = 3;
 const DEV_CYCLE_ORDER_SUBMIT = 4;
-// Orders 5 (Z2 status row) and 6 (editor text stop) are wired in their own
-// slices ([P10] revised order).
+// Order 5 (Z2 status row) is wired in its own slice ([P10] revised order).
+const DEV_CYCLE_ORDER_EDITOR = 6;
 
 /** Max characters the Z4B Project chip shows before it falls back to the
  *  leaf directory name. */
@@ -3615,6 +3615,9 @@ export function DevCardBody({
                 submitFocusOrder={DEV_CYCLE_ORDER_SUBMIT}
                 routeFocusGroup={DEV_CYCLE_GROUP}
                 routeFocusOrder={DEV_CYCLE_ORDER_ROUTE}
+                editorFocusGroup={DEV_CYCLE_GROUP}
+                editorFocusOrder={DEV_CYCLE_ORDER_EDITOR}
+                onResumeTyping={() => cycle.exit()}
                 localCommandTargetId={`${cardId}-card-content`}
                 codeSessionStore={codeSessionStore}
                 sessionMetadataStore={sessionMetadataStore}

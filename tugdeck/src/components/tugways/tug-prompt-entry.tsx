@@ -39,6 +39,7 @@ import "./tug-prompt-entry.css";
 
 import React, {
   useCallback,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -77,6 +78,7 @@ import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { TugPushButton } from "./tug-push-button";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import { useResponder } from "./use-responder";
+import { useFocusable } from "./use-focusable";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponderChain } from "./responder-chain-provider";
@@ -637,6 +639,25 @@ export interface TugPromptEntryProps {
   routeFocusGroup?: string;
   /** Order of the route within {@link routeFocusGroup}. Defaults to 0. */
   routeFocusOrder?: number;
+  /**
+   * Authors the **editor input area** itself into a focus group ([P02]) as a
+   * **text stop** — the last stop of the dev card's keyboard-focus cycle
+   * ([P10]/[P11]). When set, the input-area wrapper registers a focusable: the
+   * cycle can land the ring on it (the editor stays blurred via `deactivated`),
+   * and Return "descends" into the editor — `onResumeTyping` fires to drop the
+   * user back into typing (the host exits cycling). Omitted by non-cycling
+   * hosts. The editor is a responder (caret), so this is the *only* way it joins
+   * the walk; it never becomes a plain Tab stop.
+   */
+  editorFocusGroup?: string;
+  /** Order of the editor text-stop within {@link editorFocusGroup}. */
+  editorFocusOrder?: number;
+  /**
+   * Fired when the cycle's Return-into-text gesture lands on the editor stop
+   * ([P11]): the host should exit cycling so the editor reactivates and the
+   * caret returns. Paired with {@link editorFocusGroup}.
+   */
+  onResumeTyping?: () => void;
 }
 
 /**
@@ -706,6 +727,9 @@ export const TugPromptEntry = React.forwardRef<
     submitFocusOrder,
     routeFocusGroup,
     routeFocusOrder,
+    editorFocusGroup,
+    editorFocusOrder,
+    onResumeTyping,
   } = props;
 
   // [L02] external store state enters React through useSyncExternalStore only.
@@ -731,6 +755,33 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     if (deactivated) textEditorRef.current?.blur();
   }, [deactivated]);
+
+  // Editor-as-text-stop ([P10]/[P11]). When a host authors the editor into a
+  // cycle (`editorFocusGroup`), the input-area wrapper registers a focusable so
+  // the cycle can land the ring on it (the editor itself stays blurred via
+  // `deactivated`). Its key-view `behavior` declares the input descendable: a
+  // Return resolves to `descend` (intercepted, so the scope's default button
+  // never fires) and fires `onResumeTyping`, dropping the user back into the
+  // editor. Read through a ref ([L07]) so the behavior closure (captured by the
+  // engine at registration) never goes stale. The wrapper takes `tabIndex={-1}`
+  // so the engine can land DOM focus on it without putting it in the native Tab
+  // order; the real caret is the editor inside.
+  const onResumeTypingRef = useRef(onResumeTyping);
+  useLayoutEffect(() => {
+    onResumeTypingRef.current = onResumeTyping;
+  }, [onResumeTyping]);
+  const editorStopId = useId();
+  const { focusableRef: editorStopRef } = useFocusable({
+    id: editorStopId,
+    group: editorFocusGroup ?? "",
+    order: editorFocusOrder ?? 0,
+    register: editorFocusGroup !== undefined,
+    behavior: () => ({
+      container: "none",
+      currentItemDescendable: true,
+      onDescend: () => onResumeTypingRef.current?.(),
+    }),
+  });
 
   // Inline-attachment wiring. The per-card bytes-store and the
   // attachment-error publisher come from `codeSessionStore`; both are
@@ -1705,7 +1756,11 @@ export const TugPromptEntry = React.forwardRef<
               )}
             </div>
           )}
-          <div className="tug-prompt-entry-input-area">
+          <div
+            className="tug-prompt-entry-input-area"
+            ref={editorStopRef as (el: HTMLDivElement | null) => void}
+            tabIndex={editorFocusGroup !== undefined ? -1 : undefined}
+          >
             <TugTextEditor
               ref={textEditorRef}
               borderless
