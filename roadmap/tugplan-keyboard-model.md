@@ -524,11 +524,42 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 ### Focus-Language Modernization {#focus-language-modernization}
 
 The successor effort that grows out of [#step-14]: replace the engine's focus-visual
-**language** — today the orange ring — with the **filled-promotion + double-border**
-language proven in the inline dialogs, generalized across the component library. This
-section drives a **gallery spike** to settle the language by eye; the rollout itself is
-authored as its own separate `/tugplug:devise` plan once the spike resolves the open
-forks. We begin working here.
+**language** — today the orange ring — generalized across the component library.
+
+**STATUS — SPIKE COMPLETE; rolled out under its own plan.** The gallery
+language-spike was built and judged by eye across the full archetype taxonomy in both
+themes; the card `tugdeck/src/components/tugways/cards/gallery-focus-language.{tsx,css}`
+is the settled reference canvas. The original hypothesis recorded below
+([#flm-what]/[#flm-proven]: "filled-promotion + double-border, two-branch") was
+**revised by the spike** — see the verdict next. The behavior work of this plan is done;
+the visual-language rollout is its **own** document: **`roadmap/tugplan-focus-language.md`**
+(authored via `/tugplug:devise`). Nothing further happens in *this* plan.
+
+#### Spike verdict — the settled model {#flm-verdict}
+
+The spike replaced the two-branch fill/double-border hypothesis with one simpler model:
+
+- **One signature for keyboard focus:** the focused component wears a **ring** plus a
+  **faint behind-tint**; the committed selection is the component's **native fill** (radio
+  dot / segmented pill / option fill / list-row fill — decades-old conventions kept).
+- **Leaf controls** (button, input, toggle, slider) *are* the focusable, so the ring
+  wraps the whole component; **item-groups** put the behind-tint on the group and a ring
+  on the **cursor item**, so the cursor stays visible even atop a selection fill (this is
+  what makes multi-select legible without an added checkmark).
+- **One role axis, default `action`.** Ring + selection-fill + behind-tint all read a
+  single role variable that defaults to action (the neutral interactive blue) and is
+  overridden per role; there is **no "role-less" branch** — role-less controls ride the
+  default. Buttons keep the fill-promotion treatment from [#step-14].
+- **Decisions surfaced for the rollout to carry:** every focusable adopts a role
+  (default action); **TugInput** maps its `validation` onto the role axis (invalid →
+  danger); **TugTabBar** moves to commit-on-act; brio/harmony filled-accent/danger
+  intensities were retuned during the spike.
+- **Governance (owned by the new plan):** a new governing `[P0x]` superseding [P03], a
+  [Keyboard Behavior Matrix](#keyboard-matrix) visual-column rewrite, and a `tuglaws/`
+  focus-language doc.
+
+The subsections below are retained as the **original (now superseded) hypothesis** that
+the spike tested — historical context for the new plan, not live guidance.
 
 #### What it is {#flm-what}
 
