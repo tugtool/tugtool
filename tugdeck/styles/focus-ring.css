@@ -1,12 +1,20 @@
 /**
- * focus-ring.css — the single app-owned focus ring.
+ * focus-ring.css — the app-owned focus language.
+ *
+ * NOTE (focus-language modernization): the former single ORANGE ring is being
+ * replaced by a role-resolved language — a ring + a faint behind-tint on the
+ * focused component, the component's native fill for selection, all driven by
+ * the role axis (`--tugx-focus-ring` / `--tugx-focus-tint` / `--tugx-focus-fill`,
+ * default `action`). The global rules below own the LEAF ring, the cursor-item
+ * ring, and the within-mark; per-component CSS adds the behind-tint and native
+ * fill and overrides groups to a tint. See `roadmap/tugplan-focus-language.md`
+ * (the `tuglaws/` doc lands with that plan's governance step). The historical
+ * prose below still describes the engine attributes correctly.
  *
  * One ring, on the keyboard-active control — the control the keyboard is
  * currently driving. It replaces the old scatter of per-component `:focus` /
  * `:focus-visible` outlines (indigo `accentCool`, the link color, the accent
- * color, each at its own width/offset) and reads the `--tugx-focus-ring-*`
- * tokens authored in the theme files (brio.css / harmony.css), so the color is
- * theme-aware and tuned from one place.
+ * color, each at its own width/offset).
  *
  * **The ring is the definitive commit-key affordance** ([P12]): the
  * keyboard-active control it marks gets first claim on Return, Escape, and ⌘.
@@ -60,21 +68,48 @@
  */
 
 /* Ring geometry — the single source for the ring's thickness, gap, and corner
-   radius. These are theme-independent knobs (only the color is per-theme, the
-   orange focus axis `--tugx-focus-ring-color`). Tune the ring's WIDTH here, in
-   one place — it is no longer duplicated in the theme files. */
+   radius. Theme-independent knobs (the color is the role axis below). Tune the
+   ring's WIDTH here, in one place — it is no longer duplicated in the theme
+   files. */
 :root {
   --tugx-focus-ring-width: 1.5px;
   --tugx-focus-ring-offset: 2px;
   --tugx-focus-ring-radius: 6px;
+
+  /* The focus-language ROLE AXIS. The ring, the behind-tint, and the native
+     selection fill all resolve from these three; they DEFAULT to `action` (the
+     neutral interactive blue) and a role-bearing component overrides them at the
+     same site it injects its existing on-color (no engine attribute — pure CSS,
+     per component). They alias the per-theme `--tug7-*` tokens, so one
+     definition here resolves correctly in both brio and harmony ([L17] one-hop).
+
+     Token shape decision ([Q01]): a small shared `--tugx-focus-*` set with
+     per-component overrides — the closest lift of the proven gallery spike.
+     Behind-tint layering decision ([Q02]): components paint `--tugx-focus-tint`
+     as a gradient overlay over their own background
+     (`background: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint)), <own-bg>`)
+     so it composes with any surface; trackless groups may set it directly.
+     The behind-tint is NOT applied by the global rules below — leaf / group /
+     chrome differ, so each archetype applies it in its own step. */
+  --tugx-focus-ring: var(--tug7-element-control-border-outlined-action-rest);
+  --tugx-focus-tint: color-mix(
+    in srgb,
+    var(--tug7-surface-tone-primary-normal-active-rest) 65%,
+    transparent
+  );
+  --tugx-focus-fill: var(--tug7-surface-toggle-primary-normal-on-rest);
 }
 
 :focus-visible {
   outline: none;
 }
 
+/* The key view's ring — the LEAF treatment (a leaf focusable IS the focusable,
+   so the ring wraps the whole component). Group key-views override this to a
+   behind-tint in their own component CSS, keyed on their `data-slot` / `role`
+   ([P02] of tugplan-focus-language). Role-resolved, default action. */
 [data-key-view-kbd] {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
   outline-offset: var(--tugx-focus-ring-offset);
 }
 
@@ -86,7 +121,7 @@
    component's own radius always wins; only the square container key-views pick
    up the default ring radius. No per-component bookkeeping, no clobbering.
    Applied to the key-within mark too so it matches. */
-:where([data-key-view-kbd], [data-key-within]) {
+:where([data-key-view-kbd], [data-key-within], [data-key-cursor]) {
   border-radius: var(--tugx-focus-ring-radius);
 }
 
@@ -101,17 +136,21 @@
  */
 [data-key-within] {
   outline: var(--tugx-key-within-width, var(--tugx-focus-ring-width)) solid
-    var(--tugx-key-within-color, color-mix(in srgb, var(--tugx-focus-ring-color) 32%, transparent));
+    var(--tugx-key-within-color, color-mix(in srgb, var(--tugx-focus-ring) 32%, transparent));
   outline-offset: var(--tugx-key-within-offset, var(--tugx-focus-ring-offset));
 }
 
 /**
  * The third keyboard visual state: `data-key-cursor` — the movement cursor on
- * the current item inside a deferred component. It reuses the component's
- * **mouse-hover** treatment ([Q01]); this is the quiet neutral baseline (a
- * hover-weight surface tint) that components refine with their own hover token.
- * Distinct from committed selection (`data-selected`, accent) and from the ring.
+ * the current item inside a group. Under the focus-language model it is an
+ * outline **ring** (role-resolved, default action), offset just outside the item
+ * so it stays visible even on top of a committed selection fill — which is what
+ * lets multi-select read without an added checkmark ([P02] of
+ * tugplan-focus-language). It replaces the former neutral background tint.
+ * Distinct from the committed selection (the component's native fill) and from
+ * the key-view ring on the component.
  */
 [data-key-cursor] {
-  background-color: var(--tugx-key-cursor-surface, rgba(128, 128, 128, 0.12));
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: var(--tugx-focus-ring-offset);
 }

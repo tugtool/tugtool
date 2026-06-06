@@ -1,26 +1,21 @@
 /**
- * GalleryFocusLanguage — the focus-language modernization SPIKE (deletable).
+ * GalleryFocusLanguage — the canonical reference for the keyboard-focus visual
+ * language (a permanent gallery card).
  *
- * A static design canvas for settling the new keyboard-focus visual language by
- * eye, across the full taxonomy of component archetypes, in BOTH themes (toggle
- * brio/harmony in the gallery chrome). It is a mockup, not wired to the focus
- * engine: every state (rest / mouse-hover / keyboard-cursor / selected /
- * collision) is forced via a self-contained `data-fl-*` attribute so all states
- * show at once for comparison — the "keyboard vs mouse" distinction is the
- * mouse-hover column sitting next to the keyboard-cursor column.
+ * One static screen showing the whole language across the component-archetype
+ * taxonomy, in BOTH themes (toggle brio/harmony in the gallery chrome). Every
+ * state (rest / mouse-hover / keyboard-cursor / selected) is forced via a
+ * self-contained `data-fl-*` attribute so all of them show at once for
+ * comparison — this is the OVERVIEW; per-component keyboard vetting on the real
+ * engine lives in each component card's "Focus Language" section.
  *
- * The proposed language is two branches (see gallery-focus-language.css):
- *   FILL  — actionable role controls (buttons): cursor promotes to filled role +
- *           role-coloured ring; siblings stay outlined.
- *   RING  — role-less / selection-bearing controls (inputs, toggles, sliders,
- *           group items, rows, boxes, links): cursor = a double-border ring in
- *           the keyboard colour; FILL stays reserved for selection.
+ * The model (see gallery-focus-language.css):
+ *   - keyboard focus = a RING + a faint BEHIND-TINT on the focused component;
+ *   - committed selection = the component's NATIVE fill (dot / pill / fill);
+ *   - buttons additionally PROMOTE to their filled role style on focus;
+ *   - one ROLE AXIS, default action: ring + fill + tint all resolve from it.
  *
- * This is the canvas the dedicated rollout `/tugplug:devise` plan is judged
- * against. The live, engine-driven proof of the FILL branch already ships in the
- * Permission / Question inline dialogs.
- *
- * Laws: [L06] appearance is attribute → CSS (here forced mockup attributes, no
+ * Laws: [L06] appearance is attribute → CSS (here forced reference attributes, no
  * React-driven style); [L19] gallery-card authoring.
  */
 
@@ -91,9 +86,9 @@ export function GalleryFocusLanguage(): React.ReactElement {
   return (
     <div className="cg-content cg-focus-language" data-testid="gallery-focus-language">
       <TugLabel className="cg-section-title">
-        Focus-language spike — proposed keyboard-focus treatment across the archetype
-        taxonomy. Toggle the theme to judge both. Each row labels its branch and the
-        fork it settles.
+        Focus Language — the keyboard-focus treatment across the component-archetype
+        taxonomy. Toggle the theme to see both. Each row shows the component's states
+        (rest / hover / keyboard-cursor / selected) and its role colouring.
       </TugLabel>
 
       {/* ---------- Legend: current vs proposed ---------- */}
