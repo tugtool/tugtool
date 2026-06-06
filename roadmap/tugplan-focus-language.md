@@ -343,7 +343,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 |---|---|---|---|
 | #step-1 | Token foundation + re-point the global focus rule | done | 950337d5 (+ ring-scope fix d1dbaf12) |
 | #step-gallery | Gallery rename + enrichment policy (ring-scope bug fixed) | done | d1dbaf12 + rename |
-| #step-2 | TugPushButton keyboard-promoted state; unify inline dialogs | pending | — |
+| #step-2 | TugPushButton keyboard-promoted state; unify inline dialogs | done | (dash focus-button) |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |

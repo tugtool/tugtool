@@ -216,6 +216,33 @@ export function GalleryPushButton() {
       data-testid="gallery-buttons"
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
+      {/* ---- Focus Language ---- */}
+      {/* Buttons authored into one focus group so the engine drives Tab in this
+          card. Each OUTLINED button promotes to its filled role style + a
+          role-resolved ring on keyboard focus (action→blue, danger→red, …);
+          a FILLED button keeps its fill and gains the role ring. Clicking a
+          button never moves the key view. This is the by-eye vetting surface
+          for the keyboard-promoted state. */}
+      <div className="cg-section" data-testid="button-focus-demo">
+        <TugLabel className="cg-section-title">Focus Language</TugLabel>
+        <TugLabel size="2xs" emphasis="calm">
+          Tab to walk these. Each outlined button promotes to its filled role
+          style + role ring on keyboard focus; the filled buttons keep their fill
+          and gain the role ring. Both themes.
+        </TugLabel>
+        <div className="cg-variant-row">
+          <TugPushButton emphasis="outlined" role="action" focusGroup="gallery-button-focus" focusOrder={0} onClick={() => {}}>Action</TugPushButton>
+          <TugPushButton emphasis="outlined" role="danger" focusGroup="gallery-button-focus" focusOrder={1} onClick={() => {}}>Danger</TugPushButton>
+          <TugPushButton emphasis="outlined" role="accent" focusGroup="gallery-button-focus" focusOrder={2} onClick={() => {}}>Accent</TugPushButton>
+          <TugPushButton emphasis="outlined" role="data" focusGroup="gallery-button-focus" focusOrder={3} onClick={() => {}}>Data</TugPushButton>
+          <TugPushButton emphasis="outlined" role="agent" focusGroup="gallery-button-focus" focusOrder={4} onClick={() => {}}>Agent</TugPushButton>
+          <TugPushButton emphasis="filled" role="action" focusGroup="gallery-button-focus" focusOrder={5} onClick={() => {}}>Filled action</TugPushButton>
+          <TugPushButton emphasis="filled" role="danger" focusGroup="gallery-button-focus" focusOrder={6} onClick={() => {}}>Filled danger</TugPushButton>
+        </div>
+      </div>
+
+      <TugSeparator />
+
       {/* ---- Preview Controls ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Preview Controls</TugLabel>
