@@ -105,6 +105,8 @@ import {
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useFocusTrap } from "@/components/tugways/use-focus-trap";
+import { useInlineDialogModal } from "@/components/tugways/use-inline-dialog-scope";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -731,6 +733,123 @@ const PendingDispatchBody: React.FC<PendingDispatchBodyProps> = ({
 };
 
 // ---------------------------------------------------------------------------
+// Keyboard modal shell
+// ---------------------------------------------------------------------------
+
+interface PermissionDialogModalProps {
+  /** The scope options in render order (cursor maps index → option). */
+  allowOptions: ReadonlyArray<TugInlineDialogOption>;
+  /** Keep the scope radio in sync as the cursor moves over options. */
+  setSelectedOption: (value: string) => void;
+  /** Allow with an explicit scope value (Return on a scope option). */
+  onAllowWith: (optionValue: string) => void;
+  /** Allow with the currently selected scope (Return on Allow). */
+  onAllow: () => void;
+  /** Deny (Return on Deny, and the cancel-action: Escape / Cmd-.). */
+  onDeny: () => void;
+  /** The composed `TugInlineDialog` (built by the parent with full types). */
+  children: React.ReactNode;
+}
+
+/**
+ * The modal-for-keys shell ([P06]). Wraps the dialog in a focusable scope root,
+ * registers its choices — `[scope options…, Deny, Allow]` — as one
+ * item-container so arrows move the highlight and Return activates it (option →
+ * allow-with-scope, Deny → deny, Allow → allow), and declares Deny as the
+ * cancel-action (Escape / Cmd-.). Rendered inside the parent's `FocusModeScope`
+ * so its focusable joins the pushed mode.
+ */
+const PermissionDialogModal: React.FC<PermissionDialogModalProps> = ({
+  allowOptions,
+  setSelectedOption,
+  onAllowWith,
+  onAllow,
+  onDeny,
+  children,
+}) => {
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  // Read live so the cursor callbacks never need to re-register on a changed
+  // options list.
+  const allowOptionsRef = React.useRef(allowOptions);
+  allowOptionsRef.current = allowOptions;
+  // Number of action buttons (Deny + Allow), captured at collect time so the
+  // cursor mapping is robust if the action set ever changes.
+  const actionCountRef = React.useRef(0);
+
+  // Cursor order follows the visual layout, top to bottom: the header action
+  // buttons ([Deny, Allow]) first, then the scope option rows below. So from
+  // the default highlight (Allow) a Down/→ press reaches the options.
+  const collectItems = React.useCallback(() => {
+    const root = rootRef.current;
+    if (root === null) return [];
+    const actions = Array.from(
+      root.querySelectorAll(
+        '.tug-inline-dialog-actions [data-slot="tug-push-button"]',
+      ),
+    );
+    const options = Array.from(
+      root.querySelectorAll(
+        '.tug-inline-dialog-options [data-slot="tug-dialog-button"]',
+      ),
+    );
+    actionCountRef.current = actions.length;
+    return [...actions, ...options];
+  }, []);
+
+  const { attachRoot, onKeyDown, syncItems } = useInlineDialogModal({
+    collectItems,
+    // Default highlight on Allow — the last action button.
+    initialIndex: () => Math.max(0, actionCountRef.current - 1),
+    onActivate: (_el, index) => {
+      const ac = actionCountRef.current;
+      if (index < ac) {
+        // Last action is the default (Allow); the first is Deny.
+        if (index === ac - 1) onAllow();
+        else onDeny();
+        return;
+      }
+      const opt = allowOptionsRef.current[index - ac];
+      if (opt) onAllowWith(opt.value);
+    },
+    onMove: (_el, index) => {
+      // The scope radio follows the cursor while it is over the option rows.
+      const ac = actionCountRef.current;
+      if (index >= ac) {
+        const opt = allowOptionsRef.current[index - ac];
+        if (opt) setSelectedOption(opt.value);
+      }
+    },
+    // Escape / Cmd-. cancel-action for a permission dialog is Deny.
+    onCancel: onDeny,
+  });
+
+  const setRoot = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      attachRoot(el);
+    },
+    [attachRoot],
+  );
+
+  // Re-sync the cursor's range when the rendered options change.
+  React.useLayoutEffect(() => {
+    syncItems();
+  }, [syncItems, allowOptions.length]);
+
+  return (
+    <div
+      ref={setRoot}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      data-slot="dev-permission-dialog-scope"
+      className="dev-permission-dialog-scope"
+    >
+      {children}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -846,41 +965,49 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // body, the post-flip render would hit the early return before
   // reaching the hook and React would crash with "Rendered fewer
   // hooks than expected."
+  // Allow with an explicit scope value — the keyboard path (Return on a
+  // scope option) commits directly with that option rather than reading
+  // the lagging `selectedOption` state.
+  const respondAllowWithOption = React.useCallback(
+    (optionValue: string) => {
+      // The implicit "Allow once" maps to allow-without-scope (no rule
+      // written). Any other selection round-trips the chosen suggestion's
+      // structured `update` back as `updatedPermissions`, so the CLI
+      // records a durable rule at its destination. A selected scope whose
+      // suggestion carried no structured `update` degrades to a one-shot
+      // allow rather than sending a malformed rule.
+      if (optionValue === ALLOW_ONCE_OPTION_VALUE) {
+        respond("allow");
+        return;
+      }
+      const chosen = suggestions.find(
+        (s) =>
+          s.behavior === "allow" &&
+          permissionScopeOptionValue(s.label) === optionValue,
+      );
+      respond(
+        "allow",
+        chosen?.update !== undefined ? [chosen.update] : undefined,
+      );
+    },
+    [respond, suggestions],
+  );
+
   const handleAllow = React.useCallback(() => {
-    // The implicit "Allow once" maps to allow-without-scope (no rule
-    // written). Any other selection round-trips the chosen suggestion's
-    // structured `update` back as `updatedPermissions`, so the CLI
-    // records a durable rule at its destination. A selected scope whose
-    // suggestion carried no structured `update` degrades to a one-shot
-    // allow rather than sending a malformed rule.
-    if (selectedOption === ALLOW_ONCE_OPTION_VALUE) {
-      respond("allow");
-      return;
-    }
-    const chosen = suggestions.find(
-      (s) =>
-        s.behavior === "allow" &&
-        permissionScopeOptionValue(s.label) === selectedOption,
-    );
-    respond(
-      "allow",
-      chosen?.update !== undefined ? [chosen.update] : undefined,
-    );
-  }, [respond, selectedOption, suggestions]);
+    respondAllowWithOption(selectedOption);
+  }, [respondAllowWithOption, selectedOption]);
 
   const handleDeny = React.useCallback(() => {
     respond("deny");
   }, [respond]);
 
-  // Focus the `Allow` button on mount so a Return key answers the
-  // prompt without an explicit click. Declared above the `!isPending`
-  // early return so the hook order matches across renders. Mount-once:
-  // a new pending request remounts the component (keyed upstream by
-  // `request_id`), which is the signal to refocus.
-  const allowRef = React.useRef<HTMLButtonElement | null>(null);
-  React.useLayoutEffect(() => {
-    if (isPending) allowRef.current?.focus();
-  }, [isPending]);
+  // Inline dialogs are modal for keys ([P06]): push a focus mode while
+  // pending so the dialog owns the keyboard (the inner `PermissionDialogModal`
+  // becomes the key view + first responder) and the opener's key view is
+  // restored on dismiss. The prompt entry deactivates off the session's
+  // pending state (see `DevCardBody`). Declared above the `!isPending` early
+  // return so hook order is stable across renders.
+  const { FocusModeScope } = useFocusTrap({ active: isPending });
 
   // The dialog has no post-decision chrome — see the module docstring
   // and `#step-3-5`. Once the user clicks (or the request resolves
@@ -905,49 +1032,58 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // still a *positive decision* (`respondApproval({decision: "deny"})`),
   // not a walk-away — see the docstring carve-out.
   return (
-    <TugInlineDialog
-      icon={<ShieldAlert />}
-      iconRole="caution"
-      title="Permission requested"
-      description={
-        <PermissionDescription
-          toolName={toolName}
-          input={request.input}
-          decisionReason={decisionReason}
-        />
-      }
-      actions={
-        <>
-          <TugPushButton
-            emphasis="outlined"
-            role="danger"
-            size="xs"
-            onClick={handleDeny}
-          >
-            Deny
-          </TugPushButton>
-          <TugPushButton
-            ref={allowRef}
-            emphasis="filled"
-            role="action"
-            size="xs"
-            onClick={handleAllow}
-          >
-            Allow
-          </TugPushButton>
-        </>
-      }
-      options={allowOptions}
-      selectedOption={selectedOption}
-      onSelectOption={setSelectedOption}
-      optionsAriaLabel="Permission scope"
-      className={className}
-    >
-      <PendingBody
-        toolName={toolName}
-        input={request.input}
-        requestId={requestId}
-      />
-    </TugInlineDialog>
+    <FocusModeScope>
+      <PermissionDialogModal
+        allowOptions={allowOptions}
+        setSelectedOption={setSelectedOption}
+        onAllowWith={respondAllowWithOption}
+        onAllow={handleAllow}
+        onDeny={handleDeny}
+      >
+        <TugInlineDialog
+          icon={<ShieldAlert />}
+          iconRole="caution"
+          title="Permission requested"
+          description={
+            <PermissionDescription
+              toolName={toolName}
+              input={request.input}
+              decisionReason={decisionReason}
+            />
+          }
+          actions={
+            <>
+              <TugPushButton
+                emphasis="outlined"
+                role="danger"
+                size="xs"
+                onClick={handleDeny}
+              >
+                Deny
+              </TugPushButton>
+              <TugPushButton
+                emphasis="outlined"
+                role="action"
+                size="xs"
+                onClick={handleAllow}
+              >
+                Allow
+              </TugPushButton>
+            </>
+          }
+          options={allowOptions}
+          selectedOption={selectedOption}
+          onSelectOption={setSelectedOption}
+          optionsAriaLabel="Permission scope"
+          className={className}
+        >
+          <PendingBody
+            toolName={toolName}
+            input={request.input}
+            requestId={requestId}
+          />
+        </TugInlineDialog>
+      </PermissionDialogModal>
+    </FocusModeScope>
   );
 };

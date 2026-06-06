@@ -599,6 +599,17 @@ export interface TugPromptEntryProps {
    * supplies route-specific copy; the gallery prompt-entry omits it.
    */
   placeholderByRoute?: Readonly<Record<string, string>>;
+  /**
+   * Genuinely deactivate the entry's editor — the editor goes read-only
+   * (`EditorState.readOnly`) and is blurred so the caret stops blinking.
+   * Used while an inline Permission/Question dialog is visible: the
+   * dialog is modal for keys ([P06]), so the prompt must visibly stand
+   * down rather than appear to still accept input. This is *real*
+   * deactivation driven off the host's pending-dialog state, not a
+   * cosmetic caret hack ([L06] appearance follows real state). The entry
+   * reactivates (and the host re-focuses it) when the flag clears.
+   */
+  deactivated?: boolean;
 }
 
 /**
@@ -663,6 +674,7 @@ export const TugPromptEntry = React.forwardRef<
     returnAction: returnActionOverride,
     numpadEnterAction,
     placeholderByRoute,
+    deactivated = false,
   } = props;
 
   // [L02] external store state enters React through useSyncExternalStore only.
@@ -678,6 +690,16 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     snapRef.current = snap;
   }, [snap]);
+
+  // Deactivation: when a modal inline dialog takes over the keyboard
+  // ([P06]), the editor goes read-only (`disabled` above) *and* blurs so
+  // the caret stops blinking — the prompt visibly stands down. The host
+  // re-focuses the entry when `deactivated` clears (its single focus
+  // destination), so no re-focus is needed here. [L06] real state, not a
+  // caret paint-over.
+  useLayoutEffect(() => {
+    if (deactivated) textEditorRef.current?.blur();
+  }, [deactivated]);
 
   // Inline-attachment wiring. The per-card bytes-store and the
   // attachment-error publisher come from `codeSessionStore`; both are
@@ -1657,6 +1679,7 @@ export const TugPromptEntry = React.forwardRef<
               ref={textEditorRef}
               borderless
               maximized
+              disabled={deactivated}
               placeholder={placeholderByRoute?.[route] ?? ""}
               completionProviders={completionProviders}
               dropHandler={dropHandler}

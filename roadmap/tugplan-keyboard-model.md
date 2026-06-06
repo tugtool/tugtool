@@ -30,7 +30,7 @@ The focus engine exists and works: an app-owned `FocusManager` co-located with t
 - Tab moves only between *components* (never row-by-row / tab-by-tab); a deferred group/list/accordion is exactly one Tab stop.
 - The focus ring is on the component and never moves onto a sub-item; the current item wears the hover look; the immediate container wears `data-key-within`.
 - Space selects, Enter acts/descends, Escape ascends/cancels — verified on a nested case (accordion → descend → operate inner component → Escape ascends).
-- A text editor captures typing/caret while Tab and Escape still leave it at rest (no trap); the prompt + a pending inline dialog split keys per [P04].
+- A text editor captures typing/caret while Tab and Escape still leave it at rest (no trap). While an inline dialog is visible the prompt **deactivates** and the dialog is modal for keys (arrows move its selection, Return activates, Escape cancels) per [P06].
 - `bunx tsc --noEmit` clean; `bun test` green; no new lint findings.
 
 #### Scope {#scope}
@@ -65,7 +65,7 @@ All built in the predecessor plan and assumed present (the "Givens"):
 
 #### Assumptions {#assumptions}
 
-- The engine's key view is **logical/projected** (not DOM-focus-bound) — required for the inline-dialog split ([P04]); already true.
+- The engine's key view is **logical/projected** (not DOM-focus-bound) — required for the inline-dialog modal scope ([P06]: the dialog is the key view while the deactivated prompt holds no DOM focus); already true.
 - The scope stack already models trapped vs non-trapped — descend/ascend just drives it; confirmed against `pushFocusMode`/`popFocusMode`.
 - The prompt-entry Enter-vs-Shift+Enter submit preference is readable as a shared setting to apply library-wide to multi-line editors ([P04]).
 
@@ -134,11 +134,23 @@ Rules: *Live* components (slider, tab bar) commit as you move; *deferred* compon
 | `Tab`/`⇧Tab` | — | **yes → leave**, unless a completion is open → Tab accepts (transient) |
 | `Escape` | — | **yes → ascend/blur**, unless a completion is open → close it first; next Escape ascends |
 
-**[P04] coexistence ([predecessor P13]):** while the prompt holds the caret and an inline dialog is the logical key view — typing + Space → prompt; plain arrows → prompt caret; **Enter → the dialog's default-action**; **Escape → cancel the dialog**; the dialog's **`1`–`9` / `←`·`→` accelerators** pick options (distinct keys, so plain arrows stay caret).
+**[P04] inline-dialog interplay — superseded by [P06].** An earlier conception had the prompt keep the caret while a pending dialog borrowed only commit keys + *distinct accelerators* (`1`–`9` / `←`·`→`), with plain arrows staying caret. That accelerator-overlay split is **dropped** — it is wrong for a graphical surface. The settled model is [P06]: while an inline dialog is visible the prompt is **deactivated** and the dialog is **modal for keys** (plain arrows move its selection, Return activates, Escape cancels). There is no key-split to manage in the editor.
 
 #### [P05] Inherited substrate decisions (DECIDED elsewhere) {#p05-inherited}
 
-The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop scopes, app-intercepted Tab), [P07]–[P11] (default-action, modes, interactive-only a11y, `refuse` split, keybinding registry), and [P13] (inline dialogs as non-trapped scopes) **stand** and are dependencies of this plan, not re-decided here. The predecessor [P05]/[P06]/[P12] are superseded/extended/refined by [P01]–[P03] above.
+The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop scopes, app-intercepted Tab), [P07]–[P11] (default-action, modes, interactive-only a11y, `refuse` split, keybinding registry), and [P13] (inline dialogs as scopes) **stand** and are dependencies of this plan, not re-decided here. The predecessor [P05]/[P06]/[P12] are superseded/extended/refined by [P01]–[P03] above. The predecessor's CFRunLoop scope notion — `pushFocusMode`/`popFocusMode` ([predecessor P03]) carrying a scope-declared `DEFAULT_ACTION`/`CANCEL_ACTION` ([predecessor P12]) — is the substrate [P06] builds the inline dialogs on.
+
+#### [P06] Inline dialogs are modal-for-keys scopes; the prompt deactivates (DECIDED; GOVERNING for #step-14; corrects the [P04] interplay) {#p06-inline-dialog-modal}
+
+**Decision.** A pending inline Permission/Question dialog pushes a CFRunLoop-style event-handling scope ([predecessor P03] modes + [predecessor P12] scope `DEFAULT_ACTION`/`CANCEL_ACTION` + [predecessor P13] inline-dialog scope) and is **modal for keys** until dismissed:
+
+- The **prompt entry genuinely deactivates** while a dialog is visible — the editor is made non-editable / blurred, with **no blinking caret**. This is *real* deactivation driven off the pending-dialog state (`pendingApproval`/`pendingQuestion`), **never a cosmetic caret hack** ([L06] appearance follows real state, not a paint-over).
+- The dialog **takes the key view as an item-container** (its choices are the items): **plain arrows move the selection**, **Return activates the highlight** (Allow / Deny / Next / Submit), **Escape cancels** (`session.n()`). This is the existing move/act machinery from [#step-1]/[#step-2] — **no number keys, no accelerator overlay**.
+- On resolve the scope **pops** and the prompt **reactivates** and resumes input.
+
+Per-dialog item sets: **Permission** = the allow-scope options plus Deny/Allow (default highlight = Allow); **Question** = the current question's options plus Back/Next/Submit. DOM focus leaves the deactivated prompt; the document-capture act-dispatch routes nav/commit keys to the dialog's key view, and the dialog's scope declares the default/cancel actions that wrap the existing `respondApproval`/`respondQuestion`/`n` paths.
+
+**Rationale.** A proper graphical modal: the keyboard drives the *visible* dialog and the suspended prompt *visibly* deactivates — recovering the predecessor's CFRunLoop scope notion that was never built, and **dropping the accelerator-overlay scheme** ([P04]'s `1`–`9` / `←`·`→` with plain arrows staying caret) as wrong for a GUI. Modal-for-keys also removes the editor key-split entirely: there is nothing to "fall through" because the prompt is off.
 
 ### Specification {#specification}
 
@@ -164,7 +176,7 @@ The predecessor plan's [P01]–[P04] (FocusManager, authored order, CFRunLoop sc
 | TugPopover | component *(scope)* | — *(Tab cycles inner)* | inner act; Enter = scope default; Escape ascends/closes | per inner |
 | TugSheet | component *(trapped scope)* | — *(Tab contained)* | inner act; Enter = default; Escape cancels | per inner |
 | TugAlert | component *(trapped scope)* | — *(Tab contained)* | inner act; Enter = default; Escape cancels | per inner |
-| TugPermissionDialog · TugQuestionDialog | component *(non-trapped scope; logical key view ≠ DOM focus)* | accelerators pick the option while prompt keeps caret | Enter = confirm/Next; Escape = cancel (`popInteractive`) | deferred |
+| TugPermissionDialog · TugQuestionDialog | item *(modal-for-keys scope; prompt deactivates while visible, [P06])* | arrows move the selection over the dialog's items (options + Deny/Allow · Back/Next/Submit); Home/End | Enter activates the highlight (Allow/Deny/Next/Submit); Escape = cancel (`n`) | deferred |
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -215,7 +227,7 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 | **C1** | [#step-8]–[#step-9] | non-trapped floating | Tooltip is trivial (confirm it never takes the key view); Popover is the **first** Radix→engine component-scope migration — establishes the pattern the later sub-runs reuse. |
 | **C2** | [#step-10]–[#step-11] | trapped menu scope | **Resolved as no-op:** the menus are already keyboard-complete (Radix native for context + popup; the editor menu owns its own keys as a refuse-focus overlay). A trial engine scope added only cosmetics and broke the editor's text selection, so it was abandoned — see [#step-10]/[#step-11]. |
 | **C3** | [#step-12]–[#step-13] | modal trapped scope | **Resolved additive / no-op:** both surfaces keep Radix for DOM-focus plumbing. TugSheet already runs the engine trap (logical key view / ring / Tab walk) *alongside* Radix's auto-focus + restore — that split is the intended resting state, not a way station ([#step-12]). TugAlert is app-modal *through* Radix (overlay block, document-global trap, Enter-to-confirm, restore) and gains nothing from an engine scope — audited no-op like [#step-10]/[#step-11] ([#step-13]). The full Radix→engine removal would relocate initial-DOM-focus + restore-on-close into the engine for zero UX gain and real regression risk on the text-focus paths; deferred, not adopted. |
-| **C4** | [#step-14] | inline-dialog [P04] split | The prompt/dialog key-split (logical key view ≠ DOM focus); rests on [#step-3] (done). Stands alone. |
+| **C4** | [#step-14] | inline-dialog modal scope ([P06]) | A pending dialog pushes a CFRunLoop-style modal-for-keys scope and the prompt deactivates; arrows move the dialog selection, Return activates, Escape cancels (no accelerator overlay). Rests on [#step-3] (done) + the predecessor's scope substrate. Stands alone. |
 
 #### Step Status Ledger {#step-status-ledger}
 
@@ -234,7 +246,7 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 | #step-11 | Tame internal/tug-popup-menu | done (no change) | — |
 | #step-12 | Tame TugSheet — modal scope + restore | done (additive) | — |
 | #step-13 | Tame TugAlert — modal scope | done (no change) | — |
-| #step-14 | Inline dialogs (Permission/Question) — logical key view + prompt split ([P04]) | pending | — |
+| #step-14 | Inline dialogs (Permission/Question) — modal-for-keys scope ([P06]) | in progress (Permission done; Question + button-focus generalization deferred) | — |
 | #step-15 | Audit: `refuse` / first-responder reclassification against [P01] | pending | — |
 | #step-16 | Accessibility-mode ARIA pass + dual-mode toggle | pending | — |
 | #step-17 | Integration checkpoint | pending | — |
@@ -455,17 +467,24 @@ Batches are **run** boundaries, not commit boundaries — each step still commit
 
 #### Step 14: Inline dialogs (Permission/Question) {#step-14}
 
-**Commit:** `focus(dialog): inline dialogs — logical key view + prompt split`
+**Commit:** `focus(dialog): inline dialogs — modal-for-keys scope, prompt deactivates`
 
-**References:** [P04], [P02], #step-3
+**References:** [P06], [P02], #step-3, [predecessor P03]/[P12]/[P13] (CFRunLoop scope + scope default/cancel-action + inline-dialog scope)
 
 **Depends on:** #step-3
 
-**Tasks:** Pending Permission/Question dialogs push a **non-trapped** scope that becomes the **logical key view** while the prompt keeps the caret. **This step owns the dialog side of the [P04] coexistence split** (the editor's fall-through contract landed in [#step-3]): declare `default-action` / `cancel-action` on the scope, register the `1`–`9`/`←`·`→` option accelerators, and wire the routing so that — with the dialog pending and the prompt focused — typing/caret → prompt, Enter/Escape → dialog, accelerators pick options.
+**STATUS — in progress (PermissionDialog landed; QuestionDialog + a button-focus generalization deferred).** What landed and verified hands-on: the prompt entry genuinely deactivates while a dialog is pending (read-only + blurred, no caret), and **PermissionDialog** is a working modal-for-keys scope — arrows move the cursor over `[Deny, Allow, scope options…]`, Return activates the highlight (Allow / Deny / allow-with-scope), Escape/Cmd-. = Deny (cancel-action), and the prompt re-focuses on resolve. The visual language settled on something better than the orange ring: the keyboard cursor **promotes** the focused action button to its **filled, role-coloured** style + a role-coloured outline and **demotes** the others to outlined (the default-button emphasis follows the cursor); scope options recolour their **own border** to the focus colour. Deferred to follow-ons: (1) **QuestionDialog** (same scope, Back/Next/Submit + per-question options; deactivation extends to `pendingQuestion` when it lands); (2) **generalize the keyboard-focus visual into TugPushButton** as a first-class "keyboard-promoted" state (currently dialog-scoped CSS in `dev-permission-dialog.css` reacting to `[data-key-cursor]`) — and, more broadly, **reconsider the engine's focus-indicator language** (double-border + filled-promotion vs. the orange `[data-key-view-kbd]`/`[data-key-cursor]` rings) across the component library. That redesign gets its own scoping pass; this step's PermissionDialog work is joined to `main` as a checkpoint.
 
-**Tests:** app-test: with a dialog pending and the prompt focused — typing stays in the prompt, Enter answers/advances, Escape cancels, accelerators pick options; key view never leaves the prompt's caret.
+**Tasks:** Realize [P06] — a pending Permission/Question dialog is a CFRunLoop-style **modal-for-keys** scope:
+- **Push a scope** while the dialog is pending and **pop it** on resolve (`useLayoutEffect`, in lockstep with the session's pending state). Register the dialog's choices as an **item-container key view**, seeding the cursor on the default highlight (Allow / first option) so arrows move the selection, Return activates the highlight, Escape cancels.
+- Declare the scope's **default-action** (Return → activate the highlighted choice: Allow / Deny / Next / Submit) and **cancel-action** (Escape → `session.n()`) — wrapping the existing `respondApproval` / `respondQuestion` / `n` paths, not reinventing them. **No number keys / accelerator overlay.**
+- **Genuinely deactivate the prompt entry** while a dialog is visible — make the editor non-editable / blurred with **no blinking caret**, driven off `pendingApproval`/`pendingQuestion` ([L06] — real deactivation, not a caret paint-over). Reactivate on resolve.
+- **Remove the Allow focus-steal** (`allowRef.focus()` in `dev-permission-dialog`) — the engine scope owns the keys; DOM focus does not need to sit on a button.
+- Per dialog: Permission's items = allow-scope options + Deny/Allow; Question's items = the current question's options + Back/Next/Submit.
 
-**Checkpoint:** `just app-test` inline-dialog scenario `VERDICT: PASS`.
+**Tests:** app-test: with a dialog visible — the prompt is deactivated (no caret, not editable); **arrows move the dialog selection, Return activates the highlight, Escape cancels**; on dismiss the prompt reactivates and resumes typing. Permission: arrow to Deny + Return denies; Return on Allow allows. (Verified hands-on on a live `just app-debug` build — the modal/scope behavior is not a synthetic-key probe target.)
+
+**Checkpoint:** `just app-test` inline-dialog scenario `VERDICT: PASS`; hands-on confirmation on the live build that the prompt deactivates and the dialog is keyboard-modal.
 
 #### Step 15: Audit — `refuse` / first-responder reclassification {#step-15}
 

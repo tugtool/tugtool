@@ -374,6 +374,15 @@ export interface TugTextEditorDelegate {
    */
   focus(): void;
   /**
+   * Remove keyboard focus from the editor so the caret stops rendering.
+   * Used when a modal surface deactivates the editor (e.g. an inline
+   * Permission/Question dialog takes over the keyboard): pairing a
+   * `disabled` (read-only) editor with a blur removes both the input
+   * path and the blinking caret. No-op when the editor is not mounted
+   * or does not currently hold focus.
+   */
+  blur(): void;
+  /**
    * Snapshot the editor's text + atoms + selection + scrollTop into
    * a `TugTextEditingState`. Used by save callbacks (state
    * preservation) and history-nav consumers that want the same
@@ -1372,6 +1381,11 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         const view = viewRef.current;
         if (view === null) return;
         view.focus();
+      },
+      blur() {
+        const view = viewRef.current;
+        if (view === null) return;
+        if (view.hasFocus) view.contentDOM.blur();
       },
       captureState(): TugTextEditingState {
         const view = viewRef.current;

@@ -2198,6 +2198,25 @@ export function DevCardBody({
     codeSessionStore.getSnapshot,
   );
 
+  // An inline dialog is modal for keys ([P06]): while one is pending the prompt
+  // entry deactivates (read-only + blurred, no caret) so the dialog owns the
+  // keyboard and the prompt visibly stands down. Derived from real store state
+  // ([L06]); reactivates when the dialog resolves. Scoped to permission dialogs
+  // for now — the question dialog's modal keyboard scope lands next, and its
+  // deactivation switches on with it.
+  const inlineDialogPending = Boolean(codeSnap.pendingApproval);
+
+  // When the dialog resolves, return focus to the prompt — the card's single
+  // focus destination, which reactivates the instant `deactivated` clears.
+  // Without this the caret would not come back until the user clicked.
+  const prevInlineDialogPendingRef = useRef(false);
+  useLayoutEffect(() => {
+    if (prevInlineDialogPendingRef.current && !inlineDialogPending) {
+      entryDelegateRef.current?.focus();
+    }
+    prevInlineDialogPendingRef.current = inlineDialogPending;
+  }, [inlineDialogPending]);
+
   // `/rewind` ([#step-7-3]): when a conversation/both rewind is applied, rewind
   // the prompt history alongside the transcript so Cmd-Up/Down stops recalling
   // the rewound-away prompts. The history is keyed by the stable `tugSessionId`
@@ -3475,6 +3494,7 @@ export function DevCardBody({
               <TugPromptEntry
                 ref={entryDelegateRef}
                 id={`${cardId}-entry`}
+                deactivated={inlineDialogPending}
                 localCommandTargetId={`${cardId}-card-content`}
                 codeSessionStore={codeSessionStore}
                 sessionMetadataStore={sessionMetadataStore}
