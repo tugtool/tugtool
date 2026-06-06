@@ -38,10 +38,13 @@
   --fl-ring-offset: 2px;
   --fl-radius: 6px;
 
-  /* The single shared "tint" affordance — a soft action-blue fill that marks a
-     row/segment as hovered, cursored, or active/selected-in-a-list. ONE colour
-     across §1/§5/§6/§7 (was: action-blue in §5, gray in §6, accent-orange in §7). */
+  /* Soft action-blue tint used for mouse-hover on leaf controls (§1 etc.). */
   --fl-hover: var(--tug7-surface-tone-primary-normal-active-rest);
+
+  /* The behind-the-component focus tint (§5–§9). Deliberately FAINT — the ring
+     and the selection fill carry the weight; this only whispers "this group has
+     the keyboard". Roughly a third of --fl-hover's strength. */
+  --fl-focus-bg: color-mix(in srgb, var(--fl-hover) 65%, transparent);
 
   /* The committed-selection axis for toggle-family controls (checkbox, switch,
      radio, option) — the BLUE "on" axis the real components use, NOT accent
@@ -362,58 +365,73 @@
 }
 
 /* ============================================================
-   5 — DEFERRED ITEM-GROUP  (RING branch — the cursor≠selected collision)
+   ITEM-GROUPS (§5–§9) — ONE MODEL
+     • component has keyboard focus → a soft action-blue tint BEHIND the whole
+       component (the "this group is focused" mark);
+     • roving cursor → a RING around the current item — an outline sitting just
+       OUTSIDE the item, so it stays visible even atop a selection fill, which is
+       what lets multi-select work with no added checkmark;
+     • commit → the component's NATIVE selection fill (exclusive: one; multiple:
+       many). Selection visuals are per-component (dot / pill / fill); only the
+       focus-ring + cursor + behind-tint are shared.
    ============================================================ */
 
+/* focused component → behind-tint (one rule for every group container) */
+.cg-focus-language .fl-group[data-fl-focus="true"],
+.cg-focus-language .fl-tabs[data-fl-focus="true"],
+.cg-focus-language .fl-optset[data-fl-focus="true"],
+.cg-focus-language .fl-list[data-fl-focus="true"],
+.cg-focus-language .fl-qa[data-fl-focus="true"] {
+  background: var(--fl-focus-bg);
+}
+
+/* roving cursor → a ring around the current item, identical everywhere */
+.cg-focus-language .fl-item[data-fl-cursor="true"],
+.cg-focus-language .fl-tab[data-fl-cursor="true"],
+.cg-focus-language .fl-opt[data-fl-cursor="true"],
+.cg-focus-language .fl-list-row[data-fl-cursor="true"],
+.cg-focus-language .fl-qa-row[data-fl-cursor="true"] {
+  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline-offset: 2px;
+}
+
+/* the native blue radio dot — reused by radio rows AND exclusive Q&A rows */
+.cg-focus-language .fl-dot {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
+}
+.cg-focus-language [data-fl-selected="true"] > .fl-dot,
+.cg-focus-language .fl-dot[data-fl-selected="true"] {
+  border-color: var(--fl-on);
+  background: radial-gradient(circle, var(--fl-thumb-on) 0 28%, var(--fl-on) 30%);
+}
+
+/* ---- 5 · RadioGroup (exclusive · native = a dot) ---- */
 .cg-focus-language .fl-group {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 4px;
-  border-radius: 8px;
-  min-width: 150px;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  min-width: 175px;
 }
 .cg-focus-language .fl-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   padding: 6px 10px;
   border-radius: var(--fl-radius);
-  border: 1.5px solid transparent;
-}
-.cg-focus-language .fl-item .fl-dot {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
-  flex: none;
-}
-.cg-focus-language .fl-item[data-fl-hover="true"] {
-  background: var(--fl-hover);
-}
-/* committed selection → the BLUE radio dot fills (the selection axis these
-   groups actually use). There is NO selected-row background: real radio/choice/
-   option groups tint the row only on hover/cursor, never on selection. */
-.cg-focus-language .fl-item[data-fl-selected="true"] .fl-dot {
-  border-color: var(--fl-on);
-  background: radial-gradient(circle, var(--fl-thumb-on) 0 28%, var(--fl-on) 30%);
-}
-/* keyboard cursor → the shared action-blue tint (reuses hover). Single-select,
-   so the cursor and the small selected dot stay distinct without a ring. */
-.cg-focus-language .fl-item[data-fl-cursor="true"] {
-  background: var(--fl-hover);
 }
 
-/* ============================================================
-   6 — EXCLUSIVE SEGMENTED  (ChoiceGroup / TabBar) — solid-blue selection,
-       cursor = tint, roaming SEPARATELY from the selection
-   ============================================================ */
-
+/* ---- 6 · ChoiceGroup / TabBar (exclusive · native = a solid pill) ---- */
 .cg-focus-language .fl-tabs {
   display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 9px;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 10px;
   background: color-mix(
     in srgb,
     var(--tug7-element-field-border-normal-plain-rest) 30%,
@@ -426,93 +444,77 @@
   font-size: 0.78rem;
   font-weight: 500;
 }
-/* Segmented/tab active = SOLID blue filled segment (matches the real
-   TugChoiceGroup indicator pill), not the soft tint. The soft tint stays for
-   hover/cursor on unselected segments. */
 .cg-focus-language .fl-tab[data-fl-selected="true"] {
   background: var(--fl-on);
   color: var(--fl-thumb-on);
   font-weight: 600;
 }
-/* cursor reuses the hover tint and roams independently of the solid-blue
-   selection (different segments while navigating). On the committed segment the
-   cursor coincides with the selection, so the solid fill simply wins. */
-.cg-focus-language .fl-tab[data-fl-cursor="true"]:not([data-fl-selected="true"]) {
-  background: var(--fl-hover);
-}
 
-/* ============================================================
-   7 — MULTI-SELECT OPTION GROUP  (many checked; cursor = RING so it stays
-       visible atop an already-checked, solid-blue item)
-   ============================================================ */
-
+/* ---- 7 · OptionGroup (multiple · native = a solid fill) ---- */
 .cg-focus-language .fl-optset {
   display: inline-flex;
-  gap: 8px;
+  gap: 9px;
+  padding: 6px;
+  border-radius: 10px;
 }
 .cg-focus-language .fl-opt {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   padding: 6px 14px;
   border-radius: 8px;
   border: 1.5px solid var(--tug7-element-field-border-normal-plain-rest);
   font-size: 0.8rem;
-}
-.cg-focus-language .fl-opt .fl-opt-check {
-  width: 12px;
-  text-align: center;
-  opacity: 0;
 }
 .cg-focus-language .fl-opt[data-fl-selected="true"] {
   background: var(--fl-on);
   border-color: var(--fl-on);
   color: var(--fl-thumb-on);
 }
-.cg-focus-language .fl-opt[data-fl-selected="true"] .fl-opt-check {
-  opacity: 1;
-}
-/* cursor = a RING (not the tint) so it reads even on a checked solid-blue item */
-.cg-focus-language .fl-opt[data-fl-cursor="true"] {
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
-  outline-offset: var(--fl-ring-offset);
-}
 
-/* ============================================================
-   8 — DESCENDABLE ROWS  (RING branch + descend/within mark)
-   ============================================================ */
-
+/* ---- 8 · Descendable rows (list / accordion · native = a row fill; multi) ---- */
 .cg-focus-language .fl-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 8px;
-  min-width: 180px;
-  border: 1.5px solid transparent;
-}
-/* container becomes "contains active" when descended */
-.cg-focus-language .fl-list[data-fl-within="true"] {
-  outline: var(--fl-ring-w) solid var(--fl-within);
-  outline-offset: var(--fl-ring-offset);
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  min-width: 195px;
 }
 .cg-focus-language .fl-list-row {
   padding: 6px 10px;
   border-radius: var(--fl-radius);
-  border: 1.5px solid transparent;
   font-size: 0.82rem;
 }
 .cg-focus-language .fl-list-row[data-fl-selected="true"] {
-  background: var(--fl-hover);
+  background: var(--fl-on);
+  color: var(--fl-thumb-on);
 }
-.cg-focus-language .fl-list-row[data-fl-cursor="true"] {
-  border-color: var(--fl-kbd);
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
-  outline-offset: -1px;
+/* descended INTO the list → the container wears a quiet "contains active" mark */
+.cg-focus-language .fl-list[data-fl-within="true"] {
+  outline: var(--fl-ring-w) solid var(--fl-within);
+  outline-offset: var(--fl-ring-offset);
+}
+
+/* ---- 9 · QuestionDialog answers (exclusive = radio rows · multi = checkbox rows) ---- */
+.cg-focus-language .fl-qa {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  min-width: 235px;
+}
+.cg-focus-language .fl-qa-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--fl-radius);
+  font-size: 0.83rem;
 }
 
 /* ============================================================
-   9 — COMPONENT BOX-SCOPE  (RING branch — popover / sheet / alert box)
+   10 — COMPONENT BOX-SCOPE  (RING branch — popover / sheet / alert box)
    ============================================================ */
 
 .cg-focus-language .fl-box {
@@ -533,7 +535,7 @@
 }
 
 /* ============================================================
-   10 — INLINE LINK  (RING branch — long-tail, non-box focusable)
+   11 — INLINE LINK  (RING branch — long-tail, non-box focusable)
    ============================================================ */
 
 .cg-focus-language .fl-link {

@@ -235,68 +235,71 @@ export function GalleryFocusLanguage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ---------- 5. Single-select item-group (radio) ---------- */}
+      {/* ---------- The one model — applied per component (5–9) ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="5 · Single-select item-group — RadioGroup"
+          title="One model for item-groups (§5–§9)"
           branch="ring"
-          note="Exclusive selection shown as the blue dot (no selected-row background — these groups tint the row only on hover/cursor). The keyboard cursor reuses the hover tint and roams independently of the selected dot, so the two stay distinct: dot = committed, tint = where the keyboard is. Covers TugRadioGroup."
+          note="Every group below obeys the same rule: keyboard focus tints BEHIND the whole component; the roving cursor is a RING around the current item (it sits just outside the item, so it survives on top of a selection fill — no extra checkmark); committing sets the NATIVE selection fill. The only thing that varies is cardinality — exclusive (one) vs multiple — and each component keeps its decades-old selection convention (dot / pill / fill)."
+        />
+      </div>
+
+      {/* ---------- 5. RadioGroup (exclusive · dot) ---------- */}
+      <div className="fl-section">
+        <SectionHead
+          title="5 · RadioGroup — exclusive"
+          branch="ring"
+          note="Native selection = the blue dot, one at a time. Component focus = the behind-tint; cursor = the ring; the two are independent."
         />
         <div className="fl-grid">
-          <Cell label="rest">
-            <Group />
-          </Cell>
-          <Cell label="A selected (dot)">
+          <Cell label="rest (not focused)">
             <Group selected={0} />
           </Cell>
-          <Cell label="cursor on B (A still selected)">
-            <Group selected={0} cursor={1} />
+          <Cell label="focused — cursor on the selection (A)">
+            <Group focus selected={0} cursor={0} />
           </Cell>
-          <Cell label="cursor lands on the selection (A)">
-            <Group selected={0} cursor={0} />
+          <Cell label="focused — cursor roamed to B (A still selected)">
+            <Group focus selected={0} cursor={1} />
           </Cell>
         </div>
       </div>
 
-      {/* ---------- 6. Exclusive segmented (choice / tab) ---------- */}
+      {/* ---------- 6. ChoiceGroup / TabBar (exclusive · pill) ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="6 · Exclusive segmented — ChoiceGroup / TabBar"
+          title="6 · ChoiceGroup / TabBar — exclusive"
           branch="ring"
-          note="One selection at a time, shown as a SOLID blue filled segment (the real TugChoiceGroup indicator). The keyboard cursor reuses the hover tint and roams SEPARATELY from the selection: the solid-blue pill stays put as the cursor moves, then commits on act. Watch the progression Alpha → Beta → Gamma → act. (TugTabBar is the live variant where selection simply follows the cursor as it moves.)"
+          note="Native selection = a SOLID blue segment, one at a time. Same model: behind-tint on focus, ring on the cursor segment, fill on the selected segment. (TugTabBar is folded in here as commit-on-act, dropping its old live-commit special case.)"
         />
         <div className="fl-grid">
           <Cell label="rest — Alpha selected">
             <Tabs selected={0} />
           </Cell>
-          <Cell label="cursor → Beta (Alpha still selected)">
-            <Tabs selected={0} cursor={1} />
+          <Cell label="focused — cursor on Beta (Alpha selected)">
+            <Tabs focus selected={0} cursor={1} />
           </Cell>
-          <Cell label="cursor → Gamma">
-            <Tabs selected={0} cursor={2} />
-          </Cell>
-          <Cell label="act → Gamma selected">
-            <Tabs selected={2} cursor={2} />
+          <Cell label="focused — act → Gamma selected">
+            <Tabs focus selected={2} cursor={2} />
           </Cell>
         </div>
       </div>
 
-      {/* ---------- 7. Multi-select option group ---------- */}
+      {/* ---------- 7. OptionGroup (multiple · fill) ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="7 · Multi-select item-group — OptionGroup"
+          title="7 · OptionGroup — multiple"
           branch="ring"
-          note="The case that forces the split: MANY items can be checked (solid blue) while the cursor is on exactly one. Here the cursor is a RING, not the tint — because it must stay visible even when it lands on an already-checked item, where a tint would vanish under the solid fill. That single constraint is why multi-select gets a different cursor affordance from the single-select groups above. Covers TugOptionGroup."
+          note="Native selection = a solid fill, MANY at a time. Identical model — and here the ring-cursor pays off: when it lands on an already-checked item the ring rides on top of the fill, staying visible with no added checkmark."
         />
         <div className="fl-grid">
-          <Cell label="A + C checked">
-            <OptionSet selected={[0, 2]} />
+          <Cell label="rest — B + C checked">
+            <OptionSet selected={[1, 2]} />
           </Cell>
-          <Cell label="cursor on unchecked B">
-            <OptionSet selected={[0, 2]} cursor={1} />
+          <Cell label="focused — cursor on unchecked A">
+            <OptionSet focus selected={[1, 2]} cursor={0} />
           </Cell>
-          <Cell label="cursor on a checked item (A)">
-            <OptionSet selected={[0, 2]} cursor={0} />
+          <Cell label="focused — cursor on a checked item (C)">
+            <OptionSet focus selected={[1, 2]} cursor={2} />
           </Cell>
         </div>
       </div>
@@ -304,13 +307,13 @@ export function GalleryFocusLanguage(): React.ReactElement {
       {/* ---------- 8. Descendable rows ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="8 · Descendable rows + descend mark"
+          title="8 · Descendable rows — list / accordion (multiple)"
           branch="ring"
-          note="A list DOES tint its selected row — using the shared action-blue tint (not accent-orange) — and its row cursor is a RING (lists can be multi-select, so the cursor follows the OptionGroup rule above). Plus the descend story: when keyboard descends INTO a row, the container wears a quiet 'contains active' mark (the data-key-within analogue). Covers TugListView, TugListRow, TugAccordion, transcript/body-kind blocks."
+          note="Same model on row lists: behind-tint on focus, ring on the cursor row, native row fill on selection (multi-capable). Plus the descend story: when keyboard descends INTO a row, the container wears a quiet 'contains active' mark (the data-key-within analogue). Covers TugListView, TugListRow, TugAccordion, transcript/body-kind blocks."
         />
         <div className="fl-grid">
-          <Cell label="cursor on row 2 (row 1 selected)">
-            <ListRows selected={0} cursor={1} />
+          <Cell label="focused — cursor on row 2 (row 1 selected)">
+            <ListRows focus selected={0} cursor={1} />
           </Cell>
           <Cell label="descended — container 'within' mark">
             <ListRows selected={1} within />
@@ -318,10 +321,27 @@ export function GalleryFocusLanguage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ---------- 9. Component box-scope ---------- */}
+      {/* ---------- 9. QuestionDialog answers ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="9 · Component box-scope"
+          title="9 · QuestionDialog answers — exclusive & multi"
+          branch="ring"
+          note="The dialog's answer list is the same item-group model. An exclusive question uses radio rows (one answer); a multi-select question uses checkbox rows (several). Both get the behind-tint on focus and the ring on the cursored answer; selection is the native radio dot / checkbox."
+        />
+        <div className="fl-grid">
+          <Cell label="exclusive — focused, cursor on B (A chosen)">
+            <QAnswers mode="exclusive" focus selected={[0]} cursor={1} />
+          </Cell>
+          <Cell label="multi — focused, cursor on a chosen answer (A)">
+            <QAnswers mode="multi" focus selected={[0, 2]} cursor={0} />
+          </Cell>
+        </div>
+      </div>
+
+      {/* ---------- 10. Component box-scope ---------- */}
+      <div className="fl-section">
+        <SectionHead
+          title="10 · Component box-scope"
           branch="ring"
           note="A whole container becomes the key view (popover / sheet / alert / inline-dialog box). It can't fill. Proposal: a box-shadow ring that hugs the radius with no reflow (the treatment the dialogs already use), and the quiet 'within' variant when it merely contains the active control. Covers TugPopover, TugSheet, TugAlert, the inline-dialog shell."
         />
@@ -342,10 +362,10 @@ export function GalleryFocusLanguage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ---------- 10. Inline link ---------- */}
+      {/* ---------- 11. Inline link ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="10 · Inline link (long tail)"
+          title="11 · Inline link (long tail)"
           branch="ring"
           note="The app-wide long tail focus-ring.css flags: inline, non-box focusables that can't ring cleanly or fill. Proposal: underline on hover, underline + a keyboard-coloured ring on cursor. Covers TugLink and arbitrary focusable content."
         />
@@ -448,26 +468,28 @@ function SliderField({
   );
 }
 
+/* Every item-group below takes `focus` (→ the behind-tint on the container),
+   `cursor` (→ the ring on one item), and a `selected` set (→ native fill). */
+
 const GROUP_ITEMS = ["Allow once", "Allow always", "Allow for session"];
 
 function Group({
+  focus,
   selected,
   cursor,
-  hover,
 }: {
+  focus?: boolean;
   selected?: number;
   cursor?: number;
-  hover?: number;
 }): React.ReactElement {
   return (
-    <div className="fl-group">
+    <div className="fl-group" data-fl-focus={focus ? "true" : undefined}>
       {GROUP_ITEMS.map((label, i) => (
         <div
           key={label}
           className="fl-item"
           data-fl-selected={selected === i ? "true" : undefined}
           data-fl-cursor={cursor === i ? "true" : undefined}
-          data-fl-hover={hover === i ? "true" : undefined}
         >
           <span className="fl-dot" />
           <span>{label}</span>
@@ -480,14 +502,16 @@ function Group({
 const TAB_ITEMS = ["Alpha", "Beta", "Gamma"];
 
 function Tabs({
+  focus,
   selected,
   cursor,
 }: {
+  focus?: boolean;
   selected: number;
   cursor?: number;
 }): React.ReactElement {
   return (
-    <div className="fl-tabs">
+    <div className="fl-tabs" data-fl-focus={focus ? "true" : undefined}>
       {TAB_ITEMS.map((label, i) => (
         <span
           key={label}
@@ -505,14 +529,16 @@ function Tabs({
 const OPTION_ITEMS = ["Logs", "Telemetry", "Network"];
 
 function OptionSet({
+  focus,
   selected,
   cursor,
 }: {
+  focus?: boolean;
   selected: readonly number[];
   cursor?: number;
 }): React.ReactElement {
   return (
-    <div className="fl-optset">
+    <div className="fl-optset" data-fl-focus={focus ? "true" : undefined}>
       {OPTION_ITEMS.map((label, i) => (
         <span
           key={label}
@@ -520,7 +546,6 @@ function OptionSet({
           data-fl-selected={selected.includes(i) ? "true" : undefined}
           data-fl-cursor={cursor === i ? "true" : undefined}
         >
-          <span className="fl-opt-check">✓</span>
           {label}
         </span>
       ))}
@@ -531,16 +556,22 @@ function OptionSet({
 const LIST_ITEMS = ["README.md", "package.json", "tsconfig.json"];
 
 function ListRows({
+  focus,
   selected,
   cursor,
   within,
 }: {
+  focus?: boolean;
   selected?: number;
   cursor?: number;
   within?: boolean;
 }): React.ReactElement {
   return (
-    <div className="fl-list" data-fl-within={within ? "true" : undefined}>
+    <div
+      className="fl-list"
+      data-fl-focus={focus ? "true" : undefined}
+      data-fl-within={within ? "true" : undefined}
+    >
       {LIST_ITEMS.map((label, i) => (
         <div
           key={label}
@@ -551,6 +582,49 @@ function ListRows({
           {label}
         </div>
       ))}
+    </div>
+  );
+}
+
+const QA_ITEMS = ["Rebase onto main", "Merge with a commit", "Squash and merge"];
+
+/** QuestionDialog answer list — exclusive (radio rows) or multi (checkbox rows),
+ *  under the same item-group model. */
+function QAnswers({
+  mode,
+  focus,
+  selected,
+  cursor,
+}: {
+  mode: "exclusive" | "multi";
+  focus?: boolean;
+  selected: readonly number[];
+  cursor?: number;
+}): React.ReactElement {
+  return (
+    <div className="fl-qa" data-fl-focus={focus ? "true" : undefined}>
+      {QA_ITEMS.map((label, i) => {
+        const isSelected = selected.includes(i);
+        return (
+          <div
+            key={label}
+            className="fl-qa-row"
+            data-fl-cursor={cursor === i ? "true" : undefined}
+          >
+            {mode === "exclusive" ? (
+              <span
+                className="fl-dot"
+                data-fl-selected={isSelected ? "true" : undefined}
+              />
+            ) : (
+              <span className="fl-check" data-checked={isSelected ? "true" : undefined}>
+                {isSelected ? "✓" : ""}
+              </span>
+            )}
+            <span>{label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
