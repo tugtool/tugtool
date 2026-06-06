@@ -6,32 +6,36 @@
  * both themes (brio / harmony). It replaces nothing yet — every rule here is
  * scoped under `.cg-focus-language` so it cannot leak into the app.
  *
- * The proposed language is TWO BRANCHES, keyed on a self-contained
- * `data-fl-state` attribute (NOT the engine's `data-key-*` — this is a static
- * mockup so all states show at once for comparison):
+ * The proposed language (keyed on a self-contained `data-fl-*` attribute set —
+ * NOT the engine's `data-key-*` — since this is a static mockup so all states
+ * show at once for comparison):
  *
- *   FILL branch  — pure actionable ROLE controls (buttons). Keyboard cursor
- *                  PROMOTES to the filled role style + a role-coloured double
- *                  border (fill body + offset ring). Safe because a button has
- *                  no separate "selected" fill to collide with.
- *   RING branch  — anything role-less, or carrying its own committed-selection
- *                  fill (inputs, toggles, sliders, group items, rows, boxes,
- *                  links). Keyboard cursor = a DOUBLE BORDER in the keyboard
- *                  colour (`--fl-kbd`), so FILL stays reserved for selection.
+ *   • the component with keyboard focus wears a RING (and a faint behind-tint);
+ *   • the committed selection is a FILL (the component's native convention —
+ *     dot / pill / fill);
+ *   • buttons (§1) have no separate selection, so their focus ring PROMOTES the
+ *     button to its filled role style.
  *
- * The whole point of the spike is that the two branches are TUNABLE from the
- * token block below and judged side by side. Real `--tug7-*` theme tokens are
- * used throughout so both themes are faithful.
+ * ONE ROLE AXIS. Every focusable's ring + selection-fill + behind-tint read the
+ * `--fl-role` / `--fl-sel` / `--fl-focus-bg` variables, which DEFAULT to action
+ * (the neutral interactive blue) and are overridden per role via
+ * `[data-fl-role]`. There is no separate "role-less" path — a role-less control
+ * simply rides the action default.
+ *
+ * Everything is TUNABLE from the token block below; real `--tug7-*` theme tokens
+ * are used throughout so both themes are faithful.
  */
 
 .cg-focus-language {
   /* --- the spike's tunable knobs (retune these to taste, both themes pick up) --- */
 
-  /* Role-less keyboard-cursor promotion colour. Candidate: the action blue,
-     deliberately DISTINCT from the accent/selection colour (orange) so a cursor
-     and a selection read apart. Swap to an accent or a bespoke "keyboard" hue
-     here to compare. */
-  --fl-kbd: var(--tug7-element-control-border-outlined-action-rest);
+  /* THE ROLE AXIS. Every focusable's ring / selection-fill / behind-tint reads
+     these three. They DEFAULT to action (the neutral interactive blue) and are
+     overridden per role by the [data-fl-role] rules below. No "role-less" branch
+     — a role-less control just rides these defaults. Tune the action blue here. */
+  --fl-role: var(--tug7-element-control-border-outlined-action-rest); /* ring + item border */
+  --fl-sel: var(--tug7-surface-toggle-primary-normal-on-rest); /* committed-selection fill */
+  --fl-focus-bg: color-mix(in srgb, var(--fl-hover) 65%, transparent); /* faint behind-tint */
 
   /* The double-border ring geometry (mirrors the live `--tugx-focus-ring-*`). */
   --fl-ring-w: 1.5px;
@@ -41,22 +45,13 @@
   /* Soft action-blue tint used for mouse-hover on leaf controls (§1 etc.). */
   --fl-hover: var(--tug7-surface-tone-primary-normal-active-rest);
 
-  /* The behind-the-component focus tint (§5–§9). Deliberately FAINT — the ring
-     and the selection fill carry the weight; this only whispers "this group has
-     the keyboard". Roughly a third of --fl-hover's strength. */
-  --fl-focus-bg: color-mix(in srgb, var(--fl-hover) 65%, transparent);
-
-  /* The committed-selection axis for toggle-family controls (checkbox, switch,
-     radio, option) — the BLUE "on" axis the real components use, NOT accent
-     orange. Note this is the same hue family as `--fl-kbd`, so the cursor ring
-     and a checked fill sit close: a thing to judge in §3/§5. */
-  --fl-on: var(--tug7-surface-toggle-primary-normal-on-rest);
-  --fl-on-track: var(--tug7-surface-toggle-track-normal-on-rest);
+  /* Light glyph/text on a filled selection; off-state switch thumb. */
   --fl-thumb-on: var(--tug7-element-toggle-thumb-normal-on-rest);
   --fl-thumb-off: var(--tug7-element-toggle-thumb-normal-plain-rest);
 
-  /* Quiet "contains the active component" mark (the data-key-within analogue). */
-  --fl-within: color-mix(in srgb, var(--fl-kbd) 32%, transparent);
+  /* Quiet "contains the active component" mark (the data-key-within analogue).
+     Reads --fl-role, so it follows the role too. */
+  --fl-within: color-mix(in srgb, var(--fl-role) 32%, transparent);
 
   font-size: 0.875rem;
 }
@@ -92,8 +87,8 @@
   color: var(--tug7-element-control-text-filled-action-rest);
 }
 .cg-focus-language .fl-branch-tag[data-branch="ring"] {
-  border: var(--fl-ring-w) solid var(--fl-kbd);
-  color: var(--fl-kbd);
+  border: var(--fl-ring-w) solid var(--fl-role);
+  color: var(--fl-role);
 }
 .cg-focus-language .fl-note {
   margin-top: 4px;
@@ -221,8 +216,8 @@
 }
 /* keyboard cursor → DOUBLE border: own border recoloured + offset outer ring */
 .cg-focus-language .fl-input[data-fl-state="cursor"] {
-  border-color: var(--fl-kbd);
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  border-color: var(--fl-role);
+  outline: var(--fl-ring-w) solid var(--fl-role);
   outline-offset: var(--fl-ring-offset);
 }
 
@@ -244,7 +239,7 @@
 }
 .cg-focus-language .fl-toggle-field[data-fl-state="cursor"] {
   background: var(--fl-focus-bg);
-  outline: var(--fl-ring-w) solid var(--fl-role, var(--fl-kbd));
+  outline: var(--fl-ring-w) solid var(--fl-role);
   outline-offset: var(--fl-ring-offset);
 }
 
@@ -264,8 +259,8 @@
 }
 /* checked = FILL on the box (role-coloured when the control carries a role) */
 .cg-focus-language .fl-check[data-checked="true"] {
-  background: var(--fl-sel, var(--fl-on));
-  border-color: var(--fl-sel, var(--fl-on));
+  background: var(--fl-sel);
+  border-color: var(--fl-sel);
   color: var(--fl-thumb-on);
 }
 
@@ -291,8 +286,8 @@
 }
 /* on = FILL on the track (role-coloured when the control carries a role) */
 .cg-focus-language .fl-switch[data-checked="true"] {
-  background: var(--fl-sel, var(--fl-on-track));
-  border-color: var(--fl-sel, var(--fl-on-track));
+  background: var(--fl-sel);
+  border-color: var(--fl-sel);
 }
 .cg-focus-language .fl-switch[data-checked="true"]::after {
   left: auto;
@@ -317,7 +312,7 @@
 }
 .cg-focus-language .fl-slider-field[data-fl-state="cursor"] {
   background: var(--fl-focus-bg);
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline: var(--fl-ring-w) solid var(--fl-role);
   outline-offset: var(--fl-ring-offset);
 }
 .cg-focus-language .fl-slider-head {
@@ -346,7 +341,7 @@
   bottom: 0;
   left: 0;
   border-radius: 3px;
-  background: var(--fl-kbd);
+  background: var(--fl-role);
 }
 .cg-focus-language .fl-track .fl-thumb {
   position: absolute;
@@ -357,13 +352,13 @@
   transform: translate(-50%, -50%);
   /* at rest the thumb is hollow (surface centre, coloured rim) */
   background: var(--tug7-surface-field-primary-normal-plain-rest);
-  border: 2px solid var(--fl-kbd);
+  border: 2px solid var(--fl-role);
 }
 /* keyboard focus → FILL the thumb solid (in addition to the whole-component
    ring above) */
 .cg-focus-language .fl-slider-field[data-fl-state="cursor"] .fl-thumb {
-  background: var(--fl-on);
-  border-color: var(--fl-on);
+  background: var(--fl-sel);
+  border-color: var(--fl-sel);
 }
 
 /* ============================================================
@@ -391,11 +386,8 @@
    items), so the focus ring AND the selection fill take the role colour. Role-
    less components never set them and fall back to the action blue / blue "on"
    axis. Mirrors the per-role rings in the §1 TugPushButton example. */
-.cg-focus-language [data-fl-role="action"] {
-  --fl-role: var(--tug7-element-control-border-filled-action-rest);
-  --fl-sel: var(--tug7-surface-control-primary-filled-action-rest);
-  --fl-focus-bg: color-mix(in srgb, var(--fl-role) 13%, transparent);
-}
+/* Default role = action (set at the root). These override per non-default role,
+   colouring the ring, the selection fill, AND the faint behind-tint together. */
 .cg-focus-language [data-fl-role="danger"] {
   --fl-role: var(--tug7-element-control-border-filled-danger-rest);
   --fl-sel: var(--tug7-surface-control-primary-filled-danger-rest);
@@ -414,7 +406,7 @@
 .cg-focus-language .fl-opt[data-fl-cursor="true"],
 .cg-focus-language .fl-list-row[data-fl-cursor="true"],
 .cg-focus-language .fl-qa-row[data-fl-cursor="true"] {
-  outline: var(--fl-ring-w) solid var(--fl-role, var(--fl-kbd));
+  outline: var(--fl-ring-w) solid var(--fl-role);
   outline-offset: 2px;
 }
 
@@ -428,11 +420,11 @@
 }
 .cg-focus-language [data-fl-selected="true"] > .fl-dot,
 .cg-focus-language .fl-dot[data-fl-selected="true"] {
-  border-color: var(--fl-sel, var(--fl-on));
+  border-color: var(--fl-sel);
   background: radial-gradient(
     circle,
     var(--fl-thumb-on) 0 28%,
-    var(--fl-sel, var(--fl-on)) 30%
+    var(--fl-sel) 30%
   );
 }
 
@@ -472,7 +464,7 @@
   font-weight: 500;
 }
 .cg-focus-language .fl-tab[data-fl-selected="true"] {
-  background: var(--fl-sel, var(--fl-on));
+  background: var(--fl-sel);
   color: var(--fl-thumb-on);
   font-weight: 600;
 }
@@ -493,8 +485,8 @@
   font-size: 0.8rem;
 }
 .cg-focus-language .fl-opt[data-fl-selected="true"] {
-  background: var(--fl-sel, var(--fl-on));
-  border-color: var(--fl-sel, var(--fl-on));
+  background: var(--fl-sel);
+  border-color: var(--fl-sel);
   color: var(--fl-thumb-on);
 }
 
@@ -513,7 +505,7 @@
   font-size: 0.82rem;
 }
 .cg-focus-language .fl-list-row[data-fl-selected="true"] {
-  background: var(--fl-on);
+  background: var(--fl-sel);
   color: var(--fl-thumb-on);
 }
 /* descended INTO the list → the container wears a quiet "contains active" mark */
@@ -557,8 +549,8 @@
 .cg-focus-language .fl-box[data-fl-state="cursor"] {
   background: linear-gradient(var(--fl-focus-bg), var(--fl-focus-bg)),
     var(--tug7-surface-field-primary-normal-plain-rest);
-  box-shadow: 0 0 0 var(--fl-ring-w) var(--fl-kbd);
-  border-color: var(--fl-kbd);
+  box-shadow: 0 0 0 var(--fl-ring-w) var(--fl-role);
+  border-color: var(--fl-role);
 }
 .cg-focus-language .fl-box[data-fl-state="within"] {
   box-shadow: 0 0 0 var(--fl-ring-w) var(--fl-within);
@@ -580,7 +572,7 @@
 .cg-focus-language .fl-link[data-fl-state="cursor"] {
   background: var(--fl-focus-bg);
   text-decoration: underline;
-  outline: var(--fl-ring-w) solid var(--fl-kbd);
+  outline: var(--fl-ring-w) solid var(--fl-role);
   outline-offset: var(--fl-ring-offset);
 }
 

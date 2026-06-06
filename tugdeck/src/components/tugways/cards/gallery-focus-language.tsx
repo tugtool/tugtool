@@ -165,7 +165,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="2 · Text input"
           branch="ring"
-          note="Can't fill — a filled body destroys legibility of typed text. So the cursor is a DOUBLE border: the field's own border recolours to the keyboard colour + an offset outer ring. Covers TugInput, TugTextarea, TugValueInput, and caret editors (prompt, code/markdown)."
+          note="Can't fill — a filled body destroys legibility of typed text. So focus is a DOUBLE border: the field's own border recolours to the role colour + an offset outer ring. Input is role-less by default (action-blue), but its VALIDATION state maps onto the role axis — an invalid field is the danger role, so it focuses red (last cell). Covers TugInput, TugTextarea, TugValueInput, and caret editors (prompt, code/markdown)."
         />
         <div className="fl-grid">
           <Cell label="rest">
@@ -179,6 +179,11 @@ export function GalleryFocusLanguage(): React.ReactElement {
           <Cell label="kbd-cursor (double border)">
             <span className="fl-input" data-fl-state="cursor">
               name@host
+            </span>
+          </Cell>
+          <Cell label="invalid → danger role · kbd">
+            <span className="fl-input" data-fl-role="danger" data-fl-state="cursor">
+              not-an-email
             </span>
           </Cell>
         </div>
