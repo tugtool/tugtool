@@ -152,7 +152,7 @@ body {
 }
 
 /* Keyboard-focus-cycling suppresses the within-container mark. While a context
-   is cycling ([P12]/[#step-cycle-devcard]), the stops are spread across zones
+   is cycling ([P12]), the stops are spread across zones
    and the "container of the focused stop" outline reads as a spurious outer
    ring around the toolbar / prompt-entry section — the focused-stop ring plus
    the input blur are the mode's signal, the container mark is noise. Scoped to

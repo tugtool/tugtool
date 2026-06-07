@@ -61,7 +61,12 @@ export interface UseCycleModeResult {
   cycling: boolean;
   /** Toggle cycling on/off — wire to the `CYCLE_FOCUS_MODE` (⌥⇥) action. */
   toggle: () => void;
-  /** Exit cycling if active (caret returns to the editor) — wire to Escape. */
+  /**
+   * Exit cycling if active (caret returns to the editor). Currently reached via
+   * the editor text-stop's Return-descend; a dedicated Escape binding is left to
+   * the mode-keys work. Today's other exits are the ⌥⇥ `toggle` and the
+   * mouse-exit rule below.
+   */
   exit: () => void;
   /** Wrap the card's cycle-able zones so they register into this mode. */
   CycleScope: React.FC<{ children: React.ReactNode }>;
