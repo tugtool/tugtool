@@ -346,6 +346,22 @@ The **editor is the last stop** (a text stop, per [P11]): landing gives the **st
 - The selection fill itself (bright list rows) is left as-is — it is honest selection; toning it is a separate later lever once [#step-3]'s cursor-as-ring lands.
 - **Governance:** enshrined in the focus-language tuglaws doc ([#step-9]) as part of the prominence hierarchy.
 
+#### [P15] A keyboard value-commit's cycle disposition derives from the [P13] context type; the mode carries it (DECIDED; refines [P13]) {#p15-cycle-commit-disposition}
+
+**Decision:** When a cycle **stop** commits a value via the keyboard (the act dispatch's `select` / `act` on an item-group), the cycle either **retains** (stay cycling) or **relinquishes** (pop the cycle mode, return the keyboard to the resting key view). The disposition is **derived from the [P13] context type** and is a property **carried by the focus mode** itself:
+
+- **Persistent cycling (sheets / dialogs / `useFocusTrap`) → `retain`.** The trap *is* the base mode; there is nowhere to relinquish *to*. Committing a radio / option keeps you navigating the surface.
+- **Toggleable cycling (dev card / `useCycleMode`) → `relinquish` on a value commit (`select`/`act`), `retain` on `descend`.** The editor is home; cycling is the escape hatch, so committing a config change ("set the route to Shell") returns the keyboard to the editor. `descend` retains (you went deeper, not done).
+- **An optional per-context override** (`useCycleMode({ dispositionAfterCommit })`) refines per-stop / per-commit where a context needs something other than its derived default. Most contexts (incl. the dev card) configure nothing.
+
+**Rationale:** Fixes a concrete desync ([the dev-card sequence]): Opt-Tab → Tab to the route group → arrow → Return committed the route, and the route change returned the caret to the editor through its *own* focus path while the cycle mode stayed pushed — so the engine was still cycling (its capture-phase keydown owned the keys) under a blinking caret, and typing failed. Routing the "return to the editor" through the cycle's own relinquish keeps the engine and DOM in agreement. Deriving the default from the context type (rather than per-consumer wiring) makes the right thing happen with zero config and confines bespoke behavior to an explicit override — the scalable shape over an ad-hoc per-card fix.
+
+**Mechanism:** A focus mode gains an optional `commitDisposition(commit) → "retain" | "relinquish"`, stored at `pushFocusMode` time (the policy rides the mode, so the act dispatch stays policy-agnostic). The act dispatch, after carrying out a `select`/`act`/`descend` on the key view, calls `manager.applyCommitDisposition(kind)`; the manager consults the **top** mode's `commitDisposition` and, on `relinquish`, pops that mode (default restore → the captured editor key view + DOM focus). `useCycleMode` injects the **toggleable default** (and forwards the override); `useFocusTrap` injects nothing → `retain`. So the disposition derives from *which primitive pushed the mode*, i.e. the [P13] type. Leaf acts (chips / Z2 cells that open a popover) go native and never reach this path, so they retain — correct. Modeled on the **route-lifecycle tier** (synchronous, no `MessageChannel` drain) per [lifecycle-delegates.md]; the decision must land in the same flow to pop the mode. No new engine projection ([P04]); the dev card's existing `cycle.cycling`→caret-restore effect (gated on `consumeExitViaPointer`) carries the editor focus once the mode pops.
+
+**Implications:**
+- Implemented in [#step-cycle-commit]: `focus-manager` (`commitDisposition` on the mode + `applyCommitDisposition`), the act dispatch chokepoint, `useCycleMode` (default + override option). The dev card configures nothing — it inherits the toggleable default.
+- **Governance:** folds into the focus-language tuglaws doc ([#step-9]) alongside the [P13] cycling axis.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -500,6 +516,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-z2-components | Step 2.7 — Componentize the Z2 status cells (prereq for Z2 cycling) | done: `TugStatusCell` extraction (devised in `tugplan-z2-status-cell.md`) | afd978c7 |
 | #step-z2-cycle | Step 2.8 — Z2 status cells join the cycle (was Slice 3) | done: five Z2 cells = leaf stops (orders 5…9; rove reversed by-eye); square editor border; engine = single owner of close-focus (popovers+sheets defer; `getKeyCard` fallback; `popFocusMode` always notifies); **mouse exits cycling** ([#cycle-model]); at0140 cells + popover-escape + mouse-exit | d1c2296a + 6f579eae |
 | #step-primary | Prominence hierarchy — `primary` emphasis (tint-at-rest → fill-on-engage); session picker adopts it ([P14]) | pending | — |
+| #step-cycle-commit | Cycle commit disposition — value-commit relinquishes a toggleable cycle (derived from [P13], mode-carried); fixes the dev-card route-commit desync ([P15]) | done: `commitDisposition` on the mode + `applyCommitDisposition`; act-dispatch wired; `useCycleMode` toggleable default + override; at0140 relinquish test green, picker retain regression green | (uncommitted) |
 | #step-3 | Item-groups — radio / choice / option | done: container behind-tint (no container ring) + cursor-item ring + native role fill; `buildRoleStyle` role-resolved focus marks; route-group double-ring resolved; at0117/at0118/at0119/at0030 reworked to the [P02] contract + green | (uncommitted) |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -905,6 +922,30 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 - [ ] By-eye: in the picker, idle Open reads as a quiet tint (no longer a solid blue that mimics the selected rows); Tab onto Open → it fills + rings; Tab away → back to tint. Cancel still promotes to fill+ring when focused. Gallery primary row promotes/demotes on Tab. Both themes. *(user verification)*
 
 **Checkpoint:** `bunx tsc --noEmit` clean ✅; gallery + picker render `primary`; by-eye prominence reads as three distinct levels (tint = recommended, solid+ring = live, solid = selected) — *user verification pending*.
+
+#### Step 2.10: Cycle commit disposition — relinquish a toggleable cycle on value-commit {#step-cycle-commit}
+
+**STATUS — done (2026-06-07).** A keyboard value-commit at a cycle stop now consults the **top mode's** `commitDisposition` and, in a toggleable cycle, relinquishes (pops the mode → editor caret returns) on `select`/`act` while retaining on `descend`. The policy rides the mode (injected by `useCycleMode` = toggleable default; `useFocusTrap` injects none = retain), so the act-dispatch chokepoint stays policy-agnostic and the disposition derives from the [P13] context type with zero per-card config. Fixes the dev-card route-commit desync (caret blinking but typing dead). `at0140` gained a relinquish test (Return on the route group exits cycling, returns the caret, typing lands); the persistent picker (`at0141`) and gallery cycle demo (`at0139`) regress green (commit retains where there's no toggleable cycle).
+
+**Depends on:** #step-cycle (the cycle-mode primitive)
+
+**Commit:** `focus(cycle): value-commit relinquishes a toggleable cycle ([P15])`
+
+**References:** [P15], [P13], (#p15-cycle-commit-disposition), lifecycle-delegates.md
+
+**Artifacts:** `focus-manager.ts` (`commitDisposition` on the mode + `applyCommitDisposition`), `responder-chain-provider.tsx` (act-dispatch calls it after `select`/`act`/`descend`), `use-cycle-mode.tsx` (toggleable default + `dispositionAfterCommit` override option); a real-app test.
+
+**Tasks:**
+- [x] Carry an optional `commitDisposition(commit) → "retain" | "relinquish"` on the focus mode (stored at `pushFocusMode`); add `manager.applyCommitDisposition(kind)` that consults the **top** mode and pops it (default restore) on `relinquish`.
+- [x] Call `applyCommitDisposition` from the act dispatch after `onSelect`/`onAct`/`onDescend`.
+- [x] `useCycleMode`: inject the toggleable default (`select`/`act` → relinquish, `descend` → retain) at push; add the `dispositionAfterCommit` override option. `useFocusTrap` injects nothing → retain.
+- [x] Dev card configures nothing — inherits the toggleable default.
+
+**Tests:**
+- [x] Real-app: connected dev card → Opt-Tab → Tab to the route group → Arrow → Return commits the route AND exits cycling (the editor is the key view; typing lands) — `at0140` new case green. Z2-cell Return (act → opens popover) does NOT exit cycling — `at0140` existing case green.
+- [x] `bunx tsc --noEmit` clean; focus-walk pure-logic green; `at0139`/`at0141` (commit-retains-where-no-toggleable-cycle) regress green.
+
+**Checkpoint:** `bunx tsc --noEmit` clean ✅; the dev-card route-commit sequence leaves the editor typable (no caret-without-key-view desync) ✅; the Z2-cell-popover-open path still retains the cycle ✅.
 
 #### Step 3: Item-groups — radio / choice / option {#step-3}
 

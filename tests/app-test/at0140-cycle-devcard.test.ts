@@ -132,6 +132,13 @@ const EDITOR_FOCUSED = `(function(){
 // Whether a popover (portaled status-cell detail) is currently open.
 const POPOVER_OPEN = `document.querySelector('[data-slot="tug-popover"]') !== null`;
 
+// The editor's text content (the CodeMirror content surface). Used to prove that
+// typing actually lands after a route commit relinquishes the cycle ([P15]).
+const EDITOR_TEXT = `(function(){
+  var el = document.querySelector(${JSON.stringify(EDITOR)});
+  return el ? el.textContent : null;
+})()`;
+
 describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () => {
   test(
     "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → editor → wrap (each Z2 cell a leaf stop), skips the disabled submit when empty, Return on the editor stop resumes typing",
@@ -322,6 +329,67 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         const tail = app.tailLog(200);
         if (tail !== "") {
           process.stderr.write(`\n[at0140-cycle-devcard] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "committing the route group by keyboard relinquishes the cycle ([P15]): Return exits cycling, returns the caret, and typing lands",
+    async () => {
+      const app = await launchTugApp({ testName: "at0140-cycle-devcard-commit" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindDevSession("A");
+        await app.awaitEngineReady("A");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(ROUTE)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        // Caret in the editor (base mode, not cycling).
+        await app.nativeClickAtElement(EDITOR);
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
+
+        // ⌥⇥ enters cycling and seeds the route group (the first stop).
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+
+        // Arrow to rove the route cursor to the other choice, then Return to
+        // commit it — the reported sequence. The commit is an item-group `act`;
+        // in a toggleable cycle that disposition is RELINQUISH ([P15]).
+        await app.nativeKey("ArrowRight");
+        await app.nativeKey("Return");
+
+        // The cycle is relinquished: the card stops cycling, the engine returns
+        // the key view to the editor, and DOM focus lands the caret there — no
+        // caret-without-key-view desync.
+        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
+
+        // The definitive proof the desync is gone: typing actually lands in the
+        // editor (before the fix, the cycle still owned the keys and this failed).
+        await app.nativeType("ZZZ");
+        await app.waitForCondition<boolean>(
+          `(${EDITOR_TEXT} || "").indexOf("ZZZ") !== -1`,
+          { timeoutMs: 6000 },
+        );
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0140-cycle-devcard-commit] log tail:\n${tail}\n`);
         }
         throw err;
       } finally {

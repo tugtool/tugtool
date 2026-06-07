@@ -114,6 +114,24 @@ export interface FocusMode {
 }
 
 /**
+ * Whether a keyboard value-commit at a cycle stop keeps the cycle (`retain`) or
+ * pops it back to the resting key view (`relinquish`) — [P15] of the
+ * focus-language plan. The disposition is carried by the focus *mode* (set by
+ * whichever primitive pushed it), so the act dispatch stays policy-agnostic.
+ */
+export type CycleDisposition = "retain" | "relinquish";
+
+/** The act-dispatch commit kinds that a mode's `commitDisposition` reacts to. */
+export type FocusCommitKind = "select" | "act" | "descend";
+
+/** The commit a mode's `commitDisposition` is consulted with. */
+export interface FocusCommit {
+  kind: FocusCommitKind;
+  /** The key view (stop) that committed, for per-stop override decisions. */
+  keyViewId: string | null;
+}
+
+/**
  * Internal mode-stack entry. Adds `restoreKeyView`: the key view that was
  * current when this mode was pushed, restored when it is popped — the
  * CFRunLoop "pop restores the prior key view" semantic ([#cfrunloop-model]).
@@ -121,10 +139,13 @@ export interface FocusMode {
  * so the restore re-paints the ring iff it was there before the push (e.g. a
  * popover opened by keyboard from a focus-cycling stop returns to the ringed
  * stop on close; a mouse-opened one restores ringless).
+ * `commitDisposition` ([P15]): consulted when a stop commits a value by
+ * keyboard while this mode is current; `relinquish` pops the mode.
  */
 interface FocusModeEntry extends FocusMode {
   restoreKeyView: string | null;
   restoreKeyViewKeyboard: boolean;
+  commitDisposition?: (commit: FocusCommit) => CycleDisposition;
 }
 
 // ---- Focusables ----
@@ -621,7 +642,13 @@ export class FocusManager {
    * can be restored on pop ([#cfrunloop-model]). Pushing a `scopeId` already on
    * the stack moves it to the top (re-capturing the key view at that point).
    */
-  pushFocusMode(scopeId: string, opts: { trapped: boolean }): void {
+  pushFocusMode(
+    scopeId: string,
+    opts: {
+      trapped: boolean;
+      commitDisposition?: (commit: FocusCommit) => CycleDisposition;
+    },
+  ): void {
     const existing = this.modeStack.findIndex((m) => m.scopeId === scopeId);
     if (existing !== -1) {
       this.modeStack.splice(existing, 1);
@@ -631,10 +658,32 @@ export class FocusManager {
       trapped: opts.trapped,
       restoreKeyView: this.keyViewId,
       restoreKeyViewKeyboard: this.keyViewKeyboard,
+      commitDisposition: opts.commitDisposition,
     });
     this.syncFocusModeDomAttribute();
     this.syncKeyWithinDomAttribute();
     this.touch();
+  }
+
+  /**
+   * Apply the current (top) mode's commit disposition after a keyboard
+   * value-commit at the key view ([P15]). If the top mode declares
+   * `commitDisposition` and it returns `relinquish` for this commit, pop that
+   * mode (default restore → the captured prior key view + DOM focus). A mode
+   * with no disposition (the base mode, a plain trap) retains. Returns whether
+   * the mode was relinquished.
+   *
+   * The policy rides the mode, set by whichever primitive pushed it
+   * (`useCycleMode` injects the toggleable default; `useFocusTrap` injects
+   * none → retain) — so this dispatch chokepoint stays policy-agnostic.
+   */
+  applyCommitDisposition(kind: FocusCommitKind): boolean {
+    const top = this.modeStack[this.modeStack.length - 1];
+    if (!top || top.commitDisposition === undefined) return false;
+    const disposition = top.commitDisposition({ kind, keyViewId: this.keyViewId });
+    if (disposition !== "relinquish") return false;
+    this.popFocusMode(top.scopeId);
+    return true;
   }
 
   /**

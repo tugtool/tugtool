@@ -46,6 +46,21 @@ import React, {
 } from "react";
 
 import { FocusManagerContext, FocusModeContext } from "./focus-manager";
+import type { CycleDisposition, FocusCommit } from "./focus-manager";
+
+/**
+ * The toggleable-cycling default disposition ([P15]): a keyboard value commit at
+ * a stop (`select` / `act` on an item-group) returns the keyboard to the editor
+ * (relinquish); `descend` keeps cycling (you went deeper, not done). Leaf acts
+ * (chips / Z2 cells that open a popover) go native and never reach this path, so
+ * they retain by construction. A persistent context (`useFocusTrap`) injects no
+ * disposition at all, so it retains — the derivation from the [P13] type.
+ */
+function toggleableCommitDisposition(commit: FocusCommit): CycleDisposition {
+  return commit.kind === "select" || commit.kind === "act"
+    ? "relinquish"
+    : "retain";
+}
 
 export interface UseCycleModeOptions {
   /**
@@ -54,6 +69,14 @@ export interface UseCycleModeOptions {
    * the mode is never pushed. Defaults to `true`.
    */
   enabled?: boolean;
+  /**
+   * Optional per-context override for the cycle commit disposition ([P15]).
+   * Omit to inherit the toggleable default (a `select`/`act` value-commit
+   * relinquishes the cycle back to the editor; `descend` retains). Provide a
+   * function to decide per-stop / per-commit — e.g. keep cycling after a
+   * particular stop commits. Returns `"retain"` or `"relinquish"`.
+   */
+  dispositionAfterCommit?: (commit: FocusCommit) => CycleDisposition;
 }
 
 export interface UseCycleModeResult {
@@ -85,6 +108,7 @@ export interface UseCycleModeResult {
 
 export function useCycleMode({
   enabled = true,
+  dispositionAfterCommit,
 }: UseCycleModeOptions = {}): UseCycleModeResult {
   const manager = useContext(FocusManagerContext);
   // Stable per-card scope id. The cycle stops (rendered under `CycleScope`) and
@@ -94,6 +118,15 @@ export function useCycleMode({
   // exit from a ⌥⇥ / programmatic one (read-and-cleared via
   // `consumeExitViaPointer`). Structure-zone ref, no React state ([L24]).
   const exitViaPointerRef = useRef(false);
+
+  // Latest commit-disposition override, read at commit time via a stable wrapper
+  // so an inline `dispositionAfterCommit` never re-installs the pushed mode or
+  // churns the `toggle`/`enter` identities ([L24] structure-zone ref).
+  const dispositionRef = useRef(dispositionAfterCommit);
+  dispositionRef.current = dispositionAfterCommit;
+  const commitDispositionRef = useRef<(commit: FocusCommit) => CycleDisposition>(
+    (commit) => (dispositionRef.current ?? toggleableCommitDisposition)(commit),
+  );
 
   // `cycling` is the engine's own state, read through `useSyncExternalStore`
   // ([L02]): the mode is "on" exactly when this card's scope is **on the mode
@@ -120,7 +153,12 @@ export function useCycleMode({
   const enter = useCallback(() => {
     if (manager === null || !enabled) return;
     // Push captures the current key view (the editor caret) for restore on pop.
-    manager.pushFocusMode(scopeId, { trapped: true });
+    // The mode carries the toggleable commit disposition ([P15]) — a stable
+    // wrapper reading the latest override (or the toggleable default).
+    manager.pushFocusMode(scopeId, {
+      trapped: true,
+      commitDisposition: (commit) => commitDispositionRef.current(commit),
+    });
     // Seed the commit-home — the lowest-order cycle stop ([P10]) — and paint the
     // keyboard ring on it.
     manager.focusFirstInMode();

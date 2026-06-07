@@ -338,11 +338,15 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       switch (act) {
         case "select":
           behavior?.onSelect?.();
+          // [P15] a keyboard value-commit may relinquish a toggleable cycle
+          // (the mode's own disposition decides; no-op otherwise).
+          focusManager.applyCommitDisposition("select");
           event.preventDefault();
           event.stopImmediatePropagation();
           break;
         case "descend":
           behavior?.onDescend?.();
+          focusManager.applyCommitDisposition("descend");
           event.preventDefault();
           event.stopImmediatePropagation();
           break;
@@ -352,6 +356,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           // bubble default-button), so leaf act-consistency is unchanged.
           if (behavior && behavior.container !== "none" && behavior.onAct) {
             behavior.onAct();
+            // [P15] an item-group value commit may relinquish a toggleable cycle.
+            focusManager.applyCommitDisposition("act");
             event.preventDefault();
             event.stopImmediatePropagation();
           }
