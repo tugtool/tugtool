@@ -173,6 +173,11 @@ body {
    edge. Appearance keyed on the engine attribute, no React state ([L06]). */
 .tug-prompt-entry-input-area[data-key-view-kbd] {
   position: relative;
+  /* Suppress the global rounded key-view ring — this element draws its OWN
+     square `::after` border below. Without this, the global `[data-key-view-kbd]`
+     outline (rounded, 2px outside) painted alongside the square border and
+     bulged out below it as a rounded "chin". */
+  outline: none;
 }
 
 .tug-prompt-entry-input-area[data-key-view-kbd]::after {
