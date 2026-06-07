@@ -21,10 +21,21 @@
  * (unclaimed, Return delegates to the scope default, Escape/⌘. to the cancel
  * ladder). A surface seeds the ring to its declared default button on open
  * ([P07]), Tab moves it, and a focused button claims Return while it holds the
- * ring. `filled+action` is the standing *identity* of the primary button (the
- * ring's home base), not the live signal — so a Tab to a non-default button
- * moves the ring (and the commit keys) onto it, while the unfocused primary
- * keeps only its fill.
+ * ring.
+ *
+ * **Prominence hierarchy — solid fill is reserved for selection and the live
+ * control.** A solid fill means one of two things: a *selected* item in a
+ * collection, or the *live* (keyboard) control — which also wears the ring, so
+ * the two never read alike. A sheet/dialog's recommended-default button is
+ * neither at rest, so it does NOT sit at a solid fill: it uses the `primary`
+ * emphasis, which rests at a quiet *tint* (its standing "Return's home"
+ * identity) and promotes to the solid `filled` look + ring only while it holds
+ * the ring (see the primary section in `internal/tug-button.css`). This stops an
+ * idle default button from impersonating a selected item — both were solid blue
+ * before. So a Tab to a non-default button moves the ring (and the commit keys)
+ * onto it, and the unfocused default drops back to its tint. (`filled+action`
+ * remains a valid default for a standalone CTA with no competing controls — a
+ * lone FAB or submit affordance — where a resting solid fill is wanted.)
  *
  * It shows on **keyboard** focus, never on a mouse click — a click leaves no
  * ring, and the mouse never moves the ring off the default ([P12]). The orange

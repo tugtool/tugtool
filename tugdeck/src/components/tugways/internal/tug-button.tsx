@@ -50,8 +50,25 @@ const DEFAULT_CONFIRMATION_DURATION_MS = 1500;
  * action. It reuses TugBadge's `tinted` tokens directly and is static across
  * rest/hover/active — the mirror image of TugBadge's `filled` reusing the
  * control tokens. See the tinted section in `tug-button.css`.
+ *
+ * `primary` is the *recommended-default* emphasis for the commit button of a
+ * multi-control surface (a sheet / dialog / alert's "Open", "Save", "Confirm").
+ * It encodes the focus-language prominence hierarchy: solid fill is reserved
+ * for *selection* and the *live* (keyboard) control, so a primary button rests
+ * at the quiet `tinted` wash (its standing "Return's home" identity) and
+ * **promotes to the solid `filled` look + role ring** when it is engaged —
+ * hovered, or holding the keyboard key view. This stops an idle default button
+ * from impersonating a selected item (both were solid blue before). Like
+ * `filled` + `action`, a `primary` + `action` button registers as the scope's
+ * default (Return target).
+ *
+ * The resting look is the **badge treatment, deliberately**: `primary` rest
+ * reuses the same `tinted` tokens as `TugBadge`, so a recommended-default at
+ * rest reads as a labeled chip / marker rather than a pressed control. That
+ * linkage is enshrined ([P14]) — keep `primary`-at-rest and `TugBadge tinted`
+ * as one visual language. See the primary section in `tug-button.css`.
  */
-export type TugButtonEmphasis = "filled" | "outlined" | "ghost" | "tinted";
+export type TugButtonEmphasis = "filled" | "outlined" | "ghost" | "tinted" | "primary";
 
 /** TugButton role values — controls color domain [D02] */
 export type TugButtonRole = "accent" | "action" | "agent" | "data" | "danger" | "option";
@@ -399,7 +416,7 @@ function Spinner() {
  * use TugPushButton instead.
  *
  * Styling is controlled by the emphasis x role system [D02]:
- *   emphasis: "filled" | "outlined" | "ghost" | "tinted" (default: "outlined")
+ *   emphasis: "filled" | "outlined" | "ghost" | "tinted" | "primary" (default: "outlined")
  *   role:     "accent" | "action" | "data" | "danger" (default: "action")
  *
  * All colors use var(--tug-*) semantic tokens for zero-re-render theme switching. [L06]
@@ -567,12 +584,14 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   // ---- Default-button registration ([L03]) ----
   //
-  // A `filled` + `action` button is, by visual contract, the
-  // "primary action" of its scope — the button Return is supposed
-  // to activate ([D02]). The responder chain owns the actual
-  // Enter→click routing (`responder-chain-provider.tsx` Stage 2);
-  // this hook simply opts the button into that mechanism. Stack
-  // semantics (innermost-wins) come from the chain — a nested
+  // A `filled` (or `primary`) + `action` button is, by visual
+  // contract, the "primary action" of its scope — the button Return
+  // is supposed to activate ([D02]). `primary` is the preferred form
+  // (it rests quiet and promotes when live); `filled` + `action`
+  // stays a valid default for standalone CTAs. The responder chain
+  // owns the actual Enter→click routing (`responder-chain-provider.tsx`
+  // Stage 2); this hook simply opts the button into that mechanism.
+  // Stack semantics (innermost-wins) come from the chain — a nested
   // PermissionDialog over a QuestionDialog automatically takes
   // over while it's mounted and restores the outer button on
   // unmount.
@@ -582,7 +601,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // Skipped when no chain manager is in scope (standalone previews
   // and unit tests).
   const isDefaultButton =
-    emphasis === "filled" &&
+    (emphasis === "filled" || emphasis === "primary") &&
     isSemanticRole &&
     role === "action" &&
     !effectiveDisabled &&

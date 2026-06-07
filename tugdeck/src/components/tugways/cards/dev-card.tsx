@@ -1965,7 +1965,7 @@ function DevProjectPickerForm({
           Cancel
         </TugPushButton>
         <TugPushButton
-          emphasis="filled"
+          emphasis="primary"
           role="action"
           onClick={submit}
           disabled={openDisabled}

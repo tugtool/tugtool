@@ -1332,7 +1332,9 @@ body {
 [aria-disabled="true"].tug-button-ghost-action,
 [aria-disabled="true"].tug-button-ghost-agent,
 [aria-disabled="true"].tug-button-ghost-danger,
-[aria-disabled="true"].tug-button-ghost-option {
+[aria-disabled="true"].tug-button-ghost-option,
+[aria-disabled="true"].tug-button-primary-action,
+[aria-disabled="true"].tug-button-primary-danger {
   opacity: var(--tugx-control-disabled-opacity);
   cursor: not-allowed;
   pointer-events: none;
@@ -1568,6 +1570,106 @@ body {
 }
 
 /* ============================================================================
+   primary — the recommended-default emphasis ([D02], focus-language prominence
+   hierarchy)
+   ----------------------------------------------------------------------------
+   Solid fill is reserved for *selection* and the *live* (keyboard) control, so
+   the commit button of a sheet / dialog / alert rests at the quiet `tinted`
+   wash — its standing "Return's home" identity — and PROMOTES to the solid
+   `filled` look when it is engaged:
+
+     - REST (idle, no pointer, no key view) → tinted tokens (this section).
+     - HOVER / ACTIVE (pointer engaged)     → filled tokens (this section).
+     - keyboard KEY VIEW (Tab / seed)       → filled tokens + role ring,
+       via the "Keyboard-promoted state" block below (primary is listed
+       alongside outlined there).
+
+   This stops an idle default button from impersonating a selected item — both
+   were solid blue before. Authored for `action` (the usual default) and
+   `danger` (a destructive commit); other roles fall back to their base button
+   style. Appearance-only, driven by `data-key-view-kbd` / `:hover` — no
+   re-render ([L06]).
+
+   ENSHRINED — the resting tokens below are the `--tug7-…-tinted-…` family, the
+   SAME tokens TugBadge uses for its `tinted` look. This is deliberate, not
+   incidental reuse: a recommended-default AT REST should read as a labeled
+   chip / marker ("here is the thing Return will do"), which is exactly what a
+   badge is. `primary`-at-rest and `TugBadge tinted` are intentionally one
+   visual language — keep any retoning within the tinted/badge family (or move
+   both together). See [P14] (#p14-primary-emphasis).
+   ========================================================================== */
+
+/* --- primary-action: rests as the badge/tinted chip, engages to the action fill --- */
+
+.tug-button-primary-action {
+  background-color: var(--tug7-surface-control-primary-tinted-action-rest);
+  color: var(--tug7-element-control-text-tinted-action-rest);
+  border-color: var(--tug7-element-control-border-tinted-action-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-action-rest */
+.tug-button-primary-action svg {
+  color: var(--tug7-element-control-text-tinted-action-rest);
+}
+
+.tug-button-primary-action:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-filled-action-hover);
+  color: var(--tug7-element-control-text-filled-action-hover);
+  border-color: var(--tug7-element-control-border-filled-action-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-filled-action-hover */
+.tug-button-primary-action:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-filled-action-hover);
+}
+
+.tug-button-primary-action:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-filled-action-active);
+  color: var(--tug7-element-control-text-filled-action-active);
+  border-color: var(--tug7-element-control-border-filled-action-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-filled-action-active */
+.tug-button-primary-action:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-filled-action-active);
+}
+
+/* --- primary-danger: rests as a quiet tint, engages to the danger fill --- */
+
+.tug-button-primary-danger {
+  background-color: var(--tug7-surface-control-primary-tinted-danger-rest);
+  color: var(--tug7-element-control-text-tinted-danger-rest);
+  border-color: var(--tug7-element-control-border-tinted-danger-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-danger-rest */
+.tug-button-primary-danger svg {
+  color: var(--tug7-element-control-text-tinted-danger-rest);
+}
+
+.tug-button-primary-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-filled-danger-hover);
+  color: var(--tug7-element-control-text-filled-danger-hover);
+  border-color: var(--tug7-element-control-border-filled-danger-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-filled-danger-hover */
+.tug-button-primary-danger:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-filled-danger-hover);
+}
+
+.tug-button-primary-danger:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-filled-danger-active);
+  color: var(--tug7-element-control-text-filled-danger-active);
+  border-color: var(--tug7-element-control-border-filled-danger-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-filled-danger-active */
+.tug-button-primary-danger:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-filled-danger-active);
+}
+
+/* ============================================================================
    Width-stabilize ([L06])
    ========================================================================= */
 
@@ -1616,12 +1718,14 @@ body {
    Mode / Model / Effort cycle stops) rings agent, not the action default. */
 .tug-button-filled-action,
 .tug-button-outlined-action,
-.tug-button-tinted-action {
+.tug-button-tinted-action,
+.tug-button-primary-action {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-action-rest);
 }
 .tug-button-filled-danger,
 .tug-button-outlined-danger,
-.tug-button-tinted-danger {
+.tug-button-tinted-danger,
+.tug-button-primary-danger {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-danger-rest);
 }
 .tug-button-filled-accent,
@@ -1640,21 +1744,27 @@ body {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-agent-rest);
 }
 
-/* 2 — outlined → filled promotion (the fill quartet is explicit per role). */
-.tug-button-outlined-action:is([data-key-view-kbd], [data-key-cursor]) {
+/* 2 — outlined / primary → filled promotion (the fill quartet is explicit per
+   role). `primary` rides the same promotion as `outlined`: its quiet tinted
+   rest gives way to the solid role fill the moment it holds the key view. */
+.tug-button-outlined-action:is([data-key-view-kbd], [data-key-cursor]),
+.tug-button-primary-action:is([data-key-view-kbd], [data-key-cursor]) {
   background-color: var(--tug7-surface-control-primary-filled-action-rest);
   color: var(--tug7-element-control-text-filled-action-rest);
   border-color: var(--tug7-element-control-border-filled-action-rest);
 }
-.tug-button-outlined-action:is([data-key-view-kbd], [data-key-cursor]) svg {
+.tug-button-outlined-action:is([data-key-view-kbd], [data-key-cursor]) svg,
+.tug-button-primary-action:is([data-key-view-kbd], [data-key-cursor]) svg {
   color: var(--tug7-element-control-icon-filled-action-rest);
 }
-.tug-button-outlined-danger:is([data-key-view-kbd], [data-key-cursor]) {
+.tug-button-outlined-danger:is([data-key-view-kbd], [data-key-cursor]),
+.tug-button-primary-danger:is([data-key-view-kbd], [data-key-cursor]) {
   background-color: var(--tug7-surface-control-primary-filled-danger-rest);
   color: var(--tug7-element-control-text-filled-danger-rest);
   border-color: var(--tug7-element-control-border-filled-danger-rest);
 }
-.tug-button-outlined-danger:is([data-key-view-kbd], [data-key-cursor]) svg {
+.tug-button-outlined-danger:is([data-key-view-kbd], [data-key-cursor]) svg,
+.tug-button-primary-danger:is([data-key-view-kbd], [data-key-cursor]) svg {
   color: var(--tug7-element-control-icon-filled-danger-rest);
 }
 .tug-button-outlined-accent:is([data-key-view-kbd], [data-key-cursor]) {

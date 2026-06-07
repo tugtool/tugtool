@@ -329,6 +329,22 @@ The **editor is the last stop** (a text stop, per [P11]): landing gives the **st
 - **Governance:** this axis is enshrined in the focus-language tuglaws doc ([#step-9]) alongside the leaf/group/cycle model; until then this decision is the reference.
 - Keep it **lightweight** — a naming + decision rule + hook convergence, **not** a new "focus-context manager." The engine's focus-mode stack already is the manager; this decision only says how each context should use it.
 
+#### [P14] Solid fill is reserved for selection + the live control; a sheet's recommended-default rests at a tint (`primary` emphasis) (DECIDED; refines [P06]) {#p14-primary-emphasis}
+
+**Decision:** A **solid role fill** carries exactly two meanings in the focus language: a **selected** item in a collection (the component's native fill, [P01]), or the **live** keyboard control (which also wears the ring, [P12]). It does **not** mean "this is the recommended default action." A sheet/dialog/alert's recommended-default (commit) button therefore does **not** sit at a resting solid fill. It uses a new **`primary` emphasis** that **rests at the quiet `tinted` wash** — its standing "Return's home" identity — and **promotes to the solid `filled` look + role ring when engaged** (hovered, or holding the key view), riding the same promotion machinery as `outlined` ([P06]).
+
+**Rationale:** In a multi-control surface, an idle `filled+action` default and a `filled` selected list-row render identically (solid blue, no ring), so the default button *impersonates a selected item* — the session-picker "too much blue" observation. The ring already separates the *live* control from everything else; the remaining collision is between *selection* and *default-identity*, both shouting with a full fill. Hue carries **role** (action / danger / accent / …) and must not encode "primary-ness" (a primary-action and a primary-danger button share prominence but differ in role), so prominence is carried on the **emphasis** axis: tint = recommended (quiet), solid = selected-or-live. This keeps one role-hue and resolves the conflation without a new color or a lost affordance (full removal would make the idle default indistinguishable from a plain button).
+
+**Mechanism:** `TugButtonEmphasis` gains `"primary"`; `internal/tug-button.css` authors `primary` (action + danger) as tint-at-rest, filled-on-hover/active, and lists it alongside `outlined` in the keyboard-promoted block (filled + role ring on `[data-key-view-kbd]`). A `primary+action` button still registers as the scope default (Return target) exactly like `filled+action`. Appearance-only, driven by the engine attributes — no React state ([L06]). `filled+action` remains valid for a **standalone CTA with no competing controls** (a lone FAB / submit affordance, e.g. the prompt-entry submit, the jump-to-bottom button), where a resting solid fill is wanted.
+
+**The resting look is the badge treatment, deliberately — ENSHRINED, not incidental.** `primary`'s rest tokens are the `--tug7-…-tinted-…` family, **the same tokens `TugBadge` uses for its `tinted` look** (a faint role-tinted wash behind role-colored text). This is a load-bearing choice, not a coincidence of reuse: a recommended-default *at rest* should read as a **labeled chip / marker** — "here is the thing Return will do" — not as a pressed or selected control. A badge is exactly that: a quiet, labeled, role-colored marker. So the prominence ladder maps onto already-shipped vocabulary the eye knows — **badge (recommended) → solid fill + ring (live) → solid fill (selected)** — and the resting default borrows the badge's "labeled marker" semantics on purpose. Any future retoning of `primary`-at-rest **must keep it within the badge/`tinted` family** (or move both together); `primary` rest and `TugBadge tinted` are intentionally one visual language, and that linkage is the decision, not an implementation detail to drift apart.
+
+**Implications:**
+- The **session picker** Open button adopts `primary` now ([#step-primary]); the gallery's Focus-Language demo gains a `primary` row as the by-eye vetting surface.
+- **App-wide adoption** of `primary` for every sheet / dialog / alert commit button is folded into **[#step-7]** (surfaces / boxes), the natural home for the surface sweep — not done piecemeal here.
+- The selection fill itself (bright list rows) is left as-is — it is honest selection; toning it is a separate later lever once [#step-3]'s cursor-as-ring lands.
+- **Governance:** enshrined in the focus-language tuglaws doc ([#step-9]) as part of the prominence hierarchy.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -479,9 +495,10 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | done ([P10]r): route-seed + blur + no outer ring `6a27148f`; editor text-stop `bd9e44b0`; Z2 carved to #step-z2-cycle | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | punted (2026-06-06): cycling covers status-bar access — no dedicated Z2 chords needed; remaining mode-key polish deferred | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | punted (2026-06-06): no ceremonial checkpoint; a11y assessment deferred to the a11y follow-on | — |
-| #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | done: picker controls authored into the sheet's trapped mode (one group, orders 0–5); `TugFileChooser` standard `focusGroup`/`consumesTab` opt-in; bespoke arrow model retired; `armKeyboardRestore` seed; at0141 + nativeKey regression + by-eye green | (uncommitted) |
+| #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | done: picker controls authored into the sheet's trapped mode (one group, orders 0–5); `TugFileChooser` standard `focusGroup`/`consumesTab` opt-in; bespoke arrow model retired; `armKeyboardRestore` seed; at0141 + nativeKey regression + by-eye green | f6350aae |
 | #step-z2-components | Step 2.7 — Componentize the Z2 status cells (prereq for Z2 cycling) | done: `TugStatusCell` extraction (devised in `tugplan-z2-status-cell.md`) | afd978c7 |
 | #step-z2-cycle | Step 2.8 — Z2 status cells join the cycle (was Slice 3) | done: five Z2 cells = leaf stops (orders 5…9; rove reversed by-eye); square editor border; engine = single owner of close-focus (popovers+sheets defer; `getKeyCard` fallback; `popFocusMode` always notifies); **mouse exits cycling** ([#cycle-model]); at0140 cells + popover-escape + mouse-exit | d1c2296a + 6f579eae |
+| #step-primary | Prominence hierarchy — `primary` emphasis (tint-at-rest → fill-on-engage); session picker adopts it ([P14]) | pending | — |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -862,6 +879,32 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 
 **Checkpoint:** `bunx tsc --noEmit` clean ✅; at0140 (cells + popover-escape + mouse-exit) green ✅; at0084 + at0055/at0058/at0020/at0039/at0105/at0106/at0100/at0016 green ✅; by-eye clean in brio + harmony — *user verification pending*.
 
+#### Step 2.9: Prominence hierarchy — `primary` emphasis (tint-at-rest → fill-on-engage) {#step-primary}
+
+**STATUS — done (2026-06-07).** Motivated by the session-picker "too much blue": an idle `filled+action` default button rendered identically to a `filled` selected list-row (solid blue, no ring), so the default *impersonated a selection*. [P14] reserves solid fill for **selection + the live control** and introduces a **`primary` emphasis** that rests at the quiet tint and promotes to the solid fill + ring when engaged. The primitive is built and proven on the picker + the gallery; the app-wide sheet/dialog/alert sweep is folded into [#step-7].
+
+**Depends on:** #step-1, #step-2 (the keyboard-promoted block `primary` rides)
+
+**Commit:** `focus(buttons): primary emphasis — tint at rest, fill when engaged`
+
+**References:** [P14], [P06], [P12], (#p14-primary-emphasis)
+
+**Artifacts:** `TugButtonEmphasis` += `"primary"`; `internal/tug-button.{tsx,css}` (default-button registration accepts `primary`; primary CSS = tint-at-rest, filled-on-hover/active, listed alongside `outlined` in the keyboard-promoted block); the session picker Open button (`dev-card.tsx`); `gallery-push-button.tsx` Focus-Language demo row + preview popup; `styles/focus-ring.css` prose (the prominence-hierarchy note).
+
+**Tasks:**
+- [x] Add `"primary"` to `TugButtonEmphasis`; accept `filled || primary` in `isDefaultButton` (Return-home registration).
+- [x] Author `primary` (action + danger) in `tug-button.css`: tint-at-rest, filled-on-hover/active; add `primary` to the role-ring axis + the outlined→filled key-view promotion + the aria-disabled list.
+- [x] Switch the session-picker Open button `filled` → `primary`.
+- [x] Gallery: add a `primary` row to the Focus-Language demo (the by-eye vetting surface) + `primary` in the emphasis preview popup.
+- [x] Update `focus-ring.css` prose so the documented model matches (default rests at a tint; solid = selection-or-live).
+- [x] Leave standalone CTAs (jump-to-bottom FAB, prompt-entry submit, icon CTAs) on `filled` — no competing controls, resting solid fill is wanted.
+
+**Tests:**
+- [x] `bunx tsc --noEmit` clean.
+- [ ] By-eye: in the picker, idle Open reads as a quiet tint (no longer a solid blue that mimics the selected rows); Tab onto Open → it fills + rings; Tab away → back to tint. Cancel still promotes to fill+ring when focused. Gallery primary row promotes/demotes on Tab. Both themes. *(user verification)*
+
+**Checkpoint:** `bunx tsc --noEmit` clean ✅; gallery + picker render `primary`; by-eye prominence reads as three distinct levels (tint = recommended, solid+ring = live, solid = selected) — *user verification pending*.
+
 #### Step 3: Item-groups — radio / choice / option {#step-3}
 
 **Depends on:** #step-1
@@ -949,20 +992,31 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 
 **Commit:** `focus(surfaces): box ring + within; dialog option-rows; menus audit`
 
-**References:** [P01], [P02], [P04], (#language-contract)
+**References:** [P01], [P02], [P04], [P14], (#language-contract)
 
-**Artifacts:** popover/sheet/alert + inline-dialog shell focus CSS; the inline-dialog **option rows**; a menus audit note.
+**Artifacts:** popover/sheet/alert + inline-dialog shell focus CSS; the inline-dialog **option rows**; the sheet/dialog/alert commit buttons (`primary` adoption); a menus audit note.
 
 **Tasks:**
 - Box-scope ring (box-shadow hugging the radius, no reflow) + the quiet within variant; behind-tint where the surface allows ([Q02]).
+- **MANDATORY — adopt `primary` for EVERY sheet / dialog / alert commit button** ([P14], primitive landed in [#step-primary]). This is not optional polish: until it is done, every un-migrated surface still shows an idle `filled+action` default that impersonates a selected row — the exact bug [#step-primary] fixed for the picker, left standing everywhere else. Switch `emphasis="filled"` → `emphasis="primary"` on each surface's recommended-default (Open / Save / Done / Confirm / Retry — **action-role text commits**). Work the inventory below to zero; each is a `<TugPushButton>` (or `SheetCloseButton`) that is the surface's commit/default:
+  - [ ] `cards/dev-card.tsx` — spawn-error "Choose Directory" retry; the telemetry sheet's "Done"
+  - [ ] `cards/model-picker-sheet.tsx`, `cards/effort-picker-sheet.tsx` — confirm/commit
+  - [ ] `cards/skills-sheet.tsx`, `cards/agents-sheet.tsx`, `cards/memory-sheet.tsx`, `cards/hooks-sheet.tsx`, `cards/help-sheet.tsx` — commit/done
+  - [ ] `cards/rename-session-sheet.tsx`, `cards/rewind-sheet.tsx` — commit
+  - [ ] `cards/permission-rules-editor.tsx` (both filled commits), `cards/permission-mode-chip.tsx`, `cards/dev-attachment-preview.tsx`
+  - [ ] `cards/tool-blocks/ask-user-question-tool-block.tsx` — submit
+  - [ ] `tug-alert.tsx`, `tug-alert-sheet.tsx`, `tug-confirm-popover.tsx`, `chrome/tug-pane.tsx` — the surface/shell default
+  - **Exclude** (leave on `filled`, by [P14]): standalone CTAs with no competing controls — the jump-to-bottom FAB, prompt-entry submit/queue, any other `subtype="icon"` affordance — and the gallery `filled` *demos* (they exist to show `filled` itself).
+  - **Danger confirms** (e.g. `tug-confirm-popover`'s Trash) are a judgment call, not a blanket convert: red does not conflate with selection-blue, but `primary danger` exists if the surface wants the quiet-at-rest behavior. Decide per surface and note it.
 - **Inline-dialog option rows** (the scope/question choices — item-group *items* inside the modal, distinct from the Deny/Allow/Next buttons handled in [#step-2]): give them the item-group treatment from [#step-3] (cursor ring + native fill, role-resolved), replacing the bespoke `[data-key-cursor]` border-recolor in `dev-permission-dialog.css` / `dev-question-dialog.css`.
 - **Menus audit (`TugContextMenu`, `internal/tug-popup-menu`):** confirm they are Radix-highlighted and do **not** carry the engine `[data-key-cursor]` attribute, so the global cursor→ring flip ([#step-1]) does not reach them — record this as no-change, or add a scoped override only if the audit finds otherwise.
 
 **Tests:**
 - Behavior: surface + dialog + menu app-tests green (Escape/trap/restore unchanged — engine untouched).
-- Live-build pass: open each surface and both menus; confirm the box focus + dialog option-row cursor read in both themes; menu highlight unchanged.
+- **Completeness gate (falsifiable):** after the sweep, **no sheet / dialog / alert default remains a resting solid fill**. Concretely — every remaining `emphasis="filled"` `role="action"` text (non-`subtype="icon"`) commit button is either a deliberate standalone CTA or a gallery demo; nothing in the inventory above is still `filled`. Re-grep `emphasis="filled"` across `tugways/` and confirm each survivor against the exclude list.
+- Live-build pass: open each surface and both menus; confirm the box focus + dialog option-row cursor read in both themes; menu highlight unchanged; **each migrated commit button rests as the badge/tint and fills + rings only when it holds the key view.**
 
-**Checkpoint:** `tsc` clean; surface/dialog/menu app-tests green; live-build confirmation; menus audit recorded.
+**Checkpoint:** `tsc` clean; surface/dialog/menu app-tests green; live-build confirmation; menus audit recorded; **commit-button completeness gate met — the picker's prominence fix now holds app-wide ([P14]), with every survivor of the `filled` grep justified.**
 
 #### Step 8: Links + app-wide focusables {#step-8}
 

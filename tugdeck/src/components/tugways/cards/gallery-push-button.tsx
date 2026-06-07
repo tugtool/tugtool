@@ -239,6 +239,17 @@ export function GalleryPushButton() {
           <TugPushButton emphasis="filled" role="action" focusGroup="gallery-button-focus" focusOrder={5} onClick={() => {}}>Filled action</TugPushButton>
           <TugPushButton emphasis="filled" role="danger" focusGroup="gallery-button-focus" focusOrder={6} onClick={() => {}}>Filled danger</TugPushButton>
         </div>
+        <TugLabel size="2xs" emphasis="calm">
+          A PRIMARY button (the recommended default of a sheet / dialog) rests at
+          a quiet tint and promotes to the solid role fill only when engaged —
+          hovered, or holding the keyboard key view. Tab onto it to watch the
+          tint fill in; Tab away and it returns to the tint (solid fill stays
+          reserved for selection and the live control).
+        </TugLabel>
+        <div className="cg-variant-row">
+          <TugPushButton emphasis="primary" role="action" focusGroup="gallery-button-focus" focusOrder={7} onClick={() => {}}>Primary action</TugPushButton>
+          <TugPushButton emphasis="primary" role="danger" focusGroup="gallery-button-focus" focusOrder={8} onClick={() => {}}>Primary danger</TugPushButton>
+        </div>
       </div>
 
       <TugSeparator />
@@ -253,7 +264,7 @@ export function GalleryPushButton() {
               label={previewEmphasis}
               size="sm"
               senderId={emphasisPopupId}
-              items={(["filled", "outlined", "ghost", "tinted"] as TugButtonEmphasis[]).map((v) => ({
+              items={(["filled", "outlined", "ghost", "tinted", "primary"] as TugButtonEmphasis[]).map((v) => ({
                 action: TUG_ACTIONS.SET_VALUE,
                 value: v,
                 label: v,
