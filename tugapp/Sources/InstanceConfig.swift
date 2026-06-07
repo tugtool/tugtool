@@ -79,6 +79,19 @@ enum InstanceConfig {
         dataDir.appendingPathComponent(bundlePathMarkerName)
     }
 
+    /// Short, stable, fixed-width token derived from `instanceId`
+    /// (FNV-1a 32-bit, hex). For keying fixed-length resource names that
+    /// must stay under the Unix-domain socket path limit
+    /// (`sockaddr_un.sun_path` is ~104 bytes on macOS) even when the
+    /// instance id is long — the app-test harness mints
+    /// `apptest-<uuid>`, whose full id plus the `$TMPDIR` prefix
+    /// overflows `sun_path` and fails to bind. Same id → same token, and
+    /// 32-bit collisions across the handful of live instances are
+    /// negligible. Used for the app↔tugcast control socket name.
+    static var shortToken: String {
+        String(format: "%08x", fnv1a32(Array(instanceId.utf8)))
+    }
+
     /// Absolute path of the running app bundle. Used as the value
     /// passed via `TUG_BUNDLE_PATH` to spawned children.
     static var bundlePath: String {

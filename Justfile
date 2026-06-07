@@ -742,6 +742,25 @@ app-test *FILES:
     done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
     sleep 0.3
 
+    # Belt-and-suspenders for disorderly exits. A graceful shutdown
+    # unlinks the per-instance control socket (ProcessManager.shutdown),
+    # but a SIGKILL / crash can't — and the harness mints a fresh
+    # apptest-<uuid> each launch, so the same name never recurs to
+    # reclaim it via unlink-before-bind. Sweep tugcast control sockets
+    # and apptest notify sockets in $TMPDIR that NO live process holds.
+    # The lsof guard leaves a running dev instance's socket untouched.
+    sweep_dead_sockets() {
+        local tmp="${TMPDIR:-/tmp}"; tmp="${tmp%/}"
+        local s
+        shopt -s nullglob
+        for s in "$tmp"/tugcast-ctl-*.sock "$tmp"/tugbank-notify-apptest-*.sock; do
+            [ -S "$s" ] || continue
+            lsof -- "$s" >/dev/null 2>&1 || rm -f "$s"
+        done
+        shopt -u nullglob
+    }
+    sweep_dead_sockets
+
     TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
         # Targeted teardown — stop only the apptest-* instances the
@@ -752,6 +771,8 @@ app-test *FILES:
                 tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
             esac
         done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+        # Reap sockets orphaned by any app the harness had to SIGKILL.
+        sweep_dead_sockets
         rm -f "$TMPOUT"
     }
     trap cleanup EXIT INT TERM

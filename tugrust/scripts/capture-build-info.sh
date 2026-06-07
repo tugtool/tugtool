@@ -9,17 +9,24 @@ set -euo pipefail
 # [D02] [D03] for the design rationale.
 #
 # Writes (always):
-#   BuildProfile      "debug" (Debug) or "release" (Release)
+#   BuildProfile      "debug" (Debug) or "release" (Release), OR the
+#                     forced bundle id's last component when
+#                     TUG_FORCE_BUNDLE_ID is set (e.g. "apptest") — see
+#                     the profile block below for why the app-test build
+#                     needs a distinct profile
 #   BuildBranch       git branch at build time, or "detached-<sha8>"
 #                     if HEAD is detached
 #   BuildCommit       full SHA-1 of HEAD at build time (diagnostic)
 #
-# Writes (debug builds only; release omits per [D03] [D19]):
+# Writes (Debug-configuration builds only — debug AND the forced apptest
+# build; release omits per [D03] [D19]):
 #   BuildSourceTree   absolute path to the repo root the bundle was
 #                     built from
 #
 # Required env (set by Xcode at build time):
 #   CONFIGURATION             Debug | Release
+#   TUG_FORCE_BUNDLE_ID       (optional) forces bundle id + profile for
+#                             the app-test / unattended build path
 #   SRCROOT                   path to tugapp/ (containing the .xcodeproj)
 #   TARGET_BUILD_DIR          parent directory of the built bundle
 #   CONTENTS_FOLDER_PATH      e.g. "Tug.app/Contents"
@@ -37,18 +44,34 @@ if [ ! -f "$PLIST" ]; then
     exit 1
 fi
 
-case "${CONFIGURATION:-}" in
-    Debug)
-        BUILD_PROFILE="debug"
-        ;;
-    Release)
-        BUILD_PROFILE="release"
-        ;;
-    *)
-        echo "error: unknown CONFIGURATION '${CONFIGURATION:-}' (expected Debug or Release)" >&2
-        exit 1
-        ;;
-esac
+# The app-test / unattended build path forces a stable bundle id
+# (`TUG_FORCE_BUNDLE_ID`, e.g. dev.tugtool.app.apptest). Give that build
+# a DISTINCT profile — the forced id's last component, "apptest" — so its
+# per-instance identity (`<profile>-<branch>` = "apptest-main") never
+# collides with the developer's debug instance ("debug-main"). Without a
+# distinct profile, the app-test bundle shared the debug instance's
+# ports, control socket, registry entry, and data dir, so a standalone
+# app-test launch (or a rebuild's re-sign of the running bundle) knocked
+# the running debug instance off its connection. The other forced-id
+# consumers (assign-bundle-id.sh, product-name-from-cwd.sh,
+# bundle-id-from-cwd.sh) already key off this same env var, so identity
+# stays consistent across the build phases and the CLI helpers.
+if [ -n "${TUG_FORCE_BUNDLE_ID:-}" ]; then
+    BUILD_PROFILE="${TUG_FORCE_BUNDLE_ID##*.}"
+else
+    case "${CONFIGURATION:-}" in
+        Debug)
+            BUILD_PROFILE="debug"
+            ;;
+        Release)
+            BUILD_PROFILE="release"
+            ;;
+        *)
+            echo "error: unknown CONFIGURATION '${CONFIGURATION:-}' (expected Debug or Release)" >&2
+            exit 1
+            ;;
+    esac
+fi
 
 if ! BUILD_BRANCH="$(git -C "$SRCROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)"; then
     echo "error: git rev-parse --abbrev-ref HEAD failed in $SRCROOT" >&2
@@ -73,7 +96,14 @@ plutil -replace BuildProfile -string "$BUILD_PROFILE" "$PLIST"
 plutil -replace BuildBranch  -string "$BUILD_BRANCH"  "$PLIST"
 plutil -replace BuildCommit  -string "$BUILD_COMMIT"  "$PLIST"
 
-if [ "$BUILD_PROFILE" = "debug" ]; then
+# Source-tree is for dev-style builds that serve tugdeck from the repo:
+# debug HMR, AND the app-test bundle (which serves the prebuilt dist out
+# of the source tree under TUGAPP_APP_TEST). Both are Debug-configuration
+# builds, so key this on CONFIGURATION, not the profile string — the
+# forced "apptest" profile is still a Debug build and MUST carry the
+# source tree (the app reads it profile-independently to resolve
+# TUGCAST_RESOURCE_ROOT). Release omits it per [D03]/[D19].
+if [ "${CONFIGURATION:-}" = "Debug" ]; then
     plutil -replace BuildSourceTree -string "$BUILD_SOURCE_TREE" "$PLIST"
 else
     # Defensive: strip the key if a prior debug build's cached plist

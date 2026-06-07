@@ -18,15 +18,38 @@ class ProcessManager {
     private var controlListener: ControlSocketListener?
     private var controlConnection: ControlSocketConnection?
     /// Actual tugcast port, updated from the ready message.
-    /// Initialized to 55255 (the CLI default) so the control socket path is correct
-    /// before the ready message arrives.
+    /// Initialized to 55255 (the CLI default) until the ready message
+    /// reports the real per-instance port.
     private(set) var currentTugcastPort: Int = 55255
     private var tugcastPort: Int {
         get { currentTugcastPort }
         set { currentTugcastPort = newValue }
     }
+    /// Per-instance app↔tugcast control socket path.
+    ///
+    /// Keyed on `InstanceConfig.shortToken` (a short, fixed-width hash of
+    /// the instance id), NOT the tugcast port. Three reasons:
+    ///   1. **Isolation.** Every instance (the developer's `app-debug`,
+    ///      each `app-test` harness launch) must own a distinct control
+    ///      socket. A port-keyed path collapsed to the shared legacy
+    ///      `tugcast-ctl-55255.sock` for everyone (the port is 55255
+    ///      until the ready message), so `ControlSocketListener.init`'s
+    ///      `unlink(path)` would steal a running instance's socket —
+    ///      launching an app-test then knocked the developer's debug
+    ///      instance off its control channel (tugcast respawn → the
+    ///      WebView's "Disconnected" banner).
+    ///   2. **Stability.** A port-keyed path also *shifted* once the
+    ///      ready message updated `currentTugcastPort`, diverging from
+    ///      the path the listener was created with. The instance id is
+    ///      frozen for the process, so this path is constant across
+    ///      tugcast restarts and before/after ready.
+    ///   3. **Length.** The raw instance id can't go in the path: the
+    ///      harness mints `apptest-<uuid>`, and that under `$TMPDIR`
+    ///      overflows `sockaddr_un.sun_path` (~104 bytes), so the bind
+    ///      fails and the app never gets tugcast's ready. The hashed
+    ///      token is fixed-width and short.
     private var controlSocketPath: String {
-        NSTemporaryDirectory() + "tugcast-ctl-\(tugcastPort).sock"
+        NSTemporaryDirectory() + "tugcast-ctl-\(InstanceConfig.shortToken).sock"
     }
     private var childPID: Int32 = 0
     private var restartDecision: RestartDecision = .pending
@@ -629,6 +652,21 @@ class ProcessManager {
         // Close control connection but keep listener (for potential restart)
         controlConnection?.close()
         controlConnection = nil
+    }
+
+    /// Full teardown for app termination.
+    ///
+    /// Like `stop()` (graceful tugcast shutdown + process-group kill),
+    /// but ALSO releases the control-socket listener — which `close()`
+    /// unlinks. `stop()` deliberately keeps the listener alive so a
+    /// `restart()` can reuse it; on the terminal path there is no
+    /// restart, so we must close it or the per-instance control socket
+    /// file leaks for the lifetime of the box. Call this (not `stop()`)
+    /// from `applicationShouldTerminate`. Idempotent.
+    func shutdown() {
+        stop()
+        controlListener?.close()
+        controlListener = nil
     }
 
     /// Restart tugcast with current settings

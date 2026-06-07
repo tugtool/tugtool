@@ -240,7 +240,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // JS used synchronous XHR, so all writes to tugbank are confirmed
                 // by the time this completion handler runs. Safe to tear down.
                 self.window.cleanupBridge()
-                self.processManager.stop()
+                self.processManager.shutdown()
                 #if DEBUG
                 self.testHarnessBridge?.close()
                 self.testHarnessBridge = nil
