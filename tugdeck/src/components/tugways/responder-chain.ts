@@ -678,7 +678,36 @@ export class ResponderChainManager {
    * `getKeyResponderOfKind` form is the escape hatch for future tiers.
    */
   getKeyCard(): string | null {
-    return this.getKeyResponderOfKind("card");
+    const fromResponder = this.getKeyResponderOfKind("card");
+    if (fromResponder !== null) return fromResponder;
+    // Fallback: the card containing the current keyboard key view. The
+    // keyboard-focused element may be focus-REFUSING (a focus-cycle stop such
+    // as a Z2 status cell or a Z4B chip), so it is not a responder and the
+    // chain walk above finds no card — yet key-card-scoped chords (⌥⇥, ⇧⌘P, …)
+    // should still resolve to the card the keyboard is in. Walk up from the
+    // `[data-key-view-kbd]` element to the nearest `card`-kind responder.
+    return this.findCardFromKeyboardFocus();
+  }
+
+  /**
+   * The card responder enclosing the current keyboard key view
+   * (`[data-key-view-kbd]`), or null. A DOM walk (the engine projects the key
+   * view as that attribute) — used by {@link getKeyCard} as a fallback when the
+   * first responder is not inside a card (e.g. focus is on a focus-refusing
+   * cycle stop).
+   */
+  private findCardFromKeyboardFocus(): string | null {
+    if (typeof document === "undefined") return null;
+    const kv = document.querySelector("[data-key-view-kbd]");
+    if (kv === null) return null;
+    let el: Element | null = kv.closest("[data-responder-id]");
+    while (el !== null) {
+      const id = el.getAttribute("data-responder-id");
+      const node = id !== null ? this.nodes.get(id) : undefined;
+      if (node && node.kind === "card") return id;
+      el = el.parentElement?.closest("[data-responder-id]") ?? null;
+    }
+    return null;
   }
 
   /**

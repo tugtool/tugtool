@@ -9,11 +9,14 @@
  * ring come for free when the row is later authored into a focus cycle.
  *
  * The button is `tabIndex={-1}` and focus-refusing
- * (`data-tug-focus="refuse"`): the cell is not a native Tab stop and
- * does not promote the responder chain on click. A surrounding row that
- * authors the cells into an item-group focus cursor drives selection;
- * absent that, the cell is reached only by pointer, exactly as the old
- * `<span>` trigger was.
+ * (`data-tug-focus="refuse"`): the cell is not a *native* Tab stop and
+ * does not promote the responder chain on click. When a surrounding
+ * surface authors it into a focus group (`focusGroup`), it registers as
+ * a **leaf** cycle stop ([P10] revised): the engine drives DOM focus to
+ * the cell button during the cycle walk (a `<button>` is programmatically
+ * focusable even at `tabIndex={-1}`) and the cell wears the leaf focus
+ * ring; Space/Enter open its popover natively. Absent a group, the cell
+ * is reached only by pointer, exactly as the old `<span>` trigger was.
  *
  * Faithful to the bespoke markup it replaces — the root keeps the
  * `dev-telemetry-status-cell` / `dev-telemetry-status-anchor` classes
@@ -41,6 +44,8 @@ import {
   TugPopoverTrigger,
   type TugPopoverHandle,
 } from "./tug-popover";
+import { useFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 
 /**
  * IBM-1620-style endcap-rule label apparatus — a letterspaced uppercase
@@ -109,6 +114,17 @@ export interface TugStatusCellProps {
   "aria-label"?: string;
   /** Native title tooltip for the cell button. */
   title?: string;
+  /**
+   * Author the cell into a focus group ([P10] revised) — when set, the
+   * cell registers as a **leaf** cycle stop (its own Tab stop, like the
+   * Z4B chips; no arrow-roving). Supplied by the surface that owns the
+   * Tab order; omitted elsewhere.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
+  /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
+  focusPolicy?: FocusPolicy;
   /** The centered value content (rendered inside the value wrap). */
   children: React.ReactNode;
 }
@@ -126,8 +142,27 @@ export function TugStatusCell({
   valueEmpty,
   "aria-label": ariaLabel,
   title,
+  focusGroup,
+  focusOrder,
+  focusPolicy,
   children,
 }: TugStatusCellProps): React.ReactElement {
+  // Leaf cycle-stop registration ([P10] revised). The registration is
+  // keyed by `id` independent of the DOM ref, so we stamp
+  // `data-tug-focusable` straight onto the button below rather than
+  // routing a ref through `TugPopoverTrigger` (whose `asChild` clone
+  // would replace it). The engine resolves the cell by that attribute,
+  // moves DOM focus to the `<button>` during the cycle walk, and paints
+  // the leaf ring via the global `[data-key-view-kbd]` rule.
+  const cellFocusableId = React.useId();
+  const registered = focusGroup !== undefined;
+  useFocusable({
+    id: cellFocusableId,
+    group: focusGroup ?? "",
+    order: focusOrder ?? 0,
+    policy: focusPolicy,
+    register: registered,
+  });
   return (
     <TugPopover ref={popoverRef}>
       <TugPopoverTrigger>
@@ -136,11 +171,12 @@ export function TugStatusCell({
           data-slot="tug-status-cell"
           className="dev-telemetry-status-cell dev-telemetry-status-anchor"
           data-priority={priority}
-          // The cell is not a native Tab stop and never steals the
-          // responder chain on click — selection is driven by the row's
-          // focus cursor when it authors the cells into a cycle. [L06]
+          // Not a *native* Tab stop and never steals the responder chain
+          // on click; the engine drives DOM focus here during the cycle
+          // walk (a `<button>` is programmatically focusable at -1). [L06]
           tabIndex={-1}
           data-tug-focus="refuse"
+          data-tug-focusable={registered ? cellFocusableId : undefined}
           aria-label={ariaLabel}
           title={title}
         >

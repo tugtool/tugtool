@@ -117,9 +117,14 @@ export interface FocusMode {
  * Internal mode-stack entry. Adds `restoreKeyView`: the key view that was
  * current when this mode was pushed, restored when it is popped — the
  * CFRunLoop "pop restores the prior key view" semantic ([#cfrunloop-model]).
+ * `restoreKeyViewKeyboard` snapshots whether that key view was keyboard-driven,
+ * so the restore re-paints the ring iff it was there before the push (e.g. a
+ * popover opened by keyboard from a focus-cycling stop returns to the ringed
+ * stop on close; a mouse-opened one restores ringless).
  */
 interface FocusModeEntry extends FocusMode {
   restoreKeyView: string | null;
+  restoreKeyViewKeyboard: boolean;
 }
 
 // ---- Focusables ----
@@ -463,6 +468,17 @@ export class FocusManager {
   }
 
   /**
+   * Whether the current key view is keyboard-driven (wears the ring). A floating
+   * surface's close-focus restorer uses this at open time to decide ownership:
+   * when a keyboard key view is present, the engine's mode-stack restore owns the
+   * close-focus (it returns the ring + DOM focus to that key view), so the
+   * responder-chain "prior responder" restore must defer — one writer, not two.
+   */
+  keyViewIsKeyboard(): boolean {
+    return this.keyViewKeyboard;
+  }
+
+  /**
    * Whether the current key view's focusable declares it is consuming Tab right
    * now (its `consumesTab` predicate returns true). The Tab pipeline also checks
    * the active element's DOM marker ([TAB_CONSUME_ATTRIBUTE]) for surfaces that
@@ -614,6 +630,7 @@ export class FocusManager {
       scopeId,
       trapped: opts.trapped,
       restoreKeyView: this.keyViewId,
+      restoreKeyViewKeyboard: this.keyViewKeyboard,
     });
     this.syncFocusModeDomAttribute();
     this.syncKeyWithinDomAttribute();
@@ -638,13 +655,32 @@ export class FocusManager {
     this.syncFocusModeDomAttribute();
     this.syncKeyWithinDomAttribute();
     if (wasTop) {
-      // Restore the prior key view. A no-op when unchanged; harmless when the
-      // captured target has since unmounted (the chain's first-responder
-      // seeding will re-resolve the key view on the next chain change).
-      this.setKeyView(entry.restoreKeyView);
-    } else {
-      this.touch();
+      // Restore the prior key view AND its keyboard-ness, so a key view that
+      // wore the ring before this mode was pushed (e.g. a focus-cycling stop
+      // that opened a popover by keyboard) gets the ring back on pop, while a
+      // mouse-opened one restores ringless. A no-op when unchanged; harmless
+      // when the captured target has since unmounted (the chain's
+      // first-responder seeding will re-resolve the key view on the next chain
+      // change).
+      this.setKeyView(entry.restoreKeyView, entry.restoreKeyViewKeyboard);
+      // The engine is the single owner of close-focus when it is returning to a
+      // KEYBOARD key view (a focus-cycle / Tab stop the surface was opened from):
+      // move DOM focus onto it. The service-popup binding defers in exactly this
+      // case (it checks `keyViewIsKeyboard` at open), so focus is written by one
+      // system — no dueling writers, no dependence on effect order. A non-keyboard
+      // or null restore (a mouse-opened surface) leaves DOM focus to that
+      // responder-chain fallback instead, unchanged.
+      if (entry.restoreKeyView !== null && entry.restoreKeyViewKeyboard) {
+        this.focusKeyView();
+      }
     }
+    // Always notify: popping a mode changes `isFocusModePushed` /
+    // `currentFocusMode`, which subscribers observe (e.g. a card's `cycling`
+    // flag) independently of the key view. The `setKeyView` above is NOT enough
+    // — it early-returns when the restored key view is unchanged (restoring a
+    // null editor key view to an already-null one), which would leave the mode
+    // pop unobserved and a derived `cycling` boolean stale.
+    this.touch();
   }
 
   /**
@@ -666,6 +702,18 @@ export class FocusManager {
   currentFocusMode(): string {
     const top = this.modeStack[this.modeStack.length - 1];
     return top ? top.scopeId : BASE_FOCUS_MODE;
+  }
+
+  /**
+   * Whether `scopeId` is anywhere on the mode stack — current OR merely covered
+   * by a transient mode pushed on top of it (e.g. a popover opened from within a
+   * focus-cycling card). Distinct from {@link currentFocusMode}: a consumer that
+   * asks "am I still in this mode?" (the cycling card, deciding whether to keep
+   * its `data-cycling` treatment / not restore the editor caret) wants this, not
+   * top-of-stack — opening a nested surface must not read as an exit.
+   */
+  isFocusModePushed(scopeId: string): boolean {
+    return this.modeStack.some((m) => m.scopeId === scopeId);
   }
 
   /**

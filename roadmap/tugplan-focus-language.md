@@ -271,11 +271,13 @@ No engine touch; stays in the appearance zone ([L06]).
 
 > **route (Z4A) → Mode → Model → Effort (Z4B) → submit (Z5) → Z2 status row → prompt-entry editor → wrap.**
 
-The **editor is the last stop** (a text stop, per [P11]): landing rings the **still-blurred** input area with a focus-ring-colored border, and **Return resumes typing** (exits cycling). The **Z2 status row is one item-group stop** (Tab to it, ←/→ rove STATE/TIME/TOKENS/CONTEXT/TASKS — they are a coherent spatial row of popover triggers; the roved cell takes the default **blue** ring, no role). The **Z4B chips stay independent leaf stops** (Mode/Model/Effort). A **disabled** stop (the empty submit; the Z4B chips on the Shell route) is dropped from the walk by the engine's interactivity filter (`FocusManager.isRecordInteractive`), so the seed lands on the next live stop (route stays first).
+The **editor is the last stop** (a text stop, per [P11]): landing gives the **still-blurred** input area a clear focus-ring-colored **border around the whole text component** (a `::after` overlay — a plain inset `outline` was painted over by the CodeMirror substrate and read as no indication at all), and **Return resumes typing** (exits cycling). The **Z4B chips are independent leaf stops** (Mode/Model/Effort). A **disabled** stop (the empty submit; the Z4B chips on the Shell route) is dropped from the walk by the engine's interactivity filter (`FocusManager.isRecordInteractive`), so the seed lands on the next live stop (route stays first).
+
+> **Z2 = five leaf stops — REVERSED 2026-06-06 (by-eye).** The interim "Z2 is one item-group stop, arrow-rove the cells" was tried and **felt awful** in practice. Decision reversed: **each Z2 status cell (STATE / TIME / TOKENS / CONTEXT / TASKS) is its own leaf Tab stop**, exactly like the Z4B chips — Tab steps cell-to-cell, no arrow-roving, each cell wears the blue leaf ring in turn, Space/Enter opens its popover. The order becomes route → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → editor → wrap (cells at orders 5…9, editor at 10). A consequence: **a Z2 cell rings only while it is the active cycle stop** — never at rest (there is no item-group cursor to strand). This makes the Z2 cells a *cluster of independent controls*, not a semantic group, so the [P02] item-group treatment does not apply to them.
 
 **Why the seed moved off submit:** with the editor now in the cycle and the full toolbar+Z2 walked, a spatial left→right→up→editor reading is more legible than "nearest-actionable-first"; the route is the natural entry. (This reverses the earlier interim "submit first" — see [P12], also revised.)
 
-**Refinement (impl):** "multi-control zone = item-group" applies only to a **semantic group** (Z4A route = Code/Shell; the Z2 row = the telemetry cells). A cluster of **independent** controls (Z4B = Mode / Model / Effort) is **not** one item-group — each is its own leaf Tab stop. Arrow-within is for true groups.
+**Refinement (impl):** "multi-control zone = item-group" applies only to a **semantic group** — and in this card that is **only the Z4A route** (Code/Shell). Clusters of **independent** controls are runs of leaf stops, each its own Tab stop: the Z4B chips (Mode / Model / Effort) **and** (per the 2026-06-06 reversal above) the Z2 status cells. Arrow-within is for true groups only.
 
 **Rationale:** Zone-granular cycling keeps the Tab count low and maps the card's zones onto the focus-language's leaf/group archetypes — cycling *is* the language's showcase. Seeding at the route + reading left→right→up→editor gives a predictable spatial tour that ends on the text surface the user most often wants back.
 
@@ -343,6 +345,10 @@ A text-first card has one irreducible conflict: the **editor wants Tab** (comple
 - the trigger **pushes a trapped per-card focus mode** (`pushFocusMode`) and **seeds the key view at the commit-home** (`focusFirstInMode` → Z5 submit);
 - Tab walks the mode's focusables (the registered `Z`-zones); each zone is a **leaf** (Z5) or an **item-group** (Z2 / Z4) — so the focus-language's [P02] leaf-vs-group visuals render the tour for free;
 - the trigger (or Return dropping into a text stop) **pops the mode** (`popFocusMode`), restoring the editor caret (the captured prior key view). Escape is deferred ([P11]).
+
+**Comprehensive rule — the mouse exits toggleable cycling (DECIDED 2026-06-06).** Cycling is a *keyboard* mode; the moment the user reaches for the pointer they have left keyboard navigation. So a `pointerdown` while a toggleable cycle is the **current (top)** mode pops it (`useCycleMode` installs a capture-phase document listener; it exits only when the cycle is top, so a pointerdown inside a nested surface opened from a cycle stop does NOT exit — that surface's close returns to the originating stop). Consequences: clicking the editor ends the cycle and drops the caret in; clicking a Z4B chip / Z2 cell ends the cycle and opens its surface *by mouse*, so closing that surface restores the **editor caret** (no keyboard key view to return to). Clicking a control while NOT cycling is unchanged.
+
+**Close-focus ownership — the engine is the single writer (DECIDED 2026-06-06).** A surface (popover / sheet) opened **from a keyboard key view** (a cycle stop) returns close-focus to that stop: `popFocusMode` restores the captured key view *and its keyboard-ness* (the ring) and moves DOM focus to it (`focusKeyView`); the surface's own restorer (`useServicePopupBinding` for popovers, `handleUnmountAutoFocus` for sheets) **defers** — decided once at open via `keyViewIsKeyboard()`. A mouse-opened surface (no keyboard key view) keeps the existing responder/trigger restore. `getKeyCard` falls back to the keyboard focus's card so key-card chords (⌥⇥, ⇧⌘P) resolve even when focus is on a focus-refusing stop. `popFocusMode` always notifies (a mode pop changes `isFocusModePushed`, which a card's `cycling` flag observes, independent of the key view).
 
 **Cycle order ([P10]):** seed Z5; forward Tab wraps to the top and reads top→bottom (Z2 → Z4 → Z5 → wrap), Shift+Tab reverses; trapped within the card; Z1 transcript excluded (first cut).
 
@@ -474,8 +480,8 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
 | #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | to design + implement | — |
-| #step-z2-components | Step 2.7 — Componentize the Z2 status cells (prereq for Z2 cycling) | to devise + implement | — |
-| #step-z2-cycle | Step 2.8 — Z2 status row joins the cycle (was Slice 3) | pending (depends on #step-z2-components) | — |
+| #step-z2-components | Step 2.7 — Componentize the Z2 status cells (prereq for Z2 cycling) | done: `TugStatusCell` extraction (devised in `tugplan-z2-status-cell.md`) | afd978c7 |
+| #step-z2-cycle | Step 2.8 — Z2 status cells join the cycle (was Slice 3) | done: five Z2 cells = leaf stops (orders 5…9; rove reversed by-eye); square editor border; engine = single owner of close-focus (popovers+sheets defer; `getKeyCard` fallback; `popFocusMode` always notifies); **mouse exits cycling** ([#cycle-model]); at0140 cells + popover-escape + mouse-exit | (uncommitted) |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -806,23 +812,33 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 
 #### Step 2.8: Z2 status row joins the cycle (was Slice 3) {#step-z2-cycle}
 
+**STATUS — done (2026-06-06; Z2-as-leaf reversal applied).** Each Z2 status cell is its own **leaf** cycle stop ([P10] revised + the 2026-06-06 by-eye reversal — the interim item-group/arrow-rove "felt awful"). `TugStatusCell` registers via `useFocusable` (keyed by id; `data-tug-focusable` stamped on the cell `<button>` directly, sidestepping `TugPopoverTrigger`'s `asChild` ref capture); the engine drives DOM focus to the button during the walk and the global `[data-key-view-kbd]` rule paints the blue leaf ring; Space/Enter open the cell's popover natively. The dev card threads `statusRowFocusGroup`/`statusRowFocusOrderBase` (=5) through `useDevPlacementSlots`; the row assigns the cells consecutive orders 5…9; the editor moves to order 10. The status-bar region is wrapped in a second `cycle.CycleScope` sharing the card's mode id. **A cell rings only while it is the active cycle stop — never at rest** (the prior item-group cursor that could strand is gone). The **editor text-stop border** was reworked from an inset `outline` (painted over by CodeMirror → invisible) to a **square** (`border-radius: 0`) `::after` overlay border around the whole input component.
+
+**Close-focus ownership (one system) — added 2026-06-06.** Opening a Z2 cell's popover from the cycle, then Escape, used to lose the cycle position and dump focus into the editor. Two systems were writing close-focus and disagreeing on the destination: the focus engine's mode-stack restore (→ the cell key view) and the service-popup binding's "prior responder" restore (→ the editor, since the status bar is `data-tug-focus="refuse"`). Resolved by making the **focus engine the single owner** (see [#cycle-model] "Close-focus ownership"): `popFocusMode` restores the captured key view's keyboard-ness AND `focusKeyView`s it; `useServicePopupBinding` (popovers) and `TugSheet`'s `handleUnmountAutoFocus` (sheets) **defer** when a keyboard key view was present at open; `getKeyCard` falls back to the keyboard-focus card so key-card chords resolve on a refuse stop. Mouse/responder restore unchanged (at0055 / at0058 / at0020 / at0039 / at0106 / at0100 green). Also: `cycle.cycling` reads **mode-stack membership** (not top-of-stack) so a nested surface isn't a cycle exit; and `popFocusMode` **always notifies** (a mode pop changes `isFocusModePushed` independent of the key view — `setKeyView` early-returns when the restored key view is unchanged, which had left `cycle.cycling` stale).
+
+**Comprehensive rule — the mouse exits toggleable cycling — added 2026-06-06.** Per [#cycle-model]: `useCycleMode` exits on a `pointerdown` while the cycle is the top mode. Clicking the editor ends the cycle + drops the caret; clicking a Z4B chip / Z2 cell ends the cycle + opens its surface by mouse (close → editor caret). Verified in at0140 (editor-click + chip-click both exit).
+
 **Depends on:** #step-cycle-devcard, #step-z2-components
 
-**Commit:** `focus(cycle): Z2 status row joins the dev-card cycle`
+**Commit:** `focus(cycle): Z2 status cells join the dev-card cycle as leaf stops`
 
-**References:** [P10] (revised order — Z2 = one item-group stop), [P02], (#cycle-model)
+**References:** [P10] (revised — Z2 = five leaf stops, the 2026-06-06 reversal), (#cycle-model)
 
-**Artifacts:** the Z2 status row authored as the cycle's order-5 **item-group** stop (Tab to it, ←/→ rove the cells, blue ring on the roved cell, Space/Enter opens that cell's popover), wrapped in a second `cycle.CycleScope` sharing the card's mode id.
+**Artifacts:** the five Z2 status cells authored as the cycle's order-5…9 **leaf** stops (Tab cell-to-cell, blue leaf ring on the active cell, Space/Enter opens its popover), wrapped in a second `cycle.CycleScope` sharing the card's mode id; the editor text-stop's whole-component blue border.
 
 **Tasks:**
-- With the cells now proper components ([#step-z2-components]), author the Z2 row into `DEV_CYCLE_GROUP` at order 5 (between submit (4) and the editor (6)); wrap the status-bar region in `cycle.CycleScope`.
-- Confirm the tour: route → Mode → Model → Effort → submit → **Z2 (arrow-rove cells)** → editor → wrap; the blue ring on the roved cell; Space/Enter opens its popover.
+- [x] Author each Z2 cell as a leaf stop into `DEV_CYCLE_GROUP` (orders 5…9, editor → 10); wrap the status-bar region in `cycle.CycleScope`.
+- [x] Confirm the tour: route → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → editor → wrap; the blue leaf ring on each cell in turn; Space/Enter opens its popover; **no Z2 ring at rest**.
+- [x] Give the editor text-stop a clear **square** blue border around the whole text component.
+- [x] Make the focus engine the single owner of close-focus (popovers AND sheets defer when a keyboard key view was present at open); `getKeyCard` falls back to the keyboard-focus card; `popFocusMode` always notifies; `cycle.cycling` reads mode-stack membership so a nested surface is not a cycle exit.
+- [x] Comprehensive rule: **using the mouse exits toggleable cycling** (`useCycleMode` pointerdown-while-top → exit). Clicking the editor / a Z4B chip / a Z2 cell ends the cycle; a mouse-opened surface then restores the editor caret.
 
 **Tests:**
-- Behavior: extend at0140 — the cycle includes the Z2 row at order 5; arrow-rove within; the ring lands on a cell.
-- By-eye: the Z2 ring + rove reads as the focus language, both themes.
+- [x] Behavior: extend at0140 — the five Z2 cells are individual stops; submit skipped when empty; **Return opens a cell popover and Escape returns the ring to the same cell** without leaving the cycle or focusing the editor; **a click on the editor and on a Z4B chip both exit cycling**.
+- [x] Regression: mouse/responder close-focus unchanged — at0055 / at0058 / at0020 / at0039 / at0106 / at0100 / at0016 green.
+- [ ] By-eye: Z2 leaf rings + the square editor border read as the focus language, both themes; no ring at rest; keyboard-opened Z4B sheet returns the ring to its chip (full keyboard sheet-open lands with #step-cycle-keys). *(user verification)*
 
-**Checkpoint:** `bunx tsc --noEmit` clean; at0140 (with Z2) green; by-eye tour clean in brio + harmony.
+**Checkpoint:** `bunx tsc --noEmit` clean ✅; at0140 (cells + popover-escape + mouse-exit) green ✅; at0084 + at0055/at0058/at0020/at0039/at0105/at0106/at0100/at0016 green ✅; by-eye clean in brio + harmony — *user verification pending*.
 
 #### Step 3: Item-groups — radio / choice / option {#step-3}
 

@@ -266,20 +266,24 @@ const ROUTE_SHELL = "$";
  */
 const DEV_CYCLE_GROUP = "dev-prompt-cycle";
 // Cycle order ([P10], revised): the cycle reads the card bottom toolbar
-// left→right, then up to the status row, then into the editor, and **seeds at
+// left→right, then up to the status cells, then into the editor, and **seeds at
 // the route** (order 0). Forward Tab: route → Mode → Model → Effort → submit →
-// Z2 status row → editor → wrap; Shift+Tab reverses. The Z4B chips are
-// independent leaf stops; the Z2 row is one item-group stop; the editor is the
-// last stop (a text stop — Return resumes typing). A disabled stop (the empty
-// submit, or the chips on the Shell route) drops out of the walk via the
-// engine's interactivity filter, so the seed lands on the next live stop.
+// STATE → TIME → TOKENS → CONTEXT → TASKS → editor → wrap; Shift+Tab reverses.
+// The Z4B chips and the five Z2 status cells are all independent leaf stops
+// (no arrow-roving); the editor is the last stop (a text stop — Return resumes
+// typing). A disabled stop (the empty submit, or the chips on the Shell route)
+// drops out of the walk via the engine's interactivity filter, so the seed
+// lands on the next live stop.
 const DEV_CYCLE_ORDER_ROUTE = 0;
 const DEV_CYCLE_ORDER_MODE = 1;
 const DEV_CYCLE_ORDER_MODEL = 2;
 const DEV_CYCLE_ORDER_EFFORT = 3;
 const DEV_CYCLE_ORDER_SUBMIT = 4;
-// Order 5 (Z2 status row) is wired in its own slice ([P10] revised order).
-const DEV_CYCLE_ORDER_EDITOR = 6;
+// The Z2 status cells are five independent leaf stops ([P10] revised —
+// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / TASKS take orders
+// 5…9 (base + 0…4). The editor (the last stop) follows at 10.
+const DEV_CYCLE_ORDER_STATUS_BASE = 5;
+const DEV_CYCLE_ORDER_EDITOR = 10;
 
 /** Max characters the Z4B Project chip shows before it falls back to the
  *  leaf directory name. */
@@ -3401,6 +3405,12 @@ export function DevCardBody({
     sessionMetadataStore,
     onScrollToRow: handleScrollToRow,
     statusRowRef,
+    // Author the Z2 status cells into the card's cycle as five leaf stops
+    // ([P10] revised) starting at order 5; the status-bar region is
+    // wrapped in a second `cycle.CycleScope` (below) sharing this card's
+    // mode id.
+    statusRowFocusGroup: DEV_CYCLE_GROUP,
+    statusRowFocusOrderBase: DEV_CYCLE_ORDER_STATUS_BASE,
   });
   const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
   const effectiveStatusBarContent =
@@ -3546,7 +3556,19 @@ export function DevCardBody({
                     // Cmd-. via the service-popup binding.
                     data-tug-focus="refuse"
                   >
-                    {effectiveStatusBarContent}
+                    {/*
+                      Second cycle scope, sharing this card's mode id, so
+                      each Z2 status cell's `useFocusable` registers into
+                      the same cycle as the prompt-entry stops ([P10]
+                      revised — the cells are leaf stops at orders 5…9).
+                      The row is rendered in the transcript pane — outside
+                      the prompt entry's own `CycleScope` — so it needs its
+                      own here. Only the telemetry cells join the cycle; the
+                      sibling sash grip + maximize toggle are not stops.
+                    */}
+                    <cycle.CycleScope>
+                      {effectiveStatusBarContent}
+                    </cycle.CycleScope>
                   </div>
                   {/*
                     Maximize toggle — Z2's trailing control, in the

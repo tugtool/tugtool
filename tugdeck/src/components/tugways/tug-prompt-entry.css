@@ -158,16 +158,33 @@ body {
   cursor: not-allowed;
 }
 
-/* Editor text-stop ring ([P10]/[P11]). When the keyboard-focus cycle lands on
-   the input area (its last stop), ring it in the focus-ring colour while the
-   editor itself stays blurred (the `deactivated` stand-down). Inset offset so
-   the ring reads as a border *inside* the input region rather than extending
-   under the toolbar / pane edge. Return then "descends" into the editor
-   (resume typing). Overrides the default `[data-key-view-kbd]` offset. */
+/* Editor text-stop border ([P10]/[P11]). When the keyboard-focus cycle lands
+   on the input area (its last stop), give the WHOLE text component a clear
+   focus-ring-coloured border while the editor itself stays blurred (the
+   `deactivated` stand-down). Return then "descends" into the editor (resume
+   typing).
+
+   Drawn as a `::after` overlay rather than an `outline`: the embedded
+   CodeMirror substrate fills the input area and (with its own stacking /
+   backgrounds) painted over a negative-offset inset outline, leaving the ring
+   invisible. An absolutely-positioned, `pointer-events: none` border pinned to
+   the input area's box and lifted above the editor renders the border reliably
+   on top, hugging the text region without extending under the toolbar / pane
+   edge. Appearance keyed on the engine attribute, no React state ([L06]). */
 .tug-prompt-entry-input-area[data-key-view-kbd] {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  outline-offset: -2px;
-  border-radius: var(--tugx-focus-ring-radius);
+  position: relative;
+}
+
+.tug-prompt-entry-input-area[data-key-view-kbd]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  /* Square corners — the input area spans the full prompt-entry panel, so a
+     rounded ring reads as a floating pill; a square border hugs the panel. */
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* Keyboard-focus-cycling fill suppression ([P12]).

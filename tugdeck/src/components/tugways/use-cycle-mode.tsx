@@ -78,16 +78,23 @@ export function useCycleMode({
   const scopeId = useId();
 
   // `cycling` is the engine's own state, read through `useSyncExternalStore`
-  // ([L02]): the mode is "on" exactly when this card's scope is the current
-  // (top) focus mode. No parallel React boolean — so a pop from any path (this
-  // toggle, an exit, an unmount, a surface pushed on top) is reflected without
-  // a chance to desync.
+  // ([L02]): the mode is "on" exactly when this card's scope is **on the mode
+  // stack** — current, OR merely covered by a transient mode pushed on top of
+  // it (a popover / sheet opened from within the cycle). Using stack-membership
+  // (not top-of-stack) is deliberate: opening a nested surface from a cycle stop
+  // must NOT read as "exited cycling" — otherwise the consumer would tear down
+  // its cycling treatment (and, e.g., yank the caret back to its editor) the
+  // instant a status-cell popover opens, then be stranded when it closes. The
+  // toggle/exit guards below still use top-of-stack (`currentFocusMode`); only
+  // this "am I still cycling?" snapshot is stack-membership. No parallel React
+  // boolean — so a pop from any path (toggle, exit, unmount, a covering surface
+  // closing) is reflected without a chance to desync.
   const subscribe = useCallback(
     (onChange: () => void) => (manager === null ? () => {} : manager.subscribe(onChange)),
     [manager],
   );
   const getSnapshot = useCallback(
-    () => (manager === null ? false : manager.currentFocusMode() === scopeId),
+    () => (manager === null ? false : manager.isFocusModePushed(scopeId)),
     [manager, scopeId],
   );
   const cycling = useSyncExternalStore(subscribe, getSnapshot);
@@ -116,6 +123,29 @@ export function useCycleMode({
     if (manager.currentFocusMode() === scopeId) exit();
     else enter();
   }, [manager, scopeId, enter, exit]);
+
+  // Comprehensive rule for toggleable focus-cycling: **using the mouse exits
+  // cycling.** Cycling is a keyboard mode; the moment the user reaches for the
+  // pointer they have left keyboard navigation, so the cycle ends and the
+  // resting key view (the editor caret) returns. Implemented as a capture-phase
+  // `pointerdown` while cycling — but only when this card's cycle scope is the
+  // CURRENT (top) mode: a pointerdown inside a nested surface (a sheet / popover
+  // opened from a cycle stop) leaves cycling intact, so that surface's close can
+  // return focus to the originating stop ([engine-owns close-focus]). Exiting on
+  // the pointerdown (before the click's default) means a mouse-opened sheet then
+  // opens un-cycled and restores the editor caret on close, while a
+  // keyboard-opened one (cycle still current at open) returns to its stop. [L03]
+  useLayoutEffect(() => {
+    if (manager === null || !cycling) return;
+    const onPointerDown = (): void => {
+      if (manager.currentFocusMode() === scopeId) exit();
+    };
+    document.addEventListener("pointerdown", onPointerDown, { capture: true });
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, {
+        capture: true,
+      });
+  }, [manager, cycling, scopeId, exit]);
 
   // Safety: a card unmounting (or its eligibility dropping) while cycling must
   // not leave its scope stranded on the mode stack. Pop on unmount ([L03]).

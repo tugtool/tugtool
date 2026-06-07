@@ -213,6 +213,14 @@ export interface UseDevPlacementSlotsInput {
    * datum (the handle's calls then no-op).
    */
   statusRowRef?: React.Ref<DevTelemetryStatusRowHandle>;
+  /**
+   * Authors the Z2 status cells into the dev card's focus cycle ([P10]
+   * revised) — forwarded to {@link DevTelemetryStatusRow} when it occupies
+   * Z2 so each cell becomes its own leaf cycle stop. Omitted elsewhere.
+   */
+  statusRowFocusGroup?: string;
+  /** Order of the FIRST Z2 cell; the cells take consecutive orders. */
+  statusRowFocusOrderBase?: number;
 }
 
 /**
@@ -237,8 +245,14 @@ export function useDevPlacementSlots(
     EMPTY_PLACEMENT_MAP,
   );
 
-  const { codeSessionStore, sessionMetadataStore, onScrollToRow, statusRowRef } =
-    input;
+  const {
+    codeSessionStore,
+    sessionMetadataStore,
+    onScrollToRow,
+    statusRowRef,
+    statusRowFocusGroup,
+    statusRowFocusOrderBase,
+  } = input;
 
   // Effective Z2 — explicit mapping wins, but a null / unset value
   // falls back to `statusRow` (the Step 20.4 HMR-study outcome).
@@ -279,11 +293,20 @@ export function useDevPlacementSlots(
               codeSessionStore={codeSessionStore}
               sessionMetadataStore={sessionMetadataStore}
               onScrollToRow={onScrollToRow}
+              focusGroup={statusRowFocusGroup}
+              focusOrderBase={statusRowFocusOrderBase}
             />
           );
       }
     },
-    [codeSessionStore, sessionMetadataStore, onScrollToRow, statusRowRef],
+    [
+      codeSessionStore,
+      sessionMetadataStore,
+      onScrollToRow,
+      statusRowRef,
+      statusRowFocusGroup,
+      statusRowFocusOrderBase,
+    ],
   );
 
   const renderTurnTrailing = useMemo<DevTurnTrailingRenderer | undefined>(

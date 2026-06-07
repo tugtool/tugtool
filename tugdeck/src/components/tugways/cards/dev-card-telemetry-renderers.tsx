@@ -37,6 +37,7 @@ import React, {
 } from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
+import type { FocusPolicy } from "@/components/tugways/focus-manager";
 import { type TugPopoverHandle } from "@/components/tugways/tug-popover";
 import { TugStatusCell } from "@/components/tugways/tug-status-cell";
 import {
@@ -249,6 +250,22 @@ export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
    * inert text.
    */
   onScrollToRow?: ScrollToRowHandler;
+  /**
+   * Author the row's cells into a focus group ([P10] revised) — when set,
+   * **each cell is its own leaf cycle stop** (Tab moves cell-to-cell,
+   * no arrow-roving), like the Z4B chips. Supplied by the dev card's
+   * cycle scope; omitted in the gallery / fixtures, where the cells are
+   * not Tab stops.
+   */
+  focusGroup?: string;
+  /**
+   * Order of the FIRST cell (STATE) within {@link focusGroup}; the cells
+   * take consecutive orders left→right (STATE, TIME, TOKENS, CONTEXT,
+   * TASKS = base + 0…4).
+   */
+  focusOrderBase?: number;
+  /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
+  focusPolicy?: FocusPolicy;
 }
 
 /**
@@ -467,7 +484,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
   DevTelemetryStatusRowHandle,
   DevTelemetryStatusRowProps
 >(function DevTelemetryStatusRow(
-  { codeSessionStore, sessionMetadataStore, onScrollToRow },
+  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy },
   ref,
 ) {
   // Handle on the CONTEXT cell's popover so `/context` can pop it
@@ -480,6 +497,16 @@ export const DevTelemetryStatusRow = React.forwardRef<
     }),
     [],
   );
+
+  // Cycle stops ([P10] revised): each cell is its own leaf stop (Tab
+  // cell-to-cell, no arrow-roving), like the Z4B chips. The cells take
+  // consecutive orders left→right from `focusOrderBase`; passing an
+  // undefined group leaves them off the walk entirely (`TugStatusCell`
+  // registers only when a `focusGroup` is supplied). `cellOrder` keeps
+  // the per-cell order in one place so the DOM order and the walk order
+  // can't drift.
+  const cellOrder = (offset: number): number | undefined =>
+    focusOrderBase === undefined ? undefined : focusOrderBase + offset;
 
   const snap = useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -664,19 +691,25 @@ export const DevTelemetryStatusRow = React.forwardRef<
     <TasksPopoverContent state={taskListState} idle={isIdle} />
   );
 
-  // Flat 4-cell flex row — STATE + TIME + TOKENS + CONTEXT as direct
-  // siblings. The row's `justify-content: center` (declared in CSS)
-  // packs the four cells as one group with a fixed inter-item `gap`;
+  // Flat 5-cell flex row — STATE + TIME + TOKENS + CONTEXT + TASKS as
+  // direct siblings. The row's `justify-content: center` (declared in
+  // CSS) packs the cells as one group with a fixed inter-item `gap`;
   // the leftover width splits into equal flexing margins on the
-  // row's far left and right. Every cell is a fixed-width box — all
-  // four share one width — so the group's width is constant and the
-  // cells never shift.
+  // row's far left and right. Every cell is a fixed-width box so the
+  // group's width is constant and the cells never shift.
   return (
     <div
       className="dev-telemetry-status-row"
       data-slot="dev-telemetry-status-row"
     >
-      <TugStatusCell priority="state" label="STATE" popover={statePopover}>
+      <TugStatusCell
+        priority="state"
+        label="STATE"
+        popover={statePopover}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(0)}
+        focusPolicy={focusPolicy}
+      >
         <TugProgressIndicator
           variant="pulsing-dot"
           size={12}
@@ -693,12 +726,26 @@ export const DevTelemetryStatusRow = React.forwardRef<
           aria-hidden
         />
       </TugStatusCell>
-      <TugStatusCell priority="time" label="TIME" popover={timePopover}>
+      <TugStatusCell
+        priority="time"
+        label="TIME"
+        popover={timePopover}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(1)}
+        focusPolicy={focusPolicy}
+      >
         <span className="dev-telemetry-status-value">
           {formatTimeMinutesSeconds(perTurnActiveMs)}
         </span>
       </TugStatusCell>
-      <TugStatusCell priority="tokens" label="TOKENS" popover={tokensPopover}>
+      <TugStatusCell
+        priority="tokens"
+        label="TOKENS"
+        popover={tokensPopover}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(2)}
+        focusPolicy={focusPolicy}
+      >
         <span className="dev-telemetry-status-value">
           {formatTokensCaps(tokensCellValue)}
         </span>
@@ -708,6 +755,9 @@ export const DevTelemetryStatusRow = React.forwardRef<
         label="CONTEXT"
         popover={contextPopover}
         popoverRef={contextPopoverRef}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(3)}
+        focusPolicy={focusPolicy}
       >
         <span
           className="dev-telemetry-status-value dev-telemetry-status-value-context"
@@ -726,6 +776,9 @@ export const DevTelemetryStatusRow = React.forwardRef<
         label="TASKS"
         popover={tasksPopover}
         valueEmpty={!hasTasks}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(4)}
+        focusPolicy={focusPolicy}
       >
         <TugProgressIndicator
           variant="pulsing-dot"

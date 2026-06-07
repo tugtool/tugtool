@@ -134,3 +134,9 @@
      overrides it to a content-sized width. */
   --tugx-dev-status-cell-width: 21ch;
 }
+
+/* The row is NOT a focusable — each cell is its own leaf cycle stop
+   ([P10] revised), so the row never carries `[data-key-view-kbd]` and
+   needs no group ring override. A roved/active cell wears the leaf ring
+   via the global `[data-key-view-kbd]` rule (default blue); cells only
+   gain the key view inside the cycle, so nothing rings at rest. */

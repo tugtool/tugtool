@@ -16,16 +16,31 @@
  *   1. **rest:** clicking the editor puts the caret there (base mode); the card
  *      reads `data-cycling="false"` and the submit holds no key view.
  *   2. **empty editor → submit is skipped:** ⌥⇥ seeds the route; touring the
- *      live stops (route → Mode → Model → Effort → wrap) never lands on the
- *      submit, because its empty-input gate disables it. ⌥⇥ off restores caret.
+ *      live stops (route → Mode → Model → Effort → STATE → TIME → TOKENS →
+ *      CONTEXT → TASKS → editor → wrap) never lands on the submit, because its
+ *      empty-input gate disables it. ⌥⇥ off restores caret.
  *   3. **typed editor → route seeds:** with content, ⌥⇥ seeds the route (the
  *      first stop in the revised order).
- *   4. **Tab tours the stops:** route → Mode → Model → Effort → submit →
- *      editor → wrap (trapped). The editor is the last stop — a text stop: the
- *      input area takes the ring while the editor stays blurred (no caret).
- *      (Z2 joins in a later slice.)
+ *   4. **Tab tours the stops:** route → Mode → Model → Effort → submit → STATE
+ *      → TIME → TOKENS → CONTEXT → TASKS → editor → wrap (trapped). Each Z2
+ *      status cell is its own leaf stop ([P10] revised — no arrow-roving): Tab
+ *      steps cell-to-cell and each wears the blue leaf ring in turn. The editor
+ *      is the last stop — a text stop: the input area takes the border while the
+ *      editor stays blurred (no caret).
  *   5. **Return on the editor stop resumes typing ([P11]):** it descends into
  *      the editor, exiting cycling and returning the caret. (⌥⇥ also exits.)
+ *   6. **Z2 popover keeps the cycle:** Return on a cell opens its popover;
+ *      Escape returns the ring to the same cell — still cycling, editor
+ *      untouched (the focus engine owns close-focus; the service-popup binding
+ *      defers).
+ *   7. **Using the mouse exits cycling (editor):** a click on the editor ends
+ *      the cycle and returns the caret — the comprehensive rule for toggleable
+ *      cycling (no ⌥⇥ needed).
+ *   8. **Using the mouse exits cycling (Z4B chip):** re-enter, then a click on
+ *      the Mode chip exits the cycle too (and opens its picker by mouse). The
+ *      keyboard path — a sheet opened from a cycle stop returns the ring to that
+ *      chip via the same engine-owns close-focus as the step-6 popover — lands
+ *      with the cycle mode keys (#step-cycle-keys).
  *
  * Mode keys (Return / Space) are a later step; this gates the dev-card
  * push/seed/wrap/restore + the `data-cycling` signal. The Picker → Open default
@@ -50,10 +65,18 @@ const MODEL_CHIP = `${CARD} [data-slot="model-chip"]`;
 const EFFORT_CHIP = `${CARD} [data-slot="effort-chip"]`;
 const INPUT_AREA = `${CARD} .tug-prompt-entry-input-area`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
+// The five Z2 status cells. Each is its own leaf cycle stop ([P10]
+// revised — no item-group roving): the cell `<button>` carries
+// `data-key-view-kbd` (and the leaf ring) when it is the active stop.
+const Z2_STATE = `${CARD} [data-priority="state"]`;
+const Z2_TIME = `${CARD} [data-priority="time"]`;
+const Z2_TOKENS = `${CARD} [data-priority="tokens"]`;
+const Z2_CONTEXT = `${CARD} [data-priority="context"]`;
+const Z2_TASKS = `${CARD} [data-priority="tasks"]`;
 
 // Expression: does the element at `selector` hold the keyboard key view? Works
-// for leaf stops (submit, chips — the element carries `data-key-view-kbd`) and
-// item-group stops (the route — its group root carries it).
+// for leaf stops (submit, chips, the Z2 cells — the element carries
+// `data-key-view-kbd`) and item-group stops (the route — its group root does).
 function hasKeyView(selector: string): string {
   return `(function(){
     var el = document.querySelector(${JSON.stringify(selector)});
@@ -106,9 +129,12 @@ const EDITOR_FOCUSED = `(function(){
   return el !== null && document.activeElement === el;
 })()`;
 
+// Whether a popover (portaled status-cell detail) is currently open.
+const POPOVER_OPEN = `document.querySelector('[data-slot="tug-popover"]') !== null`;
+
 describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → editor → wrap, skips the disabled submit when empty, Return on the editor stop resumes typing",
+    "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → editor → wrap (each Z2 cell a leaf stop), skips the disabled submit when empty, Return on the editor stop resumes typing",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard" });
       try {
@@ -144,8 +170,8 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
 
         // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
         // empty-input gate), so it is NOT a Tab target — touring the live stops
-        // (route → Mode → Model → Effort → editor → wrap) skips it: Tab steps
-        // from Effort straight to the editor, never landing on the submit.
+        // (route → Mode → Model → Effort → STATE → … → TASKS → editor → wrap)
+        // skips it: Tab steps from Effort straight to STATE, never the submit.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
@@ -156,9 +182,21 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // Effort → editor (the disabled submit is skipped).
-        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
+        // Effort → STATE (the disabled submit is skipped). Each Z2 cell is
+        // its own leaf stop, so Tab steps cell-to-cell through the row.
+        await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TOKENS), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_CONTEXT), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TASKS), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        // TASKS → editor.
+        await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
         // ⌥⇥ off → back to the editor caret.
@@ -198,6 +236,21 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        // submit → the five Z2 cells, each its own leaf stop ([P10] revised):
+        // STATE → TIME → TOKENS → CONTEXT → TASKS. Each cell carries the leaf
+        // key view (and the blue ring) in turn — no arrow-roving.
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(hasKeyView(Z2_STATE))).toBe(false);
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TOKENS), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_CONTEXT), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TASKS), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         // The editor text-stop holds the ring but the caret is NOT active (the
@@ -215,11 +268,56 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         // Re-enter, walk to the editor stop, and Return to resume typing.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        for (let i = 0; i < 5; i++) await app.nativeKey("Tab"); // route→…→submit→editor
+        // route→Mode→Model→Effort→submit→STATE→TIME→TOKENS→CONTEXT→TASKS→editor.
+        for (let i = 0; i < 10; i++) await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         await app.nativeKey("Return");
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+
+        // (6) A status-cell popover opened from a Z2 cell must not be read as a
+        // cycle exit ([P10]). Re-enter, Tab to TIME, Return to open its popover,
+        // Escape to close: the popover pushes a nested focus mode on top of the
+        // card's cycle scope, but the card is STILL cycling (its scope remains
+        // on the stack), so closing the popover returns the ring to the SAME
+        // cell — focus is NOT yanked to the editor and the cycle position is not
+        // lost.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        // route→Mode→Model→Effort→submit→STATE→TIME (6 Tabs).
+        for (let i = 0; i < 6; i++) await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });
+        // Return opens the TIME cell's popover (the cell `<button>` activates).
+        await app.nativeKey("Return");
+        await app.waitForCondition<boolean>(POPOVER_OPEN, { timeoutMs: 6000 });
+        // While the popover is open the card's cycle scope is covered but still
+        // on the stack — the card reads as cycling, NOT exited.
+        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+        // Escape closes the popover. The ring returns to the TIME cell, the card
+        // is still cycling, and DOM focus did not fall back to the editor.
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(`${POPOVER_OPEN} === false`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });
+        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+        expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
+
+        // (7) Comprehensive rule: USING THE MOUSE EXITS CYCLING. From step 6
+        // (still cycling, cycle is the top mode), a CLICK on the editor ends the
+        // cycle and returns the caret — no ⌥⇥ needed.
+        await app.nativeClickAtElement(EDITOR);
+        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+
+        // (8) The mouse-exit rule also fires for a click on a Z4B chip: re-enter
+        // cycling, then a CLICK on the Mode chip exits the cycle (a mouse click
+        // leaves keyboard cycling) AND opens the chip's picker. Closing it then
+        // restores the prompt-entry caret (the cycle has exited — no keyboard key
+        // view — so close-focus falls to the editor, not the chip).
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.nativeClickAtElement(MODE_CHIP);
+        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") {

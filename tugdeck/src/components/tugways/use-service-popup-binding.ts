@@ -18,12 +18,26 @@
  *   2. Pass `onCloseAutoFocus` directly to Radix's `<Content
  *      onCloseAutoFocus>` prop. The hook decides whether to restore.
  *
- * ## Predicate ([D07])
+ * ## Ownership: engine first, responder fallback
  *
- * Restore prior responder iff: (a) something was captured at open, AND
- * (b) the chain manager is still in scope, AND (c) no external
- * pointerdown was observed during the open lifetime, AND (d) chain has
- * an active first responder.
+ * When a popup opens while the focus engine has a **keyboard key view**
+ * (it was opened from a focus-cycle / Tab stop), the FOCUS engine owns
+ * close-focus: its mode-stack pop restores the ring AND DOM focus to that
+ * key view. This responder-chain restorer then **defers** — it
+ * `preventDefault()`s (so Radix does not also refocus the trigger) and
+ * restores nothing, so focus is written by exactly one system and the
+ * engine's restored key view is never clobbered. The decision is made
+ * once at open (`keyViewIsKeyboard()`), so it does not depend on the
+ * order in which the engine pop and Radix's `onCloseAutoFocus` run. A
+ * mouse-opened popup has no keyboard key view, the engine restores
+ * nothing, and the responder predicate below owns close-focus as before.
+ *
+ * ## Predicate ([D07]) — the responder-fallback path
+ *
+ * Restore prior responder iff: (a) the engine did not claim ownership, AND
+ * (b) something was captured at open, AND (c) the chain manager is still in
+ * scope, AND (d) no external pointerdown was observed during the open
+ * lifetime, AND (e) chain has an active first responder.
  *
  * "External" = pointerdown target is NOT a descendant of the canvas
  * overlay root. Every popup-class primitive lives in the overlay root
@@ -112,10 +126,11 @@
  * @module components/tugways/use-service-popup-binding
  */
 
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useContext, useLayoutEffect, useRef } from "react";
 
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useResponderChain } from "./responder-chain-provider";
+import { FocusManagerContext } from "./focus-manager";
 
 /**
  * Return type of `useServicePopupBinding`.
@@ -156,16 +171,22 @@ export interface ServicePopupBinding {
  */
 export function useServicePopupBinding(): ServicePopupBinding {
   const manager = useResponderChain();
+  const focusManager = useContext(FocusManagerContext);
   const overlayRoot = useCanvasOverlay();
 
   // [L24] structure zone: all subscription state held in refs.
   // capturedRef holds the first-responder id snapshotted at open.
   // externalClickRef flags whether an external pointerdown was
   // observed during the open lifetime. listenerRef holds the
-  // installed handler so we can remove it later.
+  // installed handler so we can remove it later. engineOwnsRef records
+  // (decided at open) that the FOCUS engine owns close-focus for this
+  // popup — true when a keyboard key view was present at open, so the
+  // engine's mode-stack restore returns the ring + DOM focus to it and
+  // THIS responder-chain restorer must defer. One writer, not two.
   const capturedRef = useRef<string | null>(null);
   const externalClickRef = useRef<boolean>(false);
   const listenerRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const engineOwnsRef = useRef<boolean>(false);
 
   // overlayRoot is read at use-time (not closure-captured at render
   // time) so a registry change between open and close still routes
@@ -177,6 +198,19 @@ export function useServicePopupBinding(): ServicePopupBinding {
   const captureOnOpen = useCallback((): void => {
     if (!manager) return;
     if (typeof document === "undefined") return;
+
+    // Ownership decision, made once at open and race-free: if a keyboard key
+    // view is present (the popup was opened from a focus-cycle / Tab stop, e.g.
+    // a Z2 status cell), the FOCUS engine owns close-focus — its mode-stack
+    // pop restores the ring AND DOM focus to that key view. This responder
+    // restorer then defers entirely, so focus is never written twice (which
+    // would clobber the engine's restored key view). A mouse-opened popup has
+    // no keyboard key view, so the engine restores nothing and this restorer
+    // owns the close-focus as before.
+    engineOwnsRef.current =
+      focusManager !== null &&
+      focusManager.keyView() !== null &&
+      focusManager.keyViewIsKeyboard();
 
     // Snapshot the captured prior responder. May be null if no chain
     // node has claimed first-responder yet — that's still recorded;
@@ -236,6 +270,22 @@ export function useServicePopupBinding(): ServicePopupBinding {
     capturedRef.current = null;
     const externalClick = externalClickRef.current;
     externalClickRef.current = false;
+    const engineOwns = engineOwnsRef.current;
+    engineOwnsRef.current = false;
+
+    // The focus engine owns close-focus for keyboard-opened popups (see
+    // `captureOnOpen`): close-focus belongs on the originating cycle stop (the
+    // engine key view), with its ring. `preventDefault` so Radix doesn't refocus
+    // the trigger, then `focusKeyView()` — the callback is the surface's
+    // authoritative last word on DOM focus, so this lands focus on the stop even
+    // as Radix blurs the unmounting content to `<body>`. The stop is typically
+    // focus-refusing (not a responder), so the responder chain is left as-is;
+    // key-card chords still resolve via `getKeyCard`'s keyboard-focus fallback.
+    if (engineOwns) {
+      event.preventDefault();
+      focusManager?.focusKeyView();
+      return;
+    }
 
     // Restore predicate: every condition must hold for the binding
     // to take ownership of close-focus. If any short-circuits, fall

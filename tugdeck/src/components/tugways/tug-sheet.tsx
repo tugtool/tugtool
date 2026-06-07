@@ -89,6 +89,7 @@ import { useTugPaneScrim } from "@/components/tugways/use-tug-pane-scrim";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { useFocusTrap } from "./use-focus-trap";
+import { FocusManagerContext } from "./focus-manager";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import {
@@ -876,6 +877,19 @@ export function TugSheetContent({
   // Track trigger element for focus restoration on close.
   const triggerElRef = useRef<Element | null>(null);
 
+  // Close-focus ownership ([engine-owns close-focus]). When the sheet is opened
+  // from a keyboard key view (a focus-cycle / Tab stop, e.g. a Z4B chip during
+  // cycling), the FOCUS engine owns close-focus: its mode-stack pop restores the
+  // ring AND DOM focus to that stop. The sheet then defers — it does NOT refocus
+  // its trigger on close (whose `focusin` would clobber the engine's restored
+  // keyboard key view, dropping the ring). Decided once at open (in
+  // `handleMountAutoFocus`, before the FocusScope steals focus), so it does not
+  // depend on the order in which the engine pop and Radix's unmount-autofocus
+  // run. A mouse-opened sheet has no keyboard key view → the trigger restore
+  // below owns close-focus as before.
+  const focusManager = useContext(FocusManagerContext);
+  const engineOwnsCloseFocusRef = useRef(false);
+
   // No anchor applier: the panel's clip is positioned by pure CSS in
   // `tug-sheet.css` (`position: absolute` inside the pane frame). The
   // canvas-tier wrapper, scrim, ResizeObserver, MutationObserver, and
@@ -924,6 +938,13 @@ export function TugSheetContent({
   }
 
   function handleMountAutoFocus(e: Event) {
+    // Decide close-focus ownership now, before the FocusScope moves focus into
+    // the sheet (which would change the key view): if a keyboard key view is
+    // present, the engine owns the close-focus restore and the sheet defers.
+    engineOwnsCloseFocusRef.current =
+      focusManager !== null &&
+      focusManager.keyView() !== null &&
+      focusManager.keyViewIsKeyboard();
     if (onOpenAutoFocus) {
       onOpenAutoFocus(e);
     }
@@ -931,7 +952,21 @@ export function TugSheetContent({
   }
 
   function handleUnmountAutoFocus(e: Event) {
-    // Restore focus to trigger element on close.
+    // The focus engine owns close-focus for keyboard-opened sheets (see
+    // `handleMountAutoFocus`): the mode-stack pop restored the engine key view
+    // (the originating stop, e.g. a Z4B chip) + its ring. This unmount-autofocus
+    // is the surface's authoritative last word on DOM focus, so move DOM focus
+    // onto that key view here — `preventDefault` so Radix does not refocus the
+    // trigger (whose `focusin` would clobber the keyboard key view), then
+    // `focusKeyView()` to land focus on the stop even though Radix blurs the
+    // unmounting content to `<body>` during teardown.
+    if (engineOwnsCloseFocusRef.current) {
+      engineOwnsCloseFocusRef.current = false;
+      e.preventDefault();
+      focusManager?.focusKeyView();
+      return;
+    }
+    // Mouse-opened sheet: restore focus to the trigger element on close.
     if (triggerElRef.current && "focus" in triggerElRef.current) {
       e.preventDefault();
       (triggerElRef.current as HTMLElement).focus();
