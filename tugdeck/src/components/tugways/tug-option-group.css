@@ -32,7 +32,11 @@
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   align-items: stretch;
-  gap: 2px;
+  /* A CONSTANT, controlled inter-item gap — a fixed CSS length that never shifts
+     on relayout and gives the OUTSIDE cursor ring ("ring + gap", [P02]) room to
+     sit without smashing into the neighbor. Matches tug-choice-group. Ghost
+     zeroes it (inline labels). */
+  column-gap: 4px;
   width: fit-content;
   background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
   border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
@@ -132,11 +136,39 @@
 /* ---- Hover on off-state item ---- */
 
 /* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
-/* `[data-key-cursor]` is the keyboard movement cursor ([P03]/[Q01]); it reuses
- * the off-state hover so the cursor item reads as a hover. */
-.tug-option-group-item:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
+/* Pointer hover only. The keyboard movement cursor is the role-resolved RING on
+ * the cursor item (the global `[data-key-cursor]` rule in `focus-ring.css`),
+ * not a background wash — [P02]: a ring survives atop the on-state fill where
+ * the former neutral tint could not. */
+.tug-option-group-item:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
   background-color: var(--tugx-key-cursor-surface);
   color: var(--tug7-element-segment-text-normal-plain-hover);
+}
+
+/* ============================================================================
+   Focus language — item-group treatment ([P01]/[P02]/[P03])
+   ----------------------------------------------------------------------------
+   The option group is ONE Tab stop (a multi-select toolbar). When it holds the
+   key view, override the global leaf ring → a faint behind-tint on the track
+   (composed over its own background via `background-image`), and let the cursor
+   ITEM carry the single ring (global `[data-key-cursor]`). The ring sits over
+   the on-state fill of a selected item so multi-select reads without an added
+   checkmark ([P02]). Role-resolved via `--tugx-focus-tint` (default `action`,
+   role-injected by `buildRoleStyle`).
+   ========================================================================== */
+.tug-option-group[data-key-view-kbd] {
+  outline: none;
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+}
+
+/* Cursor ring = the LEAF focus treatment ([P02], "ring + gap"): the standard
+   role-blue ring sitting just OUTSIDE the item with a thin background-colored gap
+   (`outline-offset: 1px`), exactly like a focused button. The gap is what lets it
+   read atop a same-color on-fill — fill → thin track gap → role ring — without a
+   one-off neutral color (it stays in the role family). The constant `column-gap`
+   keeps this outside ring clear of neighbors. */
+.tug-option-group-item[data-key-cursor] {
+  outline-offset: 1px;
 }
 
 /* ---- On state ---- */
@@ -251,9 +283,14 @@
   pointer-events: none;
 }
 
-/* Hide pipe when the item itself is on */
+/* Hide pipe when a neighbor is on OR holds the keyboard cursor — the on-fill and
+   the focus ring each own the seam, so a divider there would collide with the
+   ring (or read as a dark line on the fill). The cursor ring hides the divider
+   exactly as the on-state does ([P02]). */
 .tug-option-group-item[data-state="on"] + .tug-option-group-item::before,
-.tug-option-group-item + .tug-option-group-item[data-state="on"]::before {
+.tug-option-group-item + .tug-option-group-item[data-state="on"]::before,
+.tug-option-group-item[data-key-cursor] + .tug-option-group-item::before,
+.tug-option-group-item + .tug-option-group-item[data-key-cursor]::before {
   background-color: transparent;
 }
 
@@ -350,7 +387,7 @@
 /* Hover on an off-state item — preview the on treatment without flipping
  * the state. Same surface/text pair as on, so the user reads "this is what
  * toggling on feels like." */
-.tug-option-group[data-emphasis="ghost"] .tug-option-group-item:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
+.tug-option-group[data-emphasis="ghost"] .tug-option-group-item:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="on"]) {
   background-color: var(--tugx-key-cursor-surface);
   color: var(--tug7-element-segment-text-normal-plain-hover);
 }

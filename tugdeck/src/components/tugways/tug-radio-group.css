@@ -136,14 +136,16 @@
 /* ---- States: rest → hover → disabled ---- */
 
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
-/* The keyboard movement cursor ([P03]/[Q01]) reuses the hover treatment: the
- * current item under the arrows reads exactly as a pointer hover. A clearly
- * visible row fill (not just the indicator border) marks the hovered/cursor
- * row — the bare indicator-border change read far too faintly. */
-.tug-radio-group [data-slot="tug-radio-item"]:is(:hover, [data-key-cursor]):not(:disabled):not([data-disabled]) {
+/* Pointer hover paints a row fill so the mouse target reads clearly. The
+ * keyboard movement cursor is NO LONGER a row fill — under the focus language
+ * it is the role-resolved RING on the cursor item ([P02]: the ring survives
+ * atop a selection fill where the former neutral tint could not). So this rule
+ * is hover-only; the cursor's ring comes from the global `[data-key-cursor]`
+ * rule in `focus-ring.css`. */
+.tug-radio-group [data-slot="tug-radio-item"]:hover:not(:disabled):not([data-disabled]) {
   background-color: var(--tugx-key-cursor-surface);
 }
-[data-slot="tug-radio-item"]:is(:hover, [data-key-cursor]):not(:disabled):not([data-disabled]) .tug-radio-indicator {
+[data-slot="tug-radio-item"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
   border-color: var(--tug7-element-radio-border-normal-off-hover);
 }
 
@@ -154,9 +156,34 @@
   border-color: var(--tugx-radio-on-color);
 }
 
-[data-state="checked"]:is(:hover, [data-key-cursor]):not(:disabled):not([data-disabled]) .tug-radio-indicator {
+[data-state="checked"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
   background-color: var(--tugx-radio-on-hover-color);
   border-color: var(--tugx-radio-on-hover-color);
+}
+
+/* ============================================================================
+   Focus language — item-group treatment ([P01]/[P02]/[P03])
+   ----------------------------------------------------------------------------
+   The group is ONE Tab stop. When it holds the keyboard key view the global
+   leaf-ring rule (`focus-ring.css`) would ring the whole container — wrong for
+   a group. Override it to a faint behind-tint on the container instead, and let
+   the cursor ITEM carry the single ring (the global `[data-key-cursor]` rule).
+   The tint composes over the container via `background-image` so it works
+   whether or not the container has its own background; role-resolved through
+   `--tugx-focus-tint` (default `action`, role-injected by `buildRoleStyle`).
+   ========================================================================== */
+[data-slot="tug-radio-group"][data-key-view-kbd] {
+  outline: none;
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+}
+
+/* Cursor ring = the LEAF focus treatment ([P02], "ring + gap"): the standard
+   role-blue ring just OUTSIDE the row with a thin gap (`outline-offset: 1px`),
+   matching choice/option and a focused button. The row carries no fill (the
+   selection is the dot), so the ring always reads against the row; the thin
+   offset keeps it from the heavy 2px halo that read "tubby". */
+[data-slot="tug-radio-item"][data-key-cursor] {
+  outline-offset: 1px;
 }
 
 /* ---- Disabled state ---- */

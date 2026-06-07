@@ -172,6 +172,23 @@ body {
   outline: none;
 }
 
+/* A toggleable-cycling context shows the focus language ONLY while it is
+   cycling ([P13]). When cycling is off (`data-cycling="false"` on the context
+   root, e.g. the dev card resting on its editor caret), the keyboard lives in
+   the editor — the cycle stops must show no ring, behind-tint, or cursor, even
+   though the engine may still mark a *resting* key view among them (the route
+   group seeds the key view on its selected segment). Suppress the ring
+   (`outline`) and the behind-tint (`background-image`) on any key-view / cursor
+   inside such a context. Persistent contexts (gallery, sheets) have no
+   `data-cycling` ancestor, so they are unaffected and always show the language
+   when keyboard-focused. (The editor's own key-view treatment is a `::after`
+   border, not an `outline`, so it is untouched.) */
+[data-cycling="false"] [data-key-view-kbd],
+[data-cycling="false"] [data-key-cursor] {
+  outline: none;
+  background-image: none;
+}
+
 /**
  * The third keyboard visual state: `data-key-cursor` — the movement cursor on
  * the current item inside a group. Under the focus-language model it is an

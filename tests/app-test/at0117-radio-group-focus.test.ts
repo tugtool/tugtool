@@ -9,13 +9,20 @@
  * commit). Tab-into lands the cursor on the checked item.
  *
  * The gallery `Focus Walk` panel authors a three-item group (value `a` checked).
- * The test proves:
- *   - **no ring at rest:** before keyboard focus the group has no ring;
- *   - **Tab → one stop, ring on the group, cursor on the checked item:** Tab
- *     rings the group and parks the cursor on `a`;
- *   - **arrows move the cursor, not the selection:** ArrowDown moves the cursor
- *     to `b` (clears it from `a`) while `a` stays checked and the ring stays on
- *     the group;
+ * The test proves the **item-group focus treatment** ([P02] of the
+ * focus-language plan): the group is one stop, but the ring does NOT wrap the
+ * container — the container carries a faint behind-tint and the *cursor item*
+ * carries the single ring. This is the inversion [#step-3] lands; the prior
+ * model rang the whole container.
+ *   - **no ring / no tint at rest:** before keyboard focus the group has no
+ *     ring and no behind-tint;
+ *   - **Tab → one stop; behind-tint on the group, NOT a ring; ring on the
+ *     cursor item:** Tab marks the group key-view, paints the behind-tint on the
+ *     container (its outline stays 0 — no container ring), and parks the ring on
+ *     the cursor item `a`. (Guards against the container double-ring regression.)
+ *   - **arrows move the cursor + its ring, not the selection:** ArrowDown moves
+ *     the cursor (and the ring) to `b` while `a` stays checked and the group
+ *     keeps the key view;
  *   - **Space commits:** Space checks the cursor item `b` (and unchecks `a`).
  */
 
@@ -51,13 +58,16 @@ function deckShape() {
   };
 }
 
-// The group's ring marker + outline (the ring is on the component, [P03]).
+// The group container's focus marks ([P02]): under the item-group model it gets
+// a behind-tint, NOT a ring — so `outline` must stay 0 while `backgroundImage`
+// carries the tint gradient when the group holds the key view.
 const GROUP_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(GROUP)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
+    behindTint: cs.backgroundImage,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
   };
 })()`;
@@ -66,6 +76,13 @@ const GROUP_PROBE = `(function(){
 const CURSOR_RADIO = `(function(){
   var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-radio-value][data-key-cursor]");
   return el ? el.getAttribute("data-radio-value") : null;
+})()`;
+
+// The outline width of the item currently wearing the cursor — the single ring
+// of the item-group model lives HERE, not on the container.
+const CURSOR_RING_WIDTH = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-radio-value][data-key-cursor]");
+  return el ? getComputedStyle(el).outlineWidth : null;
 })()`;
 
 // Per-item snapshot: cursor + checked state.
@@ -80,6 +97,7 @@ const PROBE = (selector) => `(function(){
 
 interface GroupProbe {
   outline: string;
+  behindTint: string;
   keyboardReached: boolean;
 }
 interface ItemProbe {
@@ -113,23 +131,31 @@ describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single item-container sto
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) No ring at rest on the group; `a` is the checked item.
+        // (1) At rest: no key view, no container ring, no behind-tint; `a` is
+        // the checked item.
         const atRest = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(atRest?.keyboardReached).toBe(false);
         expect(parseFloat(atRest?.outline ?? "0")).toBe(0);
+        expect(atRest?.behindTint).toBe("none");
         const aRest = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
         expect(aRest?.state).toBe("checked");
 
-        // (2) Tab → one stop: the ring lands on the GROUP and the cursor parks
-        // on the checked item `a`.
+        // (2) Tab → one stop with the item-group treatment: the GROUP holds the
+        // key view and paints the behind-tint but NOT a ring (outline stays 0 —
+        // the double-ring guard), and the single ring lands on the cursor item
+        // `a`.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "a"`, { timeoutMs: 6000 });
         const onGroup = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(onGroup?.keyboardReached).toBe(true);
-        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(onGroup?.outline ?? "0")).toBe(0);
+        expect(onGroup?.behindTint.startsWith("linear-gradient")).toBe(true);
+        const cursorRingOnA = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
+        expect(parseFloat(cursorRingOnA ?? "0")).toBeGreaterThan(0);
 
-        // (3) ArrowDown → the cursor moves to `b`; the selection does NOT follow
-        // (`a` stays checked) and the ring stays on the group.
+        // (3) ArrowDown → the cursor (and its ring) move to `b`; the selection
+        // does NOT follow (`a` stays checked) and the group keeps the key view
+        // with its behind-tint (still no container ring).
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "b"`, { timeoutMs: 6000 });
         const aAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
@@ -139,6 +165,9 @@ describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single item-container sto
         expect(bAfterMove?.state).toBe("unchecked");
         const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(ringStill?.keyboardReached).toBe(true);
+        expect(parseFloat(ringStill?.outline ?? "0")).toBe(0);
+        const cursorRingOnB = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
+        expect(parseFloat(cursorRingOnB ?? "0")).toBeGreaterThan(0);
 
         // (4) Space → commits the cursor item: `b` becomes checked, `a` unchecks.
         await app.nativeKey(" ");

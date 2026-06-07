@@ -73,17 +73,34 @@ export function getRoleTokenSuffix(role?: TugGroupRole): string {
  * @example
  * buildRoleStyle("radio", "success")
  * // → { "--tugx-radio-on-color": "var(--tug7-surface-toggle-primary-normal-success-rest)", ... }
+ *
+ * Focus-language role resolution ([P01]/[P02]/[P03] of the focus-language plan):
+ * when an explicit role is given, the focus marks of the item-group follow it
+ * too — the cursor-item ring (`--tugx-focus-ring`) and the group behind-tint
+ * (`--tugx-focus-tint`) are injected from the same role token. With NO role the
+ * keys are omitted, so the group rides the global `action` default ([P03]) for
+ * its focus marks while its *selection* fill rides the disentangled "on"
+ * selection axis (blue) — the two axes stay independent. The CSS that paints
+ * the ring/tint lives in `focus-ring.css` (global cursor ring) and each group's
+ * own CSS (the container override → behind-tint); this just resolves the color.
  */
 export function buildRoleStyle(
   prefix: string,
   role?: TugGroupRole,
 ): React.CSSProperties {
   const suffix = getRoleTokenSuffix(role);
-  return {
+  const style: Record<string, string> = {
     [`--tugx-${prefix}-on-color`]: `var(--tug7-surface-toggle-primary-normal-${suffix}-rest)`,
     [`--tugx-${prefix}-on-hover-color`]: `var(--tug7-surface-toggle-primary-normal-${suffix}-hover)`,
     [`--tugx-${prefix}-disabled-color`]: `var(--tug7-surface-toggle-primary-normal-${suffix}-disabled)`,
-  } as React.CSSProperties;
+  };
+  if (role) {
+    // Role-resolved focus marks (cursor ring sits OUTSIDE the item, so the role
+    // color reads against the gap; the behind-tint is a faint wash of it).
+    style["--tugx-focus-ring"] = `var(--tug7-surface-toggle-primary-normal-${suffix}-rest)`;
+    style["--tugx-focus-tint"] = `color-mix(in srgb, var(--tug7-surface-toggle-primary-normal-${suffix}-rest) 18%, transparent)`;
+  }
+  return style as React.CSSProperties;
 }
 
 // ---- Item icon/label rendering ----

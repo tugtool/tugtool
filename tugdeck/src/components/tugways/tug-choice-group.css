@@ -37,6 +37,12 @@
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   align-items: stretch;
+  /* A CONSTANT, controlled inter-segment gap — a fixed CSS length, so it never
+     shifts on relayout (unlike the sub-pixel seams between gapless 1fr tracks)
+     and gives the OUTSIDE cursor ring ("ring + gap", [P02]) room to sit without
+     smashing into the neighbor. The ghost route variant zeroes this (inline
+     labels + pipes). */
+  column-gap: 4px;
   width: fit-content;
   background-color: var(--tug7-surface-segment-primary-normal-plain-rest);
   border: 1px solid var(--tug7-element-segment-border-normal-plain-rest);
@@ -160,7 +166,11 @@
 }
 
 .tug-choice-group-xs .tug-choice-group-segment {
-  padding: 0 calc(var(--tug-space-md) + var(--tugx-choice-group-side-padding, 0px));  /* 0 8px + sidePadding */
+  /* lg-space horizontal (12px), not md (8px): xs segments were tight enough that
+     the inset cursor ring read as smashing into the neighbor's fill. The extra
+     horizontal room lets the ring breathe at this size. Vertical metrics
+     (font, radius, height) are unchanged. */
+  padding: 0 calc(var(--tug-space-lg) + var(--tugx-choice-group-side-padding, 0px));  /* 0 12px + sidePadding */
   font-size: var(--tug-font-size-2xs);  /* 11px */
   border-radius: calc(var(--tug-radius-sm) - 2px);
 }
@@ -186,11 +196,41 @@
 /* ---- Hover on unselected segment ---- */
 
 /* @tug-renders-on: --tug7-surface-segment-primary-normal-plain-rest */
-/* `[data-key-cursor]` is the keyboard movement cursor ([P03]/[Q01]); it reuses
- * the unselected-hover treatment so the cursor segment reads as a hover. */
-.tug-choice-group-segment:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
+/* Pointer hover only. The keyboard movement cursor is the role-resolved RING on
+ * the cursor segment (the global `[data-key-cursor]` rule in `focus-ring.css`),
+ * not a background wash — [P02]: a ring survives atop the selection pill where
+ * the former neutral tint could not. */
+.tug-choice-group-segment:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
   background-color: var(--tugx-key-cursor-surface);
   color: var(--tug7-element-segment-text-normal-plain-hover);
+}
+
+/* ============================================================================
+   Focus language — item-group treatment ([P01]/[P02]/[P03])
+   ----------------------------------------------------------------------------
+   The segmented control is ONE Tab stop. When it holds the key view, override
+   the global leaf ring → a faint behind-tint on the track (composed over its
+   own background via `background-image`), and let the cursor SEGMENT carry the
+   single ring (global `[data-key-cursor]`). This is the fix for the route
+   group's double-ring (container leaf ring + cursor ring stacked): the
+   container no longer rings, only the cursor does. Role-resolved via
+   `--tugx-focus-tint` (default `action`, role-injected by `buildRoleStyle`).
+   ========================================================================== */
+.tug-choice-group[data-key-view-kbd] {
+  outline: none;
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+}
+
+/* Cursor ring = the LEAF focus treatment ([P02], "ring + gap"): the standard
+   role-blue ring sitting just OUTSIDE the segment with a thin background-colored
+   gap (`outline-offset: 1px`), exactly like a focused button. The gap is what
+   lets it read atop a same-color selection pill — fill → thin track gap → role
+   ring — without resorting to a one-off neutral color (it stays in the role
+   family). The constant `column-gap` keeps this outside ring clear of neighbors.
+   A thin gap (1px) rather than the leaf's 2px keeps the footprint tight for this
+   dense control. */
+.tug-choice-group-segment[data-key-cursor] {
+  outline-offset: 1px;
 }
 
 /* ---- Active (selected) ---- */
@@ -276,9 +316,14 @@
   pointer-events: none;
 }
 
-/* Hide pipe when either neighbor is active */
+/* Hide pipe when either neighbor is active OR holds the keyboard cursor — the
+   selection fill and the focus ring each own the seam, so a divider there would
+   collide with the ring (or read as a dark line on the fill). The cursor ring
+   hides the divider exactly as the selection does ([P02]). */
 .tug-choice-group-segment[data-state="active"] + .tug-choice-group-segment::before,
-.tug-choice-group-segment + .tug-choice-group-segment[data-state="active"]::before {
+.tug-choice-group-segment + .tug-choice-group-segment[data-state="active"]::before,
+.tug-choice-group-segment[data-key-cursor] + .tug-choice-group-segment::before,
+.tug-choice-group-segment + .tug-choice-group-segment[data-key-cursor]::before {
   background-color: transparent;
 }
 
@@ -351,6 +396,8 @@
   background-color: transparent;
   border: 0;
   padding: 0;
+  /* Ghost reads as inline labels with pipe dividers — no inter-segment gap. */
+  column-gap: 0;
 }
 
 /* Opening bracket `[` — paints at the leading edge of the group so the
@@ -433,7 +480,7 @@
  * state, so the user gets a clear "this is what selecting feels like."
  * Match the default-emphasis hover exclusion list (don't fire on
  * disabled / active segments). */
-.tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment:is(:hover, [data-key-cursor]):not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
+.tug-choice-group[data-emphasis="ghost"] .tug-choice-group-segment:hover:not(:disabled):not([aria-disabled="true"]):not([data-state="active"]) {
   background-color: var(--tugx-key-cursor-surface);
   color: var(--tug7-element-segment-text-normal-plain-hover);
 }

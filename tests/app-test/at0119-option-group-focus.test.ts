@@ -9,11 +9,18 @@
  * (multi-select). Tab-into lands the cursor on the first item.
  *
  * The gallery `Focus Walk` panel authors a three-item group (nothing toggled).
- * The test proves:
- *   - **Tab → one stop, ring on the group, cursor on the first item:** Tab
- *     rings the group and parks the cursor on `alpha`;
- *   - **arrows move the cursor without selecting:** ArrowDown moves the cursor
- *     to `beta`; `beta` is still `data-state="off"`, the ring stays on the group;
+ * The test proves the **item-group focus treatment** ([P02] of the
+ * focus-language plan): the group is one stop, but the ring does NOT wrap the
+ * container — the container carries a faint behind-tint and the *cursor item*
+ * carries the single ring (which is what lets multi-select read atop an on-fill
+ * without an added checkmark).
+ *   - **Tab → one stop; behind-tint on the group, NOT a ring; ring on the
+ *     cursor item:** Tab marks the group key-view, paints the behind-tint on the
+ *     container (its outline stays 0 — no container ring), and parks the ring on
+ *     the cursor item `alpha`;
+ *   - **arrows move the cursor + its ring without selecting:** ArrowDown moves
+ *     the cursor (and ring) to `beta`; `beta` stays `data-state="off"`, the group
+ *     keeps the key view;
  *   - **Space toggles the cursor item:** Space turns `beta` on (`data-state="on"`).
  */
 
@@ -49,13 +56,16 @@ function deckShape() {
   };
 }
 
-// The group's ring marker + outline (the ring is on the component, [P03]).
+// The group container's focus marks ([P02]): the item-group model gives the
+// container a behind-tint, NOT a ring — `outline` stays 0 while `backgroundImage`
+// carries the tint gradient when the group holds the key view.
 const GROUP_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(GROUP)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
+    behindTint: cs.backgroundImage,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
   };
 })()`;
@@ -64,6 +74,13 @@ const GROUP_PROBE = `(function(){
 const CURSOR_OPTION = `(function(){
   var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-option-value][data-key-cursor]");
   return el ? el.getAttribute("data-option-value") : null;
+})()`;
+
+// The outline width of the cursor item — the single ring of the item-group
+// model lives here, not on the container; it must read even atop an on-fill.
+const CURSOR_RING_WIDTH = `(function(){
+  var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-option-value][data-key-cursor]");
+  return el ? getComputedStyle(el).outlineWidth : null;
 })()`;
 
 // Per-item snapshot: cursor + on/off state + aria-pressed.
@@ -79,6 +96,7 @@ const PROBE = (selector) => `(function(){
 
 interface GroupProbe {
   outline: string;
+  behindTint: string;
   keyboardReached: boolean;
 }
 interface OptionProbe {
@@ -113,16 +131,22 @@ describe.skipIf(!SHOULD_RUN)("AT0119: option group is a single item-container st
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) Tab → one stop: the ring lands on the GROUP and the cursor parks
-        // on the first item `alpha`.
+        // (1) Tab → one stop with the item-group treatment: the GROUP holds the
+        // key view and paints the behind-tint but NOT a ring (outline stays 0 —
+        // the double-ring guard), and the single ring lands on the cursor item
+        // `alpha`.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_OPTION} === "alpha"`, { timeoutMs: 6000 });
         const onGroup = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(onGroup?.keyboardReached).toBe(true);
-        expect(parseFloat(onGroup?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(onGroup?.outline ?? "0")).toBe(0);
+        expect(onGroup?.behindTint.startsWith("linear-gradient")).toBe(true);
+        const cursorRingOnAlpha = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
+        expect(parseFloat(cursorRingOnAlpha ?? "0")).toBeGreaterThan(0);
 
-        // (2) ArrowDown → the cursor moves to `beta`; selection does NOT follow
-        // (multi-select: cursor is separate from selection), ring stays on group.
+        // (2) ArrowDown → the cursor (and its ring) move to `beta`; selection does
+        // NOT follow (multi-select: cursor is separate from selection), group keeps
+        // the key view with its behind-tint (still no container ring).
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_OPTION} === "beta"`, { timeoutMs: 6000 });
         const onBeta = await app.evalJS<OptionProbe>(PROBE(OPT_BETA));
@@ -131,6 +155,9 @@ describe.skipIf(!SHOULD_RUN)("AT0119: option group is a single item-container st
         expect(alphaAfter?.cursor).toBe(false);
         const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(ringStill?.keyboardReached).toBe(true);
+        expect(parseFloat(ringStill?.outline ?? "0")).toBe(0);
+        const cursorRingOnBeta = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
+        expect(parseFloat(cursorRingOnBeta ?? "0")).toBeGreaterThan(0);
 
         // (3) Space → toggles the cursor item (beta) on; the cursor stays on beta.
         await app.nativeKey(" ");

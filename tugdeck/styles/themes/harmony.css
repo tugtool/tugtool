@@ -771,8 +771,12 @@ body {
   /* Segment */
   --tug7-surface-segment-primary-normal-plain-rest: --tug-color(indigo, i: 5, t: 84);
   --tug7-element-segment-border-normal-plain-rest: --tug-color(indigo, i: 7, t: 72);
-  --tug7-element-segment-text-normal-plain-rest: --tug-color(indigo, i: 5, t: 38);
-  --tug7-element-segment-text-normal-plain-hover: --tug-color(indigo, i: 5, t: 22);
+  /* Resting/hover segment text must be DARK on the light segment track (the
+     radio group's text is ~t:8 here); the prior t:38/t:22 read washed-out light.
+     Slight mute from the pure default (t:8) keeps segments quiet without losing
+     legibility; hover deepens toward the default. */
+  --tug7-element-segment-text-normal-plain-rest: --tug-color(indigo, i: 5, t: 16);
+  --tug7-element-segment-text-normal-plain-hover: --tug-color(indigo, i: 5, t: 8);
   --tug7-element-segment-text-normal-active-rest: --tug-color(sapphire-cobalt, i: 4, t: 100);
   --tug7-element-segment-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 8, t: 55);
 

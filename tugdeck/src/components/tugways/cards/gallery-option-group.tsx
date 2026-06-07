@@ -171,18 +171,23 @@ export function GalleryOptionGroup() {
           item (focus is separate from selection — multi-select). */}
       <div className="cg-section" data-testid="option-focus-demo">
         <TugLabel className="cg-section-title" data-testid="option-focus-title">Focus Language</TugLabel>
-        <TugOptionGroup
-          value={focusValue}
-          senderId={focusId}
-          aria-label="Focus language option group"
-          focusGroup="gallery-option-focus"
-          focusOrder={0}
-          items={[
-            { value: "alpha", label: "Alpha" },
-            { value: "beta",  label: "Beta" },
-            { value: "gamma", label: "Gamma" },
-          ]}
-        />
+        {/* Plain block wrapper so the inline-grid group stays content-width
+            instead of being stretched by `.cg-section`'s column flex (a stretched
+            1fr grid distributes fractional width and shifts on resize). */}
+        <div>
+          <TugOptionGroup
+            value={focusValue}
+            senderId={focusId}
+            aria-label="Focus language option group"
+            focusGroup="gallery-option-focus"
+            focusOrder={0}
+            items={[
+              { value: "alpha", label: "Alpha" },
+              { value: "beta",  label: "Beta" },
+              { value: "gamma", label: "Gamma" },
+            ]}
+          />
+        </div>
       </div>
 
       <TugSeparator />

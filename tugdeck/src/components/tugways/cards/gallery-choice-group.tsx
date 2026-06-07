@@ -179,18 +179,23 @@ export function GalleryChoiceGroup() {
           focus), and arrows rove + select locally. */}
       <div className="cg-section" data-testid="choice-focus-demo">
         <TugLabel className="cg-section-title" data-testid="choice-focus-title">Focus Language</TugLabel>
-        <TugChoiceGroup
-          value={focusValue}
-          senderId={focusId}
-          aria-label="Focus language choice group"
-          focusGroup="gallery-choice-focus"
-          focusOrder={0}
-          items={[
-            { value: "alpha", label: "Alpha" },
-            { value: "beta",  label: "Beta" },
-            { value: "gamma", label: "Gamma" },
-          ]}
-        />
+        {/* Plain block wrapper so the inline-grid group stays content-width
+            instead of being stretched by `.cg-section`'s column flex (a stretched
+            1fr grid distributes fractional width and shifts on resize). */}
+        <div>
+          <TugChoiceGroup
+            value={focusValue}
+            senderId={focusId}
+            aria-label="Focus language choice group"
+            focusGroup="gallery-choice-focus"
+            focusOrder={0}
+            items={[
+              { value: "alpha", label: "Alpha" },
+              { value: "beta",  label: "Beta" },
+              { value: "gamma", label: "Gamma" },
+            ]}
+          />
+        </div>
       </div>
 
       <TugSeparator />
