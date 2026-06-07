@@ -224,6 +224,14 @@ wasm:
 app-debug: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
+    # TUG_FORCE_BUNDLE_ID belongs ONLY to the app-test / unattended build
+    # path (build-app / app-test, where it pins a stable AX grant across
+    # worktrees). The interactive dev loop is always the cwd-derived
+    # debug identity, so clear any value the shell exported for app-test —
+    # otherwise product-name / bundle-id / capture-build-info would honor
+    # it and `app-debug` would build and launch an apptest instance
+    # instead of Tug-debug (debug-main).
+    unset TUG_FORCE_BUNDLE_ID
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
@@ -260,6 +268,8 @@ app-debug: build wasm
 app-release: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
+    # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
+    unset TUG_FORCE_BUNDLE_ID
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
@@ -291,6 +301,8 @@ app-release: build wasm
 launch-debug:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
+    unset TUG_FORCE_BUNDLE_ID
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
@@ -307,6 +319,8 @@ launch-debug:
 launch-release:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
+    unset TUG_FORCE_BUNDLE_ID
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
@@ -326,6 +340,8 @@ launch-release:
 stop-debug:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
+    unset TUG_FORCE_BUNDLE_ID
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
@@ -334,6 +350,8 @@ stop-debug:
 stop-release:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
+    unset TUG_FORCE_BUNDLE_ID
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
