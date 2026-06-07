@@ -477,11 +477,11 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle-trigger-spike | Step 2.5.1 — Trigger spike: confirm the chord reaches the webview | done | 62228934 |
 | #step-cycle-mechanism | Step 2.5.2 — Cycle-mode scope primitive (push/seed/pop) | done | (main) |
 | #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | done ([P10]r): route-seed + blur + no outer ring `6a27148f`; editor text-stop `bd9e44b0`; Z2 carved to #step-z2-cycle | — |
-| #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | pending | — |
-| #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | pending | — |
+| #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | punted (2026-06-06): cycling covers status-bar access — no dedicated Z2 chords needed; remaining mode-key polish deferred | — |
+| #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | punted (2026-06-06): no ceremonial checkpoint; a11y assessment deferred to the a11y follow-on | — |
 | #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | to design + implement | — |
 | #step-z2-components | Step 2.7 — Componentize the Z2 status cells (prereq for Z2 cycling) | done: `TugStatusCell` extraction (devised in `tugplan-z2-status-cell.md`) | afd978c7 |
-| #step-z2-cycle | Step 2.8 — Z2 status cells join the cycle (was Slice 3) | done: five Z2 cells = leaf stops (orders 5…9; rove reversed by-eye); square editor border; engine = single owner of close-focus (popovers+sheets defer; `getKeyCard` fallback; `popFocusMode` always notifies); **mouse exits cycling** ([#cycle-model]); at0140 cells + popover-escape + mouse-exit | (uncommitted) |
+| #step-z2-cycle | Step 2.8 — Z2 status cells join the cycle (was Slice 3) | done: five Z2 cells = leaf stops (orders 5…9; rove reversed by-eye); square editor border; engine = single owner of close-focus (popovers+sheets defer; `getKeyCard` fallback; `popFocusMode` always notifies); **mouse exits cycling** ([#cycle-model]); at0140 cells + popover-escape + mouse-exit | d1c2296a + 6f579eae |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
@@ -726,6 +726,8 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 #### Step 2.5.4: Mode keys + Z2 dedicated chords {#step-cycle-keys}
 
+**STATUS — punted (2026-06-06).** With keyboard-focus-cycling in place, the Z2 status-bar cells are reachable and activatable directly in the cycle (Tab to the cell, Space/Enter opens its popover) — so the planned Cmd-1…N dedicated chords add a parallel access path the cycle already provides, and are **dropped**. The core mode-key semantics this step would have added landed early elsewhere: the **Return-into-text exit** shipped with [#step-cycle-devcard], and the **mouse-exits-cycling** rule with [#step-z2-cycle]. The remaining polish (Space-acts on non-text stops, the inert-Return rule on buttons, a gallery text-input demo stop) is **deferred** — not needed for the current dev-card cycle; revisit only if a concrete need surfaces. The tasks below are kept for the record, not as active work.
+
 **Depends on:** #step-cycle-devcard
 
 **Commit:** `focus(cycle): mode keys + Z2 popup chords`
@@ -745,6 +747,8 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 **Checkpoint:** `bunx tsc --noEmit` clean; mode-key + chord app-tests green.
 
 #### Step 2.5.5: Integration checkpoint + a11y assessment {#step-cycle-vet}
+
+**STATUS — punted (2026-06-06).** No separate ceremonial integration checkpoint: the cycle has been verified end-to-end by the [#step-z2-cycle] audit + at0140 (enter → tour → act → exit, both card states) and by-eye, and the editor's Tab still completes (Risk R02). The [P13] a11y corollary ("always-on cycling" = a persistent push-at-mount variant, resolving [Q03]) is **deferred to the a11y follow-on** rather than recorded here as a gated task.
 
 **Depends on:** #step-cycle-trigger-spike, #step-cycle-mechanism, #step-cycle-devcard, #step-cycle-keys
 
@@ -789,7 +793,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 #### Step 2.7: Componentize the Z2 status cells {#step-z2-components}
 
-**STATUS — to devise + implement (new, surfaced 2026-06-06).** The Z2 telemetry status cells (STATE / TIME / TOKENS / CONTEXT, + TASKS) are the card's **one bespoke holdout**: hand-assembled inline in `dev-card-telemetry-renderers.tsx` as `<span className="dev-telemetry-status-cell">` wrapped in a `TugPopoverTrigger`, with ad-hoc CSS — *not* proper components. Every other zone the focus language plugs into is a real component (route = `TugChoiceGroup`, chips = `TugPushButton`) that joins the cycle via one `focusGroup` prop. Retrofitting focus/keyboard onto the bespoke spans is the "invasive" part of Z2 cycling (a `<span>` trigger is not keyboard-activatable; the ring / arrow-rove / popover-on-Space all hand-rolled). **Componentize the cells first**, so [#step-z2-cycle] becomes the same trivial "author into the cycle" as the chips.
+**STATUS — done (2026-06-06; `afd978c7`).** Devised in `tugplan-z2-status-cell.md` and implemented: the cells are now the `TugStatusCell` component (button-rooted, focus-ready), migrated faithfully from the bespoke spans, which is what made [#step-z2-cycle] the trivial "author into the cycle" it became. The original framing is kept below for the record. The Z2 telemetry status cells (STATE / TIME / TOKENS / CONTEXT, + TASKS) were the card's **one bespoke holdout**: hand-assembled inline in `dev-card-telemetry-renderers.tsx` as `<span className="dev-telemetry-status-cell">` wrapped in a `TugPopoverTrigger`, with ad-hoc CSS — *not* proper components. Every other zone the focus language plugs into is a real component (route = `TugChoiceGroup`, chips = `TugPushButton`) that joins the cycle via one `focusGroup` prop. Retrofitting focus/keyboard onto the bespoke spans is the "invasive" part of Z2 cycling (a `<span>` trigger is not keyboard-activatable; the ring / arrow-rove / popover-on-Space all hand-rolled). **Componentize the cells first**, so [#step-z2-cycle] becomes the same trivial "author into the cycle" as the chips.
 
 This step is **devised separately** (`/tugplug:devise`) — it is a real refactor with its own design questions — then implemented and rejoined before [#step-z2-cycle].
 
