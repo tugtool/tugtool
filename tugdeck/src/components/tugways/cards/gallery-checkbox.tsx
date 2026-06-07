@@ -117,13 +117,13 @@ export function GalleryCheckbox() {
         <TugLabel className="cg-section-title" data-testid="checkbox-focus-title">Focus Language</TugLabel>
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
           <TugCheckbox
-            aria-label="Focus A"
+            label="Focus A"
             focusGroup="gallery-checkbox-focus"
             focusOrder={0}
             data-testid="checkbox-focus-a"
           />
           <TugCheckbox
-            aria-label="Focus B"
+            label="Focus B"
             focusGroup="gallery-checkbox-focus"
             focusOrder={1}
             data-testid="checkbox-focus-b"

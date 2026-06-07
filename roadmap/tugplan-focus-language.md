@@ -519,8 +519,8 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle-commit | Cycle commit disposition — value-commit relinquishes a toggleable cycle (derived from [P13], mode-carried); fixes the dev-card route-commit desync ([P15]) | done: `commitDisposition` on the mode + `applyCommitDisposition`; act-dispatch wired; `useCycleMode` toggleable default + override; at0140 relinquish test green, picker retain regression green | (uncommitted) |
 | #step-3 | Item-groups — radio / choice / option | done: container behind-tint (no container ring) + cursor-item ring + native role fill; `buildRoleStyle` role-resolved focus marks; route-group double-ring resolved; at0117/at0118/at0119/at0030 reworked to the [P02] contract + green | (uncommitted) |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | done | uncommitted (pending /tugplug:commit) |
-| #step-5 | Descendable rows — list view / row, accordion | done: list + accordion container behind-tint (no leaf ring) + cursor-row inset role ring (clip-safe, survives atop a fill) + `[data-key-within]` on descend; selection stays the unified role-blue native fill ([P14]: calm quiet sibling, not the solid fill); at0120/at0121 reworked to the [P02] contract, at0110 re-pinned to the blue role color; at0127/at0122/at0141 green | (uncommitted) |
-| #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | pending | — |
+| #step-5 | Descendable rows — list view / row, accordion | done (final by-eye model): list + accordion container **perimeter ring** (picker hosts ring own border via `:has`) + cursor-row **reduced tint fill** (25% of the quiet selection blue, no ring/chevron, shares the selection's rounded bounds) + leading row gutter; selection = toned-back role-blue quiet fill covering its dividers ([P14]); `[data-key-within]` on descend; at0120/at0121 reworked to the perimeter-ring contract, at0110 re-pinned to the blue role color; at0127/at0122/at0141 green | b465e107 |
+| #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | done: toggles ring the whole component (glyph+label wrapper) + behind-tint, native "on" fill role-aware; fields keep the global leaf ring + a role-derived behind-tint wash on keyboard focus; input/textarea `validation` repoints `--tugx-focus-ring` so the ring/tint/border resolve danger/success/caution and the border holds through focus ([P07]); gallery focus-walk toggles relabelled so the wrapper ring is exercised; at0113/at0114 reworked to the wrapper-ring contract + green; field behavior tests (at0137/at0131/at0128) green | (uncommitted) |
 | #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | pending | — |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
@@ -1008,13 +1008,19 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 
 **Artifacts:** `tug-list-view.css`, `tug-list-row.css`, `tug-accordion.css`.
 
-**STATUS — done (on `main`, uncommitted; pending /tugplug:commit).**
+**STATUS — done (`b465e107`). Final model after a by-eye design pass — supersedes
+the original "container behind-tint + cursor ring" framing below.** The descendable-row
+archetype (list, accordion) settled on a treatment distinct from the small item-groups
+of [#step-3]: the focused CONTAINER wears a **perimeter ring** (not a behind-tint), and
+the cursor row wears a **reduced tint fill** (not a ring). The by-eye loop found the
+group behind-tint + cursor ring illegible for full-width rows ("too much lit up; the
+cursor blends in"), and inverted it.
 
 **Done:**
-- ✅ **List + accordion container behind-tint** (`tug-list-view.css`, `tug-accordion.css`): both are item-group containers, so the same-element override flips the global leaf ring on `[data-key-view-kbd]` to `outline:none` + a `--tugx-focus-tint` gradient (the [P02] group signature). The list's old `:not([data-key-view-kbd]){outline:none}` "ring-on-the-container" rule is retired; the accordion's "focus is the global primitive" comment is replaced by the group treatment.
-- ✅ **Cursor-row ring** (`tug-list-view.css` cell wrapper / `tug-accordion.css` trigger): the cursor is now the role **ring**, not a fill, so it survives atop a selected row's fill (the multi-select crux). Both live inside a clipping box (the scrollport / the `outline`+`inset` accordion variants), so the global *outward* outline would be cropped — overridden to an **inset `box-shadow`** ring that hugs the item inside its bounds (no clip, no reflow), mirroring the tab bar / `selectedAccent`. Flush rows square the ring to the row; pill rows light the inner row to follow the pill radius.
-- ✅ **`[data-key-within]` on descend**: Enter-descend drops the container's key view and the engine projects `[data-key-within]` on the list/accordion root → the global quiet within mark (an outline, not clipped by the element's own overflow). No new CSS needed.
-- ✅ **Selection = role native fill, already unified**: the "orange selection" the task targeted was retired by the focus/selection disentangle (`89f04171`) — list-row selection is now the role **blue** (`--tugx-list-row-selected-bg` → the `selection` family's calm `quiet` sibling, per [P14]: a large persistent row fill rides the calm sibling, not the solid `--tugx-focus-fill`, which would glare). Corrected the stale "accent orange" prose in `tug-list-row.css`.
+- ✅ **Container perimeter ring** (`tug-list-view.css`, `tug-accordion.css`): the focused container's `[data-key-view-kbd]` paints an `outline` ring at `outline-offset: 0` so it overlays the list's own border. Bordered picker hosts (`.dev-card-picker-recents-host` / `-sessions-host`) clip an inner outward outline (`overflow: hidden`), so the ring is drawn on the host via `:has(.tug-list-view[data-key-view-kbd])` (border-color + 1px box-shadow).
+- ✅ **Cursor row = reduced tint fill, no ring** (`tug-list-view.css` cell / `tug-accordion.css` trigger): the cursor is a 25% `color-mix` of the per-theme quiet selection blue (`--tugx-list-view-cursor-tint` / `--tugx-accordion-cursor-tint`), painted as a gradient fill. The global `[data-key-cursor]` ring is suppressed and `border-radius: 0` on the cursor cell drops the stray global 6px so the cursor shares the selection's host-clipped rounded bounds. No chevron/dot accessory. A leading row gutter (`--tugx-list-row-indicator-gutter: 0.2rem`) gives the fills breathing room.
+- ✅ **`[data-key-within]` on descend**: Enter-descend drops the container's key view and the engine projects `[data-key-within]` on the list/accordion root → the global quiet within mark. No new CSS needed.
+- ✅ **Selection = toned-back role-blue native fill** (`tug-list-row.css`, `brio.css`/`harmony.css`): list-row selection is the `selection` family's calm `quiet` sibling ([P14]: a large persistent row fill rides the calm sibling, not the solid `--tugx-focus-fill`), and the per-theme quiet token was toned back at source (brio `i:34,t:32`; harmony `i:42,t:45`) so the cursor tint reads as a lighter version of the same hue. Selected flush rows cover their own dividers. The cursor tint is derived from this same token.
 
 **Tests:**
 - ✅ Behavior: `at0120` (accordion) + `at0121` (list container) reworked to assert the [P02] contract (behind-tint gradient + suppressed outline, not the leaf ring); `at0110` re-pinned from the orange arc to the **blue** role arc; `at0127` (cursor/select/descend/ascend), `at0122` (subordinate), `at0141` (picker), `at0060` (content-settled), `at0030` (virtual focus) all green. (`at0069` + `at0083`'s cold-boot-restore test fail **identically on clean `main`** — pre-existing scroll-restore timing flakes, unrelated to focus visuals; verified by stash-rebuild.)
@@ -1029,6 +1035,31 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 **Commit:** `focus(leaf): whole-component ring + tint + native fill; input validation→role`
 
 **References:** [P01], [P02], [P03], [P07], (#p07-input-validation)
+
+**STATUS — done (2026-06-07).** Two leaf shapes, two treatments.
+**Toggles** (checkbox, switch): the focusable box/track is small and sits next to
+a label, so the [P02] "whole component" ring + behind-tint move to the
+`.tug-checkbox-wrapper` / `.tug-switch-wrapper` via `:has(.tug-…[data-key-view-kbd])`
+(the box's own global leaf ring is suppressed inside a wrapper; a label-less
+toggle keeps the global ring on the box). Persistent inset keyed on
+`data-tug-focusable` keeps the ring/tint off the glyph + label with no focus-time
+layout shift (the slider's approach). The native "on" fill is unchanged and
+already role-aware (`--tugx-toggle-on-color`). **Fields** (input, textarea,
+value-input): the field *is* the focusable, so the global leaf ring already wraps
+it; the leaf signature adds a faint behind-tint painted as a gradient overlay over
+the field's own focus background on keyboard focus only ([Q02]), derived from the
+resolved `--tugx-focus-ring` so it follows the role. `validation` maps onto the
+role axis ([P07]): `invalid`/`valid`/`warning` repoint `--tugx-focus-ring` to the
+danger/success/caution outlined border, so the ring AND the derived wash resolve
+to the validation colour, and the field border now holds that colour through focus
+(an invalid field stays red while you edit it). Value-input has no validation axis
+— it rides the action default. The gallery focus-walk toggles were relabelled
+(`aria-label`→visible `label`) so the wrapper ring is exercised and reviewable;
+`at0113`/`at0114` now assert the ring on the wrapper (box outline 0). Inputs are
+not engine-authorable into a focus group (no `useFocusable` wiring, and adding it
+is engine-adjacent — out of scope per [P04]); the field CSS activates wherever an
+input is an engine key view (sheets, editors), and the [P07] border-holds-red
+behaviour is reviewable on plain `:focus` in the gallery.
 
 **Artifacts:** `tug-checkbox.css`, `tug-switch.css`, `tug-input.css`, `tug-textarea.css`, `tug-value-input.css`.
 

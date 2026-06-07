@@ -88,6 +88,20 @@
    (above); the keyboard-active ring is the app-owned primitive (focus-ring.css).
    There is no longer a separate ring focus-style. */
 
+/* ---- Focus language — leaf behind-tint ([P01]) ----
+   The field IS the focusable, so the global leaf ring already wraps it. The leaf
+   signature also wants a faint behind-tint: a role wash painted as a gradient
+   overlay over the field's own focus background (the [Q02] technique), keyed on
+   keyboard focus only (`data-key-view-kbd`) so a mouse click stays clean. The
+   wash is derived from the resolved `--tugx-focus-ring` so it follows the
+   validation→role axis below — an invalid field washes danger, not action. */
+.tug-input[data-key-view-kbd] {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--tugx-focus-ring) 12%, transparent),
+    color-mix(in srgb, var(--tugx-focus-ring) 12%, transparent)
+  );
+}
+
 /* ---- Borderless ---- */
 
 .tug-input[data-borderless] {
@@ -152,22 +166,41 @@
    ========================================================================= */
 
 /*
- * Validation border colors override rest/hover but NOT focus.
- * When focused, the focus border takes precedence (user is actively editing).
+ * Validation maps onto the focus role axis ([P07]): invalid→danger,
+ * valid→success, warning→caution; the default (no class) rides the action
+ * default from focus-ring.css. Each class repoints the shared `--tugx-focus-ring`
+ * so the keyboard ring AND the derived behind-tint resolve to the validation
+ * colour, and the field's own border carries that colour at rest AND on focus —
+ * an invalid field stays red while you edit it, the natural expected behaviour.
  */
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
-.tug-input-invalid:not(:focus) {
+.tug-input-invalid {
+  --tugx-focus-ring: var(--tug7-element-control-border-outlined-danger-rest);
   border-color: var(--tug7-element-field-border-normal-danger-rest);
 }
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
-.tug-input-valid:not(:focus) {
+.tug-input-valid {
+  --tugx-focus-ring: var(--tug7-element-control-border-outlined-success-rest);
   border-color: var(--tug7-element-field-border-normal-success-rest);
 }
 
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
-.tug-input-warning:not(:focus) {
+.tug-input-warning {
+  --tugx-focus-ring: var(--tug7-element-control-border-outlined-caution-rest);
+  border-color: var(--tug7-element-field-border-normal-caution-rest);
+}
+
+/* The validation border holds through focus too ([P07]) — overrides the plain
+   focus border above (equal specificity, authored later). */
+.tug-input-invalid:focus {
+  border-color: var(--tug7-element-field-border-normal-danger-rest);
+}
+.tug-input-valid:focus {
+  border-color: var(--tug7-element-field-border-normal-success-rest);
+}
+.tug-input-warning:focus {
   border-color: var(--tug7-element-field-border-normal-caution-rest);
 }
 

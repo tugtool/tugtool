@@ -70,13 +70,13 @@ export function GallerySwitch() {
         <TugLabel className="cg-section-title" data-testid="switch-focus-title">Focus Language</TugLabel>
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
           <TugSwitch
-            aria-label="Focus A"
+            label="Focus A"
             focusGroup="gallery-switch-focus"
             focusOrder={0}
             data-testid="switch-focus-a"
           />
           <TugSwitch
-            aria-label="Focus B"
+            label="Focus B"
             focusGroup="gallery-switch-focus"
             focusOrder={1}
             data-testid="switch-focus-b"

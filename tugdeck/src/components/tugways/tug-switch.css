@@ -81,7 +81,34 @@
   border-color: var(--tugx-toggle-on-hover-color);
 }
 
-/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
+/* ---- Focus language — leaf treatment ([P01]/[P02]) ----
+   The switch is a LEAF: the whole component wears the ring + a faint behind-tint,
+   while the "on" track fill is its native "selected" mark (already role-aware via
+   `--tugx-toggle-on-color`). When a label is present the focusable track sits
+   inside `.tug-switch-wrapper`, so the ring + tint move to the wrapper to enclose
+   the track AND the label ([P02] "whole component"), and the track's own global
+   leaf ring is suppressed. A label-less switch keeps the global leaf ring on the
+   track (rounded by the global ring-radius rule). Role-resolved via the shared
+   `--tugx-focus-ring` / `--tugx-focus-tint` axis (default action). */
+
+/* Persistent inset so the wrapper ring/tint never smash the track + label and
+   never shift layout on focus — keyed on the track being an authored focus stop
+   (`data-tug-focusable`), the same constant-padding approach the slider uses. */
+.tug-switch-wrapper:has(.tug-switch[data-tug-focusable]) {
+  padding: var(--tug-space-2xs) var(--tug-space-xs);
+  border-radius: var(--tugx-focus-ring-radius);
+}
+
+.tug-switch-wrapper:has(.tug-switch[data-key-view-kbd]) {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: var(--tugx-focus-ring-offset);
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+}
+
+/* Inside a wrapper the ring lives on the wrapper, not the track. */
+.tug-switch-wrapper .tug-switch[data-key-view-kbd] {
+  outline: none;
+}
 
 /* ---- Disabled ---- */
 

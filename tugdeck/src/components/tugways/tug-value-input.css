@@ -63,6 +63,18 @@ body {
   border-color: var(--tugx-value-input-border-focus);
 }
 
+/* ---- Focus language — leaf behind-tint ([P01]) ----
+   The value input IS the focusable, so the global leaf ring already wraps it. The
+   leaf signature adds a faint action wash over the field's focus background on
+   keyboard focus only (the [Q02] technique). No validation axis here, so it rides
+   the action default `--tugx-focus-ring`. */
+.tug-value-input[data-key-view-kbd] {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--tugx-focus-ring) 12%, transparent),
+    color-mix(in srgb, var(--tugx-focus-ring) 12%, transparent)
+  );
+}
+
 /* ---- Disabled ---- */
 
 .tug-value-input[aria-disabled="true"] {

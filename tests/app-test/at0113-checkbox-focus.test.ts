@@ -6,12 +6,17 @@
  * global ring paints on **keyboard** focus only ([P05]). Space toggles natively
  * (Radix); a mouse click toggles without painting the keyboard ring.
  *
- * The gallery `Focus Walk` panel authors two checkboxes into one focus group
- * (`checkbox-focus-a` order 0, `checkbox-focus-b` order 1). The test proves:
+ * The gallery `Focus Walk` panel authors two labelled checkboxes into one focus
+ * group (`checkbox-focus-a` order 0, `checkbox-focus-b` order 1). Because they
+ * carry a visible label, each box sits inside a `.tug-checkbox-wrapper`, and the
+ * leaf focus ring wraps the whole component — glyph AND label ([P02]) — so the
+ * ring paints on the WRAPPER, not the box. The test proves:
  *   - **click → no keyboard ring:** a fresh mouse click toggles the checkbox
- *     (`data-state` flips) but paints no ring (outline 0, not `data-key-view-kbd`);
+ *     (`data-state` flips) but paints no ring on the wrapper (outline 0, box not
+ *     `data-key-view-kbd`);
  *   - **Tab → ring on keyboard focus:** Tab lands the key view on the first
- *     checkbox and paints the ring (outline > 0, `data-key-view-kbd` set);
+ *     checkbox box (`data-key-view-kbd`) and the ring paints on its wrapper
+ *     (wrapper outline > 0) while the box's own outline stays 0;
  *   - **Space toggles:** Space on the focused checkbox flips its `data-state`;
  *   - **Tab walks to the next stop:** a second Tab moves the key view to `b`.
  */
@@ -52,14 +57,19 @@ const KEY_VIEW_TESTID = `(function(){
   return el ? el.getAttribute("data-testid") : null;
 })()`;
 
-// Per-element snapshot: Radix checked state + computed ring + keyboard markers.
+// Per-element snapshot: Radix checked state + keyboard markers on the box, plus
+// the ring on its enclosing wrapper (the leaf ring wraps glyph + label, so it
+// paints on the `.tug-checkbox-wrapper`, not the box itself).
 const PROBE = (selector) => `(function(){
   var el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
   var cs = getComputedStyle(el);
+  var wrap = el.closest(".tug-checkbox-wrapper");
+  var wcs = wrap ? getComputedStyle(wrap) : null;
   return {
     state: el.getAttribute("data-state"),
     outline: cs.outlineWidth,
+    wrapperOutline: wcs ? wcs.outlineWidth : null,
     focusVisible: el.matches(":focus-visible"),
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
   };
@@ -68,6 +78,7 @@ const PROBE = (selector) => `(function(){
 interface CbProbe {
   state: string | null;
   outline: string;
+  wrapperOutline: string | null;
   focusVisible: boolean;
   keyboardReached: boolean;
 }
@@ -107,7 +118,7 @@ describe.skipIf(!SHOULD_RUN)("AT0113: checkbox focus is engine-driven", () => {
         // (which no longer paints anything). [P05] revised.
         const clicked = await app.evalJS<CbProbe>(PROBE(CB_A));
         expect(clicked?.keyboardReached).toBe(false);
-        expect(parseFloat(clicked?.outline ?? "0")).toBe(0);
+        expect(parseFloat(clicked?.wrapperOutline ?? "0")).toBe(0);
 
         // (2) Tab → the engine lands the key view on the first checkbox and the
         // ring paints (outline > 0, data-key-view-kbd set).
@@ -117,7 +128,9 @@ describe.skipIf(!SHOULD_RUN)("AT0113: checkbox focus is engine-driven", () => {
         });
         const focused = await app.evalJS<CbProbe>(PROBE(CB_A));
         expect(focused?.keyboardReached).toBe(true);
-        expect(parseFloat(focused?.outline ?? "0")).toBeGreaterThan(0);
+        // The ring wraps glyph + label: it paints on the wrapper, not the box.
+        expect(parseFloat(focused?.wrapperOutline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(focused?.outline ?? "0")).toBe(0);
 
         // (3) Space toggles the focused checkbox (checked → unchecked).
         await app.nativeKey(" ");
@@ -133,7 +146,7 @@ describe.skipIf(!SHOULD_RUN)("AT0113: checkbox focus is engine-driven", () => {
         });
         const onB = await app.evalJS<CbProbe>(PROBE(CB_B));
         expect(onB?.keyboardReached).toBe(true);
-        expect(parseFloat(onB?.outline ?? "0")).toBeGreaterThan(0);
+        expect(parseFloat(onB?.wrapperOutline ?? "0")).toBeGreaterThan(0);
       } finally {
         await app.close();
       }
