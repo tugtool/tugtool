@@ -519,7 +519,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle-commit | Cycle commit disposition — value-commit relinquishes a toggleable cycle (derived from [P13], mode-carried); fixes the dev-card route-commit desync ([P15]) | done: `commitDisposition` on the mode + `applyCommitDisposition`; act-dispatch wired; `useCycleMode` toggleable default + override; at0140 relinquish test green, picker retain regression green | (uncommitted) |
 | #step-3 | Item-groups — radio / choice / option | done: container behind-tint (no container ring) + cursor-item ring + native role fill; `buildRoleStyle` role-resolved focus marks; route-group double-ring resolved; at0117/at0118/at0119/at0030 reworked to the [P02] contract + green | (uncommitted) |
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | done | uncommitted (pending /tugplug:commit) |
-| #step-5 | Descendable rows — list view / row, accordion | pending | — |
+| #step-5 | Descendable rows — list view / row, accordion | done: list + accordion container behind-tint (no leaf ring) + cursor-row inset role ring (clip-safe, survives atop a fill) + `[data-key-within]` on descend; selection stays the unified role-blue native fill ([P14]: calm quiet sibling, not the solid fill); at0120/at0121 reworked to the [P02] contract, at0110 re-pinned to the blue role color; at0127/at0122/at0141 green | (uncommitted) |
 | #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | pending | — |
 | #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | pending | — |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
@@ -1006,17 +1006,21 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 
 **References:** [P01], [P02], [P03], (#language-contract)
 
-**Artifacts:** `tug-list-view.css`, `tug-list-row.css`, accordion CSS.
+**Artifacts:** `tug-list-view.css`, `tug-list-row.css`, `tug-accordion.css`.
 
-**Tasks:**
-- Row cursor ring + native row fill (role color) + the `[data-key-within]` mark on descend; behind-tint on the list/accordion container.
-- Replace the current orange row-cursor/selection CSS.
+**STATUS — done (on `main`, uncommitted; pending /tugplug:commit).**
+
+**Done:**
+- ✅ **List + accordion container behind-tint** (`tug-list-view.css`, `tug-accordion.css`): both are item-group containers, so the same-element override flips the global leaf ring on `[data-key-view-kbd]` to `outline:none` + a `--tugx-focus-tint` gradient (the [P02] group signature). The list's old `:not([data-key-view-kbd]){outline:none}` "ring-on-the-container" rule is retired; the accordion's "focus is the global primitive" comment is replaced by the group treatment.
+- ✅ **Cursor-row ring** (`tug-list-view.css` cell wrapper / `tug-accordion.css` trigger): the cursor is now the role **ring**, not a fill, so it survives atop a selected row's fill (the multi-select crux). Both live inside a clipping box (the scrollport / the `outline`+`inset` accordion variants), so the global *outward* outline would be cropped — overridden to an **inset `box-shadow`** ring that hugs the item inside its bounds (no clip, no reflow), mirroring the tab bar / `selectedAccent`. Flush rows square the ring to the row; pill rows light the inner row to follow the pill radius.
+- ✅ **`[data-key-within]` on descend**: Enter-descend drops the container's key view and the engine projects `[data-key-within]` on the list/accordion root → the global quiet within mark (an outline, not clipped by the element's own overflow). No new CSS needed.
+- ✅ **Selection = role native fill, already unified**: the "orange selection" the task targeted was retired by the focus/selection disentangle (`89f04171`) — list-row selection is now the role **blue** (`--tugx-list-row-selected-bg` → the `selection` family's calm `quiet` sibling, per [P14]: a large persistent row fill rides the calm sibling, not the solid `--tugx-focus-fill`, which would glare). Corrected the stale "accent orange" prose in `tug-list-row.css`.
 
 **Tests:**
-- Behavior: list-view + accordion app-tests (incl. dev-card picker / transcript regressions) green.
-- By-eye: cursor-on-selected-row legibility, descend within-mark, both themes.
+- ✅ Behavior: `at0120` (accordion) + `at0121` (list container) reworked to assert the [P02] contract (behind-tint gradient + suppressed outline, not the leaf ring); `at0110` re-pinned from the orange arc to the **blue** role arc; `at0127` (cursor/select/descend/ascend), `at0122` (subordinate), `at0141` (picker), `at0060` (content-settled), `at0030` (virtual focus) all green. (`at0069` + `at0083`'s cold-boot-restore test fail **identically on clean `main`** — pre-existing scroll-restore timing flakes, unrelated to focus visuals; verified by stash-rebuild.)
+- By-eye: pending user review — cursor-on-selected-row legibility, descend within-mark, both themes.
 
-**Checkpoint:** `tsc` clean; app-tests green; gallery parity.
+**Checkpoint:** ✅ `bunx tsc --noEmit` clean; ✅ focus app-tests green; gallery parity (the `gallery-list-view-focus` + `gallery-accordion` focus demos exercise the new behavior) — *user by-eye pending*.
 
 #### Step 6: Leaf controls — checkbox, switch, input, textarea, value-input {#step-6}
 

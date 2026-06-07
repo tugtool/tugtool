@@ -48,6 +48,15 @@ body {
   --tugx-list-view-row-gap:            var(--tug-space-sm);
   --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
 
+  /* Keyboard movement-cursor fill — the cursor row's "you are here" tint: a
+     REDUCED (lighter) version of the row selection fill, so the list reads as two
+     levels of one blue (cursor tint < selection fill < container ring). Derived
+     from the same (toned-back, per-theme) quiet selection token, so it tracks the
+     theme and stays a fixed fraction lighter than the selection. Tune the
+     fraction here. */
+  --tugx-list-view-cursor-tint:
+    color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 25%, transparent);
+
   /* Row-layout slots — consumed only when `rowLayout` is set. */
   --tugx-list-view-pill-row-gap:       var(--tug-space-sm);
   --tugx-list-view-divider-color:      var(--tug7-element-global-border-normal-muted-rest);
@@ -97,15 +106,38 @@ body {
 
 }
 
-/* Focus-ring suppression on the scroll container. `tabindex="0"` makes it
-   focusable for native arrow / page key scroll, but an ordinary (non-key-view)
-   container shows no ring — cell content owns its own focus visuals. When a
-   surface has declared the list a focus stop and the engine has made the
-   container the keyboard key view (`data-key-view-kbd`), the `:not(...)` guard
-   yields so `focus-ring.css` paints the ring on the container (ring on the
-   component, selection on the row). */
-.tug-list-view:not([data-key-view-kbd]) {
+/* ---- Focus language — item-group treatment ([P01]/[P02]) ----
+   The list is ONE item-container stop, so it never wears the leaf ring. The
+   `tabindex="0"` scroll container shows no outline at rest (native arrow / page
+   scroll still works); when it holds the keyboard key view it marks the WHOLE
+   list as the focused container with a ring on its PERIMETER, and the cursor row
+   carries its own ring (below).
+
+   Why a perimeter ring, not the behind-tint the other item-groups use ([P02]):
+   a list is a large scrollable area with full-width rows and a real selection
+   fill. A faint tint over that whole area lit too many pixels and drowned the
+   cursor row — the eye couldn't separate "container is focused", "this row is
+   the cursor", and "this row is selected". A crisp edge communicates container
+   focus with almost no lit area, leaving the cursor ring legible. (Small
+   clusters — radio / choice / option / accordion — keep the tint; the split is
+   by archetype, by size.)
+
+   The ring OVERLAYS the list's own edge (`outline-offset: 0`) rather than sitting
+   inset — an inset ring read as a second border floating inside the list's
+   frame. For an un-hosted list (e.g. the gallery) this paints the perimeter ring
+   right at the list edge. A list wrapped in a bordered, `overflow: hidden` host
+   (the dev picker's recents / sessions boxes) clips this outward outline to
+   nothing — by design: that host draws the focus ring on its OWN border via a
+   `:has(.tug-list-view[data-key-view-kbd])` rule, so the ring overlays the
+   visible frame the user actually sees. On Enter-descend the container drops the
+   key view and wears the quiet `[data-key-within]` mark (the global rule).
+   Role-resolved via `--tugx-focus-ring`. */
+.tug-list-view {
   outline: none;
+}
+.tug-list-view[data-key-view-kbd] {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: 0;
 }
 
 /* Block-axis breathing room — implemented as scroll-flow children
@@ -162,26 +194,45 @@ body {
   display: block;
 }
 
-/* ---- Movement cursor ([P03]/[Q01]) ----
-   The keyboard movement cursor reuses the row hover treatment so the row under
-   the arrows reads exactly as a pointer hover. `data-key-cursor` is projected by
-   the engine onto the cursor row's cell wrapper (appearance-only, [L06]/[L22]).
-   The fill is painted on the wrapper so it works whether or not the cell composes
-   a `TugListRow` — and it uses the same ghost-action-hover token the `flush`
-   `TugListRow` hover uses, so a hovered and a cursored row are indistinguishable.
-   `pill` rows light the inner row instead (the wrapper carries the inter-row gap). */
-/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-hover */
+/* ---- Movement cursor — a reduced-strength fill tint, NO per-row ring ([P02], list variant) ----
+   The list reads as two levels of ONE blue: the selected row is the calm
+   selection fill, and the cursor row is a REDUCED (lighter) version of that same
+   fill. That two-level relationship is legible on its own, so the list needs no
+   per-row ring (the global `[data-key-cursor]` outline is suppressed here; the
+   ring lives only on the list container) and no leading glyph. `data-key-cursor`
+   is projected by the engine onto the cursor row's cell wrapper (appearance-only,
+   [L06]/[L22]). Painted on the wrapper for default / `flush`; `pill` lights the
+   inner row (the wrapper keeps the inter-row gap). When the cursor sits on the
+   selected row the opaque selection fill shows through — the lone selection plus
+   the container ring then read as "the keyboard is on the selected row." */
 .tug-list-view-cell[data-key-cursor] {
-  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+  outline: none;
+  /* Match the selection's bounds exactly. The global `:where([data-key-cursor])`
+     rule gives the cursor cell a 6px radius (meant for the old ring); that pulled
+     the tint in from the host's rounded frame and read as "squared off" next to
+     the selection fill, which has no own radius and follows the host clip. Drop
+     the own radius so the cursor tint and the selection fill share one shape. */
+  border-radius: 0;
+  background-image: linear-gradient(var(--tugx-list-view-cursor-tint), var(--tugx-list-view-cursor-tint));
 }
 .tug-list-view[data-row-layout="pill"] .tug-list-view-cell[data-key-cursor] {
-  background-color: transparent;
+  background-image: none;
 }
 .tug-list-view[data-row-layout="pill"]
   .tug-list-view-cell[data-key-cursor]
   .tug-list-row:not([data-disabled="true"]) {
-  background-color: var(--tugx-list-row-pill-hover-bg);
-  border-color: var(--tugx-list-row-pill-hover-border);
+  background-image: linear-gradient(var(--tugx-list-view-cursor-tint), var(--tugx-list-view-cursor-tint));
+}
+
+/* Selected rows read as a clean block — cover the hairline dividers that touch
+   them (the selected cell's own bottom divider, and the divider above it owned
+   by the preceding cell). Unselected / cursor rows keep their separators, so the
+   selection fill sits "outside" the separators while everything else sits on
+   them. Flush layout only (that's where the dividers live). */
+.tug-list-view[data-row-layout="flush"] .tug-list-view-cell[data-selected="true"],
+.tug-list-view[data-row-layout="flush"]
+  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]) {
+  border-bottom-color: transparent;
 }
 
 /* ---- Read-only mode (`interactive={false}`) ----

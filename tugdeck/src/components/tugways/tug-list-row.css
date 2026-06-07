@@ -64,6 +64,12 @@ body {
   --tugx-list-row-gap:               var(--tug-space-sm);
   --tugx-list-row-padding-block:     8px;
   --tugx-list-row-padding-inline:    14px;
+  /* Reserved left gutter on every row. Two jobs: a touch of standing left
+     breathing room, and a fixed slot for a leading focus accessory (the
+     list-view keyboard-cursor chevron) so it never shifts the row text when it
+     appears/disappears. Reserved unconditionally — the chevron only paints on
+     the cursor row, but the space is always held so nothing reflows. */
+  --tugx-list-row-indicator-gutter:  0.2rem;
   --tugx-list-row-content-gap:       var(--tug-space-2xs);
   --tugx-list-row-pill-radius:       var(--tug-radius-md);
 
@@ -85,10 +91,15 @@ body {
   --tugx-list-row-pill-hover-bg:     var(--tug7-surface-control-primary-outlined-action-hover);
   --tugx-list-row-pill-hover-border: var(--tug7-element-control-border-outlined-action-hover);
 
-  /* Selection ramp — the list row uses the `selection` component's accent
-     orange in its calmer `quiet` intensity: a row selection sits there
-     persistently across a large fill, so the vibrant `selected` orange (which
-     the popup menus use for their small, transient highlight) would glare.
+  /* Selection ramp — committed row selection is the native fill in the role
+     color ([P01]/[P03]: selection is the role-resolved blue, unified with the
+     toggle "on" / filled-action blue). A row selection sits persistently across
+     a large fill, so it rides the `selection` family's calmer `quiet` sibling
+     rather than the vibrant `selected` blue (which the popup menus use for their
+     small, transient highlight). The quiet ramp is toned back per theme at the
+     source (`--tug7-surface-selection-primary-normal-quiet-*` in brio/harmony) —
+     the list row is its SOLE consumer — so it is calm in both themes without an
+     alpha `color-mix`, which washed it out over the light harmony surface.
      `-hover` steps up within the quiet ramp. Distinct from the `selection ...
      plain` family (the caret text-selection highlight in editor / code /
      markdown / pane). [L17] one-hop aliases. */
@@ -113,6 +124,11 @@ body {
      on the list; shorter rows then fill to it, center-aligned. */
   min-height: var(--tugx-list-row-min-height, auto);
   padding: var(--tugx-list-row-padding-block) var(--tugx-list-row-padding-inline);
+  /* Extra start padding holds the leading focus-accessory gutter (see the token).
+     Logical property, so it follows the row's writing direction. */
+  padding-inline-start: calc(
+    var(--tugx-list-row-padding-inline) + var(--tugx-list-row-indicator-gutter)
+  );
   /* Color + background are set per-variant so each variant declares a
      complete foreground-on-surface context. State transitions are
      color-only per [L15]. */

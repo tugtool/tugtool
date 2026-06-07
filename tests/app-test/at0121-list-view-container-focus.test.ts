@@ -11,10 +11,14 @@
  * The gallery `TugListView (focus)` card mounts a container-stop list. The test
  * proves:
  *   - **rows are not Tab stops:** every cell wrapper is `tabIndex=-1`;
- *   - **Tab → one stop, ring on the container:** Tab lands the key view on the
- *     scroll container and paints the ring there;
+ *   - **Tab → one stop, perimeter ring on the container:** Tab lands the key view
+ *     on the scroll container, which marks the whole list as the focused
+ *     container with a ring on its perimeter (an inset `outline`). A list is a
+ *     large scroll area, so it uses the perimeter ring rather than the behind-tint
+ *     the small item-groups use ([P02], by-archetype split) — the tint lit too
+ *     many pixels and drowned the cursor row;
  *   - **cursor lands on the first row:** the first cell carries `data-key-cursor`
- *     while the ring stays on the container.
+ *     (its ring) while the container holds the key view.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -47,13 +51,14 @@ function deckShape() {
   };
 }
 
-// Container snapshot: ring + keyboard marker + tab stop.
+// Container snapshot: behind-tint + suppressed ring + keyboard marker + tab stop.
 const CONTAINER_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(CONTAINER)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
+    backgroundImage: cs.backgroundImage,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
     tabIndex: el.getAttribute("tabindex"),
   };
@@ -71,6 +76,7 @@ const ALL_ROWS_NON_FOCUSABLE = `(function(){
 
 interface ContainerProbe {
   outline: string;
+  backgroundImage: string;
   keyboardReached: boolean;
   tabIndex: string | null;
 }
@@ -106,7 +112,8 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // (2) Tab → the container is the one stop: it takes the key view and
-        // the ring paints on it.
+        // marks itself as the focused container with a perimeter ring (an inset
+        // outline), no behind-tint.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CONTAINER)}).hasAttribute("data-key-view-kbd")`,
@@ -115,6 +122,7 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         const onContainer = await app.evalJS<ContainerProbe>(CONTAINER_PROBE);
         expect(onContainer?.keyboardReached).toBe(true);
         expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
+        expect(onContainer?.backgroundImage ?? "none").not.toContain("gradient");
         expect(onContainer?.tabIndex).toBe("0");
 
         // (3) The movement cursor lands on the first row — the ring stays on the

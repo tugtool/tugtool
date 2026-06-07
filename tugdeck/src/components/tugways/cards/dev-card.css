@@ -728,6 +728,20 @@
   overflow: hidden;
 }
 
+/* Container focus ring — drawn on the HOST, not the inner list. The host's
+   `overflow: hidden` (which clips the rows to the rounded frame) also clips an
+   outward outline on the inner `.tug-list-view`, so the list-view's own
+   perimeter ring never shows here. Instead, when the engine lands the keyboard
+   key view on the inner list, light up the host's OWN border as the focus ring —
+   it overlays the visible frame exactly (the border the user reads as the list's
+   edge). The host's own border + box-shadow are not subject to its own overflow
+   clip. Role-resolved via `--tugx-focus-ring`. */
+.dev-card-picker-recents-host:has(.tug-list-view[data-key-view-kbd]),
+.dev-card-picker-sessions-host:has(.tug-list-view[data-key-view-kbd]) {
+  border-color: var(--tugx-focus-ring);
+  box-shadow: 0 0 0 1px var(--tugx-focus-ring);
+}
+
 /* Empty-state placeholder — fills the (fixed-height) host so the
    sessions box stays at its full height even with no path / no
    rows. Centered text reads as a quiet hint, not a blank panel. */

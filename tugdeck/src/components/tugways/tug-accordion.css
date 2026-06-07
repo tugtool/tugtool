@@ -15,6 +15,19 @@
  * | --tug7-element-global-border-normal-default-rest   | --tug7-surface-global-primary-normal-default-rest   | informational | .tug-accordion-separator/outline/inset (border)       |
  */
 
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* Keyboard movement-cursor fill for the cursor header — a reduced (lighter)
+     version of the focus selection blue, derived from the same per-theme token as
+     TugListView's cursor tint so the two row-based item-groups read identically.
+     The accordion has no row selection of its own; this is purely the focus-blue
+     hue at a low level. Keep the fraction in sync with
+     `--tugx-list-view-cursor-tint`. */
+  --tugx-accordion-cursor-tint:
+    color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 25%, transparent);
+}
+
 /* ============================================================================
    Keyframe Animations
    ========================================================================= */
@@ -172,7 +185,30 @@
   color: var(--tug7-element-field-text-normal-label-hover);
 }
 
-/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
+/* ---- Focus language — item-group treatment ([P01]/[P02]/[P03]) ----
+   The accordion is ONE item-container stop: Tab lands on the accordion (never a
+   header), arrows move a cursor over the triggers, Space toggles the cursor
+   section, and Enter descends into an open section. It shares TugListView's
+   treatment (same row-based descendable archetype, settled by the list's by-eye
+   pass): a PERIMETER RING marks the focused container, and the cursor header
+   carries a reduced TINT FILL — not a ring. (This supersedes the earlier [P02]
+   behind-tint + cursor-ring here.) On descend the root drops the key view and
+   shows the quiet `[data-key-within]` mark (the global rule). Role-resolved via
+   `--tugx-focus-ring` / `--tugx-accordion-cursor-tint`. */
+.tug-accordion[data-key-view-kbd] {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: 0;
+  background-image: none;
+}
+
+/* The movement cursor on a trigger is a reduced tint fill (lighter focus blue),
+   matching the list cursor row — no per-row ring. Suppress the global
+   `[data-key-cursor]` outline; the ring lives only on the accordion container. */
+.tug-accordion-trigger[data-key-cursor] {
+  outline: none;
+  box-shadow: none;
+  background-image: linear-gradient(var(--tugx-accordion-cursor-tint), var(--tugx-accordion-cursor-tint));
+}
 
 /* ---- Disabled ---- */
 

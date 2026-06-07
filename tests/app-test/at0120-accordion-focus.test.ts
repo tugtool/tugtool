@@ -12,7 +12,10 @@
  * The gallery `Focus Walk` panel authors a three-section single-mode accordion,
  * fully collapsed; the first section's content holds a navigable inner control.
  * The test proves:
- *   - **Tab → one stop, ring on the accordion, cursor on the first header;**
+ *   - **Tab → one stop, perimeter ring on the accordion, cursor on the first
+ *     header** — the accordion shares TugListView's treatment (row-based
+ *     descendable archetype): a ring marks the focused container, the cursor
+ *     header carries a tint fill ([P02], rolled out from the list);
  *   - **arrows move the cursor without expanding;**
  *   - **Space expands the cursor section;**
  *   - **Enter descends** into the open section's inner control (key view leaves
@@ -53,14 +56,17 @@ function deckShape() {
   };
 }
 
-// The accordion's ring marker + visible :focus-within mark (the ring is on the
-// component, [P03]; `data-key-within` is set while a descended scope is active).
+// The accordion's container perimeter ring + the visible :focus-within mark. As
+// a row-based item-group container it wears a ring on its own bounds (matching
+// TugListView), not a behind-tint; `data-key-within` is set while a descended
+// scope is active.
 const ACC_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(ACC)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
+    backgroundImage: cs.backgroundImage,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
     within: el.hasAttribute("data-key-within"),
   };
@@ -90,6 +96,7 @@ const INNER_PROBE = `(function(){
 
 interface AccProbe {
   outline: string;
+  backgroundImage: string;
   keyboardReached: boolean;
   within: boolean;
 }
@@ -122,8 +129,9 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) Tab → one stop: the ring lands on the ACCORDION and the cursor
-        // parks on the first header; nothing is expanded.
+        // (1) Tab → one stop: the perimeter ring lands on the ACCORDION (a
+        // row-based item-group container rings its own bounds, matching the list)
+        // and the cursor parks on the first header; nothing is expanded.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_HEADER} === "first"`, { timeoutMs: 6000 });
         const onAcc = await app.evalJS<AccProbe>(ACC_PROBE);

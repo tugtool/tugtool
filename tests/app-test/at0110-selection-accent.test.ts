@@ -1,18 +1,22 @@
 /**
  * at0110-selection-accent.test.ts — the color contract for selection.
  *
- * After the UI-selection recolor, **accent/orange = selection** (the chosen
- * item) and **action/blue = the keyboard-active axis**. Two things must hold,
- * and they pull in opposite directions, so the test pins both:
+ * Under the focus language ([P01]/[P03]) committed selection is the **native
+ * fill in the role color** — the role-resolved **blue** (unified with the toggle
+ * "on" / filled-action blue), NOT orange. (This supersedes the earlier "accent /
+ * orange = selection" reading; the focus / selection disentangle re-homed the
+ * keyboard axis off the selection color, so selection is free to be the role
+ * blue.) Two things must hold:
  *   - the **UI-selection** surface a selected list row paints
  *     (`--tug7-surface-selection-primary-normal-selected-rest`, surfaced to the
- *     row via `--tugx-list-row-selected-bg`) now resolves to an **orange** hue;
+ *     row via the quiet sibling `--tugx-list-row-selected-bg`) resolves to the
+ *     **blue** arc;
  *   - **text/character selection** (`--tug7-surface-selection-primary-normal-plain-rest`,
- *     the OS highlight consumed by the editors) stays **blue**.
+ *     the OS highlight consumed by the editors) is also **blue**.
  *
  * Hue is read from the computed, build-expanded `oklch(L C H …)` value of each
  * token — robust against tone/intensity/alpha tuning and theme differences,
- * since orange and blue occupy disjoint hue arcs in both brio and harmony. A
+ * since the blue arc is disjoint from the warm arcs in both brio and harmony. A
  * `gallery-list-view` card is mounted so `tug-list-row.css` (which defines the
  * `--tugx-list-row-selected-*` aliases) is loaded and its alias resolves.
  */
@@ -58,9 +62,9 @@ function oklchHue(value: string | null): number | null {
   return m ? parseFloat(m[1]) : null;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0110: selection is accent/orange, text selection stays blue", () => {
+describe.skipIf(!SHOULD_RUN)("AT0110: selection is the action/blue role color", () => {
   test(
-    "UI-selection tokens resolve to orange; the text-selection token stays blue",
+    "UI-selection tokens resolve to blue; the text-selection token stays blue",
     async () => {
       const app = await launchTugApp({ testName: "at0110-selection-accent" });
       try {
@@ -75,14 +79,14 @@ describe.skipIf(!SHOULD_RUN)("AT0110: selection is accent/orange, text selection
         );
 
         // UI selection — the base `selected` surface and the list-row alias
-        // that consumes it both land in the orange arc.
+        // that consumes it both land in the blue arc (the role color).
         const selectedRaw = await app.evalJS<string | null>(
           RAW_OF("--tug7-surface-selection-primary-normal-selected-rest"),
         );
         const rowSelectedRaw = await app.evalJS<string | null>(
           RAW_OF("--tugx-list-row-selected-bg"),
         );
-        // Text/character selection — the OS highlight stays in the blue arc.
+        // Text/character selection — the OS highlight is in the blue arc too.
         const textSelectionRaw = await app.evalJS<string | null>(
           RAW_OF("--tug7-surface-selection-primary-normal-plain-rest"),
         );
@@ -92,16 +96,16 @@ describe.skipIf(!SHOULD_RUN)("AT0110: selection is accent/orange, text selection
         const textSelectionHue = oklchHue(textSelectionRaw);
 
         expect(selectedHue).not.toBeNull();
-        expect(selectedHue).toBeGreaterThan(20);
-        expect(selectedHue).toBeLessThan(110); // orange arc
+        expect(selectedHue).toBeGreaterThan(200);
+        expect(selectedHue).toBeLessThan(290); // blue arc — selection is the role color
 
         expect(rowSelectedHue).not.toBeNull();
-        expect(rowSelectedHue).toBeGreaterThan(20);
-        expect(rowSelectedHue).toBeLessThan(110); // orange arc — row consumes accent
+        expect(rowSelectedHue).toBeGreaterThan(200);
+        expect(rowSelectedHue).toBeLessThan(290); // blue arc — row fill is the role color
 
         expect(textSelectionHue).not.toBeNull();
         expect(textSelectionHue).toBeGreaterThan(200);
-        expect(textSelectionHue).toBeLessThan(290); // blue arc — unchanged
+        expect(textSelectionHue).toBeLessThan(290); // blue arc
       } finally {
         await app.close();
       }

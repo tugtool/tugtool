@@ -209,8 +209,13 @@ body {
      selection (`plain`, above) stays blue. */
   --tug7-surface-selection-primary-normal-selected-rest: --tug-color(blue, i: 64, t: 45);
   --tug7-surface-selection-primary-normal-selected-hover: --tug-color(blue, i: 70, t: 40);
-  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(blue, i: 52, t: 45);
-  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(blue, i: 56, t: 42);
+  /* The calm row-selection blue (the "selected color" itself; the list-view
+     cursor tint is a reduced color-mix of it). Toned back from the former vivid
+     i:52 — lower chroma calms it while the lightness stays dark enough for the
+     white selected text to read on this light theme. Sole consumer is the list
+     row. */
+  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(blue, i: 42, t: 45);
+  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(blue, i: 48, t: 41);
   --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, i: 3, t: 100);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind
