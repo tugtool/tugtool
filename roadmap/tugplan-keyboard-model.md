@@ -165,7 +165,7 @@ Per-dialog item sets: **Permission** = the allow-scope options plus Deny/Allow (
 | TugCheckbox | none | — | toggle checked | — |
 | TugSwitch | none | — | toggle on/off | — |
 | TugSlider | none | move value; Home/End = min/max; Pg/Opt = larger step | — *(no act; commits live)* | **live** |
-| TugTabBar | item | move cursor over tabs; Home/End | *(tab already switched)* | **live** — switches as you move |
+| TugTabBar | item | move cursor over tabs; Home/End | *(tab already switched)* | **live** — switches as you move ([P08]) |
 | TugRadioGroup | item | move hover over radios; Home/End | check current radio | deferred |
 | TugChoiceGroup | item | move hover over segments | select current segment | deferred |
 | TugOptionGroup | item | move hover over options | toggle current option | deferred |

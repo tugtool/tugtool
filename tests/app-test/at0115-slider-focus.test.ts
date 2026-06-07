@@ -12,8 +12,10 @@
  * value 30) into a focus group. The test proves:
  *   - **no ring at rest:** before keyboard focus the thumb has no ring (outline
  *     0, no `data-key-view-kbd`);
- *   - **Tab → ring on keyboard focus:** Tab lands the key view on the thumb and
- *     paints the ring (outline > 0, `data-key-view-kbd` set);
+ *   - **Tab → ring + behind-tint on keyboard focus:** Tab lands the key view on
+ *     the thumb, paints the ring (outline > 0, `data-key-view-kbd` set) and the
+ *     faint behind-tint on the whole component, and fills the thumb with the
+ *     role color ([P01] leaf signature);
  *   - **arrows step locally:** ArrowRight increases `aria-valuenow` by one step.
  */
 
@@ -51,7 +53,8 @@ function deckShape() {
   };
 }
 
-// Per-element snapshot: Radix value + computed ring + keyboard marker.
+// Per-element snapshot: Radix value + computed ring + behind-tint + thumb fill
+// + keyboard marker.
 const PROBE = (selector) => `(function(){
   var el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
@@ -59,6 +62,8 @@ const PROBE = (selector) => `(function(){
   return {
     valueNow: el.getAttribute("aria-valuenow"),
     outline: cs.outlineWidth,
+    behindTint: cs.backgroundImage,
+    fill: cs.backgroundColor,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
     isKeyView: el.hasAttribute("data-key-view"),
   };
@@ -67,6 +72,8 @@ const PROBE = (selector) => `(function(){
 interface SliderProbe {
   valueNow: string | null;
   outline: string;
+  behindTint: string;
+  fill: string;
   keyboardReached: boolean;
   isKeyView: boolean;
 }
@@ -97,15 +104,19 @@ describe.skipIf(!SHOULD_RUN)("AT0115: slider focus is engine-driven", () => {
         await app.nativeClickAtElement(TITLE);
         await new Promise((resolve) => setTimeout(resolve, 200));
 
-        // (1) No ring at rest: the thumb carries no keyboard marker, and the
-        // slider component carries no ring.
+        // (1) No ring/tint at rest: the thumb carries no keyboard marker, the
+        // slider component carries no ring and no behind-tint, and the thumb is
+        // at its resting (neutral) fill.
         const atRest = await app.evalJS<SliderProbe>(PROBE(THUMB));
         expect(atRest?.keyboardReached).toBe(false);
+        const thumbFillAtRest = atRest?.fill ?? "";
         const sliderAtRest = await app.evalJS<SliderProbe>(PROBE(SLIDER));
         expect(parseFloat(sliderAtRest?.outline ?? "0")).toBe(0);
+        expect(sliderAtRest?.behindTint).toBe("none");
 
-        // (2) Tab → the engine lands the key view on the thumb and the ring
-        // paints on the whole component (the slider root, not the thumb).
+        // (2) Tab → the engine lands the key view on the thumb; the ring AND the
+        // behind-tint paint on the whole component (the slider root), and the
+        // thumb fills with the role color ([P01] leaf signature).
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `(function(){ var el = document.querySelector(${JSON.stringify(THUMB)}); return el && el.hasAttribute("data-key-view-kbd"); })()`,
@@ -113,8 +124,11 @@ describe.skipIf(!SHOULD_RUN)("AT0115: slider focus is engine-driven", () => {
         );
         const focused = await app.evalJS<SliderProbe>(PROBE(THUMB));
         expect(focused?.isKeyView).toBe(true);
+        // Thumb fill changed from its resting neutral to the role fill.
+        expect(focused?.fill).not.toBe(thumbFillAtRest);
         const sliderFocused = await app.evalJS<SliderProbe>(PROBE(SLIDER));
         expect(parseFloat(sliderFocused?.outline ?? "0")).toBeGreaterThan(0);
+        expect(sliderFocused?.behindTint.startsWith("linear-gradient")).toBe(true);
         const before = parseFloat(focused?.valueNow ?? "NaN");
         expect(Number.isNaN(before)).toBe(false);
 

@@ -89,10 +89,11 @@ export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div
   /**
    * Focus group this tab bar is authored into ([P02]). When set, the bar
    * registers as a **single item-container stop** in the engine's Tab walk: Tab
-   * lands the ring on the bar (never on a tab) with the movement cursor on the
-   * active tab, and arrows move the cursor **and switch the active view live**
-   * ([P01] live commit); when omitted, the tabs stay plain native focus stops.
-   * Supplied by the surface that owns the Tab order (e.g. the enclosing pane).
+   * lands the behind-tint on the bar (never a leaf ring on the bar) with the
+   * cursor ring on the active tab; arrows move the cursor **and switch the
+   * active view live** ([P08] automatic activation), so the cursor rides the
+   * active tab. When omitted, the tabs stay plain native focus stops. Supplied
+   * by the surface that owns the Tab order (e.g. the enclosing pane).
    */
   focusGroup?: string;
   /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
@@ -607,11 +608,13 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
 
   // ---- Item-container keyboard ([P01], [P03]) — live commit ----
   //
-  // The bar is a single stop in the engine Tab walk; the ring stays on the bar
-  // (never a tab). A movement cursor traverses the visible tabs under the
-  // arrows and — because the tab bar is a *live* component — **switches the
-  // active view on every move** (commit on move). One focusable id for the
-  // whole bar.
+  // The bar is a single stop in the engine Tab walk; the bar wears the
+  // behind-tint and a movement cursor traverses the visible tabs under the
+  // arrows. The tab bar is a **view switcher**, so it **commits live** ([P08],
+  // the ARIA-tabs "automatic activation" pattern): every arrow move switches the
+  // active view as the cursor lands, so the cursor always rides the active tab —
+  // you see the tab you move to, never a cursor stranded on an un-shown tab.
+  // Space/Enter re-affirm the current tab. One focusable id for the whole bar.
   const autoFocusId = useId();
 
   // Card id carried by a tab element (via its `data-testid`).
@@ -642,7 +645,8 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       const i = visibleTabEls().findIndex((el) => cardIdOf(el) === activeCardId);
       return i >= 0 ? i : 0;
     },
-    // Live: every arrow move switches the active view; Space/Enter re-affirm.
+    // Live ([P08]): every arrow move switches the active view; Space/Enter
+    // re-affirm the current tab.
     onMove: (element) => {
       const id = cardIdOf(element);
       if (id) dispatchSelectTab(id);

@@ -244,13 +244,13 @@ No engine touch; stays in the appearance zone ([L06]).
 
 **Implications:** Input focus CSS resolves the role from the validation class; covered in [#step-6].
 
-#### [P08] TugTabBar commits on act (DECIDED) {#p08-tabbar-commit}
+#### [P08] TugTabBar keeps live commit; adopts the item-group visual signature (DECIDED; REVISED in #step-4) {#p08-tabbar-commit}
 
-**Decision:** `TugTabBar` moves from live-commit (selection follows the cursor on every move) to **commit-on-act**, matching TugChoiceGroup, so the cursor and selection are separable like every other item-group.
+**Decision:** `TugTabBar` **keeps live commit** — the selection follows the cursor on every arrow move (the ARIA-tabs *automatic activation* pattern) — and adopts the item-group focus **visual** signature (behind-tint on the bar + the cursor ring + the native `data-active` fill). Because it commits live, the cursor always rides the active tab: the focused tab shows the cursor ring *and* its fill at once.
 
-**Rationale:** Removes the one live-commit special case; lets the tab bar use the identical item-group focus signature (behind-tint + cursor ring + native pill fill).
+**Rationale (revised).** The original decision flipped the tab bar to commit-on-act "to remove the one live-commit special case." Reversed after seeing it: a tab bar is a **view switcher**, not a value picker. The ARIA tabs convention is automatic activation whenever switching content is inexpensive (it is here — switching a card is cheap), because the user expects to *see* the tab they move to. Commit-on-act stranded the cursor ring on an un-shown tab (ring on "Overflow" while still viewing "Hello") — a confusing preview state that doesn't belong on navigation. The live commit is a *justified* special case, not an accident; uniformity with TugChoiceGroup is not worth the worse UX. The valuable part of the original — the item-group *visual* signature — is kept; only the commit timing reverts.
 
-**Implications:** A small behavior change (not pure appearance) — its step carries an app-test for arrow-moves-without-committing + act-commits, and updates the keyboard-model matrix row.
+**Implications:** Pure-appearance change at the component (the live commit behavior is unchanged from before the focus-language work) plus the new visual signature. The step's app-test asserts the new visual (behind-tint on the bar, cursor ring on the tab) AND the live switch (arrow moves the cursor and switches the view together). The keyboard-model matrix row stays **live**.
 
 #### [P09] Keyboard-focus-cycling mode for text-first cards (DECIDED; behavior addition) {#p09-cycle-mode}
 
@@ -518,7 +518,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-primary | Prominence hierarchy — `primary` emphasis (tint-at-rest → fill-on-engage); session picker adopts it ([P14]) | pending | — |
 | #step-cycle-commit | Cycle commit disposition — value-commit relinquishes a toggleable cycle (derived from [P13], mode-carried); fixes the dev-card route-commit desync ([P15]) | done: `commitDisposition` on the mode + `applyCommitDisposition`; act-dispatch wired; `useCycleMode` toggleable default + override; at0140 relinquish test green, picker retain regression green | (uncommitted) |
 | #step-3 | Item-groups — radio / choice / option | done: container behind-tint (no container ring) + cursor-item ring + native role fill; `buildRoleStyle` role-resolved focus marks; route-group double-ring resolved; at0117/at0118/at0119/at0030 reworked to the [P02] contract + green | (uncommitted) |
-| #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | pending | — |
+| #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | done | uncommitted (pending /tugplug:commit) |
 | #step-5 | Descendable rows — list view / row, accordion | pending | — |
 | #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | pending | — |
 | #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | pending | — |
@@ -980,17 +980,23 @@ This step is **devised separately** (`/tugplug:devise`) — it is a real refacto
 
 **References:** [P01], [P02], [P08], (#p08-tabbar-commit)
 
-**Artifacts:** `tug-slider.css`, `tug-tab-bar.css`, and the TabBar commit-timing change.
+**Artifacts:** `tug-slider.css`, `tug-tab-bar.css` (+ `tug-tab-bar.tsx` visual signature; live commit retained per the [P08] revision), and a shared cursor-projection fix (`use-focus-cursor.ts` / `use-item-group-keyboard.ts`).
 
-**Tasks:**
-- Slider: whole-component ring + behind-tint; fill the thumb on focus (role color).
-- Tab bar: switch to commit-on-act ([P08]); apply the item-group signature (group tint + cursor ring + native pill fill); update the keyboard-model matrix row note.
+**STATUS — done (on `main`, uncommitted; pending /tugplug:commit).**
+
+**Done:**
+- ✅ **Slider** (`tug-slider.css`): the leaf now wears the full [P01] signature — the ring AND a faint behind-tint (role-resolved `--tugx-focus-tint` as a gradient overlay over the root's background, the [Q02] technique) on the whole component, and the **thumb fills with the role color** (`--tugx-focus-fill`) on keyboard focus (the slider's "native fill").
+- ✅ **Tab bar keeps live commit** ([P08], REVISED): the original plan flipped it to commit-on-act; reversed after by-eye review — a tab bar is a view switcher and the ARIA *automatic activation* pattern (arrow switches the view) is correct here. Commit-on-act stranded the cursor ring on an un-shown tab. So the tab bar adopts only the item-group **visual** signature; the live commit behavior is unchanged.
+- ✅ **Tab bar item-group signature** (`tug-tab-bar.css`): the bar wears the behind-tint (no leaf ring on the bar); the focused tab carries the single ring — **inset** (`outline-offset: -2px`, square-matched radius) because the bar clips overflow (`overflow: hidden`, the tab-collapse mechanism) and the tabs fill full height, so the choice/option groups' *outside* ring would be clipped. Because the bar commits live, the cursor always rides the active tab: the focused tab shows the ring AND its `data-active` underline+fill at once (the ring is the keyboard overlay on the live selection).
+- ✅ **Keyboard-model matrix** (`tugplan-keyboard-model.md`): TugTabBar row stays **live** (the [P08] revision).
+- ✅ **Shared cursor-at-rest fix** (surfaced by the tab bar's now-visible inset ring): `useFocusCursor` projected `data-key-cursor` unconditionally, so **every** item-group (radio/choice/option/tab) stamped a cursor ring at index 0 *at rest* and on a plain mouse click — masked before only because the outside rings were faint/clipped. Cursor projection is now gated on an `active` flag the owner flips with the keyboard key view, so no ring shows at rest or on click ([P12]). Confirmed radio/choice/option still ring correctly on Tab.
 
 **Tests:**
-- Behavior: slider app-tests green; **new** app-test — tab bar arrow moves the cursor without committing, act commits.
-- By-eye: both, both themes.
+- ✅ Behavior: `at0115` (slider) green — now also asserts behind-tint + thumb fill. `at0116` (tab bar): Tab tints the bar (no leaf ring on the bar) + cursors the active tab; arrow **switches live** (cursor + active tab move together).
+- ✅ Regression: `at0117/0118/0119` (radio/choice/option), `at0120` (accordion), `at0121/0122` (list view), `at0140` (cycle dev card), `at0109` (focus ring) all green — the shared cursor fix holds. (`at0040`, `at0083` fail identically on clean `main` — pre-existing, unrelated to this step.)
+- By-eye: pending user review — both themes; slider tint/thumb-fill; tab-bar cursor-vs-selection legibility, especially the inset ring on the active+cursor tab.
 
-**Checkpoint:** `tsc` clean; app-tests (incl. the new tab-bar one) green; gallery parity.
+**Checkpoint:** ✅ `bunx tsc --noEmit` clean; ✅ app-tests (incl. the new tab-bar contract) green; gallery parity (existing interactive demos exercise the new behavior).
 
 #### Step 5: Descendable rows — list view / row, accordion {#step-5}
 

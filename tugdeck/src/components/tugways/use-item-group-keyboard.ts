@@ -169,6 +169,10 @@ export function useItemGroupKeyboard(
       if (el === null) return;
       const kbd = el.hasAttribute("data-key-view-kbd");
       if (kbd && !wasKbdRef.current) {
+        // The group gained the keyboard key view: activate the cursor (so it may
+        // paint) and land it on the initial item. Activation precedes the seed
+        // so the projection includes the ring ([P12] — ring on keyboard focus).
+        cursor.setActive(true);
         syncItems();
         cursor.setCursor(optionsRef.current.initialIndex());
       } else if (!kbd && wasKbdRef.current) {

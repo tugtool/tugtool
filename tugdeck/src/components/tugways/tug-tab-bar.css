@@ -44,7 +44,13 @@ body {
   --tugx-tab-fg-active: var(--tug7-element-tab-text-normal-plain-active);
   --tugx-tab-close-bg-hover: var(--tug7-surface-tab-close-normal-plain-hover);
   --tugx-tab-close-fg-hover: var(--tug7-element-tab-close-normal-plain-hover);
-  --tugx-tab-underline-active: var(--tug7-element-global-fill-normal-accent-rest);
+  /* The active-tab indicator is the tab bar's SELECTION signal, so it uses the
+     focus-language selection fill (the role on-color, default action) — the same
+     blue radio / choice / option / slider use for selection — rather than the
+     accent. Keeps the whole control family cohesive ([P01] native fill = action,
+     not the legacy accent). The overflow badge and the drag insert-indicator are
+     not selection, so they stay on accent. */
+  --tugx-tab-underline-active: var(--tugx-focus-fill);
   --tugx-tab-badge-bg: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-tab-insertIndicator: var(--tug7-element-global-fill-normal-accent-rest);
 }
@@ -63,6 +69,12 @@ body {
   height: var(--tug-chrome-height);
   background-color: var(--tugx-tab-bar-bg);
   border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* Round the bar's corners to the same radius as the focused-tab ring. The bar
+     clips its content (overflow: hidden), so a square bar corner would peek
+     through the notch left by the first tab's rounded focus-ring corner. Matching
+     the radius makes the bar's clip coincide with the ring's curve, so the first
+     tab's ring corners sit clean instead of getting notched by the bar edge. */
+  border-radius: var(--tug-radius-sm);
   user-select: none;
   /* Required so absolutely-positioned insertion indicator is positioned
      relative to the tab bar. */
@@ -110,6 +122,44 @@ body {
 .tug-tab:not([data-active="true"]):hover {
   background-color: var(--tugx-tab-bg-hover);
   color: var(--tugx-tab-fg-hover);
+}
+
+/* ============================================================================
+   Focus language — item-group treatment ([P01]/[P02]/[P08])
+   ----------------------------------------------------------------------------
+   The tab bar is ONE Tab stop. When it holds the key view, override the global
+   leaf ring → a faint behind-tint on the bar (a gradient overlay composed over
+   its own background, [Q02]), and let the cursor TAB carry the single ring. The
+   tab bar commits live ([P08] automatic activation), so the cursor always rides
+   the active tab: the focused tab shows the cursor ring (keyboard is here) over
+   its background fill (selection). The ring hugs the tab edges flush, so its
+   bottom stroke lands exactly on the tab's bottom edge — taking over from the
+   selection underline as one cohesive treatment, not two misaligned blue marks.
+   ========================================================================== */
+.tug-tab-bar[data-key-view-kbd] {
+  outline: none;
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+}
+
+/* Cursor tab ring — the item-group movement cursor ([P02]). The bar clips its
+   content (`overflow: hidden`, required by the tab collapse/overflow mechanism)
+   and the tabs fill the bar's full height, so a normal OUTLINE ring is clipped
+   top and bottom, and an *inset* outline (negative offset) floats a few px in
+   from the edges — leaving the tab's actual bottom edge bare and misaligned with
+   the flush selection underline. Use a flush **inset box-shadow** instead: it is
+   never clipped (drawn inside the box) and hugs all four edges, so the ring's
+   bottom stroke sits right on the tab's bottom edge. Source order makes this
+   box-shadow win over the active tab's underline box-shadow (equal specificity),
+   so on the focused (active + cursor) tab the flush ring REPLACES the underline
+   — one cohesive frame with a real bottom edge, not ring + stray underline. The
+   underline returns the moment keyboard focus leaves the bar. Role color comes
+   from the focus axis (`--tugx-focus-ring`); the radius matches the bar's own
+   rounded clip (below) so the ring's corners coincide with the bar's edge and
+   never get notched by a square bar corner peeking through. */
+.tug-tab[data-key-cursor] {
+  outline: none;
+  border-radius: var(--tug-radius-sm);
+  box-shadow: inset 0 0 0 var(--tugx-focus-ring-width) var(--tugx-focus-ring);
 }
 
 /* ============================================================================

@@ -15,6 +15,16 @@
  * separate concern owned by that component; this hook only tracks the hover-like
  * cursor.
  *
+ * **The cursor is only painted while it is ACTIVE** — i.e. while the group holds
+ * the keyboard key view. The focus language shows no ring at rest and none on a
+ * mouse click ([P12]); the cursor ring is a keyboard affordance. So projection
+ * is gated on an `active` flag: `setItems` / `setCursor` / `moveCursor` update
+ * the tracked items and index but paint `data-key-cursor` only when active. The
+ * owner (`useItemGroupKeyboard`) flips `setActive(true)` when its group gains the
+ * keyboard key view and `setActive(false)` when it leaves. This is what keeps a
+ * freshly-mounted group, and a plain pointer click on an unfocused group, from
+ * stamping a resting cursor ring (the bug a contiguous/clipped ring would mask).
+ *
  * The styling of `data-key-cursor` reuses the component's mouse-hover treatment
  * ([Q01]); a quiet baseline lives in `focus-ring.css` and each component refines
  * it with its own hover token.
@@ -27,9 +37,16 @@ export const KEY_CURSOR_ATTRIBUTE = "data-key-cursor";
 
 export interface UseFocusCursorResult {
   /**
+   * Activate or deactivate the cursor. Active = the group holds the keyboard key
+   * view, so the cursor ring may paint; inactive = at rest / pointer-only, so no
+   * ring shows even though the index is still tracked. Re-projects immediately.
+   */
+  setActive: (active: boolean) => void;
+  /**
    * Declare the ordered item elements the cursor moves over. Call from a layout
    * effect (or whenever the rendered items change). Re-projects the cursor onto
-   * the (clamped) current index. `null` entries are tolerated and skipped.
+   * the (clamped) current index when active. `null` entries are tolerated and
+   * skipped.
    */
   setItems: (items: ReadonlyArray<Element | null>) => void;
   /**
@@ -46,7 +63,10 @@ export interface UseFocusCursorResult {
   cursorIndex: () => number;
   /** The element under the cursor, or `null`. */
   cursorElement: () => Element | null;
-  /** Remove `data-key-cursor` from every tracked item (e.g. on blur / ascend). */
+  /**
+   * Remove `data-key-cursor` from every tracked item and deactivate the cursor
+   * (e.g. on blur / ascend). Equivalent to `setActive(false)`.
+   */
   clear: () => void;
 }
 
@@ -58,17 +78,30 @@ export interface UseFocusCursorResult {
 export function useFocusCursor(): UseFocusCursorResult {
   const itemsRef = useRef<Element[]>([]);
   const indexRef = useRef(0);
+  // Whether the cursor ring may paint. Gated so a resting / pointer-only group
+  // never stamps a ring ([P12]); flipped on by the owner when the group gains
+  // the keyboard key view. Structure-zone ref, never React state ([L06]/[L24]).
+  const activeRef = useRef(false);
 
   const project = useCallback((): void => {
     const items = itemsRef.current;
+    const active = activeRef.current;
     for (let i = 0; i < items.length; i++) {
-      if (i === indexRef.current) {
+      if (active && i === indexRef.current) {
         items[i].setAttribute(KEY_CURSOR_ATTRIBUTE, "");
       } else {
         items[i].removeAttribute(KEY_CURSOR_ATTRIBUTE);
       }
     }
   }, []);
+
+  const setActive = useCallback(
+    (active: boolean): void => {
+      activeRef.current = active;
+      project();
+    },
+    [project],
+  );
 
   const clampIndex = useCallback((index: number): number => {
     const last = itemsRef.current.length - 1;
@@ -114,10 +147,11 @@ export function useFocusCursor(): UseFocusCursorResult {
   );
 
   const clear = useCallback((): void => {
+    activeRef.current = false;
     for (const el of itemsRef.current) {
       el.removeAttribute(KEY_CURSOR_ATTRIBUTE);
     }
   }, []);
 
-  return { setItems, setCursor, moveCursor, cursorIndex, cursorElement, clear };
+  return { setActive, setItems, setCursor, moveCursor, cursorIndex, cursorElement, clear };
 }

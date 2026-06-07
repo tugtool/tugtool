@@ -1,18 +1,22 @@
 /**
  * at0116-tab-bar-focus.test.ts — TugTabBar is a single item-container stop with
- * **live** commit in the Tug keyboard model ([P01]/[P03]).
+ * **live** commit and the item-group visual signature ([P01]/[P02]/[P08]).
  *
  * The tab bar registers one focusable for the whole bar ([P02]) via
- * `useItemGroupKeyboard` (`commit: "live"`): Tab lands the ring on the *bar*
- * (never on a tab) with a movement cursor on the active tab; arrows move the
- * cursor **and switch the active view on every move**. The ring is on the bar,
- * driven by `data-key-view-kbd` ([P05]).
+ * `useItemGroupKeyboard` (`commit: "live"`). When it holds the key view the
+ * *bar* wears the **behind-tint** (never a leaf ring on the bar) and the cursor
+ * ring lands on a tab. The tab bar is a **view switcher**, so it commits live
+ * (the ARIA-tabs automatic-activation pattern, [P08]): every arrow move switches
+ * the active view as the cursor lands, so the cursor always rides the active
+ * tab — never stranded on an un-shown tab.
  *
  * The gallery demo authors its TugTabBar (six tabs) into one focus group. The
  * test proves:
- *   - **no ring at rest:** before keyboard focus the bar has no ring;
- *   - **Tab → one stop, ring on the bar, cursor on the active tab:** Tab rings
- *     the bar and parks the cursor on `demo-tab-1` (the active tab);
+ *   - **no tint / no cursor at rest:** before keyboard focus the bar has no tint
+ *     and no tab carries the cursor;
+ *   - **Tab → one stop, behind-tint on the bar, cursor on the active tab:** Tab
+ *     tints the bar (no outline ring on the bar) and parks the cursor on
+ *     `demo-tab-1` (the active tab), which stays active;
  *   - **arrows switch live:** ArrowRight moves the cursor to `demo-tab-2` AND
  *     makes it the active view, while the ring stays on the bar.
  */
@@ -48,13 +52,15 @@ function deckShape() {
   };
 }
 
-// The bar's ring marker + outline (the ring is on the component, [P03]).
+// The bar's focus signature: it must wear the behind-tint (a gradient overlay)
+// and NOT an outline ring — the cursor tab owns the ring ([P02]).
 const BAR_PROBE = `(function(){
   var el = document.querySelector(${JSON.stringify(BAR)});
   if (!el) return null;
   var cs = getComputedStyle(el);
   return {
     outline: cs.outlineWidth,
+    behindTint: cs.backgroundImage,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
   };
 })()`;
@@ -77,6 +83,7 @@ const PROBE = (selector) => `(function(){
 
 interface BarProbe {
   outline: string;
+  behindTint: string;
   keyboardReached: boolean;
 }
 interface TabProbe {
@@ -86,7 +93,7 @@ interface TabProbe {
 
 describe.skipIf(!SHOULD_RUN)("AT0116: tab bar is a single item-container stop (live)", () => {
   test(
-    "no ring at rest; Tab rings the bar + cursors the active tab; arrows switch live",
+    "no tint at rest; Tab tints the bar + cursors the active tab; arrows switch live",
     async () => {
       const app = await launchTugApp({ testName: "at0116-tab-bar-focus" });
       try {
@@ -113,25 +120,33 @@ describe.skipIf(!SHOULD_RUN)("AT0116: tab bar is a single item-container stop (l
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
         await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // (1) No ring at rest on the bar; `demo-tab-1` is the active tab.
+        // (1) No tint / no cursor at rest; `demo-tab-1` is the active tab.
         const atRest = await app.evalJS<BarProbe>(BAR_PROBE);
         expect(atRest?.keyboardReached).toBe(false);
-        expect(parseFloat(atRest?.outline ?? "0")).toBe(0);
+        const cursorAtRest = await app.evalJS<string | null>(CURSOR_TAB);
+        expect(cursorAtRest).toBe(null);
         const tab1Rest = await app.evalJS<TabProbe>(PROBE(TAB1));
         expect(tab1Rest?.active).toBe("true");
 
-        // (2) Tab → one stop: the ring lands on the BAR and the cursor parks on
-        // the active tab `demo-tab-1`.
+        // (2) Tab → one stop: the BAR wears the behind-tint (a gradient overlay,
+        // NOT an outline ring) and the cursor parks on the active tab
+        // `demo-tab-1`, which stays active.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${CURSOR_TAB} === "tug-tab-demo-tab-1"`, {
           timeoutMs: 6000,
         });
         const onBar = await app.evalJS<BarProbe>(BAR_PROBE);
         expect(onBar?.keyboardReached).toBe(true);
-        expect(parseFloat(onBar?.outline ?? "0")).toBeGreaterThan(0);
+        // Behind-tint present (a gradient), no leaf ring on the bar.
+        expect(onBar?.behindTint.startsWith("linear-gradient")).toBe(true);
+        expect(parseFloat(onBar?.outline ?? "0")).toBe(0);
+        const tab1Focused = await app.evalJS<TabProbe>(PROBE(TAB1));
+        expect(tab1Focused?.cursor).toBe(true);
+        expect(tab1Focused?.active).toBe("true");
 
         // (3) ArrowRight → live switch: the cursor moves to `demo-tab-2` AND it
-        // becomes the active view; the ring stays on the bar.
+        // becomes the active view (the cursor rides the selection); the ring
+        // stays on the bar.
         await app.nativeKey("ArrowRight");
         await app.waitForCondition<boolean>(
           `(function(){var t=document.querySelector(${JSON.stringify(TAB2)});return t && t.getAttribute("data-active")==="true";})()`,

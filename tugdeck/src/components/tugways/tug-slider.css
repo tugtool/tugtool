@@ -162,18 +162,30 @@ body {
 }
 
 /* Focus indication is the app-owned focus-ring primitive (focus-ring.css), but
-   the ring marks the *whole component* ([P01]/[P03]), not just the thumb. The
-   thumb stays the keyboard target (Radix needs it focused for arrow stepping),
-   so when it holds the key view we paint the app ring on the slider root — which
-   wraps the track, value input, and label — and suppress the ring on the thumb.
-   Geometry comes from the same `--tugx-focus-ring-*` knobs as every other ring. */
+   the slider wears the full LEAF signature ([P01]): a ring AND a faint
+   behind-tint on the *whole component*, not just the thumb. The thumb stays the
+   keyboard target (Radix needs it focused for arrow stepping), so when it holds
+   the key view we paint the app ring on the slider root — which wraps the track,
+   value input, and label — and suppress the ring on the thumb. Geometry comes
+   from the same `--tugx-focus-ring-*` knobs as every other ring; the tint is the
+   role-resolved `--tugx-focus-tint` painted as a gradient overlay over the
+   root's (transparent) background, the same [Q02] technique the item-groups use,
+   so it composes regardless of the surface behind the slider. */
 .tug-slider:has(.tug-slider-thumb[data-key-view-kbd]) {
   outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
   outline-offset: var(--tugx-focus-ring-offset);
   border-radius: var(--tugx-focus-ring-radius);
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
 }
+
+/* The thumb is the slider's "native fill" under the focus language ([P01]): on
+   keyboard focus it fills with the role color (default action) so the live
+   control reads as solid + ringed, never just ringed. The local outline reset
+   keeps the engine ring on the root, not the thumb. */
 .tug-slider-thumb[data-key-view-kbd] {
   outline: none;
+  background-color: var(--tugx-focus-fill);
+  border-color: var(--tugx-focus-fill);
 }
 
 /* Breathing room inside the ring so the track / value / label don't smash into
