@@ -176,6 +176,12 @@ export function TugStatusCell({
           // walk (a `<button>` is programmatically focusable at -1). [L06]
           tabIndex={-1}
           data-tug-focus="refuse"
+          // A status cell is a pure popover trigger — clicking it must not pull
+          // card focus to the editor (the pane-focus-controller's activate →
+          // apply-focus path). Without this, a click while focus-cycling would
+          // flash the editor caret for the duration of the press, before the
+          // popover opens. The popover itself owns focus while open.
+          data-no-activate=""
           data-tug-focusable={registered ? cellFocusableId : undefined}
           aria-label={ariaLabel}
           title={title}

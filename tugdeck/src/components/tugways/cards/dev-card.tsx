@@ -2367,13 +2367,20 @@ export function DevCardBody({
   // DOM focus to the prompt, the card's single focus destination (the same
   // move it makes when an inline dialog clears). Driven off the
   // engine-derived `cycling` snapshot ([L02]) in a layout effect ([L03]).
+  //
+  // Skip the seed on a MOUSE exit ([#cycle-model] mouse-exits-cycling): the
+  // click that ended the cycle will place focus itself — opening a Z2/Z4B
+  // surface, or landing the caret where it clicked. Forcing the caret in here
+  // first would flash it for a frame before the click's own focus lands.
   const prevCyclingRef = useRef(false);
   useLayoutEffect(() => {
     if (prevCyclingRef.current && !cycle.cycling) {
-      entryDelegateRef.current?.focus();
+      if (!cycle.consumeExitViaPointer()) {
+        entryDelegateRef.current?.focus();
+      }
     }
     prevCyclingRef.current = cycle.cycling;
-  }, [cycle.cycling, entryDelegateRef]);
+  }, [cycle.cycling, cycle, entryDelegateRef]);
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,

@@ -646,8 +646,16 @@ export class FocusManager {
    * Restore fires only when popping the **top** mode (the common dismiss case);
    * popping a buried mode leaves the key view alone, since a mode still above
    * it owns the current scope.
+   *
+   * `restoreFocus` (default `true`) controls whether DOM focus is *moved* onto
+   * the restored key view. The key-view STATE (id + ring) is always restored;
+   * `restoreFocus: false` skips only the `el.focus()` — for a pop where the
+   * caller will place focus itself and a transient engine focus would flash
+   * (e.g. the mouse exiting a focus-cycle: the click that triggered the exit
+   * owns the next focus, so the engine must not first focus the resting editor).
    */
-  popFocusMode(scopeId: string): void {
+  popFocusMode(scopeId: string, opts?: { restoreFocus?: boolean }): void {
+    const restoreFocus = opts?.restoreFocus ?? true;
     const at = this.modeStack.findIndex((m) => m.scopeId === scopeId);
     if (at === -1) return;
     const wasTop = at === this.modeStack.length - 1;
@@ -669,8 +677,13 @@ export class FocusManager {
       // case (it checks `keyViewIsKeyboard` at open), so focus is written by one
       // system — no dueling writers, no dependence on effect order. A non-keyboard
       // or null restore (a mouse-opened surface) leaves DOM focus to that
-      // responder-chain fallback instead, unchanged.
-      if (entry.restoreKeyView !== null && entry.restoreKeyViewKeyboard) {
+      // responder-chain fallback instead, unchanged. Suppressed entirely when
+      // `restoreFocus` is false (the caller owns the next focus).
+      if (
+        restoreFocus &&
+        entry.restoreKeyView !== null &&
+        entry.restoreKeyViewKeyboard
+      ) {
         this.focusKeyView();
       }
     }

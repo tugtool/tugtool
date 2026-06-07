@@ -3,8 +3,8 @@
  *
  * A two-line `TugPushButton` (`label-top` / `size="sm"` / `outlined` `agent`)
  * carrying an uppercase `/PERMISSIONS` caption (the slash command the user
- * would type) over the session's current permission-mode label, prefixed with
- * the `shield-cog-corner` icon. Sized and
+ * would type) over the session's current permission-mode label. No icon — the
+ * value stays centered in the chip. Sized and
  * tinted to family with the neighbor two-line `sm` `agent` badges (Project,
  * Session) — the unified two-line scale lands `sm` at the same height. Pushing it opens a `TugSheet` whose behavior options
  * ([PERMISSION_MODE_MENU]) live in a `TugListView`; picking one calls
@@ -36,7 +36,6 @@
 import "./permission-mode-chip.css";
 
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import { ShieldCogCorner } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
@@ -125,7 +124,6 @@ export function PermissionModeChip({
       size="sm"
       emphasis="tinted"
       role="agent"
-      icon={<ShieldCogCorner aria-hidden="true" />}
       data-slot="permission-mode-chip"
       aria-label="Permission mode"
       title={

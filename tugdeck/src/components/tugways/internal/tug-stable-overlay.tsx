@@ -16,7 +16,19 @@
  * leaves layout flow, so the cell would size to `active` only — defeating the
  * mechanism. Grid keeps every variant in flow at the same `grid-area`.
  *
- * Laws: [L06] appearance via CSS, [L19] file pair, [L20] owns only its own
+ * ## High-water mark — re-stabilize larger, never shrink
+ *
+ * The declared variants set the *baseline* reservation. But a live `active`
+ * value can exceed every alternate (an unanticipated label longer than the
+ * sizers). When that happens the cell must **grow to fit and stay grown** — a
+ * subsequent narrower value must not let it shrink back, or the box reflows on
+ * the way down. So the overlay tracks the widest content it has ever held and
+ * pins a `min-width` to it (monotonic). The reservation only ever increases:
+ * stabilization that re-stabilizes larger ex-post-facto. Pure DOM — a
+ * `ResizeObserver` measures and a `min-width` is written directly, no React
+ * state ([L06] appearance via DOM, [L22] observe/mutate without a render).
+ *
+ * Laws: [L06] appearance via CSS/DOM, [L19] file pair, [L20] owns only its own
  * layout box — the variants it wraps keep their own tokens.
  *
  * @module components/tugways/internal/tug-stable-overlay
@@ -24,7 +36,7 @@
 
 import "./tug-stable-overlay.css";
 
-import React from "react";
+import React, { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 export interface TugStableOverlayProps {
@@ -52,8 +64,45 @@ export function TugStableOverlay({
   className,
   ...rest
 }: TugStableOverlayProps): React.ReactElement {
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+  // The widest content footprint seen so far, in px. Monotonic — the reserved
+  // `min-width` only grows, so a value larger than the original sizers locks the
+  // box at the larger size and a later narrower value cannot shrink it back.
+  const highWaterRef = useRef(0);
+
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (el === null || typeof ResizeObserver === "undefined") return;
+    const measure = (): void => {
+      // Natural content width = the widest variant child. Children size to their
+      // own content (the `min-width` we pin on the root never inflates them), so
+      // this reads the true required width independent of the current
+      // reservation. Grow the high-water mark + the pinned `min-width`; never
+      // shrink ([L22] DOM observe/mutate, no React state).
+      let widest = 0;
+      for (const child of Array.from(el.children)) {
+        const w = (child as HTMLElement).offsetWidth;
+        if (w > widest) widest = w;
+      }
+      if (widest > highWaterRef.current) {
+        highWaterRef.current = widest;
+        el.style.minWidth = `${widest}px`;
+      }
+    };
+    measure();
+    // Observe the root: it grows whenever the widest child exceeds the current
+    // reservation, which is exactly when the high-water mark must advance.
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <span className={cn("tug-stable-overlay", className)} {...rest}>
+    <span
+      ref={rootRef}
+      className={cn("tug-stable-overlay", className)}
+      {...rest}
+    >
       <span className="tug-stable-overlay-variant" data-tug-stable="active">
         {active}
       </span>

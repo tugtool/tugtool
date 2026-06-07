@@ -17,11 +17,11 @@
  *
  * **Never hides on missing data.** When the session has not reported a model
  * (`model === null`) and no `initialize` default is known, the chip stays
- * mounted and escalates to `caution` with a `?` value and an alert icon — the
- * same "surface the gap, don't swallow it" treatment the Claude Code version
- * chip uses for drift ([dev-route-indicator-badge.tsx]). An absent model is
- * information worth seeing, not a reason to vanish; the press still opens the
- * picker so the user can set one.
+ * mounted with a `?` value and a `data-unknown` hook — the same "surface the
+ * gap, don't swallow it" treatment the Claude Code version chip uses for drift
+ * ([dev-route-indicator-badge.tsx]). An absent model is information worth
+ * seeing, not a reason to vanish; the press still opens the picker so the user
+ * can set one.
  *
  * Resolution order (matches the picker's active-row resolution): live
  * `model` (live OR ledger-replayed `system_metadata.model`) → the
@@ -33,8 +33,11 @@
  * fits.
  *
  * Compositional component — composes `TugPushButton` and the shared
- * `TugStableOverlay` (the value-line width-stabilizer); it owns no CSS of its
- * own. The composed children keep their own tokens [L20].
+ * `TugStableOverlay` (the value-line width-stabilizer, which re-stabilizes
+ * larger ex-post-facto so a wider-than-anticipated model label locks the width
+ * and a later narrower one cannot shrink it). No icon — the value stays centered
+ * in the chip across every state; it owns no CSS of its own. The composed
+ * children keep their own tokens [L20].
  *
  * Laws: [L02] store subscription, [L06] appearance via CSS/DOM, [L19] authoring
  * Decisions: [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub,
@@ -44,7 +47,6 @@
  */
 
 import React, { useSyncExternalStore } from "react";
-import { TriangleAlert } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
@@ -126,8 +128,9 @@ export function ModelChip({
   }
 
   // `TugPushButton` has no `caution` role (unlike `TugBadge`), so an unknown
-  // model is surfaced via the alert icon + a `data-unknown` hook rather than a
-  // role escalation — still "show the gap, don't swallow it", never hides.
+  // model is surfaced via the `?` value + a `data-unknown` hook rather than a
+  // role escalation or a layout-shifting icon — still "show the gap, don't
+  // swallow it", never hides, and the value stays centered.
   return (
     <TugPushButton
       layout="label-top"
@@ -135,7 +138,6 @@ export function ModelChip({
       size="sm"
       emphasis="tinted"
       role="agent"
-      icon={unknown ? <TriangleAlert aria-hidden="true" /> : undefined}
       data-slot="model-chip"
       data-unknown={unknown ? "" : undefined}
       aria-label="Model"

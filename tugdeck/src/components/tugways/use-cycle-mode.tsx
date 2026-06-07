@@ -67,6 +67,15 @@ export interface UseCycleModeResult {
   CycleScope: React.FC<{ children: React.ReactNode }>;
   /** This card's stable cycle-scope id (for diagnostics / advanced wiring). */
   scopeId: string;
+  /**
+   * Read-and-clear: was the most recent exit driven by the mouse (the
+   * pointerdown rule below), rather than ⌥⇥ / programmatic? A consumer that
+   * restores its resting caret on exit checks this and **skips** the restore on
+   * a mouse exit — the click that caused the exit will place focus itself
+   * (opening a surface, or landing the caret where clicked), so forcing the
+   * caret in first would flash it before the click's own focus lands.
+   */
+  consumeExitViaPointer: () => boolean;
 }
 
 export function useCycleMode({
@@ -76,6 +85,10 @@ export function useCycleMode({
   // Stable per-card scope id. The cycle stops (rendered under `CycleScope`) and
   // the push/pop here agree on this one id.
   const scopeId = useId();
+  // Set true by the mouse-exit listener so a consumer can tell a pointer-driven
+  // exit from a ⌥⇥ / programmatic one (read-and-cleared via
+  // `consumeExitViaPointer`). Structure-zone ref, no React state ([L24]).
+  const exitViaPointerRef = useRef(false);
 
   // `cycling` is the engine's own state, read through `useSyncExternalStore`
   // ([L02]): the mode is "on" exactly when this card's scope is **on the mode
@@ -138,14 +151,22 @@ export function useCycleMode({
   useLayoutEffect(() => {
     if (manager === null || !cycling) return;
     const onPointerDown = (): void => {
-      if (manager.currentFocusMode() === scopeId) exit();
+      if (manager.currentFocusMode() === scopeId) {
+        exitViaPointerRef.current = true;
+        // Pop WITHOUT restoring focus: the click that triggered this exit owns
+        // the next focus (it opens a Z2/Z4B surface, or lands the caret where
+        // clicked). Restoring focus to the resting editor here would flash its
+        // caret for a frame before the click's own focus lands. The consumer's
+        // own caret-restore is likewise gated on `consumeExitViaPointer`.
+        manager.popFocusMode(scopeId, { restoreFocus: false });
+      }
     };
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
     return () =>
       document.removeEventListener("pointerdown", onPointerDown, {
         capture: true,
       });
-  }, [manager, cycling, scopeId, exit]);
+  }, [manager, cycling, scopeId]);
 
   // Safety: a card unmounting (or its eligibility dropping) while cycling must
   // not leave its scope stranded on the mode stack. Pop on unmount ([L03]).
@@ -154,6 +175,13 @@ export function useCycleMode({
       manager?.popFocusMode(scopeId);
     };
   }, [manager, scopeId]);
+
+  // Read-and-clear the pointer-exit flag (see `consumeExitViaPointer`).
+  const consumeExitViaPointer = useCallback(() => {
+    const v = exitViaPointerRef.current;
+    exitViaPointerRef.current = false;
+    return v;
+  }, []);
 
   // Stable scope component (constant identity across renders so children never
   // remount, [L26]). It always provides the scope id; the cycle stops register
@@ -175,7 +203,14 @@ export function useCycleMode({
   }
 
   return useMemo(
-    () => ({ cycling, toggle, exit, CycleScope: scopeRef.current!, scopeId }),
-    [cycling, toggle, exit, scopeId],
+    () => ({
+      cycling,
+      toggle,
+      exit,
+      CycleScope: scopeRef.current!,
+      scopeId,
+      consumeExitViaPointer,
+    }),
+    [cycling, toggle, exit, scopeId, consumeExitViaPointer],
   );
 }
