@@ -76,20 +76,16 @@ body {
 
 /*
  * Action buttons render OUTLINED and PROMOTE to their filled, role-coloured
- * style + role ring when the keyboard cursor lands on them — now a first-class
+ * style + role ring when the keyboard cursor lands on them — a first-class
  * TugPushButton capability (`internal/tug-button.css`, keyed on
  * `[data-key-cursor]` / `[data-key-view-kbd]`), so no bespoke copy lives here.
  *
- * The cursor over a scope option recolours the option row's OWN border to the
- * focus colour (the whole border turns the focus colour) rather than adding an
- * outer ring. (The box-scope / option-row treatment is finalised in the
- * surfaces step; this keeps it working on the role-resolved token meanwhile.)
+ * The scope option ROWS (`TugDialogButton`) take the item-group treatment: the
+ * roving cursor is the global `[data-key-cursor]` outline ring (role-resolved in
+ * `tug-dialog-button.css`), offset outside the row so it survives atop the native
+ * selected fill. The former bespoke border-recolor is retired — the global ring
+ * is the finalised treatment.
  */
-.dev-permission-dialog-scope
-  .tug-inline-dialog-options
-  [data-slot="tug-dialog-button"][data-key-cursor] {
-  border-color: var(--tugx-focus-ring);
-}
 
 /* Horizontal room between the action buttons for the promoted ring. */
 .dev-permission-dialog-scope .tug-inline-dialog-actions {

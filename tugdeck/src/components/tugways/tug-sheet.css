@@ -100,6 +100,30 @@ body {
      — labels, headers, and buttons should not be selectable. */
 }
 
+/* ---- Focus language — box-scope ([P01]/[P02], #language-contract) ----
+   The sheet is a large rounded box with its own drop shadow (and an internal
+   scroll). When the engine routes the key view to the box itself, override the
+   global outline-based ring to a layout-free box-shadow ring that hugs the
+   radius and LAYERS over the existing drop shadow (no reflow, not cropped by the
+   sheet's own `overflow-y`), plus a role border. No behind-tint here — a faint
+   wash over a full-height scrolling panel reads as noise, not focus ([Q02]: tint
+   "where the surface allows"). The quiet within variant marks "contains the
+   active control". Role-resolved, default action. */
+.tug-sheet-content[data-key-view-kbd] {
+  outline: none;
+  border-color: var(--tugx-focus-ring);
+  box-shadow:
+    0 0 0 var(--tugx-focus-ring-width) var(--tugx-focus-ring),
+    var(--tugx-sheet-shadow);
+}
+.tug-sheet-content[data-key-within] {
+  outline: none;
+  box-shadow:
+    0 0 0 var(--tugx-focus-ring-width)
+      var(--tugx-key-within-color, color-mix(in srgb, var(--tugx-focus-ring) 32%, transparent)),
+    var(--tugx-sheet-shadow);
+}
+
 /* ---- Display width ([data-display-width]) ----
  *
  * A fixed `sm`/`md`/`lg`/`xl` scale (mirroring TugPushButton / TugBadge).

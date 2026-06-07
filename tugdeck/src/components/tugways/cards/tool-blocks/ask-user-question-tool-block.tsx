@@ -675,7 +675,7 @@ function SalvageWizard({
         <TugPushButton emphasis="outlined" role="danger" onClick={onCancel}>
           Cancel
         </TugPushButton>
-        <TugPushButton emphasis="filled" role="action" onClick={handleSubmit}>
+        <TugPushButton emphasis="primary" role="action" onClick={handleSubmit}>
           Send answers
         </TugPushButton>
       </div>

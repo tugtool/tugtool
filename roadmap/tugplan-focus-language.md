@@ -521,7 +521,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-4 | Live / continuous — slider; tab bar (→ commit-on-act) | done | uncommitted (pending /tugplug:commit) |
 | #step-5 | Descendable rows — list view / row, accordion | done (final by-eye model): list + accordion container **perimeter ring** (picker hosts ring own border via `:has`) + cursor-row **reduced tint fill** (25% of the quiet selection blue, no ring/chevron, shares the selection's rounded bounds) + leading row gutter; selection = toned-back role-blue quiet fill covering its dividers ([P14]); `[data-key-within]` on descend; at0120/at0121 reworked to the perimeter-ring contract, at0110 re-pinned to the blue role color; at0127/at0122/at0141 green | b465e107 |
 | #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | done: toggles ring the whole component (glyph+label wrapper) + behind-tint, native "on" fill role-aware; fields keep the global leaf ring + a role-derived behind-tint wash on keyboard focus; input/textarea `validation` repoints `--tugx-focus-ring` so the ring/tint/border resolve danger/success/caution and the border holds through focus ([P07]); gallery focus-walk toggles relabelled so the wrapper ring is exercised; at0113/at0114 reworked to the wrapper-ring contract + green; field behavior tests (at0137/at0131/at0128) green | (uncommitted) |
-| #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | pending | — |
+| #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | done: box-scope ring/within = layout-free box-shadow layered over the drop shadow (popover/sheet/alert), behind-tint on popover+alert only; `primary` adopted on every action-role sheet/dialog/alert commit (completeness gate met — survivors are excluded CTAs), shared confirms resolve action→primary / danger→filled per [P14]; inline-dialog option rows → global cursor ring (role-resolved in tug-dialog-button.css), bespoke border-recolor retired; menus audit = no change (Radix `data-highlighted`, never `data-key-cursor`); surface/dialog/menu app-tests green (at0040/at0088/at0096 pre-existing flakes) | (uncommitted) |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -1081,18 +1081,77 @@ behaviour is reviewable on plain `:focus` in the gallery.
 
 **References:** [P01], [P02], [P04], [P14], (#language-contract)
 
+**STATUS — done (2026-06-07).** Four parts.
+**(A) Box-scope.** `tug-popover.css` / `tug-sheet.css` / `tug-alert.css` override the
+global outline-based ring/within on the `-content` box (a clipping rounded box with
+its own drop shadow) to a layout-free **box-shadow ring that hugs the radius and
+LAYERS over the existing drop shadow** (`0 0 0 ring-w role, var(--tugx-*-shadow)`),
+plus a role border on key-view. Popover + alert (compact) also take the faint role
+**behind-tint** ([Q02] gradient overlay over their own bg); the sheet does **not** — a
+wash over a full-height scrolling panel reads as noise ("tint where the surface
+allows"). The quiet `[data-key-within]` variant is the same box-shadow at the dimmer
+within color. The inline dialogs already carried the box-shadow box ring (modal-for-
+keys scope); kept and finalised.
+**(B) `primary` sweep — completeness gate met.** Every sheet/dialog/alert
+action-role text commit moved `filled`→`primary` (OK/Save/Done/Confirm/Retry/Send):
+the picker (from [#step-primary]) plus model/effort pickers, skills/agents/memory/
+hooks/help/rename/rewind/diff sheets, permission-rules-editor (both commits) +
+permission-mode-chip + dev-attachment-preview, ask-user-question submit, dev-card
+(spawn-retry + telemetry Done), and the pane-close confirm (`chrome/tug-pane.tsx`).
+The modal alerts (`tug-alert`, `tug-alert-sheet`) resolve
+`emphasis={confirmRole === "action" ? "primary" : "filled"}` — **action promotes to
+`primary`; danger/caution keep `filled`** (the [P14] danger judgment call: a solid
+red destructive default does not conflate with selection-blue, and the engine seeds
+the key view onto their default on open so a `primary` action default fills+rings
+regardless). Re-grep of `emphasis="filled"` leaves only the excluded standalone CTAs
+(prompt-entry submit/queue, jump-to-bottom FAB), the gallery `filled` demos, and the
+confirm-popover defaults below.
+
+**Confirm popovers — authored into their own trapped focus mode (2026-06-07).**
+`TugConfirmPopover` and the pane-close confirm previously seeded focus with a native
+`.focus()` and weren't engine focusables, so (a) the default never got
+`data-key-view-kbd` → no ring, (b) the fill sat on a fixed button instead of
+following the keyboard, and (c) **Tab escaped the popover entirely** (on the session
+picker it roved back into the picker's group). Fixed by authoring both action
+buttons into the popover's **own** `useFocusTrap` mode (the one `TugPopover` already
+pushes while open): each button takes `focusGroup`/`focusOrder`, so the engine
+cycles only those two under Tab — **the popover is its own focus layer you cannot Tab
+out of** — and moves the key view between them. Both buttons are now `emphasis="outlined"`
+in their role; the engine's `[data-key-view-kbd]` promotion turns whichever holds the
+key view into its **filled role style + role ring** — *the fill follows the ring*
+(matching the gallery's outlined→filled focus-language demo). The default is seeded as
+the engine key view via `armKeyboardRestore` on open (Return-safe **Cancel** for the
+destructive Trash confirm; **Close** for the Close confirm), so it rests filled+ringed
+and Tab promotes/demotes the pair. No bespoke `:focus` CSS — the engine drives it.
+**(C) Inline-dialog option rows.** The bespoke `[data-key-cursor]` border-recolor in
+`dev-permission-dialog.css` / `dev-question-dialog.css` is retired; the option ROWS
+(`TugDialogButton`) take the [#step-3] item-group treatment — the global
+`[data-key-cursor]` outline ring offset outside the row (survives atop the native
+selected fill), **role-resolved** via a `--tugx-focus-ring` repoint added to
+`tug-dialog-button.css` (danger options rove a red ring; action rides the default).
+**(D) Menus audit — no change.** `tug-menu`, `tug-context-menu`,
+`tug-editor-context-menu`, `tug-completion-menu`, and `internal/tug-popup-menu` drive
+highlighting via Radix `data-highlighted` (the editor menu hand-rolls the same
+attribute), never the engine `[data-key-cursor]` — so the [#step-1] cursor→ring flip
+cannot reach them. No scoped override needed.
+
+**Tests:** surface/dialog/menu app-tests green — at0090/at0093/at0094/at0097/at0100/
+at0102/at0104/at0105/at0106/at0057/at0058/at0128. (at0040/at0088/at0096 fail
+**identically on clean `main`** — pre-existing native-click / capability-metadata
+timing flakes, not gated on; verified by stash-rebuild.)
+
 **Artifacts:** popover/sheet/alert + inline-dialog shell focus CSS; the inline-dialog **option rows**; the sheet/dialog/alert commit buttons (`primary` adoption); a menus audit note.
 
 **Tasks:**
 - Box-scope ring (box-shadow hugging the radius, no reflow) + the quiet within variant; behind-tint where the surface allows ([Q02]).
 - **MANDATORY — adopt `primary` for EVERY sheet / dialog / alert commit button** ([P14], primitive landed in [#step-primary]). This is not optional polish: until it is done, every un-migrated surface still shows an idle `filled+action` default that impersonates a selected row — the exact bug [#step-primary] fixed for the picker, left standing everywhere else. Switch `emphasis="filled"` → `emphasis="primary"` on each surface's recommended-default (Open / Save / Done / Confirm / Retry — **action-role text commits**). Work the inventory below to zero; each is a `<TugPushButton>` (or `SheetCloseButton`) that is the surface's commit/default:
-  - [ ] `cards/dev-card.tsx` — spawn-error "Choose Directory" retry; the telemetry sheet's "Done"
-  - [ ] `cards/model-picker-sheet.tsx`, `cards/effort-picker-sheet.tsx` — confirm/commit
-  - [ ] `cards/skills-sheet.tsx`, `cards/agents-sheet.tsx`, `cards/memory-sheet.tsx`, `cards/hooks-sheet.tsx`, `cards/help-sheet.tsx` — commit/done
-  - [ ] `cards/rename-session-sheet.tsx`, `cards/rewind-sheet.tsx` — commit
-  - [ ] `cards/permission-rules-editor.tsx` (both filled commits), `cards/permission-mode-chip.tsx`, `cards/dev-attachment-preview.tsx`
-  - [ ] `cards/tool-blocks/ask-user-question-tool-block.tsx` — submit
-  - [ ] `tug-alert.tsx`, `tug-alert-sheet.tsx`, `tug-confirm-popover.tsx`, `chrome/tug-pane.tsx` — the surface/shell default
+  - [x] `cards/dev-card.tsx` — spawn-error "Choose Directory" retry; the telemetry sheet's "Done"
+  - [x] `cards/model-picker-sheet.tsx`, `cards/effort-picker-sheet.tsx` — confirm/commit
+  - [x] `cards/skills-sheet.tsx`, `cards/agents-sheet.tsx`, `cards/memory-sheet.tsx`, `cards/hooks-sheet.tsx`, `cards/help-sheet.tsx` — commit/done
+  - [x] `cards/rename-session-sheet.tsx`, `cards/rewind-sheet.tsx` — commit
+  - [x] `cards/permission-rules-editor.tsx` (both filled commits), `cards/permission-mode-chip.tsx`, `cards/dev-attachment-preview.tsx`
+  - [x] `cards/tool-blocks/ask-user-question-tool-block.tsx` — submit
+  - [x] `tug-alert.tsx`, `tug-alert-sheet.tsx`, `tug-confirm-popover.tsx`, `chrome/tug-pane.tsx` — the surface/shell default
   - **Exclude** (leave on `filled`, by [P14]): standalone CTAs with no competing controls — the jump-to-bottom FAB, prompt-entry submit/queue, any other `subtype="icon"` affordance — and the gallery `filled` *demos* (they exist to show `filled` itself).
   - **Danger confirms** (e.g. `tug-confirm-popover`'s Trash) are a judgment call, not a blanket convert: red does not conflate with selection-blue, but `primary danger` exists if the surface wants the quiet-at-rest behavior. Decide per surface and note it.
 - **Inline-dialog option rows** (the scope/question choices — item-group *items* inside the modal, distinct from the Deny/Allow/Next buttons handled in [#step-2]): give them the item-group treatment from [#step-3] (cursor ring + native fill, role-resolved), replacing the bespoke `[data-key-cursor]` border-recolor in `dev-permission-dialog.css` / `dev-question-dialog.css`.

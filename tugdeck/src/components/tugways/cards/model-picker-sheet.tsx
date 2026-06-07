@@ -271,7 +271,7 @@ function ModelPickerSheetBody({
       </ModelPickerListContext.Provider>
       <div className="tug-sheet-actions">
         <TugPushButton onClick={onCancel}>Cancel</TugPushButton>
-        <TugPushButton emphasis="filled" onClick={confirm}>
+        <TugPushButton emphasis="primary" onClick={confirm}>
           OK
         </TugPushButton>
       </div>

@@ -104,6 +104,7 @@ import { TugPushButton } from "./tug-push-button";
 import type { TugButtonRole } from "./internal/tug-button";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
+import { useFocusManager } from "./use-focusable";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
@@ -261,6 +262,19 @@ export const TugConfirmPopover = React.forwardRef<
   // skipped and the buttons fall back to calling the handler functions
   // directly when no manager is in scope.
   const manager = useResponderChain();
+  const focusManager = useFocusManager();
+
+  // The two action buttons are authored into the popover's own trapped focus
+  // mode (the `useFocusTrap` mode `TugPopover` pushes while open): a stable
+  // per-instance group whose members the engine cycles under Tab — so Tab is
+  // trapped inside the popover (you cannot escape to the host surface) and the
+  // engine moves the key view (`data-key-view-kbd`) between Cancel/Confirm, which
+  // drives each outlined button's promotion to its filled role style + ring
+  // ([P02]/[P06]) — the fill follows the ring. The default button is seeded with
+  // the key view on open via `armKeyboardRestore`.
+  const buttonFocusGroup = React.useId();
+  const CANCEL_ORDER = 0;
+  const CONFIRM_ORDER = 1;
 
   const fallbackResponderId = React.useId();
   const fallbackSenderId = React.useId();
@@ -443,28 +457,25 @@ export const TugConfirmPopover = React.forwardRef<
 
   // Explicit default-focus target on open. Driven by `confirmRole`
   // intent, not DOM order:
-  //   - `danger`: Enter should NOT fire a destructive action, so
-  //     focus lands on Cancel. Enter (a native button activation)
-  //     dismisses.
-  //   - `action` / `accent`: Enter accepts. Focus the Confirm
-  //     button so native Enter-on-button activates it. (The filled
-  //     +action default-button registration also wires the global
-  //     Enter→default path, but explicit focus keeps the behaviour
-  //     locked in even when the chain manager isn't in scope.)
-  // We `preventDefault()` so Radix's FocusScope doesn't run its own
-  // first-focusable walk afterwards.
+  //   - `danger`: Enter should NOT fire a destructive action, so the
+  //     default lands on Cancel (Return-safe).
+  //   - `action` / `accent`: Enter accepts, so the default lands on
+  //     Confirm.
+  // The default is seeded as the engine KEY VIEW (`armKeyboardRestore`,
+  // by the button's stable `group:order` focus key), not a bare
+  // `.focus()` — so the engine is the single owner, the ring rests on
+  // the seed at open, and the default button promotes to its filled
+  // role style + ring (the live control, [P14]). `preventDefault()`
+  // stops Radix's own first-focusable walk; the engine drives focus.
   const cancelButtonRef = React.useRef<HTMLButtonElement>(null);
   const confirmButtonRef = React.useRef<HTMLButtonElement>(null);
   const handleOpenAutoFocus = React.useCallback(
     (event: Event) => {
       event.preventDefault();
-      const target =
-        confirmRole === "danger"
-          ? cancelButtonRef.current
-          : confirmButtonRef.current;
-      target?.focus();
+      const defaultOrder = confirmRole === "danger" ? CANCEL_ORDER : CONFIRM_ORDER;
+      focusManager?.armKeyboardRestore(`${buttonFocusGroup}:${defaultOrder}`);
     },
-    [confirmRole],
+    [confirmRole, focusManager, buttonFocusGroup],
   );
 
   return (
@@ -497,18 +508,23 @@ export const TugConfirmPopover = React.forwardRef<
           <div className="tug-confirm-popover-actions">
             <TugPushButton
               ref={cancelButtonRef}
-              emphasis="ghost"
+              emphasis="outlined"
+              role="action"
               size="sm"
               onClick={onCancelClick}
+              focusGroup={buttonFocusGroup}
+              focusOrder={CANCEL_ORDER}
             >
               {cancelLabel}
             </TugPushButton>
             <TugPushButton
               ref={confirmButtonRef}
-              emphasis="filled"
+              emphasis="outlined"
               role={confirmRole}
               size="sm"
               onClick={onConfirmClick}
+              focusGroup={buttonFocusGroup}
+              focusOrder={CONFIRM_ORDER}
             >
               {confirmLabel}
             </TugPushButton>

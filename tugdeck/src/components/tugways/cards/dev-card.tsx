@@ -1172,7 +1172,7 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
         detailTitle="Can't open project"
         footer={
           <TugPushButton
-            emphasis="filled"
+            emphasis="primary"
             role="action"
             onClick={handleSpawnErrorRetry}
             data-testid="dev-card-spawn-error-retry"
@@ -3970,7 +3970,7 @@ function SettingsSheetBody({
       <div className="tug-sheet-actions">
         <TugPushButton
           autoFocus
-          emphasis="filled"
+          emphasis="primary"
           role="action"
           onClick={onClose}
           data-tug-default-button="ok"

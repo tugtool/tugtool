@@ -26,6 +26,12 @@
   white-space: nowrap;
 }
 
+/* Focus ring + fill: the action buttons are authored into the popover's trapped
+   focus mode (see `tug-confirm-popover.tsx` / the pane-close confirm), so the
+   engine drives `data-key-view-kbd` between them as Tab cycles — the global ring
+   rule paints the role ring and each outlined button promotes to its filled role
+   style ([P06]). The fill follows the ring; no bespoke `:focus` rule needed. */
+
 /* Message label sits below actions (bottom side) or above (top side).
    Horizontal padding matches actions; vertical is tighter near actions. */
 .tug-confirm-popover > .tug-label {

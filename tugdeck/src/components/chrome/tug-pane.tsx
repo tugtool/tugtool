@@ -52,6 +52,7 @@ import {
 } from "@/components/tugways/tug-popover";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useFocusManager } from "@/components/tugways/use-focusable";
 import { cardSettingsStore } from "@/lib/card-settings-store";
 import { cardTitleStore } from "@/lib/card-title-store";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
@@ -258,17 +259,28 @@ function CardTitleBar({
     closeConfirmPopoverRef.current?.close();
   }, []);
 
-  // Explicit focus target on popover open. Pane close is a non-
-  // destructive `action`-role confirmation, so Enter should accept —
-  // we focus the Close button by ref rather than relying on Radix
-  // FocusScope's first-focusable default. DOM order of Cancel/Close
-  // is irrelevant to behaviour this way.
+  // The Cancel / Close buttons are authored into the popover's own trapped focus
+  // mode (the `useFocusTrap` mode `TugPopover` pushes while open): Tab cycles only
+  // these two — you cannot escape the confirm popover — and the engine moves the
+  // key view between them, driving each outlined button's promotion to its filled
+  // role style + ring (the fill follows the ring). Pane close is a non-destructive
+  // `action`-role confirmation, so the default seeds Close (Return accepts), as
+  // the engine KEY VIEW (`armKeyboardRestore`) rather than a bare `.focus()`.
   const popoverCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const closeConfirmFocusManager = useFocusManager();
+  const closeConfirmFocusGroup = useId();
+  const CLOSE_CONFIRM_CANCEL_ORDER = 0;
+  const CLOSE_CONFIRM_CLOSE_ORDER = 1;
 
-  const handlePopoverOpenAutoFocus = useCallback((event: Event) => {
-    event.preventDefault();
-    popoverCloseButtonRef.current?.focus();
-  }, []);
+  const handlePopoverOpenAutoFocus = useCallback(
+    (event: Event) => {
+      event.preventDefault();
+      closeConfirmFocusManager?.armKeyboardRestore(
+        `${closeConfirmFocusGroup}:${CLOSE_CONFIRM_CLOSE_ORDER}`,
+      );
+    },
+    [closeConfirmFocusManager, closeConfirmFocusGroup],
+  );
 
   // Imperative bridge for the surrounding TugPane: route Cmd-W through
   // the same flow the X button uses, so a `confirmClose` pane gets the
@@ -412,18 +424,23 @@ function CardTitleBar({
               >
                 <div className="tug-confirm-popover-actions">
                   <TugPushButton
-                    emphasis="ghost"
+                    emphasis="outlined"
+                    role="action"
                     size="sm"
                     onClick={handleCancelClose}
+                    focusGroup={closeConfirmFocusGroup}
+                    focusOrder={CLOSE_CONFIRM_CANCEL_ORDER}
                   >
                     Cancel
                   </TugPushButton>
                   <TugPushButton
                     ref={popoverCloseButtonRef}
-                    emphasis="filled"
+                    emphasis="outlined"
                     role="action"
                     size="sm"
                     onClick={handleConfirmClose}
+                    focusGroup={closeConfirmFocusGroup}
+                    focusOrder={CLOSE_CONFIRM_CLOSE_ORDER}
                   >
                     {isMultiTab ? "Close All" : "Close"}
                   </TugPushButton>

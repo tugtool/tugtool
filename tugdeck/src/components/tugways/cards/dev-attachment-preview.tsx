@@ -135,7 +135,7 @@ export function DevAttachmentPreview({
       </div>
       <div className="tug-sheet-actions">
         <TugPushButton
-          emphasis="filled"
+          emphasis="primary"
           role="action"
           onClick={onClose}
         >

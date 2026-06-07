@@ -95,6 +95,30 @@ body {
   box-sizing: border-box;
 }
 
+/* ---- Focus language — box-scope ([P01]/[P02], #language-contract) ----
+   The alert is a compact rounded box with its own drop shadow. When the engine
+   routes the key view to the box itself, override the global outline-based ring
+   to a layout-free box-shadow ring that hugs the radius and LAYERS over the
+   existing drop shadow (no reflow), plus a faint role behind-tint ([Q02] gradient
+   overlay, composed over the alert's own background) and a role border. The quiet
+   within variant marks "contains the active control". Role-resolved, default
+   action. */
+.tug-alert-content[data-key-view-kbd] {
+  outline: none;
+  border-color: var(--tugx-focus-ring);
+  box-shadow:
+    0 0 0 var(--tugx-focus-ring-width) var(--tugx-focus-ring),
+    var(--tugx-alert-shadow);
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+}
+.tug-alert-content[data-key-within] {
+  outline: none;
+  box-shadow:
+    0 0 0 var(--tugx-focus-ring-width)
+      var(--tugx-key-within-color, color-mix(in srgb, var(--tugx-focus-ring) 32%, transparent)),
+    var(--tugx-alert-shadow);
+}
+
 .tug-alert-content[data-state="open"] {
   animation: tug-alert-content-in calc(150ms * var(--tug-timing, 1)) ease-out;
 }

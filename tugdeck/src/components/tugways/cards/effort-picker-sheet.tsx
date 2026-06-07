@@ -281,7 +281,7 @@ function EffortPickerSheetBody({
         </TugPushButton>
         <TugPushButton
           data-slot="effort-picker-ok"
-          emphasis="filled"
+          emphasis="primary"
           onClick={confirm}
         >
           OK

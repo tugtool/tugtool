@@ -437,7 +437,7 @@ function RewindSheetBody({
             Cancel
           </TugPushButton>
           <TugPushButton
-            emphasis="filled"
+            emphasis="primary"
             disabled={!canApply}
             onClick={apply}
             data-testid="rewind-apply"

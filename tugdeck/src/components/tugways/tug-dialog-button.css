@@ -332,6 +332,9 @@ body {
   /* Per-role selection accent — overrides the global default. */
   --tugx-dialog-button-selection-fill:       var(--tugx-dialog-button-danger-selection-fill);
   --tugx-dialog-button-selection-fill-hover: var(--tugx-dialog-button-danger-selection-fill-hover);
+  /* Role-resolve the keyboard cursor ring ([P03]): a danger option roves a red
+     ring, not the action default. */
+  --tugx-focus-ring: var(--tug7-element-control-border-outlined-danger-rest);
 }
 
 /* @tug-renders-on: --tugx-dialog-button-danger-hover-bg */
@@ -376,4 +379,9 @@ body {
    Focus
    ========================================================================= */
 
-/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). As an
+   item-group ITEM ([P02], the [#step-3] treatment), the roving keyboard cursor is
+   the global `[data-key-cursor]` outline ring — role-resolved via the
+   `--tugx-focus-ring` repoint above — offset just outside the row so it survives
+   atop the native selected fill (`[data-selected]`). No bespoke per-dialog cursor
+   recolor; the surfaces that host these rows no longer override it. */

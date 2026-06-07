@@ -67,6 +67,31 @@ body {
   outline: none;
 }
 
+/* ---- Focus language — box-scope ([P01]/[P02], #language-contract) ----
+   A portalled surface is a rounded box with its own drop shadow, so the global
+   outline-based ring / within mark (focus-ring.css) would sit oddly outside the
+   radius. When the engine routes the key view to the box itself, override to a
+   layout-free box-shadow ring that hugs the radius and LAYERS over the existing
+   drop shadow (no reflow), plus a faint role behind-tint (the [Q02] gradient
+   overlay, composed over the popover's own background) and a role border. The
+   quiet within variant marks "contains the active control" — same box-shadow
+   technique at the dimmer within color. Role-resolved, default action. */
+.tug-popover-content[data-key-view-kbd] {
+  outline: none;
+  border-color: var(--tugx-focus-ring);
+  box-shadow:
+    0 0 0 var(--tugx-focus-ring-width) var(--tugx-focus-ring),
+    var(--tugx-popover-shadow);
+  background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
+}
+.tug-popover-content[data-key-within] {
+  outline: none;
+  box-shadow:
+    0 0 0 var(--tugx-focus-ring-width)
+      var(--tugx-key-within-color, color-mix(in srgb, var(--tugx-focus-ring) 32%, transparent)),
+    var(--tugx-popover-shadow);
+}
+
 /* Popup-in-sheet z-tier elevation per [D09]. When TugPopover is rendered
    inside a `<TugSheetContent>`, the consumer (TugPopoverContent) reads
    `TugSheetStackingContext` and adds `tug-popup-in-dialog` to the

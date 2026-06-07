@@ -85,7 +85,7 @@ export function TugAlertSheetView({
           </TugPushButton>
         ) : null}
         <TugPushButton
-          emphasis="filled"
+          emphasis={confirmRole === "action" ? "primary" : "filled"}
           role={confirmRole}
           onClick={onConfirm}
           data-testid="alert-confirm"

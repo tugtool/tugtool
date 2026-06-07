@@ -125,7 +125,7 @@ function RenameSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
-          emphasis="filled"
+          emphasis="primary"
           onClick={() => onSubmit(value)}
           data-testid="rename-save"
         >

@@ -192,7 +192,7 @@ function HelpSheetBody({
         footer={
           <div className="tug-sheet-actions">
             <TugPushButton
-              emphasis="filled"
+              emphasis="primary"
               onClick={() => onClose()}
               data-testid="help-done"
             >

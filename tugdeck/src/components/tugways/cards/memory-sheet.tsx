@@ -203,7 +203,7 @@ function MemorySheetBody({
       footer={
         <div className="tug-sheet-actions">
           <TugPushButton
-            emphasis="filled"
+            emphasis="primary"
             onClick={() => onClose()}
             data-testid="memory-done"
           >

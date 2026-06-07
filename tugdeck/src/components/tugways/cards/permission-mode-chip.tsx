@@ -405,7 +405,7 @@ function PermissionModeSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
-          emphasis="filled"
+          emphasis="primary"
           onClick={confirm}
           data-testid="permission-mode-ok"
         >

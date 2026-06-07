@@ -352,7 +352,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
               )}
               <AlertDialog.Action asChild>
                 <TugPushButton
-                  emphasis="filled"
+                  emphasis={confirmRole === "action" ? "primary" : "filled"}
                   role={confirmRole}
                   onClick={onConfirmClick}
                 >

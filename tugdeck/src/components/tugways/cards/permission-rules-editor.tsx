@@ -329,7 +329,7 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
         <div className="permission-rules-add-actions">
           <TugPushButton
             size="sm"
-            emphasis="filled"
+            emphasis="primary"
             data-slot="permission-rules-add-submit"
             disabled={!valid}
             onClick={submit}
@@ -672,7 +672,7 @@ function PermissionRulesSheetBody({
         )}
 
         <div className="tug-sheet-actions">
-          <TugPushButton emphasis="filled" onClick={onDone}>
+          <TugPushButton emphasis="primary" onClick={onDone}>
             Done
           </TugPushButton>
         </div>
