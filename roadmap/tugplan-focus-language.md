@@ -479,7 +479,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-cycle-devcard | Step 2.5.3 — Dev card joins the cycle; per-state default focus | done ([P10]r): route-seed + blur + no outer ring `6a27148f`; editor text-stop `bd9e44b0`; Z2 carved to #step-z2-cycle | — |
 | #step-cycle-keys | Step 2.5.4 — Mode keys + Z2 dedicated chords | punted (2026-06-06): cycling covers status-bar access — no dedicated Z2 chords needed; remaining mode-key polish deferred | — |
 | #step-cycle-vet | Step 2.5.5 — Integration checkpoint + a11y assessment | punted (2026-06-06): no ceremonial checkpoint; a11y assessment deferred to the a11y follow-on | — |
-| #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | to design + implement | — |
+| #step-picker-keys | Step 2.6 — Session-picker keyboard navigation (persistent cycling, [P13]) | done: picker controls authored into the sheet's trapped mode (one group, orders 0–5); `TugFileChooser` standard `focusGroup`/`consumesTab` opt-in; bespoke arrow model retired; `armKeyboardRestore` seed; at0141 + nativeKey regression + by-eye green | (uncommitted) |
 | #step-z2-components | Step 2.7 — Componentize the Z2 status cells (prereq for Z2 cycling) | done: `TugStatusCell` extraction (devised in `tugplan-z2-status-cell.md`) | afd978c7 |
 | #step-z2-cycle | Step 2.8 — Z2 status cells join the cycle (was Slice 3) | done: five Z2 cells = leaf stops (orders 5…9; rove reversed by-eye); square editor border; engine = single owner of close-focus (popovers+sheets defer; `getKeyCard` fallback; `popFocusMode` always notifies); **mouse exits cycling** ([#cycle-model]); at0140 cells + popover-escape + mouse-exit | d1c2296a + 6f579eae |
 | #step-3 | Item-groups — radio / choice / option | pending | — |
@@ -768,7 +768,7 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 #### Step 2.6: Session-picker keyboard navigation (persistent cycling) {#step-picker-keys}
 
-**STATUS — to design + implement (new, surfaced 2026-06-06).** The connected card cycles (Step 2.5); the **picker** (`DevProjectPicker` / `DevProjectPickerForm`, the "Choose Session" sheet) has **no keyboard navigation** — ⌥⇥ correctly does nothing there, and that stays true. Per [P13] the picker is a **persistent-cycling** context: its only text input is the **single-line** path field, which does not own Tab, so there is no Tab-owner to suspend — the trapped Tab-walk **is** the picker's base mode (always on, no toggle). It is *not* a toggleable cycle like the connected card. The walk is missing today and must be designed + built.
+**STATUS — done (2026-06-06).** The connected card cycles (Step 2.5); the **picker** (`DevProjectPicker` / `DevProjectPickerForm`, the "Choose Session" sheet) had **no keyboard navigation** — ⌥⇥ correctly does nothing there, and that stays true. Per [P13] the picker is a **persistent-cycling** context: its only text input is the **single-line** path field, which does not own Tab, so there is no Tab-owner to suspend — the trapped Tab-walk **is** the picker's base mode (always on, no toggle). It is *not* a toggleable cycle like the connected card. The walk is missing today and must be designed + built.
 
 **Depends on:** #step-3 (the recents / sessions lists are the item-group archetype; reuse that focus CSS rather than re-inventing it).
 
@@ -776,20 +776,38 @@ Umbrella for the cycling-mode feature ([P09]) — the one deliberate **behavior*
 
 **References:** [P02], [P12], [P13], (#cycle-model — for the per-state contrast: Picker = persistent cycling, Connected = toggleable cycling)
 
-**Design (to settle in a devise/vet pass before building):**
-- **Mechanism ([P13] persistent):** the picker pushes a trapped focus mode at open via **`useFocusTrap`** (the persistent-cycling primitive — the same `pushFocusMode({ trapped: true })` the cycle uses, minus the toggle and the editor key-view restore). Its controls register into that mode as cycle stops; there is no ⌥⇥ toggle and no base/editor to return to.
-- **Tab order:** Project-path field → Recent Project Paths list → Sessions list → trash-all → Cancel → Open. Each list is one Tab stop with **arrow-roving within** (the [P02]/[#step-3] item-group model — these are `TugListView`s, the list archetype). The single-line path field is an ordinary stop (Tab leaves it; it does not consume Tab).
-- **Default focus / seed:** Picker → **Open** when a valid path is seeded (the smart latch already added in [#step-cycle-devcard]); else the path field. Return on Open submits ([P12]).
-- **Within-list keys:** ↑/↓ rove; Return opens the roved session (or commits the roved recent into the path field); the per-row trash affordance reachable (Delete key? or a roved trash button) — **open question**.
-- **Escape:** Cancel (the sheet's cancel ladder) — confirm against the inline-dialog Escape model.
-- **Focus-trap modality:** the picker is pane-modal, so the persistent trap should wrap Tab inside it — reuse the sheet focus-trap machinery (at0106), which is the same `useFocusTrap` mechanism.
+**Design (settled 2026-06-06 — every load-bearing piece consumes an existing framework seam; the only net-new code is the missing standard opt-in on one control, plus retiring the picker's bespoke keyboard model):**
 
-**Tasks:** (to expand after the design pass)
-- Push the picker's persistent trapped mode at open (`useFocusTrap`); register its controls (path field, the two lists, the action buttons) as stops in that mode so Tab walks them and arrows rove the lists.
-- Wire Return/Escape per the design; reach the trash affordances by keyboard.
-- App-test: Tab order + arrow-rove + Return-opens-session + Escape-cancels, both themes.
+- **What we're retiring (the actual "bespoke" thing).** The picker predates the focus language and hand-rolls its own keyboard model: `handleArrowKey` + a parallel `PickerSelection` React state for ArrowUp/Down over session rows, `handleFormKeyDown` intercepting arrows on the form `<div>`, and lists that are not focus stops at all. This step **deletes** that and puts the picker on the same rails as the dev-card cycle / `gallery-cycle-demo`.
 
-**Checkpoint:** `tsc` clean; picker keyboard app-test green; full keyboard reachability of the picker by-eye.
+- **Mechanism ([P13] persistent) — the trap already exists.** `TugSheet` already calls `useFocusTrap({ active: open })` and wraps its content in `FocusModeScope`, so the picker is *already* inside a trapped engine focus mode. The picker controls join it for free through the normal `FocusModeContext` (their `useFocusable`/`focusGroup` registers `modes: [sheetMode]`). **No new trap, no `useFocusTrap` call in the picker, no toggle** — the sheet's persistent mode *is* the picker's base mode.
+
+- **Tab order:** Project-path field → Recent Project Paths list → Sessions list → trash-all → Cancel → Open, authored as **one focus group with explicit orders** (the dev-card `DEV_CYCLE_GROUP` pattern). Each `TugListView` is **one** item-group stop with arrow-roving within (its existing `focusGroup` listbox model — [P02]/[#step-3] archetype, already implemented); conditionally-rendered lists (empty recents / not-ready sessions) simply leave a gap in the order, which the walk skips. The buttons (incl. the popover-wrapped trash-all) take `focusGroup`/`focusOrder` directly via `TugButton` (its asChild ref-merge already composes the focusable ref).
+
+- **The path field — bring `TugFileChooser` up to the standard (DECIDED).** It is the only interactive control in the picker missing the `focusGroup` opt-in every other control has. Extend the **shared component** with the standard `focusGroup`/`focusOrder` opt-in (stamp `data-tug-focusable` on the input so the engine lands the key view on the real caret) **plus a `consumesTab: () => menuOpen` predicate** — the exact pattern the editor uses so Tab accepts an open completion and otherwise leaves the field ("the single-line field does not own Tab"). This benefits every future form, not just this picker.
+
+- **Default focus / seed — already a framework primitive.** The picker's commit-home (Open) is **last** in reading order, so the dev-card convention (*seed = first stop*, `focusFirstInMode`) doesn't fit. The engine already resolves a focusable by its stable `group:order` focus-key, sets it as the keyboard key view, focuses it, and handles the async-mount case — **`armKeyboardRestore(focusKey)`** (built for cold-boot ring restore; it is the general "seed this specific stop by position" primitive). The smart latch ([P12], already added in [#step-cycle-devcard]) calls it: **Open** when a valid path is seeded, else the path field. (Return on Open submits regardless via the existing default-button mechanism — Open is `filled`+`action`.) **No `.focus()`-without-key-view shortcut, no parallel state.**
+
+- **Within-list keys:** ↑/↓ rove the list cursor; Return/Space commits the roved row through the list's existing `delegate.onSelect` (opens the roved session / commits the roved recent into the path field) via the engine act dispatch — no new wiring.
+
+- **Per-row trash stays pointer-only (DECIDED).** The in-row trash icons are `TugIconButton` (`data-tug-focus="refuse"`) — deliberately pointer affordances, not focusables, so they are not descendable and Return keeps its primary meaning (open the session). Keyboard users trash via the **bulk "Move all to Trash"** Tab stop. A generic keyboard row-delete gesture is a real list-archetype decision and is **deferred to [#step-5]** (list view / row), not built one-off here.
+
+- **Escape:** Cancel — the sheet's existing cancel ladder already owns Escape; confirm no regression (no new Escape wiring expected).
+
+**Tasks:**
+- [x] Extend `TugFileChooser` with the standard `focusGroup`/`focusOrder` opt-in (focusable on the input element) + `consumesTab: () => menuOpen` (plus the `data-tug-tab-consume` marker on the input — the editor's pattern, the robust signal while typing).
+- [x] Author the picker controls into one focus group with orders (path 0 → recents 1 → sessions 2 → trash-all 3 → Cancel 4 → Open 5); `focusGroup`/`focusOrder` on the two `TugListView`s and the three buttons.
+- [x] Delete the bespoke keyboard model (`handleArrowKey`, `handleFormKeyDown`, the `onKeyDown` handler, the dead `openButtonRef`); the engine cursor + the list's `onSelect` own navigation + commit.
+- [x] Seed via the smart latch through `armKeyboardRestore` (Open when valid, else the path field) so the ring rests on the seed at open.
+- [x] App-test `at0141-picker-keys`: seed on Open, Tab wraps to the path field, path releases Tab when its menu is closed, Recents is one stop with internal arrow-roving, Return commits the roved recent. Added a reusable `setTugbankValue` test-surface method (SURFACE_VERSION 1.11.0) to populate Recents in-process.
+
+**Tests:**
+- [x] Behavior: `tests/app-test/at0141-picker-keys.test.ts` — **green**. Driven by synthetic `keydown` through the real document-level focus pipeline (the engine's Tab-walk listener / `focusNext` / list arrow-rove / act dispatch all run for real); only OS→WebView delivery is skipped (the form auto-scrolls the seeded Open into view, putting the top field off-screen for a native click — see the test header).
+- [x] Regression (pure-logic): `focus-walk.test.ts` green (24/24) — walk/advance/wrap intact.
+- [x] Regression (real-app `nativeKey`): at0106 / at0055 / at0058 / at0035 / at0051 / at0140 green in a foreground run (the automation session that built this couldn't focus the app window; the user ran the suite).
+- [x] By-eye: the persistent ring reads as the focus language across the picker; per-row trash still works by mouse; Return opens a session; Escape cancels. *(user-verified)*
+
+**Checkpoint:** `bunx tsc --noEmit` clean ✅; `at0141-picker-keys` green ✅; `focus-walk` units green ✅; `nativeKey` regression set green ✅; by-eye clean ✅.
 
 #### Step 2.7: Componentize the Z2 status cells {#step-z2-components}
 

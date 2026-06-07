@@ -47,6 +47,8 @@ import { cardServicesStore } from "./lib/card-services-store";
 import type { AtomSegment } from "./lib/tug-atom-img";
 import { dispatchAction, getResponderChainManager } from "./action-dispatch";
 import type { RateLimitInfo } from "./protocol";
+import { getTugbankClient } from "./lib/tugbank-singleton";
+import type { TaggedValue } from "./lib/tugbank-client";
 
 // ---------------------------------------------------------------------------
 // Public types (`TugTestSurface`)
@@ -127,7 +129,7 @@ import type { RateLimitInfo } from "./protocol";
  * live tugcast git round-trip (which [#step-10a]'s subprocess test proves).
  * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.10.0" as const;
+export const SURFACE_VERSION = "1.11.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -407,6 +409,16 @@ export interface TugTestSurface {
 
   // ---- State seeding ----
   seedDeckState(args: SeedDeckStateArgs): void;
+
+  /**
+   * Set a tugbank value locally and notify subscribers (SURFACE_VERSION
+   * 1.11.0). Drives `useTugbankValue` consumers in-process — no tugcast / disk
+   * round-trip — so a test can populate state the picker reads, e.g. the
+   * `dev.tugtool.dev / recent-projects` list to exercise the session picker's
+   * Recents list as a keyboard cycle stop. No-op (dev-warn) if the tugbank
+   * client singleton is not yet installed.
+   */
+  setTugbankValue(domain: string, key: string, value: TaggedValue): void;
 
   // ---- Granular reset ([D01]) ----
   reset(opts: ResetOptions): void;
@@ -943,6 +955,19 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         cardStates: cardStatesRecordToMap(args.cardStates),
         focusCardId: args.focusCardId,
       });
+    },
+
+    setTugbankValue(domain: string, key: string, value: TaggedValue): void {
+      const client = getTugbankClient();
+      if (client === null) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(
+            `[test-surface] setTugbankValue(${domain}/${key}): no tugbank client installed`,
+          );
+        }
+        return;
+      }
+      client.setLocalValue(domain, key, value);
     },
 
     // ---- granular reset ----

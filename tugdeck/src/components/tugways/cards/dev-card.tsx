@@ -90,6 +90,7 @@ import { useCardSettings } from "../use-card-settings";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
+import { useFocusManager } from "../use-focusable";
 import { useCycleMode } from "../use-cycle-mode";
 import type { ActionEvent } from "../responder-chain";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
@@ -1273,20 +1274,49 @@ function noticeText(notice: PickerNotice): string {
   }
 }
 
+/**
+ * Persistent-cycling focus group for the session picker ([P13] persistent —
+ * [#step-picker-keys]). The picker lives inside a `TugSheet`, which already
+ * pushes a trapped engine focus mode (`useFocusTrap`); authoring the picker's
+ * controls into this one group makes them stops in that mode's Tab walk, read
+ * top-to-bottom: path field → Recents → Sessions → Move-all-to-Trash → Cancel →
+ * Open. There is no toggle — the sheet's mode IS the picker's base mode (unlike
+ * the connected card's toggleable ⌥⇥ cycle). Conditionally-rendered lists (empty
+ * Recents / not-ready Sessions) and a disabled stop (Move-all-to-Trash with
+ * nothing to trash, Open with no valid path) simply drop out of the walk via the
+ * engine's rendered/interactive filters; the order leaves a gap the walk skips.
+ */
+const PICKER_CYCLE_GROUP = "dev-picker-cycle";
+const PICKER_ORDER_PATH = 0;
+const PICKER_ORDER_RECENTS = 1;
+const PICKER_ORDER_SESSIONS = 2;
+const PICKER_ORDER_TRASH_ALL = 3;
+const PICKER_ORDER_CANCEL = 4;
+const PICKER_ORDER_OPEN = 5;
+/**
+ * Stable focus-key (`group:order`) of a picker stop. The smart-latch seed lands
+ * the ring on a specific stop by this key via `armKeyboardRestore` — the picker's
+ * commit-home (Open) is LAST in reading order, so the dev-card "seed = first
+ * stop" convention (`focusFirstInMode`) doesn't fit; seeding by key does.
+ */
+const pickerFocusKey = (order: number): string =>
+  `${PICKER_CYCLE_GROUP}:${order}`;
+
 function DevProjectPickerForm({
   notice,
   onOpen,
   onCancel,
   onRetryRestore,
 }: DevProjectPickerFormProps) {
+  const focusManager = useFocusManager();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // Per-state default focus for the picker ([P12] Picker → Open). The
-  // Open button is the destination so Return opens the seeded path — but
-  // Open is `disabled` until a valid path settles, and the path seed is
-  // async, so the placement is a deliberate smart latch (below), not a
-  // mount-time `autoFocus`: focus Open once it settles enabled, else the
-  // path field; never yank focus once the user has engaged the field.
-  const openButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Per-state default focus for the picker ([P12] Picker → Open). The Open
+  // button is the destination so Return opens the seeded path — but Open is
+  // `disabled` until a valid path settles, and the path seed is async, so the
+  // placement is a deliberate smart latch (below) that seeds the engine key view
+  // by focus-key once Open settles enabled, else the path field; never yanked
+  // once the user has engaged the field. Both stops are addressed by their stable
+  // `group:order`, so no element ref is needed for the seed.
   const defaultFocusPlacedRef = useRef(false);
   const userTouchedFieldRef = useRef(false);
   // True while the path field's completion menu is open — the Recent Project
@@ -1706,80 +1736,16 @@ function DevProjectPickerForm({
     [sessionsDataSource],
   );
 
-  // [D10] Arrow-key navigation across the Sessions list's selectable
-  // rows. Builds the list of selectables (session-new + non-live
-  // session-resume) and steps through with wrap.
-  const handleArrowKey = useCallback(
-    (direction: "up" | "down"): void => {
-      const selectables: Array<{ sel: PickerSelection }> = [];
-      for (let i = 0; i < sessionsDataSource.numberOfItems(); i += 1) {
-        const row = sessionsDataSource.rowAt(i);
-        if (row.kind === "session-new") {
-          selectables.push({ sel: { kind: "session-new" } });
-        } else if (
-          row.kind === "session-resume" &&
-          row.row.state !== "live"
-        ) {
-          selectables.push({
-            sel: {
-              kind: "session-resume",
-              sessionId: row.row.session_id,
-            },
-          });
-        }
-      }
-      if (selectables.length === 0) return;
-
-      let currentIdx = -1;
-      if (selection !== null) {
-        currentIdx = selectables.findIndex(({ sel }) => {
-          if (sel.kind !== selection.kind) return false;
-          if (
-            sel.kind === "session-resume" &&
-            selection.kind === "session-resume"
-          ) {
-            return sel.sessionId === selection.sessionId;
-          }
-          return true;
-        });
-      }
-
-      const nextIdx =
-        currentIdx === -1
-          ? direction === "down"
-            ? 0
-            : selectables.length - 1
-          : (currentIdx + (direction === "down" ? 1 : -1) + selectables.length) %
-            selectables.length;
-
-      setSelection(selectables[nextIdx].sel);
-    },
-    [sessionsDataSource, selection],
-  );
-
-  // Form-level keyboard handling. ArrowUp/Down moves selection across
-  // selectable session rows. Enter is handled by the responder chain
-  // — the Open button registers itself as the default button (via
-  // `emphasis="filled" role="action"` on `TugPushButton`), and the
-  // chain's bubble-phase Stage-2 listener clicks it for any Enter
-  // pressed outside an editable. Trash is mouse-driven via the
-  // per-row trash button + confirm popover.
-  const handleFormKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>): void => {
-      const target = e.target;
-      const inInput =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement;
-
-      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-        if (inInput) return;
-        e.preventDefault();
-        handleArrowKey(e.key === "ArrowDown" ? "down" : "up");
-        return;
-      }
-    },
-    [handleArrowKey],
-  );
+  // Arrow navigation + Return-to-act over the two lists is owned by the focus
+  // engine: each `TugListView` is authored as one item-group cycle stop
+  // ([#step-picker-keys]), so ↑/↓ rove the cursor within whichever list holds
+  // the key view and Return/Space commit the roved row through its
+  // `delegate.onSelect` (above). The picker's former bespoke `handleArrowKey` /
+  // `handleFormKeyDown` selection-stepping is retired — the engine listbox model
+  // is the single navigation path now. Return-to-open still falls to the default
+  // button (Open, `filled`+`action`) when the key view is not on a list. Per-row
+  // trash stays mouse-driven (the row trash icons are focus-refusing pointer
+  // affordances); keyboard users trash via the Move-all-to-Trash stop.
 
   // Cell-context value — `currentPath` drives path-recent's
   // `data-selected`; `selection` drives session cells' selection
@@ -1814,15 +1780,20 @@ function DevProjectPickerForm({
 
   // Smart-latch default focus ([P12] Picker → Open). Re-evaluated as the
   // async path seed settles `openDisabled`:
-  //   - Open enabled → focus Open (Return opens the seeded path); latch.
-  //   - Open disabled → keep the caret in the path field so typing starts
+  //   - Open enabled → seed Open (Return opens the seeded path); latch.
+  //   - Open disabled → keep the ring/caret in the path field so typing starts
   //     immediately; do NOT latch, so a seed that later enables Open
-  //     (before the user types) promotes focus to it on the next run.
+  //     (before the user types) promotes the ring to it on the next run.
   //   - The user has touched the field → that field is the default;
   //     latch without moving so typing is never interrupted.
-  // [L03] layout effect (focus before paint); the editor-vs-engine focus
-  // axes are untouched — this is plain DOM focus on the picker form.
+  // The picker is persistent-cycling ([P13]) — the seed is the engine KEY VIEW
+  // (ring + DOM focus), not a bare `.focus()`, so the focus engine stays the
+  // single owner and the ring rests on the seed at open. `armKeyboardRestore`
+  // resolves the stop by its stable focus-key now (the buttons/field are
+  // already registered) or re-lights it the instant it mounts. [L03] layout
+  // effect (seed before paint).
   useLayoutEffect(() => {
+    if (focusManager === null) return;
     if (defaultFocusPlacedRef.current) return;
     if (userTouchedFieldRef.current) {
       defaultFocusPlacedRef.current = true;
@@ -1830,19 +1801,15 @@ function DevProjectPickerForm({
     }
     if (!openDisabled) {
       defaultFocusPlacedRef.current = true;
-      openButtonRef.current?.focus();
+      focusManager.armKeyboardRestore(pickerFocusKey(PICKER_ORDER_OPEN));
     } else {
-      inputRef.current?.focus();
+      focusManager.armKeyboardRestore(pickerFocusKey(PICKER_ORDER_PATH));
     }
-  }, [openDisabled]);
+  }, [openDisabled, focusManager]);
 
   return (
     <PickerFormResponderScope>
-      <div
-        ref={setFormRootRef}
-        className="dev-card-picker-form"
-        onKeyDown={handleFormKeyDown}
-      >
+      <div ref={setFormRootRef} className="dev-card-picker-form">
       {notice !== null && (
         <div
           className="dev-card-picker-notice"
@@ -1881,6 +1848,8 @@ function DevProjectPickerForm({
           onSubmit={submit}
           onOpenChange={setPathMenuOpen}
           placeholder="/path/to/project"
+          focusGroup={PICKER_CYCLE_GROUP}
+          focusOrder={PICKER_ORDER_PATH}
         />
       </label>
       <PickerCellProvider value={cellContextValue}>
@@ -1898,6 +1867,8 @@ function DevProjectPickerForm({
                 cellRenderers={RECENTS_CELL_RENDERERS}
                 scrollKey="dev-card-picker-recents"
                 className="dev-card-picker-recents-list"
+                focusGroup={PICKER_CYCLE_GROUP}
+                focusOrder={PICKER_ORDER_RECENTS}
               />
             ) : (
               <div
@@ -1920,6 +1891,8 @@ function DevProjectPickerForm({
                 scrollKey="dev-card-picker-sessions"
                 rowLayout="flush"
                 className="dev-card-picker-sessions-list dev-card-picker-list-view"
+                focusGroup={PICKER_CYCLE_GROUP}
+                focusOrder={PICKER_ORDER_SESSIONS}
               />
             ) : sessionsPending ? (
               <div
@@ -1965,6 +1938,8 @@ function DevProjectPickerForm({
                 disabled={nonLiveCount === 0}
                 aria-label="Move all sessions to Trash for this path"
                 data-testid="dev-card-picker-trash-all"
+                focusGroup={PICKER_CYCLE_GROUP}
+                focusOrder={PICKER_ORDER_TRASH_ALL}
               />
             </TugConfirmPopover>
           </div>
@@ -1980,15 +1955,22 @@ function DevProjectPickerForm({
             {"Directory doesn't exist"}
           </TugLabel>
         )}
-        <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          onClick={onCancel}
+          focusGroup={PICKER_CYCLE_GROUP}
+          focusOrder={PICKER_ORDER_CANCEL}
+        >
           Cancel
         </TugPushButton>
         <TugPushButton
-          ref={openButtonRef}
           emphasis="filled"
           role="action"
           onClick={submit}
           disabled={openDisabled}
+          focusGroup={PICKER_CYCLE_GROUP}
+          focusOrder={PICKER_ORDER_OPEN}
         >
           Open
         </TugPushButton>

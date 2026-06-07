@@ -32,6 +32,7 @@ import "./tug-file-chooser.css";
 import React, {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -41,6 +42,8 @@ import { FolderOpen } from "lucide-react";
 
 import { TugInput } from "./tug-input";
 import { TugPushButton } from "./tug-push-button";
+import { useFocusable } from "./use-focusable";
+import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import {
   fetchPathCompletions,
@@ -73,6 +76,20 @@ export interface TugFileChooserProps {
   autoFocus?: boolean;
   className?: string;
   disabled?: boolean;
+  /**
+   * Author the field into a focus group ([P02]) — the standard `useFocusable`
+   * opt-in every other interactive control exposes. When set, the input
+   * registers as one stop in the surrounding surface's Tab walk (the engine
+   * lands the key view on the real `<input>` caret, so typing works), and a
+   * host that owns the Tab order (e.g. the session picker's persistent walk)
+   * can place it. Omitted by default — the field is an ordinary native stop and
+   * never joins an authored walk. The field never *owns* Tab except while its
+   * completion menu is open (see {@link TAB_CONSUME_ATTRIBUTE} below): Tab then
+   * accepts the highlighted match; with the menu closed Tab leaves the field.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0. */
+  focusOrder?: number;
 }
 
 const DEBOUNCE_MS = 120;
@@ -119,6 +136,8 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       autoFocus,
       className,
       disabled,
+      focusGroup,
+      focusOrder = 0,
     },
     forwardedRef,
   ) {
@@ -141,14 +160,44 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
     const overlayRoot = useCanvasOverlay();
     const showPicker = showBrowse && isPathPickerAvailable();
 
+    // Standard focus-stop opt-in ([P02]). The focusable is the `<input>` itself,
+    // so the engine lands the key view on the real caret. `consumesTab` is read
+    // live by the walk only when the field is the key view; the DOM marker below
+    // is the robust signal while the user is actually typing in the field. Both
+    // say the same thing: the field owns Tab iff its completion menu is open.
+    const focusableId = useId();
+    const { focusableRef } = useFocusable({
+      id: focusableId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      register: focusGroup !== undefined,
+      consumesTab: () => open,
+    });
+
     const setInputRef = useCallback(
       (el: HTMLInputElement | null) => {
         inputRef.current = el;
+        // Project the focus-stop attribute onto the input (no-op when
+        // un-authored); the engine resolves + lands focus on this element.
+        focusableRef(el);
         if (typeof forwardedRef === "function") forwardedRef(el);
         else if (forwardedRef) forwardedRef.current = el;
       },
-      [forwardedRef],
+      [forwardedRef, focusableRef],
     );
+
+    // Tab-consumption marker ([Q02], the editor's pattern). While the completion
+    // menu is open the field owns Tab — it accepts the highlighted match — so the
+    // document-level focus walk must yield. The marker rides the `<input>` (the
+    // active element while editing) so the walk's `closest([data-tug-tab-consume])`
+    // check sees it; cleared when the menu closes so Tab then leaves the field.
+    // Appearance-zone DOM write ([L06]), never React state.
+    useLayoutEffect(() => {
+      const el = inputRef.current;
+      if (el === null) return;
+      if (open) el.setAttribute(TAB_CONSUME_ATTRIBUTE, "true");
+      else el.removeAttribute(TAB_CONSUME_ATTRIBUTE);
+    }, [open]);
 
     // Measure the input so the portaled overlay can anchor under it.
     const measure = useCallback(() => {
