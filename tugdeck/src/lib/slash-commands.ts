@@ -73,6 +73,14 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "Switch the active model for this session",
   },
   {
+    name: "effort",
+    description: "Set the reasoning effort for this session",
+  },
+  {
+    name: "mode",
+    description: "Set the permission mode for this session",
+  },
+  {
     name: "rewind",
     description: "Rewind the conversation (and optionally code) to an earlier turn",
   },

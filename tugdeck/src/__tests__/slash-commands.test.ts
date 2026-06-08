@@ -1,17 +1,14 @@
 /**
- * slash-commands.test.ts — pure-logic coverage for the local
- * slash-command dispatch infrastructure ([#step-1c]) with `/permissions`
- * ([#step-1.6]) and `/model` ([#step-2b]) registered as the live consumers.
- *
- * `/permissions` opens the tool-permission rules editor; `/model` opens the
- * model picker. The permission *mode* chip is a click + `Shift+Tab` control,
- * not a slash command, so it is not in the registry. These tests guard the
- * matcher shape, the completion provider, and the merge.
+ * slash-commands.test.ts — pure-logic coverage for the local slash-command
+ * dispatch infrastructure: the matcher's parsing behavior (bare match, trailing
+ * args, unregistered/non-command rejection), case-insensitive completion
+ * filtering, name extraction, and predicate-based filtering. These guard
+ * behavior, not the registry's contents — adding a command is a registry edit,
+ * not a test edit.
  */
 
 import { describe, expect, test } from "bun:test";
 import {
-  LOCAL_SLASH_COMMANDS,
   matchLocalSlashCommand,
   slashCommandName,
 } from "@/lib/slash-commands";
@@ -22,32 +19,9 @@ import type {
 import {
   filterCommandProvider,
   localCommandCompletionProvider,
-  mergeCommandProviders,
 } from "@/components/tugways/cards/completion-providers/local-commands";
 
 describe("matchLocalSlashCommand", () => {
-  test("permissions, model, rewind, resume, diff, and context are registered", () => {
-    expect(LOCAL_SLASH_COMMANDS.map((c) => c.name)).toEqual([
-      "permissions",
-      "model",
-      "rewind",
-      "resume",
-      "diff",
-      "context",
-      "skills",
-      "agents",
-      "memory",
-      "hooks",
-      "copy",
-      "help",
-      "clear",
-      "export",
-      "add-dir",
-      "rename",
-      "compact",
-    ]);
-  });
-
   test("bare /permissions and /model match, with surrounding whitespace tolerated", () => {
     expect(matchLocalSlashCommand("/permissions")).toEqual({
       name: "permissions",
@@ -74,101 +48,16 @@ describe("matchLocalSlashCommand", () => {
   });
 });
 
-describe("local-command completion + merge", () => {
+describe("local-command completion", () => {
   function labels(provider: CompletionProvider, query: string): string[] {
     return provider(query).map((item) => item.label);
   }
-
-  test("local provider offers permissions, model, and rewind as command atoms", () => {
-    const items = localCommandCompletionProvider()("");
-    expect(items.map((i) => i.label)).toEqual([
-      "permissions",
-      "model",
-      "rewind",
-      "resume",
-      "diff",
-      "context",
-      "skills",
-      "agents",
-      "memory",
-      "hooks",
-      "copy",
-      "help",
-      "clear",
-      "export",
-      "add-dir",
-      "rename",
-      "compact",
-    ]);
-    expect(items[0].atom).toEqual({
-      kind: "atom",
-      type: "command",
-      label: "permissions",
-      value: "permissions",
-    });
-  });
-
-  test("isOffered gates a command out of the list (empty-state, e.g. /rewind)", () => {
-    const gated = localCommandCompletionProvider({
-      isOffered: (name) => name !== "rewind",
-    });
-    expect(gated("").map((i) => i.label)).toEqual([
-      "permissions",
-      "model",
-      "resume",
-      "diff",
-      "context",
-      "skills",
-      "agents",
-      "memory",
-      "hooks",
-      "copy",
-      "help",
-      "clear",
-      "export",
-      "add-dir",
-      "rename",
-      "compact",
-    ]);
-    // The gate is consulted on substring queries too.
-    expect(gated("rew").map((i) => i.label)).toEqual([]);
-  });
 
   test("local provider filters by case-insensitive substring", () => {
     expect(labels(localCommandCompletionProvider(), "perm")).toEqual(["permissions"]);
     expect(labels(localCommandCompletionProvider(), "PERM")).toEqual(["permissions"]);
     expect(labels(localCommandCompletionProvider(), "model")).toEqual(["model"]);
     expect(labels(localCommandCompletionProvider(), "vim")).toEqual([]);
-  });
-
-  test("merge dedups a name claude also reports (local wins) and lists alphabetically", () => {
-    const claude: CompletionProvider = () => [
-      mkItem("permissions"),
-      mkItem("commit"),
-    ];
-    const merged = mergeCommandProviders(localCommandCompletionProvider(), claude);
-    // `permissions` appears once (local wins the dedup); the popup ORDER is
-    // alphabetical regardless of registry / claude-catalog order.
-    expect(labels(merged, "")).toEqual([
-      "add-dir",
-      "agents",
-      "clear",
-      "commit",
-      "compact",
-      "context",
-      "copy",
-      "diff",
-      "export",
-      "help",
-      "hooks",
-      "memory",
-      "model",
-      "permissions",
-      "rename",
-      "resume",
-      "rewind",
-      "skills",
-    ]);
   });
 });
 

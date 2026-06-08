@@ -2998,6 +2998,8 @@ export function DevCardBody({
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
     model: () => modelPicker.openModelPicker(),
+    effort: () => effortPicker.openEffortPicker(),
+    mode: () => permissionSheet.openPermissionSheet(),
     rewind: () => rewindSheet.openRewindSheet(),
     resume: () => resumeSheet.openResumeSheet(),
     diff: () => diffSheet.openDiffSheet(),
