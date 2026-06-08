@@ -136,7 +136,7 @@ The process tree is the backbone: tugcast calls `setpgid(0, 0)` at startup so it
 **Known limitations (bounded, recorded — not open leaks):**
 
 - **Token collision.** `tug-<token>` and the sockets key on a 32-bit FNV hash of the id; two instances colliding would share a tmux server / sockets and break isolation. ~1 in 4 billion per pair — negligible for the handful of live instances, but the ceiling is real.
-- **Out-of-band worktree deletion.** A worktree removed by hand (`git worktree remove`, `rm -rf`) instead of `dash join`/`release` or `instance remove` orphans its tmux server. Same class as the pre-isolation behavior; a registry-anchored "reap servers with no live owner" startup sweep is the clean future fix if it ever bites.
+- **Out-of-band worktree deletion.** A worktree removed by hand (`git worktree remove`, `rm -rf`) instead of `dash join`/`release` or `instance remove` orphans its tmux server. `just reap` is the manual remedial — it diagnoses and releases orphaned *transient* resources (tmux servers/sessions, stale sockets, PID-1 zombies), cross-referenced against the live registry so a running instance is never touched (`just reap` to diagnose, `just reap apply` to release). It deliberately does **not** remove orphaned data dirs — that goes through `tugutil instance prune`, which can delete a (possibly shared) app bundle and so must be run on purpose. A registry-anchored *automatic* sweep at startup remains a possible future hardening.
 - **`--force` is vestigial for app-test.** Each launch mints a fresh `apptest-<uuid>`, so there is never a same-id zombie to reclaim and `force_kill_port_holder` early-returns. Harmless; the flag could be dropped from the app-test launch.
 
 ---

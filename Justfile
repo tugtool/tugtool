@@ -459,49 +459,146 @@ tail-replay:
     fi
     tail -F "$LOG" | grep --line-buffered -E "dev::replay::|dev::session-lifecycle"
 
-# List any tugcode / claude processes reparented to PID 1 — these
-# are zombies left behind by an ungraceful Tug.app exit (roadmap
-# step 4j). Expected output: `(no zombies)`. A non-empty list means
-# processes leaked past the pgid SIGTERM cleanup and need to be
-# reaped manually — use `just zombie-cleanup`.
-zombies:
+# Remedial resource cleanup — diagnose and release resources leaked by
+# crashed runs or out-of-band worktree deletion (`git worktree remove` /
+# `rm -rf` instead of `tugutil dash join|release` / `instance remove`).
+#
+# Everything released is cross-referenced against the LIVE instance
+# registry (a tmux server/session is kept iff one of its `cc-<id>`
+# sessions names a running instance), so a developer's app-debug /
+# app-release and an in-flight app-test are never touched. Sockets are
+# lsof-guarded (only those NO process holds are removed).
+#
+# Releases (transient, cheap to recreate):
+#   - orphaned per-instance tmux servers (`tug-<token>`) + legacy
+#     default-server sessions (`cc-<id>`) with no live owner
+#   - stale tugbank-notify / tugcast-ctl sockets no process holds
+#   - tugcode / claude processes reparented to PID 1 (crashed-host zombies)
+#
+# Reports only (NOT released — removal deletes the possibly-shared app
+# bundle, so run it deliberately):
+#   - orphaned data dirs whose bundle is gone → `tugutil instance prune`
+#
+# Subsumes the former `zombies` / `zombie-cleanup` recipes — the PID-1
+# process reap is the "processes" section here, now cross-referenced and
+# bundled with the other leaked resources.
+#
+# Usage (diagnose by default, like the old `zombies`):
+#   just reap          # diagnose only — report what's leaked, change nothing
+#   just reap apply    # release everything reported (the old `zombie-cleanup`+)
+#
+# Diagnose/release leaked Tug resources; safe — never touches a live instance.
+reap *MODE:
     #!/usr/bin/env bash
-    set -euo pipefail
-    PIDS="$(ps -eo pid,ppid,command \
-        | awk '$2 == 1 && ($3 ~ /tugcode/ || ($3 == "claude" && $0 ~ /stream-json/)) { print $0 }')"
-    if [ -z "$PIDS" ]; then
-        echo "(no zombies)"
+    # No `set -e` — keep going past per-item failures so one stuck reap
+    # doesn't abort the sweep.
+    set -uo pipefail
+    DRY=1; [ "{{MODE}}" = "apply" ] && DRY=0
+
+    # tugutil is the source of truth for which instances are LIVE. Without
+    # it we cannot tell an orphan from a running instance, so it is a hard
+    # dependency — build it if absent rather than risk reaping live state.
+    TUGUTIL="tugrust/target/debug/tugutil"
+    if [ ! -x "$TUGUTIL" ]; then
+        echo "==> building tugutil (needed to identify live instances)…"
+        (cd tugrust && cargo build -p tugutil) || { echo "error: could not build tugutil" >&2; exit 1; }
+    fi
+    # A read failure here must abort: reaping against an empty/unknown live
+    # set would treat every running instance as an orphan.
+    if ! LIST="$("$TUGUTIL" instance list 2>/dev/null)"; then
+        echo "error: 'tugutil instance list' failed — refusing to reap blind" >&2
+        exit 1
+    fi
+    LIVE_IDS="$(printf '%s\n' "$LIST" | awk 'NR>1 && $1!="" {print $1}')"
+    is_live() { [ -n "$1" ] && printf '%s\n' "$LIVE_IDS" | grep -qxF "$1"; }
+
+    if [ "$DRY" = 1 ]; then echo "== reap (diagnose — nothing will change) =="; else echo "== reap (apply) =="; fi
+    echo "-- live instances (protected) --"
+    if [ -n "$LIVE_IDS" ]; then printf '%s\n' "$LIVE_IDS" | sed 's/^/   /'; else echo "   (none running)"; fi
+
+    # Per-section output is capped so a big backlog (hundreds of stale
+    # sockets) doesn't bury the report; every item is still reaped.
+    REAPED=0; PRINTED=0; CAP=12
+    new_section() { PRINTED=0; echo "-- $1 --"; }
+    reap() { # reap "<description>" <command...>
+        local desc="$1"; shift
+        REAPED=$((REAPED + 1))
+        if [ "$PRINTED" -lt "$CAP" ]; then
+            if [ "$DRY" = 1 ]; then echo "   WOULD reap: $desc"; else echo "   reap: $desc"; fi
+            PRINTED=$((PRINTED + 1))
+        elif [ "$PRINTED" -eq "$CAP" ]; then
+            echo "   … (cap reached; remaining items are still reaped)"
+            PRINTED=$((PRINTED + 1))
+        fi
+        [ "$DRY" = 1 ] || "$@" >/dev/null 2>&1 || true
+    }
+
+    # 1. tmux — private per-instance servers + legacy default-server sessions.
+    new_section tmux
+    TMUX_DIR="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"
+    if [ -d "$TMUX_DIR" ]; then
+        for sock in "$TMUX_DIR"/tug-*; do
+            [ -e "$sock" ] || continue
+            label="$(basename "$sock")"
+            sessions="$(tmux -L "$label" list-sessions -F '#S' 2>/dev/null)"
+            keep=0
+            while IFS= read -r s; do
+                [ -z "$s" ] && continue
+                is_live "${s#cc-}" && keep=1
+            done <<< "$sessions"
+            if [ "$keep" = 0 ]; then
+                summary="$(printf '%s' "$sessions" | tr '\n' ',' | sed 's/,$//')"
+                reap "tmux server $label [${summary:-empty}]" sh -c "tmux -L '$label' kill-server; rm -f '$sock'"
+            fi
+        done
+    fi
+    while IFS= read -r s; do
+        [ -z "$s" ] && continue
+        is_live "${s#cc-}" || reap "default-server session $s" tmux kill-session -t "$s"
+    done < <(tmux list-sessions -F '#S' 2>/dev/null | grep '^cc-' || true)
+
+    # 2. sockets — lsof-guarded; only those NO live process holds.
+    new_section sockets
+    tmp="${TMPDIR:-/tmp}"; tmp="${tmp%/}"
+    shopt -s nullglob
+    for s in "$tmp"/tugbank-notify-*.sock "$tmp"/tugcast-ctl-*.sock; do
+        [ -S "$s" ] || continue
+        lsof -- "$s" >/dev/null 2>&1 || reap "socket $(basename "$s")" rm -f "$s"
+    done
+    shopt -u nullglob
+
+    # 3. processes — tugcode / claude reparented to PID 1 (crashed host).
+    new_section processes
+    ZPIDS="$(ps -eo pid,ppid,command | awk '$2==1 && ($3 ~ /tugcode/ || ($3=="claude" && $0 ~ /stream-json/)) {print $1}')"
+    if [ -n "$ZPIDS" ]; then
+        for pid in $ZPIDS; do
+            reap "zombie PID $pid" sh -c "kill -TERM $pid 2>/dev/null; sleep 1; kill -0 $pid 2>/dev/null && kill -KILL $pid 2>/dev/null"
+        done
     else
-        COUNT="$(printf '%s\n' "$PIDS" | wc -l | tr -d ' ')"
-        echo "$COUNT zombie process(es) reparented to PID 1:"
-        printf '%s\n' "$PIDS"
+        echo "   (none)"
     fi
 
-# Kill any tugcode / claude processes reparented to PID 1. Sends
-# SIGTERM first, waits briefly, then SIGKILLs anything still alive.
-zombie-cleanup:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    PIDS="$(ps -eo pid,ppid,command \
-        | awk '$2 == 1 && ($3 ~ /tugcode/ || ($3 == "claude" && $0 ~ /stream-json/)) { print $1 }')"
-    if [ -z "$PIDS" ]; then
-        echo "(no zombies to clean up)"
-        exit 0
+    # 4. data dirs — REPORT ONLY, both modes. Removing a data dir goes
+    #    through `tugutil instance remove`, which also unregisters and can
+    #    `rm -rf` the (possibly shared) app bundle — far too heavy to fold
+    #    into a routine reap. Surface the count and defer to the dedicated,
+    #    deliberately-run command.
+    new_section "data dirs"
+    ORPHANS="$("$TUGUTIL" instance prune --json 2>/dev/null | grep -oE '"instance_id": *"[^"]*"' | sed -E 's/.*"([^"]*)"$/\1/')"
+    if [ -n "$ORPHANS" ]; then
+        n="$(printf '%s\n' "$ORPHANS" | grep -c .)"
+        printf '%s\n' "$ORPHANS" | head -n "$CAP" | sed 's/^/   orphaned data dir: /'
+        [ "$n" -gt "$CAP" ] && echo "   … (+$((n - CAP)) more)"
+        echo "   → $n orphaned data dir(s) — remove deliberately with: tugutil instance prune"
+    else
+        echo "   (none)"
     fi
-    COUNT="$(printf '%s\n' "$PIDS" | wc -l | tr -d ' ')"
-    echo "SIGTERM-ing $COUNT zombie process(es): $PIDS"
-    # shellcheck disable=SC2086
-    kill -TERM $PIDS 2>/dev/null || true
-    sleep 1
-    STRAGGLERS="$(printf '%s\n' $PIDS | while read -r pid; do
-        if kill -0 "$pid" 2>/dev/null; then echo "$pid"; fi
-    done)"
-    if [ -n "$STRAGGLERS" ]; then
-        echo "SIGKILL-ing stragglers: $STRAGGLERS"
-        # shellcheck disable=SC2086
-        kill -KILL $STRAGGLERS 2>/dev/null || true
+
+    if [ "$DRY" = 1 ]; then
+        echo "== diagnose complete — $REAPED leaked resource(s) found (run 'just reap apply' to release) =="
+    else
+        echo "== done — $REAPED resource(s) released =="
     fi
-    echo "done"
 
 # Build unsigned DMG (no Developer ID, no notarization). Fastest
 # distribution-shape artifact; suitable for sharing a build locally
