@@ -147,6 +147,40 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Plan to resolve:** Spike in [#step-cycle-trigger-spike] — a temporary capture-phase probe / app-test that posts the chord and asserts the document listener receives it; take the first reliable option. **Lean:** Opt-Tab if it lands, else the simplest non-conflicting chord. **Resolution:** DECIDED — **Opt-Tab (⌥⇥)**. Confirmed by `at0138`: a native ⌥⇥ reaches the document keydown listeners (it is *not* eaten by macOS full-keyboard-access the way plain Tab / ⇧⇥ are) and matches the `CYCLE_FOCUS_MODE` binding (`preventDefaultOnMatch` fires). The engine side is clear too — the focus-walk stage bails on any modifier (`responder-chain-provider.tsx`), so ⌥⇥ is never consumed as a reverse-tab. No fallback chord needed.
 
+#### [Q06] Scope-options gesture — plain radio item-group vs descend model (DECIDED — 2026-06-08) {#q06-scope-gesture}
+
+**Question:** The permission scope choices (Allow once / Allow for this project / …) become an item-group stop inside the dialog's trap ([P17]). Is it a **plain radio item-group** (Tab lands on the group, arrows select-within per the [#step-7-5] single-select model) or a **descendable group** ([#step-5]: Tab lands a ring on the group, Enter / Right *descends* in, arrows rove, Escape ascends)? The user phrased issue #1 as "no way to **descend** into the options."
+
+**Why it matters:** It sets the gesture count and whether Escape inside the group ascends-to-group vs cancels-the-dialog. The descend model adds a level the two-option list may not warrant; the plain model is one fewer gesture but reads less like the list/accordion family.
+
+**Options:** (a) **plain radio item-group** — Tab to the group, arrows pick (selection follows cursor), Return falls through to Allow; (b) **descendable group** — Tab rings the group, Enter/Right descends, arrows pick inside, Escape ascends to the group (a second Escape denies).
+
+**Resolution:** DECIDED — **(a) plain radio choice group** (user, 2026-06-08). The scope choices are a single radio item-group stop: Tab reaches the group, arrows pick (selection follows the cursor, [#step-7-5] single-select), Return falls through to Allow; Escape denies (no ascend level). No descend model — "descend" meant "reach into," which the plain group satisfies with one fewer gesture.
+
+#### [Q07] Cycle-stop topology with a pending dialog (RESOLVED — obviated by [P16]) {#q07-dialog-cycle-topology}
+
+**Question:** Where would the dialog stops sit in the card's [P10] Tab order, and how would they register into the card's cycle scope across the render boundary?
+
+**Resolution:** OBVIATED. The card-modal decision ([P16]) keeps the dialog **trapped**, so it never threads into the card's cycle: there is no cross-render-boundary registration to settle, no cycle-stop ordering to choose, and no editor/submit-participation question (the editor stays deactivated and excluded, as today). The dialog's controls register into the trap's own mode via `FocusModeContext`. This question existed only for the abandoned "join the walk" model and is retained as a record of why that path was dropped.
+
+#### [Q08] QuestionDialog scope under the new model (OPEN → resolve in #step-7-6-question) {#q08-question-scope}
+
+**Question:** The `QuestionDialog` is a paged wizard (Cancel / Submit on the header, Back / Next nav, per-question option groups, a review state). Does it adopt the same card-modal archetype model as PermissionDialog ([P16]/[P17]) — Cancel/Submit/Back/Next as leaf stops + option groups as item-group stops inside the trap — or does it keep an internal sub-navigation for the wizard?
+
+**Why it matters:** The wizard has more internal structure than the permission dialog; a naïve flattening of stops could make the Back/Next/review flow awkward. But two different inline-dialog keyboard models would violate the "one language" goal.
+
+**Plan to resolve:** Settle after PermissionDialog lands ([#step-7-6-question]), reusing whatever archetype decomposition proved out. **Lean:** same model — option groups are item-group stops, Cancel/Submit/Back/Next are leaf stops, all **inside the trap**; the wizard's auto-advance / review logic is unchanged (it is state, not focus). **Resolution:** OPEN — deliberately sequenced behind the permission work (user: "Let's start with PermissionDialog").
+
+#### [Q09] Scrim scoping technique for an in-flow modal ([P19]) (OPEN → resolve in #step-7-6-modal) {#q09-scrim-technique}
+
+**Question:** How is "dim everything except the inline dialog (and its subject tool-call row)" expressed in CSS when the dialog renders *inside* the scrolling transcript rather than as a portal overlay?
+
+**Why it matters:** A naïve full-card overlay can't sit "behind the dialog but over everything else" — the dialog is in the flow, not on top. The scoping has to dim siblings/ancestors while excepting the dialog subtree, without a backdrop element and without touching the dialog's own contrast.
+
+**Options:** (a) a `[data-inline-dialog-pending]` signal on the card root that dims the chrome zones (Z2/Z4/Z5) and transcript rows `:not()` the pending dialog (and `:not()` its subject tool-call row); (b) an explicit dim class applied to each chrome zone plus a transcript-level dim the dialog row opts out of; (c) two stacked layers (dimmed transcript + bright dialog) via z-index within the flow.
+
+**Plan to resolve:** Prototype in [#step-7-6-modal]; pick the one that keeps the dialog + its subject bright with the least CSS reach. **Lean:** (a) — one ancestor signal, `:not()` exceptions for the dialog subtree and the subject row. **Resolution:** OPEN.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -160,6 +194,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 | Theme contrast: filled role on light vs dark flips text legibility | med | med | Keep the spike's retuned intensities; verify white-on-fill in both themes per step | Text unreadable on a filled selection |
 | Cycle trigger chord eaten by OS/WebKit | high | med | Spike the chord first ([#step-cycle-trigger-spike]); fall back to a non-Tab chord ([Q05]) | A posted chord never reaches the document listener |
 | Cycling mode regresses the editor's typing / Tab semantics | high | low | Mode is opt-in + trapped; behavior app-tests for enter/cycle/act/exit AND editor-Tab-still-completes | Tab in the editor stops doing completion |
+| Scrim dims the very tool call the dialog is about | med | med | Dialog subtree + its subject tool-call row opt out of the dim ([P19]); by-eye legibility check both themes | The user can't read what they're approving |
 
 **Risk R01: Mixed-language window during rollout** {#r01-mixed-window}
 
@@ -172,6 +207,16 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 - **Risk:** macOS / WebKit may intercept Opt-Tab (a Tab-family chord) before it reaches the WebView, exactly as it eats ⇧⇥ — leaving the cycling mode with no way in.
 - **Mitigation:** confirm reachability in [#step-cycle-trigger-spike] *before* building the mechanism; [Q05] carries a non-Tab fallback chord.
 - **Residual risk:** the fallback chord is less mnemonic than Opt-Tab.
+
+**Risk R03: Un-trapping the inline dialog leaks the keyboard (OBVIATED by [P16])** {#r03-dialog-untrap}
+
+- **Status:** OBVIATED. The card-modal decision ([P16]) keeps the dialog **trapped**, so there is no un-trapping and no keyboard-leak path; the `CANCEL_DIALOG` responder (Escape/Cmd-. → Deny) is unchanged. Retained as a record of the rejected "join the walk" direction.
+
+**Risk R04: The scrim hides the dialog's own subject** {#r04-scrim-legibility}
+
+- **Risk:** Dimming the card content around the dialog ([P19]) could also dim the tool-call row the permission is about, leaving the user approving something they can't read.
+- **Mitigation:** the dialog subtree **and** its subject tool-call row opt out of the dim; by-eye legibility check in both themes ([#step-7-6-modal]).
+- **Residual risk:** a quiet scrim still slightly lowers peripheral-context contrast — acceptable; that is the intended effect.
 
 ---
 
@@ -362,6 +407,60 @@ The **editor is the last stop** (a text stop, per [P11]): landing gives the **st
 - Implemented in [#step-cycle-commit]: `focus-manager` (`commitDisposition` on the mode + `applyCommitDisposition`), the act dispatch chokepoint, `useCycleMode` (default + override option). The dev card configures nothing — it inherits the toggleable default.
 - **Governance:** folds into the focus-language tuglaws doc ([#step-9]) alongside the [P13] cycling axis.
 
+#### [P16] An inline dialog is card-modal — inline display, trapped focus (DECIDED — 2026-06-08; refines [P06]; confirms [P13]) {#p16-card-modal}
+
+**Decision:** The inline Permission / Question dialogs keep their **inline display** (rendered in transcript flow, beside the tool call they concern — [D13]) but are **card-modal in focus**: while one is pending it owns the card's keyboard via a trapped focus mode (the existing `useFocusTrap` on the CFRunLoop-style mode stack — [#cycle-model]), and the rest of the card is inert. This rests on a principle: **display locus and focus locus are independent.** Where a surface *renders* (inline, in flow) does not dictate what *owns the keyboard* while it is up. A permission request is a **blocking decision** — the turn is halted, the agent waits, forward progress is gated on the answer — which is the definition of a modal interaction; the focus model should tell that truth even though the surface renders in-flow rather than as an overlay.
+
+**Rationale:**
+- Matches the semantics: focus **comes to** the user (seeded on the default, ringed) instead of making them *find* the dialog; Tab cycles the dialog's own controls; Escape cancels and unblocks. The user never has to navigate *to* a blocking decision.
+- The card chrome a non-modal "join the walk" model would expose (Model / Effort / submit) is meaningless at that instant — submit is blocked, changing the model mid-request isn't a workflow — so reaching it is a cost with no benefit.
+- It is the correct **accessibility** contract: a trap can carry `role="dialog"` / `aria-modal`, which assistive tech reads as "you are in a decision"; a peer-chrome walk cannot.
+- **Smallest, safest build, and consistent with the architecture already decided.** The dialogs *already* trap (`useFocusTrap` + `FocusModeScope`); this keeps that machinery and only fixes the *contents* (decompose into archetypes, [P17]) and the *dead-zone* ([P18]). [P13] already classified these as persistent contexts — card-modal **confirms** that (persistent-*trapped*), it does not amend it. (This supersedes the earlier "join the host card's focus walk" proposal, which would have forced the card persistent-cycling, threaded the dialog across a render boundary, and risked leaking the keyboard — all avoided here.)
+
+**Implications:**
+- A [P04]-consistent refinement (a focus-model correction, not an engine change): the dialog controls register into the trap's existing mode via `FocusModeContext`, exactly as every sheet / alert / popover does. `useInlineDialogModal` (the single flat item-container shell) is **retired** — its job is replaced by per-control focusables inside the trap.
+- Tab cycles **within the dialog** (Deny / Allow / scope group, wrap); Escape / Cmd-. → Deny (the scope's `CANCEL_DIALOG` responder, unchanged); the editor stays deactivated (already wired via `deactivated = inlineDialogPending || cycling`) and is excluded from the walk; the existing resolve → caret-return effect (`prevInlineDialogPendingRef`, `dev-card.tsx`) is unchanged.
+- The card content **outside the dialog is scrimmed** while pending ([P19]) so the modality is *felt*, not only enforced by where the keyboard is.
+- **Governance:** folds into the focus-language tuglaws doc ([#step-9]) as the inline-vs-overlay rider on [P13] — *inline display does not imply non-modal focus; a blocking in-flow dialog is card-modal.*
+
+#### [P17] PermissionDialog decomposes into focus-language archetypes — leaf buttons + a radio item-group (DECIDED — 2026-06-08; refines [P02]/[P14]) {#p17-dialog-archetypes}
+
+**Decision:** Retire the single flat item-container (`PermissionDialogModal` collects `[Deny, Allow, …scope options]` as **one** cursor list) and model the dialog's controls as their proper archetypes, each registered into the dialog's **trapped** mode ([P16]) via `FocusModeContext`:
+
+- **Deny / Allow are leaf buttons**, each its own focus stop. **Allow** is the recommended default: `emphasis="primary"` (tint-at-rest → fill + ring on engage, [P14]) **plus `persistentDefaultRing`** so it wears the "Return's home" ring the whole time the dialog is open ([#step-7-5]). **Deny** is `emphasis="outlined" role="danger"` — it promotes to filled-danger + danger ring when it holds the key view (a focused Deny claims Return, [P12]).
+- **The scope choices (Allow once / Allow for this project / …) are a single radio item-group stop** ([P02]): the group takes the behind-tint, the cursor item the ring, the chosen scope the native radio fill; **selection follows the cursor** (the [#step-7-5] single-select model — arrows move the selected scope, no separate Space step). Tab reaches the group as one stop; arrows rove **within** it without wandering onto the buttons.
+
+**Rationale:**
+- The flat container is why **arrows move the highlight off both Deny and Allow** (they keep roving into the heterogeneous option rows) and why there is **no clean way to "descend into" the scope options** (they are not a distinct, enterable group — just more cells in one undifferentiated cursor list). Splitting buttons (leaves) from scopes (a group) gives each its native gesture: Tab between, arrows within the group.
+- The Deny/Allow buttons currently render `emphasis="outlined"` (never migrated to [P14] — [#step-2] predates `primary`), so the dialog has **no resting recommended-default affordance**. `primary` + `persistentDefaultRing` on Allow makes Return's destination legible at rest (issue #3).
+
+**Implications:**
+- `dev-permission-dialog.tsx`: Deny/Allow become individually-registered leaf focusables; the scope `options` move from `TugInlineDialog`'s flat `options` radio render into an engine-registered radio item-group (reusing the [#step-3] item-group machinery, single-select per [#step-7-5]). `dev-permission-dialog.css` sheds the modal-scope ring rules.
+- The scope-group's gesture is a **plain radio choice group** ([Q06], DECIDED): Tab-to-group + arrows-select (selection follows cursor), Return falls through to Allow — no descend level.
+
+#### [P18] Inert dialog chrome establishes no focus state (DECIDED — 2026-06-08) {#p18-no-deadzone}
+
+**Decision:** Clicking the inert region of an inline dialog (the empty space around its controls) must **not** establish any focus state. The full-width transcript-row scope wrapper that today carries `tabIndex={0}` (so the modal-for-keys hook can land DOM focus on it) is removed as a focusable target: a click on dead space neither takes DOM focus nor causes the engine to project `data-key-view` / `data-key-within` onto a transcript-row-sized element.
+
+**Rationale:** The "odd wide focus ring" (issue #4) is the engine marking the full-width `tabIndex=0` wrapper (and/or its container's `data-key-within`) when a click lands on it. It is a meaningless state — a ring around a layout wrapper, not a control. Under [P16]/[P17] the dialog's controls are individually-registered focusables inside the trap, so the wrapper no longer needs to be focusable at all; removing the dead-zone deletes the state at its source rather than papering it with a CSS `outline: none`.
+
+**Implications:** Drop `tabIndex={0}` + the `data-slot="dev-permission-dialog-scope"` focusable role from the wrapper; the `.dev-permission-dialog-scope[data-key-view-kbd]` ring-relocation rules in `dev-permission-dialog.css` go with it. The dialog box's own focus reads come from its real controls. (Under the scrim, [P19], the dialog subtree is the one bright island; a click in the scrimmed surround does nothing.) Verify by app-test: a native click on the dialog's inert chrome leaves zero `data-key-view*` / `data-key-within` marks.
+
+#### [P19] A card-modal dialog scrims the card content outside it (DECIDED — 2026-06-08) {#p19-scrim}
+
+**Decision:** While an inline dialog is pending, the card content **outside the dialog is scrimmed** — a quiet dim/veil over the chrome (Z2 status row, Z4/Z5 toolbar, prompt editor) and the rest of the transcript that visually subordinates everything to the one decision in focus, reinforcing the card-modal nature ([P16]). The pending dialog itself **and the tool-call row it concerns** stay at full strength, so the user can still read what they are deciding about.
+
+**Rationale:**
+- Modality should be *felt*, not only enforced by where the keyboard is. An inline dialog has no overlay backdrop to say "everything else is on hold"; the scrim supplies that signal **in-flow**.
+- Dimming the surround while keeping the dialog (and its subject) bright draws the eye to the decision and reads as "answer this first," matching the trapped keyboard and the seeded ring.
+
+**Mechanism (appearance-only, [L06]):** a `data-*` signal on the card root keyed on `inlineDialogPending` (derived from store state via `useSyncExternalStore`, [L02]) applies a reduced-opacity / desaturated wash to the card's chrome and non-dialog transcript content via CSS — **no portal, no backdrop element, no React-state appearance.** The dialog (`.dev-permission-dialog` / `.dev-question-dialog`) and the tool-call row it is about opt **out** of the dim. The exact scoping technique is [Q09], settled in [#step-7-6-modal].
+
+**Implications:**
+- New CSS in the card / dialog stylesheets; a single derived `data-*` signal on the card root. No engine touch, no new React state ([L06]/[L24]).
+- Keep it quiet — a **scrim, not a blackout**; the dialog's subject stays legible (Risk R04).
+- **Governance:** folds into the focus-language tuglaws doc ([#step-9]) as part of the card-modal rider.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -523,6 +622,12 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | done: toggles ring the whole component (glyph+label wrapper) + behind-tint, native "on" fill role-aware; fields keep the global leaf ring + a role-derived behind-tint wash on keyboard focus; input/textarea `validation` repoints `--tugx-focus-ring` so the ring/tint/border resolve danger/success/caution and the border holds through focus ([P07]); gallery focus-walk toggles relabelled so the wrapper ring is exercised; at0113/at0114 reworked to the wrapper-ring contract + green; field behavior tests (at0137/at0131/at0128) green | (uncommitted) |
 | #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | done: box-scope ring/within = layout-free box-shadow layered over the drop shadow (popover/sheet/alert), behind-tint on popover+alert only; `primary` adopted on every action-role sheet/dialog/alert commit (completeness gate met — survivors are excluded CTAs), shared confirms resolve action→primary / danger→filled per [P14]; inline-dialog option rows → global cursor ring (role-resolved in tug-dialog-button.css), bespoke border-recolor retired; menus audit = no change (Radix `data-highlighted`, never `data-key-cursor`); surface/dialog/menu app-tests green (at0040/at0088/at0096 pre-existing flakes) | (uncommitted) |
 | #step-7-5 | Default-action ring + single-select list keyboard model | done: `persistentDefaultRing` button API + `/rename` migration + `:has`-rule undo; engine `singleSelect` Enter-passthrough (focus-act); `TugListView` `singleSelect` + `initialSelectedIndex` + `seedSelection` (arrows move+select, seed list, Enter→default); applied to effort/model/permission-mode/rewind pickers + session picker (recents/sessions singleSelect, Open persistentDefaultRing, no seedSelection so focus-gain never clobbers a typed path); new at0142 single-select keyboard app-test green; at0097/at0090/at0094/at0105/at0106/at0141 + item-container focus tests green (at0088/at0096 pre-existing chip failures, unrelated) | (uncommitted) |
+| #step-7-6 | Step 7.6 — Inline-dialog card-modal focus & keyboard model (umbrella) | pending | — |
+| #step-7-6-repro | Step 7.6.1 — Repro the four PermissionDialog defects; lock [P16]–[P19], resolve [Q06] | pending | — |
+| #step-7-6-archetypes | Step 7.6.2 — PermissionDialog controls → archetypes inside the trap (Allow primary+ring, Deny danger, scope radio group) | pending | — |
+| #step-7-6-modal | Step 7.6.3 — Card-modal polish: kill the wide-ring dead-zone; scrim the card content; verify the trap | pending | — |
+| #step-7-6-question | Step 7.6.4 — QuestionDialog adopts the model | pending | — |
+| #step-7-6-vet | Step 7.6.5 — Integration checkpoint + tuglaws note | pending | — |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -1276,6 +1381,155 @@ The two are linked: (2) is only unambiguous once (1) holds, because a single-sel
 **STATUS — done (2026-06-07).** The `persistentDefaultRing` API + `/rename` migration + the `/rename` `:has`-rule undo landed in this step's first commit. The single-select list keyboard model then landed: the engine `singleSelect` Enter-passthrough (`focus-act.ts` + the inherited `KeyViewBehavior`), the `TugListView` `singleSelect` / `initialSelectedIndex` / `seedSelection` props (arrows move + select via the capture handler, the gain-seed lands the cursor on the active row and — under `seedSelection` — commits it; Enter resolves to passthrough), and application to the effort / model / permission-mode / rewind pickers and the session picker.
 
 Implementation note ([P12], beyond the original task list): the gain-seed split into **`singleSelect`** (cursor-only seed; selection follows explicit arrow movement) vs **`seedSelection`** (also commit the seeded row on open). Confirm pickers that must enable their default action on open use `seedSelection` (rewind auto-selects its first turn so Rewind enables and its ring lights); the session picker's recents/sessions lists use `singleSelect` WITHOUT `seedSelection`, so merely cycling the key view onto a list never commits a row — a recents list must not overwrite a typed path the instant it gains focus. Open carries `persistentDefaultRing` (the "one text entry" case, like `/rename`). Verified: new `at0142` (list is key view on open + first row auto-selects + ArrowDown moves selection with no Space + Enter fires the default action), `at0097` rewind, `at0090`/`at0094`/`at0105` permissions (no opt-in, unchanged), `at0106`/`at0100`/`at0058` sheet focus, `at0141` picker keys, `at0116`–`at0120` item-container focus, `at0109`/`at0112` focus visuals — all green; `tsc` + 232 pure-logic tests green. (`at0088`/`at0096` fail identically on HEAD — pre-existing chip-rendering/metadata assertions unrelated to focus.)
+
+#### Step 7.6: Inline-dialog card-modal focus & keyboard model — PermissionDialog (then QuestionDialog) {#step-7-6}
+
+**Depends on:** #step-2, #step-3, #step-5, #step-7, #step-7-5
+
+**Commit:** `N/A (umbrella — see #step-7-6-archetypes … #step-7-6-vet)`
+
+**References:** [P16], [P17], [P18], [P19], [P02], [P12], [P13], [P14], [Q06], [Q08], [Q09], Risk R04, (#p16-card-modal, #p17-dialog-archetypes, #p18-no-deadzone, #p19-scrim, #language-contract)
+
+**Motivation (by-eye, 2026-06-08).** Driving a pending `PermissionDialog` by keyboard surfaced four defects, all rooted in the same cause — the dialog is built as a **modal-for-keys trap** (`useInlineDialogModal` + `useFocusTrap`) that registers the whole dialog as **one full-width `tabIndex=0` item-container** whose cursor roams a flat `[Deny, Allow, …scope options]` list:
+
+1. **No way to descend into the scope options** (Allow once / Allow for this project) — they are undifferentiated cells in the flat cursor list, not a distinct group you can enter.
+2. **Arrows move the highlight off *both* Deny and Allow** — the cursor keeps roving into the heterogeneous option rows, leaving the action buttons unmarked.
+3. **Deny / Allow do not follow the filled+action+ring conventions** — both render `emphasis="outlined"` (never migrated to [P14] `primary`), so there is no resting recommended-default ("Return's home") affordance.
+4. **Clicking the empty space under the dialog paints an odd "wide focus ring"** — a click lands DOM focus on the full-width `tabIndex=0` scope wrapper and the engine projects a key-view / `data-key-within` mark on a transcript-row-sized element; a meaningless state.
+
+The design question this raised — should the inline dialog *join* the card's Tab loop, or be *card-modal* (inline display, trapped focus)? — was decided in favor of **card-modal** ([P16]): a permission request is a blocking decision, so it should own the keyboard, not sit as peer chrome. The earlier "join the walk" proposal is recorded as superseded in [P16] / [Q07] / R03.
+
+**Approach.** [P16] keeps the dialog **card-modal** — inline display, **trapped** focus (the `useFocusTrap` the dialog already pushes), confirming the [P13] persistent-trapped classification rather than amending it; [P17] decomposes the dialog into focus-language archetypes registered **into that trap** (Deny/Allow leaf buttons with [P14] `primary`/`persistentDefaultRing`; scope choices as a single radio item-group, [P02] + [#step-7-5] single-select); [P18] removes the dead-zone wrapper so inert chrome establishes no focus state; [P19] **scrims the card content outside the dialog** so the modality is felt. This is a [P04]-consistent refinement (fix the trap's contents, not the engine). **PermissionDialog leads; QuestionDialog follows** ([Q08]).
+
+**State Zone Mapping:**
+
+| State | Zone | Mechanism | Law |
+|-------|------|-----------|-----|
+| Dialog controls (which holds the key view) | structure | engine focus-mode stack — dialog controls `useFocusable` into the trap's mode via `FocusModeContext` | [L02], [L22] |
+| "A dialog is pending" (drives the trap + the scrim) | local-data → derived | `inlineDialogPending` from store via `useSyncExternalStore`; `useFocusTrap({active})` + a `data-*` scrim signal on the card root | [L02], [L06] |
+| Selected scope (Allow once / project) | local-data | `useState` + [A9] preservation (unchanged) | [L23], [L24] |
+| Allow=primary tint→fill, persistent ring; Deny danger promote; scope cursor/tint/fill | appearance | CSS keyed on engine `data-*` attributes; `emphasis`/`persistentDefaultRing` props | [L06], [L24] |
+| Scrim on card content outside the dialog | appearance | CSS keyed on the card-root `data-*` signal; dialog + subject row opt out | [L06] |
+| Inert-chrome click establishes no focus | structure | remove `tabIndex=0` focusable wrapper | [L06] |
+
+**Sub-steps:** [#step-7-6-repro] (repro + decisions lock), [#step-7-6-archetypes] (archetype decomposition into the trap + emphasis), [#step-7-6-modal] (kill the dead-zone + scrim + verify the trap), [#step-7-6-question] (QuestionDialog), [#step-7-6-vet] (integration checkpoint).
+
+---
+
+#### Step 7.6.1: Repro the four PermissionDialog defects; lock decisions {#step-7-6-repro}
+
+**Depends on:** #step-7-5
+
+**Commit:** `test(focus): pin current inline-dialog keyboard defects (pre-redesign)`
+
+**References:** [P16], [P17], [P18], [Q06], (#p16-card-modal)
+
+**Artifacts:** a new `tests/app-test/at0145-permission-dialog-keyboard.test.ts` that drives a pending permission dialog and **documents the current behavior** (the four defects), so the redesign steps have a falsifiable before/after; resolved [Q06] recorded in the plan.
+
+**Tasks:**
+- Stand up a pending `PermissionDialog` in an app-test (seed a `control_request_forward` with `is_question:false` + `permission_suggestions` so the scope options render). Reuse the `at0144` harness shape (`/model` path won't do — needs a real permission request; check how `dev-permission-dialog.test.ts` / existing permission app-tests seed one).
+- Assert the **current** state as documentation (mark these `expect`s as the pre-redesign baseline): the scope wrapper carries `tabIndex=0`; the dialog is one item-container; Deny/Allow are `outlined`.
+- (Decisions already locked: [Q06] = plain radio choice group; [Q07] obviated by the card-modal decision. Nothing to resolve here beyond confirming the repro.)
+
+**Tests:**
+- The new app-test runs green describing current behavior (it will be rewritten to the target behavior in [#step-7-6-modal]).
+
+**Checkpoint:**
+- [ ] `just app-test at0145-permission-dialog-keyboard` → `VERDICT: PASS` (documents current behavior).
+- [ ] [Q06] resolved (plain radio choice group); [P16]–[P19] confirmed with the user.
+
+---
+
+#### Step 7.6.2: PermissionDialog → focus-language archetypes {#step-7-6-archetypes}
+
+**Depends on:** #step-7-6-repro
+
+**Commit:** `focus(dialog): decompose PermissionDialog into leaf buttons + radio item-group`
+
+**References:** [P17], [P02], [P14], [P12], [Q06], (#p17-dialog-archetypes, #p14-primary-emphasis)
+
+**Artifacts:** `dev-permission-dialog.tsx` (Deny/Allow as leaf focusables; scope choices as a radio item-group), `dev-permission-dialog.css` (shed bespoke modal-scope rules), the [P14] emphasis adoption.
+
+**Tasks:**
+- **Allow** → `emphasis="primary"` + `persistentDefaultRing` (the recommended default; rests at the badge tint, promotes to fill+ring on engage, keeps the "Return's home" ring while open).
+- **Deny** → `emphasis="outlined" role="danger"` (promotes to filled-danger + danger ring when it holds the key view).
+- **Scope choices** → a single **radio choice group** stop ([P02], [#step-7-5] single-select: arrows move the selected scope, selection follows the cursor, no Space; Return falls through to Allow; per [Q06], DECIDED — no descend level). Replace the bespoke flat-container cursor mixing in `PermissionDialogModal` for the options.
+- Keep the round-trip semantics unchanged (Allow-with-scope, Deny ignores scope, `respondApproval`).
+
+**Tests:**
+- Behavior: scope selection still round-trips the chosen `update`; Deny/Allow still call `respondApproval` with the right decision (existing `dev-permission-dialog.test.ts` pure-logic assertions stay green).
+- By-eye: Allow rests as the badge tint with the persistent ring; arrows within the scope group don't wander onto the buttons; both themes.
+
+**Checkpoint:** `tsc` clean; pure-logic tests green; by-eye archetypes correct in both themes.
+
+---
+
+#### Step 7.6.3: Card-modal polish — kill the wide-ring dead-zone; scrim the card; verify the trap {#step-7-6-modal}
+
+**Depends on:** #step-7-6-archetypes
+
+**Commit:** `focus(dialog): card-modal inline dialog — no dead-zone, scrimmed surround`
+
+**References:** [P16], [P18], [P19], [P13], [P12], Risk R04, [Q09], (#p16-card-modal, #p18-no-deadzone, #p19-scrim)
+
+**Artifacts:** `dev-permission-dialog.tsx` (per-control focusables in the trap; no full-width focusable wrapper; `useInlineDialogModal` retired), `dev-permission-dialog.css` (dead-zone rules removed), the card / dialog **scrim** CSS + the card-root `data-*` signal, `use-inline-dialog-scope.ts` (retired or demoted).
+
+**Tasks:**
+- **Trap stays, contents fixed.** Confirm the dialog keeps its `useFocusTrap` mode ([P16]); the [#step-7-6-archetypes] controls are the only focusables in it. Seed the key view onto **Allow** on open (`armKeyboardRestore` / the existing focus-on-mount) so Return commits and the ring lands home. Tab cycles Deny → Allow → scope group → wrap; **Escape / Cmd-. → Deny** via the scope's `CANCEL_DIALOG` responder (unchanged). The editor stays deactivated and excluded (already wired).
+- **Remove the dead-zone** ([P18]): drop `tabIndex={0}` + the focusable role from the full-width wrapper; delete the `.dev-permission-dialog-scope[data-key-view-kbd]` ring-relocation rules (the box ring now comes from the real controls / the surface box-scope ring).
+- **Scrim the surround** ([P19]): add a derived `data-*` signal on the card root keyed on `inlineDialogPending` (from store via `useSyncExternalStore`), and CSS that dims the chrome (Z2/Z4/Z5) + non-dialog transcript content while the pending dialog **and its subject tool-call row** stay bright. Settle the scoping technique ([Q09]); keep it a quiet scrim, not a blackout.
+- **Retire `useInlineDialogModal`** (and the modal-for-keys plumbing) once PermissionDialog no longer uses it; leave a pointer if QuestionDialog still references it until [#step-7-6-question].
+
+**Tests:**
+- Rewrite `at0145` to the **target** behavior: open a pending dialog → Tab cycles Deny → Allow → scope group → wraps (trapped, never escapes to the chrome/editor); Escape on a dialog stop fires **Deny**; a native click on inert dialog chrome leaves **zero** `data-key-view*` / `data-key-within` marks; Allow holds `data-default-ring` while open and exactly one filled+ring shows at a time ([#step-7-5]/at0144 invariant); the card root carries the scrim signal while pending and clears on resolve.
+- Behavior: existing permission app-tests green; the resolve→caret return still works.
+
+**Checkpoint:** `tsc` clean; `at0145` green at target behavior; permission app-tests green; by-eye scrim reads as modal in both themes with the dialog + subject legible (Risk R04); **cross-check tuglaws — name [L02]/[L06]/[L22] in the commit body** (engine focus-mode stack + appearance via attributes; external pending-state via `useSyncExternalStore`).
+
+---
+
+#### Step 7.6.4: QuestionDialog adopts the model {#step-7-6-question}
+
+**Depends on:** #step-7-6-modal
+
+**Commit:** `focus(dialog): QuestionDialog card-modal; archetype decomposition`
+
+**References:** [P16], [P17], [P19], [Q08], (#p16-card-modal, #p17-dialog-archetypes, #p19-scrim)
+
+**Artifacts:** `dev-question-dialog.tsx` (Cancel/Submit/Back/Next leaf stops; per-question option groups as item-group stops; wizard state logic unchanged), `dev-question-dialog.css` (shed modal-scope rules; opt out of the scrim).
+
+**Tasks:**
+- Apply [Q08]'s resolution (lean: same model). Option groups → item-group stops; Cancel / Submit / Back / Next → leaf stops, all **inside the trap**; Submit = `primary` (already migrated in [#step-7]) + `persistentDefaultRing` consideration. Wizard auto-advance / review / `[A9]` preservation unchanged (state, not focus).
+- Inherit the scrim ([P19]): the question dialog subtree opts out of the card dim like the permission dialog.
+- Retire the dialog's `useInlineDialogModal` usage; finish deleting the hook if both dialogs are now off it.
+- Keep `Cancel ≡ Esc ≡ popInteractive` and the confirm-popover guard.
+
+**Tests:**
+- Existing question app-tests + pure-logic tests green (answers round-trip, auto-advance, review gate).
+- New/extended app-test: Tab cycles the wizard within the trap; Escape cancels; the wizard's Back/Next/Submit work by keyboard.
+
+**Checkpoint:** `tsc` clean; question app-tests green; by-eye wizard keyboard flow + scrim in both themes; tuglaws named in the commit body.
+
+---
+
+#### Step 7.6.5: Integration checkpoint + tuglaws note {#step-7-6-vet}
+
+**Depends on:** #step-7-6-modal, #step-7-6-question
+
+**Commit:** `N/A (verification only)`
+
+**References:** [P16], [P17], [P18], [P19], [P13], (#success-criteria)
+
+**Tasks:**
+- Composed pass: open a pending permission dialog **and** a pending question dialog (in turn) on a connected dev card; confirm card-modal behavior (focus trapped in the dialog, seeded on the default; Tab cycles only the dialog; Escape → cancel), the scrim reads as modal with the dialog + subject legible, no wide-ring, the [P14] default affordance, both themes, keyboard vs mouse.
+- Record the [P16] inline-vs-overlay rider for the [#step-9] tuglaws doc (inline display ≠ non-modal focus; a blocking in-flow dialog is card-modal + scrimmed; floating overlays stay trapped) — note it; the doc itself lands in [#step-9].
+
+**Tests:**
+- Full `just app-test` permission + question + sheet sweep green; `bun test` green; `bunx tsc --noEmit` clean.
+
+**Checkpoint:** all gates green; the four defects fixed by eye; [P16]–[P19] satisfied; [P13] classification confirmed (persistent-trapped) in the plan.
+
+---
 
 #### Step 8: Links + app-wide focusables {#step-8}
 
