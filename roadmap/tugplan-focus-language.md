@@ -522,6 +522,7 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-5 | Descendable rows — list view / row, accordion | done (final by-eye model): list + accordion container **perimeter ring** (picker hosts ring own border via `:has`) + cursor-row **reduced tint fill** (25% of the quiet selection blue, no ring/chevron, shares the selection's rounded bounds) + leading row gutter; selection = toned-back role-blue quiet fill covering its dividers ([P14]); `[data-key-within]` on descend; at0120/at0121 reworked to the perimeter-ring contract, at0110 re-pinned to the blue role color; at0127/at0122/at0141 green | b465e107 |
 | #step-6 | Leaf controls — checkbox, switch, input (validation→role), textarea, value-input | done: toggles ring the whole component (glyph+label wrapper) + behind-tint, native "on" fill role-aware; fields keep the global leaf ring + a role-derived behind-tint wash on keyboard focus; input/textarea `validation` repoints `--tugx-focus-ring` so the ring/tint/border resolve danger/success/caution and the border holds through focus ([P07]); gallery focus-walk toggles relabelled so the wrapper ring is exercised; at0113/at0114 reworked to the wrapper-ring contract + green; field behavior tests (at0137/at0131/at0128) green | (uncommitted) |
 | #step-7 | Surfaces / boxes — popover, sheet, alert, inline dialogs (+ option rows), menus audit | done: box-scope ring/within = layout-free box-shadow layered over the drop shadow (popover/sheet/alert), behind-tint on popover+alert only; `primary` adopted on every action-role sheet/dialog/alert commit (completeness gate met — survivors are excluded CTAs), shared confirms resolve action→primary / danger→filled per [P14]; inline-dialog option rows → global cursor ring (role-resolved in tug-dialog-button.css), bespoke border-recolor retired; menus audit = no change (Radix `data-highlighted`, never `data-key-cursor`); surface/dialog/menu app-tests green (at0040/at0088/at0096 pre-existing flakes) | (uncommitted) |
+| #step-7-5 | Default-action ring + single-select list keyboard model | partial: `persistentDefaultRing` button API + `/rename` migration + `:has`-rule undo DONE; single-select list mode (engine Enter-passthrough + `TugListView` prop + picker application) PENDING — see [#step-7-5] | (uncommitted) |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -1228,6 +1229,51 @@ host and the store-backed `useCardSettings` "…" host remain separate by design
 - Live-build pass: open each surface and both menus; confirm the box focus + dialog option-row cursor read in both themes; menu highlight unchanged; **each migrated commit button rests as the badge/tint and fills + rings only when it holds the key view.**
 
 **Checkpoint:** `tsc` clean; surface/dialog/menu app-tests green; live-build confirmation; menus audit recorded; **commit-button completeness gate met — the picker's prominence fix now holds app-wide ([P14]), with every survivor of the `filled` grep justified.**
+
+#### Step 7.5: Default-action ring + single-select list keyboard model {#step-7-5}
+
+**Depends on:** #step-1, #step-3 (item-group cursor model), #step-5 (list/descend), #step-7 (sheets on the shared host)
+
+**Commit:** `focus(lists): single-select keyboard model; default-action ring`
+
+**References:** [P01], [P02], [P12], [P14], (#language-contract), (#p14-primary-emphasis)
+
+**Motivation (by-eye, 2026-06-07).** Two findings from driving the card sheets by keyboard:
+1. **List views should be single-select-by-arrow.** In a single-select picker (rewind turns, session recents/sessions, effort/model/permission-mode levels) the arrow keys should **move the selected row immediately** — no separate movement cursor + Space-to-commit. The current item-group model (arrows move a `data-key-cursor`, Space selects, Enter acts/descends — [#step-3]/[#step-5]) is right for **multi-select / descendable** lists but wrong for these single-pick lists.
+2. **The default action should keep its ring.** In a sheet whose **only** Return consumer is its default action (no text entry, or a single one — `/rename`, the pickers, alerts), the default commit button should wear the focus ring **the entire time the sheet is open** ("Return's home"), even while the keyboard focus / caret is on the list or the field. This is the generalization of the `/rename` field→default ring the by-eye pass landed.
+
+The two are linked: (2) is only unambiguous once (1) holds, because a single-select list must **not consume Return** — Return must fall through to the default action.
+
+**Design decisions:**
+- **`persistentDefaultRing` is a component API, opt-in per button — NOT a CSS recognition rule** (user directive). A surface tags its sole-Return-consumer default button; nothing inspects field focus. Multi-control surfaces where another control may claim Return (`/permissions`) simply do not opt in.
+- **Single-select is expressed as a single-selection list mode, not a "live-select" flag** (user preference): the concept is "this list has one selected row that the arrows move," applied only to lists that support a single-selected-row model.
+
+**DONE this turn (committed in this step's first commit; uncommitted at authoring):**
+- ✅ **`persistentDefaultRing` button prop** — `internal/tug-button.tsx` adds the prop → `data-default-ring=""` on the `<button>`. `internal/tug-button.css`: a `.tug-button[data-default-ring]:not(:disabled):not([aria-disabled="true"])` outline ring (role-resolved via the existing role-ring axis), and the `outlined`/`primary`→filled promotion `:is(...)` selectors extended to also match `[data-default-ring]` (so a `primary` default fills persistently; a `filled` default just gains the ring). Suppressed while disabled.
+- ✅ **`/rename` migrated to the API** — removed the `data-return-default-scope` attribute + the `[data-return-default-scope]:has(.tug-input[data-key-view-kbd]) .tug-button-primary-action` rule from `styles/focus-ring.css` (replaced with a pointer comment); rename's Save now carries `persistentDefaultRing`. The field is still engine-seeded (caret on open) and its `onKeyDown` commits Enter.
+
+**KEY ENGINE FINDING (the crux of the pending work).** `focus-act.ts` `resolveFocusAct` makes an **item-container always consume Enter** — `if (key === "Enter") return declaration.currentItemDescendable ? "descend" : "act";`. So a *focused* list eats Return; it never reaches the default button. That is exactly why the pickers today seed the **OK button** (not the list) — Enter works, but arrows never reach the list. To get *both* (arrows in the list **and** Return → default) a single-select list must resolve Enter to **`passthrough`**, which is a small additive engine change.
+
+**TASKS (pending — drive from here in a fresh context):**
+
+1. **Engine: single-select Enter passthrough.** Add a flag to `KeyViewBehavior` (e.g. `singleSelect?: boolean` or `actDelegatesToDefault?: boolean`) and honor it in `focus-act.ts` `resolveFocusAct`: when `container === "item"` **and** the flag is set, resolve `Enter` to `"passthrough"` (do not `act`) so the keydown bubbles to the scope default (the `pushDefaultButton` Enter→click routing in `responder-chain-provider`). Space may still `select` (harmless — selection already follows the cursor). Keep all existing item-container behavior unchanged when the flag is absent. Verify on a real app-test that Enter in a focused single-select list fires the sheet's default, not a row act.
+
+2. **`TugListView` single-select mode.** Add a prop (name to settle — `singleSelect`) that: (a) sets the new behavior flag so Enter passes through; (b) makes the **arrow / Home / End** movement *also select* the landed row — i.e. selection follows the cursor (`moveCursorTo` + `selectCursorRow` together), so there is always exactly one selected row and no Space step is needed; (c) seeds the list itself as the key view on open (so arrows work immediately) with the first selectable row selected. The cursor-as-distinct-from-selection multi-select path ([#step-3]/[#step-5]) stays the default when the prop is absent. The list keyboard handler lives in `tug-list-view.tsx` (~L2270 `behavior` declaration: `onSelect`/`onAct`/`onDescend`; ~L2348+ the capture-phase movement handler: `ArrowDown`/`ArrowUp`/`Home`/`End`/`Page`).
+
+3. **Apply to the picker sheets** — add `singleSelect` to the list(s) and `persistentDefaultRing` to the default button, and re-point each sheet's seed from the OK button to the **list**:
+   - `effort-picker-sheet.tsx`, `model-picker-sheet.tsx`, `permission-mode-chip.tsx` — list `singleSelect`; OK `persistentDefaultRing`; seed the list (currently seeds OK).
+   - `rewind-sheet.tsx` — turn list `singleSelect` (already seeds the list); Rewind `persistentDefaultRing`. **Coupling:** with `singleSelect` the first row auto-selects on open, so Rewind is enabled → its persistent ring shows (the disabled-suppression in the CSS otherwise hides it). The existing sheet-div `onKeyDown` Enter→apply can be removed once Enter passes through to the default via the engine.
+   - `dev-card.tsx` `DevProjectPickerForm` (the session picker) — recents + sessions lists `singleSelect`; Open `persistentDefaultRing`; the picker is persistent-cycling with a path **text field**, so it still seeds the field/Open per its existing `armKeyboardRestore` logic — confirm Open's ring + Return coexist with the field (this is the "one text entry" case, like `/rename`).
+4. **Alerts / Done-only sheets** — optionally add `persistentDefaultRing` to the alert confirm and the Done-only sheet commits so the default rings even when Tab moves to a secondary control. Lower priority (their seed already keeps the default ringed while focus stays on it).
+
+**Tests:**
+- Engine: a new/extended app-test — focus a `singleSelect` list in a sheet, press Enter, assert the sheet's **default action** fired (not a row act); arrow keys move `data-selected` directly (no Space).
+- Behavior: `at0097` (rewind) + the picker app-tests stay green; `at0090`/`at0094` (permissions, which does NOT opt in) unchanged.
+- By-eye: rewind/session/effort open with the first row selected + the default ring lit; arrows move the selection; Return commits the default; both themes.
+
+**Checkpoint:** `tsc` clean; engine + picker app-tests green; by-eye single-select + persistent default ring on rewind/session/effort/model/mode; `/permissions` unchanged (no opt-in); the `persistentDefaultRing` CSS suppresses on disabled.
+
+**STATUS — partial (2026-06-07).** The `persistentDefaultRing` API + `/rename` migration + the `/rename` `:has`-rule undo are done (this step's first commit). The single-select list keyboard model (engine passthrough + `TugListView` prop + picker application) is **pending** — start there in the fresh context.
 
 #### Step 8: Links + app-wide focusables {#step-8}
 

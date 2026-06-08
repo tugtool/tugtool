@@ -204,25 +204,7 @@ body {
   outline-offset: var(--tugx-focus-ring-offset);
 }
 
-/**
- * Return-target ring on a surface's recommended-default button. The ring marks
- * where the *keystrokes* go (the key view); a separate cue is needed for where
- * *Return* goes when the two differ. They differ in a text-first commit sheet: a
- * single-line field holds the caret ring but delegates Return to the surface
- * default. So while a `.tug-input` holds the key view inside a surface that opts
- * in with `[data-return-default-scope]`, the default (`primary`) commit button
- * ALSO wears a ring — "Return commits here" — alongside the field's caret ring.
- *
- * Scoped to the opt-in attribute so multi-field surfaces (where Return does NOT
- * delegate to a single default — e.g. the permissions filter) are unaffected.
- * The cue is tied to the field being the key view, so the instant focus moves to
- * a button the field is no longer the key view, this rule stops matching, and the
- * ring comes off the default — the now-focused button owns the ring (and its own
- * Return). Ring only, deliberately: the default keeps its quiet `primary` tint
- * (it is not the keystroke target), so the field and the default read as two
- * distinct marks, not two live controls.
- */
-[data-return-default-scope]:has(.tug-input[data-key-view-kbd]) .tug-button-primary-action {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  outline-offset: var(--tugx-focus-ring-offset);
-}
+/* The "default action keeps its ring" cue is now an opt-in component API —
+   `<TugPushButton persistentDefaultRing>` (`internal/tug-button.css`), applied
+   case-by-case by surfaces whose sole Return consumer is their default action —
+   not a CSS recognition rule keyed on field focus. */

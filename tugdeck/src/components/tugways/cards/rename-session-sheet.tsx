@@ -103,29 +103,24 @@ function RenameSheetBody({
 }: RenameSheetBodyProps): React.ReactElement {
   const [value, setValue] = useState(initialName);
   // Author the field + action buttons into the sheet's trapped focus mode: Tab
-  // walks name field → Cancel → Save. This is a text-first sheet ([P14]/[#step-6]),
-  // so the engine seeds the key view onto the FIELD (caret on open). The field
-  // delegates Return to the surface default (Save), so the sheet is marked a
-  // `data-return-default-scope`: while the field holds the key view, Save also
-  // wears a ring ("Return's home"). Tab onto a button and that button owns the
-  // ring (and its own Return) — the field-scope ring comes off Save.
+  // walks name field → Cancel → Save. Text-first ([P14]/[#step-6]): the engine
+  // seeds the key view onto the FIELD (caret on open). Save is the surface's sole
+  // Return consumer, so it opts into `persistentDefaultRing` — it keeps its ring
+  // the whole time (Return's home) while the caret stays in the field.
   const focusGroup = React.useId();
   const FIELD_ORDER = 0;
   const CANCEL_ORDER = 1;
   const SAVE_ORDER = 2;
   useSeedKeyView(`${focusGroup}:${FIELD_ORDER}`);
   return (
-    <div className="rename-session-sheet" data-return-default-scope>
+    <div className="rename-session-sheet">
       <TugInput
         value={value}
         placeholder="Session name (blank to clear)"
         aria-label="Session name"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          // Return in the FIELD commits (the field delegates Return to the
-          // default). A focused button handles its own Return natively, so the
-          // commit lives on the field, not the whole sheet — Tab to Cancel +
-          // Return cancels, never saves. Escape / Cmd-. → TugSheet dismiss.
+          // Return in the field commits. Escape / Cmd-. → TugSheet dismiss.
           if (e.key === "Enter") {
             e.preventDefault();
             onSubmit(value);
@@ -152,6 +147,7 @@ function RenameSheetBody({
           data-testid="rename-save"
           focusGroup={focusGroup}
           focusOrder={SAVE_ORDER}
+          persistentDefaultRing
         >
           Save
         </TugPushButton>

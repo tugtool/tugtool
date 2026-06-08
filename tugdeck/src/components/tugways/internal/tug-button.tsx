@@ -364,6 +364,18 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    */
   focusPolicy?: FocusPolicy;
   /**
+   * Keep the keyboard ring (and `primary`→filled promotion) lit on this button
+   * the entire time it is mounted — not just while it holds the key view. Opt-in,
+   * for a surface whose **default action is the sole Return consumer**: a sheet
+   * with no text entry (or a single one) where Return always commits this button
+   * ([D02], `isDefaultButton` already routes Return here). The ring then reads as
+   * "Return's home" even while the keyboard focus / caret is on the list or the
+   * field. Do NOT set on multi-control surfaces where another control may claim
+   * Return (e.g. `/permissions`). Appearance-only ([L06]); the button still gains
+   * its own key-view ring normally when Tab'd onto.
+   */
+  persistentDefaultRing?: boolean;
+  /**
    * Whether clicking promotes the responder chain and moves browser focus to
    * the button. Default `false` — the button dispatches its action and leaves
    * focus undisturbed (the no-steal-on-click half of the old `refuse` bundle).
@@ -449,6 +461,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   focusGroup,
   focusOrder = 0,
   focusPolicy,
+  persistentDefaultRing = false,
   stealsFocusOnClick = false,
   ...rest
 }: TugButtonProps, ref) {
@@ -969,6 +982,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       ref={setRefs}
       data-slot="tug-button"
       data-tug-focus={stealsFocusOnClick ? undefined : "refuse"}
+      data-default-ring={persistentDefaultRing ? "" : undefined}
       disabled={effectiveDisabled}
       role={htmlRole}
       aria-label={ariaLabel}
