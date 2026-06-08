@@ -298,6 +298,14 @@ fn run_remove(instance_id: &str, with_tcc: bool, yes: bool) -> Result<i32, Strin
         let _ = run_stop(instance_id, 5);
     }
 
+    // 1b. Reap the instance's tmux server/session. A tmux server is a
+    // daemon outside tugcast's process group, so stopping the instance
+    // does not take it down — without this, removing a dev/release
+    // instance would leak its `tug-<token>` server (and `cc-<id>`
+    // session) until tmux is killed by hand. App-test instances reap
+    // their own server on graceful shutdown, but this is the catch-all.
+    reap_instance_tmux(instance_id);
+
     // 2-4. Bundle + LaunchServices + data dir cleanup.
     if let Some(bp) = &bundle_path
         && bp.exists()
@@ -431,6 +439,22 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/// Reap the tmux server/session belonging to `instance_id`. A running
+/// instance owns a private `tug-<token>` server (current scheme) hosting
+/// a `cc-<id>` session; pre-isolation builds put `cc-<id>` on the shared
+/// default server. Both are killed best-effort so a removed instance's
+/// tmux never outlives it. tmux's "no server"/"no session" errors when
+/// the instance never launched an app are expected and ignored.
+pub(crate) fn reap_instance_tmux(instance_id: &str) {
+    let label = tugcore::instance::tmux_socket_label_for(instance_id);
+    let _ = std::process::Command::new("tmux")
+        .args(["-L", &label, "kill-server"])
+        .output();
+    let _ = std::process::Command::new("tmux")
+        .args(["kill-session", "-t", &format!("cc-{instance_id}")])
+        .output();
+}
 
 fn send_signal(pid: i32, sig: i32) {
     unsafe {

@@ -235,26 +235,15 @@ fn branch_slug(branch: &str) -> String {
 }
 
 /// Tear down the tmux server/session a removed dash worktree's app left
-/// behind. A dash worktree builds the cwd-derived debug (or release)
-/// identity `<profile>-<branch-slug>`; its tugcast created a tmux
-/// session `cc-<id>` on that instance's private `tug-<token>` server
-/// (current scheme) or, for pre-isolation builds, on the shared default
-/// server. Removing the worktree must reap both so sessions don't pile
-/// up. All best-effort — a dash that never launched an app has nothing
-/// to kill, and tmux's "no server"/"no session" errors are ignored.
+/// behind. A dash worktree builds the cwd-derived `<profile>-<branch-slug>`
+/// identity; its tugcast created a `cc-<id>` session on that instance's
+/// private `tug-<token>` server (or, for pre-isolation builds, the shared
+/// default server). The dash's profile isn't recorded, so reap both
+/// debug and release identities via the shared instance reaper.
 fn reap_dash_tmux(branch: &str) {
     let slug = branch_slug(branch);
     for profile in ["debug", "release"] {
-        let id = format!("{profile}-{slug}");
-        // Private per-instance server (current scheme).
-        let label = tugcore::instance::tmux_socket_label_for(&id);
-        let _ = Command::new("tmux")
-            .args(["-L", &label, "kill-server"])
-            .output();
-        // Legacy shared-server session (pre per-instance-server builds).
-        let _ = Command::new("tmux")
-            .args(["kill-session", "-t", &format!("cc-{id}")])
-            .output();
+        super::instance::reap_instance_tmux(&format!("{profile}-{slug}"));
     }
 }
 
