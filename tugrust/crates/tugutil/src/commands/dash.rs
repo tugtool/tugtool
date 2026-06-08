@@ -885,7 +885,10 @@ mod tests {
         // `assign-bundle-id.sh` stamps, so `reap_dash_tmux` targets the
         // exact tmux identity a removed dash's app used.
         assert_eq!(branch_slug("tugdash/kbd-model"), "tugdash-kbd-model");
-        assert_eq!(branch_slug("tugdash/Focus_Gallery"), "tugdash-focus-gallery");
+        assert_eq!(
+            branch_slug("tugdash/Focus_Gallery"),
+            "tugdash-focus-gallery"
+        );
         assert_eq!(branch_slug("tugdash/a--b"), "tugdash-a-b");
         assert_eq!(branch_slug("tugdash/trailing-"), "tugdash-trailing");
         // The reconstructed debug session name matches what tugcast creates

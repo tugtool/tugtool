@@ -236,7 +236,10 @@ mod tests {
         let dev_hi = TUGCAST_PORT_BASE + TUGCAST_PORT_WINDOW; // exclusive
         let at_lo = APPTEST_TUGCAST_PORT_BASE;
         let at_hi = APPTEST_TUGCAST_PORT_BASE + APPTEST_TUGCAST_PORT_WINDOW;
-        assert!(dev_hi <= at_lo || at_hi <= dev_lo, "tugcast windows overlap");
+        assert!(
+            dev_hi <= at_lo || at_hi <= dev_lo,
+            "tugcast windows overlap"
+        );
         let vdev_hi = VITE_PORT_BASE + VITE_PORT_WINDOW;
         let vat_lo = APPTEST_VITE_PORT_BASE;
         assert!(vdev_hi <= vat_lo, "vite windows overlap");
