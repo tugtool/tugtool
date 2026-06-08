@@ -1,125 +1,81 @@
 /**
- * useInlineDialogModal -- drive an inline Permission/Question dialog as a
- * CFRunLoop-style **modal-for-keys** scope ([P06]).
+ * useInlineDialogScope -- the cross-cutting open concerns of a **card-modal**
+ * inline Permission/Question dialog ([P16]).
  *
- * An inline dialog is not a floating overlay: it renders in the transcript flow
- * while the prompt entry sits below it. When one is pending the dialog must own
- * the keyboard — plain arrows move its selection, Return activates the
- * highlighted choice, Escape / Cmd-. cancel — and the prompt deactivates (its
- * own concern, off the session's pending state). This hook wires that takeover
- * from existing engine parts:
+ * An inline dialog renders in the transcript flow while the prompt entry sits
+ * below it, but it is **card-modal in focus**: while pending it keeps its own
+ * trapped focus mode (`useFocusTrap`, pushed by the component) and authors its
+ * controls into that mode as ordinary focusables — Deny/Allow (or
+ * Cancel/Submit/Back/Next) leaf buttons plus a scope/option item-group ([P17]).
+ * Tab cycles only those; the prompt deactivates (its own concern, off the
+ * session's pending state) and the card content around the dialog is scrimmed
+ * ([P19]).
  *
- *  - `useItemGroupKeyboard` registers the dialog as a **single item-container**
- *    stop and owns the movement cursor (arrows / Home / End) + the act-dispatch
- *    `behavior` (Space/Enter -> `onActivate` against the current cursor item);
- *  - `useOptionalResponder` declares the scope's **cancel-action**: Escape /
- *    Cmd-. dispatch `CANCEL_DIALOG` (keybinding map), which walks first-responder
- *    up — promoting this dialog to first responder (below) makes its handler win
- *    over the card-level interrupt handler, so Escape cancels the *dialog*;
- *  - on activation it makes the dialog the **key view** (so the cursor lands and
- *    the act dispatch reads this behavior) and the **first responder with DOM
- *    focus** (so the arrow `onKeyDown` fires and the keybinding routes here; the
- *    deactivated prompt loses DOM focus as a result).
+ * This hook carries only what the controls themselves don't own:
  *
- * The component supplies *what its choices are* (`collectItems`, in cursor
- * order), *where the highlight starts* (`initialIndex` — the default action),
- * and *what activate / cancel mean* (`onActivate` / `onCancel`). Must be called
- * from a component rendered inside the surface's `FocusModeScope` (from
- * `useFocusTrap`) so its focusable joins the pushed mode.
+ *  - a `CANCEL_DIALOG` responder so Escape / Cmd-. cancel the dialog (Deny /
+ *    `popInteractive`); the responder sits on the dialog's outer element, the
+ *    ancestor of every control, so the cancel-action walks up to it;
+ *  - seeding the engine key view onto the recommended default on open
+ *    ({@link useSeedKeyView}), so the default rests ringed and Return commits;
+ *  - releasing the enclosing list's follow-bottom and scrolling the dialog
+ *    header into view while open (a tall dialog must not have its header pushed
+ *    off the top by the live edge), re-engaging on close.
  *
- * Laws: [L03] registration in layout effects (inside the composed hooks); [L06]
- * the cursor is appearance, projected as DOM by `useFocusCursor`; [L26] tolerant
- * of a null manager (no-op outside a provider).
+ * It replaces the retired modal-for-keys shell (a single flat item-container
+ * that mashed every button + option row into one cursor) — the source of the
+ * card-modal redesign's defects ([P16]/[P17]/[P18]).
+ *
+ * Laws: [L03] registration / subscription in layout effects (inside the composed
+ * hooks); [L26] tolerant of a null manager (no-op outside a provider).
  */
 
-import {
-  useCallback,
-  useContext,
-  useId,
-  useLayoutEffect,
-  useRef,
-} from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useId, useLayoutEffect, useRef } from "react";
 
-import { FocusManagerContext } from "./focus-manager";
-import { useResponderChain } from "./responder-chain-provider";
-import { useItemGroupKeyboard } from "./use-item-group-keyboard";
+import { useSeedKeyView } from "./use-focusable";
 import { useOptionalResponder } from "./use-responder";
 import { useScroller } from "./internal/scroller-context";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
-export interface InlineDialogModalOptions {
-  /** Collect the arrow-navigable choice elements, in cursor order. */
-  collectItems: () => ReadonlyArray<Element | null>;
+export interface InlineDialogScopeOptions {
+  /** Whether the dialog is open (pending). The seed + scroll fire while true. */
+  active: boolean;
   /**
-   * The cursor index to land on when the dialog takes the key view — the
-   * default highlight (e.g. the Allow button / the primary action).
+   * The `group:order` focus key of the control to seed as the key view on open
+   * (the recommended default — Allow / Submit), so Return commits and the ring
+   * lands home. Null to seed nothing.
    */
-  initialIndex: () => number;
-  /** Activate the highlighted choice (Return / Space). */
-  onActivate: (element: Element | null, index: number) => void;
-  /**
-   * Fires as the cursor moves over a choice (every arrow move). Lets the dialog
-   * keep a secondary selection (e.g. the scope radio) in sync with the cursor.
-   */
-  onMove?: (element: Element | null, index: number) => void;
-  /**
-   * Cancel-action (Escape / Cmd-.). Deny for a Permission dialog, Cancel (`n`)
-   * for a Question dialog.
-   */
+  defaultFocusKey: string | null;
+  /** Cancel-action (Escape / Cmd-.) — Deny for permission, popInteractive for question. */
   onCancel: () => void;
 }
 
-export interface InlineDialogModalResult {
+export interface InlineDialogScopeResult {
   /**
-   * Ref callback for the dialog's scope-root element. Wires the focusable +
-   * responder so the dialog can become the key view / first responder and the
-   * cursor can project onto its items.
+   * Ref callback for the dialog's outer element. Wires the cancel-action
+   * responder so Escape / Cmd-. routes up to it from any focused control, and
+   * holds the element so the open effect can scroll the dialog header into view.
    */
   attachRoot: (el: HTMLElement | null) => void;
-  /** Movement key handler (arrows / Home / End) for the root's `onKeyDown`. */
-  onKeyDown: (event: ReactKeyboardEvent) => void;
-  /** Re-sync the cursor's item range (call when the rendered choices change). */
-  syncItems: () => void;
-  /** Move the cursor to an absolute index (e.g. reset to the default highlight
-   *  when a wizard step changes the choice set). */
-  setCursor: (index: number) => number;
 }
 
-export function useInlineDialogModal(
-  opts: InlineDialogModalOptions,
-): InlineDialogModalResult {
-  const manager = useContext(FocusManagerContext);
-  const chain = useResponderChain();
-  // The enclosing scrolling host's follow-bottom façade (no-op outside a list).
+/**
+ * Drive a **card-modal** inline dialog ([P16]). See the module docstring for the
+ * model; this hook supplies the cancel-action responder, the on-open default
+ * seed, and the follow-bottom release + header scroll-into-view.
+ */
+export function useInlineDialogScope(
+  opts: InlineDialogScopeOptions,
+): InlineDialogScopeResult {
   const scroller = useScroller();
-  // One id for both axes: the scope root carries `data-tug-focusable` AND
-  // `data-responder-id` under this id, so the key view, the cursor projection,
-  // and the first-responder promotion all resolve to the same element.
   const id = useId();
-  const optsRef = useRef(opts);
-  optsRef.current = opts;
-
-  const { attachRoot: attachFocusable, onKeyDown, syncItems, setCursor } =
-    useItemGroupKeyboard({
-      id,
-      group: id,
-      order: 0,
-      register: true,
-      // `live` so `onMove` fires on every arrow move (the radio follows the
-      // cursor); the actual decision still commits only on activate.
-      commit: "live",
-      collectItems: () => optsRef.current.collectItems(),
-      initialIndex: () => optsRef.current.initialIndex(),
-      onSelect: (el, i) => optsRef.current.onActivate(el, i),
-      onAct: (el, i) => optsRef.current.onActivate(el, i),
-      onMove: (el, i) => optsRef.current.onMove?.(el, i),
-    });
+  const onCancelRef = useRef(opts.onCancel);
+  onCancelRef.current = opts.onCancel;
 
   const { responderRef } = useOptionalResponder({
     id,
     actions: {
-      [TUG_ACTIONS.CANCEL_DIALOG]: () => optsRef.current.onCancel(),
+      [TUG_ACTIONS.CANCEL_DIALOG]: () => onCancelRef.current(),
     },
   });
 
@@ -127,37 +83,20 @@ export function useInlineDialogModal(
   const attachRoot = useCallback(
     (el: HTMLElement | null) => {
       rootElRef.current = el;
-      attachFocusable(el);
       responderRef(el);
     },
-    [attachFocusable, responderRef],
+    [responderRef],
   );
 
-  // Take over the keyboard once mounted. The composed hooks register the
-  // focusable + responder in their own layout effects (which run before this,
-  // declared last); by now the root carries both attributes.
-  //  - `el.focus()` lands DOM focus on the scope root so the arrow `onKeyDown`
-  //    fires and the deactivating prompt's blur becomes a no-op (it no longer
-  //    holds focus). The root is `tabIndex=0`, so it is focusable.
-  //  - `focusResponder` makes it first responder so Escape/Cmd-. -> CANCEL_DIALOG
-  //    walks to this scope's cancel handler.
-  //  - `setKeyView(id, true)` pins the key view (keyboard modality, so the ring
-  //    + cursor show) — last, so a focusin re-seed cannot leave it elsewhere.
+  // Seed the engine key view onto the default control on open ([P12]).
+  const { active, defaultFocusKey } = opts;
+  useSeedKeyView(active ? defaultFocusKey : null);
+
+  // While open, release the enclosing list's follow-bottom and bring the dialog
+  // header into view; re-engage on close (mirrors the retired modal shell).
   useLayoutEffect(() => {
-    if (manager === null) return;
-    // Release the enclosing list's follow-bottom while the dialog is shown:
-    // a dialog is often taller than the viewport, and a host pinned to the
-    // live edge would push the "Claude has questions / Permission requested"
-    // header off the top. Disengaging *before* the dialog's growth would pin
-    // (this layout effect runs ahead of the host's growth-pin) keeps the
-    // header reachable; re-engage on resolve so later output follows again.
+    if (!active) return;
     scroller.disengage("inline-dialog");
-    rootElRef.current?.focus();
-    chain?.focusResponder(id);
-    manager.setKeyView(id, true);
-    // Keep the dialog's header in view when it appears, regardless of the
-    // transcript's prior scroll position — scroll the header row (short, at the
-    // top) minimally into view. Falls back to the scope root.
     const root = rootElRef.current;
     const header =
       root?.querySelector('[data-slot="tug-inline-dialog-row"]') ?? root;
@@ -165,7 +104,7 @@ export function useInlineDialogModal(
     return () => {
       scroller.engage("inline-dialog");
     };
-  }, [manager, chain, id, scroller]);
+  }, [active, scroller]);
 
-  return { attachRoot, onKeyDown, syncItems, setCursor };
+  return { attachRoot };
 }

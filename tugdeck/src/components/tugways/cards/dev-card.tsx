@@ -3444,7 +3444,21 @@ export function DevCardBody({
         // so the submit's standing fill stands down to outlined and the
         // promoted fill follows the focused stop instead. Engine-derived
         // ([L02]); appearance via the attribute, never React state ([L06]).
-        data-cycling={cycle.cycling ? "true" : "false"}
+        // `"true"` while cycling; `"false"` while resting on the editor (the
+        // focus-ring suppression that hides the card's resting cycle-stop rings).
+        // While an inline dialog is pending the card is **card-modal** ([P16]) —
+        // neither cycling nor resting-on-editor — so the attribute is REMOVED,
+        // which lifts the `[data-cycling="false"]` suppression off the trapped
+        // dialog's own rings (its Allow ring must show on open, not after a Tab).
+        data-cycling={
+          cycle.cycling ? "true" : inlineDialogPending ? undefined : "false"
+        }
+        // Card-modal scrim signal ([P19]). Set while an inline dialog
+        // (permission / question) is pending; the scrim CSS keys on this
+        // ancestor to dim the card content around the dialog so the modality is
+        // felt. Engine-derived from the store ([L02]); appearance via the
+        // attribute, never React state ([L06]).
+        data-inline-dialog-pending={inlineDialogPending ? "true" : undefined}
       >
       <TugSplitPane
         orientation="horizontal"

@@ -1071,3 +1071,48 @@
   margin-left: calc(5rem + var(--tug-space-md));
 }
 
+/* ---- Card-modal scrim ([P19]) -------------------------------------------
+ *
+ * While an inline dialog (permission / question) is pending the card is
+ * card-modal ([P16]): the keyboard is trapped in the dialog and the content
+ * AROUND it is scrimmed so the modality is felt, not just enforced. Driven by
+ * the engine-derived `data-inline-dialog-pending` signal on the card root —
+ * appearance-only ([L06]), no portal, no backdrop element, no React state.
+ *
+ * The dialog restates its own subject (the description names the command /
+ * file; an Edit shows its diff in the body), so the single bright island is the
+ * transcript row holding the dialog; everything else dims — the other
+ * transcript rows, the Z2 status bar, and the prompt-entry pane. The dialog row
+ * is excepted via `:has()` ([Q09] option (a)).
+ */
+.dev-card[data-inline-dialog-pending="true"] .dev-card-status-bar,
+.dev-card[data-inline-dialog-pending="true"] .dev-card-entry-pane {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+
+/* Transcript turns dim except the one holding the pending dialog. Transcript
+   rows are TugListView cells (`.tug-list-view-cell`), so the dim is keyed there
+   — the user-message turns and every prior turn fade. */
+.dev-card[data-inline-dialog-pending="true"]
+  .dev-card-transcript
+  .tug-list-view-cell:not(:has(.dev-permission-dialog)):not(:has(.dev-question-dialog)) {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+
+/* The dialog lives in the LIVE assistant turn, alongside that turn's prose +
+   tool block (the `.dev-card-transcript-code-body`). Dim that body too so the
+   dialog is the single bright island — the dialog restates its own subject
+   ([Q09]/R04), so nothing legible is lost. The dialog subtree itself is a
+   sibling of the body and stays at full strength. */
+.dev-card[data-inline-dialog-pending="true"]
+  .tug-list-view-cell:has(.dev-permission-dialog)
+  .dev-card-transcript-code-body,
+.dev-card[data-inline-dialog-pending="true"]
+  .tug-list-view-cell:has(.dev-question-dialog)
+  .dev-card-transcript-code-body {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+

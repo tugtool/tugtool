@@ -58,36 +58,45 @@ body {
   color: var(--tugx-perm-reason-color);
 }
 
-/* ---- Modal-for-keys keyboard scope ([P06]) ---- */
+/* ---- Card-modal dialog ([P16]/[P17]/[P18]) ---- */
 
 /*
- * The dialog is a CFRunLoop-style modal scope: while it owns the keyboard the
- * focus ring marks the *dialog box itself*, not the full-width scope wrapper
- * (the transcript row). Suppress the engine's default outline on the wrapper
- * and overlay the ring on the `TugInlineDialog` box as a layout-free
- * `box-shadow` (hugs the box border + radius; no reflow). [L06]
- */
-.dev-permission-dialog-scope[data-key-view-kbd] {
-  outline: none;
-}
-.dev-permission-dialog-scope[data-key-view-kbd] .tug-inline-dialog {
-  box-shadow: 0 0 0 var(--tugx-focus-ring-width) var(--tugx-focus-ring);
-}
-
-/*
- * Action buttons render OUTLINED and PROMOTE to their filled, role-coloured
- * style + role ring when the keyboard cursor lands on them — a first-class
- * TugPushButton capability (`internal/tug-button.css`, keyed on
- * `[data-key-cursor]` / `[data-key-view-kbd]`), so no bespoke copy lives here.
+ * The dialog is card-modal: inline display, trapped focus. Its controls are
+ * focus-language archetypes authored into the trap — Deny / Allow are leaf
+ * buttons (the global key-view ring paints on the focused one) and the scope
+ * choices are a radio item-group (below). There is no full-width focusable
+ * scope wrapper anymore, so clicking inert chrome establishes no focus state
+ * ([P18]) — the former `.dev-permission-dialog-scope` dead-zone + its
+ * box-shadow ring relocation are gone.
  *
- * The scope option ROWS (`TugDialogButton`) take the item-group treatment: the
- * roving cursor is the global `[data-key-cursor]` outline ring (role-resolved in
- * `tug-dialog-button.css`), offset outside the row so it survives atop the native
- * selected fill. The former bespoke border-recolor is retired — the global ring
- * is the finalised treatment.
+ * Action buttons render OUTLINED / PRIMARY and PROMOTE to their filled,
+ * role-coloured style + role ring when the keyboard lands on them — a
+ * first-class TugPushButton capability (`internal/tug-button.css`, keyed on
+ * `[data-key-view-kbd]`), so no bespoke copy lives here. Allow additionally
+ * carries `persistentDefaultRing` (engine-owned "Return's home" ring).
  */
 
 /* Horizontal room between the action buttons for the promoted ring. */
-.dev-permission-dialog-scope .tug-inline-dialog-actions {
+.dev-permission-dialog .tug-inline-dialog-actions {
   gap: 0.5rem;
+}
+
+/*
+ * Scope choice group ([P02]/[Q06]) — the radio rows as a single item-group
+ * stop. The group is the focusable; per [P02] its key-view shows no leaf box
+ * ring (the roving `[data-key-cursor]` ring on the current TugDialogButton row,
+ * role-resolved in `tug-dialog-button.css`, is the "where am I" cue). The rows
+ * stack vertically and fill the dialog width.
+ */
+.dev-permission-dialog-scope-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  outline: none;
+}
+
+/* Group key-view: suppress the global leaf ring — an item-group rings its
+ * cursor item, not its container ([P02]). */
+.dev-permission-dialog-scope-group[data-key-view-kbd] {
+  outline: none;
 }

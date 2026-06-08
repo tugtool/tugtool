@@ -72,6 +72,14 @@ export interface ItemGroupKeyboardOptions {
   initialIndex: () => number;
   /** Whether the current item descends on Enter (accordion section / list row). */
   currentItemDescendable?: () => boolean;
+  /**
+   * Single-select container ([#step-7-5]): one selected item the arrows move
+   * (selection follows the cursor via {@link onMove} under `commit: "live"`).
+   * Such a group does NOT consume `Enter` — it resolves to `passthrough` so
+   * Return falls through to the scope's default action ([P12]). Absent leaves the
+   * multi-select model (Space selects, Enter acts/descends) unchanged.
+   */
+  singleSelect?: boolean;
   /** Space (and Enter-act on a non-descendable item): commit the current item. */
   onSelect: (element: Element | null, index: number) => void;
   /** Enter act on a non-descendable item. Defaults to {@link onSelect}. */
@@ -134,6 +142,7 @@ export function useItemGroupKeyboard(
       container: "item",
       commit: o.commit ?? "deferred",
       currentItemDescendable: o.currentItemDescendable?.() ?? false,
+      singleSelect: o.singleSelect ?? false,
       onSelect: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "select"),
       onAct: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "act"),
       onDescend: () => o.onDescend?.(cursor.cursorElement(), cursor.cursorIndex()),

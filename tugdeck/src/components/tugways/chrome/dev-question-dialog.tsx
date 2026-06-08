@@ -128,7 +128,6 @@ import {
   MessageCircleQuestion,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import {
   TugConfirmPopover,
@@ -136,8 +135,10 @@ import {
 } from "@/components/tugways/tug-confirm-popover";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useFocusManager } from "@/components/tugways/use-focusable";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
-import { useInlineDialogModal } from "@/components/tugways/use-inline-dialog-scope";
+import { useInlineDialogScope } from "@/components/tugways/use-inline-dialog-scope";
+import { useItemGroupKeyboard } from "@/components/tugways/use-item-group-keyboard";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -689,6 +690,117 @@ function QuestionOptionGroup({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Focus ordering — the wizard's controls as cycle stops inside the trap ([P16])
+// ---------------------------------------------------------------------------
+
+/** Tab order inside the dialog's trapped mode (disabled stops drop out). */
+const QUESTION_CANCEL_ORDER = 0;
+const QUESTION_SUBMIT_ORDER = 1;
+const QUESTION_BACK_ORDER = 2;
+const QUESTION_NEXT_ORDER = 3;
+const QUESTION_OPTIONS_ORDER = 4;
+
+interface CurrentRowOptionsProps {
+  question: ParsedQuestion;
+  selection: ReadonlyArray<string>;
+  onSelect: (optionLabel: string) => void;
+  /** Focus group the dialog authors this stop into (its trapped mode). */
+  focusGroup: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder: number;
+}
+
+/**
+ * The current question's option group as a single item-group stop ([P02]/[P17]).
+ * Tab lands the ring on the group (never on a row); arrows move a cursor over
+ * the options *without* committing (deferred); Space/Enter pick the cursor
+ * option — a single-select pick auto-advances (the wizard's existing
+ * `handleSelect`), a multi-select pick toggles. Wraps the shared
+ * {@link QuestionOptionGroup} so the hidden measurement helper, which renders
+ * it bare, measures the identical markup. Authored into the dialog's trapped
+ * mode via `FocusModeContext` (the `useItemGroupKeyboard` → `useFocusable`
+ * chain reads it).
+ */
+const CurrentRowOptions: React.FC<CurrentRowOptionsProps> = ({
+  question,
+  selection,
+  onSelect,
+  focusGroup,
+  focusOrder,
+}) => {
+  const id = React.useId();
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const questionRef = React.useRef(question);
+  questionRef.current = question;
+  const selectionRef = React.useRef(selection);
+  selectionRef.current = selection;
+  const onSelectRef = React.useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  const collectItems = React.useCallback(() => {
+    const root = rootRef.current;
+    if (root === null) return [];
+    return Array.from(root.querySelectorAll('[data-slot="tug-dialog-button"]'));
+  }, []);
+
+  // Land the cursor on the first selected option when the group gains the key
+  // view, else the first option.
+  const initialIndex = React.useCallback(() => {
+    const opts = questionRef.current.options;
+    const sel = selectionRef.current;
+    const idx = opts.findIndex((o) => sel.includes(o.label));
+    return idx < 0 ? 0 : idx;
+  }, []);
+
+  // Space/Enter act on the cursor option → the wizard's pick handler
+  // (auto-advance for single-select, toggle for multi-select).
+  const act = React.useCallback((_el: Element | null, index: number) => {
+    const opt = questionRef.current.options[index];
+    if (opt) onSelectRef.current(opt.label);
+  }, []);
+
+  const { attachRoot, onKeyDown, syncItems } = useItemGroupKeyboard({
+    id,
+    group: focusGroup,
+    order: focusOrder,
+    register: true,
+    commit: "deferred",
+    collectItems,
+    initialIndex,
+    onSelect: act,
+    onAct: act,
+  });
+
+  const setRoot = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      attachRoot(el);
+    },
+    [attachRoot],
+  );
+
+  React.useLayoutEffect(() => {
+    syncItems();
+  }, [syncItems, question.options.length]);
+
+  return (
+    <div
+      ref={setRoot}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      data-slot="dev-question-dialog-options-group"
+      className="dev-question-dialog-options-group"
+    >
+      <QuestionOptionGroup
+        question={question}
+        selection={selection}
+        onSelect={onSelect}
+      />
+    </div>
+  );
+};
+
 /**
  * The `current` row — title + options. Back/Next live on their own
  * sub-row inside the body slot (between the dialog description and
@@ -705,11 +817,15 @@ function CurrentRow({
   selection,
   optionsMinHeight,
   onSelect,
+  optionsFocusGroup,
+  optionsFocusOrder,
 }: Pick<
   QuestionRowProps,
   "index" | "question" | "selection" | "onSelect"
 > & {
   optionsMinHeight?: number;
+  optionsFocusGroup: string;
+  optionsFocusOrder: number;
 }): React.ReactElement {
   // Apply the measured options floor to the options area only — the
   // heading stays at its natural height, and shorter questions just
@@ -742,10 +858,12 @@ function CurrentRow({
         data-slot="dev-question-dialog-options-wrap"
         style={optionsStyle}
       >
-        <QuestionOptionGroup
+        <CurrentRowOptions
           question={question}
           selection={selection}
           onSelect={onSelect}
+          focusGroup={optionsFocusGroup}
+          focusOrder={optionsFocusOrder}
         />
       </div>
     </div>
@@ -753,150 +871,16 @@ function CurrentRow({
 }
 
 function QuestionRow(
-  props: QuestionRowProps & { optionsMinHeight?: number },
+  props: QuestionRowProps & {
+    optionsMinHeight?: number;
+    optionsFocusGroup: string;
+    optionsFocusOrder: number;
+  },
 ): React.ReactElement {
   if (props.status === "current") return <CurrentRow {...props} />;
   if (props.status === "pending") return <PendingRow {...props} />;
   return <AnsweredRow {...props} />;
 }
-
-// ---------------------------------------------------------------------------
-// Keyboard modal shell
-// ---------------------------------------------------------------------------
-
-interface QuestionDialogModalProps {
-  cancelRef: React.RefObject<HTMLButtonElement | null>;
-  submitRef: React.RefObject<HTMLButtonElement | null>;
-  backRef: React.RefObject<HTMLButtonElement | null>;
-  nextRef: React.RefObject<HTMLButtonElement | null>;
-  onCancel: () => void;
-  onSubmit: () => void;
-  onBack: () => void;
-  onNext: () => void;
-  /** Activate the cursor'd option — index among the current question's rows. */
-  onActivateOption: (optionIndex: number) => void;
-  /** Re-sync the cursor range when the wizard advances (the option set changes). */
-  syncKey: number;
-  /** The composed `TugInlineDialog` (built by the parent with full types). */
-  children: React.ReactNode;
-}
-
-/**
- * The modal-for-keys shell ([P06]) for the question wizard. Wraps the dialog in
- * a focusable scope root, registers its choices — the enabled action / nav
- * buttons (Cancel / Submit / Back / Next) plus the current question's option
- * rows — as one item-container so arrows move the highlight and Return activates
- * it, and declares Cancel (`popInteractive`) as the cancel-action (Escape /
- * Cmd-.). The hidden measurement helper's option clones are excluded. Rendered
- * inside the parent's `FocusModeScope`.
- */
-const QuestionDialogModal: React.FC<QuestionDialogModalProps> = ({
-  cancelRef,
-  submitRef,
-  backRef,
-  nextRef,
-  onCancel,
-  onSubmit,
-  onBack,
-  onNext,
-  onActivateOption,
-  syncKey,
-  children,
-}) => {
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-
-  const isEnabled = (el: Element): boolean =>
-    !el.hasAttribute("disabled") &&
-    el.getAttribute("aria-disabled") !== "true";
-
-  // The current question's *live* option rows — excludes the hidden
-  // `.dev-question-dialog-measure` clones.
-  const liveOptionEls = React.useCallback((): Element[] => {
-    const root = rootRef.current;
-    if (root === null) return [];
-    return Array.from(
-      root.querySelectorAll('[data-slot="tug-dialog-button"]'),
-    ).filter((el) => el.closest(".dev-question-dialog-measure") === null);
-  }, []);
-
-  // Cursor order, visual top to bottom: enabled action/nav buttons (header
-  // Cancel/Submit, then nav Back/Next) followed by the current question's
-  // option rows.
-  const collectItems = React.useCallback((): Element[] => {
-    const root = rootRef.current;
-    if (root === null) return [];
-    const buttons = Array.from(
-      root.querySelectorAll('[data-slot="tug-push-button"]'),
-    ).filter(isEnabled);
-    const options = liveOptionEls().filter(isEnabled);
-    return [...buttons, ...options];
-  }, [liveOptionEls]);
-
-  // Land on the first option (answering is the task); fall back to the primary
-  // action (Submit) when there are no options (review / no questions).
-  const computeInitialIndex = React.useCallback((): number => {
-    const items = collectItems();
-    const firstOption = items.findIndex(
-      (el) => el.getAttribute("data-slot") === "tug-dialog-button",
-    );
-    if (firstOption >= 0) return firstOption;
-    const submitIdx = items.indexOf(submitRef.current as Element);
-    return submitIdx >= 0 ? submitIdx : 0;
-  }, [collectItems, submitRef]);
-
-  const { attachRoot, onKeyDown, syncItems, setCursor } = useInlineDialogModal({
-    collectItems,
-    initialIndex: computeInitialIndex,
-    onActivate: (el) => {
-      if (el === null) return;
-      if (el === cancelRef.current) return onCancel();
-      if (el === submitRef.current) return onSubmit();
-      if (el === backRef.current) return onBack();
-      if (el === nextRef.current) return onNext();
-      const optionIndex = liveOptionEls().indexOf(el);
-      if (optionIndex >= 0) onActivateOption(optionIndex);
-    },
-    // Questions commit only on explicit activate — the cursor moving over a
-    // row does not pick it (multi-select especially).
-    onCancel,
-  });
-
-  const setRoot = React.useCallback(
-    (el: HTMLDivElement | null) => {
-      rootRef.current = el;
-      attachRoot(el);
-    },
-    [attachRoot],
-  );
-
-  // Keep the cursor's item range fresh on every render (the choice set shifts
-  // as options toggle and Back/Next/Submit enable). Reset the cursor to the new
-  // step's default highlight ONLY when the wizard actually changes step — never
-  // on a same-step re-render (e.g. a multi-select toggle), which must leave the
-  // cursor where it is. The initial mount is seeded by the scope activation, so
-  // it does not reset here either.
-  const prevSyncKeyRef = React.useRef<number | null>(null);
-  React.useLayoutEffect(() => {
-    syncItems();
-    if (prevSyncKeyRef.current !== syncKey) {
-      const isInitial = prevSyncKeyRef.current === null;
-      prevSyncKeyRef.current = syncKey;
-      if (!isInitial) setCursor(computeInitialIndex());
-    }
-  }, [syncItems, setCursor, computeInitialIndex, syncKey]);
-
-  return (
-    <div
-      ref={setRoot}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      data-slot="dev-question-dialog-scope"
-      className="dev-question-dialog-scope"
-    >
-      {children}
-    </div>
-  );
-};
 
 // ---------------------------------------------------------------------------
 // Component
@@ -1029,6 +1013,35 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     });
   }, []);
 
+  // One focus group for the wizard's controls inside the trapped mode: Cancel
+  // (0) → Submit (1) → Back (2) → Next (3) → current question's options (4).
+  // Disabled stops drop out of the walk by the engine's interactivity filter.
+  // Declared here (before the handlers) so they can name a re-seed target.
+  const focusGroup = React.useId();
+
+  // After a step change the nav handlers decide where the key view goes: `null`
+  // means "leave it where it is" (so Back/Next keep focus across a Return), a
+  // `group:order` key re-seeds it (boundary fallback / auto-advance / jump). A
+  // layout effect (below the early return's hooks) consumes it on the next
+  // `currentIndex` change. [L06]/[L03].
+  const pendingFocusKeyRef = React.useRef<string | null>(null);
+
+  // Whether every question would be answered if `assumeVisited` were visited —
+  // the gate the Next-boundary uses to choose Submit (all answered) vs Back. A
+  // question counts as answered when it is visited (or the assumed one) AND
+  // carries a selection. Reads the current render's `selections` / `visited`.
+  const wouldAllBeAnswered = React.useCallback(
+    (assumeVisited: number): boolean => {
+      if (questions.length === 0) return false;
+      return questions.every(
+        (_q, i) =>
+          (i === assumeVisited || (visited[i] ?? false)) &&
+          (selections[i]?.length ?? 0) > 0,
+      );
+    },
+    [questions, visited, selections],
+  );
+
   // Callback hooks must precede the early return so the hook order is
   // invariant across the pending → `null` transition.
   const handleSelect = React.useCallback(
@@ -1049,40 +1062,77 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       // Auto-advance is a single-select-only affordance — the user
       // confirmed picking == committing. Multi-select picks are
       // toggles; advancing on the first one would strand subsequent
-      // checks.
+      // checks. On advance the keyboard follows to the next question's
+      // options (or to Submit / Back at the review boundary).
       const question = questions[questionIndex];
-      if (question !== undefined && !question.multiSelect) {
-        setCurrentIndex((prev) =>
-          prev === questionIndex ? nextAdvanceIndex(prev, questions.length) : prev,
-        );
+      if (
+        question !== undefined &&
+        !question.multiSelect &&
+        currentIndex === questionIndex
+      ) {
+        const total = questions.length;
+        const newIndex = nextAdvanceIndex(questionIndex, total);
+        if (newIndex !== questionIndex) {
+          pendingFocusKeyRef.current =
+            newIndex < total
+              ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
+              : `${focusGroup}:${
+                  wouldAllBeAnswered(questionIndex)
+                    ? QUESTION_SUBMIT_ORDER
+                    : QUESTION_BACK_ORDER
+                }`;
+          setCurrentIndex(newIndex);
+        }
       }
     },
-    [questions, markVisited],
+    [questions, currentIndex, markVisited, focusGroup, wouldAllBeAnswered],
   );
 
   /** Jump-via-rail-click is exploratory — the user hasn't committed
    *  anything yet by browsing, so we don't mark visited. They have
-   *  to actually pick or use `Next` to lock in a row. */
-  const handleJump = React.useCallback((target: number) => {
-    setCurrentIndex(target);
-  }, []);
+   *  to actually pick or use `Next` to lock in a row. The keyboard
+   *  follows the jump to that question's options. */
+  const handleJump = React.useCallback(
+    (target: number) => {
+      if (target < questions.length) {
+        pendingFocusKeyRef.current = `${focusGroup}:${QUESTION_OPTIONS_ORDER}`;
+      }
+      setCurrentIndex(target);
+    },
+    [questions.length, focusGroup],
+  );
 
   /** `Back` from the current row: don't mark the row we're leaving
    *  as visited. A user who back-tracked without engaging hasn't
-   *  taken a stance. */
+   *  taken a stance. Focus STAYS on Back across the Return, unless this
+   *  reaches the first question (Back becomes disabled) → shift to Next. */
   const handleBack = React.useCallback(() => {
-    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : prev));
-  }, []);
+    if (currentIndex <= 0) return;
+    const newIndex = currentIndex - 1;
+    pendingFocusKeyRef.current =
+      newIndex === 0 ? `${focusGroup}:${QUESTION_NEXT_ORDER}` : null;
+    setCurrentIndex(newIndex);
+  }, [currentIndex, focusGroup]);
 
   /** `Next` from the current row IS a commit — even on multi-select,
    *  the click says "I'm done with this question". Mark visited and
-   *  advance. */
+   *  advance. Focus STAYS on Next across the Return, unless this reaches
+   *  the review step (no next question; Next becomes disabled) → shift to
+   *  Submit if every question is answered, else Back. */
   const handleAdvance = React.useCallback(() => {
-    setCurrentIndex((prev) => {
-      markVisited(prev);
-      return nextAdvanceIndex(prev, questions.length);
-    });
-  }, [questions.length, markVisited]);
+    const total = questions.length;
+    const newIndex = nextAdvanceIndex(currentIndex, total);
+    markVisited(currentIndex);
+    pendingFocusKeyRef.current =
+      newIndex < total
+        ? null
+        : `${focusGroup}:${
+            wouldAllBeAnswered(currentIndex)
+              ? QUESTION_SUBMIT_ORDER
+              : QUESTION_BACK_ORDER
+          }`;
+    setCurrentIndex(newIndex);
+  }, [questions.length, currentIndex, markVisited, focusGroup, wouldAllBeAnswered]);
 
   const respond = React.useCallback(
     (answers: Record<string, string>) => {
@@ -1115,23 +1165,45 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     session.popInteractive();
   }, [session]);
 
-  // Inline dialogs are modal for keys ([P06]): push a focus mode while pending
-  // so the dialog owns the keyboard — the inner `QuestionDialogModal` shell
-  // becomes the key view + first responder, arrows move the cursor over the
-  // choices (options + Back / Next / Cancel / Submit), Return activates the
-  // highlight, and Escape / Cmd-. cancel via the scope's CANCEL_DIALOG handler.
-  // The prompt entry deactivates off the session's pending state (see
-  // `DevCardBody`). Declared above the `!isPending` early return so hook order
-  // is stable across renders. No bespoke digit / arrow handlers and no
-  // focus-steal — the engine scope owns navigation now.
+  // The dialog is **card-modal** ([P16]): inline display, trapped focus. The
+  // trap owns the keyboard while pending — Tab cycles the wizard's own controls
+  // (Cancel / Submit / Back / Next leaf stops + the current question's option
+  // group, [P17]) and the opener's key view is restored on dismiss. The prompt
+  // entry deactivates off the session's pending state (see `DevCardBody`), and
+  // the card content around the dialog is scrimmed ([P19]). Declared above the
+  // `!isPending` early return so hook order is stable across renders.
   const { FocusModeScope } = useFocusTrap({ active: isPending });
 
-  // Refs to the fixed wizard buttons so the modal shell can map a cursor
-  // activation back to its handler.
-  const cancelRef = React.useRef<HTMLButtonElement | null>(null);
-  const submitRef = React.useRef<HTMLButtonElement | null>(null);
-  const backRef = React.useRef<HTMLButtonElement | null>(null);
-  const nextRef = React.useRef<HTMLButtonElement | null>(null);
+  const manager = useFocusManager();
+
+  // The dialog's keyboard scope ([P16]): a CANCEL_DIALOG responder so Escape /
+  // Cmd-. cancel (the bare `popInteractive`, no popover), and a seed that lands
+  // the key view on the current question's options on open (answering is the
+  // task), or on Submit at the review step.
+  const seedAtReview = currentIndex >= questions.length;
+  const seedFocusKey =
+    questions.length > 0 && !seedAtReview
+      ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
+      : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
+  const { attachRoot } = useInlineDialogScope({
+    active: isPending,
+    defaultFocusKey: seedFocusKey,
+    onCancel: handleCancel,
+  });
+
+  // Apply the nav handlers' focus intent on a step change. `null` (the default
+  // for Back/Next in the interior) leaves the key view where it is, so focus
+  // STAYS on the pressed nav button across a Return; a `group:order` key
+  // re-seeds it (boundary fallback, auto-advance to options, jump). The initial
+  // open seed is owned by `useInlineDialogScope`; this only acts when a handler
+  // set an intent. [L03] (layout effect), [L06] (key view is appearance/engine).
+  React.useLayoutEffect(() => {
+    if (!isPending || manager === null) return;
+    const target = pendingFocusKeyRef.current;
+    if (target === null) return;
+    pendingFocusKeyRef.current = null;
+    manager.armKeyboardRestore(target);
+  }, [isPending, manager, currentIndex]);
 
   // Cancel guards itself with a confirmation popover: a stray click
   // shouldn't tear the AI's question down without a second beat. The
@@ -1201,20 +1273,23 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         side="bottom"
       >
         <TugPushButton
-          ref={cancelRef}
           emphasis="outlined"
           role="danger"
           size="xs"
+          focusGroup={focusGroup}
+          focusOrder={QUESTION_CANCEL_ORDER}
           onClick={handleCancelClick}
         >
           Cancel
         </TugPushButton>
       </TugConfirmPopover>
       <TugPushButton
-        ref={submitRef}
-        emphasis="outlined"
+        emphasis="primary"
         role="action"
         size="xs"
+        focusGroup={focusGroup}
+        focusOrder={QUESTION_SUBMIT_ORDER}
+        persistentDefaultRing
         disabled={!allAnswered}
         onClick={handleSubmit}
       >
@@ -1223,10 +1298,12 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     </>
   ) : (
     <TugPushButton
-      ref={submitRef}
-      emphasis="outlined"
+      emphasis="primary"
       role="action"
       size="xs"
+      focusGroup={focusGroup}
+      focusOrder={QUESTION_SUBMIT_ORDER}
+      persistentDefaultRing
       onClick={handleSubmit}
     >
       Dismiss
@@ -1242,28 +1319,20 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // mutates, but stable across question advances so the button
   // never moves under the mouse.
   //
-  // The dialog mounts inside the modal-for-keys shell ([P06]): it owns the
-  // keyboard while pending — arrows move the cursor over the choices (options +
-  // Cancel / Submit / Back / Next), Return activates the highlight, Escape /
-  // Cmd-. cancel. `FocusModeScope` (from `useFocusTrap` above) wraps it so its
-  // focusable joins the pushed mode.
+  // The dialog is card-modal ([P16]): inline display, trapped focus. Its
+  // controls are decomposed into focus-language archetypes ([P17]) authored into
+  // the trap — Cancel / Submit / Back / Next leaf buttons + the current
+  // question's option group. The outer wrapper carries the `dev-question-dialog`
+  // class (the scrim's bright-island marker, [P19]) and the cancel-action
+  // responder root (`attachRoot`); it is NOT focusable, so clicking inert chrome
+  // establishes no focus state ([P18]). `FocusModeScope` (from `useFocusTrap`)
+  // wraps it so the controls join the pushed mode.
   return (
     <FocusModeScope>
-      <QuestionDialogModal
-        cancelRef={cancelRef}
-        submitRef={submitRef}
-        backRef={backRef}
-        nextRef={nextRef}
-        onCancel={handleCancel}
-        onSubmit={handleSubmit}
-        onBack={handleBack}
-        onNext={handleAdvance}
-        onActivateOption={(optionIndex) => {
-          const question = questions[currentIndex];
-          const option = question?.options[optionIndex];
-          if (option) handleSelect(currentIndex, option.label);
-        }}
-        syncKey={currentIndex}
+      <div
+        ref={attachRoot}
+        className="dev-question-dialog"
+        data-slot="dev-question-dialog"
       >
     <TugInlineDialog
       icon={<MessageCircleQuestion />}
@@ -1271,7 +1340,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
       description={dialogDescription}
       actions={dialogActions}
-      className={cn("dev-question-dialog", className)}
+      className={className}
     >
       {wizardSummary !== null ? (
         <div
@@ -1283,20 +1352,22 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           </span>
           <div className="dev-question-dialog-nav-buttons">
             <TugPushButton
-              ref={backRef}
               emphasis="outlined"
               role="action"
               size="xs"
+              focusGroup={focusGroup}
+              focusOrder={QUESTION_BACK_ORDER}
               disabled={isFirstQuestion}
               onClick={handleBack}
             >
               <ArrowLeft size={14} aria-hidden="true" /> Back
             </TugPushButton>
             <TugPushButton
-              ref={nextRef}
               emphasis="outlined"
               role="action"
               size="xs"
+              focusGroup={focusGroup}
+              focusOrder={QUESTION_NEXT_ORDER}
               disabled={isAtReview}
               onClick={handleAdvance}
             >
@@ -1322,6 +1393,8 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               question={single}
               selection={selections[0] ?? []}
               onSelect={(optionLabel) => handleSelect(0, optionLabel)}
+              optionsFocusGroup={focusGroup}
+              optionsFocusOrder={QUESTION_OPTIONS_ORDER}
             />
           ) : (
             <>
@@ -1340,6 +1413,8 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
                     status={status}
                     selection={selection}
                     optionsMinHeight={optionsMinHeight}
+                    optionsFocusGroup={focusGroup}
+                    optionsFocusOrder={QUESTION_OPTIONS_ORDER}
                     onSelect={(optionLabel) => handleSelect(index, optionLabel)}
                     onJump={() => handleJump(index)}
                   />
@@ -1377,7 +1452,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         </div>
       ) : null}
     </TugInlineDialog>
-      </QuestionDialogModal>
+      </div>
     </FocusModeScope>
   );
 };
