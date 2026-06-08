@@ -19,7 +19,7 @@ import type { TugAction } from "../action-vocabulary";
 import { useTugBoxDisabled } from "./tug-box-context";
 import { useControlDispatch } from "../use-control-dispatch";
 import { ResponderParentContext } from "../responder-chain";
-import { useFocusable } from "../use-focusable";
+import { useFocusable, useFocusManager } from "../use-focusable";
 import type { FocusPolicy } from "../focus-manager";
 import { TugStableOverlay } from "./tug-stable-overlay";
 
@@ -529,6 +529,8 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // useResponderChain() returns the manager or null (safe outside provider).
   // Needed for canHandle/validateAction queries and explicit-target dispatch.
   const manager = useResponderChain();
+  // Focus manager — owns the engine-projected `data-default-ring` ([P14]).
+  const focusManager = useFocusManager();
   // Parent responder ID — the default dispatch and validation target.
   const parentId = useContext(ResponderParentContext);
   // Targeted dispatch to parent responder — same hook all controls use.
@@ -629,6 +631,27 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       manager.popDefaultButton(node);
     };
   }, [isDefaultButton, manager]);
+
+  // ---- Persistent default ring ([P14], engine-owned) ----
+  //
+  // `persistentDefaultRing` keeps this button lit as "Return's home" while the
+  // keyboard rests on a non-button control (a list / field / cursor). The focus
+  // manager OWNS the `data-default-ring` attribute — it stamps it on this node
+  // iff the current key view is not itself a button, and removes it the instant
+  // the keyboard lands on any button. So the one-filled-ring-per-scope invariant
+  // is structural: a focused button is always the sole filled+ring, and this
+  // ring stands down to it (never a second filled+ring). Opt out while disabled /
+  // loading — a non-interactive button is no Return target.
+  const wantsDefaultRing = persistentDefaultRing && !effectiveDisabled && !loading;
+  React.useLayoutEffect(() => {
+    if (!wantsDefaultRing || focusManager === null) return;
+    const node = internalButtonRef.current;
+    if (node === null) return;
+    focusManager.registerDefaultRing(node);
+    return () => {
+      focusManager.unregisterDefaultRing(node);
+    };
+  }, [wantsDefaultRing, focusManager]);
 
   // Merged ref forwards to the caller while keeping our internal handle for
   // imperative DOM mutation during the confirmation cycle. Stable across
@@ -982,7 +1005,6 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       ref={setRefs}
       data-slot="tug-button"
       data-tug-focus={stealsFocusOnClick ? undefined : "refuse"}
-      data-default-ring={persistentDefaultRing ? "" : undefined}
       disabled={effectiveDisabled}
       role={htmlRole}
       aria-label={ariaLabel}

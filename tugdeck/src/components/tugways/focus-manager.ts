@@ -244,6 +244,15 @@ export class FocusManager {
   // default), the ring paints on keyboard navigation only. Orthogonal to
   // {@link accessMode}; driven by the focus-ring-modality store.
   private ringFollowsPointer = false;
+  // Stack of buttons that have opted into the persistent default ring (the
+  // "Return's home" filled+ring shown while the keyboard rests on a non-button
+  // control). The engine owns the `data-default-ring` DOM attribute so the
+  // one-filled-ring-per-scope invariant ([P14]) is structural: the TOP node
+  // wears the ring iff the current key view is NOT itself a button — the instant
+  // the keyboard lands on any button, the ring stands down and that button's own
+  // `data-key-view-kbd` is the sole filled+ring. Innermost-wins like the default
+  // button stack; nested surfaces push/pop. Appearance-zone DOM only ([L06]).
+  private defaultRingStack: HTMLElement[] = [];
   private accessMode: KeyboardAccessMode = "standard";
   private seqCounter = 0;
   private version = 0;
@@ -996,24 +1005,81 @@ export class FocusManager {
       el.removeAttribute("data-key-view");
       el.removeAttribute("data-key-view-kbd");
     });
-    if (this.keyViewId === null) return;
-    const id = this.keyViewId;
+    const el = this.keyViewElement();
+    if (el !== null && this.keyViewId !== null) {
+      el.setAttribute("data-key-view", this.keyViewId);
+      // The focus ring paints on a keyboard-reached key view (the engine's own
+      // signal, since `:focus-visible` is unreliable for programmatic focus) —
+      // and, when the ring-follows-pointer policy is on, on any pointer-driven
+      // key-view change too, so the ring is consistent across Tab and click.
+      if (this.keyViewKeyboard || this.ringFollowsPointer) {
+        el.setAttribute("data-key-view-kbd", "");
+      }
+    }
+    // The default ring tracks the same signal, so it is recomputed in lockstep
+    // with the key view ([P14] one filled+ring per scope).
+    this.syncDefaultRingDomAttribute();
+  }
+
+  /** Resolve the DOM element carrying the current key view, or `null`. */
+  private keyViewElement(): HTMLElement | null {
+    if (typeof document === "undefined" || this.keyViewId === null) return null;
     const escaped =
       typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(id)
-        : id;
-    const el = document.querySelector<HTMLElement>(
+        ? CSS.escape(this.keyViewId)
+        : this.keyViewId;
+    return document.querySelector<HTMLElement>(
       `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
     );
-    if (!el) return;
-    el.setAttribute("data-key-view", id);
-    // The focus ring paints on a keyboard-reached key view (the engine's own
-    // signal, since `:focus-visible` is unreliable for programmatic focus) —
-    // and, when the ring-follows-pointer policy is on, on any pointer-driven
-    // key-view change too, so the ring is consistent across Tab and click.
-    if (this.keyViewKeyboard || this.ringFollowsPointer) {
-      el.setAttribute("data-key-view-kbd", "");
-    }
+  }
+
+  /**
+   * Whether the current key view is itself a button — the one control that
+   * claims the scope's Return for its own activation. When it is, a persistent
+   * default ring elsewhere must stand down (that button is the live Return
+   * target and the sole filled+ring); when it is a list / field / cursor, Return
+   * delegates to the default, which keeps its ring.
+   */
+  private keyViewIsButton(): boolean {
+    const el = this.keyViewElement();
+    if (el === null) return false;
+    return el instanceof HTMLButtonElement || el.closest(".tug-button") !== null;
+  }
+
+  /**
+   * Register a button as the scope's persistent-default-ring node ([P14]). The
+   * engine owns the `data-default-ring` attribute from here, projecting it in
+   * lockstep with the key view. Innermost-wins: a nested surface's node takes
+   * over while mounted and the prior node is restored on {@link unregisterDefaultRing}.
+   */
+  registerDefaultRing(node: HTMLElement): void {
+    if (this.defaultRingStack.includes(node)) return;
+    this.defaultRingStack.push(node);
+    this.syncDefaultRingDomAttribute();
+  }
+
+  /** Remove a persistent-default-ring node (on unmount / opt-out). */
+  unregisterDefaultRing(node: HTMLElement): void {
+    const i = this.defaultRingStack.indexOf(node);
+    if (i < 0) return;
+    this.defaultRingStack.splice(i, 1);
+    node.removeAttribute("data-default-ring");
+    this.syncDefaultRingDomAttribute();
+  }
+
+  /**
+   * Project the persistent default ring: clear `data-default-ring` from every
+   * registered node, then stamp it on the TOP node iff the current key view is
+   * not itself a button. This is the structural guarantee that the default ring
+   * yields to a focused button — only one control reads filled+ring at a time
+   * ([P14]). Appearance-zone DOM only ([L06]/[L22]); guarded for DOM-free envs.
+   */
+  private syncDefaultRingDomAttribute(): void {
+    if (typeof document === "undefined") return;
+    for (const node of this.defaultRingStack) node.removeAttribute("data-default-ring");
+    const top = this.defaultRingStack[this.defaultRingStack.length - 1];
+    if (top === undefined) return;
+    if (!this.keyViewIsButton()) top.setAttribute("data-default-ring", "");
   }
 
   /**
