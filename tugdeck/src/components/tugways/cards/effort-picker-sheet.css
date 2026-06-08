@@ -22,6 +22,12 @@
 .effort-picker-sheet-list .tug-list-view {
   height: auto;
   max-height: 18rem;
+  /* Rows flush to the list frame. The list seeds as the keyboard key view, so it
+     wears the perimeter ring at its edge; the default inline padding would
+     otherwise leave a visible gap between that ring and the rows (the selection
+     fill + dividers must reach the frame). Rows keep their own internal text
+     padding, so only the fill / dividers extend, not the text ([L20]). */
+  padding-inline: 0;
 }
 
 /* The leading checkmark column is `TugListRow`'s `selectedGlyph="check"`
