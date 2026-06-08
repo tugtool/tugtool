@@ -213,8 +213,8 @@ body {
      list-view cursor tint is a reduced (lighter) color-mix of it, so the two read
      as one ramp. Lower chroma + darker keeps a clearly-"chosen" fill that no
      longer glares. Sole consumer is the list row, so this is safe to tune here. */
-  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(blue, i: 34, t: 32);
-  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(blue, i: 40, t: 38);
+  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(blue, i: 38, t: 30);
+  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(blue, i: 38, t: 35);
   --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, i: 2, t: 100);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind
