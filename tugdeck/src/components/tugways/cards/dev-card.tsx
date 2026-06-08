@@ -51,7 +51,6 @@ import { useMemorySheet } from "./memory-sheet";
 import { useHooksSheet } from "./hooks-sheet";
 import { useHelpSheet } from "./help-sheet";
 import { useRenameSessionSheet } from "./rename-session-sheet";
-import { canOfferRewind } from "./rewind-turn-source";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
 import { useEffortPicker } from "./effort-picker-sheet";
@@ -538,15 +537,11 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
         ? wrapPositionZero(
             entryDelegateRef,
             mergeCommandProviders(
-              localCommandCompletionProvider({
-                // `/rewind` is offered only once the session has a valid
-                // rewind target (≥2 anchored turns) — [#step-7-3] empty-state
-                // gating. Read live on each query, not closed over a stale
-                // snapshot ([L07]).
-                isOffered: (name) =>
-                  name !== "rewind" ||
-                  canOfferRewind(services.codeSessionStore.getSnapshot().transcript),
-              }),
+              // Every local command is always offered. `/rewind` in particular
+              // is NOT gated on having a rewind target: the command must always
+              // be discoverable, and opening it with nothing to rewind to shows
+              // an explanatory empty-state sheet rather than silently no-opping.
+              localCommandCompletionProvider(),
               // Apply the [D14] allowlist over claude's reported commands:
               // drop the known-unsupported `hidden` tier from the popup
               // ([#step-13a]). Local commands need no filter — every registry

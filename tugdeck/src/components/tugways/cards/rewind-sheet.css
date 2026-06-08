@@ -26,8 +26,9 @@
   gap: 0.75rem;
 }
 
-/* Empty-state inside the bordered host when every turn is past the last
-   /compact (nothing rewindable). */
+/* Rare in-sheet empty state inside the bordered host: the sheet opened with
+   targets but every turn filtered out as non-rewindable once previews resolved.
+   (The no-target case is handled before open by the "Can't rewind" alert.) */
 .rewind-empty {
   display: flex;
   align-items: center;

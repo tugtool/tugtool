@@ -52,6 +52,7 @@ import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
+import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import {
   TugChoiceGroup,
   type TugChoiceItem,
@@ -98,8 +99,20 @@ export function useRewindSheet({
   showSheet,
 }: UseRewindSheetArgs): RewindSheetController {
   const openRewindSheet = useCallback(() => {
+    // `/rewind` is never a silent no-op. With no rewind target (a 0/1-turn
+    // session, or everything cleared by the last /compact) present a "Can't
+    // rewind" alert explaining why; otherwise open the turn picker.
     const rows = projectRewindTurns(codeSessionStore.getSnapshot().transcript);
-    if (rows.length === 0) return; // nothing to rewind to
+    if (rows.length === 0) {
+      void presentAlertSheet(showSheet, {
+        title: "Can't rewind",
+        message:
+          "Rewind needs at least one completed turn before the current point. " +
+          "A fresh session — or one the last /compact reset — has nothing " +
+          "earlier to return to.",
+      });
+      return;
+    }
     void showSheet({
       title: "Rewind",
       // Guidance renders as a centered proposal label below the divider (in
@@ -364,12 +377,14 @@ function RewindSheetBody({
   }, [selected, isIdle, effectiveScope, codeSessionStore]);
 
   // Author the controls into the sheet's trapped focus mode: Tab walks the turn
-  // list → Cancel → Rewind, with Rewind seeded as the live default (filled+ring).
+  // list → Cancel → Rewind. Seed the LIST (rewind is pick-first; Rewind stays
+  // disabled until a turn is selected, so it must never be the seeded default).
+  // The no-target case never reaches here — it's the "Can't rewind" alert.
   const focusGroup = useId();
   const LIST_ORDER = 0;
   const CANCEL_ORDER = 1;
   const REWIND_ORDER = 2;
-  useSeedKeyView(`${focusGroup}:${REWIND_ORDER}`);
+  useSeedKeyView(`${focusGroup}:${LIST_ORDER}`);
 
   return (
     <ResponderScope>
@@ -411,8 +426,12 @@ function RewindSheetBody({
                   focusOrder={LIST_ORDER}
                 />
               ) : (
+                // Rare in-sheet empty: the sheet opened with targets but every
+                // turn filtered out as non-rewindable once previews resolved
+                // (the no-target case is handled before open by the "Can't
+                // rewind" alert).
                 <div className="rewind-empty" role="status">
-                  No turns to rewind to since the last /compact.
+                  No turns to rewind to.
                 </div>
               )}
             </div>
