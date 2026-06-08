@@ -688,6 +688,52 @@ export interface TugListViewProps<
    * @default false
    */
   keyboardSubordinate?: boolean;
+
+  /**
+   * Single-select keyboard model — the picker shape ([P01]/[P12]). When set
+   * (and the list is authored into a {@link focusGroup}), the list is a
+   * single-selected-row container: the **arrow / Home / End / Page** keys move
+   * the cursor *and* commit selection on the landed row (selection follows the
+   * cursor — no separate Space step), and the container does **not** consume
+   * `Enter` — it declares the engine's single-select flag so Return falls through
+   * to the surface's default action ([P12], the `persistentDefaultRing` button).
+   * On gaining the key view the list seeds the cursor + selection onto
+   * {@link initialSelectedIndex} (the currently-active row) when given, else the
+   * first selectable row, so there is always exactly one selected row and the
+   * arrows start from the right place.
+   *
+   * Omitted leaves the default multi-select / descend cursor model
+   * (arrows move a distinct cursor, Space selects, Enter acts/descends).
+   *
+   * @default false
+   */
+  singleSelect?: boolean;
+
+  /**
+   * The row the {@link singleSelect} cursor + selection seed onto when the list
+   * first gains the key view — the currently-active choice. Ignored unless
+   * `singleSelect` is set; a value that is not a selectable (`"cell"`-role) row
+   * falls back to the first selectable row. Used by confirm-style pickers that
+   * own their selection outside the list (so the cursor opens on the active row
+   * rather than the top).
+   */
+  initialSelectedIndex?: number;
+
+  /**
+   * Commit the seeded row's selection when the {@link singleSelect} list first
+   * gains the key view — for a surface whose list IS the opening default and
+   * needs its default action enabled on open (a pick-first picker: the rewind
+   * turn list auto-selects its first turn so Rewind enables and its ring lights).
+   * Ignored unless `singleSelect` is set.
+   *
+   * Default `false` — the gain-seed only *lands the cursor*; selection then
+   * follows explicit arrow movement. Leave it off when merely cycling the key
+   * view onto the list must not commit a row (a recents list that would
+   * otherwise overwrite a typed path the instant it gains focus).
+   *
+   * @default false
+   */
+  seedSelection?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -865,6 +911,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       focusOrder = 0,
       focusPolicy,
       keyboardSubordinate = false,
+      singleSelect = false,
+      initialSelectedIndex,
+      seedSelection = false,
     },
     ref,
   ) {
@@ -2119,6 +2168,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // fire time, not closure-capture time) [L07].
     const selectedIndexRef = React.useRef<number | null>(null);
     selectedIndexRef.current = selectedIndex;
+    // Live single-select props for the gain-seed / movement closures ([L07]).
+    const singleSelectRef = React.useRef(singleSelect);
+    singleSelectRef.current = singleSelect;
+    const initialSelectedIndexRef = React.useRef(initialSelectedIndex);
+    initialSelectedIndexRef.current = initialSelectedIndex;
+    const seedSelectionRef = React.useRef(seedSelection);
+    seedSelectionRef.current = seedSelection;
 
     // The movement cursor's data index (`-1` = unlanded). A ref, not React
     // state — moving it must not re-render ([L06]).
@@ -2270,13 +2326,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const behavior = React.useCallback(
       (): KeyViewBehavior => ({
         container: "item",
-        commit: "deferred",
-        currentItemDescendable: rowFirstFocusableId(cursorIndexRef.current) !== null,
+        commit: singleSelect ? "live" : "deferred",
+        // A single-select list commits on move and lets Enter fall through to
+        // the surface default ([P12]); it never descends.
+        singleSelect,
+        currentItemDescendable:
+          !singleSelect && rowFirstFocusableId(cursorIndexRef.current) !== null,
         onSelect: selectCursorRow,
         onAct: selectCursorRow,
         onDescend: descendCursorRow,
       }),
-      [rowFirstFocusableId, selectCursorRow, descendCursorRow],
+      [singleSelect, rowFirstFocusableId, selectCursorRow, descendCursorRow],
     );
 
     // Register the scroll container as the single item-container stop. The
@@ -2306,9 +2366,27 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const kbd = el.hasAttribute("data-key-view-kbd");
         if (kbd && !wasKbdRef.current) {
           if (cursorIndexRef.current < 0) {
-            const saved = selectedIndexRef.current ?? -1;
-            const seed = isCursorableRow(saved) ? saved : firstCursorableRow();
-            if (seed >= 0) moveCursorTo(seed, true);
+            // Seed the cursor on the active row. Single-select prefers the
+            // surface-supplied active row (`initialSelectedIndex`); both models
+            // fall back to the list-owned selection, then the first cursorable
+            // row. The seed is cursor-only by default — selection follows
+            // explicit arrow movement, so merely cycling the key view onto a
+            // list never commits a row (a recents list must not clobber a typed
+            // path on focus). A surface whose list IS the opening default
+            // (`seedSelection`) commits the seeded row so it opens with exactly
+            // one selected row (a pick-first picker that enables its default
+            // action on open).
+            const preferred =
+              singleSelectRef.current && isCursorableRow(initialSelectedIndexRef.current ?? -1)
+                ? (initialSelectedIndexRef.current as number)
+                : (selectedIndexRef.current ?? -1);
+            const seed = isCursorableRow(preferred) ? preferred : firstCursorableRow();
+            if (seed >= 0) {
+              moveCursorTo(seed, true);
+              if (singleSelectRef.current && seedSelectionRef.current) {
+                selectCursorRow();
+              }
+            }
           } else {
             projectCursor();
           }
@@ -2328,6 +2406,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       moveCursorTo,
       projectCursor,
       clearCursorVisual,
+      selectCursorRow,
     ]);
 
     // Re-project the cursor every commit while the container holds the key view,
@@ -2398,8 +2477,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         }
         e.preventDefault();
         e.stopImmediatePropagation();
-        if (next >= 0 && next !== cur) moveCursorTo(next, true);
-        else if (next >= 0) scrollIndexIntoView(next, "nearest");
+        if (next >= 0 && next !== cur) {
+          moveCursorTo(next, true);
+          // Single-select: selection follows the cursor — commit the landed row
+          // so there is no separate Space step ([P12] picker shape).
+          if (singleSelectRef.current) selectCursorRow();
+        } else if (next >= 0) scrollIndexIntoView(next, "nearest");
       };
       scrollEl.addEventListener("keydown", handler, true);
       return () => scrollEl.removeEventListener("keydown", handler, true);
@@ -2412,6 +2495,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       cursorableNear,
       moveCursorTo,
       scrollIndexIntoView,
+      selectCursorRow,
     ]);
 
     // PageUp / PageDown by entry ([L02] DOM event listener installed

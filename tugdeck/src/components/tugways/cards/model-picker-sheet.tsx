@@ -243,29 +243,22 @@ function ModelPickerSheetBody({
   );
 
   // Author the controls into the sheet's trapped focus mode: Tab walks
-  // list → Cancel → OK, with OK seeded as the live default (filled+ring).
+  // list → Cancel → OK. Single-select picker: the list is seeded as the key
+  // view (arrows move + select immediately), and OK keeps its ring the whole
+  // time (`persistentDefaultRing`) — Return falls through the list to OK.
   const focusGroup = React.useId();
   const LIST_ORDER = 0;
   const CANCEL_ORDER = 1;
   const OK_ORDER = 2;
-  useSeedKeyView(`${focusGroup}:${OK_ORDER}`);
+  useSeedKeyView(`${focusGroup}:${LIST_ORDER}`);
+  // Open the cursor on the active model so arrows start from the current choice.
+  const activeIndex =
+    activeValue === null ? -1 : options.findIndex((o) => o.value === activeValue);
 
   const confirm = (): void => onConfirm(selected);
 
   return (
-    <div
-      className="model-picker-sheet"
-      onKeyDown={(e) => {
-        // Enter accepts (OK) regardless of which control holds focus;
-        // preventDefault suppresses a focused button's native Enter-click so
-        // the accept path is single + consistent. Escape / Cmd-. are handled
-        // by TugSheet (cancelDialog → dismiss, no commit).
-        if (e.key === "Enter") {
-          e.preventDefault();
-          confirm();
-        }
-      }}
-    >
+    <div className="model-picker-sheet">
       <ModelPickerListContext.Provider value={selected}>
         <div className="model-picker-sheet-list">
           <TugListView<ModelPickerDataSource>
@@ -277,6 +270,8 @@ function ModelPickerSheetBody({
             className="model-picker-list"
             focusGroup={focusGroup}
             focusOrder={LIST_ORDER}
+            singleSelect
+            initialSelectedIndex={activeIndex}
           />
         </div>
       </ModelPickerListContext.Provider>
@@ -295,6 +290,7 @@ function ModelPickerSheetBody({
           onClick={confirm}
           focusGroup={focusGroup}
           focusOrder={OK_ORDER}
+          persistentDefaultRing
         >
           OK
         </TugPushButton>

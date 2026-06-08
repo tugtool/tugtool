@@ -1731,16 +1731,15 @@ function DevProjectPickerForm({
     [sessionsDataSource],
   );
 
-  // Arrow navigation + Return-to-act over the two lists is owned by the focus
-  // engine: each `TugListView` is authored as one item-group cycle stop
-  // ([#step-picker-keys]), so ↑/↓ rove the cursor within whichever list holds
-  // the key view and Return/Space commit the roved row through its
-  // `delegate.onSelect` (above). The picker's former bespoke `handleArrowKey` /
-  // `handleFormKeyDown` selection-stepping is retired — the engine listbox model
-  // is the single navigation path now. Return-to-open still falls to the default
-  // button (Open, `filled`+`action`) when the key view is not on a list. Per-row
-  // trash stays mouse-driven (the row trash icons are focus-refusing pointer
-  // affordances); keyboard users trash via the Move-all-to-Trash stop.
+  // Arrow navigation over the two lists is owned by the focus engine: each
+  // `TugListView` is authored as one single-select cycle stop, so ↑/↓ move the
+  // cursor within whichever list holds the key view AND select the landed row —
+  // the recent path / session selection follows the cursor (no separate Space
+  // step). A single-select list does not consume Return: it falls through to the
+  // picker's default action (Open, which keeps its ring the whole time via
+  // `persistentDefaultRing`), so arrowing to a row and pressing Return opens it.
+  // Per-row trash stays mouse-driven (the row trash icons are focus-refusing
+  // pointer affordances); keyboard users trash via the Move-all-to-Trash stop.
 
   // Cell-context value — `currentPath` drives path-recent's
   // `data-selected`; `selection` drives session cells' selection
@@ -1864,6 +1863,7 @@ function DevProjectPickerForm({
                 className="dev-card-picker-recents-list"
                 focusGroup={PICKER_CYCLE_GROUP}
                 focusOrder={PICKER_ORDER_RECENTS}
+                singleSelect
               />
             ) : (
               <div
@@ -1888,6 +1888,7 @@ function DevProjectPickerForm({
                 className="dev-card-picker-sessions-list dev-card-picker-list-view"
                 focusGroup={PICKER_CYCLE_GROUP}
                 focusOrder={PICKER_ORDER_SESSIONS}
+                singleSelect
               />
             ) : sessionsPending ? (
               <div
@@ -1966,6 +1967,7 @@ function DevProjectPickerForm({
           disabled={openDisabled}
           focusGroup={PICKER_CYCLE_GROUP}
           focusOrder={PICKER_ORDER_OPEN}
+          persistentDefaultRing
         >
           Open
         </TugPushButton>

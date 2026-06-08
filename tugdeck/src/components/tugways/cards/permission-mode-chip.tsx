@@ -375,28 +375,24 @@ function PermissionModeSheetBody({
   );
 
   // Author the controls into the sheet's trapped focus mode: Tab walks
-  // list → Cancel → OK, with OK seeded as the live default (filled+ring).
+  // list → Cancel → OK. Single-select picker: the list is seeded as the key
+  // view (arrows move + select immediately), and OK keeps its ring the whole
+  // time (`persistentDefaultRing`) — Return falls through the list to OK.
   const focusGroup = React.useId();
   const LIST_ORDER = 0;
   const CANCEL_ORDER = 1;
   const OK_ORDER = 2;
-  useSeedKeyView(`${focusGroup}:${OK_ORDER}`);
+  useSeedKeyView(`${focusGroup}:${LIST_ORDER}`);
+  // Open the cursor on the active mode so arrows start from the current choice.
+  const activeIndex =
+    selected === null
+      ? -1
+      : (PERMISSION_MODE_MENU as readonly PermissionMode[]).indexOf(selected);
 
   const confirm = (): void => onConfirm(selected);
 
   return (
-    <div
-      className="permission-mode-sheet"
-      onKeyDown={(e) => {
-        // Enter accepts (OK) regardless of focus; preventDefault suppresses a
-        // focused button's native Enter-click. Escape / Cmd-. are handled by
-        // TugSheet (cancelDialog → dismiss, no commit).
-        if (e.key === "Enter") {
-          e.preventDefault();
-          confirm();
-        }
-      }}
-    >
+    <div className="permission-mode-sheet">
       <PermissionModeListContext.Provider value={selected}>
         <div className="permission-mode-sheet-list">
           <TugListView<PermissionModeDataSource>
@@ -408,6 +404,8 @@ function PermissionModeSheetBody({
             className="permission-mode-list"
             focusGroup={focusGroup}
             focusOrder={LIST_ORDER}
+            singleSelect
+            initialSelectedIndex={activeIndex}
           />
         </div>
       </PermissionModeListContext.Provider>
@@ -428,6 +426,7 @@ function PermissionModeSheetBody({
           data-testid="permission-mode-ok"
           focusGroup={focusGroup}
           focusOrder={OK_ORDER}
+          persistentDefaultRing
         >
           OK
         </TugPushButton>

@@ -250,29 +250,22 @@ function EffortPickerSheetBody({
   );
 
   // Author the sheet's controls into its trapped focus mode (TugSheet pushes it;
-  // FocusModeScope wraps the body): Tab walks list → Cancel → OK, and the engine
-  // seeds the key view onto OK so it opens filled+ring (the live default).
+  // FocusModeScope wraps the body): Tab walks list → Cancel → OK. Single-select
+  // picker: the engine seeds the key view onto the LIST (arrows move + select the
+  // row immediately), and OK keeps its ring the whole time (`persistentDefaultRing`)
+  // as the sole Return consumer — Return falls through the list to OK.
   const focusGroup = React.useId();
   const LIST_ORDER = 0;
   const CANCEL_ORDER = 1;
   const OK_ORDER = 2;
-  useSeedKeyView(`${focusGroup}:${OK_ORDER}`);
+  useSeedKeyView(`${focusGroup}:${LIST_ORDER}`);
+  // Open the cursor on the active level so arrows start from the current choice.
+  const activeIndex = activeValue === null ? -1 : levels.indexOf(activeValue);
 
   const confirm = (): void => onConfirm(selected);
 
   return (
-    <div
-      className="effort-picker-sheet"
-      onKeyDown={(e) => {
-        // Enter accepts (OK) regardless of focus; preventDefault suppresses a
-        // focused button's native Enter-click. Escape / Cmd-. are handled by
-        // TugSheet (cancelDialog → dismiss, no commit).
-        if (e.key === "Enter") {
-          e.preventDefault();
-          confirm();
-        }
-      }}
-    >
+    <div className="effort-picker-sheet">
       <EffortPickerListContext.Provider value={selected}>
         <div className="effort-picker-sheet-list">
           <TugListView<EffortPickerDataSource>
@@ -284,6 +277,8 @@ function EffortPickerSheetBody({
             className="effort-picker-list"
             focusGroup={focusGroup}
             focusOrder={LIST_ORDER}
+            singleSelect
+            initialSelectedIndex={activeIndex}
           />
         </div>
       </EffortPickerListContext.Provider>
@@ -304,6 +299,7 @@ function EffortPickerSheetBody({
           onClick={confirm}
           focusGroup={focusGroup}
           focusOrder={OK_ORDER}
+          persistentDefaultRing
         >
           OK
         </TugPushButton>

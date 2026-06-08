@@ -377,9 +377,11 @@ function RewindSheetBody({
   }, [selected, isIdle, effectiveScope, codeSessionStore]);
 
   // Author the controls into the sheet's trapped focus mode: Tab walks the turn
-  // list → Cancel → Rewind. Seed the LIST (rewind is pick-first; Rewind stays
-  // disabled until a turn is selected, so it must never be the seeded default).
-  // The no-target case never reaches here — it's the "Can't rewind" alert.
+  // list → Cancel → Rewind. Single-select picker: the list is seeded as the key
+  // view, and its first turn auto-selects on open (so the cursor + selection land
+  // immediately, Rewind enables, and its `persistentDefaultRing` lights). Return
+  // falls through the list to Rewind. The no-target case never reaches here —
+  // it's the "Can't rewind" alert.
   const focusGroup = useId();
   const LIST_ORDER = 0;
   const CANCEL_ORDER = 1;
@@ -391,14 +393,6 @@ function RewindSheetBody({
       <div
         className="rewind-sheet"
         ref={responderRef as (el: HTMLDivElement | null) => void}
-        onKeyDown={(e) => {
-          // Enter rewinds (the default) when a turn is picked; Escape is
-          // TugSheet's cancel.
-          if (e.key === "Enter" && canApply) {
-            e.preventDefault();
-            apply();
-          }
-        }}
       >
         <div className="rewind-intro">
           <TugLabel emphasis="proposal" align="center">
@@ -424,6 +418,8 @@ function RewindSheetBody({
                   className="dev-card-picker-sessions-list dev-card-picker-list-view"
                   focusGroup={focusGroup}
                   focusOrder={LIST_ORDER}
+                  singleSelect
+                  seedSelection
                 />
               ) : (
                 // Rare in-sheet empty: the sheet opened with targets but every
@@ -480,6 +476,7 @@ function RewindSheetBody({
             data-testid="rewind-apply"
             focusGroup={focusGroup}
             focusOrder={REWIND_ORDER}
+            persistentDefaultRing
           >
             Rewind
           </TugPushButton>

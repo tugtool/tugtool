@@ -35,6 +35,30 @@ describe("resolveFocusAct — act tier", () => {
     expect(resolveFocusAct(k("Enter"), { container: "none" })).toBe("act");
   });
 
+  test("a single-select item container passes Enter through to the default", () => {
+    // Selection follows the cursor, so Return is not consumed — it bubbles to
+    // the scope default action ([P12]).
+    expect(
+      resolveFocusAct(k("Enter"), { container: "item", singleSelect: true }),
+    ).toBe("passthrough");
+    // descendable is moot under single-select — passthrough still wins.
+    expect(
+      resolveFocusAct(k("Enter"), {
+        container: "item",
+        singleSelect: true,
+        currentItemDescendable: true,
+      }),
+    ).toBe("passthrough");
+    // The flag is item-container-only: a leaf still acts.
+    expect(
+      resolveFocusAct(k("Enter"), { container: "none", singleSelect: true }),
+    ).toBe("act");
+    // Space still selects the cursor row (harmless — already selected).
+    expect(
+      resolveFocusAct(k(" "), { container: "item", singleSelect: true }),
+    ).toBe("select");
+  });
+
   test("Escape ascends, cancels at a modal scope", () => {
     expect(resolveFocusAct(k("Escape"), { container: "component" })).toBe("ascend");
     expect(resolveFocusAct(k("Escape"), { container: "component", modal: true })).toBe(

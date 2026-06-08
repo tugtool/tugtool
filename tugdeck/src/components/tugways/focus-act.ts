@@ -45,6 +45,15 @@ export interface ComponentKeyDeclaration {
    */
   currentItemDescendable?: boolean;
   /**
+   * Whether this is a **single-select** item container — one selected row that
+   * the arrows move (selection follows the cursor). Such a container does NOT
+   * consume `Enter`: with the selection already committed by movement, `Enter`
+   * resolves to `passthrough` so it falls through to the scope's default action
+   * ([P12] — Return's home). Only meaningful for `item` containers; absent leaves
+   * the multi-select cursor model (Space selects, Enter acts/descends) unchanged.
+   */
+  singleSelect?: boolean;
+  /**
    * Whether the component's scope is modal (trapped). At a modal scope `Escape`
    * **cancels** the scope rather than ascending one level.
    */
@@ -129,6 +138,11 @@ export function resolveFocusAct(
     return declaration.container === "item" ? "select" : "act";
   }
   if (key === "Enter") {
+    // A single-select item container does not consume Enter: selection already
+    // follows the cursor, so Return falls through to the scope default ([P12]).
+    if (declaration.container === "item" && declaration.singleSelect) {
+      return "passthrough";
+    }
     // Enter descends when the current item is a navigable container, else acts.
     return declaration.currentItemDescendable ? "descend" : "act";
   }
