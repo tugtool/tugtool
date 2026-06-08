@@ -212,6 +212,52 @@ fn branch_exists(repo: &Path, branch: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Canonical bundle-id branch slug — mirrors `scripts/branch-slug.sh`
+/// (lowercase; every run of non-`[a-z0-9]` collapses to a single `-`;
+/// trim leading/trailing `-`). This is the slug `assign-bundle-id.sh`
+/// folds into the per-worktree instance ID, so it lets us reconstruct
+/// the tmux identity a removed dash's app used. NOTE: distinct from
+/// `sanitize_branch_name` (which names the worktree *directory* and maps
+/// `/` → `__`).
+fn branch_slug(branch: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for c in branch.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
+/// Tear down the tmux server/session a removed dash worktree's app left
+/// behind. A dash worktree builds the cwd-derived debug (or release)
+/// identity `<profile>-<branch-slug>`; its tugcast created a tmux
+/// session `cc-<id>` on that instance's private `tug-<token>` server
+/// (current scheme) or, for pre-isolation builds, on the shared default
+/// server. Removing the worktree must reap both so sessions don't pile
+/// up. All best-effort — a dash that never launched an app has nothing
+/// to kill, and tmux's "no server"/"no session" errors are ignored.
+fn reap_dash_tmux(branch: &str) {
+    let slug = branch_slug(branch);
+    for profile in ["debug", "release"] {
+        let id = format!("{profile}-{slug}");
+        // Private per-instance server (current scheme).
+        let label = tugcore::instance::tmux_socket_label_for(&id);
+        let _ = Command::new("tmux")
+            .args(["-L", &label, "kill-server"])
+            .output();
+        // Legacy shared-server session (pre per-instance-server builds).
+        let _ = Command::new("tmux")
+            .args(["kill-session", "-t", &format!("cc-{id}")])
+            .output();
+    }
+}
+
 /// Resolve a dash's base branch: git config first ([P03]), else detection.
 fn dash_base(repo: &Path, name: &str) -> Result<String, String> {
     if let Some(base) = config_get(repo, &format!("branch.tugdash/{}.tugbase", name)) {
@@ -732,6 +778,9 @@ pub fn run_dash_join(
         }
     }
 
+    // Reap the removed worktree's tmux server/session so it doesn't leak.
+    reap_dash_tmux(&branch);
+
     // Delete the branch (warn on failure).
     match git_output(&repo_root, &["branch", "-D", &branch]) {
         Ok(o) if !o.status.success() => warnings.push(format!(
@@ -795,6 +844,9 @@ pub fn run_dash_release(name: String, json: bool, quiet: bool) -> Result<i32, St
         }
     }
 
+    // Reap the removed worktree's tmux server/session so it doesn't leak.
+    reap_dash_tmux(&branch);
+
     // Delete the branch (warn on failure).
     if branch_exists(&repo_root, &branch) {
         match git_output(&repo_root, &["branch", "-D", &branch]) {
@@ -836,6 +888,22 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
     use tempfile::TempDir;
+
+    #[test]
+    fn branch_slug_matches_canonical_bundle_id_slug() {
+        // Mirrors scripts/branch-slug.sh: lowercase, non-alnum runs → '-',
+        // trimmed. These reconstruct the per-worktree instance ID that
+        // `assign-bundle-id.sh` stamps, so `reap_dash_tmux` targets the
+        // exact tmux identity a removed dash's app used.
+        assert_eq!(branch_slug("tugdash/kbd-model"), "tugdash-kbd-model");
+        assert_eq!(branch_slug("tugdash/Focus_Gallery"), "tugdash-focus-gallery");
+        assert_eq!(branch_slug("tugdash/a--b"), "tugdash-a-b");
+        assert_eq!(branch_slug("tugdash/trailing-"), "tugdash-trailing");
+        // The reconstructed debug session name matches what tugcast creates
+        // (`cc-<instance-id>`), e.g. the leaked `cc-debug-tugdash-kbd-model`.
+        let id = format!("debug-{}", branch_slug("tugdash/kbd-model"));
+        assert_eq!(id, "debug-tugdash-kbd-model");
+    }
 
     /// Redirect `project_state_dir`'s base off the real data dir for the
     /// duration of a (serial) test, so the dash-log lands under `home`.

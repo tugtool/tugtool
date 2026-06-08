@@ -42,6 +42,44 @@ pub fn instance_id() -> Option<String> {
     env::var(ENV_INSTANCE_ID).ok().filter(|s| !s.is_empty())
 }
 
+/// Short, fixed-width token for an arbitrary instance ID (FNV-1a
+/// 32-bit, lower-hex). Pure function of the ID — use this to key
+/// resources for an instance *other* than the current process's (e.g.
+/// reaping a removed worktree's tmux server). Mirrors
+/// `InstanceConfig.shortToken` in Swift (identical FNV-1a + `%08x`).
+pub fn short_token_for(instance_id: &str) -> String {
+    format!("{:08x}", crate::ports::fnv1a_32(instance_id.as_bytes()))
+}
+
+/// Short, fixed-width token derived from the *runtime* instance ID.
+/// Returns `None` when no instance ID is set.
+///
+/// Fixed-length resource names that must stay under the Unix-domain
+/// socket path limit (`sockaddr_un.sun_path` is ~104 bytes on macOS)
+/// key on this rather than the raw ID: the app-test harness mints
+/// `apptest-<uuid>`, whose full ID plus the `$TMPDIR` prefix overflows
+/// `sun_path` and fails to bind. Same ID → same token.
+pub fn short_token() -> Option<String> {
+    instance_id().map(|id| short_token_for(&id))
+}
+
+/// Per-instance tmux server socket label for an arbitrary instance ID:
+/// `tug-<short_token>`. Pure function of the ID.
+pub fn tmux_socket_label_for(instance_id: &str) -> String {
+    format!("tug-{}", short_token_for(instance_id))
+}
+
+/// Per-instance tmux server socket label for the runtime instance:
+/// `tug-<short_token>`.
+///
+/// Passed as `tmux -L <label>` so every instance owns a private tmux
+/// server — a tmux operation in one instance can never reach another
+/// instance's sessions or server. Returns `None` when no instance ID
+/// is set (legacy / standalone launches use the default tmux server).
+pub fn tmux_socket_label() -> Option<String> {
+    instance_id().map(|id| tmux_socket_label_for(&id))
+}
+
 /// Per-instance data directory.
 ///
 /// - With `TUG_INSTANCE_ID=<id>`: `<base>/Tug/instances/<id>/`
@@ -89,15 +127,20 @@ pub fn sessions_db_path() -> Option<PathBuf> {
 
 /// Per-instance tugbank notify socket path.
 ///
-/// - With `TUG_INSTANCE_ID=<id>`: `$TMPDIR/tugbank-notify-<id>.sock`
+/// - With `TUG_INSTANCE_ID=<id>`: `$TMPDIR/tugbank-notify-<short_token>.sock`
 /// - Without: legacy `$TMPDIR/tugbank-notify.sock`
+///
+/// Keyed on [`short_token`] rather than the raw ID so the path stays
+/// under `sun_path`'s ~104-byte limit even for long IDs (the app-test
+/// harness mints `apptest-<uuid>`). Swift's
+/// `InstanceConfig.notifySocketPath` resolves the identical path.
 ///
 /// `$TMPDIR` is the per-user runtime directory on macOS, picked up
 /// via `std::env::temp_dir()`.
 pub fn notify_socket_path() -> PathBuf {
     let dir = env::temp_dir();
-    match instance_id() {
-        Some(id) => dir.join(format!("tugbank-notify-{id}.sock")),
+    match short_token() {
+        Some(tok) => dir.join(format!("tugbank-notify-{tok}.sock")),
         None => dir.join("tugbank-notify.sock"),
     }
 }
@@ -334,7 +377,26 @@ mod tests {
         set_instance(Some("debug-qux"));
         let sock = notify_socket_path();
         let name = sock.file_name().unwrap().to_str().unwrap();
-        assert_eq!(name, "tugbank-notify-debug-qux.sock");
+        // Keyed on the short token, not the raw ID, so the path stays
+        // under sun_path even for long IDs.
+        let tok = short_token().unwrap();
+        assert_eq!(name, format!("tugbank-notify-{tok}.sock"));
+        // The token is fixed-width 8-hex, so the socket name length is
+        // bounded regardless of how long the instance ID grows.
+        assert_eq!(tok.len(), 8);
+    }
+
+    #[test]
+    #[serial]
+    fn short_token_and_tmux_label_track_instance_id() {
+        let _g = EnvGuard::snapshot();
+        set_instance(Some("apptest-27b5400c-7d5e-4a9a-99a0-4f787deb6d80"));
+        let tok = short_token().expect("token when ID set");
+        assert_eq!(tok.len(), 8);
+        assert_eq!(tmux_socket_label().unwrap(), format!("tug-{tok}"));
+        set_instance(None);
+        assert_eq!(short_token(), None);
+        assert_eq!(tmux_socket_label(), None);
     }
 
     #[test]

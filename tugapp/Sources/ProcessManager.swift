@@ -734,12 +734,14 @@ class ProcessManager {
             args += ["--no-auth"]
             NSLog("ProcessManager: --no-auth enabled via tugbank")
         }
-        // In-app harness: pass --force so tugcast kills any zombie process
-        // holding port 55255 before binding. Between in-app test files the
-        // recipe `pkill -x Tug`s the parent but tugcast lives in its own
-        // process group (setpgid) and survives until its parent_watch
-        // notices, so the next launch races on the port and otherwise
-        // pays the supervisor's 1-second backoff.
+        // In-app harness: pass --force so tugcast can reclaim its own
+        // derived port from a stale *same-instance* zombie that outlived
+        // an ungraceful teardown (tugcast runs in its own process group
+        // and can linger past a SIGKILLed parent until its parent-watch
+        // fires). --force is identity-gated in tugcast: it only kills a
+        // holder the registry confirms is THIS instance's prior tugcast —
+        // never another instance or an unrelated process. See
+        // force_kill_port_holder in tugcast/src/main.rs.
         if ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1" {
             args += ["--force"]
         }

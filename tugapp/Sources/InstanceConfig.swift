@@ -68,10 +68,18 @@ enum InstanceConfig {
         dataDir.appendingPathComponent("sessions.db")
     }
 
-    /// Per-instance tugbank notify socket: `$TMPDIR/tugbank-notify-<id>.sock`.
+    /// Per-instance tugbank notify socket:
+    /// `$TMPDIR/tugbank-notify-<shortToken>.sock`.
+    ///
+    /// Keyed on `shortToken` rather than the raw `instanceId` so the
+    /// path stays under `sockaddr_un.sun_path` (~104 bytes) even for the
+    /// long `apptest-<uuid>` IDs the test harness mints. Rust's
+    /// `tugcore::instance::notify_socket_path` resolves the identical
+    /// path (same FNV-1a token), so the binder (tugcast) and this
+    /// connector agree.
     static var notifySocketPath: URL {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        return tmp.appendingPathComponent("tugbank-notify-\(instanceId).sock")
+        return tmp.appendingPathComponent("tugbank-notify-\(shortToken).sock")
     }
 
     /// Per-instance bundle-path marker: `<data-dir>/bundle-path`.
@@ -112,16 +120,31 @@ enum InstanceConfig {
     /// Vite dev-server port window size.
     static let vitePortWindow: Int = 100
 
-    /// Deterministic tugcast HTTP port for this instance.
+    /// Dedicated app-test port windows. Mirror
+    /// `tugcore::ports::APPTEST_*`. App-test instances draw from these so
+    /// their ports can never overlap a live dev/release instance's.
+    static let apptestTugcastPortBase: Int = 55400
+    static let apptestVitePortBase: Int = 55500
+    /// Instance-ID prefix marking the app-test family.
+    /// Mirrors `tugcore::ports::APPTEST_ID_PREFIX`.
+    static let apptestIDPrefix: String = "apptest-"
+
+    /// True when this instance draws from the dedicated app-test windows.
+    static var isAppTest: Bool { instanceId.hasPrefix(apptestIDPrefix) }
+
+    /// Deterministic tugcast HTTP port for this instance — app-test
+    /// window for `apptest-*`, shared dev/release window otherwise.
     /// Tugcast may still bind a different port if the derived one is
     /// taken — consult the registry for the authoritative value.
     static var tugcastPort: Int {
-        derivePort(base: tugcastPortBase, window: tugcastPortWindow)
+        derivePort(base: isAppTest ? apptestTugcastPortBase : tugcastPortBase,
+                   window: tugcastPortWindow)
     }
 
     /// Deterministic Vite dev-server port for this instance.
     static var vitePort: Int {
-        derivePort(base: vitePortBase, window: vitePortWindow)
+        derivePort(base: isAppTest ? apptestVitePortBase : vitePortBase,
+                   window: vitePortWindow)
     }
 
     /// FNV-1a 32-bit hash mirroring `tugcore::ports::fnv1a_32`.

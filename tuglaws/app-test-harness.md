@@ -95,6 +95,26 @@ The fix is the `Tug Dev` self-signed identity from the code-signing pipeline. `j
 
 ---
 
+## Instance isolation — the invariant
+
+An app-test launch and a live interactive instance (`just app-debug`, `just app-release`) must be **completely disjoint**: a test run can never disturb a developer's running session. Every per-instance resource derives from the runtime identity `TUG_INSTANCE_ID` (the harness mints `apptest-<uuid>` per launch; the dev loop uses `debug-main` / `release-main`), and nothing is shared across identities:
+
+| Resource | Keyed on | Where |
+|---|---|---|
+| App bundle / product name | `TUG_FORCE_BUNDLE_ID` (app-test always `dev.tugtool.app.apptest` → `Tug-apptest.app`) | `product-name-from-cwd.sh`, `bundle-id-from-cwd.sh` |
+| Data dir / tugbank.db / sessions.db / Logs | full `TUG_INSTANCE_ID` | `tugcore::instance` |
+| tugbank notify socket, app↔tugcast control socket | **short token** `fnv1a32(id)` (8 hex) — long IDs would overflow `sun_path` (~104 B) | `tugcore::instance::short_token`, `InstanceConfig.shortToken` |
+| tugcast HTTP + Vite ports | hash of `TUG_INSTANCE_ID` into a window. **App-test draws from a dedicated window** (tugcast 55400–55499, Vite 55500–55599) disjoint from dev/release (55300/55200) | `tugcore::ports` |
+| tmux server | per-instance `tmux -L tug-<short_token>` — a *private daemon*, not a shared server with namespaced sessions | `tugcast::feeds::terminal` |
+| Claude / tugcode subprocess | tugcast's own process group (`setpgid` + `kill(0)` on exit) | `tugcast/src/main.rs` |
+
+Two corollaries that bit us before and must not regress:
+
+- **Kills are identity-checked.** `tugutil instance stop` and tugcast's `--force` both verify a PID is still the process they registered (by command / registry ownership) before signalling. A PID is recycled the instant its process dies, so a stale registry entry can name a PID the OS has handed to an *unrelated* process — signalling it blind was how an app-test teardown could SIGKILL a live debug instance's child. Never signal a PID you cannot confirm is yours.
+- **No cross-instance file sweeps.** The recipe does not glob-and-remove sockets across instances. Each owner unlinks its own sockets on graceful close; per-launch token uniqueness means a crash-orphaned socket can never collide with a future run, so it is a harmless dead file — not something to reap by reaching into another instance's namespace.
+
+---
+
 ## Smoke vs. scenario classification
 
 Two test categories live under `tests/app-test/`:

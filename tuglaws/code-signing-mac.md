@@ -32,9 +32,9 @@ The DR depends on exactly one thing that changes between worktrees: the `CFBundl
 
 But the multi-instance scheme ([D10]/[D19], `assign-bundle-id.sh`) deliberately derives the bundle ID from the git branch: a worktree on branch `foo` builds `dev.tugtool.app.debug-foo`. That is a **new bundle ID → new DR → new TCC entry that has never been granted AX**. macOS cannot pop the grant dialog in an unattended session, so a long-running `tugplug:implement` job that builds in a worktree and runs app-tests dies at the harness's AX preflight. The OS isn't the blocker — the per-branch identity is.
 
-**The fix: pin a single, stable app-test identity.** Set `TUG_FORCE_BUNDLE_ID` in the environment and both `assign-bundle-id.sh` (the xcodebuild build phase that stamps `CFBundleIdentifier`) and `bundle-id-from-cwd.sh` (the resolver that quit/launch/instance logic consults) short-circuit their branch mapping and use it verbatim. Because the DR is path-independent, the grant given once to that ID carries across every worktree, forever.
+**The fix: pin a single, stable app-test identity — and make it the default.** `TUG_FORCE_BUNDLE_ID` short-circuits the branch mapping in both `assign-bundle-id.sh` (the xcodebuild build phase that stamps `CFBundleIdentifier`) and `bundle-id-from-cwd.sh` (the resolver that quit/launch/instance logic consults), using its value verbatim. The `build-app` and `app-test` recipes **default** it to `dev.tugtool.app.apptest` (`: "${TUG_FORCE_BUNDLE_ID:=…}"`), so every app-test — interactive or unattended, main or worktree — already runs under the granted identity with no env-var prefix to remember. Because the DR is path-independent, the grant given once carries across every worktree, forever.
 
-The canonical value is **`dev.tugtool.app.apptest`** — a dedicated identity used only by the headless harness, so it never collides with an interactive `app-debug` / `app-release` instance and a `tccutil reset` against it touches nothing else. The forced build also stamps a distinct `CFBundleDisplayName` (`Tug (apptest)`) so the entry is identifiable in System Settings, which lists apps by display name — without it, the app-test build appears as a second, identical "Tug" row and is trivially missed.
+`dev.tugtool.app.apptest` is a dedicated identity used **only** by the headless harness — it never collides with an interactive `app-debug` / `app-release` instance, and a `tccutil reset` against it touches nothing else. There is **no** "run tests under the `…app.debug` identity" path: app-tests and the interactive debug instance are fully separate identities (and separate ports, sockets, tmux servers, and data dirs). The forced build also stamps a distinct `CFBundleDisplayName` (`Tug (apptest)`) so the entry is identifiable in System Settings, which lists apps by display name.
 
 **There is no scripted way to grant Accessibility on a non-MDM Mac** — the system TCC database is SIP-protected and `tccutil` only resets. Exactly one human gesture is required, but only *once, ever*, because the DR is path-independent: every future worktree build with the same forced ID inherits the grant.
 
@@ -45,12 +45,12 @@ just app-test-grant
 #   → DRAG the Finder-revealed Tug.app into the list (do NOT use "+"),
 #     then toggle "Tug (apptest)" ON.
 
-# Thereafter, any worktree (unattended or not):
-export TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest
+# Thereafter, any worktree (unattended or not) — no env var needed:
 just build-app && just app-test               # no dialog; grant carries over
+just at                                        # or one command: build-if-needed + run
 ```
 
-`app-test` itself does not rebuild Swift, so the pinned ID must be set at **`build-app` time** — that's when it's baked into the bundle's `Info.plist` and sealed into the DR. As a safety net, `app-test` reads the built bundle's `CFBundleIdentifier`, prints it (`==> app-test bundle id: …`), and warns if `TUG_FORCE_BUNDLE_ID` is set but the built bundle doesn't match (i.e., you forgot to set it during the build).
+`app-test` itself does not rebuild Swift, so the pinned ID is baked in at **`build-app` time** — that's when it lands in the bundle's `Info.plist` and is sealed into the DR. Both recipes default the ID to `dev.tugtool.app.apptest`, so the build and the run can't disagree. As a safety net, `app-test` reads the built bundle's `CFBundleIdentifier`, prints it (`==> app-test bundle id: …`), and warns if it doesn't match the identity being driven.
 
 ### The grant dance: hard-won specifics
 
@@ -76,8 +76,8 @@ These cost real time the first time through. Read them before granting.
 4. **The identities and what each is for** (all granted independently, all persist by DR across rebuilds):
    | Bundle ID | Display name | Needs AX for |
    |---|---|---|
-   | `dev.tugtool.app.apptest` | `Tug (apptest)` | unattended / worktree app-tests (the pinned path) |
-   | `dev.tugtool.app.debug` | `Tug` | plain `just app-test` on `main` (the historical path) |
+   | `dev.tugtool.app.apptest` | `Tug (apptest)` | **all** app-tests — `build-app` / `app-test` default to this identity (no env-var prefix). It is the only identity tests ever run under. |
+   | `dev.tugtool.app.debug` | `Tug` | interactive `just app-debug`. **Never** runs app-tests. |
    | `dev.tugtool.app` | `Tug` | release/main interactive build (does not need AX for normal use) |
 
 **Caveat — serial only.** All app-test runs now share one identity. Two *concurrent* app-test runs in different worktrees would contend on that identity (LaunchServices / TCC / instance coordination). A single `implement` job runs its app-tests serially, so this is a non-issue there. The parallel case needs the MDM/PPPC route below.

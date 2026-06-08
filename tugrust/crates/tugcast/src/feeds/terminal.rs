@@ -46,9 +46,25 @@ pub enum TmuxError {
     PtyError(String),
 }
 
+/// Per-instance tmux server socket args (`-L <label>`).
+///
+/// When `TUG_INSTANCE_ID` is set, every tmux invocation targets a
+/// private server named `tug-<short_token>`, so one instance's tmux
+/// sessions and server are fully isolated from another's — an app-test
+/// sweep can never touch a live `app-debug` instance's tmux. Empty
+/// (the default server) for legacy / standalone launches with no
+/// instance ID. Prepended to every tmux command in this module.
+fn tmux_server_args() -> Vec<String> {
+    match tugcore::instance::tmux_socket_label() {
+        Some(label) => vec!["-L".to_string(), label],
+        None => Vec::new(),
+    }
+}
+
 /// Check tmux version (must be >= 3.0)
 pub async fn check_tmux_version() -> Result<String, TmuxError> {
     let output = TokioCommand::new("tmux")
+        .args(tmux_server_args())
         .arg("-V")
         .output()
         .await
@@ -89,6 +105,7 @@ pub async fn ensure_session(session: &str) -> Result<(), TmuxError> {
     // /dev/null so that noise doesn't surface to the parent (test harness,
     // capture binary, or end-user process).
     let status = TokioCommand::new("tmux")
+        .args(tmux_server_args())
         .args(["has-session", "-t", session])
         .stderr(std::process::Stdio::null())
         .status()
@@ -103,6 +120,7 @@ pub async fn ensure_session(session: &str) -> Result<(), TmuxError> {
     // Create new session
     info!(session = %session, "creating new tmux session");
     let status = TokioCommand::new("tmux")
+        .args(tmux_server_args())
         .args(["new-session", "-d", "-s", session])
         .status()
         .await
@@ -121,6 +139,7 @@ pub async fn ensure_session(session: &str) -> Result<(), TmuxError> {
 /// Capture current tmux pane content
 pub async fn capture_pane(session: &str) -> Result<Vec<u8>, TmuxError> {
     let output = TokioCommand::new("tmux")
+        .args(tmux_server_args())
         .args(["capture-pane", "-t", session, "-p", "-e"])
         .output()
         .await
@@ -198,8 +217,9 @@ impl StreamFeed for TerminalFeed {
             return;
         }
 
-        // Spawn tmux attach-session
+        // Spawn tmux attach-session (on this instance's private server)
         let _child = match pty_process::Command::new("tmux")
+            .args(tmux_server_args())
             .arg("attach-session")
             .arg("-t")
             .arg(&self.session)

@@ -571,18 +571,28 @@ teardown-dev-signing:
     echo
     echo "Next: 'just build-app' will rebuild the sentinel on first run."
 
-# Build Tug.app (Debug) end-to-end: Rust debug binaries, tugdeck deps
-# + production dist, app-test deps, xcodebuild, and a re-sign with the
-# user's Developer ID Application identity (per [D11]) so the
-# designated requirement is stable across rebuilds and the
-# Accessibility grant persists. After this finishes, run `just
-# app-test` to run tests.
+# Build the app-test bundle (Debug) end-to-end: Rust debug binaries,
+# tugdeck deps + production dist, app-test deps, xcodebuild, and a
+# re-sign with the user's Developer ID Application identity (per [D11])
+# so the designated requirement is stable across rebuilds and the
+# Accessibility grant persists. After this finishes, run `just app-test`.
+#
+# Always builds the dedicated app-test identity (`dev.tugtool.app.apptest`
+# → `Tug-apptest.app`) so the one-time AX grant from `just app-test-grant`
+# always matches — no `TUG_FORCE_BUNDLE_ID=…` prefix to remember. The
+# interactive dev/release bundles are built by `app-debug` / `app-release`,
+# which own their own identities; this recipe is app-test only.
 #
 # Prereqs (one-time per machine):
 #   just setup-dev-signing                 # verifies Developer ID cert
 build-app:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    # Pin the app-test identity unless the caller forced another (e.g.
+    # app-test-grant). This is the ONLY identity app-test ever uses.
+    : "${TUG_FORCE_BUNDLE_ID:=dev.tugtool.app.apptest}"
+    export TUG_FORCE_BUNDLE_ID
 
     # Verify the Developer ID Application identity is present. Without
     # it, the dev-loop AX grant story breaks (ad-hoc signing produces
@@ -716,6 +726,13 @@ app-test *FILES:
     # file failures so the summary captures every file's status.
     set -uo pipefail
 
+    # App-test always drives the dedicated `dev.tugtool.app.apptest`
+    # identity — the same one `build-app` produces and `app-test-grant`
+    # granted AX to. This is baked in (no env-var prefix) so the build
+    # and the run can never disagree on which bundle to launch.
+    : "${TUG_FORCE_BUNDLE_ID:=dev.tugtool.app.apptest}"
+    export TUG_FORCE_BUNDLE_ID
+
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
@@ -727,18 +744,17 @@ app-test *FILES:
         exit 1
     fi
 
-    # Surface the identity we're about to drive. The Accessibility (AX)
-    # grant is keyed on this bundle ID's designated requirement; an
-    # unattended run against an un-granted per-branch ID fails the
-    # native-event preflight. For worktree / unattended runs (e.g.
-    # tugplug:implement), build with
-    # TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest so the AX grant — given
-    # once — carries across every worktree. See tuglaws/code-signing-mac.md.
+    # Surface the identity we're about to drive and confirm the built
+    # bundle matches it. The Accessibility (AX) grant is keyed on this
+    # bundle ID's designated requirement; a mismatch fails the
+    # native-event preflight. The grant is given once via
+    # `just app-test-grant` and carries across every worktree.
+    # See tuglaws/code-signing-mac.md.
     BUILT_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP_DIR/Contents/Info.plist" 2>/dev/null || echo '?')"
-    echo "==> app-test bundle id: $BUILT_BUNDLE_ID"
-    if [ -n "${TUG_FORCE_BUNDLE_ID:-}" ] && [ "$BUILT_BUNDLE_ID" != "$TUG_FORCE_BUNDLE_ID" ]; then
-        echo "[warn] TUG_FORCE_BUNDLE_ID=$TUG_FORCE_BUNDLE_ID but the built bundle is $BUILT_BUNDLE_ID." >&2
-        echo "       Re-run 'just build-app' with TUG_FORCE_BUNDLE_ID set so the AX grant matches." >&2
+    echo "==> app-test bundle id: $BUILT_BUNDLE_ID (identity: $TUG_FORCE_BUNDLE_ID)"
+    if [ "$BUILT_BUNDLE_ID" != "$TUG_FORCE_BUNDLE_ID" ]; then
+        echo "[warn] built bundle is $BUILT_BUNDLE_ID but app-test drives $TUG_FORCE_BUNDLE_ID." >&2
+        echo "       Run 'just build-app' to rebuild the app-test bundle." >&2
     fi
 
     # Refresh tugdeck/dist so the harness (which loads prod-built
@@ -760,37 +776,57 @@ app-test *FILES:
     done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
     sleep 0.3
 
-    # Belt-and-suspenders for disorderly exits. A graceful shutdown
-    # unlinks the per-instance control socket (ProcessManager.shutdown),
-    # but a SIGKILL / crash can't — and the harness mints a fresh
-    # apptest-<uuid> each launch, so the same name never recurs to
-    # reclaim it via unlink-before-bind. Sweep tugcast control sockets
-    # and apptest notify sockets in $TMPDIR that NO live process holds.
-    # The lsof guard leaves a running dev instance's socket untouched.
-    sweep_dead_sockets() {
-        local tmp="${TMPDIR:-/tmp}"; tmp="${tmp%/}"
-        local s
-        shopt -s nullglob
-        for s in "$tmp"/tugcast-ctl-*.sock "$tmp"/tugbank-notify-apptest-*.sock; do
-            [ -S "$s" ] || continue
-            lsof -- "$s" >/dev/null 2>&1 || rm -f "$s"
+    # Reap orphaned per-instance tmux servers from ungracefully-killed
+    # app-test runs (and stale empty socket files tmux leaves behind
+    # after a graceful kill-server). Each app-test instance owns a
+    # private `tmux -L tug-<token>` server; a graceful close tears it
+    # down (tugcast's shutdown), but a SIGKILLed run leaks the whole
+    # server. A private server hosting only `cc-apptest-*` sessions (or
+    # none) is an app-test orphan — reap it. Dev/release private servers
+    # host `cc-debug-*` / `cc-release-*` sessions and are NEVER matched,
+    # so a developer's running `app-debug` tmux is untouched. Run both
+    # before the first spawn and in cleanup so nothing accrues per run.
+    reap_orphan_tmux_servers() {
+        local dir="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"
+        [ -d "$dir" ] || return 0
+        local sock label sessions
+        for sock in "$dir"/tug-*; do
+            [ -e "$sock" ] || continue
+            label="$(basename "$sock")"
+            sessions="$(tmux -L "$label" list-sessions -F '#S' 2>/dev/null)"
+            if [ -z "$sessions" ] || ! printf '%s\n' "$sessions" | grep -qv '^cc-apptest-'; then
+                tmux -L "$label" kill-server 2>/dev/null || true
+                rm -f "$sock" 2>/dev/null || true
+            fi
         done
-        shopt -u nullglob
     }
-    sweep_dead_sockets
+    reap_orphan_tmux_servers
+
+    # No cross-instance socket sweep. On graceful close each owner
+    # unlinks its own sockets (ProcessManager unlinks the control socket;
+    # tugcast unlinks its notify socket). A crash can leave orphans, but
+    # every app-test launch derives its socket names from a per-launch
+    # `apptest-<uuid>` (→ unique short token), so an orphan can never
+    # collide with a future run — it's a harmless dead file that $TMPDIR
+    # reaps on its own schedule. We deliberately do NOT glob-and-remove
+    # sockets here: the only such glob that ever existed
+    # (`tugcast-ctl-*.sock`) was unscoped and could reach a live
+    # dev/release instance's control socket. Isolation > tidiness.
 
     TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
         # Targeted teardown — stop only the apptest-* instances the
         # harness minted. A developer's separately-running app-debug
-        # session continues unaffected.
+        # session continues unaffected (and `instance stop` is now
+        # identity-checked, so a recycled PID is never signalled).
         while read -r ID; do
             case "$ID" in apptest-*)
                 tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
             esac
         done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
-        # Reap sockets orphaned by any app the harness had to SIGKILL.
-        sweep_dead_sockets
+        # Reap any private tmux servers (and stale socket files) the
+        # stopped apptest instances left behind, so a run leaves nothing.
+        reap_orphan_tmux_servers
         rm -f "$TMPOUT"
     }
     trap cleanup EXIT INT TERM
@@ -806,7 +842,7 @@ app-test *FILES:
 
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        FILES=(harness-smoke/smoke.test.ts harness-smoke/smoke-native.test.ts harness-smoke/smoke-em.test.ts harness-smoke/smoke-cold-boot.test.ts harness-smoke/smoke-app-reload.test.ts harness-smoke/smoke-capture-phase-save.test.ts at0001-tab-switch-fc.test.ts at0001-rapid-cadence.test.ts at0002-tab-switch-em.test.ts at0003-pane-activation.test.ts at0003-rapid-cadence.test.ts at0016-tab-close-handoff.test.ts at0016-rapid-cadence.test.ts at0006-cross-pane-drag.test.ts at0006-em-cross-pane.test.ts at0007-card-detach.test.ts at0007-em-card-detach.test.ts at0009-em-inactive-mount.test.ts at0021-drag-aborted.test.ts at0004-app-resign-return.test.ts at0005-app-hide-unhide.test.ts at0010-markdown-selection.test.ts at0010-cold-boot-selection.test.ts at0014-scroll-persistence.test.ts at0014-cold-boot-scroll.test.ts at0017-savestate-rpc-parity.test.ts at0018-async-content-race.test.ts at0019-pane-teardown-flush.test.ts at0020-overlay-focus-return.test.ts at0022-caret-visibility.test.ts at0023-cross-card-selection.test.ts at0024-prompt-state-roundtrip.test.ts at0025-prompt-deactivated-roundtrip.test.ts at0026-overlay-persistence.test.ts at0027-layout-state-persistence.test.ts at0030-virtual-focus.test.ts at0032-em-cold-boot-selection.test.ts at0033-em-fresh-card-activation.test.ts at0034-em-focus-after-move.test.ts at0035-em-app-switch-selection.test.ts at0035-dev-app-switch-selection.test.ts at0036-inactive-card-app-switch-selection.test.ts at0037-deck-wide-restore-consistency.test.ts at0038-deactivation-inactive-paint.test.ts at0078-dev-engine-focus-survives.test.ts at0080-dev-focus-card-switch.test.ts at0081-dev-focus-reload.test.ts)
+        FILES=(harness-smoke/smoke.test.ts harness-smoke/smoke-native.test.ts harness-smoke/smoke-em.test.ts harness-smoke/smoke-cold-boot.test.ts harness-smoke/smoke-app-reload.test.ts harness-smoke/smoke-capture-phase-save.test.ts at0001-tab-switch-fc.test.ts at0001-rapid-cadence.test.ts at0002-tab-switch-em.test.ts at0003-pane-activation.test.ts at0003-rapid-cadence.test.ts at0016-tab-close-handoff.test.ts at0016-rapid-cadence.test.ts at0006-cross-pane-drag.test.ts at0006-em-cross-pane.test.ts at0007-card-detach.test.ts at0007-em-card-detach.test.ts at0009-em-inactive-mount.test.ts at0021-drag-aborted.test.ts at0004-app-resign-return.test.ts at0005-app-hide-unhide.test.ts at0010-markdown-selection.test.ts at0010-cold-boot-selection.test.ts at0014-scroll-persistence.test.ts at0014-cold-boot-scroll.test.ts at0017-savestate-rpc-parity.test.ts at0018-async-content-race.test.ts at0019-pane-teardown-flush.test.ts at0020-overlay-focus-return.test.ts at0022-caret-visibility.test.ts at0023-cross-card-selection.test.ts at0024-prompt-state-roundtrip.test.ts at0025-prompt-deactivated-roundtrip.test.ts at0026-overlay-persistence.test.ts at0027-layout-state-persistence.test.ts at0030-virtual-focus.test.ts at0032-em-cold-boot-selection.test.ts at0033-em-fresh-card-activation.test.ts at0034-em-focus-after-move.test.ts at0035-em-app-switch-selection.test.ts at0035-dev-app-switch-selection.test.ts at0037-deck-wide-restore-consistency.test.ts at0038-deactivation-inactive-paint.test.ts at0078-dev-engine-focus-survives.test.ts at0080-dev-focus-card-switch.test.ts at0081-dev-focus-reload.test.ts)
         SWEEP_LABEL="full"
     else
         read -r -a FILES <<< "$FILES_INPUT"
@@ -937,6 +973,48 @@ app-test *FILES:
             "$files_passed" "$files_run" $((files_failed + files_errored)) "$tests_passed_total" "$tests_total"
         exit 1
     fi
+
+# Everyday app-test entry point — ONE command, no env var to remember.
+#
+# Pins the AX-granted app-test identity (TUG_FORCE_BUNDLE_ID=
+# dev.tugtool.app.apptest) for BOTH the build and the run, so the macOS
+# Accessibility grant — given once via `just app-test-grant` — always
+# matches and native-event tests pass. Builds the bundle automatically
+# the first time (when it's missing), then runs the requested files.
+#
+#   just at                          # full sweep
+#   just at at0000-smoke.test.ts     # one file
+#   just at a.test.ts b.test.ts      # several, in order
+#
+# Changed Swift / Rust / harness source? The bundle is stale and `at`
+# won't notice (it only auto-builds when the binary is ABSENT). Use
+# `just at-build ...` to force a rebuild first, then run.
+at *FILES:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest
+    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
+        -configuration Debug -destination 'platform=macOS,arch=arm64' \
+        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
+    if [ ! -x "$APP_DIR/Contents/MacOS/${PRODUCT_NAME}" ]; then
+        echo "==> ${PRODUCT_NAME}.app not built yet — building once (this is slow only the first time)…"
+        just build-app
+    fi
+    just app-test {{FILES}}
+
+# Force a fresh build of the app-test bundle, then run. Use after
+# changing Swift / Rust / harness source, where `just at` would run
+# against a stale bundle. Same pinned identity as `at`.
+#
+#   just at-build                       # rebuild + full sweep
+#   just at-build at0000-smoke.test.ts  # rebuild + one file
+at-build *FILES:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest
+    just build-app
+    just app-test {{FILES}}
 
 # One-time, reliable Accessibility grant for the app-test identity.
 #

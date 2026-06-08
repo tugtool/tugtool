@@ -103,30 +103,30 @@ async fn main() {
     let requested_port: u16 = match cli.port {
         Some(p) => p,
         None => match tug_instance::instance_id() {
-            Some(id) => match tugcore::ports::allocate_port(
-                &id,
-                tugcore::ports::TUGCAST_PORT_BASE,
-                tugcore::ports::TUGCAST_PORT_WINDOW,
-                tcp_port_is_free,
-            ) {
-                tugcore::ports::AllocatedPort::Window { port, walk_offset } => {
-                    if walk_offset > 0 {
-                        info!(
-                            port,
-                            walk_offset, "derived tugcast port via walk-on-collision"
-                        );
+            Some(id) => {
+                // App-test instances draw from a dedicated window so their
+                // ports never overlap a live dev/release instance's.
+                let (base, window) = tugcore::ports::tugcast_window_for(&id);
+                match tugcore::ports::allocate_port(&id, base, window, tcp_port_is_free) {
+                    tugcore::ports::AllocatedPort::Window { port, walk_offset } => {
+                        if walk_offset > 0 {
+                            info!(
+                                port,
+                                walk_offset, "derived tugcast port via walk-on-collision"
+                            );
+                        }
+                        port
                     }
-                    port
+                    tugcore::ports::AllocatedPort::EphemeralFallback => {
+                        warn!(
+                            "tugcast port window {}..{} exhausted; falling back to OS-ephemeral",
+                            base,
+                            base + window
+                        );
+                        0
+                    }
                 }
-                tugcore::ports::AllocatedPort::EphemeralFallback => {
-                    warn!(
-                        "tugcast port window {}..{} exhausted; falling back to OS-ephemeral",
-                        tugcore::ports::TUGCAST_PORT_BASE,
-                        tugcore::ports::TUGCAST_PORT_BASE + tugcore::ports::TUGCAST_PORT_WINDOW
-                    );
-                    0
-                }
-            },
+            }
             None => 55255,
         },
     };
@@ -903,6 +903,22 @@ async fn main() {
         warn!(error = %e, "failed to unregister from tug-instances.json");
     }
 
+    // App-test instances own an ephemeral private tmux server
+    // (`tmux -L tug-<token>`). Tear it down on shutdown so each throwaway
+    // `apptest-<uuid>` launch self-cleans instead of leaking a whole tmux
+    // server per run. Dev/release instances deliberately KEEP their
+    // server across restarts (tmux session persistence is a feature), so
+    // this is gated on the app-test family. Best-effort.
+    if let Some(id) = tug_instance::instance_id()
+        && tugcore::ports::is_apptest_id(&id)
+        && let Some(label) = tug_instance::tmux_socket_label()
+    {
+        info!(%label, "tearing down ephemeral app-test tmux server");
+        let _ = std::process::Command::new("tmux")
+            .args(["-L", &label, "kill-server"])
+            .status();
+    }
+
     // Kill our entire process group (tugcast + tugcode + children).
     // `std::process::exit` doesn't run destructors, so `kill_on_drop`
     // and async cancellation can't be relied upon — sending SIGTERM
@@ -1055,29 +1071,54 @@ fn register_with_registry(actual_port: u16, tmux_session: &str) {
     }
 }
 
-/// Kill any process currently holding the TCP port.
+/// Reclaim our derived port from a stale *same-instance* tugcast zombie.
 ///
-/// Uses lsof to find the PID, then sends SIGKILL. Waits briefly for
-/// the port to become available.
+/// Identity-gated on purpose: we kill the port holder ONLY when the
+/// registry confirms it is our own (same `TUG_INSTANCE_ID`) previously
+/// registered tugcast that failed to unregister. A holder belonging to
+/// another instance, or any unrelated process that merely happens to sit
+/// on the port, is never signalled — that blind `kill` was a
+/// cross-instance footgun (an app-test launch could SIGKILL a live dev
+/// instance). When we can't prove ownership we leave the holder alone
+/// and let the normal `allocate_port` walk / EADDRINUSE path handle it.
 fn force_kill_port_holder(port: u16) {
+    // Without an identity we can't prove a holder is ours — do nothing.
+    let Some(our_id) = tug_instance::instance_id() else {
+        return;
+    };
+    // The only PID we're entitled to reclaim is the one the registry
+    // recorded for THIS instance id (a stale/zombie self).
+    let our_pid = match tugcore::registry::find_by_id(&our_id) {
+        Ok(Some(entry)) => entry.pid,
+        _ => return, // nothing registered for us → nothing to reclaim
+    };
+
     let output = std::process::Command::new("lsof")
         .args(["-ti", &format!("tcp:{}", port)])
         .output();
-
     let pids = match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => return, // No process holding the port, or lsof not available.
     };
 
     for pid_str in pids.lines() {
-        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+        let Ok(pid) = pid_str.trim().parse::<i32>() else {
+            continue;
+        };
+        if pid == our_pid {
             eprintln!(
-                "tugcast: --force: killing PID {} holding port {}",
-                pid, port
+                "tugcast: --force: reclaiming port {port} from our stale instance (PID {pid})"
             );
             unsafe {
                 libc::kill(pid, libc::SIGKILL);
             }
+        } else {
+            warn!(
+                pid,
+                port,
+                instance_id = %our_id,
+                "--force: port holder is not our registered instance; not killing"
+            );
         }
     }
 

@@ -26,6 +26,30 @@ pub const TUGCAST_PORT_WINDOW: u16 = 100;
 pub const VITE_PORT_BASE: u16 = 55200;
 pub const VITE_PORT_WINDOW: u16 = 100;
 
+/// Dedicated tugcast window for app-test instances: 55400 ≤ port < 55500.
+///
+/// App-test instances (`apptest-<uuid>`) draw from a separate window so
+/// their ports can NEVER overlap an interactive dev/release instance's
+/// — a running `just app-debug` and an `app-test` sweep are guaranteed
+/// disjoint, even on an FNV hash collision. See [`window_for`].
+pub const APPTEST_TUGCAST_PORT_BASE: u16 = 55400;
+pub const APPTEST_TUGCAST_PORT_WINDOW: u16 = 100;
+
+/// Dedicated Vite window for app-test instances: 55500 ≤ port < 55600.
+pub const APPTEST_VITE_PORT_BASE: u16 = 55500;
+pub const APPTEST_VITE_PORT_WINDOW: u16 = 100;
+
+/// Instance-ID prefix marking an app-test instance. Kept in sync with
+/// the harness (`tests/app-test/_harness/index.ts` mints `apptest-<uuid>`)
+/// and `InstanceConfig` on the Swift side.
+pub const APPTEST_ID_PREFIX: &str = "apptest-";
+
+/// True when `instance_id` belongs to the app-test family and should
+/// draw ports from the dedicated app-test windows.
+pub fn is_apptest_id(instance_id: &str) -> bool {
+    instance_id.starts_with(APPTEST_ID_PREFIX)
+}
+
 /// Maximum number of +1 walk attempts before falling back to ephemeral.
 pub const MAX_WALK_ATTEMPTS: u16 = 32;
 
@@ -53,14 +77,36 @@ pub fn derive_port(instance_id: &str, base: u16, window: u16) -> u16 {
     base.wrapping_add(offset)
 }
 
-/// Tugcast default port for `instance_id`.
-pub fn tugcast_port_default(instance_id: &str) -> u16 {
-    derive_port(instance_id, TUGCAST_PORT_BASE, TUGCAST_PORT_WINDOW)
+/// The `(base, window)` tugcast port range for `instance_id` — the
+/// dedicated app-test window for `apptest-*` IDs, the shared dev/release
+/// window otherwise.
+pub fn tugcast_window_for(instance_id: &str) -> (u16, u16) {
+    if is_apptest_id(instance_id) {
+        (APPTEST_TUGCAST_PORT_BASE, APPTEST_TUGCAST_PORT_WINDOW)
+    } else {
+        (TUGCAST_PORT_BASE, TUGCAST_PORT_WINDOW)
+    }
 }
 
-/// Vite default port for `instance_id`.
+/// The `(base, window)` Vite port range for `instance_id`.
+pub fn vite_window_for(instance_id: &str) -> (u16, u16) {
+    if is_apptest_id(instance_id) {
+        (APPTEST_VITE_PORT_BASE, APPTEST_VITE_PORT_WINDOW)
+    } else {
+        (VITE_PORT_BASE, VITE_PORT_WINDOW)
+    }
+}
+
+/// Tugcast default port for `instance_id` (window chosen by ID family).
+pub fn tugcast_port_default(instance_id: &str) -> u16 {
+    let (base, window) = tugcast_window_for(instance_id);
+    derive_port(instance_id, base, window)
+}
+
+/// Vite default port for `instance_id` (window chosen by ID family).
 pub fn vite_port_default(instance_id: &str) -> u16 {
-    derive_port(instance_id, VITE_PORT_BASE, VITE_PORT_WINDOW)
+    let (base, window) = vite_window_for(instance_id);
+    derive_port(instance_id, base, window)
 }
 
 /// Outcome of [`allocate_port`].
@@ -163,6 +209,39 @@ mod tests {
         let v = vite_port_default("debug-foo");
         assert!((TUGCAST_PORT_BASE..TUGCAST_PORT_BASE + TUGCAST_PORT_WINDOW).contains(&tc));
         assert!((VITE_PORT_BASE..VITE_PORT_BASE + VITE_PORT_WINDOW).contains(&v));
+    }
+
+    #[test]
+    fn apptest_ids_draw_from_the_dedicated_windows() {
+        let id = "apptest-27b5400c-7d5e-4a9a-99a0-4f787deb6d80";
+        assert!(is_apptest_id(id));
+        let tc = tugcast_port_default(id);
+        let v = vite_port_default(id);
+        assert!(
+            (APPTEST_TUGCAST_PORT_BASE..APPTEST_TUGCAST_PORT_BASE + APPTEST_TUGCAST_PORT_WINDOW)
+                .contains(&tc),
+            "{id} → tugcast {tc} not in app-test window"
+        );
+        assert!(
+            (APPTEST_VITE_PORT_BASE..APPTEST_VITE_PORT_BASE + APPTEST_VITE_PORT_WINDOW)
+                .contains(&v)
+        );
+    }
+
+    #[test]
+    fn apptest_and_dev_windows_never_overlap() {
+        // The structural guarantee: an app-test sweep and a live
+        // dev/release instance can never land on the same port.
+        let dev_lo = TUGCAST_PORT_BASE;
+        let dev_hi = TUGCAST_PORT_BASE + TUGCAST_PORT_WINDOW; // exclusive
+        let at_lo = APPTEST_TUGCAST_PORT_BASE;
+        let at_hi = APPTEST_TUGCAST_PORT_BASE + APPTEST_TUGCAST_PORT_WINDOW;
+        assert!(dev_hi <= at_lo || at_hi <= dev_lo, "tugcast windows overlap");
+        let vdev_hi = VITE_PORT_BASE + VITE_PORT_WINDOW;
+        let vat_lo = APPTEST_VITE_PORT_BASE;
+        assert!(vdev_hi <= vat_lo, "vite windows overlap");
+        assert!(!is_apptest_id("debug-main"));
+        assert!(!is_apptest_id("release-main"));
     }
 
     #[test]

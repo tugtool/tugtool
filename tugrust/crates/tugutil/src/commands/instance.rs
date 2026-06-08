@@ -139,7 +139,32 @@ fn run_stop(instance_id: &str, timeout_secs: u64) -> Result<i32, String> {
         .ok_or_else(|| format!("no live instance '{instance_id}'"))?;
     let tugcast_pid = entry.pid;
     let host_pid = entry.host_pid;
-    let have_host = host_pid > 0 && pid_alive(host_pid);
+
+    // Identity guard against PID reuse. The registry records PIDs, but a
+    // PID is recycled the moment its process dies — so a stale entry can
+    // name a PID the OS has since handed to an unrelated process (even
+    // another instance's Claude). Before signalling, confirm the live
+    // PID is still the process we registered by matching its command:
+    // `tugcast` for the tugcast PID, the bundle executable for the host.
+    // A confirmed mismatch is NEVER signalled — that is how an app-test
+    // teardown could otherwise SIGKILL a live debug instance's child.
+    let host_needle = entry
+        .bundle_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Tug")
+        .to_string();
+    let have_host =
+        host_pid > 0 && pid_alive(host_pid) && pid_is(host_pid, &host_needle, "host app");
+    let tugcast_ours = pid_alive(tugcast_pid) && pid_is(tugcast_pid, "tugcast", "tugcast");
+
+    // If neither registered PID is still ours, the instance is already
+    // gone (or its PIDs were reused) — nothing safe to signal.
+    if !have_host && !tugcast_ours {
+        println!("instance '{instance_id}' is no longer running (registered PIDs not ours)");
+        return Ok(0);
+    }
 
     // Signal the GUI host app (`Tug.app`) — the process whose window
     // the user sees. tugcast runs in its own process group (setpgid)
@@ -156,15 +181,18 @@ fn run_stop(instance_id: &str, timeout_secs: u64) -> Result<i32, String> {
             "stopping {instance_id} — SIGTERM host app (PID {host_pid}) + tugcast (PID {tugcast_pid})"
         );
         send_signal(host_pid, libc::SIGTERM);
-    } else {
+    } else if tugcast_ours {
         println!("stopping {instance_id} — SIGTERM tugcast (PID {tugcast_pid})");
     }
-    send_signal(tugcast_pid, libc::SIGTERM);
+    if tugcast_ours {
+        send_signal(tugcast_pid, libc::SIGTERM);
+    }
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(1));
     while std::time::Instant::now() < deadline {
         let host_gone = !have_host || !pid_alive(host_pid);
-        if host_gone && !pid_alive(tugcast_pid) {
+        let tugcast_gone = !tugcast_ours || !pid_alive(tugcast_pid);
+        if host_gone && tugcast_gone {
             println!("stopped cleanly");
             return Ok(0);
         }
@@ -178,18 +206,52 @@ fn run_stop(instance_id: &str, timeout_secs: u64) -> Result<i32, String> {
     if have_host && pid_alive(host_pid) {
         send_signal(host_pid, libc::SIGKILL);
     }
-    if pid_alive(tugcast_pid) {
+    if tugcast_ours && pid_alive(tugcast_pid) {
         send_signal(tugcast_pid, libc::SIGKILL);
     }
     std::thread::sleep(std::time::Duration::from_millis(200));
     let host_alive = have_host && pid_alive(host_pid);
-    if pid_alive(tugcast_pid) || host_alive {
+    let tugcast_alive = tugcast_ours && pid_alive(tugcast_pid);
+    if tugcast_alive || host_alive {
         Err(format!(
             "instance '{instance_id}' still alive after SIGKILL (tugcast {tugcast_pid}, host {host_pid})"
         ))
     } else {
         Ok(0)
     }
+}
+
+/// Best-effort identity check for a registry PID, guarding against PID
+/// reuse. Returns `true` when the live process's command line contains
+/// `needle` (so it is still the process we registered), or when the
+/// command cannot be read (rare — preserve liveness rather than strand a
+/// stuck instance). Returns `false` only on a *confirmed* mismatch, and
+/// logs it, so a recycled PID is never signalled.
+fn pid_is(pid: i32, needle: &str, role: &str) -> bool {
+    match pid_command(pid) {
+        Some(cmd) if cmd.contains(needle) => true,
+        Some(cmd) => {
+            println!(
+                "  skipping {role} PID {pid}: command '{cmd}' is not '{needle}' (PID reused — not signalling)"
+            );
+            false
+        }
+        None => true,
+    }
+}
+
+/// Read a live process's full command line via `ps -p <pid> -o command=`.
+/// Returns `None` when the process is gone or `ps` produces no output.
+fn pid_command(pid: i32) -> Option<String> {
+    let out = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let cmd = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if cmd.is_empty() { None } else { Some(cmd) }
 }
 
 // ── current ──────────────────────────────────────────────────────────────────

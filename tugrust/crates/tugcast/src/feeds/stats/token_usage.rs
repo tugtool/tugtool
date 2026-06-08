@@ -92,8 +92,15 @@ impl StatCollector for TokenUsageCollector {
     }
 
     fn collect(&self) -> serde_json::Value {
-        // Run tmux capture-pane synchronously
+        // Run tmux capture-pane synchronously on this instance's private
+        // tmux server (`-L tug-<token>`) so the read is isolated from
+        // other instances' sessions (see terminal::tmux_server_args).
+        let server_args: Vec<String> = match tugcore::instance::tmux_socket_label() {
+            Some(label) => vec!["-L".to_string(), label],
+            None => Vec::new(),
+        };
         let output = match Command::new("tmux")
+            .args(&server_args)
             .args(["capture-pane", "-t", &self.session, "-p"])
             .output()
         {
