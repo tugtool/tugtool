@@ -51,8 +51,24 @@
 .tug-radio-group-vertical .tug-radio-group-items {
   flex-direction: column;
   /* A bit more breathing room between stacked options than the horizontal
-     segmented case — especially with two-line (description) items. */
+     segmented case. */
   gap: var(--tug-space-xs);
+}
+
+/* Two-line (description) rows pack a label + a muted line; the single-line gap
+   lets one row's description crowd the next row's dot/label. Open the gap up
+   when any item carries a description, and step it with the size so the larger
+   rows breathe more. */
+.tug-radio-group-vertical .tug-radio-group-items:has([data-has-description]) {
+  gap: var(--tug-space-sm); /* 6px (sm) */
+}
+.tug-radio-group-md.tug-radio-group-vertical
+  .tug-radio-group-items:has([data-has-description]) {
+  gap: var(--tug-space-md); /* 8px */
+}
+.tug-radio-group-lg.tug-radio-group-vertical
+  .tug-radio-group-items:has([data-has-description]) {
+  gap: var(--tug-space-lg); /* 12px */
 }
 
 /* ============================================================================
@@ -71,21 +87,32 @@
    ========================================================================= */
 
 /* When an item carries a description, top-align the dot with the label line
-   rather than centering it against the whole two-line stack. */
-[data-slot="tug-radio-item"][data-has-description] {
+   rather than centering it against the whole two-line stack. The flex parent of
+   the dot + label is TugButton's `.tug-button-icon-text` span (the button itself
+   only holds that one child), so the alignment override must land there. */
+[data-slot="tug-radio-item"][data-has-description] .tug-button-icon-text {
   align-items: flex-start;
 }
 
 .tug-radio-item-text {
   display: flex;
   flex-direction: column;
-  gap: 0.05rem;
+  gap: 0.1rem;
   text-align: left;
+}
+
+/* The label line inherits the item's per-size font (see "Item text scale"
+   below) but reads at a comfortable reading line-height rather than the
+   button's tight line-height:1 — so a wrapped or tall label doesn't crowd the
+   description beneath it. */
+.tug-radio-item-label {
+  line-height: 1.3;
 }
 
 .tug-radio-item-description {
   font-weight: 400;
   font-size: var(--tug-font-size-2xs);
+  line-height: 1.35;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
@@ -177,6 +204,20 @@
   background-image: linear-gradient(var(--tugx-focus-tint), var(--tugx-focus-tint));
 }
 
+/* A radio group is a single Tab stop, never a descend target — its items move a
+   movement cursor, they are not descended into — so the group must never wear
+   the `data-key-within` "contains-active / descended-from" ring. The engine can
+   still transiently stamp it: when a trap is re-pushed while the key view is
+   ALREADY inside it (it captures that in-scope element as the mode's
+   restore-key-view), the group is marked within, then the on-open seed moves the
+   key view away — leaving a stray ring stuck around the group. (In practice this
+   only surfaces across an HMR remount mid-dialog, but it should never paint at
+   all.) Suppress it; the group only ever shows its key-view tint, and the cursor
+   ring lives on the item. */
+[data-slot="tug-radio-group"][data-key-within] {
+  outline: none;
+}
+
 /* Cursor ring = the LEAF focus treatment ([P02], "ring + gap"): the standard
    role-blue ring just OUTSIDE the row with a thin gap (`outline-offset: 1px`),
    matching choice/option and a focused button. The row carries no fill (the
@@ -222,6 +263,72 @@
   opacity: var(--tugx-control-disabled-opacity);
 }
 
+
+/* ============================================================================
+   Item text scale
+   ----------------------------------------------------------------------------
+   TugButton publishes ONE single-line font (0.75rem / 12px) across sm/md/lg —
+   only its height and padding scale. A radio row is text-led, not a chip, so it
+   wants its LABEL to grow with the size the same way the indicator does.
+   Override the item font per group size (specificity 0,2,0 beats TugButton's
+   `.tug-button-size-*` at 0,1,0) so the bare-children label and the two-line
+   `.tug-radio-item-label` both step up; the muted description steps with it one
+   rung lower. Other consumers (sm/md forms) keep a body-text feel; lg reads as
+   a prominent choice (the PermissionDialog scope).
+   ========================================================================== */
+
+.tug-radio-group-sm [data-slot="tug-radio-item"] {
+  font-size: var(--tug-font-size-xs); /* 12px */
+}
+.tug-radio-group-sm .tug-radio-item-description {
+  font-size: var(--tug-font-size-2xs); /* 11px */
+}
+
+.tug-radio-group-md [data-slot="tug-radio-item"] {
+  font-size: var(--tug-font-size-md); /* 14px */
+}
+.tug-radio-group-md .tug-radio-item-description {
+  font-size: var(--tug-font-size-xs); /* 12px */
+}
+
+.tug-radio-group-lg [data-slot="tug-radio-item"] {
+  font-size: var(--tug-font-size-lg); /* 16px */
+}
+.tug-radio-group-lg .tug-radio-item-description {
+  font-size: var(--tug-font-size-sm); /* 13px */
+}
+
+/* Indicator ↔ label gap. TugButton's `.tug-button-icon-text` carries one fixed
+   gap (0.375rem) across sizes; a larger radio wants more air between the dot and
+   the text so it doesn't read cramped. Step it with the size (specificity 0,3,0
+   beats the base `.tug-button-icon-text` at 0,1,0). */
+.tug-radio-group-sm [data-slot="tug-radio-item"] .tug-button-icon-text {
+  gap: 0.375rem; /* 6px */
+}
+.tug-radio-group-md [data-slot="tug-radio-item"] .tug-button-icon-text {
+  gap: 0.5rem; /* 8px */
+}
+.tug-radio-group-lg [data-slot="tug-radio-item"] .tug-button-icon-text {
+  gap: 0.625rem; /* 10px */
+}
+
+/* ============================================================================
+   Row box — size to content, not the button's fixed height
+   ----------------------------------------------------------------------------
+   TugButton pins a single-line `height` per size (e.g. lg = 2.25rem). A radio
+   row may be TWO lines (label + description); the fixed height clamps it, so the
+   hover / cursor fill rect stays single-line tall and the description spills out
+   below it. Let the row size to its content and carry a symmetric inset instead,
+   so the fill always wraps the whole row. (Overrides the size class's
+   `height` (0,1,0) and `padding` (0,1,0) at 0,2,0.)
+   ========================================================================== */
+.tug-radio-group [data-slot="tug-radio-item"] {
+  height: auto;
+  padding: var(--tug-space-xs) var(--tug-space-sm); /* 4px / 6px */
+}
+.tug-radio-group-lg [data-slot="tug-radio-item"] {
+  padding: var(--tug-space-sm) var(--tug-space-md); /* 6px / 8px */
+}
 
 /* ============================================================================
    Size variants

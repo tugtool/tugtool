@@ -50,6 +50,11 @@ export function GalleryRadioGroup() {
     () => (typeof savedRadioMd?.value === "string" ? savedRadioMd.value : "b"),
   );
   const [sizeLgValue, setSizeLgValue] = useState("b");
+  // Two-line (description) demo — one group per size so the label + description
+  // text scale is visible side by side.
+  const [descSmValue, setDescSmValue] = useState("once");
+  const [descMdValue, setDescMdValue] = useState("once");
+  const [descLgValue, setDescLgValue] = useState("once");
   const [horzValue, setHorzValue] = useState("option-2");
   const [vertValue, setVertValue] = useState("option-2");
   const [labeledValue, setLabeledValue] = useState("email");
@@ -62,6 +67,9 @@ export function GalleryRadioGroup() {
   const radioSmId = useId();
   const radioMdId = useId();
   const radioLgId = useId();
+  const radioDescSmId = useId();
+  const radioDescMdId = useId();
+  const radioDescLgId = useId();
   const radioHorzId = useId();
   const radioVertId = useId();
   const radioLabeledId = useId();
@@ -74,6 +82,9 @@ export function GalleryRadioGroup() {
       [radioSmId]: setSizeSmValue,
       [radioMdId]: setSizeMdValue,
       [radioLgId]: setSizeLgValue,
+      [radioDescSmId]: setDescSmValue,
+      [radioDescMdId]: setDescMdValue,
+      [radioDescLgId]: setDescLgValue,
       [radioHorzId]: setHorzValue,
       [radioVertId]: setVertValue,
       [radioLabeledId]: setLabeledValue,
@@ -144,6 +155,38 @@ export function GalleryRadioGroup() {
               <TugRadioItem value="a">Alpha</TugRadioItem>
               <TugRadioItem value="b">Beta</TugRadioItem>
               <TugRadioItem value="c">Gamma</TugRadioItem>
+            </TugRadioGroup>
+          </div>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Descriptions (two-line items) ---- */}
+      {/* A radio row may carry a muted second line — the label + description
+          both scale with the group size (the PermissionDialog scope uses lg). */}
+      <div className="cg-section" data-testid="radio-descriptions-demo">
+        <TugLabel className="cg-section-title">Descriptions (two-line)</TugLabel>
+        <div style={{ display: "flex", flexDirection: "row", gap: "32px", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>sm</div>
+            <TugRadioGroup size="sm" value={descSmValue} senderId={radioDescSmId} aria-label="Small two-line radio group">
+              <TugRadioItem value="once" description="Allow this single invocation. No rule is added.">Allow once</TugRadioItem>
+              <TugRadioItem value="project" description="Add a rule for this project.">Allow for this project</TugRadioItem>
+            </TugRadioGroup>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>md</div>
+            <TugRadioGroup size="md" value={descMdValue} senderId={radioDescMdId} aria-label="Medium two-line radio group">
+              <TugRadioItem value="once" description="Allow this single invocation. No rule is added.">Allow once</TugRadioItem>
+              <TugRadioItem value="project" description="Add a rule for this project.">Allow for this project</TugRadioItem>
+            </TugRadioGroup>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--tug7-element-field-text-normal-label-rest)", marginBottom: "6px" }}>lg</div>
+            <TugRadioGroup size="lg" value={descLgValue} senderId={radioDescLgId} aria-label="Large two-line radio group">
+              <TugRadioItem value="once" description="Allow this single invocation. No rule is added.">Allow once</TugRadioItem>
+              <TugRadioItem value="project" description="Add a rule for this project.">Allow for this project</TugRadioItem>
             </TugRadioGroup>
           </div>
         </div>

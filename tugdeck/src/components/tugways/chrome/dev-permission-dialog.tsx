@@ -1024,7 +1024,7 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
                 <TugRadioGroup
                   value={selectedOption}
                   senderId={radioSenderId}
-                  size="md"
+                  size="sm"
                   orientation="vertical"
                   aria-label="Permission scope"
                   focusGroup={focusGroup}

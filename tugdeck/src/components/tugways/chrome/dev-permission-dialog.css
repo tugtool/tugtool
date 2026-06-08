@@ -84,10 +84,15 @@ body {
 /*
  * Scope choices ([P02]/[Q06]) — a standard `TugRadioGroup` (one item-group Tab
  * stop, arrows move the cursor, Space/Enter check the cursor row). The group
- * owns its own item spacing + focus treatment; this wrapper only adds breathing
- * room below the dialog description, whose negative bottom margin
- * (`TugInlineDialog`) otherwise pulls the options up tight against it.
+ * owns its own item spacing + focus treatment; this wrapper adds breathing room
+ * below the dialog description (whose negative bottom margin from
+ * `TugInlineDialog` otherwise pulls the options up tight against it) and centers
+ * the group as a whole in the dialog — the rows stay left-aligned internally,
+ * but the group block is shrink-to-content and horizontally centered, echoing
+ * the centered description line above it.
  */
 .dev-permission-dialog-scope {
   margin-top: var(--tug-space-md);
+  display: flex;
+  justify-content: center;
 }
