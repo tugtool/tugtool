@@ -102,6 +102,7 @@ An app-test launch and a live interactive instance (`just app-debug`, `just app-
 | Resource | Keyed on | Where |
 |---|---|---|
 | App bundle / product name | `TUG_FORCE_BUNDLE_ID` (app-test always `dev.tugtool.app.apptest` → `Tug-apptest.app`) | `product-name-from-cwd.sh`, `bundle-id-from-cwd.sh` |
+| Xcode build output (DerivedData) | per-variant `-derivedDataPath` keyed on `PRODUCT_NAME` — Xcode's *default* DerivedData is shared per-project, so without this, building the app-test bundle would overwrite a live `app-debug` bundle's `.app` (same target, one product) | `derived-data-path.sh` |
 | Data dir / tugbank.db / sessions.db / Logs | full `TUG_INSTANCE_ID` | `tugcore::instance` |
 | tugbank notify socket, app↔tugcast control socket | **short token** `fnv1a32(id)` (8 hex) — long IDs would overflow `sun_path` (~104 B) | `tugcore::instance::short_token`, `InstanceConfig.shortToken` |
 | tugcast HTTP + Vite ports | hash of `TUG_INSTANCE_ID` into a window. **App-test draws from a dedicated window** (tugcast 55400–55499, Vite 55500–55599) disjoint from dev/release (55300/55200) | `tugcore::ports` |

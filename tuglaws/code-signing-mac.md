@@ -46,8 +46,8 @@ just app-test-grant
 #     then toggle "Tug (apptest)" ON.
 
 # Thereafter, any worktree (unattended or not) — no env var needed:
-just build-app && just app-test               # no dialog; grant carries over
-just at                                        # or one command: build-if-needed + run
+just app-test                                 # one command: build-if-needed + run; no dialog
+just app-test-build at0001-...                # force a rebuild first (after Swift/Rust changes)
 ```
 
 `app-test` itself does not rebuild Swift, so the pinned ID is baked in at **`build-app` time** — that's when it lands in the bundle's `Info.plist` and is sealed into the DR. Both recipes default the ID to `dev.tugtool.app.apptest`, so the build and the run can't disagree. As a safety net, `app-test` reads the built bundle's `CFBundleIdentifier`, prints it (`==> app-test bundle id: …`), and warns if it doesn't match the identity being driven.
@@ -95,7 +95,8 @@ These cost real time the first time through. Read them before granting.
 | `tugrust/scripts/sign-bundle.sh` | The canonical signer. Walks the bundle inside-out — signing Rust helpers (default hardened runtime, no custom entitlements), the Swift debug dylibs (Debug builds only — must share the loading binary's team ID under hardened runtime), `tugcode` (bun-compiled, permissive entitlements per [D16]), then sealing the outer `.app` with `Tug.entitlements`. Never uses `--deep` for signing; `--deep` remains valid for verification. |
 | `tugapp/Tug.entitlements` | The outer Swift binary's entitlements. Minimal — currently just `com.apple.security.cs.allow-unsigned-executable-memory` (left over from pre-hardened-runtime WKWebView assumptions; can be re-evaluated). |
 | `tugapp/tugcode.entitlements` | The five bun-required permissive entitlements applied to the bun-compiled `tugcode` binary only: `allow-jit`, `allow-unsigned-executable-memory`, `disable-executable-page-protection`, `allow-dyld-environment-variables`, `disable-library-validation`. Per [D16]. |
-| `Justfile` `build-app` / `app-test` recipes | Re-sign post-xcodebuild via `sign-bundle.sh`. Capture the bundle's DR into `.tugtool/code-sign-fingerprint`. `app-test` reads the sentinel before re-signing and skips when the bundle's current DR already matches (the steady-state case). |
+| `Justfile` `build-app` / `app-test` recipes | Re-sign post-xcodebuild via `sign-bundle.sh`. Capture the bundle's DR into `.tugtool/code-sign-fingerprint`. `app-test` reads the sentinel before re-signing and skips when the bundle's current DR already matches (the steady-state case). Each build variant uses its own `-derivedDataPath` (`derived-data-path.sh`, keyed on `PRODUCT_NAME`) so the app-test bundle and a live `app-debug` bundle never share one DerivedData and never clobber each other's `.app`. |
+| `tugrust/scripts/derived-data-path.sh` | Resolves the per-variant Xcode DerivedData path for the cwd's build identity (parallel to `product-name-from-cwd.sh`). Xcode's default DerivedData is shared per-project — all `Tug`-scheme builds land in one directory and, being the same target, evict each other's product. Per-variant `-derivedDataPath` isolates the build outputs. |
 
 The fingerprint sentinel at `.tugtool/code-sign-fingerprint` is now **belt-and-suspenders** ([D11]). Under Developer ID + hardened runtime, the DR is stable across rebuilds anyway, so the sentinel rarely fires. It still catches the case where the user re-issues their Developer ID cert (e.g., on renewal) and the new cert produces a different DR string.
 

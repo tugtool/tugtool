@@ -244,9 +244,14 @@ app-debug: build wasm
     # Touch Swift sources so xcodebuild detects changes on this mount.
     find tugapp/Sources -name '*.swift' -exec touch {} +
     # PRODUCT_NAME gives each variant its own `.app` (Tug-debug.app /
-    # Tug-worktree.app) so builds never clobber or re-sign each other.
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' PRODUCT_NAME="$PRODUCT_NAME" build
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
+    # Tug-worktree.app) AND `-derivedDataPath` gives it its own build
+    # directory, so build outputs are fully isolated — building the
+    # app-test bundle never clobbers this debug bundle, and vice-versa.
+    # The default DerivedData is shared per-project, so without this every
+    # variant overwrites the same target product. See derived-data-path.sh.
+    DERIVED="$(bash tugrust/scripts/derived-data-path.sh debug)"
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build
+    APP_DIR="$DERIVED/Build/Products/Debug/${PRODUCT_NAME}.app"
     echo "==> Re-signing with Developer ID for stable AX grant"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     # Non-blocking orphan-detection preamble so users get a nudge to
@@ -284,8 +289,9 @@ app-release: build wasm
     (cd tugrust && cargo build --release -p tugcast -p tugexec -p tugutil -p tugrelaunch)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode
     find tugapp/Sources -name '*.swift' -exec touch {} +
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' PRODUCT_NAME="$PRODUCT_NAME" build
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
+    DERIVED="$(bash tugrust/scripts/derived-data-path.sh release)"
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build
+    APP_DIR="$DERIVED/Build/Products/Release/${PRODUCT_NAME}.app"
     echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     # Seed source-tree-path for the release instance too. AppDelegate
@@ -304,7 +310,7 @@ launch-debug:
     # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
     unset TUG_FORCE_BUNDLE_ID
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
+    APP_DIR="$(bash tugrust/scripts/derived-data-path.sh debug)/Build/Products/Debug/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
         echo "error: ${PRODUCT_NAME}.app not built at $APP_DIR" >&2
         echo "       Run 'just app-debug' first." >&2
@@ -322,7 +328,7 @@ launch-release:
     # Dev loop = cwd-derived identity; the forced bundle id is app-test-only.
     unset TUG_FORCE_BUNDLE_ID
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/${PRODUCT_NAME}.app"
+    APP_DIR="$(bash tugrust/scripts/derived-data-path.sh release)/Build/Products/Release/${PRODUCT_NAME}.app"
     if [ ! -d "$APP_DIR" ]; then
         echo "error: ${PRODUCT_NAME}.app not built at $APP_DIR" >&2
         echo "       Run 'just app-release' first." >&2
@@ -719,6 +725,10 @@ build-app:
     # TUG_FORCE_BUNDLE_ID=…apptest) so each variant is its own bundle file
     # that never clobbers or re-signs another. Matches bundle-id-from-cwd.sh.
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
+    # Per-variant derivedDataPath isolates this build from the interactive
+    # app-debug build (and every other variant): they no longer share one
+    # DerivedData and so never clobber each other's `.app`.
+    DERIVED="$(bash tugrust/scripts/derived-data-path.sh debug)"
     echo "==> [4/5] Build ${PRODUCT_NAME}.app (Debug)"
     find tugapp/Sources -name '*.swift' -exec touch {} +
     # xcodebuild is very noisy (~800 lines of SwiftDriver/SwiftCompile
@@ -729,7 +739,7 @@ build-app:
     XCODE_LOG="$(mktemp -t tugapp-xcode.XXXX.log)"
     if xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        PRODUCT_NAME="$PRODUCT_NAME" build \
+        -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build \
         > "$XCODE_LOG" 2>&1; then
         grep -E '^\*\*|warning:|error:|^ld: |^clang: |^Undefined' "$XCODE_LOG" || true
         grep -q '^\*\* BUILD' "$XCODE_LOG" || echo "** BUILD SUCCEEDED **"
@@ -741,9 +751,7 @@ build-app:
         rm -f "$XCODE_LOG"
         exit "$status"
     fi
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-        -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
+    APP_DIR="$DERIVED/Build/Products/Debug/${PRODUCT_NAME}.app"
     APP_BIN="$APP_DIR/Contents/MacOS/${PRODUCT_NAME}"
     [ -x "$APP_BIN" ] || { echo "${PRODUCT_NAME}.app binary missing: $APP_BIN"; exit 1; }
 
@@ -784,39 +792,31 @@ build-app:
     echo
     echo "==> Built. Now run 'just app-test' to run tests."
 
-# Run the app-test suite against an already-built Tug.app. Each file
-# launches its own Tug.app subprocess via the harness's
-# `launchTugApp`. Output streams per-file as bun runs, and an
-# end-of-run summary block follows — its last line is exactly
-# `VERDICT: PASS` or `VERDICT: FAIL`, greppable via `tail -n 1`.
-# Recipe exit code matches the verdict (0 iff PASS).
+# The everyday app-test command: build-if-needed, then run.
 #
-# Prereqs:
-#   just setup-dev-signing                 # one-time; Developer ID cert
-#   just build-app                         # build + sign Tug.app
+# Builds the dedicated app-test bundle (`dev.tugtool.app.apptest` →
+# Tug-apptest.app) ONLY when it's missing, then launches each test file
+# as its own Tug.app subprocess via `launchTugApp`. Output streams
+# per-file; the last line is exactly `VERDICT: PASS` / `VERDICT: FAIL`
+# (recipe exit code matches, greppable via `tail -n 1`).
+#
+# Fully isolated from your interactive instances: the bundle has its own
+# identity, its own per-variant DerivedData (so a build here never
+# clobbers a live `app-debug` bundle), its own port window / sockets /
+# private tmux server, and `apptest-<uuid>` per-launch runtime state.
+# AX is granted once via `just app-test-grant`.
+#
+# Prereq (one-time per machine): `just setup-dev-signing`.
 #
 # Usage:
-#   just app-test                          # full sweep
-#   just app-test at0001-tab-switch-fc.test.ts
-#                                          # single file (bare name)
-#   just app-test tests/app-test/at0001-tab-switch-fc.test.ts
-#                                          # repo-relative path also works
+#   just app-test                                  # full sweep
+#   just app-test at0001-tab-switch-fc.test.ts     # one file (bare name or repo path)
 #   just app-test harness-smoke/smoke.test.ts at0003-pane-activation.test.ts
-#                                          # specific files in order
 #
-# This recipe does NOT re-sign the bundle. `build-app` / `app-debug`
-# seal it with the Developer ID Application identity, whose designated
-# requirement is stable across rebuilds (it anchors to Apple's
-# intermediate, not a per-build cdhash), so the Accessibility grant for
-# `dev.tugtool.app.debug` survives. Native-event tests need that grant
-# for `CGEvent.post`; if AX is missing the harness fails the preflight
-# with the bundle id to add in System Settings.
+# Changed Swift / Rust / harness source? `app-test` only builds when the
+# bundle is ABSENT — use `just app-test-build` to force a fresh build.
 #
-# Teardown: each launch is its own `apptest-<uuid>` instance. The
-# harness signals the GUI app by PID (`getHostPid` over RPC) on
-# `app.close()`; tugcast then self-exits via its parent-watch. The
-# `tugutil instance stop` sweeps below are the backstop for a test that
-# panics before `close()`.
+# Build the app-test bundle if missing, then run the given files (full sweep if none).
 app-test *FILES:
     #!/usr/bin/env bash
     # Deliberately NOT `set -e` — we want to keep iterating past per-
@@ -831,14 +831,16 @@ app-test *FILES:
     export TUG_FORCE_BUNDLE_ID
 
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-        -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
+    APP_DIR="$(bash tugrust/scripts/derived-data-path.sh debug)/Build/Products/Debug/${PRODUCT_NAME}.app"
     APP_BIN="$APP_DIR/Contents/MacOS/${PRODUCT_NAME}"
+    # Build-if-missing: one command does the whole thing. Only builds when
+    # the bundle is ABSENT — changed Swift/Rust/harness source needs an
+    # explicit `just app-test-build` to force a fresh build. The build
+    # goes to the app-test variant's own DerivedData, never touching a
+    # live `app-debug` bundle.
     if [ ! -x "$APP_BIN" ]; then
-        echo "error: ${PRODUCT_NAME}.app not built at $APP_BIN" >&2
-        echo "       Run 'just build-app' first." >&2
-        exit 1
+        echo "==> ${PRODUCT_NAME}.app not built yet — building once (slow only the first time)…"
+        just build-app
     fi
 
     # Surface the identity we're about to drive and confirm the built
@@ -1071,42 +1073,17 @@ app-test *FILES:
         exit 1
     fi
 
-# Everyday app-test entry point — ONE command, no env var to remember.
+# Force a fresh app-test build, then run. Use after changing Swift /
+# Rust / harness source — `just app-test` only builds when the bundle is
+# ABSENT, so it would otherwise run against a stale bundle. The build
+# goes to the app-test variant's own DerivedData and never touches a
+# live `app-debug` bundle.
 #
-# Pins the AX-granted app-test identity (TUG_FORCE_BUNDLE_ID=
-# dev.tugtool.app.apptest) for BOTH the build and the run, so the macOS
-# Accessibility grant — given once via `just app-test-grant` — always
-# matches and native-event tests pass. Builds the bundle automatically
-# the first time (when it's missing), then runs the requested files.
+#   just app-test-build                       # rebuild + full sweep
+#   just app-test-build at0000-smoke.test.ts  # rebuild + one file
 #
-#   just at                          # full sweep
-#   just at at0000-smoke.test.ts     # one file
-#   just at a.test.ts b.test.ts      # several, in order
-#
-# Changed Swift / Rust / harness source? The bundle is stale and `at`
-# won't notice (it only auto-builds when the binary is ABSENT). Use
-# `just at-build ...` to force a rebuild first, then run.
-at *FILES:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    export TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest
-    PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-        -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
-    if [ ! -x "$APP_DIR/Contents/MacOS/${PRODUCT_NAME}" ]; then
-        echo "==> ${PRODUCT_NAME}.app not built yet — building once (this is slow only the first time)…"
-        just build-app
-    fi
-    just app-test {{FILES}}
-
-# Force a fresh build of the app-test bundle, then run. Use after
-# changing Swift / Rust / harness source, where `just at` would run
-# against a stale bundle. Same pinned identity as `at`.
-#
-#   just at-build                       # rebuild + full sweep
-#   just at-build at0000-smoke.test.ts  # rebuild + one file
-at-build *FILES:
+# Force a fresh app-test build, then run the given files (full sweep if none).
+app-test-build *FILES:
     #!/usr/bin/env bash
     set -euo pipefail
     export TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest
@@ -1134,9 +1111,7 @@ app-test-grant:
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
     echo "==> Building ${PRODUCT_NAME}.app pinned to $TUG_FORCE_BUNDLE_ID"
     just build-app
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-        -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/${PRODUCT_NAME}.app"
+    APP_DIR="$(bash tugrust/scripts/derived-data-path.sh debug)/Build/Products/Debug/${PRODUCT_NAME}.app"
     echo "==> Revealing the app in Finder and opening the Accessibility pane"
     open -R "$APP_DIR"
     open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
@@ -1157,17 +1132,35 @@ app-test-grant:
 # Runtime ~20-30s (vs ~3min for the full sweep).
 app-test-smoke: (app-test "harness-smoke/smoke.test.ts" "harness-smoke/version-handshake.test.ts" "at0001-tab-switch-fc.test.ts")
 
-# Clean Debug xcodebuild artifacts (matches `app-debug`)
+# Remove the interactive debug build's per-variant DerivedData (matches
+# `app-debug` — the cwd-derived debug variant, e.g. Tug-debug / Tug-worktree).
 clean-debug:
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unset TUG_FORCE_BUNDLE_ID
+    rm -rf "$(bash tugrust/scripts/derived-data-path.sh debug)"
 
-# Clean Release xcodebuild artifacts (matches `app-release`)
+# Remove the interactive release build's per-variant DerivedData (matches
+# `app-release`).
 clean-release:
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unset TUG_FORCE_BUNDLE_ID
+    rm -rf "$(bash tugrust/scripts/derived-data-path.sh release)"
 
 # Clean the Rust workspace target dir (shared by debug + release)
 clean-rust:
     cd tugrust && cargo clean
 
-# Wipe every build artifact: Debug + Release xcodebuild outputs and Rust target/
-clean-all: clean-debug clean-release clean-rust
+# Wipe every build artifact: ALL per-variant Xcode DerivedData (debug,
+# release, apptest, worktree — plus the legacy shared per-project default)
+# and the Rust target/.
+clean-all: clean-rust
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DD="${HOME}/Library/Developer/Xcode/DerivedData"
+    # Named per-variant dirs (Tug, Tug-debug, Tug-apptest, Tug-worktree, …)
+    # plus the legacy shared `Tug-<projecthash>` default that predates the
+    # per-variant split.
+    rm -rf "$DD"/Tug "$DD"/Tug-* 2>/dev/null || true
+    echo "cleaned all Tug DerivedData under $DD"
