@@ -273,6 +273,18 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
     selectValue: { [radioId]: (next: string) => setScope(next as RuleScope) },
   });
 
+  // Author the form's controls into the accordion section's own focus scope.
+  // They render under `TugAccordionItem`'s `FocusModeContext` (the section mode),
+  // so they join the descended scope, NOT the sheet's top mode: unreachable while
+  // the accordion is collapsed, and once descended Tab cycles field → scope →
+  // Add while Escape ascends back to the "Add a rule" header ([P01]/[P02]). This
+  // also makes the header descendable — the section now has a first focusable, so
+  // the accordion's `currentItemDescendable` flips true.
+  const addFocusGroup = useId();
+  const FIELD_ORDER = 0;
+  const SCOPE_ORDER = 1;
+  const ADD_ORDER = 2;
+
   const submit = useCallback(() => {
     const entry = draft.trim();
     if (isDir ? entry === "" : !isValidRuleMatcher(entry)) return;
@@ -295,6 +307,8 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
             onSubmit={submit}
             placeholder={placeholder}
             aria-label="New directory path"
+            focusGroup={addFocusGroup}
+            focusOrder={FIELD_ORDER}
           />
         ) : (
           <TugInput
@@ -311,6 +325,8 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
                 submit();
               }
             }}
+            focusGroup={addFocusGroup}
+            focusOrder={FIELD_ORDER}
           />
         )}
         <TugRadioGroup
@@ -320,6 +336,8 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
           orientation="vertical"
           aria-label={isDir ? "Where to save the directory" : "Where to save the rule"}
           className="permission-rules-scope"
+          focusGroup={addFocusGroup}
+          focusOrder={SCOPE_ORDER}
         >
           {SCOPE_OPTIONS.map((opt) => (
             <TugRadioItem key={opt.scope} value={opt.scope} description={opt.description}>
@@ -334,6 +352,8 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
             data-slot="permission-rules-add-submit"
             disabled={!valid}
             onClick={submit}
+            focusGroup={addFocusGroup}
+            focusOrder={ADD_ORDER}
           >
             Add
           </TugPushButton>

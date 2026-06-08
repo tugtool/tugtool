@@ -183,6 +183,17 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
         expect(ascended?.within).toBe(false);
         const innerAfter = await app.evalJS<InnerProbe>(INNER_PROBE);
         expect(innerAfter?.keyboardReached).toBe(false);
+
+        // (7) Right also descends (tree disclosure convention): the cursor
+        // section `first` is still open + has content, so ArrowRight enters it
+        // like Enter — the inner control becomes the key view again.
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(INNER)});return b && b.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 6000 },
+        );
+        const reDescended = await app.evalJS<AccProbe>(ACC_PROBE);
+        expect(reDescended?.within).toBe(true);
       } finally {
         await app.close();
       }

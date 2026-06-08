@@ -197,6 +197,20 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(ADD_INPUT)}) !== null`,
             { timeoutMs: 4000 },
           );
+
+          // Keyboard-descent guard: the add-form controls (matcher field, scope
+          // radios, Add) are authored as focusables in the accordion section's
+          // own scope, so the open "Add a rule" header is descendable — Enter on
+          // it lands the key view inside (the descend mechanism itself is proven
+          // generically by at0120). Without this authoring the section holds no
+          // focusables and there is no way to reach the form by keyboard.
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-rules-add [data-tug-focusable]`)}).length`,
+            ),
+            "the add-rule form's controls are authored as focusables (section is descendable)",
+          ).toBeGreaterThan(0);
+
           expect(allowRules(), "no marker rule before add").not.toContain(MARKER);
 
           // Fill the controlled matcher input via the native-setter type

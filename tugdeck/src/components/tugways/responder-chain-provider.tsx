@@ -28,6 +28,7 @@ import { resolveFocusAct } from "./focus-act";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
 import { matchKeybinding } from "./keybinding-map";
+import { TUG_ACTIONS } from "./action-vocabulary";
 import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
@@ -253,6 +254,23 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         manager.resolveKeybinding(event, mode === BASE_FOCUS_MODE ? [] : [mode]) ??
         matchKeybinding(event);
       if (binding === null) return;
+      // Escape yields to the engine's scope-ascend ([P02] Escape = ascend-or-
+      // cancel). While a descended (non-trapped, non-base) scope is current —
+      // e.g. the user has descended into an accordion section inside a sheet — a
+      // bare Escape must ascend ONE level (the act-dispatch listener below pops
+      // the scope) rather than fire CANCEL_DIALOG and dismiss the whole surface.
+      // ⌘. (a distinct binding, key `.`) still force-dismisses; an Escape at the
+      // trapped top (no descended scope to pop) falls through here and dismisses
+      // as before. Without this, the global Escape→CANCEL_DIALOG binding fires
+      // first and blows away the sheet from inside a descended scope.
+      if (
+        binding.action === TUG_ACTIONS.CANCEL_DIALOG &&
+        event.key === "Escape" &&
+        focusManager.currentFocusMode() !== BASE_FOCUS_MODE &&
+        !focusManager.currentFocusModeTrapped()
+      ) {
+        return;
+      }
       // [D06] preventDefaultOnMatch: suppress browser default on match (e.g.
       // Cmd+A native select-all) before dispatching to the responder chain.
       if (binding.preventDefaultOnMatch) {

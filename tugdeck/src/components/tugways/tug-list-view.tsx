@@ -2444,6 +2444,20 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const total = dataSourceRef.current.numberOfItems();
         if (total === 0) return;
         const cur = cursorIndexRef.current;
+        // Tree-style descend ([P02] disclosure model): Right enters a row whose
+        // content has navigable focusables, mirroring Enter. Not in single-select
+        // (those rows are picks, never descended). Ascend is Escape. Other rows
+        // ignore Right (no horizontal movement in a vertical list).
+        if (
+          e.key === "ArrowRight" &&
+          !singleSelectRef.current &&
+          rowFirstFocusableId(cur) !== null
+        ) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          descendCursorRow();
+          return;
+        }
         const pageStep = (): number =>
           Math.max(
             1,
@@ -2496,6 +2510,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       moveCursorTo,
       scrollIndexIntoView,
       selectCursorRow,
+      rowFirstFocusableId,
+      descendCursorRow,
     ]);
 
     // PageUp / PageDown by entry ([L02] DOM event listener installed

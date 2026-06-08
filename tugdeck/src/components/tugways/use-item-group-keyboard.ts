@@ -189,8 +189,23 @@ export function useItemGroupKeyboard(
     (event: ReactKeyboardEvent) => {
       let next = -1;
       switch (event.key) {
-        case "ArrowDown":
         case "ArrowRight":
+          // Tree-style descend ([P02] disclosure model): Right enters an open,
+          // descendable item (an accordion section with navigable content),
+          // mirroring Enter. When the current item isn't descendable — a closed
+          // section, or any group that never descends (radio / choice / option,
+          // and horizontal containers) — Right keeps its movement meaning, so
+          // the shared "both arrow axes move" ergonomic is preserved everywhere
+          // except where descent is genuinely available. Ascend is Escape.
+          if (optionsRef.current.currentItemDescendable?.() ?? false) {
+            event.preventDefault();
+            optionsRef.current.onDescend?.(cursor.cursorElement(), cursor.cursorIndex());
+            return;
+          }
+          event.preventDefault();
+          next = cursor.moveCursor(1);
+          break;
+        case "ArrowDown":
           event.preventDefault();
           next = cursor.moveCursor(1);
           break;
