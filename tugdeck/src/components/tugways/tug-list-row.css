@@ -154,6 +154,17 @@ body {
   align-items: center;
   justify-content: center;
   width: 1rem;
+  /* Align the glyph with the title's first line (the top row), not the row's
+     vertical center — on a two-line row a centered check floats between the
+     title and subtitle. `align-self: flex-start` pins it to the content top and
+     a line-box height equal to the md title line centers the glyph on the
+     title. */
+  align-self: flex-start;
+  height: var(--tug-line-height-md);
+  /* Sit a little nearer the left margin (reclaim the leading focus gutter the
+     check occupies) and hold extra breathing room before the text. */
+  margin-inline-start: calc(-1 * var(--tugx-list-row-indicator-gutter));
+  margin-inline-end: var(--tug-space-2xs);
 }
 
 .tug-list-row-check svg {
