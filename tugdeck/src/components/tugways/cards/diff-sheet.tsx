@@ -44,6 +44,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import {
   type GitDiffFile,
@@ -208,6 +209,10 @@ function DiffSheetBody({
   );
   const refresh = useCallback(() => gitDiffStore.requestDiff(), [gitDiffStore]);
 
+  // Seed the Done button as the sheet's live default (filled+ring) on open.
+  const doneFocusGroup = React.useId();
+  useSeedKeyView(`${doneFocusGroup}:0`);
+
   const payload = snapshot.payload;
   const files = payload?.files ?? [];
   const hasFiles = files.length > 0;
@@ -353,7 +358,7 @@ function DiffSheetBody({
       header={header}
       footer={
         <div className="tug-sheet-actions">
-          <TugPushButton emphasis="primary" onClick={() => onClose()} data-testid="diff-done">
+          <TugPushButton emphasis="primary" onClick={() => onClose()} data-testid="diff-done" focusGroup={doneFocusGroup} focusOrder={0}>
             Done
           </TugPushButton>
         </div>

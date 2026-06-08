@@ -239,3 +239,23 @@ export function useRovingFocusable(options: UseFocusableOptions): UseRovingFocus
 export function useFocusManager() {
   return useContext(FocusManagerContext);
 }
+
+/**
+ * Seed the engine key view onto a focusable by its stable `group:order` focus
+ * key, once, when this component mounts ([P12] surface default-seed). For a
+ * surface (sheet / popover) whose controls are authored into its trapped focus
+ * mode: the default control rests with the ring + its filled promotion the
+ * instant the surface opens, and Tab moves the key view from there. Rides
+ * `armKeyboardRestore`, which resolves immediately if the target is already
+ * registered or re-lights it the moment it mounts ([L03]). No-op outside a
+ * `FocusManagerProvider` or when `focusKey` is null.
+ */
+export function useSeedKeyView(focusKey: string | null): void {
+  const manager = useContext(FocusManagerContext);
+  const seededRef = useRef(false);
+  useLayoutEffect(() => {
+    if (seededRef.current || manager === null || focusKey === null) return;
+    seededRef.current = true;
+    manager.armKeyboardRestore(focusKey);
+  }, [manager, focusKey]);
+}

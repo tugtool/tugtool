@@ -42,6 +42,7 @@ import {
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
@@ -174,6 +175,13 @@ function HelpSheetBody({
     selectTab: { [tabBarId]: (id: string) => setTab(id as HelpTabId) },
   });
 
+  // Author the controls into the sheet's trapped focus mode: Tab walks the tab
+  // bar → Done, with Done seeded as the live default (filled+ring) on open.
+  const focusGroup = useId();
+  const TABBAR_ORDER = 0;
+  const DONE_ORDER = 1;
+  useSeedKeyView(`${focusGroup}:${DONE_ORDER}`);
+
   return (
     <ResponderScope>
       <TugSheetScaffold
@@ -187,6 +195,8 @@ function HelpSheetBody({
             addable={false}
             className="help-sheet-tabs"
             ref={responderRef as (el: HTMLDivElement | null) => void}
+            focusGroup={focusGroup}
+            focusOrder={TABBAR_ORDER}
           />
         }
         footer={
@@ -195,6 +205,8 @@ function HelpSheetBody({
               emphasis="primary"
               onClick={() => onClose()}
               data-testid="help-done"
+              focusGroup={focusGroup}
+              focusOrder={DONE_ORDER}
             >
               Done
             </TugPushButton>

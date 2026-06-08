@@ -38,6 +38,7 @@ import "./permission-mode-chip.css";
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugListRow } from "@/components/tugways/tug-list-row";
@@ -373,6 +374,14 @@ function PermissionModeSheetBody({
     [],
   );
 
+  // Author the controls into the sheet's trapped focus mode: Tab walks
+  // list → Cancel → OK, with OK seeded as the live default (filled+ring).
+  const focusGroup = React.useId();
+  const LIST_ORDER = 0;
+  const CANCEL_ORDER = 1;
+  const OK_ORDER = 2;
+  useSeedKeyView(`${focusGroup}:${OK_ORDER}`);
+
   const confirm = (): void => onConfirm(selected);
 
   return (
@@ -397,17 +406,28 @@ function PermissionModeSheetBody({
             rowLayout="flush"
             inline
             className="permission-mode-list"
+            focusGroup={focusGroup}
+            focusOrder={LIST_ORDER}
           />
         </div>
       </PermissionModeListContext.Provider>
       <div className="tug-sheet-actions">
-        <TugPushButton onClick={onCancel} data-testid="permission-mode-cancel">
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          onClick={onCancel}
+          data-testid="permission-mode-cancel"
+          focusGroup={focusGroup}
+          focusOrder={CANCEL_ORDER}
+        >
           Cancel
         </TugPushButton>
         <TugPushButton
           emphasis="primary"
           onClick={confirm}
           data-testid="permission-mode-ok"
+          focusGroup={focusGroup}
+          focusOrder={OK_ORDER}
         >
           OK
         </TugPushButton>

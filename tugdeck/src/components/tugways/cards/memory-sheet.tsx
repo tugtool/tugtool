@@ -41,6 +41,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import {
   type MemoryDestination,
@@ -196,6 +197,13 @@ function MemorySheetBody({
     </div>
   );
 
+  // Author the controls into the sheet's trapped focus mode: Tab walks the file
+  // list → Done, with Done seeded as the live default (filled+ring) on open.
+  const focusGroup = React.useId();
+  const LIST_ORDER = 0;
+  const DONE_ORDER = 1;
+  useSeedKeyView(`${focusGroup}:${DONE_ORDER}`);
+
   return (
     <TugSheetScaffold
       className="memory-sheet"
@@ -206,6 +214,8 @@ function MemorySheetBody({
             emphasis="primary"
             onClick={() => onClose()}
             data-testid="memory-done"
+            focusGroup={focusGroup}
+            focusOrder={DONE_ORDER}
           >
             Done
           </TugPushButton>
@@ -219,6 +229,8 @@ function MemorySheetBody({
         rowLayout="flush"
         inline
         className="memory-sheet-list"
+        focusGroup={focusGroup}
+        focusOrder={LIST_ORDER}
       />
     </TugSheetScaffold>
   );

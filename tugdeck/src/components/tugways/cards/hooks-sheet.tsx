@@ -35,6 +35,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   type HookEventRow,
   type HookMatcherGroup,
@@ -159,6 +160,12 @@ function HooksSheetBody({
     () => hooksInventoryStore.requestHooks(),
     [hooksInventoryStore],
   );
+  // Author the controls into the sheet's trapped focus mode: Tab walks the event
+  // accordion → Done, with Done seeded as the live default (filled+ring) on open.
+  const focusGroup = React.useId();
+  const ACCORDION_ORDER = 0;
+  const DONE_ORDER = 1;
+  useSeedKeyView(`${focusGroup}:${DONE_ORDER}`);
 
   const events = snapshot.payload?.events ?? {};
   const rows = useMemo(() => selectHookEventRows(events), [events]);
@@ -180,7 +187,13 @@ function HooksSheetBody({
     );
   } else {
     body = (
-      <TugAccordion type="multiple" variant="separator" className="hooks-sheet-list">
+      <TugAccordion
+        type="multiple"
+        variant="separator"
+        className="hooks-sheet-list"
+        focusGroup={focusGroup}
+        focusOrder={ACCORDION_ORDER}
+      >
         {rows.map((row) => (
           <TugAccordionItem
             key={row.name}
@@ -229,6 +242,8 @@ function HooksSheetBody({
             emphasis="primary"
             onClick={() => onClose()}
             data-testid="hooks-done"
+            focusGroup={focusGroup}
+            focusOrder={DONE_ORDER}
           >
             Done
           </TugPushButton>

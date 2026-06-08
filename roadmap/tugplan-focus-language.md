@@ -1140,6 +1140,55 @@ at0102/at0104/at0105/at0106/at0057/at0058/at0128. (at0040/at0088/at0096 fail
 **identically on clean `main`** — pre-existing native-click / capability-metadata
 timing flakes, not gated on; verified by stash-rebuild.)
 
+**Slash-command / Z4B sheet focus-scope sweep (2026-06-07).** `TugSheet` already
+pushes a trapped focus mode and wraps its body in `FocusModeScope`, but the
+slash-command + chip sheets never authored their controls into a group or seeded a
+default — so Tab did nothing and the `primary` Done/OK never got `data-key-view-kbd`
+(it sat at the resting tint). Added a reusable `useSeedKeyView(group:order)` hook
+(`use-focusable.tsx`) that seeds the engine key view onto a control on mount via
+`armKeyboardRestore`, and authored each sheet's controls into its trap with a
+`React.useId()` group: **effort / model / permission-mode pickers** (list → Cancel →
+OK, OK seeded), **permissions editor** (tab bar → Done, Done seeded), **rewind**
+(turn list → Cancel → Rewind, Rewind seeded), **memory** (file list → Done, Done
+seeded), **hooks** (accordion → Done), **help** (tab bar → Done), and the Done-only
+**skills / agents / diff / attachment-preview** sheets (Done seeded → filled+ring).
+Cancel buttons moved ghost/default → `outlined+action` so the focused one promotes to
+filled+ring like the confirm popovers.
+
+**TugInput brought into the focus system (2026-06-07).** `TugInput` gained the standard
+`useFocusable` opt-in (`focusGroup` / `focusOrder` / `focusPolicy`), composing the
+focusable ref with the responder's `composedRef` so one `<input>` carries both
+`data-responder-id` and `data-tug-focusable`; the engine lands the key view on the real
+caret and a text field never consumes Tab (default `consumesTab=false`). Backward
+compatible — un-authored inputs are unchanged. Exposed it: the **permissions** filter
+field, add-rule accordion, and rule list now join the tab walk (tab bar → add-rule →
+filter → list → Done); **rename** authors its name field as order 0 and **seeds the
+field** (caret on open, text-first) with Save resting at its tint and promoting on Tab —
+the manual `autoFocus` is retired in favor of the engine seed. (`TugTextarea` /
+`TugValueInput` can take the same opt-in if a surface needs it.) The Recently-denied
+permissions tab renders a static row `<div>` (not a `TugListView`), so it stays
+tab-bar → Done only.
+
+**Audit completion — alert / settings / compaction (2026-06-07).** Three more
+dev-card sheets were missing the seed: the **alert sheet** (`tug-alert-sheet`, the
+`presentAlertSheet` "Unknown command" / confirm alerts) — its confirm button now
+authored + seeded (action → filled+ring, danger keeps its fill), Cancel `outlined+action`;
+the **settings sheet** (`SettingsSheetBody`, the title-bar "…" menu) — Done authored +
+seeded, the stale native `autoFocus` retired in favor of the engine seed; and the
+**compaction-progress** sheet — its transient Cancel authored into the trap (so Tab
+reaches it / it rings) but deliberately NOT seeded (a progress sheet has no commit
+default; a solid-filled Cancel would misread as a primary action).
+
+**Sheet-host unification (2026-06-07).** `usePermissionRulesSheet` owned its *own*
+`useTugSheet()` host, separate from the shared `cardPickerSheet` the chips/pickers use
+— so `/permissions` and a Z4B picker (e.g. effort) rendered as two independent,
+stacked sheets: opening effort over an open `/permissions` showed permissions on top,
+and Done dismissed only one host while the other stayed up ("Done dismisses neither").
+Fixed by passing the card's shared `showSheet` into `usePermissionRulesSheet` (dropping
+its internal host + `renderRulesSheet`), so the editor and every picker occupy ONE
+sheet at a time with replace-on-open semantics. (The `DevProjectPicker` pre-session
+host and the store-backed `useCardSettings` "…" host remain separate by design.)
+
 **Artifacts:** popover/sheet/alert + inline-dialog shell focus CSS; the inline-dialog **option rows**; the sheet/dialog/alert commit buttons (`primary` adoption); a menus audit note.
 
 **Tasks:**

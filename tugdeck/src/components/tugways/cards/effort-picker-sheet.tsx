@@ -33,6 +33,7 @@ import "./effort-picker-sheet.css";
 import React, { useCallback, useMemo, useState } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import {
@@ -248,6 +249,15 @@ function EffortPickerSheetBody({
     [levels],
   );
 
+  // Author the sheet's controls into its trapped focus mode (TugSheet pushes it;
+  // FocusModeScope wraps the body): Tab walks list → Cancel → OK, and the engine
+  // seeds the key view onto OK so it opens filled+ring (the live default).
+  const focusGroup = React.useId();
+  const LIST_ORDER = 0;
+  const CANCEL_ORDER = 1;
+  const OK_ORDER = 2;
+  useSeedKeyView(`${focusGroup}:${OK_ORDER}`);
+
   const confirm = (): void => onConfirm(selected);
 
   return (
@@ -272,17 +282,28 @@ function EffortPickerSheetBody({
             rowLayout="flush"
             inline
             className="effort-picker-list"
+            focusGroup={focusGroup}
+            focusOrder={LIST_ORDER}
           />
         </div>
       </EffortPickerListContext.Provider>
       <div className="tug-sheet-actions">
-        <TugPushButton data-slot="effort-picker-cancel" onClick={onCancel}>
+        <TugPushButton
+          data-slot="effort-picker-cancel"
+          emphasis="outlined"
+          role="action"
+          onClick={onCancel}
+          focusGroup={focusGroup}
+          focusOrder={CANCEL_ORDER}
+        >
           Cancel
         </TugPushButton>
         <TugPushButton
           data-slot="effort-picker-ok"
           emphasis="primary"
           onClick={confirm}
+          focusGroup={focusGroup}
+          focusOrder={OK_ORDER}
         >
           OK
         </TugPushButton>

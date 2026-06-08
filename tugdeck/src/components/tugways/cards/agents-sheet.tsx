@@ -40,6 +40,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { Message } from "@/lib/code-session-store/types";
@@ -284,6 +285,10 @@ function AgentsSheetBody({
   const rows = useMemo(() => buildRows(running, library), [running, library]);
   const dataSource = useMemo(() => new AgentsDataSource(rows), [rows]);
 
+  // Seed the Done button as the sheet's live default (filled+ring) on open.
+  const doneFocusGroup = React.useId();
+  useSeedKeyView(`${doneFocusGroup}:0`);
+
   return (
     <TugSheetScaffold
       className="agents-sheet"
@@ -293,6 +298,8 @@ function AgentsSheetBody({
             emphasis="primary"
             onClick={() => onClose()}
             data-testid="agents-done"
+            focusGroup={doneFocusGroup}
+            focusOrder={0}
           >
             Done
           </TugPushButton>

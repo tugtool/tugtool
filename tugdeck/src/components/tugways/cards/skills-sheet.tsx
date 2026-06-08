@@ -43,6 +43,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   type SkillInventoryEntry,
   type SkillsInventoryStore,
@@ -200,6 +201,9 @@ function SkillsSheetBody({
     () => skillsInventoryStore.requestInventory(),
     [skillsInventoryStore],
   );
+  // Seed the Done button as the sheet's live default (filled+ring) on open.
+  const doneFocusGroup = React.useId();
+  useSeedKeyView(`${doneFocusGroup}:0`);
 
   const skills = snapshot.payload?.skills ?? [];
   const dataSource = useMemo(() => new SkillsDataSource(skills), [skills]);
@@ -273,6 +277,8 @@ function SkillsSheetBody({
             emphasis="primary"
             onClick={() => onClose()}
             data-testid="skills-done"
+            focusGroup={doneFocusGroup}
+            focusOrder={0}
           >
             Done
           </TugPushButton>

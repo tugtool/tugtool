@@ -90,7 +90,7 @@ import { useCardSettings } from "../use-card-settings";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
-import { useFocusManager } from "../use-focusable";
+import { useFocusManager, useSeedKeyView } from "../use-focusable";
 import { useCycleMode } from "../use-cycle-mode";
 import type { ActionEvent } from "../responder-chain";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
@@ -2837,6 +2837,7 @@ export function DevCardBody({
     cardId,
     sessionMetadataStore,
     codeSessionStore,
+    showSheet: cardPickerSheet.showSheet,
   });
 
   const modelPicker = useModelPicker({
@@ -3689,7 +3690,6 @@ export function DevCardBody({
             </TugBox>
             {renderSheet()}
             {cardPickerSheet.renderSheet()}
-            {permissionRulesSheet.renderRulesSheet()}
           </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>
@@ -3809,6 +3809,10 @@ function SettingsSheetBody({
     responseStore.subscribe,
     responseStore.getSnapshot,
   );
+
+  // Seed the Done button as the sheet's live default (filled+ring) on open.
+  const doneFocusGroup = useId();
+  useSeedKeyView(`${doneFocusGroup}:0`);
 
   return (
     <div className="dev-card-settings">
@@ -3969,11 +3973,12 @@ function SettingsSheetBody({
 
       <div className="tug-sheet-actions">
         <TugPushButton
-          autoFocus
           emphasis="primary"
           role="action"
           onClick={onClose}
           data-tug-default-button="ok"
+          focusGroup={doneFocusGroup}
+          focusOrder={0}
         >
           Done
         </TugPushButton>

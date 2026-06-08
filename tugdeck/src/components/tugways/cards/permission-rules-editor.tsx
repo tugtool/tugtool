@@ -50,6 +50,7 @@ import { TugInput } from "@/components/tugways/tug-input";
 import { TugFileChooser } from "@/components/tugways/tug-file-chooser";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
@@ -66,7 +67,7 @@ import {
   useFilteredDataSource,
   type FilteredTugListViewDataSource,
 } from "@/components/tugways/use-filtered-data-source";
-import { useTugSheet } from "@/components/tugways/tug-sheet";
+import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import {
   BucketDataSource,
   PermissionRulesStore,
@@ -353,6 +354,14 @@ interface RulePanelProps {
   cwd?: string;
   /** Optional fixed header (the Workspace tab's read-only cwd row). */
   header?: React.ReactNode;
+  /** The sheet's trapped focus group ([P02]) — the panel authors its controls into it. */
+  focusGroup?: string;
+  /** Tab order of the add-rule accordion within {@link focusGroup}. */
+  addFocusOrder?: number;
+  /** Tab order of the filter field within {@link focusGroup}. */
+  filterFocusOrder?: number;
+  /** Tab order of the rule list within {@link focusGroup}. */
+  listFocusOrder?: number;
 }
 
 /**
@@ -360,7 +369,16 @@ interface RulePanelProps {
  * form, and a windowed, filtered list of the scope-labeled rule union. A freshly
  * added rule is scrolled into view so the user sees it landed.
  */
-function RulePanel({ store, bucket, cwd, header }: RulePanelProps): React.ReactElement {
+function RulePanel({
+  store,
+  bucket,
+  cwd,
+  header,
+  focusGroup,
+  addFocusOrder,
+  filterFocusOrder,
+  listFocusOrder,
+}: RulePanelProps): React.ReactElement {
   const isDir = bucket === "additionalDirectories";
   const [query, setQuery] = useState("");
   // The rule whose removal is awaiting confirmation, plus the trash button it
@@ -440,7 +458,13 @@ function RulePanel({ store, bucket, cwd, header }: RulePanelProps): React.ReactE
   return (
     <div className="permission-rules-panel">
       {header}
-      <TugAccordion type="single" collapsible variant="outline">
+      <TugAccordion
+        type="single"
+        collapsible
+        variant="outline"
+        focusGroup={focusGroup}
+        focusOrder={addFocusOrder}
+      >
         <TugAccordionItem value="add" trigger={addLabel}>
           <AddRuleForm
             placeholder={ADD_PLACEHOLDER[bucket]}
@@ -457,6 +481,8 @@ function RulePanel({ store, bucket, cwd, header }: RulePanelProps): React.ReactE
         aria-label={isDir ? "Filter directories" : "Filter rules"}
         className="permission-rules-search"
         onChange={(event) => setQuery(event.target.value)}
+        focusGroup={focusGroup}
+        focusOrder={filterFocusOrder}
       />
       <RuleRowContext.Provider value={rowContext}>
         <div
@@ -469,6 +495,8 @@ function RulePanel({ store, bucket, cwd, header }: RulePanelProps): React.ReactE
             dataSource={filtered}
             cellRenderers={RULE_CELL_RENDERERS}
             rowLayout="flush"
+            focusGroup={focusGroup}
+            focusOrder={listFocusOrder}
           />
         </div>
       </RuleRowContext.Provider>
@@ -630,6 +658,18 @@ function PermissionRulesSheetBody({
     selectTab: { [tabBarId]: (id: string) => setTab(id as TabId) },
   });
 
+  // Author every control into the sheet's trapped focus mode (TugSheet pushes
+  // it): Tab walks tab bar → add-rule accordion → filter field → rule list →
+  // Done, with Done seeded as the live default (filled+ring) on open. The panel
+  // owns the middle three orders; it receives the group + the base orders below.
+  const focusGroup = useId();
+  const TABBAR_ORDER = 0;
+  const PANEL_ADD_ORDER = 1;
+  const PANEL_FILTER_ORDER = 2;
+  const PANEL_LIST_ORDER = 3;
+  const DONE_ORDER = 4;
+  useSeedKeyView(`${focusGroup}:${DONE_ORDER}`);
+
   const workspaceHeader = (
     <div className="permission-rules-cwd" data-slot="workspace-cwd">
       <span className="permission-rule-matcher">{cwd}</span>
@@ -650,6 +690,8 @@ function PermissionRulesSheetBody({
           senderId={tabBarId}
           addable={false}
           className="permission-rules-tabs"
+          focusGroup={focusGroup}
+          focusOrder={TABBAR_ORDER}
         />
 
         <TugLabel
@@ -668,11 +710,20 @@ function PermissionRulesSheetBody({
             bucket={active.bucket}
             cwd={cwd}
             header={active.id === "workspace" ? workspaceHeader : undefined}
+            focusGroup={focusGroup}
+            addFocusOrder={PANEL_ADD_ORDER}
+            filterFocusOrder={PANEL_FILTER_ORDER}
+            listFocusOrder={PANEL_LIST_ORDER}
           />
         )}
 
         <div className="tug-sheet-actions">
-          <TugPushButton emphasis="primary" onClick={onDone}>
+          <TugPushButton
+            emphasis="primary"
+            onClick={onDone}
+            focusGroup={focusGroup}
+            focusOrder={DONE_ORDER}
+          >
             Done
           </TugPushButton>
         </div>
@@ -693,21 +744,28 @@ export interface UsePermissionRulesSheetArgs {
   sessionMetadataStore: SessionMetadataStore;
   /** Code-session store supplying the session's accumulated denials (Recently-denied tab). */
   codeSessionStore: CodeSessionStore;
+  /**
+   * The card's shared sheet host (`useTugSheet().showSheet`). The editor MUST
+   * route through the same host as every other card picker so opening it
+   * replaces any open picker (and vice-versa) instead of stacking a second,
+   * independent sheet — the source of the "two sheets, Done dismisses neither"
+   * bug when this hook owned its own host.
+   */
+  showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
 }
 
 /** Imperative handle to the single, card-hosted rules editor. */
 export interface PermissionRulesSheetController {
   /** Open the editor (no-op when the session `cwd` is not yet known). */
   openRulesSheet: () => void;
-  /** Render the sheet portal — call once in the card's content region. */
-  renderRulesSheet: () => React.ReactNode;
 }
 
 /**
  * Own the rules editor once, at the card level, so the `/permissions` slash
  * command opens it card-scoped ([D15]). The dev card calls this hook, routes
  * its `RUN_SLASH_COMMAND` handler for `permissions` to `openRulesSheet`, and
- * renders `renderRulesSheet` in its content region.
+ * passes the card's shared `showSheet` host so the editor and the pickers
+ * occupy ONE sheet at a time.
  *
  * The `cwd` is resolved fresh at open time ([L07]): the card's bind-time
  * `projectDir` — the project root this dev card is rooted at, known from the
@@ -720,9 +778,8 @@ export function usePermissionRulesSheet({
   cardId,
   sessionMetadataStore,
   codeSessionStore,
+  showSheet,
 }: UsePermissionRulesSheetArgs): PermissionRulesSheetController {
-  const { showSheet, renderSheet } = useTugSheet();
-
   const openRulesSheet = useCallback(() => {
     const binding = cardSessionBindingStore.getBinding(cardId);
     const projectDir = binding?.projectDir ?? "";
@@ -744,5 +801,5 @@ export function usePermissionRulesSheet({
     });
   }, [showSheet, sessionMetadataStore, codeSessionStore, cardId]);
 
-  return { openRulesSheet, renderRulesSheet: renderSheet };
+  return { openRulesSheet };
 }

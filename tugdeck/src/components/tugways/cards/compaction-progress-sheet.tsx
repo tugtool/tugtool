@@ -56,6 +56,8 @@ export function CompactionProgressSheet({
     if (progress === null) close();
   }, [progress, close]);
 
+  const cancelFocusGroup = React.useId();
+
   if (progress === null) return null;
 
   const settled = progress.outcome !== null;
@@ -79,7 +81,17 @@ export function CompactionProgressSheet({
       />
       {cancelable ? (
         <div className="tug-sheet-actions">
-          <TugPushButton onClick={onCancel} data-testid="compaction-cancel">
+          {/* Authored into the sheet's trap so Tab reaches it and it rings when
+              focused; not seeded — a progress sheet has no commit default, and a
+              solid-filled Cancel would read as a primary action. */}
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            onClick={onCancel}
+            data-testid="compaction-cancel"
+            focusGroup={cancelFocusGroup}
+            focusOrder={0}
+          >
             Cancel
           </TugPushButton>
         </div>

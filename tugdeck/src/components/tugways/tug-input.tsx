@@ -39,10 +39,12 @@
 
 import "./tug-input.css";
 
-import React, { useRef } from "react";
+import React, { useCallback, useId, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useTextInputResponder } from "./use-text-input-responder";
+import { useFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
 
@@ -103,6 +105,19 @@ export interface TugInputProps
    * next React render — use `useCardStatePreservation` for controlled state.
    */
   componentStatePreservationKey?: string;
+  /**
+   * Author the field into a focus group ([P02]) — the standard `useFocusable`
+   * opt-in. When set, the `<input>` registers as one stop in the surrounding
+   * surface's trapped Tab walk, so the engine lands the key view (and the ring)
+   * on the real caret and Tab moves to/from it like any other control. Omitted ⇒
+   * the field stays a plain native focus stop (unchanged behavior). A text field
+   * never consumes Tab — Tab always moves to the next focusable.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /** Focus policy for the registered stop ([P02]); forwarded to `useFocusable`. */
+  focusPolicy?: FocusPolicy;
 }
 
 // ---- Shared rendering ----
@@ -154,6 +169,9 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
       className,
       disabled,
       onContextMenu,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
@@ -181,10 +199,31 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
       onContextMenu,
     });
 
+    // Standard focus-stop opt-in ([P02]): the focusable IS the `<input>`, so the
+    // engine lands the key view on the real caret. A text field never consumes
+    // Tab, so `consumesTab` stays false (default). The focusable ref composes
+    // with the responder's `composedRef` (internal + forwarded + responder-id)
+    // so one element carries both `data-responder-id` and `data-tug-focusable`.
+    const focusableId = useId();
+    const { focusableRef } = useFocusable({
+      id: focusableId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
+    const setRefs = useCallback(
+      (el: HTMLInputElement | null) => {
+        composedRef(el);
+        focusableRef(el);
+      },
+      [composedRef, focusableRef],
+    );
+
     return (
       <>
         <input
-          ref={composedRef}
+          ref={setRefs}
           data-slot="tug-input"
           data-focus-style={focusStyle}
           data-borderless={borderless || undefined}

@@ -45,6 +45,7 @@ import * as React from "react";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 
 export interface DevAttachmentPreviewProps {
   /**
@@ -109,6 +110,10 @@ export function DevAttachmentPreview({
     getSnapshot,
   );
 
+  // Seed the Done button as the sheet's live default (filled+ring) on open.
+  const doneFocusGroup = React.useId();
+  useSeedKeyView(`${doneFocusGroup}:0`);
+
   return (
     <div
       data-slot="dev-attachment-preview"
@@ -138,6 +143,8 @@ export function DevAttachmentPreview({
           emphasis="primary"
           role="action"
           onClick={onClose}
+          focusGroup={doneFocusGroup}
+          focusOrder={0}
         >
           Done
         </TugPushButton>

@@ -26,6 +26,7 @@ import { Info } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { TugButtonRole } from "@/components/tugways/tug-push-button";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 
 export interface AlertSheetOptions {
   /** Alert title (required). */
@@ -63,6 +64,14 @@ export function TugAlertSheetView({
 }: TugAlertSheetViewProps): React.ReactElement {
   const iconNode =
     icon === undefined ? <Info size={48} aria-hidden="true" /> : icon;
+  // Author the actions into the sheet's trapped focus mode: Tab walks Cancel →
+  // confirm, with the confirm button seeded as the live default so it opens
+  // filled+ring (an action confirm promotes its `primary` tint to the role fill;
+  // a danger confirm keeps its fill). Single-button alerts seed the lone confirm.
+  const focusGroup = React.useId();
+  const CANCEL_ORDER = 0;
+  const CONFIRM_ORDER = 1;
+  useSeedKeyView(`${focusGroup}:${CONFIRM_ORDER}`);
   return (
     <div className="tug-alert-sheet">
       <div className="tug-alert-body">
@@ -80,7 +89,14 @@ export function TugAlertSheetView({
       </div>
       <div className="tug-alert-actions">
         {cancelLabel !== null ? (
-          <TugPushButton emphasis="outlined" onClick={onCancel} data-testid="alert-cancel">
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            onClick={onCancel}
+            data-testid="alert-cancel"
+            focusGroup={focusGroup}
+            focusOrder={CANCEL_ORDER}
+          >
             {cancelLabel}
           </TugPushButton>
         ) : null}
@@ -89,6 +105,8 @@ export function TugAlertSheetView({
           role={confirmRole}
           onClick={onConfirm}
           data-testid="alert-confirm"
+          focusGroup={focusGroup}
+          focusOrder={CONFIRM_ORDER}
         >
           {confirmLabel}
         </TugPushButton>

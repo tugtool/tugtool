@@ -34,6 +34,7 @@ import "./model-picker-sheet.css";
 import React, { useCallback, useMemo, useState } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import {
@@ -241,6 +242,14 @@ function ModelPickerSheetBody({
     [options],
   );
 
+  // Author the controls into the sheet's trapped focus mode: Tab walks
+  // list → Cancel → OK, with OK seeded as the live default (filled+ring).
+  const focusGroup = React.useId();
+  const LIST_ORDER = 0;
+  const CANCEL_ORDER = 1;
+  const OK_ORDER = 2;
+  useSeedKeyView(`${focusGroup}:${OK_ORDER}`);
+
   const confirm = (): void => onConfirm(selected);
 
   return (
@@ -266,12 +275,27 @@ function ModelPickerSheetBody({
             rowLayout="flush"
             inline
             className="model-picker-list"
+            focusGroup={focusGroup}
+            focusOrder={LIST_ORDER}
           />
         </div>
       </ModelPickerListContext.Provider>
       <div className="tug-sheet-actions">
-        <TugPushButton onClick={onCancel}>Cancel</TugPushButton>
-        <TugPushButton emphasis="primary" onClick={confirm}>
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          onClick={onCancel}
+          focusGroup={focusGroup}
+          focusOrder={CANCEL_ORDER}
+        >
+          Cancel
+        </TugPushButton>
+        <TugPushButton
+          emphasis="primary"
+          onClick={confirm}
+          focusGroup={focusGroup}
+          focusOrder={OK_ORDER}
+        >
           OK
         </TugPushButton>
       </div>

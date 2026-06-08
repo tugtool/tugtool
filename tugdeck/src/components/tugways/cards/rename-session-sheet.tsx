@@ -23,6 +23,7 @@ import React, { useCallback, useState } from "react";
 
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { getConnection } from "@/lib/connection-singleton";
@@ -101,6 +102,15 @@ function RenameSheetBody({
   onCancel,
 }: RenameSheetBodyProps): React.ReactElement {
   const [value, setValue] = useState(initialName);
+  // Author the field + action buttons into the sheet's trapped focus mode: Tab
+  // walks name field → Cancel → Save. This is a text-first sheet ([P14]/[#step-6]),
+  // so the engine seeds the key view onto the FIELD (caret on open); Save rests at
+  // its primary tint and promotes to filled+ring when Tab'd onto.
+  const focusGroup = React.useId();
+  const FIELD_ORDER = 0;
+  const CANCEL_ORDER = 1;
+  const SAVE_ORDER = 2;
+  useSeedKeyView(`${focusGroup}:${FIELD_ORDER}`);
   return (
     <div
       className="rename-session-sheet"
@@ -113,21 +123,31 @@ function RenameSheetBody({
       }}
     >
       <TugInput
-        autoFocus
         value={value}
         placeholder="Session name (blank to clear)"
         aria-label="Session name"
         onChange={(e) => setValue(e.target.value)}
         data-testid="rename-session-input"
+        focusGroup={focusGroup}
+        focusOrder={FIELD_ORDER}
       />
       <div className="tug-sheet-actions">
-        <TugPushButton onClick={() => onCancel()} data-testid="rename-cancel">
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          onClick={() => onCancel()}
+          data-testid="rename-cancel"
+          focusGroup={focusGroup}
+          focusOrder={CANCEL_ORDER}
+        >
           Cancel
         </TugPushButton>
         <TugPushButton
           emphasis="primary"
           onClick={() => onSubmit(value)}
           data-testid="rename-save"
+          focusGroup={focusGroup}
+          focusOrder={SAVE_ORDER}
         >
           Save
         </TugPushButton>

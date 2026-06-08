@@ -48,6 +48,7 @@ import React, {
 } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
@@ -362,6 +363,14 @@ function RewindSheetBody({
     codeSessionStore.sessionRewind(selected.promptUuid, effectiveScope, true);
   }, [selected, isIdle, effectiveScope, codeSessionStore]);
 
+  // Author the controls into the sheet's trapped focus mode: Tab walks the turn
+  // list → Cancel → Rewind, with Rewind seeded as the live default (filled+ring).
+  const focusGroup = useId();
+  const LIST_ORDER = 0;
+  const CANCEL_ORDER = 1;
+  const REWIND_ORDER = 2;
+  useSeedKeyView(`${focusGroup}:${REWIND_ORDER}`);
+
   return (
     <ResponderScope>
       <div
@@ -398,6 +407,8 @@ function RewindSheetBody({
                   scrollKey="rewind-turns"
                   rowLayout="flush"
                   className="dev-card-picker-sessions-list dev-card-picker-list-view"
+                  focusGroup={focusGroup}
+                  focusOrder={LIST_ORDER}
                 />
               ) : (
                 <div className="rewind-empty" role="status">
@@ -433,7 +444,14 @@ function RewindSheetBody({
         ) : null}
 
         <div className="tug-sheet-actions">
-          <TugPushButton onClick={() => onClose()} data-testid="rewind-cancel">
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            onClick={() => onClose()}
+            data-testid="rewind-cancel"
+            focusGroup={focusGroup}
+            focusOrder={CANCEL_ORDER}
+          >
             Cancel
           </TugPushButton>
           <TugPushButton
@@ -441,6 +459,8 @@ function RewindSheetBody({
             disabled={!canApply}
             onClick={apply}
             data-testid="rewind-apply"
+            focusGroup={focusGroup}
+            focusOrder={REWIND_ORDER}
           >
             Rewind
           </TugPushButton>
