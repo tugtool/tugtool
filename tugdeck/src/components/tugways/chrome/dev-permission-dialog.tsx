@@ -102,13 +102,13 @@ import {
   dispatchToolCallState,
   hasBespokeWrapper,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
-import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
 import { useInlineDialogScope } from "@/components/tugways/use-inline-dialog-scope";
-import { useItemGroupKeyboard } from "@/components/tugways/use-item-group-keyboard";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -738,134 +738,15 @@ const PendingDispatchBody: React.FC<PendingDispatchBodyProps> = ({
 // Focus ordering — the dialog's controls as cycle stops inside the trap
 // ---------------------------------------------------------------------------
 
-/** Tab order inside the dialog's trapped mode: Deny → Allow → scope group. */
-const DENY_FOCUS_ORDER = 0;
-const ALLOW_FOCUS_ORDER = 1;
-const SCOPE_FOCUS_ORDER = 2;
-
-// ---------------------------------------------------------------------------
-// Scope choice group — the radio item-group ([P02]/[Q06])
-// ---------------------------------------------------------------------------
-
-interface ScopeChoiceGroupProps {
-  /** The scope options in render order. */
-  options: ReadonlyArray<TugInlineDialogOption>;
-  /** The selected option value (controlled). */
-  selectedOption: string;
-  /** Set the selected option — fired on arrow move (selection follows cursor) and click. */
-  onSelect: (value: string) => void;
-  /** Focus group the dialog authors this stop into (its trapped mode). */
-  focusGroup: string;
-  /** Order within {@link focusGroup}. */
-  focusOrder: number;
-}
-
 /**
- * The permission scope choices as a single **radio choice group** stop
- * ([P02]/[Q06]). Tab lands the ring on the group (never on a row); the arrows
- * move a cursor that carries the selection with it (single-select,
- * selection-follows-cursor — no Space step, [#step-7-5]); and Return falls
- * through to the dialog's default action (Allow) because a single-select
- * container resolves `Enter` to `passthrough`. Renders the same rich
- * `TugDialogButton` rows as before — only the keyboard model changed (the flat
- * item-container that mashed the Deny/Allow buttons and the option rows into one
- * cursor is retired; the buttons are now their own leaf stops).
- *
- * Authored into the dialog's trapped focus mode via `FocusModeContext` (the
- * `useItemGroupKeyboard` → `useFocusable` chain reads it), exactly like every
- * sheet / alert / popover item-group.
+ * Tab order inside the dialog's trapped mode: **Allow → Deny → scope group**
+ * (user directive). Allow leads (it is the seeded default + recommended action);
+ * Deny follows; the scope choices are the last stop. DOM order of the header
+ * buttons is unchanged (Deny left, Allow right) — only the focus order differs.
  */
-const ScopeChoiceGroup: React.FC<ScopeChoiceGroupProps> = ({
-  options,
-  selectedOption,
-  onSelect,
-  focusGroup,
-  focusOrder,
-}) => {
-  const id = React.useId();
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const optionsRef = React.useRef(options);
-  optionsRef.current = options;
-  const selectedRef = React.useRef(selectedOption);
-  selectedRef.current = selectedOption;
-
-  const collectItems = React.useCallback(() => {
-    const root = rootRef.current;
-    if (root === null) return [];
-    return Array.from(
-      root.querySelectorAll('[data-slot="tug-dialog-button"]'),
-    );
-  }, []);
-
-  // Land the cursor on the currently-selected scope when the group gains the key
-  // view, else the first row.
-  const initialIndex = React.useCallback(() => {
-    const idx = optionsRef.current.findIndex(
-      (o) => o.value === selectedRef.current,
-    );
-    return idx < 0 ? 0 : idx;
-  }, []);
-
-  // Selection follows the cursor (live) and a Space-select both commit the
-  // landed scope; Return passes through to Allow (singleSelect).
-  const selectByCursor = React.useCallback(
-    (_el: Element | null, index: number) => {
-      const opt = optionsRef.current[index];
-      if (opt) onSelect(opt.value);
-    },
-    [onSelect],
-  );
-
-  const { attachRoot, onKeyDown, syncItems } = useItemGroupKeyboard({
-    id,
-    group: focusGroup,
-    order: focusOrder,
-    register: true,
-    commit: "live",
-    singleSelect: true,
-    collectItems,
-    initialIndex,
-    onSelect: selectByCursor,
-    onMove: selectByCursor,
-  });
-
-  const setRoot = React.useCallback(
-    (el: HTMLDivElement | null) => {
-      rootRef.current = el;
-      attachRoot(el);
-    },
-    [attachRoot],
-  );
-
-  React.useLayoutEffect(() => {
-    syncItems();
-  }, [syncItems, options.length]);
-
-  return (
-    <div
-      ref={setRoot}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      role="radiogroup"
-      aria-label="Permission scope"
-      data-slot="dev-permission-dialog-scope-group"
-      className="dev-permission-dialog-scope-group"
-    >
-      {options.map((option) => (
-        <TugDialogButton
-          key={option.value}
-          label={option.label}
-          description={option.description}
-          role={option.role}
-          selected={selectedOption === option.value}
-          selectionStyle="radio"
-          ariaLabel={option.ariaLabel}
-          onClick={() => onSelect(option.value)}
-        />
-      ))}
-    </div>
-  );
-};
+const ALLOW_FOCUS_ORDER = 0;
+const DENY_FOCUS_ORDER = 1;
+const SCOPE_FOCUS_ORDER = 2;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -885,7 +766,7 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       : "Tool";
 
   // One focus group for the dialog's controls inside its trapped mode ([P16]):
-  // Deny (0) → Allow (1) → scope group (2). Tab cycles only these — the dialog
+  // Allow (0) → Deny (1) → scope group (2). Tab cycles only these — the dialog
   // is card-modal, so the keyboard never reaches the (deactivated) editor or the
   // scrimmed chrome while it is open.
   const focusGroup = React.useId();
@@ -1038,11 +919,25 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // default) when the dialog opens so Return commits and the ring lands home.
   // `attachRoot` wires the responder onto the dialog's outer element (the
   // ancestor of every control, so the cancel-action routes up to it).
-  const { attachRoot } = useInlineDialogScope({
+  const { attachRoot, responderId: dialogResponderId } = useInlineDialogScope({
     active: isPending,
     defaultFocusKey: `${focusGroup}:${ALLOW_FOCUS_ORDER}`,
     onCancel: handleDeny,
   });
+
+  // The scope choices are a bog-standard `TugRadioGroup` ([P02]): one item-group
+  // Tab stop, arrows move the cursor, Space/Enter check the cursor row. It is a
+  // controlled radio whose selection arrives through the responder chain ([L11])
+  // — `useResponderForm` registers the `selectValue` handler, keyed on the
+  // group's `senderId`, that updates the chosen scope. Its `parentId` is the
+  // dialog's cancel responder, so an Escape while the radio holds the key view
+  // walks `CANCEL_DIALOG` up to Deny (instead of escaping past the dialog).
+  const radioSenderId = React.useId();
+  const { ResponderScope: ScopeResponderScope, responderRef: scopeResponderRef } =
+    useResponderForm({
+      selectValue: { [radioSenderId]: (next: string) => setSelectedOption(next) },
+      parentId: dialogResponderId,
+    });
 
   // The dialog has no post-decision chrome — see the module docstring
   // and `#step-3-5`. Once the user clicks (or the request resolves
@@ -1059,11 +954,12 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // emphasis that rests at the badge tint and promotes to fill + ring when
   // engaged, plus `persistentDefaultRing` so it wears the "Return's home" ring
   // the whole time the dialog is open; Deny is outlined-danger and promotes to
-  // filled-danger when it holds the key view). The scope choices are a single
-  // radio item-group (`ScopeChoiceGroup`) — arrows pick, Return falls through to
-  // Allow. The body picker (`DiffBlock` / dispatch wrapper / `JsonTreeBlock`)
-  // and the scope group both render in the `children` slot; for `bash` / `path`
-  // the picker returns `null` and only the scope group shows.
+  // filled-danger when it holds the key view). The scope choices are a standard
+  // `TugRadioGroup` ([P02]) — one item-group Tab stop, arrows move the cursor,
+  // Space/Enter check the cursor row; selection rides the responder chain. The
+  // body picker (`DiffBlock` / dispatch wrapper / `JsonTreeBlock`) and the radio
+  // group both render in the `children` slot; for `bash` / `path` the picker
+  // returns `null` and only the radio group shows.
   //
   // The outer wrapper carries the `dev-permission-dialog` class (the scrim's
   // bright-island marker, [P19]) and the cancel-action responder root
@@ -1120,13 +1016,32 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
             requestId={requestId}
           />
           {allowOptions.length > 0 ? (
-            <ScopeChoiceGroup
-              options={allowOptions}
-              selectedOption={selectedOption}
-              onSelect={setSelectedOption}
-              focusGroup={focusGroup}
-              focusOrder={SCOPE_FOCUS_ORDER}
-            />
+            <ScopeResponderScope>
+              <div
+                ref={scopeResponderRef as (el: HTMLDivElement | null) => void}
+                className="dev-permission-dialog-scope"
+              >
+                <TugRadioGroup
+                  value={selectedOption}
+                  senderId={radioSenderId}
+                  size="md"
+                  orientation="vertical"
+                  aria-label="Permission scope"
+                  focusGroup={focusGroup}
+                  focusOrder={SCOPE_FOCUS_ORDER}
+                >
+                  {allowOptions.map((option) => (
+                    <TugRadioItem
+                      key={option.value}
+                      value={option.value}
+                      description={option.description}
+                    >
+                      {option.label}
+                    </TugRadioItem>
+                  ))}
+                </TugRadioGroup>
+              </div>
+            </ScopeResponderScope>
           ) : null}
         </TugInlineDialog>
       </div>

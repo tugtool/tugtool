@@ -57,6 +57,13 @@ export interface InlineDialogScopeResult {
    * holds the element so the open effect can scroll the dialog header into view.
    */
   attachRoot: (el: HTMLElement | null) => void;
+  /**
+   * The id of the dialog's cancel-action responder. Pass as the `parentId` of any
+   * nested responder the dialog hosts (e.g. a `TugRadioGroup`'s `useResponderForm`)
+   * so an unhandled `CANCEL_DIALOG` from inside that responder walks up the chain
+   * to this one (Escape / Cmd-. → cancel) instead of escaping past the dialog.
+   */
+  responderId: string;
 }
 
 /**
@@ -106,5 +113,5 @@ export function useInlineDialogScope(
     };
   }, [active, scroller]);
 
-  return { attachRoot };
+  return { attachRoot, responderId: id };
 }

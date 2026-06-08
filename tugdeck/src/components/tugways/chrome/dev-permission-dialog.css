@@ -82,21 +82,12 @@ body {
 }
 
 /*
- * Scope choice group ([P02]/[Q06]) — the radio rows as a single item-group
- * stop. The group is the focusable; per [P02] its key-view shows no leaf box
- * ring (the roving `[data-key-cursor]` ring on the current TugDialogButton row,
- * role-resolved in `tug-dialog-button.css`, is the "where am I" cue). The rows
- * stack vertically and fill the dialog width.
+ * Scope choices ([P02]/[Q06]) — a standard `TugRadioGroup` (one item-group Tab
+ * stop, arrows move the cursor, Space/Enter check the cursor row). The group
+ * owns its own item spacing + focus treatment; this wrapper only adds breathing
+ * room below the dialog description, whose negative bottom margin
+ * (`TugInlineDialog`) otherwise pulls the options up tight against it.
  */
-.dev-permission-dialog-scope-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-2xs);
-  outline: none;
-}
-
-/* Group key-view: suppress the global leaf ring — an item-group rings its
- * cursor item, not its container ([P02]). */
-.dev-permission-dialog-scope-group[data-key-view-kbd] {
-  outline: none;
+.dev-permission-dialog-scope {
+  margin-top: var(--tug-space-md);
 }

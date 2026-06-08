@@ -48,8 +48,11 @@ const CARD_ROOT = `${CARD} [data-slot="dev-card"]`;
 const DIALOG = `${CARD} [data-slot="dev-permission-dialog"]`;
 const ALLOW = `${DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
 const DENY = `${DIALOG} .tug-inline-dialog-actions .tug-button-outlined-danger`;
-const SCOPE = `${DIALOG} [data-slot="dev-permission-dialog-scope-group"]`;
-const SCOPE_SELECTED_LABEL = `${SCOPE} [data-slot="tug-dialog-button"][data-selected="true"] .tug-dialog-button-label`;
+const SCOPE = `${DIALOG} [data-slot="tug-radio-group"]`;
+// The checked radio row (a `TugRadioItem` only wraps its label in
+// `.tug-radio-item-label` when it carries a description, so match the row itself
+// and assert on its text).
+const SCOPE_CHECKED = `${SCOPE} [data-slot="tug-radio-item"][data-state="checked"]`;
 const OLD_DEADZONE = `${CARD} [data-slot="dev-permission-dialog-scope"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
@@ -183,34 +186,42 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
         );
         expect(allowOutlineOpen, "Allow shows a visible ring on open").toBeGreaterThan(0);
 
-        // (4) Tab → the scope group becomes the key view (a single radio
-        // item-group stop). With the keyboard on a non-button, Allow's
-        // engine-owned persistent default ring lights ("Return's home").
+        // (4) Tab order is Allow → Deny → scope group. The seed is Allow, so the
+        // first Tab lands on Deny.
+        await app.nativeKey("Tab");
+        await sleep(150);
+        expect(await hasAttr(app, DENY, "data-key-view-kbd"), "first Tab goes Allow → Deny").toBe(true);
+
+        // Next Tab(s) → the scope group (a standard TugRadioGroup, one item-group
+        // stop). With the keyboard on a non-button, Allow's engine-owned
+        // persistent default ring lights ("Return's home").
         let onScope = false;
         for (let i = 0; i < 4 && !onScope; i += 1) {
           await app.nativeKey("Tab");
           await sleep(150);
           onScope = await hasAttr(app, SCOPE, "data-key-view-kbd");
         }
-        expect(onScope, "Tab lands the key view on the scope group").toBe(true);
+        expect(onScope, "Tab lands the key view on the scope radio group").toBe(true);
         expect(
           await hasAttr(app, ALLOW, "data-default-ring"),
           "Allow shows its persistent default ring while the keyboard is on the scope group",
         ).toBe(true);
 
-        // (5) Arrows in the scope group move the selection (selection follows
-        // the cursor; no Space). It opens on "Allow once"; ArrowDown selects
-        // "Allow for this project".
+        // (5) The radio group is deferred-commit: it opens checked on "Allow
+        // once"; ArrowDown moves the cursor without committing, and Space checks
+        // the cursor row → "Allow for this project".
         expect(
-          (await textOf(app, SCOPE_SELECTED_LABEL))?.trim(),
-          "scope group opens on Allow once",
-        ).toBe("Allow once");
+          (await textOf(app, SCOPE_CHECKED)) ?? "",
+          "scope group opens checked on Allow once",
+        ).toContain("Allow once");
         await app.nativeKey("ArrowDown");
         await sleep(150);
+        await app.nativeKey(" ");
+        await sleep(150);
         expect(
-          (await textOf(app, SCOPE_SELECTED_LABEL))?.trim(),
-          "ArrowDown moves the selection to the next scope",
-        ).toBe("Allow for this project");
+          (await textOf(app, SCOPE_CHECKED)) ?? "",
+          "ArrowDown + Space checks the next scope",
+        ).toContain("Allow for this project");
 
         // (6) The trap holds: keep Tabbing and the key view never lands on the
         // editor — it cycles Deny / Allow / scope group only.
