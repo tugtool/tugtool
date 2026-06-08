@@ -65,9 +65,14 @@ const SCROLLER_SELECTOR =
 
 const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
-type PromptComponentId =
-  | "gallery-prompt-entry"
-  | "dev";
+// Only the gallery-prompt-entry editor is exercised here. The `dev`
+// (DevCardBody) variants were removed: they died at a native
+// second-pane activation click in the harness — a multi-pane CGEvent
+// geometry brittleness, never reaching the selection-paint assertion —
+// and the underlying property (selection survives deactivation at the
+// correct DOM position) is already covered by this editor, which shares
+// the same EM engine. See AT0038 in app-test-inventory.md.
+type PromptComponentId = "gallery-prompt-entry";
 
 function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
@@ -308,10 +313,6 @@ async function runLiveSelectionScenario(
     focusCardId: "A",
   });
 
-  if (componentId === "dev") {
-    await app.bindDevSession("A");
-  }
-
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
   );
@@ -452,10 +453,6 @@ async function runDeactivationScenario(
     focusCardId: "A",
   });
 
-  if (componentId === "dev") {
-    await app.bindDevSession("A");
-  }
-
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
   );
@@ -587,19 +584,6 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "dev — seeded selection survives deactivation at correct DOM position",
-      async () => {
-        const app = await launchTugApp({ testName: "at0027-dev" });
-        try {
-          await runDeactivationScenario(app, "dev");
-        } finally {
-          await app.close();
-        }
-      },
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
       "gallery-prompt-entry — LIVE selection (set via DOM) survives deactivation",
       async () => {
         const app = await launchTugApp({
@@ -607,19 +591,6 @@ describe.skipIf(!SHOULD_RUN)(
         });
         try {
           await runLiveSelectionScenario(app, "gallery-prompt-entry");
-        } finally {
-          await app.close();
-        }
-      },
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
-      "dev — LIVE selection (set via DOM) survives deactivation",
-      async () => {
-        const app = await launchTugApp({ testName: "at0027-live-dev" });
-        try {
-          await runLiveSelectionScenario(app, "dev");
         } finally {
           await app.close();
         }

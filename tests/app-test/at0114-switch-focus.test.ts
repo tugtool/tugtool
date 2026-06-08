@@ -60,7 +60,7 @@ const KEY_VIEW_TESTID = `(function(){
 // Per-element snapshot: Radix checked state + keyboard markers on the track, plus
 // the ring on its enclosing wrapper (the leaf ring wraps track + label, so it
 // paints on the `.tug-switch-wrapper`, not the track itself).
-const PROBE = (selector) => `(function(){
+const PROBE = (selector: string) => `(function(){
   var el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
   var cs = getComputedStyle(el);

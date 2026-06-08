@@ -29,6 +29,13 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Inventory
 
+### Harness-floor tag (AT0000)
+
+#### [AT0000] Smoke — launch and quit
+- **Status:** ✅ closed.
+- **Tests:** `at0000-smoke.test.ts`.
+- **Summary:** Simplest possible app-test: `launchTugApp` completes the handshake (asserts a non-empty surface version), then `close`. No scenario, no native events, AX preflight skipped. A failure here points at build / signing / bridge, not any scenario under test.
+
 ### Transition-class tags (AT0001–AT0023)
 
 In-session transitions, focus restore paths, and cross-card selection. Surfaced from the selection plan's pre-25 audit.
@@ -217,9 +224,9 @@ Surfaced during selection-plan Step 23F / 23G / 25C.5 work. Each closes a specif
 - **Summary:** Selection survives cmd-tab away + back for EM cards. Tide-specific variant exercises the redundant focus-paths bug (legacy `cardDidActivate` + framework `onCardActivated`) that triggered WebKit's selectionchange-on-focus quirk intermittently. The 23G fix routes the delegate's `focus()` through `engine.setSelectedRange` for the WebKit-safe focus-then-select pattern.
 
 #### [AT0036] Inactive-card cmd-tab selection survival
-- **Status:** ✅ closed at Step 25C.5 Layer 4.
-- **Tests:** `at0036-inactive-card-app-switch-selection.test.ts`.
-- **Summary:** FC card (TugInput) selection survives the cmd-tab cycle WHILE inactive, plus a re-activation click that would otherwise clobber the saved selection. Closure pattern: form-control mount-restore is one-shot; activation-time re-apply is `installFormControlReapplyOnNextMousedown`'s job (deterministic event-ordering primitive, no RAF/timing).
+- **Status:** ⬛ retired — gating test removed (2026-06-08).
+- **Tests:** _(none — `at0036-inactive-card-app-switch-selection.test.ts` deleted)_.
+- **Summary:** FC card (TugInput) selection survival across a cmd-tab cycle + re-activation click. Retired because the gating test was structurally brittle: it never reached its selection assertion — it died at setup, where a native CGEvent click into a **second pane's** input failed to activate that pane (a multi-pane native-click geometry artifact, not the property under test). The selection-survival property itself remains covered by the form-control restore path exercised in AT0037/AT0038 and the AT0001/AT0010 selection tests. The tag number is retained (never reused); re-add a test here only with a non-native-multi-pane activation path.
 
 ### Multi-card paint invariants (AT0037–AT0038)
 
@@ -231,9 +238,9 @@ Surfaced during selection-plan Step 25C.4 (active/inactive paint split). Gate cr
 - **Summary:** On a multi-card deck restore, exactly one card holds document focus AND its range is in `window.getSelection()`; every inactive card's range lives in `selectionGuard.cardRanges` + the `inactive-selection` CSS Custom Highlight; bag-on-disk preserves the four 25C.3 axes (text/atoms/selection/scrollTop) per card.
 
 #### [AT0038] Deactivation-time inactive paint
-- **Status:** ✅ closed at Step 25C.4.
+- **Status:** ✅ closed at Step 25C.4. Covered by the `gallery-prompt-entry` variants.
 - **Tests:** `at0038-deactivation-inactive-paint.test.ts` (renamed from `m27-*` during the 25L AT-series audit; original numbering collided with the AT0027 layout-state tag).
-- **Summary:** When a user deactivates a scrolled EM card with a selection, `paintMirrorAsInactive(publish)` rebuilds a DOM Range at the user's actual selection — not at a wrong scroll-relative position. Gates `flatToDom`'s correctness against scrolled content.
+- **Summary:** When a user deactivates a scrolled EM card with a selection, `paintMirrorAsInactive(publish)` rebuilds a DOM Range at the user's actual selection — not at a wrong scroll-relative position. Gates `flatToDom`'s correctness against scrolled content. The `dev` (DevCardBody) variants were removed (2026-06-08): they died at the same multi-pane native-activation-click setup as AT0036, never reaching the paint assertion; the property is fully covered by the `gallery-prompt-entry` variants, which drive the same EM engine.
 
 ### Overlay-tier tags (AT0051)
 

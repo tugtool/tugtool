@@ -60,7 +60,7 @@ const KEY_VIEW_TESTID = `(function(){
 // Per-element snapshot: Radix checked state + keyboard markers on the box, plus
 // the ring on its enclosing wrapper (the leaf ring wraps glyph + label, so it
 // paints on the `.tug-checkbox-wrapper`, not the box itself).
-const PROBE = (selector) => `(function(){
+const PROBE = (selector: string) => `(function(){
   var el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
   var cs = getComputedStyle(el);

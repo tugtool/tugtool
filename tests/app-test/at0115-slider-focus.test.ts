@@ -55,7 +55,7 @@ function deckShape() {
 
 // Per-element snapshot: Radix value + computed ring + behind-tint + thumb fill
 // + keyboard marker.
-const PROBE = (selector) => `(function(){
+const PROBE = (selector: string) => `(function(){
   var el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
   var cs = getComputedStyle(el);

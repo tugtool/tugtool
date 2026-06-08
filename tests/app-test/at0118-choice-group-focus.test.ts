@@ -84,7 +84,7 @@ const CURSOR_RING_WIDTH = `(function(){
 })()`;
 
 // Per-segment snapshot: cursor + active state.
-const PROBE = (selector) => `(function(){
+const PROBE = (selector: string) => `(function(){
   var el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
   return {

@@ -79,7 +79,7 @@ const CURSOR_HEADER = `(function(){
 })()`;
 
 // Per-header snapshot: open/closed state.
-const STATE = (selector) => `(function(){
+const STATE = (selector: string) => `(function(){
   var el = document.querySelector(${JSON.stringify(selector)});
   return el ? el.getAttribute("data-state") : null;
 })()`;

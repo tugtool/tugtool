@@ -751,11 +751,15 @@ export function bindDevSession(
  *    overlay.
  */
 export type DevSessionDriveAction =
-  | { op: "send"; text: string; atoms?: unknown[] }
+  | { op: "send"; text: string; atoms?: unknown[]; suppress?: boolean }
   | { op: "ingestFrame"; feedId: number; decoded: unknown }
   | { op: "interrupt" }
   | { op: "transportClose" }
-  | { op: "transportReconnect" };
+  | { op: "transportReconnect" }
+  // Flag the session as `/compact`-born so the transcript renders the
+  // compaction divider header (exercises the render without the full
+  // real-claude summarize→spawn→seed flow).
+  | { op: "markCompactionSeed"; preTokens: number | null };
 
 /**
  * Drive a bound dev card's `CodeSessionStore` one step through the
