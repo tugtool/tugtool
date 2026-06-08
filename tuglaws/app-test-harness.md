@@ -113,6 +113,32 @@ Two corollaries that bit us before and must not regress:
 - **Kills are identity-checked.** `tugutil instance stop` and tugcast's `--force` both verify a PID is still the process they registered (by command / registry ownership) before signalling. A PID is recycled the instant its process dies, so a stale registry entry can name a PID the OS has handed to an *unrelated* process — signalling it blind was how an app-test teardown could SIGKILL a live debug instance's child. Never signal a PID you cannot confirm is yours.
 - **No cross-instance file sweeps.** The recipe does not glob-and-remove sockets across instances. Each owner unlinks its own sockets on graceful close; per-launch token uniqueness means a crash-orphaned socket can never collide with a future run, so it is a harmless dead file — not something to reap by reaching into another instance's namespace.
 
+### Resource lifecycle & reclamation
+
+Isolation is only half the contract; the other half is that nothing *leaks*. The table above keys each resource to an identity — this one tracks who creates it, what reclaims it, and the residual risk. Every entry must have a definite reclaim path; "the OS cleans it up eventually" is only acceptable for kernel-owned resources (ports, fds) bounded by process lifetime.
+
+| Resource | Owner / keyed on | Created | Reclaimed | Residual risk |
+|---|---|---|---|---|
+| tugcast HTTP port (dev 55300–399 / app-test 55400–499) | tugcast, hashed id + walk-on-collision | `TcpListener::bind` | OS on process exit | None — bounded to process |
+| Vite port (dev 55200–299 / app-test 55500–599) | Swift, hashed id | `spawnViteServer` | `ProcessManager.stop()` → `terminate()` + wait | None |
+| Notify socket `tugbank-notify-<token>.sock` | tugcast | `bind` at boot | `remove_file` on graceful shutdown (`tugcast/src/main.rs`) | Crash → stale file; unique token, `$TMPDIR`-reaped. Bounded |
+| Control socket `tugcast-ctl-<token>.sock` | tugcast (path from Swift) | `bind` | ProcessManager unlink on close | Same as notify socket. Bounded |
+| **tmux server** `tug-<token>` (daemon — *outside* any process group) | tugcast (`-L`) | first `tmux` call in the terminal feed | app-test: self-reap on shutdown (`main.rs`, gated on `apptest-` id); dev/release: `tugutil instance remove`/`prune` and `dash join`/`release` (`reap_instance_tmux`); recipe pre-spawn + cleanup belt-and-suspenders | The only resource needing explicit teardown — covered on every managed path. Out-of-band worktree deletion is the residual (see below) |
+| tmux session `cc-<id>` | terminal feed | `ensure_session` | dies with its server | Bounded to server |
+| PTY master/slave + `tmux attach` child | terminal feed | `pty_process::open()` + `spawn(pts)` | split halves drop on cancel → SIGHUP detaches the attach child; else `kill(-pgid)` | Self-reaps via hangup + process group. Bounded to tugcast |
+| tugcode / claude subprocess | agent_bridge | per session | tugcast `kill(0)` on exit / ProcessManager `kill(-pgid)` SIGTERM→SIGKILL | In tugcast's process group → reaped |
+| Registry entry (`$TMPDIR/tug-instances.json`) | tugcast | `register` at boot | `unregister` on shutdown; dead entries pruned on next register/load | Self-healing |
+
+The process tree is the backbone: tugcast calls `setpgid(0, 0)` at startup so it leads its own group, and **both** exit paths reap the whole group — tugcast's own `kill(0)` on graceful shutdown and ProcessManager's `kill(-pgid)` (SIGTERM, then SIGKILL after 200 ms) on app teardown. That single mechanism reclaims tugcode, claude, and the `tmux attach` child. Vite is reaped separately and explicitly (it is a child of the GUI app, not of tugcast's group). The one daemon that escapes the process group is the tmux *server* — which is exactly why it carries explicit reaping rather than relying on signal propagation.
+
+**Identity-checked kills.** `tugutil instance stop` and tugcast's `--force` confirm a PID is still the process they registered (command match / registry ownership) before signalling. A PID is recycled the instant its process dies, so signalling a stale registry PID blind once let an app-test teardown SIGKILL a live debug instance's child. Never signal a PID you cannot confirm is yours.
+
+**Known limitations (bounded, recorded — not open leaks):**
+
+- **Token collision.** `tug-<token>` and the sockets key on a 32-bit FNV hash of the id; two instances colliding would share a tmux server / sockets and break isolation. ~1 in 4 billion per pair — negligible for the handful of live instances, but the ceiling is real.
+- **Out-of-band worktree deletion.** A worktree removed by hand (`git worktree remove`, `rm -rf`) instead of `dash join`/`release` or `instance remove` orphans its tmux server. Same class as the pre-isolation behavior; a registry-anchored "reap servers with no live owner" startup sweep is the clean future fix if it ever bites.
+- **`--force` is vestigial for app-test.** Each launch mints a fresh `apptest-<uuid>`, so there is never a same-id zombie to reclaim and `force_kill_port_holder` early-returns. Harmless; the flag could be dropped from the app-test launch.
+
 ---
 
 ## Smoke vs. scenario classification
