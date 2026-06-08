@@ -1164,7 +1164,23 @@ compatible — un-authored inputs are unchanged. Exposed it: the **permissions**
 field, add-rule accordion, and rule list now join the tab walk (tab bar → add-rule →
 filter → list → Done); **rename** authors its name field as order 0 and **seeds the
 field** (caret on open, text-first) with Save resting at its tint and promoting on Tab —
-the manual `autoFocus` is retired in favor of the engine seed. (`TugTextarea` /
+the manual `autoFocus` is retired in favor of the engine seed.
+
+**Ring vs. Return-target (2026-06-07; rule refinement).** The ring and the fill answer
+two different questions — **ring = where keystrokes go (the key view); the live control
+= what Return commits.** They coincide on one control everywhere *except* a text-first
+commit sheet, where the caret is in the field (ring) but Return commits the default. The
+rule: when the key view is a single-line **text field** (which delegates Return to the
+surface default), the field wears its caret ring AND the default `primary` commit button
+ALSO wears a **ring** ("Return commits here") — ring only, the default keeps its quiet
+tint since keystrokes don't go there. The instant focus moves to a **button**, the field
+is no longer the key view, the extra ring comes off the default, and the focused button
+owns the ring and its own Return (a focused button claims Return, [P12]). Implemented as
+the app-owned `[data-return-default-scope]:has(.tug-input[data-key-view-kbd])
+.tug-button-primary-action` ring in `focus-ring.css` (opt-in per surface so multi-field
+sheets like the permissions filter, where Return does NOT delegate to a single default,
+are unaffected); `/rename` opts in and moves its `Enter`→submit onto the field so a
+focused Cancel cancels (never saves). (`TugTextarea` /
 `TugValueInput` can take the same opt-in if a surface needs it.) The Recently-denied
 permissions tab renders a static row `<div>` (not a `TugListView`), so it stays
 tab-bar → Done only.
