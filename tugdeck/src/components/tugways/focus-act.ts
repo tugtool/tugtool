@@ -45,22 +45,22 @@ export interface ComponentKeyDeclaration {
    */
   currentItemDescendable?: boolean;
   /**
-   * Whether this is a **single-select** item container — one selected row that
-   * the arrows move (selection follows the cursor). Such a container does NOT
-   * consume `Enter`: with the selection already committed by movement, `Enter`
-   * resolves to `passthrough` so it falls through to the scope's default action
-   * ([P12] — Return's home). Only meaningful for `item` containers; absent leaves
-   * the multi-select cursor model (Space selects, Enter acts/descends) unchanged.
-   */
-  singleSelect?: boolean;
-  /**
-   * Whether this is a **multi-select** item container that toggles on **Space**
-   * (a two-stage highlight-then-select: arrows move the cursor, Space toggles the
-   * cursor item). Like {@link singleSelect}, such a group does NOT consume
-   * `Enter` — Space is its commit, so `Enter` resolves to `passthrough` and falls
-   * through to the scope's default action ([P12]). The difference from
-   * `singleSelect`: the selection does not follow the cursor (multiple items may
-   * be selected). Only meaningful for `item` containers.
+   * Whether this item-group commits its selection by a gesture *other than*
+   * `Enter` — so `Enter` is not its commit and resolves to `passthrough`, falling
+   * through to the scope's default action ([P12] — Return's home, or a dialog's
+   * ringed default button). The two such gestures the components use:
+   *  - **selection-follows-cursor** (mutually-exclusive radio / choice): the
+   *    arrows move the selection immediately (`commit: "live"` + `onMove`);
+   *  - **Space-toggle** (multi-select option): arrows move a cursor, Space
+   *    toggles the cursor item.
+   *
+   * Either way the commit is the arrow / Space, never `Enter` — one flag, because
+   * the resolver only needs to know "does `Enter` commit here?"; the single-vs-
+   * multi mechanics live in the component (its `commit` timing + `onMove`/
+   * `onSelect` wiring), not here. Absent (the default) leaves the deferred model
+   * where `Enter` *is* the commit (`act` / `descend`) — a wizard step that picks
+   * and advances on Return, or the route group that commits + relinquishes the
+   * cycle. Only meaningful for `item` containers.
    */
   enterPassthrough?: boolean;
   /**
@@ -149,14 +149,11 @@ export function resolveFocusAct(
   }
   if (key === "Enter") {
     // A selection item-group does not consume Enter — its commit is arrow-select
-    // (single-select, selection-follows-cursor) or Space (multi-select toggle) —
-    // so Return falls through to the scope default ([P12]) and can reach the
-    // dialog's ringed default button. Only a group whose Enter is *itself* the
-    // commit (a deferred wizard step) keeps it.
-    if (
-      declaration.container === "item" &&
-      (declaration.singleSelect || declaration.enterPassthrough)
-    ) {
+    // (selection-follows-cursor) or Space (multi-select toggle) — so Return falls
+    // through to the scope default ([P12]) and can reach the dialog's ringed
+    // default button. Only a group whose Enter is *itself* the commit (a deferred
+    // wizard step) keeps it.
+    if (declaration.container === "item" && declaration.enterPassthrough) {
       return "passthrough";
     }
     // Enter descends when the current item is a navigable container, else acts.

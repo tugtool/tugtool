@@ -1100,6 +1100,17 @@ export class FocusManager {
    * `true` the dialog (not the resting editor) is the card's destination and the
    * caller skips its framework/engine focus claim; when `false` the card is at
    * rest and the caller proceeds to focus the editor as before.
+   *
+   * `keyCardId` is set in TWO places, by design — they are complementary, never
+   * conflicting (both write the same activating card id):
+   *  1. the provider's deck-store subscription (`syncKeyCard`) is the *structural
+   *     authority* — it sets `keyCardId` for every way a card becomes active,
+   *     including the initial seed / same-bit case where no `cardDidActivate`
+   *     fires;
+   *  2. this `adoptKeyCard` (the focus claim) sets it again — idempotent when the
+   *     subscription already did, but it also performs the [P20] focus restore and
+   *     covers cold-boot ordering where the focus claim can precede the store
+   *     notify. Don't "simplify" the `setKeyCard` out of here.
    */
   adoptKeyCard(cardId: string): boolean {
     this.setKeyCard(cardId);

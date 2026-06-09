@@ -293,12 +293,12 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
         },
         // Default: selection-follows-cursor ([Q06]) — `commit: "live"` so the
         // selection moves *immediately* with the arrows (`onMove`), and
-        // `singleSelect` so `Enter` falls through to the scope default (the group
-        // never consumes Return). `deferCommit` restores the wizard model: the
-        // cursor moves without committing and Space/Enter commit (and the consumer
-        // advances on that commit).
+        // `enterPassthrough` so `Enter` falls through to the scope default (the
+        // group never consumes Return). `deferCommit` restores the wizard model:
+        // the cursor moves without committing and Space/Enter commit (and the
+        // consumer advances on that commit).
         commit: deferCommit ? "deferred" : "live",
-        singleSelect: !deferCommit,
+        enterPassthrough: !deferCommit,
         onMove: deferCommit
           ? undefined
           : (element) => handleValueChange(valueOf(element)),

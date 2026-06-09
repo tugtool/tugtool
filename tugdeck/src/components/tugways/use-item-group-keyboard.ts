@@ -73,18 +73,16 @@ export interface ItemGroupKeyboardOptions {
   /** Whether the current item descends on Enter (accordion section / list row). */
   currentItemDescendable?: () => boolean;
   /**
-   * Single-select container ([#step-7-5]): one selected item the arrows move
-   * (selection follows the cursor via {@link onMove} under `commit: "live"`).
-   * Such a group does NOT consume `Enter` — it resolves to `passthrough` so
-   * Return falls through to the scope's default action ([P12]). Absent leaves the
-   * multi-select model (Space selects, Enter acts/descends) unchanged.
-   */
-  singleSelect?: boolean;
-  /**
-   * Multi-select group that toggles on **Space** (arrows move the cursor, Space
-   * toggles). Such a group does NOT consume `Enter` — it falls through to the
-   * scope default ([P12]). Unlike {@link singleSelect}, the selection does not
-   * follow the cursor (multiple items may be selected).
+   * The group commits by a gesture other than `Enter`, so `Enter` falls through
+   * to the scope default ([P12]) instead of being consumed. Set this for both
+   * shapes that don't commit on Return:
+   *  - **selection-follows-cursor** (radio / choice): the arrows move the
+   *    selection immediately — pair with `commit: "live"` + {@link onMove};
+   *  - **Space-toggle** (multi-select option): arrows move the cursor, Space
+   *    toggles ({@link onSelect}).
+   *
+   * Absent (the default) leaves the deferred model where `Enter` is the commit
+   * (Space/Enter → {@link onSelect}/{@link onAct}; arrows move a cursor only).
    */
   enterPassthrough?: boolean;
   /** Space (and Enter-act on a non-descendable item): commit the current item. */
@@ -149,7 +147,6 @@ export function useItemGroupKeyboard(
       container: "item",
       commit: o.commit ?? "deferred",
       currentItemDescendable: o.currentItemDescendable?.() ?? false,
-      singleSelect: o.singleSelect ?? false,
       enterPassthrough: o.enterPassthrough ?? false,
       onSelect: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "select"),
       onAct: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "act"),

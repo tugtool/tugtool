@@ -4,9 +4,11 @@
  *
  * The radio group (no Radix) registers one focusable for the whole group
  * ([P02]) via `useItemGroupKeyboard`: Tab lands the ring on the *group* (never
- * on a member), a movement cursor (`data-key-cursor`) traverses the items under
- * the arrows **without committing**, and Space checks the cursor item (deferred
- * commit). Tab-into lands the cursor on the checked item.
+ * on a member), and the group is **selection-follows-cursor** ([Q06]) — the
+ * arrows move the cursor (`data-key-cursor`) AND the selection together, so a
+ * mutually-exclusive radio is always in a settled state (no
+ * highlighted-but-uncommitted limbo). The group does NOT consume Enter; Tab-into
+ * lands the cursor on the checked item.
  *
  * The gallery `Focus Walk` panel authors a three-item group (value `a` checked).
  * The test proves the **item-group focus treatment** ([P02] of the
@@ -20,10 +22,11 @@
  *     cursor item:** Tab marks the group key-view, paints the behind-tint on the
  *     container (its outline stays 0 — no container ring), and parks the ring on
  *     the cursor item `a`. (Guards against the container double-ring regression.)
- *   - **arrows move the cursor + its ring, not the selection:** ArrowDown moves
- *     the cursor (and the ring) to `b` while `a` stays checked and the group
- *     keeps the key view;
- *   - **Space commits:** Space checks the cursor item `b` (and unchecks `a`).
+ *   - **arrows move the selection immediately (selection follows cursor):**
+ *     ArrowDown moves the cursor (and the ring) to `b` AND checks `b` (unchecks
+ *     `a`) in one keystroke — no Space confirm; ArrowUp moves back and re-checks
+ *     `a`. The group keeps the key view + behind-tint throughout (no container
+ *     ring).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -153,30 +156,35 @@ describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single item-container sto
         const cursorRingOnA = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnA ?? "0")).toBeGreaterThan(0);
 
-        // (3) ArrowDown → the cursor (and its ring) move to `b`; the selection
-        // does NOT follow (`a` stays checked) and the group keeps the key view
-        // with its behind-tint (still no container ring).
+        // (3) ArrowDown → selection follows the cursor IMMEDIATELY ([Q06]): the
+        // cursor (and its ring) move to `b` AND `b` becomes checked while `a`
+        // unchecks — no Space confirm. The group keeps the key view + behind-tint
+        // (still no container ring).
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "b"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(RADIO_B)});return b && b.getAttribute("data-state")==="checked";})()`,
+          { timeoutMs: 6000 },
+        );
         const aAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
         expect(aAfterMove?.cursor).toBe(false);
-        expect(aAfterMove?.state).toBe("checked");
-        const bAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_B));
-        expect(bAfterMove?.state).toBe("unchecked");
+        expect(aAfterMove?.state).toBe("unchecked");
         const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(ringStill?.keyboardReached).toBe(true);
         expect(parseFloat(ringStill?.outline ?? "0")).toBe(0);
         const cursorRingOnB = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnB ?? "0")).toBeGreaterThan(0);
 
-        // (4) Space → commits the cursor item: `b` becomes checked, `a` unchecks.
-        await app.nativeKey(" ");
+        // (4) ArrowUp → selection follows the cursor back to `a` (re-checks `a`,
+        // unchecks `b`) — proving live commit in both directions.
+        await app.nativeKey("ArrowUp");
+        await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "a"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(
-          `(function(){var b=document.querySelector(${JSON.stringify(RADIO_B)});return b && b.getAttribute("data-state")==="checked";})()`,
+          `(function(){var a=document.querySelector(${JSON.stringify(RADIO_A)});return a && a.getAttribute("data-state")==="checked";})()`,
           { timeoutMs: 6000 },
         );
-        const aFinal = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
-        expect(aFinal?.state).toBe("unchecked");
+        const bFinal = await app.evalJS<ItemProbe>(PROBE(RADIO_B));
+        expect(bFinal?.state).toBe("unchecked");
       } finally {
         await app.close();
       }

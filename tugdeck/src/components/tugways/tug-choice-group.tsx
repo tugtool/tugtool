@@ -363,12 +363,12 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
         return idx >= 0 ? idx : 0;
       },
       // Default: selection-follows-cursor — `commit: "live"` so arrows move the
-      // selection immediately (`onMove`) and `singleSelect` so `Enter` falls
+      // selection immediately (`onMove`) and `enterPassthrough` so `Enter` falls
       // through to the scope default. `deferCommit` keeps the deferred model
       // (cursor moves without committing; Space/Enter commit) for a cycle stop
       // whose Return commits + relinquishes ([P15]).
       commit: deferCommit ? "deferred" : "live",
-      singleSelect: !deferCommit,
+      enterPassthrough: !deferCommit,
       onMove: deferCommit
         ? undefined
         : (element) => {

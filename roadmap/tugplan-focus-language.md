@@ -1730,11 +1730,13 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 - TugLink: inline ring + behind-tint (underline kept for hover).
 - Audit the app-wide focusables the global `[data-key-view-kbd]` rule already paints (title bars, toolbars, prompt entry, dev panel); confirm each reads correctly under the new tokens; add per-surface overrides only where the default ring is wrong.
 
+**Per-card-context interaction — decide the app-level context (from the [#step-7-7-cardscope] audit):** [P21] keys the focusable registry by `CardIdContext`. A focusable with **no** card context (`CardIdContext === null`) routes to the manager's **active** context (`contextFor(null) → activeContext()`) — correct for today's only card-less focusables, which are *transient* (a pane-chrome confirm popover opened over the key card, gone before the card switches). But a **persistent** app-chrome stop that should be Tab-reachable *regardless of which card is active* (a window title bar, a global toolbar) would register into whichever card was key at mount and then not be walked once a different card is key — the Tab walk only services the key card's context. Before authoring any such persistent app-level stop, decide its home: most likely a dedicated **app/shell context** the coordinator also services (e.g. union the shell context with the key card's walk, or a separate always-present stop tier), NOT the per-card default. If Step 8 only restyles the *existing* chrome (no new persistent walk stops), this is a no-op — but make the call explicitly rather than letting a stop silently land in a card context. (Sheets/popovers stay fine: they resolve their opening card via `CardIdContext` through the portal.)
+
 **Tests:**
 - Behavior: existing chrome app-tests green.
 - Live-build pass: Tab through the app shell; every stop rings coherently, both themes.
 
-**Checkpoint:** `tsc` clean; app-tests green; live shell Tab-through clean.
+**Checkpoint:** `tsc` clean; app-tests green; live shell Tab-through clean; the app-level-context decision is recorded (above) if any persistent app-chrome stop is added.
 
 #### Step 9: Governance — tuglaws doc + matrix rewrite + governing decision {#step-9}
 

@@ -67,6 +67,11 @@ import { createContext } from "react";
 import type { TugAction } from "./action-vocabulary";
 import type { KeyBinding } from "./keybinding-map";
 import { keyBindingMatchesEvent } from "./keybinding-map";
+// Runtime import is acyclic: `focus-manager` imports only the *type* of
+// `ResponderChainManager` (erased at runtime), so it has no runtime dependency
+// back on this module. Used by `getKeyCard` to read the activation-driven key
+// card ([P21]).
+import { getFocusManager } from "./focus-manager";
 
 export type { TugAction, GalleryAction } from "./action-vocabulary";
 
@@ -678,14 +683,27 @@ export class ResponderChainManager {
    * `getKeyResponderOfKind` form is the escape hatch for future tiers.
    */
   getKeyCard(): string | null {
+    // The FocusManager's key card is THE authority for "which card is key"
+    // ([P21]): it is set from the deck's focused card on every activation (the
+    // activation-driven single source), and the focus engine services exactly
+    // that card's context. Reading it here makes the key card single-sourced —
+    // the chain's focus-derivation below becomes a fallback, not a competing
+    // truth, so the two can never disagree. `keyCardId` tracks the same
+    // first-responder bit this chain flips (the deck store derives its focused
+    // card from it), so a change to one is a change to the other and
+    // `useKeyCardId`'s chain subscription stays reactive.
+    const fromKeyCard = getFocusManager()?.keyCard() ?? null;
+    if (fromKeyCard !== null) return fromKeyCard;
+    // Fallbacks for when no manager / no key card is set (pre-activation,
+    // gallery, standalone): the chain's first-responder-of-kind card, then the
+    // card containing the current keyboard key view. The keyboard-focused
+    // element may be focus-REFUSING (a focus-cycle stop such as a Z2 status cell
+    // or a Z4B chip), so it is not a responder and the chain walk finds no card —
+    // yet key-card-scoped chords (⌥⇥, ⇧⌘P, …) should still resolve to the card
+    // the keyboard is in. Walk up from `[data-key-view-kbd]` to the nearest
+    // `card`-kind responder.
     const fromResponder = this.getKeyResponderOfKind("card");
     if (fromResponder !== null) return fromResponder;
-    // Fallback: the card containing the current keyboard key view. The
-    // keyboard-focused element may be focus-REFUSING (a focus-cycle stop such
-    // as a Z2 status cell or a Z4B chip), so it is not a responder and the
-    // chain walk above finds no card — yet key-card-scoped chords (⌥⇥, ⇧⌘P, …)
-    // should still resolve to the card the keyboard is in. Walk up from the
-    // `[data-key-view-kbd]` element to the nearest `card`-kind responder.
     return this.findCardFromKeyboardFocus();
   }
 
