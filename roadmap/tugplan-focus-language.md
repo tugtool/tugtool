@@ -238,9 +238,9 @@ Resolution precedence (most specific first): override → group-delegation (non-
 #### [Q13] Dev-card spatial generalization — 2D order, list-as-handle, edge-landing (OPEN → resolve in #step-7-9-devcard) {#q13-devcard-spatial}
 
 **Question:** Three coupled decisions for putting the spatial plane on the dev card (the richest, 2D layout):
-1. **The 2D order + whether arrows belong in cycling.** The dev card tours its zones with Tab in cycling mode ([#cycle-model]); what spatial order (toolbar row as a horizontal ring, the Z2 status bar as a second row, the editor as the body) reads as "the direction you see," and does an arrow plane coexist cleanly with Tab there?
-2. **List-as-handle ([Q12] option (a)).** The dev card has pickers (`TugListView`), which today own their arrows (decision (b), Tab-reached). Should `TugListView` register a `SpatialCursorHandle` so a picker joins a declared ring (arrows traverse *into* it), or does Tab-reached suffice on the dev card?
-3. **Edge-aware seam landing.** Should a seam into a group be able to land the cursor at the *bottom* (a true vertical wrap — the 7.8 by-eye nit), via an optional `land: "first" | "last"` on `SpatialSeam` + a `setCursor` path on the handle?
+1. **The 2D order + whether arrows belong in cycling — including editor-zone arrow-*leave*.** The dev card tours its zones with Tab in cycling mode ([#cycle-model]); what spatial order (toolbar row as a horizontal ring, the Z2 status bar as a second row, the editor as the body) reads as "the direction you see," and does an arrow plane coexist cleanly with Tab there? **Critical sub-question:** can the ring be arrowed *off* the editor zone? [P25]'s editing-host yield gives a focused `contentEditable` all four arrows — if the editor zone's focused element is/contains CodeMirror's `.cm-content`, arrows feed the caret and the ring is trapped. Confirm the zone sits on a wrapper stop (arrow-leaveable, descent drops into the caret), or treat the editor as a Tab/Escape-only body rather than an arrow stop.
+2. **List-as-handle ([Q12] option (a)).** The dev card has pickers (`TugListView`), which today own their arrows (decision (b), Tab-reached). Should `TugListView` register a `SpatialCursorHandle` so a picker joins a declared ring (arrows traverse *into* it), or does Tab-reached suffice on the dev card? This decision also governs 7.9.1-multi / 7.9.2 (see [#step-7-9] Sequencing caveat).
+3. **Edge-aware seam landing.** Should a seam into a group be able to land the cursor at the *bottom* (a true vertical wrap — the 7.8 by-eye nit), via an optional `land: "first" | "last"` on `SpatialSeam` + a `setCursor` path on the handle? **Implementation subtlety:** the group's `wasKbd` auto-seed (selection-landing, fired off `setKeyView`'s notify) races a post-seam `setCursor(last)` — the override must run after the seed and on an active cursor, or be folded into the seed. Validate the ordering in the spike.
 
 **Why it matters:** the dev card is the end-to-end vetting surface ([#cycle-model]) and the first genuinely 2D layout; (2) and (3) are the two primitives 7.8 deferred. Deciding them on the dev card keeps the engine additions demand-driven (build them only if the feel needs them) rather than speculative.
 
@@ -2123,6 +2123,8 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 - **7.9.3 is spike-then-apply** for the dev-card: its layout is 2D (toolbar row + status bar + editor) and it forces the two primitives 7.8 deferred — **list-as-handle** ([Q12] option (a): `TugListView` registers a `SpatialCursorHandle` so a picker can join a declared ring) and **edge-aware seam landing** (Up into a group lands at the bottom, not the selection — the by-eye nit from 7.8). The spike ([Q13]) decides whether each is needed, and whether arrows belong in the cycling layout at all, before any engine work.
 - **7.9.4 verifies** the whole rollout (sweep + by-eye both themes).
 
+**Sequencing caveat — the list-as-handle decision (in 7.9.3) governs work in 7.9.1 and 7.9.2.** A multi-select QuestionDialog (7.9.1) and a list-bearing sheet (7.9.2) have a `TugListView` as a main surface; under decision (b) that list is Tab-reached, so their *spatial* story is buttons/groups-only until 7.9.3 decides whether to adopt list-as-handle (a). The order here is deliberate — prove the API on the simpler radio/button cases first, decide the heavier list primitive on the dev-card (the richest case), then **retrofit** 7.9.1-multi / 7.9.2 if (a) is adopted. To avoid a thin demo in the meantime, 7.9.2 picks a sheet rich in non-list controls. If the multi-select / sheet-list feel demands spatial traversal sooner, pull the list-as-handle decision forward into a pre-step before 7.9.1 rather than discovering it late.
+
 **State Zone Mapping:** unchanged from [#step-7-8] — each new piece is a declared `SpatialOrder` (structure/config, [L22]) on a `FocusContext`; if the spike adopts them, a list cursor handle (appearance, [L06]) and a seam landing hint (structure). No new state zones.
 
 **Sub-steps:** [#step-7-9-question], [#step-7-9-sheet], [#step-7-9-devcard] (spike + apply), [#step-7-9-vet].
@@ -2137,15 +2139,18 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 
 **References:** [P22], [P24], (#step-7-8-apply)
 
+**NOT a near-copy — design its own order.** The QuestionDialog's controls are **two button rows + options**, not the PermissionDialog's single button row (`dev-question-dialog.tsx`: one focus group, Cancel `0` / Submit `1` / Back `2` / Next `3` / options `4`). Visually Cancel/Submit are one row and Back/Next another (wizard nav), and *which* buttons render is conditional (Back/Next only multi-step; Submit gated until every question is answered). So the declared order is a **3-row vertical structure with dynamic membership**, not a copy of [#step-7-8-apply].
+
 **Tasks:**
-- In `dev-question-dialog.tsx`, capture the trap `scopeId` (from `useFocusTrap`) and declare a `SpatialOrder` via `useSpatialOrder`: a button ring over the present actions (Cancel / Submit, plus Back / Next when multi-step) + a seam into the options, mirroring the PermissionDialog. Both buttons' Up loops into the options (the liveliness pattern). Nodes by `group:order`.
-- **Radio options** (single-select question) — a delegated group ([Q12]), same as the PermissionDialog scope group. **List options** (multi-select question) — per the list-delegation decision (b), the `TugListView` is excluded from the ring/seam table (Tab-reached); the order covers the buttons. (Revisit if 7.9.3 adopts list-as-handle.)
+- In `dev-question-dialog.tsx`, capture the trap `scopeId` (from `useFocusTrap`) and declare a `SpatialOrder` via `useSpatialOrder`. Author the rows explicitly: a horizontal ring per button row (Cancel↔Submit; Back↔Next when present), a vertical seam chain between the rows, and a seam into the options; both top edges loop (the liveliness pattern — and the navigator's linear fallback backstops any unnamed edge). Nodes by `group:order`.
+- **Build the order from the buttons actually rendered this state** — recompute (memoized) when the present set changes (single vs multi question, review boundary), so a missing Back/Next never leaves a seam pointing at an absent node. (A stale seam is harmless — the navigator's `idForFocusKey` returns `null` and the liveliness fallback takes over — but author it to match what's on screen.)
+- **Radio options** (single-select question) — a delegated group ([Q12]), same as the PermissionDialog scope group. **List options** (multi-select question) — per the list-delegation decision (b), the `TugListView` is excluded from the ring/seam table (Tab-reached); the order covers the buttons. **Watch-item:** for a multi-select question the list IS the main content, so under (b) the spatial story is buttons-only until [#step-7-9-devcard] decides list-as-handle — see the umbrella Strategy note. (Revisit this step if 7.9.3 adopts (a).)
 - Register only while the dialog is the active trap (`isPending`), memoized.
 
 **Tests:**
-- App-test: extend `at0146` — from a button, Left/Right swap actions; Down/Up reach the options (radio: ring then Space commits; list: Tab-reached); Enter activates the default; nothing beeps.
+- App-test: extend `at0146` — from a button, Left/Right swap actions within a row; Up/Down move between rows and into the options (radio: ring then Space commits; list: Tab-reached); Enter activates the default; nothing beeps anywhere, including the conditional-button states (single vs multi).
 
-**Checkpoint:** the QuestionDialog is spatially navigable for both arities; `at0146` green; by-eye clean.
+**Checkpoint:** the QuestionDialog is spatially navigable for both arities and across its conditional button sets; `at0146` green; by-eye clean.
 
 ---
 
@@ -2155,17 +2160,20 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 
 **Commit:** `focus(sheets): declare a composed sheet's spatial ring`
 
-**References:** [P22], [P23], (#spatial-nav-model)
+**References:** [P22], [P23], [Q12], (#spatial-nav-model)
+
+**The scope comes from context here, not a local `useFocusTrap`.** Unlike the dialogs (which own their trap), a sheet's trap lives inside `TugSheet` (`tug-sheet.tsx` calls `useFocusTrap`); the sheet's **content** is a separate consumer that has no local `scopeId`. The mechanism already exists: `useFocusTrap`'s `FocusModeScope` provides the scope id to descendants via `FocusModeContext`. **API refinement (land first, with the engine work):** give `useSpatialOrder` a context-derived form — `useSpatialOrder(order)` reads the enclosing `FocusModeContext` for the scope, while the dialogs keep passing their own id explicitly (`useSpatialOrder(scopeId, order)`). Sheet content then declares its order with the no-id form.
 
 **Tasks:**
-- Pick one representative composed sheet (a list + a button row). Declare its `SpatialOrder` under the sheet's trap `scopeId`; register/tear-down with the sheet's open state.
+- Add the context-derived `useSpatialOrder(order)` overload (reads `FocusModeContext`); no-op when there is no enclosing scope ([L26]). Pure-logic / type coverage as warranted.
+- Pick a representative composed sheet **rich in non-list controls** (buttons + a toggle/group/segment), so the declared order exercises real spatial motion rather than degenerating to one button row — a list-dominant sheet has little to navigate under decision (b) until [#step-7-9-devcard] (see the Strategy note). Declare its `SpatialOrder` from the sheet content via the context form; it registers/tears-down with the sheet's open state automatically (the scope is only present while `FocusModeScope` renders).
 - Confirm the bounded scope is the sheet's trap mode (the boundary [P21] / [#spatial-nav-model] already draws).
-- Apply the list-delegation decision (b) unless 7.9.3 has adopted list-as-handle by the time this lands.
+- Apply the list-delegation decision (b) for any list in the sheet unless 7.9.3 has adopted list-as-handle by the time this lands.
 
 **Tests:**
-- App-test: arrows move the ring across the sheet's controls by declared order; the list is reached; never beeps; reversal returns.
+- App-test: arrows move the ring across the sheet's controls by declared order; any list is reached (Tab, or a seam if (a) is adopted); never beeps; reversal returns.
 
-**Checkpoint:** a non-dialog trap carries a declared order cleanly; the API generalizes past dialogs; by-eye clean both themes.
+**Checkpoint:** a non-dialog trap carries a declared order cleanly via the context-derived hook; the API generalizes past dialogs; by-eye clean both themes.
 
 ---
 
@@ -2179,8 +2187,10 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 
 **Headline questions — the spike decides FIRST ([Q13]):**
 1. **Do arrows belong in the cycling layout, and what is the 2D order?** Cycling tours zones with Tab; the spike maps a sensible spatial order (toolbar row — route / mode / model / effort / submit — as a horizontal ring; the Z2 status bar as a second row; the editor as the body) and confirms it coexists with Tab. Declared under the **cycle mode's `scopeId`** (the `useCycleMode` scope) so it is active exactly while cycling.
-2. **List-as-handle?** The dev card has pickers (`TugListView`). If arrows should traverse *into* a picker spatially, `TugListView` registers a `SpatialCursorHandle` (its existing cursor + select-on-arrow + descendable rows, driven by the navigator — [Q12] option (a)). The spike decides if the dev-card needs it or if Tab-reached (b) suffices.
+   - **Editor-zone arrow-*leave* (must confirm both directions).** [P25]'s editing-host yield means a focused `contentEditable` keeps all four arrows for the caret. If the editor zone's focused element *is* (or contains) CodeMirror's `.cm-content`, arrows there feed the caret and the ring could never arrow *off* the editor. The spike must confirm the editor zone is arrow-navigable **out**, not just reachable — most likely the ring sits on a wrapper stop (not the contentEditable), with Enter / typing descending into the caret. If the zone can't be left by arrow, the order needs a different editor-zone treatment (e.g. the editor is the cycle's body that only Tab/Escape enters, not an arrow stop).
+2. **List-as-handle?** The dev card has pickers (`TugListView`). If arrows should traverse *into* a picker spatially, `TugListView` registers a `SpatialCursorHandle` (its existing cursor + select-on-arrow + descendable rows, driven by the navigator — [Q12] option (a)). The spike decides if the dev-card needs it or if Tab-reached (b) suffices. (This decision also governs 7.9.1-multi / 7.9.2 — see the umbrella Sequencing caveat.)
 3. **Edge-aware seam landing?** A 2D layout may want Up-into-a-group to land at the *bottom* for a true vertical wrap. If the feel needs it, add an optional `land: "first" | "last"` to `SpatialSeam` + a `setCursor` path on the handle, and have the navigator set the cursor after a seam crossing.
+   - **Timing subtlety to validate.** A group's `useItemGroupKeyboard` auto-seeds its cursor on gaining the key view (the `wasKbd` layout effect, fired off `setKeyView` → `manager.subscribe` notify) to the *selection*. A post-seam `setCursor(last)` must run **after** that seed (or it is clobbered), and the cursor must already be `active` for the projection to paint. Verify the ordering (navigator sets the cursor after `setKeyView` + `focusKeyView` returns), or route the landing through the seed itself rather than a post-hoc override.
 
 **Tasks (after the spike locks the above):**
 - Land any adopted primitive (list-as-handle and/or edge-landing) as a small, **separately-committed** engine change with its own pure-logic test, *before* the dev-card authoring uses it.
