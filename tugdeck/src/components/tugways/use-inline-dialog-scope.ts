@@ -18,9 +18,11 @@
  *    ancestor of every control, so the cancel-action walks up to it;
  *  - seeding the engine key view onto the recommended default on open
  *    ({@link useSeedKeyView}), so the default rests ringed and Return commits;
- *  - releasing the enclosing list's follow-bottom and scrolling the dialog
- *    header into view while open (a tall dialog must not have its header pushed
- *    off the top by the live edge), re-engaging on close.
+ *  - releasing the enclosing list's follow-bottom and scrolling the ENTIRE
+ *    dialog into view on open — anchored to its bottom so the whole card-modal
+ *    shows at once (usually a scroll to the bottom), or to its header at the top
+ *    when the dialog is taller than the viewport (so the header is never pushed
+ *    off the top by the live edge); re-engaging on close.
  *
  * It replaces the retired modal-for-keys shell (a single flat item-container
  * that mashed every button + option row into one cursor) — the source of the
@@ -99,15 +101,34 @@ export function useInlineDialogScope(
   const { active, defaultFocusKey } = opts;
   useSeedKeyView(active ? defaultFocusKey : null);
 
-  // While open, release the enclosing list's follow-bottom and bring the dialog
-  // header into view; re-engage on close (mirrors the retired modal shell).
+  // While open, release the enclosing list's follow-bottom and bring the ENTIRE
+  // dialog into view; re-engage on close.
+  //
+  // The dialog is the live edge, so this is usually a scroll to the bottom: anchor
+  // the dialog's bottom to the viewport bottom so the whole card-modal shows at
+  // once (the bug this fixes: on present the dialog landed with only its header
+  // peeking at the bottom, the body below the fold). If the dialog is TALLER than
+  // the scroll viewport it cannot all fit — anchor its header to the top instead,
+  // so reading starts at the top and the remainder scrolls down (the header is
+  // never pushed off the top by the live edge).
   useLayoutEffect(() => {
     if (!active) return;
     scroller.disengage("inline-dialog");
     const root = rootElRef.current;
-    const header =
-      root?.querySelector('[data-slot="tug-inline-dialog-row"]') ?? root;
-    header?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (root !== null) {
+      const scrollEl = root.closest<HTMLElement>("[data-tug-scroll-key]");
+      const fitsInView =
+        scrollEl === null ||
+        root.getBoundingClientRect().height <=
+          scrollEl.getBoundingClientRect().height;
+      if (fitsInView) {
+        root.scrollIntoView({ block: "end", inline: "nearest" });
+      } else {
+        const header =
+          root.querySelector('[data-slot="tug-inline-dialog-row"]') ?? root;
+        header.scrollIntoView({ block: "start", inline: "nearest" });
+      }
+    }
     return () => {
       scroller.engage("inline-dialog");
     };

@@ -187,6 +187,14 @@
 .tug-radio-group [data-slot="tug-radio-item"]:hover:not(:disabled):not([data-disabled]) {
   background-color: var(--tugx-key-cursor-surface);
 }
+/* …but the item that currently holds the KEYBOARD cursor already wears the ring
+   ([P02]); a pointer hover must not stack its fill on top — the fill band's edge
+   under the ring reads as a spurious second ring. The keyboard cursor is
+   authoritative, so suppress the hover fill on the cursor item (the ring is the
+   cue). Higher specificity than the hover rule above, so it wins. */
+.tug-radio-group [data-slot="tug-radio-item"][data-key-cursor]:hover:not(:disabled):not([data-disabled]) {
+  background-color: transparent;
+}
 [data-slot="tug-radio-item"]:hover:not(:disabled):not([data-disabled]) .tug-radio-indicator {
   border-color: var(--tug7-element-radio-border-normal-off-hover);
 }
