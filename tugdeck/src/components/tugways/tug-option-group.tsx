@@ -288,6 +288,11 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       collectItems: () => enabledItemEls().map((s) => s.el),
       // No single selection to land on; start at the first enabled item.
       initialIndex: () => 0,
+      // Two-stage highlight-then-select: arrows move the cursor, **Space**
+      // toggles the cursor item. Enter is NOT a selection key here — it passes
+      // through to the scope's default action (a multi-select group never eats
+      // Return).
+      enterPassthrough: true,
       onSelect: (element) => {
         const v = element?.getAttribute("data-option-value");
         if (v != null) toggleItem(v);

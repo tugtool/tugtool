@@ -21,6 +21,7 @@ import { useControlDispatch } from "../use-control-dispatch";
 import { ResponderParentContext } from "../responder-chain";
 import { useFocusable, useFocusManager } from "../use-focusable";
 import type { FocusPolicy } from "../focus-manager";
+import { CardIdContext } from "@/lib/card-id-context";
 import { TugStableOverlay } from "./tug-stable-overlay";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
@@ -531,6 +532,10 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   const manager = useResponderChain();
   // Focus manager — owns the engine-projected `data-default-ring` ([P14]).
   const focusManager = useFocusManager();
+  // The owning card ([P21]): the persistent default ring registers into THIS
+  // card's focus context, so a (possibly background) card's dialog button never
+  // pollutes the key card's default-ring stack. `null` outside a card host.
+  const defaultRingCardId = useContext(CardIdContext);
   // Parent responder ID — the default dispatch and validation target.
   const parentId = useContext(ResponderParentContext);
   // Targeted dispatch to parent responder — same hook all controls use.
@@ -647,11 +652,12 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     if (!wantsDefaultRing || focusManager === null) return;
     const node = internalButtonRef.current;
     if (node === null) return;
-    focusManager.registerDefaultRing(node);
+    const ctx = focusManager.contextFor(defaultRingCardId);
+    ctx.registerDefaultRing(node);
     return () => {
-      focusManager.unregisterDefaultRing(node);
+      ctx.unregisterDefaultRing(node);
     };
-  }, [wantsDefaultRing, focusManager]);
+  }, [wantsDefaultRing, focusManager, defaultRingCardId]);
 
   // Merged ref forwards to the caller while keeping our internal handle for
   // imperative DOM mutation during the confirmation cycle. Stable across

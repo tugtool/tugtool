@@ -334,6 +334,118 @@ describe("FocusManager default-action resolution", () => {
   });
 });
 
+describe("FocusManager per-card contexts (key-window model)", () => {
+  test("the no-card path routes to the default context (additive refactor)", () => {
+    // A bare manager with no key card set services the default context — the
+    // entire existing suite above exercises exactly this path, unchanged.
+    const m = new FocusManager();
+    m.setGroupOrder(["g"]);
+    m.registerFocusable({ id: "a", group: "g", order: 0 });
+    expect(m.keyCard()).toBeNull();
+    expect(walkIds(m)).toEqual(["a"]);
+  });
+
+  test("the key card's walk sees only its own context's focusables", () => {
+    const m = new FocusManager();
+    const a = m.contextFor("A");
+    const b = m.contextFor("B");
+    a.setGroupOrder(["g"]);
+    b.setGroupOrder(["g"]);
+    a.registerFocusable({ id: "a1", group: "g", order: 0 });
+    b.registerFocusable({ id: "b1", group: "g", order: 0 });
+    m.setKeyCard("A");
+    expect(walkIds(m)).toEqual(["a1"]);
+    m.setKeyCard("B");
+    expect(walkIds(m)).toEqual(["b1"]);
+  });
+
+  test("switching the key card swaps contexts losslessly (mode stack + key view intact on return)", () => {
+    const m = new FocusManager();
+    const a = m.contextFor("A");
+    m.setKeyCard("A");
+    a.setKeyView("editorA");
+    // A pending card-modal dialog: a trap + its seeded default key view.
+    a.pushFocusMode("dialogA", { trapped: true });
+    a.setKeyView("dialogDefaultA", true);
+    expect(a.currentFocusMode()).toBe("dialogA");
+    expect(a.keyView()).toBe("dialogDefaultA");
+
+    // Switch away — A's universe is untouched, B starts fresh at base.
+    m.setKeyCard("B");
+    expect(a.currentFocusMode()).toBe("dialogA");
+    expect(a.keyView()).toBe("dialogDefaultA");
+    expect(a.isFocusModePushed("dialogA")).toBe(true);
+    expect(m.currentFocusMode()).toBe(BASE_FOCUS_MODE);
+
+    // Return — the dialog is still the card's destination, by construction.
+    m.setKeyCard("A");
+    expect(m.currentFocusMode()).toBe("dialogA");
+    expect(m.keyView()).toBe("dialogDefaultA");
+  });
+
+  test("a background card's pushed mode is never the key card's current mode (cross-card containment)", () => {
+    const m = new FocusManager();
+    const a = m.contextFor("A");
+    const b = m.contextFor("B");
+    // A holds a pending dialog's trap; B is the key card.
+    a.pushFocusMode("trapA", { trapped: true });
+    b.registerFocusable({ id: "b1", group: "g", order: 0 });
+    m.setKeyCard("B");
+    // The active card never sees the background card's mode (the R05 root fix).
+    expect(m.currentFocusMode()).toBe(BASE_FOCUS_MODE);
+    expect(m.isFocusModePushed("trapA")).toBe(false);
+    expect(walkIds(m)).toEqual(["b1"]);
+    // But A still owns it, ready for restore.
+    expect(a.isFocusModePushed("trapA")).toBe(true);
+  });
+
+  test("adoptKeyCard reports a pushed key destination ([P20]) and only that", () => {
+    const m = new FocusManager();
+    const a = m.contextFor("A");
+    // Resting card: no pushed destination — the activation path focuses the editor.
+    m.setKeyCard("A");
+    expect(a.hasPushedKeyDestination()).toBe(false);
+    expect(m.adoptKeyCard("A")).toBe(false);
+    // A pending dialog (trap + seeded default) IS the card's destination.
+    a.pushFocusMode("dialogA", { trapped: true });
+    a.setKeyView("dialogDefaultA", true);
+    expect(a.hasPushedKeyDestination()).toBe(true);
+    expect(m.adoptKeyCard("A")).toBe(true);
+    // A fresh card with no context still rests.
+    expect(m.adoptKeyCard("B")).toBe(false);
+    expect(m.keyCard()).toBe("B");
+  });
+
+  test("HMR re-register robustness: unregister/re-register + push/pop leaves no stale state", () => {
+    // HMR keeps the manager alive while remounting components. A rebuilt context
+    // (register → unregister → re-register, push → pop → push) must not leave a
+    // stale key view, a double-trap, or a doubled walk entry.
+    const m = new FocusManager();
+    const a = m.contextFor("A");
+    a.setGroupOrder(["g"]);
+    m.setKeyCard("A");
+    a.registerFocusable({ id: "x", group: "g", order: 0 });
+    a.pushFocusMode("trap", { trapped: true });
+    a.registerFocusable({ id: "y", group: "g", order: 0, modes: ["trap"] });
+    expect(walkIds(m)).toEqual(["y"]);
+
+    // Remount: tear the trap's focusable + mode down…
+    a.unregisterFocusable("y");
+    a.popFocusMode("trap");
+    expect(m.currentFocusMode()).toBe(BASE_FOCUS_MODE);
+    expect(walkIds(m)).toEqual(["x"]);
+
+    // …then re-register and re-push (the HMR re-mount). Pushing the same scope
+    // keeps the stack unique (no double-trap); one pop returns to base.
+    a.registerFocusable({ id: "y", group: "g", order: 0, modes: ["trap"] });
+    a.pushFocusMode("trap", { trapped: true });
+    expect(walkIds(m)).toEqual(["y"]);
+    a.popFocusMode("trap");
+    expect(m.currentFocusMode()).toBe(BASE_FOCUS_MODE);
+    expect(walkIds(m)).toEqual(["x"]);
+  });
+});
+
 describe("FocusManager subscription", () => {
   test("notifies subscribers on change and bumps the version", () => {
     const m = new FocusManager();

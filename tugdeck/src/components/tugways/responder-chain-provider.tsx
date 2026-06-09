@@ -33,6 +33,7 @@ import { selectionGuard } from "./selection-guard";
 import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
 import { getAppLifecycle } from "../../lib/app-lifecycle";
+import { getDeckStore } from "../../lib/deck-store-registry";
 
 // ---- Fallback context menu ----
 
@@ -161,6 +162,30 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // the responder chain) — setManager is a no-op on null.
     const lifecycle = getCardLifecycle();
     lifecycle?.setManager(manager);
+
+    // ---- FocusManager key card ([P21]) ----
+    // The key card is **activation-driven**, and the deck store's focused card is
+    // its single structural authority: it is set for EVERY way a card becomes
+    // active — a click / tab switch / pane activation / cross-pane move (the
+    // `_flipFirstResponder` path) AND the initial seed / cold boot (where the
+    // store already holds the active card, so the lifecycle's same-bit guard
+    // skips a `cardDidActivate` notify). Tracking the store directly avoids that
+    // gap. The focus coordinator's active context follows it; projection is
+    // downstream, so `getKeyCard`'s focus-derivation stays a consequence, never a
+    // competing truth. Only fire on an actual change of the focused card — the
+    // focus *claim* (landing DOM focus on the card's destination, incl. a pending
+    // card-modal dialog [P20], and the re-projection on window blur→focus) stays
+    // with `applyBagFocus`'s `adoptKeyCard`; this seam only names the key card.
+    const deckStore = getDeckStore();
+    let lastKeyCard: string | null | undefined;
+    const syncKeyCard = (): void => {
+      const next = deckStore?.getFirstResponderCardId() ?? null;
+      if (next === lastKeyCard) return;
+      lastKeyCard = next;
+      focusManager.setKeyCard(next);
+    };
+    syncKeyCard();
+    const unsubscribeKeyCard = deckStore?.subscribe(syncKeyCard) ?? (() => {});
 
     // ---- SelectionGuard lifecycle ----
     // Install SelectionGuard event listeners alongside the key pipeline.
@@ -408,32 +433,51 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // [D04] Activation via synthetic click (element.click()).
       if (event.key === "Enter") {
         const active = document.activeElement as HTMLElement | null;
+        // A focus-refusing button (`data-tug-focus="refuse"`) that holds DOM
+        // focus is the engine's *ringed* control — e.g. a card-modal dialog's
+        // Allow / Deny ([P17]): they ride the engine key-view ring and refuse to
+        // own DOM focus, so the browser's native focused-button Enter never fires
+        // for them. Such a button must be activated through this engine path, not
+        // skipped as "native handles it" — otherwise Enter on the ringed Allow
+        // (after a Tab tour lands DOM focus on it) does nothing. A NON-refusing
+        // focused button still keeps native Enter (it activates itself).
+        const activeIsRefusingButton =
+          active !== null &&
+          active.tagName === "BUTTON" &&
+          active.getAttribute("data-tug-focus") === "refuse";
         const skipActivation =
           active !== null &&
           (active.tagName === "INPUT" ||
             active.tagName === "TEXTAREA" ||
             active.tagName === "SELECT" ||
             active.isContentEditable ||
-            active.tagName === "BUTTON");
+            (active.tagName === "BUTTON" && !activeIsRefusingButton));
         if (!skipActivation) {
-          // Pane-scope the activation. A `Return` belongs to the pane the
-          // user is working in (the first responder's pane); a default
-          // button registered by a sheet in ANOTHER pane (e.g. an unbound
-          // card's picker Open button) must NOT be pressed by it ([D15]
-          // pane modality). Resolve the first responder's `.tug-pane` and
-          // only consider default buttons inside it; cross-pane activation
-          // is then impossible by construction. With no pane context
-          // (gallery / standalone) fall back to the global top.
-          const frId = manager.getFirstResponder();
-          const frEl =
-            frId !== null && typeof document !== "undefined"
-              ? document.querySelector(`[data-responder-id="${CSS.escape(frId)}"]`)
-              : null;
-          const activePane = frEl?.closest(".tug-pane") ?? null;
-          const defaultButton =
-            activePane !== null
-              ? manager.peekDefaultButtonInScope(activePane)
-              : manager.peekDefaultButton();
+          // The Enter target is the ringed control: when a focus-refusing button
+          // holds DOM focus it IS that control — activate it directly. Otherwise
+          // the ring is on a non-button stop (a list / field / item-group), so
+          // press the pane's default button ([P14] "Return's home").
+          //
+          // Pane-scope the default-button fallback. A `Return` belongs to the
+          // pane the user is working in (the first responder's pane); a default
+          // button registered by a sheet in ANOTHER pane (e.g. an unbound card's
+          // picker Open button) must NOT be pressed by it ([D15] pane modality).
+          // With no pane context (gallery / standalone) fall back to the global top.
+          let defaultButton: HTMLElement | null = null;
+          if (activeIsRefusingButton) {
+            defaultButton = active;
+          } else {
+            const frId = manager.getFirstResponder();
+            const frEl =
+              frId !== null && typeof document !== "undefined"
+                ? document.querySelector(`[data-responder-id="${CSS.escape(frId)}"]`)
+                : null;
+            const activePane = frEl?.closest(".tug-pane") ?? null;
+            defaultButton =
+              activePane !== null
+                ? manager.peekDefaultButtonInScope(activePane)
+                : manager.peekDefaultButton();
+          }
           if (defaultButton !== null) {
             // Press visual ([L06] — appearance via DOM). The button's
             // CSS variants treat `[data-pressing="true"]` the same as
@@ -632,6 +676,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       selectionGuard.detach();
       unsubscribeKeyboardAccess();
       unsubscribeRingModality();
+      unsubscribeKeyCard();
       registerFocusManager(null);
       focusManager.detach();
     };

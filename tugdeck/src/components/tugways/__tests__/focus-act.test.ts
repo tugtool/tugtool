@@ -59,6 +59,22 @@ describe("resolveFocusAct — act tier", () => {
     ).toBe("select");
   });
 
+  test("a multi-select item container (enterPassthrough) passes Enter through; Space toggles", () => {
+    // A multi-select group commits on Space, so Enter is not consumed — it
+    // bubbles to the scope default ([P12]). Selection does NOT follow the cursor.
+    expect(
+      resolveFocusAct(k("Enter"), { container: "item", enterPassthrough: true }),
+    ).toBe("passthrough");
+    // Space still toggles the cursor item.
+    expect(
+      resolveFocusAct(k(" "), { container: "item", enterPassthrough: true }),
+    ).toBe("select");
+    // Item-container-only: a leaf still acts on Enter.
+    expect(
+      resolveFocusAct(k("Enter"), { container: "none", enterPassthrough: true }),
+    ).toBe("act");
+  });
+
   test("Escape ascends, cancels at a modal scope", () => {
     expect(resolveFocusAct(k("Escape"), { container: "component" })).toBe("ascend");
     expect(resolveFocusAct(k("Escape"), { container: "component", modal: true })).toBe(

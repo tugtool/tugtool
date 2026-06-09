@@ -191,6 +191,17 @@ export interface TugChoiceGroupProps
    * `skip` is reachable only in accessibility mode.
    */
   focusPolicy?: FocusPolicy;
+  /**
+   * Keyboard commit timing. The default is **selection-follows-cursor**: arrows
+   * move the selection *immediately* (a mutually-exclusive segmented control is
+   * always settled), and the group does NOT consume `Enter` (Return falls through
+   * to the scope default). Set `deferCommit` for a flow whose `Enter` is the
+   * commit — e.g. a focus-cycle stop that commits *and relinquishes* the cycle on
+   * Return ([P15]): arrows then move a cursor without committing, Space/Enter
+   * commit.
+   * @default false
+   */
+  deferCommit?: boolean;
 }
 
 /** Serialized shape of `TugChoiceGroup`'s preserved state. */
@@ -219,6 +230,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       focusGroup,
       focusOrder = 0,
       focusPolicy,
+      deferCommit = false,
       ...rest
     },
     ref,
@@ -350,6 +362,19 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
         const idx = enabledSegments().findIndex((s) => s.value === value);
         return idx >= 0 ? idx : 0;
       },
+      // Default: selection-follows-cursor — `commit: "live"` so arrows move the
+      // selection immediately (`onMove`) and `singleSelect` so `Enter` falls
+      // through to the scope default. `deferCommit` keeps the deferred model
+      // (cursor moves without committing; Space/Enter commit) for a cycle stop
+      // whose Return commits + relinquishes ([P15]).
+      commit: deferCommit ? "deferred" : "live",
+      singleSelect: !deferCommit,
+      onMove: deferCommit
+        ? undefined
+        : (element) => {
+            const next = element?.getAttribute("data-choice-value");
+            if (next != null && next !== value) dispatchSelectValue(next);
+          },
       onSelect: (element) => {
         const next = element?.getAttribute("data-choice-value");
         if (next != null && next !== value) dispatchSelectValue(next);

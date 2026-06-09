@@ -1,35 +1,46 @@
 /**
- * FocusManager -- tugways focus engine.
+ * FocusManager -- tugways focus engine, per-card (the key-window model).
  *
- * A plain TypeScript class (outside React state) that owns the three things
- * the responder chain deliberately does not: the **key view** (the single
- * element keystrokes land on), an explicit **focusable registry** with an
- * app-authored Tab order, and a **focus-mode stack** modeled on CFRunLoop
- * run-loop modes (a floating surface pushes a trapped mode; the Tab walk
- * only services focusables registered in the current mode).
+ * Focus state is owned **per card**, not pooled deck-global. Each card is a
+ * self-contained focus universe: its own focus-mode stack (cycle / card-modal
+ * trap / descend), its own key view (the element keystrokes land on), its own
+ * key-within, its own default-ring stack, and its own app-authored focusable
+ * registry. That universe lives in a {@link FocusContext}.
  *
- * It is a *sibling* of `ResponderChainManager`, not a replacement: the chain
- * owns action routing (first responder), the FocusManager owns the keyboard
- * target (key view). The two usually agree but are independent axes -- a
- * focus-refusing control click routes an action while leaving the key view
- * put. Both ride the same `ResponderChainProvider` document listeners; the
- * FocusManager seeds its key view from the chain's first responder via
- * `attach(chain)`.
+ * `FocusManager` is the deck **coordinator** (the AppKit *app object* to the
+ * context's *key window*): it owns only deck-global settings (ring modality,
+ * keyboard-access mode), the responder-chain attachment, the subscriber set +
+ * version, and the **key-card** pointer plus the `cardId → FocusContext` map. Its
+ * public API delegates every walk / seed / projection / engine call to the **key
+ * card's** context (the active context). Switching the key card is an O(1) context
+ * swap; an inactive card's context is untouched, so a mid-flow cycle, a pending
+ * card-modal dialog, or a descended scope is preserved **by construction** — no
+ * tagging a shared stack, no suspend/restore reconciliation.
  *
- * This first cut is **inert**: the registry, key view, mode stack, walk, and
- * default-action map all exist and are exercised by pure-logic tests, but no
- * document listener intercepts Tab yet, so Tab behavior is unchanged in the
- * running app. The only visible effect is the `data-key-view` attribute that
- * tracks the first responder.
+ * Data-flow direction (the inversion that keeps key-card single-sourced): the key
+ * card is **activation-driven**, not focus-derived. The activation-focus channel
+ * (`applyBagFocus` in `focus-transfer.ts`) calls {@link FocusManager.setKeyCard}
+ * (or {@link FocusManager.adoptKeyCard}); that sets `keyCardId`, projects THAT
+ * context's marks, and only then does the responder chain's `getKeyCard()` DOM
+ * fallback find the just-projected key view. Projection is downstream of the key
+ * card, never an independent source — so the two can never diverge.
  *
- * Co-locates `FocusManagerContext` so the provider and `useFocusable` can
- * import it without a circular dependency -- the same pattern
- * `responder-chain.ts` uses for `ResponderChainContext`.
+ * Default context ([L26] + the no-card invariant): when no key card is set (a
+ * `new FocusManager()` in the pure-logic tests, the gallery, a standalone
+ * preview), the coordinator services a single **default context**. Registering
+ * with no `cardId` routes there and the walk/seed/projection all operate on it,
+ * so the per-card refactor is purely additive — the focus-walk suite passes
+ * unchanged against the default context, and every hook stays a clean no-op with
+ * no manager.
  *
- * State-zone classification ([L24]): the key-view id, focusable records, and
- * mode stack are all **structure** zone (registry + `useLayoutEffect` at the
- * hook). The `data-key-view` attribute is the **appearance** projection of
- * the key view, written directly to the DOM ([L06]) -- never React state.
+ * Co-locates `FocusManagerContext` so the provider and `useFocusable` can import
+ * it without a circular dependency -- the same pattern `responder-chain.ts` uses
+ * for `ResponderChainContext`.
+ *
+ * State-zone classification ([L24]): the per-card key-view id, focusable records,
+ * and mode stack are all **structure** zone (registry + `useLayoutEffect` at the
+ * hook). The `data-key-view` attribute is the **appearance** projection of the
+ * key view, written directly to the DOM ([L06]) -- never React state.
  */
 
 import { createContext } from "react";
@@ -58,7 +69,7 @@ export interface KeyViewBehavior extends ComponentKeyDeclaration {
 // ---- Focus modes ----
 
 /**
- * The id of the base focus mode -- the bottom of the mode stack, always
+ * The id of the base focus mode -- the bottom of a context's mode stack, always
  * present, never pushed or popped. Focusables that do not belong to a
  * floating surface register into this mode; the Tab walk services it
  * whenever no trapped mode is current.
@@ -71,7 +82,7 @@ export const BASE_FOCUS_MODE = "base";
  * a floating surface's mode is pushed. The appearance/structure projection of
  * the mode stack ([L24]) — useful for CSS that scopes to "a modal trap is
  * active", for devtools, and for app-tests. Mirrors `data-key-view` /
- * `data-keyboard-access`.
+ * `data-keyboard-access`. Projected only by the **key card's** context.
  */
 export const FOCUS_MODE_ATTRIBUTE = "data-focus-mode";
 
@@ -98,9 +109,9 @@ export const KEY_WITHIN_ATTRIBUTE = "data-key-within";
 export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
 
 /**
- * A focus mode (scope) on the stack. Mirrors a CFRunLoop mode: while it is
- * current, the Tab walk services only the focusables registered into it
- * ({@link FocusManager.walkModeSet}) — a focus trap for free, for EVERY pushed
+ * A focus mode (scope) on a context's stack. Mirrors a CFRunLoop mode: while it
+ * is current, the Tab walk services only the focusables registered into it
+ * ({@link FocusContext.walkModeSet}) — a focus trap for free, for EVERY pushed
  * mode.
  *
  * `trapped` does NOT widen the Tab walk; it selects the Escape semantics:
@@ -108,7 +119,7 @@ export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
  *   popover / menu, and a card's focus-cycle).
  * - `trapped: false` -- a descend scope (an accordion section, a list row).
  *   Escape ASCENDS one level instead of dismissing. Tab is still contained to
- *   this scope's focusables (a locked loop) — see {@link FocusManager.walkModeSet}.
+ *   this scope's focusables (a locked loop) — see {@link FocusContext.walkModeSet}.
  */
 export interface FocusMode {
   scopeId: string;
@@ -164,14 +175,15 @@ export type FocusPolicy = "accept" | "skip";
 /**
  * Keyboard-access mode. `standard` honors `skip`; `accessibility` ignores it
  * so every interactive affordance is Tab-reachable. The mode is owned by a
- * tugbank-backed store (wired separately); the walk reads it here.
+ * tugbank-backed store (wired separately) and is **deck-global** (the coordinator
+ * holds it; every context's walk reads it).
  */
 export type KeyboardAccessMode = "standard" | "accessibility";
 
 /**
  * The shape a caller (the `useFocusable` hook, or a test) hands to
  * `registerFocusable`. `policy` and `modes` are optional and normalized to
- * their defaults inside the manager.
+ * their defaults inside the context.
  */
 export interface FocusableInput {
   /** Stable id for this focusable. Matches the `data-tug-focusable` attribute. */
@@ -210,9 +222,9 @@ export interface FocusableInput {
 }
 
 /**
- * A normalized focusable record held in the registry. `policy` and `modes`
- * are filled in; `seq` is a monotonic registration counter used as the final
- * sort tiebreak so the walk order is deterministic.
+ * A normalized focusable record held in a context's registry. `policy` and
+ * `modes` are filled in; `seq` is a monotonic registration counter used as the
+ * final sort tiebreak so the walk order is deterministic.
  */
 export interface FocusableRecord {
   id: string;
@@ -225,9 +237,25 @@ export interface FocusableRecord {
   seq: number;
 }
 
-// ---- FocusManager ----
+// ---- FocusContext ----
 
-export class FocusManager {
+/**
+ * One card's self-contained focus universe ([P21]). Owns the focusable registry,
+ * the focus-mode stack, the key view (id + keyboard-ness), the key-within, the
+ * default-ring stack, and the group order + default-action map. All of the walk,
+ * seed, mode, and DOM-projection logic operates on *this* context.
+ *
+ * It reads deck-global settings (keyboard-access mode, ring modality) and the
+ * "am I the key card?" gate from its coordinator ({@link FocusManager}), and
+ * notifies the coordinator's single global subscriber set on change. **Only the
+ * key card's context projects to the DOM**: every projection method is a no-op
+ * when this context is not active, so a background card mutating its own stack
+ * (a dialog mounting at `display:none`) never clobbers the active card's marks.
+ * The coordinator calls {@link projectAll} when this context becomes the key
+ * card, reconciling the DOM via the same "clear all globally, then stamp" pass
+ * that is the safety net against a stale mark from a just-deactivated context.
+ */
+export class FocusContext {
   private focusables: Map<string, FocusableRecord> = new Map();
   private modeStack: FocusModeEntry[] = [];
   private groupOrder: string[] = [];
@@ -239,139 +267,30 @@ export class FocusManager {
   // unreliable for the engine's programmatic `.focus()`, so the engine marks
   // its own keyboard navigation rather than depending on the browser.
   private keyViewKeyboard = false;
-  // When true, the focus ring also follows *pointer*-driven key-view changes —
-  // not just keyboard navigation. This is the "keyboard + pointer" ring policy:
-  // a click that lands on a registered focusable paints the ring, so the ring
-  // is consistent whether you Tab to a control or click it. When false (the
-  // default), the ring paints on keyboard navigation only. Orthogonal to
-  // {@link accessMode}; driven by the focus-ring-modality store.
-  private ringFollowsPointer = false;
   // Stack of buttons that have opted into the persistent default ring (the
   // "Return's home" filled+ring shown while the keyboard rests on a non-button
   // control). The engine owns the `data-default-ring` DOM attribute so the
   // one-filled-ring-per-scope invariant ([P14]) is structural: the TOP node
-  // wears the ring iff the current key view is NOT itself a button — the instant
-  // the keyboard lands on any button, the ring stands down and that button's own
-  // `data-key-view-kbd` is the sole filled+ring. Innermost-wins like the default
-  // button stack; nested surfaces push/pop. Appearance-zone DOM only ([L06]).
+  // wears the ring iff the current key view is NOT itself a button. Per-card.
   private defaultRingStack: HTMLElement[] = [];
-  private accessMode: KeyboardAccessMode = "standard";
   private seqCounter = 0;
-  private version = 0;
-  private subscribers: Set<() => void> = new Set();
-
-  // The chain we seed the key view from, plus its unsubscribe handle. Set by
-  // `attach`, cleared by `detach`.
-  private chain: ResponderChainManager | null = null;
-  private chainUnsubscribe: (() => void) | null = null;
-  // Set while `focusKeyView` moves DOM focus. The walk has just chosen a
-  // specific focusable as the key view (keyboard=true); the `focusin` that
-  // `el.focus()` fires synchronously promotes that element's nearest *responder*
-  // (often a coarser container — a card root), which would otherwise re-seed the
-  // key view back to that responder with keyboard=false, dropping the ring on
-  // the first Tab into a freshly-revealed card. Suppress the chain re-seed for
-  // the duration of that programmatic focus so the walk's choice stands.
-  private suppressChainSeed = false;
-  // Set while a *pointer*-driven first-responder promotion runs (see
-  // `runPointerPromotion`). A pointer interaction re-seeds the key view to the
-  // promoted responder and clears the ring (click-to-focus); any other chain
-  // reflection is programmatic and yields to a finer focusable key view rather
-  // than coarsening it — the boot-restore protection in `seedKeyViewFromChain`.
-  private pointerPromotionActive = false;
   // Focus keys (`group:order`) of keyboard key views whose focusable had not
   // mounted when the focus axis restored ([focus-transfer] `deferred-dom`). The
   // ring re-lights the moment a matching focusable registers — the late-mount
   // retry for the keyboard ring across reload / relaunch.
   private pendingKeyboardRestore = new Set<string>();
 
-  // ---- Chain attachment (key-view seeding) ----
+  constructor(
+    private readonly coord: FocusManager,
+    /** The card this context belongs to, or `null` for the default context. */
+    readonly cardId: string | null,
+  ) {}
 
-  /**
-   * Bind to the responder chain so the key view tracks the first responder.
-   * The provider calls this from the same `useLayoutEffect` that installs the
-   * chain's document listeners, and `detach` from its cleanup.
-   *
-   * On every chain change the key view is set to the current first responder.
-   * In this inert cut that is the sole driver of the key view; once the Tab
-   * pipeline lands, the walk drives it imperatively and this seeding yields.
-   * Idempotent: re-attaching tears down the prior subscription first.
-   */
-  attach(chain: ResponderChainManager): void {
-    if (this.chain === chain) return;
-    this.detach();
-    this.chain = chain;
-    this.chainUnsubscribe = chain.subscribe(() => {
-      // Yield to the walk while it is imperatively landing focus on a chosen
-      // key view: the `focusin` from that programmatic `.focus()` must not
-      // re-seed (and downgrade) the key view it just set.
-      if (this.suppressChainSeed) return;
-      this.seedKeyViewFromChain();
-    });
-    // Seed immediately so the key view reflects whatever the chain already
-    // promoted before this subscription was installed.
-    this.seedKeyViewFromChain();
-  }
+  // ---- Coordinator-facing gates / settings ----
 
-  /**
-   * Reflect the chain's first responder onto the key view — the chain-seeding
-   * path. The key view is the most *specific* focus target: when the Tab walk or
-   * the focus-axis restore ([focus-transfer]) has already set the key view to a
-   * registered focusable, a chain reflection that merely re-promotes that
-   * focusable's coarser *container* (its card-root responder) must not coarsen
-   * the key view back to the container or drop its keyboard ring — it yields.
-   * This is what lets a keyboard ring survive the wave of programmatic
-   * promotions that fire during cold-boot focus restore (the boot bug). Only a
-   * genuine pointer interaction (run through {@link runPointerPromotion}, which
-   * re-seeds and clears the ring — click-to-focus) or a reflection that moves to
-   * a different subtree changes an established finer key view.
-   */
-  private seedKeyViewFromChain(): void {
-    if (this.chain === null) return;
-    const frId = this.chain.getFirstResponder();
-    if (!this.pointerPromotionActive && this.keyViewIsFinerThan(frId)) return;
-    this.setKeyView(frId);
-  }
-
-  /**
-   * Whether the current key view is a registered focusable whose element lives
-   * inside the element of `responderId` — i.e. the key view is *finer* than the
-   * responder the chain just promoted. DOM-free environments and unmatched ids
-   * resolve to `false` (no yield), preserving the bare-reflection behavior.
-   */
-  private keyViewIsFinerThan(responderId: string | null): boolean {
-    if (responderId === null || this.keyViewId === null) return false;
-    if (!this.focusables.has(this.keyViewId)) return false;
-    if (typeof document === "undefined") return false;
-    const esc = (s: string) =>
-      typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(s) : s;
-    const kvEl = document.querySelector(`[data-tug-focusable="${esc(this.keyViewId)}"]`);
-    const rEl = document.querySelector(`[data-responder-id="${esc(responderId)}"]`);
-    if (kvEl === null || rEl === null) return false;
-    return rEl.contains(kvEl);
-  }
-
-  /**
-   * Run `fn` (a first-responder promotion) marked as pointer-driven, so the
-   * chain reflection it triggers coarsens the key view and clears the ring — the
-   * click-to-focus path. Outside this wrapper, chain reflections are treated as
-   * programmatic and yield to a finer focusable key view ({@link
-   * seedKeyViewFromChain}). Synchronous: `makeFirstResponder` notifies the chain
-   * within `fn`, so the flag need only span the call.
-   */
-  runPointerPromotion(fn: () => void): void {
-    this.pointerPromotionActive = true;
-    try {
-      fn();
-    } finally {
-      this.pointerPromotionActive = false;
-    }
-  }
-
-  /** Unsubscribe from the chain. Safe to call when not attached. */
-  detach(): void {
-    this.chainUnsubscribe?.();
-    this.chainUnsubscribe = null;
-    this.chain = null;
+  /** Whether this context is the key card's context (the only one that projects). */
+  private isActive(): boolean {
+    return this.coord.isActiveContext(this);
   }
 
   // ---- Focusable registry ----
@@ -393,12 +312,12 @@ export class FocusManager {
       seq: this.seqCounter++,
     };
     this.focusables.set(record.id, record);
-    this.touch();
+    this.notify();
     // Late-mount keyboard-ring resume: if this focusable's stable `group:order`
     // is the saved key view whose element wasn't in the DOM when the focus axis
     // restored ([focus-transfer] `armKeyboardRestore`), re-light the ring on it
-    // now. `focusKeyView` runs under `suppressChainSeed`, so the `focusin` it
-    // fires can't re-seed the key view back to keyboard=false.
+    // now. `focusKeyView` runs under the coordinator's `suppressChainSeed`, so
+    // the `focusin` it fires can't re-seed the key view back to keyboard=false.
     if (record.group !== "" && this.pendingKeyboardRestore.size > 0) {
       const focusKey = `${record.group}:${record.order}`;
       if (this.pendingKeyboardRestore.has(focusKey) && this.isRecordRendered(record)) {
@@ -437,7 +356,7 @@ export class FocusManager {
   /** Remove a focusable. No-op if it is not registered. */
   unregisterFocusable(id: string): void {
     if (this.focusables.delete(id)) {
-      this.touch();
+      this.notify();
     }
   }
 
@@ -449,7 +368,7 @@ export class FocusManager {
    */
   setGroupOrder(groups: string[]): void {
     this.groupOrder = [...groups];
-    this.touch();
+    this.notify();
   }
 
   // ---- Key view ----
@@ -457,8 +376,9 @@ export class FocusManager {
   /**
    * Set the key view to `id` (or `null` to clear). Writes the `data-key-view`
    * DOM attribute on exactly one element, plus `data-key-view-kbd` when the key
-   * view was reached by keyboard (so the focus ring paints). No-op (other than
-   * DOM clear) when neither the value nor the modality changed.
+   * view was reached by keyboard (so the focus ring paints) — but only while this
+   * context is the key card's (projection is gated on active). No-op (other than
+   * the DOM sync) when neither the value nor the modality changed.
    *
    * `keyboard` defaults to `false` (pointer / chain reflection); the Tab walk
    * and surface entry pass `true`.
@@ -468,7 +388,7 @@ export class FocusManager {
     this.keyViewId = id;
     this.keyViewKeyboard = keyboard;
     this.syncKeyViewDomAttribute();
-    this.touch();
+    this.notify();
   }
 
   /**
@@ -482,11 +402,6 @@ export class FocusManager {
    * `keyboard` sets the modality the ring reads: `true` (arrow-roving) keeps the
    * ring on the newly-roved member; `false` (a pointer move within the group)
    * clears it; omit to preserve the current modality.
-   *
-   * Appearance-zone DOM mutation only ([L06], [L22]): it writes `data-key-view`
-   * / `data-key-view-kbd` and notifies no React subscriber — the key-view id is
-   * unchanged and the ring is driven by the DOM attribute, not React state, so
-   * there is nothing to `touch()`.
    */
   refreshKeyViewProjection(keyboard?: boolean): void {
     if (this.keyViewId === null) return;
@@ -512,9 +427,7 @@ export class FocusManager {
 
   /**
    * Whether the current key view's focusable declares it is consuming Tab right
-   * now (its `consumesTab` predicate returns true). The Tab pipeline also checks
-   * the active element's DOM marker ([TAB_CONSUME_ATTRIBUTE]) for surfaces that
-   * are not (yet) registered focusables; this covers the registered case.
+   * now (its `consumesTab` predicate returns true).
    */
   keyViewConsumesTab(): boolean {
     if (this.keyViewId === null) return false;
@@ -564,10 +477,15 @@ export class FocusManager {
    * Move DOM focus to the current key-view element, so keystrokes land on it
    * after the Tab walk advances. Mirrors the chain's `focusResponder` DOM-walk
    * fallback: focus the element itself when it is intrinsically focusable or
-   * carries a non-negative tabindex, else its first tabbable descendant. A
-   * guarded no-op with no document or no key view. Returns whether focus moved.
+   * carries a non-negative tabindex, else its first tabbable descendant.
+   *
+   * Gated on active: only the key card's context moves DOM focus, so a background
+   * card popping a mode (its dialog unmounting) never steals focus from the card
+   * the user is in. A guarded no-op with no document or no key view. Returns
+   * whether focus moved.
    */
   focusKeyView(): boolean {
+    if (!this.isActive()) return false;
     if (this.keyViewId === null || typeof document === "undefined") return false;
     const id = this.keyViewId;
     const escaped =
@@ -587,8 +505,9 @@ export class FocusManager {
       el instanceof HTMLAnchorElement;
     const hasFocusableTabIndex = tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
     // Suppress the chain re-seed for the synchronous `focusin` this `.focus()`
-    // fires (see `suppressChainSeed`), so the walk's keyboard key view survives.
-    this.suppressChainSeed = true;
+    // fires (see `FocusManager.suppressChainSeed`), so the walk's keyboard key
+    // view survives.
+    this.coord.beginSuppressChainSeed();
     try {
       if (intrinsicallyFocusable || hasFocusableTabIndex) {
         el.focus();
@@ -603,55 +522,17 @@ export class FocusManager {
       }
       return false;
     } finally {
-      this.suppressChainSeed = false;
+      this.coord.endSuppressChainSeed();
     }
-  }
-
-  // ---- Keyboard-access mode ----
-
-  /** Set the keyboard-access mode the Tab walk reads. */
-  setKeyboardAccessMode(mode: KeyboardAccessMode): void {
-    if (this.accessMode === mode) return;
-    this.accessMode = mode;
-    this.touch();
-  }
-
-  /** The current keyboard-access mode. */
-  keyboardAccessMode(): KeyboardAccessMode {
-    return this.accessMode;
-  }
-
-  // ---- Ring modality ----
-
-  /**
-   * Set whether the focus ring follows pointer-driven key-view changes in
-   * addition to keyboard navigation. `false` (default) = ring on keyboard
-   * navigation only; `true` = ring also paints when a click lands on a
-   * registered focusable.
-   *
-   * Repaints immediately: the key-view id is unchanged, so this re-runs the
-   * DOM projection directly (appearance-zone DOM only — no React notify, the
-   * ring is driven by the `data-key-view-kbd` attribute, not React state
-   * [L06]/[L22]).
-   */
-  setRingFollowsPointer(value: boolean): void {
-    if (this.ringFollowsPointer === value) return;
-    this.ringFollowsPointer = value;
-    this.refreshKeyViewProjection();
-  }
-
-  /** Whether the ring currently follows pointer-driven key-view changes. */
-  ringFollowsPointerMode(): boolean {
-    return this.ringFollowsPointer;
   }
 
   // ---- Focus-mode stack ----
 
   /**
    * Push a focus mode. The pushed mode becomes current; the Tab walk services
-   * only its focusables (when `trapped`). Captures the current key view so it
-   * can be restored on pop ([#cfrunloop-model]). Pushing a `scopeId` already on
-   * the stack moves it to the top (re-capturing the key view at that point).
+   * only its focusables. Captures the current key view so it can be restored on
+   * pop ([#cfrunloop-model]). Pushing a `scopeId` already on the stack moves it
+   * to the top (re-capturing the key view at that point).
    */
   pushFocusMode(
     scopeId: string,
@@ -673,20 +554,14 @@ export class FocusManager {
     });
     this.syncFocusModeDomAttribute();
     this.syncKeyWithinDomAttribute();
-    this.touch();
+    this.notify();
   }
 
   /**
    * Apply the current (top) mode's commit disposition after a keyboard
    * value-commit at the key view ([P15]). If the top mode declares
    * `commitDisposition` and it returns `relinquish` for this commit, pop that
-   * mode (default restore → the captured prior key view + DOM focus). A mode
-   * with no disposition (the base mode, a plain trap) retains. Returns whether
-   * the mode was relinquished.
-   *
-   * The policy rides the mode, set by whichever primitive pushed it
-   * (`useCycleMode` injects the toggleable default; `useFocusTrap` injects
-   * none → retain) — so this dispatch chokepoint stays policy-agnostic.
+   * mode. Returns whether the mode was relinquished.
    */
   applyCommitDisposition(kind: FocusCommitKind): boolean {
     const top = this.modeStack[this.modeStack.length - 1];
@@ -699,9 +574,7 @@ export class FocusManager {
 
   /**
    * Pop the named focus mode off the stack and restore the key view that was
-   * current when it was pushed. No-op if it is not present. `pushFocusMode`
-   * keeps scope ids unique on the stack, so a single index search is
-   * sufficient.
+   * current when it was pushed. No-op if it is not present.
    *
    * Restore fires only when popping the **top** mode (the common dismiss case);
    * popping a buried mode leaves the key view alone, since a mode still above
@@ -709,10 +582,7 @@ export class FocusManager {
    *
    * `restoreFocus` (default `true`) controls whether DOM focus is *moved* onto
    * the restored key view. The key-view STATE (id + ring) is always restored;
-   * `restoreFocus: false` skips only the `el.focus()` — for a pop where the
-   * caller will place focus itself and a transient engine focus would flash
-   * (e.g. the mouse exiting a focus-cycle: the click that triggered the exit
-   * owns the next focus, so the engine must not first focus the resting editor).
+   * `restoreFocus: false` skips only the `el.focus()`.
    */
   popFocusMode(scopeId: string, opts?: { restoreFocus?: boolean }): void {
     const restoreFocus = opts?.restoreFocus ?? true;
@@ -726,19 +596,14 @@ export class FocusManager {
       // Restore the prior key view AND its keyboard-ness, so a key view that
       // wore the ring before this mode was pushed (e.g. a focus-cycling stop
       // that opened a popover by keyboard) gets the ring back on pop, while a
-      // mouse-opened one restores ringless. A no-op when unchanged; harmless
-      // when the captured target has since unmounted (the chain's
-      // first-responder seeding will re-resolve the key view on the next chain
-      // change).
+      // mouse-opened one restores ringless.
       this.setKeyView(entry.restoreKeyView, entry.restoreKeyViewKeyboard);
       // The engine is the single owner of close-focus when it is returning to a
       // KEYBOARD key view (a focus-cycle / Tab stop the surface was opened from):
-      // move DOM focus onto it. The service-popup binding defers in exactly this
-      // case (it checks `keyViewIsKeyboard` at open), so focus is written by one
-      // system — no dueling writers, no dependence on effect order. A non-keyboard
-      // or null restore (a mouse-opened surface) leaves DOM focus to that
-      // responder-chain fallback instead, unchanged. Suppressed entirely when
-      // `restoreFocus` is false (the caller owns the next focus).
+      // move DOM focus onto it. A non-keyboard or null restore leaves DOM focus
+      // to the responder-chain fallback. Suppressed entirely when `restoreFocus`
+      // is false (the caller owns the next focus). `focusKeyView` is itself gated
+      // on active, so a background pop never moves focus.
       if (
         restoreFocus &&
         entry.restoreKeyView !== null &&
@@ -749,19 +614,15 @@ export class FocusManager {
     }
     // Always notify: popping a mode changes `isFocusModePushed` /
     // `currentFocusMode`, which subscribers observe (e.g. a card's `cycling`
-    // flag) independently of the key view. The `setKeyView` above is NOT enough
-    // — it early-returns when the restored key view is unchanged (restoring a
-    // null editor key view to an already-null one), which would leave the mode
-    // pop unobserved and a derived `cycling` boolean stale.
-    this.touch();
+    // flag) independently of the key view.
+    this.notify();
   }
 
   /**
    * Move the key view to the first focusable in the current mode (authored
    * order) and return its id, or `null` if the mode has no focusables. The
-   * engine's "set initial focus when a surface opens" primitive — a floating
-   * surface calls this after pushing its mode so keyboard entry lands inside
-   * the trap. Does not move DOM focus; pair with `focusKeyView` for that.
+   * engine's "set initial focus when a surface opens" primitive. Does not move
+   * DOM focus; pair with `focusKeyView` for that.
    */
   focusFirstInMode(): string | null {
     const order = this.walkOrder();
@@ -778,12 +639,10 @@ export class FocusManager {
   }
 
   /**
-   * Whether `scopeId` is anywhere on the mode stack — current OR merely covered
-   * by a transient mode pushed on top of it (e.g. a popover opened from within a
-   * focus-cycling card). Distinct from {@link currentFocusMode}: a consumer that
-   * asks "am I still in this mode?" (the cycling card, deciding whether to keep
-   * its `data-cycling` treatment / not restore the editor caret) wants this, not
-   * top-of-stack — opening a nested surface must not read as an exit.
+   * Whether `scopeId` is anywhere on this context's mode stack — current OR
+   * merely covered by a transient mode pushed on top of it (e.g. a popover
+   * opened from within a focus-cycling card). A consumer that asks "am I still in
+   * this mode?" (the cycling card) wants this, not top-of-stack.
    */
   isFocusModePushed(scopeId: string): boolean {
     return this.modeStack.some((m) => m.scopeId === scopeId);
@@ -791,13 +650,22 @@ export class FocusManager {
 
   /**
    * Whether the current (top) focus mode is trapped (modal). `false` at the base
-   * mode. The act dispatch ascends only **non-trapped** scopes ([P02]); a trapped
-   * (modal) scope's Escape is the surface's to handle (cancel), so the engine does
-   * not pop it from under a sheet / alert ([R04]).
+   * mode. The act dispatch ascends only **non-trapped** scopes ([P02]).
    */
   currentFocusModeTrapped(): boolean {
     const top = this.modeStack[this.modeStack.length - 1];
     return top ? top.trapped : false;
+  }
+
+  /**
+   * Whether a pushed (non-base) scope owns this card's key destination: there is
+   * a current trap / cycle / descend AND a key view to land on. The [P20] gate —
+   * the coordinator consults it on (re)activation so a pending card-modal dialog
+   * (or a mid-flow cycle) is re-established as the card's focus destination
+   * instead of the resting editor.
+   */
+  hasPushedKeyDestination(): boolean {
+    return this.currentFocusMode() !== BASE_FOCUS_MODE && this.keyViewId !== null;
   }
 
   // ---- Default-action resolution ----
@@ -812,7 +680,7 @@ export class FocusManager {
     } else {
       this.defaultActions.set(scopeId, action);
     }
-    this.touch();
+    this.notify();
   }
 
   /**
@@ -829,10 +697,6 @@ export class FocusManager {
    * Advance the key view to the next focusable in the current mode's authored
    * order, wrapping past the last to the first. Returns the new key-view id,
    * or `null` if the current mode has no participating focusables.
-   *
-   * If the current key view is not among the walk candidates (e.g. it was
-   * seeded from a non-focusable first responder), the walk starts at the
-   * beginning.
    */
   focusNext(): string | null {
     return this.advance(1);
@@ -853,18 +717,18 @@ export class FocusManager {
    */
   walkOrder(): FocusableRecord[] {
     const accepted = this.walkModeSet();
+    const accessMode = this.coord.keyboardAccessMode();
     const records: FocusableRecord[] = [];
     for (const record of this.focusables.values()) {
       const inMode = record.modes.some((m) => accepted.has(m));
       if (!inMode) continue;
-      if (this.accessMode === "standard" && record.policy === "skip") continue;
-      // A focusable in a hidden subtree is not a reachable Tab target. Card
-      // panes keep inactive tab cards mounted as `display: none` (only the
-      // active card is laid out), so without this filter the walk would step
-      // through every background card's focusables before reaching the
-      // frontmost one — Tab-ing N times for the Nth tab. Skip records whose
-      // element renders no box. A no-op without a DOM (pure-logic walk tests)
-      // and when the element can't be resolved, so neither is excluded.
+      if (accessMode === "standard" && record.policy === "skip") continue;
+      // A focusable in a hidden subtree is not a reachable Tab target. With
+      // per-card contexts the walk already sees only THIS card's focusables, so
+      // this filter is the *within-card* hidden-subtree guard (a collapsed
+      // accordion section, a conditionally-hidden control) — not the retired
+      // cross-card display:none exclusion. A no-op without a DOM (pure-logic walk
+      // tests) and when the element can't be resolved.
       if (!this.isRecordRendered(record)) continue;
       // A disabled / pointer-inert control is not a reachable Tab target — the
       // walk skips it so, e.g., the prompt submit drops out of the cycle while
@@ -889,14 +753,12 @@ export class FocusManager {
    *  - a **descend** scope (an accordion section, a list row) — Tab is a LOCKED
    *    loop inside the descended content, and Escape ASCENDS one level.
    *
-   * `trapped` governs only the Escape semantics (ascend vs dismiss; see the
-   * act-dispatch in `responder-chain-provider`), NOT the breadth of the Tab walk
-   * — a non-trapped descend is still Tab-contained. A descend must never widen
-   * the walk to the enclosing scope (it would break the locked loop) nor to
-   * `BASE_FOCUS_MODE`, which — under the single, deck-wide `FocusManager` — spans
-   * every *other* card (the cross-card leak a descend inside a sheet exposed).
-   *
-   * Only the bare base mode (nothing pushed) services the base focusables.
+   * `trapped` governs only the Escape semantics (ascend vs dismiss), NOT the
+   * breadth of the Tab walk — a non-trapped descend is still Tab-contained. A
+   * descend must never widen the walk to the enclosing scope (it would break the
+   * locked loop). (Per-card contexts already isolate each card's base mode, so
+   * `BASE_FOCUS_MODE` no longer spans other cards.) Only the bare base mode
+   * (nothing pushed) services the base focusables.
    */
   private walkModeSet(): Set<string> {
     const top = this.modeStack[this.modeStack.length - 1];
@@ -920,10 +782,10 @@ export class FocusManager {
 
   /**
    * Whether a focusable's element is currently rendered (lays out a box). Used
-   * by the walk to exclude focusables inside a `display: none` subtree (an
-   * inactive tab card). Returns `true` when there is no document or the element
-   * can't be resolved, so the in-memory walk (tests / SSR) is never narrowed by
-   * a DOM that isn't there.
+   * by the walk to exclude focusables inside a hidden (`display: none`) subtree
+   * **inside the active card** (a collapsed accordion section). Returns `true`
+   * when there is no document or the element can't be resolved, so the in-memory
+   * walk (tests / SSR) is never narrowed by a DOM that isn't there.
    */
   private isRecordRendered(record: FocusableRecord): boolean {
     if (typeof document === "undefined") return true;
@@ -936,13 +798,8 @@ export class FocusManager {
    * Whether a focusable's element is currently *interactive* — the walk must
    * never land the key view on a control that cannot be activated. Excludes
    * native-`disabled` and `aria-disabled` elements and elements made
-   * pointer-inert by CSS (`pointer-events: none` — e.g. the prompt submit's
-   * empty-input gate, which disables the button visually + for the pointer
-   * without a `disabled` attribute). Reads the DOM at walk time, exactly like
-   * {@link isRecordRendered}: the "is the control actionable" signal stays
-   * appearance/DOM state ([L06]), and this structure consumer observes it
-   * directly rather than round-tripping it through React ([L22]/[L24]).
-   * Permissive without a DOM (returns `true`) so the pure-logic walk tests are
+   * pointer-inert by CSS (`pointer-events: none`). Reads the DOM at walk time;
+   * permissive without a DOM (returns `true`) so the pure-logic walk tests are
    * never narrowed.
    */
   private isRecordInteractive(record: FocusableRecord): boolean {
@@ -988,43 +845,54 @@ export class FocusManager {
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   }
 
-  // ---- Subscription (for future useSyncExternalStore consumers, [L02]) ----
+  // ---- Default ring ----
 
-  /** Subscribe to manager changes. Returns an unsubscribe function. */
-  subscribe(callback: () => void): () => void {
-    this.subscribers.add(callback);
-    return () => {
-      this.subscribers.delete(callback);
-    };
+  /**
+   * Register a button as this card's persistent-default-ring node ([P14]). The
+   * engine owns the `data-default-ring` attribute from here, projecting it in
+   * lockstep with the key view. Innermost-wins: a nested surface's node takes
+   * over while mounted and the prior node is restored on
+   * {@link unregisterDefaultRing}.
+   */
+  registerDefaultRing(node: HTMLElement): void {
+    if (this.defaultRingStack.includes(node)) return;
+    this.defaultRingStack.push(node);
+    this.syncDefaultRingDomAttribute();
   }
 
-  /** Monotonic version for `useSyncExternalStore` snapshots. */
-  getVersion(): number {
-    return this.version;
+  /** Remove a persistent-default-ring node (on unmount / opt-out). */
+  unregisterDefaultRing(node: HTMLElement): void {
+    const i = this.defaultRingStack.indexOf(node);
+    if (i < 0) return;
+    this.defaultRingStack.splice(i, 1);
+    node.removeAttribute("data-default-ring");
+    this.syncDefaultRingDomAttribute();
   }
 
-  // ---- Private helpers ----
+  // ---- DOM projection (key-card only) ----
 
-  private touch(): void {
-    this.version += 1;
-    for (const cb of this.subscribers) {
-      cb();
-    }
+  /**
+   * Project all three engine marks for this context — called by the coordinator
+   * when this context becomes the key card. The per-mark sync methods are gated
+   * on active (so a background context never projects); at the moment the
+   * coordinator calls this, this context IS active. Each runs its "clear all
+   * globally, then stamp" pass, which doubles as the safety net that wipes a
+   * stale mark left by the just-deactivated context.
+   */
+  projectAll(): void {
+    this.syncKeyViewDomAttribute();
+    this.syncKeyWithinDomAttribute();
+    this.syncFocusModeDomAttribute();
   }
 
   /**
    * Project the key view onto the DOM: clear `data-key-view` from any element
    * that carries it, then stamp it on the element whose `data-responder-id`
-   * or `data-tug-focusable` matches the current key-view id. The attribute
-   * value is the id itself, so devtools shows `data-key-view="<id>"` inline.
-   *
-   * DOM-free environments (unit tests without a document) are detected via
-   * `typeof document` and skipped -- the in-memory key view is already set,
-   * only the appearance projection is unavailable. Mirrors the chain's
-   * `syncFirstResponderDomAttribute`.
+   * or `data-tug-focusable` matches the current key-view id. Gated on active —
+   * only the key card's context writes the projection.
    */
   private syncKeyViewDomAttribute(): void {
-    if (typeof document === "undefined") return;
+    if (typeof document === "undefined" || !this.isActive()) return;
     document.querySelectorAll<HTMLElement>("[data-key-view]").forEach((el) => {
       el.removeAttribute("data-key-view");
       el.removeAttribute("data-key-view-kbd");
@@ -1035,8 +903,8 @@ export class FocusManager {
       // The focus ring paints on a keyboard-reached key view (the engine's own
       // signal, since `:focus-visible` is unreliable for programmatic focus) —
       // and, when the ring-follows-pointer policy is on, on any pointer-driven
-      // key-view change too, so the ring is consistent across Tab and click.
-      if (this.keyViewKeyboard || this.ringFollowsPointer) {
+      // key-view change too.
+      if (this.keyViewKeyboard || this.coord.ringFollowsPointerMode()) {
         el.setAttribute("data-key-view-kbd", "");
       }
     }
@@ -1059,10 +927,7 @@ export class FocusManager {
 
   /**
    * Whether the current key view is itself a button — the one control that
-   * claims the scope's Return for its own activation. When it is, a persistent
-   * default ring elsewhere must stand down (that button is the live Return
-   * target and the sole filled+ring); when it is a list / field / cursor, Return
-   * delegates to the default, which keeps its ring.
+   * claims the scope's Return for its own activation.
    */
   private keyViewIsButton(): boolean {
     const el = this.keyViewElement();
@@ -1071,35 +936,12 @@ export class FocusManager {
   }
 
   /**
-   * Register a button as the scope's persistent-default-ring node ([P14]). The
-   * engine owns the `data-default-ring` attribute from here, projecting it in
-   * lockstep with the key view. Innermost-wins: a nested surface's node takes
-   * over while mounted and the prior node is restored on {@link unregisterDefaultRing}.
-   */
-  registerDefaultRing(node: HTMLElement): void {
-    if (this.defaultRingStack.includes(node)) return;
-    this.defaultRingStack.push(node);
-    this.syncDefaultRingDomAttribute();
-  }
-
-  /** Remove a persistent-default-ring node (on unmount / opt-out). */
-  unregisterDefaultRing(node: HTMLElement): void {
-    const i = this.defaultRingStack.indexOf(node);
-    if (i < 0) return;
-    this.defaultRingStack.splice(i, 1);
-    node.removeAttribute("data-default-ring");
-    this.syncDefaultRingDomAttribute();
-  }
-
-  /**
    * Project the persistent default ring: clear `data-default-ring` from every
    * registered node, then stamp it on the TOP node iff the current key view is
-   * not itself a button. This is the structural guarantee that the default ring
-   * yields to a focused button — only one control reads filled+ring at a time
-   * ([P14]). Appearance-zone DOM only ([L06]/[L22]); guarded for DOM-free envs.
+   * not itself a button ([P14]). Gated on active.
    */
   private syncDefaultRingDomAttribute(): void {
-    if (typeof document === "undefined") return;
+    if (typeof document === "undefined" || !this.isActive()) return;
     for (const node of this.defaultRingStack) node.removeAttribute("data-default-ring");
     const top = this.defaultRingStack[this.defaultRingStack.length - 1];
     if (top === undefined) return;
@@ -1110,14 +952,11 @@ export class FocusManager {
    * Project the **immediate container** of the key view onto the DOM (depth 1):
    * clear `data-key-within` from any element that carries it, then — when a scope
    * is descended into — stamp it on the element whose `data-tug-focusable` /
-   * `data-responder-id` matches the top scope's `restoreKeyView` (the container we
-   * descended *from*). At base (no pushed scope) nothing is marked: a flat
-   * component is its own key view and has no "within". Only the top scope's
-   * container renders — no ancestor chain ([Q02]). Appearance-zone DOM only
-   * ([L06]/[L22]); guarded for DOM-free environments.
+   * `data-responder-id` matches the top scope's `restoreKeyView`. Gated on
+   * active. At base (no pushed scope) nothing is marked.
    */
   private syncKeyWithinDomAttribute(): void {
-    if (typeof document === "undefined") return;
+    if (typeof document === "undefined" || !this.isActive()) return;
     document
       .querySelectorAll<HTMLElement>(`[${KEY_WITHIN_ATTRIBUTE}]`)
       .forEach((el) => el.removeAttribute(KEY_WITHIN_ATTRIBUTE));
@@ -1137,10 +976,10 @@ export class FocusManager {
   /**
    * Project the current (top) focus mode onto the document root: set
    * `data-focus-mode="<scopeId>"` while a trap is current, remove it at base.
-   * Guarded for DOM-free environments. Mirrors `syncKeyViewDomAttribute`.
+   * Gated on active — the document root carries exactly the key card's mode.
    */
   private syncFocusModeDomAttribute(): void {
-    if (typeof document === "undefined") return;
+    if (typeof document === "undefined" || !this.isActive()) return;
     const mode = this.currentFocusMode();
     if (mode === BASE_FOCUS_MODE) {
       document.documentElement.removeAttribute(FOCUS_MODE_ATTRIBUTE);
@@ -1148,13 +987,374 @@ export class FocusManager {
       document.documentElement.setAttribute(FOCUS_MODE_ATTRIBUTE, mode);
     }
   }
+
+  // ---- Internal ----
+
+  private notify(): void {
+    this.coord.notifyChange();
+  }
+}
+
+// ---- FocusManager (deck coordinator) ----
+
+export class FocusManager {
+  // The per-card focus universes, keyed by cardId, plus the default context for
+  // the no-card path (tests / gallery / standalone previews).
+  private contexts: Map<string, FocusContext> = new Map();
+  private readonly defaultContext: FocusContext;
+  // The key card — activation-driven authority ([P21]). `null` = no card active,
+  // so the default context is serviced. Set by `setKeyCard` / `adoptKeyCard`
+  // from the activation-focus channel; projection is downstream of it.
+  private keyCardId: string | null = null;
+
+  // ---- Deck-global settings ----
+  // When true, the focus ring also follows *pointer*-driven key-view changes.
+  private ringFollowsPointer = false;
+  private accessMode: KeyboardAccessMode = "standard";
+
+  // ---- Subscription (single global notify-all) ----
+  private version = 0;
+  private subscribers: Set<() => void> = new Set();
+
+  // ---- Chain attachment ----
+  private chain: ResponderChainManager | null = null;
+  private chainUnsubscribe: (() => void) | null = null;
+  // Set while a context's `focusKeyView` moves DOM focus. The walk has just
+  // chosen a key view (keyboard=true); the `focusin` that `el.focus()` fires
+  // synchronously promotes that element's nearest *responder* (often a coarser
+  // container), which would otherwise re-seed the key view back with
+  // keyboard=false, dropping the ring. Suppress the chain re-seed for the
+  // duration of that programmatic focus so the walk's choice stands.
+  private suppressChainSeed = false;
+  // Set while a *pointer*-driven first-responder promotion runs (see
+  // `runPointerPromotion`). A pointer interaction re-seeds the key view to the
+  // promoted responder and clears the ring (click-to-focus); any other chain
+  // reflection is programmatic and yields to a finer focusable key view.
+  private pointerPromotionActive = false;
+
+  constructor() {
+    this.defaultContext = new FocusContext(this, null);
+  }
+
+  // ---- Context resolution / key card ----
+
+  /**
+   * Resolve the {@link FocusContext} for a card. A concrete `cardId` routes to
+   * that card's context (created lazily) — even when it is a *background* card,
+   * which is how a dialog mounting in a non-key card lands its trap in the right
+   * universe. `null` (a card-less surface, or the gallery) routes to the **active
+   * context**: chrome around the key card belongs to the key card, and with no
+   * key card the active context is the default context. The hooks pass the
+   * `CardIdContext` value here.
+   */
+  contextFor(cardId: string | null): FocusContext {
+    if (cardId === null) return this.activeContext();
+    let ctx = this.contexts.get(cardId);
+    if (ctx === undefined) {
+      ctx = new FocusContext(this, cardId);
+      this.contexts.set(cardId, ctx);
+    }
+    return ctx;
+  }
+
+  /**
+   * The context the coordinator services — the key card's, or the default
+   * context when no key card is set. Every param-free public method below
+   * delegates here (the document-listener path + the pure-logic tests).
+   */
+  activeContext(): FocusContext {
+    if (this.keyCardId === null) return this.defaultContext;
+    return this.contexts.get(this.keyCardId) ?? this.defaultContext;
+  }
+
+  /** Whether `ctx` is the active (key card's) context — the projection gate. */
+  isActiveContext(ctx: FocusContext): boolean {
+    return this.activeContext() === ctx;
+  }
+
+  /** The current key card id, or `null`. Activation-driven authority. */
+  keyCard(): string | null {
+    return this.keyCardId;
+  }
+
+  /**
+   * Set the key card and project its context to the DOM ([P21] activation). The
+   * new active context's `projectAll` runs its "clear all globally, then stamp"
+   * pass, reconciling away the just-deactivated context's marks. Idempotent for
+   * an unchanged key card (re-projects so a re-activation of the same card — a
+   * window blur→focus — re-stamps its marks). Pass `null` to clear the key card
+   * (back to the default context).
+   */
+  setKeyCard(cardId: string | null): void {
+    const changed = this.keyCardId !== cardId;
+    this.keyCardId = cardId;
+    this.activeContext().projectAll();
+    if (changed) this.touch();
+  }
+
+  /**
+   * Adopt `cardId` as the key card and, if its context already owns a pushed key
+   * destination (a pending card-modal dialog's trap, a mid-flow cycle, a
+   * descended scope), land DOM focus on it and report `true` ([P20]). The
+   * activation-focus channel (`applyBagFocus`) calls this first: when it returns
+   * `true` the dialog (not the resting editor) is the card's destination and the
+   * caller skips its framework/engine focus claim; when `false` the card is at
+   * rest and the caller proceeds to focus the editor as before.
+   */
+  adoptKeyCard(cardId: string): boolean {
+    this.setKeyCard(cardId);
+    const ctx = this.activeContext();
+    if (!ctx.hasPushedKeyDestination()) return false;
+    ctx.focusKeyView();
+    return true;
+  }
+
+  // ---- Chain attachment (key-view seeding) ----
+
+  /**
+   * Bind to the responder chain so the active context's key view tracks the
+   * first responder. The provider calls this from the same `useLayoutEffect`
+   * that installs the chain's document listeners, and `detach` from its cleanup.
+   * Idempotent: re-attaching tears down the prior subscription first.
+   */
+  attach(chain: ResponderChainManager): void {
+    if (this.chain === chain) return;
+    this.detach();
+    this.chain = chain;
+    this.chainUnsubscribe = chain.subscribe(() => {
+      // Yield to the walk while it is imperatively landing focus on a chosen
+      // key view: the `focusin` from that programmatic `.focus()` must not
+      // re-seed (and downgrade) the key view it just set.
+      if (this.suppressChainSeed) return;
+      this.seedKeyViewFromChain();
+    });
+    // Seed immediately so the key view reflects whatever the chain already
+    // promoted before this subscription was installed.
+    this.seedKeyViewFromChain();
+  }
+
+  /** Unsubscribe from the chain. Safe to call when not attached. */
+  detach(): void {
+    this.chainUnsubscribe?.();
+    this.chainUnsubscribe = null;
+    this.chain = null;
+  }
+
+  /**
+   * Reflect the chain's first responder onto the active context's key view. The
+   * key view is the most *specific* focus target: a chain reflection that merely
+   * re-promotes a registered focusable's coarser *container* must not coarsen the
+   * key view or drop its keyboard ring — it yields. Only a genuine pointer
+   * interaction (run through {@link runPointerPromotion}) or a reflection that
+   * moves to a different subtree changes an established finer key view.
+   */
+  private seedKeyViewFromChain(): void {
+    if (this.chain === null) return;
+    const frId = this.chain.getFirstResponder();
+    if (!this.pointerPromotionActive && this.keyViewIsFinerThan(frId)) return;
+    this.activeContext().setKeyView(frId);
+  }
+
+  /**
+   * Whether the active context's current key view is a registered focusable whose
+   * element lives inside the element of `responderId` — i.e. the key view is
+   * *finer* than the responder the chain just promoted. DOM-free environments and
+   * unmatched ids resolve to `false` (no yield).
+   */
+  private keyViewIsFinerThan(responderId: string | null): boolean {
+    const keyViewId = this.activeContext().keyView();
+    if (responderId === null || keyViewId === null) return false;
+    if (typeof document === "undefined") return false;
+    const esc = (s: string) =>
+      typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(s) : s;
+    const kvEl = document.querySelector(`[data-tug-focusable="${esc(keyViewId)}"]`);
+    const rEl = document.querySelector(`[data-responder-id="${esc(responderId)}"]`);
+    if (kvEl === null || rEl === null) return false;
+    return rEl.contains(kvEl);
+  }
+
+  /**
+   * Run `fn` (a first-responder promotion) marked as pointer-driven, so the
+   * chain reflection it triggers coarsens the key view and clears the ring — the
+   * click-to-focus path. Synchronous.
+   */
+  runPointerPromotion(fn: () => void): void {
+    this.pointerPromotionActive = true;
+    try {
+      fn();
+    } finally {
+      this.pointerPromotionActive = false;
+    }
+  }
+
+  /** Begin/end suppression of the chain re-seed around a programmatic `.focus()`. */
+  beginSuppressChainSeed(): void {
+    this.suppressChainSeed = true;
+  }
+  endSuppressChainSeed(): void {
+    this.suppressChainSeed = false;
+  }
+
+  // ---- Keyboard-access mode (deck-global) ----
+
+  /** Set the keyboard-access mode every context's walk reads. */
+  setKeyboardAccessMode(mode: KeyboardAccessMode): void {
+    if (this.accessMode === mode) return;
+    this.accessMode = mode;
+    this.touch();
+  }
+
+  /** The current keyboard-access mode. */
+  keyboardAccessMode(): KeyboardAccessMode {
+    return this.accessMode;
+  }
+
+  // ---- Ring modality (deck-global) ----
+
+  /**
+   * Set whether the focus ring follows pointer-driven key-view changes in
+   * addition to keyboard navigation. Repaints immediately by re-projecting the
+   * active context (appearance-zone DOM only — no React notify).
+   */
+  setRingFollowsPointer(value: boolean): void {
+    if (this.ringFollowsPointer === value) return;
+    this.ringFollowsPointer = value;
+    this.activeContext().refreshKeyViewProjection();
+  }
+
+  /** Whether the ring currently follows pointer-driven key-view changes. */
+  ringFollowsPointerMode(): boolean {
+    return this.ringFollowsPointer;
+  }
+
+  // ---- Subscription (for useSyncExternalStore consumers, [L02]) ----
+
+  /** Subscribe to manager changes. Returns an unsubscribe function. */
+  subscribe(callback: () => void): () => void {
+    this.subscribers.add(callback);
+    return () => {
+      this.subscribers.delete(callback);
+    };
+  }
+
+  /** Monotonic version for `useSyncExternalStore` snapshots. */
+  getVersion(): number {
+    return this.version;
+  }
+
+  /** Internal: a context mutated — bump the global version and notify all. */
+  notifyChange(): void {
+    this.touch();
+  }
+
+  private touch(): void {
+    this.version += 1;
+    for (const cb of this.subscribers) {
+      cb();
+    }
+  }
+
+  // ---- Active-context delegations ----
+  //
+  // The document-listener path and the pure-logic tests call these param-free
+  // methods on the coordinator; each services the **key card's** context (the
+  // default context when no key card is set). Card-scoped hooks that must target
+  // a specific (possibly background) card resolve {@link contextFor} instead.
+
+  registerFocusable(input: FocusableInput): void {
+    this.activeContext().registerFocusable(input);
+  }
+  unregisterFocusable(id: string): void {
+    this.activeContext().unregisterFocusable(id);
+  }
+  armKeyboardRestore(focusKey: string): void {
+    this.activeContext().armKeyboardRestore(focusKey);
+  }
+  setGroupOrder(groups: string[]): void {
+    this.activeContext().setGroupOrder(groups);
+  }
+  setKeyView(id: string | null, keyboard = false): void {
+    this.activeContext().setKeyView(id, keyboard);
+  }
+  refreshKeyViewProjection(keyboard?: boolean): void {
+    this.activeContext().refreshKeyViewProjection(keyboard);
+  }
+  keyView(): string | null {
+    return this.activeContext().keyView();
+  }
+  keyViewIsKeyboard(): boolean {
+    return this.activeContext().keyViewIsKeyboard();
+  }
+  keyViewConsumesTab(): boolean {
+    return this.activeContext().keyViewConsumesTab();
+  }
+  keyViewBehavior(): KeyViewBehavior | null {
+    return this.activeContext().keyViewBehavior();
+  }
+  keyViewCaptures(key: FocusKey): boolean {
+    return this.activeContext().keyViewCaptures(key);
+  }
+  ascend(): boolean {
+    return this.activeContext().ascend();
+  }
+  focusKeyView(): boolean {
+    return this.activeContext().focusKeyView();
+  }
+  pushFocusMode(
+    scopeId: string,
+    opts: {
+      trapped: boolean;
+      commitDisposition?: (commit: FocusCommit) => CycleDisposition;
+    },
+  ): void {
+    this.activeContext().pushFocusMode(scopeId, opts);
+  }
+  popFocusMode(scopeId: string, opts?: { restoreFocus?: boolean }): void {
+    this.activeContext().popFocusMode(scopeId, opts);
+  }
+  applyCommitDisposition(kind: FocusCommitKind): boolean {
+    return this.activeContext().applyCommitDisposition(kind);
+  }
+  focusFirstInMode(): string | null {
+    return this.activeContext().focusFirstInMode();
+  }
+  currentFocusMode(): string {
+    return this.activeContext().currentFocusMode();
+  }
+  isFocusModePushed(scopeId: string): boolean {
+    return this.activeContext().isFocusModePushed(scopeId);
+  }
+  currentFocusModeTrapped(): boolean {
+    return this.activeContext().currentFocusModeTrapped();
+  }
+  setDefaultAction(scopeId: string, action: TugAction | null): void {
+    this.activeContext().setDefaultAction(scopeId, action);
+  }
+  resolveDefaultAction(): TugAction | null {
+    return this.activeContext().resolveDefaultAction();
+  }
+  focusNext(): string | null {
+    return this.activeContext().focusNext();
+  }
+  focusPrevious(): string | null {
+    return this.activeContext().focusPrevious();
+  }
+  walkOrder(): FocusableRecord[] {
+    return this.activeContext().walkOrder();
+  }
+  registerDefaultRing(node: HTMLElement): void {
+    this.activeContext().registerDefaultRing(node);
+  }
+  unregisterDefaultRing(node: HTMLElement): void {
+    this.activeContext().unregisterDefaultRing(node);
+  }
 }
 
 // ---- React context ----
 
 /**
- * React context holding the singleton FocusManager for the canvas subtree.
- * Default `null` (outside any provider). Co-located here so
+ * React context holding the singleton FocusManager (deck coordinator) for the
+ * canvas subtree. Default `null` (outside any provider). Co-located here so
  * `use-focusable.tsx` and `responder-chain-provider.tsx` import it without a
  * circular dependency -- the same arrangement as `ResponderChainContext`.
  */
@@ -1165,8 +1365,9 @@ export const FocusManagerContext = createContext<FocusManager | null>(null);
 // Last-registration-wins module singleton so framework code outside the React
 // tree can reach the engine — the same arrangement as
 // `registerResponderChainManager`. Used by the single-channel focus dispatcher
-// (`applyBagFocus` in `focus-transfer.ts`) to re-light the keyboard ring as
-// part of a focus-axis restore. Set by `responder-chain-provider` on mount.
+// (`applyBagFocus` in `focus-transfer.ts`) to set the key card on activation and
+// re-light the keyboard ring as part of a focus-axis restore. Set by
+// `responder-chain-provider` on mount.
 
 let activeFocusManager: FocusManager | null = null;
 

@@ -207,20 +207,20 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
           "Allow shows its persistent default ring while the keyboard is on the scope group",
         ).toBe(true);
 
-        // (5) The radio group is deferred-commit: it opens checked on "Allow
-        // once"; ArrowDown moves the cursor without committing, and Space checks
-        // the cursor row → "Allow for this project".
+        // (5) The radio group is selection-follows-cursor ([Q06]): it opens
+        // checked on "Allow once"; ArrowDown moves the selection *immediately*
+        // (no separate Space confirm), so the checked row becomes "Allow for this
+        // project". The group does NOT consume Enter — Return falls through to the
+        // ringed Allow (asserted at (6b)).
         expect(
           (await textOf(app, SCOPE_CHECKED)) ?? "",
           "scope group opens checked on Allow once",
         ).toContain("Allow once");
         await app.nativeKey("ArrowDown");
         await sleep(150);
-        await app.nativeKey(" ");
-        await sleep(150);
         expect(
           (await textOf(app, SCOPE_CHECKED)) ?? "",
-          "ArrowDown + Space checks the next scope",
+          "ArrowDown selects the next scope immediately (selection follows cursor)",
         ).toContain("Allow for this project");
 
         // (6) The trap holds: keep Tabbing and the key view never lands on the

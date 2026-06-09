@@ -680,9 +680,9 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-7-6-question | Step 7.6.4 — QuestionDialog adopts the model | done: Cancel/Submit/Back/Next leaf stops + per-question options item-group (deferred); re-seed follows auto-advance; useInlineDialogModal deleted; at0146 green (dash focus-card-modal) | — |
 | #step-7-6-vet | Step 7.6.5 — Integration checkpoint + tuglaws note | done: tsc + 3396 pure-logic green; app-test sweep green (at0084/at0097/at0106/at0117-120/at0140/at0144/at0145/at0146); inline-vs-overlay rider noted for [#step-9] (dash focus-card-modal) | — |
 | #step-7-7 | Step 7.7 — Focus-scope audit + per-card focus contexts (umbrella) | pending | — |
-| #step-7-7-audit | Step 7.7.1 — Feature-driven focus-scope audit report (enumerate + verdict + regression matrix) | pending | — |
-| #step-7-7-cardscope | Step 7.7.2 — Per-card focus contexts (the key-window model); delivers [P20] + the reported-bug fix ([P21]) | pending | — |
-| #step-7-7-vet | Step 7.7.3 — Integration checkpoint: full regression matrix green | pending | — |
+| #step-7-7-audit | Step 7.7.1 — Feature-driven focus-scope audit report (enumerate + verdict + regression matrix) | done | dash focus-cardscope — report + harness-capability finding (C/F boundaries reachable via at0080/at0081/at0125/at0035) |
+| #step-7-7-cardscope | Step 7.7.2 — Per-card focus contexts (the key-window model); delivers [P20] + the reported-bug fix ([P21]) | done | dash focus-cardscope — FocusContext per card + deck coordinator; keyCard driven by the deck store's focused card; [P20] via adoptKeyCard; cross-card filters retired; focus-walk +6 cases; at0148 (frontmost) |
+| #step-7-7-vet | Step 7.7.3 — Integration checkpoint: full regression matrix green | checkpoint — green here (tsc; bun test 3403; RPC app-tests at0030/at0037/at0026; at0148 on-open); native-keyboard suite + app-switch round-trip + by-eye both themes pending a frontmost session (OS window-key gate); see Checkpoint results | — |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -1645,9 +1645,19 @@ A separate "interim editor-yield" patch was considered and **dropped** — it is
   - **F-HMR:** HMR keeps the `FocusManager` alive while remounting components — so the goal is **robustness, not preservation**: remounting a dialog / radio / cycle component leaves **no stale rings, no double-trap, no double-seed** (the class of HMR bugs already hit). A rebuilt `FocusContext` ([P21]) is the structural guard; a pure-logic test exercises register→unregister→re-register under one manager.
 - Identify which matrix rows already have app-tests (at0140/at0141/at0145/at0146/at0147/focus-walk) and which are **new** — the switch-away-and-back cases (C), the reload/relaunch dialog-survival cases (F-durable), and the HMR re-register robustness (F-HMR, pure-logic).
 
+**Harness capability (confirmed before writing C/F tests, per the [#step-7-7-cardscope] gotcha — no silent gap):** the boundary triggers are *already* harness-reachable; the existing focus app-tests drive them and become the regression base the fixup extends:
+- **C (card switch):** `at0080-dev-focus-card-switch` already seeds two dev cards and switches between them — the multi-card / active-card-switch capability the C cases need.
+- **C (cross-card isolation):** `at0125-background-tab-focus-isolation` already asserts a background card's focus state does not leak into the foreground — the cross-card containment row (F) in app form.
+- **C (app switch / window blur→focus):** `at0035-dev-app-switch-selection` already drives resign/return.
+- **F-durable (reload):** `at0081-dev-focus-reload` already drives **Developer > Reload** and asserts focus re-derivation; `harness-smoke/smoke-app-reload` confirms the reload primitive.
+- **F-HMR:** pure-logic only (a surviving-manager register→unregister→re-register in `focus-walk.test.ts`); HMR is not an app-test trigger.
+- **Relaunch** (full app restart) is *not* a distinct harness primitive beyond reload; covered by-eye in [#step-7-7-vet] and called out there (no silent gap).
+
+So the fixup adds **assertions**, not harness plumbing: the genuinely-new coverage is a *pending card-modal dialog* surviving each of those triggers (extend the at0080 / at0081 / at0035 patterns with a present-dialog precondition), plus the F-HMR pure-logic case.
+
 **Tests:** none new here (report step); the matrix is the spec the next steps implement.
 
-**Checkpoint:** the report enumerates every focus scope with a grounded verdict; the regression matrix is explicit; [P20]/[P21]/R05 recorded.
+**Checkpoint:** the report enumerates every focus scope with a grounded verdict; the regression matrix is explicit; [P20]/[P21]/R05 recorded; the boundary triggers are confirmed harness-reachable (above).
 
 ---
 
@@ -1698,6 +1708,11 @@ A separate "interim editor-yield" patch was considered and **dropped** — it is
 - By-eye both themes: cycle, sheet, permission, question, descend — plus a reload with a pending dialog.
 
 **Checkpoint:** every focus scope solid and ready for prime time across card switch, app switch, reload/relaunch, and HMR; no band-aids; [P20]/[P21] satisfied; R05 retired.
+
+**Checkpoint results (dash focus-cardscope):**
+- **Green here (unattended):** `bunx tsc --noEmit` clean; full `bun test` 3403/3403 (incl. +6 per-card focus-walk cases — context isolation, lossless key-card swap, cross-card containment, [P20] adoption gate, HMR re-register robustness); RPC-drivable app-tests `at0030` 6/6, `at0037` 8/8, `at0026` 2/2; `at0148` dialog-modal-seeded **on open** (`keyCard=A`, walk=3 [Allow/Deny/scope], Allow seeded `data-key-view-kbd`, trap mode current).
+- **Requires a frontmost session (OS window-key gate — proven: `smoke-native` 0/5 vs non-native `smoke` 2/2; even `osascript` activation can't make the WebView `document.hasFocus()` true unattended):** the native-keyboard focus suite (at0080/at0125/at0140/at0143/at0145/at0146/at0147) and the app-switch survival round-trip in `at0148` (`simulateAppResign` needs the app actually active). Run these with the Tug window frontmost.
+- **By-eye (frontmost), both themes:** cycle / sheet / permission / question / descend; and the reported bug directly — present a card-modal dialog, switch to another card / app and back → it stays modal + ringed. F-durable (Developer > Reload) by-eye too (a harness-seeded deck does not rehydrate the transient card after reload, so the reload case is by-eye / a persisted-deck fixture, not at0148).
 
 ---
 

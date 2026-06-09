@@ -851,6 +851,10 @@ const QuestionRadioOptions: React.FC<QuestionOptionsProps> = ({
           aria-label={question.question}
           focusGroup={focusGroup}
           focusOrder={focusOrder}
+          // Wizard step: the pick is the commit that auto-advances, so Enter must
+          // commit here (not fall through). Arrows move a cursor without
+          // committing; Space/Enter pick + advance.
+          deferCommit
         >
           {question.options.map((option) => (
             <TugRadioItem

@@ -54,6 +54,16 @@ export interface ComponentKeyDeclaration {
    */
   singleSelect?: boolean;
   /**
+   * Whether this is a **multi-select** item container that toggles on **Space**
+   * (a two-stage highlight-then-select: arrows move the cursor, Space toggles the
+   * cursor item). Like {@link singleSelect}, such a group does NOT consume
+   * `Enter` — Space is its commit, so `Enter` resolves to `passthrough` and falls
+   * through to the scope's default action ([P12]). The difference from
+   * `singleSelect`: the selection does not follow the cursor (multiple items may
+   * be selected). Only meaningful for `item` containers.
+   */
+  enterPassthrough?: boolean;
+  /**
    * Whether the component's scope is modal (trapped). At a modal scope `Escape`
    * **cancels** the scope rather than ascending one level.
    */
@@ -138,9 +148,15 @@ export function resolveFocusAct(
     return declaration.container === "item" ? "select" : "act";
   }
   if (key === "Enter") {
-    // A single-select item container does not consume Enter: selection already
-    // follows the cursor, so Return falls through to the scope default ([P12]).
-    if (declaration.container === "item" && declaration.singleSelect) {
+    // A selection item-group does not consume Enter — its commit is arrow-select
+    // (single-select, selection-follows-cursor) or Space (multi-select toggle) —
+    // so Return falls through to the scope default ([P12]) and can reach the
+    // dialog's ringed default button. Only a group whose Enter is *itself* the
+    // commit (a deferred wizard step) keeps it.
+    if (
+      declaration.container === "item" &&
+      (declaration.singleSelect || declaration.enterPassthrough)
+    ) {
       return "passthrough";
     }
     // Enter descends when the current item is a navigable container, else acts.

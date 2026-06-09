@@ -423,6 +423,20 @@ export function applyBagFocus(
   options?: ApplyBagFocusOptions,
 ): "applied" | "deferred" {
   const site = options?.site ?? "apply-bag-focus";
+
+  // [P21] activation drives the key card. This is THE focus-activation channel
+  // (click / tab switch / pane activation / cross-pane move / window blur→focus /
+  // cold boot all dispatch here), so it is the single seam that names the key
+  // card: adopt this card and project its focus context. [P20] then falls out —
+  // if the card's context already owns a pushed key destination (a pending
+  // card-modal dialog's trap, a mid-flow focus-cycle, a descended scope), THAT is
+  // the card's focus destination, not the resting editor: `adoptKeyCard` lands
+  // focus on it and reports `true`, and we skip the framework/engine claim below.
+  // A resting card (base mode) reports `false` and falls through unchanged.
+  if (getFocusManager()?.adoptKeyCard(cardId) === true) {
+    return "applied";
+  }
+
   const resolution = resolveBagFocus(cardId, store);
 
   if (resolution.kind === "none") return "applied";

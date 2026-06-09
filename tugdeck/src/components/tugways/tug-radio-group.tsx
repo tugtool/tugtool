@@ -161,6 +161,19 @@ export interface TugRadioGroupProps
    * `skip` is reachable only in accessibility mode.
    */
   focusPolicy?: FocusPolicy;
+  /**
+   * Keyboard commit timing. The default is **selection-follows-cursor**: arrows
+   * move the selection *immediately* (a mutually-exclusive radio is always in a
+   * settled state — there is no highlighted-but-uncommitted limbo), and the group
+   * does NOT consume `Enter`, so Return falls through to the scope's default
+   * action (e.g. a dialog's ringed Allow button — [Q06]).
+   *
+   * Set `deferCommit` for a flow whose `Enter` is itself the commit — a wizard
+   * step that picks **and advances** on Return (the QuestionDialog): arrows then
+   * move a cursor without committing, and Space/Enter commit the cursor item.
+   * @default false
+   */
+  deferCommit?: boolean;
 }
 
 /** Serialized shape of `TugRadioGroup`'s preserved state. */
@@ -191,6 +204,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       focusGroup,
       focusOrder = 0,
       focusPolicy,
+      deferCommit = false,
       ...rest
     },
     ref,
@@ -277,6 +291,17 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
           const idx = enabled.findIndex((el) => valueOf(el) === effectiveValue);
           return idx >= 0 ? idx : 0;
         },
+        // Default: selection-follows-cursor ([Q06]) — `commit: "live"` so the
+        // selection moves *immediately* with the arrows (`onMove`), and
+        // `singleSelect` so `Enter` falls through to the scope default (the group
+        // never consumes Return). `deferCommit` restores the wizard model: the
+        // cursor moves without committing and Space/Enter commit (and the consumer
+        // advances on that commit).
+        commit: deferCommit ? "deferred" : "live",
+        singleSelect: !deferCommit,
+        onMove: deferCommit
+          ? undefined
+          : (element) => handleValueChange(valueOf(element)),
         onSelect: (element) => handleValueChange(valueOf(element)),
       });
 

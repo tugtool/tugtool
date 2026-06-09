@@ -24,6 +24,7 @@
 
 import React, { useContext, useId, useLayoutEffect, useMemo, useRef } from "react";
 import { FocusManagerContext, FocusModeContext } from "./focus-manager";
+import { CardIdContext } from "@/lib/card-id-context";
 
 export interface UseFocusTrapOptions {
   /**
@@ -34,8 +35,9 @@ export interface UseFocusTrapOptions {
    */
   active: boolean;
   /**
-   * Trapped (default) services only this mode's focusables; non-trapped unions
-   * them with the base mode (the CFRunLoop "common modes" shape). Floating
+   * Every pushed mode contains the Tab walk to its own focusables; `trapped`
+   * selects only the Escape semantics — `true` (default) dismisses on Escape
+   * (modal surfaces), `false` ascends one level (a descend scope). Floating
    * surfaces trap; leave the default.
    */
   trapped?: boolean;
@@ -53,19 +55,26 @@ export function useFocusTrap({
   trapped = true,
 }: UseFocusTrapOptions): UseFocusTrapResult {
   const manager = useContext(FocusManagerContext);
+  // The owning card ([P21]): the trap is pushed onto THIS card's focus context,
+  // so a surface opened from a card (sheet / inline dialog, even one that mounts
+  // while its card is in the background) keeps its trap in the card's own
+  // universe — preserved across card switches, never the active card's mode.
+  // `null` outside a card host routes to the default / active context.
+  const cardId = useContext(CardIdContext);
   // Stable per-instance scope id. `useId` is stable across renders, so the
   // pushed mode and the focusables that register into it agree on one id.
   const scopeId = useId();
 
-  // Push while active; pop on deactivate / unmount. The FocusManager captures
-  // the key view at push and restores it at pop ([#cfrunloop-model]).
+  // Push while active; pop on deactivate / unmount. The card's FocusContext
+  // captures the key view at push and restores it at pop ([#cfrunloop-model]).
   useLayoutEffect(() => {
     if (manager === null || !active) return;
-    manager.pushFocusMode(scopeId, { trapped });
+    const ctx = manager.contextFor(cardId);
+    ctx.pushFocusMode(scopeId, { trapped });
     return () => {
-      manager.popFocusMode(scopeId);
+      ctx.popFocusMode(scopeId);
     };
-  }, [manager, active, scopeId, trapped]);
+  }, [manager, cardId, active, scopeId, trapped]);
 
   // Stable scope component (held in a ref so it keeps a constant function
   // identity across renders — children never remount, [L26]). It always

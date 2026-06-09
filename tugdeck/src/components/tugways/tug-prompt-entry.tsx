@@ -1808,6 +1808,11 @@ export const TugPromptEntry = React.forwardRef<
               aria-label="Route"
               focusGroup={routeFocusGroup}
               focusOrder={routeFocusOrder}
+              // A focus-cycle stop: Return commits the route AND relinquishes the
+              // cycle ([P15]). Keep the deferred model so Enter is the commit
+              // (the default selection-follows-cursor would let Return fall
+              // through and never relinquish).
+              deferCommit
             />
             {/*
               Z4B — centred-floating slot; currently the indicator

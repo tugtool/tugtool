@@ -25,6 +25,7 @@
 import React, { useCallback, useContext, useLayoutEffect, useRef } from "react";
 import { FocusManagerContext, FocusModeContext } from "./focus-manager";
 import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
+import { CardIdContext } from "@/lib/card-id-context";
 
 // ---- Options / result ----
 
@@ -85,6 +86,11 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   // shell. A trapped surface's contents thus join its mode and the Tab walk
   // cycles within them ([#cfrunloop-model]).
   const focusMode = useContext(FocusModeContext);
+  // The owning card ([P21]): the focusable registers into THIS card's focus
+  // context, so the Tab walk over the key card sees only its own stops — never a
+  // background card's. `null` outside a card host (gallery / standalone) routes
+  // to the manager's default / active context.
+  const cardId = useContext(CardIdContext);
 
   // Latest options, read by the live `consumesTab` proxy without
   // re-registering. Same shape as `useOptionalResponder`'s `optionsRef`.
@@ -102,7 +108,8 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
   const { id, group, order, policy, register = true } = options;
   useLayoutEffect(() => {
     if (manager === null || !register) return;
-    manager.registerFocusable({
+    const ctx = manager.contextFor(cardId);
+    ctx.registerFocusable({
       id,
       group,
       order,
@@ -112,9 +119,9 @@ export function useFocusable(options: UseFocusableOptions): UseFocusableResult {
       behavior: () => optionsRef.current.behavior?.() ?? null,
     });
     return () => {
-      manager.unregisterFocusable(id);
+      ctx.unregisterFocusable(id);
     };
-  }, [manager, id, group, order, policy, register, focusMode]);
+  }, [manager, cardId, id, group, order, policy, register, focusMode]);
 
   // A stop authored into a focus group opts into the focus-preservation axis
   // ([card-state-model]): a stable `data-tug-focus-key` (its authored
@@ -181,6 +188,8 @@ export interface UseRovingFocusableResult {
 export function useRovingFocusable(options: UseFocusableOptions): UseRovingFocusableResult {
   const manager = useContext(FocusManagerContext);
   const focusMode = useContext(FocusModeContext);
+  // The owning card ([P21]) — the roving group registers into its card's context.
+  const cardId = useContext(CardIdContext);
 
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -191,7 +200,8 @@ export function useRovingFocusable(options: UseFocusableOptions): UseRovingFocus
   const { id, group, order, policy, register = true } = options;
   useLayoutEffect(() => {
     if (manager === null || !register) return;
-    manager.registerFocusable({
+    const ctx = manager.contextFor(cardId);
+    ctx.registerFocusable({
       id,
       group,
       order,
@@ -201,14 +211,14 @@ export function useRovingFocusable(options: UseFocusableOptions): UseRovingFocus
       behavior: () => optionsRef.current.behavior?.() ?? null,
     });
     return () => {
-      manager.unregisterFocusable(id);
+      ctx.unregisterFocusable(id);
       const el = rovedElementRef.current;
       if (el) {
         el.removeAttribute("data-tug-focusable");
         rovedElementRef.current = null;
       }
     };
-  }, [manager, id, group, order, policy, register, focusMode]);
+  }, [manager, cardId, id, group, order, policy, register, focusMode]);
 
   const setRovedElement = useCallback(
     (el: Element | null, keyboard?: boolean) => {
@@ -252,10 +262,15 @@ export function useFocusManager() {
  */
 export function useSeedKeyView(focusKey: string | null): void {
   const manager = useContext(FocusManagerContext);
+  // Seed into the OWNING card's context ([P20]/[P21]): a card-modal dialog's
+  // default key view must land in its card's universe even when that card is in
+  // the background (a request arriving for a non-key card), so reactivation
+  // re-establishes the dialog as the card's destination.
+  const cardId = useContext(CardIdContext);
   const seededRef = useRef(false);
   useLayoutEffect(() => {
     if (seededRef.current || manager === null || focusKey === null) return;
     seededRef.current = true;
-    manager.armKeyboardRestore(focusKey);
-  }, [manager, focusKey]);
+    manager.contextFor(cardId).armKeyboardRestore(focusKey);
+  }, [manager, focusKey, cardId]);
 }

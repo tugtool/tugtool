@@ -80,6 +80,13 @@ export interface ItemGroupKeyboardOptions {
    * multi-select model (Space selects, Enter acts/descends) unchanged.
    */
   singleSelect?: boolean;
+  /**
+   * Multi-select group that toggles on **Space** (arrows move the cursor, Space
+   * toggles). Such a group does NOT consume `Enter` — it falls through to the
+   * scope default ([P12]). Unlike {@link singleSelect}, the selection does not
+   * follow the cursor (multiple items may be selected).
+   */
+  enterPassthrough?: boolean;
   /** Space (and Enter-act on a non-descendable item): commit the current item. */
   onSelect: (element: Element | null, index: number) => void;
   /** Enter act on a non-descendable item. Defaults to {@link onSelect}. */
@@ -143,6 +150,7 @@ export function useItemGroupKeyboard(
       commit: o.commit ?? "deferred",
       currentItemDescendable: o.currentItemDescendable?.() ?? false,
       singleSelect: o.singleSelect ?? false,
+      enterPassthrough: o.enterPassthrough ?? false,
       onSelect: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "select"),
       onAct: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "act"),
       onDescend: () => o.onDescend?.(cursor.cursorElement(), cursor.cursorIndex()),

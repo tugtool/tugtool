@@ -47,6 +47,7 @@ import React, {
 
 import { FocusManagerContext, FocusModeContext } from "./focus-manager";
 import type { CycleDisposition, FocusCommit } from "./focus-manager";
+import { CardIdContext } from "@/lib/card-id-context";
 
 /**
  * The toggleable-cycling default disposition ([P15]): a keyboard value commit at
@@ -111,6 +112,16 @@ export function useCycleMode({
   dispositionAfterCommit,
 }: UseCycleModeOptions = {}): UseCycleModeResult {
   const manager = useContext(FocusManagerContext);
+  // The owning card ([P21]): the cycle mode is pushed onto, and read back from,
+  // THIS card's focus context — so the `cycling` snapshot stays correct even
+  // after the card is switched to the background (its cycle is preserved in its
+  // own universe; the active card's mode never bleeds in). `null` outside a card
+  // host routes to the default / active context.
+  const cardId = useContext(CardIdContext);
+  const ctx = useMemo(
+    () => (manager === null ? null : manager.contextFor(cardId)),
+    [manager, cardId],
+  );
   // Stable per-card scope id. The cycle stops (rendered under `CycleScope`) and
   // the push/pop here agree on this one id.
   const scopeId = useId();
@@ -145,40 +156,40 @@ export function useCycleMode({
     [manager],
   );
   const getSnapshot = useCallback(
-    () => (manager === null ? false : manager.isFocusModePushed(scopeId)),
-    [manager, scopeId],
+    () => (ctx === null ? false : ctx.isFocusModePushed(scopeId)),
+    [ctx, scopeId],
   );
   const cycling = useSyncExternalStore(subscribe, getSnapshot);
 
   const enter = useCallback(() => {
-    if (manager === null || !enabled) return;
+    if (ctx === null || !enabled) return;
     // Push captures the current key view (the editor caret) for restore on pop.
     // The mode carries the toggleable commit disposition ([P15]) — a stable
     // wrapper reading the latest override (or the toggleable default).
-    manager.pushFocusMode(scopeId, {
+    ctx.pushFocusMode(scopeId, {
       trapped: true,
       commitDisposition: (commit) => commitDispositionRef.current(commit),
     });
     // Seed the commit-home — the lowest-order cycle stop ([P10]) — and paint the
     // keyboard ring on it.
-    manager.focusFirstInMode();
-    manager.focusKeyView();
-  }, [manager, enabled, scopeId]);
+    ctx.focusFirstInMode();
+    ctx.focusKeyView();
+  }, [ctx, enabled, scopeId]);
 
   const exit = useCallback(() => {
-    if (manager === null) return;
-    if (manager.currentFocusMode() !== scopeId) return;
+    if (ctx === null) return;
+    if (ctx.currentFocusMode() !== scopeId) return;
     // Pop restores the captured prior key view (the editor); land DOM focus on
     // it so the caret returns.
-    manager.popFocusMode(scopeId);
-    manager.focusKeyView();
-  }, [manager, scopeId]);
+    ctx.popFocusMode(scopeId);
+    ctx.focusKeyView();
+  }, [ctx, scopeId]);
 
   const toggle = useCallback(() => {
-    if (manager === null) return;
-    if (manager.currentFocusMode() === scopeId) exit();
+    if (ctx === null) return;
+    if (ctx.currentFocusMode() === scopeId) exit();
     else enter();
-  }, [manager, scopeId, enter, exit]);
+  }, [ctx, scopeId, enter, exit]);
 
   // Comprehensive rule for toggleable focus-cycling: **using the mouse exits
   // cycling.** Cycling is a keyboard mode; the moment the user reaches for the
@@ -192,16 +203,16 @@ export function useCycleMode({
   // opens un-cycled and restores the editor caret on close, while a
   // keyboard-opened one (cycle still current at open) returns to its stop. [L03]
   useLayoutEffect(() => {
-    if (manager === null || !cycling) return;
+    if (ctx === null || !cycling) return;
     const onPointerDown = (): void => {
-      if (manager.currentFocusMode() === scopeId) {
+      if (ctx.currentFocusMode() === scopeId) {
         exitViaPointerRef.current = true;
         // Pop WITHOUT restoring focus: the click that triggered this exit owns
         // the next focus (it opens a Z2/Z4B surface, or lands the caret where
         // clicked). Restoring focus to the resting editor here would flash its
         // caret for a frame before the click's own focus lands. The consumer's
         // own caret-restore is likewise gated on `consumeExitViaPointer`.
-        manager.popFocusMode(scopeId, { restoreFocus: false });
+        ctx.popFocusMode(scopeId, { restoreFocus: false });
       }
     };
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
@@ -209,15 +220,17 @@ export function useCycleMode({
       document.removeEventListener("pointerdown", onPointerDown, {
         capture: true,
       });
-  }, [manager, cycling, scopeId]);
+  }, [ctx, cycling, scopeId]);
 
   // Safety: a card unmounting (or its eligibility dropping) while cycling must
-  // not leave its scope stranded on the mode stack. Pop on unmount ([L03]).
+  // not leave its scope stranded on its context's mode stack. Pop on unmount
+  // ([L03]) — routed to the card's own context so it pops the right stack even
+  // if the card is no longer the key card.
   useLayoutEffect(() => {
     return () => {
-      manager?.popFocusMode(scopeId);
+      ctx?.popFocusMode(scopeId);
     };
-  }, [manager, scopeId]);
+  }, [ctx, scopeId]);
 
   // Read-and-clear the pointer-exit flag (see `consumeExitViaPointer`).
   const consumeExitViaPointer = useCallback(() => {
