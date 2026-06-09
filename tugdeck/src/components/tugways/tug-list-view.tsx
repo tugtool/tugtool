@@ -2327,11 +2327,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       (): KeyViewBehavior => ({
         container: "item",
         commit: singleSelect ? "live" : "deferred",
-        // A single-select list commits on move (selection follows the cursor) and
-        // lets Enter fall through to the surface default ([P12]) via
-        // `enterPassthrough`; it never descends. A multi/descendable list keeps
-        // the deferred model (Enter acts / descends).
-        enterPassthrough: singleSelect,
+        // A single-select list keeps select-on-arrow (the cursor IS the selection —
+        // a 7.5 picker idiom, intentionally excluded from the [P24] reversion):
+        // `commit: "live"` moves the selection with the cursor, and a single-select
+        // list never descends, so Enter resolves to passthrough and reaches the
+        // surface default. A multi/descendable list moves a cursor only; Enter
+        // descends a navigable row, else bubbles to the scope default ([P24]).
         currentItemDescendable:
           !singleSelect && rowFirstFocusableId(cursorIndexRef.current) !== null,
         onSelect: selectCursorRow,

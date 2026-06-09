@@ -45,25 +45,6 @@ export interface ComponentKeyDeclaration {
    */
   currentItemDescendable?: boolean;
   /**
-   * Whether this item-group commits its selection by a gesture *other than*
-   * `Enter` — so `Enter` is not its commit and resolves to `passthrough`, falling
-   * through to the scope's default action ([P12] — Return's home, or a dialog's
-   * ringed default button). The two such gestures the components use:
-   *  - **selection-follows-cursor** (mutually-exclusive radio / choice): the
-   *    arrows move the selection immediately (`commit: "live"` + `onMove`);
-   *  - **Space-toggle** (multi-select option): arrows move a cursor, Space
-   *    toggles the cursor item.
-   *
-   * Either way the commit is the arrow / Space, never `Enter` — one flag, because
-   * the resolver only needs to know "does `Enter` commit here?"; the single-vs-
-   * multi mechanics live in the component (its `commit` timing + `onMove`/
-   * `onSelect` wiring), not here. Absent (the default) leaves the deferred model
-   * where `Enter` *is* the commit (`act` / `descend`) — a wizard step that picks
-   * and advances on Return, or the route group that commits + relinquishes the
-   * cycle. Only meaningful for `item` containers.
-   */
-  enterPassthrough?: boolean;
-  /**
    * Whether the component's scope is modal (trapped). At a modal scope `Escape`
    * **cancels** the scope rather than ascending one level.
    */
@@ -148,16 +129,15 @@ export function resolveFocusAct(
     return declaration.container === "item" ? "select" : "act";
   }
   if (key === "Enter") {
-    // A selection item-group does not consume Enter — its commit is arrow-select
-    // (selection-follows-cursor) or Space (multi-select toggle) — so Return falls
-    // through to the scope default ([P12]) and can reach the dialog's ringed
-    // default button. Only a group whose Enter is *itself* the commit (a deferred
-    // wizard step) keeps it.
-    if (declaration.container === "item" && declaration.enterPassthrough) {
-      return "passthrough";
-    }
-    // Enter descends when the current item is a navigable container, else acts.
-    return declaration.currentItemDescendable ? "descend" : "act";
+    // A descendable target descends — an accordion section / list row with
+    // navigable content, or the editor stop that resumes typing. Otherwise an item
+    // container NEVER consumes Enter ([P24]): Return bubbles to the scope default,
+    // so it reaches the ringed default button (a dialog's Allow); a leaf or
+    // component performs its plain act. Committing a ringed group member is Space's
+    // job, never Enter's — that is what makes "groups never consume Enter"
+    // unconditional and lets the old per-group passthrough flag disappear.
+    if (declaration.currentItemDescendable) return "descend";
+    return declaration.container === "item" ? "passthrough" : "act";
   }
   if (key === "Escape") {
     // Escape ascends one scope level; at a modal scope it cancels.

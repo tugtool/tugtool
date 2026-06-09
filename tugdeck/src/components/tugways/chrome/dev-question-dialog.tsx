@@ -851,10 +851,10 @@ const QuestionRadioOptions: React.FC<QuestionOptionsProps> = ({
           aria-label={question.question}
           focusGroup={focusGroup}
           focusOrder={focusOrder}
-          // Wizard step: the pick is the commit that auto-advances, so Enter must
-          // commit here (not fall through). Arrows move a cursor without
-          // committing; Space/Enter pick + advance.
-          deferCommit
+          // Wizard step under explicit commit ([P24]): arrows ring an option
+          // without committing; **Space** picks it, and that pick auto-advances
+          // (`onSelect` → the wizard's `handleSelect`). Enter is not consumed here —
+          // it bubbles to the dialog default (Next / Submit).
         >
           {question.options.map((option) => (
             <TugRadioItem
@@ -874,8 +874,9 @@ const QuestionRadioOptions: React.FC<QuestionOptionsProps> = ({
 /**
  * Multiply-selectable options ([P02]/[P17]): a flush {@link TugListView} that IS
  * the single item-group stop — Tab lands the ring on the list, arrows move the
- * cursor, Space / Enter / click activate the cursor row → `delegate.onSelect`,
- * routed to the wizard's `handleSelect` (toggle). Selection stays consumer-owned,
+ * cursor, and **Space** / click toggle the cursor row → `delegate.onSelect`,
+ * routed to the wizard's `handleSelect`. Enter is not consumed ([P24]) — it
+ * bubbles to the dialog default (Next / Submit). Selection stays consumer-owned,
  * published to the cells through {@link QuestionOptionsSelectionContext}, so the
  * list owns no selected index (no `singleSelect` / `selectionRequired`).
  */

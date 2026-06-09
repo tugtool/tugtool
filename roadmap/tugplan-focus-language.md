@@ -183,7 +183,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 ---
 
-#### [Q10] In-group commit key — Space only, or Space and Enter (OPEN → resolve in #step-7-8-spike) {#q10-commit-key}
+#### [Q10] In-group commit key — Space only, or Space and Enter (RESOLVED — 2026-06-09, #step-7-8-spike → (a)) {#q10-commit-key}
 
 **Question:** When the ring rests on a member of a selection group (radio / choice / option), does **Enter** also commit that member, or is Enter reserved exclusively for the scope default action (the ringed default button, e.g. Allow)?
 
@@ -193,11 +193,11 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Plan to resolve:** decide in the spike ([#step-7-8-spike]) against the PermissionDialog, where a default button (Allow) and a group (scope radio) coexist. Leaning (a).
 
-**Resolution:** OPEN.
+**Resolution:** (a) — **Space commits the ringed member; Enter is always the scope default** (bubbles past the group). Forced by [P24] and the [#seam-arrow-matrix] selection-group row: Enter is unconditionally the scope default for item containers, so it cannot also commit a group member. In `focus-act.ts` this is the `enterPassthrough` flag becoming the always-true behavior for item containers ([#step-7-8-commit]).
 
 ---
 
-#### [Q11] Opt-Tab escape semantics — eject-to-next vs release-in-place (OPEN → resolve in #step-7-8-spike) {#q11-opt-tab-eject}
+#### [Q11] Opt-Tab escape semantics — eject-to-next vs release-in-place (RESOLVED — 2026-06-09, #step-7-8-spike → neither; Opt-Tab is out, escape is Tab/Escape) {#q11-opt-tab-eject}
 
 **Question:** When a component captures the arrows (text-editor caret, slider value), what does the escape chord do? Does Opt-Tab **eject to the next node** (advance the ring off the component; arrows are spatial again on the next stop), or **release arrow-capture in place** (the ring stays on the component, which enters a nav-not-edit state so the next arrow navigates spatially *from here*)?
 
@@ -207,11 +207,15 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Plan to resolve:** spike both against the prompt editor in [#step-7-8-spike]; default to (a) unless a concrete need for (b) surfaces. Confirm the chord does not collide with the ⌥⇥ cycle trigger (R02).
 
-**Resolution:** OPEN.
+**Resolution:** **Opt-Tab is rejected — R02 is real.** `⌥⇥` (`code: "Tab"`, `alt: true`) is already bound to `TUG_ACTIONS.CYCLE_FOCUS_MODE` in `keybinding-map.ts` — it *toggles a card's keyboard-focus-cycling mode*. An "Opt-Tab eject" would therefore exit cycling rather than eject to the ring; the two cannot coexist on one chord. So the spike drops Opt-Tab entirely and the escape story collapses to two existing chords (the [#seam-arrow-matrix] already lists "(or Escape)"):
+- **Plain Tab** leaves any component that does not itself eat Tab — and in cycling mode Tab is *already* repointed to walk the zones, so it ejects even a normally-Tab-consuming editor.
+- **Escape** (ascend, the existing act-vocabulary meaning) is the eject for a descended component that hard-consumes Tab outside cycling (multi-line / code editor). It releases to the ring (the eject lands you back on the component's key view, ring intact; the next Tab moves on) — so the eject-to-next-vs-release-in-place sub-question is moot: Escape releases to the ring, Tab advances from there.
+
+A focused single-line text entry already leaves on plain Tab (it captures arrows, not Tab — [#seam-arrow-matrix]), so it needs no special chord. Wired in [#step-7-8-capture].
 
 ---
 
-#### [Q12] Spatial-order registration API surface (OPEN → resolve in #step-7-8-spike) {#q12-ordering-api}
+#### [Q12] Spatial-order registration API surface (RESOLVED — 2026-06-09, #step-7-8-spike → per-card declared `SpatialOrder` table) {#q12-ordering-api}
 
 **Question:** What is the concrete API a layout uses to declare its spatial arrow order? The *shape* is decided ([P23]: named ordered rings + seams as the default, per-node neighbor overrides as the escape hatch) — this question is the registration surface: how a focusable joins a ring, how a ring is named / ordered, how seams between rings are declared, and how it composes with the existing `useFocusable` / `focusGroup` registration.
 
@@ -220,6 +224,14 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 **Options:** sketched in [#spatial-nav-model] — a ring id + index per focusable plus a seam table on the context; whether seams are declared on the ring or per-node; whether the existing `focusGroup` / `order` props are reused or a new `arrowRing` / `arrowOrder` slot is added.
 
 **Plan to resolve:** prototype on the PermissionDialog in [#step-7-8-spike]; lock the surface before the engine work ([#step-7-8-spatial]).
+
+**Resolution:** A **per-card declared `SpatialOrder` table**, distinct from the per-node `groupOrder` (the linear Tab integer). The layout author declares the *whole* table for the bounded scope (the card or dialog), not order-integers scattered per focusable — because rings and seams are relations between nodes, not a property of one node. The resolver landed as a pure module, `spatial-order.ts` (`resolveSpatial(order, node, direction, cursorIndex) → ring | cursor | none`), so the spike **graduates** (not throwaway): [#step-7-8-spatial] holds a `SpatialOrder` on the per-card `FocusContext` (keyed by card via `CardIdContext`, the same context focusable registration already rides) and calls `resolveSpatial`. The locked shape:
+- `rings: { axis: "horizontal"|"vertical"; nodes: string[]; closed?: boolean }[]` — ordered runs of key-view ids; `closed` (default true) wraps the edges so the ring never beeps.
+- `seams: { from; direction; to }[]` — explicit boundary crossings (the author writes the return edge for reversibility).
+- `overrides: { from; direction; to }[]` — the [P23] per-node escape hatch; wins over rings and seams.
+- `groups: { node; axis; length }[]` — **the delegation contract.** A selection group is ONE ring node; its internal axis is declared here (not as ring nodes). The navigator reads the live cursor index from the group's `useFocusCursor` and supplies it as `cursorIndex`; a non-edge move resolves to `{ kind:"cursor", delta }` (the navigator calls `cursor.moveCursor(delta)`), an edge move falls through to a seam. This keeps `data-key-cursor` appearance-only ([L06]) and "Tab never lands on an item" intact.
+
+Resolution precedence (most specific first): override → group-delegation (non-edge) → seam → ring (wrap if closed) → **linear-order liveliness fallback** (the navigator walks `groupOrder` so the arrow always moves; never a beep, never a dead-end — R06).
 
 **Resolution:** OPEN.
 
@@ -238,7 +250,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 | Cycling mode regresses the editor's typing / Tab semantics | high | low | Mode is opt-in + trapped; behavior app-tests for enter/cycle/act/exit AND editor-Tab-still-completes | Tab in the editor stops doing completion |
 | Scrim dims the very tool call the dialog is about | med | med | Dialog subtree + its subject tool-call row opt out of the dim ([P19]); by-eye legibility check both themes | The user can't read what they're approving |
 | Card-modal / cycle focus lost across card switch or app switch | high | high | Per-card focus-mode suspend/restore on (de)activation ([P21]); a pending card-modal dialog is the card's active focus destination ([P20]); switch-away-and-back app-tests | A pending dialog goes inert on return; the editor is focusable behind a modal |
-| Spatial-order slots under-filled → dead arrow keys | med | med | Dev-time reachability warning when an active-context focusable is on no declared ring; spike the API ergonomics on the dialog first ([P23], R06) | An arrow press lands on nothing / a stop is unreachable by arrows |
+| Spatial-order slots under-filled → arrows with no declared target | med | low | Linear-order liveliness fallback: the navigator walks `groupOrder` so an arrow always moves — never a dead-end ([P23], R06). Authored seams shape the feel | An arrow press feels spatially surprising (but never beeps / dead-ends) |
 | Reverting selection-follows-cursor churns recently-shipped code + tests | low | high | The model *collapses* flags (net simplification); rewrite at0117/at0118/at0145 to explicit-commit ([P24], R07) | A group commits on arrow after the revert |
 
 **Risk R01: Mixed-language window during rollout** {#r01-mixed-window}
@@ -272,9 +284,9 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 **Risk R06: Author under-fills the spatial order → arrow keys that land on nothing** {#r06-dead-arrows}
 
-- **Risk:** [P23] moves the cost from heuristics to authoring: every layout must declare its arrow rings + seams, and a focusable left off every ring is unreachable by arrows — a *dead arrow*, which violates the "arrows always move the ring, never beep" guarantee ([P22]) exactly where the user was promised freedom.
-- **Mitigation:** a dev-time reachability check in the spatial navigator — when an arrow resolves with no declared target, or a focusable in the active context is on no ring, emit a `tugDevLog` warning (never a beep, never `console.warn`); spike the registration API ([Q12]) on the PermissionDialog so the common "one row + one column + one seam" case is near-zero-effort before rolling it wider.
-- **Residual risk:** coverage is per-layout and human-checked; the warning catches an *unreachable* stop but not a *surprising* (technically-reachable but unintuitive) order — that stays a by-eye judgment.
+- **Risk:** [P23] moves the cost from heuristics to authoring: every layout declares its arrow rings + seams, and a focusable left off every ring would otherwise be unreachable by arrows — a *dead arrow* that violates the "arrows always move the ring, never beep" guarantee ([P22]).
+- **Mitigation — DECIDED (liveliness fallback, 2026-06-09):** the spatial navigator can **never** dead-end. Within a declared spatial scope, an arrow with no spatial target (a group edge, or a direction the rings / seams don't name) **falls back to the linear `groupOrder` walk** — down / right advance, up / left retreat, both wrapping (`moveKeyViewSpatial`). The authored rings / seams give the *spatial feel*; the linear walk is the net under them, so an arrow always lands somewhere and the interface never beeps and never silently swallows the key. This is the user's "never beeps falls back to the design-time ordering" decision realized: the linear order IS the design-time ordering. (A `tugDevLog` reachability *warning* was prototyped in 7.8.3 and then removed — with the fallback there is no dead arrow to warn about.)
+- **Residual risk:** the fallback guarantees *liveliness*, not *intuitiveness* — a linear-walk target can be technically-sensible but spatially surprising (e.g. Up from a second top button steps to its sibling rather than wrapping to the content below). The authored seams exist precisely to make the common motions match what the user sees; the rest stays a by-eye judgment.
 
 **Risk R07: The explicit-commit reversion churns shipped selection code** {#r07-reversion-churn}
 
@@ -601,7 +613,7 @@ Both planes traverse the **same node set** — the current mode's focusables in 
 
 **Implications:**
 - The per-card `FocusContext` ([P21]) gains the declared **ring/seam table** (structure-zone, [L22]); registration ([Q12]) puts each focusable on a ring at an index, with optional per-node overrides.
-- An unfilled slot is a **dead arrow** (R06) — a dev-time reachability warning, never a silent gap.
+- An unfilled slot can never be a **dead arrow** (R06): the navigator falls back to the linear `groupOrder` walk, so the arrow always moves — the authored order shapes the *feel*, the linear walk guarantees *liveliness*.
 - Geometry is never read for *ordering*; `getBoundingClientRect` is not consulted by the navigator. (Appearance still reads the DOM; ordering does not.)
 
 ---
@@ -633,13 +645,13 @@ This **reverts the selection-follows-cursor model for mutually-exclusive selecti
 
 ---
 
-#### [P25] Arrow ownership & escape — capturing components suspend the spatial plane; Tab / Opt-Tab return to it (DECIDED — 2026-06-09) {#p25-arrow-ownership}
+#### [P25] Arrow ownership & escape — capturing components suspend the spatial plane; Tab / Escape return to it (DECIDED — 2026-06-09; Opt-Tab rejected per [Q11]) {#p25-arrow-ownership}
 
-**Decision:** A component that needs arrows for its own content **captures** them (via the existing `captureSet`, the act resolver), which **suspends** the spatial plane while it holds focus; the user returns to spatial / cycling navigation with **Tab** (for components that don't consume Tab) or **Opt-Tab** (the universal eject, for the ones that do — the code editor). The ownership classes are fixed by [#seam-arrow-matrix]:
+**Decision:** A component that needs arrows for its own content **captures** them (via the existing `captureSet`, the act resolver — or, for a text-editing host, the navigator yields to any focused contentEditable / input / textarea), which **suspends** the spatial plane while it holds focus; the user returns to spatial / cycling navigation with **Tab** (for components that don't consume Tab) or **Escape** (ascend, for a descended editor that consumes Tab). **Opt-Tab is rejected** — `⌥⇥` is the cycle-mode toggle (`CYCLE_FOCUS_MODE`), so it cannot also be an eject ([Q11], R02). The ownership classes are fixed by [#seam-arrow-matrix]:
 - **Leaf** (button, link, toggle, checkbox): no capture — full spatial participant; Space / Enter acts.
 - **Selection group** (radio / choice / option / list): *soft* owner — shapes the declared ring order ([P23]) but does **not** trap arrows; arrows flow out at the declared boundary, Tab jumps the whole group as one linear unit.
-- **Value control** (slider / stepper): captures the **value axis** (Left/Right); the cross axis (Up/Down) leaves spatially, or Tab / Opt-Tab.
-- **Text editor** (single-line: captures the four arrows for the caret, Tab not captured → Tab leaves; multi-line / code: captures arrows **and** Tab → Opt-Tab / Escape leaves).
+- **Value control** (slider / stepper): captures the **value axis** (Left/Right) via `captureSet`; the cross axis (Up/Down) leaves spatially, or Tab.
+- **Text editor** (single-line: captures the four arrows for the caret — the navigator yields to any focused editing host — Tab not captured → Tab leaves; multi-line / code: captures arrows **and** Tab → Escape (ascend) leaves).
 - **Container scope** (box-scope / card / dialog): not an arrow owner; Escape ascends / cancels.
 
 **Rationale:**
@@ -647,8 +659,8 @@ This **reverts the selection-follows-cursor model for mutually-exclusive selecti
 - Capture already exists (`captureSet`) and already takes precedence in the resolver, so this is wiring + a documented matrix, not a new mechanism.
 
 **Implications:**
-- Opt-Tab becomes a recognized escape chord (its exact semantics — eject-to-next vs release-in-place — is [Q11]); confirm it does not collide with the ⌥⇥ cycle trigger (R02).
-- A new arrow-needing component must opt into `captureSet`; one that forgets has its arrows taken by the spatial plane — a documented authoring requirement, surfaced by the same dev-time check as R06.
+- The escape chords are **Tab** (any non-Tab-consuming component) and **Escape** (ascend, for a Tab-consuming descended editor) — no new chord. Opt-Tab is out ([Q11]: `⌥⇥` is the cycle toggle; R02 confirmed real in the spike).
+- A new arrow-needing component must opt into `captureSet` (or be a text-editing host, which the navigator yields to automatically); one that forgets has its arrows taken by the spatial plane *only in a declared-order scope* — a documented authoring requirement, surfaced by the same dev-time check as R06.
 
 ---
 
@@ -686,7 +698,7 @@ The keyboard moves the focus ring two ways over the **same** node set — the ke
 - **Tab / Shift-Tab** — the structured **linear** walk (declared `groupOrder`), unchanged.
 - **Arrow keys** — a parallel **spatial** plane ([P22]): an *ergonomic* way to move the ring "in the direction you see," bounded to the card or sheet / dialog, that **always moves the ring and never beeps**.
 
-**Why declared, not geometric ([P23]).** True 2D nearest-in-direction is heuristic and famously non-reversible without axis-memory, and "always matches what the user sees" is impossible to honor in rich layouts (a transcript with interleaved tool cards has no well-defined "left of this"). Declaring the order per layout makes the navigator a pure lookup: "never beeps" is a closed-ring invariant, reversibility is written by the author, and the failure mode is a *dead arrow* we can lint for (R06) rather than a heuristic mis-fire that reads as a bug. The simple dialog case (the motivating one) is near-zero authoring; the cost scales with layout complexity, where explicit control is exactly what you want.
+**Why declared, not geometric ([P23]).** True 2D nearest-in-direction is heuristic and famously non-reversible without axis-memory, and "always matches what the user sees" is impossible to honor in rich layouts (a transcript with interleaved tool cards has no well-defined "left of this"). Declaring the order per layout makes the navigator a pure lookup: "never beeps" is guaranteed by the linear-order liveliness fallback (an arrow with no spatial target walks `groupOrder` — R06), reversibility is written by the author, and the worst failure mode is a *surprising* fallback target (never a dead arrow — the ring always moves) rather than a heuristic mis-fire that reads as a bug. The simple dialog case (the motivating one) is near-zero authoring; the cost scales with layout complexity, where explicit control is exactly what you want.
 
 **The model in one example (the PermissionDialog).** One horizontal ring `[Deny, Allow]`, one vertical ring `[Allow-once, Allow-for-project]`, one seam joining them (Down from the button ring → the option ring; Up returns). Left/Right move within the button ring; Up/Down move within the option ring; the seam carries the ring between them. Left-arrow from `Allow` → `Deny` — the reported expectation, satisfied by declaration.
 
@@ -696,18 +708,18 @@ The keyboard moves the focus ring two ways over the **same** node set — the ke
 - movement = set the engine key view to the resolved target and project the ring ([L22]); no React state ([L06]);
 - selection is **not** touched by movement ([P24]); Space commits the ringed node, Enter is the scope default.
 
-**Seam — arrows are already owned in several places.** Arrows mean caret in an editor, value in a slider, and (today) cursor in a group. The spatial plane **yields** to any component that captures them; the user returns to spatial / cycling nav with Tab or Opt-Tab. The fixed matrix ([P25]): {#seam-arrow-matrix}
+**Seam — arrows are already owned in several places.** Arrows mean caret in an editor, value in a slider, and (today) cursor in a group. The spatial plane **yields** to any component that captures them; the user returns to spatial / cycling nav with Tab or Escape. The fixed matrix ([P25]): {#seam-arrow-matrix}
 
 | Context | Arrows do | Captures arrows? | Resume spatial / cycling nav via | Commit / act |
 |---|---|---|---|---|
 | **Leaf** (button, link, toggle, checkbox) | nothing — full spatial participant | No | n/a (arrows already spatial) | Space / Enter acts |
 | **Selection group** (radio, choice, option, list) | move ring among members, per declared order | *Soft* — shapes order, never traps | arrows flow out at declared boundary; Tab jumps the group as one unit | **Space** commits ringed member; **Enter** = scope default |
-| **Value control** (slider, stepper) | primary axis (L/R) changes value | Primary axis **only** | cross-axis arrow (Up/Down) leaves; or Tab / Opt-Tab | value is live; Enter = scope default |
-| **Single-line text entry** (prompt) | move caret | All 4 arrows; **Tab not captured** | **Tab / Shift-Tab** (arrows spatial on the next node) | Enter submits (component policy) |
-| **Multi-line / code editor** | caret; Tab may indent | All 4 arrows **and** Tab | **Opt-Tab** (or Escape) — plain Tab is consumed | component policy |
+| **Value control** (slider, stepper) | primary axis (L/R) changes value | Primary axis **only** (`captureSet`) | cross-axis arrow (Up/Down) leaves; or Tab | value is live; Enter = scope default |
+| **Single-line text entry** (prompt) | move caret | All 4 arrows (editing-host yield); **Tab not captured** | **Tab / Shift-Tab** (arrows spatial on the next node) | Enter submits (component policy) |
+| **Multi-line / code editor** | caret; Tab may indent | All 4 arrows **and** Tab | **Escape** (ascend) — plain Tab is consumed | component policy |
 | **Container scope** (box-scope, card, dialog) | delegates to members | No | **Escape** ascends / cancels | — |
 
-The rule the matrix encodes: **plain Tab leaves any component that doesn't itself eat Tab; Opt-Tab is the universal eject for the ones that do.** ([Q11] decides whether Opt-Tab ejects-to-next or releases-in-place.)
+The rule the matrix encodes: **plain Tab leaves any component that doesn't itself eat Tab; Escape (ascend) is the eject for a Tab-consuming descended editor.** Opt-Tab is NOT used — `⌥⇥` is the cycle toggle ([Q11], R02). A focused text-editing host (contentEditable / input / textarea) keeps its arrows automatically (the navigator yields); a value control declares its captured axis via `captureSet`.
 
 **Bounding and the app shell.** The bounded scope is the active `FocusContext`'s current mode — a card, or a sheet / card-modal dialog (the trap mode bounds the dialog). This is the same boundary [P21] already draws. Persistent app-chrome stops (a title bar, a global toolbar) are the same open question Step 8 flags ([#step-8], "decide the app-level context"): the spatial plane inherits that decision — such stops need an app / shell context, not a per-card one, or arrows won't reach them after a card switch.
 
@@ -855,13 +867,13 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-7-7-audit | Step 7.7.1 — Feature-driven focus-scope audit report (enumerate + verdict + regression matrix) | done | dash focus-cardscope — report + harness-capability finding (C/F boundaries reachable via at0080/at0081/at0125/at0035) |
 | #step-7-7-cardscope | Step 7.7.2 — Per-card focus contexts (the key-window model); delivers [P20] + the reported-bug fix ([P21]) | done | dash focus-cardscope — FocusContext per card + deck coordinator; keyCard driven by the deck store's focused card; [P20] via adoptKeyCard; cross-card filters retired; focus-walk +6 cases; at0148 (frontmost) |
 | #step-7-7-vet | Step 7.7.3 — Integration checkpoint: full regression matrix green | checkpoint — green here (tsc; bun test 3403; RPC app-tests at0030/at0037/at0026; at0148 on-open); native-keyboard suite + app-switch round-trip + by-eye both themes pending a frontmost session (OS window-key gate); see Checkpoint results | — |
-| #step-7-8 | Step 7.8 — Spatial arrow navigation + explicit-commit model (umbrella) | pending | — |
-| #step-7-8-spike | Step 7.8.1 — Spike: lock model + ordering API on the PermissionDialog; resolve [Q10]–[Q12] | pending | — |
-| #step-7-8-commit | Step 7.8.2 — Explicit-commit reversion ([P24]); collapse the selection flag cluster | pending | — |
-| #step-7-8-spatial | Step 7.8.3 — The declared spatial navigator ([P22]/[P23]) | pending | — |
-| #step-7-8-capture | Step 7.8.4 — Arrow-ownership matrix + Tab/Opt-Tab escape ([P25]) | pending | — |
-| #step-7-8-apply | Step 7.8.5 — Author PermissionDialog rings + archetypes; by-eye | pending | — |
-| #step-7-8-vet | Step 7.8.6 — Integration checkpoint | pending | — |
+| #step-7-8 | Step 7.8 — Spatial arrow navigation + explicit-commit model (umbrella) | in progress (dash focus-spatial): 7.8.1–7.8.4 done; 7.8.5 PermissionDialog authored (Left→Deny verified by at0145); 7.8.6 automated sweep green. Remaining: by-eye both themes + QuestionDialog/sheet generalization, then `tugutil dash join` (user) | — |
+| #step-7-8-spike | Step 7.8.1 — Spike: lock model + ordering API on the PermissionDialog; resolve [Q10]–[Q12] | done: navigator-over-key-views + cursor-delegation confirmed (no escalation); `spatial-order.ts` resolver + 13-case test graduates; [Q10]→(a) Space-commits, [Q11]→Opt-Tab out (⌥⇥ = CYCLE_FOCUS_MODE; escape = Tab/Escape), [Q12]→per-card `SpatialOrder` table; list pickers keep select-on-arrow | (dash focus-spatial) |
+| #step-7-8-commit | Step 7.8.2 — Explicit-commit reversion ([P24]); collapse the selection flag cluster | done: resolver drops `enterPassthrough` (item-container Enter → passthrough unless descendable; descendable-first preserves the editor-stop / accordion / list descend); `deferCommit` + `onMove`/`commit:"live"` removed from radio/choice (route group + QuestionDialog wizard commit on Space now, relinquish via mode disposition); option group + single-select list behaviour preserved by the resolver; tab-bar live-commit machinery untouched; at0117/at0118/at0145 rewritten to ring-on-arrow + Space-commit; tsc + 23 pure-logic green (app-test sweep at build phase) | (dash focus-spatial) |
+| #step-7-8-spatial | Step 7.8.3 — The declared spatial navigator ([P22]/[P23]) | done: `FocusContext` gains per-mode `spatialOrders` + live `cursorHandles` + `moveKeyViewSpatial` (override→group-delegate→seam→ring→linear-order liveliness fallback so an arrow never dead-ends — refined from the initial clamp/warn in 7.8.6 per the never-dead-end directive); `arrowNavListener` sits between `focusWalkListener` and `captureListener`, gated by `keyViewCaptures`; group arrow dispatch relocated from `use-item-group-keyboard` to the navigator via `SpatialCursorHandle` (Home/End stay local; `useFocusCursor` kept); new `spatial-nav.test.ts` (10) over the real `FocusManager`; tsc + 262 tugways pure-logic green. NB: no card declares an order yet (7.8.5) so ring/seam is dormant; group roving preserved. **7.8.5 must decide list delegation** — `TugListView` manages its own cursor (no handle), so a declared order including a list needs the list to register a handle or be excluded. | (dash focus-spatial) |
+| #step-7-8-capture | Step 7.8.4 — Arrow-ownership matrix + Tab/Escape escape ([P25]) | done: navigator yields arrows to any focused editing host (contentEditable/input/textarea — covers CodeMirror/prompt with no per-editor wiring); `TugSlider` declares `captureSet(["ArrowLeft","ArrowRight"])` (value axis; container "none" leaves Space/Enter native); groups stay soft owners (7.8.3 delegation); Opt-Tab rejected → Tab/Escape (⌥⇥ is the cycle toggle, R02); plan matrix/[P25] reconciled. tsc clean | (dash focus-spatial) |
+| #step-7-8-apply | Step 7.8.5 — Author PermissionDialog rings + archetypes; by-eye | partial: `useSpatialOrder` declaration hook (the [Q12] surface — nodes by `group:order` key) + navigator id↔key translation (`focusKeyOf`/`idForFocusKey`); PermissionDialog declares its order (closed [Deny,Allow] ring; seam from either button down into the scope group; scope Up→Allow) — the reported Left→Deny; at0145 extended with the spatial-move block; list-delegation DECIDED (b) lists own their arrows, excluded from the ring/seam table; tsc + 262 pure-logic green. **Remaining (by-eye, build phase):** QuestionDialog + a composed sheet to confirm the API generalizes; by-eye both themes; dead-arrow audit (Up on a top button is an intentional no-op that dev-warns). | (dash focus-spatial) |
+| #step-7-8-vet | Step 7.8.6 — Integration checkpoint | partial: automated sweep GREEN — `tsc` clean, 262 tugways pure-logic, and 12 app-test files (at0145/at0117/at0118/at0140/at0146 changed + at0119/at0120/at0116/at0115/at0141/at0030/at0142 regression). **Remaining (user):** by-eye both themes; QuestionDialog + composed-sheet generalization (from 7.8.5). | (dash focus-spatial) |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -1903,7 +1915,7 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 
 **References:** [P22], [P23], [P24], [P25], [Q10], [Q11], [Q12], Risk R06, Risk R07, (#spatial-nav-model, #seam-arrow-matrix, #p22-two-planes, #p23-declared-order, #p24-explicit-commit, #p25-arrow-ownership)
 
-**Motivation (by-eye, 2026-06-09).** Keyboard focus-cycling is counter-intuitive in too many cases. The simplest: a card-modal PermissionDialog is up, `Allow` is ringed, and the user reaches for **Left arrow** to move the ring to `Deny` — nothing happens. Today arrows only rove *within* an item-group; there is no ergonomic, "move-the-ring-in-the-direction-you-see" motion across a bounded layout. This step adds that as a **parallel plane** ([P22]) without disturbing the structured Tab / Enter / Space contract: arrows move the ring **spatially**, in **author-declared** order ([P23], no geometry), always moving and never beeping; selection goes **explicit** again ([P24], reverting the 7.7-era selection-follows-cursor) so arrows are a pure ring-mover and Enter is free to bubble to the scope default; and arrow-owning components (editor, slider) **yield** the plane and are re-entered with Tab / Opt-Tab ([P25]).
+**Motivation (by-eye, 2026-06-09).** Keyboard focus-cycling is counter-intuitive in too many cases. The simplest: a card-modal PermissionDialog is up, `Allow` is ringed, and the user reaches for **Left arrow** to move the ring to `Deny` — nothing happens. Today arrows only rove *within* an item-group; there is no ergonomic, "move-the-ring-in-the-direction-you-see" motion across a bounded layout. This step adds that as a **parallel plane** ([P22]) without disturbing the structured Tab / Enter / Space contract: arrows move the ring **spatially**, in **author-declared** order ([P23], no geometry), always moving and never beeping; selection goes **explicit** again ([P24], reverting the 7.7-era selection-follows-cursor) so arrows are a pure ring-mover and Enter is free to bubble to the scope default; and arrow-owning components (editor, slider) **yield** the plane and are re-entered with Tab / Escape ([P25]; Opt-Tab is the cycle toggle, not an eject).
 
 **Strategy:**
 - Lock the model and the registration API on the motivating case first (the PermissionDialog) in a spike, resolving [Q10] / [Q11] / [Q12] *before* engine work.
@@ -1921,7 +1933,7 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 | Commit (Space / Enter) | (no state — act dispatch) | `resolveFocusAct` → select / passthrough; Space commits ringed, Enter bubbles to default | [L22] |
 | Ring / focus appearance | appearance | unchanged — CSS on engine `data-*` | [L06] |
 
-**Sub-steps:** [#step-7-8-spike] (lock model + API; resolve [Q10]–[Q12]), [#step-7-8-commit] (explicit-commit reversion [P24]), [#step-7-8-spatial] (the declared spatial navigator [P22] / [P23]), [#step-7-8-capture] (arrow-ownership + Tab / Opt-Tab escape [P25]), [#step-7-8-apply] (author the PermissionDialog + key archetypes; by-eye), [#step-7-8-vet] (integration checkpoint).
+**Sub-steps:** [#step-7-8-spike] (lock model + API; resolve [Q10]–[Q12]), [#step-7-8-commit] (explicit-commit reversion [P24]), [#step-7-8-spatial] (the declared spatial navigator [P22] / [P23]), [#step-7-8-capture] (arrow-ownership + Tab / Escape escape [P25]), [#step-7-8-apply] (author the PermissionDialog + key archetypes; by-eye), [#step-7-8-vet] (integration checkpoint).
 
 **Implementation landmarks (grounded by-reading the real code, 2026-06-09 — so a fresh implementer doesn't re-derive them; cite by symbol, line hints drift):**
 
@@ -1959,6 +1971,14 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 - Pure-logic: an ordering-resolution function over a declared ring / seam table (`(node, direction) → next`) — closed-ring "never beeps", seam traversal, reversibility, per-node-override precedence, **group-node-with-cursor delegation** (internal move stays in the node; an edge move crosses the seam). (No DOM.)
 
 **Checkpoint:** the navigator-over-key-views + cursor-delegation model is confirmed (or an escalation is raised); the PermissionDialog's `Allow`↔`Deny` and button↔option moves work by declared order in a spike; [Q10] / [Q11] / [Q12] + the list-picker disposition decided and recorded; the registration API is locked; Opt-Tab vs ⌥⇥ confirmed non-colliding.
+
+**Spike results (2026-06-09):**
+- **Headline question — CONFIRMED, no escalation.** Navigator-over-key-views + cursor-delegation is buildable and clean. The deep-dive prose's "vertical ring `[Allow-once, Allow-for-project]`" ([#spatial-nav-model]) is realized as the scope group's **internal cursor axis** (a `groups` entry, `length: 2`), **not** two ring nodes — so "Tab never lands on an item" and `data-key-cursor` stays appearance-only ([L06] / [P02]). Proven by `spatial-order.test.ts`: an Up/Down off the group edge resolves to `cursor`, an Up/Down at the edge crosses the seam to `Allow`. Item-promotion stays **rejected**.
+- **Artifact graduates (not throwaway).** The resolver landed as `spatial-order.ts` + `spatial-order.test.ts` (13 cases: reported `Allow`→`Deny`, closed-ring never-beep, button-ring reversibility, group cursor delegation, edge-seam crossing, dead-arrow detection, override precedence, open-ring edge). [#step-7-8-spatial] wires it onto the `FocusContext`.
+- **[Q10] → (a)** Space commits the ringed member; Enter is always the scope default.
+- **[Q11] → Opt-Tab out (R02 confirmed real).** `⌥⇥` is already `CYCLE_FOCUS_MODE` in `keybinding-map.ts`. Escape story = plain **Tab** (soft; cycling-mode Tab walks zones) / **Escape** (hard, multi-line / code editor — ascend, release-to-ring). No new chord.
+- **[Q12] → per-card declared `SpatialOrder` table** (`rings`/`seams`/`overrides`/`groups`), resolved by `resolveSpatial`; held on the per-card `FocusContext` via `CardIdContext`; group nodes expose their cursor axis through the delegation contract above. Precedence: override → group-delegation → seam → ring → none.
+- **List-picker disposition → keep select-on-arrow (the 7.5 feel); lists are excluded from the [P24] radio/choice/option reversion.** Rationale: a single-select picker's highlighted row is *simultaneously* its cursor and its selection — there is no separable "ring vs choice" to defer, so reverting would make arrowing produce no selection until Space, breaking the type-to-filter → arrow → Enter-to-open list idiom Step 7.5 deliberately built. The user's [P24] directive named radio / choice / option, not lists. [#step-7-8-commit] therefore leaves `TugListView singleSelect` untouched.
 
 ---
 
@@ -2001,7 +2021,7 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 - **Total-function / never-beep:** a closed ring always yields a next node; a seam always has a target; resolution never returns "nothing" for a declared node.
 - **Reversibility by construction:** the author declares both edges; verify Right-then-Left returns.
 - **Relocate the group's arrow *dispatch*, keep the cursor.** `use-item-group-keyboard.ts` stops owning the arrow `onKeyDown` (the navigator drives the cursor instead); **`useFocusCursor` is kept** (the `data-key-cursor` appearance projection is unchanged, [L06] / [P02]). The group reads the cursor / ringed item to know what Space commits.
-- **R06 dev-time reachability:** when an arrow resolves with no target, or a focusable in the active context is on no ring, emit a `tugDevLog` warning (never a beep, never `console.warn`).
+- **R06 liveliness (revised in 7.8.6):** when an arrow resolves with no spatial target, the navigator falls back to the linear `groupOrder` walk (wrapping) so the ring always moves — never a beep, never a silent swallow, never a dead-end. (A `tugDevLog` reachability warning was prototyped here and then removed: the fallback means there is no dead arrow to warn about.)
 - **[L26] / default-context:** the navigator no-ops cleanly with no manager and routes through the default context with no `CardIdContext` (gallery / standalone preview).
 
 **Tests:**
@@ -2012,24 +2032,24 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 
 ---
 
-#### Step 7.8.4: Arrow ownership + Tab / Opt-Tab escape {#step-7-8-capture}
+#### Step 7.8.4: Arrow ownership + Tab / Escape escape {#step-7-8-capture}
 
 **Depends on:** #step-7-8-spatial
 
-**Commit:** `feat(focus): arrow-capture matrix + Opt-Tab escape`
+**Commit:** `feat(focus): arrow-capture matrix — slider value axis + editing-host yield`
 
 **References:** [P25], [Q11], Risk R02, (#seam-arrow-matrix, #p25-arrow-ownership)
 
 **Tasks:**
-- Wire the [#seam-arrow-matrix] ownership classes via `captureSet`: a text editor captures the four arrows (caret); a slider captures the value axis (Left/Right), cross-axis leaves spatially; selection groups stay *soft* owners (no trap).
-- Implement the **Opt-Tab** escape per the [Q11] decision (eject-to-next default); plain Tab continues to leave any non-Tab-capturing component. Confirm Opt-Tab vs ⌥⇥ cycle-trigger non-collision (R02).
-- A component that needs arrows but doesn't capture them surfaces via the same R06 dev-time check (it would otherwise have its arrows stolen by the spatial plane).
+- Wire the [#seam-arrow-matrix] ownership classes: a focused **text-editing host** (contentEditable / input / textarea — CodeMirror, prompt) keeps all four arrows for the caret (the navigator yields to it directly, no per-editor wiring); a **slider** captures its value axis (Left/Right) via `captureSet`, the cross axis (Up/Down) leaves spatially; **selection groups** stay *soft* owners (the 7.8.3 delegation — no trap); a **leaf** participates fully.
+- **Escape is Tab / Escape, not Opt-Tab** ([Q11]: `⌥⇥` is the cycle toggle, R02). Plain Tab leaves any non-Tab-capturing component; Escape (ascend) leaves a descended Tab-consuming editor. No new chord.
+- A component that needs arrows but doesn't capture them surfaces via the same R06 dev-time check, *in a declared-order scope* (outside one the navigator yields by returning not-consumed).
 
 **Tests:**
-- App-test: in the prompt editor arrows move the caret (spatial suspended) and Tab / Opt-Tab returns to the plane; on a slider Left/Right change value and Up/Down (or Tab / Opt-Tab) leaves; a leaf participates fully.
-- Pure-logic: the resolver yields `capture` for an editor's arrows and `move` for a leaf's, per the matrix.
+- App-test: in the prompt editor arrows move the caret (spatial suspended) and Tab returns to the plane; on a slider Left/Right change value and Up/Down (or Tab) leaves; a leaf participates fully.
+- Pure-logic: `moveKeyViewSpatial` is gated by the editing-host yield + `keyViewCaptures` (the slider's Left/Right capture is pinned by `focus-act`'s `captureSet`); the `spatial-nav` tests cover the leaf / group / ring paths.
 
-**Checkpoint:** arrow-owning components suspend the spatial plane and are re-entered with Tab / Opt-Tab; the matrix holds for editor / slider / group / leaf; Opt-Tab does not collide with the cycle trigger.
+**Checkpoint:** arrow-owning components suspend the spatial plane and are re-entered with Tab / Escape; the matrix holds for editor / slider / group / leaf; Opt-Tab is not used (it is the cycle toggle).
 
 ---
 
@@ -2044,6 +2064,7 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 **Tasks:**
 - Author the PermissionDialog's declared order (the motivating case): `[Deny, Allow]` horizontal ring, `[Allow-once, Allow-for-project]` vertical ring, the seam — Left from Allow → Deny; Down → into the scope options; Space commits the scope; Enter activates the ringed Allow.
 - Author the QuestionDialog and one composed surface (a sheet with a list + buttons) to confirm the API generalizes beyond the simplest case.
+- **List delegation — DECIDED (b), 2026-06-09:** `TugListView` manages its own arrow cursor (it does **not** use `use-item-group-keyboard`, so it registers no `SpatialCursorHandle`). A declared spatial order **excludes the list from its ring/seam table**: the list owns its arrows (select-on-arrow, the 7.5 idiom — preserved) and Tab reaches it. Rationale: least churn, keeps the picker feel the user accepted. Option (a) — `TugListView` registering a `SpatialCursorHandle` so the navigator delegates to its cursor (consistent with groups) — is a clean future enhancement, but the list cursor is bespoke (its own seed/descend/scroll logic), out of scope for this pass. Until then, a layout's spatial ring covers its buttons / groups; lists are Tab-reached islands.
 - By-eye both themes: every arrow press moves the ring somewhere sensible; nothing beeps; reversal returns.
 
 **Tests:**
@@ -2063,7 +2084,7 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 
 **Tasks:**
 - Full sweep: `bunx tsc --noEmit`, `bun test`, `just app-test`; confirm the 7.7 regression matrix (cycle / sheet / card-modal / descend) is still green under the new arrow plane.
-- By-eye both themes: arrows move the ring across card / dialog / sheet, never beep, reverse cleanly; editor / slider yield + Tab / Opt-Tab re-entry; Space / Enter commit semantics.
+- By-eye both themes: arrows move the ring across card / dialog / sheet, never beep, reverse cleanly; editor / slider yield + Tab / Escape re-entry; Space / Enter commit semantics.
 
 **Checkpoint:** spatial arrow navigation works across the bounded scopes; explicit commit holds; arrow-owning components yield and are re-entered; no regressions in the 7.7 matrix; [P22]–[P25] satisfied; [Q10]–[Q12] resolved.
 

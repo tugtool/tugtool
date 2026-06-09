@@ -107,6 +107,8 @@ import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dial
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
+import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
+import type { SpatialOrder } from "@/components/tugways/spatial-order";
 import { useInlineDialogScope } from "@/components/tugways/use-inline-dialog-scope";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import {
@@ -912,7 +914,38 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // dismiss. The prompt entry deactivates off the session's pending state (see
   // `DevCardBody`), and the card content around the dialog is scrimmed ([P19]).
   // Declared above the `!isPending` early return so hook order is stable.
-  const { FocusModeScope } = useFocusTrap({ active: isPending });
+  const { FocusModeScope, scopeId } = useFocusTrap({ active: isPending });
+
+  // Spatial arrow order ([P22] / [P23]) — a closed *vertical loop* through the
+  // button row and the scope group, plus the horizontal button ring:
+  //   • Left / Right swap the buttons ([Deny, Allow] closed ring) — Left from Allow
+  //     lands on Deny, the reported expectation;
+  //   • Down from either button drops into the scope group; Up from either button
+  //     loops around into it too (there is nothing above the buttons), so the
+  //     keyboard always reaches the options;
+  //   • Up from the top of the scope group returns to the recommended Allow.
+  // The scope group's options are its delegated 1D cursor ([Q12]), not ring nodes —
+  // the seams join the button row to the group as one node. Any edge the seams don't
+  // name (e.g. Down off the last option) is caught by the navigator's linear-order
+  // liveliness fallback, so no arrow ever dead-ends. Nodes are stable `group:order`
+  // keys.
+  const denyKey = `${focusGroup}:${DENY_FOCUS_ORDER}`;
+  const allowKey = `${focusGroup}:${ALLOW_FOCUS_ORDER}`;
+  const scopeKey = `${focusGroup}:${SCOPE_FOCUS_ORDER}`;
+  const spatialOrder = React.useMemo<SpatialOrder>(
+    () => ({
+      rings: [{ axis: "horizontal", nodes: [denyKey, allowKey], closed: true }],
+      seams: [
+        { from: allowKey, direction: "down", to: scopeKey },
+        { from: denyKey, direction: "down", to: scopeKey },
+        { from: allowKey, direction: "up", to: scopeKey },
+        { from: denyKey, direction: "up", to: scopeKey },
+        { from: scopeKey, direction: "up", to: allowKey },
+      ],
+    }),
+    [denyKey, allowKey, scopeKey],
+  );
+  useSpatialOrder(scopeId, isPending ? spatialOrder : null);
 
   // The dialog's keyboard scope: a `CANCEL_DIALOG` responder so Escape / Cmd-.
   // → Deny, and a seed that lands the key view on Allow (the recommended

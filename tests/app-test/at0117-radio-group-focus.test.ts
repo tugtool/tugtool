@@ -4,11 +4,12 @@
  *
  * The radio group (no Radix) registers one focusable for the whole group
  * ([P02]) via `useItemGroupKeyboard`: Tab lands the ring on the *group* (never
- * on a member), and the group is **selection-follows-cursor** ([Q06]) — the
- * arrows move the cursor (`data-key-cursor`) AND the selection together, so a
- * mutually-exclusive radio is always in a settled state (no
- * highlighted-but-uncommitted limbo). The group does NOT consume Enter; Tab-into
- * lands the cursor on the checked item.
+ * on a member), and the group uses **explicit commit** ([P24]) — the arrows move
+ * the cursor (`data-key-cursor`) and its ring WITHOUT changing the selection, and
+ * **Space** commits the ringed item. This reverts the 7.7-era
+ * selection-follows-cursor: arrows are a pure ring-mover, the commit is a separate
+ * act. The group does NOT consume Enter (it bubbles to the scope default);
+ * Tab-into lands the cursor on the checked item.
  *
  * The gallery `Focus Walk` panel authors a three-item group (value `a` checked).
  * The test proves the **item-group focus treatment** ([P02] of the
@@ -22,11 +23,12 @@
  *     cursor item:** Tab marks the group key-view, paints the behind-tint on the
  *     container (its outline stays 0 — no container ring), and parks the ring on
  *     the cursor item `a`. (Guards against the container double-ring regression.)
- *   - **arrows move the selection immediately (selection follows cursor):**
- *     ArrowDown moves the cursor (and the ring) to `b` AND checks `b` (unchecks
- *     `a`) in one keystroke — no Space confirm; ArrowUp moves back and re-checks
- *     `a`. The group keeps the key view + behind-tint throughout (no container
- *     ring).
+ *   - **arrows move the ring WITHOUT committing ([P24]):** ArrowDown moves the
+ *     cursor (and the ring) to `b` while `a` stays checked and `b` stays unchecked
+ *     — no selection change. **Space** then commits `b` (checks `b`, unchecks
+ *     `a`). ArrowUp moves the ring back to `a` without changing the selection;
+ *     Space commits `a`. The group keeps the key view + behind-tint throughout
+ *     (no container ring).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -156,29 +158,38 @@ describe.skipIf(!SHOULD_RUN)("AT0117: radio group is a single item-container sto
         const cursorRingOnA = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnA ?? "0")).toBeGreaterThan(0);
 
-        // (3) ArrowDown → selection follows the cursor IMMEDIATELY ([Q06]): the
-        // cursor (and its ring) move to `b` AND `b` becomes checked while `a`
-        // unchecks — no Space confirm. The group keeps the key view + behind-tint
-        // (still no container ring).
+        // (3) ArrowDown → the cursor (and its ring) move to `b`, but the selection
+        // does NOT follow ([P24]): `a` stays checked and `b` stays unchecked. The
+        // group keeps the key view + behind-tint (still no container ring).
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "b"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(
-          `(function(){var b=document.querySelector(${JSON.stringify(RADIO_B)});return b && b.getAttribute("data-state")==="checked";})()`,
-          { timeoutMs: 6000 },
-        );
         const aAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
         expect(aAfterMove?.cursor).toBe(false);
-        expect(aAfterMove?.state).toBe("unchecked");
+        expect(aAfterMove?.state).toBe("checked"); // selection unchanged by the arrow
+        const bAfterMove = await app.evalJS<ItemProbe>(PROBE(RADIO_B));
+        expect(bAfterMove?.state).toBe("unchecked"); // ringed but not committed
         const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(ringStill?.keyboardReached).toBe(true);
         expect(parseFloat(ringStill?.outline ?? "0")).toBe(0);
         const cursorRingOnB = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnB ?? "0")).toBeGreaterThan(0);
 
-        // (4) ArrowUp → selection follows the cursor back to `a` (re-checks `a`,
-        // unchecks `b`) — proving live commit in both directions.
+        // (3b) Space → commits the ringed item `b` (checks `b`, unchecks `a`).
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(RADIO_B)});return b && b.getAttribute("data-state")==="checked";})()`,
+          { timeoutMs: 6000 },
+        );
+        const aAfterCommit = await app.evalJS<ItemProbe>(PROBE(RADIO_A));
+        expect(aAfterCommit?.state).toBe("unchecked");
+
+        // (4) ArrowUp → the ring moves back to `a` without changing the selection
+        // (`b` stays checked); Space then commits `a`.
         await app.nativeKey("ArrowUp");
         await app.waitForCondition<boolean>(`${CURSOR_RADIO} === "a"`, { timeoutMs: 6000 });
+        const bStillChecked = await app.evalJS<ItemProbe>(PROBE(RADIO_B));
+        expect(bStillChecked?.state).toBe("checked"); // selection unchanged by the arrow
+        await app.nativeKey(" ");
         await app.waitForCondition<boolean>(
           `(function(){var a=document.querySelector(${JSON.stringify(RADIO_A)});return a && a.getAttribute("data-state")==="checked";})()`,
           { timeoutMs: 6000 },

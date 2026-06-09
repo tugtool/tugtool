@@ -6,10 +6,14 @@
  * (`useFocusable`), so **Tab moves the ring between components, never onto an
  * item**. Arrows move a separate **movement cursor** (`useFocusCursor` →
  * `data-key-cursor`) over the items — appearance only, projected straight to the
- * DOM with no re-render ([L06]/[L22]). Space/Enter are carried by the engine's
- * act dispatch against the `behavior` this hook declares; the component supplies
- * what "select / act / descend" *means* via callbacks and what its items *are*
- * via `collectItems`.
+ * DOM with no re-render ([L06]/[L22]). The **arrow dispatch lives in the spatial
+ * navigator** ([P22]): this hook registers a {@link SpatialCursorHandle} so an
+ * in-group arrow drives the cursor (firing a live commit, descending Right where
+ * disclosable) while an edge arrow crosses a declared seam — the navigator owns
+ * the keydown, this hook owns what the cursor *does*. Home/End stay here (a local
+ * jump, no spatial role). Space/Enter are carried by the engine's act dispatch
+ * against the `behavior` this hook declares; the component supplies what "select /
+ * act / descend" *means* via callbacks and what its items *are* via `collectItems`.
  *
  * This is the generalization of the gallery proof-of-concept (`FocusList`) into
  * the hook every deferred item-group (radio / choice / option) and the
@@ -22,7 +26,8 @@
  *  - landing the cursor on the initial item when the group becomes the keyboard
  *    key view, and clearing it when the key view leaves (a manager subscription,
  *    keyboard-only — the cursor tracks the *key view*, not DOM focus);
- *  - the movement `onKeyDown` (arrows / Home / End), with a `live` commit hook.
+ *  - the {@link SpatialCursorHandle} the navigator drives for arrows, and the local
+ *    Home/End `onKeyDown` — both with the `live` commit hook.
  *
  * What it does NOT own: Space/Enter/Escape (the act dispatch in
  * `responder-chain-provider` invokes the `behavior` callbacks) and the committed
@@ -36,8 +41,9 @@
 import { useCallback, useContext, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
+import { CardIdContext } from "@/lib/card-id-context";
 import { FocusManagerContext } from "./focus-manager";
-import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
+import type { FocusPolicy, KeyViewBehavior, SpatialCursorHandle } from "./focus-manager";
 import type { CommitMode } from "./focus-act";
 import { useFocusable } from "./use-focusable";
 import { useFocusCursor } from "./use-focus-cursor";
@@ -72,20 +78,7 @@ export interface ItemGroupKeyboardOptions {
   initialIndex: () => number;
   /** Whether the current item descends on Enter (accordion section / list row). */
   currentItemDescendable?: () => boolean;
-  /**
-   * The group commits by a gesture other than `Enter`, so `Enter` falls through
-   * to the scope default ([P12]) instead of being consumed. Set this for both
-   * shapes that don't commit on Return:
-   *  - **selection-follows-cursor** (radio / choice): the arrows move the
-   *    selection immediately — pair with `commit: "live"` + {@link onMove};
-   *  - **Space-toggle** (multi-select option): arrows move the cursor, Space
-   *    toggles ({@link onSelect}).
-   *
-   * Absent (the default) leaves the deferred model where `Enter` is the commit
-   * (Space/Enter → {@link onSelect}/{@link onAct}; arrows move a cursor only).
-   */
-  enterPassthrough?: boolean;
-  /** Space (and Enter-act on a non-descendable item): commit the current item. */
+  /** Space: commit the current item. Enter never commits a group member ([P24]). */
   onSelect: (element: Element | null, index: number) => void;
   /** Enter act on a non-descendable item. Defaults to {@link onSelect}. */
   onAct?: (element: Element | null, index: number) => void;
@@ -124,6 +117,8 @@ export function useItemGroupKeyboard(
   const manager = useContext(FocusManagerContext);
   const cursor = useFocusCursor();
 
+  const cardId = useContext(CardIdContext);
+
   // Latest options read live by the behavior proxy and the key handler, so the
   // registration never thrashes on a changed callback identity ([L07]).
   const optionsRef = useRef(options);
@@ -134,6 +129,17 @@ export function useItemGroupKeyboard(
   const syncItems = useCallback(() => {
     cursor.setItems(optionsRef.current.collectItems());
   }, [cursor]);
+
+  // Fire a live commit ([P08], the tab bar) after the cursor lands on `index`. A
+  // deferred group (the default) commits only on Space, so this no-ops there.
+  const liveCommit = useCallback(
+    (index: number) => {
+      if (index >= 0 && (optionsRef.current.commit ?? "deferred") === "live") {
+        optionsRef.current.onMove?.(cursor.cursorElement(), index);
+      }
+    },
+    [cursor],
+  );
 
   // The component's thin declaration ([P01]). Read live; the act dispatch reads
   // it through `keyViewBehavior()` at the moment of Space/Enter.
@@ -147,7 +153,6 @@ export function useItemGroupKeyboard(
       container: "item",
       commit: o.commit ?? "deferred",
       currentItemDescendable: o.currentItemDescendable?.() ?? false,
-      enterPassthrough: o.enterPassthrough ?? false,
       onSelect: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "select"),
       onAct: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "act"),
       onDescend: () => o.onDescend?.(cursor.cursorElement(), cursor.cursorIndex()),
@@ -199,35 +204,43 @@ export function useItemGroupKeyboard(
     return unsubscribe;
   }, [manager, cursor, syncItems]);
 
+  // The spatial navigator drives the group's arrows through this handle ([P22] /
+  // [Q12]): an in-group arrow moves the 1D cursor (down/right → next, up/left →
+  // previous, both axes, firing any live commit), ArrowRight descends a disclosable
+  // item ([P02] tree model), and an off-the-edge arrow falls through so the
+  // navigator can cross a declared seam. The handle methods read live state, so it
+  // registers once. Only a *registered* group (an authored Tab stop) participates.
+  const handleRef = useRef<SpatialCursorHandle | null>(null);
+  if (handleRef.current === null) {
+    handleRef.current = {
+      length: () => optionsRef.current.collectItems().length,
+      cursorIndex: () => cursor.cursorIndex(),
+      moveCursor: (delta) => {
+        liveCommit(cursor.moveCursor(delta));
+      },
+      tryDescendRight: () => {
+        if (optionsRef.current.currentItemDescendable?.() ?? false) {
+          optionsRef.current.onDescend?.(cursor.cursorElement(), cursor.cursorIndex());
+          return true;
+        }
+        return false;
+      },
+    };
+  }
+  useLayoutEffect(() => {
+    if (manager === null || !options.register) return;
+    const ctx = manager.contextFor(cardId);
+    ctx.registerCursorHandle(options.id, handleRef.current!);
+    return () => ctx.unregisterCursorHandle(options.id);
+  }, [manager, cardId, options.id, options.register]);
+
+  // Home/End jump to the first/last item — a local cursor move with no spatial
+  // (ring/seam) role, so it stays here rather than in the navigator. The arrows are
+  // relocated to the navigator; this handler is reached only for Home/End.
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent) => {
       let next = -1;
       switch (event.key) {
-        case "ArrowRight":
-          // Tree-style descend ([P02] disclosure model): Right enters an open,
-          // descendable item (an accordion section with navigable content),
-          // mirroring Enter. When the current item isn't descendable — a closed
-          // section, or any group that never descends (radio / choice / option,
-          // and horizontal containers) — Right keeps its movement meaning, so
-          // the shared "both arrow axes move" ergonomic is preserved everywhere
-          // except where descent is genuinely available. Ascend is Escape.
-          if (optionsRef.current.currentItemDescendable?.() ?? false) {
-            event.preventDefault();
-            optionsRef.current.onDescend?.(cursor.cursorElement(), cursor.cursorIndex());
-            return;
-          }
-          event.preventDefault();
-          next = cursor.moveCursor(1);
-          break;
-        case "ArrowDown":
-          event.preventDefault();
-          next = cursor.moveCursor(1);
-          break;
-        case "ArrowUp":
-        case "ArrowLeft":
-          event.preventDefault();
-          next = cursor.moveCursor(-1);
-          break;
         case "Home":
           event.preventDefault();
           next = cursor.setCursor(0);
@@ -239,12 +252,9 @@ export function useItemGroupKeyboard(
         default:
           return;
       }
-      // Live components (tab bar) commit on every move; deferred ones wait for act.
-      if (next >= 0 && (optionsRef.current.commit ?? "deferred") === "live") {
-        optionsRef.current.onMove?.(cursor.cursorElement(), next);
-      }
+      liveCommit(next);
     },
-    [cursor],
+    [cursor, liveCommit],
   );
 
   return {

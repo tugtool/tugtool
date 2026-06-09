@@ -4,10 +4,11 @@
  *
  * The choice group (no Radix) registers one focusable for the whole group
  * ([P02]) via `useItemGroupKeyboard`: Tab lands the ring on the *group* (never
- * on a segment), and the group is **selection-follows-cursor** ([Q06]) — the
- * arrows move the cursor (`data-key-cursor`) AND the selection together, so a
- * mutually-exclusive segmented control is always settled. The group does NOT
- * consume Enter; Tab-into lands the cursor on the selected segment.
+ * on a segment), and the group uses **explicit commit** ([P24]) — the arrows move
+ * the cursor (`data-key-cursor`) and its ring WITHOUT changing the active segment,
+ * and **Space** commits the ringed segment. This reverts the 7.7-era
+ * selection-follows-cursor. The group does NOT consume Enter (it bubbles to the
+ * scope default); Tab-into lands the cursor on the selected segment.
  *
  * The gallery `Focus Walk` panel authors a three-segment group (value `alpha`
  * selected). The test proves the **item-group focus treatment** ([P02] of the
@@ -19,11 +20,12 @@
  *     cursor segment:** Tab marks the group key-view, paints the behind-tint on
  *     the container (its outline stays 0 — no container ring), and parks the ring
  *     on the cursor segment `alpha`;
- *   - **arrows move the selection immediately (selection follows cursor):**
- *     ArrowDown moves the cursor (and ring) to `beta` AND activates `beta`
- *     (deactivates `alpha`) in one keystroke — no Space confirm; ArrowUp moves
- *     back and re-activates `alpha`. The group keeps the key view + behind-tint
- *     throughout (no container ring).
+ *   - **arrows move the ring WITHOUT committing ([P24]):** ArrowDown moves the
+ *     cursor (and ring) to `beta` while `alpha` stays active and `beta` stays
+ *     inactive — no selection change. **Space** then commits `beta` (activates
+ *     `beta`, deactivates `alpha`). ArrowUp moves the ring back to `alpha` without
+ *     changing the active segment; Space commits `alpha`. The group keeps the key
+ *     view + behind-tint throughout (no container ring).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -153,29 +155,39 @@ describe.skipIf(!SHOULD_RUN)("AT0118: choice group is a single item-container st
         const cursorRingOnAlpha = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnAlpha ?? "0")).toBeGreaterThan(0);
 
-        // (3) ArrowDown → selection follows the cursor IMMEDIATELY ([Q06]): the
-        // cursor (and its ring) move to `beta` AND `beta` becomes active while
-        // `alpha` goes inactive — no Space confirm. The group keeps the key view +
-        // behind-tint (still no container ring).
+        // (3) ArrowDown → the cursor (and its ring) move to `beta`, but the active
+        // segment does NOT follow ([P24]): `alpha` stays active and `beta` stays
+        // inactive. The group keeps the key view + behind-tint (no container ring).
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(`${CURSOR_SEGMENT} === "beta"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(
-          `(function(){var b=document.querySelector(${JSON.stringify(SEG_BETA)});return b && b.getAttribute("data-state")==="active";})()`,
-          { timeoutMs: 6000 },
-        );
         const alphaAfterMove = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
         expect(alphaAfterMove?.cursor).toBe(false);
-        expect(alphaAfterMove?.state).toBe("inactive");
+        expect(alphaAfterMove?.state).toBe("active"); // selection unchanged by the arrow
+        const betaAfterMove = await app.evalJS<SegmentProbe>(PROBE(SEG_BETA));
+        expect(betaAfterMove?.state).toBe("inactive"); // ringed but not committed
         const ringStill = await app.evalJS<GroupProbe>(GROUP_PROBE);
         expect(ringStill?.keyboardReached).toBe(true);
         expect(parseFloat(ringStill?.outline ?? "0")).toBe(0);
         const cursorRingOnBeta = await app.evalJS<string | null>(CURSOR_RING_WIDTH);
         expect(parseFloat(cursorRingOnBeta ?? "0")).toBeGreaterThan(0);
 
-        // (4) ArrowUp → selection follows the cursor back to `alpha` (re-activates
-        // `alpha`, deactivates `beta`) — live commit in both directions.
+        // (3b) Space → commits the ringed segment `beta` (activates `beta`,
+        // deactivates `alpha`).
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(
+          `(function(){var b=document.querySelector(${JSON.stringify(SEG_BETA)});return b && b.getAttribute("data-state")==="active";})()`,
+          { timeoutMs: 6000 },
+        );
+        const alphaAfterCommit = await app.evalJS<SegmentProbe>(PROBE(SEG_ALPHA));
+        expect(alphaAfterCommit?.state).toBe("inactive");
+
+        // (4) ArrowUp → the ring moves back to `alpha` without changing the active
+        // segment (`beta` stays active); Space then commits `alpha`.
         await app.nativeKey("ArrowUp");
         await app.waitForCondition<boolean>(`${CURSOR_SEGMENT} === "alpha"`, { timeoutMs: 6000 });
+        const betaStillActive = await app.evalJS<SegmentProbe>(PROBE(SEG_BETA));
+        expect(betaStillActive?.state).toBe("active"); // selection unchanged by the arrow
+        await app.nativeKey(" ");
         await app.waitForCondition<boolean>(
           `(function(){var a=document.querySelector(${JSON.stringify(SEG_ALPHA)});return a && a.getAttribute("data-state")==="active";})()`,
           { timeoutMs: 6000 },

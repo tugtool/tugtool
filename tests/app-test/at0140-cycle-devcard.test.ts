@@ -339,7 +339,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
   );
 
   test(
-    "committing the route group by keyboard relinquishes the cycle ([P15]): Return exits cycling, returns the caret, and typing lands",
+    "committing the route group by keyboard relinquishes the cycle ([P15]): Space commits + exits cycling, returns the caret, and typing lands",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard-commit" });
       try {
@@ -366,11 +366,13 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
-        // Arrow to rove the route cursor to the other choice, then Return to
-        // commit it — the reported sequence. The commit is an item-group `act`;
-        // in a toggleable cycle that disposition is RELINQUISH ([P15]).
+        // Arrow to rove the route cursor to the other choice, then Space to commit
+        // it. Under explicit commit ([P24]) arrows only ring; **Space** is the
+        // group commit (an item-group `select`) — Return no longer commits a group
+        // member, it bubbles to the scope default. In a toggleable cycle a value
+        // commit's disposition is RELINQUISH ([P15]).
         await app.nativeKey("ArrowRight");
-        await app.nativeKey("Return");
+        await app.nativeKey(" ");
 
         // The cycle is relinquished: the card stops cycling, the engine returns
         // the key view to the editor, and DOM focus lands the caret there — no

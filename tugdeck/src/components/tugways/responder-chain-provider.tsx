@@ -25,6 +25,7 @@ import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
 import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager } from "./focus-manager";
 import { resolveFocusAct } from "./focus-act";
+import { arrowDirection } from "./spatial-order";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
 import { matchKeybinding } from "./keybinding-map";
@@ -261,6 +262,50 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         : focusManager.focusNext();
       if (moved !== null) {
         focusManager.focusKeyView();
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }
+
+    // ---- Spatial arrow navigation ([P22]/[P23]) ----
+    // The parallel plane: bare arrows move the ring "in the direction you see",
+    // bounded to the card / dialog, in author-declared order. A sibling of the focus
+    // walk, registered ahead of the keybinding map so a bare arrow is resolved as
+    // ring movement before a global binding can claim it (mirroring how the walk
+    // owns Tab). Modified arrows (⌘/⌃/⌥/⇧) are left alone — they belong to editors,
+    // sliders, and shortcuts. A component that captures arrows (an editor caret, a
+    // slider value axis — [P25]) keeps them: the navigator yields when the key view
+    // captures the key. When the ring rests on a selection group, an in-group arrow
+    // delegates to its cursor; only an edge arrow crosses a seam ([P24] / [Q12]).
+    function arrowNavListener(event: KeyboardEvent): void {
+      const direction = arrowDirection(event.key);
+      if (direction === null) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      // A focused text-editing host always owns its arrows for the caret ([P25]
+      // single-line / multi-line editor) — yield regardless of declared captures,
+      // so no editor has its caret stolen by the spatial plane. In cycling mode DOM
+      // focus follows the ring onto the zone (not the editor), so this never blocks
+      // zone navigation.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        (active.isContentEditable ||
+          active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA")
+      ) {
+        return;
+      }
+      const focusKey = {
+        key: event.key,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+      };
+      // A component that captures this arrow (a slider's value axis — [P25]) keeps
+      // it; the spatial plane yields.
+      if (focusManager.keyViewCaptures(focusKey)) return;
+      if (focusManager.moveKeyViewSpatial(direction)) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -654,8 +699,11 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     }
 
     // focusWalkListener is registered before captureListener so it owns Tab
-    // in the capture phase ahead of the global-shortcut dispatch.
+    // in the capture phase ahead of the global-shortcut dispatch. arrowNavListener
+    // sits between them: it owns bare arrows for the spatial plane ahead of the
+    // keybinding map, the same precedence the walk has for Tab ([P22]).
     document.addEventListener("keydown", focusWalkListener, { capture: true });
+    document.addEventListener("keydown", arrowNavListener, { capture: true });
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", actDispatchListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
@@ -666,6 +714,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     return () => {
       document.removeEventListener("keydown", focusWalkListener, { capture: true });
+      document.removeEventListener("keydown", arrowNavListener, { capture: true });
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", actDispatchListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);

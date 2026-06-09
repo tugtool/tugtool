@@ -25,7 +25,9 @@
  *   - Tab moves the key view onto the scope group (a single radio item-group
  *     stop), and Allow's engine-owned persistent default ring lights while the
  *     keyboard is on that non-button stop;
- *   - arrows in the scope group move the selection (selection-follows-cursor);
+ *   - arrows in the scope group move the ring WITHOUT committing, and **Space**
+ *     commits the ringed scope ([P24], explicit commit — reverts the 7.7-era
+ *     selection-follows-cursor);
  *   - the trap holds — Tab cycles Deny / Allow / scope group and never lands on
  *     the (deactivated) editor;
  *   - Escape denies and the dialog dismisses.
@@ -53,6 +55,8 @@ const SCOPE = `${DIALOG} [data-slot="tug-radio-group"]`;
 // `.tug-radio-item-label` when it carries a description, so match the row itself
 // and assert on its text).
 const SCOPE_CHECKED = `${SCOPE} [data-slot="tug-radio-item"][data-state="checked"]`;
+// The scope row currently wearing the movement cursor (the ring), checked or not.
+const SCOPE_CURSOR = `${SCOPE} [data-slot="tug-radio-item"][data-key-cursor]`;
 const OLD_DEADZONE = `${CARD} [data-slot="dev-permission-dialog-scope"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
@@ -186,6 +190,58 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
         );
         expect(allowOutlineOpen, "Allow shows a visible ring on open").toBeGreaterThan(0);
 
+        // (3b) Spatial arrow navigation ([P22] / [P23], the declared order): the ring
+        // is seeded on Allow. **Left** moves it to Deny (the reported case); **Right**
+        // wraps back to Allow (closed button ring); **Down** crosses the seam into the
+        // scope group; **Up** returns to Allow. Arrows move the ring only — they never
+        // commit (the checked scope is asserted unchanged in (5)). Ends on Allow so the
+        // Tab assertions below still hold (seed = Allow).
+        await app.nativeKey("ArrowLeft");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(DENY)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+        expect(await hasAttr(app, DENY, "data-key-view-kbd"), "Left from Allow rings Deny").toBe(true);
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(ALLOW)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+        expect(await hasAttr(app, ALLOW, "data-key-view-kbd"), "Right wraps back to Allow").toBe(true);
+        await app.nativeKey("ArrowDown");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(SCOPE)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+        expect(await hasAttr(app, SCOPE, "data-key-view-kbd"), "Down crosses the seam into the scope group").toBe(true);
+        await app.nativeKey("ArrowUp");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(ALLOW)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+        expect(await hasAttr(app, ALLOW, "data-key-view-kbd"), "Up from the scope group returns to Allow").toBe(true);
+
+        // (3c) Liveliness ([P23]): no arrow ever dead-ends or beeps. From Deny, Up
+        // loops into the scope group (nothing sits above the button row); Up from the
+        // top of the group returns to Allow. (Ends on Allow so the Tab assertions
+        // below still hold.)
+        await app.nativeKey("ArrowLeft"); // Allow → Deny (button ring)
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(DENY)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+        await app.nativeKey("ArrowUp"); // Deny → scope group (loops up into it)
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(SCOPE)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+        expect(await hasAttr(app, SCOPE, "data-key-view-kbd"), "Up from Deny loops into the scope group (no beep)").toBe(true);
+        await app.nativeKey("ArrowUp"); // scope top → Allow
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(ALLOW)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+
         // (4) Tab order is Allow → Deny → scope group. The seed is Allow, so the
         // first Tab lands on Deny.
         await app.nativeKey("Tab");
@@ -207,11 +263,11 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
           "Allow shows its persistent default ring while the keyboard is on the scope group",
         ).toBe(true);
 
-        // (5) The radio group is selection-follows-cursor ([Q06]): it opens
-        // checked on "Allow once"; ArrowDown moves the selection *immediately*
-        // (no separate Space confirm), so the checked row becomes "Allow for this
-        // project". The group does NOT consume Enter — Return falls through to the
-        // ringed Allow (asserted at (6b)).
+        // (5) Explicit commit ([P24]): the scope group opens checked on "Allow
+        // once". ArrowDown moves the cursor/ring onto "Allow for this project" but
+        // does NOT commit — the checked row stays "Allow once". **Space** then
+        // commits the ringed row. The group never consumes Enter — Return falls
+        // through to the ringed Allow.
         expect(
           (await textOf(app, SCOPE_CHECKED)) ?? "",
           "scope group opens checked on Allow once",
@@ -219,8 +275,18 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
         await app.nativeKey("ArrowDown");
         await sleep(150);
         expect(
+          (await textOf(app, SCOPE_CURSOR)) ?? "",
+          "ArrowDown rings the next scope",
+        ).toContain("Allow for this project");
+        expect(
           (await textOf(app, SCOPE_CHECKED)) ?? "",
-          "ArrowDown selects the next scope immediately (selection follows cursor)",
+          "ArrowDown does NOT commit — the checked row is unchanged ([P24])",
+        ).toContain("Allow once");
+        await app.nativeKey(" ");
+        await sleep(150);
+        expect(
+          (await textOf(app, SCOPE_CHECKED)) ?? "",
+          "Space commits the ringed scope",
         ).toContain("Allow for this project");
 
         // (6) The trap holds: keep Tabbing and the key view never lands on the

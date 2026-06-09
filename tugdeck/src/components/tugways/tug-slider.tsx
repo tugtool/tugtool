@@ -126,6 +126,7 @@ import { useControlDispatch } from "./use-control-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
 import { useFocusable } from "./use-focusable";
+import { captureSet } from "./focus-act";
 import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
@@ -309,6 +310,16 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       order: focusOrder,
       policy: focusPolicy,
       register: focusGroup !== undefined,
+      // The slider is a value control ([P25] / [#seam-arrow-matrix]): it captures
+      // its value axis (Left / Right) so the spatial plane yields those to the
+      // native step; the cross axis (Up / Down) is left to the navigator, leaving
+      // spatially where the layout declares a neighbour. A leaf (`container: "none"`)
+      // — Space / Enter stay on the native pipeline (the act dispatch never
+      // intercepts a `"none"` container).
+      behavior: () => ({
+        container: "none",
+        captures: captureSet(["ArrowLeft", "ArrowRight"]),
+      }),
     });
 
     // ---- Chain dispatch [L11] ----

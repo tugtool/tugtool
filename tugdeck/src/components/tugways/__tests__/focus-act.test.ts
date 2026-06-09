@@ -27,37 +27,29 @@ describe("resolveFocusAct — act tier", () => {
     expect(resolveFocusAct(k("Spacebar"), { container: "item" })).toBe("select");
   });
 
-  test("Enter acts by default, descends when the current item is navigable", () => {
-    expect(resolveFocusAct(k("Enter"), { container: "item" })).toBe("act");
+  test("Enter never commits an item group — it bubbles to the scope default ([P24])", () => {
+    // An item container NEVER consumes Enter (the explicit-commit reversion): a
+    // radio / choice / option / single-select list all bubble Return to the scope
+    // default. Unconditional now — there is no per-group flag.
+    expect(resolveFocusAct(k("Enter"), { container: "item" })).toBe("passthrough");
+    // Space remains the group commit.
+    expect(resolveFocusAct(k(" "), { container: "item" })).toBe("select");
+  });
+
+  test("Enter descends when the current target is navigable (descendable wins)", () => {
+    // A descendable accordion section / list row, or the editor stop that resumes
+    // typing — descends regardless of container kind.
     expect(
       resolveFocusAct(k("Enter"), { container: "item", currentItemDescendable: true }),
     ).toBe("descend");
-    expect(resolveFocusAct(k("Enter"), { container: "none" })).toBe("act");
+    expect(
+      resolveFocusAct(k("Enter"), { container: "none", currentItemDescendable: true }),
+    ).toBe("descend");
   });
 
-  test("an enterPassthrough item-group passes Enter through (both selection shapes); Space selects", () => {
-    // One flag covers both shapes whose commit is NOT Enter — selection-follows-
-    // cursor (radio/choice) and Space-toggle (option). Return is not consumed; it
-    // bubbles to the scope default action ([P12]).
-    expect(
-      resolveFocusAct(k("Enter"), { container: "item", enterPassthrough: true }),
-    ).toBe("passthrough");
-    // descendable is moot under enterPassthrough — passthrough still wins.
-    expect(
-      resolveFocusAct(k("Enter"), {
-        container: "item",
-        enterPassthrough: true,
-        currentItemDescendable: true,
-      }),
-    ).toBe("passthrough");
-    // The flag is item-container-only: a leaf still acts on Enter.
-    expect(
-      resolveFocusAct(k("Enter"), { container: "none", enterPassthrough: true }),
-    ).toBe("act");
-    // Space still selects/toggles the cursor item.
-    expect(
-      resolveFocusAct(k(" "), { container: "item", enterPassthrough: true }),
-    ).toBe("select");
+  test("Enter acts on a leaf or component", () => {
+    expect(resolveFocusAct(k("Enter"), { container: "none" })).toBe("act");
+    expect(resolveFocusAct(k("Enter"), { container: "component" })).toBe("act");
   });
 
   test("Escape ascends, cancels at a modal scope", () => {

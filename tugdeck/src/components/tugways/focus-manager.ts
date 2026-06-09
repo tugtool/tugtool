@@ -47,6 +47,7 @@ import { createContext } from "react";
 import type { TugAction } from "./action-vocabulary";
 import type { ComponentKeyDeclaration, FocusKey } from "./focus-act";
 import type { ResponderChainManager } from "./responder-chain";
+import { resolveSpatial, type SpatialDirection, type SpatialOrder } from "./spatial-order";
 
 /**
  * The behavior a key-view component declares to the engine ([P01]): the pure
@@ -56,14 +57,38 @@ import type { ResponderChainManager } from "./responder-chain";
  * follows from the declaration rather than a bespoke per-component keymap.
  */
 export interface KeyViewBehavior extends ComponentKeyDeclaration {
-  /** Space (and Enter-act on an item container): select / toggle the current item. */
+  /** Space: select / toggle the current item. Enter never commits a group member ([P24]). */
   onSelect?: () => void;
-  /** Enter on a non-descendable item, or a plain act. */
+  /** A plain act on a leaf (Enter / Space on a non-item component). */
   onAct?: () => void;
   /** Enter on a descendable item: the component pushes its inner scope + lands the key view inside it. */
   onDescend?: () => void;
   /** Optional cleanup when the engine ascends out of this component's descended scope. */
   onAscend?: () => void;
+}
+
+/**
+ * The live delegation contract a selection-group key view exposes to the spatial
+ * navigator ([P22] / [Q12]). The group is ONE ring node; when the ring rests on it,
+ * an arrow that stays inside the group drives its `useFocusCursor` 1D cursor instead
+ * of moving the ring, and only an arrow off the group's edge crosses a declared seam
+ * to the next key view. The handle is appearance-only ([L06]): it moves the cursor
+ * and fires any live commit; it never registers a focusable.
+ */
+export interface SpatialCursorHandle {
+  /** Number of cursor positions (live; reflects enabled items). */
+  length: () => number;
+  /** Current cursor index (live), or `-1` when empty. */
+  cursorIndex: () => number;
+  /** Move the 1D cursor by ±1 (clamped) and fire the group's live commit, if any. */
+  moveCursor: (delta: 1 | -1) => void;
+  /**
+   * If `ArrowRight` should descend the current item (tree disclosure — an open
+   * accordion section / a list row with navigable content), descend and return
+   * `true`; else `false`. Consulted before spatial movement so Right keeps its
+   * disclosure meaning wherever descent is available ([P02]).
+   */
+  tryDescendRight: () => boolean;
 }
 
 // ---- Focus modes ----
@@ -274,6 +299,16 @@ export class FocusContext {
   // wears the ring iff the current key view is NOT itself a button. Per-card.
   private defaultRingStack: HTMLElement[] = [];
   private seqCounter = 0;
+  // Declared spatial arrow orders ([P23] / [Q12]), keyed by the focus mode
+  // (`scopeId`) they govern — a card's base order, a dialog trap's own order. The
+  // navigator looks up the order for the current mode; pure ring/seam/override data
+  // (structure zone, [L22]). Group nodes are discovered live from `cursorHandles`,
+  // not declared here.
+  private spatialOrders: Map<string, SpatialOrder> = new Map();
+  // Live cursor handles for selection-group key views (the [Q12] delegation
+  // contract). Present only while a group is mounted; the navigator consults the
+  // ringed node's handle to delegate an in-group arrow to the cursor.
+  private cursorHandles: Map<string, SpatialCursorHandle> = new Map();
   // Focus keys (`group:order`) of keyboard key views whose focusable had not
   // mounted when the focus axis restored ([focus-transfer] `deferred-dom`). The
   // ring re-lights the moment a matching focusable registers — the late-mount
@@ -832,6 +867,126 @@ export class FocusContext {
     return nextId;
   }
 
+  // ---- Spatial arrow navigation ([P22] / [P23]) ----
+
+  /**
+   * Declare the spatial arrow order for a focus mode (the bounded scope a card or
+   * dialog draws). Registration ([Q12]); read by {@link moveKeyViewSpatial} for the
+   * current mode. No DOM projection, so no notify.
+   */
+  registerSpatialOrder(scopeId: string, order: SpatialOrder): void {
+    this.spatialOrders.set(scopeId, order);
+  }
+
+  /** Drop a declared spatial order (on unmount of the layout that declared it). */
+  unregisterSpatialOrder(scopeId: string): void {
+    this.spatialOrders.delete(scopeId);
+  }
+
+  /** Register a group key view's live cursor handle (the delegation contract). */
+  registerCursorHandle(id: string, handle: SpatialCursorHandle): void {
+    this.cursorHandles.set(id, handle);
+  }
+
+  /** Drop a group's cursor handle (on unmount / when it stops being a group). */
+  unregisterCursorHandle(id: string): void {
+    this.cursorHandles.delete(id);
+  }
+
+  /**
+   * Move the focus ring spatially in `direction` ([P22] / [P23]): delegate an
+   * in-group arrow to the ringed group's cursor, cross a declared seam / ring at a
+   * boundary, or descend on Right where disclosure is available. Returns `true` when
+   * the navigator owns the arrow (moved the ring, drove a group cursor, descended,
+   * or held a group at an undeclared edge), so the caller consumes it; `false` when
+   * no declared order and no group claim this arrow — it is not the spatial plane's.
+   *
+   * Never beeps: a closed ring always yields a next node and a declared seam always
+   * has a target; a group at an undeclared edge holds (clamps) rather than failing.
+   * A non-group node with a declared order but no target for this arrow is a *dead
+   * arrow* ([R06]) — warned at dev time, never a beep.
+   */
+  moveKeyViewSpatial(direction: SpatialDirection): boolean {
+    const id = this.keyViewId;
+    if (id === null) return false;
+    const handle = this.cursorHandles.get(id);
+    // Tree-disclosure descend on Right keeps its meaning wherever descent is
+    // available ([P02]) — consulted before spatial movement.
+    if (direction === "right" && (handle?.tryDescendRight() ?? false)) return true;
+    const order = this.spatialOrders.get(this.currentFocusMode());
+    if (order === undefined && handle === undefined) return false;
+    // The declared order references nodes by their stable `group:order` focus key
+    // ([Q12]) — the same key the dialog seeds with — so an author never needs an
+    // auto-generated focusable id. Map the ringed id to its key (fall back to the
+    // raw id for an unkeyed node, e.g. the engine tests).
+    const node = this.focusKeyOf(id) ?? id;
+    // Inject the ringed group's LIVE cursor length so the resolver can detect its
+    // edge; only the current node's group-ness matters to a single resolution.
+    const effective: SpatialOrder = {
+      rings: order?.rings ?? [],
+      seams: order?.seams,
+      overrides: order?.overrides,
+      groups: handle !== undefined ? [{ node, length: handle.length() }] : order?.groups,
+    };
+    const cursorIndex = handle !== undefined ? handle.cursorIndex() : null;
+    const resolution = resolveSpatial(effective, node, direction, cursorIndex);
+    if (resolution.kind === "cursor") {
+      handle?.moveCursor(resolution.delta);
+      return true;
+    }
+    if (resolution.kind === "ring") {
+      const targetId = this.idForFocusKey(resolution.target) ?? resolution.target;
+      this.setKeyView(targetId, true);
+      this.focusKeyView();
+      return true;
+    }
+    // resolution.kind === "none" — no spatial target (a group edge, or an arrow the
+    // declared rings / seams don't cover).
+    if (order !== undefined) {
+      // Liveliness ([P23] — "never beeps falls back to the design-time ordering"):
+      // within a declared spatial scope, fall back to the linear groupOrder walk —
+      // down / right advance, up / left retreat, both wrapping. Every arrow moves the
+      // ring SOMEWHERE; the interface never beeps and never silently swallows the
+      // key. (The authored rings / seams give the *spatial* feel; this is the net
+      // under them so a layout can never trap the ring in a dead-end corner.)
+      const moved =
+        direction === "down" || direction === "right"
+          ? this.focusNext()
+          : this.focusPrevious();
+      if (moved !== null) {
+        this.focusKeyView();
+        return true;
+      }
+    }
+    if (handle !== undefined) {
+      // A group at an edge in a scope with NO declared order: hold the cursor (clamp)
+      // and consume the arrow so the page does not scroll — Tab leaves the group.
+      return true;
+    }
+    return false;
+  }
+
+  /** A focusable's stable spatial node key (`group:order`), or `null` if ungrouped. */
+  private focusKeyOf(id: string): string | null {
+    const record = this.focusables.get(id);
+    if (record === undefined || record.group === "") return null;
+    return `${record.group}:${record.order}`;
+  }
+
+  /**
+   * The id of the rendered focusable with this `group:order` key, or `null`. Prefers
+   * a rendered record so the navigator lands the ring on a live target.
+   */
+  private idForFocusKey(focusKey: string): string | null {
+    let fallback: string | null = null;
+    for (const record of this.focusables.values()) {
+      if (record.group === "" || `${record.group}:${record.order}` !== focusKey) continue;
+      if (this.isRecordRendered(record)) return record.id;
+      fallback ??= record.id;
+    }
+    return fallback;
+  }
+
   private compareFocusables(a: FocusableRecord, b: FocusableRecord): number {
     const ga = this.groupIndex(a.group);
     const gb = this.groupIndex(b.group);
@@ -1349,6 +1504,9 @@ export class FocusManager {
   }
   focusPrevious(): string | null {
     return this.activeContext().focusPrevious();
+  }
+  moveKeyViewSpatial(direction: SpatialDirection): boolean {
+    return this.activeContext().moveKeyViewSpatial(direction);
   }
   walkOrder(): FocusableRecord[] {
     return this.activeContext().walkOrder();
