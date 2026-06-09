@@ -294,7 +294,7 @@ const DEV_CYCLE_ORDER_EDITOR = 10;
 // each:
 //   "relinquish" — commit exits focus-cycling; the caret returns to the prompt.
 //   "retain"     — commit keeps cycling; the ring returns to the originating chip.
-const DEV_CYCLE_PICKER_COMMIT_DISPOSITION: "retain" | "relinquish" = "relinquish";
+const DEV_CYCLE_PICKER_COMMIT_DISPOSITION: "retain" | "relinquish" = "retain";
 
 /** Max characters the Z4B Project chip shows before it falls back to the
  *  leaf directory name. */

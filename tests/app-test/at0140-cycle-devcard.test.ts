@@ -506,7 +506,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
   );
 
   test(
-    "committing a settings picker opened from a cycle stop exits cycling and returns the blinking caret to the editor ([P15])",
+    "committing a settings picker opened from a cycle stop keeps cycling and returns the ring to the originating chip ([P15] retain)",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard-picker" });
       try {
@@ -543,24 +543,24 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         // cycling — opening a picker is not an exit.
         expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
 
-        // Return commits the sheet's default (OK). Committing a setting from a
-        // cycle stop ENDS focus-cycling and returns the blinking caret to the
-        // editor ([P15]): the sheet closes, the card stops cycling, and DOM focus
-        // lands in the prompt — not stranded on a chip or a blurred editor.
+        // Return commits the sheet's default (OK). Under the card's chosen
+        // disposition (`DEV_CYCLE_PICKER_COMMIT_DISPOSITION = "retain"`) committing
+        // a setting from a cycle stop KEEPS the card cycling and returns the ring
+        // to the originating chip — the user can keep cycling. (The framework
+        // supports "relinquish" too: commit exits cycling, caret to the prompt.)
         await app.nativeKey("Return");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(SHEET_OPTION)}) === null`,
           { timeoutMs: 6000 },
         );
-        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
         expect(
           await app.evalJS<string | null>(CYCLING),
-          "committing a cycle-stop picker exits cycling",
-        ).toBe("false");
+          "committing a cycle-stop picker keeps the card cycling (retain)",
+        ).toBe("true");
         expect(
-          await app.evalJS<boolean>(EDITOR_FOCUSED),
-          "the caret returns to the editor",
+          await app.evalJS<boolean>(hasKeyView(MODE_CHIP)),
+          "the ring returns to the originating chip (retain)",
         ).toBe(true);
       } catch (err) {
         const tail = app.tailLog(200);
