@@ -1085,27 +1085,36 @@
  * transcript rows, the Z2 status bar, and the prompt-entry pane. The dialog row
  * is excepted via `:has()` ([Q09] option (a)).
  */
+/* The scrim is also a MODAL BARRIER, not just a dim: each scrimmed region drops
+   `pointer-events` so the pending dialog truly owns interaction — no hovering the
+   Copy chip on a faded turn, no clicking the status bar or typing in the entry
+   pane behind the dialog. `pointer-events: none` on a cell leaves it transparent
+   to hit-testing, so wheel events still reach the scroll container and the
+   transcript scrolls normally; only the controls inside the faded regions go
+   inert. The dialog subtree (the bright island) keeps `pointer-events: auto`. */
 .dev-card[data-inline-dialog-pending="true"] .dev-card-status-bar,
 .dev-card[data-inline-dialog-pending="true"] .dev-card-entry-pane {
   opacity: 0.45;
+  pointer-events: none;
   transition: opacity 0.15s ease;
 }
 
 /* Transcript turns dim except the one holding the pending dialog. Transcript
    rows are TugListView cells (`.tug-list-view-cell`), so the dim is keyed there
-   — the user-message turns and every prior turn fade. */
+   — the user-message turns and every prior turn fade and go inert. */
 .dev-card[data-inline-dialog-pending="true"]
   .dev-card-transcript
   .tug-list-view-cell:not(:has(.dev-permission-dialog)):not(:has(.dev-question-dialog)) {
   opacity: 0.45;
+  pointer-events: none;
   transition: opacity 0.15s ease;
 }
 
 /* …but the dialog's OWN option rows are a nested `TugListView`, so its cells are
    also `.tug-list-view-cell` descendants of the transcript that don't *contain* a
-   dialog — the rule above would dim them too. Re-light any list cell that lives
-   INSIDE the bright-island dialog. Compound depth matches the dim rule's
-   specificity and, declared after it, wins on source order. */
+   dialog — the rule above would dim AND inert them too. Re-light + re-enable any
+   list cell that lives INSIDE the bright-island dialog. Compound depth matches
+   the dim rule's specificity and, declared after it, wins on source order. */
 .dev-card[data-inline-dialog-pending="true"]
   .dev-card-transcript
   .dev-permission-dialog
@@ -1117,13 +1126,14 @@
   .tug-list-view
   .tug-list-view-cell {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* The dialog lives in the LIVE assistant turn, alongside that turn's prose +
-   tool block (the `.dev-card-transcript-code-body`). Dim that body too so the
-   dialog is the single bright island — the dialog restates its own subject
-   ([Q09]/R04), so nothing legible is lost. The dialog subtree itself is a
-   sibling of the body and stays at full strength. */
+   tool block (the `.dev-card-transcript-code-body`). Dim + inert that body too so
+   the dialog is the single bright, interactive island — the dialog restates its
+   own subject ([Q09]/R04), so nothing legible is lost. The dialog subtree itself
+   is a sibling of the body and stays at full strength + interactive. */
 .dev-card[data-inline-dialog-pending="true"]
   .tug-list-view-cell:has(.dev-permission-dialog)
   .dev-card-transcript-code-body,
@@ -1131,6 +1141,17 @@
   .tug-list-view-cell:has(.dev-question-dialog)
   .dev-card-transcript-code-body {
   opacity: 0.45;
+  pointer-events: none;
   transition: opacity 0.15s ease;
+}
+
+/* The jump-to-bottom affordance is follow-bottom chrome for free reading; while a
+   dialog is pending it's both off-topic and part of the scrimmed surround, and a
+   tall inline dialog spuriously disengages follow-bottom and pops it up. Hide it
+   for the duration (wins over its own `[data-visible="true"]` reveal). */
+.dev-card[data-inline-dialog-pending="true"] .dev-jump-to-bottom-button {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
