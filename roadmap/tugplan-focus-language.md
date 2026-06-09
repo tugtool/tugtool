@@ -195,6 +195,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 | Cycle trigger chord eaten by OS/WebKit | high | med | Spike the chord first ([#step-cycle-trigger-spike]); fall back to a non-Tab chord ([Q05]) | A posted chord never reaches the document listener |
 | Cycling mode regresses the editor's typing / Tab semantics | high | low | Mode is opt-in + trapped; behavior app-tests for enter/cycle/act/exit AND editor-Tab-still-completes | Tab in the editor stops doing completion |
 | Scrim dims the very tool call the dialog is about | med | med | Dialog subtree + its subject tool-call row opt out of the dim ([P19]); by-eye legibility check both themes | The user can't read what they're approving |
+| Card-modal / cycle focus lost across card switch or app switch | high | high | Per-card focus-mode suspend/restore on (de)activation ([P21]); a pending card-modal dialog is the card's active focus destination ([P20]); switch-away-and-back app-tests | A pending dialog goes inert on return; the editor is focusable behind a modal |
 
 **Risk R01: Mixed-language window during rollout** {#r01-mixed-window}
 
@@ -217,6 +218,13 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 - **Risk:** Dimming the card content around the dialog ([P19]) could also dim the tool-call row the permission is about, leaving the user approving something they can't read.
 - **Mitigation:** the dialog subtree **and** its subject tool-call row opt out of the dim; by-eye legibility check in both themes ([#step-7-6-modal]).
 - **Residual risk:** a quiet scrim still slightly lowers peripheral-context contrast — acceptable; that is the intended effect.
+
+**Risk R05: Focus state is pooled deck-global instead of per-card (the missing key-window model)** {#r05-global-modestack}
+
+- **Root cause (not just a risk):** The `FocusManager` is a single deck-wide singleton (one `reactRoot.render` in `deck-manager.ts`; `ResponderChainProvider` mounted once) holding ONE `modeStack` and ONE key view shared by **every card**. But focus state — the mode stack (cycle / card-modal trap / descend), the key view, the key-within — is inherently **card-local**: each card is a self-contained focus universe with its own resting key view (editor caret), its own modes, its own focusables. Pooling N cards' state into one stack is the wrong data structure. Its symptoms: a background card's still-pushed trap (its dialog stays mounted at `display:none`, so `useFocusTrap` never pops it) is `currentFocusMode` while a *different* card is active; and a card-modal dialog's focus, established once on open, is gone on return because the deck-global key view was overwritten and `paintMirrorAsActive` refocuses the editor ([#focus-restore-audit]). The current code papers over the pooling with run-time filters — `isRecordRendered` excludes `display:none` cards from the walk, `walkModeSet` bounds to the top mode — which are exactly the band-aids a wrong shape forces.
+- **The system already names the right model.** The responder chain has a **key card** (`getKeyCard`, `sendToKeyCard`, key-card-scoped chords) — the AppKit *key window*: each window owns its own responder chain / key-view loop, and the app routes input to the key window. The focus mode stack is the one structure that did NOT follow this; it pooled instead.
+- **Mitigation (the from-scratch design, not a tag-and-filter patch):** **per-card focus contexts** ([P21]) — each card owns a self-contained `FocusContext` (mode stack + key view + its focusables); the `FocusManager` becomes a deck **coordinator** holding deck-global settings (ring modality, access mode), the key-card pointer, and the per-card contexts, routing the document Tab/pointer listeners and the engine API to the **key card's** context. A card switch swaps the active context; each card's focus universe is independent and preserved **by construction** — no tagging, no suspend/restore reconciliation of a shared stack, and the *cross-card* role of `isRecordRendered` dissolves (its within-card hidden-element filter and `isRecordInteractive` stay — they are correct inside one context). [P20] (a pending dialog is the card's destination) then falls out: the card's context already remembers the dialog as its key view.
+- **Residual risk:** the refactor must preserve every per-scope invariant (cycle pop-on-unmount + mouse-exit; sheet opener-restore + pane `inert`; descend ascend-on-Escape); the audit's regression matrix ([#step-7-7-audit]) is the gate. Sheets are *pane*-modal (a pane shows one card at a time + `inert` on the pane body), which composes cleanly: a sheet's trap lives in its pane's active-card context, cross-pane isolation stays a DOM (`inert`) concern.
 
 ---
 
@@ -463,6 +471,49 @@ The **editor is the last stop** (a text stop, per [P11]): landing gives the **st
 
 ---
 
+#### [P20] A pending card-modal dialog is its card's active focus destination (DECIDED — 2026-06-08) {#p20-dialog-is-destination}
+
+**Decision:** While a `PermissionDialog` / `QuestionDialog` is pending, the **dialog is the card's active focus destination** — the thing the card's activation-focus path lands on whenever the card gains focus (cold boot, intra-pane tab switch, pane activation, cross-pane move, window blur→focus), *replacing* the resting editor caret for the duration. The card-modal trap is not a one-shot established only on open; it is **re-established every time the card becomes active** while the dialog is pending.
+
+**Rationale:**
+- The card-modal contract ([P16]) says a blocking decision owns the keyboard. "Owns the keyboard" must hold across *every* way focus can return to the card, not only the instant the dialog mounts. A trap that survives only until the next card switch is not modal.
+- The activation-focus machinery already has a single, principled channel — `bag.focus` resolved through `applyBagFocus` (`focus-transfer.ts`), with the engine branch invoking the card's `paintMirrorAsActive` hook. Today that hook unconditionally refocuses the prompt editor (`tug-prompt-entry.tsx`), with **no awareness of a pending dialog** — the defect. The dialog must participate in that channel rather than bolt on a parallel restore.
+
+**Mechanism (structure-zone, [L22]/[L24]):** [P20] is **delivered by [P21]**, not a separate patch — the card's `FocusContext` already holds a pending dialog's trap as its top mode and the dialog default as its key view, so restoring the context on activation restores the dialog. The one concrete seam [P20] names: the prompt editor's `paintMirrorAsActive` hook (`tug-prompt-entry.tsx`) is **one focusable inside the context, not a parallel focus claimant** — activation restores the context's key view (the dialog, when pending), and the editor's paint-mirror fires only when the context's key view *is* the editor. No new React appearance state; the engine context is the single source of "where focus is."
+
+**Implications:**
+- The activation-focus path (`focus-transfer.ts` engine branch → `paintMirrorAsActive`) restores the **engine context's key view**, not unconditionally the editor.
+- `useInlineDialogScope`'s seed is owned by the context's restore, not a one-shot `active`-keyed effect.
+- **Governance:** folds into the [#step-9] card-modal rider — "card-modal ⇒ the dialog is the card's focus destination until resolved; the editor is subordinate to the context's key view."
+
+---
+
+#### [P21] Per-card focus contexts — the key-window model (DECIDED — 2026-06-08) {#p21-card-scoped-modes}
+
+**Decision:** Focus state is **owned per card**, not pooled deck-global. Each card has a self-contained **`FocusContext`** — its mode stack (cycle / card-modal trap / descend), its key view (id + keyboard-ness), its key-within, and the focusables registered into it. The `FocusManager` is recast as a deck-level **coordinator**: it owns only deck-global state (ring modality, access mode, the document Tab/pointer listeners) plus the **key-card** pointer and the map of `cardId → FocusContext`, and it routes every walk / seed / projection / engine call to the **key card's** context. Switching the key card is an O(1) context swap; an inactive card's context is **untouched**, so its focus universe (a mid-flow cycle, a pending card-modal dialog, a descended scope) is preserved **by construction**.
+
+**Rationale:**
+- This is how we *would* design it from scratch, and the system already half-says it: the responder chain has a **key card** (`getKeyCard` / `sendToKeyCard` / key-card chords) — the AppKit **key window**, where each window owns its own responder chain + key-view loop and the app routes input to the key window. The focus mode stack was the lone structure that pooled all cards into one; per-card contexts complete the model the rest of the engine already uses.
+- It **retires the cross-card band-aids** the wrong shape forced — the *cross-card* burden of `isRecordRendered` (excluding *other cards'* `display:none` focusables; background cards are simply not in the active context) and `walkModeSet`'s cross-card containment caveat — and rejects outright the "tag the mode with a card and demultiplex the shared stack" scheme (that threads N universes through one structure and un-threads them at read time). **NOT deleted:** the *within-card* filters — `isRecordRendered` still skips hidden subtrees inside the active card (a collapsed accordion section, a conditionally-hidden control), and `isRecordInteractive` still skips disabled / `pointer-events:none` controls. Those are correct within one context and stay.
+- The reported "switch away and back loses the scope" bug, the cross-card Tab leak, and the activation-restore gap are **one** defect — focus state in the wrong place — and dissolve together.
+
+**Mechanism (structure-zone, [L22]):**
+- Extract a `FocusContext` holding the mode stack + key view + key-within + the default-ring stack + this card's focusable registry, with the walk/seed/project logic operating on *it*. The card id resolves at registration from the existing `CardIdContext` (`@/lib/card-id-context`, already provided by `CardHost`) — the same context-read shape `useFocusable` uses today for `FocusModeContext`, so no new plumbing.
+- `FocusManager` keeps deck-global state (ring modality, access mode, the document Tab/pointer listeners) + `keyCardId` + `Map<cardId, FocusContext>`; its public API delegates to `contexts.get(keyCardId)`.
+- **One source of truth for "which card is key" — and the data flow inverts.** Today `getKeyCard()` is *focus-derived* (first-responder of kind `card`, falling back to the card holding `[data-key-view-kbd]`). Per-card contexts make the key card **activation-driven**: `keyCardId` (set from the deck's `activeCardId` of the key pane in `onCardActivated`) is THE authority, and focus is *downstream* — set `keyCardId` → project that context's key view → `getKeyCard` reads `keyCardId` (its DOM fallback now finds the just-projected view). The two can never diverge because one feeds the other; they are not independent truths.
+- `useFocusable` registers into its **card's** context; `pushFocusMode` / `useCycleMode` / `useFocusTrap` push onto the card's context (card id from `CardIdContext`, which flows through portals so a sheet/dialog opened from a card resolves to that card).
+- Card activation (the existing `onCardActivated` / paint-mirror lifecycle) sets `keyCardId` and **projects that context's key view** to the DOM; deactivation clears the projection but leaves the context intact. Only the key card's context projects — and it projects **all three** engine marks (`data-key-view(-kbd)`, `data-key-within`, `data-default-ring`). Keep the existing "clear ALL globally, then stamp" in `syncKeyViewDomAttribute` as a safety net so a stale mark from a just-deactivated context can never linger.
+
+**Implications:**
+- Bigger than a patch, by design — but it *removes* code (the cross-card filters) as much as it adds. The audit ([#step-7-7-audit]) gates it with a regression matrix across cycle / sheet / card-modal / descend before adoption.
+- Must preserve: `useCycleMode` pop-on-unmount + mouse-exit; `useFocusTrap` pop-on-deactivate + opener key-view restore + pane `inert`; descend ascend-on-Escape.
+- Sheets stay *pane*-modal (a pane lays out one card at a time + `inert` on the pane body); a sheet's trap lives in its active card's context, cross-pane isolation stays a DOM concern — the two compose.
+- **[L26] null-tolerance:** every hook (`useFocusable` / `useFocusTrap` / `useCycleMode`) must stay a clean no-op when there is no manager AND when there is no resolvable card context (the gallery / standalone-preview path) — the per-card refactor must not assume a `CardIdContext` is always present.
+- **Pointer-activation ordering:** a click on a focusable in a non-key card must **activate that card (swap the key context) first, then** set its key view — get the order wrong and the click paints the ring in the outgoing context.
+- **Governance:** the governing statement for [#step-9] — "focus state is per-card (the key-window model); the deck coordinator services the key card's context only."
+
+---
+
 ### Deep Dives {#deep-dives}
 
 #### Keyboard-focus-cycling model {#cycle-model}
@@ -628,6 +679,10 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-7-6-modal | Step 7.6.3 — Card-modal polish: kill the wide-ring dead-zone; scrim the card content; verify the trap | done: at0145 green; [Q09]=(a) `:has()` dim with the dialog row bright (dash focus-card-modal) | — |
 | #step-7-6-question | Step 7.6.4 — QuestionDialog adopts the model | done: Cancel/Submit/Back/Next leaf stops + per-question options item-group (deferred); re-seed follows auto-advance; useInlineDialogModal deleted; at0146 green (dash focus-card-modal) | — |
 | #step-7-6-vet | Step 7.6.5 — Integration checkpoint + tuglaws note | done: tsc + 3396 pure-logic green; app-test sweep green (at0084/at0097/at0106/at0117-120/at0140/at0144/at0145/at0146); inline-vs-overlay rider noted for [#step-9] (dash focus-card-modal) | — |
+| #step-7-7 | Step 7.7 — Focus-scope audit + per-card focus contexts (umbrella) | pending | — |
+| #step-7-7-audit | Step 7.7.1 — Feature-driven focus-scope audit report (enumerate + verdict + regression matrix) | pending | — |
+| #step-7-7-cardscope | Step 7.7.2 — Per-card focus contexts (the key-window model); delivers [P20] + the reported-bug fix ([P21]) | pending | — |
+| #step-7-7-vet | Step 7.7.3 — Integration checkpoint: full regression matrix green | pending | — |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -1528,6 +1583,121 @@ The design question this raised — should the inline dialog *join* the card's T
 - Full `just app-test` permission + question + sheet sweep green; `bun test` green; `bunx tsc --noEmit` clean.
 
 **Checkpoint:** all gates green; the four defects fixed by eye; [P16]–[P19] satisfied; [P13] classification confirmed (persistent-trapped) in the plan.
+
+---
+
+#### Step 7.7: Focus-scope audit + per-card focus contexts {#step-7-7}
+
+**Depends on:** #step-7-6, #step-cycle, #step-7
+
+**Commit:** `N/A (umbrella — see #step-7-7-audit … #step-7-7-vet)`
+
+**References:** [P20], [P21], [P16], [P13], [P09], Risk R05, (#p20-dialog-is-destination, #p21-card-scoped-modes, #r05-global-modestack, #cycle-model)
+
+**Motivation (by-eye, 2026-06-08).** A pending `QuestionDialog` is card-modal, but **switching away from the card (to another card, to another app) and back does not restore the focus scope** — on return the dialog is inert (no seeded ring, modality not felt). This is the latest of a string of focus-scope defects (cross-card Tab leak; descend over-containment; double-ring), all symptoms of one under-engineered seam: **a single deck-wide `FocusManager` with one global `modeStack`, and activation-focus that has no concept of a card-modal dialog.** Enough whack-a-mole — this step is a **top-to-bottom audit** of every focus scope the product now supports, a verdict on each, and the fixups the audit proves necessary. The bar is *solid, ready-for-prime-time* code: no band-aids, the engine the single owner.
+
+**Audit scope — the focus-scope features the product must support** (the audit gates each as **SOLID** / **FIXUP**):
+
+| # | Feature (focus scope) | Required behavior | Primary code | Verdict |
+|---|-----------------------|-------------------|--------------|---------|
+| A | Card focus-cycle (⌥⇥) | Trapped per-card mode; Tab cycles chrome zones; commit-disposition relinquish; **mouse exits**; pop on unmount; restore editor caret | `use-cycle-mode.tsx` | **SOLID** — clean push/seed/pop; `useSyncExternalStore` truth; unmount + mouse-exit safety. Audit only confirms it survives [P21]. |
+| B | Sheet modality | Pane-modal (not app-modal); Tab trapped; Escape/⌘. dismiss; opener key-view restored on close; descend into accordion/list inside the sheet = locked loop | `tug-sheet.tsx` + `use-focus-trap.tsx` + Radix `loop` + pane `inert` | **SOLID (post-fix)** — cross-pane Tab leak fixed by walk-containment (`walkModeSet`, commit `821e5fd4`); relies on Radix `loop` + `inert` for native-only tabbables. Re-verify under [P21]. |
+| C | Card-modal inline dialogs | Inline display + trapped focus; seed default on open; scrim + pointer-events modal barrier; Escape→Deny/Cancel; scroll-entire-dialog-into-view; auto-advance + ring-flash; **survive card / app switch** | `dev-permission-dialog.tsx`, `dev-question-dialog.tsx`, `use-inline-dialog-scope.ts` | **FIXUP** — everything green EXCEPT survival across (re)activation: the seed is one-shot on `active`, and the card's `paintMirrorAsActive` refocuses the editor on return ([#focus-restore-audit]). [P20] + [P21]. |
+| D | Descend scopes | Accordion section / list row: locked Tab loop; Escape ascends | `tug-accordion.tsx`, `tug-list-view.tsx`, `focus-manager.ts#walkModeSet` | **SOLID (post-fix)** — containment fixed (commit `821e5fd4`); `trapped` governs Escape only. |
+| E | Item-groups | Tab to group; arrows rove cursor; Space/Enter commit; keyboard cursor authoritative over hover | `use-item-group-keyboard.ts`, `tug-radio-group`/choice/option/list | **SOLID** — double-ring (hover-over-cursor) fixed; cursor/ring model consistent. |
+| F | Cross-card containment | A background card's pushed modes must never be the active card's `currentFocusMode` | `focus-manager.ts` (one global `modeStack`) | **FIXUP** — Risk R05; the structural root. [P21]. |
+| G | Activation focus restore | Card switch / pane activation / cross-pane move / window blur→focus / cold boot all land focus on the card's correct destination | `focus-transfer.ts#applyBagFocus`, `paintMirrorAsActive` | **FIXUP** — the path is principled but has no card-modal-dialog branch; it always restores the editor. [P20]. |
+
+**Findings (grounded):**
+- **C/G — the reported bug.** `useInlineDialogScope` seeds the key view via `useSeedKeyView(active ? key : null)` — fires only when `active` flips, never on re-activation. The card's activation-focus hook `paintMirrorAsActive` (`tug-prompt-entry.tsx`) unconditionally calls `editor.paintMirrorAsActive(...)` with **no `inlineDialogPending` branch**. So returning to the card focuses the editor; the dialog's trap is still on the stack but its ring/currency is gone. {#focus-restore-audit}
+- **F — the structural root (R05).** One deck-wide `FocusManager` / `modeStack` (`deck-manager.ts` single `reactRoot.render`; `ResponderChainProvider` mounted once). A background card's dialog stays mounted at `display:none`, so `useFocusTrap`'s effect never pops its trap; that trap is `currentFocusMode` while another card is active. `walkModeSet` bounds the *walk* to the top mode but not *which card owns it*.
+- A–B, D–E are **solid** as of the recent fixes; the audit's job for them is a **regression matrix**, not new work — [P21] must not regress cycle pop-on-unmount / mouse-exit, sheet opener-restore, or descend ascend.
+
+**Approach — one structural fix, no interim band-aid.** The fix is **per-card focus contexts** ([P21], the key-window model): extract a per-card `FocusContext` (mode stack + key view + focusables) and recast `FocusManager` as a deck coordinator routing to the **key card's** context ([#step-7-7-cardscope]). This dissolves R05 and *all* its symptoms together — the reported restore bug, the cross-card Tab leak, the activation gap — because each card's focus universe is independent and preserved by construction. [P20] (a pending dialog is the card's destination, fixing the user's reported bug) **falls out**: the restored context already holds the dialog as its top mode + key view.
+
+A separate "interim editor-yield" patch was considered and **dropped** — it is an admitted band-aid (the user's standing directive: no band-aids), and its wiring (the editor reading `inlineDialogPending`; `useInlineDialogScope` subscribing to re-activation) is most of the real work [P21] does properly and then discards. We do it right once. Explicitly **not** the alternative band-aid either — tagging each mode with a card id and demultiplexing the shared stack keeps the wrong shape.
+
+**State Zone Mapping:**
+
+| State | Zone | Mechanism | Law |
+|-------|------|-----------|-----|
+| Which mode is current / serviced | structure | per-card `FocusContext` (mode stack + key view); deck coordinator routes to the key card's context | [L02], [L22] |
+| "A card-modal dialog is pending" (routes activation focus) | local-data → derived | `inlineDialogPending` via `useSyncExternalStore`; consulted by the activation-focus path | [L02] |
+| Dialog key view re-seed on reactivation | structure | `useInlineDialogScope` subscribes to card activation, re-seeds the default | [L03], [L22] |
+| Ring / scrim appearance | appearance | unchanged — CSS on engine `data-*` | [L06] |
+
+**Sub-steps:** [#step-7-7-audit] (this report + the regression matrix as living tests), [#step-7-7-cardscope] (the [P21] per-card focus contexts — delivers [P20] and the reported-bug fix), [#step-7-7-vet] (full matrix green).
+
+---
+
+#### Step 7.7.1: Feature-driven focus-scope audit report + regression matrix {#step-7-7-audit}
+
+**Commit:** `docs(focus): Step 7.7 focus-scope audit report`
+
+**References:** [P20], [P21], Risk R05, (#step-7-7)
+
+**Tasks:**
+- Land the audit table + findings above in the plan (this step's deliverable is the report itself).
+- Enumerate the **regression matrix** the fixups must keep green, as a checklist the later sub-steps turn into tests: (A) ⌥⇥ cycle enter/Tab/commit-relinquish/mouse-exit/unmount-pop; (B) sheet open → Tab-trapped → descend accordion (locked) → Escape ascend → Cmd-. dismiss → opener key-view restored; (C) permission + question present → seeded → **switch card away/back** + **window blur/focus** → still modal + ringed → resolve; (D) descend lock + Escape ascend; (E) item-group cursor vs hover.
+- **(F) Persistence boundaries** — a focus scope is never serialized; it re-derives from durable state on mount ([D13]/[A9] for a card-modal dialog) or evaporates if it was a transient gesture. The matrix asserts both directions:
+  - **F-durable:** a card-modal dialog is pending → **Developer > Reload** and **app relaunch** → the dialog returns **modal + seeded** (the cold-boot restore, `applyBagFocus(..., {site: "cold-boot"})`, must land the dialog as the card's key view, not the editor — the *same* [P20]/[P21] seam as the card-switch case, just a different trigger).
+  - **F-transient:** a ⌥⇥ cycle / a descend is in progress → **Reload / relaunch** → it does **not** come back (transient gestures, no durable source); only the resting key view is restored.
+  - **F-HMR:** HMR keeps the `FocusManager` alive while remounting components — so the goal is **robustness, not preservation**: remounting a dialog / radio / cycle component leaves **no stale rings, no double-trap, no double-seed** (the class of HMR bugs already hit). A rebuilt `FocusContext` ([P21]) is the structural guard; a pure-logic test exercises register→unregister→re-register under one manager.
+- Identify which matrix rows already have app-tests (at0140/at0141/at0145/at0146/at0147/focus-walk) and which are **new** — the switch-away-and-back cases (C), the reload/relaunch dialog-survival cases (F-durable), and the HMR re-register robustness (F-HMR, pure-logic).
+
+**Tests:** none new here (report step); the matrix is the spec the next steps implement.
+
+**Checkpoint:** the report enumerates every focus scope with a grounded verdict; the regression matrix is explicit; [P20]/[P21]/R05 recorded.
+
+---
+
+#### Step 7.7.2: Per-card focus contexts — the key-window model {#step-7-7-cardscope}
+
+**Depends on:** #step-7-7-audit
+
+**Commit:** `refactor(focus): per-card focus contexts (key-window model)`
+
+**References:** [P21], [P20], Risk R05, (#p21-card-scoped-modes, #p20-dialog-is-destination, #r05-global-modestack, #focus-restore-audit)
+
+**Tasks:**
+- Extract a `FocusContext` owning one card's mode stack + key view (id + keyboard-ness) + key-within + default-ring stack + focusable registry, with the walk/seed/project logic operating on it.
+- Recast `FocusManager` as the deck **coordinator**: deck-global settings (ring modality, access mode) + the document Tab/pointer listeners + `keyCardId` + `Map<cardId, FocusContext>`; its public API delegates to the key card's context.
+- Route `useFocusable` registration and `pushFocusMode` / `useCycleMode` / `useFocusTrap` into the **card's** context — card id from `CardIdContext` (`@/lib/card-id-context`, already provided by `CardHost`; flows through portals so a sheet/dialog resolves to its opening card).
+- **One source of truth for the key card — pin the data-flow direction.** Today `getKeyCard()` (`responder-chain.ts`) is **focus-derived**: it reads the first-responder of kind `card`, falling back to the card containing `[data-key-view-kbd]`. Per-card contexts **invert** that: the key card is driven by **card / pane activation** (the deck's existing `activeCardId` of the key pane), `keyCardId` is the authority, and focus is *downstream* of it. So the order at activation is fixed: `onCardActivated` sets `keyCardId` → the coordinator projects **that** context's key view → `getKeyCard()`'s DOM fallback now finds the view the coordinator just projected. Projection is never an independent source; `getKeyCard` is reconciled to read `keyCardId` (its focus-derivation becomes a consequence, not a competing truth). Get this inversion wrong and you reintroduce the very divergence this step exists to kill.
+- Only the key card's context projects, and it projects **all three** marks (`data-key-view(-kbd)`, `data-key-within`, `data-default-ring`). Keep `syncKeyViewDomAttribute`'s global "clear all, then stamp" as the safety net against a stale mark from a just-deactivated context.
+- **Retire only the cross-card band-aids:** the *cross-card* role of `isRecordRendered` (other cards' `display:none` focusables) and `walkModeSet`'s cross-card caveat. **Keep** the *within-card* filters — `isRecordRendered` still skips hidden subtrees inside the active card; `isRecordInteractive` still skips disabled / `pointer-events:none`; `walkModeSet`'s within-context containment stays.
+- **[P20] falls out** — the restored context already holds a pending dialog as its top mode + key view, so card switch / pane activation / cross-pane move / window blur→focus all re-establish the dialog with no editor-yield patch. The prompt editor's `paintMirrorAsActive` becomes one focusable inside the context (fires only when the context's key view *is* the editor), never a parallel claimant.
+- **[L26] + default-context invariant:** the coordinator must service a **default/implicit context** when no key card is set — `new FocusManager()` + `registerFocusable(...)` with no `CardIdContext` (the pure-logic tests, the gallery, standalone previews) routes into that default context. Design this path **first**: the existing `focus-walk` suite must pass **unchanged** against it; per-card behavior is purely additive. Every hook stays a clean no-op with no manager.
+- **Pointer-activation order:** a click on a focusable in a non-key card activates that card (swaps the key context) **before** setting its key view.
+- **Safe internal ordering (within this one atomic step — keep the migration from ever being half-applied):** (a) move all current `FocusManager` state into a single internal context, behavior-identical, all tests green; (b) add the `Map<cardId, FocusContext>` + `keyCardId` routing + register-by-card (default context still serves the no-card path); (c) wire activation (set `keyCardId` → project), reconcile `getKeyCard`, delete the cross-card filters, [P20] falls out. The dash squashes the internal commits.
+
+**Implementation notes (grounded landmarks + gotchas — captured from the 7.7 audit so a fresh implementer doesn't re-derive them; cite by symbol, line hints drift):**
+- **Landmarks.** The single deck-wide manager mounts once in `deck-manager.ts` (`ResponderChainProvider` in the lone `reactRoot.render`, ~L528). `FocusManager` fields split cleanly: per-card = `focusables`, `modeStack`, `groupOrder`, `defaultActions`, `keyViewId`/`keyViewKeyboard`, `defaultRingStack`, `version`; deck-global = `ringFollowsPointer`, `accessMode`. The editor's activation hook is `paintMirrorAsActive` registered by `tug-prompt-entry.tsx` (~L1513) — it unconditionally `editor.paintMirrorAsActive(...)` and consumes `pendingActivationDraftRef`; this is the seam [P20] makes subordinate (it must still run when the context's key view *is* the editor, including after a dialog resolves). Cold-boot restore is `card-host.tsx` `applyBagFocus(cardId, store, {site:"cold-boot"})` (~L965) → `focus-transfer.ts` engine branch → `invokeEnginePaintMirrorAsActive` — the F-durable path. `getKeyCard` is `responder-chain.ts` (~L680, focus-derived — see the data-flow inversion above). `CardIdContext` is `@/lib/card-id-context`, provided by `CardHost` (~L1516).
+- **Gotcha — the `cycling` [L02] consumer must not desync.** `useCycleMode`'s `cycling` boolean is a `useSyncExternalStore` over `manager.isFocusModePushed(scopeId)` + `manager.subscribe` (it reads *stack membership*, not top-of-stack, so a covering surface doesn't read as "exited"). Under per-card contexts, `isFocusModePushed(scopeId)` must resolve against the context that owns that scope (look up by scope, or the hook reads its own card's context), and `subscribe`/`version` should stay a single global notify-all (cheap; consumers re-read). Verify the cycle flag still flips correctly across enter/exit/cover/uncover after the refactor — it is the canonical [L02] focus consumer.
+- **Gotcha — confirm the app-test harness can drive the boundaries BEFORE writing the C / F tests** (don't defer to manual). Needed capabilities: seed a **multi-card / multi-pane** deck (today's at0145–at0147 seed a single card), **switch the active card / pane**, **window blur→focus**, and **Developer > Reload**. Audit `tests/app-test/_harness` for these; extend it where missing, or pin which boundary checks are app-test vs pure-logic (`focus-walk`) up front. If `relaunch` isn't harness-reachable, cover it by-eye and say so (no silent gap).
+- **Verify (cheap assertion):** `CardIdContext` actually resolves inside a **portaled sheet's** content (React context crosses portals, so it should — but a sheet host that renders outside the card's React subtree would break the card-id resolution the whole design rests on). One render-time check during (b).
+
+**Tests:**
+- `focus-walk.test.ts` (pure-logic, real `FocusManager`): the **existing 25 tests pass unchanged** against the default context (the no-card path), proving the refactor is additive. New cases: two card contexts; the key card's walk sees only its own focusables/modes; switching the key card swaps contexts losslessly (each card's mode stack + key view intact on return); a hidden / disabled focusable inside the active card is still skipped (within-card filters preserved). **(F-HMR robustness)** register→unregister→re-register a card's focusables + push/pop its mode under one surviving manager (the HMR remount shape) leaves no stale key view / double-trap / double-seed.
+- App-test (C): present a PermissionDialog (and a QuestionDialog), switch to another card and back, and to/from another app → the dialog is still modal, its default ringed, Tab trapped, resolve works (the reported bug). Plus two cards (one cycling, one card-modal): switch between them; each scope intact on return; neither pollutes the other.
+- App-test (F-durable): with a dialog pending, **Developer > Reload** (and, where the harness can, an app relaunch) → the dialog re-derives **modal + seeded** (cold-boot restore lands the dialog as the card's key view, not the editor).
+- App-test (F-transient): a ⌥⇥ cycle / a descend in progress → Reload → it does **not** return; only the resting key view is restored (the inverse assertion — transient scopes must not be replayed).
+
+**Checkpoint:** focus state is per-card; the deck coordinator services only the key card's context; switch-away-and-back AND reload/relaunch leave a pending dialog modal + ringed while a transient cycle/descend does not return; HMR remount leaves no stale focus marks; the cross-card filters are gone, the within-card filters preserved; the full regression matrix ([#step-7-7-audit]) green; existing at0140/at0141/at0145/at0146/at0147 + focus-walk green.
+
+---
+
+#### Step 7.7.3: Integration checkpoint — full regression matrix green {#step-7-7-vet}
+
+**Depends on:** #step-7-7-cardscope
+
+**Commit:** `N/A (checkpoint)`
+
+**Tasks:**
+- Run the full matrix (A–F) — including switch-away-and-back, the reload/relaunch dialog-survival cases (F-durable), the transient-non-restore inverse (F-transient), and the HMR re-register robustness (F-HMR); `bunx tsc --noEmit`, `bun test`, `just app-test` sweep.
+- By-eye both themes: cycle, sheet, permission, question, descend — plus a reload with a pending dialog.
+
+**Checkpoint:** every focus scope solid and ready for prime time across card switch, app switch, reload/relaunch, and HMR; no band-aids; [P20]/[P21] satisfied; R05 retired.
 
 ---
 
