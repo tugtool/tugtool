@@ -142,7 +142,10 @@ export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
  *
  * `trapped` does NOT widen the Tab walk; it selects the Escape semantics:
  * - `trapped: true` -- modal. Escape DISMISSES the surface (sheet / alert /
- *   popover / menu, and a card's focus-cycle).
+ *   popover / menu) — the surface owns its own Escape (cancel) and the engine must
+ *   not pop it from under it ([R04]). A focus-cycle is the one trapped mode that
+ *   opts OUT of this via `escapeExits` (see {@link FocusModeEntry}): it has no
+ *   surface to own Escape, so Escape pops the cycle back to rest instead.
  * - `trapped: false` -- a descend scope (an accordion section, a list row).
  *   Escape ASCENDS one level instead of dismissing. Tab is still contained to
  *   this scope's focusables (a locked loop) — see {@link FocusContext.walkModeSet}.
@@ -180,11 +183,17 @@ export interface FocusCommit {
  * stop on close; a mouse-opened one restores ringless).
  * `commitDisposition` ([P15]): consulted when a stop commits a value by
  * keyboard while this mode is current; `relinquish` pops the mode.
+ * `escapeExits`: opt a trapped mode into "Escape pops me back to rest" — a
+ * self-contained focus-cycle, as opposed to a modal surface that owns its own
+ * Escape. When set, a bare Escape at this mode (the current top) runs
+ * {@link FocusContext.escapeCurrentMode} instead of leaving Escape to a surface's
+ * cancel ([R04]).
  */
 interface FocusModeEntry extends FocusMode {
   restoreKeyView: string | null;
   restoreKeyViewKeyboard: boolean;
   commitDisposition?: (commit: FocusCommit) => CycleDisposition;
+  escapeExits?: boolean;
 }
 
 // ---- Focusables ----
@@ -514,6 +523,26 @@ export class FocusContext {
   }
 
   /**
+   * Exit the current trapped mode that opted into Escape-exit (`escapeExits`) — a
+   * self-contained focus-cycle, as opposed to a modal surface that owns its own
+   * Escape (cancel). Pops the mode and restores the prior key view (the caret the
+   * cycle captured at entry), mirroring the cycle's ⌥⇥ toggle-off
+   * (`popFocusMode` + `focusKeyView`) — and unlike {@link ascend}, it restores
+   * with the captured modality rather than forcing the ring, so a return to a
+   * non-keyboard resting view (the prompt editor) lands ringless. The consumer
+   * lands its resting destination off the `cycling` flip (its `restingFocus`).
+   * No-op (returns `false`) when the current mode did not opt in — a modal surface
+   * keeps its own Escape ([R04]).
+   */
+  escapeCurrentMode(): boolean {
+    const top = this.modeStack[this.modeStack.length - 1];
+    if (top === undefined || top.escapeExits !== true) return false;
+    this.popFocusMode(top.scopeId);
+    this.focusKeyView();
+    return true;
+  }
+
+  /**
    * Move DOM focus to the current key-view element, so keystrokes land on it
    * after the Tab walk advances. Mirrors the chain's `focusResponder` DOM-walk
    * fallback: focus the element itself when it is intrinsically focusable or
@@ -579,6 +608,7 @@ export class FocusContext {
     opts: {
       trapped: boolean;
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
+      escapeExits?: boolean;
     },
   ): void {
     const existing = this.modeStack.findIndex((m) => m.scopeId === scopeId);
@@ -591,6 +621,7 @@ export class FocusContext {
       restoreKeyView: this.keyViewId,
       restoreKeyViewKeyboard: this.keyViewKeyboard,
       commitDisposition: opts.commitDisposition,
+      escapeExits: opts.escapeExits,
     });
     this.syncFocusModeDomAttribute();
     this.syncKeyWithinDomAttribute();
@@ -749,6 +780,18 @@ export class FocusContext {
   currentFocusModeTrapped(): boolean {
     const top = this.modeStack[this.modeStack.length - 1];
     return top ? top.trapped : false;
+  }
+
+  /**
+   * Whether the current (top) focus mode opted into Escape-exit (`escapeExits`) —
+   * a focus-cycle that Escape pops back to rest, distinct from a modal surface that
+   * owns its own Escape. `false` at the base mode. The act dispatch consults this to
+   * route Escape on a trapped cycle to {@link escapeCurrentMode} instead of leaving
+   * it to the surface's cancel ([R04]).
+   */
+  currentFocusModeEscapeExits(): boolean {
+    const top = this.modeStack[this.modeStack.length - 1];
+    return top ? top.escapeExits === true : false;
   }
 
   /**
@@ -1595,6 +1638,7 @@ export class FocusManager {
     opts: {
       trapped: boolean;
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
+      escapeExits?: boolean;
     },
   ): void {
     this.activeContext().pushFocusMode(scopeId, opts);
@@ -1616,6 +1660,12 @@ export class FocusManager {
   }
   currentFocusModeTrapped(): boolean {
     return this.activeContext().currentFocusModeTrapped();
+  }
+  currentFocusModeEscapeExits(): boolean {
+    return this.activeContext().currentFocusModeEscapeExits();
+  }
+  escapeCurrentMode(): boolean {
+    return this.activeContext().escapeCurrentMode();
   }
   setDefaultAction(scopeId: string, action: TugAction | null): void {
     this.activeContext().setDefaultAction(scopeId, action);

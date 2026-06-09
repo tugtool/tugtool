@@ -325,19 +325,22 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         matchKeybinding(event);
       if (binding === null) return;
       // Escape yields to the engine's scope-ascend ([P02] Escape = ascend-or-
-      // cancel). While a descended (non-trapped, non-base) scope is current —
-      // e.g. the user has descended into an accordion section inside a sheet — a
-      // bare Escape must ascend ONE level (the act-dispatch listener below pops
-      // the scope) rather than fire CANCEL_DIALOG and dismiss the whole surface.
-      // ⌘. (a distinct binding, key `.`) still force-dismisses; an Escape at the
-      // trapped top (no descended scope to pop) falls through here and dismisses
-      // as before. Without this, the global Escape→CANCEL_DIALOG binding fires
-      // first and blows away the sheet from inside a descended scope.
+      // cancel) for the two modes the engine owns Escape on: a descended
+      // (non-trapped) scope — ascend ONE level (e.g. out of an accordion section
+      // inside a sheet) — and a trapped focus-cycle that opted into Escape-exit —
+      // pop the cycle back to rest. In both cases the act-dispatch listener below
+      // does the work, so this yields rather than firing CANCEL_DIALOG. A trapped
+      // modal SURFACE (sheet / alert) keeps its own Escape and falls through to
+      // CANCEL_DIALOG as before; ⌘. (a distinct binding, key `.`) always
+      // force-dismisses. Without this yield, the global Escape→CANCEL_DIALOG
+      // binding fires first and dismisses the surface from inside a descended
+      // scope, or no-ops a cycle's intended exit.
       if (
         binding.action === TUG_ACTIONS.CANCEL_DIALOG &&
         event.key === "Escape" &&
         focusManager.currentFocusMode() !== BASE_FOCUS_MODE &&
-        !focusManager.currentFocusModeTrapped()
+        (!focusManager.currentFocusModeTrapped() ||
+          focusManager.currentFocusModeEscapeExits())
       ) {
         return;
       }
@@ -452,18 +455,27 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           break;
         case "ascend":
         case "cancel":
-          // Ascend only a NON-trapped descended scope. A trapped (modal) scope —
-          // a sheet / alert still owned by Radix until its step lands — keeps its
-          // own Escape (cancel); the engine must not pop it from under the surface
-          // ([R04]). At the base mode there is nothing to ascend.
-          if (
-            focusManager.currentFocusMode() !== BASE_FOCUS_MODE &&
-            !focusManager.currentFocusModeTrapped()
-          ) {
-            focusManager.ascend();
-            behavior?.onAscend?.();
-            event.preventDefault();
-            event.stopImmediatePropagation();
+          // Escape's three engine dispositions by mode (at the base mode there is
+          // nothing to do — it falls through to the cancel ladder, [R04]):
+          //  - a NON-trapped descended scope (accordion section, list row): ascend
+          //    one level;
+          //  - a trapped focus-cycle that opted into Escape-exit (`escapeExits`):
+          //    pop the cycle and restore the resting key view (the editor caret) —
+          //    the keyboard mode's "Escape leaves cycling" exit;
+          //  - a trapped modal surface (sheet / alert, still owned by Radix until
+          //    its step lands): leave Escape to the surface's own cancel; the engine
+          //    must not pop it from under the surface ([R04]).
+          if (focusManager.currentFocusMode() !== BASE_FOCUS_MODE) {
+            if (!focusManager.currentFocusModeTrapped()) {
+              focusManager.ascend();
+              behavior?.onAscend?.();
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            } else if (focusManager.currentFocusModeEscapeExits()) {
+              focusManager.escapeCurrentMode();
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
           }
           break;
         default:

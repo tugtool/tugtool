@@ -97,10 +97,12 @@ export interface UseCycleModeResult {
   /** Toggle cycling on/off — wire to the `CYCLE_FOCUS_MODE` (⌥⇥) action. */
   toggle: () => void;
   /**
-   * Exit cycling if active (caret returns to the editor). Currently reached via
-   * the editor text-stop's Return-descend; a dedicated Escape binding is left to
-   * the mode-keys work. Today's other exits are the ⌥⇥ `toggle` and the
-   * mouse-exit rule below.
+   * Exit cycling if active (caret returns to the editor). Reached programmatically
+   * via the editor text-stop's Return-descend. A bare Escape while a cycle stop
+   * holds the ring also exits cycling, but through the engine directly (the
+   * `escapeExits` mode disposition pops the cycle), not this function — the resting
+   * caret lands the same way (off the `cycling` flip → `restingFocus`). The other
+   * exits are the ⌥⇥ `toggle` and the mouse-exit rule below.
    */
   exit: () => void;
   /** Wrap the card's cycle-able zones so they register into this mode. */
@@ -189,10 +191,14 @@ export function useCycleMode({
     if (ctx === null || !enabled) return;
     // Push captures the current key view (the editor caret) for restore on pop.
     // The mode carries the toggleable commit disposition ([P15]) — a stable
-    // wrapper reading the latest override (or the toggleable default).
+    // wrapper reading the latest override (or the toggleable default) — and opts
+    // into Escape-exit: a bare Escape while a cycle stop holds the ring pops the
+    // cycle back to rest (the engine's `escapeExits`), since a focus-cycle, unlike
+    // a modal surface, has no surface that owns Escape.
     ctx.pushFocusMode(scopeId, {
       trapped: true,
       commitDisposition: (commit) => commitDispositionRef.current(commit),
+      escapeExits: true,
     });
     // Seed the commit-home — the lowest-order cycle stop ([P10]) — and paint the
     // keyboard ring on it.
