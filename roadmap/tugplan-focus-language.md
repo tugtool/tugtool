@@ -229,9 +229,22 @@ A focused single-line text entry already leaves on plain Tab (it captures arrows
 - `rings: { axis: "horizontal"|"vertical"; nodes: string[]; closed?: boolean }[]` — ordered runs of key-view ids; `closed` (default true) wraps the edges so the ring never beeps.
 - `seams: { from; direction; to }[]` — explicit boundary crossings (the author writes the return edge for reversibility).
 - `overrides: { from; direction; to }[]` — the [P23] per-node escape hatch; wins over rings and seams.
-- `groups: { node; axis; length }[]` — **the delegation contract.** A selection group is ONE ring node; its internal axis is declared here (not as ring nodes). The navigator reads the live cursor index from the group's `useFocusCursor` and supplies it as `cursorIndex`; a non-edge move resolves to `{ kind:"cursor", delta }` (the navigator calls `cursor.moveCursor(delta)`), an edge move falls through to a seam. This keeps `data-key-cursor` appearance-only ([L06]) and "Tab never lands on an item" intact.
+- `groups: { node; length }[]` — **the delegation contract.** A selection group is ONE ring node with a 1D cursor (any arrow moves it: down/right → next, up/left → previous). The author does **not** declare this — the navigator injects it live from the group's registered `SpatialCursorHandle` (`length` + `cursorIndex` + `moveCursor` + `tryDescendRight`), so a non-edge move resolves to `{ kind:"cursor", delta }` (the navigator drives the handle, firing any live commit) and an edge move falls through to a seam. This keeps `data-key-cursor` appearance-only ([L06]) and "Tab never lands on an item" intact. **Node references are stable `group:order` keys** (the navigator maps the ringed focusable id ↔ key via `focusKeyOf` / `idForFocusKey`), so an author never needs an auto-generated id; declaration rides `useSpatialOrder(scopeId, order)`.
 
 Resolution precedence (most specific first): override → group-delegation (non-edge) → seam → ring (wrap if closed) → **linear-order liveliness fallback** (the navigator walks `groupOrder` so the arrow always moves; never a beep, never a dead-end — R06).
+
+---
+
+#### [Q13] Dev-card spatial generalization — 2D order, list-as-handle, edge-landing (OPEN → resolve in #step-7-9-devcard) {#q13-devcard-spatial}
+
+**Question:** Three coupled decisions for putting the spatial plane on the dev card (the richest, 2D layout):
+1. **The 2D order + whether arrows belong in cycling.** The dev card tours its zones with Tab in cycling mode ([#cycle-model]); what spatial order (toolbar row as a horizontal ring, the Z2 status bar as a second row, the editor as the body) reads as "the direction you see," and does an arrow plane coexist cleanly with Tab there?
+2. **List-as-handle ([Q12] option (a)).** The dev card has pickers (`TugListView`), which today own their arrows (decision (b), Tab-reached). Should `TugListView` register a `SpatialCursorHandle` so a picker joins a declared ring (arrows traverse *into* it), or does Tab-reached suffice on the dev card?
+3. **Edge-aware seam landing.** Should a seam into a group be able to land the cursor at the *bottom* (a true vertical wrap — the 7.8 by-eye nit), via an optional `land: "first" | "last"` on `SpatialSeam` + a `setCursor` path on the handle?
+
+**Why it matters:** the dev card is the end-to-end vetting surface ([#cycle-model]) and the first genuinely 2D layout; (2) and (3) are the two primitives 7.8 deferred. Deciding them on the dev card keeps the engine additions demand-driven (build them only if the feel needs them) rather than speculative.
+
+**Plan to resolve:** spike on the dev card in [#step-7-9-devcard] *before* any engine work; land each adopted primitive as a small, separately-committed, pure-logic-tested change ahead of the dev-card authoring that uses it. **Lean:** map the 2D order first; adopt list-as-handle only if a picker genuinely needs in-ring arrow traversal; adopt edge-landing only if the vertical wrap feels wrong without it.
 
 **Resolution:** OPEN.
 
@@ -867,13 +880,18 @@ No new store-backed state; no `useState` for appearance ([L06]).
 | #step-7-7-audit | Step 7.7.1 — Feature-driven focus-scope audit report (enumerate + verdict + regression matrix) | done | dash focus-cardscope — report + harness-capability finding (C/F boundaries reachable via at0080/at0081/at0125/at0035) |
 | #step-7-7-cardscope | Step 7.7.2 — Per-card focus contexts (the key-window model); delivers [P20] + the reported-bug fix ([P21]) | done | dash focus-cardscope — FocusContext per card + deck coordinator; keyCard driven by the deck store's focused card; [P20] via adoptKeyCard; cross-card filters retired; focus-walk +6 cases; at0148 (frontmost) |
 | #step-7-7-vet | Step 7.7.3 — Integration checkpoint: full regression matrix green | checkpoint — green here (tsc; bun test 3403; RPC app-tests at0030/at0037/at0026; at0148 on-open); native-keyboard suite + app-switch round-trip + by-eye both themes pending a frontmost session (OS window-key gate); see Checkpoint results | — |
-| #step-7-8 | Step 7.8 — Spatial arrow navigation + explicit-commit model (umbrella) | in progress (dash focus-spatial): 7.8.1–7.8.4 done; 7.8.5 PermissionDialog authored (Left→Deny verified by at0145); 7.8.6 automated sweep green. Remaining: by-eye both themes + QuestionDialog/sheet generalization, then `tugutil dash join` (user) | — |
+| #step-7-8 | Step 7.8 — Spatial arrow navigation + explicit-commit model (umbrella) | done (joined to main 2026-06-09, `8973bd60`): the model (`spatial-order` + `useSpatialOrder` + navigator) + explicit commit + arrow ownership + the PermissionDialog (Left→Deny) + the liveliness fallback. Generalization to other surfaces → [#step-7-9] | 8973bd60 |
 | #step-7-8-spike | Step 7.8.1 — Spike: lock model + ordering API on the PermissionDialog; resolve [Q10]–[Q12] | done: navigator-over-key-views + cursor-delegation confirmed (no escalation); `spatial-order.ts` resolver + 13-case test graduates; [Q10]→(a) Space-commits, [Q11]→Opt-Tab out (⌥⇥ = CYCLE_FOCUS_MODE; escape = Tab/Escape), [Q12]→per-card `SpatialOrder` table; list pickers keep select-on-arrow | (dash focus-spatial) |
 | #step-7-8-commit | Step 7.8.2 — Explicit-commit reversion ([P24]); collapse the selection flag cluster | done: resolver drops `enterPassthrough` (item-container Enter → passthrough unless descendable; descendable-first preserves the editor-stop / accordion / list descend); `deferCommit` + `onMove`/`commit:"live"` removed from radio/choice (route group + QuestionDialog wizard commit on Space now, relinquish via mode disposition); option group + single-select list behaviour preserved by the resolver; tab-bar live-commit machinery untouched; at0117/at0118/at0145 rewritten to ring-on-arrow + Space-commit; tsc + 23 pure-logic green (app-test sweep at build phase) | (dash focus-spatial) |
 | #step-7-8-spatial | Step 7.8.3 — The declared spatial navigator ([P22]/[P23]) | done: `FocusContext` gains per-mode `spatialOrders` + live `cursorHandles` + `moveKeyViewSpatial` (override→group-delegate→seam→ring→linear-order liveliness fallback so an arrow never dead-ends — refined from the initial clamp/warn in 7.8.6 per the never-dead-end directive); `arrowNavListener` sits between `focusWalkListener` and `captureListener`, gated by `keyViewCaptures`; group arrow dispatch relocated from `use-item-group-keyboard` to the navigator via `SpatialCursorHandle` (Home/End stay local; `useFocusCursor` kept); new `spatial-nav.test.ts` (10) over the real `FocusManager`; tsc + 262 tugways pure-logic green. NB: no card declares an order yet (7.8.5) so ring/seam is dormant; group roving preserved. **7.8.5 must decide list delegation** — `TugListView` manages its own cursor (no handle), so a declared order including a list needs the list to register a handle or be excluded. | (dash focus-spatial) |
 | #step-7-8-capture | Step 7.8.4 — Arrow-ownership matrix + Tab/Escape escape ([P25]) | done: navigator yields arrows to any focused editing host (contentEditable/input/textarea — covers CodeMirror/prompt with no per-editor wiring); `TugSlider` declares `captureSet(["ArrowLeft","ArrowRight"])` (value axis; container "none" leaves Space/Enter native); groups stay soft owners (7.8.3 delegation); Opt-Tab rejected → Tab/Escape (⌥⇥ is the cycle toggle, R02); plan matrix/[P25] reconciled. tsc clean | (dash focus-spatial) |
-| #step-7-8-apply | Step 7.8.5 — Author PermissionDialog rings + archetypes; by-eye | partial: `useSpatialOrder` declaration hook (the [Q12] surface — nodes by `group:order` key) + navigator id↔key translation (`focusKeyOf`/`idForFocusKey`); PermissionDialog declares its order (closed [Deny,Allow] ring; seam from either button down into the scope group; scope Up→Allow) — the reported Left→Deny; at0145 extended with the spatial-move block; list-delegation DECIDED (b) lists own their arrows, excluded from the ring/seam table; tsc + 262 pure-logic green. **Remaining (by-eye, build phase):** QuestionDialog + a composed sheet to confirm the API generalizes; by-eye both themes; dead-arrow audit (Up on a top button is an intentional no-op that dev-warns). | (dash focus-spatial) |
-| #step-7-8-vet | Step 7.8.6 — Integration checkpoint | partial: automated sweep GREEN — `tsc` clean, 262 tugways pure-logic, and 12 app-test files (at0145/at0117/at0118/at0140/at0146 changed + at0119/at0120/at0116/at0115/at0141/at0030/at0142 regression). **Remaining (user):** by-eye both themes; QuestionDialog + composed-sheet generalization (from 7.8.5). | (dash focus-spatial) |
+| #step-7-8-apply | Step 7.8.5 — Author PermissionDialog rings + archetypes; by-eye | done: `useSpatialOrder` declaration hook (the [Q12] surface — nodes by `group:order` key) + navigator id↔key translation (`focusKeyOf`/`idForFocusKey`); PermissionDialog declares its order (closed [Deny,Allow] ring; both buttons' Up/Down seam into the scope group; scope Up→Allow) — the reported Left→Deny; at0145 extended with the spatial + liveliness blocks; list-delegation DECIDED (b) lists own their arrows, excluded from ring/seam tables. QuestionDialog + composed-sheet generalization moved to [#step-7-9]. Joined `8973bd60` | 8973bd60 |
+| #step-7-8-vet | Step 7.8.6 — Integration checkpoint | done: automated sweep GREEN — `tsc` clean, 263 tugways pure-logic, 12 app-test files; by-eye accepted (the liveliness fallback fix landed in response). Joined `8973bd60` | 8973bd60 |
+| #step-7-9 | Step 7.9 — Generalize the spatial order to QuestionDialog, a sheet, and the dev-card (umbrella) | pending | — |
+| #step-7-9-question | Step 7.9.1 — QuestionDialog declares its spatial order | pending | — |
+| #step-7-9-sheet | Step 7.9.2 — A composed sheet (list + buttons) declares its order | pending | — |
+| #step-7-9-devcard | Step 7.9.3 — Dev-card spike + apply (2D zone order; list-as-handle / edge-landing decisions) | pending | — |
+| #step-7-9-vet | Step 7.9.4 — Integration checkpoint | pending | — |
 | #step-8 | Links + app-wide focusables (title bars, toolbars, prompt, dev panel) | pending | — |
 | #step-9 | Governance — tuglaws/focus-language.md + matrix rewrite + governing decision | pending | — |
 | #step-10 | Integration checkpoint + spike-card fate | pending | — |
@@ -2087,6 +2105,108 @@ So the fixup adds **assertions**, not harness plumbing: the genuinely-new covera
 - By-eye both themes: arrows move the ring across card / dialog / sheet, never beep, reverse cleanly; editor / slider yield + Tab / Escape re-entry; Space / Enter commit semantics.
 
 **Checkpoint:** spatial arrow navigation works across the bounded scopes; explicit commit holds; arrow-owning components yield and are re-entered; no regressions in the 7.7 matrix; [P22]–[P25] satisfied; [Q10]–[Q12] resolved.
+
+---
+
+#### Step 7.9: Generalize the spatial order to QuestionDialog, a sheet, and the dev-card {#step-7-9}
+
+**Depends on:** #step-7-8
+
+**Commit:** `N/A (umbrella — see #step-7-9-question … #step-7-9-vet)`
+
+**References:** [P22], [P23], [P24], [P25], [Q12], [Q13], (#spatial-nav-model, #seam-arrow-matrix, #r06-dead-arrows)
+
+**Motivation (2026-06-09).** Step 7.8 built the spatial-navigation model and proved it on the PermissionDialog (the reported Left→Deny), shipped to `main` (`8973bd60`). The model is now a **reusable primitive**: `spatial-order.ts` (the pure resolver), `useSpatialOrder` (the per-scope declaration hook — nodes by `group:order` key), the navigator's linear-order **liveliness fallback** (no arrow ever dead-ends). This step rolls it out to the rest of the bounded scopes, **easy→hard**, so each validates the API before the hard one: the QuestionDialog (a near-copy of the PermissionDialog), a composed sheet (the first non-dialog trap), and the dev-card (a genuine 2D layout — and the surface that already exercises every archetype end-to-end, [#cycle-model]).
+
+**Strategy:**
+- **7.9.1 / 7.9.2 are application steps** — declare each surface's ring/seam order with `useSpatialOrder`; no engine change expected.
+- **7.9.3 is spike-then-apply** for the dev-card: its layout is 2D (toolbar row + status bar + editor) and it forces the two primitives 7.8 deferred — **list-as-handle** ([Q12] option (a): `TugListView` registers a `SpatialCursorHandle` so a picker can join a declared ring) and **edge-aware seam landing** (Up into a group lands at the bottom, not the selection — the by-eye nit from 7.8). The spike ([Q13]) decides whether each is needed, and whether arrows belong in the cycling layout at all, before any engine work.
+- **7.9.4 verifies** the whole rollout (sweep + by-eye both themes).
+
+**State Zone Mapping:** unchanged from [#step-7-8] — each new piece is a declared `SpatialOrder` (structure/config, [L22]) on a `FocusContext`; if the spike adopts them, a list cursor handle (appearance, [L06]) and a seam landing hint (structure). No new state zones.
+
+**Sub-steps:** [#step-7-9-question], [#step-7-9-sheet], [#step-7-9-devcard] (spike + apply), [#step-7-9-vet].
+
+---
+
+#### Step 7.9.1: QuestionDialog declares its spatial order {#step-7-9-question}
+
+**Depends on:** #step-7-8
+
+**Commit:** `focus(dialogs): declare the question dialog's spatial ring`
+
+**References:** [P22], [P24], (#step-7-8-apply)
+
+**Tasks:**
+- In `dev-question-dialog.tsx`, capture the trap `scopeId` (from `useFocusTrap`) and declare a `SpatialOrder` via `useSpatialOrder`: a button ring over the present actions (Cancel / Submit, plus Back / Next when multi-step) + a seam into the options, mirroring the PermissionDialog. Both buttons' Up loops into the options (the liveliness pattern). Nodes by `group:order`.
+- **Radio options** (single-select question) — a delegated group ([Q12]), same as the PermissionDialog scope group. **List options** (multi-select question) — per the list-delegation decision (b), the `TugListView` is excluded from the ring/seam table (Tab-reached); the order covers the buttons. (Revisit if 7.9.3 adopts list-as-handle.)
+- Register only while the dialog is the active trap (`isPending`), memoized.
+
+**Tests:**
+- App-test: extend `at0146` — from a button, Left/Right swap actions; Down/Up reach the options (radio: ring then Space commits; list: Tab-reached); Enter activates the default; nothing beeps.
+
+**Checkpoint:** the QuestionDialog is spatially navigable for both arities; `at0146` green; by-eye clean.
+
+---
+
+#### Step 7.9.2: A composed sheet declares its spatial order {#step-7-9-sheet}
+
+**Depends on:** #step-7-9-question
+
+**Commit:** `focus(sheets): declare a composed sheet's spatial ring`
+
+**References:** [P22], [P23], (#spatial-nav-model)
+
+**Tasks:**
+- Pick one representative composed sheet (a list + a button row). Declare its `SpatialOrder` under the sheet's trap `scopeId`; register/tear-down with the sheet's open state.
+- Confirm the bounded scope is the sheet's trap mode (the boundary [P21] / [#spatial-nav-model] already draws).
+- Apply the list-delegation decision (b) unless 7.9.3 has adopted list-as-handle by the time this lands.
+
+**Tests:**
+- App-test: arrows move the ring across the sheet's controls by declared order; the list is reached; never beeps; reversal returns.
+
+**Checkpoint:** a non-dialog trap carries a declared order cleanly; the API generalizes past dialogs; by-eye clean both themes.
+
+---
+
+#### Step 7.9.3: Dev-card spike + apply {#step-7-9-devcard}
+
+**Depends on:** #step-7-9-question
+
+**Commit:** `feat(focus): dev-card spatial order (+ any spike-adopted primitives)`
+
+**References:** [P22], [P23], [P25], [Q12], [Q13], (#cycle-model, #spatial-nav-model, #seam-arrow-matrix)
+
+**Headline questions — the spike decides FIRST ([Q13]):**
+1. **Do arrows belong in the cycling layout, and what is the 2D order?** Cycling tours zones with Tab; the spike maps a sensible spatial order (toolbar row — route / mode / model / effort / submit — as a horizontal ring; the Z2 status bar as a second row; the editor as the body) and confirms it coexists with Tab. Declared under the **cycle mode's `scopeId`** (the `useCycleMode` scope) so it is active exactly while cycling.
+2. **List-as-handle?** The dev card has pickers (`TugListView`). If arrows should traverse *into* a picker spatially, `TugListView` registers a `SpatialCursorHandle` (its existing cursor + select-on-arrow + descendable rows, driven by the navigator — [Q12] option (a)). The spike decides if the dev-card needs it or if Tab-reached (b) suffices.
+3. **Edge-aware seam landing?** A 2D layout may want Up-into-a-group to land at the *bottom* for a true vertical wrap. If the feel needs it, add an optional `land: "first" | "last"` to `SpatialSeam` + a `setCursor` path on the handle, and have the navigator set the cursor after a seam crossing.
+
+**Tasks (after the spike locks the above):**
+- Land any adopted primitive (list-as-handle and/or edge-landing) as a small, **separately-committed** engine change with its own pure-logic test, *before* the dev-card authoring uses it.
+- Author the dev-card's declared `SpatialOrder` under the cycle scope. Keep the editing-host yield ([P25]) — arrows in the editor move the caret; the ring reaches the editor zone via the order; descent (Enter / typing) drops in.
+
+**Tests:**
+- Pure-logic: any new primitive gets a `spatial-nav` / `spatial-order` case.
+- App-test: extend `at0140` — in cycling, arrows move the ring across the dev-card's zones by declared order; pickers behave per the spike decision; the editor keeps its caret; never beeps; Space/Enter commit semantics unchanged.
+
+**Checkpoint:** the dev-card is spatially navigable in cycling; the spike's primitive decisions are recorded and (if adopted) tested; `at0140` green; by-eye both themes.
+
+---
+
+#### Step 7.9.4: Integration checkpoint {#step-7-9-vet}
+
+**Depends on:** #step-7-9-devcard
+
+**Commit:** `N/A (checkpoint)`
+
+**References:** [P22], [P23], [P24], [P25], (#success-criteria)
+
+**Tasks:**
+- Full sweep: `tsc`, `bun test`, `just app-test`; the focus app-test set (at0145 / at0146 / at0117–120 / at0140 / at0115 / at0116 / at0141 / at0142 / at0030) green under the generalized orders.
+- By-eye both themes across the PermissionDialog, QuestionDialog, the chosen sheet, and the dev-card: every arrow moves the ring somewhere sensible, never beeps, reverses cleanly.
+
+**Checkpoint:** spatial navigation generalizes to dialogs, a sheet, and the dev-card; liveliness holds everywhere; no regressions; the deferred primitives are either adopted-with-tests or consciously left at (b) / selection-landing.
 
 ---
 
