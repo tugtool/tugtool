@@ -33,7 +33,6 @@ const CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
 // widest label. Read the active variant so `textContent` is the shown label
 // alone, not the wrapper's value+sizers concatenation.
 const CHIP_CONTENT = `${CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
-const CHIP_ICON = `${CHIP} svg`;
 // Behavior sheet + its option rows (rendered into the pane frame portal).
 const SHEET = '[data-slot="tug-sheet"]';
 const AUTO_OPTION = `${SHEET} [data-mode="auto"]`;
@@ -98,22 +97,15 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindDevSession("A");
           await app.awaitEngineReady("A");
 
-          // The chip mounts as a two-line button with a value line and the
-          // shield-cog icon. (We do not wait for live claude metadata: the
-          // optimistic cycle works from the unknown state too, and headless
-          // claude is slow / may never emit a `system_metadata` — the chip's
-          // behavior under test is the client-side cycle + sheet, not the live
-          // mode value.)
+          // The chip mounts as a two-line button with a value line. (We do not
+          // wait for live claude metadata: the optimistic cycle works from the
+          // unknown state too, and headless claude is slow / may never emit a
+          // `system_metadata` — the chip's behavior under test is the
+          // client-side cycle + sheet, not the live mode value.)
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(CHIP_CONTENT)}) !== null`,
             { timeoutMs: 8000 },
           );
-          expect(
-            await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(CHIP_ICON)}) !== null`,
-            ),
-            "chip must render its leading icon",
-          ).toBe(true);
 
           const initialMode = await chipMode(app);
 

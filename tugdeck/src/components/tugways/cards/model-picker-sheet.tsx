@@ -67,6 +67,12 @@ export interface UseModelPickerArgs {
    * open picker instead of stacking a second sheet.
    */
   showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
+  /**
+   * What a committed pick does to an enclosing focus cycle ([P15]) — forwarded
+   * to the sheet. `"relinquish"` exits cycling (caret to the prompt); `"retain"`
+   * keeps cycling (ring back on the chip). Default `"retain"`.
+   */
+  commitDisposition?: "retain" | "relinquish";
 }
 
 /** Imperative handle to the card-hosted model picker sheet. */
@@ -89,6 +95,7 @@ export function useModelPicker({
   codeSessionStore,
   sessionMetadataStore,
   showSheet,
+  commitDisposition,
 }: UseModelPickerArgs): ModelPickerController {
   const openModelPicker = useCallback(() => {
     const snapshot = sessionMetadataStore.getSnapshot();
@@ -99,6 +106,7 @@ export function useModelPicker({
     void showSheet({
       title: "Model",
       description: "Choose the model for this session.",
+      onCommitDisposition: commitDisposition,
       content: (close) => (
         <ModelPickerSheetBody
           options={options}
@@ -116,7 +124,7 @@ export function useModelPicker({
         />
       ),
     });
-  }, [showSheet, sessionMetadataStore, codeSessionStore]);
+  }, [showSheet, sessionMetadataStore, codeSessionStore, commitDisposition]);
 
   return { openModelPicker };
 }

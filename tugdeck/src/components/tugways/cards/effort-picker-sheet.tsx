@@ -84,6 +84,12 @@ export interface UseEffortPickerArgs {
    * open picker instead of stacking a second sheet.
    */
   showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
+  /**
+   * What a committed pick does to an enclosing focus cycle ([P15]) — forwarded
+   * to the sheet. `"relinquish"` exits cycling (caret to the prompt); `"retain"`
+   * keeps cycling (ring back on the chip). Default `"retain"`.
+   */
+  commitDisposition?: "retain" | "relinquish";
 }
 
 /** Imperative handle to the card-hosted effort picker sheet. */
@@ -101,6 +107,7 @@ export function useEffortPicker({
   sessionMetadataStore,
   onSelectEffort,
   showSheet,
+  commitDisposition,
 }: UseEffortPickerArgs): EffortPickerController {
   const openEffortPicker = useCallback(() => {
     const snapshot = sessionMetadataStore.getSnapshot();
@@ -114,6 +121,7 @@ export function useEffortPicker({
     void showSheet({
       title: "Reasoning Effort",
       description: "Choose how long Claude thinks before answering.",
+      onCommitDisposition: commitDisposition,
       content: (close) => (
         <EffortPickerSheetBody
           levels={levels}
@@ -128,7 +136,7 @@ export function useEffortPicker({
         />
       ),
     });
-  }, [showSheet, sessionMetadataStore, onSelectEffort]);
+  }, [showSheet, sessionMetadataStore, onSelectEffort, commitDisposition]);
 
   return { openEffortPicker };
 }

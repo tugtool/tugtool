@@ -78,6 +78,17 @@ export interface UseCycleModeOptions {
    * particular stop commits. Returns `"retain"` or `"relinquish"`.
    */
   dispositionAfterCommit?: (commit: FocusCommit) => CycleDisposition;
+  /**
+   * Land the resting caret when the cycle is relinquished — the card's resting
+   * focus destination (a dev card's prompt entry). Called when `cycling` flips
+   * false by any non-pointer path: ⌥⇥ toggle-off, the editor text-stop's
+   * Return-descend, or a sub-surface commit that relinquishes the cycle ([P15] —
+   * {@link FocusContext.relinquishFocusMode}). Skipped on a mouse exit (the click
+   * places focus itself). This makes the relinquish landing a first-class part of
+   * the cycle, not bespoke per-card glue. Runs in a layout effect after the
+   * cycle's zones reactivate ([L04]).
+   */
+  restingFocus?: () => void;
 }
 
 export interface UseCycleModeResult {
@@ -96,20 +107,12 @@ export interface UseCycleModeResult {
   CycleScope: React.FC<{ children: React.ReactNode }>;
   /** This card's stable cycle-scope id (for diagnostics / advanced wiring). */
   scopeId: string;
-  /**
-   * Read-and-clear: was the most recent exit driven by the mouse (the
-   * pointerdown rule below), rather than ⌥⇥ / programmatic? A consumer that
-   * restores its resting caret on exit checks this and **skips** the restore on
-   * a mouse exit — the click that caused the exit will place focus itself
-   * (opening a surface, or landing the caret where clicked), so forcing the
-   * caret in first would flash it before the click's own focus lands.
-   */
-  consumeExitViaPointer: () => boolean;
 }
 
 export function useCycleMode({
   enabled = true,
   dispositionAfterCommit,
+  restingFocus,
 }: UseCycleModeOptions = {}): UseCycleModeResult {
   const manager = useContext(FocusManagerContext);
   // The owning card ([P21]): the cycle mode is pushed onto, and read back from,
@@ -125,9 +128,9 @@ export function useCycleMode({
   // Stable per-card scope id. The cycle stops (rendered under `CycleScope`) and
   // the push/pop here agree on this one id.
   const scopeId = useId();
-  // Set true by the mouse-exit listener so a consumer can tell a pointer-driven
-  // exit from a ⌥⇥ / programmatic one (read-and-cleared via
-  // `consumeExitViaPointer`). Structure-zone ref, no React state ([L24]).
+  // Set true by the mouse-exit listener so the resting-focus reclaim skips a
+  // pointer-driven exit (the click places focus itself); read-and-cleared by the
+  // relinquish effect above. Structure-zone ref, no React state ([L24]).
   const exitViaPointerRef = useRef(false);
 
   // Latest commit-disposition override, read at commit time via a stable wrapper
@@ -138,6 +141,10 @@ export function useCycleMode({
   const commitDispositionRef = useRef<(commit: FocusCommit) => CycleDisposition>(
     (commit) => (dispositionRef.current ?? toggleableCommitDisposition)(commit),
   );
+
+  // Latest resting-focus reclaim, read live by the relinquish effect ([L07]).
+  const restingFocusRef = useRef(restingFocus);
+  restingFocusRef.current = restingFocus;
 
   // `cycling` is the engine's own state, read through `useSyncExternalStore`
   // ([L02]): the mode is "on" exactly when this card's scope is **on the mode
@@ -160,6 +167,23 @@ export function useCycleMode({
     [ctx, scopeId],
   );
   const cycling = useSyncExternalStore(subscribe, getSnapshot);
+
+  // Land the resting caret when the cycle is relinquished. This fires off the
+  // engine-owned `cycling` transition (true → false) by ANY non-pointer path —
+  // ⌥⇥ toggle-off, the editor text-stop's Return-descend, or a sub-surface commit
+  // that relinquished the cycle ([P15]). Because it rides the engine's own state
+  // flip, the cycle owns its resting landing as one transition (no card-side
+  // race); running in a layout effect, it fires after the cycle's zones (the
+  // prompt editor) reactivate, so the caret lands ([L03]/[L04]). Skipped on a
+  // mouse exit — the click that ended the cycle places focus itself.
+  const prevCyclingRef = useRef(false);
+  useLayoutEffect(() => {
+    if (prevCyclingRef.current && !cycling) {
+      if (!exitViaPointerRef.current) restingFocusRef.current?.();
+      exitViaPointerRef.current = false;
+    }
+    prevCyclingRef.current = cycling;
+  }, [cycling]);
 
   const enter = useCallback(() => {
     if (ctx === null || !enabled) return;
@@ -210,8 +234,9 @@ export function useCycleMode({
         // Pop WITHOUT restoring focus: the click that triggered this exit owns
         // the next focus (it opens a Z2/Z4B surface, or lands the caret where
         // clicked). Restoring focus to the resting editor here would flash its
-        // caret for a frame before the click's own focus lands. The consumer's
-        // own caret-restore is likewise gated on `consumeExitViaPointer`.
+        // caret for a frame before the click's own focus lands. The
+        // `restingFocus` reclaim is likewise skipped on this pointer exit (via
+        // `exitViaPointerRef`).
         ctx.popFocusMode(scopeId, { restoreFocus: false });
       }
     };
@@ -231,13 +256,6 @@ export function useCycleMode({
       ctx?.popFocusMode(scopeId);
     };
   }, [ctx, scopeId]);
-
-  // Read-and-clear the pointer-exit flag (see `consumeExitViaPointer`).
-  const consumeExitViaPointer = useCallback(() => {
-    const v = exitViaPointerRef.current;
-    exitViaPointerRef.current = false;
-    return v;
-  }, []);
 
   // Stable scope component (constant identity across renders so children never
   // remount, [L26]). It always provides the scope id; the cycle stops register
@@ -265,8 +283,7 @@ export function useCycleMode({
       exit,
       CycleScope: scopeRef.current!,
       scopeId,
-      consumeExitViaPointer,
     }),
-    [cycling, toggle, exit, scopeId, consumeExitViaPointer],
+    [cycling, toggle, exit, scopeId],
   );
 }

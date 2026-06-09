@@ -287,6 +287,15 @@ const DEV_CYCLE_ORDER_SUBMIT = 4;
 const DEV_CYCLE_ORDER_STATUS_BASE = 5;
 const DEV_CYCLE_ORDER_EDITOR = 10;
 
+// What committing a Z4B settings picker (effort / model / permission mode) opened
+// from a cycle stop does to the cycle ([P15]). Both behaviors are first-class
+// framework features (see `TugSheet`'s `onCommitDisposition` and the engine's
+// `relinquishFocusMode`); this is the dev card's chosen value — flip it to feel
+// each:
+//   "relinquish" — commit exits focus-cycling; the caret returns to the prompt.
+//   "retain"     — commit keeps cycling; the ring returns to the originating chip.
+const DEV_CYCLE_PICKER_COMMIT_DISPOSITION: "retain" | "relinquish" = "relinquish";
+
 /** Max characters the Z4B Project chip shows before it falls back to the
  *  leaf directory name. */
 const PROJECT_CHIP_MAX_CHARS = 16;
@@ -2339,7 +2348,16 @@ export function DevCardBody({
   // ([L02]); the toggle is wired to `CYCLE_FOCUS_MODE` on the
   // card-content responder below, `CycleScope` wraps the prompt entry,
   // and `data-cycling` rides the card root for the fill-suppression CSS.
-  const cycle = useCycleMode({ enabled: !sessionErrored });
+  // The cycle's resting destination ([P12]): a connected card's resting focus is
+  // the prompt entry — a responder (caret), not a focus-group stop. The cycle
+  // lands the caret here on every relinquish (⌥⇥ toggle-off, the editor stop's
+  // Return-descend, or a sub-surface commit that relinquishes the cycle, [P15]),
+  // skipping a mouse exit. Owning this in `useCycleMode` makes the relinquish
+  // landing first-class, not bespoke per-card glue.
+  const cycle = useCycleMode({
+    enabled: !sessionErrored,
+    restingFocus: () => entryDelegateRef.current?.focus(),
+  });
 
   // Spatial arrow order for the cycle ([P22] / [P23]). Tab walks the cycle stops
   // linearly; arrows give them a 2D feel: two horizontal rings — the bottom
@@ -2373,27 +2391,6 @@ export function DevCardBody({
   }, []);
   useSpatialOrder(cycle.scopeId, cycleSpatialOrder);
 
-  // Connected → editor on cycle exit ([P12]). The engine pop restores its
-  // captured key view, but a connected card's resting focus is the editor
-  // — a responder (caret), not a focus-group stop — so there is no key
-  // view to restore. The card owns this seed: when cycling ends, return
-  // DOM focus to the prompt, the card's single focus destination (the same
-  // move it makes when an inline dialog clears). Driven off the
-  // engine-derived `cycling` snapshot ([L02]) in a layout effect ([L03]).
-  //
-  // Skip the seed on a MOUSE exit ([#cycle-model] mouse-exits-cycling): the
-  // click that ended the cycle will place focus itself — opening a Z2/Z4B
-  // surface, or landing the caret where it clicked. Forcing the caret in here
-  // first would flash it for a frame before the click's own focus lands.
-  const prevCyclingRef = useRef(false);
-  useLayoutEffect(() => {
-    if (prevCyclingRef.current && !cycle.cycling) {
-      if (!cycle.consumeExitViaPointer()) {
-        entryDelegateRef.current?.focus();
-      }
-    }
-    prevCyclingRef.current = cycle.cycling;
-  }, [cycle.cycling, cycle, entryDelegateRef]);
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
@@ -2612,8 +2609,15 @@ export function DevCardBody({
   // `macrotask-focus-claim` trace event.)
   const reclaimEntryFocus = useCallback((): void => {
     if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+    // While cycling, the cycle owns focus — a sheet opened from a cycle stop
+    // returns to its stop (the retain disposition) or relinquishes via the engine
+    // (the cycle's `restingFocus` lands the caret). Either way the card must NOT
+    // also reclaim the editor here, or it would clobber the chip restore on a
+    // retain close ([P15]). This reclaim is for sheets/banners closed outside a
+    // cycle (a slash-command picker, a banner).
+    if (cycle.cycling) return;
     entryDelegateRef.current?.focus();
-  }, [cardLifecycle, cardId, entryDelegateRef]);
+  }, [cardLifecycle, cardId, entryDelegateRef, cycle]);
 
   useSheetDelegate(cardId, {
     sheetDidHide: () => {
@@ -2859,6 +2863,7 @@ export function DevCardBody({
     sessionMetadataStore,
     onSelectMode: permissionMode.setMode,
     showSheet: cardPickerSheet.showSheet,
+    commitDisposition: DEV_CYCLE_PICKER_COMMIT_DISPOSITION,
   });
 
   // The `/permissions` rules editor, owned at the card level so the slash
@@ -2875,6 +2880,7 @@ export function DevCardBody({
     codeSessionStore,
     sessionMetadataStore,
     showSheet: cardPickerSheet.showSheet,
+    commitDisposition: DEV_CYCLE_PICKER_COMMIT_DISPOSITION,
   });
 
   // `/rewind` turn picker + restore confirm ([#step-7-3]), card-scoped per
@@ -2969,6 +2975,7 @@ export function DevCardBody({
     sessionMetadataStore,
     onSelectEffort: effort.setEffort,
     showSheet: cardPickerSheet.showSheet,
+    commitDisposition: DEV_CYCLE_PICKER_COMMIT_DISPOSITION,
   });
 
   // Surface for each local slash command, keyed by command name. The

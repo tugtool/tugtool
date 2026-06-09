@@ -45,6 +45,14 @@ export interface ComponentKeyDeclaration {
    */
   currentItemDescendable?: boolean;
   /**
+   * Whether this item container is a **commit-advances** primary control with no
+   * separate scope default — the question wizard's single-select options. When
+   * set, `Enter` commits the ringed item like Space (the default for an item
+   * container is to bubble Enter to the scope default, [P24]). Only meaningful
+   * for `item` containers; ignored when {@link currentItemDescendable}.
+   */
+  commitOnEnter?: boolean;
+  /**
    * Whether the component's scope is modal (trapped). At a modal scope `Escape`
    * **cancels** the scope rather than ascending one level.
    */
@@ -130,14 +138,21 @@ export function resolveFocusAct(
   }
   if (key === "Enter") {
     // A descendable target descends — an accordion section / list row with
-    // navigable content, or the editor stop that resumes typing. Otherwise an item
-    // container NEVER consumes Enter ([P24]): Return bubbles to the scope default,
-    // so it reaches the ringed default button (a dialog's Allow); a leaf or
-    // component performs its plain act. Committing a ringed group member is Space's
-    // job, never Enter's — that is what makes "groups never consume Enter"
-    // unconditional and lets the old per-group passthrough flag disappear.
+    // navigable content, or the editor stop that resumes typing.
     if (declaration.currentItemDescendable) return "descend";
-    return declaration.container === "item" ? "passthrough" : "act";
+    if (declaration.container === "item") {
+      // By default an item container does NOT consume Enter ([P24]): Return
+      // bubbles to the scope default, reaching the ringed default button (a
+      // dialog's Allow, a picker's Open). A **commit-advances** group opts out:
+      // the question wizard's single-select options have no separate per-question
+      // default to bubble to — committing the answer IS the forward action — so
+      // Enter commits the ringed item exactly like Space (then the wizard
+      // auto-advances). The opt-in keeps Enter-bubbles the rule for every group
+      // that has a default; only a primary commit-advance group flips it.
+      return declaration.commitOnEnter ? "select" : "passthrough";
+    }
+    // A leaf or component performs its plain act.
+    return "act";
   }
   if (key === "Escape") {
     // Escape ascends one scope level; at a modal scope it cancels.

@@ -41,6 +41,17 @@ export interface UseFocusTrapOptions {
    * surfaces trap; leave the default.
    */
   trapped?: boolean;
+  /**
+   * Close disposition toward an enclosing focus cycle, read at pop time ([P15]
+   * generalized). `"retain"` (default / absent) pops normally — restore the stop
+   * the surface was opened from, leaving any enclosing cycle intact. `"relinquish"`
+   * cascade-pops this surface AND its enclosing cycle, landing on the cycle's
+   * resting destination ({@link FocusContext.relinquishFocusMode}). A ref so a
+   * surface can set the disposition on commit just before it closes, without
+   * re-running the push/pop effect. No-op (ordinary pop) when there is no
+   * enclosing cycle.
+   */
+  closeDisposition?: React.RefObject<"retain" | "relinquish">;
 }
 
 export interface UseFocusTrapResult {
@@ -53,6 +64,7 @@ export interface UseFocusTrapResult {
 export function useFocusTrap({
   active,
   trapped = true,
+  closeDisposition,
 }: UseFocusTrapOptions): UseFocusTrapResult {
   const manager = useContext(FocusManagerContext);
   // The owning card ([P21]): the trap is pushed onto THIS card's focus context,
@@ -72,9 +84,16 @@ export function useFocusTrap({
     const ctx = manager.contextFor(cardId);
     ctx.pushFocusMode(scopeId, { trapped });
     return () => {
-      ctx.popFocusMode(scopeId);
+      // The disposition is read at pop time (it is set on commit, just before the
+      // surface closes). `relinquish` cascade-pops the enclosing cycle; `retain`
+      // (default) restores the stop the surface was opened from.
+      if (closeDisposition?.current === "relinquish") {
+        ctx.relinquishFocusMode(scopeId);
+      } else {
+        ctx.popFocusMode(scopeId);
+      }
     };
-  }, [manager, cardId, active, scopeId, trapped]);
+  }, [manager, cardId, active, scopeId, trapped, closeDisposition]);
 
   // Stable scope component (held in a ref so it keeps a constant function
   // identity across renders — children never remount, [L26]). It always

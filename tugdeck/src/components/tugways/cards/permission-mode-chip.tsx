@@ -172,6 +172,12 @@ export interface UsePermissionSheetArgs {
    * open picker instead of stacking a second sheet.
    */
   showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
+  /**
+   * What a committed pick does to an enclosing focus cycle ([P15]) — forwarded
+   * to the sheet. `"relinquish"` exits cycling (caret to the prompt); `"retain"`
+   * keeps cycling (ring back on the chip). Default `"retain"`.
+   */
+  commitDisposition?: "retain" | "relinquish";
 }
 
 /** Imperative handle to the card-hosted permission sheet. */
@@ -196,6 +202,7 @@ export function usePermissionSheet({
   sessionMetadataStore,
   onSelectMode,
   showSheet,
+  commitDisposition,
 }: UsePermissionSheetArgs): PermissionSheetController {
   const persistedMode = useTugbankValue<string | null>(
     PERMISSION_MODE_DOMAIN,
@@ -210,6 +217,7 @@ export function usePermissionSheet({
     void showSheet({
       title: "Permission Mode",
       description: "Choose how Claude handles file edits and commands.",
+      onCommitDisposition: commitDisposition,
       content: (close) => (
         <PermissionModeSheetBody
           currentMode={mode}
@@ -223,7 +231,7 @@ export function usePermissionSheet({
         />
       ),
     });
-  }, [showSheet, sessionMetadataStore, persistedMode, onSelectMode]);
+  }, [showSheet, sessionMetadataStore, persistedMode, onSelectMode, commitDisposition]);
 
   return { openPermissionSheet };
 }

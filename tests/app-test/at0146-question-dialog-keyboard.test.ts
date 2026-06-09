@@ -452,4 +452,70 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
     },
     TEST_TIMEOUT_MS,
   );
+
+  test(
+    "multi-question wizard: Return picks the ringed option and advances to the next question (return-return-return)",
+    async () => {
+      const app = await launchTugApp({ testName: "at0146-question-dialog-keyboard" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.awaitEngineReady("A");
+        await app.driveDevSession("A", { op: "send", text: "ask me something" });
+        await app.driveDevSession("A", {
+          op: "ingestFrame",
+          feedId: FEED_CODE_OUTPUT,
+          decoded: controlRequestForwardMultiQuestion(),
+        });
+
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
+          { timeoutMs: 6000 },
+        );
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+
+        // On open, Q1's options hold the key view and show Q1's labels.
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 4000 },
+        );
+        const q1Text = await app.evalJS<string>(
+          `(document.querySelector(${JSON.stringify(RADIO)})||{}).textContent || ""`,
+        );
+        expect(q1Text.includes("Expression argument"), "Q1 options render").toBe(true);
+
+        // Return on the options picks the ringed option (like Space) and the
+        // wizard auto-advances — the ring stays ON THE QUESTIONS, moving to Q2's
+        // options (NOT onto a Next button). `return-return-return` walks the wizard.
+        await app.nativeKey("Return");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && (el.textContent||"").indexOf("Precedence + parens") !== -1;})()`,
+          { timeoutMs: 4000 },
+        );
+        const q2Text = await app.evalJS<string>(
+          `(document.querySelector(${JSON.stringify(RADIO)})||{}).textContent || ""`,
+        );
+        expect(
+          q2Text.includes("Precedence + parens"),
+          `Enter advanced to Q2 (current options now: ${q2Text.slice(0, 60)})`,
+        ).toBe(true);
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0146-question-dialog-keyboard] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

@@ -654,6 +654,60 @@ export class FocusContext {
   }
 
   /**
+   * Pop a trapped sub-surface mode with a **relinquish** disposition toward its
+   * enclosing focus cycle ([P15], generalized from a commit AT a cycle stop to a
+   * commit in a sub-surface opened FROM a stop — a settings picker sheet).
+   *
+   * Instead of restoring the stop the surface was opened from (the ordinary
+   * {@link popFocusMode} "return to opener" semantic — the *retain* disposition),
+   * this cascade-pops the surface **and** the nearest enclosing cycle (a mode that
+   * declares a `commitDisposition`, set only by `useCycleMode`) in ONE
+   * engine-owned transition, landing on the cycle's own restore target. There is
+   * no second writer: the surface's own close-focus restore is intentionally
+   * skipped (the caller suppresses it), so nothing races the relinquish. The
+   * cycle's consumer lands the resting caret off its `cycling` flag flipping false
+   * (its `restingFocus`).
+   *
+   * Falls back to an ordinary pop when the surface is not inside a cycle (a
+   * relinquish-disposition surface opened standalone just closes normally).
+   */
+  relinquishFocusMode(scopeId: string): void {
+    const at = this.modeStack.findIndex((m) => m.scopeId === scopeId);
+    if (at === -1) return;
+    // The nearest enclosing relinquishable host: a cycle declares a
+    // `commitDisposition` (only `useCycleMode` does), which marks it as a mode a
+    // committed sub-surface can relinquish back to.
+    let hostAt = -1;
+    for (let i = at - 1; i >= 0; i -= 1) {
+      if (this.modeStack[i].commitDisposition !== undefined) {
+        hostAt = i;
+        break;
+      }
+    }
+    if (hostAt === -1) {
+      // No enclosing cycle — there is nothing to relinquish; close normally.
+      this.popFocusMode(scopeId);
+      return;
+    }
+    const host = this.modeStack[hostAt];
+    // One transition: drop the host cycle AND everything above it (this surface,
+    // plus any modes between) in a single splice.
+    this.modeStack.splice(hostAt);
+    this.syncFocusModeDomAttribute();
+    this.syncKeyWithinDomAttribute();
+    // Land on the cycle's restore target. The resting caret is typically a
+    // responder (not a key view), so this clears the key view and the cycle
+    // consumer's `restingFocus` reclaim (fired off `cycling` → false) lands the
+    // caret; if the cycle's prior WAS a keyboard key view, restore it with its
+    // ring.
+    this.setKeyView(host.restoreKeyView, host.restoreKeyViewKeyboard);
+    if (host.restoreKeyView !== null && host.restoreKeyViewKeyboard) {
+      this.focusKeyView();
+    }
+    this.notify();
+  }
+
+  /**
    * Move the key view to the first focusable in the current mode (authored
    * order) and return its id, or `null` if the mode has no focusables. The
    * engine's "set initial focus when a surface opens" primitive. Does not move

@@ -73,6 +73,10 @@ const Z2_TIME = `${CARD} [data-priority="time"]`;
 const Z2_TOKENS = `${CARD} [data-priority="tokens"]`;
 const Z2_CONTEXT = `${CARD} [data-priority="context"]`;
 const Z2_TASKS = `${CARD} [data-priority="tasks"]`;
+// A settings sheet opened from a cycle-stop chip (here the permission-mode chip,
+// which populates reliably headless) and one of its option rows.
+const SHEET = '[data-slot="tug-sheet"]';
+const SHEET_OPTION = `${SHEET} [data-mode]`;
 
 // Expression: does the element at `selector` hold the keyboard key view? Works
 // for leaf stops (submit, chips, the Z2 cells — the element carries
@@ -492,6 +496,76 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         const tail = app.tailLog(200);
         if (tail !== "") {
           process.stderr.write(`\n[at0140-cycle-devcard-arrows] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "committing a settings picker opened from a cycle stop exits cycling and returns the blinking caret to the editor ([P15])",
+    async () => {
+      const app = await launchTugApp({ testName: "at0140-cycle-devcard-picker" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindDevSession("A");
+        await app.awaitEngineReady("A");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MODE_CHIP)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        // Caret in the editor, then ⌥⇥ to start cycling (route seeded).
+        await app.nativeClickAtElement(EDITOR);
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+
+        // Tab to the permission-mode chip and open its sheet by keyboard (so the
+        // engine owns close-focus and the cycle is preserved underneath).
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("Return");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SHEET_OPTION)}) !== null`,
+          { timeoutMs: 6000 },
+        );
+        // The sheet (a nested trap) covers the cycle scope but the card is STILL
+        // cycling — opening a picker is not an exit.
+        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+
+        // Return commits the sheet's default (OK). Committing a setting from a
+        // cycle stop ENDS focus-cycling and returns the blinking caret to the
+        // editor ([P15]): the sheet closes, the card stops cycling, and DOM focus
+        // lands in the prompt — not stranded on a chip or a blurred editor.
+        await app.nativeKey("Return");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SHEET_OPTION)}) === null`,
+          { timeoutMs: 6000 },
+        );
+        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+        expect(
+          await app.evalJS<string | null>(CYCLING),
+          "committing a cycle-stop picker exits cycling",
+        ).toBe("false");
+        expect(
+          await app.evalJS<boolean>(EDITOR_FOCUSED),
+          "the caret returns to the editor",
+        ).toBe(true);
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0140-cycle-devcard-picker] log tail:\n${tail}\n`);
         }
         throw err;
       } finally {

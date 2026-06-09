@@ -78,7 +78,14 @@ export interface ItemGroupKeyboardOptions {
   initialIndex: () => number;
   /** Whether the current item descends on Enter (accordion section / list row). */
   currentItemDescendable?: () => boolean;
-  /** Space: commit the current item. Enter never commits a group member ([P24]). */
+  /**
+   * Whether Enter commits the ringed item like Space — for a commit-advances
+   * primary group with no separate scope default (the question wizard's
+   * single-select options). Default `false`: Enter bubbles to the scope default
+   * ([P24]).
+   */
+  commitOnEnter?: boolean;
+  /** Space: commit the current item. Enter commits too only when {@link commitOnEnter}. */
   onSelect: (element: Element | null, index: number) => void;
   /** Enter act on a non-descendable item. Defaults to {@link onSelect}. */
   onAct?: (element: Element | null, index: number) => void;
@@ -153,6 +160,7 @@ export function useItemGroupKeyboard(
       container: "item",
       commit: o.commit ?? "deferred",
       currentItemDescendable: o.currentItemDescendable?.() ?? false,
+      commitOnEnter: o.commitOnEnter ?? false,
       onSelect: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "select"),
       onAct: () => commit(cursor.cursorElement(), cursor.cursorIndex(), "act"),
       onDescend: () => o.onDescend?.(cursor.cursorElement(), cursor.cursorIndex()),

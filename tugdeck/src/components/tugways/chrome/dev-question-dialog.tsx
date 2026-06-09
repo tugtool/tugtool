@@ -853,10 +853,15 @@ const QuestionRadioOptions: React.FC<QuestionOptionsProps> = ({
           aria-label={question.question}
           focusGroup={focusGroup}
           focusOrder={focusOrder}
-          // Wizard step under explicit commit ([P24]): arrows ring an option
-          // without committing; **Space** picks it, and that pick auto-advances
-          // (`onSelect` → the wizard's `handleSelect`). Enter is not consumed here —
-          // it bubbles to the dialog default (Next / Submit).
+          // The wizard is a guided answer-and-advance flow: the ring stays on the
+          // question's options, and **Return (like Space) picks the ringed option
+          // and auto-advances** to the next question — `return-return-return` walks
+          // the wizard and lands the ring on Submit at the review step. This group
+          // is the scope's primary commit-advance action with no separate
+          // per-question default, so it opts into Enter-commits (`commitOnEnter`) —
+          // the [P24] "Enter bubbles to the scope default" rule still governs every
+          // group that HAS a default (the permission dialog's scope group → Allow).
+          commitOnEnter
         >
           {question.options.map((option) => (
             <TugRadioItem

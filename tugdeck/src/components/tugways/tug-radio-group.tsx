@@ -161,6 +161,15 @@ export interface TugRadioGroupProps
    * `skip` is reachable only in accessibility mode.
    */
   focusPolicy?: FocusPolicy;
+  /**
+   * Commit the ringed option on **Enter** as well as Space ([P24] opt-out). Use
+   * only for a commit-advances primary group with no separate scope default to
+   * bubble Enter to — the question wizard's single-select options, where Return
+   * picks the current option and advances. Off by default: a radio group in a
+   * dialog (e.g. the permission scope group) keeps Enter bubbling to the dialog's
+   * default button.
+   */
+  commitOnEnter?: boolean;
 }
 
 /** Serialized shape of `TugRadioGroup`'s preserved state. */
@@ -191,6 +200,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
       focusGroup,
       focusOrder = 0,
       focusPolicy,
+      commitOnEnter = false,
       ...rest
     },
     ref,
@@ -270,6 +280,7 @@ export const TugRadioGroup = React.forwardRef<HTMLDivElement, TugRadioGroupProps
         order: focusOrder,
         policy: focusPolicy,
         register: focusGroup !== undefined,
+        commitOnEnter,
         collectItems: enabledItems,
         // Land on the checked item when Tab enters; else the first enabled item.
         initialIndex: () => {

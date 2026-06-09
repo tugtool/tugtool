@@ -27,13 +27,33 @@ describe("resolveFocusAct — act tier", () => {
     expect(resolveFocusAct(k("Spacebar"), { container: "item" })).toBe("select");
   });
 
-  test("Enter never commits an item group — it bubbles to the scope default ([P24])", () => {
-    // An item container NEVER consumes Enter (the explicit-commit reversion): a
-    // radio / choice / option / single-select list all bubble Return to the scope
-    // default. Unconditional now — there is no per-group flag.
+  test("Enter bubbles to the scope default for an ordinary item group ([P24])", () => {
+    // The default: an item container does NOT consume Enter — a radio / choice /
+    // option / single-select list with a separate scope default (a dialog's Allow,
+    // a picker's Open) bubbles Return there.
     expect(resolveFocusAct(k("Enter"), { container: "item" })).toBe("passthrough");
     // Space remains the group commit.
     expect(resolveFocusAct(k(" "), { container: "item" })).toBe("select");
+  });
+
+  test("a commit-advances group commits the ringed item on Enter ([P24] opt-out)", () => {
+    // The question wizard's single-select options have no separate per-question
+    // default to bubble to — committing the answer IS the forward action — so they
+    // opt into Enter-commits: Return picks the ringed item like Space (then the
+    // wizard auto-advances). Descendable still wins over the opt-in.
+    expect(resolveFocusAct(k("Enter"), { container: "item", commitOnEnter: true })).toBe(
+      "select",
+    );
+    expect(resolveFocusAct(k(" "), { container: "item", commitOnEnter: true })).toBe(
+      "select",
+    );
+    expect(
+      resolveFocusAct(k("Enter"), {
+        container: "item",
+        commitOnEnter: true,
+        currentItemDescendable: true,
+      }),
+    ).toBe("descend");
   });
 
   test("Enter descends when the current target is navigable (descendable wins)", () => {

@@ -620,34 +620,47 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // loading — a non-interactive button shouldn't capture Return.
   // Skipped when no chain manager is in scope (standalone previews
   // and unit tests).
+  // The emphasis-derived default: a `filled` / `primary` action button is the
+  // scope's Return-home by convention, with no opt-in (the common case — a lone
+  // Save / Open / Submit CTA).
   const isDefaultButton =
     (emphasis === "filled" || emphasis === "primary") &&
     isSemanticRole &&
     role === "action" &&
     !effectiveDisabled &&
     !loading;
+
+  // The persistent default ring ([P14]) is the EXPLICIT declaration of "this
+  // button is the scope's Return-home" — used when the keyboard rests on a
+  // non-button control (a list / field / cursor) and when the emphasis-auto rule
+  // doesn't pick the button a layout actually wants (e.g. a wizard's `outlined`
+  // Next, which advances on Return while Submit is still gated). Opt out while
+  // disabled / loading — a non-interactive button is no Return target.
+  const wantsDefaultRing = persistentDefaultRing && !effectiveDisabled && !loading;
+
+  // "Return's home" is ONE concept: the button Enter activates AND the button
+  // that wears the ring must be the same. So the activation registration honors
+  // BOTH derivations — the emphasis-auto default and the explicit
+  // `persistentDefaultRing` — rather than only emphasis. Without this an explicit
+  // ring could point at a button Enter never presses (the ring would lie). A
+  // button that is both (a `primary` action with `persistentDefaultRing`, e.g.
+  // Allow / Submit) registers exactly once.
+  const isReturnHome = isDefaultButton || wantsDefaultRing;
   React.useLayoutEffect(() => {
-    if (!isDefaultButton) return;
-    if (manager === null) return;
+    if (!isReturnHome || manager === null) return;
     const node = internalButtonRef.current;
     if (node === null) return;
     manager.pushDefaultButton(node);
     return () => {
       manager.popDefaultButton(node);
     };
-  }, [isDefaultButton, manager]);
+  }, [isReturnHome, manager]);
 
-  // ---- Persistent default ring ([P14], engine-owned) ----
-  //
-  // `persistentDefaultRing` keeps this button lit as "Return's home" while the
-  // keyboard rests on a non-button control (a list / field / cursor). The focus
-  // manager OWNS the `data-default-ring` attribute — it stamps it on this node
-  // iff the current key view is not itself a button, and removes it the instant
-  // the keyboard lands on any button. So the one-filled-ring-per-scope invariant
-  // is structural: a focused button is always the sole filled+ring, and this
-  // ring stands down to it (never a second filled+ring). Opt out while disabled /
-  // loading — a non-interactive button is no Return target.
-  const wantsDefaultRing = persistentDefaultRing && !effectiveDisabled && !loading;
+  // The focus manager OWNS the `data-default-ring` attribute — it stamps it on
+  // this node iff the current key view is not itself a button, and removes it the
+  // instant the keyboard lands on any button. So the one-filled-ring-per-scope
+  // invariant is structural: a focused button is always the sole filled+ring, and
+  // this ring stands down to it (never a second filled+ring).
   React.useLayoutEffect(() => {
     if (!wantsDefaultRing || focusManager === null) return;
     const node = internalButtonRef.current;

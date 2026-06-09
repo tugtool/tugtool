@@ -477,6 +477,15 @@ export interface TugSheetContentProps {
    * title. Defaults to `false`. See {@link ShowSheetOptions.hideHeaderRule}.
    */
   hideHeaderRule?: boolean;
+  /**
+   * Disposition toward an enclosing focus cycle on a **committed** close ([P15]
+   * generalized to sub-surfaces). `"retain"` (default) pops normally — the cycle
+   * stays, focus returns to the originating stop. `"relinquish"` cascade-pops the
+   * enclosing cycle so it exits to its resting destination. Honored only when
+   * `getResult()` reports a committed value at close; a cancel always retains.
+   * See {@link ShowSheetOptions.onCommitDisposition}.
+   */
+  onCommitDisposition?: "retain" | "relinquish";
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -506,6 +515,7 @@ export function TugSheetContent({
   resizable = false,
   hideHeader = false,
   hideHeaderRule = false,
+  onCommitDisposition = "retain",
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -577,7 +587,24 @@ export function TugSheetContent({
   // focusables, so a form sheet relies on Radix to keep Tab inside it). The
   // sheet body is wrapped in `FocusModeScope` so any engine focusable inside it
   // joins this mode.
-  const { FocusModeScope } = useFocusTrap({ active: open });
+  // Close disposition toward an enclosing focus cycle ([P15] generalized).
+  // Resolved during render from the live close state: once `open` has flipped
+  // false AND this was a committed close (`getResult()` reports a value) AND the
+  // consumer asked to relinquish, the trap's pop relinquishes the enclosing cycle
+  // instead of restoring the originating stop. Computed during render (a ref, not
+  // state) so it is set before the trap's pop cleanup reads it; a cancel
+  // (no committed result) always retains. The engine relinquish is the single
+  // close-focus authority, so `handleUnmountAutoFocus` below stands down for it.
+  const closeDispositionRef = useRef<"retain" | "relinquish">("retain");
+  closeDispositionRef.current =
+    !open && onCommitDisposition === "relinquish" && getResult?.() !== undefined
+      ? "relinquish"
+      : "retain";
+
+  const { FocusModeScope } = useFocusTrap({
+    active: open,
+    closeDisposition: closeDispositionRef,
+  });
 
   // Presence: keep the portal mounted during the exit animation.
   // `mounted` becomes true when open goes true, and false only after the exit animation completes.
@@ -952,6 +979,16 @@ export function TugSheetContent({
   }
 
   function handleUnmountAutoFocus(e: Event) {
+    // Relinquish disposition ([P15] generalized): the engine's
+    // `relinquishFocusMode` (fired by the trap's pop) is the single close-focus
+    // authority — it exits the enclosing cycle to its resting destination. The
+    // sheet must NOT also restore the opener (the chip), or it would race that
+    // landing. Stand down: prevent Radix's default and return without touching
+    // focus.
+    if (closeDispositionRef.current === "relinquish") {
+      e.preventDefault();
+      return;
+    }
     // The focus engine owns close-focus for keyboard-opened sheets (see
     // `handleMountAutoFocus`): the mode-stack pop restored the engine key view
     // (the originating stop, e.g. a Z4B chip) + its ring. This unmount-autofocus
@@ -1193,6 +1230,20 @@ export interface ShowSheetOptions {
    * dialogs that don't dismiss their host card) leave it undefined.
    */
   cascadeTargetId?: string;
+  /**
+   * Disposition toward an enclosing focus cycle when this sheet is opened from a
+   * cycle stop and **commits** a value ([P15] generalized to sub-surfaces). Only
+   * a committed close (the `close(result)` promise resolves with a value) honors
+   * it; a cancel always retains. Default `"retain"`.
+   *
+   *  - `"retain"`: the cycle stays on and the ring returns to the originating
+   *    stop (the chip) — the user can keep cycling.
+   *  - `"relinquish"`: the cycle exits and focus returns to its resting
+   *    destination (the prompt caret).
+   *
+   * No-op when the sheet is not opened from within a cycle.
+   */
+  onCommitDisposition?: "retain" | "relinquish";
 }
 
 interface UseTugSheetState {
@@ -1517,6 +1568,7 @@ export function useTugSheet(): {
           resizable={options.resizable}
           hideHeader={options.hideHeader}
           hideHeaderRule={options.hideHeaderRule}
+          onCommitDisposition={options.onCommitDisposition}
         >
           {options.content(close)}
         </TugSheetContent>
