@@ -106,6 +106,8 @@ import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
 import { useFocusManager } from "./use-focusable";
 import { useOptionalResponder } from "./use-responder";
+import { useSpatialOrder } from "./use-spatial-order";
+import type { SpatialOrder } from "./spatial-order";
 import { TUG_ACTIONS } from "./action-vocabulary";
 
 /* ---------------------------------------------------------------------------
@@ -276,6 +278,28 @@ export const TugConfirmPopover = React.forwardRef<
   const CANCEL_ORDER = 0;
   const CONFIRM_ORDER = 1;
 
+  // Arrow navigation over the button row ([P22] / [P23]): Cancel ↔ Confirm as both
+  // a horizontal AND a vertical closed ring, so *any* arrow toggles between the two
+  // buttons (moving the ring + DOM focus, driving fill-follows-ring) — the same Tab
+  // walk the trap already cycles, now reachable by every arrow. A 2-choice
+  // confirmation has no second axis to lose, so collapsing both axes onto the pair
+  // is the forgiving behavior and leaves no undeclared direction (no dead-arrow
+  // fallback / warning). Declared against the popover's trapped focus mode by the
+  // context-form registrar below, which renders inside `TugPopover`'s
+  // `FocusModeScope` (the component body here is above it).
+  const buttonSpatialOrder = React.useMemo<SpatialOrder>(() => {
+    const nodes = [
+      `${buttonFocusGroup}:${CANCEL_ORDER}`,
+      `${buttonFocusGroup}:${CONFIRM_ORDER}`,
+    ];
+    return {
+      rings: [
+        { axis: "horizontal", nodes, closed: true },
+        { axis: "vertical", nodes, closed: true },
+      ],
+    };
+  }, [buttonFocusGroup]);
+
   const fallbackResponderId = React.useId();
   const fallbackSenderId = React.useId();
   const responderId = fallbackResponderId;
@@ -433,6 +457,30 @@ export const TugConfirmPopover = React.forwardRef<
     });
   }
 
+  // Cmd-. cancels, mirroring Escape. Escape is owned by Radix's DismissableLayer
+  // (the popover's light-dismiss); Cmd-. is not a Radix key, and the global
+  // Cmd-. → cancelDialog binding routes by first responder — unreliable for a
+  // portaled popover whose buttons carry `data-tug-focus="refuse"` and never
+  // promote. Route it to our OWN cancelDialog by identity (`sendToTarget`),
+  // exactly as the Cancel button does, so the two cancel keys behave identically.
+  // Runs in bubble phase after the capture-phase keybinding listener; if that
+  // listener had handled Cmd-. it would have stopped propagation, so this fires
+  // only when the chain dispatch did not land.
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.metaKey && e.key === ".") {
+      e.preventDefault();
+      if (!manager) {
+        handleCancelAction();
+        return;
+      }
+      manager.sendToTarget(responderId, {
+        action: TUG_ACTIONS.CANCEL_DIALOG,
+        sender: senderId,
+        phase: "discrete",
+      });
+    }
+  }
+
   // ---- Anchor element wiring (controlled mode) ----
   //
   // Radix Popover.Anchor accepts a `virtualRef` (a ref-shaped object
@@ -502,9 +550,14 @@ export const TugConfirmPopover = React.forwardRef<
           data-slot="tug-confirm-popover"
           className="tug-confirm-popover"
           onMouseDown={suppressButtonFocusShift}
+          onKeyDown={handleKeyDown}
           data-side={side}
           ref={responderRef as (el: HTMLDivElement | null) => void}
         >
+          {/* Registers the button-row arrow order against the popover's trap mode.
+              Rendered here (inside TugPopover's FocusModeScope) so the context-form
+              `useSpatialOrder` reads the trap scope, not the component's outer one. */}
+          <ConfirmPopoverSpatialOrder order={buttonSpatialOrder} />
           <div className="tug-confirm-popover-actions">
             <TugPushButton
               ref={cancelButtonRef}
@@ -535,3 +588,21 @@ export const TugConfirmPopover = React.forwardRef<
     </TugPopover>
   );
 });
+
+/* ---------------------------------------------------------------------------
+ * ConfirmPopoverSpatialOrder
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * Null-rendering registrar for the button-row arrow order. It must mount INSIDE
+ * `TugPopover`'s `FocusModeScope` — which wraps `TugPopoverContent`'s children —
+ * so the context-form `useSpatialOrder(order)` resolves the enclosing
+ * `FocusModeContext` to the popover's trapped focus mode. Calling
+ * `useSpatialOrder` in the `TugConfirmPopover` body would instead bind the order
+ * to whatever mode is current ABOVE the popover (commonly the base mode), since
+ * that body renders the `FocusModeScope`, not within it. [L03]
+ */
+function ConfirmPopoverSpatialOrder({ order }: { order: SpatialOrder }): null {
+  useSpatialOrder(order);
+  return null;
+}
