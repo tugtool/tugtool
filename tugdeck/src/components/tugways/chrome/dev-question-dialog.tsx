@@ -81,16 +81,16 @@
  * Laws:
  *  - [L02] external state (is this request still pending?) enters
  *    React via `useSyncExternalStore` over the `CodeSessionStore`.
- *  - [L06] appearance flows through CSS + `TugDialogButton`'s
- *    `data-*` attributes; React state holds only the logical
- *    selection set ([L24]).
+ *  - [L06] appearance flows through CSS + the composed `TugListView` /
+ *    `TugListRow` `data-*` attributes; React state holds only the
+ *    logical selection set ([L24]).
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot` on the question-stack containers, this docstring.
  *  - [L20] component-token sovereignty — the dialog frame is
- *    delegated to `TugInlineDialog` (`--tugx-idialog-*`); each
- *    option row is a `TugDialogButton` (`--tugx-dialog-button-*`).
- *    This component owns only the small `--tugx-question-*`
- *    wizard-rail family.
+ *    delegated to `TugInlineDialog` (`--tugx-idialog-*`); the option
+ *    list is a `TugListView` of `TugListRow`s (`--tugx-list-view-*` /
+ *    `--tugx-list-row-*`). This component owns only the small
+ *    `--tugx-question-*` wizard-rail family.
  *  - [L23] in-progress answer state (selection set, visit set,
  *    wizard focus) is user data and must survive reload / cross-pane
  *    move / cold boot. The dialog opts into the [A9] Component State
@@ -133,12 +133,21 @@ import {
   TugConfirmPopover,
   type TugConfirmPopoverHandle,
 } from "@/components/tugways/tug-confirm-popover";
-import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
+import { TugListRow, TugListRowLayoutProvider } from "@/components/tugways/tug-list-row";
+import {
+  TugListView,
+  type TugListViewCellProps,
+  type TugListViewCellRenderer,
+  type TugListViewDataSource,
+  type TugListViewDelegate,
+} from "@/components/tugways/tug-list-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { useFocusManager } from "@/components/tugways/use-focusable";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
 import { useInlineDialogScope } from "@/components/tugways/use-inline-dialog-scope";
-import { useItemGroupKeyboard } from "@/components/tugways/use-item-group-keyboard";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { animate } from "@/components/tugways/tug-animator";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -652,41 +661,127 @@ function PendingRow({
 }
 
 /**
- * The option group a `current` row shows. Lifted out of `CurrentRow`
- * so the hidden measurement helper can mount the same DOM shape and
- * measure it — the answer to layout-stability across question swaps
- * is to know, up front, the largest options block any question
- * produces, and apply that as a `min-height` floor to the visible
- * current row's options area.
+ * The current question's options render by selection arity ([P02]/[P17]):
+ *
+ *  - **mutually-exclusive** (`multiSelect: false`) → a {@link TugRadioGroup} (the
+ *    same archetype the PermissionDialog scope uses) — exactly one choice, radio
+ *    dots, deferred Space/Enter commit;
+ *  - **multiply-selectable** (`multiSelect: true`) → a flush {@link TugListView}
+ *    of `TugListRow`s — ruled rows, a selected fill + leading check, any number
+ *    chosen.
+ *
+ * Both are authored into the dialog's trapped focus group as ONE item-group Tab
+ * stop, and both route a pick to the wizard's `handleSelect` → a single-select
+ * pick REPLACES + auto-advances, a multi-select pick TOGGLES
+ * ({@link applyQuestionSelection}). Selection stays consumer-owned (the wizard's
+ * `selections` tuple, [L24]) — the radio is a controlled `value`, the list cell
+ * paints `selected` from {@link QuestionOptionsSelectionContext} — so neither
+ * control owns a selected index.
  */
-function QuestionOptionGroup({
+
+/** The current row's selection labels, published to the (multi-select) option cells. */
+const QuestionOptionsSelectionContext = React.createContext<
+  ReadonlyArray<string>
+>([]);
+
+/**
+ * Static, single-section data source over one question's options. The option set
+ * is fixed for a question's lifetime (a new question remounts the list), so
+ * `subscribe` is a no-op and `getVersion` returns the array identity.
+ */
+class QuestionOptionsDataSource implements TugListViewDataSource {
+  constructor(private readonly options: readonly ParsedQuestionOption[]) {}
+  numberOfItems(): number {
+    return this.options.length;
+  }
+  idForIndex(index: number): string {
+    // Labels are the answer values and are unique within a question.
+    return this.options[index]?.label ?? `option-${index}`;
+  }
+  kindForIndex(): string {
+    return "option";
+  }
+  /** Cell-renderer accessor — the option at `index`. */
+  optionAt(index: number): ParsedQuestionOption | undefined {
+    return this.options[index];
+  }
+  subscribe(): () => void {
+    return () => {};
+  }
+  getVersion(): unknown {
+    return this.options;
+  }
+}
+
+/**
+ * One option row — a flush {@link TugListRow}: the option label over its muted
+ * description, a leading check when selected. Presentational; activation is the
+ * enclosing list view cell wrapper's job (→ delegate `onSelect`). Selected state
+ * is read from {@link QuestionOptionsSelectionContext} so the same row paints
+ * correctly under single- AND multi-select.
+ */
+const QuestionOptionCell: TugListViewCellRenderer<QuestionOptionsDataSource> =
+  function QuestionOptionCell({
+    index,
+    dataSource,
+  }: TugListViewCellProps<QuestionOptionsDataSource>): React.ReactElement {
+    const selection = React.useContext(QuestionOptionsSelectionContext);
+    const option = dataSource.optionAt(index);
+    const label = option?.label ?? "";
+    return (
+      <TugListRow
+        title={label}
+        subtitle={option?.description}
+        subtitleMaxLines={4}
+        selected={selection.includes(label)}
+        selectedGlyph="check"
+        data-option-label={label}
+      />
+    );
+  };
+
+const QUESTION_OPTION_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<QuestionOptionsDataSource>
+> = {
+  option: QuestionOptionCell,
+};
+
+/**
+ * The hidden measurement helper renders one question's options in the same shape
+ * the live row will use — a {@link TugRadioGroup} for a single-select question, or
+ * plain {@link TugListRow}s in a `flush` layout for a multi-select one (no list
+ * view, so no focusable registers and no second cursor exists) — close enough to
+ * the live height to drive the layout-stability floor.
+ */
+function QuestionOptionsMeasure({
   question,
-  selection,
-  onSelect,
 }: {
   question: ParsedQuestion;
-  selection: ReadonlyArray<string>;
-  onSelect: (optionLabel: string) => void;
 }): React.ReactElement {
-  const selectionStyle = question.multiSelect ? "check" : "radio";
+  if (!question.multiSelect) {
+    return (
+      <TugRadioGroup size="md" orientation="vertical" aria-label={question.question}>
+        {question.options.map((option) => (
+          <TugRadioItem key={option.label} value={option.label} description={option.description}>
+            {option.label}
+          </TugRadioItem>
+        ))}
+      </TugRadioGroup>
+    );
+  }
   return (
-    <div
-      className="dev-question-dialog-options"
-      data-slot="dev-question-dialog-options"
-      role={question.multiSelect ? "group" : "radiogroup"}
-      aria-label={question.question}
-    >
+    <TugListRowLayoutProvider value={{ variant: "flush", selectedAccent: false }}>
       {question.options.map((option) => (
-        <TugDialogButton
+        <TugListRow
           key={option.label}
-          label={option.label}
-          description={option.description}
-          selected={selection.includes(option.label)}
-          selectionStyle={selectionStyle}
-          onClick={() => onSelect(option.label)}
+          title={option.label}
+          subtitle={option.description}
+          subtitleMaxLines={4}
+          selectedGlyph="check"
         />
       ))}
-    </div>
+    </TugListRowLayoutProvider>
   );
 }
 
@@ -701,7 +796,7 @@ const QUESTION_BACK_ORDER = 2;
 const QUESTION_NEXT_ORDER = 3;
 const QUESTION_OPTIONS_ORDER = 4;
 
-interface CurrentRowOptionsProps {
+interface QuestionOptionsProps {
   question: ParsedQuestion;
   selection: ReadonlyArray<string>;
   onSelect: (optionLabel: string) => void;
@@ -709,107 +804,141 @@ interface CurrentRowOptionsProps {
   focusGroup: string;
   /** Order within {@link focusGroup}. */
   focusOrder: number;
+  /**
+   * The dialog's cancel-action responder id (from {@link useInlineDialogScope}).
+   * The single-select radio's nested `useResponderForm` chains to it so an
+   * unhandled `CANCEL_DIALOG` (Escape / Cmd-.) from inside the radio walks up to
+   * the dialog instead of escaping past it.
+   */
+  dialogResponderId: string;
 }
 
 /**
- * The current question's option group as a single item-group stop ([P02]/[P17]).
- * Tab lands the ring on the group (never on a row); arrows move a cursor over
- * the options *without* committing (deferred); Space/Enter pick the cursor
- * option — a single-select pick auto-advances (the wizard's existing
- * `handleSelect`), a multi-select pick toggles. Wraps the shared
- * {@link QuestionOptionGroup} so the hidden measurement helper, which renders
- * it bare, measures the identical markup. Authored into the dialog's trapped
- * mode via `FocusModeContext` (the `useItemGroupKeyboard` → `useFocusable`
- * chain reads it).
+ * Mutually-exclusive options ([P02]/[P17]): a {@link TugRadioGroup} authored into
+ * the dialog's trapped focus group as one item-group stop (Tab lands the ring on
+ * the group, arrows rove the cursor, Space/Enter check the cursor row). Selection
+ * is a controlled `value` (the wizard's single-element `selections[i]`); a check
+ * dispatches `selectValue` through a nested `useResponderForm` to the wizard's
+ * `handleSelect`, which replaces the selection and auto-advances. The form's
+ * `parentId` is the dialog's cancel responder so Escape still cancels.
  */
-const CurrentRowOptions: React.FC<CurrentRowOptionsProps> = ({
+const QuestionRadioOptions: React.FC<QuestionOptionsProps> = ({
+  question,
+  selection,
+  onSelect,
+  focusGroup,
+  focusOrder,
+  dialogResponderId,
+}) => {
+  const senderId = React.useId();
+  const onSelectRef = React.useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: { [senderId]: (next: string) => onSelectRef.current(next) },
+    parentId: dialogResponderId,
+  });
+  return (
+    <ResponderScope>
+      <div
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+        className="dev-question-dialog-options-radio"
+      >
+        <TugRadioGroup
+          value={selection[0] ?? ""}
+          senderId={senderId}
+          size="md"
+          orientation="vertical"
+          aria-label={question.question}
+          focusGroup={focusGroup}
+          focusOrder={focusOrder}
+        >
+          {question.options.map((option) => (
+            <TugRadioItem
+              key={option.label}
+              value={option.label}
+              description={option.description}
+            >
+              {option.label}
+            </TugRadioItem>
+          ))}
+        </TugRadioGroup>
+      </div>
+    </ResponderScope>
+  );
+};
+
+/**
+ * Multiply-selectable options ([P02]/[P17]): a flush {@link TugListView} that IS
+ * the single item-group stop — Tab lands the ring on the list, arrows move the
+ * cursor, Space / Enter / click activate the cursor row → `delegate.onSelect`,
+ * routed to the wizard's `handleSelect` (toggle). Selection stays consumer-owned,
+ * published to the cells through {@link QuestionOptionsSelectionContext}, so the
+ * list owns no selected index (no `singleSelect` / `selectionRequired`).
+ */
+const QuestionListOptions: React.FC<QuestionOptionsProps> = ({
   question,
   selection,
   onSelect,
   focusGroup,
   focusOrder,
 }) => {
-  const id = React.useId();
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const questionRef = React.useRef(question);
-  questionRef.current = question;
-  const selectionRef = React.useRef(selection);
-  selectionRef.current = selection;
+  const dataSource = React.useMemo(
+    () => new QuestionOptionsDataSource(question.options),
+    [question.options],
+  );
   const onSelectRef = React.useRef(onSelect);
   onSelectRef.current = onSelect;
-
-  const collectItems = React.useCallback(() => {
-    const root = rootRef.current;
-    if (root === null) return [];
-    return Array.from(root.querySelectorAll('[data-slot="tug-dialog-button"]'));
-  }, []);
-
-  // Land the cursor on the first selected option when the group gains the key
-  // view, else the first option.
-  const initialIndex = React.useCallback(() => {
-    const opts = questionRef.current.options;
-    const sel = selectionRef.current;
-    const idx = opts.findIndex((o) => sel.includes(o.label));
-    return idx < 0 ? 0 : idx;
-  }, []);
-
-  // Space/Enter act on the cursor option → the wizard's pick handler
-  // (auto-advance for single-select, toggle for multi-select).
-  const act = React.useCallback((_el: Element | null, index: number) => {
-    const opt = questionRef.current.options[index];
-    if (opt) onSelectRef.current(opt.label);
-  }, []);
-
-  const { attachRoot, onKeyDown, syncItems } = useItemGroupKeyboard({
-    id,
-    group: focusGroup,
-    order: focusOrder,
-    register: true,
-    commit: "deferred",
-    collectItems,
-    initialIndex,
-    onSelect: act,
-    onAct: act,
-  });
-
-  const setRoot = React.useCallback(
-    (el: HTMLDivElement | null) => {
-      rootRef.current = el;
-      attachRoot(el);
-    },
-    [attachRoot],
+  const optionsRef = React.useRef(question.options);
+  optionsRef.current = question.options;
+  const delegate = React.useMemo<TugListViewDelegate>(
+    () => ({
+      onSelect: (index) => {
+        const opt = optionsRef.current[index];
+        if (opt) onSelectRef.current(opt.label);
+      },
+    }),
+    [],
   );
-
-  React.useLayoutEffect(() => {
-    syncItems();
-  }, [syncItems, question.options.length]);
 
   return (
-    <div
-      ref={setRoot}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      data-slot="dev-question-dialog-options-group"
-      className="dev-question-dialog-options-group"
-    >
-      <QuestionOptionGroup
-        question={question}
-        selection={selection}
-        onSelect={onSelect}
+    <QuestionOptionsSelectionContext.Provider value={selection}>
+      <TugListView<QuestionOptionsDataSource>
+        dataSource={dataSource}
+        delegate={delegate}
+        cellRenderers={QUESTION_OPTION_CELL_RENDERERS}
+        rowLayout="flush"
+        inline
+        className="dev-question-dialog-options-list"
+        focusGroup={focusGroup}
+        focusOrder={focusOrder}
+        aria-label={question.question}
       />
-    </div>
+    </QuestionOptionsSelectionContext.Provider>
   );
 };
+
+/**
+ * The current question's options — a radio group for a mutually-exclusive
+ * question, a list view for a multiply-selectable one. Both author into the same
+ * focus group / order, so the dialog seeds and Tab-reaches the options the same
+ * way regardless of arity.
+ */
+const QuestionOptions: React.FC<QuestionOptionsProps> = (props) =>
+  props.question.multiSelect ? (
+    <QuestionListOptions {...props} />
+  ) : (
+    <QuestionRadioOptions {...props} />
+  );
 
 /**
  * The `current` row — title + options. Back/Next live on their own
  * sub-row inside the body slot (between the dialog description and
  * the question accordion), not inside the row itself, so they keep a
  * stable on-screen position across question advances (the button
- * never jumps out from under the mouse). The options group is the
- * only place a `TugDialogButton` lives in the wizard, so the role /
- * aria semantics stay scoped to one row at a time (avoids cross-row
- * radio-group leaks).
+ * never jumps out from under the mouse). The options list (a
+ * `TugListView`) is the only place an answerable option row lives in
+ * the wizard, so its selection / aria semantics stay scoped to one
+ * row at a time.
  */
 function CurrentRow({
   index,
@@ -819,6 +948,7 @@ function CurrentRow({
   onSelect,
   optionsFocusGroup,
   optionsFocusOrder,
+  dialogResponderId,
 }: Pick<
   QuestionRowProps,
   "index" | "question" | "selection" | "onSelect"
@@ -826,6 +956,7 @@ function CurrentRow({
   optionsMinHeight?: number;
   optionsFocusGroup: string;
   optionsFocusOrder: number;
+  dialogResponderId: string;
 }): React.ReactElement {
   // Apply the measured options floor to the options area only — the
   // heading stays at its natural height, and shorter questions just
@@ -858,12 +989,13 @@ function CurrentRow({
         data-slot="dev-question-dialog-options-wrap"
         style={optionsStyle}
       >
-        <CurrentRowOptions
+        <QuestionOptions
           question={question}
           selection={selection}
           onSelect={onSelect}
           focusGroup={optionsFocusGroup}
           focusOrder={optionsFocusOrder}
+          dialogResponderId={dialogResponderId}
         />
       </div>
     </div>
@@ -875,6 +1007,7 @@ function QuestionRow(
     optionsMinHeight?: number;
     optionsFocusGroup: string;
     optionsFocusOrder: number;
+    dialogResponderId: string;
   },
 ): React.ReactElement {
   if (props.status === "current") return <CurrentRow {...props} />;
@@ -1026,6 +1159,22 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // `currentIndex` change. [L06]/[L03].
   const pendingFocusKeyRef = React.useRef<string | null>(null);
 
+  // A single-select pick doesn't advance instantly — that's jarring (the group
+  // vanishes before the eye registers the choice). Instead the pick commits the
+  // selection, then a layout effect flashes the chosen row (a menu-style
+  // confirmation blink) and advances on the flash's tail. `handleSelect` records
+  // the intent here; the effect on `selections` consumes it. `null` = no pending
+  // advance (multi-select toggles, or a pick that doesn't move the row).
+  const pendingAdvanceRef = React.useRef<{
+    to: number;
+    focusKey: string | null;
+  } | null>(null);
+
+  // The dialog's outer element — held so the flash effect can find the chosen
+  // option row to animate. The composed ref callback (with the cancel-responder
+  // `attachRoot`) is built after `useInlineDialogScope` runs.
+  const dialogRootRef = React.useRef<HTMLDivElement | null>(null);
+
   // Whether every question would be answered if `assumeVisited` were visited —
   // the gate the Next-boundary uses to choose Submit (all answered) vs Back. A
   // question counts as answered when it is visited (or the assumed one) AND
@@ -1073,15 +1222,20 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         const total = questions.length;
         const newIndex = nextAdvanceIndex(questionIndex, total);
         if (newIndex !== questionIndex) {
-          pendingFocusKeyRef.current =
-            newIndex < total
-              ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
-              : `${focusGroup}:${
-                  wouldAllBeAnswered(questionIndex)
-                    ? QUESTION_SUBMIT_ORDER
-                    : QUESTION_BACK_ORDER
-                }`;
-          setCurrentIndex(newIndex);
+          // Don't advance now — record the intent. The flash effect (on
+          // `selections`) blinks the just-chosen row, then advances on the
+          // blink's tail so the selection registers before the group collapses.
+          pendingAdvanceRef.current = {
+            to: newIndex,
+            focusKey:
+              newIndex < total
+                ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
+                : `${focusGroup}:${
+                    wouldAllBeAnswered(questionIndex)
+                      ? QUESTION_SUBMIT_ORDER
+                      : QUESTION_BACK_ORDER
+                  }`,
+          };
         }
       }
     },
@@ -1185,11 +1339,74 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     questions.length > 0 && !seedAtReview
       ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
       : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
-  const { attachRoot } = useInlineDialogScope({
+  const { attachRoot, responderId: dialogResponderId } = useInlineDialogScope({
     active: isPending,
     defaultFocusKey: seedFocusKey,
     onCancel: handleCancel,
   });
+
+  // Compose the dialog's outer ref: the cancel-responder root + the held element
+  // the flash effect animates.
+  const setDialogRoot = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      dialogRootRef.current = el;
+      attachRoot(el);
+    },
+    [attachRoot],
+  );
+
+  // Flash-then-advance for a single-select pick ([menu-flash confirmation]). When
+  // `handleSelect` records a pending advance, the selection has already committed
+  // (the dot fills, the ring lands on the chosen row); blink that row's focus
+  // RING a couple of times so the eye registers the choice, then advance on the
+  // blink's tail. Runs on `selections` so it fires right after the pick re-renders
+  // the chosen row checked; a no-op for multi-select toggles (they record no
+  // pending advance). TugAnimator scales the blink under reduced motion ([D06]).
+  React.useLayoutEffect(() => {
+    const pending = pendingAdvanceRef.current;
+    if (pending === null) return;
+    pendingAdvanceRef.current = null;
+
+    const advance = () => {
+      pendingFocusKeyRef.current = pending.focusKey;
+      setCurrentIndex(pending.to);
+    };
+
+    const row = dialogRootRef.current?.querySelector<HTMLElement>(
+      '.dev-question-dialog-options-radio [data-slot="tug-radio-item"][data-state="checked"]',
+    );
+    // The chosen row carries the movement-cursor ring as an `outline`. Pulse just
+    // the ring (its `outline-color`), leaving the row's text / dot steady. Fall
+    // back to a plain advance if the ring isn't present.
+    const ringColor = row ? getComputedStyle(row).outlineColor : "";
+    if (!row || ringColor === "" || ringColor === "transparent") {
+      advance();
+      return;
+    }
+
+    let cancelled = false;
+    const flash = animate(
+      row,
+      [
+        { outlineColor: ringColor },
+        { outlineColor: "transparent" },
+        { outlineColor: ringColor },
+        { outlineColor: "transparent" },
+        { outlineColor: ringColor },
+      ],
+      { duration: "--tug-motion-duration-slow", easing: "ease-in-out", key: "question-pick-flash" },
+    );
+    flash.finished
+      .then(() => {
+        if (!cancelled) advance();
+      })
+      .catch(() => {
+        /* flash cancelled (rapid re-pick / unmount) — the superseding effect run advances */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selections]);
 
   // Apply the nav handlers' focus intent on a step change. `null` (the default
   // for Back/Next in the interior) leaves the key view where it is, so focus
@@ -1330,7 +1547,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   return (
     <FocusModeScope>
       <div
-        ref={attachRoot}
+        ref={setDialogRoot}
         className="dev-question-dialog"
         data-slot="dev-question-dialog"
       >
@@ -1395,6 +1612,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               onSelect={(optionLabel) => handleSelect(0, optionLabel)}
               optionsFocusGroup={focusGroup}
               optionsFocusOrder={QUESTION_OPTIONS_ORDER}
+              dialogResponderId={dialogResponderId}
             />
           ) : (
             <>
@@ -1415,6 +1633,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
                     optionsMinHeight={optionsMinHeight}
                     optionsFocusGroup={focusGroup}
                     optionsFocusOrder={QUESTION_OPTIONS_ORDER}
+                    dialogResponderId={dialogResponderId}
                     onSelect={(optionLabel) => handleSelect(index, optionLabel)}
                     onJump={() => handleJump(index)}
                   />
@@ -1439,11 +1658,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
                     key={`measure:${index}:${question.question}`}
                     data-dev-question-measure
                   >
-                    <QuestionOptionGroup
-                      question={question}
-                      selection={[]}
-                      onSelect={NOOP_SELECT}
-                    />
+                    <QuestionOptionsMeasure question={question} />
                   </div>
                 ))}
               </div>
@@ -1456,9 +1671,3 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     </FocusModeScope>
   );
 };
-
-/** Stable no-op so the measurement helper's `onSelect` closure
- *  identity never changes — it never fires because the helper's
- *  CSS sets `pointer-events: none`, but a stable reference still
- *  lets React skip re-rendering the inner buttons. */
-const NOOP_SELECT = (): void => {};

@@ -1,16 +1,16 @@
 /* @tug-pairings:
    - --tugx-idialog-*           (TugInlineDialog owns the dialog frame)
-   - --tugx-dialog-button-*     (TugDialogButton owns each option row)
+   - --tugx-list-view-* / --tugx-list-row-*  (TugListView / TugListRow own each option row)
    - --tugx-question-current-bg | --tugx-idialog-bg      (highlight tone behind the focused row)
    - --tugx-question-row-hover-bg | --tugx-idialog-bg    (hover bg on a done/pending row)
    - --tugx-question-marker-done-color | --tugx-idialog-bg     (done-row checkmark)
    - --tugx-question-marker-current-color | --tugx-idialog-bg  (current-row arrow)
    - --tugx-question-marker-pending-color | --tugx-idialog-bg  (pending-row ring)
    - --tugx-question-answer-color | --tugx-idialog-bg          (done-row → answer summary)
-   `QuestionDialog` delegates the dialog frame to `TugInlineDialog`
-   and every option row to `TugDialogButton`. The wizard rail itself
-   — done / current / pending rows and the dialog-level Back / Next
-   group — owns only `--tugx-question-*` here.
+   `QuestionDialog` delegates the dialog frame to `TugInlineDialog` and the option
+   list to `TugListView` / `TugListRow`. The wizard rail itself — done / current /
+   pending rows and the dialog-level Back / Next group — owns only
+   `--tugx-question-*` here.
 */
 
 /**
@@ -72,7 +72,7 @@ body {
   /* Answer summary on done rows — sits below the heading at a
    * notch-smaller size, muted enough to read as a derived value
    * not a heading. */
-  --tugx-question-answer-size:   0.8125rem;
+  --tugx-question-answer-size:   0.875rem;
   --tugx-question-answer-color:  var(--tug7-element-global-text-normal-default-rest);
   --tugx-question-answer-leading: 1.4;
 
@@ -102,10 +102,6 @@ body {
    * question text below them. */
   --tugx-question-number-w:   1.5ch;
   --tugx-question-number-gap: 0.4ch;
-
-  /* Options block — slightly tighter inter-button gap so the option
-   * column reads as a single answer group rather than a list. */
-  --tugx-question-option-gap: var(--tug-space-2xs);
 
   /* Single-question payload preserves the legacy compact layout. */
   --tugx-question-single-options-padding: 0;
@@ -354,10 +350,40 @@ body {
   );
 }
 
-.dev-question-dialog-options {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tugx-question-option-gap);
+/* The options are a flush `TugListView` (mirrors the model / effort picker
+ * sheets) — the `dev-question-dialog-options-list` class is on the
+ * `.tug-list-view` root itself (so the selector is a compound, NOT a descendant).
+ * Size it to its rows (every option shows, no inner scroll — the whole dialog
+ * scrolls in the transcript), run the rows + dividers flush to the list frame,
+ * and drop the list's block-axis breathing pseudo-elements so the rows sit tight.
+ * On open the list holds the key view and wears its perimeter ring (the picker
+ * shape — the cursor-row fill marks the cursor inside it). The rows keep their
+ * own internal text padding ([L20] cascade-scoped instance override). */
+.dev-question-dialog-options-list.tug-list-view {
+  height: auto;
+  padding-inline: 0;
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-row-gap: 0;
+}
+
+/* Mutually-exclusive questions render a `TugRadioGroup`. Stretch its items to the
+ * full options width so long, prose descriptions wrap at the dialog's right edge
+ * instead of overflowing (the group is full-width here, unlike the centered,
+ * shrink-to-content PermissionDialog scope). */
+.dev-question-dialog-options-radio .tug-radio-group-items {
+  align-items: stretch;
+}
+
+/* The dialog renders inside `.dev-card-transcript`, whose own list-view rule
+ * (`dev-card.css`) sets a large inter-TURN `--tugx-list-view-row-gap` /
+ * `padding-block`. Those custom properties target every `.tug-list-view`
+ * descendant — including this nested option list — and tie on specificity with
+ * `rowLayout="flush"`'s reset, bleeding the transcript's between-turn margin into
+ * the option rows as spurious gaps. Re-assert the flush values one level more
+ * specific so the option rows stay tight. */
+.dev-card-transcript .dev-question-dialog-options-list.tug-list-view {
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-row-gap: 0;
 }
 
 /* ---- Single-question payload — collapse the wizard chrome ---- */
@@ -385,8 +411,7 @@ body {
 
 .dev-question-dialog-questions:has(> .dev-question-dialog-row:only-child)
   > .dev-question-dialog-row[data-status="current"]
-  > .dev-question-dialog-options {
-  padding: var(--tugx-question-single-options-padding);
+  .dev-question-dialog-options-list {
   margin-top: 0;
 }
 
@@ -456,18 +481,9 @@ body {
  * button (Cancel / Submit / Back / Next) promotes to its filled, role-coloured
  * style + role ring — a first-class TugPushButton capability
  * (`internal/tug-button.css`), so no bespoke copy lives here; Submit additionally
- * carries `persistentDefaultRing`. The current question's option ROWS
- * (`TugDialogButton`) take the item-group treatment inside `CurrentRowOptions`:
- * the roving `[data-key-cursor]` outline ring (role-resolved in
- * `tug-dialog-button.css`) marks the cursor row, offset outside it so it survives
- * atop the native selected fill. There is no full-width focusable scope wrapper
- * anymore, so clicking inert chrome establishes no focus state ([P18]). */
-
-/* The current question's option group is the focusable; per [P02] its key-view
- * shows no leaf box ring (the cursor-row ring is the cue). */
-.dev-question-dialog-options-group {
-  outline: none;
-}
-.dev-question-dialog-options-group[data-key-view-kbd] {
-  outline: none;
-}
+ * carries `persistentDefaultRing`. The current question's options are a flush
+ * `TugListView` authored into the trap as one item-group stop: it owns its own
+ * focus treatment (the perimeter ring on the list when it holds the key view, the
+ * cursor-row fill on the movement cursor inside it). There is no full-width
+ * focusable scope wrapper anymore, so clicking inert chrome establishes no focus
+ * state ([P18]). */

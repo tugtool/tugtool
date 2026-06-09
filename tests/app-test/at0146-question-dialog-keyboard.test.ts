@@ -32,8 +32,13 @@ const CARD = '[data-card-id="A"]';
 const CARD_ROOT = `${CARD} [data-slot="dev-card"]`;
 const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
 const SUBMIT = `${DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
-const OPTIONS = `${DIALOG} [data-slot="dev-question-dialog-options-group"]`;
-const OPTION_ROWS = `${OPTIONS} [data-slot="tug-dialog-button"]`;
+// The options are a flush TugListView authored into the trap as one item-group
+// stop: the list (its scroll container) holds the key view; the movement cursor
+// (`data-key-cursor`) lands on a `.tug-list-view-cell`; the committed selection
+// (`data-selected`) lands on the `TugListRow` inside it.
+const OPTIONS = `${DIALOG} [data-slot="tug-list-view"]`;
+const OPTION_CELLS = `${OPTIONS} .tug-list-view-cell`;
+const OPTION_ROWS = `${OPTIONS} [data-slot="tug-list-row"]`;
 const OLD_DEADZONE = `${CARD} [data-slot="dev-question-dialog-scope"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
@@ -68,10 +73,15 @@ function exists(app: App, selector: string): Promise<boolean> {
   );
 }
 
-// Whether the option row at `index` carries the given attribute.
-function rowHasAttr(app: App, index: number, attr: string): Promise<boolean> {
+// Whether the element at `index` of `listSelector` carries the given attribute.
+function nthHasAttr(
+  app: App,
+  listSelector: string,
+  index: number,
+  attr: string,
+): Promise<boolean> {
   return app.evalJS<boolean>(
-    `(function(){var els=document.querySelectorAll(${JSON.stringify(OPTION_ROWS)});var el=els[${index}];return el!=null && el.hasAttribute(${JSON.stringify(attr)});})()`,
+    `(function(){var els=document.querySelectorAll(${JSON.stringify(listSelector)});var el=els[${index}];return el!=null && el.hasAttribute(${JSON.stringify(attr)});})()`,
   );
 }
 
@@ -153,7 +163,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.nativeKey("ArrowDown");
         await sleep(150);
         expect(
-          await rowHasAttr(app, 1, "data-key-cursor"),
+          await nthHasAttr(app, OPTION_CELLS, 1, "data-key-cursor"),
           "ArrowDown moves the cursor to the second option",
         ).toBe(true);
 
@@ -161,7 +171,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.nativeKey(" ");
         await sleep(150);
         expect(
-          await rowHasAttr(app, 1, "data-selected"),
+          await nthHasAttr(app, OPTION_ROWS, 1, "data-selected"),
           "Space toggles the second option selected",
         ).toBe(true);
 

@@ -94,11 +94,26 @@
   align-items: flex-start;
 }
 
+/* A radio row left-aligns its [dot + text] cluster and lets its text wrap.
+   TugButton centers content (`justify-content: center`) and forbids wrapping
+   (`white-space: nowrap`) — both wrong for a radio row: a centered cluster drifts
+   to a different x per row once items are full-width, and prose descriptions must
+   wrap. Override both, one level more specific than `.tug-button`. (Wrapping only
+   engages when the item is width-constrained; content-width groups are otherwise
+   unchanged.) */
+.tug-radio-group [data-slot="tug-radio-item"] {
+  justify-content: flex-start;
+  white-space: normal;
+}
+
 .tug-radio-item-text {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
   text-align: left;
+  /* Allow the text column to shrink below its content width inside the
+     icon-text flex row, so wrapping engages instead of overflowing. */
+  min-width: 0;
 }
 
 /* The label line inherits the item's per-size font (see "Item text scale"

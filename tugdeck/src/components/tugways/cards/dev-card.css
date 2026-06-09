@@ -1101,6 +1101,24 @@
   transition: opacity 0.15s ease;
 }
 
+/* …but the dialog's OWN option rows are a nested `TugListView`, so its cells are
+   also `.tug-list-view-cell` descendants of the transcript that don't *contain* a
+   dialog — the rule above would dim them too. Re-light any list cell that lives
+   INSIDE the bright-island dialog. Compound depth matches the dim rule's
+   specificity and, declared after it, wins on source order. */
+.dev-card[data-inline-dialog-pending="true"]
+  .dev-card-transcript
+  .dev-permission-dialog
+  .tug-list-view
+  .tug-list-view-cell,
+.dev-card[data-inline-dialog-pending="true"]
+  .dev-card-transcript
+  .dev-question-dialog
+  .tug-list-view
+  .tug-list-view-cell {
+  opacity: 1;
+}
+
 /* The dialog lives in the LIVE assistant turn, alongside that turn's prose +
    tool block (the `.dev-card-transcript-code-body`). Dim that body too so the
    dialog is the single bright island — the dialog restates its own subject
