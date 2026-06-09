@@ -44,6 +44,7 @@
  */
 
 import { createContext } from "react";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { TugAction } from "./action-vocabulary";
 import type { ComponentKeyDeclaration, FocusKey } from "./focus-act";
 import type { ResponderChainManager } from "./responder-chain";
@@ -314,6 +315,10 @@ export class FocusContext {
   // ring re-lights the moment a matching focusable registers — the late-mount
   // retry for the keyboard ring across reload / relaunch.
   private pendingKeyboardRestore = new Set<string>();
+  // Dev-only: dead-arrow reachability warnings ([R06]) already emitted, keyed by
+  // `mode|node|direction`, so a held / repeated arrow into an undeclared direction
+  // reports its authoring gap once instead of spamming the dev log.
+  private warnedDeadArrows = new Set<string>();
 
   constructor(
     private readonly coord: FocusManager,
@@ -1010,6 +1015,17 @@ export class FocusContext {
     // resolution.kind === "none" — no spatial target (a group edge, or an arrow the
     // declared rings / seams don't cover) — or a ring target that was non-interactive.
     if (order !== undefined && this.nodeInOrder(order, node)) {
+      // A genuine dead arrow ([R06]): the node is ON the declared spatial plane but
+      // this direction names no override / seam / ring target. The liveliness net
+      // below still moves the ring (the model never beeps), so this is purely an
+      // authoring signal — surface it once at dev time so the gap is visible and the
+      // author can declare the edge. Scoped to a real `none` (a ring target that was
+      // merely non-interactive is the endorsed dynamic-layout case, [#step-7-8], not
+      // an authoring gap) and to a non-group node (a group legitimately returns `none`
+      // at its cursor edge to fall through to a seam).
+      if (resolution.kind === "none" && handle === undefined) {
+        this.warnDeadArrow(node, direction);
+      }
       // Liveliness ([P23] — "never beeps falls back to the design-time ordering"):
       // within a declared spatial scope, fall back to the linear groupOrder walk —
       // down / right advance, up / left retreat, both wrapping. Every arrow moves the
@@ -1051,6 +1067,27 @@ export class FocusContext {
     if (order.overrides?.some((o) => o.from === node || o.to === node)) return true;
     if (order.groups?.some((group) => group.node === node)) return true;
     return false;
+  }
+
+  /**
+   * Emit a one-time dev-time reachability warning for a dead arrow ([R06]): a node
+   * declared in the current scope's spatial order whose arrow in `direction` resolves
+   * to no override / seam / ring target. The navigator's liveliness net still moves
+   * the ring (the model never beeps), so this is an authoring signal only — declare a
+   * seam / override / ring edge for this (node, direction) to silence it. De-duped per
+   * `mode|node|direction` so a repeated keypress reports once. No-op in production.
+   */
+  private warnDeadArrow(node: string, direction: SpatialDirection): void {
+    if (process.env.NODE_ENV === "production") return;
+    const mode = this.currentFocusMode();
+    const dedupeKey = `${mode}|${node}|${direction}`;
+    if (this.warnedDeadArrows.has(dedupeKey)) return;
+    this.warnedDeadArrows.add(dedupeKey);
+    tugDevLogStore.warn(
+      "focus-spatial",
+      `dead arrow: "${node}" declares no ${direction} target in spatial scope "${mode}" — fell back to linear movement; declare a seam, override, or ring edge`,
+      { node, direction, scope: mode, cardId: this.cardId },
+    );
   }
 
   /** A focusable's stable spatial node key (`group:order`), or `null` if ungrouped. */

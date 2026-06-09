@@ -79,7 +79,7 @@ export type SpatialResolution =
   | { readonly kind: "ring"; readonly target: string }
   /** Delegate to the ringed group's internal cursor (stay in the node). */
   | { readonly kind: "cursor"; readonly delta: 1 | -1 }
-  /** Undeclared arrow — the dead-arrow case; the navigator warns and does nothing. */
+  /** Undeclared arrow — the dead-arrow case; the navigator warns at dev time and falls back to the linear walk. */
   | { readonly kind: "none" };
 
 const AXIS_OF: Record<SpatialDirection, SpatialAxis> = {
@@ -224,6 +224,6 @@ export function resolveSpatial(
   }
 
   // 5. Undeclared — the dead-arrow case; the navigator emits a dev-time reachability
-  //    warning (never a beep) and leaves the ring where it is.
+  //    warning and falls back to the linear walk (never a beep).
   return { kind: "none" };
 }
