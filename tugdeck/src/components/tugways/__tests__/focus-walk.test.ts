@@ -112,7 +112,12 @@ describe("FocusManager focus modes", () => {
     expect(walkIds(m)).toEqual(["base1", "base2"]);
   });
 
-  test("a non-trapped mode unions its focusables with base", () => {
+  test("a non-trapped (descend) mode contains the walk to its own focusables", () => {
+    // A descend scope (accordion section / list row) pushes a non-trapped mode.
+    // `trapped: false` selects Escape-ascends (vs dismiss), but it must NOT widen
+    // the Tab walk: a descend is a LOCKED loop inside the descended content, never
+    // unioning the enclosing scope or base. (Base spans every other card under the
+    // single deck-wide manager — the cross-card Tab leak this guards against.)
     const m = new FocusManager();
     m.setGroupOrder(["g"]);
     register(m, [
@@ -120,7 +125,28 @@ describe("FocusManager focus modes", () => {
       { id: "overlay1", group: "g", order: 1, modes: ["overlay"] },
     ]);
     m.pushFocusMode("overlay", { trapped: false });
-    expect(walkIds(m)).toEqual(["base1", "overlay1"]);
+    expect(walkIds(m)).toEqual(["overlay1"]);
+    m.popFocusMode("overlay");
+    expect(walkIds(m)).toEqual(["base1"]);
+  });
+
+  test("a descend inside a trap stays locked to the descend scope (no leak)", () => {
+    // Regression: descending into an accordion/list scope INSIDE a modal sheet
+    // must keep Tab inside the descend scope — not the sheet, and never base /
+    // another card. ([impossible-by-construction] focus containment.)
+    const m = new FocusManager();
+    m.setGroupOrder(["g"]);
+    register(m, [
+      { id: "otherCard", group: "g", order: 0 },
+      { id: "sheetField", group: "g", order: 0, modes: ["sheet"] },
+      { id: "sectionField", group: "g", order: 0, modes: ["section"] },
+    ]);
+    m.pushFocusMode("sheet", { trapped: true });
+    expect(walkIds(m)).toEqual(["sheetField"]);
+    m.pushFocusMode("section", { trapped: false });
+    expect(walkIds(m)).toEqual(["sectionField"]);
+    m.popFocusMode("section");
+    expect(walkIds(m)).toEqual(["sheetField"]);
   });
 
   test("currentFocusMode reflects the top of the stack", () => {

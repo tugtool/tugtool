@@ -100,13 +100,15 @@ export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
 /**
  * A focus mode (scope) on the stack. Mirrors a CFRunLoop mode: while it is
  * current, the Tab walk services only the focusables registered into it
- * (when `trapped`), giving a focus trap for free.
+ * ({@link FocusManager.walkModeSet}) — a focus trap for free, for EVERY pushed
+ * mode.
  *
- * - `trapped: true` -- only this mode's focusables participate; Tab wraps
- *   within them. This is what a sheet / alert / popover / menu pushes.
- * - `trapped: false` -- this mode's focusables PLUS the base-mode focusables
- *   participate (the CFRunLoop "common modes" shape), for surfaces that
- *   layer accelerators without trapping.
+ * `trapped` does NOT widen the Tab walk; it selects the Escape semantics:
+ * - `trapped: true` -- modal. Escape DISMISSES the surface (sheet / alert /
+ *   popover / menu, and a card's focus-cycle).
+ * - `trapped: false` -- a descend scope (an accordion section, a list row).
+ *   Escape ASCENDS one level instead of dismissing. Tab is still contained to
+ *   this scope's focusables (a locked loop) — see {@link FocusManager.walkModeSet}.
  */
 export interface FocusMode {
   scopeId: string;
@@ -850,14 +852,10 @@ export class FocusManager {
    * pipeline and for inspection; the walk uses it directly.
    */
   walkOrder(): FocusableRecord[] {
-    const top = this.modeStack[this.modeStack.length - 1];
-    const modeId = top ? top.scopeId : BASE_FOCUS_MODE;
-    const trapped = top ? top.trapped : false;
+    const accepted = this.walkModeSet();
     const records: FocusableRecord[] = [];
     for (const record of this.focusables.values()) {
-      const inMode =
-        record.modes.includes(modeId) ||
-        (!trapped && record.modes.includes(BASE_FOCUS_MODE));
+      const inMode = record.modes.some((m) => accepted.has(m));
       if (!inMode) continue;
       if (this.accessMode === "standard" && record.policy === "skip") continue;
       // A focusable in a hidden subtree is not a reachable Tab target. Card
@@ -877,6 +875,32 @@ export class FocusManager {
     }
     records.sort((a, b) => this.compareFocusables(a, b));
     return records;
+  }
+
+  /**
+   * The set of mode ids the Tab walk services for the current mode stack
+   * ([#cfrunloop-model]).
+   *
+   * Every PUSHED mode CONTAINS the walk to its own focusables, whatever its
+   * `trapped` flag:
+   *  - a modal trap (sheet / inline dialog) — Tab cycles the surface, Escape
+   *    dismisses;
+   *  - a card's focus-cycle — Tab cycles the card's stops;
+   *  - a **descend** scope (an accordion section, a list row) — Tab is a LOCKED
+   *    loop inside the descended content, and Escape ASCENDS one level.
+   *
+   * `trapped` governs only the Escape semantics (ascend vs dismiss; see the
+   * act-dispatch in `responder-chain-provider`), NOT the breadth of the Tab walk
+   * — a non-trapped descend is still Tab-contained. A descend must never widen
+   * the walk to the enclosing scope (it would break the locked loop) nor to
+   * `BASE_FOCUS_MODE`, which — under the single, deck-wide `FocusManager` — spans
+   * every *other* card (the cross-card leak a descend inside a sheet exposed).
+   *
+   * Only the bare base mode (nothing pushed) services the base focusables.
+   */
+  private walkModeSet(): Set<string> {
+    const top = this.modeStack[this.modeStack.length - 1];
+    return new Set<string>([top ? top.scopeId : BASE_FOCUS_MODE]);
   }
 
   /**
