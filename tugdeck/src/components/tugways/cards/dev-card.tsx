@@ -91,6 +91,8 @@ import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
 import { useFocusManager, useSeedKeyView } from "../use-focusable";
 import { useCycleMode } from "../use-cycle-mode";
+import { rowGridOrder, type SpatialOrder } from "../spatial-order";
+import { useSpatialOrder } from "../use-spatial-order";
 import type { ActionEvent } from "../responder-chain";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { deckTrace } from "@/deck-trace";
@@ -2338,6 +2340,38 @@ export function DevCardBody({
   // card-content responder below, `CycleScope` wraps the prompt entry,
   // and `data-cycling` rides the card root for the fill-suppression CSS.
   const cycle = useCycleMode({ enabled: !sessionErrored });
+
+  // Spatial arrow order for the cycle ([P22] / [P23]). Tab walks the cycle stops
+  // linearly; arrows give them a 2D feel: two horizontal rings — the bottom
+  // toolbar (route → mode → model → effort → submit) and the Z2 status cells —
+  // with a vertical seam cycle between the rows. The editor (the last stop) is the
+  // cycle's BODY, reached by Tab / typing, not arrows: it is deactivated while
+  // cycling and a focused editor keeps its caret arrows ([P25] editing-host yield),
+  // so it is deliberately left OUT of the grid. The chips disable on the Shell
+  // route; the navigator skips a disabled ring target onto the next live stop, so
+  // this fixed grid needs no per-route membership. Declared under the cycle scope
+  // so it is consulted exactly while cycling. All leaf stops — no delegated group,
+  // so no list-as-handle or edge-landing primitive is needed here.
+  const cycleSpatialOrder = useMemo<SpatialOrder>(() => {
+    const k = (order: number) => `${DEV_CYCLE_GROUP}:${order}`;
+    return rowGridOrder([
+      [
+        k(DEV_CYCLE_ORDER_ROUTE),
+        k(DEV_CYCLE_ORDER_MODE),
+        k(DEV_CYCLE_ORDER_MODEL),
+        k(DEV_CYCLE_ORDER_EFFORT),
+        k(DEV_CYCLE_ORDER_SUBMIT),
+      ],
+      [
+        k(DEV_CYCLE_ORDER_STATUS_BASE + 0),
+        k(DEV_CYCLE_ORDER_STATUS_BASE + 1),
+        k(DEV_CYCLE_ORDER_STATUS_BASE + 2),
+        k(DEV_CYCLE_ORDER_STATUS_BASE + 3),
+        k(DEV_CYCLE_ORDER_STATUS_BASE + 4),
+      ],
+    ]);
+  }, []);
+  useSpatialOrder(cycle.scopeId, cycleSpatialOrder);
 
   // Connected → editor on cycle exit ([P12]). The engine pop restores its
   // captured key view, but a connected card's resting focus is the editor

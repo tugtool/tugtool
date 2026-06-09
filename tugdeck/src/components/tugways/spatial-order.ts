@@ -125,6 +125,46 @@ export function arrowDirection(key: string): SpatialDirection | null {
 }
 
 /**
+ * Build a `SpatialOrder` for a simple top→bottom grid of rows — the common shape
+ * for a dialog or sheet whose controls stack in horizontal rows. Each row is a
+ * left→right list of node keys. The builder makes a closed horizontal ring per
+ * row of two or more nodes (Left / Right swap within the row, wrapping) and a
+ * vertical seam cycle between the rows (Up / Down move between rows and loop at
+ * the top / bottom edge), each row entered at its first member.
+ *
+ * A single-node row (e.g. a delegated selection group) gets NO ring — its own
+ * cursor roves the interior and the vertical seams fire only at its edges (the
+ * resolver delegates a group's interior arrows to its cursor before consulting a
+ * seam). Empty rows are dropped, so an author can pass a fixed-shape grid whose
+ * rows come and go with state. The navigator's liveliness fallback backstops any
+ * edge this does not name, so no arrow ever dead-ends.
+ */
+export function rowGridOrder(
+  rows: readonly (readonly string[])[],
+): SpatialOrder {
+  const present = rows.filter((row) => row.length > 0);
+  const rings: SpatialRing[] = [];
+  for (const row of present) {
+    if (row.length >= 2) {
+      rings.push({ axis: "horizontal", nodes: [...row], closed: true });
+    }
+  }
+  const seams: SpatialSeam[] = [];
+  const n = present.length;
+  if (n >= 2) {
+    for (let i = 0; i < n; i += 1) {
+      const downTo = present[(i + 1) % n][0];
+      const upTo = present[(i - 1 + n) % n][0];
+      for (const node of present[i]) {
+        seams.push({ from: node, direction: "down", to: downTo });
+        seams.push({ from: node, direction: "up", to: upTo });
+      }
+    }
+  }
+  return { rings, seams };
+}
+
+/**
  * Resolve one arrow press against the declared order.
  *
  * `cursorIndex` is the live cursor position for a group node (from `useFocusCursor`);

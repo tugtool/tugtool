@@ -400,4 +400,104 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
     },
     TEST_TIMEOUT_MS,
   );
+
+  test(
+    "arrows give the cycle a 2D feel: a toolbar ring + a seam to the status row; a disabled stop is skipped; the editor is not an arrow stop",
+    async () => {
+      const app = await launchTugApp({ testName: "at0140-cycle-devcard-arrows" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindDevSession("A");
+        await app.awaitEngineReady("A");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SUBMIT)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        // Caret in the editor (base mode).
+        await app.nativeClickAtElement(EDITOR);
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+
+        // ---- Phase 1: a disabled stop is skipped --------------------------------
+        // Empty editor → the submit is disabled. ⌥⇥ seeds the route; Tab to the
+        // Effort chip, then ArrowRight resolves toward the (disabled) submit — the
+        // navigator must NOT strand the ring on it: it skips to the next live stop
+        // (the STATE cell), never beeping.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        for (let i = 0; i < 3; i++) await app.nativeKey("Tab"); // route→Mode→Model→Effort
+        await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
+
+        // ArrowUp from the status row seams back to the toolbar (its first member,
+        // the route) — and NOT to the editor, which is excluded from the grid.
+        await app.nativeKey("ArrowUp");
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(hasKeyView(INPUT_AREA))).toBe(false);
+
+        // Exit, type so the full toolbar (incl. submit) is live.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+        await app.nativeType("hello");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(SUBMIT)});return el!==null && el.closest(${JSON.stringify(`${CARD} [data-slot="tug-prompt-entry"]`)})?.getAttribute("data-empty")==="false";})()`,
+          { timeoutMs: 6000 },
+        );
+
+        // ---- Phase 2: the toolbar ring + the cross-row seam ---------------------
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+
+        // Tab to the Mode chip (a leaf), then Left/Right ring the toolbar.
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(hasKeyView(MODEL_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        // Right off the last toolbar member wraps the closed ring back to the route.
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        // Left reverses (route → submit, the ring's other edge).
+        await app.nativeKey("ArrowLeft");
+        await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
+
+        // The cross-row seam: Down from a toolbar chip enters the status row; Up
+        // returns to the toolbar. Tab back to the Mode chip first.
+        await app.nativeKey("ArrowLeft"); // submit → effort
+        await app.nativeKey("ArrowLeft"); // effort → model
+        await app.nativeKey("ArrowLeft"); // model → mode
+        await app.waitForCondition<boolean>(hasKeyView(MODE_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("ArrowDown");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
+        await app.nativeKey("ArrowUp");
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        // Across the whole arrow sequence the editor was never an arrow stop and
+        // the card never left cycling (no dead-end, no beep).
+        expect(await app.evalJS<boolean>(hasKeyView(INPUT_AREA))).toBe(false);
+        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0140-cycle-devcard-arrows] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

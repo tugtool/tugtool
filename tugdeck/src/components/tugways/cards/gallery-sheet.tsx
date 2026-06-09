@@ -23,6 +23,9 @@ import type { TugPushButtonProps } from "@/components/tugways/tug-push-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
+import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
+import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -106,6 +109,91 @@ function PresentationSheetBody({ close }: { close: (result?: string) => void }) 
         <TugPushButton emphasis="filled" onClick={() => close()}>Done</TugPushButton>
       </div>
     </div>
+  );
+}
+
+// Spatial-order stops for the SpatialSheetBody demo: the radio group on top, the
+// Cancel / Save button row below.
+const SPATIAL_VISIBILITY_ORDER = 0;
+const SPATIAL_CANCEL_ORDER = 1;
+const SPATIAL_SAVE_ORDER = 2;
+
+/**
+ * SpatialSheetBody — a control-rich sheet body that declares a spatial arrow
+ * order via the CONTEXT-derived `useSpatialOrder(order)` form ([P22] / [P23]).
+ *
+ * Unlike the dialogs, a sheet's trap lives in `TugSheet`; this body is rendered
+ * inside that trap (a descendant of the sheet's `FocusModeScope`), so it has no
+ * local `scopeId` and reads the enclosing `FocusModeContext` instead — the
+ * mechanism that generalizes the spatial plane past dialogs to any composed trap.
+ *
+ * Two rows of non-list controls: a vertical radio group (a delegated item-group)
+ * over a button row (Cancel ↔ Save). `rowGridOrder` makes the button row a closed
+ * horizontal ring and a vertical seam cycle between the rows — Down off the radio
+ * group's bottom edge crosses into the buttons, Up returns, Left / Right swap the
+ * buttons. The navigator's liveliness fallback backstops any unnamed edge.
+ */
+function SpatialSheetBody() {
+  const close = useTugSheetClose();
+  const focusGroup = React.useId();
+  const senderId = React.useId();
+  const [visibility, setVisibility] = React.useState("team");
+
+  const spatialOrder = React.useMemo<SpatialOrder>(
+    () =>
+      rowGridOrder([
+        [`${focusGroup}:${SPATIAL_VISIBILITY_ORDER}`],
+        [`${focusGroup}:${SPATIAL_CANCEL_ORDER}`, `${focusGroup}:${SPATIAL_SAVE_ORDER}`],
+      ]),
+    [focusGroup],
+  );
+  useSpatialOrder(spatialOrder);
+
+  // Selection rides the responder chain ([L11]) — the same wiring the dialogs use.
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: { [senderId]: (next: string) => setVisibility(next) },
+  });
+
+  return (
+    <ResponderScope>
+      <div
+        ref={responderRef}
+        style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+      >
+        <TugRadioGroup
+          orientation="vertical"
+          size="md"
+          label="Card visibility"
+          senderId={senderId}
+          value={visibility}
+          focusGroup={focusGroup}
+          focusOrder={SPATIAL_VISIBILITY_ORDER}
+        >
+          <TugRadioItem value="private">Private</TugRadioItem>
+          <TugRadioItem value="team">Team</TugRadioItem>
+          <TugRadioItem value="public">Public</TugRadioItem>
+        </TugRadioGroup>
+        <div className="tug-sheet-actions">
+          <TugPushButton
+            emphasis="outlined"
+            focusGroup={focusGroup}
+            focusOrder={SPATIAL_CANCEL_ORDER}
+            onClick={() => close()}
+          >
+            Cancel
+          </TugPushButton>
+          <TugPushButton
+            emphasis="primary"
+            persistentDefaultRing
+            focusGroup={focusGroup}
+            focusOrder={SPATIAL_SAVE_ORDER}
+            onClick={() => close()}
+          >
+            Save
+          </TugPushButton>
+        </div>
+      </div>
+    </ResponderScope>
   );
 }
 
@@ -386,6 +474,34 @@ export function GallerySheet() {
             </TugSheetTrigger>
             <TugSheetContent title="Pre-launch Checklist">
               <RichChecklistContent />
+            </TugSheetContent>
+          </TugSheet>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 7. Spatial Arrow Order ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Spatial Arrow Order</TugLabel>
+        <div style={labelStyle}>
+          A non-dialog trap declaring its spatial order via the context-derived{" "}
+          <code>useSpatialOrder(order)</code> — arrows rove the radio group and seam
+          to the Cancel / Save row; Left/Right swap the buttons. Tab still cycles.
+        </div>
+        <div style={{ display: "flex" }}>
+          <TugSheet componentStatePreservationKey="sheet-spatial">
+            <TugSheetTrigger asChild>
+              <TugPushButton
+                emphasis="outlined"
+                size="sm"
+                data-testid="gallery-spatial-sheet-trigger"
+              >
+                Open Spatial Sheet
+              </TugPushButton>
+            </TugSheetTrigger>
+            <TugSheetContent title="Card Visibility">
+              <SpatialSheetBody />
             </TugSheetContent>
           </TugSheet>
         </div>

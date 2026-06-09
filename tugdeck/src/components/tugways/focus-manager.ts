@@ -935,20 +935,38 @@ export class FocusContext {
       return true;
     }
     if (resolution.kind === "ring") {
-      const targetId = this.idForFocusKey(resolution.target) ?? resolution.target;
-      this.setKeyView(targetId, true);
-      this.focusKeyView();
-      return true;
+      const targetId = this.idForFocusKey(resolution.target);
+      const targetRecord = targetId !== null ? this.focusables.get(targetId) : undefined;
+      if (
+        targetId !== null &&
+        targetRecord !== undefined &&
+        this.isRecordRendered(targetRecord) &&
+        this.isRecordInteractive(targetRecord)
+      ) {
+        this.setKeyView(targetId, true);
+        this.focusKeyView();
+        return true;
+      }
+      // The declared target is absent or non-interactive (a disabled stop — e.g. a
+      // toolbar chip on the Shell route). Don't strand the ring on a dead node: fall
+      // through to the liveliness walk below, which skips disabled stops and lands on
+      // the next interactive key view. So an author can declare a fixed grid over a
+      // dynamic layout without recomputing membership per state.
     }
     // resolution.kind === "none" — no spatial target (a group edge, or an arrow the
-    // declared rings / seams don't cover).
-    if (order !== undefined) {
+    // declared rings / seams don't cover) — or a ring target that was non-interactive.
+    if (order !== undefined && this.nodeInOrder(order, node)) {
       // Liveliness ([P23] — "never beeps falls back to the design-time ordering"):
       // within a declared spatial scope, fall back to the linear groupOrder walk —
       // down / right advance, up / left retreat, both wrapping. Every arrow moves the
       // ring SOMEWHERE; the interface never beeps and never silently swallows the
       // key. (The authored rings / seams give the *spatial* feel; this is the net
       // under them so a layout can never trap the ring in a dead-end corner.)
+      //
+      // Gated on the ringed node actually being *part of* the declared order: a key
+      // view the author left OUT of the order (a Tab-reached list that owns its own
+      // arrows) is not on the spatial plane, so the navigator yields the arrow to that
+      // surface's own handler rather than dragging it into the linear net.
       const moved =
         direction === "down" || direction === "right"
           ? this.focusNext()
@@ -963,6 +981,21 @@ export class FocusContext {
       // and consume the arrow so the page does not scroll — Tab leaves the group.
       return true;
     }
+    return false;
+  }
+
+  /**
+   * Whether a node key is referenced anywhere in a declared order — as a ring
+   * member, a seam / override endpoint, or a delegated group. A node the author did
+   * not place in the order is off the spatial plane: the navigator yields its arrows
+   * (it does not apply the liveliness fallback) so a Tab-reached surface keeps its
+   * own keyboard.
+   */
+  private nodeInOrder(order: SpatialOrder, node: string): boolean {
+    if (order.rings.some((ring) => ring.nodes.includes(node))) return true;
+    if (order.seams?.some((seam) => seam.from === node || seam.to === node)) return true;
+    if (order.overrides?.some((o) => o.from === node || o.to === node)) return true;
+    if (order.groups?.some((group) => group.node === node)) return true;
     return false;
   }
 

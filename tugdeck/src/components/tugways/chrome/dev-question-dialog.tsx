@@ -143,8 +143,10 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
+import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
 import { useFocusManager } from "@/components/tugways/use-focusable";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
+import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { useInlineDialogScope } from "@/components/tugways/use-inline-dialog-scope";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { animate } from "@/components/tugways/tug-animator";
@@ -1331,7 +1333,49 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // entry deactivates off the session's pending state (see `DevCardBody`), and
   // the card content around the dialog is scrimmed ([P19]). Declared above the
   // `!isPending` early return so hook order is stable across renders.
-  const { FocusModeScope } = useFocusTrap({ active: isPending });
+  const { FocusModeScope, scopeId } = useFocusTrap({ active: isPending });
+
+  // Spatial arrow order ([P22] / [P23]). The dialog's controls stack in up to
+  // three rows — the header actions (Cancel ↔ Submit), the wizard nav (Back ↔
+  // Next, multi-question only), and the current question's options — so Left /
+  // Right swap within a row while Up / Down move between rows and loop at the
+  // edges (`rowGridOrder`). Only the controls actually rendered AND enabled this
+  // state join the grid, so an arrow never lands the ring on a disabled or absent
+  // button: Submit drops out until every question is answered, Back at the first
+  // question, Next at the review step. A single-select question's radio options
+  // are a delegated group (a seam target whose cursor roves the interior); a
+  // multi-select question's list is Tab-reached (decision (b)) and left out of
+  // the grid. Nodes are stable `group:order` keys; the navigator's liveliness
+  // fallback backstops any edge the grid doesn't name, so no arrow dead-ends.
+  const spatialOrder = React.useMemo<SpatialOrder>(() => {
+    const key = (order: number): string => `${focusGroup}:${order}`;
+    const hasQ = questions.length > 0;
+    const multi = questions.length > 1;
+    const atReview = currentIndex >= questions.length;
+    const everyAnswered =
+      hasQ && countConfirmedAnswers(selections, visited) === questions.length;
+    const current = questions[currentIndex];
+    const optionsAreRadio = current !== undefined && !current.multiSelect;
+
+    const buttonRow: string[] = [];
+    if (hasQ) {
+      buttonRow.push(key(QUESTION_CANCEL_ORDER));
+      if (everyAnswered) buttonRow.push(key(QUESTION_SUBMIT_ORDER));
+    } else {
+      // No questions → a lone "Dismiss" (the Submit stop), always enabled.
+      buttonRow.push(key(QUESTION_SUBMIT_ORDER));
+    }
+    const navRow: string[] = [];
+    if (multi) {
+      if (currentIndex > 0) navRow.push(key(QUESTION_BACK_ORDER));
+      if (!atReview) navRow.push(key(QUESTION_NEXT_ORDER));
+    }
+    const optionsRow: string[] = [];
+    if (hasQ && optionsAreRadio) optionsRow.push(key(QUESTION_OPTIONS_ORDER));
+
+    return rowGridOrder([buttonRow, navRow, optionsRow]);
+  }, [focusGroup, questions, selections, visited, currentIndex]);
+  useSpatialOrder(scopeId, isPending ? spatialOrder : null);
 
   const manager = useFocusManager();
 

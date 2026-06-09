@@ -18,6 +18,7 @@ import {
   arrowDirection,
   oppositeDirection,
   resolveSpatial,
+  rowGridOrder,
   type SpatialOrder,
 } from "../spatial-order";
 
@@ -118,6 +119,82 @@ describe("resolveSpatial — open-ring edge", () => {
     expect(resolveSpatial(open, "A", "right")).toEqual({ kind: "ring", target: "B" });
     expect(resolveSpatial(open, "B", "right")).toEqual({ kind: "none" });
     expect(resolveSpatial(open, "A", "left")).toEqual({ kind: "none" });
+  });
+});
+
+describe("rowGridOrder — stacked control rows", () => {
+  test("a closed horizontal ring per multi-node row; none for a lone node", () => {
+    const order = rowGridOrder([["Cancel", "Submit"], ["Options"]]);
+    expect(order.rings).toEqual([
+      { axis: "horizontal", nodes: ["Cancel", "Submit"], closed: true },
+    ]);
+    // Left / Right swap within the button row, wrapping.
+    expect(resolveSpatial(order, "Cancel", "right")).toEqual({
+      kind: "ring",
+      target: "Submit",
+    });
+    expect(resolveSpatial(order, "Submit", "right")).toEqual({
+      kind: "ring",
+      target: "Cancel",
+    });
+  });
+
+  test("a vertical seam cycle: every member drops to the next row, loops at the edge", () => {
+    const order = rowGridOrder([
+      ["Cancel", "Submit"],
+      ["Back", "Next"],
+      ["Options"],
+    ]);
+    // Down from a top-row member enters the next row at its first member.
+    expect(resolveSpatial(order, "Cancel", "down")).toEqual({
+      kind: "ring",
+      target: "Back",
+    });
+    expect(resolveSpatial(order, "Submit", "down")).toEqual({
+      kind: "ring",
+      target: "Back",
+    });
+    // Down from the nav row enters the options row.
+    expect(resolveSpatial(order, "Next", "down")).toEqual({
+      kind: "ring",
+      target: "Options",
+    });
+    // The bottom row loops back to the top (after its cursor edge, for a group).
+    expect(resolveSpatial(order, "Options", "down")).toEqual({
+      kind: "ring",
+      target: "Cancel",
+    });
+    // Up reverses, and the top row loops to the bottom.
+    expect(resolveSpatial(order, "Options", "up")).toEqual({
+      kind: "ring",
+      target: "Back",
+    });
+    expect(resolveSpatial(order, "Cancel", "up")).toEqual({
+      kind: "ring",
+      target: "Options",
+    });
+  });
+
+  test("empty rows drop out so a fixed-shape grid tracks dynamic membership", () => {
+    // Single-question state: no wizard-nav row, Submit not yet enabled.
+    const order = rowGridOrder([["Cancel"], [], ["Options"]]);
+    expect(order.rings).toEqual([]); // both present rows are single-node
+    expect(resolveSpatial(order, "Cancel", "down")).toEqual({
+      kind: "ring",
+      target: "Options",
+    });
+    expect(resolveSpatial(order, "Options", "up")).toEqual({
+      kind: "ring",
+      target: "Cancel",
+    });
+  });
+
+  test("a single present row yields no seams (liveliness backstops its edges)", () => {
+    const order = rowGridOrder([["Dismiss"], [], []]);
+    expect(order.rings).toEqual([]);
+    expect(order.seams).toEqual([]);
+    // No declared move — the navigator's linear fallback consumes the arrow.
+    expect(resolveSpatial(order, "Dismiss", "down")).toEqual({ kind: "none" });
   });
 });
 
