@@ -267,6 +267,19 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       }
     }
 
+    // Whether a dismissable popover surface is currently open in the DOM. Such a
+    // surface (a Radix popover — a Z2 status popover, a Z4B picker, the close
+    // confirm) owns Escape via its own DismissableLayer but does NOT push an engine
+    // focus mode, so the engine's current mode stays whatever was beneath it (e.g. a
+    // focus-cycle). The Escape handling consults this so a cycle's `escapeExits` does
+    // not fire on the same Escape that should only close the popover.
+    function aDismissableSurfaceIsOpen(): boolean {
+      return (
+        typeof document !== "undefined" &&
+        document.querySelector('[data-slot="tug-popover"]') !== null
+      );
+    }
+
     // ---- Spatial arrow navigation ([P22]/[P23]) ----
     // The parallel plane: bare arrows move the ring "in the direction you see",
     // bounded to the card / dialog, in author-declared order. A sibling of the focus
@@ -335,12 +348,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // force-dismisses. Without this yield, the global Escape→CANCEL_DIALOG
       // binding fires first and dismisses the surface from inside a descended
       // scope, or no-ops a cycle's intended exit.
+      //
+      // BUT: a focus-cycle's Escape-exit must defer to an open dismissable popover
+      // (a Z2 status popover, a Z4B picker) opened from a cycle stop. Such a popover
+      // is a Radix DismissableLayer that owns Escape but does NOT push an engine
+      // focus mode, so the cycle stays the engine's current mode while it is open —
+      // a bare `escapeExits` yield here would let the cycle exit on the very Escape
+      // that should only close the popover. When a popover is open, do NOT yield:
+      // CANCEL_DIALOG dispatches (or Radix dismisses) to close the popover, and the
+      // cycle stays. The cycle's own Escape-exit resumes once the popover is gone.
       if (
         binding.action === TUG_ACTIONS.CANCEL_DIALOG &&
         event.key === "Escape" &&
         focusManager.currentFocusMode() !== BASE_FOCUS_MODE &&
         (!focusManager.currentFocusModeTrapped() ||
-          focusManager.currentFocusModeEscapeExits())
+          (focusManager.currentFocusModeEscapeExits() && !aDismissableSurfaceIsOpen()))
       ) {
         return;
       }
@@ -471,7 +493,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
               behavior?.onAscend?.();
               event.preventDefault();
               event.stopImmediatePropagation();
-            } else if (focusManager.currentFocusModeEscapeExits()) {
+            } else if (
+              focusManager.currentFocusModeEscapeExits() &&
+              !aDismissableSurfaceIsOpen()
+            ) {
+              // A focus-cycle exits on Escape — but only when no popover is open
+              // over it. An open popover (which does not push an engine mode) owns
+              // this Escape; the cycle stays and resumes its Escape-exit once the
+              // popover closes.
               focusManager.escapeCurrentMode();
               event.preventDefault();
               event.stopImmediatePropagation();

@@ -52,6 +52,16 @@ export interface UseFocusTrapOptions {
    * enclosing cycle.
    */
   closeDisposition?: React.RefObject<"retain" | "relinquish">;
+  /**
+   * Set when this surface DISPLACES DOM focus on open (it moves focus to its own
+   * control, e.g. a confirm popover seeding the ring onto its default button). On
+   * close the engine then re-projects the captured key view onto the DOM even when
+   * it is ringless — the opener's caret comes back by the engine's own restore
+   * rather than a Radix/chain fallback that the displacement defeated. Leave unset
+   * for surfaces that do not move focus on open (a plain popover): their ringless
+   * restore stays with the chain fallback, unchanged.
+   */
+  restoreFocusComplete?: boolean;
 }
 
 export interface UseFocusTrapResult {
@@ -65,6 +75,7 @@ export function useFocusTrap({
   active,
   trapped = true,
   closeDisposition,
+  restoreFocusComplete,
 }: UseFocusTrapOptions): UseFocusTrapResult {
   const manager = useContext(FocusManagerContext);
   // The owning card ([P21]): the trap is pushed onto THIS card's focus context,
@@ -82,7 +93,7 @@ export function useFocusTrap({
   useLayoutEffect(() => {
     if (manager === null || !active) return;
     const ctx = manager.contextFor(cardId);
-    ctx.pushFocusMode(scopeId, { trapped });
+    ctx.pushFocusMode(scopeId, { trapped, restoreFocusComplete });
     return () => {
       // The disposition is read at pop time (it is set on commit, just before the
       // surface closes). `relinquish` cascade-pops the enclosing cycle; `retain`
@@ -93,7 +104,7 @@ export function useFocusTrap({
         ctx.popFocusMode(scopeId);
       }
     };
-  }, [manager, cardId, active, scopeId, trapped, closeDisposition]);
+  }, [manager, cardId, active, scopeId, trapped, closeDisposition, restoreFocusComplete]);
 
   // Stable scope component (held in a ref so it keeps a constant function
   // identity across renders — children never remount, [L26]). It always

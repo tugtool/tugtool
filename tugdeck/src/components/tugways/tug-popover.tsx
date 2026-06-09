@@ -646,6 +646,16 @@ export interface TugPopoverContentProps {
    * Forwarded verbatim to Radix's `Popover.Content`.
    */
   onOpenAutoFocus?: (event: Event) => void;
+  /**
+   * Set when this popover DISPLACES DOM focus on open (it moves focus to its own
+   * control, e.g. `TugConfirmPopover` seeding the ring onto its default button).
+   * Forwarded to the engine focus trap so that, on close, the engine re-projects
+   * the captured opener key view onto the DOM even when ringless — restoring the
+   * opener's caret, which the displacement defeats the normal restore of. Leave
+   * unset for a plain popover that does not move focus. See
+   * {@link useFocusTrap}'s `restoreFocusComplete`.
+   */
+  restoreFocusComplete?: boolean;
   /** Additional CSS class names. */
   className?: string;
   children: React.ReactNode;
@@ -674,6 +684,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
       sideOffset = 6,
       arrow = false,
       onOpenAutoFocus,
+      restoreFocusComplete,
       className,
       children,
     },
@@ -715,7 +726,9 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           // pointerdown first.
           onFocusOutside={(e) => e.preventDefault()}
         >
-          <TugPopoverContentShell>{children}</TugPopoverContentShell>
+          <TugPopoverContentShell restoreFocusComplete={restoreFocusComplete}>
+            {children}
+          </TugPopoverContentShell>
           {arrow && <Popover.Arrow className="tug-popover-arrow" />}
         </Popover.Content>
       </Popover.Portal>
@@ -735,7 +748,13 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
  * the Safari focus-shift fix, and receives the ref for
  * `findResponderForTarget` walks.
  */
-function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
+function TugPopoverContentShell({
+  children,
+  restoreFocusComplete,
+}: {
+  children: React.ReactNode;
+  restoreFocusComplete?: boolean;
+}) {
   const ctx = React.useContext(TugPopoverInternalContext);
   const manager = useResponderChain();
   const responderId = React.useId();
@@ -752,7 +771,10 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
   // `FocusModeScope` wraps the content so any `useFocusable` inside joins this
   // mode. Upholds [L03] (push in a layout effect, inside the hook) and [L06]
   // (the mode projection is DOM, not React state).
-  const { FocusModeScope } = useFocusTrap({ active: ctx?.open ?? false });
+  const { FocusModeScope } = useFocusTrap({
+    active: ctx?.open ?? false,
+    restoreFocusComplete,
+  });
 
   // Local ref to the shell's root div. Used by observeDispatch to
   // check whether the currently focused element is inside the

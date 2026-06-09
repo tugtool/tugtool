@@ -26,7 +26,10 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const TEST_TIMEOUT_MS = 60_000;
 
-const CONFIRM_POPOVER_SELECTOR = "[data-slot=\"tug-pane-close-confirm\"]";
+// The pane-close confirmation is the shared `TugConfirmPopover` component
+// (data-slot "tug-confirm-popover"); on this close-reopen route it is the only
+// confirm popover present.
+const CONFIRM_POPOVER_SELECTOR = "[data-slot=\"tug-confirm-popover\"]";
 
 function pause(ms: number): Promise<void> {
   return new Promise<void>((resolve) =>

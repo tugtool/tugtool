@@ -38,7 +38,10 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const TEST_TIMEOUT_MS = 60_000;
 
-const CONFIRM_POPOVER_SELECTOR = "[data-slot=\"tug-pane-close-confirm\"]";
+// The pane-close confirmation is the shared `TugConfirmPopover` component
+// (data-slot "tug-confirm-popover"); on these close-confirm routes it is the
+// only confirm popover present.
+const CONFIRM_POPOVER_SELECTOR = "[data-slot=\"tug-confirm-popover\"]";
 
 function pause(ms: number): Promise<void> {
   return new Promise<void>((resolve) =>
@@ -209,9 +212,9 @@ describe.skipIf(!SHOULD_RUN)(
   "at0040: title-bar X close confirmation — a uniform pane feature",
   () => {
     test(
-      "case 1 — single-tab: X opens 'Close Card?' popover and the popover STAYS open",
+      "case 1 — single-tab non-opt-in: plain X click closes immediately, no confirm",
       async () => {
-        const app = await launchTugApp({ testName: "at0040-c1-single-open" });
+        const app = await launchTugApp({ testName: "at0040-c1-single-immediate" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({
@@ -224,113 +227,21 @@ describe.skipIf(!SHOULD_RUN)(
 
           await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
 
-          // Sleep past the flash-bug window to gate that the popover holds.
-          await pause(300);
-
-          const popoverState = await app.evalJS<{ present: boolean; text: string | null }>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)});
-              if (el === null) return { present: false, text: null };
-              return { present: true, text: el.textContent };
-            })()`,
-          );
-          expect(
-            popoverState.present,
-            "confirm popover must still be in the DOM 300ms after the X click",
-          ).toBe(true);
-          expect(
-            popoverState.text ?? "",
-            "popover prompt must read 'Close Card?'",
-          ).toContain("Close Card?");
-
-          // Pane must still exist — confirm wasn't pressed.
-          const paneStillExists = await app.evalJS<boolean>(
-            `document.querySelector('[data-pane-id="p1"]') !== null`,
-          );
-          expect(paneStillExists, "pane must still exist while popover is open").toBe(true);
-        } finally {
-          await app.close();
-        }
-      },
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
-      "case 1 — single-tab: confirming 'Close' closes the pane",
-      async () => {
-        const app = await launchTugApp({ testName: "at0040-c1-single-confirm" });
-        try {
-          await app.enableDeckTrace(true);
-          await app.seedDeckState({
-            state: activeSingleTabDeckShape(),
-            focusCardId: "A",
-          });
-          await app.waitForCondition<boolean>(
-            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
-          );
-
-          await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
-            { timeoutMs: 2000 },
-          );
-
-          await app.evalJS<void>(
-            `(function(){
-              var btn = ${popoverButtonByText("Close")};
-              if (btn === null) throw new Error("[at0040] Close button missing");
-              btn.click();
-            })()`,
-          );
-
+          // Per-card policy: a single-tab pane confirms on close ONLY when its card
+          // type opts in (`confirmClose: true`, e.g. the Dev card). `gallery-input`
+          // does not, so a plain X click closes the pane immediately — no popover.
+          // (Multi-tab panes always confirm — see case 2.)
           await app.waitForCondition<boolean>(
             `document.querySelector('[data-pane-id="p1"]') === null`,
             { timeoutMs: 2000 },
           );
-        } finally {
-          await app.close();
-        }
-      },
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
-      "case 1 — single-tab: Cancel keeps the pane and dismisses the popover",
-      async () => {
-        const app = await launchTugApp({ testName: "at0040-c1-single-cancel" });
-        try {
-          await app.enableDeckTrace(true);
-          await app.seedDeckState({
-            state: activeSingleTabDeckShape(),
-            focusCardId: "A",
-          });
-          await app.waitForCondition<boolean>(
-            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
-          );
-
-          await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
-          await app.waitForCondition<boolean>(
+          const popoverPresent = await app.evalJS<boolean>(
             `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
-            { timeoutMs: 2000 },
           );
-
-          await app.evalJS<void>(
-            `(function(){
-              var btn = ${popoverButtonByText("Cancel")};
-              if (btn === null) throw new Error("[at0040] Cancel button missing");
-              btn.click();
-            })()`,
-          );
-
-          // Popover dismisses, pane stays.
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) === null`,
-            { timeoutMs: 2000 },
-          );
-          const paneStillExists = await app.evalJS<boolean>(
-            `document.querySelector('[data-pane-id="p1"]') !== null`,
-          );
-          expect(paneStillExists, "pane must still exist after cancel").toBe(true);
+          expect(
+            popoverPresent,
+            "no confirm popover should render for a non-opt-in single-tab pane",
+          ).toBe(false);
         } finally {
           await app.close();
         }
@@ -496,7 +407,7 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "case 4 — inactive single-tab: X activates the pane AND opens the confirm popover",
+      "case 4 — inactive single-tab non-opt-in: X click closes the pane, no confirm",
       async () => {
         const app = await launchTugApp({ testName: "at0040-c4-inactive-single" });
         try {
@@ -509,37 +420,27 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("C")`,
           );
 
-          // Sanity: C is the active card (foreground pane).
+          // Sanity: C is the active card (foreground pane); p1 (A) is inactive.
           const activeBefore = await app.evalJS<string | null>(
             `window.__tug.getActiveCardId()`,
           );
           expect(activeBefore, "C must be active before the click").toBe("C");
 
           await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
-          await pause(300);
 
-          // Clicking X on an inactive single-tab pane brings it
-          // forward — A becomes the new active card.
-          const activeAfter = await app.evalJS<string | null>(
-            `window.__tug.getActiveCardId()`,
+          // Per-card policy: `gallery-input` does not opt into confirm, so even an
+          // inactive single-tab pane closes immediately on the X click — no popover.
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-pane-id="p1"]') === null`,
+            { timeoutMs: 2000 },
+          );
+          const popoverPresent = await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
           );
           expect(
-            activeAfter,
-            "case 4: A must be active — clicking X on an inactive pane must bring it forward",
-          ).toBe("A");
-
-          // And the popover must be open with the single-tab prompt.
-          const popoverState = await app.evalJS<{ present: boolean; text: string | null }>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)});
-              if (el === null) return { present: false, text: null };
-              return { present: true, text: el.textContent };
-            })()`,
-          );
-          expect(popoverState.present, "popover must be open").toBe(true);
-          expect(popoverState.text ?? "", "popover must read 'Close Card?'").toContain(
-            "Close Card?",
-          );
+            popoverPresent,
+            "no confirm popover should render for a non-opt-in single-tab pane",
+          ).toBe(false);
         } finally {
           await app.close();
         }

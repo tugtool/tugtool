@@ -27,7 +27,6 @@ import React, {
   useEffect,
   useId,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -38,24 +37,14 @@ import type { CardMeta, CardSizePolicy } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
 import type { Rect, GuidePosition, SnapResult } from "@/snap";
-import { useResponder, useOptionalResponder } from "@/components/tugways/use-responder";
+import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
-import type { SpatialOrder } from "@/components/tugways/spatial-order";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
 import { TugButton } from "@/components/tugways/internal/tug-button";
-import {
-  TugPopover,
-  TugPopoverAnchor,
-  TugPopoverContent,
-  type TugPopoverHandle,
-} from "@/components/tugways/tug-popover";
-import { TugLabel } from "@/components/tugways/tug-label";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { useFocusManager } from "@/components/tugways/use-focusable";
+import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardSettingsStore } from "@/lib/card-settings-store";
 import { cardTitleStore } from "@/lib/card-title-store";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
@@ -159,17 +148,6 @@ export interface CardTitleBarProps {
   onDragStart?: (event: React.PointerEvent) => void;
 }
 
-/**
- * Null-rendering registrar for the close-confirm button-row arrow order. Must
- * mount INSIDE `TugPopover`'s `FocusModeScope` (which wraps the popover content)
- * so the context-form `useSpatialOrder(order)` resolves the popover's trapped
- * focus mode rather than the chrome's outer mode. [L03]
- */
-function CloseConfirmSpatialOrder({ order }: { order: SpatialOrder }): null {
-  useSpatialOrder(order);
-  return null;
-}
-
 export const CardTitleBar = React.forwardRef<CardTitleBarHandle, CardTitleBarProps>(
 function CardTitleBar({
   title,
@@ -203,12 +181,12 @@ function CardTitleBar({
     [onCollapse],
   );
 
-  // Imperative handle on the close-confirm popover. The popover is
-  // rendered for every pane — single-tab and multi-tab alike — and
-  // anchored to the X button via a `TugPopoverAnchor` (not a
-  // `TugPopoverTrigger`); see the comment on the render block below
-  // for why.
-  const closeConfirmPopoverRef = useRef<TugPopoverHandle>(null);
+  // Controlled-mode open state for the close-confirm popover (the shared
+  // `TugConfirmPopover` component). The X button drives it true; the component's
+  // onConfirm / onCancel drive it false. Anchored to the X button element, captured
+  // by a callback ref so the popover re-positions once the button mounts.
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [closeAnchorEl, setCloseAnchorEl] = useState<HTMLButtonElement | null>(null);
 
   // Drives the popover's copy only — not whether it appears.
   const isMultiTab = cardCount > 1;
@@ -240,7 +218,7 @@ function CardTitleBar({
       if (event.altKey || !confirmClose) {
         onClose?.();
       } else {
-        closeConfirmPopoverRef.current?.open();
+        setCloseConfirmOpen(true);
       }
     },
     [onClose, confirmClose],
@@ -251,86 +229,30 @@ function CardTitleBar({
       // Keyboard activation (Enter / Space) lands here with no
       // preceding pointerup; mouse clicks also re-enter here after
       // `handleClosePointerUp` already acted. Opening the popover a
-      // second time is idempotent (`TugPopover.open()` just
-      // setState(true), a no-op when already open), and the
-      // Option-bypass close is safe to repeat — the pane is gone
-      // after the first call.
+      // second time is idempotent (`setCloseConfirmOpen(true)` is a
+      // no-op when already open), and the Option-bypass close is safe
+      // to repeat — the pane is gone after the first call.
       if (event?.altKey || !confirmClose) {
         onClose?.();
         return;
       }
-      closeConfirmPopoverRef.current?.open();
+      setCloseConfirmOpen(true);
     },
     [onClose, confirmClose],
   );
 
-  const handleConfirmClose = useCallback(() => {
-    closeConfirmPopoverRef.current?.close();
+  // Confirm / cancel callbacks for the shared `TugConfirmPopover`. Confirm closes
+  // the pane; cancel just dismisses the popover. The component owns the focus model
+  // (default-button seed, arrow navigation, Escape / Cmd-. cancel) — chrome no
+  // longer hand-rolls any of it.
+  const handleCloseConfirm = useCallback(() => {
+    setCloseConfirmOpen(false);
     onClose?.();
   }, [onClose]);
 
-  const handleCancelClose = useCallback(() => {
-    closeConfirmPopoverRef.current?.close();
+  const handleCloseCancel = useCallback(() => {
+    setCloseConfirmOpen(false);
   }, []);
-
-  // The Cancel / Close buttons are authored into the popover's own trapped focus
-  // mode (the `useFocusTrap` mode `TugPopover` pushes while open): Tab cycles only
-  // these two — you cannot escape the confirm popover — and the engine moves the
-  // key view between them, driving each outlined button's promotion to its filled
-  // role style + ring (the fill follows the ring). Pane close is a non-destructive
-  // `action`-role confirmation, so the default seeds Close (Return accepts), as
-  // the engine KEY VIEW (`armKeyboardRestore`) rather than a bare `.focus()`.
-  const popoverCloseButtonRef = useRef<HTMLButtonElement>(null);
-  const closeConfirmFocusManager = useFocusManager();
-  const closeConfirmFocusGroup = useId();
-  const CLOSE_CONFIRM_CANCEL_ORDER = 0;
-  const CLOSE_CONFIRM_CLOSE_ORDER = 1;
-
-  // Register the confirm popover as a chain responder so the keyboard cancel keys
-  // land HERE by identity. Without it, Cmd-. (the global CANCEL_DIALOG binding,
-  // dispatched by first responder) misses the popover and leaks to the card-content
-  // responder behind it — which both fails to cancel and, because the bare global
-  // `[data-key-view-kbd]` ring paints on whatever element becomes the keyboard key
-  // view, lights an outline around the WHOLE card. The popover owning a
-  // CANCEL_DIALOG / CONFIRM_DIALOG handler keeps the dispatch a self-loop: Escape
-  // and Cmd-. both close the popover and nothing leaks. [L11]
-  const closeConfirmResponderId = useId();
-  const { responderRef: closeConfirmResponderRef } = useOptionalResponder({
-    id: closeConfirmResponderId,
-    actions: {
-      [TUG_ACTIONS.CANCEL_DIALOG]: handleCancelClose,
-      [TUG_ACTIONS.CONFIRM_DIALOG]: handleConfirmClose,
-    },
-  });
-
-  // Arrow navigation over the Cancel ↔ Close pair ([P22] / [P23]): both a
-  // horizontal and a vertical closed ring, so *any* arrow toggles the two buttons
-  // (a 2-choice confirmation has no second axis to lose, and declaring both axes
-  // leaves no undeclared direction). Registered against the popover's trapped focus
-  // mode by the context-form registrar rendered inside `TugPopover`'s
-  // `FocusModeScope` (this component body is above it).
-  const closeConfirmSpatialOrder = useMemo<SpatialOrder>(() => {
-    const nodes = [
-      `${closeConfirmFocusGroup}:${CLOSE_CONFIRM_CANCEL_ORDER}`,
-      `${closeConfirmFocusGroup}:${CLOSE_CONFIRM_CLOSE_ORDER}`,
-    ];
-    return {
-      rings: [
-        { axis: "horizontal", nodes, closed: true },
-        { axis: "vertical", nodes, closed: true },
-      ],
-    };
-  }, [closeConfirmFocusGroup]);
-
-  const handlePopoverOpenAutoFocus = useCallback(
-    (event: Event) => {
-      event.preventDefault();
-      closeConfirmFocusManager?.armKeyboardRestore(
-        `${closeConfirmFocusGroup}:${CLOSE_CONFIRM_CLOSE_ORDER}`,
-      );
-    },
-    [closeConfirmFocusManager, closeConfirmFocusGroup],
-  );
 
   // Imperative bridge for the surrounding TugPane: route Cmd-W through
   // the same flow the X button uses, so a `confirmClose` pane gets the
@@ -338,7 +260,7 @@ function CardTitleBar({
   React.useImperativeHandle(ref, () => ({
     requestClose: () => {
       if (confirmClose) {
-        closeConfirmPopoverRef.current?.open();
+        setCloseConfirmOpen(true);
       } else {
         onClose?.();
       }
@@ -410,102 +332,48 @@ function CardTitleBar({
 
         {closable && (
           // Pane-level close confirmation: every pane's X button —
-          // single-tab and multi-tab alike — opens a "Close …?"
-          // confirm popover, so a pane is never discarded on a single
-          // stray click. Option-click on X bypasses the popover and
-          // closes immediately (see `handleClosePointerUp`).
+          // single-tab and multi-tab alike — opens a "Close …?" confirm
+          // popover (the shared `TugConfirmPopover`), so a pane is never
+          // discarded on a single stray click. Option-click on X bypasses
+          // the popover and closes immediately (see `handleClosePointerUp`).
           //
-          // The X button is the popover's `TugPopoverAnchor` — NOT a
-          // `TugPopoverTrigger`. Why Anchor instead of Trigger:
-          //
-          //   - `TugPopoverTrigger` composes Radix's auto-toggle
-          //     `onClick` onto the host element via `Slot.mergeProps`.
-          //     The X button's pointer-capture flow opens the popover
-          //     imperatively on `pointerup`; React then commits the
-          //     state transition before the trailing `click` event
-          //     fires; Radix's toggle reads the just-committed
-          //     `open=true` from its closure and inverts to
-          //     `open=false` — closing the popover the user just
-          //     opened. The "popover briefly flashes" bug.
-          //   - `TugPopoverAnchor` provides positioning only — no
-          //     toggle, no `onClick` composition. Open is purely
-          //     imperative via `closeConfirmPopoverRef.current.open()`
-          //     and the popover stays open until the user clicks
-          //     Confirm / Cancel, presses Escape, or clicks outside.
-          //
-          // We also pass `dismissOnChainActivity={false}` so the
-          // popover doesn't self-close on its own
-          // `cancelDialog` re-emit (which `TugPopover.handleOpenChange(false)`
-          // dispatches on every close) — the inner shell's
-          // observeDispatch would otherwise see that dispatch (sender
-          // is the popover's own senderId, but only the SHELL's
-          // observer filters self; the outer subscription doesn't).
-          // Click-outside and Escape are still handled by Radix's
-          // DismissableLayer regardless of this flag.
-          //
-          // The button carries no `data-no-activate`: clicking X on a
-          // background pane brings it forward before the popover
-          // opens, so the user sees what they are about to discard.
-          <TugPopover ref={closeConfirmPopoverRef} dismissOnChainActivity={false}>
-            <TugPopoverAnchor asChild>
-              <TugButton
-                subtype="icon"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={<X />}
-                onPointerDown={handleClosePointerDown}
-                onPointerUp={handleClosePointerUp}
-                onClick={handleCloseClick}
-                aria-label={
-                  isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
-                }
-                data-testid="tug-pane-close-button"
-              />
-            </TugPopoverAnchor>
-            <TugPopoverContent
+          // Controlled mode: the X button drives `closeConfirmOpen` and is
+          // the popover's anchor (captured via `setCloseAnchorEl`). The X
+          // is a plain button, NOT a `TugPopoverTrigger`, because its
+          // pointer-capture open flow on `pointerup` would race Radix's
+          // auto-toggle and flash the popover closed. The component owns the
+          // focus model — default-button seed, Cancel↔Close arrow nav, and
+          // Escape / Cmd-. cancel (it claims first responder on focus so the
+          // keyboard cancel keys land on it, not the card behind it).
+          <>
+            <TugButton
+              ref={setCloseAnchorEl}
+              subtype="icon"
+              emphasis="ghost"
+              role="action"
+              size="sm"
+              icon={<X />}
+              onPointerDown={handleClosePointerDown}
+              onPointerUp={handleClosePointerUp}
+              onClick={handleCloseClick}
+              aria-label={
+                isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
+              }
+              data-testid="tug-pane-close-button"
+            />
+            <TugConfirmPopover
+              open={closeConfirmOpen}
+              anchorEl={closeAnchorEl}
+              onConfirm={handleCloseConfirm}
+              onCancel={handleCloseCancel}
               side="bottom"
               sideOffset={6}
-              onOpenAutoFocus={handlePopoverOpenAutoFocus}
-            >
-              <div
-                data-slot="tug-pane-close-confirm"
-                className="tug-confirm-popover"
-                ref={closeConfirmResponderRef as (el: HTMLDivElement | null) => void}
-              >
-                {/* Registers the button-row arrow order against the popover's trap
-                    mode. Rendered here (inside TugPopover's FocusModeScope) so the
-                    context-form `useSpatialOrder` reads the trap scope. */}
-                <CloseConfirmSpatialOrder order={closeConfirmSpatialOrder} />
-                <div className="tug-confirm-popover-actions">
-                  <TugPushButton
-                    emphasis="outlined"
-                    role="action"
-                    size="sm"
-                    onClick={handleCancelClose}
-                    focusGroup={closeConfirmFocusGroup}
-                    focusOrder={CLOSE_CONFIRM_CANCEL_ORDER}
-                  >
-                    Cancel
-                  </TugPushButton>
-                  <TugPushButton
-                    ref={popoverCloseButtonRef}
-                    emphasis="outlined"
-                    role="action"
-                    size="sm"
-                    onClick={handleConfirmClose}
-                    focusGroup={closeConfirmFocusGroup}
-                    focusOrder={CLOSE_CONFIRM_CLOSE_ORDER}
-                  >
-                    {isMultiTab ? "Close All" : "Close"}
-                  </TugPushButton>
-                </div>
-                <TugLabel size="md" align="center">
-                  {isMultiTab ? `Close ${cardCount} Tabs?` : "Close Card?"}
-                </TugLabel>
-              </div>
-            </TugPopoverContent>
-          </TugPopover>
+              message={isMultiTab ? `Close ${cardCount} Tabs?` : "Close Card?"}
+              confirmLabel={isMultiTab ? "Close All" : "Close"}
+              confirmRole="action"
+              cancelLabel="Cancel"
+            />
+          </>
         )}
       </div>
     </div>

@@ -481,6 +481,23 @@ export const TugConfirmPopover = React.forwardRef<
     }
   }
 
+  // Claim first responder when focus lands anywhere in the popover — THE fix that
+  // makes keyboard cancel work. The action buttons carry `data-tug-focus="refuse"`
+  // (so a click never promotes the popover over the host editor), but the
+  // responder-chain provider's `focusin` promotion honors that same refusal, so a
+  // keyboard-focused button never promotes the popover either. Result: the global
+  // Cmd-. → CANCEL_DIALOG binding (dispatched to the FIRST RESPONDER) would miss
+  // the open popover and land on the editor / a host dialog's Cancel (dismissing
+  // the wrong thing). A modal confirmation must own the first responder while open;
+  // claim it here (the popover's own focus handler, not the refusal-gated global
+  // one) so Cmd-. and any other first-responder-routed accelerator reach our
+  // cancel/confirm handlers. Idempotent.
+  function handleContentFocus() {
+    if (manager && manager.getFirstResponder() !== responderId) {
+      manager.makeFirstResponder(responderId);
+    }
+  }
+
   // ---- Anchor element wiring (controlled mode) ----
   //
   // Radix Popover.Anchor accepts a `virtualRef` (a ref-shaped object
@@ -545,12 +562,18 @@ export const TugConfirmPopover = React.forwardRef<
         side={side}
         sideOffset={sideOffset}
         onOpenAutoFocus={handleOpenAutoFocus}
+        // This popover displaces DOM focus on open (`armKeyboardRestore` seeds the
+        // ring onto the default button), so the engine must fully re-project the
+        // captured opener key view on close — restoring the editor caret / the
+        // ringed cycle stop exactly, whatever it was. [#cfrunloop-model]
+        restoreFocusComplete
       >
         <div
           data-slot="tug-confirm-popover"
           className="tug-confirm-popover"
           onMouseDown={suppressButtonFocusShift}
           onKeyDown={handleKeyDown}
+          onFocus={handleContentFocus}
           data-side={side}
           ref={responderRef as (el: HTMLDivElement | null) => void}
         >
