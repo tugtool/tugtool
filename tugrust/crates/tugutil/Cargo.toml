@@ -22,6 +22,7 @@ regex.workspace = true
 dirs.workspace = true
 tugcore.workspace = true
 tugutil-core.workspace = true
+chrono.workspace = true
 ureq = { version = "3", features = ["json"] }
 
 [build-dependencies]

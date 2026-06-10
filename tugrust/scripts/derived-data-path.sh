@@ -12,12 +12,19 @@
 # app-test build never clobbers a live `app-debug` bundle.
 #
 # The path is keyed on PRODUCT_NAME (which already encodes the variant
-# and honors `TUG_FORCE_BUNDLE_ID`):
+# and honors `TUG_FORCE_BUNDLE_ID`). Forced-identity builds (app-test)
+# additionally key on the worktree's branch slug: every worktree builds
+# `Tug-apptest.app` under the SAME bundle id (so the one AX/TCC grant —
+# keyed on the path-independent designated requirement — covers them
+# all), but each worktree gets its own build directory so a build or
+# re-sign in one worktree can never clobber the bundle another
+# worktree's app-test run is executing.
 #
 #   (release, main)        → …/DerivedData/Tug
 #   (debug, main)          → …/DerivedData/Tug-debug
 #   (debug|release, other) → …/DerivedData/Tug-worktree
-#   TUG_FORCE_BUNDLE_ID=…   → …/DerivedData/Tug-<suffix>  (e.g. Tug-apptest)
+#   TUG_FORCE_BUNDLE_ID=…   → …/DerivedData/Tug-<suffix>-<wtslug>
+#                             (e.g. Tug-apptest-main, Tug-apptest-tugdash-foo)
 #
 # Usage:
 #   derived-data-path.sh <profile>    # debug | release
@@ -36,7 +43,20 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRODUCT_NAME="$(bash "$SCRIPT_DIR/product-name-from-cwd.sh" "$PROFILE")"
 
+LEAF="$PRODUCT_NAME"
+if [ -n "${TUG_FORCE_BUNDLE_ID:-}" ]; then
+    # Same branch → slug derivation as bundle-id-from-cwd.sh.
+    if BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && [ "$BRANCH" != "HEAD" ]; then
+        :
+    else
+        SHA="$(git rev-parse HEAD 2>/dev/null | cut -c1-8)"
+        BRANCH="detached-${SHA:-unknown}"
+    fi
+    WTSLUG="$(bash "$SCRIPT_DIR/branch-slug.sh" "$BRANCH")"
+    LEAF="${PRODUCT_NAME}-${WTSLUG}"
+fi
+
 # Match Xcode's default base so standard tooling (and `clean-*`) find it;
 # only the leaf name is per-variant instead of the shared project hash.
 BASE="${HOME}/Library/Developer/Xcode/DerivedData"
-echo "${BASE}/${PRODUCT_NAME}"
+echo "${BASE}/${LEAF}"

@@ -800,11 +800,19 @@ build-app:
 # per-file; the last line is exactly `VERDICT: PASS` / `VERDICT: FAIL`
 # (recipe exit code matches, greppable via `tail -n 1`).
 #
-# Fully isolated from your interactive instances: the bundle has its own
-# identity, its own per-variant DerivedData (so a build here never
-# clobbers a live `app-debug` bundle), its own port window / sockets /
-# private tmux server, and `apptest-<uuid>` per-launch runtime state.
-# AX is granted once via `just app-test-grant`.
+# Fully isolated from your interactive instances AND from other
+# worktrees: the bundle has its own identity, its own per-worktree
+# DerivedData (so a build here never clobbers a live `app-debug`
+# bundle or another worktree's app-test bundle), its own port window /
+# sockets / private tmux server, and `apptest-<wtslug>-<uuid>`
+# per-launch runtime state whose destructive sweeps match only this
+# worktree's prefix. Whole invocations are serialized machine-wide by
+# a port gate (`tugutil gate --name apptest`) — native input and app
+# activation are login-session singletons, so only one app-test run
+# ever drives them at a time; a second invocation queues with a
+# visible "held by <worktree>" message. AX is granted once via
+# `just app-test-grant` and covers every worktree's bundle (the TCC
+# grant keys on the path-independent designated requirement).
 #
 # Prereq (one-time per machine): `just setup-dev-signing`.
 #
@@ -829,6 +837,38 @@ app-test *FILES:
     # and the run can never disagree on which bundle to launch.
     : "${TUG_FORCE_BUNDLE_ID:=dev.tugtool.app.apptest}"
     export TUG_FORCE_BUNDLE_ID
+
+    # Worktree identity. Scopes the per-launch instance ids
+    # (apptest-<wtslug>-<uuid>, minted by the harness from
+    # TUG_APPTEST_ID_PREFIX) and every destructive sweep below to THIS
+    # worktree, so one worktree's run can never stop another worktree's
+    # instances, wipe its data dirs, or reap its tmux server. Same
+    # branch → slug derivation as bundle-id-from-cwd.sh.
+    if BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && [ "$BRANCH" != "HEAD" ]; then :; else
+        SHA="$(git rev-parse HEAD 2>/dev/null | cut -c1-8)"
+        BRANCH="detached-${SHA:-unknown}"
+    fi
+    WTSLUG="$(bash tugrust/scripts/branch-slug.sh "$BRANCH")"
+    export TUG_APPTEST_ID_PREFIX="apptest-${WTSLUG}"
+
+    # One app-test invocation at a time, machine-wide. Native CGEvent
+    # input, app activation, and key-window status are login-session
+    # singletons — two concurrent runs would interleave each other's
+    # gestures no matter how well files and ports are namespaced. The
+    # gate is a localhost port bind (tugutil gate; kernel-released on
+    # any death, no lock file): the whole invocation — clean slate,
+    # build-if-missing, dist refresh, every file, exit cleanup — runs
+    # under it, so one run completes before the next begins. A waiting
+    # invocation prints who holds the gate and since when.
+    if [ "${TUG_APPTEST_GATED:-}" != "1" ]; then
+        if [ ! -x tugrust/target/debug/tugutil ]; then
+            echo "==> building tugutil (needed for the app-test gate)…"
+            (cd tugrust && cargo build -p tugutil >/dev/null)
+        fi
+        export TUG_APPTEST_GATED=1
+        exec tugrust/target/debug/tugutil gate run --name apptest --label "$WTSLUG" -- just app-test {{FILES}}
+    fi
+    echo "==> app-test instance prefix: $TUG_APPTEST_ID_PREFIX"
 
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh debug)"
     APP_DIR="$(bash tugrust/scripts/derived-data-path.sh debug)/Build/Products/Debug/${PRODUCT_NAME}.app"
@@ -862,14 +902,15 @@ app-test *FILES:
     # reflects current source.
     (cd tugdeck && bun run build >/dev/null)
 
-    # Clean slate before the first spawn: wipe any apptest-* data
-    # dirs from earlier runs and stop any apptest-* tugcasts that
-    # are still alive. Other instances (developer's `app-debug` /
-    # `app-release`, harness colleagues' parallel `app-test` runs)
-    # are untouched — pkill -x Tug would have killed them all.
-    rm -rf "$HOME/Library/Application Support/Tug/instances/apptest-"* 2>/dev/null || true
+    # Clean slate before the first spawn: wipe THIS WORKTREE's
+    # apptest data dirs from earlier runs and stop any of its tugcasts
+    # that are still alive. Every match is scoped to
+    # $TUG_APPTEST_ID_PREFIX — another worktree's instances, like a
+    # developer's `app-debug` / `app-release`, are structurally out of
+    # reach (and the gate above means none should be running anyway).
+    rm -rf "$HOME/Library/Application Support/Tug/instances/${TUG_APPTEST_ID_PREFIX}-"* 2>/dev/null || true
     while read -r ID; do
-        case "$ID" in apptest-*)
+        case "$ID" in "${TUG_APPTEST_ID_PREFIX}-"*)
             tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
         esac
     done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
@@ -880,11 +921,17 @@ app-test *FILES:
     # after a graceful kill-server). Each app-test instance owns a
     # private `tmux -L tug-<token>` server; a graceful close tears it
     # down (tugcast's shutdown), but a SIGKILLed run leaks the whole
-    # server. A private server hosting only `cc-apptest-*` sessions (or
-    # none) is an app-test orphan — reap it. Dev/release private servers
-    # host `cc-debug-*` / `cc-release-*` sessions and are NEVER matched,
-    # so a developer's running `app-debug` tmux is untouched. Run both
-    # before the first spawn and in cleanup so nothing accrues per run.
+    # server. A private server hosting only THIS WORKTREE's
+    # `cc-${TUG_APPTEST_ID_PREFIX}-*` sessions is our orphan — reap it.
+    # Another worktree's apptest sessions, and dev/release servers
+    # (`cc-debug-*` / `cc-release-*`), are NEVER matched.
+    #
+    # A server with NO sessions stays in scope deliberately: an empty
+    # server cannot be attributed to a worktree, and the gate
+    # guarantees no other app-test run is live while we sweep — so an
+    # empty tug-* server here is a dead orphan, not someone's
+    # mid-boot server. Run both before the first spawn and in cleanup
+    # so nothing accrues per run.
     reap_orphan_tmux_servers() {
         local dir="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"
         [ -d "$dir" ] || return 0
@@ -893,7 +940,7 @@ app-test *FILES:
             [ -e "$sock" ] || continue
             label="$(basename "$sock")"
             sessions="$(tmux -L "$label" list-sessions -F '#S' 2>/dev/null)"
-            if [ -z "$sessions" ] || ! printf '%s\n' "$sessions" | grep -qv '^cc-apptest-'; then
+            if [ -z "$sessions" ] || ! printf '%s\n' "$sessions" | grep -qv "^cc-${TUG_APPTEST_ID_PREFIX}-"; then
                 tmux -L "$label" kill-server 2>/dev/null || true
                 rm -f "$sock" 2>/dev/null || true
             fi
@@ -905,21 +952,22 @@ app-test *FILES:
     # unlinks its own sockets (ProcessManager unlinks the control socket;
     # tugcast unlinks its notify socket). A crash can leave orphans, but
     # every app-test launch derives its socket names from a per-launch
-    # `apptest-<uuid>` (→ unique short token), so an orphan can never
-    # collide with a future run — it's a harmless dead file that $TMPDIR
-    # reaps on its own schedule. We deliberately do NOT glob-and-remove
-    # sockets here: the only such glob that ever existed
+    # `apptest-<wtslug>-<uuid>` (→ unique short token), so an orphan can
+    # never collide with a future run — it's a harmless dead file that
+    # $TMPDIR reaps on its own schedule. We deliberately do NOT
+    # glob-and-remove sockets here: the only such glob that ever existed
     # (`tugcast-ctl-*.sock`) was unscoped and could reach a live
     # dev/release instance's control socket. Isolation > tidiness.
 
     TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
-        # Targeted teardown — stop only the apptest-* instances the
-        # harness minted. A developer's separately-running app-debug
-        # session continues unaffected (and `instance stop` is now
-        # identity-checked, so a recycled PID is never signalled).
+        # Targeted teardown — stop only THIS WORKTREE's apptest
+        # instances. Another worktree's run and a developer's
+        # separately-running app-debug session continue unaffected
+        # (and `instance stop` is identity-checked, so a recycled PID
+        # is never signalled).
         while read -r ID; do
-            case "$ID" in apptest-*)
+            case "$ID" in "${TUG_APPTEST_ID_PREFIX}-"*)
                 tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
             esac
         done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
@@ -993,12 +1041,12 @@ app-test *FILES:
             FAILURE_BLOCKS+=("$f"$'\n'"$(cat "$TMPOUT")")
         fi
 
-        # Between files, stop any apptest-* stragglers. The harness's
-        # `app.close()` already targets the current instance; this is
-        # defence-in-depth for the rare case where a test panics
-        # before reaching `close`.
+        # Between files, stop any of THIS WORKTREE's apptest
+        # stragglers. The harness's `app.close()` already targets the
+        # current instance; this is defence-in-depth for the rare case
+        # where a test panics before reaching `close`.
         while read -r ID; do
-            case "$ID" in apptest-*)
+            case "$ID" in "${TUG_APPTEST_ID_PREFIX}-"*)
                 tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
             esac
         done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
@@ -1087,6 +1135,10 @@ app-test-build *FILES:
     #!/usr/bin/env bash
     set -euo pipefail
     export TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest
+    # build-app runs OUTSIDE the app-test gate, which is fine: it
+    # targets this worktree's own per-worktree DerivedData, so it can
+    # never clobber a bundle another worktree's gated run is executing.
+    # The `just app-test` call below re-execs itself under the gate.
     just build-app
     just app-test {{FILES}}
 

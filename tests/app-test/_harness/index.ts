@@ -1398,6 +1398,18 @@ const processKillNative = (
   }
 ).process.kill;
 
+/**
+ * Validate the recipe-provided instance-id prefix. Must be the
+ * `apptest` family (the dedicated port windows and tugcast's tmux
+ * self-reap both key on the `apptest-` prefix) and slug-shaped after
+ * it. Anything else falls back to the bare `apptest` family rather
+ * than minting an id outside the app-test namespace.
+ */
+function validatedIdPrefix(raw: string | undefined): string {
+  if (raw && /^apptest-[a-z0-9-]+$/.test(raw)) return raw;
+  return "apptest";
+}
+
 function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
   // macOS `/tmp` is root-owned; the Swift bridge's parent-dir-owner
   // check ([D06]) rejects sockets there. `os.tmpdir()` returns the
@@ -1408,13 +1420,20 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
   const logPath = opts.testName
     ? pathResolve(LOGS_DIR, `${sanitizeTestName(opts.testName)}.log`)
     : null;
-  // Per-launch instance identity. Defaults to `apptest-<uuid>` so each
+  // Per-launch instance identity. Defaults to `<prefix>-<uuid>` so each
   // launchTugApp call gets its own per-instance data dir, tugbank,
   // tmux session, and registry entry — concurrent app-tests don't
   // collide, and a separately-running `just app-dev` is untouched by
   // the harness's targeted teardown. Tests that need cross-launch
   // continuity (e.g. cold-boot) pass `opts.instanceId` explicitly.
-  const instanceId = opts.instanceId ?? `apptest-${randomUUID()}`;
+  //
+  // The prefix is worktree-scoped when the recipe provides it
+  // (`TUG_APPTEST_ID_PREFIX=apptest-<wtslug>`), so one worktree's
+  // recipe sweeps can never match another worktree's live instances.
+  // Outside the recipe (bare `bun test`, discouraged) it falls back
+  // to the bare `apptest` family.
+  const idPrefix = validatedIdPrefix(process.env.TUG_APPTEST_ID_PREFIX);
+  const instanceId = opts.instanceId ?? `${idPrefix}-${randomUUID()}`;
   return {
     appPath,
     socketPath,

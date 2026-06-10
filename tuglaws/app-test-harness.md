@@ -97,22 +97,29 @@ The fix is the `Tug Dev` self-signed identity from the code-signing pipeline. `j
 
 ## Instance isolation — the invariant
 
-An app-test launch and a live interactive instance (`just app-debug`, `just app-release`) must be **completely disjoint**: a test run can never disturb a developer's running session. Every per-instance resource derives from the runtime identity `TUG_INSTANCE_ID` (the harness mints `apptest-<uuid>` per launch; the dev loop uses `debug-main` / `release-main`), and nothing is shared across identities:
+An app-test launch, a live interactive instance (`just app-debug`, `just app-release`), and **another worktree's app-test world** must all be **completely disjoint**: a test run can never disturb a developer's running session, and one worktree's run can never disturb (or even reach) another worktree's. Every per-instance resource derives from the runtime identity `TUG_INSTANCE_ID` (the harness mints `apptest-<wtslug>-<uuid>` per launch — the worktree's branch slug rides in the id so the recipe's destructive sweeps can scope to their own worktree; the dev loop uses `debug-main` / `release-main`), and nothing is shared across identities:
 
 | Resource | Keyed on | Where |
 |---|---|---|
-| App bundle / product name | `TUG_FORCE_BUNDLE_ID` (app-test always `dev.tugtool.app.apptest` → `Tug-apptest.app`) | `product-name-from-cwd.sh`, `bundle-id-from-cwd.sh` |
-| Xcode build output (DerivedData) | per-variant `-derivedDataPath` keyed on `PRODUCT_NAME` — Xcode's *default* DerivedData is shared per-project, so without this, building the app-test bundle would overwrite a live `app-debug` bundle's `.app` (same target, one product) | `derived-data-path.sh` |
+| App bundle / product name | `TUG_FORCE_BUNDLE_ID` (app-test always `dev.tugtool.app.apptest` → `Tug-apptest.app`) — deliberately the SAME for every worktree, so the one AX grant (keyed on the path-independent designated requirement) covers them all | `product-name-from-cwd.sh`, `bundle-id-from-cwd.sh` |
+| Xcode build output (DerivedData) | per-variant `-derivedDataPath` keyed on `PRODUCT_NAME`, **plus the worktree slug for forced-identity builds** (`Tug-apptest-<wtslug>`) — Xcode's *default* DerivedData is shared per-project, so without this, building the app-test bundle would overwrite a live `app-debug` bundle's `.app`, and without the slug one worktree's build/re-sign would clobber the bundle another worktree's run is executing | `derived-data-path.sh` |
 | Data dir / tugbank.db / sessions.db / Logs | full `TUG_INSTANCE_ID` | `tugcore::instance` |
 | tugbank notify socket, app↔tugcast control socket | **short token** `fnv1a32(id)` (8 hex) — long IDs would overflow `sun_path` (~104 B) | `tugcore::instance::short_token`, `InstanceConfig.shortToken` |
 | tugcast HTTP + Vite ports | hash of `TUG_INSTANCE_ID` into a window. **App-test draws from a dedicated window** (tugcast 55400–55499, Vite 55500–55599) disjoint from dev/release (55300/55200) | `tugcore::ports` |
 | tmux server | per-instance `tmux -L tug-<short_token>` — a *private daemon*, not a shared server with namespaced sessions | `tugcast::feeds::terminal` |
 | Claude / tugcode subprocess | tugcast's own process group (`setpgid` + `kill(0)` on exit) | `tugcast/src/main.rs` |
+| **Native input / app activation / key window** | **not divisible** — these are login-session singletons, so they are serialized, not namespaced: the whole `just app-test` invocation runs under `tugutil gate run --name apptest` | `tugcore::ports::APPTEST_GATE_PORT`, `tugutil::commands::gate` |
+
+### The invocation gate
+
+Native gestures post via `CGEvent.post(tap: .cgSessionEventTap)` and the lifecycle tests drive `NSApp.activate`/`deactivate` — keyboard focus, the frontmost window, and screen-coordinate clicks belong to the *login session*, not to any instance. No amount of per-instance namespacing makes two concurrent native-gesture runs safe; serialization is physics. The `app-test` recipe therefore re-execs its entire body under a machine-wide gate: `tugutil gate run --name apptest --label <wtslug>`.
+
+The gate is a **localhost port bind** (`tugcore::ports::APPTEST_GATE_PORT`, a well-known port outside every hashed window), not a lock file — this project does not use lock files. Binding is exclusive by kernel construction and the kernel frees the port on any holder death, including SIGKILL, so no stale-lock state can exist. The holder serves a live JSON greeting (`{gate, label, pid, since}`) to every connection; a queued invocation prints `gate 'apptest' held by <worktree> (pid …, since …) — waiting…` and blocks reading that connection until EOF (the holder's exit), then races to re-bind — event-driven, no polling. A non-gate listener on the port fails the greeting handshake and the acquirer errors out instead of waiting. `--no-wait` turns queueing into a fail-fast exit for scripted callers.
 
 Two corollaries that bit us before and must not regress:
 
 - **Kills are identity-checked.** `tugutil instance stop` and tugcast's `--force` both verify a PID is still the process they registered (by command / registry ownership) before signalling. A PID is recycled the instant its process dies, so a stale registry entry can name a PID the OS has handed to an *unrelated* process — signalling it blind was how an app-test teardown could SIGKILL a live debug instance's child. Never signal a PID you cannot confirm is yours.
-- **No cross-instance file sweeps.** The recipe does not glob-and-remove sockets across instances. Each owner unlinks its own sockets on graceful close; per-launch token uniqueness means a crash-orphaned socket can never collide with a future run, so it is a harmless dead file — not something to reap by reaching into another instance's namespace.
+- **No cross-instance file sweeps.** The recipe does not glob-and-remove sockets across instances. Each owner unlinks its own sockets on graceful close; per-launch token uniqueness means a crash-orphaned socket can never collide with a future run, so it is a harmless dead file — not something to reap by reaching into another instance's namespace. The same discipline now has a worktree dimension: every destructive match in the recipe (data-dir wipe, instance stops, tmux reaping) is scoped to `apptest-<wtslug>-` — one worktree's cleanup is structurally unable to reach another's. The one deliberate exception is the *empty* tmux-server reap (a session-less server cannot be attributed to a worktree); it is safe because the gate guarantees no other app-test run is live during a sweep.
 
 ### Resource lifecycle & reclamation
 
@@ -129,6 +136,8 @@ Isolation is only half the contract; the other half is that nothing *leaks*. The
 | PTY master/slave + `tmux attach` child | terminal feed | `pty_process::open()` + `spawn(pts)` | split halves drop on cancel → SIGHUP detaches the attach child; else `kill(-pgid)` | Self-reaps via hangup + process group. Bounded to tugcast |
 | tugcode / claude subprocess | agent_bridge | per session | tugcast `kill(0)` on exit / ProcessManager `kill(-pgid)` SIGTERM→SIGKILL | In tugcast's process group → reaped |
 | Registry entry (`$TMPDIR/tug-instances.json`) | tugcast | `register` at boot | `unregister` on shutdown; dead entries pruned on next register/load | Self-healing |
+| Gate port (`APPTEST_GATE_PORT`, 55600) | `tugutil gate` holder | `TcpListener::bind` at invocation start | OS on process exit — including SIGKILL (`FD_CLOEXEC` keeps gated children from inheriting it) | None — bounded to process |
+| Per-worktree app-test DerivedData (`Tug-apptest-<wtslug>`) | `just build-app` (forced identity) | first app-test build in a worktree | **nothing automatic** — `just clean-all`'s `Tug-*` glob, or manual `rm` | The known leak: a dash that ran app-test leaves a DerivedData tree behind after `dash join`/`release`. Disk, not correctness |
 
 The process tree is the backbone: tugcast calls `setpgid(0, 0)` at startup so it leads its own group, and **both** exit paths reap the whole group — tugcast's own `kill(0)` on graceful shutdown and ProcessManager's `kill(-pgid)` (SIGTERM, then SIGKILL after 200 ms) on app teardown. That single mechanism reclaims tugcode, claude, and the `tmux attach` child. Vite is reaped separately and explicitly (it is a child of the GUI app, not of tugcast's group). The one daemon that escapes the process group is the tmux *server* — which is exactly why it carries explicit reaping rather than relying on signal propagation.
 
@@ -138,7 +147,7 @@ The process tree is the backbone: tugcast calls `setpgid(0, 0)` at startup so it
 
 - **Token collision.** `tug-<token>` and the sockets key on a 32-bit FNV hash of the id; two instances colliding would share a tmux server / sockets and break isolation. ~1 in 4 billion per pair — negligible for the handful of live instances, but the ceiling is real.
 - **Out-of-band worktree deletion.** A worktree removed by hand (`git worktree remove`, `rm -rf`) instead of `dash join`/`release` or `instance remove` orphans its tmux server. `just reap` is the manual remedial — it diagnoses and releases orphaned *transient* resources (tmux servers/sessions, stale sockets, PID-1 zombies), cross-referenced against the live registry so a running instance is never touched (`just reap` to diagnose, `just reap apply` to release). It deliberately does **not** remove orphaned data dirs — that goes through `tugutil instance prune`, which can delete a (possibly shared) app bundle and so must be run on purpose. A registry-anchored *automatic* sweep at startup remains a possible future hardening.
-- **`--force` is vestigial for app-test.** Each launch mints a fresh `apptest-<uuid>`, so there is never a same-id zombie to reclaim and `force_kill_port_holder` early-returns. Harmless; the flag could be dropped from the app-test launch.
+- **`--force` is vestigial for app-test.** Each launch mints a fresh `apptest-<wtslug>-<uuid>`, so there is never a same-id zombie to reclaim and `force_kill_port_holder` early-returns. Harmless; the flag could be dropped from the app-test launch.
 
 ---
 

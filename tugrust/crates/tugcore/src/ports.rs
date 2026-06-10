@@ -44,6 +44,26 @@ pub const APPTEST_VITE_PORT_WINDOW: u16 = 100;
 /// and `InstanceConfig` on the Swift side.
 pub const APPTEST_ID_PREFIX: &str = "apptest-";
 
+/// Well-known port for the `apptest` invocation gate
+/// (`tugutil gate run --name apptest`). One fixed port OUTSIDE every
+/// hashed window: holding a listener on it is the machine-wide mutex
+/// that serializes whole `just app-test` invocations — native CGEvent
+/// input and app activation are login-session singletons, so only one
+/// app-test run may drive them at a time. The kernel frees the port on
+/// any holder death (including SIGKILL); there is no lock file. See
+/// `tuglaws/app-test-harness.md`.
+pub const APPTEST_GATE_PORT: u16 = 55600;
+
+/// Resolve a gate name to its reserved well-known port. Gates are
+/// enumerated here (never hashed) so nothing can collide with the
+/// windowed allocations above.
+pub fn gate_port(name: &str) -> Option<u16> {
+    match name {
+        "apptest" => Some(APPTEST_GATE_PORT),
+        _ => None,
+    }
+}
+
 /// True when `instance_id` belongs to the app-test family and should
 /// draw ports from the dedicated app-test windows.
 pub fn is_apptest_id(instance_id: &str) -> bool {

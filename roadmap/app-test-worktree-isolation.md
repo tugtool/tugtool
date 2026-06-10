@@ -270,12 +270,12 @@ tugutil gate run --name <name> [--label <text>] [--no-wait] [--json] -- <cmd> [a
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Worktree-scoped DerivedData | pending | — |
-| #step-2 | `tugutil gate` subcommand | pending | — |
-| #step-3 | Worktree-scoped instance ids (harness + recipe env) | pending | — |
-| #step-4 | Scope the recipe sweeps + wrap in the gate | pending | — |
-| #step-5 | Documentation updates | pending | — |
-| #step-6 | Two-worktree integration drill | pending | — |
+| #step-1 | Worktree-scoped DerivedData | done | 2a498fbb |
+| #step-2 | `tugutil gate` subcommand | done | 4c3af281 |
+| #step-3 | Worktree-scoped instance ids (harness + recipe env) | done | 7fbb7f0f |
+| #step-4 | Scope the recipe sweeps + wrap in the gate | done | e7170e1a |
+| #step-5 | Documentation updates | done | 9c0c51ca |
+| #step-6 | Two-worktree integration drill | done | (verification only) |
 
 #### Step 1: Worktree-scoped DerivedData {#step-1}
 

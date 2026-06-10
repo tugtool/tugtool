@@ -62,6 +62,33 @@ block when any file fails. See
 [`roadmap/tugplan-app-test-cleanup.md#s01-summary-format`](../../roadmap/tugplan-app-test-cleanup.md#s01-summary-format)
 for the contract.
 
+### Concurrency: one invocation at a time
+
+Whole `just app-test` invocations are serialized machine-wide by a
+port gate (`tugutil gate run --name apptest`): native CGEvent input
+and app activation are login-session singletons, so only one run may
+drive them at a time. Invoking `just app-test` while another worktree
+(or another terminal) holds the gate prints
+
+```
+gate 'apptest' held by <worktree-slug> (pid <pid>, since <iso8601>) — waiting…
+```
+
+and queues until the holder finishes — nothing is killed, both runs
+complete. The wait is event-driven (the gate releases the moment the
+holder exits, even on SIGKILL). For scripted callers that prefer
+fail-fast over queueing:
+
+```bash
+tugrust/target/debug/tugutil gate run --name apptest --no-wait -- true
+# exit 2 + holder info when held (JSON shape with --json)
+```
+
+Each worktree's run is otherwise fully isolated: its own
+`Tug-apptest.app` bundle (per-worktree DerivedData, same bundle id —
+the one AX grant covers all of them), and `apptest-<wtslug>-<uuid>`
+instance ids whose cleanup sweeps match only that worktree's prefix.
+
 ## Environment variables
 
 | Variable                  | Purpose                                                      |

@@ -2,7 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::commands::{DashCommands, InstanceCommands};
+use crate::commands::{DashCommands, GateCommands, InstanceCommands};
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
 
@@ -124,6 +124,14 @@ pub enum Commands {
     /// Subcommands: list, stop, current, remove, prune.
     #[command(subcommand)]
     Instance(InstanceCommands),
+
+    /// Machine-wide mutual exclusion via a localhost port bind.
+    ///
+    /// Holding a listener on the gate's reserved port is the mutex;
+    /// the kernel frees it on any holder death — no lock file.
+    /// Used to serialize whole `just app-test` invocations.
+    #[command(subcommand)]
+    Gate(GateCommands),
 
     /// Print the per-project runtime-state directory
     ///
