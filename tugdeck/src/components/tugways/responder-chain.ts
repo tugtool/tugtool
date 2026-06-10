@@ -548,6 +548,16 @@ export class ResponderChainManager {
    * (DOM focus). It does not touch React state and does not participate
    * in `useSyncExternalStore` consumption.
    */
+  /**
+   * Whether `id` is a registered responder node. Lets the focus engine route a
+   * key-view restore through {@link focusResponder} (honoring the responder's
+   * focus contract) only when the key view is a responder — falling back to its
+   * own DOM walk for focusable-only key views (chips, list rows).
+   */
+  hasResponder(id: string): boolean {
+    return this.nodes.has(id);
+  }
+
   focusResponder(id: string): void {
     const node = this.nodes.get(id);
     if (!node) {

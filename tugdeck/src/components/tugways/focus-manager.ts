@@ -569,23 +569,35 @@ export class FocusContext {
       typeof CSS !== "undefined" && typeof CSS.escape === "function"
         ? CSS.escape(id)
         : id;
-    const el = document.querySelector<HTMLElement>(
-      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
-    );
-    if (!el) return false;
-    const tabIndexAttr = el.getAttribute("tabindex");
-    const intrinsicallyFocusable =
-      el instanceof HTMLButtonElement ||
-      el instanceof HTMLInputElement ||
-      el instanceof HTMLTextAreaElement ||
-      el instanceof HTMLSelectElement ||
-      el instanceof HTMLAnchorElement;
-    const hasFocusableTabIndex = tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
     // Suppress the chain re-seed for the synchronous `focusin` this `.focus()`
     // fires (see `FocusManager.suppressChainSeed`), so the walk's keyboard key
     // view survives.
     this.coord.beginSuppressChainSeed();
     try {
+      // Honor the responder focus contract first ([D03] #focus-contract): a
+      // substrate that owns a non-trivial focus surface (the prompt editor's
+      // CodeMirror `view.focus()`) declares how it takes focus, and the engine
+      // must NOT re-implement that with a generic DOM walk — the walk lands on a
+      // child input/button or nothing, never on a contenteditable caret. When the
+      // key view is a registered responder, route through it so restoring the
+      // editor key view lands the caret by construction.
+      if (this.coord.focusKeyViewViaContract(id)) return true;
+      // Generic fallback for focusable-only key views (chips, list rows, tab
+      // bars) that declare no focus contract: focus the element itself when it is
+      // intrinsically focusable or carries a non-negative tabindex, else its first
+      // tabbable descendant.
+      const el = document.querySelector<HTMLElement>(
+        `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
+      );
+      if (!el) return false;
+      const tabIndexAttr = el.getAttribute("tabindex");
+      const intrinsicallyFocusable =
+        el instanceof HTMLButtonElement ||
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLSelectElement ||
+        el instanceof HTMLAnchorElement;
+      const hasFocusableTabIndex = tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
       if (intrinsicallyFocusable || hasFocusableTabIndex) {
         el.focus();
         return true;
@@ -1545,6 +1557,24 @@ export class FocusManager {
   }
   endSuppressChainSeed(): void {
     this.suppressChainSeed = false;
+  }
+
+  /**
+   * Focus a key view through its responder **focus contract** when it is a
+   * registered responder — the single, complete focus authority. A substrate
+   * with a non-trivial focus surface (the prompt editor's CodeMirror
+   * `view.focus()`, a contenteditable, a shadow-DOM host) declares a `focus`
+   * callback on `useResponder` ([D03] #focus-contract); `chain.focusResponder`
+   * invokes it so DOM focus lands on the right element. The focus *engine* must
+   * not re-implement this — its generic DOM walk cannot focus a CodeMirror caret
+   * — so `focusKeyView` delegates here first. Returns whether the contract path
+   * applied; `false` (the key view is a focusable-only stop, not a responder)
+   * leaves the caller to its DOM-walk fallback. No-op without a chain.
+   */
+  focusKeyViewViaContract(keyViewId: string): boolean {
+    if (this.chain === null || !this.chain.hasResponder(keyViewId)) return false;
+    this.chain.focusResponder(keyViewId);
+    return true;
   }
 
   // ---- Keyboard-access mode (deck-global) ----

@@ -175,6 +175,7 @@ import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useFocusTrap } from "./use-focus-trap";
+import { FocusManagerContext } from "./focus-manager";
 
 /* ---------------------------------------------------------------------------
  * TugPopoverHandle
@@ -692,6 +693,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
   ) {
     const overlayRoot = useCanvasOverlay();
     const ctx = React.useContext(TugPopoverInternalContext);
+    const focusManager = React.useContext(FocusManagerContext);
     // Popup-in-sheet z-tier elevation per [D09]. When TugPopover is
     // rendered inside a `<TugSheetContent>`, the sheet provides
     // `TugSheetStackingContext` with value `true`; we tag the portaled
@@ -713,7 +715,25 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           align={align}
           sideOffset={sideOffset}
           onOpenAutoFocus={onOpenAutoFocus}
-          onCloseAutoFocus={ctx?.onCloseAutoFocus}
+          // When the engine owns the close-focus restore (`restoreFocusComplete` —
+          // a surface that displaced DOM focus on open and re-projects the captured
+          // key view on close), the engine must be the SINGLE close-focus writer,
+          // AND its restore must run at the moment the FocusScope tears down — not
+          // earlier in `useFocusTrap`'s pop, where the scope is still trapping and
+          // would yank the editor caret straight back into the (closing) popover,
+          // landing focus on <body>. Radix's `onCloseAutoFocus` fires exactly at
+          // teardown: `preventDefault` stops Radix's own restore, then the engine's
+          // `focusKeyView` lands DOM focus on the already-restored key view (the
+          // editor caret via its focus contract). Otherwise defer to the
+          // service-popup binding.
+          onCloseAutoFocus={
+            restoreFocusComplete
+              ? (e: Event) => {
+                  e.preventDefault();
+                  focusManager?.focusKeyView();
+                }
+              : ctx?.onCloseAutoFocus
+          }
           // Suppress Radix DismissableLayer's focus-outside dismissal.
           // Focus moving to a sibling element (e.g. the editor under a
           // popover that opened with persisted `open=true` after reload,
