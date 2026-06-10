@@ -54,17 +54,22 @@ body {
   /* Wizard rail */
   --tugx-question-stack-gap: var(--tug-space-xs);
 
-  /* Heading typography — the rail rows and the panel heading. Sized to
-   * match the dialog title (0.875 rem) so the question rail reads as
-   * supporting content under the title, not as competing chrome. */
+  /* Heading typography. The PANEL heading keeps the full dialog-title
+   * treatment (0.875 rem, semibold) — it marks the working surface.
+   * The RAIL recedes a notch on every axis (smaller, normal weight,
+   * default-toned rather than bright) so the index above reads as
+   * supporting reference, not as a competing set of questions. */
   --tugx-question-heading-size:    0.875rem;
   --tugx-question-heading-weight:  600;
   --tugx-question-heading-leading: 1.4;
+  --tugx-question-rail-heading-size:   0.8125rem;
+  --tugx-question-rail-heading-weight: 500;
+  --tugx-question-rail-heading-color:  var(--tug7-element-global-text-normal-default-rest);
 
-  /* Answer summary — sits below the heading at the same size, muted
-   * enough to read as a derived value not a heading. */
-  --tugx-question-answer-size:   0.875rem;
-  --tugx-question-answer-color:  var(--tug7-element-global-text-normal-default-rest);
+  /* Answer summary — sits below the rail heading a tone quieter
+   * still, so the rail layers heading over derived value. */
+  --tugx-question-answer-size:   0.8125rem;
+  --tugx-question-answer-color:  var(--tug7-element-global-text-normal-muted-rest);
   --tugx-question-answer-leading: 1.4;
 
   /* Markers — one slot per state so themes can tune independently.
@@ -155,7 +160,7 @@ body {
  * paints. */
 .dev-question-dialog-rail .tug-list-row-leading {
   align-self: flex-start;
-  height: calc(var(--tugx-question-heading-size) * var(--tugx-question-heading-leading));
+  height: calc(var(--tugx-question-rail-heading-size) * var(--tugx-question-heading-leading));
 }
 
 .dev-question-dialog-row-marker {
@@ -181,10 +186,12 @@ body {
   min-width: 0;
 }
 
+/* @tug-renders-on: --tugx-idialog-bg */
 .dev-question-dialog-row-heading {
-  font-size: var(--tugx-question-heading-size);
-  font-weight: var(--tugx-question-heading-weight);
+  font-size: var(--tugx-question-rail-heading-size);
+  font-weight: var(--tugx-question-rail-heading-weight);
   line-height: var(--tugx-question-heading-leading);
+  color: var(--tugx-question-rail-heading-color);
 }
 
 /* Number prefix ("1.", "2.", …). Tabular numerals + a fixed
@@ -218,10 +225,15 @@ body {
 }
 
 /* The current row is a passive landmark — its question is already
- * open in the panel, so it offers no click and paints no hover (the
- * `selected` fill from TugListRow marks it instead). */
+ * open in the panel, so it offers no click and paints no hover. Its
+ * soft tint is the SAME tone the panel paints, so the rail pointer
+ * and the working surface below read as one linked pair (deliberately
+ * not TugListRow's loud `selected` fill, which competed with the
+ * panel for "this is active"). */
+/* @tug-renders-on: --tugx-idialog-bg */
 .dev-question-dialog-row[data-status="current"] {
   pointer-events: none;
+  background: var(--tugx-question-current-bg);
 }
 
 /* ---- Row markers: per-status tone ---- */
@@ -246,6 +258,16 @@ body {
   color: var(--tugx-question-marker-pending-color);
 }
 
+/* ---- Rail / panel separator ----
+ *
+ * The quiet structural cut between the index (rail) and the working
+ * surface (panel): a full-width hairline, no box. Block margins give
+ * the cut a little air on both sides; the TugInlineDialog body's own
+ * gap supplies the rest. */
+.dev-question-dialog-separator {
+  width: 100%;
+}
+
 /* ---- Stationary options panel ----
  *
  * A one-cell grid: every sizer and the live face share `1 / 1`, so
@@ -256,6 +278,16 @@ body {
 /* @tug-renders-on: --tugx-idialog-bg */
 .dev-question-dialog-panel {
   display: grid;
+  /* `start`, NOT the grid default `stretch`: the component writes a
+   * ratcheted `min-height` floor onto this box, and a stretched row
+   * would follow that min-height, stretch the face with it, and feed
+   * the next measurement — a runaway. With `start` the row is sized
+   * by its items alone, so the floor pads the box without ever
+   * changing what gets measured. `border-box` for the same reason:
+   * the floor is measured from the border box, so a content-box
+   * min-height would re-add the padding on every measurement. */
+  align-content: start;
+  box-sizing: border-box;
   width: 100%;
   padding: var(--tugx-question-panel-padding);
   border-radius: var(--tugx-question-panel-radius);
@@ -287,14 +319,20 @@ body {
   margin-top: var(--tug-space-sm);
 }
 
-/* The review state's face — a muted, description-toned line in the
- * same panel box (the sizers hold the height; review never collapses
- * the panel). */
+/* The review state's face — the wizard's closing CTA, bold and
+ * centered on BOTH axes of the held panel space (the sizers hold the
+ * height; review never collapses the panel), so the reserved area
+ * reads as a deliberate stage for the prompt rather than leftover
+ * emptiness. */
 /* @tug-renders-on: --tugx-question-current-bg */
 .dev-question-dialog-panel-review {
+  display: grid;
+  place-content: center;
+  height: 100%;
   font-size:   var(--tugx-idialog-description-size);
   line-height: var(--tugx-idialog-description-leading);
-  opacity:     var(--tugx-idialog-description-opacity);
+  font-weight: 600;
+  text-align:  center;
 }
 
 /* ---- Single-question payload ---- */

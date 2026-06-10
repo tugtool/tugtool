@@ -158,6 +158,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
 import { useFocusManager } from "@/components/tugways/use-focusable";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
@@ -641,10 +642,13 @@ class QuestionRailDataSource implements TugListViewDataSource {
  * The heading wraps freely — its text is constant per row, so its
  * height is too.
  *
- * The current row renders `selected` (the active-row fill — its
- * question is open in the panel below) and its answer summary tracks
- * the in-flight selection live; activation is the enclosing list view
- * cell wrapper's job (→ delegate `onSelect` → the wizard's jump).
+ * The current row carries a soft `--tugx-question-current-bg` tint —
+ * the SAME tone the panel below paints, so pointer and stage read as
+ * one linked pair (deliberately not TugListRow's loud `selected`
+ * fill, which competed with the panel for "this is active") — and its
+ * answer summary tracks the in-flight selection live; activation is
+ * the enclosing list view cell wrapper's job (→ delegate `onSelect` →
+ * the wizard's jump).
  */
 const QuestionRailCell: TugListViewCellRenderer<QuestionRailDataSource> =
   function QuestionRailCell({
@@ -671,7 +675,6 @@ const QuestionRailCell: TugListViewCellRenderer<QuestionRailDataSource> =
       <TugListRow
         className="dev-question-dialog-row"
         data-status={status}
-        selected={status === "current"}
         aria-current={status === "current" ? "step" : undefined}
         aria-label={`${labelPrefix} ${index + 1}: ${question?.question ?? ""}`}
         leading={
@@ -1469,6 +1472,55 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     manager.armKeyboardRestore(target);
   }, [isPending, manager, currentIndex]);
 
+  // Panel height floor, ratcheted — the hard guarantee under the sizer grid.
+  // The stacked sizers already hold the panel at the tallest question's
+  // natural height, but any transient under-measure in a hidden sizer (a
+  // list settling its layout, wrap math drifting a fraction at odd widths)
+  // would let the panel shrink and the dialog's bottom edge wobble. The
+  // floor is monotone: the panel's `min-height` only ever grows, so the
+  // answer section can never shrink mid-wizard. Width changes re-baseline
+  // it (wrap math is width-specific). Direct DOM style writes, not React
+  // state ([L06] appearance zone); [L03] layout effect. The ResizeObserver
+  // catches growth the render cycle can't see (a sizer settling, a font
+  // swap); shrink below the floor never changes the panel's box, so the
+  // observer loop is one-directional.
+  //
+  // DEPENDS on the panel grid's `align-content: start` (see the CSS): with
+  // the default `stretch`, a `min-height` on the grid container stretches
+  // the row, the row stretches the face, and the next measurement reads the
+  // stretched box — a +padding-per-frame runaway. `start` decouples row
+  // sizing from the container's min-height, making the ratchet idempotent.
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
+  const panelFloorRef = React.useRef(0);
+  const panelFloorWidthRef = React.useRef(-1);
+  const syncPanelFloor = React.useCallback(() => {
+    const panel = panelRef.current;
+    if (panel === null) return;
+    const rect = panel.getBoundingClientRect();
+    if (Math.abs(rect.width - panelFloorWidthRef.current) > 0.5) {
+      panelFloorWidthRef.current = rect.width;
+      panel.style.minHeight = "";
+      const natural = panel.getBoundingClientRect().height;
+      panelFloorRef.current = Math.ceil(natural);
+      panel.style.minHeight = `${panelFloorRef.current}px`;
+      return;
+    }
+    if (rect.height > panelFloorRef.current) {
+      panelFloorRef.current = Math.ceil(rect.height);
+      panel.style.minHeight = `${panelFloorRef.current}px`;
+    }
+  }, []);
+  React.useLayoutEffect(() => {
+    syncPanelFloor();
+  });
+  React.useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (panel === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => syncPanelFloor());
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [syncPanelFloor, questions, isPending]);
+
   // Cancel guards itself with a confirmation popover: a stray click
   // shouldn't tear the AI's question down without a second beat. The
   // popover is anchored to the Cancel trigger via `TugConfirmPopover`'s
@@ -1680,6 +1732,10 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
             />
           </QuestionRailContext.Provider>
 
+          {/* A quiet structural cut between the index (rail) and the
+            * working surface (panel) — a full-width hairline, no box. */}
+          <TugSeparator className="dev-question-dialog-separator" />
+
           {/* The stationary panel — the one place options ever
             * render. A CSS grid stacks one hidden, inert sizer per
             * question (heading + options at the panel's own width)
@@ -1688,6 +1744,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
             * JS measurement, no reflow on advance. The review state
             * swaps the face's content, never the panel's box. */}
           <div
+            ref={panelRef}
             className="dev-question-dialog-panel"
             data-slot="dev-question-dialog-panel"
           >
