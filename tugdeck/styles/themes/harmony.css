@@ -431,8 +431,8 @@ body {
 
   /* Outlined Action */
   --tug7-surface-control-primary-outlined-action-rest: transparent;
-  --tug7-surface-control-primary-outlined-action-hover: --tug-color(white, a: 60);
-  --tug7-surface-control-primary-outlined-action-active: --tug-color(white, a: 100);
+  --tug7-surface-control-primary-outlined-action-hover: --tug-color(blue, i: 64, t: 45, a: 30);
+  --tug7-surface-control-primary-outlined-action-active: --tug-color(blue, i: 64, t: 45, a: 48);
   --tug7-element-control-text-outlined-action-rest: --tug-color(blue, i: 4, t: 8);
   --tug7-element-control-text-outlined-action-hover: --tug-color(blue, i: 4, t: 8);
   --tug7-element-control-text-outlined-action-active: --tug-color(blue, i: 4, t: 8);
@@ -543,8 +543,8 @@ body {
 
   /* Ghost Action */
   --tug7-surface-control-primary-ghost-action-rest: transparent;
-  --tug7-surface-control-primary-ghost-action-hover: --tug-color(white, a: 10);
-  --tug7-surface-control-primary-ghost-action-active: --tug-color(white, a: 100);
+  --tug7-surface-control-primary-ghost-action-hover: --tug-color(blue, i: 64, t: 45, a: 16);
+  --tug7-surface-control-primary-ghost-action-active: --tug-color(blue, i: 64, t: 45, a: 32);
   --tug7-surface-control-primary-ghost-action-confirmed: transparent;
   --tug7-element-control-text-ghost-action-rest: --tug-color(blue, i: 4, t: 8);
   --tug7-element-control-text-ghost-action-hover: --tug-color(blue, i: 4, t: 8);
