@@ -611,15 +611,18 @@ export class ResponderChainManager {
       el instanceof HTMLAnchorElement;
     const hasFocusableTabIndex =
       tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
+    // `preventScroll` on every engine focus write: scroll-position writes
+    // belong to SmartScroll / the owning surface ([D07]) — a focus write must
+    // never let the browser auto-scroll an off-viewport target into view.
     if (intrinsicallyFocusable || hasFocusableTabIndex) {
-      el.focus();
+      el.focus({ preventScroll: true });
       return;
     }
 
     const tabbable = el.querySelector<HTMLElement>(
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     );
-    tabbable?.focus();
+    tabbable?.focus({ preventScroll: true });
   }
 
   /** Returns the current firstResponderId (or null if none). */
