@@ -410,13 +410,16 @@ export function initActionDispatch(
     });
   });
 
-  // show-card: Show a card by componentId, as a singleton. The Swift
-  // app menu sends show-card with component: "settings" / "about";
-  // showSingletonCard reuses an existing card of that type (raising it
-  // to z-top) instead of spawning a duplicate. The about invocation
-  // additionally carries the app's build identity (version, build,
-  // commit, branch, profile, copyright), parked in appInfoStore for
-  // the About card to read.
+  // show-card: Show a card by componentId. The Swift app menu sends
+  // show-card for "settings" / "about" (app-level singletons) and for
+  // "dev" (New Dev Card, ⌘N). Singleton components reuse an existing
+  // card of that type (raising it to z-top) instead of spawning a
+  // duplicate; every other component — notably "dev" — adds a fresh
+  // card each time, so ⌘N always opens a new dev card. The about
+  // invocation additionally carries the app's build identity (version,
+  // build, commit, branch, profile, copyright), parked in appInfoStore
+  // for the About card to read.
+  const SINGLETON_CARDS = new Set(["about", "settings"]);
   registerAction("show-card", (payload) => {
     const component = payload.component;
     if (typeof component !== "string") {
@@ -426,7 +429,11 @@ export function initActionDispatch(
     if (component === "about") {
       appInfoStore.setFromPayload(payload);
     }
-    deckManager.showSingletonCard(component);
+    if (SINGLETON_CARDS.has(component)) {
+      deckManager.showSingletonCard(component);
+    } else {
+      deckManager.addCard(component);
+    }
   });
 
   // add-card-to-active-pane (Both): add a new card to the focused pane.
