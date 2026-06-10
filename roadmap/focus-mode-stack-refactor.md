@@ -153,7 +153,9 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 #### [P02] One Escape ladder, in the act dispatch (DECIDED) {#p02-one-ladder}
 
-**Decision:** The act dispatch's Escape branch becomes the single arbiter, walking in order: (1) `keyViewCaptures(Escape)` → the component keeps it (editor completion popup); (2) top mode has `onEscapeDismiss` → call it, consume the event; (3) top mode trapped without callback → dev-warn, yield; (4) top mode non-trapped (descend scope) → `ascend()`; (5) top mode `escapeExits` (cycle) → `escapeCurrentMode()`; (6) base mode → fall through to the cancel ladder (the global Escape→`CANCEL_DIALOG` binding, unchanged). The keybinding stage's Escape guard simplifies to "any non-base mode is current → yield to the act dispatch" — no probe, no `escapeExits` special-casing there.
+**Decision:** The act dispatch's Escape branch becomes the single arbiter, walking in order: (1) `keyViewCaptures(Escape)` → the component keeps it (editor completion popup); (2) top mode has `onEscapeDismiss` → call it, consume the event; (3) top mode trapped without callback → dev-warn, yield; (4) top mode non-trapped (descend scope) → `ascend()`; (5) top mode `escapeExits` (cycle) → `escapeCurrentMode()`; (6) base mode → fall through to the cancel ladder (the global Escape→`CANCEL_DIALOG` binding, unchanged).
+
+The keybinding stage's Escape guard changes in **two stages**. **Transitional (lands with the ladder):** yield iff the ladder will act — top mode has a callback, OR is non-trapped, OR is `escapeExits` (probe term dropped; safe per [Q01] because popovers push traps, so a cycle is never top-of-stack under an open popover). A trapped mode *without* a callback keeps today's path: Stage-1 dispatches `CANCEL_DIALOG`, and Radix's fallthrough closes Radix surfaces — **this is load-bearing, not optional: the host-less dialogs' Escape IS that dispatch** (they have no Radix layer and no local handler), so yielding for trapped-no-callback before they register callbacks would break their Escape mid-plan. **Final (lands with the probe deletion):** once every trapped surface has a callback, trapped-no-callback is dead and the guard collapses to "any non-base mode → yield to the ladder."
 
 **Rationale:**
 - Today the decision is smeared across the keybinding guard, the chain walk's incidental reach, and Radix; one ladder in one place is the entire point of the feature.
@@ -206,6 +208,40 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 **Implications:**
 - An alert-Escape app-test is added (none exists); app-modal semantics (blocks everything until resolved) are unchanged — only who routes the Escape.
+
+---
+
+### Deep Dives — Implementation Notes for a Fresh Context {#deep-dives}
+
+> Session-derived facts the plan's steps rely on but a cold read of the code won't surface quickly. Symbols, not line numbers — find them by name.
+
+#### Current Escape flow — symbol map {#current-escape-flow}
+
+Both arbitration sites live in `responder-chain-provider.tsx`:
+
+1. **Stage-1** (the keybinding capture listener): matches the Escape→`CANCEL_DIALOG` binding, then the guard — `currentFocusMode() !== BASE_FOCUS_MODE && (!currentFocusModeTrapped() || (currentFocusModeEscapeExits() && !aDismissableSurfaceIsOpen()))` — yields (returns without dispatching). **The guard is keyed on `event.key === "Escape"`**; Cmd-. shares the `CANCEL_DIALOG` action but never enters the guard. Non-yield → `sendToFirstResponderForContinuation(CANCEL_DIALOG)`; handled → `preventDefault` + `stopImmediatePropagation` (Radix never sees the key); unhandled → nothing consumed → Radix's `DismissableLayer` (a document listener registered when the surface opened; the provider's listener, registered at mount, runs first by registration order) closes the surface on the *same* keydown. That unhandled-fallthrough **is the handshake this plan deletes**.
+2. **The act dispatch** (the focus-act resolution listener): its CANCEL branch holds the three-way — non-trapped → `ascend()`; `escapeExits && !aDismissableSurfaceIsOpen()` → `escapeCurrentMode()`. This branch becomes the ladder.
+
+**Two live popover-close paths exist today — both must survive every step:**
+- *Plain popover:* first responder is usually the editor; the chain walk (editor → card → canvas) never reaches the portaled `TugPopoverContentShell` responder (its `parentId` hangs off the card, not the walk path), so the dispatch goes unhandled → **Radix closes it** → `handleOpenChange(false)` re-emits `DISMISS_POPOVER`.
+- *Confirm popover:* it **claims first responder on open** (`handleContentFocus → makeFirstResponder`), so the walk starts at its own responder → its `CANCEL_DIALOG` handler resolves + closes, and Stage-1 consumes the key — Radix never acts. It *also* resolves via `observeDispatch` of `DISMISS_POPOVER` (the click-outside path), which is why the Step 3 transitional window (where its Escape briefly routes via Radix dismissal instead of the chain) still resolves correctly — verify with at0151/at0152 anyway.
+- *Sheet:* its own React `onKeyDown` (`handleKeyDown`, Escape + Cmd-. → `sendToTarget(responderId, CANCEL_DIALOG)`) — not Radix. *Dialogs:* no Radix, no local handler — Stage-1's dispatch IS their Escape (the [P02] staging exists because of this). *Menus:* Radix-internal Escape + `useServicePopupBinding` restore.
+
+#### Mechanism hints {#mechanism-hints}
+
+- **Synthetic-Escape marker:** `KeyboardEvent` constructors don't take custom fields — assign after construction (`const ev = new KeyboardEvent("keydown", { key: "Escape", bubbles: true }); (ev as any).__tugEngineSyntheticEscape = true;`). The *same Event instance* reaches every listener, including Radix's `onEscapeKeyDown(event)` — so both the engine's early-return and the context menu's suppressor passthrough read the marker off the event they're handed. `tug-context-menu` already has `synthesizeEscapeDismiss()`; extend it, don't duplicate it. Its `blinkingRef` self-dispatch guard must not eat the engine-initiated close.
+- **Consuming branches:** the ladder consumes via `preventDefault` + `stopImmediatePropagation` (suppression is the belt; consumption is the braces — Radix's later-registered document listener never fires).
+- **`useFocusTrap` ref-held callback:** mirror the `closeDisposition` pattern exactly — hold `onEscapeDismiss` in a ref, register a stable wrapper with `pushFocusMode`, never put the raw prop in the push/pop effect deps (effect churn re-pushes the mode and re-captures the key view mid-open).
+- **Menu restore equivalence:** the trap's teardown writer (`onCloseAutoFocus` → `focusKeyView`) reproduces the binding's `focusResponder(captured)` because a ringless key view is seeded *equal* to the first responder (`seedKeyViewFromChain` writes `keyView = firstResponder`) — the same argument that carried the popover migration. Keyboard-opened menus restore the ringed stop (the binding's engine-owns branch, now structural).
+- **Submenus:** `tug-popup-menu` has submenus (`openSubKey`). Radix's native semantics: Escape closes the *whole* menu; ArrowLeft closes the submenu. The engine dismiss callback closes the root — same outcome — but verify by-eye in the menu step that ArrowLeft submenu-close still works (it's Radix-internal and untouched).
+
+#### Fixture and harness notes {#fixture-notes}
+
+- **at0157's cross-pane case is hard to construct for a real reason:** a default popover dismisses on any cross-pane chain activity (`observeDispatch`) and on outside `pointerdown` (Radix). To get "popover open in pane B while interacting with pane A," use a **`dismissOnChainActivity={false}`** popover in pane B (the form-content gallery popover is the realistic instance) and activate pane A by keyboard. If even that can't realistically survive, *that finding itself* resolves the cross-pane case — document it in the test and pin the same-pane case hard.
+- **Two-pane seeding:** copy at0100's `deckShape` (two panes, `acceptsFamilies`, `focusCardId`); gallery cards by `componentId`.
+- **Keystroke routes:** synthetic document keydown (at0141's `pressKey` helper) travels the same capture pipeline as hardware — right for arbitration tests; `nativeKey` (modifier name is `"cmd"`, never `"meta"`) for full-OS paths (at0140 style). Native clicks throw `CoordinateOutOfBoundsError` on off-screen targets — synthetic `el.click()` is legitimate for focus-refusing controls (precedent in at0152).
+- **Fresh dash worktree setup:** `cargo build --bin tugbank` in `tugrust/` first — tugbank-seeding app-tests (at0055 et al.) fail at *setup* with ENOENT otherwise, masquerading as regressions. `tugutil` may be off PATH; use `tugrust/target/debug/tugutil` for dash commits. Prefix **both** `just build-app` and `just app-test` with `TUG_FORCE_BUNDLE_ID=dev.tugtool.app.apptest` (the AX-granted bundle). tsc is `./node_modules/.bin/tsc --noEmit` from `tugdeck/` (not bunx).
+- **Inconsistent batch results** (tests failing in a sweep but passing standalone) usually mean a concurrent app-test session or a stale build — re-run standalone and/or do a clean `TUG_FORCE_BUNDLE_ID=… just build-app` before believing a regression.
 
 ---
 
@@ -302,7 +338,7 @@ Cycle-with-surface-open is now: stack `[…, cycle, surfaceTrap]` → first Esca
 **References:** (#success-criteria), Table T01 (#t01-surface-inventory), [P04] (#p04-menus-into-trap)
 
 **Artifacts:**
-- `tests/app-test/at0157-cycle-escape-two-pane.test.ts`: two panes; cycle active in pane A; popover open in pane B (opened via its trigger, left open); Escape in pane A — **pin the *intended* behavior: the cycle exits** (this is the cross-pane fix; if it fails against current `main`, mark the case `test.todo`-style as the target and pin the same-pane case (cycle + own-pane popover: first Escape closes only the popover) which must already pass).
+- `tests/app-test/at0157-cycle-escape-two-pane.test.ts`: two panes; cycle active in pane A; popover open in pane B (opened via its trigger, left open); Escape in pane A — **pin the *intended* behavior: the cycle exits** (this is the cross-pane fix; if it fails against current `main`, mark the case `test.todo`-style as the target and pin the same-pane case (cycle + own-pane popover: first Escape closes only the popover) which must already pass). Pane B's popover must be a `dismissOnChainActivity={false}` instance and pane A activated by keyboard, or it self-dismisses before Escape — see (#fixture-notes).
 - `tests/app-test/at0158-menu-escape-close-focus.test.ts`: open the editor-toolbar popup menu (the at0055 fixture), press Escape, assert the menu closes and editor focus/typing is restored — green against current behavior (the binding's restore).
 
 **Tasks:**
@@ -352,19 +388,20 @@ Cycle-with-surface-open is now: stack `[…, cycle, surfaceTrap]` → first Esca
 **Artifacts:**
 - `FocusModeEntry.onEscapeDismiss` + `pushFocusMode` opts + `FocusManager` delegate; `useFocusTrap` option (ref-held, stable wrapper).
 - The act-dispatch Escape ladder per [#escape-ladder], including the synthetic-marker early-return and the trapped-no-callback dev-warn+yield branch.
-- Keybinding-stage Escape guard simplified to "non-base mode current → yield to the ladder" (probe term removed *from the guard's logic path* — the function itself is deleted in #step-7 once both sites are gone).
+- Keybinding-stage Escape guard moved to its **transitional** form per [P02]: yield iff top mode has a callback / is non-trapped / is `escapeExits` (probe term dropped); trapped-no-callback keeps today's `CANCEL_DIALOG` dispatch + Radix fallthrough. The guard's *final* "non-base → yield" form lands in #step-7, NOT here — the host-less dialogs' Escape rides the dispatch until they register callbacks in #step-4.
 - Pure-logic tests for the ladder's stack decisions.
 
 **Tasks:**
-- [ ] Engine fields + threading; ladder; guard simplification.
-- [ ] No surface registers a callback yet — behavior holds because branch 3 (trapped-no-callback → yield) reproduces today's yield-to-Radix for every trapped surface, and untrapped-surface flows are untouched.
+- [ ] Engine fields + threading; ladder; transitional guard.
+- [ ] No surface registers a callback yet — behavior must hold byte-identical: trapped-no-callback surfaces keep the Stage-1 dispatch path (dialogs close via their chain handlers; plain popovers via Radix fallthrough; the FR-claiming confirm popover via its own `CANCEL_DIALOG` handler), and descend/cycle flows route through the ladder exactly as the old act-dispatch branches did.
+- [ ] Preserve the guard's `event.key === "Escape"` condition — Cmd-. shares the `CANCEL_DIALOG` action but must NEVER be yielded to the ladder (it stays chain-routed for all surfaces, per #non-goals).
 
 **Tests:**
 - [ ] Pure-logic: top trapped mode with callback → callback invoked once, cycle untouched; without → yield; descend → ascend; cycle top → exit; pointer-exit pop options unchanged.
 
 **Checkpoint:**
 - [ ] `./node_modules/.bin/tsc --noEmit` clean; `bun test src/components/tugways/__tests__/` → all pass
-- [ ] `just app-test at0140-cycle-devcard at0151-confirm-popover-editor-restore at0152-confirm-popover-firstresponder-restore at0106-sheet-focus-trap at0157-cycle-escape-two-pane` → VERDICT: PASS (behavior unchanged; dev-warn may log)
+- [ ] `just app-test at0140-cycle-devcard at0151-confirm-popover-editor-restore at0152-confirm-popover-firstresponder-restore at0106-sheet-focus-trap at0147-question-nav-focus at0105-permission-cycle-keys at0157-cycle-escape-two-pane` → VERDICT: PASS (behavior unchanged — the dialog tests prove the transitional guard kept the dispatch path; dev-warn may log)
 
 ---
 
@@ -435,6 +472,8 @@ Cycle-with-surface-open is now: stack `[…, cycle, surfaceTrap]` → first Esca
 
 **Tasks:**
 - [ ] Migrate the three menus; delete the binding; verify menu arrow-nav/typeahead by-eye on the HMR build.
+- [ ] Verify submenu semantics by-eye: ArrowLeft still closes only the submenu (Radix-internal, untouched); Escape closes the whole menu via the engine callback — see (#mechanism-hints).
+- [ ] Confirm the context menu's `blinkingRef` self-dispatch guard does not swallow the engine-initiated close.
 
 **Tests:**
 - [ ] at0160 (new); at0158 (from #step-1) now exercises the trap-owned restore.
@@ -456,9 +495,10 @@ Cycle-with-surface-open is now: stack `[…, cycle, surfaceTrap]` → first Esca
 
 **Artifacts:**
 - `aDismissableSurfaceIsOpen()` and any residual references deleted from `responder-chain-provider.tsx`; the at0157 pinned-target case (cross-pane) flipped to a hard assertion if it was deferred in #step-1.
+- The keybinding-stage Escape guard collapsed to its **final** form per [P02]: "any non-base mode → yield to the ladder" — every trapped surface now has a callback, so the transitional trapped-no-callback dispatch path is dead and removed.
 
 **Tasks:**
-- [ ] Delete; flip at0157's target case live; confirm zero `aDismissableSurfaceIsOpen` references.
+- [ ] Delete the probe; collapse the guard to its final form; flip at0157's target case live; confirm zero `aDismissableSurfaceIsOpen` references.
 
 **Tests:**
 - [ ] at0157 fully asserting (both cases hard).
