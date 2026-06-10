@@ -22,9 +22,11 @@
  * no-ops outside a `FocusManagerProvider`, like `useOptionalResponder`).
  */
 
-import React, { useContext, useId, useLayoutEffect, useMemo, useRef } from "react";
+import React, { useCallback, useContext, useId, useLayoutEffect, useMemo, useRef } from "react";
 import { FocusManagerContext, FocusModeContext } from "./focus-manager";
 import { CardIdContext } from "@/lib/card-id-context";
+import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import { useExternalPointerdownObserver } from "./internal/external-dismiss-observer";
 
 export interface UseFocusTrapOptions {
   /**
@@ -53,15 +55,17 @@ export interface UseFocusTrapOptions {
    */
   closeDisposition?: React.RefObject<"retain" | "relinquish">;
   /**
-   * Set when this surface DISPLACES DOM focus on open (it moves focus to its own
-   * control, e.g. a confirm popover seeding the ring onto its default button). On
-   * close the engine then re-projects the captured key view onto the DOM even when
-   * it is ringless — the opener's caret comes back by the engine's own restore
-   * rather than a Radix/chain fallback that the displacement defeated. Leave unset
-   * for surfaces that do not move focus on open (a plain popover): their ringless
-   * restore stays with the chain fallback, unchanged.
+   * Set when the surface owns its own DOM-focus write at teardown (the returned
+   * {@link UseFocusTrapResult.onCloseAutoFocus} wired to a Radix `Content` /
+   * `FocusScope`, or a surface-specific writer like the sheet's
+   * `handleUnmountAutoFocus`). The trap then pops `moveDomFocus: false` so the
+   * engine's `popFocusMode` restores only the logical state (key view + first
+   * responder) and does NOT also move DOM focus — the teardown writer is the
+   * single DOM writer, at the moment the focus scope is gone. Leave unset for a
+   * host-less surface (an inline dialog): the engine moves DOM focus in
+   * `popFocusMode` as before.
    */
-  restoreFocusComplete?: boolean;
+  deferDomFocusToTeardown?: boolean;
 }
 
 export interface UseFocusTrapResult {
@@ -69,15 +73,30 @@ export interface UseFocusTrapResult {
   scopeId: string;
   /** Wrap the surface's content so its focusables join this trap's mode. */
   FocusModeScope: React.FC<{ children: React.ReactNode }>;
+  /**
+   * The surface's single close-focus DOM writer, wired to its Radix teardown slot
+   * (`Popover.Content` `onCloseAutoFocus` / `FocusScope` `onUnmountAutoFocus`).
+   * Three branches, in order: a `relinquish` close stands down (the engine's
+   * `relinquishFocusMode` owns the landing); an external pointerdown during open
+   * defers to Radix (the user clicked elsewhere); otherwise it re-projects the
+   * engine's already-restored key view onto the DOM. Only meaningful when the
+   * surface also sets `deferDomFocusToTeardown`.
+   */
+  onCloseAutoFocus: (event: Event) => void;
 }
 
 export function useFocusTrap({
   active,
   trapped = true,
   closeDisposition,
-  restoreFocusComplete,
+  deferDomFocusToTeardown,
 }: UseFocusTrapOptions): UseFocusTrapResult {
   const manager = useContext(FocusManagerContext);
+  // The "user clicked outside any popup" predicate ([D07] generalized): while the
+  // surface is open, watch for a pointerdown outside the canvas overlay root, so
+  // `onCloseAutoFocus` can defer to the clicked surface instead of restoring.
+  const overlayRoot = useCanvasOverlay();
+  const wasExternalRef = useExternalPointerdownObserver(active, overlayRoot);
   // The owning card ([P21]): the trap is pushed onto THIS card's focus context,
   // so a surface opened from a card (sheet / inline dialog, even one that mounts
   // while its card is in the background) keeps its trap in the card's own
@@ -93,7 +112,7 @@ export function useFocusTrap({
   useLayoutEffect(() => {
     if (manager === null || !active) return;
     const ctx = manager.contextFor(cardId);
-    ctx.pushFocusMode(scopeId, { trapped, restoreFocusComplete });
+    ctx.pushFocusMode(scopeId, { trapped });
     return () => {
       // The disposition is read at pop time (it is set on commit, just before the
       // surface closes). `relinquish` cascade-pops the enclosing cycle; `retain`
@@ -101,10 +120,49 @@ export function useFocusTrap({
       if (closeDisposition?.current === "relinquish") {
         ctx.relinquishFocusMode(scopeId);
       } else {
-        ctx.popFocusMode(scopeId);
+        // When the surface owns its own teardown DOM write (`onCloseAutoFocus`),
+        // pop logical state only — the engine must not also move DOM focus here
+        // (the focus scope is still trapping, so it would land on `<body>`). A
+        // host-less surface leaves `deferDomFocusToTeardown` unset and the engine
+        // moves DOM focus as before.
+        ctx.popFocusMode(scopeId, { moveDomFocus: !deferDomFocusToTeardown });
       }
     };
-  }, [manager, cardId, active, scopeId, trapped, closeDisposition, restoreFocusComplete]);
+  }, [
+    manager,
+    cardId,
+    active,
+    scopeId,
+    trapped,
+    closeDisposition,
+    deferDomFocusToTeardown,
+  ]);
+
+  // The surface's single close-focus DOM writer (see UseFocusTrapResult). Stable
+  // identity so a consumer can pass it to Radix's `onCloseAutoFocus` without
+  // identity churn ([L07]).
+  const onCloseAutoFocus = useCallback(
+    (event: Event): void => {
+      // No engine in scope (standalone preview / test): leave Radix's default
+      // close-focus path alone.
+      if (manager === null) return;
+      // A `relinquish` close: the engine's `relinquishFocusMode` (fired by the
+      // trap's pop) is the sole authority for the landing — stand down so we do
+      // not race it. `preventDefault` so Radix does not refocus the trigger.
+      if (closeDisposition?.current === "relinquish") {
+        event.preventDefault();
+        return;
+      }
+      // The user dismissed by clicking some other surface: let that surface keep
+      // focus (Radix's default), do not restore.
+      if (wasExternalRef.current) return;
+      // Otherwise re-project the engine's already-restored key view onto the DOM,
+      // now that the focus scope has torn down and will not yank it to `<body>`.
+      event.preventDefault();
+      manager.focusKeyView();
+    },
+    [manager, closeDisposition, wasExternalRef],
+  );
 
   // Stable scope component (held in a ref so it keeps a constant function
   // identity across renders — children never remount, [L26]). It always
@@ -127,7 +185,7 @@ export function useFocusTrap({
   }
 
   return useMemo(
-    () => ({ scopeId, FocusModeScope: scopeRef.current! }),
-    [scopeId],
+    () => ({ scopeId, FocusModeScope: scopeRef.current!, onCloseAutoFocus }),
+    [scopeId, onCloseAutoFocus],
   );
 }

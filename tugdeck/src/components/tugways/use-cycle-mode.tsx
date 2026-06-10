@@ -243,7 +243,7 @@ export function useCycleMode({
         // caret for a frame before the click's own focus lands. The
         // `restingFocus` reclaim is likewise skipped on this pointer exit (via
         // `exitViaPointerRef`).
-        ctx.popFocusMode(scopeId, { restoreFocus: false });
+        ctx.popFocusMode(scopeId, { moveDomFocus: false, restoreFirstResponder: false });
       }
     };
     document.addEventListener("pointerdown", onPointerDown, { capture: true });

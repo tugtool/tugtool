@@ -562,11 +562,6 @@ export const TugConfirmPopover = React.forwardRef<
         side={side}
         sideOffset={sideOffset}
         onOpenAutoFocus={handleOpenAutoFocus}
-        // This popover displaces DOM focus on open (`armKeyboardRestore` seeds the
-        // ring onto the default button), so the engine must fully re-project the
-        // captured opener key view on close — restoring the editor caret / the
-        // ringed cycle stop exactly, whatever it was. [#cfrunloop-model]
-        restoreFocusComplete
       >
         <div
           data-slot="tug-confirm-popover"

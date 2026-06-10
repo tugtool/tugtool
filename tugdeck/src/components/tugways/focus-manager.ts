@@ -195,14 +195,6 @@ interface FocusModeEntry extends FocusMode {
   commitDisposition?: (commit: FocusCommit) => CycleDisposition;
   escapeExits?: boolean;
   /**
-   * The surface displaced DOM focus on open (it stole focus to its own control,
-   * e.g. the confirm popover's `armKeyboardRestore` to its default button), so on
-   * pop the engine must re-project the restored key view onto the DOM even when it
-   * is ringless — the normal Radix/chain restore can't put the opener's focus back.
-   * A surface that did NOT displace focus leaves a ringless restore to that fallback.
-   */
-  restoreFocusComplete?: boolean;
-  /**
    * The chain's first responder when this mode was pushed — the SECOND axis of the
    * CFRunLoop restore, alongside `restoreKeyView`. DOM focus, the key view, and the
    * first responder are all projections of one focus state; a trapped surface (a
@@ -641,7 +633,6 @@ export class FocusContext {
       trapped: boolean;
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
       escapeExits?: boolean;
-      restoreFocusComplete?: boolean;
     },
   ): void {
     const existing = this.modeStack.findIndex((m) => m.scopeId === scopeId);
@@ -655,7 +646,6 @@ export class FocusContext {
       restoreKeyViewKeyboard: this.keyViewKeyboard,
       commitDisposition: opts.commitDisposition,
       escapeExits: opts.escapeExits,
-      restoreFocusComplete: opts.restoreFocusComplete,
       // Capture the first responder alongside the key view ([#cfrunloop-model]):
       // a surface about to claim first responder on open (a modal confirm popover)
       // captures here, BEFORE its claim, so the pop restores the prior responder.
@@ -689,12 +679,22 @@ export class FocusContext {
    * popping a buried mode leaves the key view alone, since a mode still above
    * it owns the current scope.
    *
-   * `restoreFocus` (default `true`) controls whether DOM focus is *moved* onto
-   * the restored key view. The key-view STATE (id + ring) is always restored;
-   * `restoreFocus: false` skips only the `el.focus()`.
+   * The restore has two independent axes, each gated by its own option (both
+   * default `true`):
+   * - `moveDomFocus` — move DOM focus onto the restored key view (the
+   *   `focusKeyView` call). The key-view STATE (id + ring) is restored regardless;
+   *   this gates only the `el.focus()`. A surface whose own teardown writer owns
+   *   the DOM move (a Radix-trapped popover/sheet) pops `moveDomFocus: false`.
+   * - `restoreFirstResponder` — reinstate the chain's first responder captured at
+   *   push. A caller that owns the next focus itself (the cycle's pointer-exit —
+   *   the click promotes its own responder) pops this `false`.
    */
-  popFocusMode(scopeId: string, opts?: { restoreFocus?: boolean }): void {
-    const restoreFocus = opts?.restoreFocus ?? true;
+  popFocusMode(
+    scopeId: string,
+    opts?: { moveDomFocus?: boolean; restoreFirstResponder?: boolean },
+  ): void {
+    const moveDomFocus = opts?.moveDomFocus ?? true;
+    const restoreFirstResponder = opts?.restoreFirstResponder ?? true;
     const at = this.modeStack.findIndex((m) => m.scopeId === scopeId);
     if (at === -1) return;
     const wasTop = at === this.modeStack.length - 1;
@@ -714,12 +714,12 @@ export class FocusContext {
       // first-responder-routed accelerator (Cmd-.) keeps landing on the now-closed
       // surface's stale handler. This is what makes "leave the responder as-is" close
       // paths (the engine-owns restore for a focus-refusing key view) correct by
-      // construction. Gated on `restoreFocus`: when it is false the caller owns the
-      // next focus (the cycle's pointer-exit — the click promotes its own responder),
-      // so the engine must not reinstate the prior one. Suppressed-seed so this
-      // chain-head change does not re-seed (coarsen) the key view just restored above;
-      // a responder key view re-promotes itself through `focusKeyView`'s contract below.
-      if (restoreFocus && entry.restoreFirstResponder !== null) {
+      // construction. Gated on `restoreFirstResponder`: when it is false the caller
+      // owns the next focus (the cycle's pointer-exit — the click promotes its own
+      // responder), so the engine must not reinstate the prior one. Suppressed-seed so
+      // this chain-head change does not re-seed (coarsen) the key view just restored
+      // above; a responder key view re-promotes itself through `focusKeyView` below.
+      if (restoreFirstResponder && entry.restoreFirstResponder !== null) {
         this.coord.beginSuppressChainSeed();
         try {
           this.coord.restoreFirstResponder(entry.restoreFirstResponder);
@@ -727,25 +727,20 @@ export class FocusContext {
           this.coord.endSuppressChainSeed();
         }
       }
-      // Re-project the restored key view onto the DOM (move focus to it). DOM focus
-      // is a *projection* of the key view, so restoring the key view restores focus
-      // to it. Two cases want this:
-      //   - the restored view wore the keyboard ring (a focus-cycle / Tab stop the
-      //     surface was opened from) — the engine owns its close-focus; OR
-      //   - the surface declared `restoreFocusComplete` because it DISPLACED DOM
-      //     focus on open (e.g. the confirm popover's `armKeyboardRestore` steals
-      //     focus to its default button), so the normal Radix/chain restore can't
-      //     put the opener's caret back — the engine must. A ringless view that the
-      //     surface did NOT displace (a plain mouse-opened popover) keeps the prior
-      //     behavior: DOM focus is left to the responder-chain / Radix restore, so
-      //     unrelated surfaces are unaffected.
-      // Suppressed entirely when `restoreFocus` is false (the caller owns the next
-      // focus, e.g. the cycle's mouse-exit). `focusKeyView` is gated on active, so a
-      // background pop never moves focus.
+      // Re-project the restored key view onto the DOM (move focus to it) when the
+      // restored view wore the keyboard ring (a focus-cycle / Tab stop the surface
+      // was opened from) — the engine owns its close-focus. A ringless view leaves
+      // DOM focus to the responder-chain / Radix restore, so unrelated surfaces are
+      // unaffected. A surface that displaces DOM focus on open and must re-project a
+      // ringless key view now does so through its own teardown writer (the
+      // `useFocusTrap` `onCloseAutoFocus`), not here — so it pops `moveDomFocus:
+      // false` and this branch stays out of its way. Suppressed entirely when
+      // `moveDomFocus` is false; `focusKeyView` is gated on active, so a background
+      // pop never moves focus.
       if (
-        restoreFocus &&
+        moveDomFocus &&
         entry.restoreKeyView !== null &&
-        (entry.restoreKeyViewKeyboard || entry.restoreFocusComplete === true)
+        entry.restoreKeyViewKeyboard
       ) {
         this.focusKeyView();
       }
@@ -1768,12 +1763,14 @@ export class FocusManager {
       trapped: boolean;
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
       escapeExits?: boolean;
-      restoreFocusComplete?: boolean;
     },
   ): void {
     this.activeContext().pushFocusMode(scopeId, opts);
   }
-  popFocusMode(scopeId: string, opts?: { restoreFocus?: boolean }): void {
+  popFocusMode(
+    scopeId: string,
+    opts?: { moveDomFocus?: boolean; restoreFirstResponder?: boolean },
+  ): void {
     this.activeContext().popFocusMode(scopeId, opts);
   }
   applyCommitDisposition(kind: FocusCommitKind): boolean {

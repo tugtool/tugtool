@@ -170,12 +170,10 @@ import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useCardLifecycle } from "@/lib/card-lifecycle";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
-import { useServicePopupBinding } from "./use-service-popup-binding";
 import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useFocusTrap } from "./use-focus-trap";
-import { FocusManagerContext } from "./focus-manager";
 
 /* ---------------------------------------------------------------------------
  * TugPopoverHandle
@@ -213,16 +211,6 @@ interface TugPopoverInternalContextValue {
    *  menu selection inside the popover). Click-outside / Escape dismissal via
    *  Radix still work. Default true. */
   dismissOnChainActivity: boolean;
-  /**
-   * Service-popup close-focus restorer per [D06] / [D07]. Threaded
-   * from `TugPopover` (where `captureOnOpen` runs in `handleOpenChange`)
-   * down to `TugPopoverContent` so it can pass the same callback to
-   * Radix's `<Popover.Content onCloseAutoFocus>`. The two halves
-   * (capture / restore) are bound to the same hook instance, so the
-   * `capturedRef` and `externalClickRef` written by `captureOnOpen`
-   * are read by the same `onCloseAutoFocus`.
-   */
-  onCloseAutoFocus: (event: Event) => void;
   /**
    * Captures the trigger DOM node. `TugPopoverTrigger` writes the
    * element it renders here; `TugPopoverContentShell` reads it to
@@ -326,13 +314,6 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     // only fires when a manager is in scope.
     const manager = useResponderChain();
 
-    // Service-popup close-focus binding per [D06] / [D07]. captureOnOpen
-    // is called from `handleOpenChange` when next is true; the
-    // `onCloseAutoFocus` is threaded through the internal context to
-    // `TugPopoverContent` so it can be passed to Radix's Content prop.
-    // Tolerant of no-provider contexts (no-ops).
-    const { captureOnOpen, onCloseAutoFocus } = useServicePopupBinding();
-
     const fallbackSenderId = React.useId();
     const senderId = senderIdProp ?? fallbackSenderId;
 
@@ -430,10 +411,9 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
         }
         return;
       }
-      // Capture first responder + start watching for external
-      // pointerdown BEFORE Radix's FocusScope mounts and grabs DOM
-      // focus. [D06] / [D07] / (#service-binding).
-      captureOnOpen();
+      // First responder + key view are captured by the engine focus trap's
+      // `pushFocusMode` (in `TugPopoverContent`) when the surface opens; the
+      // trap's `onCloseAutoFocus` restores them on close. No separate capture here.
       if (!isControlled) setInternalOpen(nextOpen);
       onOpenChangeProp?.(nextOpen);
     }
@@ -449,10 +429,9 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
         open: effectiveOpen,
         senderId,
         dismissOnChainActivity,
-        onCloseAutoFocus,
         triggerElRef,
       }),
-      [close, effectiveOpen, senderId, dismissOnChainActivity, onCloseAutoFocus],
+      [close, effectiveOpen, senderId, dismissOnChainActivity],
     );
 
     return (
@@ -647,16 +626,6 @@ export interface TugPopoverContentProps {
    * Forwarded verbatim to Radix's `Popover.Content`.
    */
   onOpenAutoFocus?: (event: Event) => void;
-  /**
-   * Set when this popover DISPLACES DOM focus on open (it moves focus to its own
-   * control, e.g. `TugConfirmPopover` seeding the ring onto its default button).
-   * Forwarded to the engine focus trap so that, on close, the engine re-projects
-   * the captured opener key view onto the DOM even when ringless — restoring the
-   * opener's caret, which the displacement defeats the normal restore of. Leave
-   * unset for a plain popover that does not move focus. See
-   * {@link useFocusTrap}'s `restoreFocusComplete`.
-   */
-  restoreFocusComplete?: boolean;
   /** Additional CSS class names. */
   className?: string;
   children: React.ReactNode;
@@ -685,7 +654,6 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
       sideOffset = 6,
       arrow = false,
       onOpenAutoFocus,
-      restoreFocusComplete,
       className,
       children,
     },
@@ -693,7 +661,18 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
   ) {
     const overlayRoot = useCanvasOverlay();
     const ctx = React.useContext(TugPopoverInternalContext);
-    const focusManager = React.useContext(FocusManagerContext);
+    // Engine focus trap ([#cfrunloop-model]): while the popover is open, push a
+    // trapped focus mode (Tab cycles the popover's own focusables; the opener's key
+    // view + first responder are captured at open and restored on close). The trap
+    // also provides the SINGLE close-focus DOM writer wired to Radix's
+    // `onCloseAutoFocus` below, and `deferDomFocusToTeardown` so `popFocusMode`
+    // restores only logical state (the hook owns the DOM move, at teardown timing).
+    // `FocusModeScope` is handed to the content shell so focusables inside join this
+    // mode. [L03] (push in a layout effect) / [L06] (mode projection is DOM).
+    const { FocusModeScope, onCloseAutoFocus } = useFocusTrap({
+      active: ctx?.open ?? false,
+      deferDomFocusToTeardown: true,
+    });
     // Popup-in-sheet z-tier elevation per [D09]. When TugPopover is
     // rendered inside a `<TugSheetContent>`, the sheet provides
     // `TugSheetStackingContext` with value `true`; we tag the portaled
@@ -715,25 +694,12 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           align={align}
           sideOffset={sideOffset}
           onOpenAutoFocus={onOpenAutoFocus}
-          // When the engine owns the close-focus restore (`restoreFocusComplete` —
-          // a surface that displaced DOM focus on open and re-projects the captured
-          // key view on close), the engine must be the SINGLE close-focus writer,
-          // AND its restore must run at the moment the FocusScope tears down — not
-          // earlier in `useFocusTrap`'s pop, where the scope is still trapping and
-          // would yank the editor caret straight back into the (closing) popover,
-          // landing focus on <body>. Radix's `onCloseAutoFocus` fires exactly at
-          // teardown: `preventDefault` stops Radix's own restore, then the engine's
-          // `focusKeyView` lands DOM focus on the already-restored key view (the
-          // editor caret via its focus contract). Otherwise defer to the
-          // service-popup binding.
-          onCloseAutoFocus={
-            restoreFocusComplete
-              ? (e: Event) => {
-                  e.preventDefault();
-                  focusManager?.focusKeyView();
-                }
-              : ctx?.onCloseAutoFocus
-          }
+          // The engine focus trap is the single close-focus writer: at FocusScope
+          // teardown (the only moment focus won't be yanked back into the closing
+          // popover) it re-projects the restored key view, or defers when the user
+          // dismissed by clicking elsewhere / on a relinquish close. See
+          // `useFocusTrap`'s `onCloseAutoFocus`.
+          onCloseAutoFocus={onCloseAutoFocus}
           // Suppress Radix DismissableLayer's focus-outside dismissal.
           // Focus moving to a sibling element (e.g. the editor under a
           // popover that opened with persisted `open=true` after reload,
@@ -746,7 +712,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           // pointerdown first.
           onFocusOutside={(e) => e.preventDefault()}
         >
-          <TugPopoverContentShell restoreFocusComplete={restoreFocusComplete}>
+          <TugPopoverContentShell FocusModeScope={FocusModeScope}>
             {children}
           </TugPopoverContentShell>
           {arrow && <Popover.Arrow className="tug-popover-arrow" />}
@@ -770,31 +736,14 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
  */
 function TugPopoverContentShell({
   children,
-  restoreFocusComplete,
+  FocusModeScope,
 }: {
   children: React.ReactNode;
-  restoreFocusComplete?: boolean;
+  FocusModeScope: React.FC<{ children: React.ReactNode }>;
 }) {
   const ctx = React.useContext(TugPopoverInternalContext);
   const manager = useResponderChain();
   const responderId = React.useId();
-
-  // Engine focus mode ([P02]/[#cfrunloop-model]): while the popover is open, push
-  // a trapped focus mode so Tab cycles the popover's own focusables and the
-  // opener's key view is captured at open and restored on close. `trapped` (the
-  // `useFocusTrap` default) is what keeps the engine from ascending the scope on
-  // Escape — the popover's existing light-dismiss (Radix DismissableLayer →
-  // `handleOpenChange` → `close`) owns Escape / click-outside, and this mode pops
-  // and restores the opener's key view as the shell releases it ([R04]). Additive
-  // to Radix's own `FocusScope`, which a non-modal popover uses only for DOM
-  // auto-focus (it never trapped Tab); the engine is now the authoritative scope.
-  // `FocusModeScope` wraps the content so any `useFocusable` inside joins this
-  // mode. Upholds [L03] (push in a layout effect, inside the hook) and [L06]
-  // (the mode projection is DOM, not React state).
-  const { FocusModeScope } = useFocusTrap({
-    active: ctx?.open ?? false,
-    restoreFocusComplete,
-  });
 
   // Local ref to the shell's root div. Used by observeDispatch to
   // check whether the currently focused element is inside the

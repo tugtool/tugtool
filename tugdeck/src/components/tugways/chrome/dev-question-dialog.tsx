@@ -1338,6 +1338,9 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // entry deactivates off the session's pending state (see `DevCardBody`), and
   // the card content around the dialog is scrimmed ([P19]). Declared above the
   // `!isPending` early return so hook order is stable across renders.
+  // Host-less inline dialog: no Radix focus primitive, so no teardown-autofocus
+  // slot to own the DOM-focus write. It does NOT defer — the engine moves DOM
+  // focus to the restored key view in `popFocusMode` on close, as before.
   const { FocusModeScope, scopeId } = useFocusTrap({ active: isPending });
 
   // Spatial arrow order ([P22] / [P23]). The dialog's controls stack in up to

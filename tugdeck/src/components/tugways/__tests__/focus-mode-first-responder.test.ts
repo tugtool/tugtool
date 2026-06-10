@@ -47,15 +47,27 @@ describe("FocusManager first-responder restore on mode pop", () => {
     expect(fm.keyView()).toBe("editor");
   });
 
-  test("restoreFocus:false leaves first responder to the caller (cycle pointer-exit)", () => {
+  test("{moveDomFocus:false, restoreFirstResponder:false} leaves both to the caller (cycle pointer-exit)", () => {
     const { fm, chain } = setup();
     fm.pushFocusMode("trap", { trapped: true });
     chain.makeFirstResponder("popover");
 
     // The pointer-exit pop hands the next focus to the click that triggered it —
     // the engine must NOT reinstate the captured responder.
-    fm.popFocusMode("trap", { restoreFocus: false });
+    fm.popFocusMode("trap", { moveDomFocus: false, restoreFirstResponder: false });
     expect(chain.getFirstResponder()).toBe("popover");
+  });
+
+  test("{moveDomFocus:false, restoreFirstResponder:true} restores the first responder and key-view state", () => {
+    const { fm, chain } = setup();
+    fm.pushFocusMode("trap", { trapped: true });
+    chain.makeFirstResponder("popover");
+
+    // A deferring surface (popover/sheet) restores the LOGICAL state — first
+    // responder + key view — while its own teardown writer owns the DOM move.
+    fm.popFocusMode("trap", { moveDomFocus: false, restoreFirstResponder: true });
+    expect(chain.getFirstResponder()).toBe("editor");
+    expect(fm.keyView()).toBe("editor");
   });
 
   test("a captured responder that unmounted before pop is not forced back", () => {

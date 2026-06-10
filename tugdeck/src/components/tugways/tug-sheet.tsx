@@ -601,9 +601,16 @@ export function TugSheetContent({
       ? "relinquish"
       : "retain";
 
+  // `deferDomFocusToTeardown`: the sheet owns its single close-focus DOM write in
+  // `handleUnmountAutoFocus` (on the Radix `FocusScope` below) — relinquish
+  // stand-down / engine-owns→`focusKeyView` / mouse→trigger. So the trap pops
+  // `moveDomFocus: false` (logical state only, key view + first responder); the
+  // engine must NOT also move DOM focus in `popFocusMode`, which would double-write
+  // against the unmount-autofocus writer.
   const { FocusModeScope } = useFocusTrap({
     active: open,
     closeDisposition: closeDispositionRef,
+    deferDomFocusToTeardown: true,
   });
 
   // Presence: keep the portal mounted during the exit animation.

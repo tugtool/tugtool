@@ -25,14 +25,16 @@ Three commits (`21f49971`, `cbeabd6b`, `ea9c5280`) built correct focus + first-r
 2. **`useServicePopupBinding`** (`onCloseAutoFocus`) — restores DOM focus + first responder via `focusResponder(captured)`, *unless* it decided the engine owns close-focus at open (`keyViewIsKeyboard()`), *plus* the one genuinely unique concern: an **external-pointerdown predicate** ("the user clicked outside any popup → don't restore, let the clicked surface keep focus").
 3. **The `restoreFocusComplete` override** in `tug-popover.tsx` — bypasses writer #2 entirely and calls `focusKeyView()` at Radix teardown.
 
-These three are all on the **popover** (`tug-popover` is the only surface that consumes `useServicePopupBinding` *and* `useFocusTrap` *and* carries the `restoreFocusComplete` override). They agree today only because the captured values coincide and the bypasses line up. The cost: a redundant first-responder write, a latent `pointerdown`-listener leak if a `restoreFocusComplete` popover ever opens from a Radix trigger (the override skips the binding's only listener-removal path), a double `focusKeyView` for `restoreFocusComplete` that relies on the second call overriding the first's body-yanked result, and a coarse global `document.querySelector('[data-slot="tug-popover"]')` probe that is pane-blind.
+These three are all on the **popover** (`tug-popover` is the only surface that consumes `useServicePopupBinding` *and* `useFocusTrap` *and* carries the `restoreFocusComplete` override). They agree today only because the captured values coincide and the bypasses line up. The cost: a redundant first-responder write, a latent `pointerdown`-listener leak if a `restoreFocusComplete` popover ever opens from a Radix trigger (the override skips the binding's only listener-removal path), and a double `focusKeyView` for `restoreFocusComplete` that relies on the second call overriding the first's body-yanked result.
 
 The other engine-trap surfaces are **already engine-aligned** and are *not* part of the three-writer overlap — but they are mis-shaped in ways the same split corrects:
 
 - **`tug-sheet`** uses the standalone `@radix-ui/react-focus-scope` (not a Radix `Content`), restoring DOM focus in its own `onUnmountAutoFocus` (`handleUnmountAutoFocus`) with a richer, surface-specific contract: relinquish stand-down, engine-owns→`focusKeyView`, and **mouse-opened→focus the trigger element**. It never used `useServicePopupBinding`. But because `useFocusTrap`'s cleanup *also* calls `focusKeyView` today, the sheet carries the same redundant double-`focusKeyView` the popover does.
 - The **inline dialogs** (`dev-question-dialog`, `dev-permission-dialog`, `use-inline-dialog-scope`) render no Radix focus primitive at all — they are host-less and restore DOM focus solely through `popFocusMode`'s `focusKeyView`. They have nowhere to host a teardown hook and must keep that path.
 
-The model the code is reaching for — "DOM focus, key view, and first responder are projections of one focus state, saved by `popFocusMode` and written to the DOM by exactly one teardown writer per surface" — is visible but unfinished. This phase finishes it: the popover gets a clean engine-owned restorer, `restoreFocusComplete` disappears, the sheet and dialogs stop double-writing, and the pane-blind probe is scoped.
+The model the code is reaching for — "DOM focus, key view, and first responder are projections of one focus state, saved by `popFocusMode` and written to the DOM by exactly one teardown writer per surface" — is visible but unfinished. This phase finishes it: the popover gets a clean engine-owned restorer, `restoreFocusComplete` disappears, and the sheet and dialogs stop double-writing.
+
+> **Note (dropped sub-item):** an earlier draft also pane-scoped `aDismissableSurfaceIsOpen()` (the coarse global `[data-slot="tug-popover"]` probe in `responder-chain-provider.tsx`). That was cut from this phase during implementation — popovers `Popover.Portal` into a single global `tug-canvas-overlay-root`, so the "query within the active pane subtree" approach is unworkable (a same-pane popover lives outside `.tug-pane`). The cross-pane false positive it targeted is near-unreachable (a peer-pane popover auto-dismisses on cross-pane interaction), and the correct fix needs a different mechanism. It is recorded as a traced follow-on (#roadmap).
 
 #### Strategy {#strategy}
 
@@ -41,14 +43,13 @@ The model the code is reaching for — "DOM focus, key view, and first responder
 - **Consolidate the popover; align the sheet; leave the dialogs.** The three-writer overlap is the popover's — fix it. The sheet keeps its richer surface-owned teardown writer (its contract differs from the popover's: mouse→trigger, not mouse→prior-key-view) but sets the deferral flag to kill its double-`focusKeyView`. The host-less dialogs keep `popFocusMode.focusKeyView` ([R02]).
 - **Refactor before behavior change.** First make `popFocusMode`'s options express the restore shapes as a no-op refactor; then move the popover onto the unified restorer; then retire `restoreFocusComplete`; then align sheet/dialogs — the focus app-test suite the falsifiable gate at every step.
 - **Scope to the engine-trap family; menus stay on the binding.** Menus push no engine focus mode and restore *only* through `useServicePopupBinding`. Bringing them into the engine trap is a separate, larger effort; this phase leaves them on the binding (which is *retained*, not deleted) and merely removes the popover as its consumer.
-- **Retire `restoreFocusComplete`** and **pane-scope `aDismissableSurfaceIsOpen()`**.
+- **Retire `restoreFocusComplete`.**
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - `tug-popover.tsx` no longer imports or calls `useServicePopupBinding`, and no longer references `restoreFocusComplete` (`grep` returns zero hits in that file). (verify: `grep`)
 - The identifier `restoreFocusComplete` does not appear anywhere under `src/components/tugways` (`grep` returns zero hits). (verify: `grep`)
 - **One DOM-focus writer per surface, at the surface's own teardown moment:** the popover's `useFocusTrap`-owned `onCloseAutoFocus`; the sheet's `handleUnmountAutoFocus`; the host-less dialogs' `popFocusMode.focusKeyView`. No surface calls `focusKeyView` from *both* `popFocusMode` cleanup and a teardown hook (the popover and sheet pop `moveDomFocus: false`). (verify: code read + the focus app-test suite)
-- `aDismissableSurfaceIsOpen()` resolves against the active pane, not the whole document. (verify: new multi-pane app-test at0153)
 - The full focus app-test suite stays green across every step: at0020, at0037, at0039, at0040, at0041, at0055, at0056, at0058, at0100, at0105, at0106, at0140, at0147, at0151, at0152. (verify: `just app-test`)
 - `useServicePopupBinding` remains in use by the menu surfaces only (popup-button, context-menu, popup-menu) and is unreferenced by popover/sheet/dialog. (verify: `grep`)
 
@@ -59,13 +60,13 @@ The model the code is reaching for — "DOM focus, key view, and first responder
 3. Migrate **`tug-popover`** (and thereby `tug-confirm-popover`) onto the unified restorer; drop its `useServicePopupBinding` usage and the `restoreFocusComplete` override.
 4. Retire the `restoreFocusComplete` flag end-to-end.
 5. Align **`tug-sheet`** with the split (set `deferDomFocusToTeardown`, keep its own `handleUnmountAutoFocus`); confirm the **inline dialogs** stay host-less on `popFocusMode.focusKeyView` ([R02]).
-6. Pane-scope `aDismissableSurfaceIsOpen()`.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
 - **Bringing menus into the engine trap.** `TugPopupButton`, `TugContextMenu`, and `tug-popup-menu` push no engine focus mode and restore close-focus solely through `useServicePopupBinding`. They keep it. A follow-up phase may unify them; this phase does not.
 - **Replacing the sheet's surface-owned teardown writer with the provided hook.** The sheet's close-focus contract (mouse→trigger restore, relinquish stand-down) genuinely differs from the popover's (mouse→prior key view). It stays surface-owned and engine-aligned ([P07]); only its double-`focusKeyView` is removed.
 - **Deleting `useServicePopupBinding`.** It survives as the menus-only restorer. Its external-pointerdown predicate logic is *copied* into the trap, not deleted from the binding.
+- **Pane-scoping `aDismissableSurfaceIsOpen()`.** Dropped from this phase (popovers portal globally; see the Context note and #roadmap).
 - **Changing what gets restored** (the user-visible behavior). This is a structural consolidation; the caret/ring/first-responder/trigger outcomes must be the same as today, proven by the unchanged app-test suite.
 - **`tug-alert`** — uses neither the trap nor the binding today; out of scope.
 
@@ -121,15 +122,15 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Popover close-focus regression | high | med | App-tests at0151/at0152/at0055/at0056/at0058/at0040/at0041 gate Step 4 | Any go red |
-| Sheet trigger-restore / relinquish regression from the deferral change | high | low | Sheet keeps its own writer; only the trap's `focusKeyView` is suppressed; at0100/at0106 gate Step 6 | at0100/at0106 differ pre/post |
-| A host-less dialog popped `state-only` loses DOM focus | high | low | Dialogs do NOT set `deferDomFocusToTeardown`; they keep `moveDomFocus: true` ([R02]) | Step 6 finds a dialog set to defer |
+| Popover close-focus regression | high | med | App-tests at0151/at0152/at0055/at0056/at0058/at0040/at0041 gate Step 3 | Any go red |
+| Sheet trigger-restore / relinquish regression from the deferral change | high | low | Sheet keeps its own writer; only the trap's `focusKeyView` is suppressed; at0100/at0106 gate Step 5 | at0100/at0106 differ pre/post |
+| A host-less dialog popped `state-only` loses DOM focus | high | low | Dialogs do NOT set `deferDomFocusToTeardown`; they keep `moveDomFocus: true` ([R02]) | Step 5 finds a dialog set to defer |
 | Menus inadvertently broken | high | low | Binding logic untouched; only the popover stops using it | by-eye menu check |
 
 **Risk R01: Popover close-focus regression** {#r01-regression}
 
 - **Risk:** Re-routing the popover's close-focus through the unified hook changes which element ends up focused on close.
-- **Mitigation:** The hook's non-external branch is `focusKeyView`, equal to the old `focusResponder(captured)` for the popover (see [#assumptions]); the full popover app-test set gates Step 4.
+- **Mitigation:** The hook's non-external branch is `focusKeyView`, equal to the old `focusResponder(captured)` for the popover (see [#assumptions]); the full popover app-test set gates the popover migration.
 - **Residual risk:** An exotic open/close ordering not under test could differ — by-eye smoke before phase close.
 
 **Risk R02: Host-less surface popped state-only** {#r02-no-radix-host}
@@ -137,12 +138,6 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 - **Risk:** Deferring the DOM write on a surface with no teardown writer drops the caret restore.
 - **Mitigation:** `deferDomFocusToTeardown` is **opt-in**. Only the popover and sheet set it; the host-less dialogs leave it unset and keep `moveDomFocus: true` (engine moves DOM focus in `popFocusMode`, exactly as today) — they merely gain the unified first-responder restore from the option split.
 - **Residual risk:** The dialogs keep the engine's `popFocusMode.focusKeyView` path — a second engine DOM-focus path, by design and isolated, documented in [T01].
-
-**Risk R03: Pane-scoping the dismissable probe changes cycle Escape behavior** {#r03-pane-scope}
-
-- **Risk:** Narrowing `aDismissableSurfaceIsOpen()` to the active pane flips the Escape decision in some single-pane case.
-- **Mitigation:** at0140 pins single-pane cycle+popover Escape; new at0153 pins the cross-pane fix. Both must pass.
-- **Residual risk:** None material — single-pane semantics are unchanged when the query is scoped to the only pane.
 
 ---
 
@@ -189,7 +184,7 @@ When `deferDomFocusToTeardown` is set, the trap's cleanup pops `{ moveDomFocus: 
 
 **Implications:**
 - Call sites: `ascend`/`escapeCurrentMode` → defaults; `use-cycle-mode` pointer-exit (`restoreFocus: false`) → `{ moveDomFocus: false, restoreFirstResponder: false }`; `useFocusTrap` cleanup → `{ moveDomFocus: false }` when `deferDomFocusToTeardown`, else `{ moveDomFocus: true }`.
-- A mechanical, behavior-preserving rename in isolation (Step 2), verifiable by the unchanged test suite before any surface migrates.
+- A mechanical, behavior-preserving rename in isolation (Step 1), verifiable by the unchanged test suite before any surface migrates.
 
 #### [P04] `restoreFocusComplete` is retired (DECIDED) {#p04-retire-flag}
 
@@ -212,17 +207,6 @@ When `deferDomFocusToTeardown` is set, the trap's cleanup pops `{ moveDomFocus: 
 
 **Implications:**
 - The binding's logic is untouched; only `tug-popover` stops importing it. The external-pointerdown predicate is *copied* into the trap's helper ([P02]); the binding keeps its own copy until menus migrate.
-
-#### [P06] `aDismissableSurfaceIsOpen()` is pane-scoped (DECIDED) {#p06-pane-scope}
-
-**Decision:** `aDismissableSurfaceIsOpen()` (in `responder-chain-provider.tsx`) queries for an open dismissable popover within the **active pane's** subtree, not the whole document.
-
-**Rationale:**
-- The current global `document.querySelector('[data-slot="tug-popover"]')` lets a popover open in a peer pane suppress a cycle's Escape-exit in the pane the user is actually in — a cross-pane false positive ([R03]).
-- The cycle's Escape-exit is a per-card/per-pane concern; the probe should be too.
-
-**Implications:**
-- The query is rooted at the active pane element (resolved via the key card / active pane), with the global query as the no-pane fallback (gallery / standalone). Single-pane behavior is unchanged. A new app-test pins the fix.
 
 #### [P07] The sheet keeps its surface-owned teardown writer (DECIDED) {#p07-sheet-bespoke}
 
@@ -300,8 +284,8 @@ after:
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Pure-logic (`bun:test`)** | Pin `popFocusMode` option semantics (move vs no-move, FR vs no-FR) against `FocusManager` + `ResponderChainManager`; the containment predicate as a pure function | Steps 2–3 |
-| **Real-app (`just app-test`)** | Prove user-visible restore outcomes unchanged through each migration; the pane-scope fix; the sheet's trigger-restore unchanged | Every step's checkpoint |
+| **Pure-logic (`bun:test`)** | Pin `popFocusMode` option semantics (move vs no-move, FR vs no-FR) against `FocusManager` + `ResponderChainManager`; the containment predicate as a pure function | Steps 1–2 |
+| **Real-app (`just app-test`)** | Prove user-visible restore outcomes unchanged through each migration; the sheet's trigger-restore unchanged | Every step's checkpoint |
 | **Drift prevention** | The existing focus suite is the regression oracle — green unchanged | All steps |
 
 #### What stays out of tests {#test-non-goals}
@@ -309,7 +293,7 @@ after:
 - **Mock-store / call-count tests** — banned; pure-logic tests exercise the real `FocusManager`/`ResponderChainManager` as data-in/data-out.
 - **Fake-DOM / RTL render tests** — banned; DOM-dependent behavior goes to `app-test`.
 - **Menu close-focus** — out of scope ([P05]); a by-eye smoke only.
-- **Re-asserting unchanged outcomes with new tests** — the existing app-tests already encode the behavior contract; keep them green rather than duplicating, except at0153 (the pane-scope fix). If the sheet suite (at0100/at0106) is found *not* to cover the mouse→trigger-restore path, add a targeted app-test in Step 6 rather than trusting coverage.
+- **Re-asserting unchanged outcomes with new tests** — the existing app-tests already encode the behavior contract; keep them green rather than duplicating. The one possible addition is a mouse-opened-sheet → trigger-restore app-test, *only if* at0100/at0106 are found not to cover it (Step 5).
 
 ---
 
@@ -321,40 +305,14 @@ after:
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Pane-scope the dismissable probe | pending | — |
-| #step-2 | Split `popFocusMode` options (no behavior change) | pending | — |
-| #step-3 | Add the unified `onCloseAutoFocus` + deferral flag to `useFocusTrap` | pending | — |
-| #step-4 | Migrate `tug-popover`/`tug-confirm-popover` onto it | pending | — |
-| #step-5 | Retire `restoreFocusComplete` | pending | — |
-| #step-6 | Align `tug-sheet` + confirm dialogs host-less | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Split `popFocusMode` options (no behavior change) | done | e90987b9 |
+| #step-2 | Add the unified `onCloseAutoFocus` + deferral flag to `useFocusTrap` | done | f20b0365 |
+| #step-3 | Migrate `tug-popover`/`tug-confirm-popover` onto it | done | 285bab63 |
+| #step-4 | Retire `restoreFocusComplete` | done | 9f4af624 |
+| #step-5 | Align `tug-sheet` + confirm dialogs host-less | done | 08f62f4b |
+| #step-6 | Integration checkpoint | done | verification only |
 
-#### Step 1: Pane-scope the dismissable probe {#step-1}
-
-**Commit:** `Pane-scope the dismissable-surface probe`
-
-**References:** [P06] (#p06-pane-scope), Risk R03 (#r03-pane-scope), Table T01 (#t01-consumer-map)
-
-**Artifacts:**
-- `aDismissableSurfaceIsOpen()` pane-scoped.
-- New multi-pane app-test.
-
-**Tasks:**
-- [ ] In `responder-chain-provider.tsx`, scope `aDismissableSurfaceIsOpen()` to the active pane subtree (resolve the active pane element via the key card / active pane), querying `[data-slot="tug-popover"]` within it.
-- [ ] Keep the global query as the fallback only when no active pane resolves (gallery / standalone), matching the provider's existing no-pane fallbacks.
-
-**Tests:**
-- [ ] New `tests/app-test/at0153-cycle-escape-pane-scoped.test.ts`: two panes, a cycle active in pane A, a popover open in pane B; Escape in pane A exits the cycle (the peer-pane popover does not suppress it).
-
-**Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` clean
-- [ ] `just app-test at0140-cycle-devcard at0153-cycle-escape-pane-scoped` → VERDICT: PASS
-
----
-
-#### Step 2: Split `popFocusMode` options (no behavior change) {#step-2}
-
-**Depends on:** #step-1
+#### Step 1: Split `popFocusMode` options (no behavior change) {#step-1}
 
 **Commit:** `Split popFocusMode restore into moveDomFocus + restoreFirstResponder`
 
@@ -367,7 +325,7 @@ after:
 
 **Tasks:**
 - [ ] Rework `FocusContext.popFocusMode` + the `FocusManager` delegate; `moveDomFocus` gates `focusKeyView`, `restoreFirstResponder` gates the FR restore.
-- [ ] Map call sites: `ascend`/`escapeCurrentMode` → defaults; `use-cycle-mode` pointer-exit (`restoreFocus: false`) → `{ moveDomFocus: false, restoreFirstResponder: false }`; `useFocusTrap` cleanup → defaults for now (the deferral lands in Step 3, keeping behavior identical here).
+- [ ] Map call sites: `ascend`/`escapeCurrentMode` → defaults; `use-cycle-mode` pointer-exit (`restoreFocus: false`) → `{ moveDomFocus: false, restoreFirstResponder: false }`; `useFocusTrap` cleanup → defaults for now (the deferral lands in Step 2, keeping behavior identical here).
 - [ ] Confirm `relinquishFocusMode`'s FR restore is unchanged.
 
 **Tests:**
@@ -379,9 +337,9 @@ after:
 
 ---
 
-#### Step 3: Add the unified `onCloseAutoFocus` + deferral flag to `useFocusTrap` {#step-3}
+#### Step 2: Add the unified `onCloseAutoFocus` + deferral flag to `useFocusTrap` {#step-2}
 
-**Depends on:** #step-2
+**Depends on:** #step-1
 
 **Commit:** `Add engine-owned close-focus hook and deferral flag to useFocusTrap`
 
@@ -408,9 +366,9 @@ after:
 
 ---
 
-#### Step 4: Migrate `tug-popover`/`tug-confirm-popover` onto the unified hook {#step-4}
+#### Step 3: Migrate `tug-popover`/`tug-confirm-popover` onto the unified hook {#step-3}
 
-**Depends on:** #step-3
+**Depends on:** #step-2
 
 **Commit:** `Route popover close-focus through the engine trap hook`
 
@@ -418,7 +376,7 @@ after:
 
 **Artifacts:**
 - `tug-popover.tsx`: wire `useFocusTrap`'s `onCloseAutoFocus` to `Popover.Content`; pass `deferDomFocusToTeardown` to `useFocusTrap`; remove the `useServicePopupBinding` import/usage and the `restoreFocusComplete ? focusKeyView : ctx?.onCloseAutoFocus` branch.
-- `tug-confirm-popover.tsx`: unchanged behavior (its `restoreFocusComplete` prop becomes a no-op here, removed in Step 5).
+- `tug-confirm-popover.tsx`: unchanged behavior (its `restoreFocusComplete` prop becomes a no-op here, removed in Step 4).
 
 **Tasks:**
 - [ ] Replace the popover `onCloseAutoFocus` wiring with the trap-provided hook (sole consumer of Radix's slot).
@@ -435,9 +393,9 @@ after:
 
 ---
 
-#### Step 5: Retire `restoreFocusComplete` {#step-5}
+#### Step 4: Retire `restoreFocusComplete` {#step-4}
 
-**Depends on:** #step-4
+**Depends on:** #step-3
 
 **Commit:** `Retire restoreFocusComplete disposition`
 
@@ -461,9 +419,9 @@ after:
 
 ---
 
-#### Step 6: Align `tug-sheet`; confirm dialogs host-less {#step-6}
+#### Step 5: Align `tug-sheet`; confirm dialogs host-less {#step-5}
 
-**Depends on:** #step-5
+**Depends on:** #step-4
 
 **Commit:** `Stop the sheet double-writing close-focus; leave dialogs on the engine`
 
@@ -487,9 +445,9 @@ after:
 
 ---
 
-#### Step 7: Integration checkpoint {#step-7}
+#### Step 6: Integration checkpoint {#step-6}
 
-**Depends on:** #step-4, #step-5, #step-6
+**Depends on:** #step-3, #step-4, #step-5
 
 **Commit:** `N/A (verification only)`
 
@@ -505,7 +463,7 @@ after:
 
 **Checkpoint:**
 - [ ] `./node_modules/.bin/tsc --noEmit` clean; `bun test src/components/tugways/__tests__/` → all pass
-- [ ] `just app-test at0020-overlay-focus-return at0037-deck-wide-restore-consistency at0039-title-bar-return-focus-restore at0040-multi-tab-close-confirm at0041-gallery-close-reopen at0055-popup-close-restores-editor-focus at0056-popup-outside-click-skips-restore at0058-popup-in-sheet-close-focus at0100-sheet-pane-modal-focus at0105-permission-cycle-keys at0106-sheet-focus-trap at0140-cycle-devcard at0147-question-nav-focus at0151-confirm-popover-editor-restore at0152-confirm-popover-firstresponder-restore at0153-cycle-escape-pane-scoped` → VERDICT: PASS
+- [ ] `just app-test at0020-overlay-focus-return at0037-deck-wide-restore-consistency at0039-title-bar-return-focus-restore at0040-multi-tab-close-confirm at0041-gallery-close-reopen at0055-popup-close-restores-editor-focus at0056-popup-outside-click-skips-restore at0058-popup-in-sheet-close-focus at0100-sheet-pane-modal-focus at0105-permission-cycle-keys at0106-sheet-focus-trap at0140-cycle-devcard at0147-question-nav-focus at0151-confirm-popover-editor-restore at0152-confirm-popover-firstresponder-restore` → VERDICT: PASS
 - [ ] `grep -rn "restoreFocusComplete" tugdeck/src/components/tugways` → no hits; `grep -rln "useServicePopupBinding" tugdeck/src/components/tugways` → only menu surfaces + the binding file
 
 ---
@@ -528,7 +486,7 @@ after:
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** The popover's three overlapping close-focus writers collapse to one logical restore (`popFocusMode`) + one teardown DOM writer (the `useFocusTrap` hook); `restoreFocusComplete` is gone; the sheet stops double-writing while keeping its own teardown contract; the inline dialogs stay on the engine's `popFocusMode.focusKeyView`; `useServicePopupBinding` is menus-only; the dismissable probe is pane-scoped.
+**Deliverable:** The popover's three overlapping close-focus writers collapse to one logical restore (`popFocusMode`) + one teardown DOM writer (the `useFocusTrap` hook); `restoreFocusComplete` is gone; the sheet stops double-writing while keeping its own teardown contract; the inline dialogs stay on the engine's `popFocusMode.focusKeyView`; `useServicePopupBinding` is menus-only.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
@@ -536,17 +494,18 @@ after:
 - [ ] `tug-popover.tsx` free of `useServicePopupBinding` (grep)
 - [ ] `useServicePopupBinding` referenced only by menu surfaces + its own file (grep)
 - [ ] Popover and sheet each have exactly one teardown DOM writer and pop `moveDomFocus: false`; dialogs keep `popFocusMode.focusKeyView` (code read)
-- [ ] `aDismissableSurfaceIsOpen()` pane-scoped (code read + at0153)
 - [ ] Full focus app-test sweep green; pure tests green; tsc clean
 
 **Acceptance tests:**
-- [ ] The Step 7 full sweep passes
-- [ ] at0153 (new) pins the pane-scope fix; at0152 still pins the first-responder restore; at0151 still pins the editor caret; at0100/at0106 still pin the sheet
+- [ ] The Step 6 full sweep passes
+- [ ] at0152 still pins the first-responder restore; at0151 still pins the editor caret; at0100/at0106 still pin the sheet
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Bring menus (`TugPopupButton`, `TugContextMenu`, `tug-popup-menu`) into the engine trap and retire `useServicePopupBinding` entirely, reusing the predicate helper extracted in [#step-3].
+- [ ] **Pane-scope `aDismissableSurfaceIsOpen()`** so a peer-pane popover can't suppress a cycle's Escape-exit. Dropped from this phase: popovers `Popover.Portal` into a single global `tug-canvas-overlay-root`, so the DOM-subtree approach is unworkable. The likely correct mechanism is a **key-card-open-trigger** scope — a Radix popover marks its trigger `data-state="open"`, and the cycle-relevant triggers (Z2 cells, Z4B chips) live inside the key card — so "does the key card contain an open popover trigger?" distinguishes a same-pane popover from a peer-pane one. Trace the portal, verify the triggers carry `data-state`, and add a multi-pane app-test before implementing.
+- [ ] Bring menus (`TugPopupButton`, `TugContextMenu`, `tug-popup-menu`) into the engine trap and retire `useServicePopupBinding` entirely, reusing the predicate helper extracted in [#step-2].
 - [ ] Extract the shared engine-owns→`focusKeyView` core from the popover hook, the sheet's `handleUnmountAutoFocus`, and the menu binding into one helper, once menus migrate.
+- [ ] Add a dedicated app-test for the mouse-opened-sheet → trigger-restore-on-close path (the sheet's `handleUnmountAutoFocus` mouse branch). The existing sheet suite covers the keyboard/Escape close (at0106) but not the mouse→trigger restore; the consolidation left that path unchanged by construction, so it's a coverage gap, not a regression.
 - [ ] Consider whether `tug-alert` (neither trap nor binding today) should adopt the same model.
 
 | Checkpoint | Verification |
@@ -554,4 +513,3 @@ after:
 | Popover is engine-only for close-focus | grep (no `restoreFocusComplete`, no binding in popover) + popover app-tests |
 | Sheet no longer double-writes; contract unchanged | code read + at0100/at0106 (+ trigger-restore test if added) |
 | No behavior regression | the unchanged at00xx focus suite stays green at every step |
-| Pane-scope fix | at0153 multi-pane test |
