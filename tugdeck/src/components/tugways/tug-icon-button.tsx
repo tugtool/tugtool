@@ -1,11 +1,19 @@
 /**
- * TugIconButton — focus-refusing icon button for in-list trailing actions.
+ * TugIconButton — icon button for in-list trailing actions.
  *
  * Encapsulates the compose pattern that any trailing-action icon button on a
- * `TugListView` cell (or any in-cell control) needs:
+ * `TugListView` cell (or any in-cell control) needs. Its focus behavior has
+ * two independent axes (TugButton's split):
  *
- *  - `data-tug-focus="refuse"` so clicking the button does NOT promote the
- *    chain or move browser focus off the active editor.
+ *  - **Click refusal** — always on: `data-tug-focus="refuse"`, so clicking
+ *    the button does NOT promote the chain or move browser focus off the
+ *    active editor.
+ *  - **Keyboard authoring** — opt-in: `focusGroup` / `focusOrder` /
+ *    `focusPolicy` register the button as an engine focusable
+ *    (`data-tug-focusable`). Inside a `TugListView` cell the registration
+ *    lands in the row's own focus scope (the per-row `FocusModeContext`),
+ *    so the button is reachable by descend (ArrowRight / Enter onto the
+ *    row) but never appears in the surface's Tab cycle.
  *  - Targeted dispatch via `useControlDispatch()` — payload-carrying
  *    `ActionEvent` reaches the parent responder, not the first responder.
  *  - Standard hover / focus / active styling via the underlying
@@ -85,6 +93,7 @@ import "./tug-icon-button.css";
 import React from "react";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
+import type { FocusPolicy } from "./focus-manager";
 import type { ActionEvent } from "./responder-chain";
 import { useControlDispatch } from "./use-control-dispatch";
 
@@ -139,6 +148,18 @@ export interface TugIconButtonProps {
    * for deterministic chain logging.
    */
   senderId?: string;
+  /**
+   * Focus group this button is authored into (forwarded to TugButton).
+   * When set, the button registers as an engine focusable and becomes
+   * keyboard-reachable — inside a list cell, via the row's descend
+   * scope. Click refusal is unaffected. Omitted (the default) leaves
+   * the button keyboard-invisible, as before.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Forwarded to TugButton. */
+  focusOrder?: number;
+  /** Walk policy when registered. Forwarded to TugButton. */
+  focusPolicy?: FocusPolicy;
   /** Additional CSS class names. */
   className?: string;
 }
@@ -148,10 +169,11 @@ export interface TugIconButtonProps {
  * ---------------------------------------------------------------------------*/
 
 /**
- * Focus-refusing icon button for in-list trailing actions.
+ * Icon button for in-list trailing actions — click-focus-refusing,
+ * optionally keyboard-authored via `focusGroup`.
  *
  * See module docstring for the dispatch-mode contract, sender-id
- * convention, and visual model.
+ * convention, focus axes, and visual model.
  */
 export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonProps>(
   function TugIconButton(
@@ -165,6 +187,9 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
       size = "sm",
       tone = "default",
       senderId: senderIdProp,
+      focusGroup,
+      focusOrder,
+      focusPolicy,
       className,
     },
     ref,
@@ -226,6 +251,9 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
         title={title}
         disabled={disabled}
         onClick={handleClick}
+        focusGroup={focusGroup}
+        focusOrder={focusOrder}
+        focusPolicy={focusPolicy}
         data-slot="tug-icon-button"
         className={cn("tug-icon-button", className)}
       />

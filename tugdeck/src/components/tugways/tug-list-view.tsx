@@ -2298,6 +2298,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       [focusableId],
     );
 
+    // The active descend record: which row (by stable data-source id) the
+    // key view is descended into, and the scope it pushed. Written by
+    // `descendCursorRow`, consumed and cleared by the deletion-landing
+    // reconciliation below.
+    const descendedRowRef = React.useRef<{
+      id: string;
+      scopeId: string;
+      index: number;
+    } | null>(null);
+
     // Space / Enter-act: commit selection on the cursor row (`data-selected`)
     // and fire `delegate.onSelect`. Enter-descend: push the row's non-trapped
     // scope and land the key view on its first inner focusable.
@@ -2316,10 +2326,91 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         selectCursorRow();
         return;
       }
+      // Record the descend by the row's STABLE data-source id (not its
+      // index), so the reconciliation below can tell "this row was
+      // deleted" apart from "this row scrolled out of the render
+      // window" — only deletion may ascend the scope out from under
+      // the user.
+      descendedRowRef.current = {
+        id: dataSourceRef.current.idForIndex(i),
+        scopeId: rowScopeId(i),
+        index: i,
+      };
       manager.pushFocusMode(rowScopeId(i), { trapped: false });
       manager.setKeyView(innerId, true);
       manager.focusKeyView();
     }, [manager, rowFirstFocusableId, rowScopeId, selectCursorRow]);
+
+    // ---- Descended-row deletion landing ----
+    //
+    // While the key view is descended into a row scope, the row's own
+    // action can delete the row (the picker's trash → confirm flow).
+    // That unmounts the descended focusable and would strand the
+    // keyboard on a dead scope. The reconciliation here ascends the
+    // scope and lands the cursor on the nearest surviving cursorable
+    // row (committing it in single-select, where selection follows the
+    // cursor).
+    //
+    // It runs on BOTH triggers — every commit (data-source ticks
+    // re-render the list) and engine mode-stack changes — and acts only
+    // when the recorded row scope is the TOP mode. With a surface (the
+    // confirm popover) still above the row scope it defers; the
+    // mode-stack subscription re-runs it after that surface pops, so
+    // the landing is the final focus writer in every pop ordering.
+    const reconcileDescendedRow = React.useCallback((): void => {
+      const rec = descendedRowRef.current;
+      if (rec === null || manager === null) return;
+      if (manager.currentFocusMode() !== rec.scopeId) {
+        // Not ours on top. Fully popped (a normal Escape/Left ascend)
+        // → the descend is over, drop the record. Still pushed but
+        // buried (popover above) → keep it and wait for the next
+        // mode-stack change.
+        if (!manager.isFocusModePushed(rec.scopeId)) {
+          descendedRowRef.current = null;
+        }
+        return;
+      }
+      const ds = dataSourceRef.current;
+      const total = ds.numberOfItems();
+      let alive = false;
+      for (let i = 0; i < total; i += 1) {
+        if (ds.idForIndex(i) === rec.id) {
+          alive = true;
+          break;
+        }
+      }
+      if (alive) return;
+      // The descended row was deleted: ascend back to the container
+      // (restores key view + ring) and land the cursor on the nearest
+      // surviving cursorable row. An emptied list keeps the container
+      // key view with no cursor.
+      descendedRowRef.current = null;
+      manager.ascend();
+      const landing = total > 0 ? cursorableNear(rec.index, -1) : -1;
+      if (landing >= 0) {
+        moveCursorTo(landing, true);
+        if (singleSelectRef.current) selectCursorRow();
+      } else {
+        cursorIndexRef.current = -1;
+        clearCursorVisual();
+      }
+    }, [
+      manager,
+      cursorableNear,
+      moveCursorTo,
+      selectCursorRow,
+      clearCursorVisual,
+    ]);
+    React.useLayoutEffect(() => {
+      if (manager === null || !focusEngineActive) return;
+      return manager.subscribe(reconcileDescendedRow);
+    }, [manager, focusEngineActive, reconcileDescendedRow]);
+    React.useLayoutEffect(() => {
+      // Per-commit pass: a data-source tick that removed the descended
+      // row re-renders the list, and this catches it. Near-zero cost
+      // when nothing is descended.
+      reconcileDescendedRow();
+    });
 
     // The thin declaration the engine's act dispatch reads at Space/Enter/Escape
     // ([P01]) — `currentItemDescendable` is evaluated live against the cursor row.
@@ -2330,8 +2421,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // A single-select list keeps select-on-arrow (the cursor IS the selection —
         // a 7.5 picker idiom, intentionally excluded from the [P24] reversion):
         // `commit: "live"` moves the selection with the cursor, and a single-select
-        // list never descends, so Enter resolves to passthrough and reaches the
-        // surface default. A multi/descendable list moves a cursor only; Enter
+        // list never descends on ENTER (Right is its descend gesture, handled in
+        // the movement-key listener), so Enter resolves to passthrough and reaches
+        // the surface default. A multi/descendable list moves a cursor only; Enter
         // descends a navigable row, else bubbles to the scope default ([P24]).
         currentItemDescendable:
           !singleSelect && rowFirstFocusableId(cursorIndexRef.current) !== null,
@@ -2439,6 +2531,27 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const handler = (e: KeyboardEvent): void => {
         if (e.defaultPrevented || e.metaKey || e.ctrlKey) return;
         if (isEditableEventTarget(e.target)) return;
+        // Tree-style ascend: while descended into one of THIS list's row
+        // scopes (the container is no longer the key view; the key view is an
+        // in-row focusable), a bare ArrowLeft pops the scope back to the
+        // container — the symmetric exit to Right's descend. The spatial
+        // navigator provably yields this arrow in a row scope (no declared
+        // order, no cursor handle), so this handler is its owner. Gated on
+        // the TOP mode being one of our row scopes: with a popover or other
+        // surface above it, Left belongs to that surface, not the list.
+        if (
+          e.key === "ArrowLeft" &&
+          !e.altKey &&
+          !e.shiftKey &&
+          manager !== null &&
+          !scrollEl.hasAttribute("data-key-view-kbd") &&
+          manager.currentFocusMode().startsWith(`${focusableId}-row-`)
+        ) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          manager.ascend();
+          return;
+        }
         // Move the cursor only while the container itself holds the keyboard key
         // view. After Enter descends onto an inner focusable the container is no
         // longer the key view — arrows then belong to the descended component,
@@ -2448,14 +2561,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         if (total === 0) return;
         const cur = cursorIndexRef.current;
         // Tree-style descend ([P02] disclosure model): Right enters a row whose
-        // content has navigable focusables, mirroring Enter. Not in single-select
-        // (those rows are picks, never descended). Ascend is Escape. Other rows
+        // content has navigable focusables, mirroring Enter — in BOTH selection
+        // models. A single-select row stays a pick on Enter (never descends —
+        // Return falls through to the surface default); Right is its one way
+        // in to a focusable accessory. Ascend is Escape or Left. Other rows
         // ignore Right (no horizontal movement in a vertical list).
-        if (
-          e.key === "ArrowRight" &&
-          !singleSelectRef.current &&
-          rowFirstFocusableId(cur) !== null
-        ) {
+        if (e.key === "ArrowRight" && rowFirstFocusableId(cur) !== null) {
           e.preventDefault();
           e.stopImmediatePropagation();
           descendCursorRow();
@@ -2515,6 +2626,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       selectCursorRow,
       rowFirstFocusableId,
       descendCursorRow,
+      manager,
+      focusableId,
     ]);
 
     // PageUp / PageDown by entry ([L02] DOM event listener installed

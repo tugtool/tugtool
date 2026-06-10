@@ -108,6 +108,17 @@ body {
   --tugx-list-row-selected-text:          var(--tug7-element-selection-text-normal-selected-rest);
   --tugx-list-row-selected-accent-border: var(--tug7-element-tone-border-normal-accent-rest);
   --tugx-list-row-accent-border-width:    1.5px;
+  /* Demoted selection — the row stays marked but yields the emphasis while
+     the keyboard key view is INSIDE it (a descended trailing accessory wears
+     the filled role style; two saturated fills side by side fight). The
+     fill is role-resolved to the live accessory through the theme's
+     `selection … demoted` family — a danger trash murmurs red under its
+     filled-danger button — so the row whispers what the descended control
+     will do. The role arms below repoint this one alias off the accessory's
+     `data-tug-role`; an un-roled accessory falls back to the
+     `plain-inactive` selection wash (the Mac "selection grays back when
+     focus moves within" idiom). [L17] one-hop aliases. */
+  --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-normal-plain-inactive);
 }
 
 /* ---- Base ---- */
@@ -322,6 +333,40 @@ body {
   border-color: var(--tugx-list-row-selected-accent-border);
 }
 
+/* ---- Demoted selection (key view inside the row) ----
+   While a trailing accessory holds the keyboard key view (an ArrowRight
+   descend), the selected row's fill demotes — the row stays visibly marked,
+   but the descended accessory's filled role style carries the emphasis
+   alone. Both variants; hover keeps the demoted fill too (the keyboard is
+   mid-gesture; the pointer must not re-saturate the fight this rule exists
+   to avoid). Appearance-only ([L06]). */
+/* @tug-renders-on: --tugx-list-row-selected-demoted-bg */
+.tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-key-view-kbd]),
+.tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-key-view-kbd]):hover:not([data-disabled="true"]) {
+  background-color: var(--tugx-list-row-selected-demoted-bg);
+}
+
+/* Role-resolved arms: each repoints the demoted alias at the theme's
+   role-hued demoted-selection wash, keyed off the descended accessory's
+   `data-tug-role` (stamped by TugButton) — emphasis-independent, so any
+   button emphasis in any role resolves the same way the focus-ring axis
+   does. */
+.tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="action"][data-key-view-kbd]) {
+  --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-action-rest);
+}
+.tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="danger"][data-key-view-kbd]) {
+  --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-danger-rest);
+}
+.tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="accent"][data-key-view-kbd]) {
+  --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-accent-rest);
+}
+.tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="data"][data-key-view-kbd]) {
+  --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-data-rest);
+}
+.tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="agent"][data-key-view-kbd]) {
+  --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-agent-rest);
+}
+
 /* ---- Disabled ----
    Shared across variants — dimmed, not-allowed cursor. The enclosing
    container is responsible for refusing activation; this is the
@@ -332,15 +377,21 @@ body {
 }
 
 /* ---- Trailing reveal ----
-   `data-reveal="hover"` keeps the trailing accessory hidden until the
-   row is hovered or holds focus — the closed-state row reads clean,
-   the accessory surfaces on approach. */
-.tug-list-row-trailing[data-reveal="hover"] {
+   `data-reveal="engaged"` keeps the trailing accessory hidden until
+   the row is engaged — the closed-state row reads clean, the accessory
+   surfaces on approach. Engagement is the pointer's hover, focus held
+   within the row, the row's selection (`data-selected` on the row), or
+   the keyboard movement cursor (`data-key-cursor` on the enclosing
+   list-view cell wrapper) — so the keyboard sees the affordance an
+   ArrowRight descend will reach. */
+.tug-list-row-trailing[data-reveal="engaged"] {
   opacity: 0;
   transition: opacity 100ms ease;
 }
 
-.tug-list-row:hover .tug-list-row-trailing[data-reveal="hover"],
-.tug-list-row:focus-within .tug-list-row-trailing[data-reveal="hover"] {
+.tug-list-row:hover .tug-list-row-trailing[data-reveal="engaged"],
+.tug-list-row:focus-within .tug-list-row-trailing[data-reveal="engaged"],
+.tug-list-row[data-selected="true"] .tug-list-row-trailing[data-reveal="engaged"],
+.tug-list-view-cell[data-key-cursor] .tug-list-row .tug-list-row-trailing[data-reveal="engaged"] {
   opacity: 1;
 }

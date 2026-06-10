@@ -832,14 +832,15 @@
 }
 
 /* Trailing affordance — the trash icon button lives in the row's
-   TugListRow trailing slot, which hides it until row hover /
-   focus-within (`trailingReveal="hover"`). The only extra behavior
+   TugListRow trailing slot, which hides it until the row is engaged
+   (`trailingReveal="engaged"`: hover, focus-within, selected, or
+   keyboard cursor). The only extra behavior
    this scope adds: keep the trash visible while THIS row's confirm
    popover is open — the pointer is then on the portaled popover, off
    the row, so the primitive's hover reveal wouldn't fire. */
 .dev-card-picker-sessions-list
   .tug-list-row[data-pending-trash="true"]
-  .tug-list-row-trailing[data-reveal="hover"] {
+  .tug-list-row-trailing[data-reveal="engaged"] {
   opacity: 1;
 }
 

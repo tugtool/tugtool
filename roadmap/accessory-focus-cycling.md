@@ -316,12 +316,12 @@ With the key view on a picker list container (cursor on row *i*, a non-live sess
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Engaged reveal: rename + selected/cursor triggers | pending | — |
-| #step-2 | TugIconButton focus authoring | pending | — |
-| #step-3 | TugListView: Right-descend in single-select, Left-ascend | pending | — |
-| #step-4 | Author the picker trash buttons | pending | — |
-| #step-5 | Post-delete focus landing | pending | — |
-| #step-6 | at0163 journey test + integration checkpoint | pending | — |
+| #step-1 | Engaged reveal: rename + selected/cursor triggers | done | a7886789 |
+| #step-2 | TugIconButton focus authoring | done | 65051caa |
+| #step-3 | TugListView: Right-descend in single-select, Left-ascend | done | 051356bd |
+| #step-4 | Author the picker trash buttons | done | bab48a71 |
+| #step-5 | Post-delete focus landing | done | bad21bfc |
+| #step-6 | at0163 journey test + integration checkpoint | done | 15c01ba6 |
 
 #### Step 1: Engaged reveal — rename `"hover"` → `"engaged"`, reveal on selected + cursor {#step-1}
 

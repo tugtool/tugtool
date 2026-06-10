@@ -1034,6 +1034,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       ref={setRefs}
       data-slot="tug-button"
       data-tug-focus={stealsFocusOnClick ? undefined : "refuse"}
+      data-tug-role={role}
       disabled={effectiveDisabled}
       role={htmlRole}
       aria-label={ariaLabel}

@@ -390,23 +390,23 @@ describe("initActionDispatch: set-theme", () => {
 
 // ---- show-card handler (T23, T24) ----
 
-describe("initActionDispatch: show-card – T23: calls deckManager.showSingletonCard", () => {
+describe("initActionDispatch: show-card – T23: routes singletons vs new cards", () => {
   beforeEach(() => {
     _resetForTest();
   });
 
-  it("calls deckManager.showSingletonCard with the component value", () => {
+  it("adds a fresh card for a non-singleton component", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
     dispatchAction({ action: "show-card", component: "hello" });
 
-    expect(deck._showSingletonCardCalls.length).toBe(1);
-    expect(deck._showSingletonCardCalls[0]).toBe("hello");
+    expect(deck._showSingletonCardCalls.length).toBe(0);
+    expect(deck._addCardCalls).toEqual(["hello"]);
   });
 
-  it("calls showSingletonCard with any string component value (not just registered ids)", () => {
+  it("calls showSingletonCard for the singleton components", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -415,6 +415,7 @@ describe("initActionDispatch: show-card – T23: calls deckManager.showSingleton
     dispatchAction({ action: "show-card", component: "about" });
 
     expect(deck._showSingletonCardCalls).toEqual(["settings", "about"]);
+    expect(deck._addCardCalls.length).toBe(0);
   });
 });
 

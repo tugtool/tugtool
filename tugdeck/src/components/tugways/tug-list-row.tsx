@@ -42,9 +42,10 @@
  *
  * Accessories:
  *  - `leading` / `trailing` are arbitrary nodes (UIKit's leading
- *    `imageView` / trailing `accessoryView`). `trailingReveal="hover"`
- *    keeps the trailing accessory hidden until row hover /
- *    focus-within.
+ *    `imageView` / trailing `accessoryView`). `trailingReveal="engaged"`
+ *    keeps the trailing accessory hidden until the row is engaged:
+ *    hovered, holding focus within, selected, or under the keyboard
+ *    movement cursor.
  *  - `selectedGlyph="check"` reserves a fixed-width leading checkmark
  *    column (UIKit's `.checkmark` accessory) — shown when `selected`,
  *    empty otherwise so titles align. It sits leading-most and coexists
@@ -82,7 +83,7 @@ import { TugLabel, type TugLabelSize } from "./tug-label";
 export type TugListRowVariant = "flush" | "pill";
 
 /** Reveal policy for the trailing accessory. */
-export type TugListRowTrailingReveal = "always" | "hover";
+export type TugListRowTrailingReveal = "always" | "engaged";
 
 /** Leading single-select checkmark column mode. */
 export type TugListRowSelectedGlyph = "check" | "none";
@@ -104,9 +105,10 @@ export interface TugListRowProps
   trailing?: React.ReactNode;
 
   /**
-   * Reveal policy for `trailing`. `"hover"` keeps the accessory
-   * hidden until the row is hovered or holds focus.
-   * @selector .tug-list-row-trailing[data-reveal="hover"]
+   * Reveal policy for `trailing`. `"engaged"` keeps the accessory
+   * hidden until the row is engaged — hovered, holding focus within,
+   * selected, or under the keyboard movement cursor.
+   * @selector .tug-list-row-trailing[data-reveal="engaged"]
    * @default "always"
    */
   trailingReveal?: TugListRowTrailingReveal;

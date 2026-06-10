@@ -177,7 +177,7 @@ const RuleCell: TugListViewCellRenderer<FilteredTugListViewDataSource> =
     return (
       <TugListRow
         variant="flush"
-        trailingReveal="hover"
+        trailingReveal="engaged"
         trailing={
           <TugPushButton
             emphasis="ghost"

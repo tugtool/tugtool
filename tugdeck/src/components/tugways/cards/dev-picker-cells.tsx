@@ -41,11 +41,14 @@
  *    `delegate.onSelect` (the form's delegate dispatches navigation
  *    for path-recent, selection update for session-* per [D03],
  *    [D04]).
- *  - The trash control is a focus-refusing `TugIconButton` per
- *    [D16]. Its click dispatches `request-trash-session` with
- *    `{ sessionId }` payload via `useControlDispatch()` to the form
- *    responder. The form sets pending-id state which drives a single
- *    anchored `TugConfirmPopover`. The cell knows nothing about the
+ *  - The trash control is a click-focus-refusing `TugIconButton` per
+ *    [D16], authored into its row's focus scope
+ *    (`PICKER_ROW_TRASH_FOCUS_GROUP`) so ArrowRight on the row
+ *    descends onto it. Its activation dispatches
+ *    `request-trash-session` with `{ sessionId }` payload via
+ *    `useControlDispatch()` to the form responder. The form sets
+ *    pending-id state which drives a single anchored
+ *    `TugConfirmPopover`. The cell knows nothing about the
  *    confirmation UI.
  *
  * Laws:
@@ -93,6 +96,20 @@ import {
   truncateForDisplay,
 } from "./dev-picker-format";
 import { sessionRowTitle } from "@/lib/session-name";
+
+// ---------------------------------------------------------------------------
+// Row-accessory focus authoring
+// ---------------------------------------------------------------------------
+
+/**
+ * Focus group for the per-row trash buttons. The cells render inside
+ * `TugListView`'s per-row `FocusModeContext`, so each button registers
+ * into its own row's descend scope — the mode, not this group, scopes
+ * the walk; the shared constant is just the within-row ordering. The
+ * buttons are reachable only by descending (ArrowRight) onto the row,
+ * never via the picker's Tab cycle.
+ */
+const PICKER_ROW_TRASH_FOCUS_GROUP = "picker-row-trash";
 
 // ---------------------------------------------------------------------------
 // Selection type + context
@@ -218,7 +235,7 @@ export const PathRecentCell: TugListViewCellRenderer<DevRecentsDataSource> = ({
     <TugListRow
       mono
       selected={isSelected}
-      trailingReveal="hover"
+      trailingReveal="engaged"
       data-recent-path={row.path}
       data-pending-trash={isPendingTrash ? "true" : undefined}
       trailing={
@@ -228,6 +245,8 @@ export const PathRecentCell: TugListViewCellRenderer<DevRecentsDataSource> = ({
           title={`Remove ${pathShort} from recent paths`}
           tone="danger"
           className="dev-card-picker-recent-trash"
+          focusGroup={PICKER_ROW_TRASH_FOCUS_GROUP}
+          focusOrder={0}
           dispatch={{
             action: TUG_ACTIONS.REQUEST_TRASH_RECENT,
             value: { path: row.path },
@@ -314,8 +333,8 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
 
   // Trailing accessory: a live/failed status badge, a trash action, or
   // both (a failed row can still be trashed). The trash reveals on row
-  // hover/focus-within for the plain case; when a badge is present the
-  // trailing stays visible.
+  // engagement (hover, focus-within, selected, keyboard cursor) for the
+  // plain case; when a badge is present the trailing stays visible.
   const badge = isLive ? (
     <TugBadge emphasis="tinted" role="action">
       live
@@ -332,6 +351,8 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
       title={`Move session ${idShort} to Trash`}
       tone="danger"
       className="dev-card-picker-session-trash"
+      focusGroup={PICKER_ROW_TRASH_FOCUS_GROUP}
+      focusOrder={0}
       dispatch={{
         action: TUG_ACTIONS.REQUEST_TRASH_SESSION,
         value: { sessionId: row.session_id },
@@ -358,7 +379,7 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
       selected={isSelected}
       disabled={isLive}
       trailing={trailing}
-      trailingReveal={badge !== null ? "always" : "hover"}
+      trailingReveal={badge !== null ? "always" : "engaged"}
       data-testid="dev-card-picker-session-resume"
       data-state={row.state}
       data-session-id={row.session_id}

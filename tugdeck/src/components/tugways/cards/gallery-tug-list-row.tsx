@@ -8,8 +8,9 @@
  *   2. Title + subtitle — the two-line content column.
  *   3. Leading + trailing accessories — an icon on the leading edge,
  *      a badge / chevron on the trailing edge.
- *   4. Trailing reveal — `trailingReveal="hover"`: the accessory stays
- *      hidden until the row is hovered or holds focus.
+ *   4. Trailing reveal — `trailingReveal="engaged"`: the accessory stays
+ *      hidden until the row is engaged (hovered, focused-within,
+ *      selected, or under the keyboard cursor).
  *   5. States — rest / selected / disabled.
  *   6. Selection is consumer-owned — `TugListRow` is presentational
  *      and takes no `onClick`; the demo's own wrapper owns the click
@@ -339,13 +340,13 @@ export function GalleryTugListRow(): React.ReactElement {
       {/* ---- 4. Trailing reveal ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Trailing reveal — hover
+          Trailing reveal — engaged
         </TugLabel>
         <div style={captionStyle}>
-          <code>trailingReveal="hover"</code> keeps the trailing
-          accessory hidden until the row is hovered or holds focus —
-          the closed row reads clean. Hover a row to surface its
-          delete button.
+          <code>trailingReveal="engaged"</code> keeps the trailing
+          accessory hidden until the row is engaged — hovered, holding
+          focus, selected, or under the keyboard cursor — so the closed
+          row reads clean. Hover a row to surface its delete button.
         </div>
         <div style={pillStackStyle}>
           {RECENTS.map((path) => (
@@ -353,7 +354,7 @@ export function GalleryTugListRow(): React.ReactElement {
               key={path}
               variant="pill"
               title={path}
-              trailingReveal="hover"
+              trailingReveal="engaged"
               trailing={
                 <TugIconButton
                   icon={<Trash2 size={14} aria-hidden="true" />}

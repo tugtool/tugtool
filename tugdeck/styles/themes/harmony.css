@@ -216,6 +216,18 @@ body {
      row. */
   --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(blue, i: 42, t: 42);
   --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(blue, i: 44, t: 38);
+  /* Demoted selection — a selected list row whose descended trailing
+     accessory holds the keyboard key view yields its fill to the live
+     control: the row drops to a calmer wash TINGED BY THE ACCESSORY'S ROLE
+     (a danger trash murmurs red under its filled-danger button). Same recipe
+     as `quiet` but toned back and role-hued; the lightness stays dark enough
+     on this light theme for the white selected text. One token per
+     focus-ring-axis role; sole consumer is the list row's demotion rules. */
+  --tug7-surface-selection-primary-demoted-action-rest: --tug-color(blue, i: 28, t: 40);
+  --tug7-surface-selection-primary-demoted-danger-rest: --tug-color(red, i: 28, t: 40);
+  --tug7-surface-selection-primary-demoted-accent-rest: --tug-color(orange, i: 28, t: 40);
+  --tug7-surface-selection-primary-demoted-data-rest: --tug-color(teal, i: 28, t: 40);
+  --tug7-surface-selection-primary-demoted-agent-rest: --tug-color(violet, i: 28, t: 40);
   --tug7-element-selection-text-normal-selected-rest: --tug-color(indigo, i: 3, t: 100);
 
   /* tug-text-editor selection overlay — saturated blue painted as a layer behind
