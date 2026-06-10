@@ -116,6 +116,7 @@ export function useDiffSheet({
       }
       void showSheet({
         title: "Diff",
+        icon: "GitCompareArrows",
         displayWidth: "xl",
         content: (close) => (
           <DiffSheetBody gitDiffStore={gitDiffStore} onClose={close} />

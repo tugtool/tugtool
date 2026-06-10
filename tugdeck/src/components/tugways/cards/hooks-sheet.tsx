@@ -69,6 +69,7 @@ export function useHooksSheet({
     hooksInventoryStore.requestHooks();
     void showSheet({
       title: "Hooks",
+      icon: "Webhook",
       displayWidth: "lg",
       content: (close) => (
         <HooksSheetBody hooksInventoryStore={hooksInventoryStore} onClose={close} />

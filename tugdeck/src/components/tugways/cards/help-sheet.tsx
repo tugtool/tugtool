@@ -128,6 +128,7 @@ export function useHelpSheet({
     const docPath = resolveDocPath(projectDir);
     void showSheet({
       title: "Help",
+      icon: "CircleQuestionMark",
       displayWidth: "lg",
       content: (close) => (
         <HelpSheetBody

@@ -115,6 +115,7 @@ export function useRewindSheet({
     }
     void showSheet({
       title: "Rewind",
+      icon: "History",
       // Guidance renders as a centered proposal label below the divider (in
       // the body), not as a below-the-line description.
       displayWidth: "md",

@@ -216,6 +216,8 @@ export function usePermissionSheet({
       sessionMetadataStore.getSnapshot().permissionMode ?? persistedMode ?? "default";
     void showSheet({
       title: "Permission Mode",
+      icon: "ShieldCheck",
+      iconRole: "agent",
       description: "Choose how Claude handles file edits and commands.",
       onCommitDisposition: commitDisposition,
       content: (close) => (

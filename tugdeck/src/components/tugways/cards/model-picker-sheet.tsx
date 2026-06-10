@@ -105,6 +105,8 @@ export function useModelPicker({
     );
     void showSheet({
       title: "Model",
+      icon: "Sparkles",
+      iconRole: "agent",
       description: "Choose the model for this session.",
       onCommitDisposition: commitDisposition,
       content: (close) => (

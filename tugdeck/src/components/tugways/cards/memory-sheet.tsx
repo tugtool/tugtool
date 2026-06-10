@@ -76,6 +76,7 @@ export function useMemorySheet({
   const openMemorySheet = useCallback(() => {
     void showSheet({
       title: "Memory",
+      icon: "Brain",
       displayWidth: "md",
       content: (close) => (
         <MemorySheetBody

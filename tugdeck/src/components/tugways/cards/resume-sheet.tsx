@@ -92,6 +92,7 @@ export function useResumeSheet({
     if (projectDir.length === 0) return;
     void showSheet({
       title: "Resume session",
+      icon: "RotateCcw",
       description: "Pick a session to resume in this card.",
       content: (close) => (
         <ResumeSheetBody

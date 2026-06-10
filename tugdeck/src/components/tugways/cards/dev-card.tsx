@@ -932,6 +932,7 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
 
     void showSheet({
       title: "Choose Session",
+      icon: "FolderOpen",
       presentation: "top",
       displayWidth: "md",
       // Capture the cascade target at sheet-open time per
@@ -3093,6 +3094,7 @@ export function DevCardBody({
       void cardPickerSheet
         .showSheet({
           title: "Compacting",
+          icon: "Archive",
           hideHeaderRule: true,
           content: (close) => (
             <CompactionProgressSheet close={close} onCancel={onCancel} />

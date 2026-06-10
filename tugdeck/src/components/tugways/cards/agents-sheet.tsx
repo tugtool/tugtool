@@ -78,6 +78,7 @@ export function useAgentsSheet({
   const openAgentsSheet = useCallback(() => {
     void showSheet({
       title: "Agents",
+      icon: "Bot",
       displayWidth: "lg",
       content: (close) => (
         <AgentsSheetBody

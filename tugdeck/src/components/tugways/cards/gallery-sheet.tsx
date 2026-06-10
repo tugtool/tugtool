@@ -226,6 +226,7 @@ export function GallerySheet() {
             onClick={async () => {
               const result = await showSheet({
                 title: "Rename Card",
+                icon: "Pencil",
                 description: "Enter a new name for this card.",
                 content: (close) => (
                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -250,6 +251,35 @@ export function GallerySheet() {
             }}
           >
             Rename Card
+          </TugPushButton>
+          {/* Agent-colored icon preview — the look the Z4B picker sheets
+              (Permission Mode / Model / Effort) get on rollout. */}
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            role="agent"
+            onClick={() =>
+              void showSheet({
+                title: "Model",
+                icon: "Bot",
+                iconRole: "agent",
+                description: "Choose the model this session runs on.",
+                content: (close) => (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div style={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
+                      The header icon carries the agent tone (violet) — matching
+                      the Z4B agent chips that open these pickers.
+                    </div>
+                    <div className="tug-sheet-actions">
+                      <TugPushButton emphasis="outlined" onClick={() => close()}>Cancel</TugPushButton>
+                      <TugPushButton emphasis="primary" onClick={() => close("ok")}>OK</TugPushButton>
+                    </div>
+                  </div>
+                ),
+              })
+            }
+          >
+            Model (agent)
           </TugPushButton>
         </div>
         {renderSheet()}
@@ -330,7 +360,7 @@ export function GallerySheet() {
                 Open Settings
               </TugPushButton>
             </TugSheetTrigger>
-            <TugSheetContent title="Card Settings">
+            <TugSheetContent title="Card Settings" icon="Settings2">
               <div style={fieldGroupStyle}>
                 <div style={fieldRowStyle}>
                   <label style={fieldLabelStyle} htmlFor="sheet-basic-name">Card name</label>
@@ -387,6 +417,7 @@ export function GallerySheet() {
             </TugSheetTrigger>
             <TugSheetContent
               title="Share Card"
+              icon="Share2"
               description="Choose who can view or edit this card. Changes take effect immediately."
             >
               <div style={fieldGroupStyle}>
@@ -419,7 +450,7 @@ export function GallerySheet() {
         </div>
         <TugSheet ref={sheetRef}>
           {/* No TugSheetTrigger — opened programmatically */}
-          <TugSheetContent title="Notifications">
+          <TugSheetContent title="Notifications" icon="Bell">
             <div style={fieldGroupStyle}>
               <div style={fieldRowStyle}>
                 <label style={fieldLabelStyle} htmlFor="sheet-imp-channel">Notification channel</label>
@@ -472,7 +503,7 @@ export function GallerySheet() {
             <TugSheetTrigger asChild>
               <TugPushButton emphasis="outlined" size="sm">Review Checklist</TugPushButton>
             </TugSheetTrigger>
-            <TugSheetContent title="Pre-launch Checklist">
+            <TugSheetContent title="Pre-launch Checklist" icon="ListChecks">
               <RichChecklistContent />
             </TugSheetContent>
           </TugSheet>
@@ -500,7 +531,7 @@ export function GallerySheet() {
                 Open Spatial Sheet
               </TugPushButton>
             </TugSheetTrigger>
-            <TugSheetContent title="Card Visibility">
+            <TugSheetContent title="Card Visibility" icon="Eye">
               <SpatialSheetBody />
             </TugSheetContent>
           </TugSheet>

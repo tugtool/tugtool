@@ -26,6 +26,9 @@ body {
   --tugx-sheet-border:     var(--tug7-element-global-border-normal-default-rest);
   --tugx-sheet-shadow:     var(--tug7-element-global-shadow-normal-overlay-rest);
   --tugx-sheet-header-fg:  var(--tug7-element-global-text-normal-default-rest);
+  /* Header icon — muted by default (the TugAlert icon color); per-role
+     overrides below tint it via the tone-icon family. */
+  --tugx-sheet-icon-fg:    var(--tug7-element-global-icon-normal-muted-rest);
   /* Spacing grid: A=tight (gap, close padding), B=generous (outer padding, gutters) */
   --tugx-sheet-space-a: 0.75rem;
   --tugx-sheet-space-b: 1.5rem;
@@ -296,26 +299,54 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
   opacity: 1;
 }
 
-/* ---- Sheet header: title left, close button right ---- */
+/* ---- Sheet header: role icon left, title + description right (TugAlert layout) ---- */
 
 .tug-sheet-header {
   /* @tug-renders-on: --tugx-sheet-bg */
   color: var(--tugx-sheet-header-fg);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  /* No side padding — panel's B padding handles edges */
-  padding-bottom: var(--tugx-sheet-space-a);
-  margin-bottom: var(--tugx-sheet-space-a);
-  border-bottom: 1px solid var(--tugx-sheet-border);
+  /* Icon aligns to the top of the title text — the TugAlert layout. */
+  align-items: flex-start;
+  /* Icon ↔ text gap. Tighter than the alert's B gap — the sheet icon is
+     smaller (28px) and the title is more compact. */
+  gap: var(--tugx-sheet-space-a);
+  /* No rule (TugAlert has none); the generous bottom margin is the only
+     separation from the body. */
+  margin-bottom: var(--tugx-sheet-space-b);
 }
 
-/* `hideHeaderRule`: keep the title, drop the divider beneath it and the
-   padding the divider needed — the title then reads as part of a compact
-   body, separated only by the bottom margin. */
+/* `hideHeaderRule` is a no-op now that the header carries no rule by default;
+   the class stays for call-site compatibility. */
 .tug-sheet-header-no-rule {
-  padding-bottom: 0;
-  border-bottom: none;
+  margin-bottom: var(--tugx-sheet-space-b);
+}
+
+/* ---- Header icon column ---- */
+
+.tug-sheet-icon {
+  /* @tug-renders-on: --tugx-sheet-bg */
+  color: var(--tugx-sheet-icon-fg);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Per-role icon tint — mirrors the tone-icon family. `muted` is the default
+   (declared on body), so it needs no override here. */
+.tug-sheet-header[data-icon-role="agent"]   { --tugx-sheet-icon-fg: var(--tug7-element-tone-icon-normal-agent-rest); }
+.tug-sheet-header[data-icon-role="accent"]  { --tugx-sheet-icon-fg: var(--tug7-element-tone-icon-normal-accent-rest); }
+.tug-sheet-header[data-icon-role="active"]  { --tugx-sheet-icon-fg: var(--tug7-element-tone-icon-normal-active-rest); }
+.tug-sheet-header[data-icon-role="caution"] { --tugx-sheet-icon-fg: var(--tug7-element-tone-icon-normal-caution-rest); }
+.tug-sheet-header[data-icon-role="danger"]  { --tugx-sheet-icon-fg: var(--tug7-element-tone-icon-normal-danger-rest); }
+.tug-sheet-header[data-icon-role="data"]    { --tugx-sheet-icon-fg: var(--tug7-element-tone-icon-normal-data-rest); }
+.tug-sheet-header[data-icon-role="success"] { --tugx-sheet-icon-fg: var(--tug7-element-tone-icon-normal-success-rest); }
+
+/* ---- Header text column (title + description) ---- */
+
+.tug-sheet-heading {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---- Sheet title ---- */
@@ -330,10 +361,17 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 /* ---- Optional description ---- */
 
 .tug-sheet-description {
-  font-size: 0.8125rem;
+  /* Matches the TugAlert message style. */
+  font-size: 0.875rem;
   line-height: 1.5;
   margin: 0 0 var(--tugx-sheet-space-a) 0;
-  opacity: 0.75;
+  opacity: 0.8;
+}
+
+/* In the header text column the description sits directly under the title:
+   a small top gap, no bottom margin (the header owns the gap to the body). */
+.tug-sheet-heading .tug-sheet-description {
+  margin: 0.25rem 0 0 0;
 }
 
 /* ---- Sheet body: arbitrary content ---- */

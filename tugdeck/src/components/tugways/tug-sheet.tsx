@@ -97,6 +97,7 @@ import {
   useSavedComponentState,
 } from "./use-component-state-preservation";
 import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
+import { icons } from "lucide-react";
 
 /* ---------------------------------------------------------------------------
  * Presentation styles
@@ -409,11 +410,37 @@ export function TugSheetTrigger({ asChild = true, children }: TugSheetTriggerPro
  * ---------------------------------------------------------------------------*/
 
 /** TugSheetContent props. */
+/**
+ * Color role for a sheet header icon. `"muted"` (the default) paints the
+ * neutral icon color TugAlert uses; the others tint the icon with the matching
+ * tone color — `"agent"` is the violet the Z4B agent chips carry, so the
+ * permission/model/effort picker sheets read as agent surfaces.
+ */
+export type TugSheetIconRole =
+  | "muted"
+  | "agent"
+  | "accent"
+  | "active"
+  | "caution"
+  | "danger"
+  | "data"
+  | "success";
+
 export interface TugSheetContentProps {
   /**
    * Sheet title (required — renders in header row, wired to aria-labelledby).
    */
   title: string;
+  /**
+   * Optional Lucide icon name (PascalCase, e.g. `"Pencil"`) shown to the left
+   * of the title — the TugAlert header layout. Omit for no icon.
+   */
+  icon?: string;
+  /**
+   * Color role for {@link icon}. Defaults to `"muted"`. Pass `"agent"` for the
+   * Z4B picker sheets so the icon carries the agent tone.
+   */
+  iconRole?: TugSheetIconRole;
   /**
    * Optional description text (wired to aria-describedby).
    */
@@ -506,6 +533,8 @@ export interface TugSheetContentProps {
  */
 export function TugSheetContent({
   title,
+  icon,
+  iconRole = "muted",
   description,
   onOpenAutoFocus,
   getResult,
@@ -531,6 +560,10 @@ export function TugSheetContent({
 
   const titleId = `${contentId}-title`;
   const descriptionId = `${contentId}-desc`;
+
+  // Resolve the optional header icon by Lucide name (PascalCase), matching
+  // TugAlert's lookup. Unknown names resolve to null (no icon, no throw).
+  const IconComponent = icon ? (icons[icon as keyof typeof icons] ?? null) : null;
 
   // Chain manager — null when rendered outside a ResponderChainProvider.
   // Escape / Cmd+. fall back to calling onOpenChange directly in that
@@ -1071,9 +1104,11 @@ export function TugSheetContent({
             onMouseDown={suppressButtonFocusShift}
           >
             <ResponderScope>
-              {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape.
-                  Suppressed when `hideHeader` (e.g. TugAlertSheet owns the panel);
-                  the title still labels the dialog via aria-label above. */}
+              {/* Sheet header: an optional role-colored icon left of the
+                  title + description (the TugAlert header layout). No close
+                  button — sheets dismiss via Cancel/Escape. Suppressed when
+                  `hideHeader` (e.g. TugAlertSheet owns the panel); the title
+                  still labels the dialog via aria-label above. */}
               {!hideHeader && (
                 <div
                   className={
@@ -1081,13 +1116,27 @@ export function TugSheetContent({
                       ? "tug-sheet-header tug-sheet-header-no-rule"
                       : "tug-sheet-header"
                   }
+                  data-icon-role={icon ? iconRole : undefined}
                 >
-                  <h2 id={titleId} className="tug-sheet-title">{title}</h2>
+                  {IconComponent && (
+                    <div className="tug-sheet-icon" aria-hidden="true">
+                      <IconComponent size={28} />
+                    </div>
+                  )}
+                  <div className="tug-sheet-heading">
+                    <h2 id={titleId} className="tug-sheet-title">{title}</h2>
+                    {description && (
+                      <p id={descriptionId} className="tug-sheet-description">
+                        {description}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Optional description */}
-              {description && (
+              {/* Headerless sheets (e.g. TugAlertSheet) still expose their
+                  description for aria-describedby and reading order. */}
+              {hideHeader && description && (
                 <p id={descriptionId} className="tug-sheet-description">{description}</p>
               )}
 
@@ -1176,6 +1225,16 @@ export function useTugSheetClose(): () => void {
 export interface ShowSheetOptions {
   /** Sheet title (required — wired to aria-labelledby). */
   title: string;
+  /**
+   * Optional Lucide icon name (PascalCase) shown left of the title — the
+   * TugAlert header layout. See {@link TugSheetContentProps.icon}.
+   */
+  icon?: string;
+  /**
+   * Color role for {@link icon}. Defaults to `"muted"`; pass `"agent"` for the
+   * Z4B picker sheets. See {@link TugSheetIconRole}.
+   */
+  iconRole?: TugSheetIconRole;
   /** Optional description (wired to aria-describedby). */
   description?: string;
   /**
@@ -1576,6 +1635,8 @@ export function useTugSheet(): {
       <TugSheet key={callId} defaultOpen responderId={responderId}>
         <TugSheetContent
           title={options.title}
+          icon={options.icon}
+          iconRole={options.iconRole}
           description={options.description}
           onOpenAutoFocus={options.onOpenAutoFocus}
           getResult={getResultForContent}

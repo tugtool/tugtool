@@ -120,6 +120,8 @@ export function useEffortPicker({
     const activeValue = snapshot.effort ?? DEFAULT_EFFORT_LEVEL;
     void showSheet({
       title: "Reasoning Effort",
+      icon: "Gauge",
+      iconRole: "agent",
       description: "Choose how long Claude thinks before answering.",
       onCommitDisposition: commitDisposition,
       content: (close) => (

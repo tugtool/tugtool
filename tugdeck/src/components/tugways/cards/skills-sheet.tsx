@@ -80,6 +80,7 @@ export function useSkillsSheet({
     skillsInventoryStore.requestInventory();
     void showSheet({
       title: "Skills",
+      icon: "Wrench",
       displayWidth: "lg",
       content: (close) => (
         <SkillsSheetBody
