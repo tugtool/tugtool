@@ -19,7 +19,6 @@ import {
   useTugSheetClose,
 } from "@/components/tugways/tug-sheet";
 import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
-import type { TugPushButtonProps } from "@/components/tugways/tug-push-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
@@ -29,6 +28,7 @@ import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -59,6 +59,244 @@ const fieldRowStyle: React.CSSProperties = {
 };
 
 // ---------------------------------------------------------------------------
+// Wired sheet bodies — model the full focus language ([P14]/[P15]/[P22]/[P23])
+// every sheet must carry: Tab walks the controls, arrows rove + seam between
+// rows, the commit button keeps the default ring (`persistentDefaultRing`) and
+// owns Return, and the engine seeds the opening key view (`useSeedKeyView`).
+// ---------------------------------------------------------------------------
+
+/**
+ * A single text field over a Cancel / commit button row, fully wired:
+ *  - caret seeds in the field on open;
+ *  - Tab walks field → Cancel → commit;
+ *  - Down/Up seam between the field and the button row, Left/Right rove the
+ *    buttons (the button row is a closed horizontal ring via `rowGridOrder`);
+ *  - the commit button holds the default ring and Return (in the field or on
+ *    the button) commits.
+ */
+function FieldSheetBody({
+  close,
+  label,
+  fieldId,
+  defaultValue,
+  placeholder,
+  commitLabel,
+  commitResult,
+}: {
+  close: (result?: string) => void;
+  label: string;
+  fieldId: string;
+  defaultValue?: string;
+  placeholder?: string;
+  commitLabel: string;
+  commitResult?: string;
+}) {
+  const focusGroup = React.useId();
+  const FIELD_ORDER = 0;
+  const CANCEL_ORDER = 1;
+  const COMMIT_ORDER = 2;
+  const spatialOrder = React.useMemo<SpatialOrder>(
+    () =>
+      rowGridOrder([
+        [`${focusGroup}:${FIELD_ORDER}`],
+        [`${focusGroup}:${CANCEL_ORDER}`, `${focusGroup}:${COMMIT_ORDER}`],
+      ]),
+    [focusGroup],
+  );
+  useSpatialOrder(spatialOrder);
+  useSeedKeyView(`${focusGroup}:${FIELD_ORDER}`);
+  const [value, setValue] = React.useState(defaultValue ?? "");
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <div style={fieldRowStyle}>
+        <label style={fieldLabelStyle} htmlFor={fieldId}>{label}</label>
+        <TugInput
+          id={fieldId}
+          size="sm"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              close(commitResult);
+            }
+          }}
+          focusGroup={focusGroup}
+          focusOrder={FIELD_ORDER}
+        />
+      </div>
+      <div className="tug-sheet-actions">
+        <TugPushButton
+          emphasis="outlined"
+          focusGroup={focusGroup}
+          focusOrder={CANCEL_ORDER}
+          onClick={() => close()}
+        >
+          Cancel
+        </TugPushButton>
+        <TugPushButton
+          emphasis="primary"
+          persistentDefaultRing
+          focusGroup={focusGroup}
+          focusOrder={COMMIT_ORDER}
+          onClick={() => close(commitResult)}
+        >
+          {commitLabel}
+        </TugPushButton>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Lead text over a button row, fully wired. `showCancel` (default true) adds a
+ * Cancel button left of the commit button; with it off the body is a single
+ * commit button (e.g. a "Done" acknowledgement). The commit button seeds the
+ * opening key view, holds the default ring, and owns Return.
+ */
+function ButtonsSheetBody({
+  close,
+  message,
+  commitLabel,
+  commitResult,
+  showCancel = true,
+}: {
+  close: (result?: string) => void;
+  message?: React.ReactNode;
+  commitLabel: string;
+  commitResult?: string;
+  showCancel?: boolean;
+}) {
+  const focusGroup = React.useId();
+  const CANCEL_ORDER = 0;
+  const COMMIT_ORDER = 1;
+  const spatialOrder = React.useMemo<SpatialOrder>(
+    () =>
+      rowGridOrder([
+        showCancel
+          ? [`${focusGroup}:${CANCEL_ORDER}`, `${focusGroup}:${COMMIT_ORDER}`]
+          : [`${focusGroup}:${COMMIT_ORDER}`],
+      ]),
+    [focusGroup, showCancel],
+  );
+  useSpatialOrder(spatialOrder);
+  useSeedKeyView(`${focusGroup}:${COMMIT_ORDER}`);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {message && (
+        <div style={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>{message}</div>
+      )}
+      <div className="tug-sheet-actions">
+        {showCancel && (
+          <TugPushButton
+            emphasis="outlined"
+            focusGroup={focusGroup}
+            focusOrder={CANCEL_ORDER}
+            onClick={() => close()}
+          >
+            Cancel
+          </TugPushButton>
+        )}
+        <TugPushButton
+          emphasis="primary"
+          persistentDefaultRing
+          focusGroup={focusGroup}
+          focusOrder={COMMIT_ORDER}
+          onClick={() => close(commitResult)}
+        >
+          {commitLabel}
+        </TugPushButton>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * `FieldSheetBody` for the compound / imperative APIs, which dismiss via the
+ * chain-native `useTugSheetClose()` rather than a render-callback `close`.
+ */
+function ClosingFieldSheetBody(
+  props: Omit<React.ComponentProps<typeof FieldSheetBody>, "close">,
+) {
+  const close = useTugSheetClose();
+  return <FieldSheetBody {...props} close={close} />;
+}
+
+/**
+ * Card Settings body — two fields + a popup-in-sheet ([D09] elevation demo and
+ * the at0057/at0058 fixture) over a Cancel / Save row. The fields and buttons
+ * carry the full focus language (Tab walk, arrow seam/rove, caret seeded in the
+ * name field, default ring on Save); the popup keeps its own behavior.
+ */
+function CardSettingsSheetBody() {
+  const close = useTugSheetClose();
+  const focusGroup = React.useId();
+  const NAME_ORDER = 0;
+  const DESC_ORDER = 1;
+  const CANCEL_ORDER = 2;
+  const SAVE_ORDER = 3;
+  const spatialOrder = React.useMemo<SpatialOrder>(
+    () =>
+      rowGridOrder([
+        [`${focusGroup}:${NAME_ORDER}`],
+        [`${focusGroup}:${DESC_ORDER}`],
+        [`${focusGroup}:${CANCEL_ORDER}`, `${focusGroup}:${SAVE_ORDER}`],
+      ]),
+    [focusGroup],
+  );
+  useSpatialOrder(spatialOrder);
+  useSeedKeyView(`${focusGroup}:${NAME_ORDER}`);
+  return (
+    <>
+      <div style={fieldGroupStyle}>
+        <div style={fieldRowStyle}>
+          <label style={fieldLabelStyle} htmlFor="sheet-basic-name">Card name</label>
+          <TugInput
+            id="sheet-basic-name"
+            size="sm"
+            placeholder="Untitled card"
+            defaultValue="My Project Notes"
+            focusGroup={focusGroup}
+            focusOrder={NAME_ORDER}
+          />
+        </div>
+        <div style={fieldRowStyle}>
+          <label style={fieldLabelStyle} htmlFor="sheet-basic-desc">Description</label>
+          <TugInput
+            id="sheet-basic-desc"
+            size="sm"
+            placeholder="Optional description"
+            focusGroup={focusGroup}
+            focusOrder={DESC_ORDER}
+          />
+        </div>
+        <SheetPopupContent />
+      </div>
+      <div className="tug-sheet-actions">
+        <TugPushButton
+          emphasis="outlined"
+          focusGroup={focusGroup}
+          focusOrder={CANCEL_ORDER}
+          onClick={() => close()}
+        >
+          Cancel
+        </TugPushButton>
+        <TugPushButton
+          emphasis="primary"
+          persistentDefaultRing
+          focusGroup={focusGroup}
+          focusOrder={SAVE_ORDER}
+          onClick={() => close()}
+        >
+          Save
+        </TugPushButton>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GallerySheet
 // ---------------------------------------------------------------------------
 
@@ -74,41 +312,18 @@ const fieldRowStyle: React.CSSProperties = {
  * 6. Rich scrollable content (checklist).
  */
 /**
- * SheetCloseButton -- TugPushButton that closes the enclosing TugSheet
- * via the chain-native path. Reads the sheet responder id from
- * TugSheetContext internally (via useTugSheetClose), so each button is
- * self-sufficient and does not need per-sheet senderId plumbing.
- */
-function SheetCloseButton(props: TugPushButtonProps) {
-  const close = useTugSheetClose();
-  const { onClick, ...rest } = props;
-  return (
-    <TugPushButton
-      {...rest}
-      onClick={(event) => {
-        onClick?.(event);
-        close();
-      }}
-    />
-  );
-}
-
-/**
  * PresentationSheetBody -- shared body for the Presentation Styles demo.
  * Rendered inside a `useTugSheet()` sheet; the `close` callback comes
  * from the hook's content render function.
  */
 function PresentationSheetBody({ close }: { close: (result?: string) => void }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-      <div style={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
-        Reopen with a different style to compare — every style lands in the same
-        position and size. Only the entrance and exit animation differ.
-      </div>
-      <div className="tug-sheet-actions">
-        <TugPushButton emphasis="filled" onClick={() => close()}>Done</TugPushButton>
-      </div>
-    </div>
+    <ButtonsSheetBody
+      close={close}
+      showCancel={false}
+      commitLabel="Done"
+      message="Reopen with a different style to compare — every style lands in the same position and size. Only the entrance and exit animation differ."
+    />
   );
 }
 
@@ -229,22 +444,15 @@ export function GallerySheet() {
                 icon: "Pencil",
                 description: "Enter a new name for this card.",
                 content: (close) => (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    <div style={fieldRowStyle}>
-                      <label style={fieldLabelStyle} htmlFor="hook-sheet-name">Card name</label>
-                      <TugInput
-                        id="hook-sheet-name"
-                        size="sm"
-                        placeholder="Untitled card"
-                        defaultValue="My Project Notes"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="tug-sheet-actions">
-                      <TugPushButton emphasis="outlined" onClick={() => close()}>Cancel</TugPushButton>
-                      <TugPushButton emphasis="filled" onClick={() => close("save")}>Save</TugPushButton>
-                    </div>
-                  </div>
+                  <FieldSheetBody
+                    close={close}
+                    label="Card name"
+                    fieldId="hook-sheet-name"
+                    defaultValue="My Project Notes"
+                    placeholder="Untitled card"
+                    commitLabel="Save"
+                    commitResult="save"
+                  />
                 ),
               });
               setHookResult(result ?? "");
@@ -265,16 +473,12 @@ export function GallerySheet() {
                 iconRole: "agent",
                 description: "Choose the model this session runs on.",
                 content: (close) => (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    <div style={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
-                      The header icon carries the agent tone (violet) — matching
-                      the Z4B agent chips that open these pickers.
-                    </div>
-                    <div className="tug-sheet-actions">
-                      <TugPushButton emphasis="outlined" onClick={() => close()}>Cancel</TugPushButton>
-                      <TugPushButton emphasis="primary" onClick={() => close("ok")}>OK</TugPushButton>
-                    </div>
-                  </div>
+                  <ButtonsSheetBody
+                    close={close}
+                    commitLabel="OK"
+                    commitResult="ok"
+                    message="The header icon carries the agent tone (violet) — matching the Z4B agent chips that open these pickers."
+                  />
                 ),
               })
             }
@@ -361,42 +565,7 @@ export function GallerySheet() {
               </TugPushButton>
             </TugSheetTrigger>
             <TugSheetContent title="Card Settings" icon="Settings2">
-              <div style={fieldGroupStyle}>
-                <div style={fieldRowStyle}>
-                  <label style={fieldLabelStyle} htmlFor="sheet-basic-name">Card name</label>
-                  <TugInput
-                    id="sheet-basic-name"
-                    size="sm"
-                    placeholder="Untitled card"
-                    defaultValue="My Project Notes"
-                  />
-                </div>
-                <div style={fieldRowStyle}>
-                  <label style={fieldLabelStyle} htmlFor="sheet-basic-desc">Description</label>
-                  <TugInput
-                    id="sheet-basic-desc"
-                    size="sm"
-                    placeholder="Optional description"
-                  />
-                </div>
-                {/*
-                 * SheetPopupContent — TugPopupButton inside this
-                 * sheet exercises [D09] popup-in-sheet z-tier
-                 * elevation. The menu portals to the canvas overlay
-                 * root just like the sheet itself, but consumes
-                 * TugSheetStackingContext (provided by TugSheetContent)
-                 * to apply `tug-menu-in-dialog` and swap to the
-                 * elevated --tug-z-overlay-menu-in-dialog token.
-                 *
-                 * Also serves as the deterministic fixture for the
-                 * at0057 / at0058 app-tests.
-                 */}
-                <SheetPopupContent />
-              </div>
-              <div className="tug-sheet-actions">
-                <SheetCloseButton emphasis="outlined">Cancel</SheetCloseButton>
-                <SheetCloseButton emphasis="filled">Save</SheetCloseButton>
-              </div>
+              <CardSettingsSheetBody />
             </TugSheetContent>
           </TugSheet>
         </div>
@@ -420,21 +589,12 @@ export function GallerySheet() {
               icon="Share2"
               description="Choose who can view or edit this card. Changes take effect immediately."
             >
-              <div style={fieldGroupStyle}>
-                <div style={fieldRowStyle}>
-                  <label style={fieldLabelStyle} htmlFor="sheet-desc-email">Invite by email</label>
-                  <TugInput
-                    id="sheet-desc-email"
-                    size="sm"
-                    type="email"
-                    placeholder="colleague@example.com"
-                  />
-                </div>
-              </div>
-              <div className="tug-sheet-actions">
-                <SheetCloseButton emphasis="outlined">Cancel</SheetCloseButton>
-                <SheetCloseButton emphasis="filled">Invite</SheetCloseButton>
-              </div>
+              <ClosingFieldSheetBody
+                label="Invite by email"
+                fieldId="sheet-desc-email"
+                placeholder="colleague@example.com"
+                commitLabel="Invite"
+              />
             </TugSheetContent>
           </TugSheet>
         </div>
@@ -451,25 +611,13 @@ export function GallerySheet() {
         <TugSheet ref={sheetRef}>
           {/* No TugSheetTrigger — opened programmatically */}
           <TugSheetContent title="Notifications" icon="Bell">
-            <div style={fieldGroupStyle}>
-              <div style={fieldRowStyle}>
-                <label style={fieldLabelStyle} htmlFor="sheet-imp-channel">Notification channel</label>
-                <TugInput
-                  id="sheet-imp-channel"
-                  size="sm"
-                  placeholder="#general"
-                  defaultValue="#alerts"
-                />
-              </div>
-            </div>
-            <div className="tug-sheet-actions">
-              <TugPushButton emphasis="outlined" size="sm" onClick={() => sheetRef.current?.close()}>
-                Cancel
-              </TugPushButton>
-              <TugPushButton emphasis="filled" onClick={() => sheetRef.current?.close()}>
-                Apply
-              </TugPushButton>
-            </div>
+            <ClosingFieldSheetBody
+              label="Notification channel"
+              fieldId="sheet-imp-channel"
+              defaultValue="#alerts"
+              placeholder="#general"
+              commitLabel="Apply"
+            />
           </TugSheetContent>
         </TugSheet>
         <div style={{ display: "flex", gap: "8px" }}>
@@ -634,6 +782,25 @@ function RichChecklistContent() {
     toggle: toggleBindings,
   });
 
+  // Full focus language: each checkbox is a focus stop, the Cancel / Save row
+  // follows. Tab walks the list then the buttons; Down/Up rove the checkboxes
+  // and seam into the button row; Left/Right swap the buttons. The first
+  // checkbox seeds the opening key view; Save keeps the default ring + Return.
+  const close = useTugSheetClose();
+  const focusGroup = React.useId();
+  const CANCEL_ORDER = CHECKLIST_ITEMS.length;
+  const SAVE_ORDER = CHECKLIST_ITEMS.length + 1;
+  const spatialOrder = React.useMemo<SpatialOrder>(
+    () =>
+      rowGridOrder([
+        ...CHECKLIST_ITEMS.map((_, i) => [`${focusGroup}:${i}`]),
+        [`${focusGroup}:${CANCEL_ORDER}`, `${focusGroup}:${SAVE_ORDER}`],
+      ]),
+    [focusGroup, CANCEL_ORDER, SAVE_ORDER],
+  );
+  useSpatialOrder(spatialOrder);
+  useSeedKeyView(`${focusGroup}:0`);
+
   return (
     <ResponderScope>
     <div
@@ -644,19 +811,36 @@ function RichChecklistContent() {
         {completedCount} of {CHECKLIST_ITEMS.length} complete
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        {CHECKLIST_ITEMS.map((item) => (
+        {CHECKLIST_ITEMS.map((item, i) => (
           <TugCheckbox
             key={item.id}
             checked={checked[item.id]}
             senderId={item.id}
             label={item.label}
             size="sm"
+            focusGroup={focusGroup}
+            focusOrder={i}
           />
         ))}
       </div>
       <div className="tug-sheet-actions">
-        <SheetCloseButton emphasis="outlined">Cancel</SheetCloseButton>
-        <SheetCloseButton emphasis="filled">Save</SheetCloseButton>
+        <TugPushButton
+          emphasis="outlined"
+          focusGroup={focusGroup}
+          focusOrder={CANCEL_ORDER}
+          onClick={() => close()}
+        >
+          Cancel
+        </TugPushButton>
+        <TugPushButton
+          emphasis="primary"
+          persistentDefaultRing
+          focusGroup={focusGroup}
+          focusOrder={SAVE_ORDER}
+          onClick={() => close()}
+        >
+          Save
+        </TugPushButton>
       </div>
     </div>
     </ResponderScope>
