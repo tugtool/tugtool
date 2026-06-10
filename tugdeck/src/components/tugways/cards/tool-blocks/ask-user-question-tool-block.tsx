@@ -83,7 +83,7 @@
 import "./ask-user-question-tool-block.css";
 
 import React from "react";
-import { MessageCircleQuestion } from "lucide-react";
+import { Check, Circle, MessageCircleQuestion } from "lucide-react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
@@ -478,43 +478,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
       </div>
     );
   } else {
-    body = (
-      <ol
-        className="ask-user-question-tool-block-list"
-        data-slot="ask-user-question-tool-block-list"
-      >
-        {summary.map((entry, index) => (
-          <li
-            key={`${index}:${entry.question}`}
-            className="ask-user-question-tool-block-item"
-            data-slot="ask-user-question-tool-block-item"
-            data-answered={entry.answers.length > 0 ? "true" : "false"}
-          >
-            <div className="ask-user-question-tool-block-question">
-              {entry.question}
-            </div>
-            <div
-              className="ask-user-question-tool-block-answer"
-              data-slot="ask-user-question-tool-block-answer"
-            >
-              {entry.answers.length === 0 ? (
-                <span className="ask-user-question-tool-block-no-answer">
-                  (no answer)
-                </span>
-              ) : entry.answers.length === 1 ? (
-                <span>{entry.answers[0]}</span>
-              ) : (
-                <ul className="ask-user-question-tool-block-answer-multi">
-                  {entry.answers.map((a, j) => (
-                    <li key={j}>{a}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </li>
-        ))}
-      </ol>
-    );
+    body = <QuestionSummaryList entries={summary} />;
   }
 
   // Errored calls carry the failure message in `textOutput` — route to
@@ -684,9 +648,11 @@ function SalvageWizard({
 }
 
 /**
- * Post-salvage Q&A summary. Same visible shape as the regular
- * post-tool answered view (numbered Q→A pairs) so the wrapper reads
- * identically regardless of which channel produced the result.
+ * Post-salvage Q&A summary. Composes the locally-collected picks into
+ * the same {@link AnswerSummaryEntry} shape the regular post-tool view
+ * uses and renders through the shared {@link QuestionSummaryList}, so
+ * the wrapper reads identically regardless of which channel produced
+ * the result.
  */
 function SalvageAnsweredSummary({
   questions,
@@ -695,44 +661,75 @@ function SalvageAnsweredSummary({
   questions: ReadonlyArray<ParsedQuestion>;
   answersByQuestion: ReadonlyMap<string, ReadonlyArray<string>>;
 }): React.ReactElement {
+  const entries = questions.map((question) => ({
+    question: question.question,
+    answers: [...(answersByQuestion.get(question.question) ?? [])],
+  }));
+  return <QuestionSummaryList entries={entries} />;
+}
+
+/**
+ * The recorded Q&A list — one row per question, in the QuestionDialog
+ * rail's visual vocabulary so the live wizard and the durable record
+ * read as the same artifact: a leading status marker (success-toned
+ * `Check` for an answered row, the muted `Circle` ring for an
+ * unanswered one), the reserved `N.` number prefix on the question
+ * line, and the muted `→ answer` line(s) beneath. The numbering rides
+ * a CSS counter (see the `.css`) so the marker column and number
+ * column hold fixed widths down the list.
+ */
+function QuestionSummaryList({
+  entries,
+}: {
+  entries: ReadonlyArray<AnswerSummaryEntry>;
+}): React.ReactElement {
   return (
     <ol
       className="ask-user-question-tool-block-list"
       data-slot="ask-user-question-tool-block-list"
     >
-      {questions.map((question, index) => {
-        const picks = answersByQuestion.get(question.question) ?? [];
-        return (
-          <li
-            key={`${index}:${question.question}`}
-            className="ask-user-question-tool-block-item"
-            data-slot="ask-user-question-tool-block-item"
-            data-answered={picks.length > 0 ? "true" : "false"}
+      {entries.map((entry, index) => (
+        <li
+          key={`${index}:${entry.question}`}
+          className="ask-user-question-tool-block-item"
+          data-slot="ask-user-question-tool-block-item"
+          data-answered={entry.answers.length > 0 ? "true" : "false"}
+        >
+          <span
+            className="ask-user-question-tool-block-marker"
+            aria-hidden="true"
           >
+            {entry.answers.length > 0 ? (
+              <Check size={14} aria-hidden="true" />
+            ) : (
+              <Circle size={14} aria-hidden="true" />
+            )}
+          </span>
+          <div className="ask-user-question-tool-block-body">
             <div className="ask-user-question-tool-block-question">
-              {question.question}
+              {entry.question}
             </div>
             <div
               className="ask-user-question-tool-block-answer"
               data-slot="ask-user-question-tool-block-answer"
             >
-              {picks.length === 0 ? (
+              {entry.answers.length === 0 ? (
                 <span className="ask-user-question-tool-block-no-answer">
                   (no answer)
                 </span>
-              ) : picks.length === 1 ? (
-                <span>{picks[0]}</span>
+              ) : entry.answers.length === 1 ? (
+                <span>{entry.answers[0]}</span>
               ) : (
                 <ul className="ask-user-question-tool-block-answer-multi">
-                  {picks.map((a, j) => (
+                  {entry.answers.map((a, j) => (
                     <li key={j}>{a}</li>
                   ))}
                 </ul>
               )}
             </div>
-          </li>
-        );
-      })}
+          </div>
+        </li>
+      ))}
     </ol>
   );
 }
