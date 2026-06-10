@@ -137,7 +137,11 @@ fn non_gate_listener_is_rejected_not_waited_on() {
 
     let start = Instant::now();
     let out = gate_cmd(port, &[], &["true"]).output().expect("run");
-    assert_eq!(out.status.code(), Some(1), "squatted port must fail, not wait");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "squatted port must fail, not wait"
+    );
     assert!(
         start.elapsed() < Duration::from_secs(5),
         "must fail fast, took {:?}",

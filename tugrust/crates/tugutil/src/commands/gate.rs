@@ -310,7 +310,10 @@ fn report_held(greeting: &Greeting, json: bool) {
                 "since": greeting.since,
             },
         });
-        println!("{}", serde_json::to_string_pretty(&body).expect("serializes"));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&body).expect("serializes")
+        );
     } else {
         eprintln!(
             "gate '{}' held by {} (pid {}, since {})",
@@ -323,7 +326,11 @@ fn report_held(greeting: &Greeting, json: bool) {
 }
 
 fn display_label(label: &str) -> &str {
-    if label.is_empty() { "<unlabeled>" } else { label }
+    if label.is_empty() {
+        "<unlabeled>"
+    } else {
+        label
+    }
 }
 
 fn truncate(s: &str, max: usize) -> &str {
@@ -350,10 +357,7 @@ mod tests {
         let (_listener, port) = bind_ephemeral();
         let second = bind_reuseaddr(port);
         assert!(second.is_err(), "second live listener must be refused");
-        assert_eq!(
-            second.unwrap_err().kind(),
-            std::io::ErrorKind::AddrInUse
-        );
+        assert_eq!(second.unwrap_err().kind(), std::io::ErrorKind::AddrInUse);
     }
 
     #[test]
@@ -422,7 +426,8 @@ mod tests {
             // Accept one connection, hold it briefly, then drop
             // listener + connection (simulates holder exit).
             let (mut stream, _) = listener.accept().expect("accept");
-            let _ = stream.write_all(b"{\"gate\":\"t\",\"label\":\"\",\"pid\":1,\"since\":\"now\"}\n");
+            let _ =
+                stream.write_all(b"{\"gate\":\"t\",\"label\":\"\",\"pid\":1,\"since\":\"now\"}\n");
             std::thread::sleep(Duration::from_millis(150));
             // stream + listener drop here → waiter sees EOF.
         });
