@@ -72,6 +72,9 @@ import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useFocusTrap } from "./use-focus-trap";
+import { useFocusManager } from "./use-focusable";
+import { useSpatialOrder } from "./use-spatial-order";
+import type { SpatialOrder } from "./spatial-order";
 
 /* ---------------------------------------------------------------------------
  * Helpers
@@ -276,6 +279,40 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       ? (icons[resolvedIconName as keyof typeof icons] ?? null)
       : null;
 
+    // ---- Focus language ([P14]/[P22]/[P23]) ----
+    // Author the Cancel / Action buttons into a focus group so Tab walks them,
+    // declare a closed arrow ring over the pair (registered inside the trap's
+    // FocusModeScope by AlertSpatialOrder), and seed the engine key view on the
+    // default button at open — the ring rests there and the default button
+    // promotes to its live/filled style ([P14]). Danger keeps Return safe by
+    // defaulting to Cancel when present.
+    const focusManager = useFocusManager();
+    const buttonFocusGroup = React.useId();
+    const CANCEL_ORDER = 0;
+    const ACTION_ORDER = 1;
+    const hasCancel = cancelLabel !== null;
+    const buttonSpatialOrder = React.useMemo<SpatialOrder>(() => {
+      const nodes = hasCancel
+        ? [`${buttonFocusGroup}:${CANCEL_ORDER}`, `${buttonFocusGroup}:${ACTION_ORDER}`]
+        : [`${buttonFocusGroup}:${ACTION_ORDER}`];
+      return {
+        rings: [
+          { axis: "horizontal", nodes, closed: true },
+          { axis: "vertical", nodes, closed: true },
+        ],
+      };
+    }, [buttonFocusGroup, hasCancel]);
+    const handleOpenAutoFocus = React.useCallback(
+      (event: Event) => {
+        // Stop Radix's own first-focusable walk; the engine drives focus.
+        event.preventDefault();
+        const defaultOrder =
+          confirmRole === "danger" && hasCancel ? CANCEL_ORDER : ACTION_ORDER;
+        focusManager?.armKeyboardRestore(`${buttonFocusGroup}:${defaultOrder}`);
+      },
+      [confirmRole, hasCancel, focusManager, buttonFocusGroup],
+    );
+
     // IMPORTANT: Never clear overrideRef during close. The exit animation
     // needs the override values to stay so the content doesn't revert to
     // singleton defaults while fading out. Overrides are cleared on next open
@@ -331,6 +368,9 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             className="tug-alert-content"
             data-slot="tug-alert"
             onMouseDown={suppressButtonFocusShift}
+            // The engine seeds the default button as the key view ([P14]); stop
+            // Radix's own first-focusable walk so the two don't fight.
+            onOpenAutoFocus={handleOpenAutoFocus}
             // [P03] Suppress Radix's own Escape — the engine's Escape ladder owns
             // it via the trap's `onEscapeDismiss` (above).
             onEscapeKeyDown={(e) => e.preventDefault()}
@@ -346,6 +386,10 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             }}
           >
             <FocusModeScope>
+            {/* Registers the button-row arrow ring against the alert's trap
+                mode. Must mount INSIDE FocusModeScope so the context-form
+                `useSpatialOrder` reads the trap scope, not the outer one. */}
+            <AlertSpatialOrder order={buttonSpatialOrder} />
             {/* Classic Mac HIG layout: icon left, text right, buttons bottom-right */}
             <div className="tug-alert-body">
               {IconComponent && (
@@ -367,7 +411,12 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             <div className="tug-alert-actions">
               {cancelLabel !== null && (
                 <AlertDialog.Cancel asChild>
-                  <TugPushButton emphasis="outlined" onClick={onCancelClick}>
+                  <TugPushButton
+                    emphasis="outlined"
+                    onClick={onCancelClick}
+                    focusGroup={buttonFocusGroup}
+                    focusOrder={CANCEL_ORDER}
+                  >
                     {cancelLabel}
                   </TugPushButton>
                 </AlertDialog.Cancel>
@@ -377,6 +426,8 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                   emphasis={confirmRole === "action" ? "primary" : "filled"}
                   role={confirmRole}
                   onClick={onConfirmClick}
+                  focusGroup={buttonFocusGroup}
+                  focusOrder={ACTION_ORDER}
                 >
                   {confirmLabel}
                 </TugPushButton>
@@ -389,6 +440,22 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     );
   },
 );
+
+/* ---------------------------------------------------------------------------
+ * AlertSpatialOrder
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * Null-rendering registrar for the alert's button-row arrow ring. It must mount
+ * INSIDE the alert's `FocusModeScope` so the context-form `useSpatialOrder(order)`
+ * resolves the enclosing `FocusModeContext` to the alert's trapped focus mode —
+ * calling it in the `TugAlert` body would bind the order to the mode ABOVE the
+ * trap. Mirrors `ConfirmPopoverSpatialOrder`. [L03]
+ */
+function AlertSpatialOrder({ order }: { order: SpatialOrder }): null {
+  useSpatialOrder(order);
+  return null;
+}
 
 /* ---------------------------------------------------------------------------
  * TugAlertContext + TugAlertProvider + useTugAlert
