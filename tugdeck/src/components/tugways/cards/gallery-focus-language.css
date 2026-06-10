@@ -1,20 +1,23 @@
 /**
- * gallery-focus-language.css — the focus-language modernization SPIKE.
+ * gallery-focus-language.css — the canonical reference for the keyboard-focus
+ * visual language (a permanent gallery card; see tuglaws/focus-language.md for
+ * the governing contract).
  *
- * A throwaway design canvas (deletable) for settling the new keyboard-focus
- * visual language BY EYE, across the full taxonomy of component archetypes, in
- * both themes (brio / harmony). It replaces nothing yet — every rule here is
- * scoped under `.cg-focus-language` so it cannot leak into the app.
+ * One static screen of the whole language across the component-archetype
+ * taxonomy, in both themes (brio / harmony). Every state shows at once for
+ * comparison, so the mockups are keyed on a self-contained `data-fl-*` attribute
+ * set rather than the engine's live `data-key-*` — this card is a visual
+ * overview, not a live-engine vetting (that lives in each component card).
+ * Scoped under `.cg-focus-language` so nothing leaks into the app.
  *
- * The proposed language (keyed on a self-contained `data-fl-*` attribute set —
- * NOT the engine's `data-key-*` — since this is a static mockup so all states
- * show at once for comparison):
+ * The shipped language:
  *
  *   • the component with keyboard focus wears a RING (and a faint behind-tint);
  *   • the committed selection is a FILL (the component's native convention —
  *     dot / pill / fill);
- *   • buttons (§1) have no separate selection, so their focus ring PROMOTES the
- *     button to its filled role style.
+ *   • buttons (§1) have no separate selection: the live (focused) button PROMOTES
+ *     to its filled role style; a scope's recommended-default rests at a TINT with
+ *     a ring (solid fill is reserved for selection + the live control).
  *
  * ONE ROLE AXIS. Every focusable's ring + selection-fill + behind-tint read the
  * `--fl-role` / `--fl-sel` / `--fl-focus-bg` variables, which DEFAULT to action
@@ -22,12 +25,11 @@
  * `[data-fl-role]`. There is no separate "role-less" path — a role-less control
  * simply rides the action default.
  *
- * Everything is TUNABLE from the token block below; real `--tug7-*` theme tokens
- * are used throughout so both themes are faithful.
+ * Real `--tug7-*` theme tokens are used throughout so both themes are faithful.
  */
 
 .cg-focus-language {
-  /* --- the spike's tunable knobs (retune these to taste, both themes pick up) --- */
+  /* --- the reference knobs (mirror the live `--tugx-focus-*` tokens) --- */
 
   /* THE ROLE AXIS. Every focusable's ring / selection-fill / behind-tint reads
      these three. They DEFAULT to action (the neutral interactive blue) and are
@@ -163,6 +165,17 @@
 
 .cg-focus-language .fl-btn[data-fl-state="hover"] {
   background: var(--fl-hover);
+}
+
+/* recommended default (at rest, not the live control) → a TINT + a ring, never
+   a full fill. Full fill is reserved for the live/focused control below ([P14]).
+   This is the `persistentDefaultRing` look a sheet/dialog commit button wears. */
+.cg-focus-language .fl-btn[data-role="action"][data-fl-state="default"] {
+  background: var(--tug7-surface-control-primary-tinted-action-rest);
+  color: var(--tug7-element-control-text-tinted-action-rest);
+  border-color: var(--tug7-element-control-border-tinted-action-rest);
+  outline: var(--fl-ring-w) solid var(--fl-role);
+  outline-offset: var(--fl-ring-offset);
 }
 
 /* keyboard cursor → FILL promotion + role-coloured double border */
@@ -574,18 +587,4 @@
   text-decoration: underline;
   outline: var(--fl-ring-w) solid var(--fl-role);
   outline-offset: var(--fl-ring-offset);
-}
-
-/* ============================================================
-   Legend — current (orange) vs proposed, side by side
-   ============================================================ */
-
-.cg-focus-language .fl-legend {
-  display: flex;
-  gap: 22px;
-  align-items: flex-end;
-}
-.cg-focus-language .fl-current-ring {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring-color);
-  outline-offset: var(--tugx-focus-ring-offset);
 }

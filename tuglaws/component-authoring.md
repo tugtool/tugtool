@@ -271,6 +271,8 @@ Every `.css` file follows this structure in this order:
 6. Variant styles (emphasis × role, validation states, etc.)
 ```
 
+**Keyboard focus and selection follow the focus language.** A focusable control's focus/selection appearance is not freehand — style it by selecting on the engine attributes (`data-key-view-kbd`, `data-key-cursor`, `data-selected`, `data-default-ring`, `data-key-within`), author the control into a `focusGroup` with a `focusOrder`, and follow the motion/commit rules. See [focus-language.md](focus-language.md) for the full contract.
+
 ### @tug-pairings Table
 
 Opens every CSS file. Declares every foreground-on-background relationship the component creates. Machine-readable by `audit-tokens lint`. [L16]

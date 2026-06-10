@@ -19,6 +19,7 @@
 - [responder-chain.md](responder-chain.md) — The tree of components that own semantic state, and the walk that routes typed actions through them. Read before writing any component that emits or handles an action.
 - [action-naming.md](action-naming.md) — The action vocabulary. Every action has one canonical `kebab-case` name, exported as a `TUG_ACTIONS.*` constant, referenced by constant at every call site.
 - [component-authoring.md](component-authoring.md) — The component author's checklist. How to build a tugways component end-to-end — files, hooks, attributes, tokens, tests.
+- [focus-language.md](focus-language.md) — The keyboard-focus model: focus is a ring + behind-tint, selection is a native fill, motion is two planes (Tab linear / arrows spatial) with explicit commit. The engine attributes appearance reads, and the authoring contract (focusGroup / persistentDefaultRing / useSeedKeyView / useSpatialOrder). Read before adding a focusable control or a dialog/sheet/alert.
 - [list-view-usage.md](list-view-usage.md) — House rules for `TugListView` consumers: compose `TugListRow`, never reimplement the row state ramp, the selection-ownership matrix, the consumer inventory, and the sanctioned custom-cell exceptions.
 - [dev-card-unsupported-slash-commands.md](dev-card-unsupported-slash-commands.md) — Why some of Claude Code's slash commands are hidden from the dev card's `/` popup ([D14]). Mirrors `HIDDEN_SLASH_COMMANDS` in `slash-supported.ts`; the discoverable answer to "why isn't `/vim` here?".
 

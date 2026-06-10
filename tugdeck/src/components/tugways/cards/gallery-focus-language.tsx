@@ -9,11 +9,16 @@
  * comparison — this is the OVERVIEW; per-component keyboard vetting on the real
  * engine lives in each component card's "Focus Language" section.
  *
- * The model (see gallery-focus-language.css):
+ * The shipped model (see tuglaws/focus-language.md for the governing contract):
  *   - keyboard focus = a RING + a faint BEHIND-TINT on the focused component;
  *   - committed selection = the component's NATIVE fill (dot / pill / fill);
- *   - buttons additionally PROMOTE to their filled role style on focus;
- *   - one ROLE AXIS, default action: ring + fill + tint all resolve from it.
+ *   - buttons: the live (focused) button PROMOTES to its filled role style; a
+ *     scope's recommended-default rests at a TINT + ring (full fill is reserved
+ *     for selection + the live control);
+ *   - one ROLE AXIS, default action: ring + fill + tint all resolve from it;
+ *   - motion is two planes: Tab moves the key view (linear), arrows move the
+ *     cursor within a focused group (spatial); commit is a separate act (Space
+ *     commits the ringed item, Enter is the scope default).
  *
  * Laws: [L06] appearance is attribute → CSS (here forced reference attributes, no
  * React-driven style); [L19] gallery-card authoring.
@@ -72,7 +77,7 @@ function Btn({
   label,
 }: {
   role: "action" | "danger" | "accent";
-  state?: "hover" | "cursor";
+  state?: "hover" | "cursor" | "default";
   label: string;
 }): React.ReactElement {
   return (
@@ -91,25 +96,20 @@ export function GalleryFocusLanguage(): React.ReactElement {
         (rest / hover / keyboard-cursor / selected) and its role colouring.
       </TugLabel>
 
-      {/* ---------- Legend: current vs proposed ---------- */}
+      {/* ---------- Motion model: two planes + explicit commit ---------- */}
       <div className="fl-section">
         <SectionHead
-          title="Legend — current orange ring vs proposed"
+          title="Motion — two planes, explicit commit"
           branch="ring"
-          note="Today every focusable wears one global orange outline (left). The proposal replaces it with the two-branch language below: fill-promotion for role buttons, a keyboard-coloured double border for everything else."
+          note="Keyboard motion is two independent planes. Tab (and Shift-Tab) moves the KEY VIEW linearly through the focusable stops of the current focus mode. Within a focused item-group, the arrows move a CURSOR spatially over the members (author-declared rings + seams, not geometry). Committing is a separate act: Space commits the ringed member, Enter fires the scope's default. Arrows never select. A capturing control (a text editor) suspends the arrow plane; Tab or Escape returns to it."
         />
-        <div className="fl-legend">
-          <Cell label="current (orange)">
-            <span className="fl-btn fl-current-ring" data-role="action">
-              Allow
-            </span>
+        <div className="fl-grid">
+          <Cell label="ring on the cursor (no commit)">
+            <Group focus selected={0} cursor={1} />
           </Cell>
-          <Cell label="proposed · fill">
-            <Btn role="action" state="cursor" label="Allow" />
-          </Cell>
-          <Cell label="proposed · ring">
+          <Cell label="text field — captures arrows">
             <span className="fl-input" data-fl-state="cursor">
-              text field
+              caret here
             </span>
           </Cell>
         </div>
@@ -120,7 +120,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="1 · Role button"
           branch="fill"
-          note="Settles the filled-overload fork. A pure action control has no separate 'selected' state, so the cursor can safely take over the FILL: focused button promotes to its filled role style + a role-coloured ring; siblings demote to outlined (default-button emphasis follows focus). Covers TugPushButton, TugIconButton, TugDialogButton, TugPopupButton."
+          note="A pure action control has no separate 'selected' state, so the cursor can take over the FILL: the live (focused) button promotes to its filled role style + a role-coloured ring; siblings demote to outlined. Solid fill is reserved for selection + the live control — a scope's recommended-default (the button Return fires, when the cursor rests elsewhere) instead rests at a TINT with a ring (`persistentDefaultRing`). Covers TugPushButton, TugIconButton, TugDialogButton, TugPopupButton."
         />
         <div className="fl-grid">
           <Cell label="rest (outlined)">
@@ -129,7 +129,10 @@ export function GalleryFocusLanguage(): React.ReactElement {
           <Cell label="mouse-hover">
             <Btn role="action" state="hover" label="Allow" />
           </Cell>
-          <Cell label="kbd-cursor (action)">
+          <Cell label="recommended default (tint + ring)">
+            <Btn role="action" state="default" label="Allow" />
+          </Cell>
+          <Cell label="live / focused (filled + ring)">
             <Btn role="action" state="cursor" label="Allow" />
           </Cell>
           <Cell label="kbd-cursor (danger)">
@@ -360,7 +363,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="10 · Component box-scope"
           branch="ring"
-          note="A whole container becomes the key view (popover / sheet / alert / inline-dialog box). It can't fill. Proposal: a box-shadow ring that hugs the radius with no reflow (the treatment the dialogs already use), and the quiet 'within' variant when it merely contains the active control. Covers TugPopover, TugSheet, TugAlert, the inline-dialog shell."
+          note="A whole container becomes the key view (popover / sheet / alert / inline-dialog box). It can't fill, so it wears a box-shadow ring that hugs the radius with no reflow, and the quiet 'within' variant when it merely contains the active control. Covers TugPopover, TugSheet, TugAlert, the inline-dialog shell."
         />
         <div className="fl-grid">
           <Cell label="rest">
@@ -384,7 +387,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="11 · Inline link (long tail)"
           branch="ring"
-          note="The app-wide long tail focus-ring.css flags: inline, non-box focusables that can't ring cleanly or fill. Proposal: underline on hover, underline + a keyboard-coloured ring on cursor. Covers TugLink and arbitrary focusable content."
+          note="The long tail: inline, non-box focusables that can't ring cleanly or fill. They underline on hover, and underline + a keyboard-coloured ring on cursor. Covers TugLink and arbitrary focusable content."
         />
         <div className="fl-grid">
           <Cell label="rest">
