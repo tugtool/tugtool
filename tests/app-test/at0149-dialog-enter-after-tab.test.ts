@@ -7,12 +7,11 @@
  *
  * The reported bug: with the keyboard on the **scope radio group** (the group
  * ringed, Allow showing its persistent default-ring), Return did NOTHING — the
- * radio group was a *deferred-commit* item-group, so its act-dispatch consumed
- * Enter (to confirm a cursor move) instead of letting it bubble to the ringed
- * Allow. The fix is component-level: a mutually-exclusive group
- * (`TugRadioGroup`/`TugChoiceGroup`) is **selection-follows-cursor** — arrows move
- * the selection immediately, and the group does NOT consume `Enter`, so Return
- * falls through to the scope's default button.
+ * radio group consumed Enter instead of letting it bubble to the ringed Allow.
+ * Under the explicit-commit model ([P24]) the guarantee is: arrows move the
+ * group's movement cursor WITHOUT committing, **Space** commits the cursor
+ * item, and the group does NOT consume `Enter` — Return always falls through
+ * to the scope's default button.
  *
  * The walk is driven with **synthetic keydown events dispatched on `document`** —
  * these traverse the EXACT handler chain a human keypress does (the capture-phase
@@ -37,6 +36,8 @@ const DIALOG = `${CARD} [data-slot="dev-permission-dialog"]`;
 const ALLOW = `${DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
 const SCOPE = `${DIALOG} [data-slot="tug-radio-group"]`;
 const SCOPE_CHECKED = `${SCOPE} [data-slot="tug-radio-item"][data-state="checked"]`;
+// The scope row currently wearing the movement cursor, checked or not.
+const SCOPE_CURSOR = `${SCOPE} [data-slot="tug-radio-item"][data-key-cursor]`;
 
 function controlRequestForward(): Record<string, unknown> {
   return {
@@ -139,12 +140,22 @@ describe.skipIf(!SHOULD_RUN)(
             (await textOf(app, SCOPE_CHECKED)) ?? "",
             "scope group opens checked on Allow once",
           ).toContain("Allow once");
-          // Selection-follows-cursor: ArrowDown selects "Allow for this project"
-          // IMMEDIATELY — no deferred confirm step.
+          // Explicit commit ([P24]): ArrowDown moves the movement cursor onto
+          // "Allow for this project" WITHOUT committing — the checked scope
+          // stays "Allow once" until Space commits the cursor item.
           await dispatchKey(app, "ArrowDown"); await sleep(150);
           expect(
+            (await textOf(app, SCOPE_CURSOR)) ?? "",
+            "ArrowDown moves the cursor to the next scope without committing",
+          ).toContain("Allow for this project");
+          expect(
             (await textOf(app, SCOPE_CHECKED)) ?? "",
-            "ArrowDown selects the next scope immediately (no confirm needed)",
+            "the checked scope is unchanged by a bare cursor move",
+          ).toContain("Allow once");
+          await dispatchKey(app, " "); await sleep(150);
+          expect(
+            (await textOf(app, SCOPE_CHECKED)) ?? "",
+            "Space commits the cursor scope",
           ).toContain("Allow for this project");
           // Allow shows its persistent default-ring while the keyboard is on the
           // (non-button) scope group.
