@@ -102,6 +102,14 @@ export interface SpatialCursorHandle {
  */
 export const BASE_FOCUS_MODE = "base";
 
+/** Escape an id for use inside a `[attr="..."]` selector. Falls back to the raw
+ *  id where `CSS.escape` is unavailable (older/headless environments). */
+function cssEscapeId(id: string): string {
+  return typeof CSS !== "undefined" && typeof CSS.escape === "function"
+    ? CSS.escape(id)
+    : id;
+}
+
 /**
  * DOM projection of the current (top) focus mode, stamped on the document root.
  * Absent when the base mode is current; set to the active trap's scope id while
@@ -1513,6 +1521,16 @@ export class FocusManager {
     const changed = this.keyCardId !== cardId;
     this.keyCardId = cardId;
     this.activeContext().projectAll();
+    // Restore the first responder for the now-active card — the per-card FR axis
+    // of activation. setKeyCard is the UNIVERSAL activation signal: the provider's
+    // `syncKeyCard` fires it for every way a card becomes active (click, tab
+    // switch, **pane activation / frontmost change**, cross-pane move, cold boot),
+    // including a pane promoted to frontmost whose active card never *changed*
+    // activation — which fires no card-level focus claim (`adoptKeyCard`) and no
+    // `focusin`, the exact case that strands the frontmost pane. FR promotion is
+    // chain (structure) state, not a DOM focus claim, so it belongs here beside
+    // naming the key card; the DOM focus claim stays in `adoptKeyCard`. [P21]
+    if (cardId !== null) this.restoreCardFirstResponder(cardId);
     if (changed) this.touch();
   }
 
@@ -1539,9 +1557,73 @@ export class FocusManager {
   adoptKeyCard(cardId: string): boolean {
     this.setKeyCard(cardId);
     const ctx = this.activeContext();
-    if (!ctx.hasPushedKeyDestination()) return false;
-    ctx.focusKeyView();
-    return true;
+    const hasDialog = ctx.hasPushedKeyDestination();
+    if (hasDialog) ctx.focusKeyView();
+    // (The first-responder axis is restored in `setKeyCard` above — the universal
+    // activation signal — so it covers pane-frontmost promotion too, not just the
+    // card-level focus claim this method performs.)
+    return hasDialog;
+  }
+
+  /**
+   * Promote the responder that CONTAINS the active key view to first responder —
+   * what a `focusin` on that key view would have done — so the activated card
+   * owns first-responder-routed accelerators. No-op when the current first
+   * responder is already within `cardId`: a pointer promotion (or an in-card
+   * focus) just set a finer one and must not be clobbered. The key view itself
+   * is the target when it is a registered responder (a resting card's editor);
+   * otherwise its nearest registered DOM ancestor is (a sheet's focused control →
+   * the sheet's responder, which owns `CANCEL_DIALOG`). Promoting that *coarser*
+   * container does not coarsen the finer key view — {@link seedKeyViewFromChain}
+   * yields via {@link keyViewIsFinerThan}. No-op without a chain / DOM / key view.
+   */
+  private restoreCardFirstResponder(cardId: string): void {
+    if (this.chain === null || typeof document === "undefined") return;
+    const currentFr = this.chain.getFirstResponder();
+    const within = currentFr !== null && this.responderWithinCard(currentFr, cardId);
+    let target: string | null = null;
+    const keyViewId = this.activeContext().keyView();
+    if (!within) {
+      if (keyViewId !== null) {
+        // The responder owning the key view: the key view itself if registered,
+        // else its nearest registered DOM ancestor.
+        target = this.chain.hasResponder(keyViewId) ? keyViewId : null;
+        if (target === null) {
+          const el = this.elementForFocusKey(keyViewId);
+          target = el ? this.chain.findResponderForTarget(el) : null;
+        }
+      }
+      if (target === null) {
+        // No key view (a pane promoted to frontmost whose card was never focused).
+        // Fall back to the card's own responder so the activated card still owns
+        // its accelerators (Cmd-W reaches it). Resolve via any registered
+        // responder element inside the card subtree.
+        const cardEl = document.querySelector(`[data-card-id="${cssEscapeId(cardId)}"]`);
+        const inner = cardEl?.querySelector("[data-responder-id]") ?? null;
+        target = inner ? this.chain.findResponderForTarget(inner) : null;
+      }
+    }
+    if (!within && target !== null && this.chain.getFirstResponder() !== target) {
+      this.chain.makeFirstResponder(target);
+    }
+  }
+
+  /** Whether `responderId`'s element lives inside card `cardId`'s subtree. */
+  private responderWithinCard(responderId: string, cardId: string): boolean {
+    if (typeof document === "undefined") return false;
+    const esc = cssEscapeId;
+    const rEl = document.querySelector(`[data-responder-id="${esc(responderId)}"]`);
+    const cardEl = document.querySelector(`[data-card-id="${esc(cardId)}"]`);
+    return rEl !== null && cardEl !== null && cardEl.contains(rEl);
+  }
+
+  /** The element carrying a focus key — a responder id or a focusable id. */
+  private elementForFocusKey(id: string): HTMLElement | null {
+    if (typeof document === "undefined") return null;
+    const esc = cssEscapeId(id);
+    return document.querySelector<HTMLElement>(
+      `[data-responder-id="${esc}"], [data-tug-focusable="${esc}"]`,
+    );
   }
 
   // ---- Chain attachment (key-view seeding) ----

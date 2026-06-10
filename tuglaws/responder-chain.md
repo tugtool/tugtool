@@ -173,7 +173,7 @@ After the walk — handled or not — every registered dispatch observer fires. 
 
 The *first responder* is the node the walk starts from. Exactly one node (or none) holds the title at any instant. It is how "the innermost thing the user is working with" gets routed its shortcuts, and it is the reason `select-all` selects the editor's content when the caret is in an editor and does nothing when no editor is focused.
 
-The first responder is promoted in four ways, in rough order of how often you'll see each:
+The first responder is promoted in five ways, in rough order of how often you'll see each:
 
 1. **Pointer down.** A document-level capture-phase `pointerdown` listener installed by `ResponderChainProvider` walks from `event.target` up through DOM ancestors, looking for an element with `data-responder-id` whose value is a registered node. The innermost match becomes first responder. Click inside the editor → editor promotes. Click on the pane chrome → pane promotes. **Exception:** controls marked with `data-tug-focus="refuse"` (buttons, checkboxes, switches, sliders, etc.) are skipped — the first responder does not change when a focus-refusing control is clicked. See [Focus acceptance](#focus-acceptance) below.
 
@@ -182,6 +182,8 @@ The first responder is promoted in four ways, in rough order of how often you'll
 3. **Auto-promotion of roots.** When a responder registers with `parentId === null` and no first responder is currently set, it becomes first responder automatically. This is how the canvas becomes the starting point on first mount.
 
 4. **Programmatic `makeFirstResponder(id)`.** Rare. The only sanctioned use is the chain's own unregister path (when the current first responder unmounts, the manager promotes the nearest still-registered ancestor) and `DeckCanvas` promoting a freshly-opened card. Component code should not call `makeFirstResponder` as a substitute for the pointer/focus promotion path — if you find yourself wanting to, you are papering over a layering bug.
+
+5. **Card activation ([P21]).** The first responder is the chain's *single* register, but focus is *per card* (see [focus-language.md](focus-language.md), the per-card key-window model). So when a card becomes active — tab switch, close-and-restore-to-sibling, pane activation, cross-pane move, app become-active — the engine (`FocusManager.adoptKeyCard`) restores that card's first responder as the fifth per-card axis, alongside its key view: it promotes the responder *containing the activated key view* (a resting card's editor; a sheet's focused control → the sheet's responder). This is necessary because a keyboard/programmatic activation does not always fire a `focusin` that would promote (1)/(2): the activated key view may be a focus-refusing control (a dialog button — `focusin` skips it), or the activation `.focus()` may be idempotency-skipped because DOM focus is already on target. Without it, a first-responder-routed accelerator (Cmd-W `close`, Cmd-. `cancel-dialog`) is dropped on the just-activated card, while Escape — the engine's own ladder, which reads the active card's context directly — keeps working. This is the one engine-owned promotion path; component code still must not call `makeFirstResponder`.
 
 ### Why the DOM is the truth source
 
@@ -495,6 +497,8 @@ Four things that must be true for this to work:
 Both are optional advisory callbacks on the responder node. They are not consulted during dispatch — only during capability queries.
 
 - **`canHandle(action)`** lets a responder claim it can handle actions outside its static `actions` map. Used by `DeckCanvas` as a last-resort responder that advertises a broader capability surface than its literal handler set. If omitted, the chain treats the `actions` map as authoritative and skips the advisory branch entirely (which is the path most responders want).
+
+  As the root, `DeckCanvas` is also where a **card/pane-scoped accelerator that fell all the way up gets re-routed to the active surface**. `close` is normally handled by the active *pane* (an innermost-first walk from a card reaches the pane before the canvas), but if the first responder has fallen up to `deck-canvas` — a card or pane closed and no card reclaimed the first responder (no `focusin` on a static card) — `close` reaches the canvas. Its handler `sendToTarget`s the topmost pane's responder, so Cmd-W is never dropped on the frontmost card regardless of first-responder-restoration state. This is the responder-chain backstop to the engine's per-card first-responder restoration ([focus-language.md](focus-language.md)): the engine keeps the first responder on the active card; the canvas guarantees the accelerator lands even if it didn't.
 
 - **`validateAction(action)`** answers "is this action currently enabled?" for UI that wants to gray out a menu item. Defaults to `true` if omitted. Called by the chain's `validateAction` query, which is what `TugEditorContextMenu` uses to dim its own items based on current selection state.
 

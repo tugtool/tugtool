@@ -54,7 +54,9 @@ Keyboard motion moves on two independent planes, and **commit is a separate act*
 
 **Arrow ownership.** A capturing control — a text editor that needs the arrows for its caret — suspends the spatial plane while it holds the key view. `Tab` or `Escape` returns control to the plane.
 
-**Per-card key-window model.** Focus contexts are **per card**. Each card owns its own key view, cursor, default-ring stack, and scope stack, like windows in a windowing system; only the active card's context is live.
+**Per-card key-window model.** Focus contexts are **per card**. Each card owns its own key view, cursor, default-ring stack, scope stack, **and first responder**, like windows in a windowing system; only the active card's context is live.
+
+The first responder is the chain's *single global* register (see [responder-chain.md](responder-chain.md)), but the key-window model makes focus per-card — so card **activation must restore the first responder** alongside the key view, as the fifth per-card axis. The engine does this in `FocusManager.adoptKeyCard` ([P21] activation): it promotes the responder that contains the activated card's key view (a resting card's editor; a sheet's focused control → the sheet's responder). Without it, a first-responder-routed accelerator (Cmd-W `close`, Cmd-. `cancel-dialog`) is dropped on the just-activated card while the engine's Escape ladder — which reads the active context directly — still works. The first responder must NOT be left to ride DOM `focusin`: that does not fire when the activated key view is a focus-refusing control (a dialog button) or when the activation `.focus()` is idempotency-skipped (DOM focus already on target).
 
 ---
 

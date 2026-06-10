@@ -20,6 +20,7 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { transferFocusForActivation } from "@/focus-transfer";
@@ -136,6 +137,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   const panesRef = useRef<readonly TugPaneState[]>(panes);
   panesRef.current = panes;
+
+  // The responder chain manager — used by the last-resort `close` handler below
+  // to route to the active pane when the first responder has fallen up to the
+  // canvas root (e.g. a card/pane closed and nothing re-promoted a card).
+  const manager = useResponderChain();
+  const managerRef = useRef(manager);
+  managerRef.current = manager;
 
   /**
    * containerRef: ref to the positioning wrapper div that card frames and snap guides
@@ -259,6 +267,20 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         if (s.length === 0) return;
         const activePaneId = s[s.length - 1].id; // topmost pane (z-order)
         store.addCardToPane(activePaneId, "hello");
+      },
+      // Last-resort `close` ([D08]). `close` is normally handled by the active
+      // pane (an innermost-first walk from a card reaches the pane before the
+      // canvas). It only reaches the canvas root when the first responder has
+      // fallen up to "deck-canvas" — a card/pane closed and the next active card
+      // never reclaimed the first responder (no `focusin` on a non-text card).
+      // Route it to the topmost pane so Cmd-W is never dropped on the frontmost
+      // card, regardless of the first-responder restoration state.
+      [TUG_ACTIONS.CLOSE]: (_event: ActionEvent) => {
+        const m = managerRef.current;
+        const s = panesRef.current;
+        if (m === null || s.length === 0) return;
+        const activePaneId = s[s.length - 1].id; // topmost pane (z-order)
+        m.sendToTarget(activePaneId, { action: TUG_ACTIONS.CLOSE, phase: "discrete" });
       },
     },
   });
