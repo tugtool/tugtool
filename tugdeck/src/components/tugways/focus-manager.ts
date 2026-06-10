@@ -202,6 +202,18 @@ interface FocusModeEntry extends FocusMode {
    * A surface that did NOT displace focus leaves a ringless restore to that fallback.
    */
   restoreFocusComplete?: boolean;
+  /**
+   * The chain's first responder when this mode was pushed — the SECOND axis of the
+   * CFRunLoop restore, alongside `restoreKeyView`. DOM focus, the key view, and the
+   * first responder are all projections of one focus state; a trapped surface (a
+   * modal confirm popover) may displace the first responder on open — it claims it
+   * via `makeFirstResponder` so its own Cmd-. cancel reaches it, since its refuse
+   * buttons never promote — so on pop the stack restores this captured responder
+   * and action dispatch returns to where the user was. Without it a
+   * first-responder-routed accelerator (Cmd-.) keeps landing on the closed surface.
+   * `null` when nothing held first responder at push.
+   */
+  restoreFirstResponder: string | null;
 }
 
 // ---- Focusables ----
@@ -644,6 +656,10 @@ export class FocusContext {
       commitDisposition: opts.commitDisposition,
       escapeExits: opts.escapeExits,
       restoreFocusComplete: opts.restoreFocusComplete,
+      // Capture the first responder alongside the key view ([#cfrunloop-model]):
+      // a surface about to claim first responder on open (a modal confirm popover)
+      // captures here, BEFORE its claim, so the pop restores the prior responder.
+      restoreFirstResponder: this.coord.firstResponder(),
     });
     this.syncFocusModeDomAttribute();
     this.syncKeyWithinDomAttribute();
@@ -691,6 +707,26 @@ export class FocusContext {
       // that opened a popover by keyboard) gets the ring back on pop, while a
       // mouse-opened one restores ringless.
       this.setKeyView(entry.restoreKeyView, entry.restoreKeyViewKeyboard);
+      // Restore the FIRST RESPONDER captured at push — the second axis of the
+      // restore, alongside the key view. A trapped surface (a modal confirm popover)
+      // may have claimed first responder on open so its own Cmd-. cancel landed; on
+      // close, action dispatch must return to the responder the user was on, or a
+      // first-responder-routed accelerator (Cmd-.) keeps landing on the now-closed
+      // surface's stale handler. This is what makes "leave the responder as-is" close
+      // paths (the engine-owns restore for a focus-refusing key view) correct by
+      // construction. Gated on `restoreFocus`: when it is false the caller owns the
+      // next focus (the cycle's pointer-exit — the click promotes its own responder),
+      // so the engine must not reinstate the prior one. Suppressed-seed so this
+      // chain-head change does not re-seed (coarsen) the key view just restored above;
+      // a responder key view re-promotes itself through `focusKeyView`'s contract below.
+      if (restoreFocus && entry.restoreFirstResponder !== null) {
+        this.coord.beginSuppressChainSeed();
+        try {
+          this.coord.restoreFirstResponder(entry.restoreFirstResponder);
+        } finally {
+          this.coord.endSuppressChainSeed();
+        }
+      }
       // Re-project the restored key view onto the DOM (move focus to it). DOM focus
       // is a *projection* of the key view, so restoring the key view restores focus
       // to it. Two cases want this:
@@ -768,6 +804,19 @@ export class FocusContext {
     // caret; if the cycle's prior WAS a keyboard key view, restore it with its
     // ring.
     this.setKeyView(host.restoreKeyView, host.restoreKeyViewKeyboard);
+    // Restore the first responder the cycle captured at entry (the resting caret's
+    // responder, typically the editor) — the same second-axis restore popFocusMode
+    // does, so a sub-surface committed from a cycle stop lands action dispatch back
+    // on the cycle's resting responder. Suppressed-seed (the key view above is the
+    // authoritative restore). Complements the cycle consumer's `restingFocus` reclaim.
+    if (host.restoreFirstResponder !== null) {
+      this.coord.beginSuppressChainSeed();
+      try {
+        this.coord.restoreFirstResponder(host.restoreFirstResponder);
+      } finally {
+        this.coord.endSuppressChainSeed();
+      }
+    }
     if (host.restoreKeyView !== null && host.restoreKeyViewKeyboard) {
       this.focusKeyView();
     }
@@ -1575,6 +1624,37 @@ export class FocusManager {
     if (this.chain === null || !this.chain.hasResponder(keyViewId)) return false;
     this.chain.focusResponder(keyViewId);
     return true;
+  }
+
+  /**
+   * The chain's current first responder id, or `null` — read by a context's
+   * {@link FocusContext.pushFocusMode} to capture the first-responder axis of the
+   * focus state, so the matching pop can restore it ([#cfrunloop-model]). `null`
+   * without a chain.
+   */
+  firstResponder(): string | null {
+    return this.chain?.getFirstResponder() ?? null;
+  }
+
+  /**
+   * Restore the chain's first responder to `id` as the first-responder axis of a
+   * focus-mode pop — the structure-level counterpart to {@link focusKeyView}'s DOM
+   * re-projection. A trapped surface may claim first responder on open so its own
+   * keyboard cancel (Cmd-.) reaches it (a modal confirm popover does, since its
+   * `data-tug-focus="refuse"` buttons never promote); restoring the responder
+   * captured at push returns action dispatch to where the user was — so a
+   * "leave the responder as-is" close path (the engine-owns restore for a
+   * focus-refusing key view) is correct even when the surface displaced it. No-op
+   * without a chain, when `id` is no longer registered (the prior responder
+   * unmounted with its own surface), or when it is already first. Callers wrap
+   * this in `beginSuppressChainSeed`/`endSuppressChainSeed` so the chain notify
+   * does not re-seed (coarsen) the key view restored alongside it.
+   */
+  restoreFirstResponder(id: string): void {
+    if (this.chain === null) return;
+    if (!this.chain.hasResponder(id)) return;
+    if (this.chain.getFirstResponder() === id) return;
+    this.chain.makeFirstResponder(id);
   }
 
   // ---- Keyboard-access mode (deck-global) ----
