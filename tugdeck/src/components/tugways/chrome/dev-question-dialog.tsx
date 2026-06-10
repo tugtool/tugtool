@@ -19,24 +19,39 @@
  * (or skipped) it renders `null`.
  *
  * Layout (composed on `TugInlineDialog`'s header-bar primitive — see
- * [D01] / [D08]). Paged wizard. A single-question payload renders
- * inline (the question text goes in the dialog `description` and the
- * options fill the children slot). A multi-question payload renders
- * a vertical stack of *rows*, one per question, in three states:
+ * [D01] / [D08]). Paged wizard, master–detail. A single-question
+ * payload renders inline (the question text goes in the dialog
+ * `description` and the options fill the children slot). A
+ * multi-question payload renders a *rail* of uniform summary rows —
+ * one per question — above a single stationary *panel* that hosts the
+ * current question's heading and options. Rail rows carry a status:
  *
  *  - **done** — the user has picked at least one option. Row shows
- *    `✓ N. Question text · → chosen answer`. Clickable to jump back.
- *  - **current** — the row in focus. Shows `▸ N. Question text` and
- *    expands the options. Single-select picks auto-advance to the
- *    next row; multi-select waits for an explicit `Next`.
- *  - **pending** — not yet visited. Shows `○ N. Question text` only.
- *    Clickable to skip ahead.
+ *    `✓ N. Question text` over `→ chosen answer`. Clickable to jump
+ *    back.
+ *  - **current** — the row whose question fills the panel. `▸`
+ *    marker, highlight band, live `→ answer` summary. Single-select
+ *    picks auto-advance to the next row; multi-select waits for an
+ *    explicit `Next`.
+ *  - **pending** — not yet visited. `○` marker; the answer line is
+ *    reserved but blank. Clickable to skip ahead.
+ *
+ * **Constant geometry.** The dialog sits at the transcript's live
+ * edge, so any height change or content relocation mid-wizard shoves
+ * the scroll under the user's eye. Three rules keep its geometry
+ * fixed from open to submit: every rail row reserves its one-line
+ * `→ answer` slot (clamped to one line, ellipsized) in every status;
+ * the options panel never moves (the rail highlight moves instead)
+ * and sizes to the tallest question via stacked hidden sizers (CSS
+ * grid, one inert sizer per question under the live face — no JS
+ * measurement); and the review state fills the same panel rather
+ * than collapsing it.
  *
  * **Two control rows.** Dialog controls (`Cancel` / `Submit`) flow
  * into the primitive's trailing `actions` slot on the header row.
  * Wizard nav (`Back` / `Next`) shares a single row with the
  * progress summary (`{N} questions · {M} answered`) inside the body
- * slot, between the dialog description and the question accordion —
+ * slot, between the dialog description and the question rail —
  * close enough to the questions for the touch target to feel coupled
  * to the row it mutates, but stable across question advances so the
  * button never moves out from under the mouse. Single-question
@@ -44,11 +59,11 @@
  * summarize).
  *
  * The wizard exposes a **review state** at the end of the flow:
- * `currentIndex === questions.length` paints every row as its
- * post-interaction summary (no `current`), giving the user a final
- * pass over the answers before clicking `Submit`. `nextAdvanceIndex`
- * advances into review on the last question; the `Next` button
- * is disabled once in review.
+ * `currentIndex === questions.length` paints every rail row as its
+ * post-interaction summary (no `current`) and fills the panel with a
+ * review notice, giving the user a final pass over the answers before
+ * clicking `Submit`. `nextAdvanceIndex` advances into review on the
+ * last question; the `Next` button is disabled once in review.
  *
  * `Cancel` carries a confirmation popover (`TugConfirmPopover`,
  * imperative API). A stray click can't tear the AI's question down
@@ -133,7 +148,7 @@ import {
   TugConfirmPopover,
   type TugConfirmPopoverHandle,
 } from "@/components/tugways/tug-confirm-popover";
-import { TugListRow, TugListRowLayoutProvider } from "@/components/tugways/tug-list-row";
+import { TugListRow } from "@/components/tugways/tug-list-row";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -539,13 +554,18 @@ export function seedQuestionDialogState(
 // Row components — one per wizard state
 // ---------------------------------------------------------------------------
 
-interface QuestionRowProps {
-  index: number;
-  question: ParsedQuestion;
-  status: QuestionRowStatus;
-  selection: ReadonlyArray<string>;
-  onSelect: (optionLabel: string) => void;
-  onJump: () => void;
+/**
+ * The wizard state the rail cells read — published via
+ * {@link QuestionRailContext} (the {@link QuestionOptionsSelectionContext}
+ * pattern) so the rail's cell renderer can derive each row's status,
+ * marker, and answer summary without the data source carrying
+ * per-render state.
+ */
+interface QuestionRailState {
+  questions: ReadonlyArray<ParsedQuestion>;
+  selections: ReadonlyArray<ReadonlyArray<string>>;
+  visited: ReadonlyArray<boolean>;
+  currentIndex: number;
 }
 
 /** Pixel size for the lucide row-marker icons. Matches the heading
@@ -577,90 +597,114 @@ function RowMarker({ status }: { status: QuestionRowStatus }): React.ReactElemen
   return <Circle size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
 }
 
+const QuestionRailContext = React.createContext<QuestionRailState>({
+  questions: [],
+  selections: [],
+  visited: [],
+  currentIndex: 0,
+});
+
 /**
- * A `done` or `recommended` row — the row carries a selection but is
- * not currently focused. Renders the heading and an inline `→ answer`
- * summary; clickable to jump back and edit. The status icon
- * distinguishes "you confirmed this" (`Check`) from "this is the
- * recommendation, you haven't engaged yet" (`CircleDot`). The whole
- * row is the click target so the user has a wide click region
- * without juggling nested anchors.
+ * Static, single-section data source over the wizard's questions —
+ * the rail's row *identity*. The question set is fixed for a
+ * request's lifetime, so `subscribe` is a no-op and `getVersion`
+ * returns the array identity. Row *state* (status / answer) is
+ * per-render and flows to the cells via {@link QuestionRailContext}.
  */
-function AnsweredRow({
-  index,
-  question,
-  status,
-  selection,
-  onJump,
-}: Pick<
-  QuestionRowProps,
-  "index" | "question" | "status" | "selection" | "onJump"
->): React.ReactElement {
-  const labelPrefix =
-    status === "done" ? "Edit answer to" : "Open recommendation for";
-  return (
-    <button
-      type="button"
-      className="dev-question-dialog-row"
-      data-slot="dev-question-dialog-row"
-      data-status={status}
-      aria-label={`${labelPrefix} question ${index + 1}: ${question.question}`}
-      onClick={onJump}
-    >
-      <span className="dev-question-dialog-row-marker" aria-hidden="true">
-        <RowMarker status={status} />
-      </span>
-      <span className="dev-question-dialog-row-body">
-        <span className="dev-question-dialog-row-heading">
-          <span className="dev-question-dialog-row-heading-number">
-            {index + 1}.
-          </span>
-          {question.question}
-        </span>
-        <span
-          className="dev-question-dialog-row-answer"
-          data-slot="dev-question-dialog-row-answer"
-        >
-          → {composeRowAnswerLabel(selection)}
-        </span>
-      </span>
-    </button>
-  );
+class QuestionRailDataSource implements TugListViewDataSource {
+  constructor(private readonly questions: readonly ParsedQuestion[]) {}
+  numberOfItems(): number {
+    return this.questions.length;
+  }
+  idForIndex(index: number): string {
+    return `${index}:${this.questions[index]?.question ?? ""}`;
+  }
+  kindForIndex(): string {
+    return "question";
+  }
+  subscribe(): () => void {
+    return () => {};
+  }
+  getVersion(): unknown {
+    return this.questions;
+  }
 }
 
 /**
- * A `pending` row — not yet visited and no selection (only possible
- * for multi-select questions, which seed empty). Renders the heading
- * only, with the empty `Circle` marker. Clickable to skip ahead.
+ * One rail row — the uniform per-question summary, a {@link TugListRow}
+ * whose `leading` slot carries the status marker and whose content
+ * column stacks the heading over a reserved one-line `→ answer` slot.
+ * Geometry is identical across all four statuses so a status change
+ * never changes the rail's height: the answer slot always renders,
+ * hidden via `data-empty` while there is no selection, and clamps to
+ * one ellipsized line so a long multi-select answer can't rewrap it.
+ * The heading wraps freely — its text is constant per row, so its
+ * height is too.
+ *
+ * The current row renders `selected` (the active-row fill — its
+ * question is open in the panel below) and its answer summary tracks
+ * the in-flight selection live; activation is the enclosing list view
+ * cell wrapper's job (→ delegate `onSelect` → the wizard's jump).
  */
-function PendingRow({
-  index,
-  question,
-  onJump,
-}: Pick<QuestionRowProps, "index" | "question" | "onJump">): React.ReactElement {
-  return (
-    <button
-      type="button"
-      className="dev-question-dialog-row"
-      data-slot="dev-question-dialog-row"
-      data-status="pending"
-      aria-label={`Skip to question ${index + 1}: ${question.question}`}
-      onClick={onJump}
-    >
-      <span className="dev-question-dialog-row-marker" aria-hidden="true">
-        <RowMarker status="pending" />
-      </span>
-      <span className="dev-question-dialog-row-body">
-        <span className="dev-question-dialog-row-heading">
-          <span className="dev-question-dialog-row-heading-number">
-            {index + 1}.
+const QuestionRailCell: TugListViewCellRenderer<QuestionRailDataSource> =
+  function QuestionRailCell({
+    index,
+  }: TugListViewCellProps<QuestionRailDataSource>): React.ReactElement {
+    const rail = React.useContext(QuestionRailContext);
+    const question = rail.questions[index];
+    const selection = rail.selections[index] ?? [];
+    const status = rowStatus(
+      index === rail.currentIndex,
+      rail.visited[index] === true,
+      selection.length > 0,
+    );
+    const answer = composeRowAnswerLabel(selection);
+    const labelPrefix =
+      status === "current"
+        ? "Current question"
+        : status === "done"
+          ? "Edit answer to question"
+          : status === "recommended"
+            ? "Open recommendation for question"
+            : "Skip to question";
+    return (
+      <TugListRow
+        className="dev-question-dialog-row"
+        data-status={status}
+        selected={status === "current"}
+        aria-current={status === "current" ? "step" : undefined}
+        aria-label={`${labelPrefix} ${index + 1}: ${question?.question ?? ""}`}
+        leading={
+          <span className="dev-question-dialog-row-marker" aria-hidden="true">
+            <RowMarker status={status} />
           </span>
-          {question.question}
+        }
+      >
+        <span className="dev-question-dialog-row-body">
+          <span className="dev-question-dialog-row-heading">
+            <span className="dev-question-dialog-row-heading-number">
+              {index + 1}.
+            </span>
+            {question?.question ?? ""}
+          </span>
+          <span
+            className="dev-question-dialog-row-answer"
+            data-slot="dev-question-dialog-row-answer"
+            data-empty={answer === "" ? "true" : undefined}
+          >
+            → {answer}
+          </span>
         </span>
-      </span>
-    </button>
-  );
-}
+      </TugListRow>
+    );
+  };
+
+const QUESTION_RAIL_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<QuestionRailDataSource>
+> = {
+  question: QuestionRailCell,
+};
 
 /**
  * The current question's options render by selection arity ([P02]/[P17]):
@@ -750,40 +794,49 @@ const QUESTION_OPTION_CELL_RENDERERS: Record<
 };
 
 /**
- * The hidden measurement helper renders one question's options in the same shape
- * the live row will use — a {@link TugRadioGroup} for a single-select question, or
- * plain {@link TugListRow}s in a `flush` layout for a multi-select one (no list
- * view, so no focusable registers and no second cursor exists) — close enough to
- * the live height to drive the layout-stability floor.
+ * The inert face of one question's options for the panel's hidden sizers — the
+ * SAME components the live options render, in the same wrapper classes, so the
+ * sizer's box equals the live face's by construction: a {@link TugRadioGroup}
+ * inside the `options-radio` wrapper for a single-select question, a
+ * {@link TugListView} with the `options-list` class for a multi-select one. Both
+ * are de-fanged for the sizer stack — no `focusGroup` (no engine registration),
+ * `interactive={false}` on the list (inert rows, no DOM tab stops), no senderId /
+ * delegate — so the hidden copies add no Tab stops and no second cursor. Stacked
+ * under the live face in the panel's grid cell, the tallest sizer fixes the
+ * panel's height across every wizard state.
  */
-function QuestionOptionsMeasure({
+function QuestionOptionsSizer({
   question,
 }: {
   question: ParsedQuestion;
 }): React.ReactElement {
+  const dataSource = React.useMemo(
+    () => new QuestionOptionsDataSource(question.options),
+    [question.options],
+  );
   if (!question.multiSelect) {
     return (
-      <TugRadioGroup size="md" orientation="vertical" aria-label={question.question}>
-        {question.options.map((option) => (
-          <TugRadioItem key={option.label} value={option.label} description={option.description}>
-            {option.label}
-          </TugRadioItem>
-        ))}
-      </TugRadioGroup>
+      <div className="dev-question-dialog-options-radio">
+        <TugRadioGroup size="md" orientation="vertical" aria-label={question.question}>
+          {question.options.map((option) => (
+            <TugRadioItem key={option.label} value={option.label} description={option.description}>
+              {option.label}
+            </TugRadioItem>
+          ))}
+        </TugRadioGroup>
+      </div>
     );
   }
   return (
-    <TugListRowLayoutProvider value={{ variant: "flush", selectedAccent: false }}>
-      {question.options.map((option) => (
-        <TugListRow
-          key={option.label}
-          title={option.label}
-          subtitle={option.description}
-          subtitleMaxLines={4}
-          selectedGlyph="check"
-        />
-      ))}
-    </TugListRowLayoutProvider>
+    <TugListView<QuestionOptionsDataSource>
+      dataSource={dataSource}
+      cellRenderers={QUESTION_OPTION_CELL_RENDERERS}
+      rowLayout="flush"
+      inline
+      interactive={false}
+      className="dev-question-dialog-options-list"
+      aria-label={question.question}
+    />
   );
 }
 
@@ -943,88 +996,27 @@ const QuestionOptions: React.FC<QuestionOptionsProps> = (props) =>
   );
 
 /**
- * The `current` row — title + options. Back/Next live on their own
- * sub-row inside the body slot (between the dialog description and
- * the question accordion), not inside the row itself, so they keep a
- * stable on-screen position across question advances (the button
- * never jumps out from under the mouse). The options list (a
- * `TugListView`) is the only place an answerable option row lives in
- * the wizard, so its selection / aria semantics stay scoped to one
- * row at a time.
+ * The panel's question heading — `N. Question text`, repeated from
+ * the rail so the options always sit directly under the question they
+ * answer (the rail's current row may be several rows away from the
+ * panel). Rendered identically inside the live face and each hidden
+ * sizer so both faces wrap — and size — the same.
  */
-function CurrentRow({
+function PanelHeading({
   index,
   question,
-  selection,
-  optionsMinHeight,
-  onSelect,
-  optionsFocusGroup,
-  optionsFocusOrder,
-  dialogResponderId,
-}: Pick<
-  QuestionRowProps,
-  "index" | "question" | "selection" | "onSelect"
-> & {
-  optionsMinHeight?: number;
-  optionsFocusGroup: string;
-  optionsFocusOrder: number;
-  dialogResponderId: string;
+}: {
+  index: number;
+  question: ParsedQuestion;
 }): React.ReactElement {
-  // Apply the measured options floor to the options area only — the
-  // heading stays at its natural height, and shorter questions just
-  // see trailing whitespace below their options.
-  // `undefined` while the measurement effect hasn't run yet (first
-  // paint only); on every subsequent render the value is locked.
-  const optionsStyle: React.CSSProperties | undefined =
-    optionsMinHeight !== undefined
-      ? { minHeight: `${optionsMinHeight}px` }
-      : undefined;
   return (
-    <div
-      className="dev-question-dialog-row"
-      data-slot="dev-question-dialog-row"
-      data-status="current"
-    >
-      <div className="dev-question-dialog-row-header">
-        <span className="dev-question-dialog-row-marker" aria-hidden="true">
-          <RowMarker status="current" />
-        </span>
-        <span className="dev-question-dialog-row-heading">
-          <span className="dev-question-dialog-row-heading-number">
-            {index + 1}.
-          </span>
-          {question.question}
-        </span>
-      </div>
-      <div
-        className="dev-question-dialog-options-wrap"
-        data-slot="dev-question-dialog-options-wrap"
-        style={optionsStyle}
-      >
-        <QuestionOptions
-          question={question}
-          selection={selection}
-          onSelect={onSelect}
-          focusGroup={optionsFocusGroup}
-          focusOrder={optionsFocusOrder}
-          dialogResponderId={dialogResponderId}
-        />
-      </div>
+    <div className="dev-question-dialog-panel-heading">
+      <span className="dev-question-dialog-row-heading-number">
+        {index + 1}.
+      </span>
+      {question.question}
     </div>
   );
-}
-
-function QuestionRow(
-  props: QuestionRowProps & {
-    optionsMinHeight?: number;
-    optionsFocusGroup: string;
-    optionsFocusOrder: number;
-    dialogResponderId: string;
-  },
-): React.ReactElement {
-  if (props.status === "current") return <CurrentRow {...props} />;
-  if (props.status === "pending") return <PendingRow {...props} />;
-  return <AnsweredRow {...props} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -1113,39 +1105,15 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     captureState: () => ({ selections, visited, currentIndex }),
   });
 
-  // Layout-stability floor for the current row's options area. We
-  // pre-render every question's option group inside a hidden
-  // measurement helper, then lock the visible row's options area to
-  // the tallest measurement. The dialog's overall height stops
-  // depending on which row is current — clicking through Back/Next
-  // never reflows the page below.
-  //
-  // `null` until the effect below runs; the first paint shows the
-  // natural Q1 height without a floor, and the next render (a
-  // synchronous re-render from `setState` inside `useLayoutEffect`)
-  // applies the lock before any user interaction.
-  const measureRef = React.useRef<HTMLDivElement | null>(null);
-  const [optionsMinHeight, setOptionsMinHeight] = React.useState<
-    number | undefined
-  >(undefined);
-  React.useLayoutEffect(() => {
-    const el = measureRef.current;
-    if (el === null) return;
-    const rows = el.querySelectorAll<HTMLElement>(
-      "[data-dev-question-measure]",
-    );
-    let max = 0;
-    rows.forEach((row) => {
-      const h = row.getBoundingClientRect().height;
-      if (h > max) max = h;
-    });
-    // Round up so a sub-pixel fractional measurement never reads as
-    // a one-pixel shrink on the next render.
-    const ceil = Math.ceil(max);
-    setOptionsMinHeight((prev) =>
-      prev === undefined || ceil > prev ? ceil : prev,
-    );
-  }, [questions]);
+  // The rail's list-view plumbing. The data source is row identity
+  // only (stable per request); per-render row state reaches the cells
+  // through `QuestionRailContext` below. The delegate routes a row
+  // activation to the wizard's jump — `handleJump` no-ops on the
+  // current row, so clicking it can't strand a pending focus intent.
+  const railDataSource = React.useMemo(
+    () => new QuestionRailDataSource(questions),
+    [questions],
+  );
 
   /** Mark `index` as user-engaged. Idempotent: the cheap reference
    *  equality check below means a no-op set doesn't trigger a render. */
@@ -1257,15 +1225,30 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   /** Jump-via-rail-click is exploratory — the user hasn't committed
    *  anything yet by browsing, so we don't mark visited. They have
    *  to actually pick or use `Next` to lock in a row. The keyboard
-   *  follows the jump to that question's options. */
+   *  follows the jump to that question's options. A no-op on the
+   *  already-current row: arming a focus intent there would never be
+   *  consumed (the consuming effect runs on `currentIndex` changes)
+   *  and would misfire on the next genuine step. */
   const handleJump = React.useCallback(
     (target: number) => {
+      if (target === currentIndex) return;
       if (target < questions.length) {
         pendingFocusKeyRef.current = `${focusGroup}:${QUESTION_OPTIONS_ORDER}`;
       }
       setCurrentIndex(target);
     },
-    [questions.length, focusGroup],
+    [questions.length, focusGroup, currentIndex],
+  );
+
+  // The rail delegate routes through a ref so its identity stays
+  // stable while `handleJump` re-binds to the moving `currentIndex`.
+  const handleJumpRef = React.useRef(handleJump);
+  handleJumpRef.current = handleJump;
+  const railDelegate = React.useMemo<TugListViewDelegate>(
+    () => ({
+      onSelect: (index) => handleJumpRef.current(index),
+    }),
+    [],
   );
 
   /** `Back` from the current row: don't mark the row we're leaving
@@ -1595,7 +1578,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // (Cancel / Submit, or just Dismiss when there are no questions)
   // flow into `actions` on the header row. The wizard nav (Back / Next)
   // sits on its own row inside the body slot, between the dialog
-  // description and the question accordion — close enough to the
+  // description and the question rail — close enough to the
   // questions for the touch target to feel coupled to the row it
   // mutates, but stable across question advances so the button
   // never moves under the mouse.
@@ -1657,78 +1640,105 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           </div>
         </div>
       ) : null}
-      {hasQuestions ? (
+      {hasQuestions && single !== null ? (
+        // Single-question payload — no rail, no panel, no wizard
+        // chrome. The question text is the dialog `description`
+        // (above) and the options fill the children slot at full
+        // width. No sizers: a single question's options always
+        // reflect themselves; there is no second state to absorb.
         <div
           className="dev-question-dialog-questions"
           data-slot="dev-question-dialog-questions"
         >
-          {single !== null ? (
-            // Single-question payload — no rail, no wizard chrome.
-            // The question text is the dialog `description` (above)
-            // and the options fill the children slot at full width.
-            // No measurement / `optionsMinHeight` floor: a single
-            // question's options always reflect themselves; there is
-            // no second state to absorb.
-            <CurrentRow
-              index={0}
-              question={single}
-              selection={selections[0] ?? []}
-              onSelect={(optionLabel) => handleSelect(0, optionLabel)}
-              optionsFocusGroup={focusGroup}
-              optionsFocusOrder={QUESTION_OPTIONS_ORDER}
-              dialogResponderId={dialogResponderId}
+          <QuestionOptions
+            question={single}
+            selection={selections[0] ?? []}
+            onSelect={(optionLabel) => handleSelect(0, optionLabel)}
+            focusGroup={focusGroup}
+            focusOrder={QUESTION_OPTIONS_ORDER}
+            dialogResponderId={dialogResponderId}
+          />
+        </div>
+      ) : null}
+      {hasQuestions && single === null ? (
+        <>
+          {/* The rail — one TugListRow summary per question, uniform
+            * geometry in every status. Row identity lives in the data
+            * source; row state reaches the cells via context. No
+            * `focusGroup`: the rail is mouse-jump only (keyboard
+            * walks Back / Next), so it contributes no Tab stop. */}
+          <QuestionRailContext.Provider
+            value={{ questions, selections, visited, currentIndex }}
+          >
+            <TugListView<QuestionRailDataSource>
+              dataSource={railDataSource}
+              delegate={railDelegate}
+              cellRenderers={QUESTION_RAIL_CELL_RENDERERS}
+              inline
+              className="dev-question-dialog-rail"
+              aria-label="Questions"
             />
-          ) : (
-            <>
-              {questions.map((question, index) => {
-                const selection = selections[index] ?? [];
-                const status = rowStatus(
-                  index === currentIndex,
-                  visited[index] === true,
-                  selection.length > 0,
-                );
-                return (
-                  <QuestionRow
-                    key={`${index}:${question.question}`}
-                    index={index}
-                    question={question}
-                    status={status}
-                    selection={selection}
-                    optionsMinHeight={optionsMinHeight}
-                    optionsFocusGroup={focusGroup}
-                    optionsFocusOrder={QUESTION_OPTIONS_ORDER}
-                    dialogResponderId={dialogResponderId}
-                    onSelect={(optionLabel) => handleSelect(index, optionLabel)}
-                    onJump={() => handleJump(index)}
-                  />
-                );
-              })}
+          </QuestionRailContext.Provider>
 
-              {/* Hidden measurement helper. Renders every question's
-                * option group in the same width context as the
-                * visible row, but positioned out of the visual flow
-                * via `dev-question-dialog-measure`. The effect
-                * above measures each block's natural height and
-                * locks the visible current row's options area to
-                * the max. Mounted once and re-runs only when the
-                * `questions` array reference changes. */}
+          {/* The stationary panel — the one place options ever
+            * render. A CSS grid stacks one hidden, inert sizer per
+            * question (heading + options at the panel's own width)
+            * under the live face, so the panel holds the tallest
+            * question's natural height in every wizard state — no
+            * JS measurement, no reflow on advance. The review state
+            * swaps the face's content, never the panel's box. */}
+          <div
+            className="dev-question-dialog-panel"
+            data-slot="dev-question-dialog-panel"
+          >
+            <div
+              className="dev-question-dialog-panel-face"
+              data-slot="dev-question-dialog-panel-face"
+            >
+              {isAtReview ? (
+                <div className="dev-question-dialog-panel-review">
+                  Review your answers above, then Submit.
+                </div>
+              ) : (
+                <>
+                  <PanelHeading
+                    index={currentIndex}
+                    question={questions[currentIndex]}
+                  />
+                  <div className="dev-question-dialog-panel-options">
+                    <QuestionOptions
+                      key={`${currentIndex}:${questions[currentIndex].question}`}
+                      question={questions[currentIndex]}
+                      selection={selections[currentIndex] ?? []}
+                      onSelect={(optionLabel) =>
+                        handleSelect(currentIndex, optionLabel)
+                      }
+                      focusGroup={focusGroup}
+                      focusOrder={QUESTION_OPTIONS_ORDER}
+                      dialogResponderId={dialogResponderId}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            {/* Sizers render AFTER the live face so a first-match DOM
+              * query for an option primitive (a radio group, a list
+              * row) always lands on the live one, never an inert
+              * sizer clone. Grid stacking is order-independent. */}
+            {questions.map((question, index) => (
               <div
-                ref={measureRef}
-                className="dev-question-dialog-measure"
+                key={`sizer:${index}:${question.question}`}
+                className="dev-question-dialog-panel-sizer"
                 aria-hidden="true"
               >
-                {questions.map((question, index) => (
-                  <div
-                    key={`measure:${index}:${question.question}`}
-                    data-dev-question-measure
-                  >
-                    <QuestionOptionsMeasure question={question} />
-                  </div>
-                ))}
+                <PanelHeading index={index} question={question} />
+                <div className="dev-question-dialog-panel-options">
+                  <QuestionOptionsSizer question={question} />
+                </div>
               </div>
-            </>
-          )}
-        </div>
+            ))}
+          </div>
+        </>
       ) : null}
     </TugInlineDialog>
       </div>
