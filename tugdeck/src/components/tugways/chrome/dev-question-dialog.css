@@ -147,7 +147,14 @@ body {
   height: auto;
   width: 100%;
   padding-inline: 0;
+  /* The `-start` / `-end` variants must be zeroed EXPLICITLY: the
+   * breathing pseudo-elements read them with the base token only as a
+   * fallback, and the transcript sets `-end` directly (`dev-card.css`,
+   * a 2xl tail) — zeroing the base alone leaves a large phantom band
+   * under the last rail row. */
   --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-block-start: 0;
+  --tugx-list-view-padding-block-end: 0;
   --tugx-list-view-row-gap: var(--tugx-question-stack-gap);
 }
 
@@ -261,11 +268,15 @@ body {
 /* ---- Rail / panel separator ----
  *
  * The quiet structural cut between the index (rail) and the working
- * surface (panel): a full-width hairline, no box. Block margins give
- * the cut a little air on both sides; the TugInlineDialog body's own
- * gap supplies the rest. */
+ * surface (panel): a full-width hairline, no box. The lead-in above
+ * the rule stays tight (the rail's own row gap already supplies air);
+ * the default block margin remains below. */
 .dev-question-dialog-separator {
   width: 100%;
+}
+
+.dev-question-dialog-separator.tug-separator-horizontal {
+  margin-block-start: var(--tug-space-xs);
 }
 
 /* ---- Stationary options panel ----
