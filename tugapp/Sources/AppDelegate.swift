@@ -606,8 +606,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showAbout(_ sender: Any?) {
-        sendControl("show-card", params: ["component": "about"])
+        // The About card reads its identity from this payload (parked in
+        // tugdeck's appInfoStore) — version/build/copyright from
+        // Info.plist, the rest from BuildInfo, plus the running
+        // bundle's app icon as a data URL (so debug/nightly builds show
+        // their own icon). All constant for the process lifetime.
+        let info = Bundle.main.infoDictionary ?? [:]
+        sendControl("show-card", params: [
+            "component": "about",
+            "version": info["CFBundleShortVersionString"] as? String ?? "",
+            "build": info["CFBundleVersion"] as? String ?? "",
+            "commit": BuildInfo.commit,
+            "branch": BuildInfo.branch,
+            "profile": BuildInfo.profile,
+            "copyright": info["NSHumanReadableCopyright"] as? String ?? "",
+            "icon": Self.appIconDataURL,
+        ])
     }
+
+    /// The running app's icon rendered to a 256px PNG data URL for the
+    /// About card. Computed once — the icon never changes within a
+    /// process lifetime. Empty string when no icon can be rendered
+    /// (the card falls back to its placeholder glyph).
+    private static let appIconDataURL: String = {
+        guard let icon = NSApp.applicationIconImage else { return "" }
+        var rect = NSRect(x: 0, y: 0, width: 256, height: 256)
+        guard let cg = icon.cgImage(forProposedRect: &rect, context: nil, hints: nil) else {
+            return ""
+        }
+        let rep = NSBitmapImageRep(cgImage: cg)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return "" }
+        return "data:image/png;base64," + png.base64EncodedString()
+    }()
 
     @objc private func selectTheme(_ sender: NSMenuItem) {
         let name = sender.representedObject as? String ?? sender.title

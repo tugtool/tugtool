@@ -69,7 +69,7 @@ export function GalleryTitleBar() {
     >
       <div className="cg-section">
         <TugLabel className="cg-section-title">Title Bar Demo (Step 3)</TugLabel>
-        <TugLabel size="2xs" emphasis="calm">CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal ellipsis), and close buttons.</TugLabel>
+        <TugLabel size="2xs" emphasis="calm">CardTitleBar in isolation: collapse/expand toggle (chevron) and close buttons.</TugLabel>
       </div>
 
       <TugSeparator />

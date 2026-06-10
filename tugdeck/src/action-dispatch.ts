@@ -48,6 +48,7 @@ import { sessionNameStore } from "./lib/session-name-store";
 import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
 import { notifySpawnRejected } from "./lib/dev-session-restore";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
+import { appInfoStore } from "./lib/app-info-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
 import { decodeSessionUpdated } from "./protocol";
@@ -409,17 +410,23 @@ export function initActionDispatch(
     });
   });
 
-  // show-card: Add a card by componentId ()
-  // The AppDelegate already sends show-card with component: "settings" and
-  // component: "about" -- those will log a warning and return null from addCard
-  // until Phase 9 registers those card types. This is correct behavior.
+  // show-card: Show a card by componentId, as a singleton. The Swift
+  // app menu sends show-card with component: "settings" / "about";
+  // showSingletonCard reuses an existing card of that type (raising it
+  // to z-top) instead of spawning a duplicate. The about invocation
+  // additionally carries the app's build identity (version, build,
+  // commit, branch, profile, copyright), parked in appInfoStore for
+  // the About card to read.
   registerAction("show-card", (payload) => {
     const component = payload.component;
     if (typeof component !== "string") {
       console.warn("show-card: missing or invalid component parameter", payload);
       return;
     }
-    deckManager.addCard(component);
+    if (component === "about") {
+      appInfoStore.setFromPayload(payload);
+    }
+    deckManager.showSingletonCard(component);
   });
 
   // add-card-to-active-pane (Both): add a new card to the focused pane.

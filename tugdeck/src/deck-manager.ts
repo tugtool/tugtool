@@ -677,10 +677,18 @@ export class DeckManager implements IDeckManagerStore {
       sizePolicy.preferred.height,
       Math.max(sizePolicy.min.height, Math.floor(canvasHeightForCap * 0.9)),
     );
-    const position = this.nextCascadePosition({
-      width: cappedPreferredWidth,
-      height: cappedPreferredHeight,
-    });
+    // Dialog-like cards (registration `placement: "center"`) open
+    // centered in the live canvas; everything else walks the cascade.
+    const position =
+      registration.placement === "center"
+        ? {
+            x: Math.max(0, Math.floor((canvasWidthForCap - cappedPreferredWidth) / 2)),
+            y: Math.max(0, Math.floor((canvasHeightForCap - cappedPreferredHeight) / 2)),
+          }
+        : this.nextCascadePosition({
+            width: cappedPreferredWidth,
+            height: cappedPreferredHeight,
+          });
 
     const seededCards: CardState[] = [];
     if (registration.defaultCards && registration.defaultCards.length > 0) {
@@ -737,6 +745,30 @@ export class DeckManager implements IDeckManagerStore {
     );
 
     return firstCardId;
+  }
+
+  /**
+   * Show a card type as a singleton: if any card with `componentId`
+   * already exists in the deck, activate it — `activateCard` raises its
+   * host pane to z-top — instead of creating a duplicate. Otherwise
+   * fall through to {@link addCard}.
+   *
+   * Singleton-ness is a property of this call site, not of the card
+   * registry: callers that want multiple instances keep using
+   * `addCard` directly.
+   *
+   * Returns the reused or newly created card id, or `null` when
+   * `componentId` is unregistered (same contract as `addCard`).
+   */
+  showSingletonCard(componentId: string): string | null {
+    const existing = this.deckState.cards.find(
+      (c) => c.componentId === componentId,
+    );
+    if (existing) {
+      this.activateCard(existing.id);
+      return existing.id;
+    }
+    return this.addCard(componentId);
   }
 
   /**

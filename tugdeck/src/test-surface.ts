@@ -514,7 +514,9 @@ export interface TugTestSurface {
    * Swift host uses for menu items and keyboard shortcuts:
    * `action-dispatch.ts`'s `dispatchAction({ action })`. Routes
    * through any registered handler (e.g. `show-component-gallery`,
-   * `add-card-to-active-pane`, `close`, `reload`).
+   * `add-card-to-active-pane`, `close`, `reload`). Extra payload
+   * fields (e.g. `show-card`'s `component`) ride along via the
+   * optional second argument, exactly as they would on the wire.
    *
    * Returns `true` if a handler ran (registered + chain reached a
    * matching responder), `false` otherwise. Most actions delegate to
@@ -524,7 +526,10 @@ export interface TugTestSurface {
    * useful signal for tests that need to verify an action stays
    * reachable across deck mutations.
    */
-  dispatchControlAction(actionName: string): void;
+  dispatchControlAction(
+    actionName: string,
+    payload?: Record<string, unknown>,
+  ): void;
 
   /**
    * Return the current "ready generation" — a counter
@@ -1332,8 +1337,11 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       dispatchAction({ action: "reload" });
     },
 
-    dispatchControlAction(actionName: string): void {
-      dispatchAction({ action: actionName });
+    dispatchControlAction(
+      actionName: string,
+      payload?: Record<string, unknown>,
+    ): void {
+      dispatchAction({ ...payload, action: actionName });
     },
 
     getReadyGen(): number {

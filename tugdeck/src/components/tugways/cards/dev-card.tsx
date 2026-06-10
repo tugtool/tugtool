@@ -21,10 +21,9 @@
  *     wrapped in a position-0 gate so `/` mid-text produces an empty popup.
  *   • A shared `PromptHistoryStore` singleton for arrow-up/down recall.
  *   • A per-card `EditorSettingsStore` whose CSS variables cascade from
- *     the entry-pane TugBox down to the input editor. The tools panel
- *     (toggled via the button on the status row) exposes font-family,
- *     font-size, tracking, and leading popup buttons that write back to
- *     the store.
+ *     the entry-pane TugBox down to the input editor. The store reads
+ *     the global tugbank domain edited by the Settings card's Dev Card
+ *     tab and tracks it live via `onDomainChanged`.
  *
  * The entry is mounted inside a `TugBox` with `inset={false}` so the
  * pane fills edge-to-edge. The split pane's grip pill is suppressed via
@@ -56,7 +55,6 @@ import { EffortChip } from "./effort-chip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
 import { useRoute } from "@/lib/route-lifecycle";
-import { createNumberFormatter } from "@/lib/tug-format";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
@@ -74,22 +72,16 @@ import {
   TugConfirmPopover,
   type TugConfirmPopoverHandle,
 } from "../tug-confirm-popover";
-import { TugPopupButton } from "../tug-popup-button";
-import type { TugPopupButtonItem } from "../tug-popup-button";
-import { TugSwitch } from "../tug-switch";
-import { TugChoiceGroup } from "../tug-choice-group";
-import { TugSlider } from "../tug-slider";
 import {
   TugListView,
   type TugListViewDelegate,
 } from "../tug-list-view";
 import { useTugSheet } from "../tug-sheet";
 import { presentAlertSheet } from "../tug-alert-sheet";
-import { useCardSettings } from "../use-card-settings";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
-import { useFocusManager, useSeedKeyView } from "../use-focusable";
+import { useFocusManager } from "../use-focusable";
 import { useCycleMode } from "../use-cycle-mode";
 import { rowGridOrder, type SpatialOrder } from "../spatial-order";
 import { useSpatialOrder } from "../use-spatial-order";
@@ -191,32 +183,6 @@ import "./dev-card.css";
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const EDITOR_FONT_OPTIONS: TugPopupButtonItem<string>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: "plex-sans", label: "IBM Plex Sans" },
-  { action: TUG_ACTIONS.SET_VALUE, value: "inter", label: "Inter" },
-  { action: TUG_ACTIONS.SET_VALUE, value: "hack", label: "Hack (mono)" },
-];
-
-const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: 11, label: "11 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 12, label: "12 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 13, label: "13 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 14, label: "14 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 15, label: "15 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
-];
-
-const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.35, label: "-0.35 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.25, label: "-0.25 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.15, label: "-0.15 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.10, label: "-0.10 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.05, label: "-0.05 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0, label: "Normal" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0.05, label: "+0.05 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0.10, label: "+0.10 px" },
-];
 
 /** Percentage the entry panel pegs to when the user clicks Maximize.
  *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
@@ -335,27 +301,8 @@ function DevRouteShellGate({
   return <>{children(useRoute() === ROUTE_SHELL)}</>;
 }
 
-const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.1, label: "1.1" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.2, label: "1.2" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.3, label: "1.3" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.4, label: "1.4" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.5, label: "1.5" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.6, label: "1.6" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.7, label: "1.7" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.8, label: "1.8" },
-];
-
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
-
-/**
- * Two-decimal formatter for the magnification slider's value input.
- * `0.5` → `"0.50"`, `1` → `"1.00"`, `1.5` → `"1.50"`. Module-scope so
- * the formatter identity stays stable across renders.
- */
-const MAGNIFICATION_FORMATTER = createNumberFormatter({ decimals: 2 });
 
 /**
  * Human-readable labels for the `lastError` causes the card surfaces as
@@ -2780,67 +2727,6 @@ export function DevCardBody({
   //   - FOCUS_PROMPT (⌘K): move keyboard focus to the prompt editor.
   //     Reads the delegate via the ref [L07] so the handler closure
   //     registered at mount never goes stale.
-  // --- Stable senders for the settings sheet controls. Declared
-  // here so both `useResponderForm` (below) and the sheet body
-  // can reference them. The sheet now hosts two sections:
-  // Response Settings (transcript pane) and Editor Settings (prompt
-  // entry pane). Senders for each section share this scope. ---
-  const fontPopupId = useId();
-  const fontSizePopupId = useId();
-  const letterSpacingPopupId = useId();
-  const lineHeightPopupId = useId();
-  const lineWrapId = useId();
-  const lineNumbersId = useId();
-  const activeLineGutterId = useId();
-  const returnKeyId = useId();
-  const enterKeyId = useId();
-  const responseEntryMarginSliderId = useId();
-  const responseMagnificationSliderId = useId();
-
-  // --- Card settings (title-bar `…` button). ---
-  //
-  // `useCardSettings` registers a stable controller in
-  // `cardSettingsStore` keyed by `cardId`. The pane's title bar
-  // invokes `controller.toggle()` directly — no chain dispatch, no
-  // ref gymnastics. The hook also writes the open / closed state
-  // back to the store so the title bar's `…` button can paint as
-  // highlighted while the sheet is up. [L02 / L24]
-  const cardSettings = useCardSettings({
-    cardId,
-    title: "Settings",
-    displayWidth: "lg",
-    render: (close) => (
-      <SettingsSheetBody
-        editorStore={editorStore}
-        responseStore={responseStore}
-        fontPopupId={fontPopupId}
-        fontSizePopupId={fontSizePopupId}
-        letterSpacingPopupId={letterSpacingPopupId}
-        lineHeightPopupId={lineHeightPopupId}
-        lineWrapId={lineWrapId}
-        lineNumbersId={lineNumbersId}
-        activeLineGutterId={activeLineGutterId}
-        returnKeyId={returnKeyId}
-        enterKeyId={enterKeyId}
-        responseEntryMarginSliderId={responseEntryMarginSliderId}
-        responseMagnificationSliderId={responseMagnificationSliderId}
-        onClose={close}
-      />
-    ),
-    // Override Radix FocusScope's default first-focusable pick so
-    // the OK button claims initial focus. With OK focused, Return
-    // dismisses the sheet directly via the button's native click
-    // semantics — no extra keymap needed.
-    onOpenAutoFocus: (event) => {
-      event.preventDefault();
-      const okButton = document.querySelector<HTMLButtonElement>(
-        '[data-slot="tug-sheet"] [data-tug-default-button="ok"]',
-      );
-      okButton?.focus();
-    },
-  });
-  const { renderSheet } = cardSettings;
-
   // Permission-mode cycle + per-card persistence/restore ([D02], [D03],
   // [D07]). `cycle` advances default → acceptEdits → plan → auto → … and
   // sends the `permission_mode` frame; the Z4B chip reflects the result
@@ -3350,34 +3236,6 @@ export function DevCardBody({
     },
   });
 
-  // --- Responder scope for the settings controls. ---
-  const { ResponderScope, responderRef } = useResponderForm({
-    setValueString: {
-      [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
-    },
-    setValueNumber: {
-      [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
-      [letterSpacingPopupId]: (v: number) => editorStore.set({ letterSpacing: v }),
-      [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
-      [responseEntryMarginSliderId]: (v: number) =>
-        responseStore.set({ entryMargin: v }),
-      [responseMagnificationSliderId]: (v: number) =>
-        responseStore.set({ magnification: v }),
-    },
-    toggle: {
-      [lineWrapId]: (v: boolean) => editorStore.set({ lineWrap: v }),
-      [lineNumbersId]: (v: boolean) => editorStore.set({ lineNumbers: v }),
-      [activeLineGutterId]: (v: boolean) =>
-        editorStore.set({ highlightActiveLineGutter: v }),
-    },
-    selectValue: {
-      [returnKeyId]: (v: string) =>
-        editorStore.set({ returnKeyAction: v as "submit" | "newline" }),
-      [enterKeyId]: (v: string) =>
-        editorStore.set({ numpadEnterAction: v as "submit" | "newline" }),
-    },
-  });
-
   // --- Status row + tools panel content. ---
   // The status badge shows the card's bound `projectDir` — the cwd that
   // Claude is running against. Subscribed via L02 so a rebind (when
@@ -3647,104 +3505,100 @@ export function DevCardBody({
           maxSize="90%"
           groupResizeBehavior="preserve-pixel-size"
         >
-          <ResponderScope>
-            <TugBox
-              ref={(el) => {
-                paneRef.current = el as HTMLDivElement | null;
-                (responderRef as (node: Element | null) => void)(el as Element | null);
-              }}
-              variant="plain"
-              inset={false}
-              disabled={sessionErrored}
-              className="dev-card-entry-pane"
-            >
-              {/*
-                CycleScope keys the prompt entry's authored focus stops
-                into this card's cycle mode (not the base mode), so the
-                submit registers as a cycle stop that is inert while typing
-                and walked only while cycling ([P09]/[P10]). The editor
-                itself is a responder (caret), not a focus-group stop, so
-                it is untouched. Z2 / Z4A stops join in later slices via
-                additional `CycleScope`s sharing this same mode id.
-              */}
-              <cycle.CycleScope>
-              <TugPromptEntry
-                ref={entryDelegateRef}
-                id={`${cardId}-entry`}
-                // The editor stands down (read-only + caret off + dimmed) both
-                // while an inline dialog owns the keyboard AND while cycling —
-                // the latter is the cycling-mode indicator ([P12] revised:
-                // reuse the deactivated path as the "blur"). It reactivates when
-                // cycling ends (the Connected → editor effect re-focuses it).
-                deactivated={inlineDialogPending || cycle.cycling}
-                submitFocusGroup={DEV_CYCLE_GROUP}
-                submitFocusOrder={DEV_CYCLE_ORDER_SUBMIT}
-                routeFocusGroup={DEV_CYCLE_GROUP}
-                routeFocusOrder={DEV_CYCLE_ORDER_ROUTE}
-                editorFocusGroup={DEV_CYCLE_GROUP}
-                editorFocusOrder={DEV_CYCLE_ORDER_EDITOR}
-                onResumeTyping={() => cycle.exit()}
-                localCommandTargetId={`${cardId}-card-content`}
-                codeSessionStore={codeSessionStore}
-                sessionMetadataStore={sessionMetadataStore}
-                historyStore={historyStore}
-                completionProviders={completionProviders}
-                onBeforeSubmit={handleBeforeSubmit}
-                onAfterSubmit={handleAfterSubmit}
-                onEscapeWhenEmpty={handleEscapeWhenEmpty}
-                indicatorsContent={
-                  <>
-                    <DevRouteIndicatorBadge
-                      codeSessionStore={codeSessionStore}
-                      sessionMetadataStore={sessionMetadataStore}
-                    />
-                    {effectivePromptStatusContent}
-                    <DevRouteShellGate>
-                      {(isShell) => (
-                        <>
-                          <DevSessionIdBadge cardId={cardId} disabled={isShell} />
-                          <PermissionModeChip
-                            cardId={cardId}
-                            sessionMetadataStore={sessionMetadataStore}
-                            onOpenSheet={permissionSheet.openPermissionSheet}
-                            disabled={isShell}
-                            focusGroup={DEV_CYCLE_GROUP}
-                            focusOrder={DEV_CYCLE_ORDER_MODE}
-                          />
-                          <ModelChip
-                            sessionMetadataStore={sessionMetadataStore}
-                            onOpenPicker={modelPicker.openModelPicker}
-                            disabled={isShell}
-                            focusGroup={DEV_CYCLE_GROUP}
-                            focusOrder={DEV_CYCLE_ORDER_MODEL}
-                          />
-                          <EffortChip
-                            sessionMetadataStore={sessionMetadataStore}
-                            onOpenPicker={effortPicker.openEffortPicker}
-                            disabled={isShell}
-                            focusGroup={DEV_CYCLE_GROUP}
-                            focusOrder={DEV_CYCLE_ORDER_EFFORT}
-                          />
-                        </>
-                      )}
-                    </DevRouteShellGate>
-                    {effectiveFooterContent}
-                  </>
-                }
-                lineWrap={editorSettings.lineWrap}
-                lineNumbers={editorSettings.lineNumbers}
-                highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
-                returnAction={editorSettings.returnKeyAction}
-                numpadEnterAction={editorSettings.numpadEnterAction}
-                maximized={maximized}
-                onMaximizeChange={setMaximized}
-                placeholderByRoute={DEV_PROMPT_PLACEHOLDER_BY_ROUTE}
-              />
-              </cycle.CycleScope>
-            </TugBox>
-            {renderSheet()}
-            {cardPickerSheet.renderSheet()}
-          </ResponderScope>
+          <TugBox
+            ref={(el) => {
+              paneRef.current = el as HTMLDivElement | null;
+            }}
+            variant="plain"
+            inset={false}
+            disabled={sessionErrored}
+            className="dev-card-entry-pane"
+          >
+            {/*
+              CycleScope keys the prompt entry's authored focus stops
+              into this card's cycle mode (not the base mode), so the
+              submit registers as a cycle stop that is inert while typing
+              and walked only while cycling ([P09]/[P10]). The editor
+              itself is a responder (caret), not a focus-group stop, so
+              it is untouched. Z2 / Z4A stops join in later slices via
+              additional `CycleScope`s sharing this same mode id.
+            */}
+            <cycle.CycleScope>
+            <TugPromptEntry
+              ref={entryDelegateRef}
+              id={`${cardId}-entry`}
+              // The editor stands down (read-only + caret off + dimmed) both
+              // while an inline dialog owns the keyboard AND while cycling —
+              // the latter is the cycling-mode indicator ([P12] revised:
+              // reuse the deactivated path as the "blur"). It reactivates when
+              // cycling ends (the Connected → editor effect re-focuses it).
+              deactivated={inlineDialogPending || cycle.cycling}
+              submitFocusGroup={DEV_CYCLE_GROUP}
+              submitFocusOrder={DEV_CYCLE_ORDER_SUBMIT}
+              routeFocusGroup={DEV_CYCLE_GROUP}
+              routeFocusOrder={DEV_CYCLE_ORDER_ROUTE}
+              editorFocusGroup={DEV_CYCLE_GROUP}
+              editorFocusOrder={DEV_CYCLE_ORDER_EDITOR}
+              onResumeTyping={() => cycle.exit()}
+              localCommandTargetId={`${cardId}-card-content`}
+              codeSessionStore={codeSessionStore}
+              sessionMetadataStore={sessionMetadataStore}
+              historyStore={historyStore}
+              completionProviders={completionProviders}
+              onBeforeSubmit={handleBeforeSubmit}
+              onAfterSubmit={handleAfterSubmit}
+              onEscapeWhenEmpty={handleEscapeWhenEmpty}
+              indicatorsContent={
+                <>
+                  <DevRouteIndicatorBadge
+                    codeSessionStore={codeSessionStore}
+                    sessionMetadataStore={sessionMetadataStore}
+                  />
+                  {effectivePromptStatusContent}
+                  <DevRouteShellGate>
+                    {(isShell) => (
+                      <>
+                        <DevSessionIdBadge cardId={cardId} disabled={isShell} />
+                        <PermissionModeChip
+                          cardId={cardId}
+                          sessionMetadataStore={sessionMetadataStore}
+                          onOpenSheet={permissionSheet.openPermissionSheet}
+                          disabled={isShell}
+                          focusGroup={DEV_CYCLE_GROUP}
+                          focusOrder={DEV_CYCLE_ORDER_MODE}
+                        />
+                        <ModelChip
+                          sessionMetadataStore={sessionMetadataStore}
+                          onOpenPicker={modelPicker.openModelPicker}
+                          disabled={isShell}
+                          focusGroup={DEV_CYCLE_GROUP}
+                          focusOrder={DEV_CYCLE_ORDER_MODEL}
+                        />
+                        <EffortChip
+                          sessionMetadataStore={sessionMetadataStore}
+                          onOpenPicker={effortPicker.openEffortPicker}
+                          disabled={isShell}
+                          focusGroup={DEV_CYCLE_GROUP}
+                          focusOrder={DEV_CYCLE_ORDER_EFFORT}
+                        />
+                      </>
+                    )}
+                  </DevRouteShellGate>
+                  {effectiveFooterContent}
+                </>
+              }
+              lineWrap={editorSettings.lineWrap}
+              lineNumbers={editorSettings.lineNumbers}
+              highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
+              returnAction={editorSettings.returnKeyAction}
+              numpadEnterAction={editorSettings.numpadEnterAction}
+              maximized={maximized}
+              onMaximizeChange={setMaximized}
+              placeholderByRoute={DEV_PROMPT_PLACEHOLDER_BY_ROUTE}
+            />
+            </cycle.CycleScope>
+          </TugBox>
+          {cardPickerSheet.renderSheet()}
         </TugSplitPanel>
       </TugSplitPane>
       {/*
@@ -3764,280 +3618,6 @@ export function DevCardBody({
       {renderDevCardBanner(bannerSpec, setDismissedAt, setUnknownDismissedAt)}
       </div>
     </CardContentResponderScope>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SettingsSheetBody — combined settings sheet for the title-bar `…` menu
-// ---------------------------------------------------------------------------
-
-/**
- * Props for {@link SettingsSheetBody}.
- *
- * Sender ids are provided by the enclosing `DevCardBody` so the form
- * bindings (registered there via `useResponderForm`) can target the
- * controls. Both stores are forwarded so the body can subscribe
- * directly via `useSyncExternalStore` and stay in sync without an
- * outer re-render of the sheet payload.
- */
-interface SettingsSheetBodyProps {
-  editorStore: EditorSettingsStore;
-  responseStore: ResponseSettingsStore;
-  fontPopupId: string;
-  fontSizePopupId: string;
-  letterSpacingPopupId: string;
-  lineHeightPopupId: string;
-  lineWrapId: string;
-  lineNumbersId: string;
-  activeLineGutterId: string;
-  returnKeyId: string;
-  enterKeyId: string;
-  responseEntryMarginSliderId: string;
-  responseMagnificationSliderId: string;
-  /** Dismiss callback supplied by `useTugSheet`'s render closure. */
-  onClose: () => void;
-}
-
-function letterSpacingLabel(value: number): string {
-  if (value === 0) return "Normal";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)} px`;
-}
-
-/**
- * Plain-language legend for the submit-key option groups — one line per
- * combination (Return, Shift+Return, Enter, Shift+Enter) describing
- * exactly what it does under the current `returnKeyAction` /
- * `numpadEnterAction`. Shift always inverts the unshifted action, so a
- * single boolean per key drives both of its lines. Recomputed on every
- * render so the legend tracks the choice groups live.
- */
-function submitKeyLegend(
-  returnKeyAction: "submit" | "newline",
-  numpadEnterAction: "submit" | "newline",
-): { key: string; effect: string }[] {
-  const SUBMIT = "submits";
-  const NEWLINE = "inserts a newline";
-  const returnSubmits = returnKeyAction === "submit";
-  const enterSubmits = numpadEnterAction === "submit";
-  return [
-    { key: "Return", effect: returnSubmits ? SUBMIT : NEWLINE },
-    { key: "Shift+Return", effect: returnSubmits ? NEWLINE : SUBMIT },
-    { key: "Enter", effect: enterSubmits ? SUBMIT : NEWLINE },
-    { key: "Shift+Enter", effect: enterSubmits ? NEWLINE : SUBMIT },
-  ];
-}
-
-/**
- * Body of the combined settings sheet shown when the user taps the `…`
- * button in the Dev card's title bar.
- *
- * Two stacked sections:
- *   1. **Response** — Magnification (CSS `zoom` on the transcript root,
- *      per card) and the inter-entry vertical gap. The macOS app's View
- *      menu (`WKWebView.pageZoom`) scales the whole window and composes
- *      with the per-card magnification.
- *   2. **Editor** — typography and view toggles for the prompt editor
- *      (the bottom pane).
- */
-function SettingsSheetBody({
-  editorStore,
-  responseStore,
-  fontPopupId,
-  fontSizePopupId,
-  letterSpacingPopupId,
-  lineHeightPopupId,
-  lineWrapId,
-  lineNumbersId,
-  activeLineGutterId,
-  returnKeyId,
-  enterKeyId,
-  responseEntryMarginSliderId,
-  responseMagnificationSliderId,
-  onClose,
-}: SettingsSheetBodyProps) {
-  const editorSettings = useSyncExternalStore(
-    editorStore.subscribe,
-    editorStore.getSnapshot,
-  );
-  const responseSettings = useSyncExternalStore(
-    responseStore.subscribe,
-    responseStore.getSnapshot,
-  );
-
-  // Seed the Done button as the sheet's live default (filled+ring) on open.
-  const doneFocusGroup = useId();
-  useSeedKeyView(`${doneFocusGroup}:0`);
-
-  return (
-    <div className="dev-card-settings">
-      <TugBox
-        label="Response"
-        labelPosition="legend"
-        variant="bordered"
-        className="dev-card-settings-group"
-      >
-        {/* 2-column grid (label / slider) so both rows share a single
-            label column auto-sized to the longest entry, keeping labels
-            close to their slider track. Both sliders share `valueWidth`
-            so their value columns also align. Magnification scales the
-            whole transcript subtree (CSS `zoom` on `.dev-card-transcript`)
-            per card; the macOS app's View menu (`WKWebView.pageZoom`)
-            still scales the entire window and composes with this. */}
-        <div className="dev-card-settings-slider-grid">
-          <span className="dev-card-settings-slider-label">Magnification</span>
-          <TugSlider
-            className="dev-card-settings-slider"
-            value={responseSettings.magnification}
-            min={0.5}
-            max={1.5}
-            step={0.05}
-            senderId={responseMagnificationSliderId}
-            size="md"
-            valueWidth="3.5rem"
-            formatter={MAGNIFICATION_FORMATTER}
-          />
-          <span className="dev-card-settings-slider-label">Entry Gap</span>
-          <TugSlider
-            className="dev-card-settings-slider"
-            value={responseSettings.entryMargin}
-            min={0}
-            max={48}
-            step={1}
-            senderId={responseEntryMarginSliderId}
-            size="md"
-            valueWidth="3.5rem"
-          />
-        </div>
-      </TugBox>
-
-      <TugBox
-        label="Editor"
-        labelPosition="legend"
-        variant="bordered"
-        className="dev-card-settings-group"
-      >
-        <div className="dev-card-settings-row">
-          <TugPopupButton
-            className="dev-card-settings-popup dev-card-settings-popup-font"
-            topLabel="Font"
-            label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
-            items={EDITOR_FONT_OPTIONS}
-            senderId={fontPopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="dev-card-settings-popup dev-card-settings-popup-size"
-            topLabel="Size"
-            label={`${editorSettings.fontSize}px`}
-            items={FONT_SIZE_OPTIONS}
-            senderId={fontSizePopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="dev-card-settings-popup dev-card-settings-popup-line"
-            topLabel="Line"
-            label={editorSettings.lineHeight.toFixed(1)}
-            items={LINE_HEIGHT_OPTIONS}
-            senderId={lineHeightPopupId}
-            size="sm"
-          />
-          <TugPopupButton
-            className="dev-card-settings-popup dev-card-settings-popup-spacing"
-            topLabel="Spacing"
-            label={letterSpacingLabel(editorSettings.letterSpacing)}
-            items={LETTER_SPACING_OPTIONS}
-            senderId={letterSpacingPopupId}
-            size="sm"
-          />
-        </div>
-
-        <div className="dev-card-settings-switches">
-          <TugSwitch
-            label="Line wrap"
-            checked={editorSettings.lineWrap}
-            senderId={lineWrapId}
-            size="md"
-          />
-          <TugSwitch
-            label="Line numbers"
-            checked={editorSettings.lineNumbers}
-            senderId={lineNumbersId}
-            size="md"
-          />
-          <TugSwitch
-            label="Active line"
-            checked={editorSettings.highlightActiveLineGutter}
-            senderId={activeLineGutterId}
-            size="md"
-          />
-        </div>
-
-        {/* Submit-key policy. One option group per physical key; the
-            default (today's behavior) is the first option in each.
-            `returnKeyAction` / `numpadEnterAction` are the editor's
-            `InputAction`s straight through — shift inverts each. */}
-        <div className="dev-card-settings-keys">
-          {/* Label + choice-group pairs in a 2-column grid. The control
-              column is `max-content` (sized to the widest group), and each
-              group fills it (`width:auto` + grid stretch) — so both groups
-              are equal width and every segment is just as wide as the
-              longest of the four choices, never the whole row. */}
-          <div className="dev-card-settings-key-grid">
-            <span className="dev-card-settings-key-label">Return key</span>
-            <TugChoiceGroup
-              className="dev-card-settings-key-choice"
-              size="sm"
-              senderId={returnKeyId}
-              value={editorSettings.returnKeyAction}
-              aria-label="Return key submit behavior"
-              items={[
-                { value: "newline", label: "Shift+Return submits" },
-                { value: "submit", label: "Return submits" },
-              ]}
-            />
-            <span className="dev-card-settings-key-label">Enter key</span>
-            <TugChoiceGroup
-              className="dev-card-settings-key-choice"
-              size="sm"
-              senderId={enterKeyId}
-              value={editorSettings.numpadEnterAction}
-              aria-label="Enter key submit behavior"
-              items={[
-                { value: "submit", label: "Enter submits" },
-                { value: "newline", label: "Shift+Enter submits" },
-              ]}
-            />
-          </div>
-
-          {/* Live legend: exactly what each key combination does under the
-              current choices. Updates as the groups change (driven off the
-              same `editorSettings` snapshot). */}
-          <div className="dev-card-settings-key-legend">
-            {submitKeyLegend(
-              editorSettings.returnKeyAction,
-              editorSettings.numpadEnterAction,
-            ).map(({ key, effect }) => (
-              <TugLabel key={key} size="sm" emphasis="calm">
-                {`• ${key} ${effect}`}
-              </TugLabel>
-            ))}
-          </div>
-        </div>
-      </TugBox>
-
-      <div className="tug-sheet-actions">
-        <TugPushButton
-          emphasis="primary"
-          role="action"
-          onClick={onClose}
-          data-tug-default-button="ok"
-          focusGroup={doneFocusGroup}
-          focusOrder={0}
-        >
-          Done
-        </TugPushButton>
-      </div>
-    </div>
   );
 }
 

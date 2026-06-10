@@ -123,6 +123,13 @@ export interface CardRegistration {
   /** Size policy for this card type. Falls back to DEFAULT_SIZE_POLICY when omitted. */
   sizePolicy?: CardSizePolicy;
   /**
+   * Where a fresh pane for this card type opens on the canvas.
+   * `"cascade"` (the default) walks the standard cascade origin;
+   * `"center"` centers the pane in the live canvas — for app-level
+   * dialog-like cards (e.g. the About box).
+   */
+  placement?: "cascade" | "center";
+  /**
    * Category this card belongs to in the type picker menu of a multi-tab
    * host. Registrations sharing a `category.label` are grouped together in
    * the [+] popup, ordered by first-encountered appearance in the registry.

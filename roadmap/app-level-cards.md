@@ -332,12 +332,12 @@ A fixed-size (`min == max == preferred`), non-resizable card: app icon, "Tug" wo
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Singleton primitive + handler rewire | pending | — |
-| #step-2 | About card + app-info store + Swift payload | pending | — |
-| #step-3 | Settings card shell (internal tabs) | pending | — |
-| #step-4 | Migrate Dev `…` settings into General tab | pending | — |
-| #step-5 | Retire the `…` (chrome + store/hook deletion) | pending | — |
-| #step-6 | Integration checkpoint | pending | — |
+| #step-1 | Singleton primitive + handler rewire | done | f2f4bd0a |
+| #step-2 | About card + app-info store + Swift payload | done | 87ddf012 |
+| #step-3 | Settings card shell (internal tabs) | done | 7478359a |
+| #step-4 | Migrate Dev `…` settings into General tab | done | 89bf7184 |
+| #step-5 | Retire the `…` (chrome + store/hook deletion) | done | e37e227f |
+| #step-6 | Integration checkpoint | done | (verification only) |
 
 #### Step 1: Singleton primitive + `show-card` rewire {#step-1}
 

@@ -14,13 +14,19 @@ import type { ActionEvent } from "../components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 // Minimal mock DeckManager.
-// addCard and prepareForReload are stubs that record calls; other methods are omitted.
+// addCard, showSingletonCard, and prepareForReload are stubs that record
+// calls; other methods are omitted.
 function createMockDeckManager() {
   const addCardCalls: string[] = [];
+  const showSingletonCardCalls: string[] = [];
   let prepareForReloadCallCount = 0;
   return {
     addCard(componentId: string): string | null {
       addCardCalls.push(componentId);
+      return null;
+    },
+    showSingletonCard(componentId: string): string | null {
+      showSingletonCardCalls.push(componentId);
       return null;
     },
     prepareForReload(): Promise<void> {
@@ -28,6 +34,7 @@ function createMockDeckManager() {
       return Promise.resolve();
     },
     _addCardCalls: addCardCalls,
+    _showSingletonCardCalls: showSingletonCardCalls,
     get _prepareForReloadCallCount() { return prepareForReloadCallCount; },
   };
 }
@@ -383,23 +390,23 @@ describe("initActionDispatch: set-theme", () => {
 
 // ---- show-card handler (T23, T24) ----
 
-describe("initActionDispatch: show-card – T23: calls deckManager.addCard", () => {
+describe("initActionDispatch: show-card – T23: calls deckManager.showSingletonCard", () => {
   beforeEach(() => {
     _resetForTest();
   });
 
-  it("calls deckManager.addCard with the component value", () => {
+  it("calls deckManager.showSingletonCard with the component value", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
     dispatchAction({ action: "show-card", component: "hello" });
 
-    expect(deck._addCardCalls.length).toBe(1);
-    expect(deck._addCardCalls[0]).toBe("hello");
+    expect(deck._showSingletonCardCalls.length).toBe(1);
+    expect(deck._showSingletonCardCalls[0]).toBe("hello");
   });
 
-  it("calls addCard with any string component value (not just registered ids)", () => {
+  it("calls showSingletonCard with any string component value (not just registered ids)", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -407,7 +414,7 @@ describe("initActionDispatch: show-card – T23: calls deckManager.addCard", () 
     dispatchAction({ action: "show-card", component: "settings" });
     dispatchAction({ action: "show-card", component: "about" });
 
-    expect(deck._addCardCalls).toEqual(["settings", "about"]);
+    expect(deck._showSingletonCardCalls).toEqual(["settings", "about"]);
   });
 });
 
@@ -416,31 +423,31 @@ describe("initActionDispatch: show-card – T24: missing component logs warning"
     _resetForTest();
   });
 
-  it("warns and does not call addCard when component field is missing", () => {
+  it("warns and does not call showSingletonCard when component field is missing", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
     expect(() => dispatchAction({ action: "show-card" })).not.toThrow();
-    expect(deck._addCardCalls.length).toBe(0);
+    expect(deck._showSingletonCardCalls.length).toBe(0);
   });
 
-  it("warns and does not call addCard when component is not a string", () => {
+  it("warns and does not call showSingletonCard when component is not a string", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
     expect(() => dispatchAction({ action: "show-card", component: 42 })).not.toThrow();
-    expect(deck._addCardCalls.length).toBe(0);
+    expect(deck._showSingletonCardCalls.length).toBe(0);
   });
 
-  it("warns and does not call addCard when component is null", () => {
+  it("warns and does not call showSingletonCard when component is null", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
     expect(() => dispatchAction({ action: "show-card", component: null })).not.toThrow();
-    expect(deck._addCardCalls.length).toBe(0);
+    expect(deck._showSingletonCardCalls.length).toBe(0);
   });
 });
 

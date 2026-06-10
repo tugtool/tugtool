@@ -33,6 +33,8 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerDevCard } from "./components/tugways/cards/dev-card";
+import { registerAboutCard } from "./components/tugways/cards/about-card";
+import { registerSettingsCard } from "./components/tugways/cards/settings-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
 import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
@@ -198,11 +200,12 @@ if (!container) {
   initMotionObserver();
 
   // Register card types before DeckManager construction so addCard("hello") works
-  // from the first render. Additional card types (settings, about, etc.) will be
-  // registered in Phase 9.
+  // from the first render.
   registerHelloWorldCard();
   registerGitCard();
   registerDevCard();
+  registerAboutCard();
+  registerSettingsCard();
   registerGalleryCards();
   registerDevPanelInspectorTabs();
 
