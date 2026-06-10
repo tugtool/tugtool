@@ -808,6 +808,16 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   const handleClick = (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (effectiveDisabled || loading) return;
 
+    // Ignore secondary (context-menu) activations. On macOS a Control-click is
+    // a secondary gesture, but WebKit still dispatches a `click` for it (with
+    // `button === 0` and `ctrlKey === true`) alongside the `contextmenu` event
+    // — without this guard a Ctrl-click would fire the button's action as well
+    // as raising the context menu. A true right-click (`button === 2`) fires no
+    // `click` at all, so it never reaches here. Synthetic activations
+    // (`element.click()` from the keyboard default-button path) carry neither
+    // flag, so they pass.
+    if (e && (e.button !== 0 || e.ctrlKey)) return;
+
     // Chain-action disabled guard: aria-disabled buttons still receive click
     // events (unlike HTML disabled). Return early without dispatching.
     if (isChainDisabled) return;

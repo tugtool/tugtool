@@ -58,12 +58,12 @@ import { useRoute } from "@/lib/route-lifecycle";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
+import { openPathInOS } from "@/lib/os-open";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { group } from "../tug-animator";
 import { TugBox } from "../tug-box";
-import { TugBadge } from "../tug-badge";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPushButton } from "../tug-push-button";
 import { AlertTriangle, Maximize2, Minimize2, Trash2 } from "lucide-react";
@@ -3270,16 +3270,19 @@ export function DevCardBody({
   const projectChipText =
     projectDir !== null ? formatProjectChipText(projectDir) : null;
   const projectStatusContent = projectDir !== null ? (
-    <TugBadge
+    <TugPushButton
       size="sm"
       emphasis="tinted"
       role="agent"
       layout="label-top"
       label="Project"
-      title={projectChipText !== projectDir ? projectDir : undefined}
+      data-slot="project-chip"
+      aria-label="Open project folder in Finder"
+      title={`Open in Finder: ${projectDir}`}
+      onClick={() => openPathInOS(projectDir, "folder")}
     >
       {projectChipText}
-    </TugBadge>
+    </TugPushButton>
   ) : null;
 
   // Dev-only placement-experiment slots. In production this returns
@@ -3310,10 +3313,11 @@ export function DevCardBody({
   // gallery) or a dev placement-experiment Z4B assignment fills it.
   const effectiveFooterContent =
     footerContent ?? experimentSlots.promptIndicatorsContent;
-  // Project badge — sits between the Claude Code route badge and the
-  // Session badge in the Z4B indicator cluster. The project-path
-  // badge is the default; the placement-experiment harness overrides
-  // it when its mapping assigns a datum to Z3.
+  // Project button — sits after the Session badge in the Z4B indicator
+  // cluster, grouped with the Mode/Model/Effort controls. Clicking it
+  // opens the bound project folder in Finder. The project-path button
+  // is the default; the placement-experiment harness overrides it when
+  // its mapping assigns a datum to Z3.
   const effectivePromptStatusContent =
     experimentSlots.promptStatusContent ?? projectStatusContent;
 
@@ -3554,11 +3558,11 @@ export function DevCardBody({
                     codeSessionStore={codeSessionStore}
                     sessionMetadataStore={sessionMetadataStore}
                   />
-                  {effectivePromptStatusContent}
                   <DevRouteShellGate>
                     {(isShell) => (
                       <>
                         <DevSessionIdBadge cardId={cardId} disabled={isShell} />
+                        {effectivePromptStatusContent}
                         <PermissionModeChip
                           cardId={cardId}
                           sessionMetadataStore={sessionMetadataStore}
