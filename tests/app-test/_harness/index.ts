@@ -42,6 +42,8 @@ import type {
   AccessibilityStatus,
   EvalJsOptions,
   LaunchTugAppOptions,
+  MenuItemSnapshot,
+  MenuItemState,
   NativeModifier,
   NativeMouseButton,
   ScreenRect,
@@ -133,8 +135,12 @@ export type {
  * the process. Tests use this to gate cold-boot scenarios that
  * need the save side to actually reach tugbank disk.
  * Additive; major stays `1`.
+ *
+ * `1.6.0`: adds native-menu introspection verbs (`menuSnapshot`,
+ * `menuItemState`), reporting each item's validated enabled state
+ * via `NSMenuItemValidation`. Additive; major stays `1`.
  */
-export const EXPECTED_SURFACE_VERSION = "1.5.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.6.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs
@@ -428,6 +434,24 @@ export class App {
    */
   getElementScreenBounds(selector: string): Promise<ScreenRect> {
     return client.getElementScreenBounds(this as HarnessCaller, selector);
+  }
+
+  /**
+   * Full recursive snapshot of the native main menu, each item carrying
+   * its *validated* enabled state (the `NSMenuItemValidation` outcome
+   * AppKit computes at open / key-equivalent time).
+   */
+  menuSnapshot(): Promise<MenuItemSnapshot[]> {
+    return client.menuSnapshot(this as HarnessCaller);
+  }
+
+  /**
+   * Validated state of one native menu item by its
+   * `NSUserInterfaceItemIdentifier` (e.g. `"file.closeCard"`,
+   * `"file.closeAllCards"`). Returns `{ found: false }` when absent.
+   */
+  menuItemState(identifier: string): Promise<MenuItemState> {
+    return client.menuItemState(this as HarnessCaller, identifier);
   }
 
   /** Compact state bundle: tagName, disabled, readOnly, checked, visible, isFocused. */

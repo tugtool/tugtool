@@ -24,6 +24,8 @@ import type {
   AccessibilityStatus,
   EvalJsOptions,
   InnerNativeVerb,
+  MenuItemSnapshot,
+  MenuItemState,
   NativeModifier,
   NativeMouseButton,
   ScreenRect,
@@ -885,6 +887,30 @@ export function getElementScreenBounds(
   selector: string,
 ): Promise<ScreenRect> {
   return caller.rpcCall<ScreenRect>("getElementScreenBounds", { selector });
+}
+
+// ---- native menu introspection ----
+
+/**
+ * Full recursive snapshot of the app's native main menu, with each item's
+ * *validated* enabled state (run through `NSMenuItemValidation` the way
+ * AppKit does at open / key-equivalent time). Use to assert menu-validation
+ * outcomes without driving a real menu-tracking session.
+ */
+export function menuSnapshot(caller: HarnessCaller): Promise<MenuItemSnapshot[]> {
+  return caller.rpcCall<MenuItemSnapshot[]>("menuSnapshot", {});
+}
+
+/**
+ * Validated state of a single native menu item addressed by its
+ * `NSUserInterfaceItemIdentifier`. Returns `{ found: false }` when no item
+ * carries the identifier.
+ */
+export function menuItemState(
+  caller: HarnessCaller,
+  identifier: string,
+): Promise<MenuItemState> {
+  return caller.rpcCall<MenuItemState>("menuItemState", { identifier });
 }
 
 // ---- native gestures ----

@@ -1,6 +1,6 @@
 import Cocoa
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var window: MainWindow!
     private var processManager = ProcessManager()
     private var devModeEnabled = false
@@ -40,6 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // File menu state
     private var closeMenuItem: NSMenuItem!
+    private var closeAllMenuItem: NSMenuItem!
 
     // View menu state
     private var viewMenu: NSMenu!
@@ -512,7 +513,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // is "Close Pane" — before the first card list arrives, any pending
         // ⌘W best describes the default single-card pane state.
         closeMenuItem = NSMenuItem(title: "Close Pane", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
+        // Stable identifier for native-menu introspection (test harness
+        // `menuItemState` / `menuSnapshot`). Title flips Close Card ↔ Close
+        // Pane, so identity must not ride the title.
+        closeMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeCard")
         fileMenu.addItem(closeMenuItem)
+
+        // Close All Cards (⌥⌘W): closes every tab in the focused pane via the
+        // same `close-all` responder-chain round-trip `close` uses. Enabled
+        // only when the focused pane holds more than one card — see
+        // validateMenuItem(_:). The web layer pops the "Close N Tabs?"
+        // confirm when any hosted card opts into confirmClose.
+        closeAllMenuItem = NSMenuItem(title: "Close All Cards", action: #selector(closeAllCards(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
+        closeAllMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCards")
+        fileMenu.addItem(closeAllMenuItem)
 
         // Edit Menu - position 2
         let editMenuItem = NSMenuItem()
@@ -735,6 +749,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("close")
     }
 
+    @objc private func closeAllCards(_ sender: Any) {
+        // Wire format is the bare chain-action name "close-all". The web
+        // layer's responder chain walks it to the focused pane, which
+        // closes every hosted tab — popping the "Close N Tabs?" confirm
+        // first when any of its cards opts into confirmClose. Enablement
+        // is gated in validateMenuItem(_:): only a multi-card focused pane
+        // makes this command meaningful.
+        sendControl("close-all")
+    }
+
     @objc private func sourceTree(_ sender: Any) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -832,6 +856,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let focusedPane = list.first { ($0["focused"] as? Bool) == true }
         let cardCount = focusedPane?["cardCount"] as? Int ?? 0
         closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
+    }
+
+    /// The focused pane's cached entry (nil when nothing is focused), read
+    /// from the card list the frontend pushes on every deck change.
+    private var focusedPaneEntry: [String: Any]? {
+        cachedCardList.first { ($0["focused"] as? Bool) == true }
+    }
+
+    /// Card count of the focused pane (0 when nothing is focused). Drives
+    /// Close-All-Cards enablement.
+    private var focusedPaneCardCount: Int {
+        focusedPaneEntry?["cardCount"] as? Int ?? 0
+    }
+
+    /// Whether the focused pane's active card is closable (false when
+    /// nothing is focused). Drives Close-Card / Close-Pane enablement.
+    private var focusedPaneActiveCardClosable: Bool {
+        focusedPaneEntry?["closable"] as? Bool ?? false
+    }
+
+    /// Auto-enable hook (`autoenablesItems` is on by default). Consulted
+    /// for menu items whose nil-target action resolves to this delegate.
+    /// Both File-menu close items are state-gated, so they (and their ⌘W /
+    /// ⌥⌘W key equivalents) go inert when they don't apply:
+    ///   - Close Card / Close Pane — a closable card must be frontmost.
+    ///   - Close All Cards — the frontmost pane must hold more than one card.
+    /// Everything else stays enabled.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(closeActiveCard(_:)) {
+            return focusedPaneActiveCardClosable
+        }
+        if menuItem.action == #selector(closeAllCards(_:)) {
+            return focusedPaneCardCount > 1
+        }
+        return true
     }
 
     // MARK: - UDS control commands

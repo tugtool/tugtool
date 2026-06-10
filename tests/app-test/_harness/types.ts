@@ -22,6 +22,8 @@ export type RpcMethod =
   | "getHostPid"
   | "checkAccessibilityPermission"
   | "getElementScreenBounds"
+  | "menuSnapshot"
+  | "menuItemState"
   | "nativeClick"
   | "nativeDoubleClick"
   | "nativeRightClick"
@@ -130,6 +132,33 @@ export interface ScreenRect {
 }
 
 /**
+ * One node in a native-menu snapshot (`menuSnapshot` / `menuItemState`).
+ * `enabled` is the *validated* state — what AppKit computes through
+ * `NSMenuItemValidation` at open / key-equivalent time, not a stale
+ * stored flag. `submenu` is present only on parent items.
+ */
+export interface MenuItemSnapshot {
+  title: string;
+  enabled: boolean;
+  hidden: boolean;
+  separator: boolean;
+  keyEquivalent: string;
+  modifierMask: number;
+  identifier?: string;
+  action?: string;
+  submenu?: MenuItemSnapshot[];
+}
+
+/**
+ * Result of `menuItemState`: the matched item's snapshot fields plus a
+ * `found` discriminator. When `found` is `false`, the other fields are
+ * absent.
+ */
+export type MenuItemState =
+  | ({ found: true } & Omit<MenuItemSnapshot, "submenu">)
+  | { found: false };
+
+/**
  * Result of `checkAccessibilityPermission`.
  */
 export interface AccessibilityStatus {
@@ -179,6 +208,15 @@ export type Request =
       id: number;
       method: "getElementScreenBounds";
       selector: string;
+    }
+  | {
+      id: number;
+      method: "menuSnapshot";
+    }
+  | {
+      id: number;
+      method: "menuItemState";
+      identifier: string;
     }
   | {
       id: number;

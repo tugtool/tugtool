@@ -140,6 +140,11 @@ export const KEYBINDINGS: KeyBinding[] = [
   // no conflicting default at all (⌘, , ⌘., ⌘F inside a WebView run
   // without a browser UI to collide with).
   { key: "KeyW", meta: true, action: TUG_ACTIONS.CLOSE },
+  // ⌥⌘W — Close All Cards (every tab in the focused multi-card pane).
+  // App-level in the WebView; the Swift File menu drives it natively and
+  // gates enablement on a multi-card focused pane. This entry serves
+  // browser-only dev where no Swift menu is present.
+  { key: "KeyW", meta: true, alt: true, action: TUG_ACTIONS.CLOSE_ALL },
   { key: "KeyT", meta: true, action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE },
   // Focus the key card's prompt input. `scope: "key-card"` routes the
   // dispatch to the `card-content` responder inside the active card;

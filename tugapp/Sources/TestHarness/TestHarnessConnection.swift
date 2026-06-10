@@ -76,7 +76,13 @@ final class TestHarnessConnection {
     /// handler — the response is written before terminate runs;
     /// callers await `subprocess.exited` for the real signal.
     /// Additive; major stays `1`.
-    static let surfaceVersion = "1.5.0"
+    ///
+    /// `1.6.0`: adds native-menu introspection verbs
+    /// (`menuSnapshot`, `menuItemState`). Both walk `NSApp.mainMenu`
+    /// on main and report each item's *validated* enabled state
+    /// (resolved through `NSMenuItemValidation`, as AppKit does at
+    /// open / key-equivalent time). Additive; major stays `1`.
+    static let surfaceVersion = "1.6.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
@@ -194,6 +200,14 @@ final class TestHarnessConnection {
                 return
             }
             dispatchGetElementScreenBounds(id: id, selector: selector)
+        case "menuSnapshot":
+            dispatchMenuSnapshot(id: id)
+        case "menuItemState":
+            guard let identifier = obj["identifier"] as? String else {
+                respondError(id: id, name: "ProtocolError", message: "menuItemState: missing 'identifier'")
+                return
+            }
+            dispatchMenuItemState(id: id, identifier: identifier)
         default:
             respondError(id: id, name: "NotImplemented", message: "Unknown method: \(method)")
         }
@@ -353,6 +367,111 @@ final class TestHarnessConnection {
                 self.respond(id: id, ok: true, payload: ["value": rect])
             }
         }
+    }
+
+    // MARK: - Native menu introspection
+
+    /// Full recursive snapshot of `NSApp.mainMenu` as a nested tree. Each
+    /// node reports its title, identifier, *validated* enabled state (run
+    /// through the same NSMenuItemValidation path AppKit uses at display /
+    /// key-equivalent time), hidden flag, key equivalent, and submenu. Lets
+    /// the harness assert menu-validation outcomes without entering a real
+    /// tracking session.
+    private func dispatchMenuSnapshot(id: Int) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard let mainMenu = NSApp.mainMenu else {
+                self.respondError(id: id, name: "NoMainMenu", message: "NSApp.mainMenu is nil")
+                return
+            }
+            let tree = self.snapshotMenu(mainMenu)
+            self.respond(id: id, ok: true, payload: ["value": tree])
+        }
+    }
+
+    /// Targeted lookup of a single menu item by its
+    /// `NSUserInterfaceItemIdentifier`. Returns `{ found: false }` when no
+    /// item carries the identifier, else the item's snapshot node merged
+    /// with `found: true` (submenu children trimmed for a compact payload).
+    private func dispatchMenuItemState(id: Int, identifier: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard let mainMenu = NSApp.mainMenu else {
+                self.respondError(id: id, name: "NoMainMenu", message: "NSApp.mainMenu is nil")
+                return
+            }
+            let tree = self.snapshotMenu(mainMenu)
+            if var found = Self.findByIdentifier(tree, identifier) {
+                found["found"] = true
+                found.removeValue(forKey: "submenu")
+                self.respond(id: id, ok: true, payload: ["value": found])
+            } else {
+                self.respond(id: id, ok: true, payload: ["value": ["found": false]])
+            }
+        }
+    }
+
+    /// Recursively serialize a menu. Must run on the main thread.
+    private func snapshotMenu(_ menu: NSMenu) -> [[String: Any]] {
+        var items: [[String: Any]] = []
+        for item in menu.items {
+            var entry: [String: Any] = [
+                "title": item.title,
+                "enabled": validatedEnabled(item),
+                "hidden": item.isHidden,
+                "separator": item.isSeparatorItem,
+                "keyEquivalent": item.keyEquivalent,
+                "modifierMask": Int(item.keyEquivalentModifierMask.rawValue),
+            ]
+            if let ident = item.identifier?.rawValue { entry["identifier"] = ident }
+            if let action = item.action { entry["action"] = NSStringFromSelector(action) }
+            if let submenu = item.submenu {
+                entry["submenu"] = snapshotMenu(submenu)
+            }
+            items.append(entry)
+        }
+        return items
+    }
+
+    /// The *validated* enabled state of a menu item — what AppKit would
+    /// compute when the menu opens or the key equivalent fires. For an
+    /// auto-enabling menu (the default) with a nil-target action, this
+    /// resolves the responder-chain target exactly as AppKit does and asks
+    /// its `NSMenuItemValidation`. Items in a manual-enabling menu, or with
+    /// no resolvable target, fall back to their stored / disabled state.
+    private func validatedEnabled(_ item: NSMenuItem) -> Bool {
+        if item.isSeparatorItem { return false }
+        let autoenables = item.menu?.autoenablesItems ?? true
+        guard autoenables, let action = item.action else {
+            return item.isEnabled
+        }
+        guard let target = NSApp.target(forAction: action, to: item.target, from: item) else {
+            return false
+        }
+        if let validator = target as? NSMenuItemValidation {
+            return validator.validateMenuItem(item)
+        }
+        // Target handles the action but offers no validator → AppKit
+        // leaves it enabled.
+        return true
+    }
+
+    /// Depth-first search of a snapshot tree for the node whose
+    /// `identifier` matches.
+    private static func findByIdentifier(
+        _ items: [[String: Any]],
+        _ identifier: String,
+    ) -> [String: Any]? {
+        for item in items {
+            if (item["identifier"] as? String) == identifier {
+                return item
+            }
+            if let sub = item["submenu"] as? [[String: Any]],
+               let hit = findByIdentifier(sub, identifier) {
+                return hit
+            }
+        }
+        return nil
     }
 
     // MARK: - Tugcode subprocess lifecycle verbs

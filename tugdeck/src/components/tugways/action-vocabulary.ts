@@ -346,6 +346,12 @@ export const TUG_ACTIONS = {
   // ---- Pane / card ----
   //
   // CLOSE:                  payload — none. Close the first card responder.
+  // CLOSE_ALL:              payload — none. Close every tab in the focused
+  //                         multi-card pane (the pane goes away). The pane's
+  //                         registered handler pops the "Close N Tabs?"
+  //                         confirm when any hosted card opts into
+  //                         `confirmClose`, closes immediately otherwise.
+  //                         Dispatched by File ▸ Close All Cards (⌥⌘W).
   // MINIMIZE:               payload — none. Minimize the first card.
   // MAXIMIZE:               payload — none. Maximize the first card.
   // SHOW_COMPONENT_GALLERY: payload — none. Open or focus the gallery card.
@@ -371,6 +377,7 @@ export const TUG_ACTIONS = {
   //                         distinct from the bare MAXIMIZE action which
   //                         targets a card's window.
   CLOSE:                  "close",
+  CLOSE_ALL:              "close-all",
   MINIMIZE:               "minimize",
   MAXIMIZE:               "maximize",
   SHOW_COMPONENT_GALLERY: "show-component-gallery",

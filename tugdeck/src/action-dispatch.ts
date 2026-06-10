@@ -466,6 +466,22 @@ export function initActionDispatch(
     }
   });
 
+  // close-all (Both): close every tab in the focused multi-card pane. Like
+  // `close`, the Control-frame name and chain-action name are identical
+  // (TUG_ACTIONS.CLOSE_ALL = "close-all") and the dispatch walks to the
+  // focused pane's registered handler (DeckCanvas's last-resort handler
+  // re-routes to the topmost pane when the first responder has stranded on
+  // the canvas). This is File ▸ Close All Cards (⌥⌘W); the Swift menu item
+  // is enabled only when the focused pane is multi-card. The tugdeck-side
+  // keybinding entry exists for browser-only dev where no Swift menu runs.
+  registerAction(TUG_ACTIONS.CLOSE_ALL, () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.CLOSE_ALL, phase: "discrete" });
+    } else {
+      console.warn(`${TUG_ACTIONS.CLOSE_ALL}: responder chain manager not registered yet`);
+    }
+  });
+
   // spawn_session_ok: the tugcast supervisor echoes the
   // canonical workspace_key back via this CONTROL ack after a successful
   // spawn_session (). The handler populates

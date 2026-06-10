@@ -589,9 +589,11 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Push the current stack list (id, title, focused state, cardCount) to the
-   * Swift host via WKScriptMessage so the View menu can build a dynamic stack
-   * list. No-op when running outside a WKWebView (browser dev mode).
+   * Push the current stack list (id, title, focused state, cardCount,
+   * active-card closable) to the Swift host via WKScriptMessage so the View
+   * menu can build a dynamic stack list and the File menu can gate Close
+   * Card / Close All Cards on the focused pane's state. No-op when running
+   * outside a WKWebView (browser dev mode).
    *
    * Payload shape is a wire contract with `AppDelegate.swift`
    * (`updateCardList`). Keep the fields here in sync with the Swift reader.
@@ -611,7 +613,13 @@ export class DeckManager implements IDeckManagerStore {
       const activeCard = cardsById.get(s.activeCardId);
       const firstCard = cardsById.get(s.cardIds[0]);
       const title = s.title || activeCard?.title || firstCard?.title || "Untitled";
-      return { id: s.id, title, focused: s.id === focusedId, cardCount: s.cardIds.length };
+      return {
+        id: s.id,
+        title,
+        focused: s.id === focusedId,
+        cardCount: s.cardIds.length,
+        closable: activeCard?.closable ?? false,
+      };
     }).reverse();
     handler.postMessage(list);
   }

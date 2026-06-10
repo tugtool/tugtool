@@ -282,6 +282,17 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const activePaneId = s[s.length - 1].id; // topmost pane (z-order)
         m.sendToTarget(activePaneId, { action: TUG_ACTIONS.CLOSE, phase: "discrete" });
       },
+      // Last-resort `close-all` ([D08]), symmetric with the `close`
+      // backstop above. Route File ▸ Close All Cards to the topmost pane
+      // even when the first responder has stranded on the canvas, so the
+      // command is never dropped on the frontmost pane.
+      [TUG_ACTIONS.CLOSE_ALL]: (_event: ActionEvent) => {
+        const m = managerRef.current;
+        const s = panesRef.current;
+        if (m === null || s.length === 0) return;
+        const activePaneId = s[s.length - 1].id; // topmost pane (z-order)
+        m.sendToTarget(activePaneId, { action: TUG_ACTIONS.CLOSE_ALL, phase: "discrete" });
+      },
     },
   });
 
