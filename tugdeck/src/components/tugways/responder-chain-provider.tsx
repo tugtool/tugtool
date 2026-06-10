@@ -35,6 +35,8 @@ import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
 import { getAppLifecycle } from "../../lib/app-lifecycle";
 import { getDeckStore } from "../../lib/deck-store-registry";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
+import { isSyntheticEscape } from "./internal/synthetic-escape";
 
 // ---- Fallback context menu ----
 
@@ -267,19 +269,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       }
     }
 
-    // Whether a dismissable popover surface is currently open in the DOM. Such a
-    // surface (a Radix popover — a Z2 status popover, a Z4B picker, the close
-    // confirm) owns Escape via its own DismissableLayer but does NOT push an engine
-    // focus mode, so the engine's current mode stays whatever was beneath it (e.g. a
-    // focus-cycle). The Escape handling consults this so a cycle's `escapeExits` does
-    // not fire on the same Escape that should only close the popover.
-    function aDismissableSurfaceIsOpen(): boolean {
-      return (
-        typeof document !== "undefined" &&
-        document.querySelector('[data-slot="tug-popover"]') !== null
-      );
-    }
-
     // ---- Spatial arrow navigation ([P22]/[P23]) ----
     // The parallel plane: bare arrows move the ring "in the direction you see",
     // bounded to the card / dialog, in author-declared order. A sibling of the focus
@@ -326,6 +315,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {
+      // [P03] An engine-synthesized Escape (the context-menu close lever) is the
+      // engine's own close mechanism, not a user Escape — never re-arbitrate it;
+      // let it pass through to the target surface's Radix layer.
+      if (isSyntheticEscape(event)) return;
       // Resolve dynamic, context-scoped bindings first ([P11],
       // #keybinding-registry): the active focus mode (innermost — a floating
       // surface's accelerators, reachable even when focus is elsewhere, e.g. an
@@ -337,32 +330,19 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         manager.resolveKeybinding(event, mode === BASE_FOCUS_MODE ? [] : [mode]) ??
         matchKeybinding(event);
       if (binding === null) return;
-      // Escape yields to the engine's scope-ascend ([P02] Escape = ascend-or-
-      // cancel) for the two modes the engine owns Escape on: a descended
-      // (non-trapped) scope — ascend ONE level (e.g. out of an accordion section
-      // inside a sheet) — and a trapped focus-cycle that opted into Escape-exit —
-      // pop the cycle back to rest. In both cases the act-dispatch listener below
-      // does the work, so this yields rather than firing CANCEL_DIALOG. A trapped
-      // modal SURFACE (sheet / alert) keeps its own Escape and falls through to
-      // CANCEL_DIALOG as before; ⌘. (a distinct binding, key `.`) always
-      // force-dismisses. Without this yield, the global Escape→CANCEL_DIALOG
-      // binding fires first and dismisses the surface from inside a descended
-      // scope, or no-ops a cycle's intended exit.
-      //
-      // BUT: a focus-cycle's Escape-exit must defer to an open dismissable popover
-      // (a Z2 status popover, a Z4B picker) opened from a cycle stop. Such a popover
-      // is a Radix DismissableLayer that owns Escape but does NOT push an engine
-      // focus mode, so the cycle stays the engine's current mode while it is open —
-      // a bare `escapeExits` yield here would let the cycle exit on the very Escape
-      // that should only close the popover. When a popover is open, do NOT yield:
-      // CANCEL_DIALOG dispatches (or Radix dismisses) to close the popover, and the
-      // cycle stays. The cycle's own Escape-exit resumes once the popover is gone.
+      // Escape on any non-base focus mode yields to the engine's Escape ladder
+      // (the act-dispatch listener below), which is the single arbiter ([P02]
+      // final form). Every dismissable surface now pushes a mode with an
+      // `onEscapeDismiss` callback (branch (2)), every descend scope is
+      // non-trapped (branch (4)), and a focus-cycle is `escapeExits` (branch (5)) —
+      // so the ladder always knows what to do, and the old per-surface special
+      // cases (the trapped-no-callback CANCEL_DIALOG dispatch and the DOM probe)
+      // are gone. ⌘. (key `.`) never enters this guard (the `event.key` condition),
+      // so it stays chain-routed for every surface (#non-goals).
       if (
         binding.action === TUG_ACTIONS.CANCEL_DIALOG &&
         event.key === "Escape" &&
-        focusManager.currentFocusMode() !== BASE_FOCUS_MODE &&
-        (!focusManager.currentFocusModeTrapped() ||
-          (focusManager.currentFocusModeEscapeExits() && !aDismissableSurfaceIsOpen()))
+        focusManager.currentFocusMode() !== BASE_FOCUS_MODE
       ) {
         return;
       }
@@ -417,6 +397,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // an engine scope is descended — otherwise it falls through to the cancel
     // ladder ([R04]).
     function actDispatchListener(event: KeyboardEvent): void {
+      // [P03] never re-arbitrate an engine-synthesized Escape (see captureListener).
+      if (isSyntheticEscape(event)) return;
       if (event.metaKey || event.ctrlKey) return;
       const key = event.key;
       if (key !== " " && key !== "Spacebar" && key !== "Enter" && key !== "Escape") {
@@ -477,33 +459,46 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           break;
         case "ascend":
         case "cancel":
-          // Escape's three engine dispositions by mode (at the base mode there is
-          // nothing to do — it falls through to the cancel ladder, [R04]):
-          //  - a NON-trapped descended scope (accordion section, list row): ascend
-          //    one level;
-          //  - a trapped focus-cycle that opted into Escape-exit (`escapeExits`):
-          //    pop the cycle and restore the resting key view (the editor caret) —
-          //    the keyboard mode's "Escape leaves cycling" exit;
-          //  - a trapped modal surface (sheet / alert, still owned by Radix until
-          //    its step lands): leave Escape to the surface's own cancel; the engine
-          //    must not pop it from under the surface ([R04]).
+          // The single Escape ladder ([P02], Spec #escape-ladder). `keyViewCaptures`
+          // and the synthetic-marker / tab-consume early-returns above are the
+          // ladder's first rungs; the rest resolves against the top focus mode:
+          //  (2) top mode registered `onEscapeDismiss` → the surface owns its close;
+          //      call it and consume — the engine decides WHEN, the surface HOW;
+          //  (4) a NON-trapped descended scope (accordion section, list row): ascend
+          //      one level;
+          //  (5) a trapped focus-cycle that opted into Escape-exit (`escapeExits`):
+          //      pop the cycle back to its resting key view. No DOM probe: an open
+          //      surface over the cycle is its OWN top mode with a callback (branch
+          //      (2)), which consumes the Escape, so the cycle's mode is only ever
+          //      top — and this branch only ever reached — with no surface open;
+          //  (3) a trapped surface with no callback and no `escapeExits`: dev-warn
+          //      tripwire and yield (today's Stage-1 `CANCEL_DIALOG` + Radix
+          //      fallthrough still closes it during migration);
+          //  base mode: nothing — falls through to the cancel ladder ([R04]).
           if (focusManager.currentFocusMode() !== BASE_FOCUS_MODE) {
-            if (!focusManager.currentFocusModeTrapped()) {
+            const onEscapeDismiss = focusManager.currentFocusModeOnEscapeDismiss();
+            if (onEscapeDismiss !== null) {
+              onEscapeDismiss();
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            } else if (!focusManager.currentFocusModeTrapped()) {
               focusManager.ascend();
               behavior?.onAscend?.();
               event.preventDefault();
               event.stopImmediatePropagation();
-            } else if (
-              focusManager.currentFocusModeEscapeExits() &&
-              !aDismissableSurfaceIsOpen()
-            ) {
-              // A focus-cycle exits on Escape — but only when no popover is open
-              // over it. An open popover (which does not push an engine mode) owns
-              // this Escape; the cycle stays and resumes its Escape-exit once the
-              // popover closes.
+            } else if (focusManager.currentFocusModeEscapeExits()) {
               focusManager.escapeCurrentMode();
               event.preventDefault();
               event.stopImmediatePropagation();
+            } else {
+              // A trapped surface that did not register a dismiss callback. During
+              // migration its Escape still rides Stage-1's CANCEL_DIALOG dispatch;
+              // this is a tripwire for a future surface that forgets to register.
+              tugDevLogStore.warn(
+                "responder-chain-provider",
+                "Escape reached a trapped focus mode with no onEscapeDismiss; yielding to the surface's own close path",
+                { mode: focusManager.currentFocusMode() },
+              );
             }
           }
           break;

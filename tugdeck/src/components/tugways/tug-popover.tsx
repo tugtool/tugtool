@@ -197,6 +197,13 @@ interface TugPopoverInternalContextValue {
   /** Close the popover. Called by chain action handlers and observeDispatch. */
   close: () => void;
   /**
+   * Close the popover AND re-emit `DISMISS_POPOVER` through the chain ([P05]).
+   * The engine's Escape ladder calls this (registered as the trap's
+   * `onEscapeDismiss`) so an engine-initiated close resolves inner composites
+   * exactly as a Radix-initiated one does.
+   */
+  closeAndEmit: () => void;
+  /**
    * The popover's effective open state. The content shell drives its engine
    * focus mode ([P02]) off this — pushing while open and popping the instant it
    * flips false, so the opener's key view is restored promptly on close rather
@@ -331,6 +338,8 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     isControlledRef.current = isControlled;
     const onOpenChangePropRef = React.useRef(onOpenChangeProp);
     onOpenChangePropRef.current = onOpenChangeProp;
+    const managerRef = React.useRef(manager);
+    managerRef.current = manager;
 
     // Single helper the chain-action shell and the imperative handle
     // both route through for "close." In controlled mode it cannot flip
@@ -341,6 +350,26 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
       if (!isControlledRef.current) setInternalOpen(false);
       onOpenChangePropRef.current?.(false);
     }, []);
+
+    // [P05] Close AND re-emit the popover-scoped `DISMISS_POPOVER` through the
+    // chain in one place. Inner composites (TugConfirmPopover's promise/callback
+    // resolution, other `observeDispatch` consumers) listen to the chain, not to
+    // Radix — so the emission must be close-path-invariant. Both the Radix/user
+    // close (`handleOpenChange(false)`) and the engine's Escape dismiss
+    // (registered as the trap's `onEscapeDismiss`) route through here, so an
+    // engine-initiated close resolves them exactly as a Radix-initiated one did
+    // ([R01]). The emission carries our `senderId` so the shell's `observeDispatch`
+    // filters its own re-entry; handlers are idempotent once resolved, so a
+    // double-delivery is harmless. Stable identity (refs) — safe in `contextValue`.
+    const closeAndEmit = React.useCallback(() => {
+      if (!isControlledRef.current) setInternalOpen(false);
+      onOpenChangePropRef.current?.(false);
+      managerRef.current?.sendToFirstResponder({
+        action: TUG_ACTIONS.DISMISS_POPOVER,
+        sender: senderId,
+        phase: "discrete",
+      });
+    }, [senderId]);
 
     React.useImperativeHandle(
       ref,
@@ -400,15 +429,10 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     // unchanged because `observeDispatch` does not filter by action.
     function handleOpenChange(nextOpen: boolean) {
       if (!nextOpen) {
-        if (!isControlled) setInternalOpen(false);
-        onOpenChangeProp?.(false);
-        if (manager) {
-          manager.sendToFirstResponder({
-            action: TUG_ACTIONS.DISMISS_POPOVER,
-            sender: senderId,
-            phase: "discrete",
-          });
-        }
+        // Route through the shared close-and-emit helper ([P05]) so a Radix/user
+        // close (outside pointerdown) and an engine Escape dismiss resolve inner
+        // composites identically.
+        closeAndEmit();
         return;
       }
       // First responder + key view are captured by the engine focus trap's
@@ -426,12 +450,13 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
     const contextValue = React.useMemo<TugPopoverInternalContextValue>(
       () => ({
         close,
+        closeAndEmit,
         open: effectiveOpen,
         senderId,
         dismissOnChainActivity,
         triggerElRef,
       }),
-      [close, effectiveOpen, senderId, dismissOnChainActivity],
+      [close, closeAndEmit, effectiveOpen, senderId, dismissOnChainActivity],
     );
 
     return (
@@ -672,6 +697,11 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
     const { FocusModeScope, onCloseAutoFocus } = useFocusTrap({
       active: ctx?.open ?? false,
       deferDomFocusToTeardown: true,
+      // [P01]/[P05] The engine's Escape ladder owns this surface's dismissal:
+      // when the popover's trap is the top mode, the ladder calls this to close
+      // AND re-emit `DISMISS_POPOVER` (so inner composites resolve). Radix's own
+      // Escape is suppressed below — the engine is the single arbiter.
+      onEscapeDismiss: ctx ? () => ctx.closeAndEmit() : undefined,
     });
     // Popup-in-sheet z-tier elevation per [D09]. When TugPopover is
     // rendered inside a `<TugSheetContent>`, the sheet provides
@@ -711,6 +741,10 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           // because every user click that moves focus also fires
           // pointerdown first.
           onFocusOutside={(e) => e.preventDefault()}
+          // [P03] Suppress Radix's own Escape dismissal — the engine's Escape
+          // ladder is the single arbiter and calls `onEscapeDismiss` (above).
+          // Listener ordering can never matter again: Radix never acts on Escape.
+          onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <TugPopoverContentShell FocusModeScope={FocusModeScope}>
             {children}

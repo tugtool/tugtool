@@ -65,7 +65,7 @@ import { Check, ChevronRight } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
-import { useServicePopupBinding } from "@/components/tugways/use-service-popup-binding";
+import { useFocusTrap } from "@/components/tugways/use-focus-trap";
 import { TugSheetStackingContext } from "@/components/tugways/tug-sheet-stacking-context";
 import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
@@ -206,12 +206,6 @@ export function TugPopupMenu({
   // (default) and stacking is unchanged.
   const inDialog = useContext(TugSheetStackingContext);
 
-  // Service-popup close-focus binding per [D06]/[D07]. captureOnOpen
-  // snapshots first responder when the menu opens; onCloseAutoFocus
-  // restores it when the menu closes (unless the user clicked outside
-  // any popup, in which case Radix's default close-focus path runs).
-  const { captureOnOpen, onCloseAutoFocus } = useServicePopupBinding();
-
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.
   const blinkingRef = useRef(false);
 
@@ -221,6 +215,22 @@ export function TugPopupMenu({
   // those all continue to flow through Radix's internal open handlers
   // back into our setOpen via onOpenChange.
   const [open, setOpen] = useState(defaultOpen);
+
+  // Engine focus trap ([P04]): the menu joins the engine model exactly as the
+  // popover did, replacing the old service-popup binding. The trap captures the key
+  // view + first responder at push (the binding's `captureOnOpen` snapshot), its
+  // external-pointerdown observer is the binding's outside-click predicate, and
+  // its `onCloseAutoFocus` is the single close-focus DOM writer (the binding's
+  // engine-owns / external-defer / restore branches). `onEscapeDismiss` is the
+  // controlled close, so the engine's Escape ladder owns the menu's Escape
+  // (Radix Escape suppressed below). Menu items register no engine focusables, so
+  // the trap's Tab walk is empty for this mode and Radix's arrow-nav/typeahead
+  // fall through untouched.
+  const { FocusModeScope, onCloseAutoFocus } = useFocusTrap({
+    active: open,
+    deferDomFocusToTeardown: true,
+    onEscapeDismiss: () => setOpen(false),
+  });
 
   // Which sub-menu is currently open, keyed by the entry's render key.
   // `null` means no sub-menu is open. Each `Sub` is controlled against
@@ -236,11 +246,10 @@ export function TugPopupMenu({
     if (!open) setOpenSubKey(null);
   }, [open]);
 
-  // captureOnOpen() must run as soon as the menu is asked to open,
-  // before Radix's FocusScope grabs DOM focus and overwrites
-  // first-responder semantics. [D06] / [D07] / (#service-binding).
+  // The engine focus trap captures the key view + first responder at push (keyed
+  // off `open`), so there is no separate capture-on-open call: flipping `open`
+  // drives both Radix and the trap.
   function handleOpenChange(next: boolean): void {
-    if (next) captureOnOpen();
     setOpen(next);
   }
 
@@ -466,8 +475,11 @@ export function TugPopupMenu({
           sideOffset={sideOffset}
           data-testid={dataTestId}
           onCloseAutoFocus={onCloseAutoFocus}
+          // [P03] Suppress Radix's own Escape — the engine's Escape ladder owns
+          // it via the trap's `onEscapeDismiss` (controlled close).
+          onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          {renderEntries(items, "root", true)}
+          <FocusModeScope>{renderEntries(items, "root", true)}</FocusModeScope>
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
     </DropdownMenuPrimitive.Root>

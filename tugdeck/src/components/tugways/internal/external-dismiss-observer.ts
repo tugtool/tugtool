@@ -16,9 +16,9 @@
  * a document capture-phase listener while the surface is open and records the
  * verdict in a ref the consumer reads at close time.
  *
- * Mirrors the predicate `useServicePopupBinding` carries for menus; extracted
- * here so the engine focus trap (`useFocusTrap`) and the menu binding can share
- * one implementation as menus migrate.
+ * Mirrors the outside-click predicate the old service-popup binding carried for
+ * menus; the engine focus trap (`useFocusTrap`) now uses it for every dismissable
+ * surface (popover, sheet, alert, menus).
  *
  * Laws: [L22]/[L24] — a document observer held in refs and installed in a layout
  * effect (structure zone), never React state.

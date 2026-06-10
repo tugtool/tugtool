@@ -46,7 +46,8 @@ import React, { useCallback, useContext, useId, useLayoutEffect, useRef, useStat
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import { playMenuItemBlink } from "@/components/tugways/tug-menu-item-blink";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
-import { useServicePopupBinding } from "@/components/tugways/use-service-popup-binding";
+import { useFocusTrap } from "@/components/tugways/use-focus-trap";
+import { isSyntheticEscape, markSyntheticEscape } from "./internal/synthetic-escape";
 import { TugSheetStackingContext } from "@/components/tugways/tug-sheet-stacking-context";
 import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
@@ -147,7 +148,13 @@ export interface TugContextMenuProps<V extends TugContextMenuItemPayload = never
  * programmatic close path available.
  */
 function synthesizeEscapeDismiss(): void {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  // [P03]/[R02] Mark the synthetic Escape so the engine's own listeners
+  // early-return on it (no re-arbitration → no loop through `onEscapeDismiss`)
+  // while the context menu's `onEscapeKeyDown` suppressor lets it THROUGH to
+  // Radix's DismissableLayer, which performs the actual close.
+  const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true });
+  markSyntheticEscape(event);
+  document.dispatchEvent(event);
 }
 
 // ---- TugContextMenu ----
@@ -175,11 +182,6 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
   // so its CSS class swaps to `--tug-z-overlay-menu-in-dialog`.
   const inDialog = useContext(TugSheetStackingContext);
 
-  // Service-popup close-focus binding per [D06] / [D07]. captureOnOpen
-  // is called from `handleOpenChangeForBinding` when next is true;
-  // onCloseAutoFocus is passed to Radix's Content prop.
-  const { captureOnOpen, onCloseAutoFocus } = useServicePopupBinding();
-
   // Guards against re-entrant blink calls during animation. Also used by
   // the observeDispatch observer to skip dismissal while the menu is
   // dispatching its own action (so the blink can finish before close).
@@ -187,18 +189,28 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
 
   // Local mirror of Radix's internal open state. Radix ContextMenu is
   // uncontrolled (no open/defaultOpen props), but onOpenChange still fires
-  // so we can gate the observeDispatch effect on open.
+  // so we can gate the observeDispatch effect AND the engine focus trap on it.
   const [open, setOpen] = useState(false);
 
-  // Wrap setOpen so captureOnOpen() runs before Radix's FocusScope
-  // mounts. [D06] / [D07] / (#service-binding).
-  const handleOpenChangeForBinding = useCallback(
-    (next: boolean): void => {
-      if (next) captureOnOpen();
-      setOpen(next);
-    },
-    [captureOnOpen],
-  );
+  // Engine focus trap ([P04]), replacing the old service-popup binding. Keyed off the
+  // open mirror: the trap captures the key view + first responder at push and its
+  // `onCloseAutoFocus` is the single close-focus DOM writer. Because Radix
+  // ContextMenu is uncontrolled, its only programmatic close is a synthesized
+  // Escape — so `onEscapeDismiss` is `synthesizeEscapeDismiss` (marked, [P03]):
+  // the engine's ladder decides WHEN to dismiss, and the marked synthetic Escape
+  // is the close MECHANISM that reaches Radix. Menu items register no engine
+  // focusables, so Radix's arrow-nav/typeahead fall through untouched.
+  const { FocusModeScope, onCloseAutoFocus } = useFocusTrap({
+    active: open,
+    deferDomFocusToTeardown: true,
+    onEscapeDismiss: synthesizeEscapeDismiss,
+  });
+
+  // The trap captures at push (keyed off `open`), so there is no separate
+  // capture-on-open call — flipping the open mirror drives both Radix and the trap.
+  const handleOpenChange = useCallback((next: boolean): void => {
+    setOpen(next);
+  }, []);
 
   // Chain manager for observeDispatch subscription. Null outside a provider.
   const manager = useResponderChain();
@@ -258,7 +270,7 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
   );
 
   return (
-    <ContextMenuPrimitive.Root onOpenChange={handleOpenChangeForBinding}>
+    <ContextMenuPrimitive.Root onOpenChange={handleOpenChange}>
       <ContextMenuPrimitive.Trigger asChild>
         {children}
       </ContextMenuPrimitive.Trigger>
@@ -267,7 +279,14 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
           data-slot="tug-context-menu"
           className={cn("tug-menu-content", inDialog && "tug-menu-in-dialog")}
           onCloseAutoFocus={onCloseAutoFocus}
+          // [P03] Suppress a user-originated Escape (the engine ladder owns it),
+          // but let the engine's MARKED synthetic Escape through — it IS the close
+          // mechanism for this uncontrolled menu and must reach Radix.
+          onEscapeKeyDown={(e) => {
+            if (!isSyntheticEscape(e)) e.preventDefault();
+          }}
         >
+          <FocusModeScope>
           {items.map((entry, index) => {
             if (entry.type === "separator") {
               return (
@@ -309,6 +328,7 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
               </ContextMenuPrimitive.Item>
             );
           })}
+          </FocusModeScope>
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>

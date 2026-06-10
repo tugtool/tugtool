@@ -71,6 +71,7 @@ import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import { useFocusTrap } from "./use-focus-trap";
 
 /* ---------------------------------------------------------------------------
  * Helpers
@@ -229,6 +230,20 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       },
     });
 
+    // Engine focus trap ([P06]): the alert is the last dismissable surface that
+    // sat entirely outside the engine model — "single authority" is false while
+    // it does. Push a trapped mode while open so the engine's Escape ladder owns
+    // its Escape (calling `handleCancelAction`, the same cancel its CANCEL_DIALOG
+    // handler / Radix dismissal ran), the key view is captured/restored on close,
+    // and the close-focus DOM write is the trap's single teardown writer wired to
+    // `AlertDialog.Content` below. App-modal blocking is unchanged — Radix's own
+    // overlay + focus scope still block everything; only Escape routing moves.
+    const { FocusModeScope, onCloseAutoFocus } = useFocusTrap({
+      active: open,
+      deferDomFocusToTeardown: true,
+      onEscapeDismiss: handleCancelAction,
+    });
+
     React.useImperativeHandle(ref, () => ({
       alert(options) {
         return new Promise<boolean>((resolve) => {
@@ -316,14 +331,21 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             className="tug-alert-content"
             data-slot="tug-alert"
             onMouseDown={suppressButtonFocusShift}
+            // [P03] Suppress Radix's own Escape — the engine's Escape ladder owns
+            // it via the trap's `onEscapeDismiss` (above).
+            onEscapeKeyDown={(e) => e.preventDefault()}
+            // [P06] The trap is the single close-focus DOM writer at teardown.
+            onCloseAutoFocus={onCloseAutoFocus}
             onKeyDown={(e) => {
-              // Cmd+. dismisses (macOS convention) — treat as cancel.
+              // Cmd+. dismisses (macOS convention) — treat as cancel. Stays
+              // chain-routed; only Escape moved to the engine ladder (#non-goals).
               if (e.metaKey && e.key === ".") {
                 e.preventDefault();
                 handleOpenChange(false);
               }
             }}
           >
+            <FocusModeScope>
             {/* Classic Mac HIG layout: icon left, text right, buttons bottom-right */}
             <div className="tug-alert-body">
               {IconComponent && (
@@ -360,6 +382,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                 </TugPushButton>
               </AlertDialog.Action>
             </div>
+            </FocusModeScope>
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>

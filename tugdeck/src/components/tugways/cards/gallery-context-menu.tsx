@@ -54,7 +54,7 @@ export function GalleryContextMenu() {
               { action: TUG_ACTIONS.PASTE, label: "Paste" },
             ]}
           >
-            <div style={regionStyle}>Right-click here</div>
+            <div style={regionStyle} data-testid="ctx-region">Right-click here</div>
           </TugContextMenu>
         </div>
       </div>

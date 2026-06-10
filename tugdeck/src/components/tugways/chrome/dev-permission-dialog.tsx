@@ -917,7 +917,15 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // Host-less inline dialog: no Radix focus primitive, so no teardown-autofocus
   // slot to own the DOM-focus write. It does NOT defer — the engine moves DOM
   // focus to the restored key view in `popFocusMode` on close, as before.
-  const { FocusModeScope, scopeId } = useFocusTrap({ active: isPending });
+  // [P01] The engine's Escape ladder owns Escape now: when this dialog's trap is
+  // the top mode, the ladder calls `handleDeny` directly (the same action
+  // `useInlineDialogScope`'s CANCEL_DIALOG handler runs — Escape denies a
+  // permission prompt) instead of Stage-1's CANCEL_DIALOG fallthrough. ⌘. stays
+  // chain-routed via the scope.
+  const { FocusModeScope, scopeId } = useFocusTrap({
+    active: isPending,
+    onEscapeDismiss: handleDeny,
+  });
 
   // Spatial arrow order ([P22] / [P23]) — a closed *vertical loop* through the
   // button row and the scope group, plus the horizontal button ring:

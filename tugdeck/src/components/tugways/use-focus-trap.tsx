@@ -27,6 +27,7 @@ import { FocusManagerContext, FocusModeContext } from "./focus-manager";
 import { CardIdContext } from "@/lib/card-id-context";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useExternalPointerdownObserver } from "./internal/external-dismiss-observer";
+import { useResponderChain } from "./responder-chain-provider";
 
 export interface UseFocusTrapOptions {
   /**
@@ -66,6 +67,16 @@ export interface UseFocusTrapOptions {
    * `popFocusMode` as before.
    */
   deferDomFocusToTeardown?: boolean;
+  /**
+   * The surface's dismiss action, registered on the pushed mode so the engine's
+   * Escape ladder can close THIS surface when it is the top mode ([P01]/[P02]).
+   * Held in a ref and registered via a stable wrapper, so changing the callback's
+   * identity between renders never re-runs the push/pop effect ([L07], the
+   * `closeDisposition` pattern). Leave unset for a surface the engine closes
+   * structurally (a focus-cycle, a descend scope) — the ladder then routes Escape
+   * to `escapeCurrentMode` / `ascend` instead of a callback.
+   */
+  onEscapeDismiss?: () => void;
 }
 
 export interface UseFocusTrapResult {
@@ -90,8 +101,25 @@ export function useFocusTrap({
   trapped = true,
   closeDisposition,
   deferDomFocusToTeardown,
+  onEscapeDismiss,
 }: UseFocusTrapOptions): UseFocusTrapResult {
   const manager = useContext(FocusManagerContext);
+  // The chain — for the mouse-opened close-focus fallback in `onCloseAutoFocus`
+  // (restore the captured first responder's DOM focus when no keyboard ring owns
+  // it). Null outside a provider; the writer then leaves Radix's default alone.
+  const chain = useResponderChain();
+  // Hold the dismiss callback in a ref and register a stable wrapper, so the
+  // surface can pass a fresh closure each render without re-running the push/pop
+  // effect ([L07]). Presence (defined-or-not) IS in the effect deps: a surface
+  // either registers a callback or does not, stably — a no-callback surface must
+  // push `undefined` so the ladder's "top mode has onEscapeDismiss" branch does
+  // not fire (and consume the Escape) on a surface that never registered one.
+  const onEscapeDismissRef = useRef(onEscapeDismiss);
+  onEscapeDismissRef.current = onEscapeDismiss;
+  const hasOnEscapeDismiss = onEscapeDismiss !== undefined;
+  const stableOnEscapeDismiss = useRef(() => {
+    onEscapeDismissRef.current?.();
+  }).current;
   // The "user clicked outside any popup" predicate ([D07] generalized): while the
   // surface is open, watch for a pointerdown outside the canvas overlay root, so
   // `onCloseAutoFocus` can defer to the clicked surface instead of restoring.
@@ -112,7 +140,10 @@ export function useFocusTrap({
   useLayoutEffect(() => {
     if (manager === null || !active) return;
     const ctx = manager.contextFor(cardId);
-    ctx.pushFocusMode(scopeId, { trapped });
+    ctx.pushFocusMode(scopeId, {
+      trapped,
+      onEscapeDismiss: hasOnEscapeDismiss ? stableOnEscapeDismiss : undefined,
+    });
     return () => {
       // The disposition is read at pop time (it is set on commit, just before the
       // surface closes). `relinquish` cascade-pops the enclosing cycle; `retain`
@@ -136,6 +167,8 @@ export function useFocusTrap({
     trapped,
     closeDisposition,
     deferDomFocusToTeardown,
+    hasOnEscapeDismiss,
+    stableOnEscapeDismiss,
   ]);
 
   // The surface's single close-focus DOM writer (see UseFocusTrapResult). Stable
@@ -156,12 +189,32 @@ export function useFocusTrap({
       // The user dismissed by clicking some other surface: let that surface keep
       // focus (Radix's default), do not restore.
       if (wasExternalRef.current) return;
-      // Otherwise re-project the engine's already-restored key view onto the DOM,
-      // now that the focus scope has torn down and will not yank it to `<body>`.
-      event.preventDefault();
-      manager.focusKeyView();
+      // Two restore paths, mirroring the old service-popup binding. Each
+      // `preventDefault`s ONLY when it actually restores — so a surface opened
+      // with nothing to restore (e.g. a context menu on a bare, non-focusable
+      // region: no key view, no first responder) falls through to Radix's default
+      // close-focus instead of being stranded on `<body>`.
+      //  - a KEYBOARD key view owns close-focus (the surface was opened from a
+      //    cycle / Tab stop): re-project the engine's restored ring onto the DOM;
+      //  - otherwise (mouse-opened — the key view is null or a ringless control
+      //    like a refuse trigger button): restore the captured first responder's
+      //    DOM focus. The trap's pop already reinstated the chain first responder,
+      //    so focusing it lands DOM focus where the user was (e.g. the editor),
+      //    not on a trigger button that briefly held the key view.
+      if (manager.keyView() !== null && manager.keyViewIsKeyboard()) {
+        event.preventDefault();
+        manager.focusKeyView();
+        return;
+      }
+      if (chain !== null) {
+        const firstResponder = chain.getFirstResponder();
+        if (firstResponder !== null) {
+          event.preventDefault();
+          chain.focusResponder(firstResponder);
+        }
+      }
     },
-    [manager, closeDisposition, wasExternalRef],
+    [manager, chain, closeDisposition, wasExternalRef],
   );
 
   // Stable scope component (held in a ref so it keeps a constant function

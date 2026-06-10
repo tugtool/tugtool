@@ -525,7 +525,7 @@ export class ResponderChainManager {
    * The single primitive that closes the gap between chain-state and DOM
    * focus. Use cases: a popup-class primitive's close handler restoring
    * focus to whichever responder was first responder when the popup
-   * opened (`useServicePopupBinding`); a chain-driven workflow that
+   * opened (the engine focus trap's close-focus writer); a chain-driven workflow that
    * needs the keyboard caret to land on the newly-promoted responder
    * (cross-card activation via Cmd-tab).
    *

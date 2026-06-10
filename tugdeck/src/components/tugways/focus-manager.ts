@@ -206,6 +206,17 @@ interface FocusModeEntry extends FocusMode {
    * `null` when nothing held first responder at push.
    */
   restoreFirstResponder: string | null;
+  /**
+   * The surface's own dismiss action, registered at push by a user-dismissable
+   * trapped surface (popover, sheet, alert, dialogs, menus). When the engine's
+   * Escape ladder selects "dismiss the top surface" it calls this and consumes
+   * the event; what the callback does is the surface's business (a controlled
+   * Radix flip, a chain `CANCEL_DIALOG` dispatch, or a synthesized Escape). The
+   * mode stack owns *which* surface is on top; the callback owns *how* it closes
+   * ([P01]). `undefined` for modes the engine closes structurally (a focus-cycle
+   * via `escapeExits`, a non-trapped descend scope via `ascend`).
+   */
+  onEscapeDismiss?: () => void;
 }
 
 // ---- Focusables ----
@@ -633,6 +644,7 @@ export class FocusContext {
       trapped: boolean;
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
       escapeExits?: boolean;
+      onEscapeDismiss?: () => void;
     },
   ): void {
     const existing = this.modeStack.findIndex((m) => m.scopeId === scopeId);
@@ -646,6 +658,7 @@ export class FocusContext {
       restoreKeyViewKeyboard: this.keyViewKeyboard,
       commitDisposition: opts.commitDisposition,
       escapeExits: opts.escapeExits,
+      onEscapeDismiss: opts.onEscapeDismiss,
       // Capture the first responder alongside the key view ([#cfrunloop-model]):
       // a surface about to claim first responder on open (a modal confirm popover)
       // captures here, BEFORE its claim, so the pop restores the prior responder.
@@ -867,6 +880,17 @@ export class FocusContext {
   currentFocusModeEscapeExits(): boolean {
     const top = this.modeStack[this.modeStack.length - 1];
     return top ? top.escapeExits === true : false;
+  }
+
+  /**
+   * The current (top) focus mode's registered dismiss callback, or `null` when
+   * the base mode is current or the top mode registered none. The Escape ladder
+   * calls this to ask "does the top surface own its own dismissal?" — branch (2)
+   * of [P02]. A returned callback is invoked once and the Escape consumed.
+   */
+  currentFocusModeOnEscapeDismiss(): (() => void) | null {
+    const top = this.modeStack[this.modeStack.length - 1];
+    return top?.onEscapeDismiss ?? null;
   }
 
   /**
@@ -1763,6 +1787,7 @@ export class FocusManager {
       trapped: boolean;
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
       escapeExits?: boolean;
+      onEscapeDismiss?: () => void;
     },
   ): void {
     this.activeContext().pushFocusMode(scopeId, opts);
@@ -1790,6 +1815,9 @@ export class FocusManager {
   }
   currentFocusModeEscapeExits(): boolean {
     return this.activeContext().currentFocusModeEscapeExits();
+  }
+  currentFocusModeOnEscapeDismiss(): (() => void) | null {
+    return this.activeContext().currentFocusModeOnEscapeDismiss();
   }
   escapeCurrentMode(): boolean {
     return this.activeContext().escapeCurrentMode();

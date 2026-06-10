@@ -54,13 +54,15 @@
  * Per `tugplan-dev-popup-bindings.md` [D08] (#popup-button-defaults),
  * TugPopupButton inherits the **service** popup role through
  * composition. Activating the trigger opens a Radix dropdown that
- * grabs DOM focus via `FocusScope`; on close, `useServicePopupBinding`
- * (called once inside `TugPopupMenu` per [D06]) restores focus to the
- * responder that owned it before the popup opened — typically the
- * editor or form control the user was working in.
+ * grabs DOM focus via `FocusScope`; on close, the engine focus trap
+ * `TugPopupMenu` pushes (its `onCloseAutoFocus` teardown writer)
+ * restores focus to the responder that owned it before the popup
+ * opened — typically the editor or form control the user was working
+ * in. (Escape is owned by the engine's Escape ladder via the trap's
+ * `onEscapeDismiss`.)
  *
  * Consumers do NOT pick a role at the call site and do NOT pass an
- * `onCloseAutoFocus` override: the binding owns close-focus
+ * `onCloseAutoFocus` override: the trap owns close-focus
  * restoration. A consumer who needs custom close behavior calls
  * `manager.focusResponder(targetId)` directly inside the menu-item
  * handler before the menu closes (per Risk R02 in the popup-bindings

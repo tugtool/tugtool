@@ -91,7 +91,7 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Is the probe already vestigial post-consolidation? (OPEN) {#q01-probe-vestigial}
+#### [Q01] Is the probe already vestigial post-consolidation? (DECIDED) {#q01-probe-vestigial}
 
 **Question:** The probe was added when the Z2 popover Escape collapsed the cycle beneath it — at a time when the cycle could be top-of-stack with a popover open. Since `050bd54f`, every popover pushes a trap onto the same card context as the cycle, so the cycle should never be top-of-stack while a popover is open. Does removing the probe today (before any other change) leave at0140 and the new two-pane test green?
 
@@ -99,9 +99,9 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 **Plan to resolve:** Step 2 spike — temporarily remove the probe locally, run at0140 + the new two-pane test, restore, record the result in [T01]'s notes.
 
-**Resolution:** OPEN — resolved by [#step-2].
+**Resolution:** DECIDED — **the probe is NOT vestigial today; it is load-bearing.** Neutralizing it (`aDismissableSurfaceIsOpen() → false`) makes at0140 (popover-over-cycle) and at0157 (same-pane) fail: the first Escape over a cycle-stop popover *exits the cycle* instead of only closing the popover. **Mechanism (measured by instrumenting both arbitration sites):** within ONE Escape keydown, the capture-phase Stage-1 guard sees the popover trap on top (`trapped, escapeExits:false`) and dispatches `CANCEL_DIALOG`, which closes the popover and **pops its trap synchronously**; the act-dispatch listener then runs *on the same event* and now sees the **cycle** on top (`escapeExits:true`). The probe (popover DOM still present) is the only thing stopping the act-dispatch from exiting the cycle on that same Escape. **Implication for the refactor:** the probe compensates for today's *two-listener* split + synchronous mid-event popover close. The single consuming ladder ([P02]) reads the top mode ONCE (popover trap → its `onEscapeDismiss`), acts, and `stopImmediatePropagation`s — so no second listener processes the same Escape and the cycle is never re-exposed mid-event. The probe is therefore safe to delete **only after** the single ladder lands and consumes (exactly the plan's Step 7 sequencing). The ladder's consume on branches 2/4/5 is load-bearing for this — not optional.
 
-#### [Q02] What is the editor context menu's current close-focus mechanism? (OPEN) {#q02-editor-menu-restore}
+#### [Q02] What is the editor context menu's current close-focus mechanism? (DECIDED) {#q02-editor-menu-restore}
 
 **Question:** `tug-editor-context-menu` is hand-rolled (no Radix, no `useServicePopupBinding` import) with its own Escape keydown branch. How does it restore focus to the editor on close today, and does it need the trap's teardown writer or is the editor's own focus reclamation sufficient when its trap pops `moveDomFocus: true`?
 
@@ -109,7 +109,7 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 **Plan to resolve:** Step 2 spike — read its close path and the editor's reclaim; record the disposition in [T01].
 
-**Resolution:** OPEN — resolved by [#step-2].
+**Resolution:** DECIDED — **the editor never loses focus, so there is nothing to restore.** `tug-editor-context-menu` is hand-rolled and uses **mousedown-preventDefault on its items so DOM focus stays on the editor for the entire menu lifecycle** (the chain action even targets the responder that *opened* the menu, captured at open). Its keyboard contract (Escape / ⌘. → close) rides a `window`-level capture-phase `keydown` listener; close is its `onClose` prop. **Migration disposition:** join the trap for **stack presence + Escape arbitration only** — push a trapped mode while open, register `onEscapeDismiss` = its existing `onClose`, delete the local Escape `keydown` branch (keep ⌘.). It needs **no** `deferDomFocusToTeardown` / teardown DOM writer (unlike popover/sheet): since the editor retains focus, the trap-pop key-view restore (which *is* the editor) is a harmless idempotent no-op. Closest to the host-less inline-dialog row, not the popover row.
 
 ---
 
@@ -155,7 +155,7 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 **Decision:** The act dispatch's Escape branch becomes the single arbiter, walking in order: (1) `keyViewCaptures(Escape)` → the component keeps it (editor completion popup); (2) top mode has `onEscapeDismiss` → call it, consume the event; (3) top mode trapped without callback → dev-warn, yield; (4) top mode non-trapped (descend scope) → `ascend()`; (5) top mode `escapeExits` (cycle) → `escapeCurrentMode()`; (6) base mode → fall through to the cancel ladder (the global Escape→`CANCEL_DIALOG` binding, unchanged).
 
-The keybinding stage's Escape guard changes in **two stages**. **Transitional (lands with the ladder):** yield iff the ladder will act — top mode has a callback, OR is non-trapped, OR is `escapeExits` (probe term dropped; safe per [Q01] because popovers push traps, so a cycle is never top-of-stack under an open popover). A trapped mode *without* a callback keeps today's path: Stage-1 dispatches `CANCEL_DIALOG`, and Radix's fallthrough closes Radix surfaces — **this is load-bearing, not optional: the host-less dialogs' Escape IS that dispatch** (they have no Radix layer and no local handler), so yielding for trapped-no-callback before they register callbacks would break their Escape mid-plan. **Final (lands with the probe deletion):** once every trapped surface has a callback, trapped-no-callback is dead and the guard collapses to "any non-base mode → yield to the ladder."
+The keybinding stage's Escape guard changes in **two stages**. **Transitional (lands with the ladder):** yield iff the ladder will act — top mode has a callback, OR is non-trapped, OR is (`escapeExits` AND no dismissable surface open). **The probe term is KEPT in the transitional guard AND on the ladder's `escapeExits` branch — corrected from the original plan text by the [#step-2] spike.** The spike measured ([Q01]) that the probe is load-bearing precisely *because* of the two-listener split: when a popover is open over a cycle, Stage-1 sees the popover trap (trapped, no callback yet) and dispatches `CANCEL_DIALOG`, which closes the popover and pops its trap **synchronously**, so the act-dispatch then runs *on the same Escape* with the cycle (`escapeExits`) on top. Until the popover carries an `onEscapeDismiss` ([#step-4]) — which makes the ladder take branch (2) and `stopImmediatePropagation` *before* the cycle is ever reached — dropping the probe would exit the cycle on the popover's Escape and regress at0140/at0157. So branches (2) handle surfaces with callbacks, while branch (5)'s probe guard protects the cycle from the still-callback-less popover during Steps 3–6. A trapped mode *without* a callback keeps today's path: Stage-1 dispatches `CANCEL_DIALOG`, and Radix's fallthrough closes Radix surfaces — **this is load-bearing, not optional: the host-less dialogs' Escape IS that dispatch** (they have no Radix layer and no local handler), so yielding for trapped-no-callback before they register callbacks would break their Escape mid-plan. **Final (lands with the probe deletion, [#step-7]):** once every trapped surface has a callback, every open surface is handled by branch (2)+consume before branch (5), so the cycle's `escapeExits` branch is only ever reached with no surface open — the probe is then provably always-false and is deleted from both the guard and branch (5); the guard collapses to "any non-base mode → yield to the ladder."
 
 **Rationale:**
 - Today the decision is smeared across the keybinding guard, the chain walk's incidental reach, and Radix; one ladder in one place is the entire point of the feature.
@@ -275,7 +275,11 @@ Cycle-with-surface-open is now: stack `[…, cycle, surfaceTrap]` → first Esca
 | `tug-context-menu` | Radix ContextMenu | **uncontrolled** (no `open` prop) | ✗ → joins ([P04]) | Radix | `synthesizeEscapeDismiss()` + marker ([P03]) | preventDefault, marked events pass |
 | `tug-editor-context-menu` | hand-rolled (no Radix) | controlled by editor | ✗ → joins ([P04]) | own keydown Escape branch | its `onClose` callback | delete the local Escape branch |
 
-> Spike notes ([#step-2]) fill in: probe-vestigiality result ([Q01]) and the editor context menu's close-focus disposition ([Q02]).
+> **Spike notes ([#step-2], DECIDED):**
+> - **[Q01] probe is load-bearing, not vestigial** — neutralizing it fails at0140 + at0157; the cause is the two-listener split (Stage-1 closes the popover + pops its trap synchronously, then the act-dispatch sees the cycle on the *same* Escape). The single consuming ladder replaces it; delete only in [#step-7]. Full mechanism in [Q01]'s resolution.
+> - **[Q02] editor context menu retains editor focus the whole lifecycle** (item mousedown-preventDefault) → no teardown writer needed; push trapped mode + `onEscapeDismiss` = `onClose` + delete its local Escape branch. Full disposition in [Q02]'s resolution.
+> - **Radix `Content` props confirmed present** on the installed versions (no typecheck error; already in use): `internal/tug-popup-menu.tsx` passes `DropdownMenuPrimitive.Content onCloseAutoFocus` (today sourced from `useServicePopupBinding` — [#step-6] swaps to the trap's); `tug-context-menu.tsx` passes `ContextMenuPrimitive.Content onCloseAutoFocus`, already has `synthesizeEscapeDismiss()` ([P03]) and the `blinkingRef` self-dispatch guard ([R02]); `tug-alert.tsx` is controlled via `AlertDialog.Root open/onOpenChange` with a `handleOpenChange` close path ([P06]). `onEscapeKeyDown` is already used on `Popover.Content` / `ContextMenu.Content`, so the suppression prop is available on all four.
+> - **Per-surface Escape today (verified):** popover/confirm → Stage-1 `CANCEL_DIALOG` dispatch closes via the chain handler (confirm, which claims first responder) or Radix `DismissableLayer` (plain); the dismiss re-emits `DISMISS_POPOVER`. Menus → Radix-internal Escape + `useServicePopupBinding` restore. Editor context menu → window-capture `keydown` Escape branch → `onClose`. Sheet/dialogs unchanged from the plan's [#current-escape-flow].
 
 #### Public API Surface (within tugways) {#api-surface}
 
@@ -322,14 +326,14 @@ Cycle-with-surface-open is now: stack `[…, cycle, surfaceTrap]` → first Esca
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Behavioral pins: two-pane cycle Escape + menu Escape-close tests | pending | — |
-| #step-2 | Spike: probe vestigiality + per-surface Escape characterization | pending | — |
-| #step-3 | Engine: `onEscapeDismiss` + the Escape ladder | pending | — |
-| #step-4 | Popover/confirm + sheet + dialogs: callbacks, suppression, close-and-emit | pending | — |
-| #step-5 | Alert joins the trap | pending | — |
-| #step-6 | Menus into the trap; delete `useServicePopupBinding` | pending | — |
-| #step-7 | Delete the probe and its call sites | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Behavioral pins: two-pane cycle Escape + menu Escape-close tests | done | 2f9f12a4 |
+| #step-2 | Spike: probe vestigiality + per-surface Escape characterization | done | 930f0aee |
+| #step-3 | Engine: `onEscapeDismiss` + the Escape ladder | done | 4a125427 |
+| #step-4 | Popover/confirm + sheet + dialogs: callbacks, suppression, close-and-emit | done | 13e3e5ed |
+| #step-5 | Alert joins the trap | done | 42f6bfdf |
+| #step-6 | Menus into the trap; delete `useServicePopupBinding` | done | fa7c3625 |
+| #step-7 | Delete the probe and its call sites | done | 79cfeaf6 |
+| #step-8 | Integration checkpoint | done | (verification only) |
 
 #### Step 1: Behavioral pins {#step-1}
 
@@ -388,7 +392,7 @@ Cycle-with-surface-open is now: stack `[…, cycle, surfaceTrap]` → first Esca
 **Artifacts:**
 - `FocusModeEntry.onEscapeDismiss` + `pushFocusMode` opts + `FocusManager` delegate; `useFocusTrap` option (ref-held, stable wrapper).
 - The act-dispatch Escape ladder per [#escape-ladder], including the synthetic-marker early-return and the trapped-no-callback dev-warn+yield branch.
-- Keybinding-stage Escape guard moved to its **transitional** form per [P02]: yield iff top mode has a callback / is non-trapped / is `escapeExits` (probe term dropped); trapped-no-callback keeps today's `CANCEL_DIALOG` dispatch + Radix fallthrough. The guard's *final* "non-base → yield" form lands in #step-7, NOT here — the host-less dialogs' Escape rides the dispatch until they register callbacks in #step-4.
+- Keybinding-stage Escape guard moved to its **transitional** form per [P02]: yield iff top mode has a callback / is non-trapped / is (`escapeExits` AND no dismissable surface open — **probe term KEPT**, per the [#step-2] spike correction); trapped-no-callback keeps today's `CANCEL_DIALOG` dispatch + Radix fallthrough. The ladder's `escapeExits` branch (5) ALSO keeps its `!aDismissableSurfaceIsOpen()` guard this step. Dropping the probe before the popover has a callback ([#step-4]) would regress at0140/at0157 — the spike proved the popover trap pops mid-Escape, exposing the cycle to the act-dispatch on the same event. The guard's *final* "non-base → yield" form and the probe deletion both land in #step-7.
 - Pure-logic tests for the ladder's stack decisions.
 
 **Tasks:**

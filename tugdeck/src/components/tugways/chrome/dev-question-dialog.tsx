@@ -1341,7 +1341,14 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // Host-less inline dialog: no Radix focus primitive, so no teardown-autofocus
   // slot to own the DOM-focus write. It does NOT defer — the engine moves DOM
   // focus to the restored key view in `popFocusMode` on close, as before.
-  const { FocusModeScope, scopeId } = useFocusTrap({ active: isPending });
+  // [P01] The engine's Escape ladder owns Escape now: when this dialog's trap is
+  // the top mode, the ladder calls `handleCancel` directly (the same action
+  // `useInlineDialogScope`'s CANCEL_DIALOG handler runs) instead of relying on
+  // Stage-1's CANCEL_DIALOG fallthrough. ⌘. stays chain-routed via the scope.
+  const { FocusModeScope, scopeId } = useFocusTrap({
+    active: isPending,
+    onEscapeDismiss: handleCancel,
+  });
 
   // Spatial arrow order ([P22] / [P23]). The dialog's controls stack in up to
   // three rows — the header actions (Cancel ↔ Submit), the wizard nav (Back ↔

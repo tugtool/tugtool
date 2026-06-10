@@ -549,6 +549,23 @@ export function TugSheetContent({
     onOpenChange(false);
   }, [onOpenChange]);
 
+  // The sheet's cancel request: dispatch `CANCEL_DIALOG` to the sheet's own
+  // responder id (so the walk starts inside the sheet regardless of current
+  // first-responder state), or call `closeSheet` directly with no provider. Both
+  // the engine's Escape ladder (registered as the trap's `onEscapeDismiss`) and
+  // the ⌘. keydown route through here — one owner for "the user asked to cancel."
+  const requestCancel = useCallback(() => {
+    if (manager) {
+      manager.sendToTarget(responderId, {
+        action: TUG_ACTIONS.CANCEL_DIALOG,
+        sender: senderId,
+        phase: "discrete",
+      });
+    } else {
+      closeSheet();
+    }
+  }, [manager, responderId, senderId, closeSheet]);
+
   // Register the sheet content as a chain responder. The cancelDialog
   // handler closes the sheet; there is no confirmDialog handler (a
   // sheet's "confirm" is the consumer's responsibility — their save
@@ -611,6 +628,10 @@ export function TugSheetContent({
     active: open,
     closeDisposition: closeDispositionRef,
     deferDomFocusToTeardown: true,
+    // [P01] The engine's Escape ladder owns the sheet's Escape now: when the
+    // sheet's trap is the top mode, the ladder calls this instead of the sheet's
+    // own `handleKeyDown` Escape branch (deleted below). ⌘. stays chain-routed.
+    onEscapeDismiss: requestCancel,
   });
 
   // Presence: keep the portal mounted during the exit animation.
@@ -951,23 +972,12 @@ export function TugSheetContent({
   }, [open, cardEl]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape" || (e.metaKey && e.key === ".")) {
+    // Escape is owned by the engine's Escape ladder ([P02]) via the trap's
+    // `onEscapeDismiss` (= `requestCancel`); the sheet no longer handles it here.
+    // ⌘. stays the force-dismiss chord, chain-routed exactly as before (#non-goals).
+    if (e.metaKey && e.key === ".") {
       e.preventDefault();
-      // Route via sendToTarget at the sheet's own responder id so the
-      // dispatch reaches this sheet regardless of who is currently
-      // first responder. First-responder walks are the wrong tool for
-      // a modal close — the sheet owns its cancelDialog handler by
-      // identity, not by focus position. Fallback: no provider → call
-      // closeSheet directly.
-      if (manager) {
-        manager.sendToTarget(responderId, {
-          action: TUG_ACTIONS.CANCEL_DIALOG,
-          sender: senderId,
-          phase: "discrete",
-        });
-      } else {
-        closeSheet();
-      }
+      requestCancel();
     }
   }
 

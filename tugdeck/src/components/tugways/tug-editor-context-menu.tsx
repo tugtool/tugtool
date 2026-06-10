@@ -104,6 +104,7 @@ import { createPortal } from "react-dom";
 import { playMenuItemBlink } from "./tug-menu-item-blink";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import { useControlDispatch } from "./use-control-dispatch";
+import { useFocusTrap } from "./use-focus-trap";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import type { TugAction } from "./action-vocabulary";
 
@@ -231,6 +232,24 @@ export function TugEditorContextMenu({
 
   useLayoutEffect(() => { itemsRef.current = items; }, [items]);
   useLayoutEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // Stable close request: imperatively hide the menu then fire `onClose`. Used by
+  // the engine's Escape ladder (the trap's `onEscapeDismiss`) and the ⌘. keydown.
+  const requestClose = useCallback(() => {
+    const menu = menuRef.current;
+    if (menu) menu.style.display = "none";
+    onCloseRef.current();
+  }, []);
+
+  // Engine focus trap ([P04] / [Q02]): the hand-rolled editor context menu joins
+  // the engine model for STACK PRESENCE + Escape arbitration only. It keeps the
+  // editor focused for its whole lifecycle (items mousedown-preventDefault), so it
+  // needs NO close-focus teardown writer — `onCloseAutoFocus` is unused and the
+  // trap pops with `moveDomFocus: true`, harmlessly re-projecting the editor key
+  // view (which never lost focus). Registering `onEscapeDismiss` lets the engine's
+  // ladder own Escape; the local Escape keydown branch is deleted below. ⌘. stays
+  // handled in the window keydown listener.
+  useFocusTrap({ active: open, onEscapeDismiss: requestClose });
 
   // Reset all transient state whenever the menu closes so the next
   // open starts fresh.
@@ -455,13 +474,11 @@ export function TugEditorContextMenu({
         return;
       }
 
-      // Escape — close.
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        dismiss();
-        return;
-      }
+      // Escape is owned by the engine's Escape ladder ([P02]) via the trap's
+      // `onEscapeDismiss` (= `requestClose`). Do NOT handle it here — letting it
+      // propagate to the engine's document listener is what routes it to the
+      // ladder (this window listener fires first in the capture chain, so a local
+      // handler would shadow the engine).
 
       // Enter / Space — activate the keyboard-selected item, if any.
       if (e.key === "Enter" || e.key === " ") {
