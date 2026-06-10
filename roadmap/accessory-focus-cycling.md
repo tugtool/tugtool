@@ -76,7 +76,7 @@ All the machinery this feature needs already shipped in the focus-language phase
 #### Assumptions {#assumptions}
 
 - `moveKeyViewSpatial("left")` returns `false` in a descended row scope (no declared spatial order, no cursor handle on a leaf button), so a bare ArrowLeft falls through the document-level arrow navigator to `TugListView`'s own capture handler. (Verified by reading `focus-manager.ts` `moveKeyViewSpatial`; pinned by the at0163 app-test.)
-- A focused native `<button>` activates on Space/Enter through the existing leaf pipeline (the act dispatch leaves leaves to native), so the descended trash button needs no `behavior` declaration.
+- A descended trash button needs no `behavior` declaration: Space activates natively on the DOM-focused `<button>` (the act dispatch leaves leaves alone), and Enter activates through the bubble Stage-2 refusing-button branch (`activeIsRefusingButton` → synthetic click + `preventDefault`), which routes Enter to the focused refusing button instead of the sheet's default button. (Verified by reading `responder-chain-provider.tsx` Stage-2.)
 - The Sessions list's "New session" row and live-session rows have no focusable accessory (live rows render a badge, trash suppressed), so Right is naturally inert on them via the `rowFirstFocusableId !== null` gate.
 
 ---
@@ -120,7 +120,7 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | ArrowLeft intercepted upstream of the list handler | med | low | Verified fall-through by code reading; at0163 pins it | Left stops ascending after navigator changes |
-| Popover pop restores a dead key view before reconciliation runs | low | med | Assert final state, not intermediates; reconciliation is the last writer | Ring vanishes after confirm-trash |
+| Popover pop and row-scope reconciliation race on confirm | low | med | Reconciliation triggers on data AND mode-stack changes, acts only when the row scope is top — final writer by construction | Ring vanishes after confirm-trash |
 | A missed `data-reveal="hover"` selector permanently hides an accessory | med | low | Grep checkpoint in #step-1 (zero remaining occurrences) | Any invisible trailing accessory |
 | Registered trash buttons leak into the picker's Tab cycle | high | low | Buttons register under the row's `FocusModeContext`, not the cycle's mode; at0163 asserts Tab order unchanged | Tab lands on a trash icon |
 
@@ -130,11 +130,11 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 - **Mitigation:** at0163 asserts the full Left-ascend journey in the real app; the list handler's branch is gated narrowly (top mode is one of this list's row scopes) so it never competes outside descend.
 - **Residual risk:** A future *global* bare-ArrowLeft keybinding would shadow the ascend; the dead-arrow dev-warning plus at0163 would surface it.
 
-**Risk R02: Transient dead key view between popover pop and reconciliation** {#r02-transient-dead-keyview}
+**Risk R02: Pop-ordering race between the popover's restore and the reconciliation** {#r02-pop-ordering-race}
 
-- **Risk:** On confirm, the popover's trapped mode pops first and restores its captured key view — the now-unmounted trash button — before the list's reconciliation pops the row scope and lands the cursor.
-- **Mitigation:** The reconciliation is a layout-effect pass over the same commit that removes the row ([L03]); tests assert the *final* state (container key view, ring, cursor on neighbor). `focusKeyView` is a no-op for an unmounted id, so nothing user-visible happens in between.
-- **Residual risk:** A one-frame ringless flash in pathological orderings; cosmetic only.
+- **Risk:** On confirm, two pops race. The likely ordering (async store deletion) is benign: the popover's trapped mode pops first (its captured key view — the trash button — is still mounted), the row unmounts later, and the reconciliation runs with the row scope on top. But if a store ever notifies *before* the popover finishes closing, the reconciliation would pop a **buried** row scope (no restore), and the popover's later pop would become the final writer — restoring a dead key view and stranding the ring.
+- **Mitigation:** The reconciliation triggers on **both** data changes and mode-stack changes (`manager.subscribe`) and acts only when the recorded row scope is the **top** mode ([P05]). Whichever pop happens last, the reconciliation re-runs after it and lands the cursor — final writer by construction, not by ordering luck. Tests assert the final state (container key view, ring, cursor on neighbor).
+- **Residual risk:** A one-frame ringless flash between the racing pops; cosmetic only.
 
 **Risk R03: Reveal-rename regression surface** {#r03-rename-regression}
 
@@ -204,17 +204,19 @@ Cite plan-local decisions `[P01]`–`[P0n]` (use `P`, never `D`), open questions
 
 #### [P05] Post-delete landing: ascend + cursor to nearest surviving row, committed in single-select (DECIDED) {#p05-post-delete-landing}
 
-**Decision:** `TugListView` records the descended row's stable data-source id at descend time; a layout-effect reconciliation on data change detects the id vanishing while the row scope is pushed, then: pops the row scope back to the container (key view + ring on the container), clamps the cursor to the nearest surviving cursorable row (old index clamped into range, then nearest-cursorable resolution), scrolls it into view, and — in single-select — commits it (`selectCursorRow`), so selection lands where the eye does.
+**Decision:** `TugListView` records the descended row's stable data-source id at descend time; a layout-effect reconciliation — triggered on **both** data changes and engine mode-stack changes (`manager.subscribe`) — detects the id vanishing while the row scope is pushed **and acts only when that row scope is the top mode**, then: pops the row scope back to the container (key view + ring on the container), clamps the cursor to the nearest surviving cursorable row (old index clamped into range, then nearest-cursorable resolution), scrolls it into view, and — in single-select — commits it (`selectCursorRow`), so selection lands where the eye does.
 
 **Rationale:**
 - Mac convention: deleting the selected item moves selection to its nearest neighbor; stranding the keyboard on a dead scope is the only alternative and is unacceptable ([Q04]).
 - Keying on the row *id* (not index) distinguishes "row deleted" from "row scrolled out of the render window" — virtualized unmount must not ascend.
 - Committing the landed row in single-select supersedes the form's interim selection fallback through the normal `delegate.onSelect` path — one writer, the list's own commit machinery.
+- Gating on top-mode + subscribing to mode-stack changes makes the reconciliation the final writer in **every** pop ordering: if the popover's trapped mode is still above the row scope when the row vanishes, the reconciliation simply waits for that pop (it re-runs on the mode-stack change) and then lands the cursor ([R02]).
 
 **Implications:**
 - Emptied list: no cursorable row remains → the cursor clears and the container keeps the key view + ring (the Sessions list always retains "New session", so this is the Recents edge).
-- The popover's own pop may transiently restore a dead key view first; the reconciliation is the final writer ([R02]).
+- The popover's own pop may transiently restore a dead key view first; the reconciliation re-runs after it and is the final writer by construction ([R02]).
 - Mouse-initiated trash (no descend) is unaffected — the reconciliation is gated on the pushed row scope.
+- In the Recents list, committing the landed neighbor rewrites the project-path input (the Recents delegate's `onSelect` fills the path). This is deliberate and consistent with that list's existing live-commit arrows — every arrow movement already rewrites the path — not a bug.
 
 #### [P06] Picker trash buttons author into the row scope with a shared group constant (DECIDED) {#p06-picker-authoring}
 
@@ -238,7 +240,7 @@ With the key view on a picker list container (cursor on row *i*, a non-live sess
 
 1. **↑/↓** move cursor + selection (single-select live commit, unchanged). The cursor row's trash is *visible* ([P01]).
 2. **→** pushes the row scope (non-trapped), key view → trash button, ring on it; the accessory stays lit via `:focus-within`. ([P03])
-3. **Space/Enter** on the button natively activates it → `request-trash-session` → confirm popover anchored to the button (unchanged flow).
+3. **Space/Enter** on the button activates it → `request-trash-session` → confirm popover anchored to the button (unchanged flow). Mechanism differs by key: **Space** activates natively (DOM focus is on the button; the act dispatch leaves leaves alone). **Enter** rides the bubble Stage-2 refusing-button path — the button carries `data-tug-focus="refuse"` and holds DOM focus, so Stage-2 synthetically clicks *it* (not the sheet's Open default) and `preventDefault` stops double-fire.
 4. **Confirm** → row deleted → reconciliation pops the row scope, cursor + selection land on the nearest surviving row, ring on the container. ([P05])
 5. **Cancel / Escape in the popover** → popover pops, key view restores to the trash button (still mounted), row scope intact; **←/Escape** then ascend to the list. ([P04])
 6. **Enter** on a row (not descended) still falls through to the picker's default action (Open). ([P03])
@@ -429,12 +431,12 @@ With the key view on a picker list container (cursor on row *i*, a non-live sess
 
 **Artifacts:**
 - Descend records the row's stable data-source id (ref); ascend/pop clears it.
-- A layout-effect reconciliation: row scope pushed + recorded id absent from the data source → `popFocusMode` the row scope, clamp the old cursor index into range, resolve the nearest cursorable row, `moveCursorTo` + scroll, commit it when single-select; emptied list → clear cursor, container keeps key view + ring.
+- A layout-effect reconciliation triggered on **both** data-source changes and engine mode-stack changes (`manager.subscribe`): recorded id absent from the data source (`idForIndex` sweep) **and the recorded row scope is the top mode** → `popFocusMode` the row scope, clamp the old cursor index into range, resolve the nearest cursorable row, `moveCursorTo` + scroll, commit it when single-select; emptied list → clear cursor, container keeps key view + ring. When the row vanishes while the popover trap is still above the row scope, the reconciliation defers — the mode-stack subscription re-runs it after the popover pops, so it is the final writer in every ordering ([R02]).
 
 **Tasks:**
 - [ ] Record/clear the descended row id around `descendCursorRow` / ascend / scope pop.
-- [ ] Implement the reconciliation effect; ensure it is inert when no row scope is pushed (mouse-trash flow untouched).
-- [ ] Verify the popover's earlier dead restore is overwritten by the reconciliation (final-writer ordering, [R02]).
+- [ ] Implement the reconciliation effect with both triggers (data subscription + `manager.subscribe`); gate the action on the recorded row scope being the top mode; ensure it is inert when no row scope is pushed (mouse-trash flow untouched).
+- [ ] Verify both pop orderings land identically: popover-pops-first (async store, the common case) and row-vanishes-first (reconciliation defers until the popover's pop) — final state is container key view + ring + cursor on neighbor ([R02]).
 
 **Tests:**
 - [ ] Covered by at0163 in #step-6 (deleting mid-list, last-row, and selected-row cases).
@@ -457,6 +459,8 @@ With the key view on a picker list container (cursor on row *i*, a non-live sess
 - `tests/app-test/at0163-list-accessory-keyboard.test.ts` exercising the real picker: seeded sessions, keyboard-only journey, greppable `VERDICT: PASS|FAIL`.
 
 **Tasks:**
+- [ ] Park the OS pointer away from the picker window (or assert on a row provably outside the pointer position) before sampling computed styles — a resting pointer over the list would contaminate the `opacity: 0` assertion via `:hover`.
+- [ ] Seed at least three non-live sessions so the mid-list, last-row, and selected-row deletion cases are all exercisable.
 - [ ] Assert: cursor row's trailing slot computed `opacity: 1`; a non-engaged row's `opacity: 0`.
 - [ ] Assert: Right lands `data-key-view-kbd` on the trash button; Tab from the list container never lands on a trash button; Enter on a row triggers the picker default (not descend).
 - [ ] Assert: Space opens the confirm popover; cancel restores the trash key view; Left and Escape each ascend to the container with the cursor preserved.
