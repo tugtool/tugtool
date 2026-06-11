@@ -21,11 +21,15 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0083** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10; AT0075–AT0079 ship at Phase E.11; AT0071–AT0077 + AT0079 are retired at Phase E.12 — see entries below; AT0080–AT0081 ship at Phase E.12; AT0082 gates gallery-shipped-renderers; AT0083 gates the Step 20.4.16 Sub-step I scroll-to-bottom + auto-pin work).
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0180**. Gaps with no test file today: AT0008/0011/0012/0013/0015 are infra/decision/deferred tags (see entries); AT0028/0029 deferred; AT0036/0047/0062–0066/0072–0077/0079/0089 are retired or never-filled; AT0123/0124/0129/0130/0132–0135 are unused.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
 5. Add the gating test as `tests/app-test/at{NNNN}-{slug}.test.ts`.
+
+> **Collision renumbering (2026-06-11 reconciliation).** Six AT numbers previously had **two test files gating unrelated regressions** — a violation of the "one tag = one regression" rule (multiple files per tag are allowed only for halves of the *same* regression, e.g. an FC half + EM half). Resolved: in each pair the earlier-authored file kept the number and the later interloper moved to a fresh tag (AT0175–AT0180). The moves: `at0051-dev-mount-focus` → **AT0175**; `at0104-tab-accepts-completion` → **AT0176**; `at0105-permission-cycle-keys` → **AT0177**; `at0106-sheet-focus-trap` → **AT0178**; `at0107-dynamic-keybinding` → **AT0179**; `at0163-list-accessory-keyboard` → **AT0180** (here `sheet-focus-language` predated the accessory test, so AT0163 stays with `sheet-focus-language`).
+>
+> **Tag reuse.** Four tags were reused after their original meaning was retired/deferred — the entries below document the current meaning: **AT0024**, **AT0025** (now prompt-state round-trips, formerly component-protocol structural tags), **AT0070**, **AT0071** (now TugDevPanel tags, formerly deferred FileBlock / retired find-fixture tags).
 
 ## Inventory
 
@@ -159,15 +163,17 @@ In-session transitions, focus restore paths, and cross-card selection. Surfaced 
 
 Component-level state preservation — gaps surfaced from the L23 audit of the stateful component roster. All route through the [A9] Component State Preservation Protocol (see [state-preservation.md](state-preservation.md) for the full protocol).
 
-#### [AT0024] No component-level state preservation protocol
-- **Status:** ✅ closed at Step 19 ([A9] foundational landed; see [state-preservation.md](state-preservation.md)).
-- **Tests:** `selection-persistence-integration.test.tsx` (foundational gate); per-component coverage in AT0027/AT0030/AT0031.
-- **Summary:** `useComponentStatePreservation` + `ComponentStatePreservationRegistry` provide the protocol; components opt in via `componentStatePreservationKey`.
+> **AT0024 / AT0025 reuse:** these two numbers originally tagged structural protocol milestones gated by the `.tsx` unit test `selection-persistence-integration.test.tsx` (not an app-test). The protocol's structural closure now rides AT0026/AT0027/AT0030. The AT0024/AT0025 *app-test* slots were subsequently filled with the prompt-state round-trip scenarios documented below.
 
-#### [AT0025] Intrinsic internal state hidden from authors
-- **Status:** ✅ closed in spirit by 25D / 25E / 25F / 25G — every priority-roster component is now opted in or explicitly classified ephemeral.
-- **Tests:** N/A — closure is structural (the protocol exists; per-component coverage rides AT0027/AT0030/AT0031).
-- **Summary:** [A9d] roster of opt-ins resolves which internal states are user-visible (capture/restore) vs. ephemeral (no opt-in). See selection-plan [A9d] for the resolved roster.
+#### [AT0024] Prompt-state round-trip across reload + relaunch
+- **Status:** ✅ closed.
+- **Tests:** `at0024-prompt-state-roundtrip.test.ts`.
+- **Summary:** Comprehensive prompt-state round-trip matrix — a dev / `gallery-prompt-entry` card's multi-line text, non-collapsed selection, and editor scroll position survive `Developer > Reload` AND quit + relaunch.
+
+#### [AT0025] Selection survives the deactivation → reload/relaunch path
+- **Status:** ✅ closed.
+- **Tests:** `at0025-prompt-deactivated-roundtrip.test.ts`.
+- **Summary:** Layer-4 case — type + select in a dev card, deactivate it by clicking a sibling tab, reload or relaunch, reactivate; the selection round-trips (previously lost because `engine.captureState()` read a live DOM Selection that no longer existed on the deactivated card).
 
 #### [AT0026] Open-overlay persistence semantics
 - **Status:** ✅ closed at Step 25F.
@@ -218,10 +224,10 @@ Surfaced during selection-plan Step 23F / 23G / 25C.5 work. Each closes a specif
 - **Tests:** `at0034-em-focus-after-move.test.ts`.
 - **Summary:** Pre-23F, `engine-activation-dispatched` fired on a cross-pane drag (proving `onCardActivated` ran) but `.focus()` no-op'd on the freshly re-mounted contenteditable, leaving `document.activeElement` on BODY. This test is the regression gate for the actual focus-landing assertion that at0006-em / at0007-em deliberately omit.
 
-#### [AT0035] App-switch selection survival (EM + tide)
+#### [AT0035] App-switch selection survival (EM + dev)
 - **Status:** ✅ closed at Step 23G.
-- **Tests:** `at0035-em-app-switch-selection.test.ts`, `at0035-tide-app-switch-selection.test.ts`.
-- **Summary:** Selection survives cmd-tab away + back for EM cards. Tide-specific variant exercises the redundant focus-paths bug (legacy `cardDidActivate` + framework `onCardActivated`) that triggered WebKit's selectionchange-on-focus quirk intermittently. The 23G fix routes the delegate's `focus()` through `engine.setSelectedRange` for the WebKit-safe focus-then-select pattern.
+- **Tests:** `at0035-em-app-switch-selection.test.ts`, `at0035-dev-app-switch-selection.test.ts`.
+- **Summary:** Selection survives cmd-tab away + back for EM cards. The dev-specific variant exercises the redundant focus-paths bug (legacy `cardDidActivate` + framework `onCardActivated`) that triggered WebKit's selectionchange-on-focus quirk intermittently — it reproduces ONLY with dev-card, not `gallery-prompt-entry`. The 23G fix routes the delegate's `focus()` through `engine.setSelectedRange` for the WebKit-safe focus-then-select pattern.
 
 #### [AT0036] Inactive-card cmd-tab selection survival
 - **Status:** ⬛ retired — gating test removed (2026-06-08).
@@ -241,6 +247,65 @@ Surfaced during selection-plan Step 25C.4 (active/inactive paint split). Gate cr
 - **Status:** ✅ closed at Step 25C.4. Covered by the `gallery-prompt-entry` variants.
 - **Tests:** `at0038-deactivation-inactive-paint.test.ts` (renamed from `m27-*` during the 25L AT-series audit; original numbering collided with the AT0027 layout-state tag).
 - **Summary:** When a user deactivates a scrolled EM card with a selection, `paintMirrorAsInactive(publish)` rebuilds a DOM Range at the user's actual selection — not at a wrong scroll-relative position. Gates `flatToDom`'s correctness against scrolled content. The `dev` (DevCardBody) variants were removed (2026-06-08): they died at the same multi-pane native-activation-click setup as AT0036, never reaching the paint assertion; the property is fully covered by the `gallery-prompt-entry` variants, which drive the same EM engine.
+
+### Title-bar / close-confirm + text-editor tags (AT0039–AT0050)
+
+Surfaced during the close-confirm work and the `tug-text-editor` substrate migration. AT0039–AT0041 gate title-bar focus + close-confirm behavior; AT0042–AT0050 gate the `tug-text-editor` substrate (state round-trip, clipboard, caret rendering) and the `tug-prompt-entry` migration onto it.
+
+#### [AT0039] Title-bar return-focus restore (inactive FC card)
+- **Status:** ✅ closed.
+- **Tests:** `at0039-title-bar-return-focus-restore.test.ts`.
+- **Summary:** Selection in an INACTIVE FC card (TugInput) survives a title-bar-driven activation round-trip when the OTHER card (TugTextarea) was the focused card mid-trip — the case the retired AT0036 missed because it used an input-click (not a title-bar click) and the same component on both sides.
+
+#### [AT0040] Title-bar X close confirmation
+- **Status:** ✅ closed.
+- **Tests:** `at0040-multi-tab-close-confirm.test.ts`.
+- **Summary:** Pane-level close-confirm matrix: plain X click opens a "Close Card?" / "Close N Tabs?" popover that stays open until confirm/cancel; Option-click closes the pane immediately (power-user escape hatch).
+
+#### [AT0041] Gallery close → reopen reachability
+- **Status:** ✅ closed.
+- **Tests:** `at0041-gallery-close-reopen.test.ts`.
+- **Summary:** Closing the Component Gallery via the title-bar X (multi-tab confirm flow) must leave `SHOW_COMPONENT_GALLERY` reachable so a subsequent `View > Show Component Gallery` re-opens it (regression: the action handler lived on a responder that the close path tore down).
+
+#### [AT0042] tug-text-editor state round-trip across reload
+- **Status:** ✅ closed.
+- **Tests:** `at0042-tug-text-editor-state-roundtrip.test.ts`.
+- **Summary:** `gallery-text-editor` typed text survives `Developer > Reload` through `useTextEditorStatePreservation` registered with the enclosing `CardHost`.
+
+#### [AT0043] tug-text-editor copy across selection classes
+- **Status:** ✅ closed.
+- **Tests:** `at0043-tug-text-editor-copy-diag.test.ts`.
+- **Summary:** Empirical clipboard read-back for `tug-text-editor` copy across text-only / mixed / atom-only selection classes (the atom-only "appears not to copy" and mixed-paste symptoms from the Step 9 manual checkpoint).
+
+#### [AT0044] tug-text-editor clipboard stress + undo
+- **Status:** ✅ closed.
+- **Tests:** `at0044-tug-text-editor-clipboard-stress.test.ts`.
+- **Summary:** Multi-step copy/paste round-trips and undo-after-cut/paste for `tug-text-editor` atoms — guards atom-content loss across repeated pastes and atom-decoration loss after undo.
+
+#### [AT0045] tug-text-editor Cmd+A after typing
+- **Status:** ✅ closed.
+- **Tests:** `at0045-tug-text-editor-cmd-a-after-typing.test.ts`.
+- **Summary:** After a typing transaction, Cmd+A still reaches the responder-chain → CM6 selectAll path.
+
+#### [AT0046] tug-text-editor first responder after button click
+- **Status:** ✅ closed.
+- **Tests:** `at0046-tug-text-editor-first-responder-after-button-click.test.ts`.
+- **Summary:** Clicking an atom-row button no longer steals first responder from the editor — `pane-focus-controller` now honors `data-tug-focus="refuse"` so ⌘A/⌘C/⌘X/⌘V keep reaching the editor's handlers.
+
+#### [AT0048] tug-text-editor caret rendering
+- **Status:** ✅ closed.
+- **Tests:** `at0048-tug-text-editor-caret-rendering.test.ts`.
+- **Summary:** The CM6-owned caret renders as exactly one DOM node with line-height-derived geometry across the four canonical doc shapes (guards against zero/two markers and height drift).
+
+#### [AT0049] tug-text-editor no doubled caret
+- **Status:** ✅ closed.
+- **Tests:** `at0049-tug-text-editor-no-doubled-caret.test.ts`.
+- **Summary:** Each layout-shifting transition that historically left WebKit's contentEditable caret cache stale (e.g. atom removal via backspace) leaves exactly one caret element with the CM6-owned caret layer in place.
+
+#### [AT0050] tug-prompt-entry migration onto tug-text-editor
+- **Status:** ✅ closed.
+- **Tests:** `at0050-tug-prompt-entry-text-editor-migration.test.ts`.
+- **Summary:** End-to-end coverage for the Step 15 migration of `tug-prompt-entry` onto the `tug-text-editor` substrate (dropped per-route drafts + route-atom-in-doc model; one-shot insertion-only route-prefix detection).
 
 ### Overlay-tier tags (AT0051)
 
@@ -347,13 +412,15 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0069] (continued) Save-side coverage
 - The on-disk bag is asserted to carry a non-empty `meta.cellHeights` array; this is the proof that the writer captured the live `heightIndex.snapshot()` alongside the existing `meta.anchor`.
 
-#### [AT0070] FileBlock CM6 line-relative restore — deferred
-- **Status:** ⏸ claimed at Phase E.9, immediately deferred. No production usage of FileBlock today places CM6 in a height-constrained container, so CM6's `scrollDOM` never accumulates non-zero `scrollTop` in current shipping flows. The line-relative restore (`meta.line = { number, offsetPx }`) ships in the FileBlock writer + reader and is unit-test-covered, but an end-to-end app-test would require fabricating a CM6-in-constrained-container scenario the production app doesn't expose. The tag is reserved for the day a real CM6-with-inner-scroll context lands (split-pane file viewer, sidebar preview, etc.); the app-test naturally fits at that point.
-- **Coverage today:** the line-relative writer + reader semantics are pinned in unit tests; the writer's attribute-update path is exercised by AT0061 (same channel; different meta family). No production regression goes unguarded.
+#### [AT0070] TugDevPanel toggle round-trip
+- **Status:** ✅ closed (reused tag — see note). Originally claimed at Phase E.9 as a deferred FileBlock CM6 line-relative-restore tag (the line-relative writer/reader semantics remain unit-test-covered; AT0061 exercises the same attribute channel). The app-test slot was later filled with the TugDevPanel toggle scenario below.
+- **Tests:** `at0070-dev-panel-toggle.test.ts`.
+- **Summary:** TugDevPanel toggle round-trip via the `show-dev-panel-toggle` action (Step 20.3.1). Drives the action directly rather than the `⌥⌘/` chord — under the app-test harness maker mode reads false on the unseeded tugbank, so the Maker menu (and its "Show Dev Panel" item) is hidden.
 
-#### [AT0071] Content-owning focus survives app-switch
-- **Status:** 🗑 **retired at Phase E.12** — gated find-row / framework-axis focus survival inside a content-owning card; per-block Find is removed in total at Phase E.12 (a card has at most one text-entry surface). The fixture (`gallery-file-block-find-fixture`) and the test file are deleted. The engine-path coverage that survives is AT0078 + AT0080. No successor — the behavior it gated no longer exists.
-- **Tests:** `at0071-content-owning-focus-survives-app-switch.test.ts` (deleted).
+#### [AT0071] TugDevPanel active-tab persistence
+- **Status:** ✅ closed (reused tag — see note). Originally a content-owning-focus / find-row tag retired at Phase E.12 when per-block Find was removed; the original fixture and test file were deleted. The app-test slot was later filled with the TugDevPanel active-tab persistence scenario below.
+- **Tests:** `at0071-dev-panel-tab-persistence.test.ts`.
+- **Summary:** TugDevPanel `activeTab` persistence (Step 20.3.2): the active tab survives a panel hide/show round-trip (via `show-dev-panel-toggle`) AND a full `appReload` (via the tugbank-persisted `activeTab` key under `dev.tugtool.dev-panel`).
 
 #### [AT0072] Content-owning focus survives card-switch
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0071 (find fixture removed). The card-switch source is now gated for the engine path by AT0080.
@@ -379,31 +446,492 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
 - **Tests:** `at0077-tide-find-reload.test.ts` (deleted).
 
-#### [AT0078] Tide-card engine focus survives app-switch
-- **Status:** ✅ shipped at Phase E.11; retained + repurposed at Phase E.12 as the app-switch gate for the single-text-entry rule (#phase-e-12): a tide card's activation focus always lands on the `tug-prompt-entry` contenteditable.
-- **Tests:** `at0078-tide-engine-focus-survives.test.ts`.
-- **Summary:** Seed a tide-card, bind a fake session, await engine ready. Click into the contenteditable, type "hello", `simulateAppResign` (window-blur). After a brief blur dwell, `simulateAppBecomeActive` runs `reactivateCurrentFocusDestination` → `applyBagFocus` → engine resolution → engine hook invocation → `view.focus()`. Asserts `document.activeElement` is the tide-card's contenteditable.
+#### [AT0078] Dev-card engine focus survives app-switch
+- **Status:** ✅ shipped at Phase E.11; retained + repurposed at Phase E.12 as the app-switch gate for the single-text-entry rule (#phase-e-12): a dev card's activation focus always lands on the `tug-prompt-entry` contenteditable.
+- **Tests:** `at0078-dev-engine-focus-survives.test.ts`.
+- **Summary:** Seed a dev-card, bind a fake session, await engine ready. Click into the contenteditable, type "hello", `simulateAppResign` (window-blur). After a brief blur dwell, `simulateAppBecomeActive` runs `reactivateCurrentFocusDestination` → `applyBagFocus` → engine resolution → engine hook invocation → `view.focus()`. Asserts `document.activeElement` is the dev-card's contenteditable.
 
 #### [AT0079] Tide-card engine focus wins over stale find-row mount
 - **Status:** 🗑 **retired at Phase E.12** — was `describe.skip`; per-block Find is removed in total at Phase E.12, so there is no "stale find-row mount" for the engine kind to win over. The file is deleted.
 - **Tests:** `at0079-tide-engine-focus-wins-over-stale-find.test.ts` (deleted).
 
-#### [AT0080] Tide-card focus lands on the prompt entry after card-switch
+#### [AT0080] Dev-card focus lands on the prompt entry after card-switch
 - **Status:** ✅ shipped at Phase E.12 — the card-switch gate for the single-text-entry rule (#phase-e-12).
-- **Tests:** `at0080-tide-focus-card-switch.test.ts`.
-- **Summary:** Two tide cards (A + B) in one pane, both bound to fake sessions. Click into A's contenteditable, type "hello", click B's tab (focus lands on B's contenteditable), click A's tab. Asserts `document.activeElement` is A's `tug-prompt-entry` contenteditable — the activation focus has one destination.
+- **Tests:** `at0080-dev-focus-card-switch.test.ts`.
+- **Summary:** Two dev cards (A + B) in one pane, both bound to fake sessions. Click into A's contenteditable, type "hello", click B's tab (focus lands on B's contenteditable), click A's tab. Asserts `document.activeElement` is A's `tug-prompt-entry` contenteditable — the activation focus has one destination.
 
-#### [AT0081] Tide-card focus lands on the prompt entry after Developer > Reload
+#### [AT0081] Dev-card focus lands on the prompt entry after Developer > Reload
 - **Status:** ✅ shipped at Phase E.12 — the cold-boot / reload gate for the single-text-entry rule (#phase-e-12). Exercises the `deferred-engine` settle (the one late-mount focus path that survives Phase E.12's retirement of the `deferred-dom` focus-retry branch).
-- **Tests:** `at0081-tide-focus-reload.test.ts`.
-- **Summary:** Seed a tide card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the tide-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
+- **Tests:** `at0081-dev-focus-reload.test.ts`.
+- **Summary:** Seed a dev card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the dev-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
 
 > **Cross-pane drag** — the fourth activation source for the single-text-entry rule (#phase-e-12) — is gated by AT0034 (`at0034-em-focus-after-move.test.ts`), which exercises a cross-pane drag and a detach on `gallery-prompt-entry` (the `tug-prompt-entry` surface a tide card uses internally) and asserts focus lands on the contenteditable. No new tag is needed.
+
+#### [AT0082] Gallery-shipped assistant renderers
+- **Status:** ✅ closed.
+- **Tests:** `at0082-gallery-shipped-renderers.test.ts`.
+- **Summary:** Render-half verification for the Dev assistant-rendering gallery cards — the `DevThinkingBlock` chrome, the `JsonTreeBlock` body kind, the file tool wrappers (`ReadToolBlock` / `EditToolBlock`), the `DefaultToolWrapper` fallback, and the extended `gallery-bash-tool-block` card. (Registry wiring is pinned separately by the `gallery-registrations.test.ts` unit test.)
 
 #### [AT0083] TugListView scroll-to-bottom reliability + auto-pin funnel
 - **Status:** ✅ shipped at tide-assistant-turns Step 20.4.16 Sub-step I — gates the I-0 restore-anchor fix and the I-1 `maybePinToBottom` consolidation.
 - **Tests:** `at0083-list-view-submit-pin.test.ts`.
 - **Summary:** Drives `gallery-list-view-scroll-keyed` (real `TugListView` + `SmartScroll` + CardHost region-scroll restore). Test 1 (I-0): cold-boot a card restored to a mid-list anchor, drive the fixture's "Scroll to bottom" control (the inner `TugListView`'s imperative `scrollToBottom()` — the same method the tide-card transcript host calls on submit), assert the scroller lands AND holds at the bottom — the restore-anchor apply effect must not pull it back. Test 2 (I-0 a/b/c + I-1): `scrollToBottom()` at the bottom is a no-op; after `tug-disengage-follow-bottom` content growth does NOT auto-pin (gate false — also covers the collapsed-hunk case); `scrollToBottom()` re-engages follow-bottom; subsequent growth then auto-pins (gate true). Gates `SmartScroll.shouldAutoPin` / `maybePinToBottom` — the funnel `TugMarkdownView` also routes through.
+
+### Dev-card lifecycle + chrome tags (AT0084–AT0088)
+
+Surfaced during the dev-card-zones / Claude-Code-parity plans. Gate the lifecycle state-to-zone coordination matrix, the route axis, and the Z4B chrome chips. (The shipped-renderers tag AT0082 and the list-view tag AT0083 above belong to the dev assistant-rendering / region-scroll families.)
+
+#### [AT0084] Dev-card lifecycle state-to-zone coordination matrix
+- **Status:** ✅ closed.
+- **Tests:** `at0084-dev-lifecycle-coordination.test.ts`.
+- **Summary:** Drives a real `CodeSessionStore` inside a real dev card through every distinct lifecycle matrix row (IDLE → STREAMING → TOOL_WORK → COMPLETE, AWAITING_USER, QUEUED_NEXT_TURN, ERRORED, REPLAYING, TRANSPORT_DOWN, the two interrupt cases) via `driveDevSession` and asserts the rendered DOM for zones Z1/Z2/Z5. No mock store, no fake DOM.
+
+#### [AT0085] tug-prompt-entry route survives reload
+- **Status:** ✅ closed.
+- **Tests:** `at0085-prompt-entry-route.test.ts`.
+- **Summary:** `TugPromptEntry`'s `route` axis rides `bag.content.route` and round-trips across reload — the successor coverage for the retired AT0031 chrome axis.
+
+#### [AT0086] DevRouteIndicatorBadge repaint + mount identity
+- **Status:** ✅ closed.
+- **Tests:** `at0086-dev-route-indicator-badge.test.ts`.
+- **Summary:** `DevRouteIndicatorBadge` repaints when the prompt-entry route flips (Code / Shell) and keeps its mount identity across the flip.
+
+#### [AT0087] TugBadge two-line presentation
+- **Status:** ✅ closed.
+- **Tests:** `at0087-tug-badge-two-line.test.ts`.
+- **Summary:** The two-line `TugBadge` variant (`layout="label-top" | "content-top"` + `label`) renders with the borrowed status-bar legend typography, correct stacking order, and a width-stabilized slot — verified against the real app since there is no DOM unit layer.
+
+#### [AT0088] Permission-mode chip cycling
+- **Status:** ✅ closed.
+- **Tests:** `at0088-permission-mode-chip.test.ts`.
+- **Summary:** The Z4B permission-mode chip (a two-line `TugPushButton`) cycles default → acceptEdits → plan → auto via `⇧⌘P` and via its behavior sheet, reflecting the change optimistically through `SessionMetadataStore.applyPermissionMode`.
+
+### Claude-Code-parity command + banner tags (AT0090–AT0108)
+
+Surfaced during the dev-card / Claude-Code-parity plan. Gate the `/permissions` editor, slash-command live surfaces (`/rewind`, `/resume`, `/diff`, `/compact`), pane-scope routing, completion-acceptance, and the soft warn/caution banners.
+
+#### [AT0090] /permissions rules editor
+- **Status:** ✅ closed.
+- **Tests:** `at0090-permissions-rules-editor.test.ts`.
+- **Summary:** The `/permissions` rules editor adds/removes allow & deny rules.
+
+#### [AT0091] /permissions Recently-denied tab
+- **Status:** ✅ closed.
+- **Tests:** `at0091-recently-denied.test.ts`.
+- **Summary:** The `/permissions` Recently-denied tab promotes a denied request into a rule.
+
+#### [AT0092] /permissions Workspace tab
+- **Status:** ✅ closed.
+- **Tests:** `at0092-workspace-directories.test.ts`.
+- **Summary:** The `/permissions` Workspace tab adds additional working directories.
+
+#### [AT0093] /permissions bucket routing
+- **Status:** ✅ closed.
+- **Tests:** `at0093-permission-buckets.test.ts`.
+- **Summary:** Every `/permissions` tab writes to the correct persistence bucket.
+
+#### [AT0094] /permissions add-rule scope routing
+- **Status:** ✅ closed.
+- **Tests:** `at0094-permission-scope-routing.test.ts`.
+- **Summary:** The add-rule scope picker routes a new rule to the chosen scope (project / user / etc.).
+
+#### [AT0095] Rate-limit caution banner
+- **Status:** ✅ closed.
+- **Tests:** `at0095-rate-limit-banner.test.ts`.
+- **Summary:** A single, app-level rate-limit caution banner surfaces (not per-card).
+
+#### [AT0096] Reasoning-effort chip
+- **Status:** ✅ closed.
+- **Tests:** `at0096-effort-chip.test.ts`.
+- **Summary:** The Z4B reasoning-effort chip mounts only when the bound session advertises effort support.
+
+#### [AT0097] /rewind turn picker + restore confirm
+- **Status:** ✅ closed.
+- **Tests:** `at0097-rewind-sheet.test.ts`.
+- **Summary:** The `/rewind` turn picker opens and its restore-confirm flow drives a conversation rewind.
+
+#### [AT0098] /rewind local-truncation mount identity
+- **Status:** ✅ closed.
+- **Tests:** `at0098-rewind-mount-identity.test.ts`.
+- **Summary:** The [L26] pin for `/rewind`'s local conversation truncation — surviving transcript rows keep their React reconciliation identity (no remount), so scroll/selection/DOM-resident state stay intact.
+
+#### [AT0099] /resume focused sessions overlay
+- **Status:** ✅ closed.
+- **Tests:** `at0099-resume-command.test.ts`.
+- **Summary:** Typing `/resume` on a live bound session opens a card-scoped sessions overlay (sessions list, no project-path / recents chrome); cancel dismisses it and leaves the live session + transcript intact.
+
+#### [AT0100] Sheet is pane-modal
+- **Status:** ✅ closed.
+- **Tests:** `at0100-sheet-pane-modal-focus.test.ts`.
+- **Summary:** A sheet is PANE-modal, never app-modal — other panes stay interactive while a sheet is open.
+
+#### [AT0101] Slash command pane scope
+- **Status:** ✅ closed.
+- **Tests:** `at0101-slash-command-pane-scope.test.ts`.
+- **Summary:** A slash command typed into a card dispatches within that card's pane scope.
+
+#### [AT0102] Default-button pane scope
+- **Status:** ✅ closed.
+- **Tests:** `at0102-default-button-pane-scope.test.ts`.
+- **Summary:** A default button registered by a card is scoped to its pane — Return in another pane doesn't trigger it.
+
+#### [AT0103] Submit accepts open completion
+- **Status:** ✅ closed.
+- **Tests:** `at0103-submit-accepts-completion.test.ts`.
+- **Summary:** Submitting while the completion popup is open accepts the highlighted suggestion rather than submitting raw text.
+
+#### [AT0104] /diff per-file accordion sheet
+- **Status:** ✅ closed.
+- **Tests:** `at0104-diff-sheet.test.ts`.
+- **Summary:** `/diff` opens a per-file accordion sheet of the session's changes.
+
+#### [AT0105] API retry banner
+- **Status:** ✅ closed.
+- **Tests:** `at0105-api-retry-banner.test.ts`.
+- **Summary:** The dev card surfaces claude's API-retry state as a soft banner.
+
+#### [AT0106] Compact-boundary divider
+- **Status:** ✅ closed.
+- **Tests:** `at0106-compact-boundary-divider.test.ts`.
+- **Summary:** The dev-card transcript shows a compaction-boundary divider.
+
+#### [AT0107] /compact live surface
+- **Status:** ✅ closed.
+- **Tests:** `at0107-compact-command.test.ts`.
+- **Summary:** `/compact`'s live surface — the compaction divider header renders for a `/compact`-born session and the suppressed seed turn never appears in the transcript.
+
+#### [AT0108] Unknown-event warn banner
+- **Status:** ✅ closed.
+- **Tests:** `at0108-unknown-event-banner.test.ts`.
+- **Summary:** The dev card surfaces tugcode's forward-compat `unknown_event` frame as a soft, dismissible warn banner (rather than silently dropping an untranslated top-level event).
+
+### Focus-language, keyboard-cycling + menu-validation tags (AT0109–AT0174)
+
+The largest cluster — the unified focus ring / selection color contract, per-component engine-driven focus, the keyboard-focus-cycling primitive, card-modal dialog keyboard models, sheet focus-trap language, singletons, and native-menu validation.
+
+#### [AT0109] Single app-owned focus ring
+- **Status:** ✅ closed.
+- **Tests:** `at0109-focus-ring.test.ts`.
+- **Summary:** The single app-owned focus ring (`focus-ring.css` + the engine) is the only focus indicator.
+
+#### [AT0110] Selection color contract
+- **Status:** ✅ closed.
+- **Tests:** `at0110-selection-accent.test.ts`.
+- **Summary:** The color contract for selection (accent tokens) holds across surfaces.
+
+#### [AT0111] Keyboard-active ring color
+- **Status:** ✅ closed.
+- **Tests:** `at0111-blue-keyboard-active.test.ts`.
+- **Summary:** Orange is confined to the keyboard-active ring; other focus states stay blue.
+
+#### [AT0112] Button focus engine-driven
+- **Status:** ✅ closed.
+- **Tests:** `at0112-button-focus.test.ts`.
+- **Summary:** The base button's focus is engine-driven.
+
+#### [AT0113] Checkbox focus engine-driven
+- **Status:** ✅ closed.
+- **Tests:** `at0113-checkbox-focus.test.ts`.
+- **Summary:** `TugCheckbox` focus is engine-driven.
+
+#### [AT0114] Switch focus engine-driven
+- **Status:** ✅ closed.
+- **Tests:** `at0114-switch-focus.test.ts`.
+- **Summary:** `TugSwitch` focus is engine-driven.
+
+#### [AT0115] Slider focus engine-driven
+- **Status:** ✅ closed.
+- **Tests:** `at0115-slider-focus.test.ts`.
+- **Summary:** `TugSlider` focus is engine-driven.
+
+#### [AT0116] Tab-bar container stop
+- **Status:** ✅ closed.
+- **Tests:** `at0116-tab-bar-focus.test.ts`.
+- **Summary:** `TugTabBar` is a single item-container focus stop with internal arrow navigation.
+
+#### [AT0117] Radio-group container stop
+- **Status:** ✅ closed.
+- **Tests:** `at0117-radio-group-focus.test.ts`.
+- **Summary:** `TugRadioGroup` is a single item-container focus stop.
+
+#### [AT0118] Choice-group container stop
+- **Status:** ✅ closed.
+- **Tests:** `at0118-choice-group-focus.test.ts`.
+- **Summary:** `TugChoiceGroup` is a single item-container focus stop.
+
+#### [AT0119] Option-group container stop
+- **Status:** ✅ closed.
+- **Tests:** `at0119-option-group-focus.test.ts`.
+- **Summary:** `TugOptionGroup` is a single item-container focus stop.
+
+#### [AT0120] Accordion container stop
+- **Status:** ✅ closed.
+- **Tests:** `at0120-accordion-focus.test.ts`.
+- **Summary:** `TugAccordion` is a single item-container focus stop (Enter descends to the inner control, Escape ascends).
+
+#### [AT0121] List-view container stop
+- **Status:** ✅ closed.
+- **Tests:** `at0121-list-view-container-focus.test.ts`.
+- **Summary:** `TugListView` container-stop shape.
+
+#### [AT0122] List-view input-subordinate
+- **Status:** ✅ closed.
+- **Tests:** `at0122-list-view-subordinate-focus.test.ts`.
+- **Summary:** `TugListView` input-subordinate shape (rows yield to an inner input).
+
+#### [AT0125] Background-tab focus isolation
+- **Status:** ✅ closed.
+- **Tests:** `at0125-background-tab-focus-isolation.test.ts`.
+- **Summary:** The Tab walk ignores hidden (background-tab) cards' focusables.
+
+#### [AT0126] Keyboard ring cold-boot
+- **Status:** ✅ closed.
+- **Tests:** `at0126-keyboard-ring-cold-boot.test.ts`.
+- **Summary:** The keyboard focus ring survives a cold boot / reload.
+
+#### [AT0127] List-view cursor (listbox model)
+- **Status:** ✅ closed.
+- **Tests:** `at0127-list-view-cursor.test.ts`.
+- **Summary:** `TugListView` listbox model ([P01]/[P03]) — cursor movement and selection.
+
+#### [AT0128] Context-menu preserves input selection
+- **Status:** ✅ closed.
+- **Tests:** `at0128-ctx-menu-input-selection.test.ts`.
+- **Summary:** A secondary-click (macOS Control-click, `button: 0`) opening the context menu on selected text in a native `TugInput` must NOT drop the selection, so Cut / Copy act on what the user had selected.
+
+#### [AT0131] Textarea paste menu
+- **Status:** ✅ closed.
+- **Tests:** `at0131-textarea-paste-menu.test.ts`.
+- **Summary:** Reproduces the real menu-paste flow on a `TugTextarea` (context-menu Paste lands).
+
+#### [AT0136] Stale form-control reapply clobber guard
+- **Status:** ✅ closed.
+- **Tests:** `at0136-stale-reapply-clobber.test.ts`.
+- **Summary:** A live edit must never be clobbered by a saved form-control snapshot when the user clicks back into the field (the now-removed `installFormControlReapplyOnNextMousedown` mechanism caused deleted TugInput text to reappear on right-click).
+
+#### [AT0137] Textarea cut + paste round-trip
+- **Status:** ✅ closed.
+- **Tests:** `at0137-textarea-cut-paste.test.ts`.
+- **Summary:** Cut then Paste round-trips in `TugTextarea`.
+
+#### [AT0138] Keyboard-cycling trigger chord
+- **Status:** ✅ closed.
+- **Tests:** `at0138-cycle-trigger-chord.test.ts`.
+- **Summary:** The keyboard-focus-cycling trigger chord enters cycle mode.
+
+#### [AT0139] Keyboard-cycling mode scope
+- **Status:** ✅ closed.
+- **Tests:** `at0139-cycle-mode-scope.test.ts`.
+- **Summary:** The keyboard-focus-cycling mode primitive scopes correctly to its surface.
+
+#### [AT0140] Dev card joins the cycle ring
+- **Status:** ✅ closed.
+- **Tests:** `at0140-cycle-devcard.test.ts`.
+- **Summary:** The dev card joins the keyboard-focus-cycling ring.
+
+#### [AT0141] Session-picker persistent keyboard stop
+- **Status:** ✅ closed.
+- **Tests:** `at0141-picker-keys.test.ts`.
+- **Summary:** The session picker is a PERSISTENT keyboard-focus stop with its own key handling.
+
+#### [AT0142] Single-select list keyboard model
+- **Status:** ✅ closed.
+- **Tests:** `at0142-single-select-keyboard.test.ts`.
+- **Summary:** The single-select list keyboard model (arrow + select).
+
+#### [AT0143] Descend / Escape-ascend inside a sheet
+- **Status:** ✅ closed.
+- **Tests:** `at0143-descend-escape-ascend.test.ts`.
+- **Summary:** Escape ascends out of a descended scope INSIDE a sheet (a descendable accordion whose inner control is a text input, inside a Radix dialog); it dismisses the sheet only at the sheet's top level.
+
+#### [AT0144] One filled+ring per sheet
+- **Status:** ✅ closed.
+- **Tests:** `at0144-one-filled-ring.test.ts`.
+- **Summary:** At most one filled+ring control per sheet ([P14]).
+
+#### [AT0145] PermissionDialog keyboard model
+- **Status:** ✅ closed.
+- **Tests:** `at0145-permission-dialog-keyboard.test.ts`.
+- **Summary:** The PermissionDialog is card-modal with a complete keyboard model.
+
+#### [AT0146] QuestionDialog keyboard model
+- **Status:** ✅ closed.
+- **Tests:** `at0146-question-dialog-keyboard.test.ts`.
+- **Summary:** The QuestionDialog is card-modal with a complete keyboard model.
+
+#### [AT0147] QuestionDialog wizard nav focus
+- **Status:** ✅ closed.
+- **Tests:** `at0147-question-nav-focus.test.ts`.
+- **Summary:** QuestionDialog wizard navigation keeps keyboard focus inside the dialog across steps.
+
+#### [AT0148] Card-modal dialog survives reactivation
+- **Status:** ✅ closed.
+- **Tests:** `at0148-dialog-survives-reactivation.test.ts`.
+- **Summary:** A pending card-modal dialog survives card deactivation/reactivation.
+
+#### [AT0149] Dialog Return after Tab
+- **Status:** ✅ closed.
+- **Tests:** `at0149-dialog-enter-after-tab.test.ts`.
+- **Summary:** Return commits the card-modal dialog's default action even after Tab moved focus within it.
+
+#### [AT0150] Composed-sheet spatial order
+- **Status:** ✅ closed.
+- **Tests:** `at0150-sheet-spatial-order.test.ts`.
+- **Summary:** A composed (non-dialog) sheet declares a spatial arrow order via the context-derived `useSpatialOrder(order)` form ([P22]/[P23]) — reading the enclosing `FocusModeContext` for its scope id.
+
+#### [AT0151] Confirm-popover editor restore
+- **Status:** ✅ closed.
+- **Tests:** `at0151-confirm-popover-editor-restore.test.ts`.
+- **Summary:** The close-confirm popover restores editor focus on dismiss.
+
+#### [AT0152] Confirm-popover first-responder restore
+- **Status:** ✅ closed.
+- **Tests:** `at0152-confirm-popover-firstresponder-restore.test.ts`.
+- **Summary:** A confirm popover restores the prior first responder on dismiss.
+
+#### [AT0153] About card singleton
+- **Status:** ✅ closed.
+- **Tests:** `at0153-about-singleton.test.ts`.
+- **Summary:** About card singleton + payload — only one About card mounts.
+
+#### [AT0154] Settings card singleton
+- **Status:** ✅ closed.
+- **Tests:** `at0154-settings-singleton.test.ts`.
+- **Summary:** Settings card singleton — only one Settings card mounts.
+
+#### [AT0155] Settings propagation
+- **Status:** ✅ closed.
+- **Tests:** `at0155-settings-propagation.test.ts`.
+- **Summary:** Settings card edits propagate to the rest of the app.
+
+#### [AT0156] Title-bar control set
+- **Status:** ✅ closed.
+- **Tests:** `at0156-title-bar-controls.test.ts`.
+- **Summary:** The pane title bar carries only the window-shade (collapse) and close controls — the per-pane `…` card-settings button is retired (settings live in the app-level Settings card). DOM-only, no native CGEvents.
+
+#### [AT0157] Escape is mode-stack ordering (two-pane cycle)
+- **Status:** ✅ closed.
+- **Tests:** `at0157-cycle-escape-two-pane.test.ts`.
+- **Summary:** Escape is mode-stack ordering, not a DOM heuristic — with a surface open over a cycle, one Escape closes the surface and the next exits the cycle.
+
+#### [AT0158] Menu Escape close-focus
+- **Status:** ✅ closed.
+- **Tests:** `at0158-menu-escape-close-focus.test.ts`.
+- **Summary:** Closing a service popup menu with Escape restores focus correctly.
+
+#### [AT0159] Alert Escape
+- **Status:** ✅ closed.
+- **Tests:** `at0159-alert-escape.test.ts`.
+- **Summary:** `tug-alert` joins the engine focus trap; Escape dismisses it.
+
+#### [AT0160] Context-menu Escape engine-owned
+- **Status:** ✅ closed.
+- **Tests:** `at0160-context-menu-escape.test.ts`.
+- **Summary:** `tug-context-menu` Escape is engine-owned.
+
+#### [AT0161] QuestionDialog geometry
+- **Status:** ✅ closed.
+- **Tests:** `at0161-question-dialog-geometry.test.ts`.
+- **Summary:** The QuestionDialog's geometry is correct (sizing / placement).
+
+#### [AT0162] Control-click does not activate a button
+- **Status:** ✅ closed.
+- **Tests:** `at0162-button-ctrl-click-no-activate.test.ts`.
+- **Summary:** A Control-click (macOS secondary gesture, dispatched as `click` with `ctrlKey === true`) must not fire a `TugButton`'s action — `TugButton.handleClick` ignores any `ctrlKey` click so a Ctrl-click on a Z4B chip raises only the context menu.
+
+#### [AT0163] Sheet focus language
+- **Status:** ✅ closed.
+- **Tests:** `at0163-sheet-focus-language.test.ts`.
+- **Summary:** Gallery sheet bodies carry the full focus language (trap + spatial order + ring). (The `list-accessory-keyboard` test that previously shared this prefix was renumbered to AT0180.)
+
+#### [AT0164] Alert focus language
+- **Status:** ✅ closed.
+- **Tests:** `at0164-alert-focus-language.test.ts`.
+- **Summary:** `TugAlert` carries the full focus language (trap + spatial order + ring).
+
+#### [AT0165] Active card owns first responder
+- **Status:** ✅ closed.
+- **Tests:** `at0165-activation-first-responder.test.ts`.
+- **Summary:** The active card always owns first responder on activation.
+
+#### [AT0166] Per-card close-confirm + Close All
+- **Status:** ✅ closed.
+- **Tests:** `at0166-close-confirm-multitab-and-close-all.test.ts`.
+- **Summary:** Per-card close confirmation in multi-tab panes plus the Close All path.
+
+#### [AT0167] File-menu close validation
+- **Status:** ✅ closed.
+- **Tests:** `at0167-file-menu-close-validation.test.ts`.
+- **Summary:** Native File-menu Close items validate against deck state.
+
+#### [AT0168] Menu structure contract
+- **Status:** ✅ closed.
+- **Tests:** `at0168-menu-structure.test.ts`.
+- **Summary:** The menu bar's structure contract (item presence + ordering).
+
+#### [AT0169] Deck-tier menu validation
+- **Status:** ✅ closed.
+- **Tests:** `at0169-menu-deck-validation.test.ts`.
+- **Summary:** Deck-state-tier menu validation (items enable/disable per deck state).
+
+#### [AT0170] Maker-menu gate
+- **Status:** ✅ closed.
+- **Tests:** `at0170-maker-mode-gate.test.ts`.
+- **Summary:** The Maker menu's tugbank gate (hidden unless maker mode is enabled).
+
+#### [AT0171] Session-menu card-type validation
+- **Status:** ✅ closed.
+- **Tests:** `at0171-session-menu-card-type.test.ts`.
+- **Summary:** Session-menu item validation by card type.
+
+#### [AT0172] Session-menu live-state validation
+- **Status:** ✅ closed.
+- **Tests:** `at0172-session-menu-live-state.test.ts`.
+- **Summary:** Session-menu item validation against the bound session's live state.
+
+#### [AT0173] Settings shortcut
+- **Status:** ✅ closed.
+- **Tests:** `at0173-settings-shortcut.test.ts`.
+- **Summary:** `⌘,` opens the Settings card.
+
+#### [AT0174] Edit-menu validation
+- **Status:** ✅ closed.
+- **Tests:** `at0174-edit-menu-validation.test.ts`.
+- **Summary:** The Edit menu (Cut/Copy/Paste/Delete/Select All/Undo/Redo + Find) validates against the focused responder's real edit capabilities via `AppDelegate.validateMenuItem` ← `MenuState.edit` (web responder `validateAction` projected onto the menu, D05) — replacing the native AppKit selectors that over-enabled Copy / Select All.
+
+### Collision-renumber successor tags (AT0175–AT0180)
+
+These tags were minted on 2026-06-11 to resolve the six prefix collisions (see the note at the top of the file). Each is the later-authored file of a colliding pair, moved off the number the earlier file kept.
+
+#### [AT0175] Dev-card mount-time focus + caret claim
+- **Status:** ✅ closed (renumbered from AT0051).
+- **Tests:** `at0175-dev-mount-focus.test.ts`.
+- **Summary:** When a dev card mounts as the focused card and its session binds, the prompt-entry editor (CodeMirror's `contentDOM`) gains DOM focus AND the custom caret layer renders, all without a user click. Pins the editor-focus contract (Spec [S02], `roadmap/tugplan-dev-session-init-orchestration.md`): every overlay that sets `inert` on `.tug-pane-body` emits a per-card `xxxDidHide` after `inert` clears, and `DevCardBody` makes an idempotent focus claim.
+
+#### [AT0176] Tab accepts an open completion
+- **Status:** ✅ closed (renumbered from AT0104).
+- **Tests:** `at0176-tab-accepts-completion.test.ts`.
+- **Summary:** Tab is owned by the app focus walk, but a text editor with an open completion popup keeps Tab to accept the highlighted suggestion — while the typeahead is interactive the editor advertises `data-tug-tab-consume="true"` on its `contentDOM` and the focus walk yields Tab to the editor's completion keymap instead of advancing focus ([Q02] flag model).
+
+#### [AT0177] Permission-mode cycle keys
+- **Status:** ✅ closed (renumbered from AT0105).
+- **Tests:** `at0177-permission-cycle-keys.test.ts`.
+- **Summary:** Permission-mode cycling is on `⇧⌘P`, never on Shift+Tab — the keyboard path that drives the Z4B permission-mode chip.
+
+#### [AT0178] Sheet focus-trap mode
+- **Status:** ✅ closed (renumbered from AT0106).
+- **Tests:** `at0178-sheet-focus-trap.test.ts`.
+- **Summary:** Opening a sheet pushes a focus-trap mode onto the engine mode stack and closing it pops the mode.
+
+#### [AT0179] Dynamic context-scoped keybinding
+- **Status:** ✅ closed (renumbered from AT0107).
+- **Tests:** `at0179-dynamic-keybinding.test.ts`.
+- **Summary:** A dynamic, context-scoped keybinding registers and fires (complementing the static-chord coverage in AT0085 / AT0177).
+
+#### [AT0180] List-row trailing accessory keyboard
+- **Status:** ✅ closed (renumbered from AT0163).
+- **Tests:** `at0180-list-accessory-keyboard.test.ts`.
+- **Summary:** List-row trailing accessories join the keyboard focus language — end-to-end keyboard journey: reveal-on-cursor, Right-descend, Space→popover, confirm→landing, Left/Escape ascend, Enter-still-opens.
 
 ## Maintenance
 

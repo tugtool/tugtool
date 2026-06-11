@@ -1,5 +1,5 @@
 /**
- * at0105-permission-cycle-keys.test.ts — permission-mode cycling is on ⇧⌘P,
+ * at0177-permission-cycle-keys.test.ts — permission-mode cycling is on ⇧⌘P,
  * and Shift+Tab does NOT cycle it.
  *
  * Tug departs from the Claude Code TUI: the terminal cycles the permission mode
@@ -30,7 +30,7 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const SID = "at0105-session";
+const SID = "at0177-session";
 
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
@@ -83,11 +83,11 @@ function dispatchKeyExpr(
   })()`;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0105: cycle on ⇧⌘P, never on Shift+Tab", () => {
+describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⇧⌘P, never on Shift+Tab", () => {
   test(
     "⇧⌘P advances the permission mode; a following Shift+Tab does not",
     async () => {
-      const app = await launchTugApp({ testName: "at0105-permission-cycle-keys" });
+      const app = await launchTugApp({ testName: "at0177-permission-cycle-keys" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

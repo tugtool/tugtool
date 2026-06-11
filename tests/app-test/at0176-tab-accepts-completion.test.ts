@@ -1,5 +1,5 @@
 /**
- * at0104-tab-accepts-completion.test.ts — Tab is owned by the app focus walk,
+ * at0176-tab-accepts-completion.test.ts — Tab is owned by the app focus walk,
  * but a text editor with an open completion popup keeps Tab to accept the
  * highlighted suggestion.
  *
@@ -27,7 +27,7 @@ import type { App } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const SID = "at0104-session";
+const SID = "at0176-session";
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
@@ -70,11 +70,11 @@ async function buildTurn(app: App, i: number): Promise<void> {
   await frame({ type: "turn_complete", msg_id: msgId, result: "success" });
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0104: Tab accepts an open completion (editor keeps Tab)", () => {
+describe.skipIf(!SHOULD_RUN)("AT0176: Tab accepts an open completion (editor keeps Tab)", () => {
   test(
     "typing /rew then pressing Tab accepts /rewind and keeps focus in the editor",
     async () => {
-      const app = await launchTugApp({ testName: "at0104-tab-accepts-completion" });
+      const app = await launchTugApp({ testName: "at0176-tab-accepts-completion" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

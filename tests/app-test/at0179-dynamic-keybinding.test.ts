@@ -1,5 +1,5 @@
 /**
- * at0107-dynamic-keybinding.test.ts — a dynamic, context-scoped keybinding
+ * at0179-dynamic-keybinding.test.ts — a dynamic, context-scoped keybinding
  * (useKeybindings) fires only while its scope is in context.
  *
  * Step 5 adds a dynamic keybinding registry alongside the static map ([P11]):
@@ -24,7 +24,7 @@
  * Coverage split: the resolution precedence (innermost-beats-ancestor,
  * off-walk-doesn't-match, unregister) is pinned in pure-logic
  * `keybinding-registry.test.ts`; that static global bindings still fire is
- * covered by the existing static-chord app-tests (at0085 ⇧⌘C, at0105 ⇧⌘P,
+ * covered by the existing static-chord app-tests (at0085 ⇧⌘C, at0177 ⇧⌘P,
  * at0043 ⌘A/⌘C), which remain green after the dynamic layer was added.
  */
 
@@ -69,11 +69,11 @@ const DISPATCH_CHORD = `(function(){
   }));
 })()`;
 
-describe.skipIf(!SHOULD_RUN)("AT0107: dynamic context-scoped keybinding", () => {
+describe.skipIf(!SHOULD_RUN)("AT0179: dynamic context-scoped keybinding", () => {
   test(
     "⇧⌘Y fires only when the registering panel is in context",
     async () => {
-      const app = await launchTugApp({ testName: "at0107-dynamic-keybinding" });
+      const app = await launchTugApp({ testName: "at0179-dynamic-keybinding" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

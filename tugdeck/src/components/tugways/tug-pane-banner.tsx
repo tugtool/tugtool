@@ -312,7 +312,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // editor here, gated on first-responder state. Per the contract
     // documented in `dev-card.tsx` (the focus-claim handlers
     // block) and pinned by
-    // `tests/app-test/at0051-dev-mount-focus.test.ts`: any new
+    // `tests/app-test/at0175-dev-mount-focus.test.ts`: any new
     // overlay-class component that sets `inert` on the pane body
     // MUST emit a per-card `didHide` lifecycle event after `inert`
     // clears, mirroring this emission. Removing or gating this

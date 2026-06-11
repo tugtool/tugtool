@@ -1,5 +1,5 @@
 /**
- * at0106-sheet-focus-trap.test.ts — opening a sheet pushes a focus-trap mode;
+ * at0178-sheet-focus-trap.test.ts — opening a sheet pushes a focus-trap mode;
  * dismissing it pops the mode and restores the key view to the opener.
  *
  * Step 4 of the keyboard-access plan wires the CFRunLoop-style focus trap
@@ -26,7 +26,7 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const SID = "at0106-session";
+const SID = "at0178-session";
 
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
@@ -55,11 +55,11 @@ function deckShape() {
 const HAS_FOCUS_MODE = `document.documentElement.hasAttribute("data-focus-mode")`;
 const KEY_VIEW_IN_CARD = `(function(){ var kv = document.querySelector("[data-key-view]"); var card = document.querySelector(${JSON.stringify(CARD)}); return kv !== null && card !== null && card.contains(kv); })()`;
 
-describe.skipIf(!SHOULD_RUN)("AT0106: sheet pushes/pops a focus-trap mode", () => {
+describe.skipIf(!SHOULD_RUN)("AT0178: sheet pushes/pops a focus-trap mode", () => {
   test(
     "opening the permission sheet pushes data-focus-mode; Escape pops it and restores the key view",
     async () => {
-      const app = await launchTugApp({ testName: "at0106-sheet-focus-trap" });
+      const app = await launchTugApp({ testName: "at0178-sheet-focus-trap" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

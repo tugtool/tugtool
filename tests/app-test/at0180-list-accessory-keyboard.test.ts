@@ -1,5 +1,5 @@
 /**
- * at0163-list-accessory-keyboard.test.ts — list-row trailing accessories join
+ * at0180-list-accessory-keyboard.test.ts — list-row trailing accessories join
  * the keyboard focus language, end to end on the session picker's Recents list.
  *
  * ## What this gates
@@ -156,11 +156,11 @@ function deckShape() {
   };
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0163: list-row accessories join the keyboard focus language", () => {
+describe.skipIf(!SHOULD_RUN)("AT0180: list-row accessories join the keyboard focus language", () => {
   test(
     "cursor reveals the trash, Right descends onto it, Left/Escape ascend, Enter confirms through the popover, and deletion lands the cursor on the nearest survivor",
     async () => {
-      const app = await launchTugApp({ testName: "at0163-list-accessory-keyboard" });
+      const app = await launchTugApp({ testName: "at0180-list-accessory-keyboard" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -396,7 +396,7 @@ describe.skipIf(!SHOULD_RUN)("AT0163: list-row accessories join the keyboard foc
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") {
-          process.stderr.write(`\n[at0163-list-accessory-keyboard] log tail:\n${tail}\n`);
+          process.stderr.write(`\n[at0180-list-accessory-keyboard] log tail:\n${tail}\n`);
         }
         throw err;
       } finally {

@@ -1,5 +1,5 @@
 /**
- * at0051-dev-mount-focus.test.ts — when a dev card mounts as the
+ * at0175-dev-mount-focus.test.ts — when a dev card mounts as the
  * focused card and its session binds, the prompt-entry editor
  * (CodeMirror's contentDOM) gains DOM focus AND the custom caret
  * layer renders, all without a user click.
@@ -162,8 +162,8 @@ async function installBannerWatch(app: App, cardId: string): Promise<void> {
     `(function(){
       var bannerSel = '[data-slot="tug-pane-banner"]';
       var cardSel = ${JSON.stringify(cardSelector)};
-      window.__at0051BannerTotal = 0;
-      window.__at0051BannerObserver = new MutationObserver(function(muts){
+      window.__at0175BannerTotal = 0;
+      window.__at0175BannerObserver = new MutationObserver(function(muts){
         for (var i = 0; i < muts.length; i++) {
           var m = muts[i];
           for (var j = 0; j < m.addedNodes.length; j++) {
@@ -172,14 +172,14 @@ async function installBannerWatch(app: App, cardId: string): Promise<void> {
             var el = node;
             // Direct match.
             if (el.matches && el.matches(bannerSel)) {
-              window.__at0051BannerTotal++;
+              window.__at0175BannerTotal++;
               continue;
             }
             // Banner mounted as a descendant of an added subtree
             // (the typical case — TugPaneBanner portals into the
             // pane chrome, which lands under the card subtree).
             if (el.querySelectorAll) {
-              window.__at0051BannerTotal +=
+              window.__at0175BannerTotal +=
                 el.querySelectorAll(bannerSel).length;
             }
           }
@@ -192,7 +192,7 @@ async function installBannerWatch(app: App, cardId: string): Promise<void> {
       // every reachable mount path.
       var card = document.querySelector(cardSel);
       var root = card !== null ? card : document.body;
-      window.__at0051BannerObserver.observe(root, {
+      window.__at0175BannerObserver.observe(root, {
         childList: true,
         subtree: true,
       });
@@ -214,13 +214,13 @@ async function readBannerWatch(
   const bannerSelector = `[data-card-id="${cardId}"] [data-slot="tug-pane-banner"]`;
   return app.evalJS<BannerWatchSnapshot>(
     `(function(){
-      var total = window.__at0051BannerTotal || 0;
+      var total = window.__at0175BannerTotal || 0;
       var current = document.querySelectorAll(${JSON.stringify(bannerSelector)}).length;
-      if (window.__at0051BannerObserver) {
-        window.__at0051BannerObserver.disconnect();
-        window.__at0051BannerObserver = undefined;
+      if (window.__at0175BannerObserver) {
+        window.__at0175BannerObserver.disconnect();
+        window.__at0175BannerObserver = undefined;
       }
-      window.__at0051BannerTotal = undefined;
+      window.__at0175BannerTotal = undefined;
       return { total: total, current: current };
     })()`,
   );
@@ -253,7 +253,7 @@ async function waitForEditor(app: App, cardId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "at0051: dev card mount-time focus + caret claim",
+  "AT0175: dev card mount-time focus + caret claim",
   () => {
     test(
       "after seed + bind: editor's contentDOM is activeElement, .cm-focused is set, exactly one caret renders",
@@ -263,7 +263,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "at0051-dev-mount-focus",
+            testName: "at0175-dev-mount-focus",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });
@@ -344,7 +344,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "at0051-dev-mount-focus-new-mode",
+            testName: "at0175-dev-mount-focus-new-mode",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });

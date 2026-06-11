@@ -2499,7 +2499,7 @@ export function DevCardBody({
   // Composing two emitters (sheet + banner) costs one stale call
   // per cycle; the cost is bounded and worth the simpler invariant.
   //
-  // Pinned by `tests/app-test/at0051-dev-mount-focus.test.ts`. A
+  // Pinned by `tests/app-test/at0175-dev-mount-focus.test.ts`. A
   // future overlay that sets `inert` without emitting `didHide`
   // breaks at0051; the test exists exactly so the contract isn't
   // re-discovered the hard way. See
