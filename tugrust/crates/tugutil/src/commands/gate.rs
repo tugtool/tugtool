@@ -189,7 +189,14 @@ fn bind_reuseaddr(port: u16) -> std::io::Result<TcpListener> {
         addr.sin_addr = libc::in_addr {
             s_addr: u32::from(Ipv4Addr::LOCALHOST).to_be(),
         };
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
         {
             addr.sin_len = std::mem::size_of::<libc::sockaddr_in>() as u8;
         }
