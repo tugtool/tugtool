@@ -15,6 +15,7 @@
 import type { FeedStore } from "./feed-store";
 import type { FeedIdValue } from "../protocol";
 import type { CompletionProvider, CompletionItem } from "./tug-text-types";
+import { scoreMatch } from "./text-match";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -528,17 +529,22 @@ export class SessionMetadataStore {
   /**
    * Returns a CompletionProvider for the / trigger.
    * The provider closes over the store and reads current slashCommands on each call.
-   * Filters by case-insensitive substring match. Returns CompletionItem[] with
+   * Matches and ranks by {@link scoreMatch} so the popup mirrors the `@`-file
+   * popup: items carry highlight `matches` ranges and are ordered by match
+   * quality (score descending, alphabetical tiebreak). An empty query offers
+   * every command, alphabetically. Returns CompletionItem[] with
    * atom.type = "command".
    */
   getCommandCompletionProvider(): CompletionProvider {
     return (query: string): CompletionItem[] => {
       const { slashCommands } = this._snapshot;
-      const lower = query.toLowerCase();
-      const results: CompletionItem[] = [];
+      const ranked: Array<{ item: CompletionItem; score: number }> = [];
       for (const cmd of slashCommands) {
-        if (!lower || cmd.name.toLowerCase().includes(lower)) {
-          results.push({
+        const match = scoreMatch(query, cmd.name);
+        if (match === null) continue;
+        ranked.push({
+          score: match.score ?? 0,
+          item: {
             label: cmd.name,
             atom: {
               kind: "atom",
@@ -546,10 +552,17 @@ export class SessionMetadataStore {
               label: cmd.name,
               value: cmd.name,
             },
-          });
-        }
+            matches: match.matches.map(([s, e]) => [s, e] as [number, number]),
+          },
+        });
       }
-      return results;
+      ranked.sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        return a.item.label.localeCompare(b.item.label, undefined, {
+          sensitivity: "base",
+        });
+      });
+      return ranked.map((r) => r.item);
     };
   }
 

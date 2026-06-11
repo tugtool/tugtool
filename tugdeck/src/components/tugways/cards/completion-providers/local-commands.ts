@@ -20,6 +20,7 @@
 
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
 import { LOCAL_SLASH_COMMANDS, type LocalCommandName } from "@/lib/slash-commands";
+import { scoreMatch } from "@/lib/text-match";
 
 /** Options for {@link localCommandCompletionProvider}. */
 export interface LocalCommandProviderOptions {
@@ -39,29 +40,33 @@ export interface LocalCommandProviderOptions {
  * any other slash command — the completion layer draws no local/remote
  * distinction. The split happens later, at submit: `performSubmit` recognizes
  * a *local* command atom and opens its surface; everything else is sent to
- * claude ([#step-1c] / [D23]). Filtered by case-insensitive substring on the
- * name.
+ * claude ([#step-1c] / [D23]).
+ *
+ * Matched and ranked by {@link scoreMatch} so the popup feels identical to the
+ * `@`-file popup: each item carries highlight `matches` ranges, and final
+ * ordering is by score (applied in {@link mergeCommandProviders}). An empty
+ * query offers every command (no filter).
  */
 export function localCommandCompletionProvider(
   options: LocalCommandProviderOptions = {},
 ): CompletionProvider {
   const { isOffered } = options;
   return (query: string): CompletionItem[] => {
-    const lower = query.toLowerCase();
     const items: CompletionItem[] = [];
     for (const cmd of LOCAL_SLASH_COMMANDS) {
       if (isOffered !== undefined && !isOffered(cmd.name)) continue;
-      if (lower === "" || cmd.name.toLowerCase().includes(lower)) {
-        items.push({
+      const match = scoreMatch(query, cmd.name);
+      if (match === null) continue;
+      items.push({
+        label: cmd.name,
+        atom: {
+          kind: "atom",
+          type: "command",
           label: cmd.name,
-          atom: {
-            kind: "atom",
-            type: "command",
-            label: cmd.name,
-            value: cmd.name,
-          },
-        });
-      }
+          value: cmd.name,
+        },
+        matches: match.matches.map(([s, e]) => [s, e] as [number, number]),
+      });
     }
     return items;
   };
@@ -93,9 +98,15 @@ export function filterCommandProvider(
  * - **Dedup precedence** decides which item *survives* when a name appears in
  *   more than one provider: first-wins, so listing the local provider first
  *   means a name claude also reports resolves to the local (graphical) entry.
- * - **Display order** is alphabetical, applied after dedup — the popup is
- *   predictable regardless of registry / catalog order (which is otherwise an
- *   unfathomable mix of local-registry order then claude's catalog order).
+ * - **Display order** is by match quality (descending {@link scoreMatch}
+ *   score), with alphabetical as the tiebreak — so `/permi` ranks
+ *   `permissions` (a prefix hit) above `fewer-permission-prompts` (a
+ *   word-boundary hit) instead of letting the alphabet decide. The score is
+ *   recomputed here from each surviving item's label against the live query;
+ *   the providers don't thread a score through the `CompletionItem` shape, and
+ *   re-scoring a ≤ 50-item list per keystroke is free. For an empty query
+ *   `scoreMatch` returns no score, so every item ties and the ordering falls
+ *   back to purely alphabetical — the previous behavior, preserved.
  *
  * Synchronous only — command providers don't carry the async `subscribe` hook
  * that file completion uses.
@@ -113,9 +124,12 @@ export function mergeCommandProviders(
         merged.push(item);
       }
     }
-    merged.sort((a, b) =>
-      a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
-    );
+    merged.sort((a, b) => {
+      const scoreA = scoreMatch(query, a.label)?.score ?? 0;
+      const scoreB = scoreMatch(query, b.label)?.score ?? 0;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+    });
     return merged;
   };
 }

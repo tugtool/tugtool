@@ -19,6 +19,7 @@ import type {
 import {
   filterCommandProvider,
   localCommandCompletionProvider,
+  mergeCommandProviders,
 } from "@/components/tugways/cards/completion-providers/local-commands";
 
 describe("matchLocalSlashCommand", () => {
@@ -58,6 +59,56 @@ describe("local-command completion", () => {
     expect(labels(localCommandCompletionProvider(), "PERM")).toEqual(["permissions"]);
     expect(labels(localCommandCompletionProvider(), "model")).toEqual(["model"]);
     expect(labels(localCommandCompletionProvider(), "vim")).toEqual([]);
+  });
+
+  test("local provider matches a non-contiguous subsequence", () => {
+    // `pm` is a subsequence of `permissions` (p…m…) but not a substring.
+    expect(labels(localCommandCompletionProvider(), "pm")).toContain("permissions");
+  });
+});
+
+describe("mergeCommandProviders", () => {
+  function labels(provider: CompletionProvider, query: string): string[] {
+    return provider(query).map((item) => item.label);
+  }
+
+  /** A provider over a fixed list of command names (no availability gating). */
+  function namesProvider(...names: string[]): CompletionProvider {
+    return (() =>
+      names.map((name) => ({
+        label: name,
+        atom: { kind: "atom", type: "command", label: name, value: name },
+      }))) as CompletionProvider;
+  }
+
+  test("orders by match quality, not the alphabet", () => {
+    // The reported bug: `/permi` must surface `permissions` (a prefix hit)
+    // above `fewer-permission-prompts` (a word-boundary hit), even though the
+    // latter sorts first alphabetically.
+    const merged = mergeCommandProviders(
+      namesProvider("fewer-permission-prompts"),
+      namesProvider("permissions"),
+    );
+    expect(labels(merged, "permi")).toEqual([
+      "permissions",
+      "fewer-permission-prompts",
+    ]);
+  });
+
+  test("empty query falls back to alphabetical order", () => {
+    const merged = mergeCommandProviders(
+      namesProvider("zebra", "alpha"),
+      namesProvider("mango"),
+    );
+    expect(labels(merged, "")).toEqual(["alpha", "mango", "zebra"]);
+  });
+
+  test("dedups by label, first provider wins", () => {
+    const merged = mergeCommandProviders(
+      namesProvider("permissions"),
+      namesProvider("permissions"),
+    );
+    expect(labels(merged, "permi")).toEqual(["permissions"]);
   });
 });
 

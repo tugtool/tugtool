@@ -58,14 +58,19 @@ describe("createFixtureSessionMetadataStore", () => {
     expect(byCategory.get("agent")).toBe(5);
   });
 
-  it("narrows `tug` to the tugplug-prefixed entries", () => {
+  it("ranks the `tugplug:` prefix matches for `tug` ahead of fuzzy hits", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const provider = store.getCommandCompletionProvider();
     const hits = provider("tug");
-    expect(hits.length).toBe(6);
+    // Six commands start with `tug` (the `tugplug:` family) — those are the
+    // strong prefix matches and must lead. Fuzzy/subsequence hits (e.g.
+    // `extra-usage`, where t…u…g appears in order) are still offered — that's
+    // the @-file popup's behavior — but rank strictly below the prefix matches.
+    const prefixed = hits.filter((h) => h.label.startsWith("tugplug:"));
+    expect(prefixed.length).toBe(6);
+    expect(hits.slice(0, 6).every((h) => h.label.startsWith("tugplug:"))).toBe(true);
     for (const h of hits) {
       expect(h.atom.type).toBe("command");
-      expect(h.label.startsWith("tugplug:")).toBe(true);
     }
   });
 

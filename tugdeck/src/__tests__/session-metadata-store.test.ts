@@ -4,7 +4,7 @@
  * Tests cover:
  * - Store starts with null snapshot fields and empty slashCommands array.
  * - Subscribing to a FeedStore that emits a system_metadata payload updates the snapshot correctly.
- * - getCommandCompletionProvider() filters commands by substring query.
+ * - getCommandCompletionProvider() matches and ranks commands by query.
  * - Entries without a name string are skipped during parse.
  * - Subscribers are notified on metadata change; not notified on duplicate reference.
  */
@@ -414,6 +414,47 @@ describe("SessionMetadataStore getCommandCompletionProvider", () => {
     // "xyz" matches nothing
     const results4 = provider("xyz");
     expect(results4).toHaveLength(0);
+
+    store.dispose();
+  });
+
+  test("ranks a prefix match above a word-boundary match", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+    feedStore.emit(
+      FEED_ID,
+      makeMetadataPayload({
+        slash_commands: [
+          { name: "fewer-permission-prompts", description: "skill", category: "skill" },
+          { name: "permissions", description: "rules", category: "local" },
+        ],
+      }),
+    );
+
+    const provider = store.getCommandCompletionProvider();
+    const results = provider("permi");
+
+    // Both match, but `permissions` is a prefix hit and must rank first —
+    // not the alphabetically-earlier `fewer-permission-prompts`.
+    expect(results.map((r) => r.label)).toEqual([
+      "permissions",
+      "fewer-permission-prompts",
+    ]);
+    // And the matched span is highlighted (mirrors the @-file popup).
+    expect(results[0].matches).toEqual([[0, 5]]);
+
+    store.dispose();
+  });
+
+  test("matches a non-contiguous subsequence (fzf-feel)", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+    feedStore.emit(FEED_ID, makeMetadataPayload());
+
+    const provider = store.getCommandCompletionProvider();
+    // "smrz" is a subsequence of "summarize" but not a substring.
+    const results = provider("smrz");
+    expect(results.map((r) => r.label)).toEqual(["summarize"]);
 
     store.dispose();
   });

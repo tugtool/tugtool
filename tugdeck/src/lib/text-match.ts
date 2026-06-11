@@ -26,11 +26,14 @@
  * can paint highlights identically across surfaces. That's this
  * file.
  *
- * The two implementations CAN drift. Fuzzy parity (when we want
- * fzf-feel for short lists) is a follow-on that adds a `fuzzyMatch`
- * function here mirroring the Rust algorithm. For now we ship the
- * common case — case-insensitive substring — and leave fuzzy as
- * deferred until a consumer earns it.
+ * The two implementations CAN drift. This file ships two matchers:
+ * `caseInsensitiveSubstring` (the original substring filter used by
+ * the picker recents and the gallery card) and `scoreMatch` (a small
+ * fzf-lite ranked matcher mirroring the Rust scorer's tier/bonus
+ * feel, earned by the slash-command popup — which needs the `@`-file
+ * popup's quality ordering and highlight ranges over a ≤ 50-item
+ * command set, where a per-keystroke wire round-trip is not worth
+ * paying).
  *
  * ## Coordinate system
  *
@@ -156,4 +159,187 @@ export function caseInsensitiveSubstring(
   // approximation breaks; we intentionally don't pay for a per-char
   // walk to handle data the picker / gallery card never see.
   return { matches: [[idx, idx + query.length]] };
+}
+
+// ---------------------------------------------------------------------------
+// Ranked match (fzf-lite) — used by slash-command completion
+// ---------------------------------------------------------------------------
+
+/**
+ * Scoring tiers. Each tier is a *class* of match, ranked strictly above the
+ * next: a match in a higher tier always outscores any match in a lower tier,
+ * regardless of bonuses. The gap between adjacent tiers ({@link TIER_GAP}) is
+ * the hard ceiling on the bonus sum — {@link clampBonus} enforces it — so two
+ * candidates can only swap order *within* a tier, never across one.
+ */
+const EXACT = 10_000;
+const PREFIX = 8_000;
+const WORD_PREFIX = 6_000;
+const SUBSTRING = 4_000;
+const SUBSEQUENCE = 2_000;
+/** Adjacent-tier spacing; the per-tier bonus is clamped strictly below this. */
+const TIER_GAP = 2_000;
+
+/**
+ * Within-tier bonuses. All are additive and the total is clamped to
+ * `TIER_GAP - 1`, so they tune ordering among same-tier matches without ever
+ * promoting a match into the tier above.
+ *
+ * - `MATCH_RATIO`: favors shorter targets / fuller coverage — `permissions`
+ *   over `fewer-permission-prompts` when both prefix-match. The dominant
+ *   signal, which is why it's the largest.
+ * - `POSITION`: favors a match nearer the start of the target.
+ * - `BOUNDARY` / `CONSECUTIVE`: subsequence-only — reward chars landing on
+ *   word boundaries and contiguous runs (fzf-feel), so `pm` lights up the two
+ *   word starts of `permissions` rather than scattered letters.
+ */
+const MATCH_RATIO_BONUS = 500;
+const POSITION_BONUS = 200;
+const BOUNDARY_BONUS = 50;
+const CONSECUTIVE_BONUS = 20;
+
+/** Separators that begin a new word (the char *after* one is a boundary). */
+const WORD_SEPARATORS = new Set(["-", "_", "/", ".", " "]);
+
+const isUpper = (c: string): boolean => c !== c.toLowerCase() && c === c.toUpperCase();
+const isLower = (c: string): boolean => c !== c.toUpperCase() && c === c.toLowerCase();
+const isDigit = (c: string): boolean => c >= "0" && c <= "9";
+
+/** Clamp the within-tier bonus so it can never cross into the tier above. */
+const clampBonus = (bonus: number): number => Math.min(Math.max(0, bonus), TIER_GAP - 1);
+
+/**
+ * Mark each index of `target` that starts a word: index 0, the char after a
+ * separator, a camelCase hump (`aB`), or a digit run start (`a1`). Computed on
+ * the ORIGINAL (un-folded) target so camelCase survives — case folding would
+ * erase the `aB` signal.
+ */
+function wordBoundaries(target: string): boolean[] {
+  const flags = new Array<boolean>(target.length).fill(false);
+  for (let i = 0; i < target.length; i++) {
+    if (i === 0) {
+      flags[i] = true;
+      continue;
+    }
+    const prev = target[i - 1]!;
+    const cur = target[i]!;
+    if (WORD_SEPARATORS.has(prev)) flags[i] = true;
+    else if (isLower(prev) && isUpper(cur)) flags[i] = true;
+    else if (!isDigit(prev) && isDigit(cur)) flags[i] = true;
+  }
+  return flags;
+}
+
+/**
+ * Greedy fzf-style subsequence match: are all of `q`'s chars present in `t`,
+ * left to right? Returns merged contiguous highlight ranges plus a score that
+ * rewards boundary hits and consecutive runs, or `null` if `q` is not a
+ * subsequence of `t`. `q`/`t` are pre-folded; `target` is the original (for
+ * boundary detection and range coordinates, which coincide for ASCII).
+ */
+function subsequenceMatch(
+  q: string,
+  t: string,
+  target: string,
+  boundaries: boolean[],
+): MatchResult | null {
+  const idxs: number[] = [];
+  let qi = 0;
+  for (let i = 0; i < t.length && qi < q.length; i++) {
+    if (t[i] === q[qi]) {
+      idxs.push(i);
+      qi++;
+    }
+  }
+  if (qi < q.length) return null;
+
+  let boundaryHits = 0;
+  let consecutive = 0;
+  for (let k = 0; k < idxs.length; k++) {
+    if (boundaries[idxs[k]!]) boundaryHits++;
+    if (k > 0 && idxs[k]! === idxs[k - 1]! + 1) consecutive++;
+  }
+  const bonus =
+    Math.round((MATCH_RATIO_BONUS * q.length) / target.length) +
+    boundaryHits * BOUNDARY_BONUS +
+    consecutive * CONSECUTIVE_BONUS +
+    Math.max(0, POSITION_BONUS - idxs[0]!);
+
+  // Merge adjacent indices into contiguous [start, end) ranges.
+  const matches: Array<readonly [number, number]> = [];
+  let start = idxs[0]!;
+  let prev = idxs[0]!;
+  for (let k = 1; k < idxs.length; k++) {
+    if (idxs[k]! === prev + 1) {
+      prev = idxs[k]!;
+      continue;
+    }
+    matches.push([start, prev + 1]);
+    start = idxs[k]!;
+    prev = idxs[k]!;
+  }
+  matches.push([start, prev + 1]);
+  return { score: SUBSEQUENCE + clampBonus(bonus), matches };
+}
+
+/**
+ * Ranked match used by the slash-command popup so it feels identical to the
+ * `@`-file popup: candidates order by match *quality*, not the alphabet, and
+ * the returned `matches` ranges drive the same highlight rendering.
+ *
+ * Returns a `MatchResult` with a `score` (higher = better) and highlight
+ * ranges, or `null` when `query` does not match `target` at all. Matching is
+ * tiered, highest-wins:
+ *
+ *  1. **Exact** — folded equal (`permissions` for `permissions`).
+ *  2. **Prefix** — target starts with the query (`permi` → `permissions`).
+ *  3. **Word-boundary prefix** — query matches at a word start inside the
+ *     target (`permi` → fewer-**permi**ssion-prompts), earliest boundary wins.
+ *  4. **Substring** — query appears mid-word (`ermi` → p**ermi**ssions).
+ *  5. **Subsequence** — query chars appear in order (`pm` → **p**er**m**issions).
+ *
+ * Within a tier, shorter / fuller / earlier matches rank higher (see the bonus
+ * constants). Empty query returns `{ matches: [] }` with no `score`, i.e. "no
+ * filter": every candidate passes and ranking falls back to the caller's
+ * tiebreak (alphabetical for the command popup). Empty target with a non-empty
+ * query returns `null`.
+ *
+ * Coordinate system and case folding match {@link caseInsensitiveSubstring} —
+ * see the module docstring.
+ */
+export function scoreMatch(query: string, target: string): MatchResult | null {
+  if (query.length === 0) return { matches: [] };
+  if (target.length === 0) return null;
+
+  const q = query.toLowerCase();
+  const t = target.toLowerCase();
+  const qlen = q.length;
+  const ratioBonus = Math.round((MATCH_RATIO_BONUS * qlen) / target.length);
+
+  if (t === q) {
+    return { score: EXACT + clampBonus(ratioBonus), matches: [[0, target.length]] };
+  }
+
+  if (t.startsWith(q)) {
+    return { score: PREFIX + clampBonus(ratioBonus), matches: [[0, qlen]] };
+  }
+
+  const boundaries = wordBoundaries(target);
+
+  // Earliest word boundary at which the whole query matches.
+  for (let i = 1; i < target.length; i++) {
+    if (!boundaries[i]) continue;
+    if (t.startsWith(q, i)) {
+      const bonus = ratioBonus + Math.max(0, POSITION_BONUS - i);
+      return { score: WORD_PREFIX + clampBonus(bonus), matches: [[i, i + qlen]] };
+    }
+  }
+
+  const idx = t.indexOf(q);
+  if (idx >= 0) {
+    const bonus = ratioBonus + Math.max(0, POSITION_BONUS - idx);
+    return { score: SUBSTRING + clampBonus(bonus), matches: [[idx, idx + qlen]] };
+  }
+
+  return subsequenceMatch(q, t, target, boundaries);
 }
