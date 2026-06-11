@@ -289,6 +289,42 @@ The close-validation work that landed in commit `9ff9cb4d` built the foundation 
 
 ---
 
+### Deep Dives (Optional) {#deep-dives}
+
+#### Implementation Landmarks {#implementation-landmarks}
+
+Code geography a fresh session needs, verified against the tree at plan time. Cite symbols, not line numbers — these are the load-bearing sites.
+
+**Table T03: landmark symbols** {#t03-landmarks}
+
+| Where | Symbol | Role in this plan |
+|---|---|---|
+| `tugapp/Sources/AppDelegate.swift` | `buildMenuBar()` | the rewrite target; also `closeMenuItem` / `closeAllMenuItem`, `validateMenuItem(_:)`, `updateCardList(_:)`, `menuNeedsUpdate(_:)` (View + Theme delegates), `NSMenuItem` convenience init with `modifierMask` (file bottom) |
+| `tugapp/Sources/MainWindow.swift` | `contentController.add(self, name: …)` registrations + the `userContentController(_:didReceive:)` case switch | add `menuState`, drop `cardList`, rename `setDevMode` → `setMakerMode`; the `getSettings` / `setDevMode` cases respond via `evaluateJavaScript("window.__tugBridge?…")` — these emit strings are what Step 6 renames and Step 7's receiver matches |
+| `tugapp/Sources/TestHarness/TestHarnessConnection.swift` | `dispatchMenuSnapshot` / `dispatchMenuItemState` / `findByIdentifier` | harness surface 1.6.0; reports *validated* enabled state — no new verbs needed for this plan |
+| `tugdeck/src/deck-manager.ts` | `pushCardListToHost()` called from `notify()` | the body Step 1 extracts into the aggregator; the projection logic (focused = last pane in z-order, title fallback chain, `.reverse()`) must move verbatim |
+| `tugdeck/src/action-dispatch.ts` | `registerAction`, `responderChainManagerRef`, `_resetForTest` | Both-category registrations follow the `TUG_ACTIONS.CLOSE` pattern (constant at register + dispatch site) |
+| `tugdeck/src/components/tugways/responder-chain.ts` | `sendToKeyCard` / `sendToKeyCardForContinuation` | key-card scope resolves to the active card's `card-content` responder even when focus sits on chrome |
+| `tugdeck/src/components/tugways/cards/dev-card.tsx` | `slashCommandSurfaces` (a `Record<LocalCommandName, …>` near the card-content `useResponder`) | exhaustively keyed — every `run-card-command` name Swift sends MUST be a `LOCAL_SLASH_COMMANDS` member or it's a silent no-op; the card-content responder is where `SET_PERMISSION_MODE` / `INTERRUPT_SESSION` handlers land |
+| `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` | mode fallback (`live ?? persisted ?? "default"`), `usePermissionSheet`, `onSelectMode` → `usePermissionMode().setMode` | `setMode` sends the `permission_mode` frame, optimistically reflects, persists per card — the single commit path [P06] reuses; factor the fallback into a shared helper for Step 2 |
+| `tugdeck/src/lib/permission-mode.ts` | `PERMISSION_MODE_MENU`, `formatPermissionMode` | the menu mode set (no `bypassPermissions`) and display labels |
+| `tugdeck/src/lib/code-session-store.ts` | snapshot `canInterrupt` (phase disjunction incl. `waking`), `interrupt()` | Stop's predicate and action |
+| `tugapp/Sources/TugConfig.swift` | `keyDevModeEnabled = "dev-mode-enabled"`, `domain` | migration source key; read/write via `ProcessManager.readTugbank` / `writeTugbank` |
+
+#### Behavioral nuances to preserve {#behavioral-nuances}
+
+- **Close Card ↔ Close Pane title flip**: `updateCardList` retitles `closeMenuItem` from the focused pane's `cardCount` (Safari/Finder convention, initial title "Close Pane"). This must survive the Step 1 `MenuState` refactor byte-for-byte — at0167 asserts validated state around it.
+- **Identifier stability**: `file.closeCard` keeps its identifier through the title flip — identity never rides the title. Same rule for every new dynamic item ([P07]).
+- **`autoenablesItems` + nil-target routing**: validation only reaches `validateMenuItem` for items whose action resolves to the AppDelegate up the responder chain. New items follow the existing pattern (no explicit target); native-selector items (`NSText.cut` etc.) validate against the field editor as today.
+- **Before the first `menuState` push** (app boot, pre-frontendReady): the cached `MenuState` is empty → tier-2/3/4 predicates all read false → close items and the whole Session menu start disabled. This matches today's pre-cardList behavior and is correct, not a bug to "fix".
+- **Zoom items keep build-time enablement** in `menuNeedsUpdate` with the epsilon comparison and the hidden ⌘= alias (`allowsKeyEquivalentWhenHidden`) — the [P11] exception. The ⌘= alias pattern is also the reference if any future alias chord is needed.
+- **Theme submenu reads themes from disk** (`sourceTreePath` + `tugdeck/styles/themes/*.css`) and re-reads the active theme from tugbank on every open. Relocation to View moves this logic unchanged.
+- **`run-card-command` arg semantics**: `rename` and `compact` are the only `takesArgs` commands; menu items send no args (bare `rename` opens the seeded one-field sheet — exactly the wanted menu behavior).
+- **Stop ≠ cancel-dialog**: Escape's chain walk gives popover-dismiss priority over interrupt. The menu's `interrupt-session` frame bypasses that walk deliberately — it always means interrupt ([P10]); enablement (`canInterrupt`) is the only gate.
+- **App-test harness binds a real tugcode** (the at0099/at0105/at0107 suites drive real sessions); never hand-roll session stubs for Step 9 — reuse those suites' setup helpers.
+
+---
+
 ### Specification {#specification}
 
 **Spec S01: `menuState` wire payload** {#s01-menu-state-payload}
@@ -452,7 +488,7 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 
 **Commit:** `menuState host push: aggregator module replaces cardList channel`
 
-**References:** [P04] menuState push, [P11] pull validation, Spec S01, Risk R01, (#s01-menu-state-payload, #r01-menu-state-churn)
+**References:** [P04] menuState push, [P11] pull validation, Spec S01, Table T03, Risk R01, (#s01-menu-state-payload, #r01-menu-state-churn, #behavioral-nuances)
 
 **Artifacts:**
 - New `tugdeck/src/lib/host-menu-state.ts` — aggregator: deck projection (panes + activeCard), diff, microtask coalesce, `postMessage` to `menuState`.
@@ -566,7 +602,7 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 
 **Commit:** `Session menu: dev-card command surfaces, live Stop, permission-mode radio submenu`
 
-**References:** [P02] disabled-not-hidden, [P03] run-card-command, [P06] permission-mode submenu, [P10] stop, Spec S02, Tables T01-T02, (#p02-session-disabled-not-hidden, #p06-permission-mode-submenu)
+**References:** [P02] disabled-not-hidden, [P03] run-card-command, [P06] permission-mode submenu, [P10] stop, Spec S02, Tables T01-T03, (#p02-session-disabled-not-hidden, #p06-permission-mode-submenu, #behavioral-nuances)
 
 **Artifacts:**
 - Session menu built per Table T01 between Edit and View; one `runCardCommand(_:)` selector with `representedObject` command names; `interrupt-session` for Stop; `focus-prompt` for Focus Prompt ⌘K; permission-mode submenu with `menuNeedsUpdate` checkmarks + Cycle item ⇧⌘P.
