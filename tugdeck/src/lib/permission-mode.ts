@@ -123,3 +123,19 @@ export function parsePersistedPermissionMode(
 
 /** tugbank domain for per-card permission-mode persistence per [D07]. */
 export const PERMISSION_MODE_DOMAIN = "dev.permission-mode";
+
+/**
+ * The session's effective permission mode for display / publication:
+ * live metadata when the `system_metadata` round-trip has landed, the
+ * per-card persisted mode as the pre-population fallback, and
+ * `default` (what tugcode spawns with) when neither is known. The
+ * single fallback chain shared by the chip, the permission sheet, and
+ * the host menu-state publication — keep all consumers on this helper
+ * so they can never disagree.
+ */
+export function resolvePermissionMode(
+  live: string | null | undefined,
+  persisted: string | null | undefined,
+): string {
+  return live ?? persisted ?? "default";
+}

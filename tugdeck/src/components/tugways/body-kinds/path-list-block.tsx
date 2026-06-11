@@ -144,7 +144,7 @@ export interface PathListBlockProps {
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, PathListBlock persists its sort mode into
-   * `bag.components` so a Developer > Reload restores it. Undefined
+   * `bag.components` so a Maker > Reload restores it. Undefined
    * opts out (gallery, standalone).
    */
   componentStatePreservationKey?: string;

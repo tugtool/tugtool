@@ -449,7 +449,7 @@ export function composePermissionLineRange(
 /**
  * The serialized payload the dialog captures into `bag.components`.
  * Mirrors the one piece of local state — the chosen scope option —
- * so a user mid-pick survives HMR / Developer > Reload / cross-pane
+ * so a user mid-pick survives HMR / Maker > Reload / cross-pane
  * move. Mirrors {@link QuestionDialogPreservedState}'s shape so both
  * dialogs in the family use the same protocol the same way.
  */

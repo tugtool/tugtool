@@ -1,0 +1,33 @@
+/* ----------------------------------------------------------------------------
+   .settings-app — the App settings panel
+   ----------------------------------------------------------------------------
+   App-level preferences, hosted by the Settings card's App tab. One
+   section today: the Maker box with the maker-mode switch and its
+   explanatory hint.
+   ----------------------------------------------------------------------------- */
+
+.settings-app {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xl);
+  padding: var(--tug-space-xs) 0;
+}
+
+/* Matches .settings-general-group: override .tug-box's fit-content so
+   the box fills the panel's content area. */
+.settings-app-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-app-switch-row {
+  display: flex;
+  align-items: center;
+}
+
+.settings-app-hint {
+  max-width: 48ch;
+}

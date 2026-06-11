@@ -144,6 +144,12 @@ export interface MenuItemSnapshot {
   separator: boolean;
   keyEquivalent: string;
   modifierMask: number;
+  /**
+   * Raw `NSControl.StateValue` — 1 = checked (`.on`), 0 = `.off`.
+   * Captured after the validation sweep, so radio checkmarks that
+   * validators refresh (the permission-mode submenu) are current.
+   */
+  state: number;
   identifier?: string;
   action?: string;
   submenu?: MenuItemSnapshot[];

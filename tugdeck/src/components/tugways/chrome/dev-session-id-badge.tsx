@@ -4,7 +4,7 @@
  *
  * Purpose: surface "which session am I bound to right now?" inline so
  * regressions in session-restore (e.g. an unintended `mode=new` after
- * Developer > Reload) are visible at a glance — pre-reload and
+ * Maker > Reload) are visible at a glance — pre-reload and
  * post-reload ids should match if the binding survived. Renders in all
  * builds; collapses to `null` only when the card has no binding.
  *

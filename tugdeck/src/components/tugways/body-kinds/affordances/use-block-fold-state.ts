@@ -17,7 +17,7 @@
  *     synchronously in render and seeds `useState`'s initializer, so
  *     the first paint already reflects the user's last-saved fold.
  *  3. **Capture registration.** `useComponentStatePreservation`
- *     registers the resolved flag for capture so a Developer > Reload
+ *     registers the resolved flag for capture so a Maker > Reload
  *     round-trips it.
  *  4. **The toggle.** A reference-stable setter that updates the
  *     internal state (uncontrolled only) and fires the change
@@ -93,7 +93,7 @@ export interface UseBlockFoldStateOptions {
   /**
    * [A9] component-state-preservation key. When set, the resolved
    * `collapsed` flag is persisted into `bag.components` so a
-   * Developer > Reload restores the fold, and the saved value seeds
+   * Maker > Reload restores the fold, and the saved value seeds
    * the uncontrolled initial state. Undefined opts out (gallery,
    * standalone) — the hook still tracks state, it just is not
    * preserved.

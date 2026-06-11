@@ -78,7 +78,7 @@ describe.skipIf(!SHOULD_RUN)("cold-boot harness smoke", () => {
       try {
         // Seed the empty temp tugbank with the minimum values
         // Tug.app reads at startup (source-tree-path,
-        // dev-mode-enabled). Without this, AppDelegate's
+        // maker-mode-enabled). Without this, AppDelegate's
         // loadPreferences fails to resolve a source tree and
         // renders the "Source Tree Required" alert instead of
         // booting tugdeck — harness's `window.__tug` wait then

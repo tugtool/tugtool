@@ -49,6 +49,8 @@ Every action name belongs to exactly one of three categories. The category deter
 
   No name translation. The Swift `sendControl("add-card-to-active-pane")` and the `manager.sendToFirstResponder({ action: "add-card-to-active-pane" })` carry the same string; the responder chain takes over from there.
 
+  The menu bar is the main producer of Both entries: every keyboard chord promoted to a menu item needs one, because AppKit swallows the chord before the WKWebView sees it. The full menu-driven catalog — including the key-card-scoped variants (`focus-prompt`, `set-permission-mode`, `interrupt-session`) and the generic `run-card-command` — lives in [menus.md](menus.md).
+
 ---
 
 ## The Shape of a Name

@@ -100,7 +100,7 @@ import type { TaggedValue } from "./lib/tugbank-client";
  * {@link TugTestSurface.appReload} and
  * {@link TugTestSurface.getReadyGen}. `appReload` invokes the
  * same `dispatchAction({ action: "reload" })` path the
- * `Developer > Reload` menu fires — `prepareForReload` →
+ * `Maker > Reload` menu fires — `prepareForReload` →
  * synchronous flush → `location.reload()`. `getReadyGen` returns
  * a generation counter that {@link attachTugTestSurface}
  * increments at every page boot, persisted across reloads via
@@ -484,7 +484,7 @@ export interface TugTestSurface {
 
   /**
    * Trigger a soft reload via the same code path as the
-   * `Developer > Reload` menu: `dispatchAction({action:"reload"})`,
+   * `Maker > Reload` menu: `dispatchAction({action:"reload"})`,
    * which routes through the registered handler in
    * `action-dispatch.ts` —
    * `prepareForReload().then(() => location.reload())`. The
@@ -1328,7 +1328,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
     // ---- Reload primitives (SURFACE_VERSION 1.4.0) ----
 
     appReload(): void {
-      // Same dispatch the `Developer > Reload` menu fires (see
+      // Same dispatch the `Maker > Reload` menu fires (see
       // `action-dispatch.ts` `registerAction("reload", ...)`).
       // Routing through `dispatchAction` rather than calling
       // `prepareForReload` + `location.reload()` directly keeps the

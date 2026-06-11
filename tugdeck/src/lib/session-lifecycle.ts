@@ -123,7 +123,7 @@ export function sendCloseSessionKeepingBinding(
  * against the inbound replay frames.
  *
  * Used by `cardServicesStore._construct` for resume bindings (HMR,
- * Developer > Reload, future card mounts that find their session
+ * Maker > Reload, future card mounts that find their session
  * already Live on the supervisor). Fresh-spawn bindings don't need
  * this — there's no JSONL to replay until claude writes its first turn.
  *

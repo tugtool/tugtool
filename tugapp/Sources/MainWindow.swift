@@ -5,13 +5,13 @@ import WebKit
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
     func bridgeChoosePath(kind: String, initialPath: String?, completion: @escaping (String?) -> Void)
-    func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void)
+    func bridgeSetMakerMode(enabled: Bool, completion: @escaping (Bool) -> Void)
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
     func bridgeDevModeError(message: String)
     func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
-    func bridgeIsDevMode() -> Bool
+    func bridgeIsMakerMode() -> Bool
     func bridgePageDidLoad()
     func bridgeHmrUpdate()
 }
@@ -263,13 +263,13 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController = WKUserContentController()
         contentController.add(self, name: "sourceTree")
         contentController.add(self, name: "choosePath")
-        contentController.add(self, name: "setDevMode")
+        contentController.add(self, name: "setMakerMode")
         contentController.add(self, name: "getSettings")
         contentController.add(self, name: "frontendReady")
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
         contentController.add(self, name: "clipboardRead")
-        contentController.add(self, name: "cardList")
+        contentController.add(self, name: "menuState")
         contentController.add(self, name: "hmrUpdate")
         contentController.add(self, name: "openPath")
         contentController.add(self, name: "exportSession")
@@ -621,13 +621,13 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         guard !bridgeCleaned else { return }
         contentController.removeScriptMessageHandler(forName: "sourceTree")
         contentController.removeScriptMessageHandler(forName: "choosePath")
-        contentController.removeScriptMessageHandler(forName: "setDevMode")
+        contentController.removeScriptMessageHandler(forName: "setMakerMode")
         contentController.removeScriptMessageHandler(forName: "getSettings")
         contentController.removeScriptMessageHandler(forName: "frontendReady")
         contentController.removeScriptMessageHandler(forName: "setTheme")
         contentController.removeScriptMessageHandler(forName: "devBadge")
         contentController.removeScriptMessageHandler(forName: "clipboardRead")
-        contentController.removeScriptMessageHandler(forName: "cardList")
+        contentController.removeScriptMessageHandler(forName: "menuState")
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
         contentController.removeScriptMessageHandler(forName: "openPath")
         contentController.removeScriptMessageHandler(forName: "exportSession")
@@ -940,19 +940,19 @@ extension MainWindow: WKScriptMessageHandler {
                     }
                 }
             }
-        case "setDevMode":
+        case "setMakerMode":
             guard let body = message.body as? [String: Any],
                   let enabled = body["enabled"] as? Bool else { return }
-            bridgeDelegate?.bridgeSetDevMode(enabled: enabled) { [weak self] confirmed in
+            bridgeDelegate?.bridgeSetMakerMode(enabled: enabled) { [weak self] confirmed in
                 guard let self = self else { return }
-                self.webView.evaluateJavaScript("window.__tugBridge?.onDevModeChanged?.(\(confirmed))") { _, error in
+                self.webView.evaluateJavaScript("window.__tugBridge?.onMakerModeChanged?.(\(confirmed))") { _, error in
                     if let error = error {
-                        NSLog("MainWindow: evaluateJavaScript failed for setDevMode: %@", error.localizedDescription)
+                        NSLog("MainWindow: evaluateJavaScript failed for setMakerMode: %@", error.localizedDescription)
                     }
                 }
             }
         case "getSettings":
-            bridgeDelegate?.bridgeGetSettings { [weak self] devMode, sourceTree in
+            bridgeDelegate?.bridgeGetSettings { [weak self] makerMode, sourceTree in
                 guard let self = self else { return }
                 let stValue: String
                 if let st = sourceTree {
@@ -960,7 +960,7 @@ extension MainWindow: WKScriptMessageHandler {
                 } else {
                     stValue = "null"
                 }
-                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), sourceTree: \(stValue)})") { _, error in
+                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({makerMode: \(makerMode), sourceTree: \(stValue)})") { _, error in
                     if let error = error {
                         NSLog("MainWindow: evaluateJavaScript failed for getSettings: %@", error.localizedDescription)
                     }
@@ -1075,12 +1075,13 @@ extension MainWindow: WKScriptMessageHandler {
                     NSLog("MainWindow: evaluateJavaScript failed for clipboardRead: %@", error.localizedDescription)
                 }
             }
-        case "cardList":
-            // Card list pushed from the frontend on every deck state change.
-            // Cache it on AppDelegate for the View menu's dynamic card list.
-            if let list = message.body as? [[String: Any]],
+        case "menuState":
+            // Menu-relevant state pushed from the frontend's host-menu-state
+            // aggregator. Cache it on AppDelegate for menu validation and
+            // the dynamic pane list.
+            if let payload = message.body as? [String: Any],
                let appDelegate = NSApp.delegate as? AppDelegate {
-                appDelegate.updateCardList(list)
+                appDelegate.updateMenuState(payload)
             }
         case "hmrUpdate":
             bridgeDelegate?.bridgeHmrUpdate()

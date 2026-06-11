@@ -31,7 +31,7 @@ The close-validation work that landed in commit `9ff9cb4d` built the foundation 
 - Add one generic control frame, `run-card-command`, that re-enters the dev card's existing `RUN_SLASH_COMMAND` surface map via `sendToKeyCard` — one frame covers all 19 command surfaces with zero per-command JS.
 - Restructure the bar to **Tug · File · Edit · Session · View · Window · Maker · Help**, with every item carrying a namespaced identifier.
 - Validate everything in `validateMenuItem(_:)` from the cached `MenuState` — four tiers: always-on, deck-state, card-type, session-state.
-- Rename Developer → **Maker** end to end (menu, Swift identifiers, tugbank key with read-fallback migration, Settings toggle), leaving the tugcast `dev_mode` wire verbs untouched.
+- Rename Developer → **Maker** end to end (menu, Swift identifiers, tugbank key — clean rename, no legacy fallback; every client updated — Settings toggle), leaving the tugcast `dev_mode` wire verbs untouched.
 - Land in slices that keep every commit green: wire channel first, JS adapters second, Swift menus third, tests per tier.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -40,7 +40,7 @@ The close-validation work that landed in commit `9ff9cb4d` built the foundation 
 - With a git card frontmost, every Session-menu item reports `enabled: false` via `menuItemState`; with a bound dev card frontmost, the tier-4 items report `enabled: true` (app-test).
 - `session.stop` reports `enabled: true` only while the dev card's `canInterrupt` snapshot is true (app-test using the dev-session harness pattern).
 - The Permission Mode submenu shows a single `.on` checkmark matching the live mode, and selecting a different mode item changes the session's mode (app-test).
-- A tugbank DB carrying only the legacy `dev-mode-enabled=true` key launches with the Maker menu visible and writes `maker-mode-enabled` through (app-test with seeded `TUGBANK_PATH`).
+- A tugbank DB seeded with `maker-mode-enabled=true` launches with the Maker menu visible; `false` hides it (app-test with seeded `TUGBANK_PATH`). The legacy `dev-mode-enabled` key is dead — no fallback, no migration (user directive during implementation).
 - Edit ▸ Find / Find Next / Find Previous route to the chain's `find` / `find-next` / `find-previous` actions; the dead `NSTextView` find-panel items are gone (snapshot assert + existing find behavior unchanged in browser dev).
 - `cd tugdeck && bun run check && bun test` and `just build-app` pass at every step boundary; `cargo nextest run` is unaffected (no Rust changes).
 
@@ -51,7 +51,7 @@ The close-validation work that landed in commit `9ff9cb4d` built the foundation 
 3. `run-card-command` and `set-permission-mode` control frames; Both-category adapters for `find`, `find-next`, `find-previous`, `next-tab`, `previous-tab`, `cycle-card`, `focus-prompt`, `cycle-permission-mode`.
 4. Full menu-bar restructure per **Table T01**, identifiers on every item.
 5. New Session menu with four-tier validation and a native Permission Mode radio submenu.
-6. Developer → Maker rename: menu title, Swift symbol names, tugbank key migration, user-facing strings, Settings toggle.
+6. Developer → Maker rename: menu title, Swift symbol names, tugbank key (clean rename, all clients updated), user-facing strings, Settings toggle.
 7. App-test coverage per validation tier on the at0167 pattern.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -120,7 +120,7 @@ The close-validation work that landed in commit `9ff9cb4d` built the foundation 
 | Promoted menu chords break web shortcuts | high | med | Both-category round-trip per chord, app-test per chord | any chord dead in-app |
 | menuState push churn | low | med | diff + microtask coalescing in the aggregator | main-thread jank while streaming |
 | Stale Stop enablement | low | low | push on every CodeSessionStore phase change; AppKit re-validates on menu open | Stop enabled with no turn running |
-| Maker key migration loses prefs | med | low | read-fallback + write-through, app-test with seeded DB | fresh launch loses dev mode |
+| Maker key rename loses prefs | low | low | clean rename per user directive — old key ignored; build-profile default covers fresh DBs | fresh launch loses maker mode |
 | at0166/at0167 coupled to cardList payload | med | high | step 1 keeps validation semantics identical; update harness types in same commit | either test red after step 1 |
 
 **Risk R01: menuState push frequency** {#r01-menu-state-churn}
@@ -195,15 +195,15 @@ The close-validation work that landed in commit `9ff9cb4d` built the foundation 
 
 #### [P05] Maker rename stops at the tugcast wire (DECIDED) {#p05-maker-rename-boundary}
 
-**Decision:** Rename the menu (Developer → Maker), Swift symbols (`devModeEnabled` → `makerModeEnabled`, `developerMenu` → `makerMenu`, `updateDeveloperMenuVisibility` → `updateMakerMenuVisibility`, bridge names `bridgeSetDevMode` → `bridgeSetMakerMode`, WKScriptMessage `setDevMode` → `setMakerMode`), user-facing strings, and the tugbank key (`dev-mode-enabled` → `maker-mode-enabled`, read-fallback migration). The tugcast wire verbs (`dev_mode` control frame, `sendDevMode(enabled:sourceTree:vitePort:)`) and Vite/watcher plumbing keep their names.
+**Decision:** Rename the menu (Developer → Maker), Swift symbols (`devModeEnabled` → `makerModeEnabled`, `developerMenu` → `makerMenu`, `updateDeveloperMenuVisibility` → `updateMakerMenuVisibility`, bridge names `bridgeSetDevMode` → `bridgeSetMakerMode`, WKScriptMessage `setDevMode` → `setMakerMode`), user-facing strings, and the tugbank key (`dev-mode-enabled` → `maker-mode-enabled`, clean rename — NO legacy fallback; every client updated, per user directive). The tugcast wire verbs (`dev_mode` control frame, `sendDevMode(enabled:sourceTree:vitePort:)`) and Vite/watcher plumbing keep their names.
 
 **Rationale:**
 - The wire layer genuinely is about dev-*serving* (Vite, HMR, origin allowlists); renaming it ripples into tugcast Rust and reconnect paths for zero user-visible gain.
 - "Maker" frees "dev" to mean the Dev card's domain — development done *with* Tug — while Maker names tooling for makers *of* Tug.
 
 **Implications:**
-- `loadPreferences()`: read `maker-mode-enabled`; if absent, read legacy `dev-mode-enabled` and write through. `savePreferences()` writes only the new key.
-- The JS action registry registers `set-maker-mode` and keeps `set-dev-mode` as a deprecated alias (external `tugcode tell` callers keep working).
+- `loadPreferences()`: read `maker-mode-enabled` only (absent → build-profile default; deterministically false under the app-test harness). `savePreferences()` writes the new key.
+- The JS action registry registers `set-maker-mode` only — no `set-dev-mode` alias; external callers (tugcode tell examples) updated.
 - One comment at the Swift/JS → tugcast boundary notes that maker mode is the user-facing name for the dev-serving switch.
 
 #### [P06] Permission Mode is a native radio submenu (DECIDED) {#p06-permission-mode-submenu}
@@ -309,7 +309,7 @@ Code geography a fresh session needs, verified against the tree at plan time. Ci
 | `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` | mode fallback (`live ?? persisted ?? "default"`), `usePermissionSheet`, `onSelectMode` → `usePermissionMode().setMode` | `setMode` sends the `permission_mode` frame, optimistically reflects, persists per card — the single commit path [P06] reuses; factor the fallback into a shared helper for Step 2 |
 | `tugdeck/src/lib/permission-mode.ts` | `PERMISSION_MODE_MENU`, `formatPermissionMode` | the menu mode set (no `bypassPermissions`) and display labels |
 | `tugdeck/src/lib/code-session-store.ts` | snapshot `canInterrupt` (phase disjunction incl. `waking`), `interrupt()` | Stop's predicate and action |
-| `tugapp/Sources/TugConfig.swift` | `keyDevModeEnabled = "dev-mode-enabled"`, `domain` | migration source key; read/write via `ProcessManager.readTugbank` / `writeTugbank` |
+| `tugapp/Sources/TugConfig.swift` | `keyMakerModeEnabled = "maker-mode-enabled"`, `domain` | the renamed key (no legacy fallback); read/write via `ProcessManager.readTugbank` / `writeTugbank` |
 
 #### Behavioral nuances to preserve {#behavioral-nuances}
 
@@ -364,7 +364,7 @@ Posted by `lib/host-menu-state.ts` to `webkit.messageHandlers.menuState`. Wire c
 | `cycle-card` | — | Both-category: dispatch via `sendToFirstResponder` |
 | `focus-prompt` | — | dispatch `FOCUS_PROMPT` via `sendToKeyCard` |
 | `cycle-permission-mode` | — | dispatch `CYCLE_PERMISSION_MODE` via `sendToKeyCard` |
-| `set-maker-mode` | `enabled: bool` | renamed `set-dev-mode` handler (legacy name kept as alias) |
+| `set-maker-mode` | `enabled: bool` | renamed `set-dev-mode` handler (no alias — clean rename) |
 
 New `TUG_ACTIONS` entries: `SET_PERMISSION_MODE` (`"set-permission-mode"`, payload `value: string`) and `INTERRUPT_SESSION` (`"interrupt-session"`, no payload), both handled by the dev card's card-content responder.
 
@@ -452,7 +452,7 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 | Category | Purpose | When to use |
 |----------|---------|-------------|
 | **Unit (bun, pure logic)** | aggregator projection/diff correctness | `host-menu-state` payload building from synthetic snapshots |
-| **Integration (app-test)** | real app, real menus, real validation | structure snapshot, per-tier enablement, chord round-trips, mode checkmarks, maker migration |
+| **Integration (app-test)** | real app, real menus, real validation | structure snapshot, per-tier enablement, chord round-trips, mode checkmarks, maker gate |
 | **Golden / Contract** | menu structure as a contract | `menuSnapshot` identifier/key-equivalent assertions (Table T01) |
 
 #### What stays out of tests {#test-non-goals}
@@ -472,17 +472,17 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | menuState channel replaces cardList | pending | — |
-| #step-2 | Dev-card session state in menuState | pending | — |
-| #step-3 | Control-frame adapters in tugdeck | pending | — |
-| #step-4 | Menu restructure: File/Edit/View/Window/Help | pending | — |
-| #step-5 | Session menu + four-tier validation | pending | — |
-| #step-6 | Maker rename + tugbank key migration | pending | — |
-| #step-7 | Settings App tab: Maker Mode toggle | pending | — |
-| #step-8 | App-tests: structure + deck-tier validation | pending | — |
-| #step-9 | App-tests: session-tier validation | pending | — |
-| #step-10 | Docs: tuglaws menu reference | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | menuState channel replaces cardList | done | f1b3a103 |
+| #step-2 | Dev-card session state in menuState | done | 2aaf6e37 |
+| #step-3 | Control-frame adapters in tugdeck | done | 8e132244 |
+| #step-4 | Menu restructure: File/Edit/View/Window/Help | done | a037ff8e |
+| #step-5 | Session menu + four-tier validation | done | 9e89744b |
+| #step-6 | Maker rename + tugbank key migration | done | 524f02e2 |
+| #step-7 | Settings App tab: Maker Mode toggle | done | c7272161 |
+| #step-8 | App-tests: structure + deck-tier validation | done | d97c7566 |
+| #step-9 | App-tests: session-tier validation | done | 7ea24392 |
+| #step-10 | Docs: tuglaws menu reference | done | 971dc89f |
+| #step-11 | Integration checkpoint | done | n/a (verification only) |
 
 #### Step 1: menuState channel replaces cardList {#step-1}
 
@@ -635,16 +635,16 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 - Swift: `makerMenu` titled "Maker"; `makerModeEnabled`, `updateMakerMenuVisibility`, `bridgeSetMakerMode`; `MainWindow` message handler renamed `setMakerMode`; alert strings ("Go to Maker > Source Tree…"); gallery/hello creators moved in (⌥⌘N / ⇧⌥⌘N, debug-gated); "Add Card to Active Pane" removed.
 - `TugConfig`: `keyMakerModeEnabled = "maker-mode-enabled"`; `loadPreferences` reads new key, falls back to `dev-mode-enabled` with write-through; `savePreferences` writes the new key only.
 - `TUGAPP_APP_TEST` force narrowed to the serving decision; the menu-visibility preference reads tugbank normally (Risk R05).
-- tugdeck: `set-maker-mode` action registered (legacy `set-dev-mode` kept as alias); webkit postMessage call sites renamed.
+- tugdeck: `set-maker-mode` action registered (no alias); webkit postMessage call sites renamed.
 - Bridge callback identifiers renamed in lockstep (safe — no live JS defines `window.__tugBridge` today, so there is no consumer to break): `MainWindow`'s `setMakerMode` response calls `window.__tugBridge?.onMakerModeChanged?.(…)`, and `getSettings`'s `onSettingsLoaded` payload field becomes `makerMode` (was `devMode`). Step 7 defines the receiver to match.
 
 **Tasks:**
 - [ ] One boundary comment where `makerModeEnabled` feeds `sendDevMode(...)` noting the user-facing vs wire naming ([P05]).
-- [ ] Split the `TUGAPP_APP_TEST=1` force (today one boolean override in `loadPreferences` gates both serving and menu visibility): introduce a serving-only flag so the harness still loads prebuilt `dist/` from tugcast, while `makerModeEnabled` (and the Maker menu gate) reads tugbank normally — this is what lets #step-8's migration test see the menu (Risk R05).
+- [ ] Split the `TUGAPP_APP_TEST=1` force (today one boolean override in `loadPreferences` gates both serving and menu visibility): introduce a serving-only flag so the harness still loads prebuilt `dist/` from tugcast, while `makerModeEnabled` (and the Maker menu gate) reads tugbank normally — this is what lets #step-8's maker-gate test see the menu (Risk R05).
 - [ ] Grep both trees for remaining user-facing "Developer"/"dev mode" strings in this surface (dev-info overlay content stays).
 
 **Tests:**
-- [ ] (migration app-test lands in #step-8)
+- [ ] (maker-gate app-test lands in #step-8)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run check && bun test`
@@ -679,18 +679,18 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 
 ---
 
-#### Step 8: App-tests — structure + deck-tier validation + maker migration {#step-8}
+#### Step 8: App-tests — structure + deck-tier validation + maker gate {#step-8}
 
 **Depends on:** #step-4, #step-6, #step-7
 
-**Commit:** `app-tests: menu structure contract, deck-tier validation, maker-mode key migration`
+**Commit:** `app-tests: menu structure contract, deck-tier validation, maker-mode gate`
 
 **References:** [P01] bar structure, [P07] identifiers, Tables T01-T02, Risk R05, (#t01-menu-structure, #success-criteria)
 
 **Artifacts:**
 - `at01xx-menu-structure.test.ts`: `menuSnapshot` asserts menus, identifiers, key equivalents per Table T01 (incl. removed items absent; Session present; Maker hidden under default app-test prefs).
 - `at01xx-menu-deck-validation.test.ts`: `menuItemState` for tier-2 items across single-pane / multi-pane / multi-card decks (`file.newCardInPane`, `window.nextCard`, `window.cyclePanes`).
-- `at01xx-maker-mode-migration.test.ts`: seeded `TUGBANK_PATH` with legacy `dev-mode-enabled=true` → Maker menu visible in `menuSnapshot`; new key written through (read DB after).
+- `at01xx-maker-mode-gate.test.ts`: seeded `TUGBANK_PATH` with `maker-mode-enabled=true` → Maker menu visible in `menuSnapshot`; `false` → hidden.
 
 **Tasks:**
 - [ ] Assert by identifier only ([P07]); never by title.
@@ -702,7 +702,7 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 **Checkpoint:**
 - [ ] `just app-test tests/app-test/at01xx-menu-structure.test.ts` → `VERDICT: PASS`
 - [ ] `just app-test tests/app-test/at01xx-menu-deck-validation.test.ts` → `VERDICT: PASS`
-- [ ] `just app-test tests/app-test/at01xx-maker-mode-migration.test.ts` → `VERDICT: PASS`
+- [ ] `just app-test tests/app-test/at01xx-maker-mode-gate.test.ts` → `VERDICT: PASS`
 
 ---
 
@@ -782,13 +782,13 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 
 - [ ] `menuSnapshot` matches Table T01 (structure app-test green).
 - [ ] All four validation tiers behave per Table T02 (deck/session app-tests green).
-- [ ] Maker rename complete through the [P05] boundary; legacy tugbank key migrates with write-through (migration app-test green).
+- [ ] Maker rename complete through the [P05] boundary; clean key rename with every client updated (maker-gate app-test green).
 - [ ] Settings ▸ App hosts a working Maker Mode toggle.
 - [ ] No dead menu items remain (find trio rewired; Use Selection for Find gone).
 - [ ] Every promoted chord works in-app via its round-trip (manual smoke + chord assertions).
 
 **Acceptance tests:**
-- [ ] at01xx menu structure / deck validation / maker migration / session card-type / session live-state, plus at0166–at0167 regression.
+- [ ] at01xx menu structure / deck validation / maker gate / session card-type / session live-state, plus at0166–at0167 regression.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -801,5 +801,5 @@ Removed outright: Edit ▸ Use Selection for Find (dead), Developer ▸ Add Card
 |------------|--------------|
 | Structure contract | `at01xx-menu-structure` `VERDICT: PASS` |
 | Validation tiers | deck + session app-tests `VERDICT: PASS` |
-| Maker migration | seeded-DB app-test `VERDICT: PASS` |
+| Maker gate | seeded-DB app-test `VERDICT: PASS` |
 | Builds green | `just build-app`, `bun run check`, `bun test`, `cargo nextest run` |

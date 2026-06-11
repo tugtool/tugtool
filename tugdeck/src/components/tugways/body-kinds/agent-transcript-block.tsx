@@ -163,7 +163,7 @@ export interface AgentTranscriptBlockProps {
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, AgentTranscriptBlock persists its collapse state into
-   * `bag.components` so a Developer > Reload restores it. Undefined
+   * `bag.components` so a Maker > Reload restores it. Undefined
    * opts out (gallery, standalone).
    */
   componentStatePreservationKey?: string;
@@ -361,7 +361,7 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   // AgentTranscriptBlock is purely uncontrolled — no `collapsed` prop —
   // so it supplies only the default: collapsed once rendered past the
   // [D17] depth cap. A saved fold wins over the depth default so a
-  // Developer > Reload restores the user's explicit choice.
+  // Maker > Reload restores the user's explicit choice.
   const { collapsed, setCollapsed } = useBlockFoldState({
     defaultCollapsed: shouldCollapseAgentDepth(depth, maxDepth),
     componentStatePreservationKey,

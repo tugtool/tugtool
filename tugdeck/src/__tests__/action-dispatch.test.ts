@@ -226,9 +226,9 @@ describe("initActionDispatch: reload", () => {
   });
 });
 
-// ---- set-dev-mode handler ----
+// ---- set-maker-mode handler ----
 
-describe("initActionDispatch: set-dev-mode", () => {
+describe("initActionDispatch: set-maker-mode", () => {
   beforeEach(() => {
     _resetForTest();
   });
@@ -238,7 +238,7 @@ describe("initActionDispatch: set-dev-mode", () => {
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
-    expect(() => dispatchAction({ action: "set-dev-mode", enabled: true })).not.toThrow();
+    expect(() => dispatchAction({ action: "set-maker-mode", enabled: true })).not.toThrow();
   });
 
   it("warns and does not throw when enabled is not a boolean", () => {
@@ -246,10 +246,10 @@ describe("initActionDispatch: set-dev-mode", () => {
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
-    expect(() => dispatchAction({ action: "set-dev-mode", enabled: "yes" })).not.toThrow();
+    expect(() => dispatchAction({ action: "set-maker-mode", enabled: "yes" })).not.toThrow();
   });
 
-  it("calls webkit bridge when present", () => {
+  it("calls the setMakerMode webkit bridge when present", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -257,17 +257,18 @@ describe("initActionDispatch: set-dev-mode", () => {
     const posted: unknown[] = [];
     (globalThis as Record<string, unknown>).webkit = {
       messageHandlers: {
-        setDevMode: { postMessage: (v: unknown) => posted.push(v) },
+        setMakerMode: { postMessage: (v: unknown) => posted.push(v) },
       },
     };
 
-    dispatchAction({ action: "set-dev-mode", enabled: false });
+    dispatchAction({ action: "set-maker-mode", enabled: false });
 
     expect(posted.length).toBe(1);
     expect(posted[0]).toMatchObject({ enabled: false });
 
     delete (globalThis as Record<string, unknown>).webkit;
   });
+
 });
 
 // ---- source-tree handler ----
@@ -634,6 +635,165 @@ describe("initActionDispatch: close (Both)", () => {
     initActionDispatch(conn as any, deck as any);
 
     expect(() => dispatchAction({ action: TUG_ACTIONS.CLOSE })).not.toThrow();
+  });
+});
+
+// ---- Menu-command adapters ----
+
+describe("initActionDispatch: menu-command chain adapters", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  function setupWithStubManager() {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+    const firstResponder: ActionEvent[] = [];
+    const keyCard: ActionEvent[] = [];
+    registerResponderChainManager({
+      sendToFirstResponder(event: ActionEvent): boolean {
+        firstResponder.push(event);
+        return true;
+      },
+      sendToKeyCard(event: ActionEvent): boolean {
+        keyCard.push(event);
+        return true;
+      },
+    } as any);
+    return { firstResponder, keyCard };
+  }
+
+  it("first-responder Both adapters re-dispatch their own action name", () => {
+    const { firstResponder } = setupWithStubManager();
+    for (const action of [
+      TUG_ACTIONS.FIND,
+      TUG_ACTIONS.FIND_NEXT,
+      TUG_ACTIONS.FIND_PREVIOUS,
+      TUG_ACTIONS.NEXT_TAB,
+      TUG_ACTIONS.PREVIOUS_TAB,
+      TUG_ACTIONS.CYCLE_CARD,
+    ]) {
+      dispatchAction({ action });
+    }
+    expect(firstResponder.map((e) => e.action)).toEqual([
+      TUG_ACTIONS.FIND,
+      TUG_ACTIONS.FIND_NEXT,
+      TUG_ACTIONS.FIND_PREVIOUS,
+      TUG_ACTIONS.NEXT_TAB,
+      TUG_ACTIONS.PREVIOUS_TAB,
+      TUG_ACTIONS.CYCLE_CARD,
+    ]);
+    expect(firstResponder.every((e) => e.phase === "discrete")).toBe(true);
+  });
+
+  it("key-card Both adapters dispatch through the key-card scope", () => {
+    const { firstResponder, keyCard } = setupWithStubManager();
+    for (const action of [
+      TUG_ACTIONS.FOCUS_PROMPT,
+      TUG_ACTIONS.CYCLE_PERMISSION_MODE,
+      TUG_ACTIONS.INTERRUPT_SESSION,
+    ]) {
+      dispatchAction({ action });
+    }
+    expect(keyCard.map((e) => e.action)).toEqual([
+      TUG_ACTIONS.FOCUS_PROMPT,
+      TUG_ACTIONS.CYCLE_PERMISSION_MODE,
+      TUG_ACTIONS.INTERRUPT_SESSION,
+    ]);
+    expect(firstResponder.length).toBe(0);
+  });
+
+  it("adapters warn and do not throw when no manager is registered", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+    expect(() => dispatchAction({ action: TUG_ACTIONS.FIND })).not.toThrow();
+    expect(() => dispatchAction({ action: TUG_ACTIONS.FOCUS_PROMPT })).not.toThrow();
+  });
+});
+
+describe("initActionDispatch: run-card-command", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  function setupWithStubManager() {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+    const keyCard: ActionEvent[] = [];
+    registerResponderChainManager({
+      sendToKeyCard(event: ActionEvent): boolean {
+        keyCard.push(event);
+        return true;
+      },
+    } as any);
+    return keyCard;
+  }
+
+  it("re-enters RUN_SLASH_COMMAND with name and defaulted args", () => {
+    const keyCard = setupWithStubManager();
+    dispatchAction({ action: "run-card-command", name: "model" });
+    expect(keyCard.length).toBe(1);
+    expect(keyCard[0]).toEqual({
+      action: TUG_ACTIONS.RUN_SLASH_COMMAND,
+      value: { name: "model", args: "" },
+      phase: "discrete",
+    });
+  });
+
+  it("passes explicit args through", () => {
+    const keyCard = setupWithStubManager();
+    dispatchAction({ action: "run-card-command", name: "rename", args: "My Session" });
+    expect(keyCard[0]?.value).toEqual({ name: "rename", args: "My Session" });
+  });
+
+  it("drops a frame with a missing or non-string name", () => {
+    const keyCard = setupWithStubManager();
+    dispatchAction({ action: "run-card-command" });
+    dispatchAction({ action: "run-card-command", name: 7 });
+    expect(keyCard.length).toBe(0);
+  });
+});
+
+describe("initActionDispatch: set-permission-mode", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  function setupWithStubManager() {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+    const keyCard: ActionEvent[] = [];
+    registerResponderChainManager({
+      sendToKeyCard(event: ActionEvent): boolean {
+        keyCard.push(event);
+        return true;
+      },
+    } as any);
+    return keyCard;
+  }
+
+  it("dispatches a valid menu mode key-card-scoped", () => {
+    const keyCard = setupWithStubManager();
+    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE, mode: "plan" });
+    expect(keyCard.length).toBe(1);
+    expect(keyCard[0]).toEqual({
+      action: TUG_ACTIONS.SET_PERMISSION_MODE,
+      value: "plan",
+      phase: "discrete",
+    });
+  });
+
+  it("rejects modes outside the menu set", () => {
+    const keyCard = setupWithStubManager();
+    // bypassPermissions is a real mode but deliberately not menu-reachable.
+    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE, mode: "bypassPermissions" });
+    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE, mode: "nonsense" });
+    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE });
+    expect(keyCard.length).toBe(0);
   });
 });
 

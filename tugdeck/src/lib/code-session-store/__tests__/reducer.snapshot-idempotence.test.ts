@@ -9,7 +9,7 @@
  * reducer's idempotence ensures the second emission produces no
  * duplicate.
  *
- * Without this contract, a Developer > Reload mid-stream would
+ * Without this contract, a Maker > Reload mid-stream would
  * double-mint every Message, and the user would see the in-flight
  * content twice.
  */

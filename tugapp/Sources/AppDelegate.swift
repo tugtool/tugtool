@@ -3,7 +3,27 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var window: MainWindow!
     private var processManager = ProcessManager()
-    private var devModeEnabled = false
+
+    /// Maker mode — the user-facing gate on the app-maker tooling: the
+    /// Maker menu, the dev-info overlay, and (outside the app-test
+    /// harness) dev serving via Vite. Persisted in tugbank as
+    /// `maker-mode-enabled`; the tugcast wire keeps its `dev_mode`
+    /// verbs — see the boundary note at the `sendDevMode` feed sites.
+    private var makerModeEnabled = false
+
+    /// True when the app-test harness drives this launch. The harness
+    /// pins production *serving* (tugcast's prebuilt `dist/`, no Vite —
+    /// ~700ms faster cold launch) without overriding the user-visible
+    /// maker-mode preference, so seeded-tugbank tests can exercise the
+    /// Maker menu gate.
+    private let isAppTestHarness = ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1"
+
+    /// The dev-*serving* switch: maker mode, except the app-test
+    /// harness always serves production. Feeds Vite spawning and the
+    /// tugcast `dev_mode` wire verb (which keeps its name — it really
+    /// is about serving).
+    private var devServingEnabled: Bool { makerModeEnabled && !isAppTestHarness }
+
     private var sourceTreePath: String?
     private var lastAuthURL: String?
     private var vitePort: Int = InstanceConfig.vitePort
@@ -28,7 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// and the first paint is driven by `revealWebView` in
     /// `MainWindow.bridgeFrontendReady`.
     private var frontendHasLoadedOnce = false
-    private var developerMenu: NSMenuItem!
+    private var makerMenu: NSMenuItem!
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
 
@@ -44,7 +64,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // View menu state
     private var viewMenu: NSMenu!
-    private var cachedCardList: [[String: Any]] = []
+
+    // Window menu state. The pane-list slice is managed in place between
+    // `windowPaneListAnchor` and the following separator — the menu
+    // assigned to NSApp.windowsMenu is never wholesale-rebuilt, so
+    // AppKit's automatic window entries survive every open.
+    private var windowMenu: NSMenu!
+    private var windowPaneListAnchor: NSMenuItem?
+
+    /// Cached menu-relevant frontend state, replaced wholesale on every
+    /// `menuState` push from tugdeck. All pull-based menu validation
+    /// (`validateMenuItem(_:)`) and dynamic menu building read from here.
+    private var menuState = MenuState.empty
 
     // Theme menu state
     private var themeMenu: NSMenu!
@@ -150,7 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 // No source tree -- sendDevMode needs the source tree; show error alert
                 let alert = NSAlert()
                 alert.messageText = "Source Tree Required"
-                alert.informativeText = "Tug requires a source tree to serve the frontend.\nGo to Developer > Source Tree... to set one."
+                alert.informativeText = "Tug requires a source tree to serve the frontend.\nGo to Maker > Source Tree... to set one."
                 alert.alertStyle = .warning
                 alert.runModal()
                 return
@@ -178,8 +209,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 self.window.evaluateJavaScript(
                     "fetch('/auth?token=\(token)',{credentials:'include'}).then(function(){window.tugdeck?.reconnect?.()}).catch(function(){})"
                 )
+                // Maker mode is the user-facing name; the tugcast wire
+                // verb stays `dev_mode` — it genuinely is the
+                // dev-*serving* switch (Vite, watchers, allowlist).
                 self.processManager.sendDevMode(
-                    enabled: self.devModeEnabled,
+                    enabled: self.devServingEnabled,
                     sourceTree: path,
                     vitePort: self.vitePort
                 )
@@ -187,7 +221,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
             self.initialLoadComplete = true
 
-            if self.devModeEnabled {
+            if self.devServingEnabled {
                 // Dev mode: spawn Vite (HMR), wait for it, then load from the Vite port.
                 // The duplication guard inside spawnViteServer prevents re-spawning on tugcast restarts.
                 self.processManager.spawnViteServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort, devMode: true)
@@ -363,27 +397,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     private func loadPreferences() {
         // Per-instance tugbank starts empty on a fresh identity. Both
-        // `dev-mode-enabled` and `source-tree-path` fall back to
+        // `maker-mode-enabled` and `source-tree-path` fall back to
         // build-time values so a fresh dev instance lights up with
-        // the Developer menu visible and its source tree wired, and
-        // a fresh prod instance defaults to non-dev with the user-
+        // the Maker menu visible and its source tree wired, and
+        // a fresh prod instance defaults to non-maker with the user-
         // picker flow available.
         //
         // `readTugbank` returns Optional<String>, so we can tell the
         // difference between "key absent" (use the build-profile
         // default) and "key explicitly false" (honor the user's
         // preference).
-        let devModeRaw = ProcessManager.readTugbank(
-            domain: TugConfig.domain, key: TugConfig.keyDevModeEnabled
+        let makerModeRaw = ProcessManager.readTugbank(
+            domain: TugConfig.domain, key: TugConfig.keyMakerModeEnabled
         )
-        if let raw = devModeRaw {
-            devModeEnabled = raw.caseInsensitiveCompare("true") == .orderedSame
+        if let raw = makerModeRaw {
+            makerModeEnabled = raw.caseInsensitiveCompare("true") == .orderedSame
         } else {
             // No explicit preference yet — default from the build
-            // profile baked into Info.plist by Step 1's
-            // capture-build-info.sh. Debug bundles ship with dev
-            // mode ON; release bundles ship with it OFF.
-            devModeEnabled = BuildInfo.profile == "debug"
+            // profile baked into Info.plist by capture-build-info.sh:
+            // debug bundles ship with maker mode ON; release bundles
+            // ship with it OFF. The app-test harness reads an absent
+            // key as deterministically OFF instead, so menu-structure
+            // assertions don't depend on the build profile; a seeded
+            // tugbank value above is honored as-is under the harness.
+            makerModeEnabled = isAppTestHarness ? false : (BuildInfo.profile == "debug")
         }
 
         sourceTreePath = ProcessManager.readTugbank(
@@ -392,20 +429,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if sourceTreePath == nil, let buildTimePath = BuildInfo.sourceTree {
             sourceTreePath = buildTimePath
         }
-
-        // In-app harness path: force production mode regardless of the
-        // tugbank setting. The harness loads from tugcast's pre-built
-        // `dist/` (served via ServeDir) instead of spawning Vite — saves
-        // ~700ms on cold launch by skipping the Vite subprocess + the
-        // first-request TS-on-demand transform. Test-only; manual
-        // launches still honor whatever the user has set in tugbank.
-        if ProcessInfo.processInfo.environment["TUGAPP_APP_TEST"] == "1" {
-            devModeEnabled = false
-        }
     }
 
     private func savePreferences() {
-        ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keyDevModeEnabled, value: devModeEnabled ? "true" : "false")
+        ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keyMakerModeEnabled, value: makerModeEnabled ? "true" : "false")
         if let path = sourceTreePath {
             ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath, value: path)
         }
@@ -442,37 +469,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenuItem.submenu = appMenu
         let aboutItem = NSMenuItem(title: "About Tug", action: #selector(showAbout(_:)), keyEquivalent: "")
         aboutItem.isEnabled = false
+        aboutItem.identifier = NSUserInterfaceItemIdentifier("app.about")
         self.aboutMenuItem = aboutItem
         appMenu.addItem(aboutItem)
         appMenu.addItem(NSMenuItem.separator())
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ",")
         settingsItem.isEnabled = false
+        settingsItem.identifier = NSUserInterfaceItemIdentifier("app.settings")
         self.settingsMenuItem = settingsItem
         appMenu.addItem(settingsItem)
         appMenu.addItem(NSMenuItem.separator())
 
-        // Theme submenu — populated dynamically via NSMenuDelegate
-        let themeMenuItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
-        let dynamicThemeMenu = NSMenu(title: "Theme")
-        dynamicThemeMenu.delegate = self
-        themeMenuItem.submenu = dynamicThemeMenu
-        self.themeMenu = dynamicThemeMenu
-        appMenu.addItem(themeMenuItem)
-        appMenu.addItem(NSMenuItem.separator())
-
         // Services submenu
         let servicesMenuItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        servicesMenuItem.identifier = NSUserInterfaceItemIdentifier("app.services")
         let servicesMenu = NSMenu(title: "Services")
         servicesMenuItem.submenu = servicesMenu
         appMenu.addItem(servicesMenuItem)
         NSApp.servicesMenu = servicesMenu
 
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Hide Tug", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
-        appMenu.addItem(NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h", modifierMask: [.command, .option]))
-        appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
+        let hideItem = NSMenuItem(title: "Hide Tug", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        hideItem.identifier = NSUserInterfaceItemIdentifier("app.hide")
+        appMenu.addItem(hideItem)
+        let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h", modifierMask: [.command, .option])
+        hideOthersItem.identifier = NSUserInterfaceItemIdentifier("app.hideOthers")
+        appMenu.addItem(hideOthersItem)
+        let showAllItem = NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        showAllItem.identifier = NSUserInterfaceItemIdentifier("app.showAll")
+        appMenu.addItem(showAllItem)
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Quit Tug", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        let quitItem = NSMenuItem(title: "Quit Tug", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quitItem.identifier = NSUserInterfaceItemIdentifier("app.quit")
+        appMenu.addItem(quitItem)
 
         // File Menu - position 1
         let fileMenuItem = NSMenuItem()
@@ -480,22 +509,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
 
-        // New submenu (per roadmap/tide-to-dev-rename.md [D03] [D04]).
-        // Two items always available; two more on debug builds only,
-        // gated at compile time on BuildInfo.profile so release
-        // bundles literally never expose the gallery + hello-world
-        // creation surfaces.
-        let newMenuItem = NSMenuItem(title: "New", action: nil, keyEquivalent: "")
-        let newMenu = NSMenu(title: "New")
-        newMenuItem.submenu = newMenu
-        fileMenu.addItem(newMenuItem)
-        newMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n"))
-        newMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: ""))
-        if BuildInfo.profile == "debug" {
-            newMenu.addItem(NSMenuItem.separator())
-            newMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]))
-            newMenu.addItem(NSMenuItem(title: "New Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option, .shift]))
-        }
+        // Card creation, flattened — two production card types don't need
+        // a submenu. The debug-only gallery / hello-world creators live in
+        // the app-maker menu, gated at compile time on BuildInfo.profile.
+        fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
+        fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
+        // New Card in Active Pane (⌘T): the tab-creation chord. Validated
+        // against deck state (needs a pane to add to).
+        fileMenu.addItem(NSMenuItem(title: "New Card in Active Pane", action: #selector(addCardToActivePane(_:)), keyEquivalent: "t").identified("file.newCardInPane"))
 
         fileMenu.addItem(NSMenuItem.separator())
 
@@ -528,86 +549,207 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         closeAllMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCards")
         fileMenu.addItem(closeAllMenuItem)
 
+        fileMenu.addItem(NSMenuItem.separator())
+
+        // Export Transcript… — the dev card's `/export` surface, reached
+        // through the generic run-card-command round-trip. Dev-card-gated
+        // in validateMenuItem(_:).
+        let exportItem = NSMenuItem(title: "Export Transcript…", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("file.exportTranscript")
+        exportItem.representedObject = "export"
+        fileMenu.addItem(exportItem)
+
         // Edit Menu - position 2
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenuItem.submenu = editMenu
-        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z", modifierMask: [.command, .shift]))
+        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z").identified("edit.undo"))
+        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z", modifierMask: [.command, .shift]).identified("edit.redo"))
         editMenu.addItem(NSMenuItem.separator())
-        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
-        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x").identified("edit.cut"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c").identified("edit.copy"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v").identified("edit.paste"))
+        editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: "").identified("edit.delete"))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
         editMenu.addItem(NSMenuItem.separator())
 
-        // Find submenu
+        // Copy Last Response — the dev card's `/copy` surface. Gated on a
+        // dev card being frontmost AND its transcript holding an
+        // assistant message (validateMenuItem).
+        let copyLastItem = NSMenuItem(title: "Copy Last Response", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("edit.copyLastResponse")
+        copyLastItem.representedObject = "copy"
+        editMenu.addItem(copyLastItem)
+        editMenu.addItem(NSMenuItem.separator())
+
+        // Find submenu — chain-action round-trips. The previous
+        // NSTextView.performFindPanelAction items never reached WKWebView
+        // content (dead UI); these dispatch the web responder chain's
+        // find / find-next / find-previous, handled by the focused card's
+        // find session. Enablement is deliberately loose (always on): an
+        // unhandled dispatch is a no-op, matching the web-side behavior
+        // where ⌘F on a card without find UI does nothing.
         let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let findMenu = NSMenu(title: "Find")
         findMenuItem.submenu = findMenu
-        let findItem = NSMenuItem(title: "Find...", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
-        findItem.tag = 1
-        findMenu.addItem(findItem)
-        let findNextItem = NSMenuItem(title: "Find Next", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "g")
-        findNextItem.tag = 2
-        findMenu.addItem(findNextItem)
-        let findPreviousItem = NSMenuItem(title: "Find Previous", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "g", modifierMask: [.command, .shift])
-        findPreviousItem.tag = 3
-        findMenu.addItem(findPreviousItem)
-        let useSelectionItem = NSMenuItem(title: "Use Selection for Find", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "e")
-        useSelectionItem.tag = 7
-        findMenu.addItem(useSelectionItem)
+        findMenu.addItem(NSMenuItem(title: "Find...", action: #selector(performFind(_:)), keyEquivalent: "f").identified("edit.find"))
+        findMenu.addItem(NSMenuItem(title: "Find Next", action: #selector(performFindNext(_:)), keyEquivalent: "g").identified("edit.findNext"))
+        findMenu.addItem(NSMenuItem(title: "Find Previous", action: #selector(performFindPrevious(_:)), keyEquivalent: "g", modifierMask: [.command, .shift]).identified("edit.findPrevious"))
         editMenu.addItem(findMenuItem)
 
-        // View Menu - position 3
+        // Session Menu - position 3. The dev card's command surfaces,
+        // first-class in the menu bar. The menu is always present and its
+        // items validate to disabled without a frontmost dev card
+        // (stable bars with disabled items beat vanishing menus for
+        // discoverability); most items are run-card-command round-trips
+        // into the card's slash-command surface map.
+        let sessionMenuItem = NSMenuItem()
+        mainMenu.addItem(sessionMenuItem)
+        let sessionMenu = NSMenu(title: "Session")
+        sessionMenuItem.submenu = sessionMenu
+
+        sessionMenu.addItem(NSMenuItem(title: "Focus Prompt", action: #selector(focusPrompt(_:)), keyEquivalent: "k").identified("session.focusPrompt"))
+        // Stop has no key equivalent by design: Escape already routes
+        // interrupt through the chain with dismiss-first priority
+        // (popover > drag-cancel > interrupt); this item is the
+        // discoverable, always-means-interrupt face of that path,
+        // gated on canInterrupt.
+        sessionMenu.addItem(NSMenuItem(title: "Stop", action: #selector(stopSession(_:)), keyEquivalent: "").identified("session.stop"))
+        sessionMenu.addItem(NSMenuItem.separator())
+
+        func sessionCommandItem(_ title: String, _ command: String, _ id: String) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: #selector(runCardCommand(_:)), keyEquivalent: "").identified(id)
+            item.representedObject = command
+            return item
+        }
+        sessionMenu.addItem(sessionCommandItem("New Session", "clear", "session.new"))
+        sessionMenu.addItem(sessionCommandItem("Resume Session…", "resume", "session.resume"))
+        sessionMenu.addItem(sessionCommandItem("Rename Session…", "rename", "session.rename"))
+        sessionMenu.addItem(NSMenuItem.separator())
+        sessionMenu.addItem(sessionCommandItem("Model…", "model", "session.model"))
+        sessionMenu.addItem(sessionCommandItem("Reasoning Effort…", "effort", "session.effort"))
+
+        // Permission Mode — a native radio submenu over the four
+        // cycle-reachable modes (bypassPermissions is deliberately not
+        // menu-reachable, matching the chip's Shift-Tab cycle). Titles
+        // are hardcoded for label parity with formatPermissionMode; the
+        // mode string rides representedObject. Checkmarks refresh in
+        // validateMenuItem from MenuState.dev.permissionMode.
+        let permissionModeItem = NSMenuItem(title: "Permission Mode", action: nil, keyEquivalent: "").identified("session.permissionMode")
+        let permissionModeMenu = NSMenu(title: "Permission Mode")
+        permissionModeItem.submenu = permissionModeMenu
+        for (title, mode) in [("Default", "default"), ("Accept Edits", "acceptEdits"), ("Plan", "plan"), ("Auto", "auto")] {
+            let item = NSMenuItem(title: title, action: #selector(setPermissionModeFromMenu(_:)), keyEquivalent: "").identified("session.permissionMode.\(mode)")
+            item.representedObject = mode
+            permissionModeMenu.addItem(item)
+        }
+        permissionModeMenu.addItem(NSMenuItem.separator())
+        permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .shift]).identified("session.permissionMode.cycle"))
+        sessionMenu.addItem(permissionModeItem)
+
+        sessionMenu.addItem(sessionCommandItem("Permission Rules…", "permissions", "session.permissionRules"))
+        sessionMenu.addItem(NSMenuItem.separator())
+        sessionMenu.addItem(sessionCommandItem("Rewind…", "rewind", "session.rewind"))
+        sessionMenu.addItem(sessionCommandItem("Compact Conversation", "compact", "session.compact"))
+        sessionMenu.addItem(NSMenuItem.separator())
+        sessionMenu.addItem(sessionCommandItem("Add Working Directory…", "add-dir", "session.addDir"))
+        sessionMenu.addItem(sessionCommandItem("Show Changes", "diff", "session.diff"))
+        sessionMenu.addItem(sessionCommandItem("Show Context", "context", "session.context"))
+        sessionMenu.addItem(NSMenuItem.separator())
+        sessionMenu.addItem(sessionCommandItem("Skills", "skills", "session.skills"))
+        sessionMenu.addItem(sessionCommandItem("Agents", "agents", "session.agents"))
+        sessionMenu.addItem(sessionCommandItem("Hooks", "hooks", "session.hooks"))
+        sessionMenu.addItem(sessionCommandItem("Memory", "memory", "session.memory"))
+
+        // View Menu - position 4.
+        // Appearance and page zoom; rebuilt on every open in
+        // menuNeedsUpdate (theme submenu + zoom enablement).
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
         let vMenu = NSMenu(title: "View")
         vMenu.delegate = self
         viewMenuItem.submenu = vMenu
         self.viewMenu = vMenu
-        vMenu.addItem(NSMenuItem(title: "Cascade", action: #selector(cascadeCards(_:)), keyEquivalent: "c", modifierMask: [.control, .option]))
-        vMenu.addItem(NSMenuItem(title: "Tile", action: #selector(tileCards(_:)), keyEquivalent: "t", modifierMask: [.control, .option]))
-        // Card list and dev-mode items are populated dynamically in menuNeedsUpdate.
 
-        // Developer Menu - position 4
-        developerMenu = NSMenuItem()
-        mainMenu.addItem(developerMenu)
-        let devMenu = NSMenu(title: "Developer")
-        developerMenu.submenu = devMenu
-        let reloadItem = NSMenuItem(title: "Reload", action: #selector(reload(_:)), keyEquivalent: "r")
-        reloadItem.target = self
-        devMenu.addItem(reloadItem)
-        devMenu.addItem(NSMenuItem.separator())
-        devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Show Dev Panel", action: #selector(showDevPanel(_:)), keyEquivalent: "/", modifierMask: [.command, .option]))
-        devMenu.addItem(NSMenuItem(title: "Add Card to Active Pane", action: #selector(addCardToActivePane(_:)), keyEquivalent: ""))
-        devMenu.addItem(NSMenuItem.separator())
-        devMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: ""))
-        developerMenu.isHidden = !devModeEnabled
+        // Theme submenu — populated dynamically via NSMenuDelegate. The
+        // NSMenu instance persists across View-menu rebuilds; each rebuild
+        // wraps it in a fresh parent item.
+        let dynamicThemeMenu = NSMenu(title: "Theme")
+        dynamicThemeMenu.delegate = self
+        self.themeMenu = dynamicThemeMenu
 
-        // Window Menu - position 4
+        // Window Menu - position 5. Static items are built once here and
+        // never touched by the delegate; only the dynamic `window.pane.*`
+        // slice (between paneListAnchor and the following separator) churns
+        // in menuNeedsUpdate. NSApp.windowsMenu keeps AppKit's automatic
+        // window entries at the menu tail — never removeAllItems() here.
         let windowMenuItem = NSMenuItem()
         mainMenu.addItem(windowMenuItem)
-        let windowMenu = NSMenu(title: "Window")
-        windowMenuItem.submenu = windowMenu
-        windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
-        windowMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
-        windowMenu.addItem(NSMenuItem.separator())
-        windowMenu.addItem(NSMenuItem(title: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f", modifierMask: [.command, .control]))
-        windowMenu.addItem(NSMenuItem.separator())
-        windowMenu.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
-        NSApp.windowsMenu = windowMenu
+        let wMenu = NSMenu(title: "Window")
+        wMenu.delegate = self
+        windowMenuItem.submenu = wMenu
+        self.windowMenu = wMenu
+        wMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m").identified("window.minimize"))
+        wMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "").identified("window.zoom"))
+        wMenu.addItem(NSMenuItem.separator())
+        wMenu.addItem(NSMenuItem(title: "Cascade", action: #selector(cascadeCards(_:)), keyEquivalent: "c", modifierMask: [.control, .option]).identified("window.cascade"))
+        wMenu.addItem(NSMenuItem(title: "Tile", action: #selector(tileCards(_:)), keyEquivalent: "t", modifierMask: [.control, .option]).identified("window.tile"))
+        wMenu.addItem(NSMenuItem.separator())
+        // Card / pane navigation — chain round-trips for the chords AppKit
+        // now swallows at the menu bar (⇧⌘[ / ⇧⌘] / ⌃`).
+        wMenu.addItem(NSMenuItem(title: "Previous Card", action: #selector(previousCard(_:)), keyEquivalent: "[", modifierMask: [.command, .shift]).identified("window.previousCard"))
+        wMenu.addItem(NSMenuItem(title: "Next Card", action: #selector(nextCard(_:)), keyEquivalent: "]", modifierMask: [.command, .shift]).identified("window.nextCard"))
+        wMenu.addItem(NSMenuItem(title: "Cycle Panes", action: #selector(cyclePanes(_:)), keyEquivalent: "`", modifierMask: [.control]).identified("window.cyclePanes"))
+        // Anchor separator for the dynamic pane-list slice: pane items are
+        // inserted directly after it (and removed by identifier prefix) on
+        // every menu open. macOS hides the redundant separator pair when
+        // the slice is empty.
+        let paneAnchor = NSMenuItem.separator()
+        self.windowPaneListAnchor = paneAnchor
+        wMenu.addItem(paneAnchor)
+        wMenu.addItem(NSMenuItem.separator())
+        wMenu.addItem(NSMenuItem(title: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f", modifierMask: [.command, .control]).identified("window.enterFullScreen"))
+        wMenu.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "").identified("window.bringAllToFront"))
+        NSApp.windowsMenu = wMenu
 
-        // Help Menu - position 5
+        // Maker Menu - position 6. Tooling for makers *of* the app —
+        // "dev" stays free to mean the Dev card's domain. Hidden (not
+        // disabled) behind the maker-mode gate: a *mode*, not a focus
+        // state, so hide-on-gate is the right shape here.
+        makerMenu = NSMenuItem()
+        mainMenu.addItem(makerMenu)
+        let mMenu = NSMenu(title: "Maker")
+        makerMenu.submenu = mMenu
+        let reloadItem = NSMenuItem(title: "Reload", action: #selector(reload(_:)), keyEquivalent: "r").identified("maker.reload")
+        reloadItem.target = self
+        mMenu.addItem(reloadItem)
+        mMenu.addItem(NSMenuItem.separator())
+        mMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]).identified("maker.jsConsole"))
+        mMenu.addItem(NSMenuItem(title: "Show Dev Panel", action: #selector(showDevPanel(_:)), keyEquivalent: "/", modifierMask: [.command, .option]).identified("maker.devPanel"))
+        if BuildInfo.profile == "debug" {
+            // Debug-only card creators, relocated from the flattened
+            // File ▸ New submenu. Compile-time gated so release bundles
+            // never expose the gallery + hello-world creation surfaces.
+            mMenu.addItem(NSMenuItem.separator())
+            mMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("maker.galleryCard"))
+            mMenu.addItem(NSMenuItem(title: "New Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option, .shift]).identified("maker.helloCard"))
+        }
+        mMenu.addItem(NSMenuItem.separator())
+        mMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: "").identified("maker.sourceTree"))
+        makerMenu.isHidden = !makerModeEnabled
+
+        // Help Menu - position 7
         let helpMenuItem = NSMenuItem()
         mainMenu.addItem(helpMenuItem)
         let helpMenu = NSMenu(title: "Help")
         helpMenuItem.submenu = helpMenu
-        helpMenu.addItem(NSMenuItem(title: "Project Home", action: #selector(openProjectHome(_:)), keyEquivalent: ""))
-        helpMenu.addItem(NSMenuItem(title: "GitHub", action: #selector(openGitHub(_:)), keyEquivalent: ""))
+        // Keyboard Shortcuts & Commands — the dev card's `/help` sheet via
+        // run-card-command. Dev-card-gated in validateMenuItem(_:).
+        let shortcutsItem = NSMenuItem(title: "Keyboard Shortcuts & Commands", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("help.shortcuts")
+        shortcutsItem.representedObject = "help"
+        helpMenu.addItem(shortcutsItem)
+        helpMenu.addItem(NSMenuItem.separator())
+        helpMenu.addItem(NSMenuItem(title: "Project Home", action: #selector(openProjectHome(_:)), keyEquivalent: "").identified("help.projectHome"))
+        helpMenu.addItem(NSMenuItem(title: "GitHub", action: #selector(openGitHub(_:)), keyEquivalent: "").identified("help.github"))
         NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = mainMenu
@@ -759,6 +901,63 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("close-all")
     }
 
+    /// One selector for every menu item whose action is a dev-card local
+    /// slash command: the command name rides `representedObject`, and the
+    /// frame re-enters the card's slash-command surface map key-card-scoped
+    /// in tugdeck — byte-identical to typing the command. Items send no
+    /// args (bare `rename` opens the seeded one-field sheet, etc.).
+    @objc private func runCardCommand(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        sendControl("run-card-command", params: ["name": name])
+    }
+
+    // Session menu actions.
+
+    @objc private func focusPrompt(_ sender: Any?) {
+        sendControl("focus-prompt")
+    }
+
+    @objc private func stopSession(_ sender: Any?) {
+        sendControl("interrupt-session")
+    }
+
+    @objc private func setPermissionModeFromMenu(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        sendControl("set-permission-mode", params: ["mode": mode])
+    }
+
+    @objc private func cyclePermissionModeFromMenu(_ sender: Any?) {
+        sendControl("cycle-permission-mode")
+    }
+
+    // Edit ▸ Find — chain-action round-trips (the web responder chain's
+    // find session owns the semantics; an unhandled dispatch is a no-op).
+    @objc private func performFind(_ sender: Any?) {
+        sendControl("find")
+    }
+
+    @objc private func performFindNext(_ sender: Any?) {
+        sendControl("find-next")
+    }
+
+    @objc private func performFindPrevious(_ sender: Any?) {
+        sendControl("find-previous")
+    }
+
+    // Window ▸ card / pane navigation — chain-action round-trips for the
+    // chords the menu bar now swallows.
+    @objc private func previousCard(_ sender: Any?) {
+        sendControl("previous-tab")
+    }
+
+    @objc private func nextCard(_ sender: Any?) {
+        sendControl("next-tab")
+    }
+
+    @objc private func cyclePanes(_ sender: Any?) {
+        sendControl("cycle-card")
+    }
+
     @objc private func sourceTree(_ sender: Any) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -783,8 +982,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    private func updateDeveloperMenuVisibility() {
-        developerMenu.isHidden = !devModeEnabled
+    private func updateMakerMenuVisibility() {
+        makerMenu.isHidden = !makerModeEnabled
     }
 
     /// Read the short git revision of the source tree. Returns nil when the
@@ -823,9 +1022,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    /// Update the bottom-left dev-info overlay. Hidden when dev mode is off.
+    /// Update the bottom-left dev-info overlay. Hidden when maker mode is off.
     private func updateDevInfoOverlay() {
-        guard devModeEnabled else {
+        guard makerModeEnabled else {
             window.setDevInfo(text: "")
             return
         }
@@ -845,52 +1044,97 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         window.setDevInfo(text: "\(branch) · \(rev) · build \(buildStamp) · load \(loadStamp)")
     }
 
-    /// Update the cached card list from the frontend (called by MainWindow on cardList message).
-    func updateCardList(_ list: [[String: Any]]) {
-        cachedCardList = list
+    /// Replace the cached menu state from the frontend (called by
+    /// MainWindow on every `menuState` message).
+    func updateMenuState(_ payload: [String: Any]) {
+        menuState = MenuState(payload: payload)
 
         // File ▸ Close Card / Close Pane — dynamic label based on the
         // focused pane's card count. Multi-card: ⌘W closes the active card
         // (pane stays). Single-card: ⌘W closes the pane. Matches
         // macOS Safari / Finder behavior.
-        let focusedPane = list.first { ($0["focused"] as? Bool) == true }
-        let cardCount = focusedPane?["cardCount"] as? Int ?? 0
+        let cardCount = menuState.focusedPane?.cardCount ?? 0
         closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
     }
 
-    /// The focused pane's cached entry (nil when nothing is focused), read
-    /// from the card list the frontend pushes on every deck change.
-    private var focusedPaneEntry: [String: Any]? {
-        cachedCardList.first { ($0["focused"] as? Bool) == true }
-    }
-
     /// Card count of the focused pane (0 when nothing is focused). Drives
-    /// Close-All-Cards enablement.
+    /// Close-All-Cards and card-navigation enablement.
     private var focusedPaneCardCount: Int {
-        focusedPaneEntry?["cardCount"] as? Int ?? 0
+        menuState.focusedPane?.cardCount ?? 0
     }
 
     /// Whether the focused pane's active card is closable (false when
     /// nothing is focused). Drives Close-Card / Close-Pane enablement.
     private var focusedPaneActiveCardClosable: Bool {
-        focusedPaneEntry?["closable"] as? Bool ?? false
+        menuState.focusedPane?.closable ?? false
+    }
+
+    /// Whether the focused pane's active card is a dev card — the
+    /// card-type gate for the dev-card command surfaces (Session items,
+    /// Copy Last Response, Export Transcript, Help shortcuts).
+    private var devCardFrontmost: Bool {
+        menuState.activeCard?.component == "dev"
     }
 
     /// Auto-enable hook (`autoenablesItems` is on by default). Consulted
     /// for menu items whose nil-target action resolves to this delegate.
-    /// Both File-menu close items are state-gated, so they (and their ⌘W /
-    /// ⌥⌘W key equivalents) go inert when they don't apply:
-    ///   - Close Card / Close Pane — a closable card must be frontmost.
-    ///   - Close All Cards — the frontmost pane must hold more than one card.
-    /// Everything else stays enabled.
+    /// All enablement is pull-based from the cached MenuState, keyed on
+    /// the item's stable identifier (identity never rides the title).
+    /// Tiers: deck state (close / new-in-pane / card navigation), card
+    /// type (dev-card command surfaces), and session state (transcript
+    /// facts from the dev block). Anything without a predicate here stays
+    /// enabled.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(closeActiveCard(_:)) {
+        guard let id = menuItem.identifier?.rawValue else { return true }
+
+        // Session menu: every item needs a frontmost dev card (card-type
+        // tier); below that, Focus Prompt works on any dev card, Stop
+        // needs an interruptible turn, Rewind needs a bound session with
+        // committed turns, and everything else needs a bound session.
+        if id.hasPrefix("session.") {
+            // Permission-mode radio checkmarks refresh here, during the
+            // validation sweep — AppKit validates every item when its
+            // menu opens (and the harness snapshot runs the same path),
+            // so state-setting inside validateMenuItem is the single
+            // mechanism; no menuNeedsUpdate rebuild is involved.
+            if id.hasPrefix("session.permissionMode."),
+               let mode = menuItem.representedObject as? String {
+                menuItem.state = (mode == menuState.dev?.permissionMode) ? .on : .off
+            }
+            guard devCardFrontmost else { return false }
+            switch id {
+            case "session.focusPrompt":
+                return true
+            case "session.stop":
+                return menuState.dev?.canInterrupt ?? false
+            case "session.rewind":
+                return (menuState.dev?.sessionBound ?? false) && (menuState.dev?.hasTurns ?? false)
+            default:
+                return menuState.dev?.sessionBound ?? false
+            }
+        }
+
+        switch id {
+        // Deck-state tier.
+        case "file.closeCard":
             return focusedPaneActiveCardClosable
-        }
-        if menuItem.action == #selector(closeAllCards(_:)) {
+        case "file.closeAllCards":
             return focusedPaneCardCount > 1
+        case "file.newCardInPane":
+            return !menuState.panes.isEmpty
+        case "window.previousCard", "window.nextCard":
+            return focusedPaneCardCount > 1
+        case "window.cyclePanes":
+            return menuState.panes.count >= 2
+        // Card-type tier.
+        case "file.exportTranscript", "help.shortcuts":
+            return devCardFrontmost
+        // Card-type + session-state tiers.
+        case "edit.copyLastResponse":
+            return devCardFrontmost && (menuState.dev?.hasAssistantMessage ?? false)
+        default:
+            return true
         }
-        return true
     }
 
     // MARK: - UDS control commands
@@ -927,8 +1171,8 @@ extension AppDelegate: BridgeDelegate {
             self.sourceTreePath = url.path
             self.savePreferences()
             self.updateDevInfoOverlay()
-            // Re-send dev_mode if already enabled (per D12)
-            if self.devModeEnabled {
+            // Re-send dev_mode if serving is already enabled (per D12)
+            if self.devServingEnabled {
                 self.processManager.sendDevMode(enabled: true, sourceTree: url.path, vitePort: self.vitePort)
             }
             completion(url.path)
@@ -961,9 +1205,9 @@ extension AppDelegate: BridgeDelegate {
         }
     }
 
-    func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void) {
-        self.devModeEnabled = enabled
-        self.updateDeveloperMenuVisibility()
+    func bridgeSetMakerMode(enabled: Bool, completion: @escaping (Bool) -> Void) {
+        self.makerModeEnabled = enabled
+        self.updateMakerMenuVisibility()
         self.updateDevInfoOverlay()
         self.savePreferences()
 
@@ -971,9 +1215,18 @@ extension AppDelegate: BridgeDelegate {
         if enabled, sourceTreePath == nil {
             let alert = NSAlert()
             alert.messageText = "Source Tree Required"
-            alert.informativeText = "Dev mode requires a source tree.\nGo to Developer > Source Tree... to set one."
+            alert.informativeText = "Maker mode requires a source tree.\nGo to Maker > Source Tree... to set one."
             alert.alertStyle = .warning
             alert.runModal()
+            completion(enabled)
+            return
+        }
+
+        // The serving flip below (Vite spawn/teardown + page reload) is
+        // pinned to production under the app-test harness; the preference
+        // and menu visibility still flipped above, which is what
+        // harness-driven Maker-gate tests exercise.
+        guard !isAppTestHarness else {
             completion(enabled)
             return
         }
@@ -1031,7 +1284,7 @@ extension AppDelegate: BridgeDelegate {
     }
 
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void) {
-        completion(devModeEnabled, sourceTreePath)
+        completion(makerModeEnabled, sourceTreePath)
     }
 
     func bridgeFrontendReady() {
@@ -1084,8 +1337,8 @@ extension AppDelegate: BridgeDelegate {
         _ = app
     }
 
-    func bridgeIsDevMode() -> Bool {
-        return devModeEnabled
+    func bridgeIsMakerMode() -> Bool {
+        return makerModeEnabled
     }
 
     func bridgePageDidLoad() {
@@ -1105,6 +1358,10 @@ extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === viewMenu {
             rebuildViewMenu(menu)
+            return
+        }
+        if menu === windowMenu {
+            rebuildWindowPaneList(menu)
             return
         }
         guard menu === themeMenu else { return }
@@ -1144,7 +1401,7 @@ extension AppDelegate: NSMenuDelegate {
         }
 
         for name in sortedThemeNames {
-            let item = NSMenuItem(title: name.capitalized, action: #selector(selectTheme(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: name.capitalized, action: #selector(selectTheme(_:)), keyEquivalent: "").identified("view.theme.\(name)")
             item.representedObject = name
             item.state = (name == activeThemeName) ? .on : .off
             menu.addItem(item)
@@ -1159,18 +1416,22 @@ extension AppDelegate: NSMenuDelegate {
 
         // Separator + Next Theme
         menu.addItem(NSMenuItem.separator())
-        let nextItem = NSMenuItem(title: "Next Theme", action: #selector(nextTheme(_:)), keyEquivalent: "t", modifierMask: [.command, .option])
+        let nextItem = NSMenuItem(title: "Next Theme", action: #selector(nextTheme(_:)), keyEquivalent: "t", modifierMask: [.command, .option]).identified("view.nextTheme")
         menu.addItem(nextItem)
     }
 
-    /// Rebuild the View menu with arrangement commands, zoom commands,
-    /// card list, and dev-mode items.
+    /// Rebuild the View menu: the theme submenu and page-zoom commands.
+    /// Zoom enablement is computed here at build time (the pull-validation
+    /// exception) because it reads live `webView.pageZoom`, not MenuState.
     private func rebuildViewMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        // Arrangement commands
-        menu.addItem(NSMenuItem(title: "Cascade", action: #selector(cascadeCards(_:)), keyEquivalent: "c", modifierMask: [.control, .option]))
-        menu.addItem(NSMenuItem(title: "Tile", action: #selector(tileCards(_:)), keyEquivalent: "t", modifierMask: [.control, .option]))
+        // Theme submenu — the persistent themeMenu NSMenu (its own
+        // NSMenuDelegate repopulates it on open), wrapped in a fresh
+        // parent item per rebuild.
+        let themeMenuItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "").identified("view.theme")
+        themeMenuItem.submenu = themeMenu
+        menu.addItem(themeMenuItem)
 
         // Zoom commands — Safari-style. Drive `webView.pageZoom` so the
         // entire page scales uniformly. `Actual Size` (⌘0) returns to
@@ -1185,10 +1446,10 @@ extension AppDelegate: NSMenuDelegate {
         // comparisons use a small epsilon to avoid spurious disables
         // right at the bounds.
         let epsilon: CGFloat = 0.005
-        let actualSizeItem = NSMenuItem(title: "Actual Size", action: #selector(actualSize(_:)), keyEquivalent: "0")
+        let actualSizeItem = NSMenuItem(title: "Actual Size", action: #selector(actualSize(_:)), keyEquivalent: "0").identified("view.actualSize")
         actualSizeItem.isEnabled = abs(zoom - MainWindow.defaultPageZoom) > epsilon
         menu.addItem(actualSizeItem)
-        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "+")
+        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "+").identified("view.zoomIn")
         zoomInItem.isEnabled = zoom < MainWindow.maxPageZoom - epsilon
         menu.addItem(zoomInItem)
         // ⌘= alias for Zoom In — visible item displays ⌘+, this hidden
@@ -1196,29 +1457,36 @@ extension AppDelegate: NSMenuDelegate {
         // Safari. `allowsKeyEquivalentWhenHidden` keeps the shortcut
         // live even though the item is suppressed from the visible
         // menu. Both fire the same action.
-        let zoomInAliasItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "=")
+        let zoomInAliasItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "=").identified("view.zoomInAlias")
         zoomInAliasItem.isEnabled = zoomInItem.isEnabled
         zoomInAliasItem.isHidden = true
         zoomInAliasItem.allowsKeyEquivalentWhenHidden = true
         menu.addItem(zoomInAliasItem)
-        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-")
+        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-").identified("view.zoomOut")
         zoomOutItem.isEnabled = zoom > MainWindow.minPageZoom + epsilon
         menu.addItem(zoomOutItem)
+    }
 
-        // Card list section (from cached card list pushed by the frontend)
-        if !cachedCardList.isEmpty {
-            menu.addItem(NSMenuItem.separator())
-            for entry in cachedCardList {
-                guard let paneId = entry["id"] as? String,
-                      let title = entry["title"] as? String else { continue }
-                let focused = entry["focused"] as? Bool ?? false
-                let item = NSMenuItem(title: title, action: #selector(focusPaneFromMenu(_:)), keyEquivalent: "")
-                item.representedObject = paneId
-                item.state = focused ? .on : .off
-                menu.addItem(item)
-            }
+    /// Refresh the Window menu's dynamic pane-list slice in place: remove
+    /// exactly the `window.pane.*` items, then re-insert the current panes
+    /// (checkmark on the focused one) directly after the anchor separator.
+    /// Sectioned management — never a wholesale rebuild — because this menu
+    /// is NSApp.windowsMenu and AppKit owns auto-added window entries in it.
+    private func rebuildWindowPaneList(_ menu: NSMenu) {
+        for item in menu.items where item.identifier?.rawValue.hasPrefix("window.pane.") == true {
+            menu.removeItem(item)
         }
-
+        guard let anchor = windowPaneListAnchor, !menuState.panes.isEmpty else { return }
+        var index = menu.index(of: anchor) + 1
+        for (n, pane) in menuState.panes.enumerated() {
+            // Positional identifiers: the harness addresses slots, not pane
+            // ids (which are session-random).
+            let item = NSMenuItem(title: pane.title, action: #selector(focusPaneFromMenu(_:)), keyEquivalent: "").identified("window.pane.\(n)")
+            item.representedObject = pane.id
+            item.state = pane.focused ? .on : .off
+            menu.insertItem(item, at: index)
+            index += 1
+        }
     }
 }
 
@@ -1227,5 +1495,101 @@ extension NSMenuItem {
     convenience init(title: String, action: Selector?, keyEquivalent: String, modifierMask: NSEvent.ModifierFlags) {
         self.init(title: title, action: action, keyEquivalent: keyEquivalent)
         self.keyEquivalentModifierMask = modifierMask
+    }
+
+    /// Tag the item with its stable, namespaced introspection identifier.
+    /// The test harness (`menuSnapshot` / `menuItemState`) addresses items
+    /// by identifier, and `validateMenuItem(_:)` switches on it — identity
+    /// never rides the (flippable, localizable) title. Returns self so
+    /// build sites can tag inline.
+    @discardableResult
+    func identified(_ id: String) -> NSMenuItem {
+        identifier = NSUserInterfaceItemIdentifier(id)
+        return self
+    }
+}
+
+// MARK: - MenuState
+
+/// Menu-relevant frontend state, pushed by tugdeck's host-menu-state
+/// aggregator on every menu-relevant change. Wire contract with
+/// `tugdeck/src/lib/host-menu-state.ts` — keep both sides in sync.
+///
+/// Decoding is defensive throughout: a missing or mistyped field reads
+/// as its inert value (empty list, nil block, false flag), so menu
+/// validation degrades to "disabled" rather than crashing on a
+/// malformed payload. Before the first push arrives (app boot,
+/// pre-frontendReady) the cache is `.empty` and every state-gated item
+/// validates disabled — the correct cold-start posture.
+struct MenuState {
+    /// One pane entry, z-order topmost first.
+    struct Pane {
+        let id: String
+        let title: String
+        let focused: Bool
+        let cardCount: Int
+        let closable: Bool
+    }
+
+    /// The focused pane's active card; nil when the deck has no panes.
+    struct ActiveCard {
+        let component: String
+        let closable: Bool
+    }
+
+    /// Dev-card session state; nil unless the active card is a dev card.
+    struct Dev {
+        let cardId: String
+        let sessionBound: Bool
+        let canInterrupt: Bool
+        let permissionMode: String
+        let hasAssistantMessage: Bool
+        let hasTurns: Bool
+    }
+
+    var panes: [Pane] = []
+    var activeCard: ActiveCard?
+    var dev: Dev?
+
+    static let empty = MenuState()
+
+    /// The focused pane's entry (nil when nothing is focused).
+    var focusedPane: Pane? {
+        panes.first { $0.focused }
+    }
+
+    init() {}
+
+    init(payload: [String: Any]) {
+        if let rawPanes = payload["panes"] as? [[String: Any]] {
+            panes = rawPanes.compactMap { entry in
+                guard let id = entry["id"] as? String else { return nil }
+                return Pane(
+                    id: id,
+                    title: entry["title"] as? String ?? "Untitled",
+                    focused: entry["focused"] as? Bool ?? false,
+                    cardCount: entry["cardCount"] as? Int ?? 0,
+                    closable: entry["closable"] as? Bool ?? false
+                )
+            }
+        }
+        if let rawActive = payload["activeCard"] as? [String: Any],
+           let component = rawActive["component"] as? String {
+            activeCard = ActiveCard(
+                component: component,
+                closable: rawActive["closable"] as? Bool ?? false
+            )
+        }
+        if let rawDev = payload["dev"] as? [String: Any],
+           let cardId = rawDev["cardId"] as? String {
+            dev = Dev(
+                cardId: cardId,
+                sessionBound: rawDev["sessionBound"] as? Bool ?? false,
+                canInterrupt: rawDev["canInterrupt"] as? Bool ?? false,
+                permissionMode: rawDev["permissionMode"] as? String ?? "default",
+                hasAssistantMessage: rawDev["hasAssistantMessage"] as? Bool ?? false,
+                hasTurns: rawDev["hasTurns"] as? Bool ?? false
+            )
+        }
     }
 }

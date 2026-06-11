@@ -13,7 +13,7 @@
  *   that never walks the responder chain. These stay as kebab-case
  *   string literals at the `registerAction` call site because they
  *   have no chain-action counterpart. Examples: `reload`, `set-theme`,
- *   `next-theme`, `set-dev-mode`, `show-card`, `source-tree`.
+ *   `next-theme`, `set-maker-mode`, `show-card`, `source-tree`.
  *
  * - **Both** (identity) actions — Control-frame RPCs whose entire
  *   purpose is to inject a chain dispatch on behalf of a Swift menu
@@ -43,6 +43,7 @@ import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
@@ -267,24 +268,27 @@ export function initActionDispatch(
     });
   });
 
-  // set-dev-mode: Call WKScriptMessageHandler bridge if available
-  registerAction("set-dev-mode", (payload) => {
+  // set-maker-mode: flip the app-maker gate via the WKScriptMessageHandler
+  // bridge. "Maker mode" is the user-facing name for what the wire layer
+  // still calls dev mode (the serving switch).
+  const setMakerModeHandler: ActionHandler = (payload) => {
     const enabled = payload.enabled;
     if (typeof enabled !== "boolean") {
-      console.warn("set-dev-mode: missing or invalid enabled parameter", payload);
+      console.warn("set-maker-mode: missing or invalid enabled parameter", payload);
       return;
     }
 
-    console.info(`set-dev-mode: enabled=${enabled}`);
+    console.info(`set-maker-mode: enabled=${enabled}`);
 
     const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
     const messageHandlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
-    if (messageHandlers?.setDevMode) {
-      (messageHandlers.setDevMode as { postMessage: (v: unknown) => void }).postMessage({ enabled });
+    if (messageHandlers?.setMakerMode) {
+      (messageHandlers.setMakerMode as { postMessage: (v: unknown) => void }).postMessage({ enabled });
     } else {
-      console.info("set-dev-mode: WKScriptMessageHandler bridge not available");
+      console.info("set-maker-mode: WKScriptMessageHandler bridge not available");
     }
-  });
+  };
+  registerAction("set-maker-mode", setMakerModeHandler);
 
   // set-theme: Switch the active theme via TugThemeProvider.
   // Accepts any string theme name — validation is delegated to the theme provider,
@@ -378,8 +382,9 @@ export function initActionDispatch(
 
   // focus-pane: Bring a pane to front by activating its active card.
   //
-  // Swift's View menu builds a pane list from `pushCardListToHost` and
-  // emits `focus-pane` with `payload.paneId` when the user picks an entry.
+  // Swift builds a pane list from the `menuState` push (see
+  // `lib/host-menu-state.ts`) and emits `focus-pane` with
+  // `payload.paneId` when the user picks an entry.
   // Routes through `activateCard` on the pane's `activeCardId`
   // so the menu selection fires the full will/didDeactivate +
   // will/didActivate transition and promotes the responder chain —
@@ -479,6 +484,102 @@ export function initActionDispatch(
       responderChainManagerRef.sendToFirstResponder({ action: TUG_ACTIONS.CLOSE_ALL, phase: "discrete" });
     } else {
       console.warn(`${TUG_ACTIONS.CLOSE_ALL}: responder chain manager not registered yet`);
+    }
+  });
+
+  // ---- Menu-command adapters ----
+  //
+  // Round-trips for menu items whose chords AppKit swallows at the menu
+  // bar: each Swift menu item sends a Control frame, and these adapters
+  // re-enter the responder chain so the menu action and the web-side
+  // keystroke produce byte-identical dispatches. The browser-only
+  // keybinding-map entries for the same chords keep working in browser
+  // dev, where no Swift menu exists.
+
+  // Both-category chain adapters (control-frame name == chain-action
+  // name; first-responder walk). Enablement is loose by design — an
+  // unhandled dispatch is a silent no-op, matching the web-side
+  // behavior where e.g. ⌘F on a card without find UI does nothing.
+  for (const action of [
+    TUG_ACTIONS.FIND,
+    TUG_ACTIONS.FIND_NEXT,
+    TUG_ACTIONS.FIND_PREVIOUS,
+    TUG_ACTIONS.NEXT_TAB,
+    TUG_ACTIONS.PREVIOUS_TAB,
+    TUG_ACTIONS.CYCLE_CARD,
+  ]) {
+    registerAction(action, () => {
+      if (responderChainManagerRef) {
+        responderChainManagerRef.sendToFirstResponder({ action, phase: "discrete" });
+      } else {
+        console.warn(`${action}: responder chain manager not registered yet`);
+      }
+    });
+  }
+
+  // Both-category key-card adapters (control-frame name == chain-action
+  // name; key-card scope, so the dispatch starts at the active card's
+  // card-content responder even when focus sits on chrome). Non-dev key
+  // cards register no handler — silent no-op behind the menu's
+  // validation gate.
+  for (const action of [
+    TUG_ACTIONS.FOCUS_PROMPT,
+    TUG_ACTIONS.CYCLE_PERMISSION_MODE,
+    TUG_ACTIONS.INTERRUPT_SESSION,
+  ]) {
+    registerAction(action, () => {
+      if (responderChainManagerRef) {
+        responderChainManagerRef.sendToKeyCard({ action, phase: "discrete" });
+      } else {
+        console.warn(`${action}: responder chain manager not registered yet`);
+      }
+    });
+  }
+
+  // run-card-command: a Session/File/Edit/Help menu item carrying a
+  // local slash-command name (`payload.name`, optional `payload.args`).
+  // Re-enters the dev card's RUN_SLASH_COMMAND surface map via the
+  // key-card scope — byte-identical to typing the command, with zero
+  // per-command plumbing here. An unknown name relies on the dev
+  // card's defensive surface-map lookup (silent no-op).
+  registerAction("run-card-command", (payload) => {
+    const name = payload.name;
+    if (typeof name !== "string") {
+      console.warn("run-card-command: missing or invalid name parameter", payload);
+      return;
+    }
+    const args = typeof payload.args === "string" ? payload.args : "";
+    if (responderChainManagerRef) {
+      responderChainManagerRef.sendToKeyCard({
+        action: TUG_ACTIONS.RUN_SLASH_COMMAND,
+        value: { name, args },
+        phase: "discrete",
+      });
+    } else {
+      console.warn("run-card-command: responder chain manager not registered yet");
+    }
+  });
+
+  // set-permission-mode: the Session ▸ Permission Mode submenu's
+  // round-trip. The mode is validated against the four-mode set the
+  // native submenu offers (`bypassPermissions` is deliberately not
+  // menu-reachable, matching the ⇧⌘P cycle) so a malformed frame can
+  // never reach the send path; the dev card's handler commits through
+  // the chip's mode-set path.
+  registerAction(TUG_ACTIONS.SET_PERMISSION_MODE, (payload) => {
+    const mode = payload.mode;
+    if (typeof mode !== "string" || !PERMISSION_MODE_CYCLE.includes(mode as never)) {
+      console.warn(`${TUG_ACTIONS.SET_PERMISSION_MODE}: invalid mode`, payload);
+      return;
+    }
+    if (responderChainManagerRef) {
+      responderChainManagerRef.sendToKeyCard({
+        action: TUG_ACTIONS.SET_PERMISSION_MODE,
+        value: mode,
+        phase: "discrete",
+      });
+    } else {
+      console.warn(`${TUG_ACTIONS.SET_PERMISSION_MODE}: responder chain manager not registered yet`);
     }
   });
 

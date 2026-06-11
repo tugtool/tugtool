@@ -1211,7 +1211,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     //      is in a sibling card, the body, or off-document. This
     //      happens whenever a save fires for an INACTIVE card —
     //      `visibilitychange` (cmd-tab / app-hide), `beforeunload`
-    //      (Developer > Reload), or a debounced save while the user
+    //      (Maker > Reload), or a debounced save while the user
     //      is editing in another card. `captureFocus` would return
     //      `{ kind: "none" }` here too, but writing that into the
     //      bag would BLANK whatever focus was captured at the

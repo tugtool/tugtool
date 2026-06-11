@@ -174,7 +174,7 @@ export interface SearchResultBlockProps {
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, SearchResultBlock persists its per-file collapse set
-   * into `bag.components` so a Developer > Reload restores it.
+   * into `bag.components` so a Maker > Reload restores it.
    * Undefined opts out (gallery, standalone).
    */
   componentStatePreservationKey?: string;

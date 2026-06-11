@@ -139,8 +139,13 @@ export type {
  * `1.6.0`: adds native-menu introspection verbs (`menuSnapshot`,
  * `menuItemState`), reporting each item's validated enabled state
  * via `NSMenuItemValidation`. Additive; major stays `1`.
+ *
+ * `1.7.0`: menu snapshot nodes gain `state` (raw
+ * `NSControl.StateValue`, 1 = checked), captured after the
+ * validation sweep so validator-refreshed radio checkmarks are
+ * current. Additive; major stays `1`.
  */
-export const EXPECTED_SURFACE_VERSION = "1.6.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.7.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs

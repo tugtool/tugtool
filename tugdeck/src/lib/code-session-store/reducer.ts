@@ -2435,7 +2435,7 @@ function handleControlRequestForward(
   //   2. **Replay bracket** — the in-flight snapshot path. tugcode's
   //      `emitInflightTurnFromActiveTurn` re-emits any pending
   //      `control_request_forward` from `pendingControlRequests` so a
-  //      Developer > Reload mid-dialog can rehydrate the dialog
+  //      Maker > Reload mid-dialog can rehydrate the dialog
   //      against the same `request_id`. During replay we stash the
   //      forward into `pendingApproval` / `pendingQuestion` but do
   //      NOT transition the phase — `replay_complete` owns the post-

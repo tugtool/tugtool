@@ -77,10 +77,10 @@ pub enum Commands {
     ///
     /// Posts a JSON action to the tugcast /api/tell endpoint.
     #[command(
-        long_about = "Send an action to tugcast via HTTP POST.\n\nPosts a JSON body to http://127.0.0.1:<port>/api/tell.\nThe body contains {\"action\": \"<ACTION>\", ...params}.\n\nParameters are specified with -p KEY=VALUE (repeatable).\nValues are auto-coerced: true/false -> bool, null -> null,\nintegers -> number, floats -> number, everything else -> string.\n\nExamples:\n  tugcode tell restart\n  tugcode tell show-card -p component=about\n  tugcode tell set-dev-mode -p enabled=true"
+        long_about = "Send an action to tugcast via HTTP POST.\n\nPosts a JSON body to http://127.0.0.1:<port>/api/tell.\nThe body contains {\"action\": \"<ACTION>\", ...params}.\n\nParameters are specified with -p KEY=VALUE (repeatable).\nValues are auto-coerced: true/false -> bool, null -> null,\nintegers -> number, floats -> number, everything else -> string.\n\nExamples:\n  tugcode tell restart\n  tugcode tell show-card -p component=about\n  tugcode tell set-maker-mode -p enabled=true"
     )]
     Tell {
-        /// Action name (e.g., reload, show-card, set-dev-mode)
+        /// Action name (e.g., reload, show-card, set-maker-mode)
         action: String,
 
         /// Tugcast server port (overrides --instance and CLI discovery).

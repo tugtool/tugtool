@@ -1612,7 +1612,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
       // Listen for `tug-region-scroll-set` — dispatched by CardHost's
       // `applyRegionScrolls` during cold-boot region-scroll restore
-      // (Developer > Reload, cross-pane mount, HMR reload), AND
+      // (Maker > Reload, cross-pane mount, HMR reload), AND
       // re-dispatched by CardHost's `MutationObserver`-driven retry
       // loop on every cardRoot subtree mutation until `el.scrollTop`
       // is within tolerance of `pos.y`.

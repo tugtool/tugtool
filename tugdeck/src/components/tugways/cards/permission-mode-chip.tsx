@@ -57,6 +57,7 @@ import {
   formatPermissionMode,
   isPermissionMode,
   parsePersistedPermissionMode,
+  resolvePermissionMode,
 } from "@/lib/permission-mode";
 import type { PermissionMode } from "@tugproto/inbound";
 
@@ -116,7 +117,9 @@ export function PermissionModeChip({
   // Absent live metadata and a persisted override, the session is in
   // `default` (what tugcode spawns with) — show that, not a "…" loading
   // dash, so a fresh session reads `Default` and the sheet checkmarks it.
-  const mode = liveMode ?? persistedMode ?? "default";
+  // Shared fallback chain — the host menu-state publication resolves
+  // the mode through the same helper so menu checkmarks match the chip.
+  const mode = resolvePermissionMode(liveMode, persistedMode);
 
   return (
     <TugPushButton
@@ -212,8 +215,10 @@ export function usePermissionSheet({
   );
 
   const openPermissionSheet = useCallback(() => {
-    const mode =
-      sessionMetadataStore.getSnapshot().permissionMode ?? persistedMode ?? "default";
+    const mode = resolvePermissionMode(
+      sessionMetadataStore.getSnapshot().permissionMode,
+      persistedMode,
+    );
     void showSheet({
       title: "Permission Mode",
       icon: "ShieldCheck",

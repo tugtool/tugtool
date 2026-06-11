@@ -517,8 +517,6 @@ export class DeckManager implements IDeckManagerStore {
       this.cardLifecycle.notifyCardDidFinishConstruction(card.id);
     }
 
-    this.pushCardListToHost();
-
     this.reactRoot.render(
       composeProviders(
         [
@@ -584,44 +582,11 @@ export class DeckManager implements IDeckManagerStore {
       validateDeckState(this.deckState);
     }
     this.stateVersion += 1;
+    // Host menu state rides the ordinary subscriber list: the
+    // `host-menu-state` aggregator subscribes at boot (main.tsx) and
+    // projects each notification into the `menuState` push the Swift
+    // host validates its menus from.
     this.subscribers.forEach((cb) => cb());
-    this.pushCardListToHost();
-  }
-
-  /**
-   * Push the current stack list (id, title, focused state, cardCount,
-   * active-card closable) to the Swift host via WKScriptMessage so the View
-   * menu can build a dynamic stack list and the File menu can gate Close
-   * Card / Close All Cards on the focused pane's state. No-op when running
-   * outside a WKWebView (browser dev mode).
-   *
-   * Payload shape is a wire contract with `AppDelegate.swift`
-   * (`updateCardList`). Keep the fields here in sync with the Swift reader.
-   */
-  private pushCardListToHost(): void {
-    const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
-    const messageHandlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
-    const handler = messageHandlers?.cardList as { postMessage: (v: unknown) => void } | undefined;
-    if (!handler) return;
-
-    const stacks = this.deckState.panes;
-    const cardsById = new Map<string, CardState>();
-    for (const c of this.deckState.cards) cardsById.set(c.id, c);
-    const focusedStack = stacks.length > 0 ? stacks[stacks.length - 1] : null;
-    const focusedId = focusedStack ? focusedStack.id : null;
-    const list = stacks.map((s) => {
-      const activeCard = cardsById.get(s.activeCardId);
-      const firstCard = cardsById.get(s.cardIds[0]);
-      const title = s.title || activeCard?.title || firstCard?.title || "Untitled";
-      return {
-        id: s.id,
-        title,
-        focused: s.id === focusedId,
-        cardCount: s.cardIds.length,
-        closable: activeCard?.closable ?? false,
-      };
-    }).reverse();
-    handler.postMessage(list);
   }
 
   refresh(): void {

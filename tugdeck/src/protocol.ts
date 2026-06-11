@@ -531,7 +531,7 @@ export function encodeTrashProjectDirSessions(projectDir: string): Frame {
  *
  * Used by `cardServicesStore._construct` whenever a fresh
  * `CodeSessionStore` is built for an existing resume binding (HMR,
- * Developer > Reload, future card mounts). The fresh store has no
+ * Maker > Reload, future card mounts). The fresh store has no
  * replay history of its own; this verb tells the supervisor "send me
  * the JSONL again so I can rehydrate."
  */

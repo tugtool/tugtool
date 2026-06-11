@@ -3,12 +3,12 @@
  * the `show-dev-panel-toggle` action (Step 20.3.1).
  *
  * Why we don't fire `nativeKey('/', ['cmd', 'alt'])` here:
- * the in-app harness force-disables dev mode at launch (see
- * `tugapp/Sources/AppDelegate.swift::loadPreferences` — when
- * `TUGAPP_APP_TEST=1`, dev mode is pinned to `false` so the harness
- * loads from the pre-built `dist/` and skips Vite, saving ~700ms per
- * test). The Developer menu (`developerMenu.isHidden = !devModeEnabled`)
- * is therefore HIDDEN during app-tests, so `⌥⌘/` cannot reach the
+ * under the in-app harness, maker mode reads false on an unseeded
+ * tugbank (see `tugapp/Sources/AppDelegate.swift::loadPreferences` —
+ * when `TUGAPP_APP_TEST=1`, an absent key is deterministically OFF,
+ * and serving always pins to the pre-built `dist/`, skipping Vite to
+ * save ~700ms per test). The Maker menu (`makerMenu.isHidden =
+ * !makerModeEnabled`) is therefore HIDDEN during this test, so `⌥⌘/` cannot reach the
  * "Show Dev Panel" menu item — the chord is dead before it ever
  * dispatches.
  *

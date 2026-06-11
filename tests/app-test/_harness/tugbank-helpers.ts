@@ -190,11 +190,12 @@ export function tugbankWrite(
  *   - `dev.tugtool.app/source-tree-path` = repo root, so
  *     ProcessManager can locate `tugdeck/dist` and tugcast can
  *     ServeDir from it (or Vite can spawn from the source tree
- *     when dev-mode-enabled is true).
- *   - `dev.tugtool.app/dev-mode-enabled` = `false`. The in-app
- *     test harness skips Vite anyway (TUGAPP_APP_TEST=1 path
- *     in `ProcessManager.startProcess`), so prod-mode is the
- *     fastest boot. Override via opts if a test needs dev-mode.
+ *     when maker-mode-enabled is true).
+ *   - `dev.tugtool.app/maker-mode-enabled` = `false`. The in-app
+ *     test harness pins production serving anyway (TUGAPP_APP_TEST=1
+ *     path in `ProcessManager.startProcess`), so prod-mode is the
+ *     fastest boot. Override via opts if a test needs the Maker gate
+ *     on.
  *
  * `sourceTreePath` defaults to the repo root derived from this
  * module's location: `tests/app-test/_harness/tugbank-helpers.ts`
@@ -204,18 +205,18 @@ export function seedTugbankForLaunch(
   path: string,
   opts?: {
     sourceTreePath?: string;
-    devModeEnabled?: boolean;
+    makerModeEnabled?: boolean;
   },
 ): void {
   const sourceTreePath = opts?.sourceTreePath ?? defaultRepoRoot();
-  const devModeEnabled = opts?.devModeEnabled ?? false;
+  const makerModeEnabled = opts?.makerModeEnabled ?? false;
   tugbankWrite(path, "dev.tugtool.app", "source-tree-path", "string", sourceTreePath);
   tugbankWrite(
     path,
     "dev.tugtool.app",
-    "dev-mode-enabled",
+    "maker-mode-enabled",
     "bool",
-    devModeEnabled ? "true" : "false",
+    makerModeEnabled ? "true" : "false",
   );
 }
 

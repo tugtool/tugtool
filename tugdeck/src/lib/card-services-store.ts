@@ -405,7 +405,7 @@ class CardServicesStore {
     // and the reducer flashes through `replaying` back to `idle` —
     // harmless. For ANY binding whose session has had wire activity
     // (the post-Step-5 smoke test scenario: open new card, type
-    // "hello", get response, `Developer > Reload`), the JSONL has
+    // "hello", get response, `Maker > Reload`), the JSONL has
     // content and the replay rehydrates the transcript.
     //
     // The previous gate (`if (binding.sessionMode === "resume")`)

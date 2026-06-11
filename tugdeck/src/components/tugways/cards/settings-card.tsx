@@ -22,20 +22,24 @@ import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
 import { SettingsGeneralBody } from "./settings-general-body";
+import { SettingsAppBody } from "./settings-app-body";
 import "./settings-card.css";
 
 // ---------------------------------------------------------------------------
 // Tabs — a fixed, non-closable tab set
 // ---------------------------------------------------------------------------
 
-type SettingsTabId = "general";
+type SettingsTabId = "general" | "app";
 
 interface SettingsTabSpec {
   readonly id: SettingsTabId;
   readonly label: string;
 }
 
-const TABS: readonly SettingsTabSpec[] = [{ id: "general", label: "Dev Card" }];
+const TABS: readonly SettingsTabSpec[] = [
+  { id: "general", label: "Dev Card" },
+  { id: "app", label: "App" },
+];
 
 /**
  * The tabs as `TugTabBar` cards: fixed and non-closable (`closable:
@@ -78,6 +82,7 @@ export function SettingsCardContent() {
         </div>
         <div className="settings-card-panel">
           {tab === "general" ? <SettingsGeneralBody /> : null}
+          {tab === "app" ? <SettingsAppBody /> : null}
         </div>
       </div>
     </ResponderScope>

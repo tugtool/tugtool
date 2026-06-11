@@ -223,6 +223,24 @@ export const TUG_ACTIONS = {
   //                 card-content responder. Non-dev cards register no
   //                 handler, so the dispatch is a silent no-op
   //                 (`preventDefaultOnMatch` suppresses the macOS beep).
+  // SET_PERMISSION_MODE: payload — `value: string` (a permission mode,
+  //                 validated against the menu mode set before dispatch).
+  //                 The Session ▸ Permission Mode submenu's control-frame
+  //                 round-trip (Both category): Swift sends
+  //                 `set-permission-mode {mode}`, action-dispatch
+  //                 re-dispatches key-card-scoped, and the dev card's
+  //                 card-content responder commits through the same
+  //                 mode-set path the permission chip uses (frame +
+  //                 optimistic metadata + per-card persistence). Non-dev
+  //                 key cards register no handler — silent no-op behind
+  //                 the menu's validation gate.
+  // INTERRUPT_SESSION: payload — none. Stop the in-flight turn:
+  //                 Session ▸ Stop's control-frame round-trip (Both
+  //                 category). The dev card's card-content responder
+  //                 calls `codeSessionStore.interrupt()`. Deliberately
+  //                 NOT Escape's CANCEL_DIALOG walk — the menu item
+  //                 always means interrupt; enablement (`canInterrupt`,
+  //                 published via menuState) is the only gate.
   // CYCLE_FOCUS_MODE: payload — none. Toggle a text-first card's
   //                 keyboard-focus-cycling mode on/off — the mode in which
   //                 Tab circulates the card's chrome zones instead of feeding
@@ -262,6 +280,8 @@ export const TUG_ACTIONS = {
   FOCUS_PROMPT:   "focus-prompt",
   JUMP_TO_TAB:    "jump-to-tab",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
+  SET_PERMISSION_MODE: "set-permission-mode",
+  INTERRUPT_SESSION: "interrupt-session",
   CYCLE_FOCUS_MODE: "cycle-focus-mode",
   RUN_SLASH_COMMAND: "run-slash-command",
   SHOW_SLASH_COMMAND_NOTICE: "show-slash-command-notice",

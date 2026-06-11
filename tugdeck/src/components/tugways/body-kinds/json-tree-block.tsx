@@ -33,7 +33,7 @@
  *  - The whole expand state (`expandMode` + `overrides`) is logical UI
  *    state — the *number* of rendered rows changes — so it lives in
  *    React state per [L06], and is persisted through the [A9]
- *    Component State Preservation Protocol so a Developer > Reload
+ *    Component State Preservation Protocol so a Maker > Reload
  *    restores the user's expand shape.
  *
  * What this body kind does NOT do (and never will):

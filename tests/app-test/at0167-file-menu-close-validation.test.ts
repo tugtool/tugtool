@@ -57,7 +57,7 @@ function paneOf(n: number, activeClosable = true) {
 }
 
 /** Poll the validated menu-item state until it matches `wantEnabled`,
- *  giving the async cardList push time to reach the Swift host. Returns
+ *  giving the async menuState push time to reach the Swift host. Returns
  *  the final observed state for further assertions. */
 async function waitMenuEnabled(
   app: App,
@@ -174,7 +174,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("C0") && window.__tug.assertHostRootRegistered("C1")`,
           );
 
-          // Let the cardList push settle so validation reflects the seed.
+          // Let the menuState push settle so validation reflects the seed.
           await waitMenuEnabled(app, CLOSE_ALL, true);
 
           const tree = await app.menuSnapshot();

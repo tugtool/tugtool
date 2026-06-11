@@ -62,6 +62,7 @@ import { useRoute } from "@/lib/route-lifecycle";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
+import { isPermissionMode } from "@/lib/permission-mode";
 import { openPathInOS } from "@/lib/os-open";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { group } from "../tug-animator";
@@ -144,6 +145,7 @@ import {
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
 import { cardTitleStore } from "@/lib/card-title-store";
 import { useDevCardObserver } from "./use-dev-card-observer";
+import { useMenuStatePublication } from "./use-menu-state-publication";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { putDevRecentProjects } from "@/settings-api";
@@ -2179,6 +2181,7 @@ export function DevCardBody({
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
+  useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
 
   // Imperative handle to the transcript pane. `handleAfterSubmit`
   // reads it to jump the transcript back to the live edge on submit
@@ -3133,6 +3136,24 @@ export function DevCardBody({
       // the metadata store [L07].
       [TUG_ACTIONS.CYCLE_PERMISSION_MODE]: (_event: ActionEvent) => {
         permissionMode.cycle();
+      },
+      // A Session ▸ Permission Mode menu pick, round-tripped through the
+      // `set-permission-mode` control frame. Commits through the same
+      // mode-set path the chip and sheet use (frame + optimistic
+      // metadata + per-card persistence), so all entry points agree.
+      // action-dispatch already validated against the menu mode set;
+      // the narrow here is defensive against other dispatchers.
+      [TUG_ACTIONS.SET_PERMISSION_MODE]: (event: ActionEvent) => {
+        const mode = event.value;
+        if (typeof mode !== "string" || !isPermissionMode(mode)) return;
+        permissionMode.setMode(mode);
+      },
+      // Session ▸ Stop. Always means interrupt — the menu deliberately
+      // bypasses Escape's dismiss-priority walk (popover > drag >
+      // interrupt); the menu item's `canInterrupt` enablement is the
+      // only gate, and a stray dispatch while idle is a no-op.
+      [TUG_ACTIONS.INTERRUPT_SESSION]: (_event: ActionEvent) => {
+        codeSessionStore.interrupt();
       },
       // A typed local slash command, dispatched key-card-scoped by the
       // prompt entry. Open the command's surface; an unknown name is a

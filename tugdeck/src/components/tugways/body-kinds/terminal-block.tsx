@@ -237,7 +237,7 @@ export interface TerminalBlockProps {
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, TerminalBlock persists its uncontrolled `collapsed`
-   * flag into `bag.components` so a Developer > Reload restores the
+   * flag into `bag.components` so a Maker > Reload restores the
    * fold.
    *
    * The virtualized scroller's `scrollTop` is persisted independently

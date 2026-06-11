@@ -10,6 +10,7 @@ import { TugbankClient } from "./lib/tugbank-client";
 import { setTugbankClient } from "./lib/tugbank-singleton";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
+import { initHostMenuState } from "./lib/host-menu-state";
 import { cardServicesStore } from "./lib/card-services-store";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { restoreDevSessions } from "./lib/dev-session-restore";
@@ -264,6 +265,12 @@ if (!container) {
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
+
+  // Wire the menuState host push: the aggregator subscribes to the
+  // deck store and posts the menu-relevant projection to the Swift
+  // host, which validates the menu bar from it. See
+  // `lib/host-menu-state.ts` for the wire contract.
+  initHostMenuState(deck);
 
   // Install `window.__tug` test-harness surface when
   // `window.__tugTestMode === true`. The attach is a no-op otherwise;

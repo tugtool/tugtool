@@ -82,7 +82,13 @@ final class TestHarnessConnection {
     /// on main and report each item's *validated* enabled state
     /// (resolved through `NSMenuItemValidation`, as AppKit does at
     /// open / key-equivalent time). Additive; major stays `1`.
-    static let surfaceVersion = "1.6.0"
+    ///
+    /// `1.7.0`: menu snapshot nodes gain `state` (the raw
+    /// `NSControl.StateValue` — 1 = checked), captured AFTER the
+    /// validation sweep so validators that refresh radio checkmarks
+    /// (the permission-mode submenu) are reflected. Additive; major
+    /// stays `1`.
+    static let surfaceVersion = "1.7.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
@@ -415,13 +421,18 @@ final class TestHarnessConnection {
     private func snapshotMenu(_ menu: NSMenu) -> [[String: Any]] {
         var items: [[String: Any]] = []
         for item in menu.items {
+            // Validate before reading `state`: validators may refresh
+            // radio checkmarks as part of the sweep (the permission-mode
+            // submenu does), exactly as they would on a real menu open.
+            let enabled = validatedEnabled(item)
             var entry: [String: Any] = [
                 "title": item.title,
-                "enabled": validatedEnabled(item),
+                "enabled": enabled,
                 "hidden": item.isHidden,
                 "separator": item.isSeparatorItem,
                 "keyEquivalent": item.keyEquivalent,
                 "modifierMask": Int(item.keyEquivalentModifierMask.rawValue),
+                "state": item.state.rawValue,
             ]
             if let ident = item.identifier?.rawValue { entry["identifier"] = ident }
             if let action = item.action { entry["action"] = NSStringFromSelector(action) }

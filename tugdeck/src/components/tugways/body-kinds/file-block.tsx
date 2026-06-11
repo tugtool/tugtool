@@ -206,7 +206,7 @@ export interface FileBlockProps {
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, FileBlock persists its uncontrolled `collapsed` flag
-   * into `bag.components` so a Developer > Reload restores the fold.
+   * into `bag.components` so a Maker > Reload restores the fold.
    *
    * The CM6 inner scroller's `scrollTop` is persisted independently
    * via the [A9] region-scroll axis — FileBlock writes

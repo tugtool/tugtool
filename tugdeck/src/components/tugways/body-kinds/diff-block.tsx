@@ -210,7 +210,7 @@ export interface DiffBlockProps {
   /**
    * Opt-in key for the Component State Preservation Protocol. When
    * set, DiffBlock persists its uncontrolled `collapsed` flag into
-   * `bag.components` so a Developer > Reload restores the fold state.
+   * `bag.components` so a Maker > Reload restores the fold state.
    * Undefined opts out (gallery, standalone). View-mode persistence
    * runs through `cardId` + tugbank independently — that channel
    * predates the protocol. [A9]
