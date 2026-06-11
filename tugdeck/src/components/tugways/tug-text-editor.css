@@ -205,6 +205,12 @@ body {
  * flex parent and ignores `maxRows` per the prop contract. */
 .tug-text-editor:not([data-maximized]) > .cm-editor > .cm-scroller {
   max-height: calc(var(--tug-text-editor-max-rows, 8) * 1lh + 16px);
+  /* Optional default height for the text area. Consumers that want the
+     editor to open taller than its content set `--tug-text-editor-min-height`
+     (e.g. the Dev card's prompt); the editor still grows with content up to
+     the `maxRows` cap and then scrolls. Defaults to 0 — no floor — so other
+     hosts keep the pure auto-grow-from-one-row behavior. */
+  min-height: var(--tug-text-editor-min-height, 0);
 }
 
 /* ---- Maximized: fill available container space ---- */

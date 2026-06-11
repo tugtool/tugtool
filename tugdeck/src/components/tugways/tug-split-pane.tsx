@@ -64,10 +64,12 @@
  *
  * ## Content-driven sizing is a consumer concern
  *
- * This primitive does not observe content to grow/shrink panels. Consumers
- * that want content-driven sizing wire up their own observers and call
- * `panelRef.current.requestSize(px)`. The `useContentDrivenPanelSize`
- * hook (sibling file) covers the common scroll-source case.
+ * This primitive does not observe content to grow/shrink panels. A
+ * consumer that genuinely needs a content-driven *split* would wire up its
+ * own observers and call `panelRef.current.requestSize(px)`. (Note: the
+ * dev-card / gallery prompt entries do NOT use this primitive — they are
+ * plain content-sized flex columns; an auto-height editor sizes them
+ * natively, no JS.)
  *
  * Laws: [L02] external state enters React through useSyncExternalStore,
  *       [L03] registrations in useLayoutEffect, [L06] appearance via CSS,
@@ -572,9 +574,6 @@ export interface TugSplitPanelSizeChangeOptions {
  * tween; default behavior is instant. User drags take a separate path
  * entirely (via `TugSplitPane`'s `onLayoutChanged`) and never go
  * through this handle.
- *
- * See `useContentDrivenPanelSize` (sibling file) for the common
- * scroll-source case.
  */
 export interface TugSplitPanelHandle {
   /**

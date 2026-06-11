@@ -1,14 +1,18 @@
 /**
  * dev-card.tsx — Dev card (Unified Command Surface).
  *
- * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane`. The top
- * pane (`DevTranscriptHost`) renders the multi-turn transcript and
- * absorbs all height growth as the card grows. The bottom pane (the
- * prompt entry) is pinned to a pixel size — defaults to 240px, floored
- * at 180px, capped at 90% of the card — and uses
- * `groupResizeBehavior="preserve-pixel-size"` so the entry stays the
- * same number of visible rows regardless of card height. The card
- * wires:
+ * The card body is a plain **flex column** ([L06]/[L13] — no JS sizing).
+ * The transcript region (`DevTranscriptHost` + Z2 status bar) flexes into
+ * all remaining height; the prompt-entry region below is **content-sized**
+ * and grows with the editor, which auto-heights up to `maxRows` rows and
+ * then scrolls. So the entry is as tall as the prompt and the transcript
+ * yields exactly that much — a stray submit auto-collapses the entry back
+ * to one row because the cleared editor shrinks. The **maximized** toggle
+ * (Z2 button) flips the entry region to fill (the 90% peg) via a
+ * `data-maximized` attribute read by CSS; it is session-only and never
+ * persisted. There is no split pane, no sash, and no content-sizing JS —
+ * this replaced an earlier `TugSplitPane` + `useContentDrivenPanelSize`
+ * machine. The card wires:
  *
  *   • A live `CodeSessionStore` bound to the supervisor-issued
  *     `tugSessionId` via the card-session binding store.
@@ -25,16 +29,14 @@
  *     the global tugbank domain edited by the Settings card's Dev Card
  *     tab and tracks it live via `onDomainChanged`.
  *
- * The entry is mounted inside a `TugBox` with `inset={false}` so the
- * pane fills edge-to-edge. The split pane's grip pill is suppressed via
- * `showHandle={false}` — the sash line remains draggable.
+ * The entry is mounted inside a `TugBox` with `inset={false}` so it
+ * fills the entry region edge-to-edge.
  */
 
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { DevTranscriptHost, type DevTranscriptHandle } from "./dev-card-transcript";
-import { DevCardSashGrip } from "./dev-card-sash-grip";
 import { useDevPlacementSlots } from "./dev-card-placement-experiment";
 import type { DevTelemetryStatusRowHandle } from "./dev-card-telemetry-renderers";
 import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
@@ -60,8 +62,6 @@ import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { openPathInOS } from "@/lib/os-open";
 import { TugPaneBanner } from "../tug-pane-banner";
-import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
-import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { group } from "../tug-animator";
 import { TugBox } from "../tug-box";
 import { TugFileChooser } from "../tug-file-chooser";
@@ -183,10 +183,6 @@ import "./dev-card.css";
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Percentage the entry panel pegs to when the user clicks Maximize.
- *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
-const ENTRY_PANEL_MAX_PCT = 90;
 
 /**
  * The picker sheet's exit animation duration, in milliseconds. Used
@@ -2182,7 +2178,6 @@ export function DevCardBody({
 
   useDevCardObserver(cardId, codeSessionStore);
 
-  const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
   // Imperative handle to the transcript pane. `handleAfterSubmit`
   // reads it to jump the transcript back to the live edge on submit
   // (the transcript is a split-pane sibling of the prompt entry, so
@@ -2361,50 +2356,14 @@ export function DevCardBody({
     return () => editorStore.unbind();
   }, [editorStore]);
 
-  // --- Content-driven panel growth for the entry pane. ---
-  // The bottom TugSplitPanel grows toward `maxSize` as the editor
-  // overflows and snaps back to the user's library-resolved size on
-  // the editor's `data-empty="true"` signal. The source element is
-  // derived from the entry delegate at call time via a stable
-  // useMemo'd shim — identity-stable so the hook's effect doesn't
-  // re-install observers on every render. (`entryPanelRef` and
-  // `entryDelegateRef` are declared earlier so `completionProviders`
-  // can read them for the position-0 gate.)
-  const editorSourceRef = useMemo(
-    () => ({
-      get current(): HTMLElement | null {
-        // The legacy substrate's contentEditable was both the
-        // content surface AND the scroll container, so reading
-        // `scrollHeight`/`clientHeight` off it correctly reported
-        // overflow. CM6 splits those two roles: `view.contentDOM`
-        // grows freely, and `view.scrollDOM` (`.cm-scroller`) is
-        // the bounded overflow element. Walk up from contentDOM to
-        // hand the hook the scroller — that's where overflow
-        // actually shows up. Falls through to the contentDOM if
-        // the scroller isn't found (defensive for non-CM6 hosts of
-        // the entry, e.g. the gallery's stand-alone harness).
-        const contentEl = entryDelegateRef.current?.getEditorElement();
-        if (contentEl === null || contentEl === undefined) return null;
-        return contentEl.closest<HTMLElement>(".cm-scroller") ?? contentEl;
-      },
-    }),
-    [],
-  );
-  // --- Maximize toggle. ---
-  // When true, the entry panel is pegged to its declared max and the
-  // split-pane handle is disabled. The content-driven sizer and the
-  // submit-time restore both stand down so nothing fights the peg.
-  // When false, the pane behaves exactly as if the toggle never
-  // existed: saved size persists, transient size accommodates content.
+  // --- Maximize toggle (session-only — never persisted). ---
+  // Pure appearance state ([L06]): drives `data-maximized` on the entry
+  // region, which CSS reads to flip the entry from content-sized
+  // (auto-height editor, transcript takes the rest) to fill (the 90%
+  // peg). No JS sizing, no split-pane sash — the browser sizes the
+  // column. Submitting collapses the entry back to content height
+  // automatically, because the cleared editor auto-shrinks.
   const [maximized, setMaximized] = useState(false);
-  useLayoutEffect(() => {
-    const panel = entryPanelRef.current;
-    if (!panel) return;
-    if (maximized) panel.setTransientSize(ENTRY_PANEL_MAX_PCT, { animated: true });
-    else panel.restoreUserSize({ animated: true });
-  }, [maximized]);
-
-  useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef, enabled: !maximized });
 
   // Focus the prompt editor at meaningful moments:
   //
@@ -2656,35 +2615,6 @@ export function DevCardBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Snap-back-to-userSize on explicit user submit — not on any other
-  // data-empty transition (manual delete, undo, etc.). Fires before
-  // `input.clear()` so the restore commits to the library store
-  // first; the content-driven hook's subsequent restore is a no-op
-  // because the library store already matches the user size. Skip
-  // while maximized — the maximize peg owns the size. No animation
-  // here: the snap is paired with the user pressing Send and should
-  // feel immediate, not show motion.
-  const handleBeforeSubmit = useCallback(() => {
-    if (maximized) return;
-    entryPanelRef.current?.restoreUserSize();
-  }, [maximized]);
-
-  // Escape on an empty editor collapses the entry pane to its minimum
-  // height — the keyboard twin of dragging the sash grip all the way
-  // down. `setTransientSize(0)` is clamped by the library up to the
-  // panel's `minSize` (180px), so the pane lands on its floor without
-  // this site needing to know the group height. Animated to match the
-  // maximize toggle's motion. Skipped while maximized: the maximize
-  // peg owns the size and the sash is frozen, so the gesture would
-  // fight it — the user restores via the toggle instead. The content-
-  // driven sizer never undoes this while the editor stays empty: with
-  // no overflow its recompute is a no-op, so the floor holds until the
-  // user types enough to overflow (grow) or submits (restore).
-  const handleEscapeWhenEmpty = useCallback(() => {
-    if (maximized) return;
-    entryPanelRef.current?.setTransientSize(0, { animated: true });
-  }, [maximized]);
-
   // Return focus to the editor after a successful submit so the user
   // can type the next prompt immediately, and pull the transcript
   // back to the live edge. `onAfterSubmit` fires from `performSubmit`
@@ -2698,7 +2628,13 @@ export function DevCardBody({
   // transcript down so the new turn (and the response streaming into
   // it) is in view. Once follow-bottom is re-engaged the new turn row
   // pins automatically via the list's post-commit pin.
+  //
+  // Submitting always collapses the entry: un-maximize (so a maximized
+  // entry returns the transcript to full height) and let the cleared
+  // editor drive the content sizer back to the 180px floor. Keeps the
+  // transcript readable after every send.
   const handleAfterSubmit = useCallback(() => {
+    setMaximized(false);
     transcriptRef.current?.scrollToBottom();
     entryDelegateRef.current?.focus();
   }, [entryDelegateRef]);
@@ -3365,39 +3301,25 @@ export function DevCardBody({
         // attribute, never React state ([L06]).
         data-inline-dialog-pending={inlineDialogPending ? "true" : undefined}
       >
-      <TugSplitPane
-        orientation="horizontal"
-        showHandle={false}
-        disabled={maximized}
-        // Per-card storage key. The entry-pane sash position is a
-        // per-card preference: a single shared key would let every
-        // dev card's mount-time layout write clobber every other
-        // card's saved sash position, and on relaunch each card would
-        // paint at whatever card last wrote the shared entry before
-        // snapping to its own — a visible shift. `cardId` is stable
-        // across relaunch (the ledger restore matches on it) and
-        // across cross-pane moves, so the pref persists with the card.
-        storageKey={`dev.prompt-entry.${cardId}`}
-      >
         {/*
-          Top pane: multi-turn transcript. `DevTranscriptHost` mounts a
-          `TugListView` over a `DevTranscriptDataSource` that maps
-          `codeSessionStore.transcript` (committed turns) and
-          `inflightUserMessage` (the live submission) onto pairs of
-          `(user, code)` rows. The streaming `code` cell observes
-          `codeSessionStore.streamingDocument` directly per [D06] /
-          [L22] — deltas don't round-trip through the data source. The
-          old `TugMarkdownView` single-region wire-up is gone; the
-          "sticky last turn" emergent side-effect goes with it.
+          Card body is a plain flex column ([L06]/[L13] — no JS sizing).
+          The transcript region (this `dev-card-top-column`: header +
+          multi-turn transcript + Z2 status bar) flexes into all remaining
+          height; the prompt-entry region below is content-sized and grows
+          with the editor (auto-height, capped at `maxRows`), so the
+          transcript yields exactly as much as the prompt needs. Maximize
+          expands the entry region to fill via `data-maximized` (CSS only).
+          This replaces the old `TugSplitPane` + `useContentDrivenPanelSize`
+          machine wholesale.
+
+          `DevTranscriptHost` mounts a `TugListView` over a
+          `DevTranscriptDataSource` mapping `codeSessionStore.transcript`
+          (committed turns) + `inflightUserMessage` onto `(user, code)`
+          rows; the streaming `code` cell observes
+          `codeSessionStore.streamingDocument` directly ([D06]/[L22]). The
+          column is always rendered so the transcript's mount identity
+          stays stable across slot-content changes ([L26]).
         */}
-        <TugSplitPanel id="dev-card-top" defaultSize="70%" minSize="10%">
-          {/*
-            Top-pane flex column — three rows (Z0 / transcript / Z2).
-            Always rendered so `DevTranscriptHost`'s mount identity
-            stays stable across slot-content changes ([L26]); empty
-            Z0 / Z2 wrappers collapse to zero height via `flex: 0 0
-            auto` + no intrinsic content.
-          */}
           <div
             className="dev-card-top-column"
             data-slot="dev-card-top-column"
@@ -3433,13 +3355,14 @@ export function DevCardBody({
               data-slot="dev-card-status-bar"
             >
               {/*
-                Z2 status content with a sash grip on the leading end
-                and the maximize toggle on the trailing end. The grip
-                resizes the split-pane sash directly below — the status
-                bar would otherwise mask the sash's thin hit line.
+                Z2 status content with an empty lead spacer and the
+                maximize toggle on the trailing end. The spacer balances
+                the trailing toggle's width so the status cells stay
+                centered; it carries no resize affordance (the sash below
+                is non-draggable — sizing is content-driven or pegged).
                 Rendered only when Z2 has content: an empty slot leaves
                 the wrapper `:empty`, which collapses the whole strip
-                (CSS) and restores the bare-sash layout.
+                (CSS).
 
                 Per [D100] the row's TASKS cell carries the assembled
                 task-list state plus a popover with the full list, so
@@ -3447,10 +3370,9 @@ export function DevCardBody({
               */}
               {effectiveStatusBarContent != null && (
                 <>
-                  <DevCardSashGrip
-                    entryPanelRef={entryPanelRef}
-                    side="start"
-                    disabled={maximized}
+                  <div
+                    className="dev-card-status-bar-lead-spacer"
+                    aria-hidden="true"
                   />
                   <div
                     className="dev-card-status-bar-main"
@@ -3479,9 +3401,10 @@ export function DevCardBody({
                     </cycle.CycleScope>
                   </div>
                   {/*
-                    Maximize toggle — Z2's trailing control, in the
-                    place the trailing sash grip used to hold. The sash
-                    stays draggable from the leading grip.
+                    Maximize toggle — Z2's trailing control. Flips the
+                    bottom pane between its content-autosized state and
+                    the 90% maximize peg; the leading spacer balances its
+                    width so the status cells stay centered.
                   */}
                   <TugPushButton
                     className="dev-card-maximize-toggle"
@@ -3502,14 +3425,16 @@ export function DevCardBody({
               )}
             </div>
           </div>
-        </TugSplitPanel>
-        <TugSplitPanel
-          ref={entryPanelRef}
-          id="dev-card-bottom"
-          defaultSize="240px"
-          minSize="180px"
-          maxSize="90%"
-          groupResizeBehavior="preserve-pixel-size"
+        {/*
+          Prompt-entry region — content-sized (`flex: 0 0 auto`, floored at
+          180px). The entry grows with the editor's auto-height; the
+          transcript above yields. `data-maximized` flips it to fill (the
+          90% peg) — CSS only, session-only, never persisted.
+        */}
+        <div
+          className="dev-card-entry-region"
+          data-slot="dev-card-entry-region"
+          data-maximized={maximized ? "" : undefined}
         >
           <TugBox
             ref={(el) => {
@@ -3551,9 +3476,8 @@ export function DevCardBody({
               sessionMetadataStore={sessionMetadataStore}
               historyStore={historyStore}
               completionProviders={completionProviders}
-              onBeforeSubmit={handleBeforeSubmit}
               onAfterSubmit={handleAfterSubmit}
-              onEscapeWhenEmpty={handleEscapeWhenEmpty}
+              maximized={maximized}
               indicatorsContent={
                 <>
                   <DevRouteIndicatorBadge
@@ -3598,15 +3522,12 @@ export function DevCardBody({
               highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
               returnAction={editorSettings.returnKeyAction}
               numpadEnterAction={editorSettings.numpadEnterAction}
-              maximized={maximized}
-              onMaximizeChange={setMaximized}
               placeholderByRoute={DEV_PROMPT_PLACEHOLDER_BY_ROUTE}
             />
             </cycle.CycleScope>
           </TugBox>
           {cardPickerSheet.renderSheet()}
-        </TugSplitPanel>
-      </TugSplitPane>
+        </div>
       {/*
         Single TugPaneBanner driven by `deriveDevCardBannerSpec`.
         The precedence chain (error > transport > none) is enforced

@@ -1,8 +1,11 @@
 /**
  * gallery-prompt-entry.tsx — TugPromptEntry showcase card.
  *
- * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane` (top 70% —
- * placeholder; bottom 30% — entry, clamped at 85%). The card wires:
+ * Mounts `TugPromptEntry` in a flex column. A placeholder stands in for a
+ * transcript and flexes into the remaining height; the entry below is
+ * content-sized — the editor auto-heights up to `maxRows` then scrolls, so
+ * the entry is as tall as the prompt. No split pane, no JS sizing, no
+ * maximize in the showcase. The card wires:
  *
  *   • A `TestFrameChannel`-backed `CodeSessionStore` paired with a fresh
  *     `ConnectionLifecycle` that never receives transport events (no real
@@ -24,14 +27,13 @@
  *
  * The entry is mounted inside a `TugBox` with `inset={false}` so the
  * pane fills edge-to-edge. The split pane's grip pill is suppressed via
- * `showHandle={false}` — the sash line remains draggable.
+ * `showHandle={false}` and the sash is non-draggable (`disabled`) — the
+ * line is a pure visual divider; sizing is content-driven or pegged.
  */
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
-import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
-import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { useResponderForm } from "../use-responder-form";
@@ -62,10 +64,6 @@ import "./gallery-prompt-entry.css";
  * entirely against the `TestFrameChannel`.
  */
 export const GALLERY_TUG_SESSION_ID = "gallery-prompt-entry-session";
-
-/** Percentage the entry panel pegs to when the user clicks Maximize.
- *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
-const ENTRY_PANEL_MAX_PCT = 90;
 
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
@@ -172,10 +170,9 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     historyStoreRef.current = new PromptHistoryStore();
   }
 
-  // --- Entry + panel handles (declared here so completionProviders' memo
-  // can read entryDelegateRef for the position-0 gate). Stable ref
-  // identities — the memo below uses [] deps correctly. ---
-  const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
+  // --- Entry handle (declared here so completionProviders' memo can read
+  // entryDelegateRef for the position-0 gate). Stable ref identity — the
+  // memo below uses [] deps correctly. ---
   const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
 
   // --- Compose completion providers. ---
@@ -199,51 +196,6 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     };
   }, []);
 
-  // --- Content-driven panel growth for the entry pane. ---
-  // The bottom TugSplitPanel grows toward `maxSize` as the editor
-  // overflows and snaps back to the user's library-resolved size on
-  // the editor's `data-empty="true"` signal. The source element is
-  // derived from the entry delegate at call time via a stable
-  // useMemo'd shim — identity-stable so the hook's effect doesn't
-  // re-install observers on every render. (`entryPanelRef` and
-  // `entryDelegateRef` are declared earlier so `completionProviders`
-  // can read them for the position-0 gate.)
-  const editorSourceRef = useMemo(
-    () => ({
-      get current(): HTMLElement | null {
-        return entryDelegateRef.current?.getEditorElement() ?? null;
-      },
-    }),
-    [],
-  );
-  // --- Maximize toggle. ---
-  // When true, the entry panel is pegged to its declared max and the
-  // split-pane handle is disabled. The content-driven sizer and the
-  // submit-time restore both stand down so nothing fights the peg.
-  // When false, the pane behaves exactly as if the toggle never
-  // existed: saved size persists, transient size accommodates content.
-  const [maximized, setMaximized] = React.useState(false);
-  useLayoutEffect(() => {
-    const panel = entryPanelRef.current;
-    if (!panel) return;
-    if (maximized) panel.setTransientSize(ENTRY_PANEL_MAX_PCT, { animated: true });
-    else panel.restoreUserSize({ animated: true });
-  }, [maximized]);
-
-  useContentDrivenPanelSize({ panelRef: entryPanelRef, sourceRef: editorSourceRef, enabled: !maximized });
-
-  // Animate the snap-back-to-userSize ONLY on explicit user submit —
-  // not on any other data-empty transition (manual delete, undo, etc.).
-  // Fires before `input.clear()` so the animated restore commits to
-  // the library store first; the content-driven hook's subsequent
-  // instant-restore is a no-op because the library store already
-  // matches the user size. Skip while maximized — the maximize peg
-  // owns the size.
-  const handleBeforeSubmit = useCallback(() => {
-    if (maximized) return;
-    entryPanelRef.current?.restoreUserSize({ animated: true });
-  }, [maximized]);
-
   // --- Responder scope for the card. ---
   const { ResponderScope, responderRef } = useResponderForm({});
 
@@ -255,50 +207,37 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
   );
 
   return (
+    // Flex column ([L06]/[L13] — no JS sizing). A placeholder stands in for
+    // a transcript and flexes into the remaining height; the entry region
+    // below is content-sized — the editor auto-heights up to `maxRows` then
+    // scrolls, so the entry is as tall as the prompt and the placeholder
+    // takes the rest. No split pane, no content-sizing observers.
     <div className="gallery-prompt-entry-card" data-testid="gallery-prompt-entry">
-      <TugSplitPane
-        orientation="horizontal"
-        showHandle={false}
-        disabled={maximized}
-        storageKey="gallery.prompt-entry"
-      >
-        <TugSplitPanel id="gallery-prompt-entry-top" defaultSize="70%" minSize="10%">
-          <div className="gallery-prompt-entry-placeholder" aria-hidden="true" />
-        </TugSplitPanel>
-        <TugSplitPanel
-          ref={entryPanelRef}
-          id="gallery-prompt-entry-bottom"
-          defaultSize="30%"
-          minSize="180px"
-          maxSize="90%"
-        >
-          <ResponderScope>
-            <TugBox
-              ref={(el) =>
-                (responderRef as (node: Element | null) => void)(
-                  el as Element | null,
-                )
-              }
-              variant="plain"
-              inset={false}
-              className="gallery-prompt-entry-entry-pane"
-            >
-              <TugPromptEntry
-                ref={entryDelegateRef}
-                id={`${cardId}-entry`}
-                codeSessionStore={mockSessionRef.current!.codeSessionStore}
-                sessionMetadataStore={getFixtureSessionMetadataStore()}
-                historyStore={historyStoreRef.current}
-                completionProviders={completionProviders}
-                onBeforeSubmit={handleBeforeSubmit}
-                statusContent={statusContent}
-                maximized={maximized}
-                onMaximizeChange={setMaximized}
-              />
-            </TugBox>
-          </ResponderScope>
-        </TugSplitPanel>
-      </TugSplitPane>
+      <div className="gallery-prompt-entry-placeholder" aria-hidden="true" />
+      <div className="gallery-prompt-entry-region">
+        <ResponderScope>
+          <TugBox
+            ref={(el) =>
+              (responderRef as (node: Element | null) => void)(
+                el as Element | null,
+              )
+            }
+            variant="plain"
+            inset={false}
+            className="gallery-prompt-entry-entry-pane"
+          >
+            <TugPromptEntry
+              ref={entryDelegateRef}
+              id={`${cardId}-entry`}
+              codeSessionStore={mockSessionRef.current!.codeSessionStore}
+              sessionMetadataStore={getFixtureSessionMetadataStore()}
+              historyStore={historyStoreRef.current}
+              completionProviders={completionProviders}
+              statusContent={statusContent}
+            />
+          </TugBox>
+        </ResponderScope>
+      </div>
     </div>
   );
 }

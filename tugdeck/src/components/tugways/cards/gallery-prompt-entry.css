@@ -1,10 +1,10 @@
 /* ============================================================================
    gallery-prompt-entry.css
    ============================================================================
-   Showcase card for TugPromptEntry mounted inside a horizontal TugSplitPane
-   (top 70% / bottom 30%, bottom capped at 85%). The card itself is a
-   full-height flex column so the split pane has a concrete height to
-   measure against.
+   Showcase card for TugPromptEntry in a flex column: a placeholder stands in
+   for a transcript and flexes into the remaining height; the entry below is
+   content-sized (the editor auto-heights up to maxRows, then scrolls). No
+   split pane, no JS sizing.
    ========================================================================= */
 
 .gallery-prompt-entry-card {
@@ -14,26 +14,36 @@
   height: 100%;
 }
 
+/* Placeholder filler standing in for the transcript — flexes into all the
+   height the content-sized entry leaves. */
+.gallery-prompt-entry-placeholder {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Prompt-entry region — content-sized: the embedded editor auto-heights and
+   the region is as tall as the prompt. Floored at 180px; shrinks before the
+   placeholder if the card is short. */
+.gallery-prompt-entry-region {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 180px;
+  width: 100%;
+  min-width: 0;
+}
+
 /* Entry pane wrapper — a TugBox rendered plain + inset={false}.
    TugBox's default width:fit-content would collapse the box to content
-   width; we need it to fill the pane. Using flex + 100% + min-height:0
-   lets the entry stretch edge-to-edge. The fieldset element is otherwise
-   already reset by tug-box.css (no border, no margin, no padding when
-   plain + inset={false}). */
+   width; `width: 100%` makes it span the region. Height is content-sized so
+   the auto-height editor drives the region's height. The fieldset element is
+   otherwise already reset by tug-box.css (no border, no margin, no padding
+   when plain + inset={false}). */
 .gallery-prompt-entry-entry-pane {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
   min-height: 0;
   min-width: 0;
 }
-
-/* Placeholder filler for the top pane — T3.4.c replaces this with the
-   real transcript/preview surface. Keeps the split visible in the gallery
-   without adding borrowed chrome. */
-.gallery-prompt-entry-placeholder {
-  height: 100%;
-  width: 100%;
-}
-

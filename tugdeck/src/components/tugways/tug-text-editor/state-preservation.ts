@@ -109,8 +109,8 @@ function recordPaintMirrorInactive(cardId: string | null): void {
  * watching `view.scrollDOM`.
  *
  * Re-applied on every CM6 measure pass via `view.requestMeasure({
- * write })` so layout-driven scroll shifts (the editor's host panel
- * growing via `useContentDrivenPanelSize` after first paint,
+ * write })` so layout-driven scroll shifts (the editor's host growing as
+ * its content-sized container reflows after first paint,
  * `ResizeObserver`-driven viewport resizes, CM6's own measure cycle
  * recomputing the viewport, the browser's focus-driven
  * "scroll-to-caret" on first activation) do not overwrite the

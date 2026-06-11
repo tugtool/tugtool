@@ -196,14 +196,6 @@ interface TugPromptEntryState {
   route: string;
   draft: TugTextEditingState | null;
   /**
-   * Latest known maximize state of the entry's pane. Optional so
-   * older persisted snapshots restore as "not maximized" without a
-   * migration. The entry doesn't own this state itself — it's a
-   * controlled-component prop — so on save it snapshots the current
-   * `maximized` prop and on restore it re-emits via `onMaximizeChange`.
-   */
-  maximized?: boolean;
-  /**
    * Snapshot of the per-card `AtomBytesStore` — base64 image bytes
    * for atoms currently in the draft. Round-trips through the
    * `useCardStatePreservation` bag so a card that is deactivated,
@@ -228,7 +220,6 @@ interface TugPromptEntryState {
 interface LegacyTugPromptEntryState {
   currentRoute?: string;
   perRoute?: Record<string, TugTextEditingState>;
-  maximized?: boolean;
 }
 
 /**
@@ -249,17 +240,15 @@ export function coerceRestorePayload(raw: unknown): TugPromptEntryState {
   const fallback: TugPromptEntryState = {
     route: DEFAULT_ROUTE,
     draft: null,
-    maximized: false,
   };
   if (raw === null || typeof raw !== "object") return fallback;
   const obj = raw as Partial<TugPromptEntryState> & LegacyTugPromptEntryState;
-  const maximized = typeof obj.maximized === "boolean" ? obj.maximized : false;
   const attachmentBytes = coerceAttachmentBytes(obj.attachmentBytes);
 
   // New shape — `route` + `draft` are both present.
   if (typeof obj.route === "string") {
     const draft = isEditingState(obj.draft) ? obj.draft : null;
-    return { route: obj.route, draft, maximized, attachmentBytes };
+    return { route: obj.route, draft, attachmentBytes };
   }
 
   // Legacy shape — `currentRoute` + `perRoute`.
@@ -272,7 +261,7 @@ export function coerceRestorePayload(raw: unknown): TugPromptEntryState {
     const perRoute = obj.perRoute as Record<string, unknown>;
     const candidate = perRoute[obj.currentRoute];
     const draft = isEditingState(candidate) ? candidate : null;
-    return { route: obj.currentRoute, draft, maximized, attachmentBytes };
+    return { route: obj.currentRoute, draft, attachmentBytes };
   }
 
   return fallback;
@@ -542,17 +531,16 @@ export interface TugPromptEntryProps {
    */
   indicatorsContent?: React.ReactNode;
   /**
-   * The entry pane's maximize state, owned by the host card. The entry
-   * renders no maximize control itself — the host card does, in its own
-   * chrome — but it persists this value in its editing-state snapshot
-   * and re-emits it through `onMaximizeChange` on restore.
+   * Maximize *mode* (session-only appearance — never persisted). When
+   * `false` (the default), the entry is content-sized: the editor
+   * auto-grows with its content up to `maxRows` and then scrolls, so the
+   * host can let the entry size itself and give the rest of the column to
+   * its transcript. When `true`, the entry fills its host container and
+   * the editor fills the entry (the editor's own `[data-maximized]`
+   * fill mode). The host owns the live state and renders the toggle in
+   * its own chrome; the entry just maps it onto `data-maximized`.
    */
   maximized?: boolean;
-  /**
-   * Called on restore to re-emit the persisted maximize state to the
-   * host card, which owns the live `maximized` state.
-   */
-  onMaximizeChange?: (next: boolean) => void;
   /** Caller-supplied className merged with the root. */
   className?: string;
   /**
@@ -677,9 +665,9 @@ export interface TugPromptEntryDelegate {
   /** Clear the input's content. */
   clear(): void;
   /**
-   * The underlying editor element (CM6's `cm-content` div). Used by
-   * `useContentDrivenPanelSize` as the scroll-source signal for
-   * content-driven panel growth.
+   * The underlying editor element (CM6's `cm-content` div). Exposed for
+   * callers that need to reach the live editor DOM (measurement, focus
+   * diagnostics, harness assertions).
    */
   getEditorElement(): HTMLElement | null;
   /**
@@ -713,8 +701,7 @@ export const TugPromptEntry = React.forwardRef<
     statusContent,
     cautionContent,
     indicatorsContent,
-    maximized,
-    onMaximizeChange,
+    maximized = false,
     className,
     lineWrap,
     lineNumbers,
@@ -936,20 +923,6 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     onEscapeWhenEmptyRef.current = onEscapeWhenEmpty;
   }, [onEscapeWhenEmpty]);
-
-  // Live refs for the maximize controlled-pair so the chain-action
-  // handler (registered once at mount via `useResponder.actions`)
-  // sees the current values per [L07]. The handler can't close over
-  // `props` directly — `useResponder`'s actions map is captured at
-  // mount and would freeze whatever values the first render had.
-  const maximizedRef = useRef(props.maximized);
-  const onMaximizeChangeRef = useRef(props.onMaximizeChange);
-  useLayoutEffect(() => {
-    maximizedRef.current = props.maximized;
-  }, [props.maximized]);
-  useLayoutEffect(() => {
-    onMaximizeChangeRef.current = props.onMaximizeChange;
-  }, [props.onMaximizeChange]);
 
   // Card id for diagnostic deck-trace events. Held in a ref so the
   // onRestore closure (registered through useCardStatePreservation)
@@ -1608,7 +1581,6 @@ export const TugPromptEntry = React.forwardRef<
       return {
         route: routeLifecycle.getRoute(),
         draft,
-        maximized: maximizedRef.current ?? false,
         attachmentBytes,
       };
     },
@@ -1678,9 +1650,6 @@ export const TugPromptEntry = React.forwardRef<
         const view = editor?.view() ?? null;
         root.setAttribute("data-empty", String(isEffectivelyEmpty(view)));
       }
-      // Re-emit the persisted maximize state so the parent's
-      // controlled value matches the snapshot.
-      onMaximizeChangeRef.current?.(restored.maximized ?? false);
     },
   });
 
@@ -1739,6 +1708,10 @@ export const TugPromptEntry = React.forwardRef<
           data-pending-approval={snap.pendingApproval ? "" : undefined}
           data-pending-question={snap.pendingQuestion ? "" : undefined}
           data-empty="true"
+          // Maximize mode (appearance, [L06]): present → fill the host;
+          // absent → content-sized (the editor auto-grows up to maxRows
+          // then scrolls). CSS branches the entry's flex behavior on this.
+          data-maximized={maximized ? "" : undefined}
           className={cn("tug-prompt-entry", className)}
         >
           {hasStatusRow && (
@@ -1764,7 +1737,12 @@ export const TugPromptEntry = React.forwardRef<
             <TugTextEditor
               ref={textEditorRef}
               borderless
-              maximized
+              // Mode follows the host's maximize state. Not maximized →
+              // auto-height: opens at the host's `--tug-text-editor-min-height`
+              // (the Dev card sets 200px), grows with content up to `maxRows`
+              // rows, then scrolls. Maximized → fill the entry.
+              maximized={maximized}
+              maxRows={20}
               disabled={deactivated}
               placeholder={placeholderByRoute?.[route] ?? ""}
               completionProviders={completionProviders}

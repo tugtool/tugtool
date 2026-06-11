@@ -45,21 +45,35 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry — root container
    ----------------------------------------------------------------------------
-   The entry fills its host container vertically (flex: 1 + height: 100% +
-   min-height: 0). Host chrome — pane edges, card frame, sheet background —
-   belongs to the parent; the entry itself has no border, no radius, no
-   padding. The input takes the remaining space above the toolbar; the
+   Two layout modes, keyed on `[data-maximized]` (the host's maximize
+   state):
+
+   - **Content-sized (default).** `flex: 0 0 auto` — the entry sizes to its
+     content. The embedded editor auto-grows with its text up to `maxRows`
+     rows and then scrolls (see `tug-text-editor.css`), so the entry is as
+     tall as the prompt and the host gives the rest of its column to the
+     transcript. No JS measurement, no split-pane sash — the browser sizes
+     it natively.
+   - **Maximized.** `flex: 1 1 auto; height: 100%` — the entry fills its
+     host container and the editor fills the entry.
+
+   Host chrome — pane edges, card frame, sheet background — belongs to the
+   parent; the entry itself has no border, no radius, no padding. The
    toolbar sits at the bottom naturally via the flex-column order.
    ----------------------------------------------------------------------------- */
 
 .tug-prompt-entry {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  height: 100%;
+  flex: 0 0 auto;
   min-height: 0;
   background-color: var(--tugx-prompt-entry-surface);
   transition: background-color var(--tug-motion-duration-fast, 120ms) ease;
+}
+
+.tug-prompt-entry[data-maximized] {
+  flex: 1 1 auto;
+  height: 100%;
 }
 
 /* When the composed input is focused (editor carries focus), the whole
@@ -76,25 +90,34 @@ body {
    target the input region without reaching into the substrate's own
    token slot [L20]. The substrate takes the remaining horizontal space
    and stretches vertically to fill the area. */
+/* Content-sized by default so the auto-height editor drives the entry's
+   height; fills only when the entry is maximized. */
 .tug-prompt-entry-input-area {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: stretch;
   min-height: 0;
 }
+.tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area {
+  flex: 1 1 auto;
+}
 
-/* The substrate takes the entire input area. `min-width: 0` prevents
-   the editor's intrinsic width from forcing the row wider than its
-   column. The editor sits flush against the entry's edges — drop the
+/* The substrate sits flush against the entry's edges — drop the
    substrate's default rounded corners (and the inner `.cm-editor`
    clip radius that pairs with them) so the entry reads as a single
-   continuous panel. */
+   continuous panel. `min-width: 0` prevents the editor's intrinsic width
+   from forcing the row wider than its column. Flex is NOT set here: in
+   the default (content-sized) mode the editor governs its own height via
+   `maxRows` auto-grow; only the maximized mode stretches it to fill. */
 .tug-prompt-entry-input-area > .tug-text-editor,
 .tug-prompt-entry-input-area > .tug-text-editor > .cm-editor {
-  flex: 1 1 auto;
   min-width: 0;
   border-radius: 0;
+}
+.tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area > .tug-text-editor,
+.tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area > .tug-text-editor > .cm-editor {
+  flex: 1 1 auto;
 }
 
 /* No vertical nudge for the route choice-group's lucide icons — flex

@@ -7,7 +7,7 @@
  *     leading prefix character iff it maps to the active route per
  *     [Q09]=a.
  *   - `coerceRestorePayload(raw)` — accepts a restored bag, narrows
- *     it to the canonical `{ route, draft, maximized? }` shape, and
+ *     it to the canonical `{ route, draft }` shape, and
  *     migrates legacy `{ currentRoute, perRoute }` payloads forward
  *     by mapping `perRoute[currentRoute]` onto `draft` and dropping
  *     drafts for other routes per [Q07]=a.
@@ -78,19 +78,9 @@ describe("coerceRestorePayload — new shape", () => {
     const result = coerceRestorePayload({
       route: "$",
       draft,
-      maximized: true,
     });
     expect(result.route).toBe("$");
     expect(result.draft).toEqual(draft);
-    expect(result.maximized).toBe(true);
-  });
-
-  it("defaults maximized to false when omitted", () => {
-    const result = coerceRestorePayload({
-      route: "$",
-      draft: null,
-    });
-    expect(result.maximized).toBe(false);
   });
 
   it("treats a malformed draft as null", () => {
@@ -121,13 +111,11 @@ describe("coerceRestorePayload — legacy `perRoute` migration", () => {
         "$": shellDraft,
         ":": { text: "cmd", atoms: [], selection: null },
       },
-      maximized: false,
     });
     expect(result.route).toBe("$");
-    expect(result.draft).toEqual(shellDraft);
     // The Code draft and the legacy `:`-route draft are dropped per
     // [Q07]=a; only the current-route (`$`) draft survives migration.
-    expect(result.maximized).toBe(false);
+    expect(result.draft).toEqual(shellDraft);
   });
 
   it("returns a null draft when perRoute has no entry for currentRoute", () => {
@@ -147,7 +135,6 @@ describe("coerceRestorePayload — defaults", () => {
     const result = coerceRestorePayload(null);
     expect(result.route).toBe("❯");
     expect(result.draft).toBeNull();
-    expect(result.maximized).toBe(false);
   });
 
   it("returns the default shape for a non-object", () => {
