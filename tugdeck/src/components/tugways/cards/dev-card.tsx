@@ -3,16 +3,18 @@
  *
  * The card body is a plain **flex column** ([L06]/[L13] — no JS sizing).
  * The transcript region (`DevTranscriptHost` + Z2 status bar) flexes into
- * all remaining height; the prompt-entry region below is **content-sized**
- * and grows with the editor, which auto-heights up to `maxRows` rows and
- * then scrolls. So the entry is as tall as the prompt and the transcript
- * yields exactly that much — a stray submit auto-collapses the entry back
- * to one row because the cleared editor shrinks. The **maximized** toggle
- * (Z2 button) flips the entry region to fill (the 90% peg) via a
- * `data-maximized` attribute read by CSS; it is session-only and never
- * persisted. There is no split pane, no sash, and no content-sizing JS —
- * this replaced an earlier `TugSplitPane` + `useContentDrivenPanelSize`
- * machine. The card wires:
+ * all remaining height (never below `--dev-transcript-min`); the prompt-entry
+ * region below is **content-sized** and pinned to the card bottom. Its text
+ * area opens at `--tug-text-editor-min-height` and grows with content up to
+ * `--dev-entry-max-height` (a fraction of the card height), then scrolls — so
+ * the Z4/Z5 toolbar is never pushed off the card. A stray submit collapses
+ * the entry back toward the opening height because the cleared editor
+ * shrinks. The **maximized** toggle (Z2 button) pegs the transcript to its
+ * minimum and gives the rest to the entry, via a `data-maximized` attribute
+ * on the card root read by CSS; it is session-only and never persisted. There
+ * is no split pane, no sash, and no content-sizing JS — this replaced an
+ * earlier `TugSplitPane` + `useContentDrivenPanelSize` machine. The card
+ * wires:
  *
  *   • A live `CodeSessionStore` bound to the supervisor-issued
  *     `tugSessionId` via the card-session binding store.
@@ -2357,12 +2359,13 @@ export function DevCardBody({
   }, [editorStore]);
 
   // --- Maximize toggle (session-only — never persisted). ---
-  // Pure appearance state ([L06]): drives `data-maximized` on the entry
-  // region, which CSS reads to flip the entry from content-sized
-  // (auto-height editor, transcript takes the rest) to fill (the 90%
-  // peg). No JS sizing, no split-pane sash — the browser sizes the
-  // column. Submitting collapses the entry back to content height
-  // automatically, because the cleared editor auto-shrinks.
+  // Pure appearance state ([L06]): drives `data-maximized` on the card
+  // root, which CSS reads to peg the transcript to its minimum
+  // (`--dev-transcript-min`) and give the rest of the height to the entry
+  // (the editor switches to its fill mode). No JS sizing, no split-pane
+  // sash — the browser sizes the column. Submitting collapses the entry
+  // back toward its opening height automatically, because the cleared
+  // editor auto-shrinks.
   const [maximized, setMaximized] = useState(false);
 
   // Focus the prompt editor at meaningful moments:
@@ -3310,12 +3313,12 @@ export function DevCardBody({
           Card body is a plain flex column ([L06]/[L13] — no JS sizing).
           The transcript region (this `dev-card-top-column`: header +
           multi-turn transcript + Z2 status bar) flexes into all remaining
-          height; the prompt-entry region below is content-sized and grows
-          with the editor (auto-height, capped at `maxRows`), so the
-          transcript yields exactly as much as the prompt needs. Maximize
-          expands the entry region to fill via `data-maximized` (CSS only).
-          This replaces the old `TugSplitPane` + `useContentDrivenPanelSize`
-          machine wholesale.
+          height (floored at `--dev-transcript-min`); the prompt-entry region
+          below is content-sized and grows with the editor (auto-height,
+          capped at `--dev-entry-max-height` so the Z4/Z5 toolbar stays
+          pinned). Maximize pegs the transcript to its minimum and fills the
+          entry via `data-maximized` (CSS only). This replaces the old
+          `TugSplitPane` + `useContentDrivenPanelSize` machine wholesale.
 
           `DevTranscriptHost` mounts a `TugListView` over a
           `DevTranscriptDataSource` mapping `codeSessionStore.transcript`
@@ -3407,9 +3410,10 @@ export function DevCardBody({
                   </div>
                   {/*
                     Maximize toggle — Z2's trailing control. Flips the
-                    bottom pane between its content-autosized state and
-                    the 90% maximize peg; the leading spacer balances its
-                    width so the status cells stay centered.
+                    entry between its content-autosized state and the
+                    maximized state (transcript pegged to its minimum, entry
+                    fills the rest); the leading spacer balances its width so
+                    the status cells stay centered.
                   */}
                   <TugPushButton
                     className="dev-card-maximize-toggle"
@@ -3431,10 +3435,12 @@ export function DevCardBody({
             </div>
           </div>
         {/*
-          Prompt-entry region — content-sized (`flex: 0 0 auto`, floored at
-          180px). The entry grows with the editor's auto-height; the
-          transcript above yields. `data-maximized` flips it to fill (the
-          90% peg) — CSS only, session-only, never persisted.
+          Prompt-entry region — content-sized and pinned to the card bottom.
+          The text area grows with the editor up to `--dev-entry-max-height`
+          then scrolls; the transcript above yields. Maximize (driven by
+          `data-maximized` on the card root) pegs the transcript to its
+          minimum and fills the entry — CSS only, session-only, never
+          persisted.
         */}
         <div
           className="dev-card-entry-region"
@@ -3585,7 +3591,7 @@ export function registerDevCard(): void {
       // toolbar/indicator rows) AND leave the transcript its minimum
       // (`--dev-transcript-min`), so the entry never crowds the transcript
       // out even at the smallest card size.
-      min: { width: 800, height: 380 },
+      min: { width: 800, height: 500 },
       // Default size opens the card tall enough for an extended
       // transcript to read as a continuous column, not a porthole,
       // and wide enough to give the Choose Session sheet (caps at

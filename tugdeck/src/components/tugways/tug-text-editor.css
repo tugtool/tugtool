@@ -181,35 +181,29 @@ body {
   border-color: var(--tug7-element-field-border-normal-plain-readonly);
 }
 
-/* ---- maxRows: cap visible rows before vertical scrolling ---- */
+/* ---- text-area height ---- */
 
-/* `--tug-text-editor-max-rows` is set as an inline style on `.tug-text-editor` from
- * the React shell (numeric, unitless). The cap is computed on the
- * inner `.cm-scroller` because that's the element CodeMirror 6
- * lays out as the scroll container; setting a max-height on the
- * outer host would clip the scrollbar.
+/* The auto-height editor grows with its content. Two optional bounds:
  *
- * `1lh` is the computed line-height of the element; combined with
- * the unitless `--tug-text-editor-max-rows` it yields exactly N visible
- * rows. The trailing `+ 16px` accounts for `.cm-content`'s 8px
- * top + 8px bottom padding (set in `tug-text-editor/theme.ts`) so the
- * cap is "N rows of text" rather than "N rows of text minus the
- * pad."
+ * - `max-height` from `maxRows` — the default row-count cap. The React shell
+ *   writes `--tug-text-editor-max-rows` as an inline style; `1lh` is the
+ *   computed line-height, and the trailing `+ 16px` covers `.cm-content`'s
+ *   8px top + 8px bottom padding (theme.ts), so the cap reads as "N rows of
+ *   text." `overflow-y: auto` is CM6's own default on `.cm-scroller`, so once
+ *   the document grows past the cap, vertical scrolling kicks in. A host can
+ *   override this cap from its own scoped rule — the Dev card caps the
+ *   scroller at a fraction of the card height (`cqh`) instead, so the prompt
+ *   scrolls rather than pushing its toolbar off the card (see `dev-card.css`).
  *
- * `overflow-y: auto` is CM6's own default on `.cm-scroller`; we
- * don't override it. When the document is short enough to fit, the
- * scrollbar doesn't appear; once it grows past the cap, vertical
- * scrolling kicks in.
+ * - `min-height` from `--tug-text-editor-min-height` — the optional *default*
+ *   height: the editor opens at least this tall even when its content is
+ *   shorter (the Dev card sets 200px). Defaults to 0 — no floor — so other
+ *   hosts keep the pure auto-grow-from-one-row behavior.
  *
- * Skipped when `[data-maximized]` is set — that variant fills the
- * flex parent and ignores `maxRows` per the prop contract. */
+ * Skipped when `[data-maximized]` is set — that variant fills the flex
+ * parent and ignores `maxRows` per the prop contract. */
 .tug-text-editor:not([data-maximized]) > .cm-editor > .cm-scroller {
   max-height: calc(var(--tug-text-editor-max-rows, 8) * 1lh + 16px);
-  /* Optional default height for the text area. Consumers that want the
-     editor to open taller than its content set `--tug-text-editor-min-height`
-     (e.g. the Dev card's prompt); the editor still grows with content up to
-     the `maxRows` cap and then scrolls. Defaults to 0 — no floor — so other
-     hosts keep the pure auto-grow-from-one-row behavior. */
   min-height: var(--tug-text-editor-min-height, 0);
 }
 

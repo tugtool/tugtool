@@ -6,11 +6,12 @@
    The card body is a plain flex column (no split pane, no JS sizing). The
    transcript column (`.dev-card-top-column`: history + Z2 status row) flexes
    into the remaining height but never drops below `--dev-transcript-min`;
-   the prompt-entry region below is pinned to the bottom and is exactly as
-   tall as its fixed text area (`--tug-text-editor-min-height`) plus the
-   Z4 / Z5 rows. The maximize toggle pegs the transcript to its minimum and
-   gives the rest to the entry. One rule governs the split: the transcript
-   minimum.
+   the prompt-entry region below is pinned to the bottom. The text area opens
+   at `--tug-text-editor-min-height` and grows with content up to
+   `--dev-entry-max-height` (a fraction of the card height), then scrolls —
+   so the Z4 / Z5 toolbar stays pinned to the card bottom, always fully
+   visible. The maximize toggle pegs the transcript to its minimum and gives
+   the rest to the entry.
    ========================================================================= */
 
 .dev-card {
@@ -18,11 +19,20 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  /* Size container so the prompt editor's growth cap can be expressed in
+     `cqh` (a fraction of the card's own height). The card's size comes from
+     its hosting pane (definite), so size containment changes nothing
+     visually. */
+  container-type: size;
   /* ── Tune this ──────────────────────────────────────────────────────
      The transcript region (history + Z2 status row) never shrinks below
-     this, even as the entry grows or is maximized — the single governing
-     rule for the card's vertical split. ──────────────────────────────── */
+     this — a hard floor, and the height it pegs to when maximized. ─────── */
   --dev-transcript-min: 52px;
+  /* ── Tune this ──────────────────────────────────────────────────────
+     How tall the text area may auto-expand before it scrolls — a fraction
+     of the card's own height (`cqh`). The transcript and the pinned Z4 / Z5
+     toolbar share the rest. ───────────────────────────────────────────── */
+  --dev-entry-max-height: 50cqh;
   /* No `min-width` here — a leaf cannot widen its container, it only
      overflows and clips. The card's width floor is declared as
      `sizePolicy.min.width` in `registerDevCard`; the hosting pane's
@@ -101,13 +111,25 @@
   width: 100%;
   min-width: 0;
   /* ── Tune this ──────────────────────────────────────────────────────
-     Fixed height of the text-entry area (the editor), in CSS pixels. The
-     editor is this tall and scrolls when content exceeds it (it is NOT
-     auto-grow in normal mode — that is what the maximize toggle is for, and
-     what keeps the entry from ever crowding out the transcript). The fixed
-     Z4 / Z5 rows are unaffected.
+     Default (opening) height of the text-entry area, in CSS pixels. The
+     editor opens this tall and grows with content up to its cap — `card
+     height − --dev-transcript-min − --dev-entry-chrome` (see the scroller
+     rule below) — then scrolls. So it never pushes the Z4 / Z5 toolbar off
+     the card bottom. The fixed Z4 / Z5 rows are unaffected.
      ──────────────────────────────────────────────────────────────────── */
-  --tug-text-editor-min-height: 200px;
+  --tug-text-editor-min-height: 160px;
+}
+
+/* Cap the text area's auto-expand at `--dev-entry-max-height` (a fraction
+   of the card's height); past it the editor SCROLLS, so the Z4 / Z5 toolbar
+   is never pushed off the card bottom. The editor's `[data-maximized]` fill
+   mode bypasses this. [L20] — the card tunes the substrate's scroll height
+   through its own scoped rule. */
+.dev-card-entry-region
+  .tug-text-editor:not([data-maximized])
+  > .cm-editor
+  > .cm-scroller {
+  max-height: var(--dev-entry-max-height, 50cqh);
 }
 
 /* Maximize: peg the transcript to its minimum and give the rest to the
@@ -175,11 +197,12 @@
   gap: var(--tug-space-md);
   padding: var(--tug-space-md);
   background-color: var(--tug7-surface-card-primary-normal-status-rest);
-  /* Top-only border separates the status bar from the transcript
-     above. The rule sets both `background-color` and `border-top`
-     (an element); self-documenting per [L16] — the border renders on
-     the status surface declared on the same rule. */
+  /* Borders top and bottom frame the status bar: the top rule separates it
+     from the transcript above, the bottom rule from the prompt entry below.
+     Both render on the status surface set on this same rule (self-documenting
+     per [L16]). */
   border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
   /* Drop shadow casting upward from the top edge so the transcript's
      bottom rows read as scrolling "under" the bar. The hard border-
      top above is the fixed separator line; the shadow is the soft

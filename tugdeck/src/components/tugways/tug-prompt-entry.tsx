@@ -533,12 +533,15 @@ export interface TugPromptEntryProps {
   /**
    * Maximize *mode* (session-only appearance — never persisted). When
    * `false` (the default), the entry is content-sized: the editor
-   * auto-grows with its content up to `maxRows` and then scrolls, so the
-   * host can let the entry size itself and give the rest of the column to
-   * its transcript. When `true`, the entry fills its host container and
-   * the editor fills the entry (the editor's own `[data-maximized]`
-   * fill mode). The host owns the live state and renders the toggle in
-   * its own chrome; the entry just maps it onto `data-maximized`.
+   * auto-grows with its content up to its height cap and then scrolls
+   * (the `maxRows` row cap by default; a host may override the scroller's
+   * `max-height` with its own scoped rule — the Dev card caps by card
+   * height so its toolbar stays pinned). The host can then let the entry
+   * size itself and give the rest of the column to its transcript. When
+   * `true`, the entry fills its host container and the editor fills the
+   * entry (the editor's own `[data-maximized]` fill mode). The host owns
+   * the live state and renders the toggle in its own chrome; the entry
+   * just maps it onto `data-maximized`.
    */
   maximized?: boolean;
   /** Caller-supplied className merged with the root. */
@@ -1709,8 +1712,9 @@ export const TugPromptEntry = React.forwardRef<
           data-pending-question={snap.pendingQuestion ? "" : undefined}
           data-empty="true"
           // Maximize mode (appearance, [L06]): present → fill the host;
-          // absent → content-sized (the editor auto-grows up to maxRows
-          // then scrolls). CSS branches the entry's flex behavior on this.
+          // absent → content-sized (the editor auto-grows up to its
+          // height cap then scrolls). CSS branches the entry's flex
+          // behavior on this.
           data-maximized={maximized ? "" : undefined}
           className={cn("tug-prompt-entry", className)}
         >
@@ -1739,8 +1743,13 @@ export const TugPromptEntry = React.forwardRef<
               borderless
               // Mode follows the host's maximize state. Not maximized →
               // auto-height: opens at the host's `--tug-text-editor-min-height`
-              // (the Dev card sets 200px), grows with content up to `maxRows`
-              // rows, then scrolls. Maximized → fill the entry.
+              // (the Dev card sets 200px), grows with content up to its
+              // height cap, then scrolls. The cap is `maxRows` rows by
+              // default; a host may override the scroller's `max-height`
+              // (the Dev card caps by card height instead — see
+              // `dev-card.css` — so the gallery prompt keeps the 20-row cap
+              // while the Dev prompt scrolls at a fraction of the card).
+              // Maximized → fill the entry.
               maximized={maximized}
               maxRows={20}
               disabled={deactivated}
