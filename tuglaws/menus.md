@@ -242,7 +242,10 @@ The Window menu is special: it is `NSApp.windowsMenu`, so AppKit owns
 auto-added entries in it. The dynamic pane list is managed as a sectioned
 slice — remove exactly the `window.pane.*` items, re-insert after the
 anchor separator — and the menu is **never** wholesale-rebuilt
-(`removeAllItems()` is forbidden there).
+(`removeAllItems()` is forbidden there). Automatic window **tabbing**
+items (Show Previous/Next Tab, Move Tab to New Window, Merge All Windows)
+are suppressed app-wide via `NSWindow.allowsAutomaticWindowTabbing = false`
+at launch — Tug navigates by cards and panes, not native NSWindow tabs.
 
 ## Testing
 

@@ -93,6 +93,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         lap("start")
 
+        // Tug has no native window tabbing — cards and panes are Tug's own
+        // navigation model, not NSWindow tabs. Disabling automatic tabbing
+        // keeps AppKit from injecting the Show Previous/Next Tab, Move Tab
+        // to New Window, and Merge All Windows items into the Window menu.
+        NSWindow.allowsAutomaticWindowTabbing = false
+
         // Per-instance tugbank DB at `InstanceConfig.tugbankDbPath`.
         // TUGBANK_PATH still takes precedence as a harness override so
         // app-tests can point at a temp DB without rebuilding.

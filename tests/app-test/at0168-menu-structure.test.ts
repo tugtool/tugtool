@@ -155,6 +155,21 @@ describe.skipIf(!SHOULD_RUN)("AT0168: menu structure contract", () => {
         );
         expect(findPanel.length, "no NSTextView find-panel items remain").toBe(0);
 
+        // AppKit's automatic window-tabbing items (Show Previous/Next Tab,
+        // Move Tab to New Window, Merge All Windows) are suppressed via
+        // NSWindow.allowsAutomaticWindowTabbing = false — Tug has no native
+        // window tabbing.
+        const TABBING_ACTIONS = new Set([
+          "selectPreviousTab:",
+          "selectNextTab:",
+          "moveTabToNewWindow:",
+          "mergeAllWindows:",
+          "toggleTabBar:",
+          "toggleTabOverview:",
+        ]);
+        const tabbing = flat.filter((i) => i.action !== undefined && TABBING_ACTIONS.has(i.action));
+        expect(tabbing.length, "no automatic window-tabbing items remain").toBe(0);
+
         // File is flat: New Dev Card sits directly inside a top-level
         // menu (bar item depth 0 → menu item depth 1), not behind a
         // New submenu shell.
