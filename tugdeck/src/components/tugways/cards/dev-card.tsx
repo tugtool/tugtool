@@ -3300,6 +3300,11 @@ export function DevCardBody({
         // felt. Engine-derived from the store ([L02]); appearance via the
         // attribute, never React state ([L06]).
         data-inline-dialog-pending={inlineDialogPending ? "true" : undefined}
+        // Maximize signal (session-only appearance, [L06]). Set on the card
+        // root so BOTH the transcript column and the entry region (siblings)
+        // can react: maximized pegs the transcript to its minimum height and
+        // gives the rest to the entry. Removed when not maximized.
+        data-maximized={maximized ? "" : undefined}
       >
         {/*
           Card body is a plain flex column ([L06]/[L13] — no JS sizing).
@@ -3434,7 +3439,6 @@ export function DevCardBody({
         <div
           className="dev-card-entry-region"
           data-slot="dev-card-entry-region"
-          data-maximized={maximized ? "" : undefined}
         >
           <TugBox
             ref={(el) => {
@@ -3577,8 +3581,11 @@ export function registerDevCard(): void {
       // breathing room. `getStackSizePolicy` lifts the hosting pane's
       // resize floor to this value (or higher, if a wider card shares
       // the pane), so the instrument readout never clips. The height
-      // floor is comfortable for a few transcript turns.
-      min: { width: 800, height: 240 },
+      // floor must fit the prompt entry (the fixed 200px text area + its
+      // toolbar/indicator rows) AND leave the transcript its minimum
+      // (`--dev-transcript-min`), so the entry never crowds the transcript
+      // out even at the smallest card size.
+      min: { width: 800, height: 380 },
       // Default size opens the card tall enough for an extended
       // transcript to read as a continuous column, not a porthole,
       // and wide enough to give the Choose Session sheet (caps at

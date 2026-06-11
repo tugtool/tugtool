@@ -422,6 +422,11 @@ function handlePaste(
     effects: placedAtoms.length > 0 ? addAtomsEffect.of(placedAtoms) : [],
     selection: { anchor: from + sidecar.text.length },
     userEvent: "input.paste",
+    // Reveal the caret after the paste — without this the sidecar-paste
+    // path leaves the caret below the fold on a paste that overflows the
+    // visible rows. (The `keepCaretVisible` listener also re-checks
+    // post-layout, but flag the transaction too for the immediate case.)
+    scrollIntoView: true,
   });
 
   event.preventDefault();

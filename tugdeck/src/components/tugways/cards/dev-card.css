@@ -3,13 +3,14 @@
    ============================================================================
    Dev card — the Unified Command Surface.
 
-   Horizontal TugSplitPane. The top pane (transcript) absorbs height
-   growth; the bottom pane (entry) is pinned to a pixel size — defaults
-   to 240px, floored at 180px, capped at 90% — via
-   `groupResizeBehavior="preserve-pixel-size"`, so the entry stays the
-   same number of visible rows as the card grows or shrinks. The card
-   itself is a full-height flex column so the split pane has a concrete
-   height to measure against.
+   The card body is a plain flex column (no split pane, no JS sizing). The
+   transcript column (`.dev-card-top-column`: history + Z2 status row) flexes
+   into the remaining height but never drops below `--dev-transcript-min`;
+   the prompt-entry region below is pinned to the bottom and is exactly as
+   tall as its fixed text area (`--tug-text-editor-min-height`) plus the
+   Z4 / Z5 rows. The maximize toggle pegs the transcript to its minimum and
+   gives the rest to the entry. One rule governs the split: the transcript
+   minimum.
    ========================================================================= */
 
 .dev-card {
@@ -17,6 +18,11 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  /* ── Tune this ──────────────────────────────────────────────────────
+     The transcript region (history + Z2 status row) never shrinks below
+     this, even as the entry grows or is maximized — the single governing
+     rule for the card's vertical split. ──────────────────────────────── */
+  --dev-transcript-min: 52px;
   /* No `min-width` here — a leaf cannot widen its container, it only
      overflows and clips. The card's width floor is declared as
      `sizePolicy.min.width` in `registerDevCard`; the hosting pane's
@@ -40,9 +46,9 @@
   min-width: 0;
 }
 
-/* When maximized, the entry pane fills the 90%-pegged region (the prompt
+/* When maximized, the entry pane fills the expanded region (the prompt
    entry inside switches to its own fill mode via `[data-maximized]`). */
-.dev-card-entry-region[data-maximized] .dev-card-entry-pane {
+.dev-card[data-maximized] .dev-card-entry-pane {
   flex: 1 1 auto;
   height: 100%;
 }
@@ -63,41 +69,56 @@
   display: flex;
   flex-direction: column;
   /* Direct flex child of `.dev-card` now (the split pane is gone). Flexes
-     into all height the content-sized entry region below leaves. */
+     into all height the content-sized entry region below leaves, but never
+     drops below `--dev-transcript-min` — the transcript (and its Z2 status
+     row) always keeps a usable minimum, even when the entry grows or is
+     maximized. The inner list view keeps its own `min-height: 0` for
+     scrolling; this floor is on the outer column only. */
   flex: 1 1 0;
   width: 100%;
-  min-height: 0;
+  min-height: var(--dev-transcript-min, 140px);
   min-width: 0;
 }
 
-/* Prompt-entry region — sibling of the transcript column in the card's
-   flex layout, ALWAYS pinned to the bottom (it is the last flex child; the
-   transcript column above is `flex: 1 1 0` and absorbs all slack).
+/* Prompt-entry region — sibling of the transcript column, ALWAYS pinned to
+   the bottom (last flex child; the transcript column above is `flex: 1 1 0`
+   and absorbs the slack).
 
-   `flex: 0 0 auto` — purely content-sized, NO min-height of its own, so the
-   region is exactly as tall as the prompt entry (text area + the fixed
-   Z2-less toolbar / Z4 / Z5 rows) with no dead space below the toolbar. The
-   text area's default height is owned by the editor via
-   `--tug-text-editor-min-height` below — the region just wraps it.
+   `flex: 0 1 auto` — content-sized (the editor's height drives it) with no
+   min-height of its own, so the region is exactly text-area + the fixed
+   Z4 / Z5 rows, no dead space below the toolbar. `flex-shrink: 1` lets the
+   region yield to the transcript's `--dev-transcript-min` floor on a small
+   card rather than overflowing.
 
-   Maximized → a fixed 90% peg (the transcript keeps 10%); `data-maximized`
-   is set from the host's session-only maximize state. */
+   Maximized → the region fills everything above the transcript minimum (see
+   the `.dev-card[data-maximized]` rules below). There is no 90% peg: the one
+   governing rule is "the transcript keeps `--dev-transcript-min`"; maximize
+   just hands the entry all the height above that floor. */
 .dev-card-entry-region {
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   width: 100%;
   min-width: 0;
   /* ── Tune this ──────────────────────────────────────────────────────
-     Default height of the text-entry area (the editor), in CSS pixels.
-     The editor opens this tall and still grows with content up to its
-     `maxRows` cap, then scrolls. The fixed Z2 / Z4 / Z5 rows are unaffected.
+     Fixed height of the text-entry area (the editor), in CSS pixels. The
+     editor is this tall and scrolls when content exceeds it (it is NOT
+     auto-grow in normal mode — that is what the maximize toggle is for, and
+     what keeps the entry from ever crowding out the transcript). The fixed
+     Z4 / Z5 rows are unaffected.
      ──────────────────────────────────────────────────────────────────── */
-  --tug-text-editor-min-height: 160px;
+  --tug-text-editor-min-height: 200px;
 }
 
-.dev-card-entry-region[data-maximized] {
-  flex: 0 0 90%;
+/* Maximize: peg the transcript to its minimum and give the rest to the
+   entry. One rule — the transcript minimum — governs both maximize and the
+   normal grow cap; this is just maximize using the full height above it. */
+.dev-card[data-maximized] .dev-card-top-column {
+  flex: 0 0 var(--dev-transcript-min, 140px);
+}
+
+.dev-card[data-maximized] .dev-card-entry-region {
+  flex: 1 1 auto;
 }
 
 /* The `TugPaneBulletinProvider` nested inside the top column carries the same

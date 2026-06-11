@@ -728,6 +728,49 @@ export interface TugTextEditorProps
  * Kept as a free function so the extension list is easy to grow
  * without disturbing the lifecycle code.
  */
+/**
+ * Keep the caret visible after every user edit. CM6's own
+ * `scrollIntoView` runs during the edit transaction, but when the editor
+ * is auto-height the scroller's height is still settling (CSS `max-height`
+ * clamp + the measure cycle), so a large paste can leave the caret below
+ * the fold. This listener re-checks AFTER the measure settles and nudges
+ * `scrollDOM` directly to reveal the caret line — a plain measure-phase
+ * scroll, no re-entrant dispatch, no `requestAnimationFrame` (this is
+ * CM6's own measure cycle, not React's). Guarded so it no-ops when the
+ * caret is already in view (the common case for ordinary typing).
+ */
+const keepCaretVisible: Extension = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return;
+  const isUserEdit = update.transactions.some(
+    (t) => t.isUserEvent("input") || t.isUserEvent("delete"),
+  );
+  if (!isUserEdit) return;
+  const view = update.view;
+  view.requestMeasure({
+    read() {
+      const head = view.state.selection.main.head;
+      const block = view.lineBlockAt(head);
+      const scroller = view.scrollDOM;
+      return {
+        blockTop: block.top,
+        blockBottom: block.bottom,
+        scrollTop: scroller.scrollTop,
+        clientHeight: scroller.clientHeight,
+      };
+    },
+    write(m) {
+      const scroller = view.scrollDOM;
+      const margin = 6;
+      const viewBottom = m.scrollTop + m.clientHeight;
+      if (m.blockBottom > viewBottom - margin) {
+        scroller.scrollTop = m.blockBottom - m.clientHeight + margin;
+      } else if (m.blockTop < m.scrollTop + margin) {
+        scroller.scrollTop = Math.max(0, m.blockTop - margin);
+      }
+    },
+  });
+});
+
 function buildExtensions(
   host: HTMLElement,
   getKeymapConfig: () => TugTextEditorKeymapConfig,
@@ -863,6 +906,7 @@ function buildExtensions(
     pendingAtomTheme,
     clipboardExtension(getBytesStore, onAttachmentError),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
+    keepCaretVisible,
   ];
 }
 
