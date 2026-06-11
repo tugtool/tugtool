@@ -89,7 +89,7 @@ export interface CardTitleBarHandle {
   requestClose: () => void;
   /**
    * General close-with-confirm entry point shared by Cmd-W (active-card
-   * close on a multi-tab pane) and the "Close All Cards" command. When
+   * close on a multi-tab pane) and the "Close All Card Tabs" command. When
    * `needsConfirm` is `true` the shared confirm popover opens with the
    * supplied copy and `onConfirm` fires only on confirm; when `false`,
    * `onConfirm` runs immediately. Always anchored to the X button.
@@ -180,7 +180,7 @@ function CardTitleBar({
   // `closeIntent` carries the popover copy and the confirm action for the
   // *current* close gesture — a pane close (X / Cmd-W on a single-tab
   // pane), an active-card close (Cmd-W on a multi-tab pane), or a
-  // close-all (the "Close All Cards" command). It is set on open and
+  // close-all (the "Close All Card Tabs" command). It is set on open and
   // retained while the popover animates closed so the copy never flips
   // mid-dismiss.
   const [closeOpen, setCloseOpen] = useState(false);
@@ -758,7 +758,7 @@ export function TugPane({
     onClose?.();
   }, [onClose]);
 
-  // Close All Cards (TUG_ACTIONS.CLOSE_ALL — File ▸ Close All Cards,
+  // Close All Card Tabs (TUG_ACTIONS.CLOSE_ALL — File ▸ Close All Card Tabs,
   // ⌥⌘W). Closes the entire focused pane (every hosted tab). The
   // confirm rule is per-card: pop the "Close N Tabs?" guard only when at
   // least one hosted card opts into `confirmClose`, close immediately

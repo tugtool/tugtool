@@ -9,7 +9,7 @@
  *   - **Close Card** (`file.closeCard`, ⌘W) — enabled only when the
  *     focused pane's active card is closable. The label is static
  *     "Close Card"; the web layer decides card-vs-pane close.
- *   - **Close All Card Tabs** (`file.closeAllCards`, ⌥⌘W) — enabled only
+ *   - **Close All Card Tabs** (`file.closeAllCardTabs`, ⌥⌘W) — enabled only
  *     when the focused pane holds more than one card.
  *
  * Verified through the harness's native-menu introspection
@@ -27,7 +27,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CLOSE_CARD = "file.closeCard";
-const CLOSE_ALL = "file.closeAllCards";
+const CLOSE_ALL = "file.closeAllCardTabs";
 
 /** One pane with `n` gallery-input cards; the active card's `closable`
  *  is overridable to exercise the non-closable branch. */
@@ -95,7 +95,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(closeCard.title, "label is the static 'Close Card'").toBe("Close Card");
 
           const closeAll = await waitMenuEnabled(app, CLOSE_ALL, false);
-          expect(closeAll.found, "file.closeAllCards must exist").toBe(true);
+          expect(closeAll.found, "file.closeAllCardTabs must exist").toBe(true);
           expect(closeAll.enabled, "Close All Card Tabs disabled for a single-card pane").toBe(false);
         } catch (err) {
           const tail = app.tailLog(200);

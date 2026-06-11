@@ -1,6 +1,6 @@
 /**
  * at0166-close-confirm-multitab-and-close-all.test.ts — per-card
- * close-confirm on a multi-tab pane (Cmd-W) and the Close All Cards
+ * close-confirm on a multi-tab pane (Cmd-W) and the Close All Card Tabs
  * command (⌥⌘W).
  *
  * Two close gestures, each gated on the *card's own* `confirmClose`
@@ -12,7 +12,7 @@
  *     "Close Card?" popover guards the removal; a non-opt-in active card
  *     (gallery-input) is removed immediately with no popover.
  *
- *  2. **Close All Cards (⌥⌘W → CLOSE_ALL)** closes the whole focused
+ *  2. **Close All Card Tabs (⌥⌘W → CLOSE_ALL)** closes the whole focused
  *     pane. It pops the "Close N Tabs?" guard only when *any* hosted
  *     card opts into `confirmClose`, and closes immediately otherwise —
  *     unlike the X button, whose multi-tab close always confirms (the
@@ -88,7 +88,7 @@ function clickPopoverButton(label: string): string {
 const settle = () => new Promise((r) => setTimeout(r, 350));
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0166: per-card close-confirm on multi-tab Cmd-W and Close All Cards",
+  "AT0166: per-card close-confirm on multi-tab Cmd-W and Close All Card Tabs",
   () => {
     test(
       "Cmd-W — multi-tab, opt-in active card: 'Close Card?' guards, confirm removes only that tab",

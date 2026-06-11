@@ -476,7 +476,7 @@ export function initActionDispatch(
   // (TUG_ACTIONS.CLOSE_ALL = "close-all") and the dispatch walks to the
   // focused pane's registered handler (DeckCanvas's last-resort handler
   // re-routes to the topmost pane when the first responder has stranded on
-  // the canvas). This is File ▸ Close All Cards (⌥⌘W); the Swift menu item
+  // the canvas). This is File ▸ Close All Card Tabs (⌥⌘W); the Swift menu item
   // is enabled only when the focused pane is multi-card. The tugdeck-side
   // keybinding entry exists for browser-only dev where no Swift menu runs.
   registerAction(TUG_ACTIONS.CLOSE_ALL, () => {

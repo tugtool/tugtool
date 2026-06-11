@@ -148,7 +148,7 @@ re-validates on menu open and key-equivalent dispatch; nothing pushes
 | Tier | Predicate source | Examples |
 |---|---|---|
 | 1 — always | — | natives, links |
-| 2 — deck state | `panes` | `file.closeCard` (closable), `file.closeAllCards` / `window.previousCard` / `window.nextCard` (focused `cardCount > 1`), `maker.newCardInPane` (≥1 pane; debug-gated Maker menu), `window.cyclePanes` (≥2 panes) |
+| 2 — deck state | `panes` | `file.closeCard` (closable), `file.closeAllCardTabs` / `window.previousCard` / `window.nextCard` (focused `cardCount > 1`), `maker.newCardInPane` (≥1 pane; debug-gated Maker menu), `window.cyclePanes` (≥2 panes) |
 | 3 — edit capability | `edit` block | `edit.cut` / `edit.copy` / `edit.paste` / `edit.delete` / `edit.selectAll` / `edit.undo` / `edit.redo` and the Find trio (`edit.find` / `edit.findNext` / `edit.findPrevious`) — each gated on the focused responder handling that action; undo/redo additionally carry the focused editor's history depth |
 | 4 — card type | `activeCard.component == "dev"` | every `session.*` item, `edit.copyLastResponse`, `file.exportTranscript`, `help.shortcuts` |
 | 5 — session state | `dev` block | `session.stop` (`canInterrupt`), `session.rewind` (`sessionBound && hasTurns`), `edit.copyLastResponse` (`hasAssistantMessage`), other `session.*` items (`sessionBound`) |

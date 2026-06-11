@@ -327,7 +327,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         m.sendToTarget(activePaneId, { action: TUG_ACTIONS.CLOSE, phase: "discrete" });
       },
       // Last-resort `close-all` ([D08]), symmetric with the `close`
-      // backstop above. Route File ▸ Close All Cards to the topmost pane
+      // backstop above. Route File ▸ Close All Card Tabs to the topmost pane
       // even when the first responder has stranded on the canvas, so the
       // command is never dropped on the frontmost pane.
       [TUG_ACTIONS.CLOSE_ALL]: (_event: ActionEvent) => {

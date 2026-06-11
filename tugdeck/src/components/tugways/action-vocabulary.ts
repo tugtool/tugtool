@@ -371,7 +371,7 @@ export const TUG_ACTIONS = {
   //                         registered handler pops the "Close N Tabs?"
   //                         confirm when any hosted card opts into
   //                         `confirmClose`, closes immediately otherwise.
-  //                         Dispatched by File ▸ Close All Cards (⌥⌘W).
+  //                         Dispatched by File ▸ Close All Card Tabs (⌥⌘W).
   // MINIMIZE:               payload — none. Minimize the first card.
   // MAXIMIZE:               payload — none. Maximize the first card.
   // SHOW_COMPONENT_GALLERY: payload — none. Open or focus the gallery card.

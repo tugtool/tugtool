@@ -453,7 +453,7 @@ export class App {
   /**
    * Validated state of one native menu item by its
    * `NSUserInterfaceItemIdentifier` (e.g. `"file.closeCard"`,
-   * `"file.closeAllCards"`). Returns `{ found: false }` when absent.
+   * `"file.closeAllCardTabs"`). Returns `{ found: false }` when absent.
    */
   menuItemState(identifier: string): Promise<MenuItemState> {
     return client.menuItemState(this as HarnessCaller, identifier);

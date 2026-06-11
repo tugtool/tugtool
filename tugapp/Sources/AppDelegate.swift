@@ -60,7 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // File menu state
     private var closeMenuItem: NSMenuItem!
-    private var closeAllMenuItem: NSMenuItem!
+    private var closeAllCardTabsMenuItem: NSMenuItem!
 
     // View menu state
     private var viewMenu: NSMenu!
@@ -551,9 +551,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // only when the focused pane holds more than one card — see
         // validateMenuItem(_:). The web layer pops the "Close N Tabs?"
         // confirm when any hosted card opts into confirmClose.
-        closeAllMenuItem = NSMenuItem(title: "Close All Card Tabs", action: #selector(closeAllCards(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
-        closeAllMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCards")
-        fileMenu.addItem(closeAllMenuItem)
+        closeAllCardTabsMenuItem = NSMenuItem(title: "Close All Card Tabs", action: #selector(closeAllCardTabs(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
+        closeAllCardTabsMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCardTabs")
+        fileMenu.addItem(closeAllCardTabsMenuItem)
 
         fileMenu.addItem(NSMenuItem.separator())
 
@@ -930,7 +930,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("close")
     }
 
-    @objc private func closeAllCards(_ sender: Any) {
+    @objc private func closeAllCardTabs(_ sender: Any) {
         // Wire format is the bare chain-action name "close-all". The web
         // layer's responder chain walks it to the focused pane, which
         // closes every hosted tab — popping the "Close N Tabs?" confirm
@@ -1216,7 +1216,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // Deck-state tier.
         case "file.closeCard":
             return focusedPaneActiveCardClosable
-        case "file.closeAllCards":
+        case "file.closeAllCardTabs":
             return focusedPaneCardCount > 1
         case "maker.newCardInPane":
             return !menuState.panes.isEmpty
