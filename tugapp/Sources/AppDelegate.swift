@@ -524,42 +524,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         fileMenuItem.submenu = fileMenu
 
         // Card creation, flattened — two production card types don't need
-        // a submenu. The debug-only gallery / hello-world creators live in
-        // the app-maker menu, gated at compile time on BuildInfo.profile.
+        // a submenu. The debug-only gallery / hello-world / active-pane
+        // creators live in the app-maker menu, gated at compile time on
+        // BuildInfo.profile.
         fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
         fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
-        // New Card in Active Pane (⌘T): the tab-creation chord. Validated
-        // against deck state (needs a pane to add to).
-        fileMenu.addItem(NSMenuItem(title: "New Card in Active Pane", action: #selector(addCardToActivePane(_:)), keyEquivalent: "t").identified("file.newCardInPane"))
 
         fileMenu.addItem(NSMenuItem.separator())
 
-        // Close Card / Close Pane: routes through the web view's responder
-        // chain rather than NSWindow.performClose. The custom selector sends a
+        // Close Card (⌘W): routes through the web view's responder chain
+        // rather than NSWindow.performClose. The custom selector sends a
         // Control frame that action-dispatch.ts turns into a `close` chain
         // dispatch, which lands on TugPane's registered handler. Without the
         // round-trip, AppKit would swallow ⌘W at the menubar and the WKWebView
-        // would never see the keystroke.
-        //
-        // Title is dynamic (updated by updateCardList on every frontend push):
-        //   multi-card pane  → "Close Card" (closes the active card)
-        //   single-card pane → "Close Pane" (removes the last card / pane)
-        // matching the macOS Safari / Finder convention. The initial title
-        // is "Close Pane" — before the first card list arrives, any pending
-        // ⌘W best describes the default single-card pane state.
-        closeMenuItem = NSMenuItem(title: "Close Pane", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
+        // would never see the keystroke. The web layer decides whether ⌘W
+        // closes the active card or the whole pane (single-card case); the
+        // label stays "Close Card" regardless.
+        closeMenuItem = NSMenuItem(title: "Close Card", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
         // Stable identifier for native-menu introspection (test harness
-        // `menuItemState` / `menuSnapshot`). Title flips Close Card ↔ Close
-        // Pane, so identity must not ride the title.
+        // `menuItemState` / `menuSnapshot`).
         closeMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeCard")
         fileMenu.addItem(closeMenuItem)
 
-        // Close All Cards (⌥⌘W): closes every tab in the focused pane via the
-        // same `close-all` responder-chain round-trip `close` uses. Enabled
+        // Close All Card Tabs (⌥⌘W): closes every tab in the focused pane via
+        // the same `close-all` responder-chain round-trip `close` uses. Enabled
         // only when the focused pane holds more than one card — see
         // validateMenuItem(_:). The web layer pops the "Close N Tabs?"
         // confirm when any hosted card opts into confirmClose.
-        closeAllMenuItem = NSMenuItem(title: "Close All Cards", action: #selector(closeAllCards(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
+        closeAllMenuItem = NSMenuItem(title: "Close All Card Tabs", action: #selector(closeAllCards(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
         closeAllMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCards")
         fileMenu.addItem(closeAllMenuItem)
 
@@ -746,6 +738,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             mMenu.addItem(NSMenuItem.separator())
             mMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("maker.galleryCard"))
             mMenu.addItem(NSMenuItem(title: "New Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option, .shift]).identified("maker.helloCard"))
+            // New Card in Active Pane (⌘T): the tab-creation chord.
+            // Validated against deck state (needs a pane to add to).
+            mMenu.addItem(NSMenuItem(title: "New Card in Active Pane", action: #selector(addCardToActivePane(_:)), keyEquivalent: "t").identified("maker.newCardInPane"))
         }
         mMenu.addItem(NSMenuItem.separator())
         mMenu.addItem(NSMenuItem(title: "Source Tree...", action: #selector(sourceTree(_:)), keyEquivalent: "").identified("maker.sourceTree"))
@@ -1066,13 +1061,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// MainWindow on every `menuState` message).
     func updateMenuState(_ payload: [String: Any]) {
         menuState = MenuState(payload: payload)
-
-        // File ▸ Close Card / Close Pane — dynamic label based on the
-        // focused pane's card count. Multi-card: ⌘W closes the active card
-        // (pane stays). Single-card: ⌘W closes the pane. Matches
-        // macOS Safari / Finder behavior.
-        let cardCount = menuState.focusedPane?.cardCount ?? 0
-        closeMenuItem?.title = cardCount > 1 ? "Close Card" : "Close Pane"
     }
 
     /// Card count of the focused pane (0 when nothing is focused). Drives
@@ -1138,7 +1126,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return focusedPaneActiveCardClosable
         case "file.closeAllCards":
             return focusedPaneCardCount > 1
-        case "file.newCardInPane":
+        case "maker.newCardInPane":
             return !menuState.panes.isEmpty
         case "window.previousCard", "window.nextCard":
             return focusedPaneCardCount > 1

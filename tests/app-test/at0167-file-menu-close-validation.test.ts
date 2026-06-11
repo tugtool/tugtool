@@ -1,15 +1,15 @@
 /**
  * at0167-file-menu-close-validation.test.ts — native File-menu
- * validation for Close Card / Close Pane and Close All Cards.
+ * validation for Close Card and Close All Card Tabs.
  *
  * Both close items are state-gated by `AppDelegate.validateMenuItem`,
  * driven by the focused pane's cached card list (the frontend pushes
  * `{ focused, cardCount, closable }` per pane on every deck change):
  *
- *   - **Close Card / Close Pane** (`file.closeCard`, ⌘W) — enabled only
- *     when the focused pane's active card is closable. Title flips
- *     "Close Card" (multi-card) ↔ "Close Pane" (single-card).
- *   - **Close All Cards** (`file.closeAllCards`, ⌥⌘W) — enabled only
+ *   - **Close Card** (`file.closeCard`, ⌘W) — enabled only when the
+ *     focused pane's active card is closable. The label is static
+ *     "Close Card"; the web layer decides card-vs-pane close.
+ *   - **Close All Card Tabs** (`file.closeAllCards`, ⌥⌘W) — enabled only
  *     when the focused pane holds more than one card.
  *
  * Verified through the harness's native-menu introspection
@@ -76,10 +76,10 @@ async function waitMenuEnabled(
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0167: File-menu Close Card / Close All Cards validation",
+  "AT0167: File-menu Close Card / Close All Card Tabs validation",
   () => {
     test(
-      "single closable card: Close Pane enabled, Close All Cards disabled",
+      "single closable card: Close Card enabled, Close All Card Tabs disabled",
       async () => {
         const app = await launchTugApp({ testName: "at0167-single" });
         try {
@@ -91,12 +91,12 @@ describe.skipIf(!SHOULD_RUN)(
 
           const closeCard = await waitMenuEnabled(app, CLOSE_CARD, true);
           expect(closeCard.found, "file.closeCard must exist").toBe(true);
-          expect(closeCard.enabled, "Close Pane enabled for a closable card").toBe(true);
-          expect(closeCard.title, "single-card label is 'Close Pane'").toBe("Close Pane");
+          expect(closeCard.enabled, "Close Card enabled for a closable card").toBe(true);
+          expect(closeCard.title, "label is the static 'Close Card'").toBe("Close Card");
 
           const closeAll = await waitMenuEnabled(app, CLOSE_ALL, false);
           expect(closeAll.found, "file.closeAllCards must exist").toBe(true);
-          expect(closeAll.enabled, "Close All Cards disabled for a single-card pane").toBe(false);
+          expect(closeAll.enabled, "Close All Card Tabs disabled for a single-card pane").toBe(false);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") process.stderr.write(`\n[at0167-single] log tail:\n${tail}\n`);
@@ -109,7 +109,7 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "multi-card pane: Close Card AND Close All Cards both enabled",
+      "multi-card pane: Close Card AND Close All Card Tabs both enabled",
       async () => {
         const app = await launchTugApp({ testName: "at0167-multi" });
         try {
@@ -121,10 +121,10 @@ describe.skipIf(!SHOULD_RUN)(
 
           const closeCard = await waitMenuEnabled(app, CLOSE_CARD, true);
           expect(closeCard.enabled, "Close Card enabled in a multi-card pane").toBe(true);
-          expect(closeCard.title, "multi-card label is 'Close Card'").toBe("Close Card");
+          expect(closeCard.title, "label is the static 'Close Card'").toBe("Close Card");
 
           const closeAll = await waitMenuEnabled(app, CLOSE_ALL, true);
-          expect(closeAll.enabled, "Close All Cards enabled for a multi-card pane").toBe(true);
+          expect(closeAll.enabled, "Close All Card Tabs enabled for a multi-card pane").toBe(true);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") process.stderr.write(`\n[at0167-multi] log tail:\n${tail}\n`);
@@ -151,7 +151,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(closeCard.enabled, "Close item disabled when the active card is not closable").toBe(false);
 
           const closeAll = await waitMenuEnabled(app, CLOSE_ALL, false);
-          expect(closeAll.enabled, "Close All Cards disabled for a single-card pane").toBe(false);
+          expect(closeAll.enabled, "Close All Card Tabs disabled for a single-card pane").toBe(false);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") process.stderr.write(`\n[at0167-nonclosable] log tail:\n${tail}\n`);
@@ -192,7 +192,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(closeCard, "closeCard present in snapshot").toBeDefined();
           expect(closeAll, "closeAll present in snapshot").toBeDefined();
           expect(closeCard!.keyEquivalent, "Close Card is ⌘W").toBe("w");
-          expect(closeAll!.keyEquivalent, "Close All Cards is ⌥⌘W").toBe("w");
+          expect(closeAll!.keyEquivalent, "Close All Card Tabs is ⌥⌘W").toBe("w");
           // ⌥⌘W carries the Option bit; ⌘W does not.
           expect(
             closeAll!.modifierMask & closeCard!.modifierMask,

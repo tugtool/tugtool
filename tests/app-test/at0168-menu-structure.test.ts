@@ -9,8 +9,8 @@
  * prefs (empty per-instance tugbank → maker mode reads false under
  * the harness).
  *
- * Assertions are by identifier only — titles flip (Close Card ↔ Close
- * Pane) and localize; identity never rides the title. Dynamic items
+ * Assertions are by identifier only — titles localize and identity
+ * never rides the title. Dynamic items
  * (View menu body, theme list, `window.pane.*`) are rebuilt in
  * `menuNeedsUpdate` on open and deliberately NOT asserted here — the
  * snapshot walks the menu tree without a tracking session.
@@ -45,7 +45,6 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // File
   { id: "file.newDevCard", key: "n", mods: MOD.command },
   { id: "file.newGitCard", key: "n", mods: MOD.command | MOD.shift },
-  { id: "file.newCardInPane", key: "t", mods: MOD.command },
   { id: "file.closeCard", key: "w", mods: MOD.command },
   { id: "file.closeAllCards", key: "w", mods: MOD.command | MOD.option },
   { id: "file.exportTranscript", key: "" },
@@ -96,9 +95,9 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "window.enterFullScreen", key: "f", mods: MOD.command | MOD.control },
   { id: "window.bringAllToFront" },
   // Maker (items exist in the hidden menu). The gallery / hello-world
-  // creators are gated on BuildInfo.profile == "debug"; the app-test
-  // bundle's profile is "apptest", so they are absent here and not
-  // asserted.
+  // / active-pane creators are gated on BuildInfo.profile == "debug";
+  // the app-test bundle's profile is "apptest", so they are absent here
+  // and not asserted.
   { id: "maker.reload", key: "r", mods: MOD.command },
   { id: "maker.jsConsole", key: "c", mods: MOD.command | MOD.option },
   { id: "maker.devPanel", key: "/", mods: MOD.command | MOD.option },

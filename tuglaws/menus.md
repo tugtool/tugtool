@@ -86,7 +86,7 @@ re-validates on menu open and key-equivalent dispatch; nothing pushes
 | Tier | Predicate source | Examples |
 |---|---|---|
 | 1 — always | — | natives, Find trio, links |
-| 2 — deck state | `panes` | `file.closeCard` (closable), `file.closeAllCards` / `window.previousCard` / `window.nextCard` (focused `cardCount > 1`), `file.newCardInPane` (≥1 pane), `window.cyclePanes` (≥2 panes) |
+| 2 — deck state | `panes` | `file.closeCard` (closable), `file.closeAllCards` / `window.previousCard` / `window.nextCard` (focused `cardCount > 1`), `maker.newCardInPane` (≥1 pane; debug-gated Maker menu), `window.cyclePanes` (≥2 panes) |
 | 3 — card type | `activeCard.component == "dev"` | every `session.*` item, `edit.copyLastResponse`, `file.exportTranscript`, `help.shortcuts` |
 | 4 — session state | `dev` block | `session.stop` (`canInterrupt`), `session.rewind` (`sessionBound && hasTurns`), `edit.copyLastResponse` (`hasAssistantMessage`), other `session.*` items (`sessionBound`) |
 
@@ -141,9 +141,9 @@ session.permissionMode.<mode>          view.zoomInAlias (hidden ⌘= alias)
 
 Rules:
 
-- **Identity never rides the title.** `file.closeCard` keeps its
-  identifier through the Close Card ↔ Close Pane title flip; tests and
-  the harness address items by identifier only.
+- **Identity never rides the title.** Titles localize and (for dynamic
+  items) carry runtime data; the identifier never does. Tests and the
+  harness address items by identifier only.
 - Dynamic items mint identifiers at build time (`view.theme.<name>`,
   `window.pane.<n>` by position, since pane ids are session-random).
 - AppKit injects its own identified items (dictation, emoji palette) and

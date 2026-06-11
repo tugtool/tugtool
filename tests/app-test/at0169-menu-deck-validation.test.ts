@@ -4,10 +4,13 @@
  * The deck-state tier of `AppDelegate.validateMenuItem` is driven by
  * the `menuState` push's pane projection:
  *
- *   - `file.newCardInPane` (⌘T) — enabled when the deck has ≥1 pane.
  *   - `window.previousCard` / `window.nextCard` (⇧⌘[ / ⇧⌘]) — enabled
  *     when the focused pane holds more than one card.
  *   - `window.cyclePanes` (⌃`) — enabled when the deck has ≥2 panes.
+ *
+ * (`maker.newCardInPane`, ⌘T, also rides this tier, but lives in the
+ * debug-gated Maker menu and is absent from the apptest bundle, so it
+ * isn't probed here.)
  *
  * Also covers the card-type tier's negative half with a non-dev
  * active card: every dev-card command surface (`session.*`,
@@ -99,7 +102,7 @@ async function expectEnabled(app: App, identifier: string, want: boolean): Promi
 
 describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
   test(
-    "single pane, single card: new-in-pane enabled; card-nav and cycle disabled",
+    "single pane, single card: card-nav and cycle disabled",
     async () => {
       const app = await launchTugApp({ testName: "at0169-single" });
       try {
@@ -108,7 +111,6 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("C0")`,
         );
 
-        await expectEnabled(app, "file.newCardInPane", true);
         await expectEnabled(app, "window.previousCard", false);
         await expectEnabled(app, "window.nextCard", false);
         await expectEnabled(app, "window.cyclePanes", false);
