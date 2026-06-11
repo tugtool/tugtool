@@ -5,6 +5,8 @@ import {
   EMPTY_EDIT_CAPABILITIES,
   HostMenuStatePublisher,
   projectDeckState,
+  registerEditCapsRefresher,
+  requestEditMenuStateRefresh,
   type MenuStateDevBlock,
   type MenuStateEditBlock,
   type MenuStatePayload,
@@ -274,7 +276,18 @@ describe("computeEditCapabilities", () => {
     expect(caps.cut).toBe(false);
     expect(caps.paste).toBe(false);
     expect(caps.undo).toBe(false);
+    expect(caps.redo).toBe(false);
     expect(caps.find).toBe(false);
+  });
+
+  test("undo/redo follow the focused editor's depth-gated validateAction", () => {
+    // An editor that handles UNDO/REDO but whose history holds only an
+    // undoable step (depth-gated validator: undo yes, redo no).
+    const caps = computeEditCapabilities(
+      chainHandling(TUG_ACTIONS.UNDO),
+    );
+    expect(caps.undo).toBe(true);
+    expect(caps.redo).toBe(false);
   });
 
   test("nothing focused → every capability is false", () => {
@@ -288,5 +301,19 @@ describe("computeEditCapabilities", () => {
     expect(caps.find).toBe(true);
     expect(caps.findNext).toBe(true);
     expect(caps.findPrevious).toBe(true);
+  });
+});
+
+describe("edit-caps refresher registry", () => {
+  test("requestEditMenuStateRefresh invokes the registered refresher; clearing stops it", () => {
+    let calls = 0;
+    registerEditCapsRefresher(() => {
+      calls += 1;
+    });
+    requestEditMenuStateRefresh();
+    expect(calls).toBe(1);
+    registerEditCapsRefresher(null);
+    requestEditMenuStateRefresh(); // no registered refresher → no-op
+    expect(calls).toBe(1);
   });
 });

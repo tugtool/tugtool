@@ -35,7 +35,11 @@ import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
 import { getAppLifecycle } from "../../lib/app-lifecycle";
 import { getDeckStore } from "../../lib/deck-store-registry";
-import { computeEditCapabilities, publishEditMenuState } from "../../lib/host-menu-state";
+import {
+  computeEditCapabilities,
+  publishEditMenuState,
+  registerEditCapsRefresher,
+} from "../../lib/host-menu-state";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { isSyntheticEscape } from "./internal/synthetic-escape";
 
@@ -167,10 +171,47 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // host-menu-state's deck/dev publishers). Seed now, then republish on
     // every validation change (focus / register / unregister).
     const publishEditCaps = (): void => {
-      publishEditMenuState(computeEditCapabilities(manager));
+      const caps = computeEditCapabilities(manager);
+      // Undo/Redo liveness gate. The chain first responder is deliberately
+      // sticky — a canvas-background click (pane deselect) blurs the
+      // editor to body but demotes nothing, so the FR keeps answering
+      // capability queries for a card the user has visibly deactivated.
+      // Undo/Redo are *editing* state: an editor is active for editing iff
+      // it actually holds keyboard focus, so they additionally require
+      // `document.activeElement` inside the FR's element. The other caps
+      // stay ungated on purpose — Copy must keep working for read-only
+      // selections (transcript text), where the selection lives without
+      // DOM focus on the responder.
+      const frId = manager.getFirstResponder();
+      const frEl =
+        frId !== null
+          ? document.querySelector(`[data-responder-id="${CSS.escape(frId)}"]`)
+          : null;
+      const active = document.activeElement;
+      const frFocused =
+        frEl !== null &&
+        active !== null &&
+        (frEl === active || frEl.contains(active));
+      publishEditMenuState(
+        frFocused ? caps : { ...caps, undo: false, redo: false },
+      );
     };
     publishEditCaps();
     const unsubscribeEditCaps = manager.subscribe(publishEditCaps);
+    // Substrates request a recompute when a capability flips *within* the
+    // focused responder (e.g. an editor's undo depth changing as the user
+    // types) — those flips don't bump the validation version by design.
+    registerEditCapsRefresher(publishEditCaps);
+    // DOM focus moves don't always bump the validation version either —
+    // a blur to body (canvas deselect) promotes nothing — so the liveness
+    // gate needs its own triggers. Microtask defer lets the focus
+    // transition settle before reading `document.activeElement`; the
+    // publisher's diff suppresses no-op posts.
+    const onFocusChange = (): void => {
+      queueMicrotask(publishEditCaps);
+    };
+    document.addEventListener("focusin", onFocusChange, { capture: true });
+    document.addEventListener("focusout", onFocusChange, { capture: true });
 
     // Late-bind the responder chain manager to the CardLifecycle so
     // activations can promote the key responder. DeckManager
@@ -775,6 +816,9 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("focusin", promoteOnFocusIn, { capture: true });
       document.removeEventListener("contextmenu", fallbackContextMenu);
       selectionGuard.detach();
+      document.removeEventListener("focusin", onFocusChange, { capture: true });
+      document.removeEventListener("focusout", onFocusChange, { capture: true });
+      registerEditCapsRefresher(null);
       unsubscribeEditCaps();
       unsubscribeKeyboardAccess();
       unsubscribeRingModality();

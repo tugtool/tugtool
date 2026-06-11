@@ -569,21 +569,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenuItem.submenu = editMenu
-        // Standard edit actions. The items target AppDelegate wrappers
-        // (performUndo / performCopy / …) rather than the bare NSText
-        // selectors so that `validateMenuItem(_:)` is consulted here — the
-        // wrappers resolve to this delegate, the native selectors would
-        // resolve to the WKWebView and be validated by WebKit, which
-        // over-enables Copy / Select All because a web page is always
-        // "selectable" regardless of our focus state. Each wrapper
-        // re-dispatches its native AppKit selector to the first responder
-        // synchronously (`NSApp.sendAction`), so the system pasteboard and
-        // the in-gesture clipboard path are preserved untouched —
-        // enablement is the only thing we take over, pulled from
-        // MenuState.edit (the web responder chain's capabilities).
+        // Undo / Redo are chain round-trips validated from MenuState.edit,
+        // NOT the bare `undo:` selectors AppKit would auto-validate against
+        // an NSUndoManager. The web view's undoManager is per-web-view — it
+        // accumulates the whole view's history and knows nothing about card
+        // activation, so a deactivated card's undo state would keep showing
+        // in the menu. The chain is card-scoped by construction: the
+        // focused editor reports its own history depth (CM6 undoDepth /
+        // redoDepth) through `validateAction`, and deactivating the card
+        // moves the first responder off it, disabling the items. When
+        // disabled, the ⌘Z chord falls through to the web view (CM6 keymap
+        // / browser-native input undo). Trade-off: titles are static —
+        // AppKit's "Undo Typing" retitling only exists on the
+        // NSUndoManager path.
         editMenu.addItem(NSMenuItem(title: "Undo", action: #selector(performUndo(_:)), keyEquivalent: "z").identified("edit.undo"))
         editMenu.addItem(NSMenuItem(title: "Redo", action: #selector(performRedo(_:)), keyEquivalent: "z", modifierMask: [.command, .shift]).identified("edit.redo"))
         editMenu.addItem(NSMenuItem.separator())
+        // The remaining edit actions target AppDelegate wrappers
+        // (performCopy / …) rather than the bare NSText selectors so that
+        // `validateMenuItem(_:)` is consulted — the wrappers resolve to
+        // this delegate, the native selectors would resolve to the
+        // WKWebView and be validated by WebKit, which over-enables Copy /
+        // Select All because a web page is always "selectable" regardless
+        // of our focus state. Each wrapper re-dispatches its native AppKit
+        // selector to the first responder synchronously (`NSApp.sendAction`),
+        // so the system pasteboard and the in-gesture clipboard path are
+        // preserved untouched — enablement is the only thing we take over,
+        // pulled from MenuState.edit (the web responder chain's caps).
         editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(performCut(_:)), keyEquivalent: "x").identified("edit.cut"))
         editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(performCopy(_:)), keyEquivalent: "c").identified("edit.copy"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(performPaste(_:)), keyEquivalent: "v").identified("edit.paste"))
@@ -956,22 +968,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("cycle-permission-mode")
     }
 
-    // Edit ▸ standard actions — thin AppDelegate wrappers that re-dispatch
+    // Edit ▸ Undo / Redo — chain round-trips to the focused editor's own
+    // history (card-specific; see the menu build site for the rationale).
+    // Unlike the clipboard wrappers below, these deliberately do NOT
+    // re-dispatch the native selector: the native path drives the
+    // per-web-view NSUndoManager, which is exactly the non-card-scoped
+    // stack the menu must not reflect. Undo isn't gesture-sensitive the
+    // way the clipboard is, so the async control-frame round-trip is fine.
+    @objc private func performUndo(_ sender: Any?) {
+        sendControl("undo")
+    }
+
+    @objc private func performRedo(_ sender: Any?) {
+        sendControl("redo")
+    }
+
+    // Edit ▸ clipboard actions — thin AppDelegate wrappers that re-dispatch
     // the native AppKit selector to the first responder. Routing through
     // these (instead of binding the menu item directly to the native
     // selector) puts validation under `validateMenuItem(_:)` / MenuState
     // while leaving the action itself byte-identical to what AppKit would
     // have done: a synchronous responder-chain send that the WKWebView
-    // services natively (system pasteboard, in-gesture clipboard, the
-    // focused field editor's undo stack).
-    @objc private func performUndo(_ sender: Any?) {
-        NSApp.sendAction(Selector(("undo:")), to: nil, from: sender)
-    }
-
-    @objc private func performRedo(_ sender: Any?) {
-        NSApp.sendAction(Selector(("redo:")), to: nil, from: sender)
-    }
-
+    // services natively (system pasteboard, in-gesture clipboard).
     @objc private func performCut(_ sender: Any?) {
         NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: sender)
     }
@@ -1137,9 +1155,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// the item's stable identifier (identity never rides the title).
     /// Tiers: deck state (close / new-in-pane / card navigation), edit
     /// capability (Cut / Copy / Paste / Delete / Select All / Undo / Redo
-    /// and the Find items, from the focused responder's edit block), card
-    /// type (dev-card command surfaces), and session state (transcript
-    /// facts from the dev block). Anything without a predicate here stays
+    /// and the Find items, from the focused responder's edit block — undo
+    /// and redo carry the focused editor's history depth), card type
+    /// (dev-card command surfaces), and session state (transcript facts
+    /// from the dev block). Anything without a predicate here stays
     /// enabled.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let id = menuItem.identifier?.rawValue else { return true }
@@ -1187,6 +1206,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // from the web responder chain (MenuState.edit). Disabled when no
         // focused surface handles the action; Find stays disabled until a
         // find-capable surface is focused (no surface implements it yet).
+        // Undo / Redo carry the focused editor's own history depth, so
+        // they go dark the moment the card deactivates (card-specific).
         case "edit.undo":
             return menuState.edit.undo
         case "edit.redo":
@@ -1633,6 +1654,15 @@ struct MenuState {
     /// single source of truth for whether the focused surface handles an
     /// edit action). Each flag gates one Edit-menu item; all false when
     /// nothing focused handles edits (e.g. only the Settings card up).
+    ///
+    /// Undo / Redo ride this block — NOT AppKit's automatic NSUndoManager
+    /// validation — because the web view's undoManager is per-web-view: it
+    /// accumulates the whole view's edit history and knows nothing about
+    /// card activation, so a deactivated card's undo state would keep
+    /// showing in the menu. The chain is card-scoped by construction;
+    /// editors report their own history depth through `validateAction`.
+    /// Native inputs register no undo handler, so the items stay disabled
+    /// for them and ⌘Z falls through to browser-native undo.
     struct Edit {
         let cut: Bool
         let copy: Bool

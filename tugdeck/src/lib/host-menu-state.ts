@@ -41,9 +41,22 @@ import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
  *
  * The Swift host validates the Edit items against this block, the same
  * pull-based way it validates the close items against `panes`. The
- * actions themselves still execute natively (Swift re-dispatches the
+ * clipboard actions still execute natively (Swift re-dispatches the
  * AppKit selector) so the system pasteboard and the in-gesture clipboard
- * path are preserved — this block governs *enablement only*.
+ * path are preserved — for those, this block governs *enablement only*.
+ *
+ * Undo / Redo are here AND card-specific. The platform's NSUndoManager
+ * (which AppKit would otherwise validate `undo:` against) is per-web-view:
+ * it accumulates the whole view's edit history and knows nothing about
+ * card activation, so a deactivated card's undo state would keep leaking
+ * into the menu. The responder chain is card-scoped by construction — the
+ * first responder lives inside the active card — so undo/redo ride this
+ * block like the other edit actions, with the depth-accuracy supplied by
+ * each editor's `validateAction` (CM6 reports `undoDepth`/`redoDepth` of
+ * its own per-instance history). Native `<input>`/`<textarea>` register no
+ * UNDO/REDO chain handler (their browser stack is JS-opaque), so the menu
+ * items stay disabled for them by design — the disabled items let ⌘Z fall
+ * through to the web view, where browser-native undo still works.
  */
 export interface MenuStateEditBlock {
   cut: boolean;
@@ -346,4 +359,27 @@ export function clearDevMenuState(cardId: string): void {
  */
 export function publishEditMenuState(caps: MenuStateEditBlock): void {
   activePublisher?.setEditCapabilities(caps);
+}
+
+/**
+ * Recompute-and-publish hook for edit-capability changes that the chain's
+ * validation version cannot see. Focus / register / unregister all bump
+ * the version, but a capability can flip *within* a focused responder —
+ * the canonical case is an editor's undo/redo depth changing as the user
+ * types. The responder-chain provider registers its publish closure here;
+ * substrates call {@link requestEditMenuStateRefresh} when such a flip
+ * happens. Deliberately NOT a validationVersion bump: that would re-render
+ * every chain-subscribed component on each keystroke. The publisher's
+ * serialized diff suppresses no-op posts, so over-calling is cheap.
+ */
+let editCapsRefresher: (() => void) | null = null;
+
+/** Register (or clear, with null) the provider's recompute-and-publish closure. */
+export function registerEditCapsRefresher(refresh: (() => void) | null): void {
+  editCapsRefresher = refresh;
+}
+
+/** Ask the provider to recompute and republish the edit capabilities. */
+export function requestEditMenuStateRefresh(): void {
+  editCapsRefresher?.();
 }

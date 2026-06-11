@@ -500,10 +500,16 @@ export function initActionDispatch(
   // name; first-responder walk). Enablement is loose by design — an
   // unhandled dispatch is a silent no-op, matching the web-side
   // behavior where e.g. ⌘F on a card without find UI does nothing.
+  // Undo/Redo ride this path so the menu items reach the focused
+  // editor's own history (card-specific); their menu items validate
+  // against the editor's depth, and when disabled the ⌘Z chord falls
+  // through to the web view (CM6 keymap / browser-native input undo).
   for (const action of [
     TUG_ACTIONS.FIND,
     TUG_ACTIONS.FIND_NEXT,
     TUG_ACTIONS.FIND_PREVIOUS,
+    TUG_ACTIONS.UNDO,
+    TUG_ACTIONS.REDO,
     TUG_ACTIONS.NEXT_TAB,
     TUG_ACTIONS.PREVIOUS_TAB,
     TUG_ACTIONS.CYCLE_CARD,

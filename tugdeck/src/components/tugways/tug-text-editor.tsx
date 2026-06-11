@@ -92,10 +92,13 @@ import {
   history,
   historyKeymap,
   redo,
+  redoDepth,
   selectAll,
   undo,
+  undoDepth,
 } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
+import { requestEditMenuStateRefresh } from "@/lib/host-menu-state";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import type { AtomSegment } from "@/lib/tug-atom-img";
@@ -771,6 +774,36 @@ const keepCaretVisible: Extension = EditorView.updateListener.of((update) => {
   });
 });
 
+/**
+ * Mirror undo/redo *availability* flips outward to the native Edit menu.
+ *
+ * The menu's undo/redo enablement reads this editor's history depth
+ * through the responder node's `validateAction`, but the chain only
+ * recomputes on validation-version changes (focus / register /
+ * unregister) — typing changes the depth without any of those. This
+ * listener asks the edit-caps publisher to recompute when the
+ * *availability* (depth > 0) flips, not on every keystroke: after the
+ * first character the undo flag is already true, so subsequent typing
+ * publishes nothing. Per-view last-published flags ride a WeakMap (the
+ * extension is module-shared across editor instances). The publisher
+ * additionally diffs the serialized payload, so even a redundant
+ * request posts nothing — over-asking is cheap, under-asking shows a
+ * stale menu.
+ */
+const lastUndoAvailability = new WeakMap<EditorView, { undo: boolean; redo: boolean }>();
+const publishUndoAvailability: Extension = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return;
+  const view = update.view;
+  const next = {
+    undo: undoDepth(view.state) > 0,
+    redo: redoDepth(view.state) > 0,
+  };
+  const prev = lastUndoAvailability.get(view);
+  if (prev !== undefined && prev.undo === next.undo && prev.redo === next.redo) return;
+  lastUndoAvailability.set(view, next);
+  requestEditMenuStateRefresh();
+});
+
 function buildExtensions(
   host: HTMLElement,
   getKeymapConfig: () => TugTextEditorKeymapConfig,
@@ -907,6 +940,7 @@ function buildExtensions(
     clipboardExtension(getBytesStore, onAttachmentError),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
+    publishUndoAvailability,
   ];
 }
 
@@ -1748,6 +1782,25 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const { responderRef, ResponderScope } = useOptionalResponder({
       id: responderId,
       actions,
+      // Depth-accurate undo/redo enablement for the native Edit menu.
+      // The chain consults `validateAction` only for actions this node
+      // handles (it's in the actions map), so UNDO/REDO report the live
+      // history depth of THIS editor instance — card-specific by
+      // construction — and every other handled action stays `true`.
+      // Reads `viewRef.current` at query time, never a captured view
+      // [L07]; before the EditorView mounts, depth reads as 0 and the
+      // items validate disabled, the correct cold posture.
+      validateAction: (action) => {
+        if (action === TUG_ACTIONS.UNDO) {
+          const view = viewRef.current;
+          return view !== null && undoDepth(view.state) > 0;
+        }
+        if (action === TUG_ACTIONS.REDO) {
+          const view = viewRef.current;
+          return view !== null && redoDepth(view.state) > 0;
+        }
+        return true;
+      },
       // Substrate-supplied focus callback per
       // `tugplan-dev-popup-bindings.md` [D03] (#focus-contract).
       // `manager.focusResponder(responderId)` invokes this AFTER
