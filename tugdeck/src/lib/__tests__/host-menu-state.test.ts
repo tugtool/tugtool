@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  computeEditCapabilities,
+  EMPTY_EDIT_CAPABILITIES,
   HostMenuStatePublisher,
   projectDeckState,
   type MenuStateDevBlock,
+  type MenuStateEditBlock,
   type MenuStatePayload,
 } from "../host-menu-state";
+import { TUG_ACTIONS } from "../../components/tugways/action-vocabulary";
 import type { CardState, DeckState, TugPaneState } from "../../layout-tree";
 
 function card(id: string, overrides: Partial<CardState> = {}): CardState {
@@ -223,5 +227,66 @@ describe("HostMenuStatePublisher", () => {
     await settle();
     expect(posted).toHaveLength(2);
     expect(posted[1].panes[0].cardCount).toBe(2);
+  });
+
+  test("the payload carries an all-disabled edit block by default", async () => {
+    const posted: MenuStatePayload[] = [];
+    const publisher = new HostMenuStatePublisher((p) => posted.push(p));
+    publisher.setDeckProjection(projectDeckState(deck([card("a")], [pane("p1", ["a"])])));
+    await settle();
+    expect(posted[0].edit).toEqual(EMPTY_EDIT_CAPABILITIES);
+  });
+
+  test("setEditCapabilities rides the payload and flips on change", async () => {
+    const posted: MenuStatePayload[] = [];
+    const publisher = new HostMenuStatePublisher((p) => posted.push(p));
+    publisher.setDeckProjection(projectDeckState(deck([card("a")], [pane("p1", ["a"])])));
+    const caps: MenuStateEditBlock = { ...EMPTY_EDIT_CAPABILITIES, copy: true, selectAll: true };
+    publisher.setEditCapabilities(caps);
+    await settle();
+    expect(posted).toHaveLength(1);
+    expect(posted[0].edit).toEqual(caps);
+
+    // Same caps again → suppressed; a changed cap → new post.
+    publisher.setEditCapabilities({ ...caps });
+    await settle();
+    expect(posted).toHaveLength(1);
+    publisher.setEditCapabilities({ ...caps, paste: true });
+    await settle();
+    expect(posted).toHaveLength(2);
+    expect(posted[1].edit.paste).toBe(true);
+  });
+});
+
+describe("computeEditCapabilities", () => {
+  /** A chain stub that handles exactly the given actions. */
+  function chainHandling(...handled: string[]) {
+    const set = new Set<string>(handled);
+    return { validateAction: (action: string) => set.has(action) };
+  }
+
+  test("maps each edit action to the chain's validateAction", () => {
+    const caps = computeEditCapabilities(
+      chainHandling(TUG_ACTIONS.COPY, TUG_ACTIONS.SELECT_ALL),
+    );
+    expect(caps.copy).toBe(true);
+    expect(caps.selectAll).toBe(true);
+    expect(caps.cut).toBe(false);
+    expect(caps.paste).toBe(false);
+    expect(caps.undo).toBe(false);
+    expect(caps.find).toBe(false);
+  });
+
+  test("nothing focused → every capability is false", () => {
+    expect(computeEditCapabilities(chainHandling())).toEqual(EMPTY_EDIT_CAPABILITIES);
+  });
+
+  test("a find-capable surface enables the find items", () => {
+    const caps = computeEditCapabilities(
+      chainHandling(TUG_ACTIONS.FIND, TUG_ACTIONS.FIND_NEXT, TUG_ACTIONS.FIND_PREVIOUS),
+    );
+    expect(caps.find).toBe(true);
+    expect(caps.findNext).toBe(true);
+    expect(caps.findPrevious).toBe(true);
   });
 });

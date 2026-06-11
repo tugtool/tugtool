@@ -569,14 +569,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenuItem.submenu = editMenu
-        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z").identified("edit.undo"))
-        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z", modifierMask: [.command, .shift]).identified("edit.redo"))
+        // Standard edit actions. The items target AppDelegate wrappers
+        // (performUndo / performCopy / …) rather than the bare NSText
+        // selectors so that `validateMenuItem(_:)` is consulted here — the
+        // wrappers resolve to this delegate, the native selectors would
+        // resolve to the WKWebView and be validated by WebKit, which
+        // over-enables Copy / Select All because a web page is always
+        // "selectable" regardless of our focus state. Each wrapper
+        // re-dispatches its native AppKit selector to the first responder
+        // synchronously (`NSApp.sendAction`), so the system pasteboard and
+        // the in-gesture clipboard path are preserved untouched —
+        // enablement is the only thing we take over, pulled from
+        // MenuState.edit (the web responder chain's capabilities).
+        editMenu.addItem(NSMenuItem(title: "Undo", action: #selector(performUndo(_:)), keyEquivalent: "z").identified("edit.undo"))
+        editMenu.addItem(NSMenuItem(title: "Redo", action: #selector(performRedo(_:)), keyEquivalent: "z", modifierMask: [.command, .shift]).identified("edit.redo"))
         editMenu.addItem(NSMenuItem.separator())
-        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x").identified("edit.cut"))
-        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c").identified("edit.copy"))
-        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v").identified("edit.paste"))
-        editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: "").identified("edit.delete"))
-        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
+        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(performCut(_:)), keyEquivalent: "x").identified("edit.cut"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(performCopy(_:)), keyEquivalent: "c").identified("edit.copy"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(performPaste(_:)), keyEquivalent: "v").identified("edit.paste"))
+        editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(performDelete(_:)), keyEquivalent: "").identified("edit.delete"))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(performSelectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
         editMenu.addItem(NSMenuItem.separator())
 
         // Copy Last Response — the dev card's `/copy` surface. Gated on a
@@ -591,9 +603,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // NSTextView.performFindPanelAction items never reached WKWebView
         // content (dead UI); these dispatch the web responder chain's
         // find / find-next / find-previous, handled by the focused card's
-        // find session. Enablement is deliberately loose (always on): an
-        // unhandled dispatch is a no-op, matching the web-side behavior
-        // where ⌘F on a card without find UI does nothing.
+        // find session. Enablement is gated on MenuState.edit (the
+        // responder chain's find capability): disabled until a
+        // find-capable surface is focused, so the items aren't live
+        // shortcuts to a no-op while no card implements find.
         let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let findMenu = NSMenu(title: "Find")
         findMenuItem.submenu = findMenu
@@ -943,6 +956,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("cycle-permission-mode")
     }
 
+    // Edit ▸ standard actions — thin AppDelegate wrappers that re-dispatch
+    // the native AppKit selector to the first responder. Routing through
+    // these (instead of binding the menu item directly to the native
+    // selector) puts validation under `validateMenuItem(_:)` / MenuState
+    // while leaving the action itself byte-identical to what AppKit would
+    // have done: a synchronous responder-chain send that the WKWebView
+    // services natively (system pasteboard, in-gesture clipboard, the
+    // focused field editor's undo stack).
+    @objc private func performUndo(_ sender: Any?) {
+        NSApp.sendAction(Selector(("undo:")), to: nil, from: sender)
+    }
+
+    @objc private func performRedo(_ sender: Any?) {
+        NSApp.sendAction(Selector(("redo:")), to: nil, from: sender)
+    }
+
+    @objc private func performCut(_ sender: Any?) {
+        NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: sender)
+    }
+
+    @objc private func performCopy(_ sender: Any?) {
+        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: sender)
+    }
+
+    @objc private func performPaste(_ sender: Any?) {
+        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
+    }
+
+    @objc private func performDelete(_ sender: Any?) {
+        NSApp.sendAction(#selector(NSText.delete(_:)), to: nil, from: sender)
+    }
+
+    @objc private func performSelectAll(_ sender: Any?) {
+        NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: sender)
+    }
+
     // Edit ▸ Find — chain-action round-trips (the web responder chain's
     // find session owns the semantics; an unhandled dispatch is a no-op).
     @objc private func performFind(_ sender: Any?) {
@@ -1086,7 +1135,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// for menu items whose nil-target action resolves to this delegate.
     /// All enablement is pull-based from the cached MenuState, keyed on
     /// the item's stable identifier (identity never rides the title).
-    /// Tiers: deck state (close / new-in-pane / card navigation), card
+    /// Tiers: deck state (close / new-in-pane / card navigation), edit
+    /// capability (Cut / Copy / Paste / Delete / Select All / Undo / Redo
+    /// and the Find items, from the focused responder's edit block), card
     /// type (dev-card command surfaces), and session state (transcript
     /// facts from the dev block). Anything without a predicate here stays
     /// enabled.
@@ -1132,6 +1183,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return focusedPaneCardCount > 1
         case "window.cyclePanes":
             return menuState.panes.count >= 2
+        // Edit / Find tier — first-responder edit capabilities, mirrored
+        // from the web responder chain (MenuState.edit). Disabled when no
+        // focused surface handles the action; Find stays disabled until a
+        // find-capable surface is focused (no surface implements it yet).
+        case "edit.undo":
+            return menuState.edit.undo
+        case "edit.redo":
+            return menuState.edit.redo
+        case "edit.cut":
+            return menuState.edit.cut
+        case "edit.copy":
+            return menuState.edit.copy
+        case "edit.paste":
+            return menuState.edit.paste
+        case "edit.delete":
+            return menuState.edit.delete
+        case "edit.selectAll":
+            return menuState.edit.selectAll
+        case "edit.find":
+            return menuState.edit.find
+        case "edit.findNext":
+            return menuState.edit.findNext
+        case "edit.findPrevious":
+            return menuState.edit.findPrevious
         // Card-type tier.
         case "file.exportTranscript", "help.shortcuts":
             return devCardFrontmost
@@ -1553,9 +1628,35 @@ struct MenuState {
         let hasTurns: Bool
     }
 
+    /// Edit-menu capabilities of the current first responder, projected
+    /// from the web responder chain's `validateAction` (the suite's
+    /// single source of truth for whether the focused surface handles an
+    /// edit action). Each flag gates one Edit-menu item; all false when
+    /// nothing focused handles edits (e.g. only the Settings card up).
+    struct Edit {
+        let cut: Bool
+        let copy: Bool
+        let paste: Bool
+        let delete: Bool
+        let selectAll: Bool
+        let undo: Bool
+        let redo: Bool
+        let find: Bool
+        let findNext: Bool
+        let findPrevious: Bool
+
+        /// Nothing focused handles any edit action.
+        static let disabled = Edit(
+            cut: false, copy: false, paste: false, delete: false,
+            selectAll: false, undo: false, redo: false,
+            find: false, findNext: false, findPrevious: false
+        )
+    }
+
     var panes: [Pane] = []
     var activeCard: ActiveCard?
     var dev: Dev?
+    var edit: Edit = .disabled
 
     static let empty = MenuState()
 
@@ -1595,6 +1696,20 @@ struct MenuState {
                 permissionMode: rawDev["permissionMode"] as? String ?? "default",
                 hasAssistantMessage: rawDev["hasAssistantMessage"] as? Bool ?? false,
                 hasTurns: rawDev["hasTurns"] as? Bool ?? false
+            )
+        }
+        if let rawEdit = payload["edit"] as? [String: Any] {
+            edit = Edit(
+                cut: rawEdit["cut"] as? Bool ?? false,
+                copy: rawEdit["copy"] as? Bool ?? false,
+                paste: rawEdit["paste"] as? Bool ?? false,
+                delete: rawEdit["delete"] as? Bool ?? false,
+                selectAll: rawEdit["selectAll"] as? Bool ?? false,
+                undo: rawEdit["undo"] as? Bool ?? false,
+                redo: rawEdit["redo"] as? Bool ?? false,
+                find: rawEdit["find"] as? Bool ?? false,
+                findNext: rawEdit["findNext"] as? Bool ?? false,
+                findPrevious: rawEdit["findPrevious"] as? Bool ?? false
             )
         }
     }

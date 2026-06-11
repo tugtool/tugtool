@@ -57,6 +57,26 @@ const CARD_ZINDEX_BASE = 1;
 // ---- DeckCanvas ----
 
 /**
+ * The actions DeckCanvas genuinely implements (its actions-map keys).
+ *
+ * DeckCanvas's `canHandle: () => true` is a *dispatch* last-resort so
+ * chain-action buttons stay enabled in practice ([D08]); it must NOT make
+ * `validateAction` answer true for every action, or every menu item gated
+ * on `chain.validateAction(...)` would light up the moment any card is
+ * focused (the chain always reaches this root). `validateAction` below
+ * affirms only the canvas's real capabilities; everything else falls
+ * through as disabled — keep this set in sync with the actions map.
+ */
+const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
+  TUG_ACTIONS.CYCLE_CARD,
+  TUG_ACTIONS.SHOW_SETTINGS,
+  TUG_ACTIONS.SHOW_COMPONENT_GALLERY,
+  TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE,
+  TUG_ACTIONS.CLOSE,
+  TUG_ACTIONS.CLOSE_ALL,
+]);
+
+/**
  * DeckCanvas — plain function component (no `forwardRef`).
  *
  * Renders the responder-chain root and one TugPane per entry in deckState.panes.
@@ -177,6 +197,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
      * [D08] DeckCanvas last-resort responder
      */
     canHandle: () => true,
+    /**
+     * Capability query (used by `chain.validateAction`, e.g. the native
+     * menu's edit/find enablement) must reflect what DeckCanvas actually
+     * does, not the `canHandle` dispatch catch-all. Affirm only the
+     * canvas's own actions; everything else is "not handled here" so the
+     * walk reports the action as unavailable when nothing real handles it.
+     */
+    validateAction: (action) => DECK_CANVAS_VALIDATED_ACTIONS.has(action),
     actions: {
       [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => {
         const s = panesRef.current;

@@ -28,6 +28,77 @@
  */
 
 import type { DeckState } from "../layout-tree";
+import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
+
+/**
+ * Edit-menu capability block: per-action enablement for the native
+ * Edit menu (and the Find submenu), derived from the responder chain's
+ * `validateAction` — the suite's single source of truth for whether the
+ * focused surface handles an edit action (design decision D05). Each
+ * flag is `true` iff a focused responder currently handles that action;
+ * `false` when nothing in focus does (e.g. only the Settings card is
+ * up), which is exactly when the menu item should be disabled.
+ *
+ * The Swift host validates the Edit items against this block, the same
+ * pull-based way it validates the close items against `panes`. The
+ * actions themselves still execute natively (Swift re-dispatches the
+ * AppKit selector) so the system pasteboard and the in-gesture clipboard
+ * path are preserved — this block governs *enablement only*.
+ */
+export interface MenuStateEditBlock {
+  cut: boolean;
+  copy: boolean;
+  paste: boolean;
+  delete: boolean;
+  selectAll: boolean;
+  undo: boolean;
+  redo: boolean;
+  find: boolean;
+  findNext: boolean;
+  findPrevious: boolean;
+}
+
+/** All-disabled default — nothing focused handles any edit action. */
+export const EMPTY_EDIT_CAPABILITIES: MenuStateEditBlock = {
+  cut: false,
+  copy: false,
+  paste: false,
+  delete: false,
+  selectAll: false,
+  undo: false,
+  redo: false,
+  find: false,
+  findNext: false,
+  findPrevious: false,
+};
+
+/** Minimal slice of the responder chain the cap computation needs. */
+export interface EditCapabilitySource {
+  validateAction(action: string): boolean;
+}
+
+/**
+ * Compute the edit-menu capability block from the responder chain.
+ * Pure (given the chain's current focus) — exported for unit tests.
+ * Each flag mirrors `chain.validateAction(<action>)`, which returns
+ * false when no focused responder handles the action.
+ */
+export function computeEditCapabilities(
+  chain: EditCapabilitySource,
+): MenuStateEditBlock {
+  return {
+    cut: chain.validateAction(TUG_ACTIONS.CUT),
+    copy: chain.validateAction(TUG_ACTIONS.COPY),
+    paste: chain.validateAction(TUG_ACTIONS.PASTE),
+    delete: chain.validateAction(TUG_ACTIONS.DELETE),
+    selectAll: chain.validateAction(TUG_ACTIONS.SELECT_ALL),
+    undo: chain.validateAction(TUG_ACTIONS.UNDO),
+    redo: chain.validateAction(TUG_ACTIONS.REDO),
+    find: chain.validateAction(TUG_ACTIONS.FIND),
+    findNext: chain.validateAction(TUG_ACTIONS.FIND_NEXT),
+    findPrevious: chain.validateAction(TUG_ACTIONS.FIND_PREVIOUS),
+  };
+}
 
 /** One pane entry, z-order topmost first (matches the Swift reader). */
 export interface MenuStatePaneEntry {
@@ -81,6 +152,8 @@ export interface MenuStatePayload {
   activeCard: MenuStateActiveCard | null;
   /** Dev-card session block; null unless the active card is a dev card. */
   dev: MenuStateDevBlock | null;
+  /** Edit-menu capabilities of the current first responder. */
+  edit: MenuStateEditBlock;
 }
 
 /**
@@ -149,6 +222,12 @@ export class HostMenuStatePublisher {
    * rides the payload, by checking the focused pane's active card.
    */
   private readonly devBlocks = new Map<string, MenuStateDevBlock>();
+  /**
+   * Edit-menu capabilities of the current first responder. A single
+   * publisher (the responder-chain provider) feeds this; defaults to
+   * all-disabled until the first push.
+   */
+  private editCapabilities: MenuStateEditBlock = EMPTY_EDIT_CAPABILITIES;
   private lastSent: string | null = null;
   private flushScheduled = false;
 
@@ -171,6 +250,11 @@ export class HostMenuStatePublisher {
     this.scheduleFlush();
   }
 
+  setEditCapabilities(caps: MenuStateEditBlock): void {
+    this.editCapabilities = caps;
+    this.scheduleFlush();
+  }
+
   private scheduleFlush(): void {
     if (this.flushScheduled) return;
     this.flushScheduled = true;
@@ -186,7 +270,12 @@ export class HostMenuStatePublisher {
       activeCard?.component === "dev" && focusedActiveCardId !== null
         ? (this.devBlocks.get(focusedActiveCardId) ?? null)
         : null;
-    const payload: MenuStatePayload = { panes, activeCard, dev };
+    const payload: MenuStatePayload = {
+      panes,
+      activeCard,
+      dev,
+      edit: this.editCapabilities,
+    };
     const serialized = JSON.stringify(payload);
     if (serialized === this.lastSent) return;
     this.lastSent = serialized;
@@ -248,4 +337,13 @@ export function publishDevMenuState(cardId: string, block: MenuStateDevBlock): v
 /** Drop a dev card's session block (card unmount / services teardown). */
 export function clearDevMenuState(cardId: string): void {
   activePublisher?.clearDevBlock(cardId);
+}
+
+/**
+ * Publish the current first responder's edit-menu capabilities. Called
+ * by the responder-chain provider on every validation change (focus /
+ * register / unregister); a no-op before {@link initHostMenuState} runs.
+ */
+export function publishEditMenuState(caps: MenuStateEditBlock): void {
+  activePublisher?.setEditCapabilities(caps);
 }

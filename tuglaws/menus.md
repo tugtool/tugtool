@@ -54,6 +54,11 @@ Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct.
     "permissionMode": "default",   // live metadata ?? persisted ?? "default"
     "hasAssistantMessage": false,
     "hasTurns": false
+  },
+  "edit": {                        // first responder's edit capabilities
+    "cut": false, "copy": false, "paste": false, "delete": false,
+    "selectAll": false, "undo": false, "redo": false,
+    "find": false, "findNext": false, "findPrevious": false
   }
 }
 ```
@@ -68,6 +73,13 @@ Publication discipline:
   derivation. Every dev card publishes unconditionally; the aggregator
   decides which block rides the payload (the focused pane's active dev
   card).
+- The `edit` block is published by the responder-chain provider, which
+  subscribes to the chain's validation version and projects
+  `chain.validateAction(<action>)` for each edit action ([D05]). It is an
+  outward mirror only — no React consumer reads it — so it rides a plain
+  subscription, not `useSyncExternalStore`. Each flag is `true` iff a
+  focused responder handles that action; all false when nothing in focus
+  does.
 - The aggregator posts only when the serialized payload changes,
   coalesced on a microtask — wire traffic is proportional to
   menu-relevant change, not store churn.
@@ -75,7 +87,7 @@ Publication discipline:
   and every state-gated item validates disabled. That is the correct
   cold-start posture, not a bug.
 
-## Validation: pull-based, four tiers
+## Validation: pull-based, five tiers
 
 All enablement flows through `AppDelegate.validateMenuItem(_:)`, keyed on
 the item's identifier and reading only the cached `MenuState`. AppKit
@@ -85,12 +97,13 @@ re-validates on menu open and key-equivalent dispatch; nothing pushes
 
 | Tier | Predicate source | Examples |
 |---|---|---|
-| 1 — always | — | natives, Find trio, links |
+| 1 — always | — | natives, links |
 | 2 — deck state | `panes` | `file.closeCard` (closable), `file.closeAllCards` / `window.previousCard` / `window.nextCard` (focused `cardCount > 1`), `maker.newCardInPane` (≥1 pane; debug-gated Maker menu), `window.cyclePanes` (≥2 panes) |
-| 3 — card type | `activeCard.component == "dev"` | every `session.*` item, `edit.copyLastResponse`, `file.exportTranscript`, `help.shortcuts` |
-| 4 — session state | `dev` block | `session.stop` (`canInterrupt`), `session.rewind` (`sessionBound && hasTurns`), `edit.copyLastResponse` (`hasAssistantMessage`), other `session.*` items (`sessionBound`) |
+| 3 — edit capability | `edit` block | `edit.cut` / `edit.copy` / `edit.paste` / `edit.delete` / `edit.selectAll` / `edit.undo` / `edit.redo` and the Find trio (`edit.find` / `edit.findNext` / `edit.findPrevious`) — each gated on the focused responder handling that action |
+| 4 — card type | `activeCard.component == "dev"` | every `session.*` item, `edit.copyLastResponse`, `file.exportTranscript`, `help.shortcuts` |
+| 5 — session state | `dev` block | `session.stop` (`canInterrupt`), `session.rewind` (`sessionBound && hasTurns`), `edit.copyLastResponse` (`hasAssistantMessage`), other `session.*` items (`sessionBound`) |
 
-An item in tiers 3+4 requires both. The Session menu is
+An item in tiers 4+5 requires both. The Session menu is
 **disabled, not hidden** — stable menu bars preserve discoverability. The
 Maker menu is the deliberate exception: it hides behind the
 `maker-mode-enabled` tugbank gate, because maker mode is a *mode*, not a
@@ -123,6 +136,21 @@ working control-frame round-trip** (a Both-category entry or equivalent),
 landed *before* the key equivalent is attached. The tugdeck keybinding-map
 entries for the same chords stay for browser dev, where no Swift menu
 exists.
+
+**The clipboard exception — native re-dispatch, not a round-trip.** The
+standard Edit items (Cut / Copy / Paste / Delete / Select All / Undo /
+Redo, chords ⌘X/⌘C/⌘V/⌘A/⌘Z) do **not** round-trip through a control
+frame. A control frame is async and leaves the JS clipboard call outside
+the user gesture, which the browser blocks; and WebKit's native
+`copy:` / `cut:` / `paste:` already drive the system pasteboard correctly.
+So each item targets a thin AppDelegate wrapper (`performCopy:` etc.) that
+re-dispatches its native AppKit selector to the first responder
+synchronously (`NSApp.sendAction(copy:, to: nil)`). Routing through the
+wrapper (rather than binding the item straight to `copy:`) is what puts
+**enablement** under `validateMenuItem` / `MenuState.edit` — the action
+stays byte-identical to AppKit's own behavior; only validation moves to
+the responder chain. When an item validates disabled, AppKit lets the
+chord fall through to the WKWebView, where the keybinding map handles it.
 
 `run-card-command` arg semantics: menu items send no `args`. `rename` and
 `compact` are the only `takesArgs` commands, and a bare `rename` opens the

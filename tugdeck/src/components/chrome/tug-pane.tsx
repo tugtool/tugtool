@@ -851,9 +851,12 @@ export function TugPane({
         if (typeof event.value !== "string") return;
         store.addCardToPane(stackId, event.value);
       },
-      [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
-        console.info("find: stub — no find UI implemented yet");
-      },
+      // No FIND handler here on purpose. A registered no-op would make
+      // the native Edit ▸ Find item validate as enabled (the menu pulls
+      // `chain.validateAction(FIND)`) while doing nothing — a live
+      // shortcut to a stub. Find enables only where a surface really
+      // implements it (e.g. the code view's search session); everywhere
+      // else it stays disabled until a real find lands.
     },
   });
 

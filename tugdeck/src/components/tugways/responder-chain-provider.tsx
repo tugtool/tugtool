@@ -35,6 +35,7 @@ import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
 import { getAppLifecycle } from "../../lib/app-lifecycle";
 import { getDeckStore } from "../../lib/deck-store-registry";
+import { computeEditCapabilities, publishEditMenuState } from "../../lib/host-menu-state";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { isSyntheticEscape } from "./internal/synthetic-escape";
 
@@ -155,6 +156,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // dispatch "add-card-to-active-pane" through the chain without importing React context.
     // ([D06], [D09])
     registerResponderChainManager(manager);
+
+    // ---- Edit-menu capability mirror ----
+    // Mirror the focused responder's edit-action capabilities outward to
+    // the native menu bar so the host validates Cut/Copy/Paste/Delete/
+    // Select All/Undo/Redo and the Find items against real focus, not
+    // WebKit's "the page is selectable" guess. `validateAction` is the
+    // single source of truth (D05). Outward mirror only — no React
+    // consumer reads it, so no `useSyncExternalStore` (same shape as
+    // host-menu-state's deck/dev publishers). Seed now, then republish on
+    // every validation change (focus / register / unregister).
+    const publishEditCaps = (): void => {
+      publishEditMenuState(computeEditCapabilities(manager));
+    };
+    publishEditCaps();
+    const unsubscribeEditCaps = manager.subscribe(publishEditCaps);
 
     // Late-bind the responder chain manager to the CardLifecycle so
     // activations can promote the key responder. DeckManager
@@ -759,6 +775,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("focusin", promoteOnFocusIn, { capture: true });
       document.removeEventListener("contextmenu", fallbackContextMenu);
       selectionGuard.detach();
+      unsubscribeEditCaps();
       unsubscribeKeyboardAccess();
       unsubscribeRingModality();
       unsubscribeKeyCard();
