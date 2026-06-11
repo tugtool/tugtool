@@ -179,15 +179,20 @@ fn bind_reuseaddr(port: u16) -> std::io::Result<TcpListener> {
             libc::close(fd);
             return Err(err);
         }
-        let addr = libc::sockaddr_in {
-            sin_len: std::mem::size_of::<libc::sockaddr_in>() as u8,
-            sin_family: libc::AF_INET as libc::sa_family_t,
-            sin_port: port.to_be(),
-            sin_addr: libc::in_addr {
-                s_addr: u32::from(Ipv4Addr::LOCALHOST).to_be(),
-            },
-            sin_zero: [0; 8],
+        // `sockaddr_in` is laid out differently across platforms: the BSDs
+        // (incl. macOS) carry a leading `sin_len` byte that Linux lacks.
+        // Zero-init and set only the portable fields; `sin_len`, when present,
+        // is set behind a cfg so the struct literal stays cross-platform.
+        let mut addr: libc::sockaddr_in = std::mem::zeroed();
+        addr.sin_family = libc::AF_INET as libc::sa_family_t;
+        addr.sin_port = port.to_be();
+        addr.sin_addr = libc::in_addr {
+            s_addr: u32::from(Ipv4Addr::LOCALHOST).to_be(),
         };
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
+        {
+            addr.sin_len = std::mem::size_of::<libc::sockaddr_in>() as u8;
+        }
         if libc::bind(
             fd,
             std::ptr::addr_of!(addr).cast(),
