@@ -230,6 +230,25 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
         expect(undoState.title, "Undo names the next step").toBe("Undo Typing");
         await expectEnabled(app, REDO, false);
 
+        // Mouse-selection path: the menu item fires a control frame, NOT
+        // the ⌘Z chord (CM6's keymap eats the chord before the menu bar
+        // sees it). dispatchControlAction drives that exact path. CM6's
+        // undo/redo handlers defer their work into a continuation; the
+        // adapter must invoke it — a dropped continuation is the
+        // "menu Undo does nothing" bug.
+        await app.evalJS<void>(`window.__tug.dispatchControlAction("undo")`);
+        await app.waitForCondition<boolean>(
+          `(function(){ var el = document.querySelector(${JSON.stringify(EDITOR)}); return el !== null && el.textContent.indexOf("hello") === -1; })()`,
+          { timeoutMs: 6000 },
+        );
+        await expectEnabled(app, REDO, true);
+        await app.evalJS<void>(`window.__tug.dispatchControlAction("redo")`);
+        await app.waitForCondition<boolean>(
+          `(function(){ var el = document.querySelector(${JSON.stringify(EDITOR)}); return el !== null && el.textContent.indexOf("hello") !== -1; })()`,
+          { timeoutMs: 6000 },
+        );
+        await expectEnabled(app, UNDO, true);
+
         // The repro: click the empty canvas to deselect the pane. The
         // editor blurs (the chain FR goes stale on it), so its undo
         // depth must stop driving the menu — the deactivated card's

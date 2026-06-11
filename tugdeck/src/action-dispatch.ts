@@ -519,7 +519,19 @@ export function initActionDispatch(
   ]) {
     registerAction(action, () => {
       if (responderChainManagerRef) {
-        responderChainManagerRef.sendToFirstResponder({ action, phase: "discrete" });
+        // Continuation-aware dispatch, continuation invoked immediately.
+        // Handlers built for the in-app context menu defer their visible
+        // side effect into a returned continuation (two-phase activation:
+        // run after the menu blink) — CM6's undo/redo/select-all all have
+        // this shape. A native-menu control frame arrives AFTER AppKit
+        // already played its own blink, so there is nothing to defer
+        // past; the plain `sendToFirstResponder` would report handled
+        // and silently drop the deferred work.
+        const result = responderChainManagerRef.sendToFirstResponderForContinuation({
+          action,
+          phase: "discrete",
+        });
+        result.continuation?.();
       } else {
         console.warn(`${action}: responder chain manager not registered yet`);
       }

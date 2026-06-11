@@ -651,17 +651,27 @@ describe("initActionDispatch: menu-command chain adapters", () => {
     initActionDispatch(conn as any, deck as any);
     const firstResponder: ActionEvent[] = [];
     const keyCard: ActionEvent[] = [];
+    const continuations: string[] = [];
     registerResponderChainManager({
-      sendToFirstResponder(event: ActionEvent): boolean {
+      // The first-responder adapters use the ForContinuation variant and
+      // invoke any returned continuation immediately (native-menu
+      // dispatches have no web-side blink to defer past). The stub
+      // returns a continuation that records its own invocation.
+      sendToFirstResponderForContinuation(event: ActionEvent) {
         firstResponder.push(event);
-        return true;
+        return {
+          handled: true,
+          continuation: () => {
+            continuations.push(event.action);
+          },
+        };
       },
       sendToKeyCard(event: ActionEvent): boolean {
         keyCard.push(event);
         return true;
       },
     } as any);
-    return { firstResponder, keyCard };
+    return { firstResponder, keyCard, continuations };
   }
 
   it("first-responder Both adapters re-dispatch their own action name", () => {
@@ -670,6 +680,8 @@ describe("initActionDispatch: menu-command chain adapters", () => {
       TUG_ACTIONS.FIND,
       TUG_ACTIONS.FIND_NEXT,
       TUG_ACTIONS.FIND_PREVIOUS,
+      TUG_ACTIONS.UNDO,
+      TUG_ACTIONS.REDO,
       TUG_ACTIONS.NEXT_TAB,
       TUG_ACTIONS.PREVIOUS_TAB,
       TUG_ACTIONS.CYCLE_CARD,
@@ -680,11 +692,23 @@ describe("initActionDispatch: menu-command chain adapters", () => {
       TUG_ACTIONS.FIND,
       TUG_ACTIONS.FIND_NEXT,
       TUG_ACTIONS.FIND_PREVIOUS,
+      TUG_ACTIONS.UNDO,
+      TUG_ACTIONS.REDO,
       TUG_ACTIONS.NEXT_TAB,
       TUG_ACTIONS.PREVIOUS_TAB,
       TUG_ACTIONS.CYCLE_CARD,
     ]);
     expect(firstResponder.every((e) => e.phase === "discrete")).toBe(true);
+  });
+
+  it("a handler's returned continuation is invoked immediately", () => {
+    // Two-phase handlers (CM6 undo/redo/select-all) defer their visible
+    // side effect into the continuation; a dropped continuation means the
+    // menu item "works" while doing nothing — the mouse-selected Undo bug.
+    const { continuations } = setupWithStubManager();
+    dispatchAction({ action: TUG_ACTIONS.UNDO });
+    dispatchAction({ action: TUG_ACTIONS.REDO });
+    expect(continuations).toEqual([TUG_ACTIONS.UNDO, TUG_ACTIONS.REDO]);
   });
 
   it("key-card Both adapters dispatch through the key-card scope", () => {
