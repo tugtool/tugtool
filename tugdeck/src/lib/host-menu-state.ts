@@ -53,10 +53,23 @@ import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
  * first responder lives inside the active card — so undo/redo ride this
  * block like the other edit actions, with the depth-accuracy supplied by
  * each editor's `validateAction` (CM6 reports `undoDepth`/`redoDepth` of
- * its own per-instance history). Native `<input>`/`<textarea>` register no
- * UNDO/REDO chain handler (their browser stack is JS-opaque), so the menu
- * items stay disabled for them by design — the disabled items let ⌘Z fall
- * through to the web view, where browser-native undo still works.
+ * its own per-instance history).
+ *
+ * Native `<input>`/`<textarea>` take the third path: their undo stack is
+ * the browser's (JS-opaque), reachable through the web view's
+ * NSUndoManager. When the focused element is a native text control,
+ * `nativeUndoToken` is non-zero and the Swift side validates Undo/Redo
+ * LIVE from `webView.undoManager.canUndo`/`canRedo` and executes the
+ * native `undo:`/`redo:` selectors. The token changes whenever the
+ * focused native control changes (and drops to 0 on blur); the host
+ * clears the web view's undo stack on every token change, so the
+ * per-web-view stack never outlives focus in one control — that is what
+ * keeps the native path card-safe.
+ *
+ * A chord whose menu item validates DISABLED is eaten at the menu bar
+ * with a beep (standard macOS) — it does NOT fall through to the web
+ * view. That is why the native path must light the item: a dark Undo
+ * means a dead ⌘Z.
  */
 export interface MenuStateEditBlock {
   cut: boolean;
@@ -66,6 +79,17 @@ export interface MenuStateEditBlock {
   selectAll: boolean;
   undo: boolean;
   redo: boolean;
+  /** Menu-title noun for Undo ("Typing", "Paste", …); "" → plain "Undo". */
+  undoLabel: string;
+  /** Menu-title noun for Redo; "" → plain "Redo". */
+  redoLabel: string;
+  /**
+   * Non-zero iff the focused element is an editable native text control
+   * (`<input>`/`<textarea>`). Changes value when the focused control
+   * changes. Drives the Swift side's NSUndoManager undo path and its
+   * clear-on-blur.
+   */
+  nativeUndoToken: number;
   find: boolean;
   findNext: boolean;
   findPrevious: boolean;
@@ -80,6 +104,9 @@ export const EMPTY_EDIT_CAPABILITIES: MenuStateEditBlock = {
   selectAll: false,
   undo: false,
   redo: false,
+  undoLabel: "",
+  redoLabel: "",
+  nativeUndoToken: 0,
   find: false,
   findNext: false,
   findPrevious: false,
@@ -107,10 +134,56 @@ export function computeEditCapabilities(
     selectAll: chain.validateAction(TUG_ACTIONS.SELECT_ALL),
     undo: chain.validateAction(TUG_ACTIONS.UNDO),
     redo: chain.validateAction(TUG_ACTIONS.REDO),
+    // Filled in by the publisher (responder-chain provider): labels come
+    // from the focused editor's registry entry, the token from the
+    // focused-native-control tracker.
+    undoLabel: "",
+    redoLabel: "",
+    nativeUndoToken: 0,
     find: chain.validateAction(TUG_ACTIONS.FIND),
     findNext: chain.validateAction(TUG_ACTIONS.FIND_NEXT),
     findPrevious: chain.validateAction(TUG_ACTIONS.FIND_PREVIOUS),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Undo/redo menu-label registry
+// ---------------------------------------------------------------------------
+
+/** Menu-title nouns for an editor's next undo/redo steps. */
+export interface EditUndoLabels {
+  undo: string;
+  redo: string;
+}
+
+/**
+ * Per-editor undo/redo label registry, keyed by a DOM element inside the
+ * editor (CM6 registers `view.dom`). The publisher resolves the focused
+ * responder's element and picks the entry contained within it, so labels
+ * are only ever shown for the editor that actually owns the lit Undo —
+ * a registry keyed by element (not a single "current" slot) is what keeps
+ * two mounted editors from leaking titles into each other.
+ */
+const editUndoLabelRegistry = new Map<Element, EditUndoLabels>();
+
+/** Publish (or clear, with null) an editor's undo/redo menu labels. */
+export function setEditUndoLabels(el: Element, labels: EditUndoLabels | null): void {
+  if (labels === null) {
+    editUndoLabelRegistry.delete(el);
+  } else {
+    editUndoLabelRegistry.set(el, labels);
+  }
+}
+
+/**
+ * Resolve the labels for the editor inside (or at) the given responder
+ * element. Returns empty labels when no registered editor is in scope.
+ */
+export function editUndoLabelsWithin(scope: Element): EditUndoLabels {
+  for (const [el, labels] of editUndoLabelRegistry) {
+    if (scope === el || scope.contains(el)) return labels;
+  }
+  return { undo: "", redo: "" };
 }
 
 /** One pane entry, z-order topmost first (matches the Swift reader). */

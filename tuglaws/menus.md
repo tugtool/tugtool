@@ -59,6 +59,8 @@ Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct.
     "cut": false, "copy": false, "paste": false, "delete": false,
     "selectAll": false,
     "undo": false, "redo": false,  // focused editor's history depth
+    "undoLabel": "", "redoLabel": "",  // menu nouns: "Undo Typing"
+    "nativeUndoToken": 0,          // non-zero: native text control focused
     "find": false, "findNext": false, "findPrevious": false
   }
 }
@@ -82,29 +84,43 @@ Publication discipline:
   focused responder handles that action; all false when nothing in focus
   does.
 - **Undo / Redo are in the `edit` block, and card-specific by design.**
-  The tempting alternative — AppKit's automatic `undo:` validation against
-  the responder-chain `NSUndoManager` — is rejected because WKWebView's
+  Unconditional AppKit auto-validation of `undo:` against the
+  responder-chain `NSUndoManager` is rejected because WKWebView's
   undoManager is *per-web-view*: it accumulates the whole view's edit
   history and knows nothing about card activation, so a deactivated card's
   undo state keeps showing in the menu. The chain is card-scoped by
   construction (the first responder lives inside the active card), and the
   focused editor supplies depth-accuracy through `validateAction` (CM6
-  reports `undoDepth`/`redoDepth` of its own per-instance history).
-  Trade-offs accepted with this: native `<input>`/`<textarea>` register no
-  UNDO/REDO chain handler (their browser stack is per-web-view and
-  JS-opaque), so the menu items stay disabled for them — ⌘Z falls through
-  to the web view where browser-native undo still works; and the items
-  keep static titles (AppKit's "Undo Typing" retitling only exists on the
-  NSUndoManager path).
-- **Undo / Redo additionally carry a liveness gate.** The chain first
-  responder is deliberately sticky: a canvas-background click (pane
-  deselect) blurs the editor to body but demotes nothing, so the stale FR
-  would keep answering capability queries for a visibly deactivated card.
-  Editing state requires actual keyboard focus, so the publisher zeroes
-  `undo`/`redo` unless the FR's element contains `document.activeElement`
-  (republished on document `focusin`/`focusout`). The other caps are NOT
-  gated — Copy must keep working for read-only selections (transcript
-  text), where the selection lives without DOM focus on the responder.
+  reports `undoDepth`/`redoDepth` of its own per-instance history) plus a
+  menu-title noun (`undoLabel`/`redoLabel`, from the editor's label stacks
+  in `tug-text-editor/undo-labels.ts` — "Undo Typing", "Redo Paste"). The
+  host sets the item title during the validation sweep, the same
+  sanctioned pattern as the permission-mode checkmarks; identity never
+  rides the title.
+- **Native text controls ride the web view's NSUndoManager, scoped by
+  clear-on-blur.** A native `<input>`/`<textarea>`'s undo stack is the
+  browser's (JS-opaque); the only handle is the per-web-view
+  NSUndoManager. While one is focused, `nativeUndoToken` is non-zero and
+  the host validates Undo/Redo LIVE from `webView.undoManager`
+  (`canUndo`/`canRedo`, with its localized `undoMenuItemTitle`) and
+  executes the native `undo:`/`redo:` selectors. The token changes per
+  focused control; the host clears the stack on every token change, so
+  the per-web-view stack never outlives focus in one control — leave the
+  control and its history is gone. That scoping is what makes the native
+  stack card-safe to surface.
+- **A chord on a disabled menu item is eaten at the menu bar with a
+  beep** — it does NOT fall through to the WKWebView. This is why the
+  native-control path must light the item: a dark Undo means a dead ⌘Z.
+- **Cut / Paste / Select All / Undo / Redo carry a liveness gate.** The
+  chain first responder is deliberately sticky: a canvas-background click
+  (pane deselect) blurs the editor to body but demotes nothing, so the
+  stale FR would keep answering capability queries for a visibly
+  deactivated card. Editing actions require actual keyboard focus, so the
+  publisher zeroes them unless the FR's element contains
+  `document.activeElement` (republished on document `focusin`/`focusout`).
+  Copy is NOT gated — it must keep working for read-only selections
+  (transcript text), where the selection lives without DOM focus on the
+  responder.
 - **Capability flips inside a focused responder** (an editor's undo depth
   changing as the user types) don't bump the chain's validation version —
   by design, so typing never re-renders chain-subscribed components. The
@@ -158,7 +174,7 @@ classification:
 | `set-permission-mode {mode}` | Both | validated against the four-mode menu set, then `SET_PERMISSION_MODE` via `sendToKeyCard`; the dev card commits through the chip's mode-set path |
 | `interrupt-session` | Both | `INTERRUPT_SESSION` via `sendToKeyCard`; the dev card calls `codeSessionStore.interrupt()` — deliberately NOT Escape's dismiss-priority walk |
 | `find` / `find-next` / `find-previous` | Both | `sendToFirstResponder` round-trips (the focused card's find session) |
-| `undo` / `redo` | Both | `sendToFirstResponder` round-trips into the focused editor's own history (CM6 `handleUndo` / `handleRedo`); items validate against the editor's depth, and when disabled the ⌘Z chord falls through to the web view |
+| `undo` / `redo` | Both | `sendToFirstResponder` round-trips into the focused editor's own history (CM6 `handleUndo` / `handleRedo`); items validate against the editor's depth. Bypassed when `nativeUndoToken` is non-zero — the host drives the web view's NSUndoManager natively instead |
 | `next-tab` / `previous-tab` / `cycle-card` | Both | `sendToFirstResponder` round-trips |
 | `focus-prompt` / `cycle-permission-mode` | Both | `sendToKeyCard` round-trips |
 | `close` / `close-all` / `add-card-to-active-pane` | Both | as before this phase |
@@ -187,12 +203,14 @@ byte-identical to AppKit's own behavior; only validation moves to the
 responder chain. When an item validates disabled, AppKit lets the chord
 fall through to the WKWebView, where the keybinding map handles it.
 
-**Undo / Redo are chain round-trips, not native re-dispatch.** The native
-path drives the per-web-view `NSUndoManager` — exactly the
-non-card-scoped stack the menu must not reflect — and undo isn't
-gesture-sensitive the way the clipboard is, so the async control-frame
-round-trip is fine. See the `edit` block notes above for the full
-rationale and trade-offs.
+**Undo / Redo are two-path.** For chain editors (CM6) the items
+round-trip `undo`/`redo` control frames to the focused editor's own
+history — undo isn't gesture-sensitive the way the clipboard is, so the
+async round-trip is fine. For browser-native text controls
+(`nativeUndoToken` non-zero) the wrappers re-dispatch the native
+`undo:`/`redo:` selectors instead, driving the web view's NSUndoManager —
+the only route to a native input's undo stack — kept card-safe by the
+token-change clear. See the `edit` block notes above.
 
 `run-card-command` arg semantics: menu items send no `args`. `rename` and
 `compact` are the only `takesArgs` commands, and a bare `rename` opens the

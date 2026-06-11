@@ -27,13 +27,15 @@
  *      clicking the empty canvas deselects/blurs and disables it;
  *      clicking back in re-enables it (per-instance history survives
  *      in-session, [L23]).
- *   4. **Native inputs trade menu undo for card-specificity.** Their
- *      browser undo stack is per-web-view and JS-opaque — the one native
- *      handle (the web view's NSUndoManager) is exactly the
- *      non-card-scoped state the menu must not show. They register no
- *      UNDO chain handler, so the menu item stays disabled even after
- *      typing; ⌘Z falls through to browser-native undo, which still
- *      works.
+ *   4. **Native inputs ride the web view's NSUndoManager, scoped by
+ *      clear-on-blur.** While a browser-native text control is focused
+ *      (`nativeUndoToken` non-zero), the host validates Undo/Redo LIVE
+ *      from `webView.undoManager` and executes the native `undo:` —
+ *      typing lights the menu and ⌘Z works (a chord on a disabled item
+ *      is eaten at the menu bar with a beep, so a dark Undo means a dead
+ *      ⌘Z). The host clears the stack on every token change, so the
+ *      per-web-view stack never outlives focus in one control: leave the
+ *      control and its history is gone.
  *
  * Verified through the harness's native-menu introspection
  * (`menuItemState`) — the real `NSMenuItemValidation` path, not a stored
@@ -220,9 +222,12 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
         await expectEnabled(app, UNDO, false);
 
         // Type. CM6's history gains a step; the depth-flip refresher
-        // republishes the edit caps with no focus change → Undo enables.
+        // republishes the edit caps with no focus change → Undo enables,
+        // titled with the event noun ("Undo Typing").
         await app.nativeType("hello");
         await expectEnabled(app, UNDO, true);
+        const undoState = await app.menuItemState(UNDO);
+        expect(undoState.title, "Undo names the next step").toBe("Undo Typing");
         await expectEnabled(app, REDO, false);
 
         // The repro: click the empty canvas to deselect the pane. The
@@ -249,7 +254,7 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
   );
 
   test(
-    "native input: Undo stays disabled — its browser stack is not card-specific",
+    "native input: Undo rides the web view's NSUndoManager, cleared on blur",
     async () => {
       const app = await launchTugApp({ testName: "at0174-nativeundo" });
       try {
@@ -258,20 +263,52 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
+        const INPUT = `${CARD("A")} input`;
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(`${CARD("A")} input`)}) !== null`,
+          `document.querySelector(${JSON.stringify(INPUT)}) !== null`,
           { timeoutMs: 6000 },
         );
 
-        // Focus the native input and type. Its undo lives on the browser's
-        // per-web-view stack (JS-opaque, not card-scoped), so the menu item
-        // deliberately stays disabled — ⌘Z falls through to the web view
-        // and browser-native undo still works there.
-        await app.nativeClickAtElement(`${CARD("A")} input`);
+        // Focused, untouched input → Undo disabled (empty native stack).
+        await app.nativeClickAtElement(INPUT);
+        await expectEnabled(app, COPY, true);
+        await expectEnabled(app, UNDO, false);
+
+        // Type. WebKit registers the edit on the web view's NSUndoManager;
+        // the host validates Undo LIVE from it (nativeUndoToken path).
         await app.nativeType("hello");
-        await expectEnabled(app, COPY, true); // typing landed; caps republished
+        await expectEnabled(app, UNDO, true);
+
+        // ⌘Z executes the native undo: — the typing reverts (this is the
+        // chord that used to beep when the item validated disabled).
+        // Redo lights up from the same live NSUndoManager; its execution
+        // path is the same wrapper shape as undo's (performRedo →
+        // sendAction(redo:)), asserted by validation only — the harness's
+        // synthesized cmd+shift chord doesn't reach AppKit's menu
+        // matching the way a real keyboard's does (it types a literal
+        // "Z"), so the chord itself isn't drivable from here.
+        await app.nativeKey("z", ["cmd"]);
+        await app.waitForCondition<boolean>(
+          `(function(){ var el = document.querySelector(${JSON.stringify(INPUT)}); return el !== null && el.value === ""; })()`,
+          { timeoutMs: 6000 },
+        );
+        await expectEnabled(app, REDO, true);
+
+        // Blur via canvas deselect: the token drops to 0 and the host
+        // clears the native stack — the focused control's history never
+        // leaks elsewhere.
+        await app.nativeMouseDown({ x: 760, y: 300 });
+        await app.nativeMouseUp({ x: 760, y: 300 });
         await expectEnabled(app, UNDO, false);
         await expectEnabled(app, REDO, false);
+
+        // Clicking back in does NOT resurrect the old history — the
+        // clear-on-blur semantics: keep undo while you stay, lose it when
+        // you leave. Fresh typing builds a fresh stack.
+        await app.nativeClickAtElement(INPUT);
+        await expectEnabled(app, UNDO, false);
+        await app.nativeType("x");
+        await expectEnabled(app, UNDO, true);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0174-nativeundo] log tail:\n${tail}\n`);

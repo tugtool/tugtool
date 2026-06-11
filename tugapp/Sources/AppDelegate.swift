@@ -569,19 +569,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenuItem.submenu = editMenu
-        // Undo / Redo are chain round-trips validated from MenuState.edit,
-        // NOT the bare `undo:` selectors AppKit would auto-validate against
-        // an NSUndoManager. The web view's undoManager is per-web-view — it
-        // accumulates the whole view's history and knows nothing about card
-        // activation, so a deactivated card's undo state would keep showing
-        // in the menu. The chain is card-scoped by construction: the
-        // focused editor reports its own history depth (CM6 undoDepth /
-        // redoDepth) through `validateAction`, and deactivating the card
-        // moves the first responder off it, disabling the items. When
-        // disabled, the ⌘Z chord falls through to the web view (CM6 keymap
-        // / browser-native input undo). Trade-off: titles are static —
-        // AppKit's "Undo Typing" retitling only exists on the
-        // NSUndoManager path.
+        // Undo / Redo target performUndo/performRedo wrappers, NOT the
+        // bare `undo:` selectors AppKit would auto-validate against an
+        // NSUndoManager — the web view's undoManager is per-web-view and
+        // knows nothing about card activation, so unconditional
+        // auto-validation kept showing a deactivated card's undo state.
+        // Validation and execution are two-path, discriminated by
+        // MenuState.edit.nativeUndoToken (see validateMenuItem and the
+        // wrappers): chain caps + control-frame round-trip for the CM6
+        // editors (card-scoped history depth + "Undo Typing" nouns), and
+        // the web view's NSUndoManager — live canUndo + native selector —
+        // for browser-native text controls, scoped by the token-change
+        // clear. A chord on a DISABLED item is eaten at the menu bar with
+        // a beep (it does NOT fall through to the web view), which is why
+        // the native path must light the item rather than stay dark.
         editMenu.addItem(NSMenuItem(title: "Undo", action: #selector(performUndo(_:)), keyEquivalent: "z").identified("edit.undo"))
         editMenu.addItem(NSMenuItem(title: "Redo", action: #selector(performRedo(_:)), keyEquivalent: "z", modifierMask: [.command, .shift]).identified("edit.redo"))
         editMenu.addItem(NSMenuItem.separator())
@@ -968,19 +969,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("cycle-permission-mode")
     }
 
-    // Edit ▸ Undo / Redo — chain round-trips to the focused editor's own
-    // history (card-specific; see the menu build site for the rationale).
-    // Unlike the clipboard wrappers below, these deliberately do NOT
-    // re-dispatch the native selector: the native path drives the
-    // per-web-view NSUndoManager, which is exactly the non-card-scoped
-    // stack the menu must not reflect. Undo isn't gesture-sensitive the
-    // way the clipboard is, so the async control-frame round-trip is fine.
+    // Edit ▸ Undo / Redo — two execution paths, matching the two
+    // validation sources (see validateMenuItem):
+    //   - Native text control focused: drive the web view's NSUndoManager
+    //     through the native selector — the only route to a browser-native
+    //     input's undo stack. Card-safety comes from the token-change
+    //     clear in updateMenuState, not from avoiding the manager.
+    //   - Otherwise: chain round-trip to the focused editor's own history
+    //     (CM6). Undo isn't gesture-sensitive the way the clipboard is,
+    //     so the async control-frame round-trip is fine.
     @objc private func performUndo(_ sender: Any?) {
-        sendControl("undo")
+        if menuState.edit.nativeUndoToken != 0 {
+            NSApp.sendAction(Selector(("undo:")), to: nil, from: sender)
+        } else {
+            sendControl("undo")
+        }
     }
 
     @objc private func performRedo(_ sender: Any?) {
-        sendControl("redo")
+        if menuState.edit.nativeUndoToken != 0 {
+            NSApp.sendAction(Selector(("redo:")), to: nil, from: sender)
+        } else {
+            sendControl("redo")
+        }
     }
 
     // Edit ▸ clipboard actions — thin AppDelegate wrappers that re-dispatch
@@ -1127,7 +1138,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// Replace the cached menu state from the frontend (called by
     /// MainWindow on every `menuState` message).
     func updateMenuState(_ payload: [String: Any]) {
+        let previousToken = menuState.edit.nativeUndoToken
         menuState = MenuState(payload: payload)
+
+        // Native-control undo scoping: the web view's NSUndoManager is
+        // per-web-view, so its contents must never outlive focus in one
+        // native text control. The frontend changes `nativeUndoToken`
+        // whenever the focused native control changes (and zeroes it on
+        // blur); clearing here on every change confines the native undo
+        // stack to the control the user is in right now.
+        if menuState.edit.nativeUndoToken != previousToken {
+            window.editingUndoManager()?.removeAllActions()
+        }
     }
 
     /// Card count of the focused pane (0 when nothing is focused). Drives
@@ -1206,11 +1228,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // from the web responder chain (MenuState.edit). Disabled when no
         // focused surface handles the action; Find stays disabled until a
         // find-capable surface is focused (no surface implements it yet).
-        // Undo / Redo carry the focused editor's own history depth, so
-        // they go dark the moment the card deactivates (card-specific).
+        //
+        // Undo / Redo: titles AND enablement set here, during the
+        // validation sweep (the sanctioned AppKit pattern, same as the
+        // permission-mode checkmarks; identity never rides the title).
+        // Two sources, discriminated by nativeUndoToken:
+        //   - Native text control focused (token != 0): the web view's
+        //     NSUndoManager is the live truth — canUndo/canRedo and its
+        //     own localized menu titles ("Undo Typing"). The stack is
+        //     cleared on every token change (updateMenuState), so what it
+        //     reports is always scoped to the focused control.
+        //   - Otherwise: the chain caps (focused editor's history depth)
+        //     plus the editor-published noun ("Typing", "Paste", …).
         case "edit.undo":
+            if menuState.edit.nativeUndoToken != 0,
+               let um = window.editingUndoManager() {
+                menuItem.title = um.canUndo ? um.undoMenuItemTitle : "Undo"
+                return um.canUndo
+            }
+            menuItem.title = menuState.edit.undoLabel.isEmpty
+                ? "Undo" : "Undo \(menuState.edit.undoLabel)"
             return menuState.edit.undo
         case "edit.redo":
+            if menuState.edit.nativeUndoToken != 0,
+               let um = window.editingUndoManager() {
+                menuItem.title = um.canRedo ? um.redoMenuItemTitle : "Redo"
+                return um.canRedo
+            }
+            menuItem.title = menuState.edit.redoLabel.isEmpty
+                ? "Redo" : "Redo \(menuState.edit.redoLabel)"
             return menuState.edit.redo
         case "edit.cut":
             return menuState.edit.cut
@@ -1660,9 +1706,16 @@ struct MenuState {
     /// accumulates the whole view's edit history and knows nothing about
     /// card activation, so a deactivated card's undo state would keep
     /// showing in the menu. The chain is card-scoped by construction;
-    /// editors report their own history depth through `validateAction`.
-    /// Native inputs register no undo handler, so the items stay disabled
-    /// for them and ⌘Z falls through to browser-native undo.
+    /// editors report their own history depth through `validateAction`,
+    /// plus a menu-title noun (`undoLabel` / `redoLabel` → "Undo Typing").
+    ///
+    /// Native text controls take a third path: when `nativeUndoToken` is
+    /// non-zero (a browser-native input/textarea is focused) the delegate
+    /// validates Undo/Redo LIVE from the web view's NSUndoManager and
+    /// executes the native selectors. The token changes per focused
+    /// control; the delegate clears the stack on every change
+    /// (`updateMenuState`), which is what keeps the per-web-view native
+    /// stack card-safe.
     struct Edit {
         let cut: Bool
         let copy: Bool
@@ -1671,6 +1724,9 @@ struct MenuState {
         let selectAll: Bool
         let undo: Bool
         let redo: Bool
+        let undoLabel: String
+        let redoLabel: String
+        let nativeUndoToken: Int
         let find: Bool
         let findNext: Bool
         let findPrevious: Bool
@@ -1679,6 +1735,7 @@ struct MenuState {
         static let disabled = Edit(
             cut: false, copy: false, paste: false, delete: false,
             selectAll: false, undo: false, redo: false,
+            undoLabel: "", redoLabel: "", nativeUndoToken: 0,
             find: false, findNext: false, findPrevious: false
         )
     }
@@ -1737,6 +1794,9 @@ struct MenuState {
                 selectAll: rawEdit["selectAll"] as? Bool ?? false,
                 undo: rawEdit["undo"] as? Bool ?? false,
                 redo: rawEdit["redo"] as? Bool ?? false,
+                undoLabel: rawEdit["undoLabel"] as? String ?? "",
+                redoLabel: rawEdit["redoLabel"] as? String ?? "",
+                nativeUndoToken: rawEdit["nativeUndoToken"] as? Int ?? 0,
                 find: rawEdit["find"] as? Bool ?? false,
                 findNext: rawEdit["findNext"] as? Bool ?? false,
                 findPrevious: rawEdit["findPrevious"] as? Bool ?? false

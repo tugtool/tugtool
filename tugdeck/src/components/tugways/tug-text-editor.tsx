@@ -80,9 +80,16 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { EditorView, highlightActiveLineGutter, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
+import {
+  EditorView,
+  highlightActiveLineGutter,
+  keymap,
+  placeholder as cmPlaceholder,
+  ViewPlugin,
+} from "@codemirror/view";
+import type { ViewUpdate } from "@codemirror/view";
 import {
   cursorGroupBackward,
   cursorGroupForward,
@@ -98,8 +105,14 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
-import { requestEditMenuStateRefresh } from "@/lib/host-menu-state";
+import { requestEditMenuStateRefresh, setEditUndoLabels } from "@/lib/host-menu-state";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import {
+  applyHistoryStep,
+  EMPTY_UNDO_LABEL_STACKS,
+  undoLabelForUserEvent,
+  type UndoLabelStacks,
+} from "./tug-text-editor/undo-labels";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
@@ -775,34 +788,77 @@ const keepCaretVisible: Extension = EditorView.updateListener.of((update) => {
 });
 
 /**
- * Mirror undo/redo *availability* flips outward to the native Edit menu.
+ * Mirror undo/redo *state* outward to the native Edit menu.
  *
- * The menu's undo/redo enablement reads this editor's history depth
- * through the responder node's `validateAction`, but the chain only
- * recomputes on validation-version changes (focus / register /
- * unregister) — typing changes the depth without any of those. This
- * listener asks the edit-caps publisher to recompute when the
- * *availability* (depth > 0) flips, not on every keystroke: after the
- * first character the undo flag is already true, so subsequent typing
- * publishes nothing. Per-view last-published flags ride a WeakMap (the
- * extension is module-shared across editor instances). The publisher
- * additionally diffs the serialized payload, so even a redundant
- * request posts nothing — over-asking is cheap, under-asking shows a
- * stale menu.
+ * Two outputs per document change:
+ *
+ *   - **Availability.** The menu's undo/redo enablement reads this
+ *     editor's history depth through the responder node's
+ *     `validateAction`, but the chain only recomputes on
+ *     validation-version changes (focus / register / unregister) —
+ *     typing changes the depth without any of those. The plugin asks the
+ *     edit-caps publisher to recompute when availability (depth > 0) or
+ *     the menu labels change — not on every keystroke: a continued
+ *     typing run alters neither, so it publishes nothing. The publisher
+ *     additionally diffs the serialized payload, so even a redundant
+ *     request posts nothing.
+ *   - **Labels.** Parallel label stacks (undo-labels.ts) name the next
+ *     undo/redo steps ("Typing", "Paste", …); the tops are registered in
+ *     host-menu-state's per-editor label registry keyed by `view.dom`,
+ *     where the publisher resolves them for the focused editor only.
+ *
+ * A ViewPlugin (not a bare updateListener) so per-instance state lives
+ * on the plugin and `destroy()` clears the registry entry on unmount.
  */
-const lastUndoAvailability = new WeakMap<EditorView, { undo: boolean; redo: boolean }>();
-const publishUndoAvailability: Extension = EditorView.updateListener.of((update) => {
-  if (!update.docChanged) return;
-  const view = update.view;
-  const next = {
-    undo: undoDepth(view.state) > 0,
-    redo: redoDepth(view.state) > 0,
-  };
-  const prev = lastUndoAvailability.get(view);
-  if (prev !== undefined && prev.undo === next.undo && prev.redo === next.redo) return;
-  lastUndoAvailability.set(view, next);
-  requestEditMenuStateRefresh();
-});
+const undoMenuStatePlugin: Extension = ViewPlugin.fromClass(
+  class {
+    private stacks: UndoLabelStacks = EMPTY_UNDO_LABEL_STACKS;
+    /** Availability + label fingerprint of the last refresh request. */
+    private lastPublished = "";
+
+    constructor(private readonly view: EditorView) {
+      setEditUndoLabels(view.dom, { undo: "", redo: "" });
+    }
+
+    update(update: ViewUpdate): void {
+      if (!update.docChanged) return;
+
+      const isUndo = update.transactions.some((t) => t.isUserEvent("undo"));
+      const isRedo = update.transactions.some((t) => t.isUserEvent("redo"));
+      let label = "";
+      if (!isUndo && !isRedo) {
+        for (const t of update.transactions) {
+          const userEvent = t.annotation(Transaction.userEvent) ?? null;
+          const mapped = undoLabelForUserEvent(userEvent);
+          if (mapped !== "") label = mapped;
+        }
+      }
+      this.stacks = applyHistoryStep(this.stacks, {
+        kind: isUndo ? "undo" : isRedo ? "redo" : "edit",
+        label,
+        undoDepthAfter: undoDepth(update.state),
+        redoDepthAfter: redoDepth(update.state),
+      });
+
+      const undoLabel = this.stacks.done[this.stacks.done.length - 1] ?? "";
+      const redoLabel = this.stacks.undone[this.stacks.undone.length - 1] ?? "";
+      setEditUndoLabels(this.view.dom, { undo: undoLabel, redo: redoLabel });
+
+      // Refresh only when something menu-visible changed: availability
+      // (depth > 0) or the labels. A continued typing run changes
+      // neither, so it requests nothing.
+      const published = `${this.stacks.done.length > 0}|${undoLabel}|${this.stacks.undone.length > 0}|${redoLabel}`;
+      if (published !== this.lastPublished) {
+        this.lastPublished = published;
+        requestEditMenuStateRefresh();
+      }
+    }
+
+    destroy(): void {
+      setEditUndoLabels(this.view.dom, null);
+    }
+  },
+);
 
 function buildExtensions(
   host: HTMLElement,
@@ -940,7 +996,7 @@ function buildExtensions(
     clipboardExtension(getBytesStore, onAttachmentError),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
-    publishUndoAvailability,
+    undoMenuStatePlugin,
   ];
 }
 

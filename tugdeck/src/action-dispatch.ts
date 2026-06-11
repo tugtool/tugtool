@@ -502,8 +502,11 @@ export function initActionDispatch(
   // behavior where e.g. ⌘F on a card without find UI does nothing.
   // Undo/Redo ride this path so the menu items reach the focused
   // editor's own history (card-specific); their menu items validate
-  // against the editor's depth, and when disabled the ⌘Z chord falls
-  // through to the web view (CM6 keymap / browser-native input undo).
+  // against the editor's depth. (When a browser-native text control is
+  // focused, the host bypasses this round-trip entirely and drives the
+  // web view's NSUndoManager natively — see menus.md. A chord on a
+  // disabled menu item is eaten at the menu bar with a beep; it never
+  // falls through to the web view.)
   for (const action of [
     TUG_ACTIONS.FIND,
     TUG_ACTIONS.FIND_NEXT,

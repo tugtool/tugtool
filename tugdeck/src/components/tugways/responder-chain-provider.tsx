@@ -37,6 +37,7 @@ import { getAppLifecycle } from "../../lib/app-lifecycle";
 import { getDeckStore } from "../../lib/deck-store-registry";
 import {
   computeEditCapabilities,
+  editUndoLabelsWithin,
   publishEditMenuState,
   registerEditCapsRefresher,
 } from "../../lib/host-menu-state";
@@ -170,16 +171,26 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // consumer reads it, so no `useSyncExternalStore` (same shape as
     // host-menu-state's deck/dev publishers). Seed now, then republish on
     // every validation change (focus / register / unregister).
+    // Focused-native-control tracker for the host's NSUndoManager undo
+    // path. The token changes whenever the focused native text control
+    // changes (and reads 0 when none is focused); the Swift side clears
+    // the web view's undo stack on every token change, so the
+    // per-web-view native stack never outlives focus in one control.
+    // Closure state, not React state — nothing renders from it.
+    let nativeUndoCounter = 0;
+    let lastNativeUndoEl: Element | null = null;
+
     const publishEditCaps = (): void => {
       const caps = computeEditCapabilities(manager);
-      // Undo/Redo liveness gate. The chain first responder is deliberately
-      // sticky — a canvas-background click (pane deselect) blurs the
-      // editor to body but demotes nothing, so the FR keeps answering
-      // capability queries for a card the user has visibly deactivated.
-      // Undo/Redo are *editing* state: an editor is active for editing iff
-      // it actually holds keyboard focus, so they additionally require
-      // `document.activeElement` inside the FR's element. The other caps
-      // stay ungated on purpose — Copy must keep working for read-only
+      // Editing-state liveness gate. The chain first responder is
+      // deliberately sticky — a canvas-background click (pane deselect)
+      // blurs the editor to body but demotes nothing, so the FR keeps
+      // answering capability queries for a card the user has visibly
+      // deactivated. Cut / Paste / Select All / Undo / Redo are
+      // *editing* actions: an editor is active for editing iff it
+      // actually holds keyboard focus, so they additionally require
+      // `document.activeElement` inside the FR's element. Copy stays
+      // ungated on purpose — it must keep working for read-only
       // selections (transcript text), where the selection lives without
       // DOM focus on the responder.
       const frId = manager.getFirstResponder();
@@ -192,9 +203,40 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         frEl !== null &&
         active !== null &&
         (frEl === active || frEl.contains(active));
-      publishEditMenuState(
-        frFocused ? caps : { ...caps, undo: false, redo: false },
-      );
+
+      // Native text control focused? Then the host validates Undo/Redo
+      // from the web view's NSUndoManager instead of the chain caps.
+      const isNativeText =
+        active instanceof HTMLTextAreaElement
+          ? !active.readOnly && !active.disabled
+          : active instanceof HTMLInputElement
+            ? !active.readOnly && !active.disabled
+            : false;
+      if (isNativeText) {
+        if (active !== lastNativeUndoEl) {
+          nativeUndoCounter += 1;
+          lastNativeUndoEl = active;
+        }
+      } else {
+        lastNativeUndoEl = null;
+      }
+
+      const labels =
+        frFocused && frEl !== null
+          ? editUndoLabelsWithin(frEl)
+          : { undo: "", redo: "" };
+
+      publishEditMenuState({
+        ...caps,
+        cut: frFocused && caps.cut,
+        paste: frFocused && caps.paste,
+        selectAll: frFocused && caps.selectAll,
+        undo: frFocused && caps.undo,
+        redo: frFocused && caps.redo,
+        undoLabel: labels.undo,
+        redoLabel: labels.redo,
+        nativeUndoToken: isNativeText ? nativeUndoCounter : 0,
+      });
     };
     publishEditCaps();
     const unsubscribeEditCaps = manager.subscribe(publishEditCaps);

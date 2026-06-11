@@ -436,6 +436,16 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     }
     #endif
 
+    /// The web view's editing NSUndoManager — the platform stack WebKit
+    /// feeds when the user edits a browser-native text control. The
+    /// app delegate validates Edit ▸ Undo/Redo from it (and clears it on
+    /// native-control blur) while `MenuState.edit.nativeUndoToken` is
+    /// non-zero. See AppDelegate's Edit-menu construction for the
+    /// card-specific undo design.
+    func editingUndoManager() -> UndoManager? {
+        return webView.undoManager
+    }
+
     /// Open web inspector
     func openWebInspector() {
         guard let inspector = webView.value(forKey: "_inspector") as? NSObject else { return }
