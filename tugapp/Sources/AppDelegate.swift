@@ -459,15 +459,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: - Menu Bar
 
+    /// The running variant's display name — "Tug", "Tug-debug",
+    /// "Tug-apptest", "Tug-worktree", etc. Read from the bundle, the
+    /// same source AppKit uses for the app-menu title (so "About …",
+    /// "Hide …", and "Quit …" match the title exactly). The name keys
+    /// are stamped per-variant at build time by assign-bundle-id.sh;
+    /// never hardcoded here. Falls back to the process name if both
+    /// bundle keys are somehow absent.
+    private var appDisplayName: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? ProcessInfo.processInfo.processName
+    }
+
     private func buildMenuBar() {
         let mainMenu = NSMenu()
+        let appName = appDisplayName
 
         // Tug (App) Menu - position 0
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
-        let aboutItem = NSMenuItem(title: "About Tug", action: #selector(showAbout(_:)), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About \(appName)", action: #selector(showAbout(_:)), keyEquivalent: "")
         aboutItem.isEnabled = false
         aboutItem.identifier = NSUserInterfaceItemIdentifier("app.about")
         self.aboutMenuItem = aboutItem
@@ -489,7 +503,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.servicesMenu = servicesMenu
 
         appMenu.addItem(NSMenuItem.separator())
-        let hideItem = NSMenuItem(title: "Hide Tug", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideItem = NSMenuItem(title: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         hideItem.identifier = NSUserInterfaceItemIdentifier("app.hide")
         appMenu.addItem(hideItem)
         let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h", modifierMask: [.command, .option])
@@ -499,7 +513,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         showAllItem.identifier = NSUserInterfaceItemIdentifier("app.showAll")
         appMenu.addItem(showAllItem)
         appMenu.addItem(NSMenuItem.separator())
-        let quitItem = NSMenuItem(title: "Quit Tug", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.identifier = NSUserInterfaceItemIdentifier("app.quit")
         appMenu.addItem(quitItem)
 
@@ -770,6 +784,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let info = Bundle.main.infoDictionary ?? [:]
         sendControl("show-card", params: [
             "component": "about",
+            // The variant's display name (e.g. "Tug-debug"), the same
+            // dynamic source the menu bar and app-menu items use — never
+            // hardcoded. The About card's wordmark and title bar read it.
+            "name": appDisplayName,
             "version": info["CFBundleShortVersionString"] as? String ?? "",
             "build": info["CFBundleVersion"] as? String ?? "",
             "commit": BuildInfo.commit,

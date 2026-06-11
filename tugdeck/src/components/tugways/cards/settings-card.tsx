@@ -34,11 +34,17 @@ type SettingsTabId = "general" | "app";
 interface SettingsTabSpec {
   readonly id: SettingsTabId;
   readonly label: string;
+  /** Distinct per-tab lucide icon. The tabs share one sentinel
+   *  componentId, so the icon can't come from a registration —
+   *  it rides each tab card's `icon` field. */
+  readonly icon: string;
 }
 
 const TABS: readonly SettingsTabSpec[] = [
-  { id: "general", label: "Dev Card" },
-  { id: "app", label: "App" },
+  // "Dev Card" carries the dev card's own icon; "Maker" a tool icon
+  // for the app-maker gate.
+  { id: "general", label: "Dev Card", icon: "MessageSquareText" },
+  { id: "app", label: "Maker", icon: "Wrench" },
 ];
 
 /**
@@ -51,6 +57,7 @@ const TAB_CARDS: readonly CardState[] = TABS.map((spec) => ({
   id: spec.id,
   componentId: "settings-tab",
   title: spec.label,
+  icon: spec.icon,
   closable: false,
 }));
 

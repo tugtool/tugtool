@@ -23,11 +23,28 @@
   box-sizing: border-box;
 }
 
+/* WebKit gives `<legend>` an intrinsic inline-size that can extend past
+   its visible text, leaving the fieldset's top border truncated on the
+   right of the legend. Clamping the legend to its content restores the
+   border on both sides. (Same fix as .settings-general-group.) */
+.settings-app-group > .tug-box-legend {
+  inline-size: max-content;
+}
+
 .settings-app-switch-row {
   display: flex;
   align-items: center;
 }
 
-.settings-app-hint {
-  max-width: 48ch;
+/* The hint is a TugLabel (size sm, emphasis calm). TugLabel is
+   `inline-flex` by default, which shrinks to content and wraps at odd
+   points; make this instance a full-width block so its text flows as a
+   normal paragraph with a comfortable measure and line-height. The
+   descendant selector outranks `.tug-label` so the display override
+   wins deterministically. */
+.settings-app .settings-app-hint {
+  display: flex;
+  width: 100%;
+  max-width: 60ch;
+  line-height: var(--tug-line-height-lg);
 }

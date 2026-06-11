@@ -201,13 +201,29 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           commitMutation: () => store.activateCard(nextId),
         });
       },
-      [TUG_ACTIONS.RESET_LAYOUT]: (_event: ActionEvent) => {
-        // Phase 5 will reset card positions.
-        console.log("reset-layout: stub -- not implemented until Phase 5");
-      },
       [TUG_ACTIONS.SHOW_SETTINGS]: (_event: ActionEvent) => {
-        // Phase 8 will open the settings panel.
-        console.log("show-settings: stub -- not implemented until Phase 8");
+        // ⌘, — open (or raise) the Settings singleton card. This
+        // handler is why the keybinding owns the chord in-app: with the
+        // WKWebView first responder, the web layer captures ⌘, before
+        // AppKit's menu ever sees it, so the menu's key equivalent can't
+        // be relied on — the chord must do its work here. Same
+        // find-or-create-then-focus-claim shape as the gallery action
+        // (and the focus-correct sibling of the native menu's
+        // `show-card settings` → `showSingletonCard` path).
+        const snapshot = store.getSnapshot();
+        const settingsCard = snapshot.cards.find(
+          (c) => c.componentId === "settings",
+        );
+        const incomingCardId = settingsCard
+          ? settingsCard.id
+          : store.addCard("settings");
+        if (incomingCardId === null) return;
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId,
+          store,
+          commitMutation: () => store.activateCard(incomingCardId),
+        });
       },
       /**
        * show-component-gallery — find or create the gallery card ([D05], [D07]).

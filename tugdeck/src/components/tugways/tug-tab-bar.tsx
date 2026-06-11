@@ -791,7 +791,11 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       {...rest}
     >
       {cards.map((card) => {
-        const iconName = getAllRegistrations().get(card.componentId)?.defaultMeta.icon;
+        // A per-card icon override wins over the componentId's registry
+        // default — lets fixed tab sets that share one sentinel
+        // componentId give each tab a distinct icon.
+        const iconName =
+          card.icon ?? getAllRegistrations().get(card.componentId)?.defaultMeta.icon;
         const iconNode = renderIcon(iconName);
         return (
           <TabView

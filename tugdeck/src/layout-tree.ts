@@ -239,6 +239,15 @@ export interface CardState {
   componentId: string;
   title: string;
   closable: boolean;
+  /**
+   * Optional per-card tab icon (a lucide icon name) that overrides the
+   * componentId's registry default in `TugTabBar`. Presentational, like
+   * `title`; not serialized. Used by fixed tab sets whose tabs share one
+   * sentinel componentId (e.g. the Settings card's panel tabs) so each
+   * tab can carry a distinct icon. Omit for ordinary deck cards — the
+   * tab bar falls back to the registration's `defaultMeta.icon`.
+   */
+  icon?: string;
   state?: CardStateBag;
 }
 

@@ -17,10 +17,11 @@
  * @module components/tugways/cards/about-card
  */
 
-import React, { useSyncExternalStore } from "react";
+import React, { useLayoutEffect, useSyncExternalStore } from "react";
 import { Ship } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { appInfoStore } from "@/lib/app-info-store";
+import { cardTitleStore } from "@/lib/card-title-store";
 import "./about-card.css";
 
 const PLACEHOLDER = "—";
@@ -31,17 +32,33 @@ function shortCommit(commit: string | undefined): string {
   return commit.slice(0, 8);
 }
 
-export function AboutCardContent() {
+export function AboutCardContent({ cardId }: { cardId: string }) {
   const info = useSyncExternalStore(
     appInfoStore.subscribe,
     appInfoStore.getSnapshot,
   );
 
+  // The variant's display name ("Tug", "Tug-debug", …) — app identity
+  // delivered with the rest of the About payload. Drives both the
+  // wordmark and the card's chrome title. "Tug" is the generic fallback
+  // when no host has delivered identity (browser-only dev).
+  const name = info?.name ?? "Tug";
   const version = info?.version ?? PLACEHOLDER;
   const build = info?.build ?? PLACEHOLDER;
   const profile = info?.profile ?? PLACEHOLDER;
   const branch = info?.branch ?? PLACEHOLDER;
   const copyright = info?.copyright ?? PLACEHOLDER;
+
+  // Publish the chrome title from card content via the same
+  // `cardTitleStore` mechanism the dev card uses. The About card
+  // declares no static registry title — its title *is* its dynamic
+  // identity — so this override stands alone as the whole title bar
+  // ("About Tug-debug"). useLayoutEffect so the title is set before
+  // paint, with no empty-base flash.
+  useLayoutEffect(() => {
+    cardTitleStore.set(cardId, `About ${name}`);
+    return () => cardTitleStore.clear(cardId);
+  }, [cardId, name]);
 
   return (
     <div className="about-card" data-testid="about-card">
@@ -58,7 +75,7 @@ export function AboutCardContent() {
           <Ship size={40} strokeWidth={1.5} />
         </div>
       )}
-      <h1 className="about-card-name">Tug</h1>
+      <h1 className="about-card-name">{name}</h1>
       <p className="about-card-version" data-testid="about-card-version">
         Version {version} ({build})
       </p>
@@ -83,8 +100,12 @@ export function AboutCardContent() {
 export function registerAboutCard(): void {
   registerCard({
     componentId: "about",
-    contentFactory: () => <AboutCardContent />,
-    defaultMeta: { title: "About Tug", closable: true },
+    contentFactory: (cardId) => <AboutCardContent cardId={cardId} />,
+    // Empty static title: the About card's chrome title is its dynamic
+    // identity, published by the content via cardTitleStore once the
+    // app name resolves (see AboutCardContent). The empty base lets
+    // that override stand alone as the whole title bar.
+    defaultMeta: { title: "", closable: true },
     hidden: true,
     placement: "center",
     sizePolicy: {

@@ -18,6 +18,9 @@
 
 /** App identity fields from the native `show-card` payload. */
 export interface AppInfo {
+  /** The running variant's display name (`CFBundleName`), e.g.
+   *  "Tug", "Tug-debug". The wordmark and About card title read this. */
+  name?: string;
   /** Marketing version (`CFBundleShortVersionString`), e.g. "0.8.0". */
   version?: string;
   /** Build number (`CFBundleVersion`), e.g. "800". */
@@ -35,6 +38,7 @@ export interface AppInfo {
 }
 
 const APP_INFO_KEYS = [
+  "name",
   "version",
   "build",
   "commit",

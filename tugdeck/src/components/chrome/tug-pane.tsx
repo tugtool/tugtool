@@ -851,7 +851,6 @@ export function TugPane({
         if (typeof event.value !== "string") return;
         store.addCardToPane(stackId, event.value);
       },
-      [TUG_ACTIONS.MINIMIZE]: (_event: ActionEvent) => {},
       [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
         console.info("find: stub — no find UI implemented yet");
       },
@@ -871,11 +870,14 @@ export function TugPane({
     ? activeCardRegistration.defaultMeta
     : meta;
 
-  // Per-card title override (cardTitleStore). When a card publishes
-  // an override (e.g. the Dev card publishes its bound project path
-  // once a session is picked), the title bar composes it as
-  // `"<registry> — <override>"`. Subscription is keyed on the
-  // active card so a card swap repaints the title without prop drill.
+  // Per-card title override (cardTitleStore). When a card publishes an
+  // override (e.g. the Dev card publishes its bound project path once a
+  // session is picked), the title bar composes it as
+  // `"<base> : <override>"`. A card with no static base title (e.g. the
+  // About card, whose title *is* its dynamic identity) declares an
+  // empty registry title, and the override then stands alone as the
+  // whole title. Subscription is keyed on the active card so a card
+  // swap repaints the title without prop drill.
   const activeCardTitleOverride = useSyncExternalStore(
     cardTitleStore.subscribe,
     useCallback(
@@ -888,7 +890,9 @@ export function TugPane({
     ? `${cardTitle} : ${effectiveMeta.title}`
     : effectiveMeta.title;
   const displayTitle = activeCardTitleOverride
-    ? `${baseTitle} : ${activeCardTitleOverride}`
+    ? baseTitle
+      ? `${baseTitle} : ${activeCardTitleOverride}`
+      : activeCardTitleOverride
     : baseTitle;
 
   const resolvedAccessory: React.ReactNode | null = hasMultipleCards
