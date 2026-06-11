@@ -250,6 +250,22 @@
   outline-offset: 1px;
 }
 
+/* A radio item is a ghost-action TugButton, so it inherits the ghost→filled
+   live-control promotion (`internal/tug-button.css`) — the moment its row holds
+   the movement cursor it would flip to the solid `filled-action` fill. That
+   promotion is meant for a descended ghost ACCESSORY (a list-row trash icon),
+   not a radio row: a radio's cursor treatment is the ring (above) and its
+   selection is the dot, never a row fill ([P02]; gallery focus-language §5/§9).
+   The solid fill drowned the white dot and read far too intense. Hold the row at
+   its resting ghost surface so only the ring + dot mark it. Group-scoped
+   (specificity 0,3,0) so it outranks the button promotion (0,2,0) without
+   touching genuine accessory buttons. */
+.tug-radio-group [data-slot="tug-radio-item"][data-key-cursor] {
+  background-color: var(--tug7-surface-control-primary-ghost-action-rest);
+  color: var(--tug7-element-control-text-ghost-action-rest);
+  border-color: var(--tug7-element-control-border-ghost-action-rest);
+}
+
 /* ---- Disabled state ---- */
 
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
