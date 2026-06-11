@@ -653,12 +653,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.representedObject = command
             return item
         }
-        sessionMenu.addItem(sessionCommandItem("New Session", "clear", "session.new"))
+        sessionMenu.addItem(sessionCommandItem("Clear Session", "clear", "session.new"))
         sessionMenu.addItem(sessionCommandItem("Resume Session…", "resume", "session.resume"))
         sessionMenu.addItem(sessionCommandItem("Rename Session…", "rename", "session.rename"))
         sessionMenu.addItem(NSMenuItem.separator())
-        sessionMenu.addItem(sessionCommandItem("Model…", "model", "session.model"))
-        sessionMenu.addItem(sessionCommandItem("Reasoning Effort…", "effort", "session.effort"))
 
         // Permission Mode — a native radio submenu over the four
         // cycle-reachable modes (bypassPermissions is deliberately not
@@ -678,13 +676,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .shift]).identified("session.permissionMode.cycle"))
         sessionMenu.addItem(permissionModeItem)
 
+        sessionMenu.addItem(sessionCommandItem("Model…", "model", "session.model"))
+        sessionMenu.addItem(sessionCommandItem("Reasoning Effort…", "effort", "session.effort"))
         sessionMenu.addItem(sessionCommandItem("Permission Rules…", "permissions", "session.permissionRules"))
         sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(sessionCommandItem("Rewind…", "rewind", "session.rewind"))
         sessionMenu.addItem(sessionCommandItem("Compact Conversation", "compact", "session.compact"))
         sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(sessionCommandItem("Add Working Directory…", "add-dir", "session.addDir"))
-        sessionMenu.addItem(sessionCommandItem("Show Changes", "diff", "session.diff"))
+        sessionMenu.addItem(sessionCommandItem("Show Code Changes", "diff", "session.diff"))
         sessionMenu.addItem(sessionCommandItem("Show Context", "context", "session.context"))
         sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(sessionCommandItem("Skills", "skills", "session.skills"))
