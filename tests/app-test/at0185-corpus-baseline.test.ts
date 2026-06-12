@@ -100,6 +100,10 @@ async function resumeAndAudit(snap: SelectedSnapshot): Promise<void> {
         // shows something honest — placeholder, progress strip, or
         // content. Mount-transition flicker tolerance only.
         expect(reveal.maxBlankRunMs).toBeLessThanOrEqual(500);
+        // The prompt entry stands down through the window — a
+        // caret-capable entry mid-restore is the regression the
+        // editable(false) pairing exists to prevent.
+        expect(reveal.entryEditableDuringReplay).toBe(false);
       }
     } finally {
       await app.close();

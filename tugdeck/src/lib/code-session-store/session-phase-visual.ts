@@ -91,7 +91,7 @@ export const DEV_SESSION_PHASE_LABELS: Record<DevSessionPhaseKey, string> = {
   streaming: "Streaming",
   tool_work: "Working",
   awaiting_approval: "Awaiting",
-  replaying: "Replaying",
+  replaying: "Restoring",
   waking: "Streaming",
   errored: "Error",
 };

@@ -646,8 +646,11 @@ export interface TugTextEditorProps
   maximized?: boolean;
   /**
    * Whether the editor is disabled. Sets `EditorState.readOnly` so
-   * CM6 rejects content edits at the transaction level, and toggles
-   * `data-disabled` on the host wrapper for visual state.
+   * CM6 rejects content edits at the transaction level, drops
+   * `EditorView.editable` so the content DOM loses contenteditable —
+   * no caret can render while disabled, even if focus lands on the
+   * editor afterwards — and toggles `data-disabled` on the host
+   * wrapper for visual state.
    * @default false
    * @selector .tug-text-editor[data-disabled]
    */
@@ -925,7 +928,15 @@ function buildExtensions(
     activeLineGutterCompartment.of(
       initial.highlightActiveLineGutter ? highlightActiveLineGutter() : [],
     ),
-    readOnlyCompartment.of(EditorState.readOnly.of(initial.disabled)),
+    // `readOnly` blocks input transactions; `editable(false)` drops
+    // contenteditable so a disabled editor cannot render a caret even
+    // if something focuses it later (the host's transition-time blur
+    // can't guard against focus arrivals WHILE disabled — e.g. a
+    // card's mount-time focus restore landing on a stood-down entry).
+    readOnlyCompartment.of([
+      EditorState.readOnly.of(initial.disabled),
+      EditorView.editable.of(!initial.disabled),
+    ]),
     // Initial revision marker. Each `EditorView.theme({})` mints
     // a fresh style-module prefix; subsequent reconfigures
     // produce a new prefix → the `theme` facet's value differs
@@ -1338,9 +1349,10 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       const view = viewRef.current;
       if (view === null) return;
       view.dispatch({
-        effects: readOnlyCompartment.reconfigure(
+        effects: readOnlyCompartment.reconfigure([
           EditorState.readOnly.of(disabled),
-        ),
+          EditorView.editable.of(!disabled),
+        ]),
       });
     }, [disabled]);
 

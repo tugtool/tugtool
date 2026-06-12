@@ -168,7 +168,7 @@ describe("DEV_SESSION_PHASE_LABELS — human-readable labels", () => {
     ["streaming", "Streaming"],
     ["tool_work", "Working"],
     ["awaiting_approval", "Awaiting"],
-    ["replaying", "Replaying"],
+    ["replaying", "Restoring"],
     ["waking", "Streaming"],
     ["errored", "Error"],
     ["offline", "Disconnected"],

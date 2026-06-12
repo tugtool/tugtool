@@ -62,6 +62,13 @@ body {
    toolbar sits at the bottom naturally via the flex-column order.
    ----------------------------------------------------------------------------- */
 
+/* Whole-entry stand-down (session restore in flight). The root is
+   `inert` (interaction blocked natively); this rule carries the visual
+   reading. [L06] appearance via a data attribute. */
+.tug-prompt-entry[data-disabled] {
+  opacity: 0.55;
+}
+
 .tug-prompt-entry {
   display: flex;
   flex-direction: column;

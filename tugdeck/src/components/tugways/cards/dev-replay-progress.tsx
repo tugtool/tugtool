@@ -18,7 +18,10 @@
  *     `REPLAY_FOLD_FLUSH_THRESHOLD` events; each flush is a listener
  *     notify, so the `useSyncExternalStore` turn-count read below
  *     ticks exactly at flush commits — the only render-coupled signal
- *     ([L02]). No timers, no rAF anywhere.
+ *     ([L02]). Progress is never timer-driven; the one `setTimeout`
+ *     here is the dismissal dwell (lifecycle, not render scheduling —
+ *     the bar completes to full and lingers briefly before the strip
+ *     unmounts, same timer class as `DevRestoring`'s panel delay).
  *  3. **The windowed mount commits**: bounded by collapse + windowing,
  *     painting under the strip until the window closes and the strip
  *     unmounts.
@@ -73,12 +76,10 @@ export function deriveReplayProgress(
   turnsSoFar: number,
   metadata: ResumeDisplayMetadata | undefined,
 ): ReplayProgressView {
-  const title =
-    metadata?.title !== undefined &&
-    metadata.title !== null &&
-    metadata.title.length > 0
-      ? `“${metadata.title}”`
-      : "session";
+  // The label is deliberately the bare verb — the session title rides
+  // the metadata for any surface that wants it, but the strip reads
+  // `[Restoring…][bar][N of M turns]` per the canonical labeled-bar
+  // layout.
   const total =
     metadata?.turnCount !== undefined &&
     metadata.turnCount !== null &&
@@ -87,25 +88,48 @@ export function deriveReplayProgress(
       : null;
   if (total !== null) {
     return {
-      label: `Restoring ${title}…`,
+      label: "Restoring…",
       value: Math.min(turnsSoFar, total),
       max: total,
     };
   }
   if (turnsSoFar > 0) {
     return {
-      label: `Restoring ${title} — ${turnsSoFar} turns…`,
+      label: `Restoring — ${turnsSoFar} turns…`,
       value: null,
       max: null,
     };
   }
-  return { label: `Restoring ${title}…`, value: null, max: null };
+  return { label: "Restoring…", value: null, max: null };
+}
+
+/**
+ * Force a captured view to its completed pose: the bar MUST reach
+ * full before the strip dismisses — a partial fill at dismissal reads
+ * as the restore escaping our control. A determinate view completes
+ * to `max of max`; an indeterminate one renders a full anonymous bar.
+ */
+export function completeReplayProgress(
+  view: ReplayProgressView,
+): ReplayProgressView {
+  if (view.max !== null) {
+    return { label: view.label, value: view.max, max: view.max };
+  }
+  return { label: "Restoring…", value: 1, max: 1 };
 }
 
 /** `formatValue` for the determinate readout — "465 of 4,904 turns". */
 export function formatReplayProgressValue(value: number, max: number): string {
   return `${value.toLocaleString()} of ${max.toLocaleString()} turns`;
 }
+
+/**
+ * How long the completed (full-bar) pose lingers before the strip
+ * unmounts. A lifecycle dwell, not render scheduling — the same
+ * `setTimeout` class as `DevRestoring`'s panel-reveal delay; replay
+ * progress itself stays purely event-driven.
+ */
+export const REPLAY_PROGRESS_DISMISS_DWELL_MS = 700;
 
 export interface DevReplayProgressProps {
   cardId: string;
@@ -130,11 +154,43 @@ export const DevReplayProgress: React.FC<DevReplayProgressProps> = ({
     () => codeSessionStore.getSnapshot().transcript.length,
   );
 
-  if (!active) return null;
-  const view = deriveReplayProgress(
-    turnsSoFar,
-    getResumeDisplayMetadata(cardId),
-  );
+  // Dismissal dwell: the window-close commit would otherwise unmount
+  // the strip in the same paint that delivers the final turn count,
+  // so the user never sees the bar finish. On the active → settled
+  // edge the strip lingers briefly in its completed pose (full bar,
+  // `max of max`), then unmounts. The last live view is captured in a
+  // ref because the resume metadata clears with the window.
+  const [dwell, setDwell] = React.useState(false);
+  const lastViewRef = React.useRef<ReplayProgressView | null>(null);
+  const wasActiveRef = React.useRef(false);
+  React.useEffect(() => {
+    if (active) {
+      wasActiveRef.current = true;
+      setDwell(false);
+      return;
+    }
+    if (!wasActiveRef.current) return;
+    wasActiveRef.current = false;
+    setDwell(true);
+    const handle = setTimeout(
+      () => setDwell(false),
+      REPLAY_PROGRESS_DISMISS_DWELL_MS,
+    );
+    return () => clearTimeout(handle);
+  }, [active]);
+
+  let view: ReplayProgressView;
+  if (active) {
+    view = deriveReplayProgress(turnsSoFar, getResumeDisplayMetadata(cardId));
+    lastViewRef.current = view;
+  } else if (dwell && lastViewRef.current !== null) {
+    view = completeReplayProgress(lastViewRef.current);
+  } else {
+    return null;
+  }
+  // The anonymous full bar (indeterminate capture) has no meaningful
+  // count to read out; the determinate one completes to "N of N turns".
+  const showValue = view.max !== null && view.max > 1;
   return (
     <div
       className="dev-replay-progress"
@@ -145,14 +201,18 @@ export const DevReplayProgress: React.FC<DevReplayProgressProps> = ({
     >
       <TugProgressIndicator
         variant="bar"
+        size={8}
+        role="action"
         state="running"
         label={view.label}
+        glyphPosition="right"
         {...(view.value !== null && view.max !== null
           ? {
               value: view.value,
               max: view.max,
-              showValue: true,
-              formatValue: formatReplayProgressValue,
+              ...(showValue
+                ? { showValue: true, formatValue: formatReplayProgressValue }
+                : {}),
             }
           : {})}
         className="dev-replay-progress-bar"

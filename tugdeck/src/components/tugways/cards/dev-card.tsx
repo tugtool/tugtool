@@ -3533,13 +3533,18 @@ export function DevCardBody({
             <TugPromptEntry
               ref={entryDelegateRef}
               id={`${cardId}-entry`}
-              // The editor stands down (read-only + caret off + dimmed) while
-              // an inline dialog owns the keyboard, while cycling (the
-              // cycling-mode indicator, [P12] revised: reuse the deactivated
-              // path as the "blur"), AND through a resume replay window (no
-              // caret while history reconstructs). It reactivates when the
-              // condition clears (the stood-down effect re-focuses it).
-              deactivated={entryStoodDown || cycle.cycling}
+              // The editor stands down (read-only + caret off + dimmed)
+              // while an inline dialog owns the keyboard and while cycling
+              // (the cycling-mode indicator, [P12] revised: reuse the
+              // deactivated path as the "blur") — cycling needs the chips
+              // keyboard-reachable, so these must NOT inert the subtree.
+              deactivated={inlineDialogPending || cycle.cycling}
+              // A resume replay disables the WHOLE entry — route toggle,
+              // chips, and submit included — via the inert subtree: nothing
+              // here can act on a session that is still reconstructing. It
+              // reactivates when the window closes (the stood-down effect
+              // re-focuses the editor).
+              disabled={replayHoldActive}
               submitFocusGroup={DEV_CYCLE_GROUP}
               submitFocusOrder={DEV_CYCLE_ORDER_SUBMIT}
               routeFocusGroup={DEV_CYCLE_GROUP}

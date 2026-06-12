@@ -630,7 +630,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // of HISTORY, not of anything happening now. The value cells render
   // an inert em-dash for the duration (and the row's
   // `data-replay-inert` attribute dims them + drops pointer events via
-  // CSS, [L06]); only STATE stays live, reading "Replaying".
+  // CSS, [L06]); only STATE stays live, reading "Restoring".
   const replayInert =
     snap.phase === "replaying" || deriveColdRestoreActive(snap);
   const inertValue = (text: string): string => (replayInert ? "—" : text);

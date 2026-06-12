@@ -303,7 +303,9 @@ describe("corpus harvest", () => {
   test("excludes harness-seeded project dirs from the survey", async () => {
     const root = tempRoot();
     const projectsRoot = seed(root, [
-      proseSession("aaaa1111-0000-0000-0000-000000000008", "-tmp-proj-real"),
+      // A real project whose name merely contains a seed word must
+      // NOT match (the pattern anchors to temp-dir encodings).
+      proseSession("aaaa1111-0000-0000-0000-000000000008", "-Users-x-corpus-tools"),
       proseSession(
         "bbbb2222-0000-0000-0000-000000000009",
         "-private-var-folders-x-T-at0183-rows-1k-AbCdEf",
@@ -311,6 +313,10 @@ describe("corpus harvest", () => {
       proseSession(
         "cccc3333-0000-0000-0000-00000000000a",
         "-tmp-hmr-mid-stream-test-12345",
+      ),
+      proseSession(
+        "dddd4444-0000-0000-0000-00000000000b",
+        "-private-var-folders-x-T-corpus-collapsed-history-bHDFbB",
       ),
     ]);
     const manifest = await harvest({
@@ -321,8 +327,43 @@ describe("corpus harvest", () => {
       dryRun: true,
     });
     expect(manifest.survey.sessions).toBe(1);
-    expect(manifest.survey.skippedSeeded).toBe(2);
-    expect(manifest.sessions[0].projectDir).toBe("-tmp-proj-real");
+    expect(manifest.survey.skippedSeeded).toBe(3);
+    expect(manifest.sessions[0].projectDir).toBe("-Users-x-corpus-tools");
+  });
+
+  test("a pin picks the best same-id candidate and never a husk", async () => {
+    const root = tempRoot();
+    const pinId = "763cd1d8-0000-0000-0000-00000000000c";
+    const real: FixtureSession = {
+      id: pinId,
+      project: "-tmp-proj-real-home",
+      lines: [
+        userLine("one"),
+        assistantLine([{ type: "text", text: "a" }]),
+        userLine("two"),
+        assistantLine([{ type: "text", text: "b" }]),
+      ],
+    };
+    // A 0-turn husk sharing the pinned id (what a leaked resume seed
+    // leaves behind) in a dir the seed pattern does NOT catch — the
+    // pin selection itself must reject it.
+    const husk: FixtureSession = {
+      id: pinId,
+      project: "-tmp-proj-other",
+      lines: [JSON.stringify({ type: "mode", mode: "normal", sessionId: pinId })],
+    };
+    const projectsRoot = seed(root, [husk, real]);
+    const manifest = await harvest({
+      projectsRoot,
+      sessionsDir: join(root, "no-sessions"),
+      outDir: join(root, "out"),
+      pins: ["763cd1d8"],
+      dryRun: true,
+    });
+    const pinned = manifest.selected.filter((s) => s.pinned);
+    expect(pinned.length).toBe(1);
+    expect(pinned[0].projectDir).toBe("-tmp-proj-real-home");
+    expect(pinned[0].stats.turns).toBe(2);
   });
 
   test("selects the newest representative per class × shape", async () => {

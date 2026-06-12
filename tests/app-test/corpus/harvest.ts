@@ -61,10 +61,16 @@ export const DEFAULT_PINS = ["763cd1d8"];
 
 /**
  * Project dirs seeded by the app-test harness (and leaked by wedged
- * runs). Synthetic content must never enter the corpus, so these are
- * excluded from the survey entirely.
+ * runs): the at0NNN fixture seeds, the corpus runner's own
+ * `corpus-<label>-XXXXXX` seeds, and tugcode's hmr-mid-stream test
+ * dirs — all anchored to a temp-dir encoding (`-T-` / `-tmp-`) so a
+ * real project that merely contains one of these words never
+ * matches. Harness content must never enter the corpus; worse, a
+ * leaked seed shares its session id with the REAL session it copied,
+ * so it can shadow the genuine file in id-keyed selection.
  */
-export const SEEDED_PROJECT_DIR_PATTERN = /-at0\d{3}-|hmr-mid-stream-test/;
+export const SEEDED_PROJECT_DIR_PATTERN =
+  /(-T-|-tmp-)(at0\d{3}-|corpus-|hmr-mid-stream-test)/;
 
 export interface SurveyedSession {
   id: string;
@@ -178,9 +184,23 @@ export function selectRepresentatives(
   };
   for (const s of cells.values()) add(s, {});
   for (const pin of pins) {
+    // Several files can share a pinned id (a leaked harness seed is a
+    // COPY of the real session, husks included) — snapshot only the
+    // best candidate: most committed turns, then most bytes, and
+    // never a zero-turn husk.
+    let best: SurveyedSession | null = null;
     for (const s of sessions) {
-      if (s.id.startsWith(pin)) add(s, { pinned: true });
+      if (!s.id.startsWith(pin)) continue;
+      if (s.stats.turns < 1) continue;
+      if (
+        best === null ||
+        s.stats.turns > best.stats.turns ||
+        (s.stats.turns === best.stats.turns && s.bytes > best.bytes)
+      ) {
+        best = s;
+      }
     }
+    if (best !== null) add(best, { pinned: true });
   }
   let biggest: SurveyedSession | null = null;
   for (const s of sessions) {

@@ -94,6 +94,11 @@ export interface UiSample {
   replaying: boolean;
   /** The replay progress strip is mounted. */
   affordance: boolean;
+  /**
+   * The prompt entry exists and is INTERACTIVE — its root is not
+   * `inert`, or its content DOM is contenteditable (caret-capable).
+   */
+  entryEditable: boolean;
   rows: number;
   perfDone: boolean;
 }
@@ -110,6 +115,13 @@ export const SAMPLE_SCRIPT = `(function(){
     transcript: host !== null,
     replaying: host !== null && host.hasAttribute("data-replaying"),
     affordance: document.querySelector(${JSON.stringify(PROGRESS_STRIP)}) !== null,
+    entryEditable: (function(){
+      var root = document.querySelector('[data-card-id="A"] [data-slot="tug-prompt-entry"]');
+      if (root === null) return false;
+      if (!root.hasAttribute("inert")) return true;
+      var c = root.querySelector(".cm-content");
+      return c !== null && c.getAttribute("contenteditable") === "true";
+    })(),
     rows: document.querySelectorAll(${JSON.stringify(USER_ROWS)}).length,
     perfDone: perfDone
   };
@@ -129,6 +141,14 @@ export interface RevealTimeline {
    * staring at the card always sees something honest.
    */
   maxBlankRunMs: number;
+  /**
+   * A sample taken while the replay window was still open (ingest not
+   * yet complete) observed an INTERACTIVE prompt entry — the whole
+   * entry must be inert until the restore completes. Checked against
+   * `perfDone` (window completion), not settle, so the progress
+   * strip's post-completion dismissal dwell cannot false-positive.
+   */
+  entryEditableDuringReplay: boolean;
   perfDoneMs: number | null;
   settledMs: number | null;
   stalls: { atMs: number; ms: number }[];
@@ -154,6 +174,7 @@ export async function auditReveal(
     replayingClearedMs: null,
     affordanceFirstMs: null,
     maxBlankRunMs: 0,
+    entryEditableDuringReplay: false,
     perfDoneMs: null,
     settledMs: null,
     stalls: [],
@@ -210,6 +231,9 @@ export async function auditReveal(
       if (run > tl.maxBlankRunMs) tl.maxBlankRunMs = run;
     } else {
       blankRunStartedAt = null;
+    }
+    if (sample.entryEditable && !sample.perfDone) {
+      tl.entryEditableDuringReplay = true;
     }
     if (sample.replaying) sawReplaying = true;
     if (

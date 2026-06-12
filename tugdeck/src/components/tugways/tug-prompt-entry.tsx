@@ -604,6 +604,18 @@ export interface TugPromptEntryProps {
    */
   deactivated?: boolean;
   /**
+   * Disable the ENTIRE entry — the root subtree goes `inert` (no
+   * mouse, no keyboard, no focus for the editor, route toggle, chips,
+   * and submit alike) and dims via `data-disabled`. Implies the
+   * {@link deactivated} editor stand-down. Used while a session
+   * restore replays history: nothing in the entry can act on a
+   * session that does not exist yet. Distinct from `deactivated`,
+   * which must leave the chips keyboard-reachable for the cycling
+   * mode's walk.
+   * @selector [data-slot="tug-prompt-entry"][data-disabled]
+   */
+  disabled?: boolean;
+  /**
    * Authors the `Z5` submit button into a focus group ([P02]) — the
    * existing `TugPushButton.focusGroup` opt-in, surfaced on the entry so
    * the host that owns the Tab order can register the submit as a walk
@@ -712,7 +724,8 @@ export const TugPromptEntry = React.forwardRef<
     returnAction: returnActionOverride,
     numpadEnterAction,
     placeholderByRoute,
-    deactivated = false,
+    deactivated: deactivatedProp = false,
+    disabled = false,
     submitFocusGroup,
     submitFocusOrder,
     routeFocusGroup,
@@ -742,6 +755,8 @@ export const TugPromptEntry = React.forwardRef<
   // re-focuses the entry when `deactivated` clears (its single focus
   // destination), so no re-focus is needed here. [L06] real state, not a
   // caret paint-over.
+  // `disabled` (whole-entry inert) implies the editor stand-down.
+  const deactivated = deactivatedProp || disabled;
   useLayoutEffect(() => {
     if (deactivated) textEditorRef.current?.blur();
   }, [deactivated]);
@@ -1716,6 +1731,13 @@ export const TugPromptEntry = React.forwardRef<
           // height cap then scrolls). CSS branches the entry's flex
           // behavior on this.
           data-maximized={maximized ? "" : undefined}
+          // Whole-entry stand-down: `inert` blocks mouse, keyboard,
+          // and focus for the entire subtree — the route toggle,
+          // chips, and submit included — while a restore replays.
+          // React 19 boolean prop; dimming rides `data-disabled`
+          // ([L06]).
+          inert={disabled || undefined}
+          data-disabled={disabled ? "" : undefined}
           className={cn("tug-prompt-entry", className)}
         >
           {hasStatusRow && (
