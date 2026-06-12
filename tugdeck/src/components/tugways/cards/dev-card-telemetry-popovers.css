@@ -457,9 +457,9 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Jobs popover — per-job rows above a summary + Clear footer. Mirrors
-   the Tasks popover's rhythm; the extra columns (elapsed value, stop
-   button) ride one flex row per job.
+   Jobs popover — two-line rows (description over a muted meta line)
+   beside a status dot, with a stop button on running rows. Mirrors the
+   Tasks popover's rhythm at the shared frame font scale.
    ------------------------------------------------------------------------- */
 
 .dev-popover-frame:has(.dev-jobs-popover-body) {
@@ -477,38 +477,67 @@
 .dev-jobs-popover-row {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  /* Top-aligned: the status dot pairs with the FIRST text line, never
+     vertically centered across both rows. */
+  align-items: flex-start;
   gap: var(--tug-space-sm);
   padding: var(--tug-space-xs) var(--tug-space-sm);
 }
 
-/* The indicator (dot + description label) takes the row's free width
-   so the elapsed value and stop button sit in a stable right rail. */
-.dev-jobs-popover-row .dev-jobs-popover-indicator {
+/* Optically center the 12px dot within line 1's line box (~13px at
+   the frame's 0.6875rem scale). */
+.dev-jobs-popover-row .dev-jobs-popover-dot {
+  flex: 0 0 auto;
+  margin-block-start: 1px;
+}
+
+/* The stop button is a row-level control, not an indicator — it stays
+   vertically centered across the two-line block. */
+.dev-jobs-popover-row > .tug-push-button {
+  align-self: center;
+}
+
+/* The two-line text block takes the row's free width; min-width: 0
+   lets the description line clip with an ellipsis instead of forcing
+   the row wider. */
+.dev-jobs-popover-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   flex: 1 1 auto;
   min-width: 0;
 }
 
-/* Elapsed value — quiet mono figure, right-aligned in its rail.
-   `tabular-nums` keeps a running row's ticking digits stable. */
+/* Line 1 — the job description at the frame's shared font scale
+   (0.6875rem mono, like the Time / Tokens rows), CSS-clipped. */
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.dev-jobs-popover-elapsed {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-family: var(--tug-font-mono, monospace);
-  font-size: 0.6875rem;
-  font-variant-numeric: tabular-nums;
+.dev-jobs-popover-description {
+  color: var(--tug7-element-global-text-normal-default-rest);
   white-space: nowrap;
-  text-align: right;
-  min-width: 7ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Footprint of the stop TugPushButton (icon subtype, `sm` =
-   --tug-button-sm-height square) — finished rows reserve it so the
-   elapsed rail doesn't shift when a stop button appears. */
-.dev-jobs-popover-stop-spacer {
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
-  flex: 0 0 auto;
+/* Line 2 — muted meta: #NNNN launch-row link · kind · elapsed. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--tug-space-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-meta-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  opacity: 0.6;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-elapsed {
+  font-variant-numeric: tabular-nums;
 }
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */

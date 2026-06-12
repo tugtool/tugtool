@@ -96,7 +96,7 @@ import {
   formatTokensCaps,
   useLiveTick,
 } from "./dev-card-telemetry-renderers";
-import { OctagonX } from "lucide-react";
+import { Square } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   composeJobsSummary,
@@ -918,17 +918,33 @@ export function TasksPopoverContent({
 // ---------------------------------------------------------------------------
 
 /**
- * Per-job description preview cap — end-truncated to keep the row
- * compact; the full text surfaces in a tooltip (the task-description
+ * One-line job description — whitespace-collapsed; the CSS clips with
+ * an ellipsis at whatever width the popover affords (no character
+ * cap), and the full text surfaces in a tooltip (the task-description
  * precedent).
  */
-const JOB_PREVIEW_MAX_CHARS = 28;
-
-function jobPreviewText(description: string): string {
+function jobDescriptionText(description: string): string {
   const text = description.replace(/\s+/g, " ").trim();
-  if (text.length === 0) return "(unnamed job)";
-  if (text.length <= JOB_PREVIEW_MAX_CHARS) return text;
-  return `${text.slice(0, JOB_PREVIEW_MAX_CHARS - 1)}…`;
+  return text.length === 0 ? "(unnamed job)" : text;
+}
+
+/**
+ * Transcript row index of the assistant row whose turn launched this
+ * job — resolved by finding the committed turn carrying the job's
+ * launching `tool_use`. `-1` while the launch turn is still in flight
+ * (the `#NNNN` affordance appears once the turn commits, matching the
+ * Time / Tokens popovers' committed-rows-only numbering).
+ */
+function jobAssistantRowIndex(
+  job: JobItem,
+  transcript: ReadonlyArray<TurnEntry>,
+): number {
+  const turnIndex = transcript.findIndex((t) =>
+    t.messages.some(
+      (m) => m.kind === "tool_use" && m.toolUseId === job.toolUseId,
+    ),
+  );
+  return turnIndex === -1 ? -1 : assistantRowIndexForTurn(turnIndex, transcript);
 }
 
 /**
@@ -966,21 +982,29 @@ function JobElapsedValue({ startedAtMs }: { startedAtMs: number }): React.ReactE
 }
 
 /**
- * One row of the Jobs popover — status indicator + end-truncated
- * description (full text in a tooltip), elapsed as the right-aligned
- * value, and a stop button on running rows. The stop is a
- * fire-and-forget control-style action: no popover-local state, no
- * optimistic flip — the row flips when the wire confirms with
- * `task_updated{killed}` / a `stopped` notification.
+ * One row of the Jobs popover — a status dot beside a two-line text
+ * block (description above a muted meta line: the launching turn's
+ * clickable `#NNNN` entry number, the job kind, and the elapsed
+ * time), with a stop button on running rows. The stop button wears
+ * the Z5 submit/stop treatment — the bold `Square` glyph on a filled
+ * danger button — and is a fire-and-forget control-style action: no
+ * popover-local state, no optimistic flip; the row flips when the
+ * wire confirms. Finished rows simply omit the button (the dot
+ * already tells the status; no reserved gap).
  */
 function JobRow({
   job,
+  transcript,
+  onScrollToRow,
   onStopJob,
 }: {
   job: JobItem;
+  transcript: ReadonlyArray<TurnEntry>;
+  onScrollToRow?: ScrollToRowHandler;
   onStopJob?: (jobId: string) => void;
 }): React.ReactElement {
-  const preview = jobPreviewText(job.description);
+  const description = jobDescriptionText(job.description);
+  const rowIndex = jobAssistantRowIndex(job, transcript);
   const elapsed =
     job.status === "running" ? (
       <JobElapsedValue startedAtMs={job.startedAtMs} />
@@ -989,16 +1013,25 @@ function JobRow({
         Math.max(0, (job.endedAtMs ?? job.startedAtMs) - job.startedAtMs),
       )
     );
-  const indicator = (
-    <TugProgressIndicator
-      variant="pulsing-dot"
-      glyphPosition="left"
-      size={14}
-      state={jobRowState(job.status)}
-      label={preview}
-      data-status={job.status}
-      className="dev-jobs-popover-indicator"
-    />
+  const textBlock = (
+    <div className="dev-jobs-popover-text">
+      <span className="dev-jobs-popover-description">{description}</span>
+      <span className="dev-jobs-popover-meta">
+        {rowIndex >= 0 ? (
+          <>
+            <TurnNumberButton rowIndex={rowIndex} onScrollToRow={onScrollToRow} />
+            <span className="dev-jobs-popover-meta-sep" aria-hidden>
+              ·
+            </span>
+          </>
+        ) : null}
+        <span className="dev-jobs-popover-kind">{job.kind}</span>
+        <span className="dev-jobs-popover-meta-sep" aria-hidden>
+          ·
+        </span>
+        <span className="dev-jobs-popover-elapsed">{elapsed}</span>
+      </span>
+    </div>
   );
   return (
     <div
@@ -1006,31 +1039,32 @@ function JobRow({
       data-status={job.status}
       data-slot="dev-jobs-popover-row"
     >
-      {job.description.length > preview.length ? (
+      <TugProgressIndicator
+        variant="pulsing-dot"
+        size={12}
+        state={jobRowState(job.status)}
+        className="dev-jobs-popover-dot"
+        aria-label={`${job.kind} job ${job.status}`}
+      />
+      {job.description.trim().length > 0 ? (
         <TugTooltip content={job.description} side="top" align="start">
-          {indicator}
+          {textBlock}
         </TugTooltip>
       ) : (
-        indicator
+        textBlock
       )}
-      <span className="dev-jobs-popover-elapsed">{elapsed}</span>
       {job.status === "running" && onStopJob !== undefined ? (
         <TugPushButton
           subtype="icon"
-          icon={<OctagonX size={14} />}
-          aria-label={`Stop background job: ${preview}`}
+          icon={<Square size={12} strokeWidth={3} />}
+          aria-label={`Stop background job: ${description}`}
           title="Stop this job"
-          emphasis="ghost"
+          emphasis="filled"
           role="danger"
-          size="sm"
+          size="xs"
           onClick={() => onStopJob(job.jobId)}
         />
-      ) : (
-        // Reserve the stop button's slot (sm icon subtype, 24px) so
-        // the elapsed column doesn't shift between running and
-        // finished rows.
-        <span className="dev-jobs-popover-stop-spacer" aria-hidden />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1047,10 +1081,15 @@ function JobRow({
  */
 export function JobsPopoverContent({
   jobs,
+  transcript,
+  onScrollToRow,
   onStopJob,
   onClearJobs,
 }: {
   jobs: readonly JobItem[];
+  /** Committed turns — resolves each job's `#NNNN` launch-row link. */
+  transcript: ReadonlyArray<TurnEntry>;
+  onScrollToRow?: ScrollToRowHandler;
   onStopJob?: (jobId: string) => void;
   onClearJobs?: () => void;
 }): React.ReactElement {
@@ -1066,7 +1105,13 @@ export function JobsPopoverContent({
     <PerAreaPopoverFrame title="Jobs">
       <div className="dev-jobs-popover-body" data-slot="dev-jobs-popover-body">
         {jobs.map((job) => (
-          <JobRow key={job.jobId} job={job} onStopJob={onStopJob} />
+          <JobRow
+            key={job.jobId}
+            job={job}
+            transcript={transcript}
+            onScrollToRow={onScrollToRow}
+            onStopJob={onStopJob}
+          />
         ))}
       </div>
       <div

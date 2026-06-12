@@ -732,6 +732,8 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const jobsPopover = (
     <JobsPopoverContent
       jobs={jobsLedger}
+      transcript={snap.transcript}
+      onScrollToRow={onScrollToRow}
       onStopJob={stopJob}
       onClearJobs={clearJobs}
     />
