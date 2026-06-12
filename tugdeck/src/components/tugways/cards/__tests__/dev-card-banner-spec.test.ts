@@ -44,6 +44,7 @@ function baseSnap(
     lastRewindResult: null,
     activeTurn: null,
     wakeTrigger: null,
+    jobs: [],
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,

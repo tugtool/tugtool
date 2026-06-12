@@ -119,6 +119,7 @@ function snapshotWith(args: {
     transportDowntimeSegmentStartedAt: null,
     interruptInFlightIntervals: [],
     wakeTrigger: null,
+    jobs: [],
     interruptInFlightSegmentStartedAt: null,
   };
 }

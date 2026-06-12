@@ -15,6 +15,7 @@
 
 import type { AtomSegment } from "../tug-atom-img";
 import type { CardSessionMode } from "../card-session-binding-store";
+import type { JobItem } from "./select-jobs";
 
 export type { CardSessionMode } from "../card-session-binding-store";
 
@@ -960,6 +961,15 @@ export interface CodeSessionSnapshot {
    * stability during quiescent renders.
    */
   wakeTrigger: WakeTrigger | null;
+  /**
+   * Session-lifetime background-jobs ledger — the Z2 JOBS cell's
+   * feed. Rows accumulate across turns and survive turn commits;
+   * cleared by session reset or the user's explicit Clear (terminal
+   * rows only). The reference is passed through from the reducer
+   * unchanged so identity is stable across quiescent snapshot
+   * rebuilds ([L02]). Read via `useJobsState`.
+   */
+  jobs: ReadonlyArray<JobItem>;
   /**
    * Wall-clock ms when the user-initiated interrupt round-trip
    * started (`interrupt()` from a content-bearing phase — CASE B), or

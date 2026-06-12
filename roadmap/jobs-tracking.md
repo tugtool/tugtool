@@ -160,7 +160,16 @@ every `Agent` call.
 
 **Plan to resolve:** Step 1 live capture (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1; the captured fixture becomes the contract.
+**Resolution:** DECIDED — pinned by the #step-1 capture
+(`v2.1.173-jobs-spike/test-jobs-lifecycle-raw.jsonl`). `task_started` carries
+`task_id` / `tool_use_id` / `description` / `task_type: "local_bash" | "local_agent"`
+(+ `subagent_type`, `prompt` for agents) and **no backgrounded discriminant** — a
+foreground Agent emits a shape-identical frame. The gate is the frame's
+`tool_use_id` → launching tool call's `input.run_in_background === true`.
+`task_updated` is patch-based: `patch.status ∈ {completed, failed, killed}` +
+`patch.end_time`. Bash launch echo: `tool_use_result.backgroundTaskId` + "Command
+running in background with ID: <id>" text; Agent launch echo:
+`tool_use_result.{isAsync: true, agentId, outputFile}`.
 
 #### [Q02] Which path delivers terminal status between turns (OPEN) {#q02-terminal-path}
 
@@ -174,8 +183,11 @@ both — and whether tugcode must forward task frames from the inter-turn drain
 
 **Plan to resolve:** Step 1 capture includes a job that outlives its turn (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1. The plan provisions both paths ([P05]);
-the capture confirms which fire.
+**Resolution:** DECIDED — **both, on both tiers** (#step-1 capture). `task_updated`
+is the canonical terminal flip and arrives mid-turn for a fast failure and
+inter-turn for an idle completion; `task_notification` follows inter-turn as the
+wake trigger (and does not fire a wake for `stopped`). [P05]'s both-tiers
+forwarding is confirmed necessary.
 
 #### [Q03] Ledger reconstruction on replay / resume (DEFERRED) {#q03-replay-reconstruction}
 
@@ -206,7 +218,9 @@ wire-confirmed and optimistic flip ([P06]'s contingency).
 **Plan to resolve:** Step 1 capture exercises the control-request stop by writing the
 control request to a persistent session's stdin, exactly as tugcode does (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1; [P06] carries the fallback either way.
+**Resolution:** DECIDED — **yes** (#step-1 capture): a control-request stop produces
+`task_updated{status:"killed"}` + `task_notification{status:"stopped"}` (plus a
+`control_response` ack). The wire-confirmed rule stands; no optimistic flip.
 
 ---
 
@@ -667,14 +681,14 @@ rhythm, title "Jobs"):
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Capture background-job wire fixtures | pending | — |
-| #step-2 | tugcode forwards task frames | pending | — |
-| #step-3 | Deck wire layer | pending | — |
-| #step-4 | Jobs ledger in the deck store | pending | — |
-| #step-5 | JOBS cell in the Z2 row | pending | — |
-| #step-6 | Jobs popover with stop and clear | pending | — |
-| #step-7 | Document the JOBS cell | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Capture background-job wire fixtures | done | f728bfcc |
+| #step-2 | tugcode forwards task frames | done | c9906be7 |
+| #step-3 | Deck wire layer | done | 7dc8d8e1 |
+| #step-4 | Jobs ledger in the deck store | done | 5bbcfe2d |
+| #step-5 | JOBS cell in the Z2 row | done | 970d5008 |
+| #step-6 | Jobs popover with stop and clear | done | 6746013a |
+| #step-7 | Document the JOBS cell | done | 3f339688 |
+| #step-8 | Integration checkpoint | in progress (suites + build green; live walk pending) | — |
 
 #### Step 1: Capture background-job wire fixtures {#step-1}
 

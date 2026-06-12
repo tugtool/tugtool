@@ -28,6 +28,8 @@ import type {
   CostUpdate,
   StreamingUsage,
   WakeStarted,
+  TaskStarted,
+  TaskUpdated,
   Attachment,
   ContentBlock,
   RewindPreview,
@@ -788,6 +790,74 @@ export function buildWakeStartedMessage(
   };
 }
 
+/**
+ * Pure factory for the {@link TaskStarted} IPC frame from a
+ * `system/task_started` event. Returns null for non-matching events or
+ * ones missing the required `task_id` / `tool_use_id` strings —
+ * permissive on the optional fields so a partial frame still forwards.
+ *
+ * Note the frame fires for foreground subagents too (shape-identical
+ * to the background case); tugcode forwards verbatim and leaves the
+ * background gate to the consumer, which holds the launching tool
+ * call's `input.run_in_background`. Empirical contract:
+ * `stream-json-catalog/v2.1.173-jobs-spike/`.
+ */
+export function buildTaskStartedMessage(
+  event: Record<string, unknown>,
+  sessionId: string,
+): TaskStarted | null {
+  if (event.type !== "system" || event.subtype !== "task_started") {
+    return null;
+  }
+  const taskId = event.task_id;
+  const toolUseId = event.tool_use_id;
+  if (typeof taskId !== "string" || taskId.length === 0) return null;
+  if (typeof toolUseId !== "string" || toolUseId.length === 0) return null;
+  const subagentType = event.subagent_type;
+  return {
+    type: "task_started",
+    session_id: sessionId,
+    task_id: taskId,
+    tool_use_id: toolUseId,
+    description: typeof event.description === "string" ? event.description : "",
+    task_type: typeof event.task_type === "string" ? event.task_type : "",
+    ...(typeof subagentType === "string" ? { subagent_type: subagentType } : {}),
+    ipc_version: 2,
+  };
+}
+
+/**
+ * Pure factory for the {@link TaskUpdated} IPC frame from a
+ * `system/task_updated` event. Flattens claude's `patch` object onto
+ * the frame (`patch.status` / `patch.end_time`). Returns null for
+ * non-matching events or ones missing `task_id` / `patch.status`.
+ */
+export function buildTaskUpdatedMessage(
+  event: Record<string, unknown>,
+  sessionId: string,
+): TaskUpdated | null {
+  if (event.type !== "system" || event.subtype !== "task_updated") {
+    return null;
+  }
+  const taskId = event.task_id;
+  if (typeof taskId !== "string" || taskId.length === 0) return null;
+  const patch =
+    typeof event.patch === "object" && event.patch !== null
+      ? (event.patch as Record<string, unknown>)
+      : null;
+  const status = patch?.status;
+  if (typeof status !== "string" || status.length === 0) return null;
+  const endTime = patch?.end_time;
+  return {
+    type: "task_updated",
+    session_id: sessionId,
+    task_id: taskId,
+    status,
+    ...(typeof endTime === "number" ? { end_time: endTime } : {}),
+    ipc_version: 2,
+  };
+}
+
 export interface TopLevelRoutingResult {
   messages: OutboundMessage[];
   gotResult: boolean;
@@ -967,6 +1037,22 @@ export function routeTopLevelEvent(
           error: (event.error as string) || "unknown",
           ipc_version: 2,
         });
+      } else if (subtype === "task_started") {
+        // Background-task lifecycle frames can fire mid-turn (the
+        // launching tool call runs inside the turn; a fast job can
+        // even flip terminal before the turn ends — observed in the
+        // v2.1.173-jobs-spike capture). Forward both verbatim.
+        const frame = buildTaskStartedMessage(
+          event,
+          (event.session_id as string) || "",
+        );
+        if (frame !== null) messages.push(frame);
+      } else if (subtype === "task_updated") {
+        const frame = buildTaskUpdatedMessage(
+          event,
+          (event.session_id as string) || "",
+        );
+        if (frame !== null) messages.push(frame);
       }
       break;
     }
@@ -3865,6 +3951,25 @@ export class SessionManager {
     }
     if (event.type === "system" && event.subtype === "task_notification") {
       this.handleTaskNotification(event);
+    }
+    // Background-task lifecycle frames also fire BETWEEN turns — an
+    // idle completion delivers its terminal `task_updated` after the
+    // launch turn's result (v2.1.173-jobs-spike capture). Forward them
+    // from the drain so the deck's jobs ledger flips without waiting
+    // for the next turn.
+    if (event.type === "system" && event.subtype === "task_started") {
+      const frame = buildTaskStartedMessage(
+        event,
+        (event.session_id as string) || this.sessionId,
+      );
+      if (frame !== null) writeLine(frame);
+    }
+    if (event.type === "system" && event.subtype === "task_updated") {
+      const frame = buildTaskUpdatedMessage(
+        event,
+        (event.session_id as string) || this.sessionId,
+      );
+      if (frame !== null) writeLine(frame);
     }
     // Other inter-turn event types are currently no-ops. The drain
     // is intentionally permissive here — it must not throw, since

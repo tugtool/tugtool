@@ -455,3 +455,80 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: 0.6875rem;
 }
+
+/* ----------------------------------------------------------------------------
+   Jobs popover — per-job rows above a summary + Clear footer. Mirrors
+   the Tasks popover's rhythm; the extra columns (elapsed value, stop
+   button) ride one flex row per job.
+   ------------------------------------------------------------------------- */
+
+.dev-popover-frame:has(.dev-jobs-popover-body) {
+  min-width: 340px;
+  max-width: 520px;
+}
+
+.dev-jobs-popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-block: var(--tug-space-xs);
+}
+
+.dev-jobs-popover-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+}
+
+/* The indicator (dot + description label) takes the row's free width
+   so the elapsed value and stop button sit in a stable right rail. */
+.dev-jobs-popover-row .dev-jobs-popover-indicator {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Elapsed value — quiet mono figure, right-aligned in its rail.
+   `tabular-nums` keeps a running row's ticking digits stable. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-elapsed {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  min-width: 7ch;
+}
+
+/* Footprint of the stop TugPushButton (icon subtype, `sm` =
+   --tug-button-sm-height square) — finished rows reserve it so the
+   elapsed rail doesn't shift when a stop button appears. */
+.dev-jobs-popover-stop-spacer {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  flex: 0 0 auto;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  padding-block-start: var(--tug-space-sm);
+  /* Same inset rationale as the Tasks footer: the trailing ghost
+     button carries its own hover padding, the leading label doesn't. */
+  padding-inline-start: var(--tug-space-md);
+  padding-inline-end: var(--tug-space-xs);
+  margin-block-start: var(--tug-space-xs);
+  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-summary {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.6875rem;
+}

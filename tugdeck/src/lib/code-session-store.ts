@@ -43,6 +43,10 @@ import {
 import { buildWirePayload } from "./build-wire-payload";
 import { synthesizeUserMessageFromBlocks } from "./synthesize-user-message";
 import {
+  narrowTaskStartedFrame,
+  narrowTaskUpdatedFrame,
+} from "./code-session-store/select-jobs";
+import {
   createInitialState,
   deriveActiveTurnSnapshot,
   reduce,
@@ -176,6 +180,13 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // events; the bracket closes implicitly on the next `turn_complete`.
   // See `roadmap/tugplan-dev-session-wake.md` [D01].
   "wake_started",
+  // Background-job lifecycle frames (the JOBS cell's feed — unrelated
+  // to the TaskCreate/TaskUpdate tool calls behind TASKS). tugcode
+  // forwards claude's `system/task_started` / `system/task_updated`
+  // from both routing tiers; the reducer folds them into the
+  // session-lifetime jobs ledger.
+  "task_started",
+  "task_updated",
   // `/rewind` frames ([#step-7-1]/[#step-7-2]). `prompt_anchor` carries the
   // live turn's rewind anchor (the reducer stamps it onto the turn);
   // `rewind_preview_result` carries a per-turn diff-stat (folded into the
@@ -561,6 +572,11 @@ export class CodeSessionStore {
       // ([L02]). Slice 1 has no consumers; the field is plumbed so
       // Slice 2 chrome can read it without further reducer changes.
       wakeTrigger: this.state.wakeTrigger,
+      // Background-jobs ledger — reference passed through unchanged so
+      // identity is stable across snapshot rebuilds while the reducer
+      // field doesn't change ([L02]). The JOBS cell reads it via
+      // `useJobsState`.
+      jobs: this.state.jobs,
     };
     this._cachedSnapshot = snap;
     return snap;
@@ -794,6 +810,36 @@ export class CodeSessionStore {
       FeedId.CODE_INPUT,
       encodeCodeInputPayload({ type: "add_directory", directory }, this.tugSessionId),
     );
+  }
+
+  /**
+   * Stop a running background job. Emits a `stop_task` CODE_INPUT frame
+   * (tugcode forwards it to claude as a `stop_task` control request). Sent
+   * directly rather than through the reducer — the {@link addDirectory}
+   * precedent: no optimistic ledger flip happens here. The wire confirms the
+   * stop with `task_updated{status:"killed"}` + a `stopped` task
+   * notification (pinned by the v2.1.173-jobs-spike capture), and the
+   * ledger row flips when those land — the row stays truthful rather than
+   * guessing. The Jobs popover's per-row stop button is the only caller.
+   */
+  stopJob(taskId: string): void {
+    if (this._disposed) return;
+    this.conn.send(
+      FeedId.CODE_INPUT,
+      encodeCodeInputPayload({ type: "stop_task", task_id: taskId }, this.tugSessionId),
+    );
+  }
+
+  /**
+   * Clear the jobs ledger's finished rows — the Jobs popover's Clear
+   * button. Deck-local (no wire traffic): dispatches `clear_jobs_action`,
+   * which drops terminal rows and always preserves `running` ones. Routing
+   * through a named method keeps `dispatch` private — the `interrupt` /
+   * `setPermissionMode` precedent.
+   */
+  clearJobs(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "clear_jobs_action" });
   }
 
   /**
@@ -1146,6 +1192,17 @@ export class CodeSessionStore {
             ? { preTokens: ev.pre_tokens }
             : {}),
         } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "task_started" || ev.type === "task_updated") {
+        // Background-job lifecycle frames — snake_case wire narrowed
+        // to the camelCase reducer events by the select-jobs helpers.
+        // A drifted/malformed frame narrows to undefined and is
+        // dropped here rather than dispatched.
+        const narrowed =
+          ev.type === "task_started"
+            ? narrowTaskStartedFrame(ev)
+            : narrowTaskUpdatedFrame(ev);
+        return narrowed ?? null;
       }
       if (ev.type === "unknown_event") {
         // Normalize tugcode's snake_case forward-compat frame to the

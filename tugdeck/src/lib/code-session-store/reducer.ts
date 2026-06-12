@@ -61,6 +61,8 @@ import type {
   ToolResultEvent,
   ToolUseEvent,
   ToolUseStructuredEvent,
+  TaskStartedEvent,
+  TaskUpdatedEvent,
   TurnCompleteEvent,
   WakeStartedEvent,
   WireErrorEvent,
@@ -96,6 +98,17 @@ import type {
   WakeTrigger,
 } from "./types";
 import { compactionNoteText } from "./compaction";
+import {
+  applyJobFlip,
+  clearTerminalJobs,
+  EMPTY_JOBS_LEDGER,
+  insertJob,
+  jobKindFromTaskType,
+  markRunningJobsStopped,
+  parseBackgroundLaunchResult,
+  terminalJobStatusFromWire,
+  type JobItem,
+} from "./select-jobs";
 import { decodePermissionDenials, mergeDenials } from "./denials";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import {
@@ -675,6 +688,19 @@ export interface CodeSessionState {
    * across quiescent snapshot rebuilds ([L02]).
    */
   wakeTrigger: WakeTrigger | null;
+  /**
+   * Session-lifetime background-jobs ledger behind the Z2 JOBS cell —
+   * unlike `wakeTrigger` it is durable: rows accumulate across turns
+   * and survive turn commits, cleared only by session reset or the
+   * user's explicit Clear (`clear_jobs_action`, terminal rows only).
+   * Lives in reducer state rather than as a fold over `toolCalls`
+   * because the lifecycle events are not all tool calls (terminal
+   * status arrives as system frames) and Clear must *forget* rows.
+   * Mirrored unchanged onto `CodeSessionSnapshot.jobs` for stable
+   * `Object.is` identity across quiescent rebuilds ([L02]). Replay
+   * never populates it — see `handleToolResult`'s launch-insert guard.
+   */
+  jobs: readonly JobItem[];
 }
 
 /**
@@ -754,6 +780,7 @@ export function createInitialState(
     interruptInFlightIntervals: [],
     toolUseStartedAt: new Map(),
     wakeTrigger: null,
+    jobs: EMPTY_JOBS_LEDGER,
   };
 }
 
@@ -1141,14 +1168,25 @@ function handleSessionInit(
   state: CodeSessionState,
   _event: SessionInitEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // No state mutation. Tugdeck uses a single session id (`tugSessionId`,
-  // chosen by the picker and known from CodeSessionStore construction)
-  // for everything user-facing — history keys, picker matching, the
+  // Tugdeck uses a single session id (`tugSessionId`, chosen by the
+  // picker and known from CodeSessionStore construction) for
+  // everything user-facing — history keys, picker matching, the
   // sessions record. Claude's `session_init.session_id` is verified to
   // equal `tugSessionId` by the lifecycle log on the wire side; if they
   // ever diverge it's a tugcast/tugcode bug, not something React state
-  // has to mirror. Frame is consumed for its lifecycle log only.
-  return { state, effects: [] };
+  // has to mirror.
+  //
+  // The one state mutation: stale-mark the jobs ledger. `session_init`
+  // means a fresh claude subprocess (tugcode forwards only a
+  // subprocess's FIRST init; re-inits route to the wake detector), and
+  // a respawned claude cannot have carried background tasks across —
+  // rows still `running` are dead, so they flip to `stopped` rather
+  // than pulsing forever.
+  const jobs = markRunningJobsStopped(state.jobs, Date.now());
+  if (jobs === state.jobs) {
+    return { state, effects: [] };
+  }
+  return { state: { ...state, jobs }, effects: [] };
 }
 
 /**
@@ -1735,12 +1773,61 @@ function handleToolResult(
 
   const streamFold = isReplaying ? {} : foldStreamEvent(state, now);
 
+  // Jobs ledger — two folds, both suppressed during replay. Replay
+  // re-delivers tool events but never the task lifecycle frames, so a
+  // replayed launch insert would sit at `running` forever; after a
+  // reload the ledger deliberately starts empty.
+  let jobs = state.jobs;
+  if (!isReplaying && mutated.status === "done") {
+    const input =
+      typeof mutated.input === "object" && mutated.input !== null
+        ? (mutated.input as Record<string, unknown>)
+        : null;
+    if (input?.run_in_background === true) {
+      // Background launch — the `tool_result` echo carries the job id
+      // (and usually the output file). The `task_started` frame is the
+      // other insert path; `insertJob` composes the two idempotently.
+      const echo = parseBackgroundLaunchResult(mutated.result);
+      if (echo !== undefined) {
+        jobs = insertJob(jobs, {
+          jobId: echo.jobId,
+          source: "claude",
+          kind: echo.kind,
+          toolUseId: mutated.toolUseId,
+          description:
+            typeof input.description === "string" ? input.description : "",
+          ...(echo.outputFile !== undefined
+            ? { outputFile: echo.outputFile }
+            : {}),
+          status: "running",
+          startedAtMs: now,
+          endedAtMs: null,
+        });
+      }
+    } else if (mutated.toolName.toLowerCase() === "taskstop") {
+      // Defensive fold: the wire also confirms a stop via
+      // `task_updated{killed}`, but folding the TaskStop call keeps
+      // the row honest if that frame is ever missed. First terminal
+      // flip wins, so the double-delivery is harmless.
+      const stoppedId =
+        typeof input?.task_id === "string"
+          ? input.task_id
+          : typeof input?.shell_id === "string"
+            ? input.shell_id
+            : undefined;
+      if (stoppedId !== undefined) {
+        jobs = applyJobFlip(jobs, stoppedId, "stopped", now);
+      }
+    }
+  }
+
   return {
     state: {
       ...state,
       phase: nextPhase,
       scratch: nextScratch,
       toolUseStartedAt,
+      jobs,
       ...streamFold,
     },
     effects: [],
@@ -3831,13 +3918,27 @@ function handleWakeStarted(
     summary: event.wake_trigger.summary,
     outputFile: event.wake_trigger.output_file,
   };
+  // Jobs-ledger fold: the wake trigger carries the job's terminal
+  // status, so a matching `running` row flips here even if the
+  // sibling `task_updated` frame was missed (first terminal flip
+  // wins; an unknown id — e.g. a Monitor wake — is a no-op). During
+  // replay the ledger is structurally empty (launch inserts are
+  // suppressed), so a synthesized replay wake cannot flip anything.
+  const wireStatus = terminalJobStatusFromWire(trigger.status);
+  const jobs =
+    wireStatus !== undefined
+      ? applyJobFlip(state.jobs, trigger.taskId, wireStatus, Date.now())
+      : state.jobs;
   if (state.phase === "waking") {
     // Nested wake — idempotent refresh of trigger metadata only.
     if (state.wakeTrigger === null) {
       return {
-        state: { ...state, wakeTrigger: trigger },
+        state: { ...state, wakeTrigger: trigger, jobs },
         effects: [],
       };
+    }
+    if (jobs !== state.jobs) {
+      return { state: { ...state, jobs }, effects: [] };
     }
     return { state, effects: [] };
   }
@@ -3852,6 +3953,11 @@ function handleWakeStarted(
   // the matching `turn_complete` commits the entry via the
   // replaying-stays-in-replaying branch.
   if (state.phase !== "idle" && state.phase !== "replaying") {
+    // The wake bracket is refused mid-turn, but the trigger's job flip
+    // still folds — the terminal status is real regardless of phase.
+    if (jobs !== state.jobs) {
+      return { state: { ...state, jobs }, effects: [] };
+    }
     return { state, effects: [] };
   }
   const submitAt = Date.now();
@@ -3861,6 +3967,7 @@ function handleWakeStarted(
       ...state,
       phase: nextPhase,
       wakeTrigger: trigger,
+      jobs,
       activeMsgId: null,
       scratch: withScratchEntry(
         state.scratch,
@@ -3899,6 +4006,107 @@ function handleWakeStarted(
     },
     effects: [],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Background-jobs ledger handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * `task_started` — primary ledger insert. The frame fires for
+ * foreground subagents too (no backgrounded discriminant on the
+ * wire), so the insert is gated on the launching tool call's
+ * `input.run_in_background === true`, looked up by `toolUseId` in
+ * the in-flight turn's scratch. A frame whose launching call isn't
+ * visible in our stream (e.g. an async subagent's internal jobs) or
+ * isn't backgrounded is ignored. Replay never reaches here — task
+ * frames aren't part of the replay stream.
+ */
+function handleTaskStarted(
+  state: CodeSessionState,
+  event: TaskStartedEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Replay never populates the ledger. Task frames aren't part of the
+  // replay stream today, but a replayed turn's tool calls DO satisfy
+  // the run_in_background gate below — this guard keeps the invariant
+  // structural rather than incidental.
+  if (state.phase === "replaying") {
+    return { state, effects: [] };
+  }
+  const turnKey = state.pendingTurn?.turnKey;
+  const entry = turnKey !== undefined ? state.scratch.get(turnKey) : undefined;
+  const arrayIdx = entry?.toolCallIndex.get(event.toolUseId);
+  const launching =
+    entry !== undefined && arrayIdx !== undefined
+      ? entry.messages[arrayIdx]
+      : undefined;
+  if (launching === undefined || launching.kind !== "tool_use") {
+    return { state, effects: [] };
+  }
+  const input =
+    typeof launching.input === "object" && launching.input !== null
+      ? (launching.input as Record<string, unknown>)
+      : null;
+  if (input?.run_in_background !== true) {
+    return { state, effects: [] };
+  }
+  const jobs = insertJob(state.jobs, {
+    jobId: event.taskId,
+    source: "claude",
+    kind: jobKindFromTaskType(event.taskType),
+    toolUseId: event.toolUseId,
+    description: event.description,
+    status: "running",
+    startedAtMs: Date.now(),
+    endedAtMs: null,
+  });
+  if (jobs === state.jobs) {
+    return { state, effects: [] };
+  }
+  return { state: { ...state, jobs }, effects: [] };
+}
+
+/**
+ * `task_updated` — terminal status flip, keyed by job id. Unknown
+ * wire vocabulary is dropped (a future non-terminal status must not
+ * finish a running row); unknown ids and already-terminal rows are
+ * no-ops. `endTime` is claude's epoch-ms stamp; absent, the receipt
+ * clock stands in.
+ */
+function handleTaskUpdated(
+  state: CodeSessionState,
+  event: TaskUpdatedEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const status = terminalJobStatusFromWire(event.status);
+  if (status === undefined) {
+    return { state, effects: [] };
+  }
+  const jobs = applyJobFlip(
+    state.jobs,
+    event.taskId,
+    status,
+    event.endTime ?? Date.now(),
+  );
+  if (jobs === state.jobs) {
+    return { state, effects: [] };
+  }
+  return { state: { ...state, jobs }, effects: [] };
+}
+
+/**
+ * `clear_jobs_action` — the popover's Clear button: a deck-local wipe
+ * of terminal rows. `running` rows always survive (clearing one would
+ * orphan it from the UI with no way to stop it from Z2). No wire
+ * traffic.
+ */
+function handleClearJobs(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  const jobs = clearTerminalJobs(state.jobs);
+  if (jobs === state.jobs) {
+    return { state, effects: [] };
+  }
+  return { state: { ...state, jobs }, effects: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -4118,6 +4326,12 @@ export function reduce(
       return handleAddUserMessage(state, event);
     case "wake_started":
       return handleWakeStarted(state, event);
+    case "task_started":
+      return handleTaskStarted(state, event);
+    case "task_updated":
+      return handleTaskUpdated(state, event);
+    case "clear_jobs_action":
+      return handleClearJobs(state);
     case "bind_resume_acknowledged":
       return handleBindResumeAcknowledged(state);
     case "tick_soft_budget":

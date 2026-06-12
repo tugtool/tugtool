@@ -90,7 +90,20 @@ import {
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import type { TaskListState } from "@/lib/code-session-store/select-task-list";
 
-import { formatTimeAlwaysHours, formatTokensCaps } from "./dev-card-telemetry-renderers";
+import {
+  formatDurationMs,
+  formatTimeAlwaysHours,
+  formatTokensCaps,
+  useLiveTick,
+} from "./dev-card-telemetry-renderers";
+import { OctagonX } from "lucide-react";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import {
+  composeJobsSummary,
+  countJobs,
+  type JobItem,
+  type JobStatus,
+} from "@/lib/code-session-store/select-jobs";
 
 // ---------------------------------------------------------------------------
 // Cross-popover callback contract
@@ -895,6 +908,185 @@ export function TasksPopoverContent({
           aria-label="Copy task list"
           getText={() => composeTaskCopyText(state.tasks)}
         />
+      </div>
+    </PerAreaPopoverFrame>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Jobs popover
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-job description preview cap — end-truncated to keep the row
+ * compact; the full text surfaces in a tooltip (the task-description
+ * precedent).
+ */
+const JOB_PREVIEW_MAX_CHARS = 28;
+
+function jobPreviewText(description: string): string {
+  const text = description.replace(/\s+/g, " ").trim();
+  if (text.length === 0) return "(unnamed job)";
+  if (text.length <= JOB_PREVIEW_MAX_CHARS) return text;
+  return `${text.slice(0, JOB_PREVIEW_MAX_CHARS - 1)}…`;
+}
+
+/**
+ * Map a job's status onto the row indicator's pose. Failed rows take
+ * the `aborted` pose (danger tone); stopped rows read quiet. NO idle
+ * demotion — a background job genuinely runs between turns, so a
+ * running row keeps its motion regardless of session phase (the one
+ * deliberate divergence from {@link taskRowState}).
+ */
+function jobRowState(status: JobStatus): TugProgressIndicatorState {
+  switch (status) {
+    case "running":
+      return "running";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "aborted";
+    case "stopped":
+      return "stopped";
+  }
+}
+
+/**
+ * Live elapsed readout for a running job. A leaf component so the
+ * shared 1Hz tick subscription mounts only while the popover is open
+ * — the cell itself shows `N/M` (no clock) and its pulse is CSS
+ * animation, so a closed popover pays no tick. This is the popovers
+ * module's one external-state read; the tick is presentation
+ * clockwork, not session state, so the module stays a function of its
+ * session inputs.
+ */
+function JobElapsedValue({ startedAtMs }: { startedAtMs: number }): React.ReactElement {
+  const now = useLiveTick();
+  return <>{formatDurationMs(Math.max(0, now - startedAtMs))}</>;
+}
+
+/**
+ * One row of the Jobs popover — status indicator + end-truncated
+ * description (full text in a tooltip), elapsed as the right-aligned
+ * value, and a stop button on running rows. The stop is a
+ * fire-and-forget control-style action: no popover-local state, no
+ * optimistic flip — the row flips when the wire confirms with
+ * `task_updated{killed}` / a `stopped` notification.
+ */
+function JobRow({
+  job,
+  onStopJob,
+}: {
+  job: JobItem;
+  onStopJob?: (jobId: string) => void;
+}): React.ReactElement {
+  const preview = jobPreviewText(job.description);
+  const elapsed =
+    job.status === "running" ? (
+      <JobElapsedValue startedAtMs={job.startedAtMs} />
+    ) : (
+      formatDurationMs(
+        Math.max(0, (job.endedAtMs ?? job.startedAtMs) - job.startedAtMs),
+      )
+    );
+  const indicator = (
+    <TugProgressIndicator
+      variant="pulsing-dot"
+      glyphPosition="left"
+      size={14}
+      state={jobRowState(job.status)}
+      label={preview}
+      data-status={job.status}
+      className="dev-jobs-popover-indicator"
+    />
+  );
+  return (
+    <div
+      className="dev-jobs-popover-row"
+      data-status={job.status}
+      data-slot="dev-jobs-popover-row"
+    >
+      {job.description.length > preview.length ? (
+        <TugTooltip content={job.description} side="top" align="start">
+          {indicator}
+        </TugTooltip>
+      ) : (
+        indicator
+      )}
+      <span className="dev-jobs-popover-elapsed">{elapsed}</span>
+      {job.status === "running" && onStopJob !== undefined ? (
+        <TugPushButton
+          subtype="icon"
+          icon={<OctagonX size={14} />}
+          aria-label={`Stop background job: ${preview}`}
+          title="Stop this job"
+          emphasis="ghost"
+          role="danger"
+          size="sm"
+          onClick={() => onStopJob(job.jobId)}
+        />
+      ) : (
+        // Reserve the stop button's slot (sm icon subtype, 24px) so
+        // the elapsed column doesn't shift between running and
+        // finished rows.
+        <span className="dev-jobs-popover-stop-spacer" aria-hidden />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Jobs popover — opened from the `JOBS` cell in the status row.
+ * Renders the session-lifetime background-jobs ledger as a flex
+ * column of rows ({@link JobRow}) above a footer carrying the
+ * composed summary ("1 running, 2 done, 1 failed") and a Clear
+ * button. Clear is a deck-local wipe of terminal rows only — running
+ * rows always survive — and is disabled while nothing is clearable.
+ *
+ * An empty ledger renders the standard popover empty message.
+ */
+export function JobsPopoverContent({
+  jobs,
+  onStopJob,
+  onClearJobs,
+}: {
+  jobs: readonly JobItem[];
+  onStopJob?: (jobId: string) => void;
+  onClearJobs?: () => void;
+}): React.ReactElement {
+  if (jobs.length === 0) {
+    return (
+      <PerAreaPopoverFrame title="Jobs">
+        <div className="dev-popover-empty">No background jobs this session.</div>
+      </PerAreaPopoverFrame>
+    );
+  }
+  const counts = countJobs(jobs);
+  return (
+    <PerAreaPopoverFrame title="Jobs">
+      <div className="dev-jobs-popover-body" data-slot="dev-jobs-popover-body">
+        {jobs.map((job) => (
+          <JobRow key={job.jobId} job={job} onStopJob={onStopJob} />
+        ))}
+      </div>
+      <div
+        className="dev-jobs-popover-footer"
+        data-slot="dev-jobs-popover-footer"
+      >
+        <span className="dev-jobs-popover-summary">
+          {composeJobsSummary(counts)}
+        </span>
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          size="xs"
+          aria-label="Clear finished jobs"
+          title="Clear finished jobs (running jobs are kept)"
+          disabled={counts.finished === 0 || onClearJobs === undefined}
+          onClick={onClearJobs}
+        >
+          Clear
+        </TugPushButton>
       </div>
     </PerAreaPopoverFrame>
   );

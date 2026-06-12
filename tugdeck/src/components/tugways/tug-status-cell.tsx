@@ -86,7 +86,7 @@ export interface TugStatusCellProps {
    * Priority key — sets `data-priority`, which selects the cell's static
    * `--tugx-dev-status-cell-width` and drives the container-query
    * collapse order. One of the row's cell ids (`state` / `time` /
-   * `tokens` / `context` / `tasks`).
+   * `tokens` / `context` / `tasks` / `jobs`).
    */
   priority: string;
   /** Letterspaced uppercase legend rendered in the endcap-rule apparatus. */

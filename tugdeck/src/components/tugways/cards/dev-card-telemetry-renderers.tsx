@@ -72,6 +72,7 @@ import { useSessionStateChanges } from "@/lib/session-state-changes-store";
 
 import {
   ContextPopoverContent,
+  JobsPopoverContent,
   StateChangeLogPopoverContent,
   TasksPopoverContent,
   TimePopoverContent,
@@ -79,6 +80,11 @@ import {
   type ScrollToRowHandler,
 } from "./dev-card-telemetry-popovers";
 import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
+import { useJobsState } from "@/lib/code-session-store/hooks/use-jobs-state";
+import {
+  countJobs,
+  jobsCellPose,
+} from "@/lib/code-session-store/select-jobs";
 import { countTasks } from "@/components/tugways/body-kinds/todo-list-block";
 
 // ---------------------------------------------------------------------------
@@ -222,8 +228,13 @@ function getTick(): number {
  * Hook returning the current 1Hz tick value. Renderers that need a
  * live clock subscribe; the underlying interval starts on first
  * subscription and stops when nothing subscribes.
+ *
+ * Exported for the Jobs popover's per-row elapsed readout — the leaf
+ * `JobElapsedValue` component mounts only while the popover is open,
+ * so an idle session with running jobs pays no tick until the user
+ * actually looks.
  */
-function useLiveTick(): number {
+export function useLiveTick(): number {
   return useSyncExternalStore(subscribeTick, getTick, getTick);
 }
 
@@ -261,7 +272,7 @@ export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
   /**
    * Order of the FIRST cell (STATE) within {@link focusGroup}; the cells
    * take consecutive orders left→right (STATE, TIME, TOKENS, CONTEXT,
-   * TASKS = base + 0…4).
+   * TASKS, JOBS = base + 0…5).
    */
   focusOrderBase?: number;
   /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
@@ -434,9 +445,9 @@ export const DevTelemetryPhase: React.FC<DevTelemetryProps> = ({
  * Combined session status row — production Z2 surface promoted from
  * the workshop gallery. Layout:
  *
- *     STATE   TIME   TOKENS   CONTEXT
+ *     STATE   TIME   TOKENS   CONTEXT   TASKS   JOBS
  *
- * Four cell anchors, each opening a popover on click:
+ * Six cell anchors, each opening a popover on click:
  *
  *   - **STATE** → `StateChangeLogPopoverContent` driven by
  *     `useSessionStateChanges(snap.tugSessionId)` against the
@@ -470,12 +481,15 @@ export const DevTelemetryPhase: React.FC<DevTelemetryProps> = ({
  * `devSessionPhaseKey` + `devSessionPhaseVisual`) and give the
  * cell the live motion a static figure cannot.
  *
- * The row renders four cells — STATE / TIME / TOKENS / CONTEXT.
- * Cumulative TOTAL TIME / TOTAL TOKENS are not separate cells; the
- * same sums surface in the TIME and TOKENS popovers' summary footers
- * (one click reveals the per-turn rows + the cumulative totals).
+ * The TASKS cell carries the [D100] todo list; the JOBS cell carries
+ * the background-jobs ledger (`useJobsState`), same `N/M` + pose
+ * grammar, with no idle demotion — a background job genuinely runs
+ * between turns. Cumulative TOTAL TIME / TOTAL TOKENS are not
+ * separate cells; the same sums surface in the TIME and TOKENS
+ * popovers' summary footers (one click reveals the per-turn rows +
+ * the cumulative totals).
  *
- * **Mount-identity ([L26]):** the four-cell flex row and every cell
+ * **Mount-identity ([L26]):** the six-cell flex row and every cell
  * are unconditionally mounted across phase / transport / interrupt
  * transitions. Only the popovers' open/closed state and the cell
  * values change; the STATE indicators reconcile tone in place.
@@ -652,6 +666,31 @@ export const DevTelemetryStatusRow = React.forwardRef<
           ? "running"
           : "stopped";
 
+  // JOBS cell — the background-jobs ledger (session-lifetime, fed by
+  // the task_started / task_updated frames). Mirrors the TASKS grammar
+  // — `finished/total` + pose — with one deliberate divergence: NO
+  // idle demotion. A background job genuinely runs *between* turns, so
+  // the dot keeps pulsing while the session idles; `jobsCellPose` is a
+  // pure function of the ledger only. The `aborted` pose (danger)
+  // surfaces a failed job until the user clears it or new work starts.
+  const jobsLedger = useJobsState(codeSessionStore);
+  const jobCounts = countJobs(jobsLedger);
+  const hasJobs = jobCounts.total > 0;
+  const jobsLabelText = hasJobs
+    ? `${jobCounts.finished}/${jobCounts.total}`
+    : "None";
+  const jobsIndicatorState: TugProgressIndicatorState = jobsCellPose(jobsLedger);
+  // Popover actions — fire-and-forget control-style callbacks onto the
+  // store's named methods (stop rides the wire; clear is deck-local).
+  const stopJob = useCallback(
+    (jobId: string) => codeSessionStore.stopJob(jobId),
+    [codeSessionStore],
+  );
+  const clearJobs = useCallback(
+    () => codeSessionStore.clearJobs(),
+    [codeSessionStore],
+  );
+
   // Per-anchor popover content. Each popover receives only the
   // inputs it needs — no shared context object — so future popover
   // changes touch one factory call instead of a coupling layer.
@@ -690,13 +729,21 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const tasksPopover = (
     <TasksPopoverContent state={taskListState} idle={isIdle} />
   );
+  const jobsPopover = (
+    <JobsPopoverContent
+      jobs={jobsLedger}
+      onStopJob={stopJob}
+      onClearJobs={clearJobs}
+    />
+  );
 
-  // Flat 5-cell flex row — STATE + TIME + TOKENS + CONTEXT + TASKS as
-  // direct siblings. The row's `justify-content: center` (declared in
-  // CSS) packs the cells as one group with a fixed inter-item `gap`;
-  // the leftover width splits into equal flexing margins on the
-  // row's far left and right. Every cell is a fixed-width box so the
-  // group's width is constant and the cells never shift.
+  // Flat 6-cell flex row — STATE + TIME + TOKENS + CONTEXT + TASKS +
+  // JOBS as direct siblings. The row's `justify-content: center`
+  // (declared in CSS) packs the cells as one group with a fixed
+  // inter-item `gap`; the leftover width splits into equal flexing
+  // margins on the row's far left and right. Every cell is a
+  // fixed-width box so the group's width is constant and the cells
+  // never shift.
   return (
     <div
       className="dev-telemetry-status-row"
@@ -795,6 +842,33 @@ export const DevTelemetryStatusRow = React.forwardRef<
             hasTasks
               ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
               : "No tasks"
+          }
+        />
+      </TugStatusCell>
+      <TugStatusCell
+        priority="jobs"
+        label="JOBS"
+        popover={jobsPopover}
+        valueEmpty={!hasJobs}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(5)}
+        focusPolicy={focusPolicy}
+      >
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          glyphPosition="both"
+          size={10}
+          state={jobsIndicatorState}
+          label={jobsLabelText}
+          labelAlign="center"
+          phaseLabels={{
+            none: "None",
+            max: hasJobs ? `${jobCounts.total}/${jobCounts.total}` : "0/0",
+          }}
+          aria-label={
+            hasJobs
+              ? `${jobCounts.finished} of ${jobCounts.total} jobs finished`
+              : "No background jobs"
           }
         />
       </TugStatusCell>

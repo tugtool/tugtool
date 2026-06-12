@@ -894,6 +894,50 @@ export interface WakeStarted {
   ipc_version: number;
 }
 
+/**
+ * Background-task lifecycle opener — a verbatim forward of claude's
+ * `system/task_started` event minus the `type/subtype` envelope. Fired
+ * when a background task starts (`Bash` / `Agent` with
+ * `run_in_background: true`) — and ALSO for foreground subagents, whose
+ * frames are shape-identical: the wire carries no backgrounded
+ * discriminant. Consumers that only want background jobs must gate on
+ * the launching tool call's `input.run_in_background` via
+ * `tool_use_id`.
+ *
+ * `task_type` distinguishes the task's kind (`"local_bash"` /
+ * `"local_agent"` observed), not its foreground/background mode.
+ * Empirical contract: `tugrust/crates/tugcast/tests/fixtures/`
+ * `stream-json-catalog/v2.1.173-jobs-spike/`.
+ */
+export interface TaskStarted {
+  type: "task_started";
+  session_id: string;
+  task_id: string;
+  tool_use_id: string;
+  description: string;
+  task_type: string;
+  subagent_type?: string;
+  ipc_version: number;
+}
+
+/**
+ * Background-task status flip — claude's `system/task_updated` with the
+ * `patch` object flattened onto the frame. Observed `status` values:
+ * `"completed"` / `"failed"` / `"killed"` (a stop — via the `TaskStop`
+ * tool or a `stop_task` control request — reads `"killed"` here and
+ * `"stopped"` on the corresponding `task_notification`). `end_time` is
+ * epoch ms when claude supplies it. Same empirical contract as
+ * {@link TaskStarted}.
+ */
+export interface TaskUpdated {
+  type: "task_updated";
+  session_id: string;
+  task_id: string;
+  status: string;
+  end_time?: number;
+  ipc_version: number;
+}
+
 export interface ReplayStarted {
   type: "replay_started";
   ipc_version: number;
@@ -1042,6 +1086,8 @@ export type OutboundMessage =
   | ReplayStarted
   | ReplayComplete
   | WakeStarted
+  | TaskStarted
+  | TaskUpdated
   | RewindPreviewResult
   | RewindResult
   | SkillsInventory

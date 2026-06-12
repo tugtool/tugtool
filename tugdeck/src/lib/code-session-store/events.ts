@@ -369,6 +369,16 @@ export interface CancelQueuedSendActionEvent {
 }
 
 /**
+ * `clear_jobs_action` — the Jobs popover's Clear button: drop the
+ * jobs ledger's terminal rows (running rows always survive). A
+ * deck-local action; no wire traffic. Dispatched by
+ * `CodeSessionStore.clearJobs()`.
+ */
+export interface ClearJobsActionEvent {
+  type: "clear_jobs_action";
+}
+
+/**
  * `context_breakdown` — `/context`-style per-category token breakdown
  * emitted by tugcode at session_init, after each `cost_update`, and
  * after `compact_boundary`. Also emitted by the tugcast supervisor
@@ -821,6 +831,53 @@ export interface WakeStartedEvent {
 }
 
 /**
+ * Background-job lifecycle opener — tugcode's forward of claude's
+ * `system/task_started` event, snake_case wire fields narrowed to
+ * camelCase by the store wrapper (`narrowTaskStartedFrame` in
+ * `select-jobs.ts`).
+ *
+ * **Terminology guard:** despite the `task_` wire spelling, this is
+ * the *background-jobs* vocabulary (the JOBS cell), unrelated to the
+ * `TaskCreate` / `TaskUpdate` *tool calls* that drive the TASKS cell's
+ * todo list ([D100]).
+ *
+ * The frame fires for foreground subagents too (shape-identical — the
+ * wire carries no backgrounded discriminant), so the reducer gates
+ * ledger inserts on the launching tool call's
+ * `input.run_in_background` via {@link TaskStartedEvent.toolUseId}.
+ * `taskType` distinguishes kind (`"local_bash"` / `"local_agent"`),
+ * not mode. Empirical contract:
+ * `stream-json-catalog/v2.1.173-jobs-spike/`.
+ */
+export interface TaskStartedEvent {
+  type: "task_started";
+  taskId: string;
+  toolUseId: string;
+  description: string;
+  taskType: string;
+  subagentType?: string;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Background-job status flip — tugcode's forward of claude's
+ * `system/task_updated` event with the `patch` object flattened
+ * (`status` / `endTime`). Observed `status` vocabulary: `"completed"`
+ * / `"failed"` / `"killed"` (a stop reads `"killed"` here). Same
+ * terminology guard and empirical contract as
+ * {@link TaskStartedEvent}.
+ */
+export interface TaskUpdatedEvent {
+  type: "task_updated";
+  taskId: string;
+  status: string;
+  endTime?: number;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
  * Bracket marker emitted by the replay translator at the start of a
  * JSONL replay window. The reducer transitions
  * `phase: {idle | errored} → replaying` and gates `canSubmit` /
@@ -940,6 +997,9 @@ export type CodeSessionEvent =
   | ReplayStartedEvent
   | ReplayCompleteEvent
   | WakeStartedEvent
+  | TaskStartedEvent
+  | TaskUpdatedEvent
+  | ClearJobsActionEvent
   | BindResumeAcknowledgedEvent
   | TickSoftBudgetEvent
   | TickTimeoutDwellDoneEvent
