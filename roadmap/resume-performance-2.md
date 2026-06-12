@@ -102,7 +102,9 @@ snapshots, not generators:
   budget set from baseline data ([Q03]).
 - **Feedback:** from Open to first content, the card always shows a live
   affordance (placeholder → progress → progressive transcript); no
-  blank-card interval at any class.
+  blank-card interval at any class — and the affordance is informative
+  from t=0 (title / turn count / size from the picker row, per Spec S03),
+  not just animated.
 - **Collapsed history:** replayed tool blocks mount header-only; expanding
   one materializes its body on demand; expansion state survives scrolling
   (windowed unmount/remount) and cold boot (the [A9] bag carries it).
@@ -359,6 +361,10 @@ proceeds only where the post-collapse re-baseline still shows a hot spot
 - Selection: per class × shape, newest representative plus pinned ids
   (always includes `763cd1d8`); the survey table (population counts per
   class) is recorded in this plan.
+- **Live-session tolerance:** skip sessions a terminal currently holds
+  (the `~/.claude/sessions/` registry is the authority) and tolerate
+  mid-write reads everywhere — JSONL is append-only, so a torn final
+  line parses as one skipped record, same as the translator's policy.
 
 **Spec S02: Collapse state rides the EXISTING contracts — no new store** {#s02-expansion-state}
 
@@ -386,13 +392,25 @@ proceeds only where the post-collapse re-baseline still shows a hot spot
 
 **Spec S03: Replay progress affordance** {#s03-progress}
 
-- Data: transcript turn count + (when available from the picker row) total
-  expected turns; read from the store snapshot at fold-flush commits — the
-  only new render-coupled signal is the existing flush notify ([L02]).
+- **The wait has three segments and only one produces deck events.**
+  (1) Open → first frame: spawn + `request_replay` + read + translate —
+  several hundred ms on the heavy class with NOTHING arriving at the deck;
+  (2) ingest: fold flushes tick every 250 events (brief); (3) the windowed
+  mount commits. The affordance must be informative across all three, so:
+- **t=0 data comes from the picker row, not the wire.** The picker already
+  knows `turn_count`, file size, and the title for the selected session —
+  thread that metadata through the open/restore expectation (the
+  `devRestoreRegistry` entry already carries `projectDir`; extend it) so
+  the placeholder reads "Restoring <title> — 106 turns (12MB)…" from the
+  first paint, before any frame exists.
+- During ingest, transcript turn count read from the store snapshot at
+  fold-flush commits updates the line ([L02] — the flush notify is the
+  only render-coupled signal). Between events at every segment, a
+  CSS/compositor indeterminate animation keeps motion without JS ticks
+  ([L06]).
 - Surface: a slim strip or placeholder line in the transcript region
   (exact chrome designed in-step against the gallery), visible from body
-  mount until the window closes; between flushes a CSS/compositor
-  indeterminate animation keeps motion without JS ticks ([L06]).
+  mount until the window closes.
 - No timers, no rAF anywhere in the affordance.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
@@ -404,6 +422,79 @@ proceeds only where the post-collapse re-baseline still shows a hot spot
 | Replay progress data | existing store snapshot | read at fold-flush commits via `useSyncExternalStore` | [L02] |
 | Progress animation between flushes | appearance | CSS indeterminate animation | [L06], [L05]/[L13] honored |
 | Reveal/paint gating | appearance | CSS / mount-order, no React state for paint | [L06], [L23] |
+
+---
+
+### Deep Dive: Implementation Anchors {#implementation-anchors}
+
+Symbol/path map for the implementing session — everything here was
+verified by reading the code or by measurement during planning (no line
+numbers by convention; symbols are greppable):
+
+**Reveal chain (`tugdeck/src/components/tugways/cards/dev-card.tsx`):**
+`DevCardContent` routes unbound cards (restore registry →
+`DevRestoring variant="binding"`, `restorePassGate` → `"pass-pending"`,
+else picker). `DevCardServicesGate` routes bound cards: `transportState
+=== "restoring"` or (`deriveColdRestoreActive` && one-shot `revealed`
+latch not yet flipped) → `DevRestoring`; else `DevCardBody`. The latch +
+`deriveColdRestoreActive` are the exact surface #step-4 reworks; the
+docstring's own words — body "mounts exactly once, against a fully
+reconstructed transcript, and reveals in a single paint" — describe the
+freeze being removed.
+
+**Transcript (`cards/dev-card-transcript.tsx`):** `DevTranscriptHost`;
+the `windowedTranscript` [L02] boolean selector with
+`WINDOWED_TRANSCRIPT_ROW_THRESHOLD` (1200) and
+`WINDOWED_TRANSCRIPT_MESSAGE_THRESHOLD` (600); the [DT10]
+`data-replaying` → `visibility:hidden` gate on the host root; cell memo
+gate `transcriptCellPropsEqual` + `sameTranscriptRowData` in
+`lib/dev-transcript-data-source.ts` (cells take a resolved `row` prop —
+comparators cannot read live state). `CodeRowBody` iterates
+`turn.messages` and dispatches kinds; tool calls route through
+`dispatchToolCallState` (`cards/dev-assistant-renderer-dispatch.ts`).
+
+**Fold + counters (`lib/code-session-store.ts`):** `dispatch(event,
+origin)` — wire-origin events defer notifies while `phase ===
+"replaying"`; `_publishAndNotify` / `_flushReplayFold`;
+`REPLAY_FOLD_FLUSH_THRESHOLD` (250) — the progress affordance's tick.
+Perf: `_getPerfForDevPanel` (replay/lastReplay/liveTurn/lastLiveTurn),
+`getSessionPerf(cardId)` on `window.__tug` (SURFACE_VERSION 1.12.0).
+The warm queue is fed from the `write-inflight` effect (text channels,
+replay window only).
+
+**Render-once (`lib/markdown/`):** `parse-cache.ts` — `ensureParsed`
+is THE chokepoint (render path + warm queue share it; options identical
+by construction); `warm-queue.ts` (LIFO, 8ms slices, `setTimeout`-class);
+`parse-counters.ts` (`parses/cacheHits/memoHits`,
+`maxParsesPerIdentity === 1` is the parse-once assertion).
+
+**Tool blocks (`cards/tool-blocks/`):** Layer-2 per-tool wrappers
+(bash/edit/grep/glob/read/write/default/…); `types.ts` carries the
+host-owned collapse contract (`collapsed` + `onToggleCollapsed`) and the
+[A9] `componentStatePreservationKey` — Spec S02 builds on exactly these.
+`chrome/dev-thinking-block.tsx`: default-collapsed on complete is a CSS
+`data-collapsed` flip — body still mounts/parses (the #step-5 candidate).
+
+**Measured facts (don't re-derive):** bridge throughput ≈25MB/s (53MB
+session = ~2.2s server-side end-to-end; translate itself is 42ms
+unpaced in-memory); zero broadcast lag at 16k frames (capacity 1024);
+`REPLAY_HARD_TIMEOUT_MS` = 10s in tugcode; medium-synthetic post-plan-1
+wall ≈0.8s with server ≈25ms of it; the motivating real session
+(`763cd1d8`): server 420ms, deck ~19.6s in the single mount commit.
+Prior baselines: `roadmap/resume-performance.md#baseline-numbers`.
+
+**Harness lore (hard-won — do not rediscover):** drive the picker via
+the recents MOUNT-SEED (the path field auto-fills from the first
+recent; the at0181-style Tab→Tab→Enter reliably triggers the picker's
+Enter fall-through, which opens a NEW session and dismisses the picker —
+recorded follow-up bug); readiness predicates must be windowed-aware
+(≥1 mounted user row + `lastReplay !== null`, never "all rows mounted");
+a wedged WebView defeats the harness's own RPC timeouts — bun's outer
+test timeout is the only backstop, so legs that can wedge must be
+skipped-by-default with their numbers recorded; `just app-test` only
+builds the apptest bundle when it is ABSENT — `just app-test-build`
+forces a rebuild after Rust/tugcode/Swift changes (tugdeck rides the
+recipe's dist refresh).
 
 ---
 
@@ -540,7 +631,7 @@ Prose generators are deleted, not deprecated.
 **References:** [P05], [P01], (#corpus-baseline)
 
 **Tasks:**
-- [ ] Gate check on the post-#step-4 corpus waterfalls; name the residue (candidates: JsonTree depth bounds, code-view highlight deferral, digest warm coverage)
+- [ ] Gate check on the post-#step-4 corpus waterfalls; name the residue (candidates: JsonTree depth bounds, code-view highlight deferral, digest warm coverage, **historical thinking blocks** — `DevThinkingBlock` is default-collapsed on complete but only via a CSS `data-collapsed` flip: the markdown body still mounts and parses; 457 of them in the motivating session. If the numbers say so, give them the same body-on-expand treatment as [P02])
 - [ ] Re-scope the speculative warm queue for the collapsed world: digests in, bodies out — the replay-window feed currently warms tool-result markdown that collapsed history may never render; decide keep/trim from the measured hit rates
 - [ ] Implement only what the numbers demand; re-measure
 
