@@ -746,6 +746,18 @@
   font-family: var(--tug-font-family-sans);
 }
 
+/* Inline "scanning terminal sessions…" hint beside the Sessions label,
+   shown while the host's phase-2 external-JSONL scan is still running
+   (the ledger rows are already listed). Muted, non-uppercase, lower
+   weight so it reads as a transient status, not a second heading. */
+.dev-card-picker-scanning {
+  margin-left: 0.5em;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.65;
+}
+
 /* Project-path input — mono family so the typed path and the recent
    paths in the list below read as one family. The smoothing pins
    mirror `.dev-card-picker-path-recent` exactly so the two surfaces

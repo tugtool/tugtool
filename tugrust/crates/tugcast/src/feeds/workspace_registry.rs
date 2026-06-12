@@ -29,7 +29,7 @@ use crate::feeds::file_watcher::FileWatcher;
 use crate::feeds::filesystem::FilesystemFeed;
 use crate::feeds::filetree::{FileTreeFeed, FileTreeQuery};
 use crate::feeds::git::GitFeed;
-use crate::feeds::path_resolver::PathResolver;
+use crate::path_resolver::PathResolver;
 
 /// Errors from [`WorkspaceRegistry`] operations.
 ///

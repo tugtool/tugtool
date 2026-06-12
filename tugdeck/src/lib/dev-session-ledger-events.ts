@@ -62,6 +62,14 @@ const listSessionsOkBus = makeBus<{
   project_dir: string;
   sessions: SessionRow[];
   dir_exists: boolean;
+  /**
+   * `true` for the cheap phase-1 emit (ledger rows only; the external
+   * JSONL scan is still running on the host), `false` for the settled
+   * phase-2 emit carrying the full union. Drives the picker's "scanning
+   * terminal sessions…" indicator. Optional — absent is treated as
+   * `false` (a single-shot response is already the settled union).
+   */
+  scanning?: boolean;
 }>();
 const listSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 const listCardBindingsOkBus = makeBus<{ bindings: CardBinding[] }>();

@@ -6,6 +6,11 @@ mod defaults;
 mod dev;
 mod external_sessions;
 mod feeds;
+/// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives
+/// at the root, not under `feeds/`, because both `feeds` (file watching) and
+/// `session_ledger` (storage) depend on it — keeping it a leaf avoids a
+/// storage→feeds back-reference.
+mod path_resolver;
 mod fs_complete;
 mod host;
 mod permissions;
@@ -603,6 +608,40 @@ async fn main() {
             count = trash_swept,
             "swept stale trash directories on startup"
         );
+    }
+
+    // Background warm scan: pre-populate the external-session scan cache
+    // for every project dir that already has ledger rows, so the picker's
+    // first open after launch finds terminal-created sessions already
+    // cached (a warm, stat-only scan) instead of paying the multi-second
+    // cold JSONL parse on the user's timeline. Detached and best-effort:
+    // it never blocks startup, and an empty/failed scan is harmless. The
+    // scan itself fans out across cores (rayon), and `scan_*_cached` is
+    // idempotent, so a concurrent picker scan during warm-up only
+    // duplicates work, never corrupts.
+    {
+        let ledger = Arc::clone(&ledger);
+        tokio::task::spawn_blocking(move || {
+            let dirs = match ledger.distinct_workspaces() {
+                Ok(dirs) => dirs,
+                Err(err) => {
+                    warn!(error = %err, "warm scan: distinct_workspaces failed");
+                    return;
+                }
+            };
+            for dir in dirs {
+                let outcome =
+                    crate::external_sessions::scan_external_sessions_cached(&ledger, &dir);
+                if outcome.parsed > 0 {
+                    info!(
+                        project_dir = %dir,
+                        parsed = outcome.parsed,
+                        cache_hits = outcome.cache_hits,
+                        "warm scan populated external-session cache",
+                    );
+                }
+            }
+        });
     }
 
     let sessions_recorder: Arc<dyn SessionsRecorder> = ledger_recorder;

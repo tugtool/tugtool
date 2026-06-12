@@ -97,6 +97,37 @@ describe("DevSessionLedgerStore", () => {
     store.dispose();
   });
 
+  it("two-phase scan: phase-1 is ready+scanning, phase-2 settles with the union", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    // Phase 1 — ledger rows only, scan still running. The picker is
+    // interactive immediately (status ready) even though scanning is true.
+    publishListSessionsOk({
+      project_dir: "ws-1",
+      dir_exists: true,
+      scanning: true,
+      sessions: [makeRow({ session_id: "tug", last_used_at: 100 })],
+    });
+    const phase1 = store.getSnapshot("ws-1");
+    expect(phase1.status).toBe("ready");
+    expect(phase1.scanning).toBe(true);
+    expect(phase1.rows.map((r) => r.session_id)).toEqual(["tug"]);
+    // Phase 2 — full union arrives, scanning clears.
+    publishListSessionsOk({
+      project_dir: "ws-1",
+      dir_exists: true,
+      scanning: false,
+      sessions: [
+        makeRow({ session_id: "tug", last_used_at: 100 }),
+        makeRow({ session_id: "ext", last_used_at: 200 }),
+      ],
+    });
+    const phase2 = store.getSnapshot("ws-1");
+    expect(phase2.scanning).toBe(false);
+    expect(phase2.rows.map((r) => r.session_id)).toEqual(["ext", "tug"]);
+    store.dispose();
+  });
+
   it("carries dir_exists from list_sessions_ok into the snapshot", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");

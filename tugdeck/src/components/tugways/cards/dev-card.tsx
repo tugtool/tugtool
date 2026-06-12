@@ -1841,7 +1841,19 @@ function DevProjectPickerForm({
           </div>
         </div>
         <div className="dev-card-picker-section">
-          <span className="dev-card-picker-label">Sessions</span>
+          <span className="dev-card-picker-label">
+            Sessions
+            {sessionsReady && sessionLedger.scanning === true ? (
+              <span
+                className="dev-card-picker-scanning"
+                role="status"
+                aria-live="polite"
+                data-testid="dev-card-picker-scanning"
+              >
+                scanning terminal sessions…
+              </span>
+            ) : null}
+          </span>
           <div className="dev-card-picker-sessions-host">
             {sessionsReady ? (
               <TugListView

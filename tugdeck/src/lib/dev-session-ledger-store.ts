@@ -55,6 +55,16 @@ export interface WorkspaceSnapshot {
    * `spawn_session` is sent.
    */
   dirExists?: boolean;
+  /**
+   * `true` while the host is still scanning on-disk JSONLs for external
+   * (terminal-created) sessions — the phase-1 `list_sessions_ok` carries
+   * the ledger rows immediately with `scanning: true`, then a phase-2
+   * emit replaces this snapshot with the full union and `scanning: false`.
+   * The picker shows a "scanning terminal sessions…" indicator while
+   * `true` so a large project dir's multi-second scan reads as progress,
+   * never a freeze. `false` once settled.
+   */
+  scanning?: boolean;
 }
 
 const EMPTY_ROWS: readonly SessionRow[] = Object.freeze([]);
@@ -162,7 +172,7 @@ export class DevSessionLedgerStore {
 
   private installSubscriptions(): void {
     this.disposers.push(
-      subscribeToListSessionsOk(({ project_dir, sessions, dir_exists }) => {
+      subscribeToListSessionsOk(({ project_dir, sessions, dir_exists, scanning }) => {
         const sorted = [...sessions].sort(
           (a, b) => b.last_used_at - a.last_used_at,
         );
@@ -174,10 +184,15 @@ export class DevSessionLedgerStore {
         for (const row of sorted) {
           this.rowLocations.set(row.session_id, { projectDir: project_dir });
         }
+        // Status settles to "ready" on the phase-1 emit already — the
+        // ledger rows are usable immediately, so the picker is interactive
+        // (pick "New session", resume a recent) while `scanning` is still
+        // true and external rows are en route.
         this.snapshots.set(project_dir, {
           status: "ready",
           rows: Object.freeze(sorted),
           dirExists: dir_exists,
+          scanning,
         });
         this.tick();
       }),
@@ -259,6 +274,7 @@ export class DevSessionLedgerStore {
       status: "ready",
       rows: Object.freeze(nextRows),
       dirExists: cached.dirExists,
+      scanning: cached.scanning,
     });
     this.tick();
   }
@@ -275,6 +291,7 @@ export class DevSessionLedgerStore {
       status: "ready",
       rows: Object.freeze(nextRows),
       dirExists: cached.dirExists,
+      scanning: cached.scanning,
     });
     this.tick();
   }

@@ -30,6 +30,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::session_ledger::{
@@ -136,6 +137,32 @@ fn parse_timestamp_millis(raw: &str) -> Option<i64> {
         .map(|dt| dt.timestamp_millis())
 }
 
+/// The fields the scanner reads from each JSONL record. Everything else
+/// in the line (the often multi-MB assistant `content`, `toolUseResult`,
+/// usage blocks, …) is skipped without allocation: unknown keys go to
+/// serde's `IgnoredAny`, and `message` is captured as an **unparsed**
+/// slice ([`RawValue`]) — only the rare `type: "user"` lines pay to parse
+/// it into a tree. The scalar fields are `Option<String>` (so a missing
+/// or `null` value is `None`, never a parse error). This typed extraction
+/// replaces a full `serde_json::Value` DOM build per line — the dominant
+/// cost of a cold scan over a multi-GB project dir.
+#[derive(Deserialize)]
+struct ScanRecord<'a> {
+    #[serde(rename = "type", default)]
+    kind: Option<String>,
+    #[serde(rename = "sessionId", default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    timestamp: Option<String>,
+    #[serde(rename = "aiTitle", default)]
+    ai_title: Option<String>,
+    /// Unparsed — only `type: "user"` lines parse this to read `content`.
+    #[serde(default, borrow)]
+    message: Option<&'a serde_json::value::RawValue>,
+}
+
 /// Stream one candidate JSONL and extract its metadata.
 ///
 /// `Ok(None)` means the file was deliberately excluded (cwd mismatch,
@@ -168,14 +195,14 @@ fn parse_session_file(
         if trimmed.is_empty() {
             continue;
         }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-            continue;
-        };
-        let Some(obj) = value.as_object() else {
+        // Typed extraction: scans the line structurally but builds no tree
+        // for the bulk fields. A non-object or malformed line fails here
+        // and is skipped — same tolerance as the prior `Value` path.
+        let Ok(rec) = serde_json::from_str::<ScanRecord>(trimmed) else {
             continue;
         };
 
-        if let Some(sid) = obj.get("sessionId").and_then(|v| v.as_str()) {
+        if let Some(sid) = rec.session_id.as_deref() {
             if sid != expected_stem {
                 tracing::debug!(
                     path = %path.display(),
@@ -186,7 +213,7 @@ fn parse_session_file(
             }
         }
         if !cwd_checked {
-            if let Some(cwd) = obj.get("cwd").and_then(|v| v.as_str()) {
+            if let Some(cwd) = rec.cwd.as_deref() {
                 cwd_checked = true;
                 if cwd != project_dir {
                     tracing::debug!(
@@ -199,18 +226,23 @@ fn parse_session_file(
             }
         }
         if created_at.is_none() {
-            if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_str()) {
+            if let Some(ts) = rec.timestamp.as_deref() {
                 created_at = parse_timestamp_millis(ts);
             }
         }
 
-        match obj.get("type").and_then(|v| v.as_str()) {
+        match rec.kind.as_deref() {
             Some("user") => {
-                let content = obj.get("message").and_then(|m| m.get("content"));
+                // Only here do we parse the (small) user `message` into a
+                // tree to inspect its `content`.
+                let content = rec
+                    .message
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.get()).ok())
+                    .and_then(|msg| msg.get("content").cloned());
                 if let Some(content) = content {
-                    if is_user_submission_content(content) {
+                    if is_user_submission_content(&content) {
                         turn_count += 1;
-                        let text = submission_text(content);
+                        let text = submission_text(&content);
                         if !text.is_empty() {
                             last_prompt = Some(truncate_prompt(&text));
                         }
@@ -218,7 +250,7 @@ fn parse_session_file(
                 }
             }
             Some("ai-title") => {
-                if let Some(title) = obj.get("aiTitle").and_then(|v| v.as_str()) {
+                if let Some(title) = rec.ai_title.as_deref() {
                     if !title.is_empty() {
                         name = Some(title.to_owned());
                     }
@@ -410,6 +442,23 @@ fn meta_from_cache_row(row: ScanCacheRow) -> ExternalSessionMeta {
 /// prune cache rows whose backing file is gone. Cache I/O failures are
 /// logged and degrade to an uncached parse — the scan itself never
 /// fails.
+/// Parse a batch of cache-miss candidates across all available cores via
+/// rayon's work-stealing pool, returning results index-aligned with
+/// `misses` (`None` = deliberately excluded or unreadable). Work-stealing
+/// (rather than fixed chunks) keeps every core busy despite wildly uneven
+/// per-file sizes — a cold scan's JSONLs range from a few KB to tens of MB,
+/// so a straggler chunk would otherwise dominate wall-clock. `par_iter`
+/// preserves input order in the collected `Vec`.
+fn parse_candidates_parallel(
+    misses: &[&SessionFileCandidate],
+    project_dir: &str,
+) -> Vec<Option<ExternalSessionMeta>> {
+    misses
+        .par_iter()
+        .map(|c| parse_candidate(c, project_dir))
+        .collect()
+}
+
 pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) -> ScanOutcome {
     let (candidates, canonical) =
         list_session_file_candidates(ledger.claude_projects_root(), project_dir);
@@ -421,7 +470,12 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
         canonical_project_dir: canonical.clone(),
         ..ScanOutcome::default()
     };
+    // Pass 1 (sequential, fast): stat-validate each candidate against the
+    // sqlite cache. Cache hits resolve here; misses are collected for the
+    // parallel parse below. Cache I/O stays single-threaded — the ledger
+    // owns one connection behind a mutex.
     let mut seen_ids: Vec<String> = Vec::with_capacity(candidates.len());
+    let mut misses: Vec<&SessionFileCandidate> = Vec::new();
     for candidate in &candidates {
         seen_ids.push(candidate.session_id.clone());
         let cached = ledger
@@ -439,8 +493,23 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
                 continue;
             }
         }
-        outcome.parsed += 1;
-        match parse_candidate(candidate, project_dir) {
+        misses.push(candidate);
+    }
+    outcome.parsed = misses.len();
+
+    // Pass 2 (parallel): stream + parse the cache misses across all cores.
+    // Parsing is pure (no ledger access) and embarrassingly parallel — one
+    // multi-GB cold scan is dominated by per-line JSON work, not disk, so
+    // fanning out across cores is the dominant speedup. Results stay
+    // index-aligned with `misses` for the write-back below.
+    let parsed = parse_candidates_parallel(&misses, project_dir);
+
+    // Pass 3 (sequential): write parse results back to the cache and
+    // collect surfaced rows. Exclusions are cached too (with `excluded:
+    // true`) so a cwd/sessionId-mismatch file isn't re-streamed every scan;
+    // the (size, mtime) key still invalidates if the file changes.
+    for (candidate, meta_opt) in misses.iter().zip(parsed) {
+        match meta_opt {
             Some(meta) => {
                 let row = cache_row_from_meta(&meta, project_dir);
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
@@ -449,10 +518,6 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
                 outcome.metas.push(meta);
             }
             None => {
-                // Deliberate exclusion (cwd / sessionId mismatch) or an
-                // unreadable file. Remember exclusions so the file isn't
-                // re-streamed every scan; the (size, mtime) pair still
-                // invalidates if the file changes.
                 let row = ScanCacheRow {
                     session_id: candidate.session_id.clone(),
                     project_dir: project_dir.to_owned(),

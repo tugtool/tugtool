@@ -79,6 +79,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::path_resolver::resolve_to_claude_form;
+
 /// Maximum non-live rows per workspace before cap eviction kicks in on spawn.
 pub const DEV_LEDGER_MAX_PER_WORKSPACE: usize = 20;
 
@@ -1855,20 +1857,26 @@ pub fn encode_claude_project_name(project_dir: &str) -> String {
 /// per-project directory — the single chokepoint every production
 /// consumer (scan, trash, row synthesis) must route through.
 ///
-/// Canonicalizes the path first (claude names the directory after the
-/// canonical cwd; user-typed paths may arrive through symlink aliases
-/// like `/u/src/tugtool`), falling back to the literal path when
-/// canonicalization fails (the project dir was deleted; the encoded
-/// literal is then the best available guess). Returns both the
-/// resolved directory under `claude_projects_root` and the canonical
-/// project-dir string, so callers never re-derive either themselves.
+/// Resolves the path to the **Claude form** via
+/// [`resolve_to_claude_form`] (symlinks + synthetic.conf firmlinks
+/// resolved, APFS data-volume firmlink collapsed back to `/Users/…`).
+/// Claude names its `~/.claude/projects/<encoded-cwd>` directory after
+/// the form `getcwd` reports — which is firmlink-*collapsed*, NOT the
+/// firmlink-expanded `/System/Volumes/Data/…` that `std::fs::canonicalize`
+/// would yield. Using `canonicalize` here was the bug that hid every
+/// terminal-created session from the picker (the scan opened a
+/// `-System-Volumes-Data-…` directory that does not exist) and silently
+/// no-op'd trash; the resolver is firmlink-aware so all three forms
+/// (on-disk dir name, ledger `workspace_key`, this canonical string)
+/// agree. Returns both the resolved directory under `claude_projects_root`
+/// and the canonical project-dir string, so callers never re-derive either.
 pub fn claude_project_dir(
     claude_projects_root: &Path,
     project_dir: &str,
 ) -> (PathBuf, String) {
-    let canonical = std::fs::canonicalize(project_dir)
-        .ok()
-        .and_then(|p| p.to_str().map(|s| s.to_owned()))
+    let canonical = resolve_to_claude_form(Path::new(project_dir))
+        .to_str()
+        .map(|s| s.to_owned())
         .unwrap_or_else(|| project_dir.to_owned());
     let dir = claude_projects_root.join(encode_claude_project_name(&canonical));
     (dir, canonical)

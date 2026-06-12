@@ -24,7 +24,7 @@ use tracing::{error, info, warn};
 
 use tugcast_core::types::FsEvent;
 
-use super::path_resolver::PathResolver;
+use crate::path_resolver::PathResolver;
 
 /// Broadcast channel buffer capacity
 const BROADCAST_CAPACITY: usize = 256;

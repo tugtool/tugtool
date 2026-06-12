@@ -33,6 +33,44 @@ pub struct PathResolver {
     pub is_autofs: bool,
 }
 
+/// Resolve a user-supplied directory path to the **Claude form**: symlinks
+/// and macOS `synthetic.conf` firmlinks resolved, but the APFS data-volume
+/// firmlink collapsed back to its user-visible prefix
+/// (`/System/Volumes/Data/Users/…` → `/Users/…`).
+///
+/// This is the single path form that the kernel's `getcwd`, Bun's
+/// `realpathSync`, and Claude Code's `~/.claude/projects/<encoded-cwd>`
+/// directory naming all agree on. Every consumer that must line up with
+/// Claude's on-disk layout — the external-session scanner, the trash mover,
+/// the JSONL `cwd` record filter, `claude_project_dir` — MUST route through
+/// here. It is the standalone twin of [`PathResolver`]'s `primary` selection
+/// (they share `resolve_synthetic` / `resolve_apfs_firmlink`), exposed for
+/// callers that only need the canonical string, not a live FSEvents watcher.
+///
+/// **Do not** reach for [`std::fs::canonicalize`] on a project path: on macOS
+/// `realpath(3)` expands the data-volume firmlink to `/System/Volumes/Data/…`,
+/// a form Claude never writes. That single mismatch is the recurring
+/// "terminal sessions don't appear in the picker / trash silently no-ops"
+/// bug class — this function is its firmlink-aware replacement.
+pub fn resolve_to_claude_form(path: &Path) -> PathBuf {
+    // Phase 1: resolve symlinks via canonicalize (firmlink-expanded on macOS).
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+    // Phase 2/3 (macOS): collapse synthetic.conf + APFS firmlinks back to the
+    // user-visible form, identity-verified. Priority matches PathResolver's
+    // `primary`: synthetic-resolved > firmlink-resolved > canonical.
+    #[cfg(target_os = "macos")]
+    {
+        resolve_synthetic(path)
+            .or_else(|| resolve_apfs_firmlink(&canonical))
+            .unwrap_or(canonical)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        canonical
+    }
+}
+
 impl PathResolver {
     /// Create a resolver from a user-provided path.
     ///
@@ -81,12 +119,15 @@ impl PathResolver {
             seen.insert(br.clone());
         }
 
-        // Choose the primary (the form to register with the watcher).
-        // Priority: synthetic-resolved > firmlink-resolved > canonical > original.
-        let primary = synthetic_resolved
-            .clone()
-            .or(firmlink_resolved.clone())
-            .unwrap_or_else(|| canonical.clone());
+        // Choose the primary (the form to register with the watcher) via the
+        // shared resolver, so the synthetic > firmlink > canonical priority
+        // lives in exactly ONE place ([`resolve_to_claude_form`]) and the
+        // FSEvents watch path can never drift from the Claude form the ledger
+        // scan resolves to. `resolve_to_claude_form` recomputes the pieces
+        // above, but `PathResolver::new` is cold (once per workspace), so the
+        // duplicate stat is immaterial — coherence wins. The pieces computed
+        // above are still used to build `alt_prefixes`.
+        let primary = resolve_to_claude_form(&path);
 
         // Build alt_prefixes from all discovered forms except the primary.
         let alt_prefixes: Vec<PathBuf> = seen.into_iter().filter(|p| *p != primary).collect();
@@ -351,4 +392,90 @@ fn resolve_bind_mounts(path: &Path) -> Option<PathBuf> {
 #[allow(dead_code)]
 fn resolve_bind_mounts(_path: &Path) -> Option<PathBuf> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression pin for the firmlink bug class. A path reached through a
+    /// macOS `synthetic.conf` symlink (e.g. `/u`) must resolve to the
+    /// firmlink-*collapsed* Claude form (`/Users/…`), never the
+    /// firmlink-*expanded* form (`/System/Volumes/Data/Users/…`) that a bare
+    /// `canonicalize` yields. When the two diverge, every lookup keyed on
+    /// Claude's on-disk `~/.claude/projects/<encoded-cwd>` directory breaks
+    /// silently — terminal-created sessions vanish from the picker, trash
+    /// no-ops. This fails the moment `resolve_to_claude_form` regresses to
+    /// plain `canonicalize`.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn synthetic_path_resolves_to_firmlink_collapsed_claude_form() {
+        const DATA_PREFIX: &str = "/System/Volumes/Data";
+        let Ok(conf) = std::fs::read_to_string("/etc/synthetic.conf") else {
+            eprintln!("skip: no /etc/synthetic.conf on this host");
+            return;
+        };
+
+        let mut exercised = false;
+        for line in conf.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let syn_root = PathBuf::from(format!("/{}", parts[0].trim()));
+            if !syn_root.exists() {
+                continue;
+            }
+
+            let resolved = resolve_to_claude_form(&syn_root);
+            let resolved_str = resolved.to_string_lossy();
+
+            // The whole point: the resolved form is the user-visible,
+            // firmlink-collapsed path — never the data-volume expansion.
+            assert!(
+                !resolved_str.starts_with(DATA_PREFIX),
+                "resolve_to_claude_form({}) must collapse the APFS firmlink, got {resolved_str}",
+                syn_root.display(),
+            );
+            // And it must still point at the very same directory.
+            assert!(
+                same_identity(&syn_root, &resolved),
+                "resolved form {} is not the same directory as {}",
+                resolved.display(),
+                syn_root.display(),
+            );
+            // Document the divergence this function exists to fix: a bare
+            // canonicalize WOULD expand the firmlink on a synthetic root, and
+            // the resolver must NOT agree with it in that case.
+            if let Ok(canon) = syn_root.canonicalize() {
+                if canon.to_string_lossy().starts_with(DATA_PREFIX) {
+                    assert_ne!(
+                        canon, resolved,
+                        "resolver must diverge from canonicalize when canonicalize expands the firmlink",
+                    );
+                }
+            }
+            exercised = true;
+            break;
+        }
+
+        if !exercised {
+            eprintln!("skip: no usable synthetic.conf entry on this host");
+        }
+    }
+
+    /// On a plain real directory with no synthetic/firmlink involvement, the
+    /// Claude form equals `canonicalize` — the resolver is a faithful no-op
+    /// there, so non-firmlinked projects are unaffected.
+    #[test]
+    fn plain_directory_matches_canonicalize() {
+        let tmp = tempfile::tempdir().unwrap();
+        let resolved = resolve_to_claude_form(tmp.path());
+        let canon = tmp.path().canonicalize().unwrap();
+        assert_eq!(resolved, canon);
+    }
 }

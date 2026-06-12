@@ -14,7 +14,10 @@ clap = { version = "4", features = ["derive"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# raw_value: lets the external-session scanner capture a record's `message`
+# as an unparsed slice and only build a JSON tree for the few user lines it
+# inspects, instead of fully parsing every (often multi-MB) line.
+serde_json = { version = "1", features = ["raw_value"] }
 toml = "0.8"
 
 # Time utilities
@@ -32,6 +35,9 @@ arc-swap = "1"
 
 # Regex for parsing
 regex = "1"
+
+# Data parallelism (work-stealing thread pool)
+rayon = "1"
 
 # Directory paths
 dirs = "5"

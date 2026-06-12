@@ -189,14 +189,26 @@ pub(crate) fn resolve_symlinks(path: &Path) -> std::io::Result<PathBuf> {
         }
     }
 
-    // macOS firmlink normalization: FSEvents expects /Users/..., not
-    // /System/Volumes/Data/Users/... which canonicalize/read_link may produce.
+    // macOS firmlink normalization: FSEvents expects the user-visible form
+    // (`/Users/...`), not the data-volume expansion (`/System/Volumes/Data/
+    // Users/...`) that `read_link` may produce. Strip the `/System/Volumes/
+    // Data` prefix generically — not just `/Users`, but every firmlink
+    // (`/opt`, `/private`, …) — so any firmlinked source tree collapses
+    // correctly. This is the same Claude form the crate's canonical
+    // `path_resolver::resolve_to_claude_form` produces; this function does
+    // NOT call it because FSEvents needs a path resolved
+    // component-by-component (canonicalize over-resolves), and dev-mode init
+    // runs before any ledger/claude context exists.
     #[cfg(target_os = "macos")]
     {
-        const FIRMLINK_PREFIX: &str = "/System/Volumes/Data/Users/";
+        const FIRMLINK_PREFIX: &str = "/System/Volumes/Data";
         if let Some(path_str) = resolved.to_str() {
-            if let Some(suffix) = path_str.strip_prefix(FIRMLINK_PREFIX) {
-                resolved = PathBuf::from(format!("/Users/{}", suffix));
+            if let Some(rest) = path_str.strip_prefix(FIRMLINK_PREFIX) {
+                // Only when the prefix ends at a path boundary (next char is
+                // `/`) — never a longer name like `/System/Volumes/DataFoo`.
+                if rest.starts_with('/') {
+                    resolved = PathBuf::from(rest);
+                }
             }
         }
     }

@@ -1034,6 +1034,75 @@ pub struct ListedSession {
     pub terminal_live: Option<TerminalLiveWire>,
 }
 
+/// Build the picker's `list_sessions` row union from a ledger snapshot, a
+/// terminal-liveness map, and (optionally) an external-session scan.
+///
+/// Ledger rows are tagged `origin: "tug"`; external scan rows not already
+/// owned by the ledger are tagged `origin: "external"` with their
+/// `SessionRow` fields synthesized (`state: closed`, `card_id: null`,
+/// `workspace_key`/`project_dir` set to the scan's canonical dir — the form
+/// claude's directory name encodes, so trash re-derives the JSONL path).
+/// Every row is annotated with `terminal_live` from `live`, and the result
+/// is sorted newest-first by `last_used_at`.
+///
+/// `scan: None` yields the ledger-only preview (phase 1); `Some` yields the
+/// settled union (phase 2). Both phases route through this one builder so
+/// their annotation, dedupe, and ordering can never drift.
+fn build_listed_union(
+    rows: Vec<crate::session_ledger::SessionRow>,
+    live: &HashMap<String, crate::terminal_registry::TerminalLiveEntry>,
+    scan: Option<crate::external_sessions::ScanOutcome>,
+) -> Vec<ListedSession> {
+    let annotate = |session_id: &str| {
+        live.get(session_id).map(|e| TerminalLiveWire {
+            status: e.status.as_wire_str(),
+        })
+    };
+    // Only the union (phase 2) needs the dedupe set; the preview skips it.
+    let need_known = scan.is_some();
+    let mut known: HashSet<String> = HashSet::new();
+    let mut listed: Vec<ListedSession> = Vec::with_capacity(rows.len());
+    for row in rows {
+        if need_known {
+            known.insert(row.session_id.clone());
+        }
+        let terminal_live = annotate(&row.session_id);
+        listed.push(ListedSession {
+            row,
+            origin: "tug",
+            terminal_live,
+        });
+    }
+    if let Some(scan) = scan {
+        let synthetic_workspace_key =
+            crate::session_ledger::encode_claude_project_name(&scan.canonical_project_dir);
+        for meta in scan.metas {
+            if known.contains(&meta.session_id) {
+                continue;
+            }
+            let terminal_live = annotate(&meta.session_id);
+            listed.push(ListedSession {
+                row: crate::session_ledger::SessionRow {
+                    session_id: meta.session_id,
+                    workspace_key: synthetic_workspace_key.clone(),
+                    project_dir: scan.canonical_project_dir.clone(),
+                    created_at: meta.created_at,
+                    last_used_at: meta.last_used_at,
+                    turn_count: meta.turn_count,
+                    last_user_prompt: meta.last_user_prompt,
+                    state: crate::session_ledger::SessionState::Closed,
+                    card_id: None,
+                    name: meta.name,
+                },
+                origin: "external",
+                terminal_live,
+            });
+        }
+    }
+    listed.sort_by(|a, b| b.row.last_used_at.cmp(&a.row.last_used_at));
+    listed
+}
+
 /// Owned form of a parsed CONTROL payload.
 struct OwnedControlPayload {
     card_id: String,
@@ -2416,6 +2485,43 @@ impl AgentSupervisor {
         }
     }
 
+    /// Broadcast a `list_sessions_ok` frame. `scanning` is `true` for the
+    /// cheap phase-1 emit (ledger rows only, external scan still running)
+    /// and `false` for the settled phase-2 emit carrying the full union —
+    /// the picker shows a scanning indicator while `true` and clears it
+    /// when the `false` frame replaces the snapshot.
+    fn send_list_sessions_ok(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        dir_exists: bool,
+        sessions: &[ListedSession],
+        scanning: bool,
+    ) {
+        let body = serde_json::json!({
+            "action": "list_sessions_ok",
+            "project_dir": project_dir,
+            "dir_exists": dir_exists,
+            "scanning": scanning,
+            "sessions": sessions,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_sessions_ok serializes"),
+        ));
+    }
+
+    fn send_list_sessions_err(control_tx: &broadcast::Sender<Frame>, project_dir: &str) {
+        let body = serde_json::json!({
+            "action": "list_sessions_err",
+            "project_dir": project_dir,
+            "reason": "ledger_read_failed",
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_sessions_err serializes"),
+        ));
+    }
+
     /// Handle a `list_sessions` CONTROL request. Broadcasts a
     /// `list_sessions_ok` response carrying the **union** of:
     ///
@@ -2431,10 +2537,12 @@ impl AgentSupervisor {
     /// when a live process registered in `~/.claude/sessions/`
     /// currently holds it.
     ///
-    /// The ledger read, directory scan, and registry read all perform
-    /// blocking I/O (sqlite, file streaming, `ps`), so they run on a
-    /// `spawn_blocking` thread — a cold scan of a large project dir
-    /// must never stall the supervisor's control loop.
+    /// Emitted in **two phases** so the picker never blocks on the scan
+    /// (see the inline phase comments and Risk R03): a cheap phase-1
+    /// `list_sessions_ok { scanning: true }` with the ledger rows lands
+    /// immediately, then a settled phase-2 `{ scanning: false }` with the
+    /// full union lands once the off-loop JSONL scan completes. The client
+    /// replaces its snapshot on each, so external rows stream in.
     ///
     /// The response also carries `dir_exists` — a filesystem check on
     /// `project_dir` — so the picker can disable its Open button before
@@ -2450,122 +2558,109 @@ impl AgentSupervisor {
             .map(|m| m.is_dir())
             .unwrap_or(false);
         let Some(ledger) = self.session_ledger.as_ref() else {
-            // No ledger wired — emit an empty response so a confused client
-            // doesn't sit on a pending state forever.
-            let body = serde_json::json!({
-                "action": "list_sessions_ok",
-                "project_dir": project_dir,
-                "dir_exists": dir_exists,
-                "sessions": serde_json::Value::Array(Vec::new()),
-            });
-            let _ = self.control_tx.send(Frame::new(
-                FeedId::CONTROL,
-                serde_json::to_vec(&body).expect("list_sessions_ok serializes"),
-            ));
+            // No ledger wired — emit an empty, settled response so a
+            // confused client doesn't sit on a pending state forever.
+            Self::send_list_sessions_ok(&self.control_tx, project_dir, dir_exists, &[], false);
             return;
         };
-        // The scan resolves the typed path to claude's canonical
-        // directory internally (the `claude_project_dir` chokepoint in
-        // `session_ledger.rs` — symlink aliases like `/u/src/tugtool`
-        // are its problem, not ours). The ledger query stays literal:
-        // rows store the user-typed path recorded at spawn time, by
-        // contract.
+
         let ledger_arc = Arc::clone(ledger);
-        let pd = project_dir.to_owned();
         let registry_root = self.terminal_registry_root();
-        let gathered = tokio::task::spawn_blocking(move || {
-            let rows = ledger_arc.list_for_project_dir(&pd)?;
-            let scan = crate::external_sessions::scan_external_sessions_cached(&ledger_arc, &pd);
-            let live = Self::read_terminal_live_sessions(registry_root.as_deref());
-            Ok::<_, crate::session_ledger::LedgerError>((rows, scan, live))
+        let control_tx = self.control_tx.clone();
+        let pd = project_dir.to_owned();
+
+        // ── Phase 1: cheap reads (sqlite ledger + the handful of tiny
+        //    `~/.claude/sessions` registry files). Emitted IMMEDIATELY so
+        //    the picker shows "New session" plus every resumable ledger
+        //    row without waiting on the JSONL scan — which on a large
+        //    project dir (this repo's claude dir is ~1k files / multi-GB)
+        //    can take many seconds (Risk R03). Pressing Cmd-N must never
+        //    block on the scan; before this split it froze the dialog for
+        //    the full scan duration.
+        let phase1 = tokio::task::spawn_blocking({
+            let ledger_arc = Arc::clone(&ledger_arc);
+            let registry_root = registry_root.clone();
+            let pd = pd.clone();
+            move || {
+                let rows = ledger_arc.list_for_project_dir(&pd)?;
+                let live = Self::read_terminal_live_sessions(registry_root.as_deref());
+                Ok::<_, crate::session_ledger::LedgerError>((rows, live))
+            }
         })
         .await;
-        let (rows, scan, live) = match gathered {
+        let (rows, live) = match phase1 {
             Ok(Ok(t)) => t,
             Ok(Err(err)) => {
-                warn!(error = %err, project_dir, "list_sessions failed");
-                let body = serde_json::json!({
-                    "action": "list_sessions_err",
-                    "project_dir": project_dir,
-                    "reason": "ledger_read_failed",
-                });
-                let _ = self.control_tx.send(Frame::new(
-                    FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("list_sessions_err serializes"),
-                ));
+                warn!(error = %err, project_dir, "list_sessions phase 1 failed");
+                Self::send_list_sessions_err(&control_tx, project_dir);
                 return;
             }
             Err(join_err) => {
                 warn!(error = %join_err, project_dir, "list_sessions worker panicked");
-                let body = serde_json::json!({
-                    "action": "list_sessions_err",
-                    "project_dir": project_dir,
-                    "reason": "ledger_read_failed",
-                });
-                let _ = self.control_tx.send(Frame::new(
-                    FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("list_sessions_err serializes"),
-                ));
+                Self::send_list_sessions_err(&control_tx, project_dir);
                 return;
             }
         };
-        let terminal_live_for = |session_id: &str| {
-            live.get(session_id).map(|entry| TerminalLiveWire {
-                status: entry.status.as_wire_str(),
+
+        // Phase 1 emit: ledger-only preview, scan still pending.
+        let ledger_preview = build_listed_union(rows, &live, None);
+        Self::send_list_sessions_ok(&control_tx, project_dir, dir_exists, &ledger_preview, true);
+
+        // ── Phase 2: the expensive JSONL scan, run off the control loop in
+        //    a detached task. Re-reads the ledger + liveness **fresh**
+        //    alongside the scan, so any `session_updated` that lands during
+        //    the scan window is reflected in the settled frame instead of
+        //    being clobbered by the stale phase-1 snapshot. Emits the
+        //    authoritative union (scanning: false); the client replaces its
+        //    snapshot, so external/terminal rows stream in and the scanning
+        //    indicator clears. The scan resolves the typed path to claude's
+        //    canonical directory internally (the `claude_project_dir`
+        //    chokepoint).
+        let project_dir_owned = project_dir.to_owned();
+        // Phase-1 preview, retained only as the settle-with-rows fallback if
+        // the phase-2 worker panics (effectively unreachable — its body
+        // cannot panic on well-formed input — but keeps the indicator from
+        // ever spinning forever).
+        let preview_fallback = ledger_preview;
+        tokio::spawn(async move {
+            let built = tokio::task::spawn_blocking(move || {
+                let rows = ledger_arc.list_for_project_dir(&pd).unwrap_or_else(|err| {
+                    warn!(error = %err, "list_sessions phase 2 ledger re-read failed");
+                    Vec::new()
+                });
+                let live = Self::read_terminal_live_sessions(registry_root.as_deref());
+                let scan = crate::external_sessions::scan_external_sessions_cached(&ledger_arc, &pd);
+                build_listed_union(rows, &live, Some(scan))
             })
-        };
-        let known: HashSet<String> = rows.iter().map(|r| r.session_id.clone()).collect();
-        let mut listed: Vec<ListedSession> = rows
-            .into_iter()
-            .map(|row| {
-                let terminal_live = terminal_live_for(&row.session_id);
-                ListedSession {
-                    row,
-                    origin: "tug",
-                    terminal_live,
+            .await;
+            match built {
+                Ok(union) => {
+                    Self::send_list_sessions_ok(
+                        &control_tx,
+                        &project_dir_owned,
+                        dir_exists,
+                        &union,
+                        false,
+                    );
                 }
-            })
-            .collect();
-        // External rows carry the CANONICAL project dir the scan
-        // resolved: the trash path re-derives the JSONL location from
-        // `row.project_dir`, and the canonical form is the one claude's
-        // directory name encodes.
-        let scan_project_dir = scan.canonical_project_dir.clone();
-        let synthetic_workspace_key =
-            crate::session_ledger::encode_claude_project_name(&scan_project_dir);
-        for meta in scan.metas {
-            if known.contains(&meta.session_id) {
-                continue;
+                Err(join_err) => {
+                    warn!(
+                        error = %join_err,
+                        project_dir = %project_dir_owned,
+                        "list_sessions phase 2 worker panicked",
+                    );
+                    // Settle with the phase-1 preview so the indicator clears
+                    // and the user keeps their resumable rows.
+                    Self::send_list_sessions_ok(
+                        &control_tx,
+                        &project_dir_owned,
+                        dir_exists,
+                        &preview_fallback,
+                        false,
+                    );
+                }
             }
-            let terminal_live = terminal_live_for(&meta.session_id);
-            listed.push(ListedSession {
-                row: crate::session_ledger::SessionRow {
-                    session_id: meta.session_id,
-                    workspace_key: synthetic_workspace_key.clone(),
-                    project_dir: scan_project_dir.clone(),
-                    created_at: meta.created_at,
-                    last_used_at: meta.last_used_at,
-                    turn_count: meta.turn_count,
-                    last_user_prompt: meta.last_user_prompt,
-                    state: crate::session_ledger::SessionState::Closed,
-                    card_id: None,
-                    name: meta.name,
-                },
-                origin: "external",
-                terminal_live,
-            });
-        }
-        listed.sort_by(|a, b| b.row.last_used_at.cmp(&a.row.last_used_at));
-        let body = serde_json::json!({
-            "action": "list_sessions_ok",
-            "project_dir": project_dir,
-            "dir_exists": dir_exists,
-            "sessions": listed,
         });
-        let _ = self.control_tx.send(Frame::new(
-            FeedId::CONTROL,
-            serde_json::to_vec(&body).expect("list_sessions_ok serializes"),
-        ));
     }
 
     /// Handle a `list_card_bindings` CONTROL request. Reads every
@@ -7095,6 +7190,35 @@ mod tests {
         (Arc::new(sup), ledger, control_rx)
     }
 
+    /// Drain until the **settled** `list_sessions_ok` — the phase-2 emit
+    /// carrying the full union (`scanning: false`). `do_list_sessions`
+    /// emits twice: a phase-1 `{ scanning: true }` with ledger rows only,
+    /// then this one once the external scan completes. Tests asserting on
+    /// external/union rows must wait for the settled frame.
+    async fn drain_until_list_sessions_settled(
+        rx: &mut broadcast::Receiver<Frame>,
+    ) -> serde_json::Value {
+        // The settled frame is sent from a detached phase-2 task, so we
+        // must `await` (yield to the runtime) rather than `try_recv` — the
+        // task only runs while this test awaits. Bounded by a timeout so a
+        // never-arriving frame surfaces as a panic, not a hang.
+        for _ in 0..256 {
+            let frame =
+                match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
+                    Ok(Ok(f)) => f,
+                    _ => break,
+                };
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                let is_ok = v.get("action").and_then(|a| a.as_str()) == Some("list_sessions_ok");
+                let settled = v.get("scanning").and_then(|s| s.as_bool()) == Some(false);
+                if is_ok && settled {
+                    return v;
+                }
+            }
+        }
+        panic!("settled `list_sessions_ok` (scanning:false) not observed");
+    }
+
     fn drain_until_action(rx: &mut broadcast::Receiver<Frame>, action: &str) -> serde_json::Value {
         // Pull frames off the broadcast until we find one whose `action`
         // matches; ignore the others. Bounded loop so a missing frame
@@ -7492,7 +7616,7 @@ mod tests {
             .await
             .expect_handled();
 
-        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let response = drain_until_list_sessions_settled(&mut rx).await;
         let sessions = response["sessions"].as_array().expect("sessions array");
         assert_eq!(sessions.len(), 2, "ledger row + external row: {response}");
         let by_id: std::collections::HashMap<&str, &serde_json::Value> = sessions
@@ -7550,7 +7674,7 @@ mod tests {
             .await
             .expect_handled();
 
-        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let response = drain_until_list_sessions_settled(&mut rx).await;
         let sessions = response["sessions"].as_array().expect("sessions array");
         assert_eq!(sessions.len(), 1, "alias query finds the canonical-dir session: {response}");
         assert_eq!(sessions[0]["session_id"], EXTERNAL_ID);
@@ -7586,7 +7710,7 @@ mod tests {
             .await
             .expect_handled();
 
-        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let response = drain_until_list_sessions_settled(&mut rx).await;
         let sessions = response["sessions"].as_array().expect("sessions array");
         assert_eq!(sessions.len(), 1, "deduped: {response}");
         assert_eq!(sessions[0]["origin"], "tug");
@@ -7625,7 +7749,7 @@ mod tests {
             .await
             .expect_handled();
 
-        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let response = drain_until_list_sessions_settled(&mut rx).await;
         let sessions = response["sessions"].as_array().expect("sessions array");
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0]["terminal_live"]["status"], "busy");

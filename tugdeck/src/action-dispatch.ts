@@ -691,6 +691,10 @@ export function initActionDispatch(
     // spawn-error banner is the backstop.
     const dirExists =
       typeof payload.dir_exists === "boolean" ? payload.dir_exists : true;
+    // Absent (older tugcast) → `false`: a single-shot response is already
+    // the settled union, so the picker shows no scanning indicator.
+    const scanning =
+      typeof payload.scanning === "boolean" ? payload.scanning : false;
     const rows = (sessions as Parameters<typeof normalizeSessionRow>[0][]).map(
       normalizeSessionRow,
     );
@@ -703,6 +707,7 @@ export function initActionDispatch(
       project_dir: projectDir,
       sessions: rows,
       dir_exists: dirExists,
+      scanning,
     });
   });
   // spawn_session_error: the supervisor rejected a `spawn_session`
