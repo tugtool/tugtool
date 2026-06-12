@@ -33,7 +33,7 @@ Now is the right time: the transcript's architecture has stabilized (single-kind
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- Fast-scrolling a windowed transcript (>1200 rows or >600 messages) never paints bare card background — verified by a `verify`-skill app run scrolling at speed plus a windowing unit test asserting no transparent gap in the rendered range. ([#step-1], [#step-2])
+- Fast-scrolling a transcript never paints bare card background in **either** render mode — windowed (>1200 rows or >600 messages) *and* inline (the `content-visibility: auto` path below the threshold) — verified by `verify`-skill app runs scrolling at speed in both regimes, plus a windowing unit test asserting no transparent gap in the rendered range. ([#step-1], [#step-2])
 - `h1`/`h2`/`h3` in transcript markdown render at the gallery-vetted compressed scale (size delta ≤ ~4px across the hierarchy; differentiation is weight + spacing), confirmed visually in `gallery-markdown-view`. ([#step-4], [#step-5])
 - Inline code renders with no aggressive color shift — a subtle tint only — confirmed in the gallery. ([#step-5])
 - Selecting any sub-range of an assistant row and copying yields well-formed markdown for that selection (round-trips: copied text re-parses to the same block structure), proven by a unit test over the Range→markdown mapping. ([#step-6], [#step-7])
@@ -172,16 +172,16 @@ These inform the candidate option sets the gallery cards present; the *decisions
 
 ### Design Decisions {#design-decisions}
 
-#### [P01] Never-blank is a hard invariant via two-layer defense (DECIDED) {#p01-never-blank}
+#### [P01] Never-blank is a hard invariant via two-layer defense, in BOTH render modes (DECIDED) {#p01-never-blank}
 
-**Decision:** A windowed transcript row must never expose bare card background. Achieved by (1) render-ahead (directional, tunable overscan) and (2) a skeleton backstop that fills any reserved-but-unpainted row slot AND the spacer regions with a neutral row-rhythm fill.
+**Decision:** A transcript row must never expose bare card background, in **either** render mode — windowed *or* inline. Achieved by (1) render-ahead (directional, tunable overscan, windowed mode only) and (2) a skeleton backstop that paints a neutral row-rhythm fill on any reserved-but-unpainted slot, covering all three blank sources: windowed top/bottom spacers, windowed cells not yet painted, AND inline-mode cells whose paint is deferred by `content-visibility: auto`.
 
 **Rationale:**
 - Render-ahead alone can be outrun by a fast fling (R01); the backstop guarantees the invariant unconditionally.
-- The spacer regions, not just unpainted cells, currently show through as "card background" — both must be covered.
+- The blank is not only a windowing artifact. Inline mode (≤1200 rows / ≤600 messages) defers paint via `content-visibility: auto` + `contain-intrinsic-size` (`dev-card.css` `#inline-content-visibility`), so an off-screen inline cell renders as an empty intrinsic-size box — card background shows through during fast scroll exactly as a windowed spacer does. The invariant must hold in both modes or it only half-holds.
 
 **Implications:**
-- `computeWindow` gains direction-aware overscan; spacers render a fill instead of transparency; cells render a skeleton until their content paints (gated off the height index / a painted flag), all CSS/DOM-driven [L06].
+- `computeWindow` gains direction-aware overscan (windowed); windowed spacers + unpainted windowed cells render a fill instead of transparency; inline `content-visibility` cells paint a neutral fill on their contained (deferred-paint) box so the intrinsic-size placeholder is never bare. All CSS/DOM-driven [L06].
 
 #### [P02] Overscan becomes directional and delegate-tunable (DECIDED) {#p02-directional-overscan}
 
@@ -217,11 +217,13 @@ These inform the candidate option sets the gallery cards present; the *decisions
 
 #### [P06] Single per-tool collapse-default table (DECIDED) {#p06-collapse-table}
 
-**Decision:** A single, plainly-editable map (tool kind → `defaultCollapsed: boolean`) is the source of truth for which blocks mount collapsed, applied to live *and* historical turns.
+**Decision:** A single, plainly-editable map (tool kind → `defaultCollapsed: boolean`) is the source of truth for which blocks mount collapsed, applied to live *and* historical turns. **Default-collapse applies even in-flight:** a collapsed live tool block withholds its body (the streaming output) while the header keeps tracking phase via its lifecycle dot (in-flight → success/error). The user opts these noisy tools into "I don't need to watch them," so hiding the streaming body is the intended behavior, not a regression.
 
-**Rationale:** The user asked for a simple table to flip defaults per tool; centralizing also removes the scattered `defaultFolded` idioms.
+**Rationale:** The user asked for a simple table to flip defaults per tool; centralizing also removes the scattered `defaultFolded` idioms. The header (not the body) carries the phase signal, so a collapsed in-flight block still shows liveness.
 
-**Implications:** A new `tool-collapse-defaults.ts` map; the dispatch site reads it (replacing `historyCollapsed === true`-only gating); per-block `defaultFolded` props defer to the table.
+**Implications:**
+- A new `tool-collapse-defaults.ts` map; the dispatch site reads it (replacing `historyCollapsed === true`-only gating); per-block `defaultFolded` props defer to the table.
+- **[L26] mount identity:** the dispatch site currently branches `wrapped : unwrapped`; with the table it **always** wraps a noisy block in `ToolBlockHistoryCollapse`, so the React key moves to the wrapper. For a given turn the wrapping is stable across the live→committed transition (a live turn's wrap policy is table-derived from kind, which never changes), so mount identity holds and no remount/scroll-jump occurs. Step 9 verifies a live Bash that streams-then-collapses does not remount.
 
 #### [P07] Default-collapse seed set (DECIDED) {#p07-collapse-seed} 
 
@@ -277,12 +279,24 @@ These inform the candidate option sets the gallery cards present; the *decisions
 
 #### Partial-copy design {#partial-copy-design}
 
-The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per block, `startOffset`/`endOffset` (JS string indices into the source text). The reconstruction pipeline:
+**The hard reality: an assistant row is NOT one markdown string.** Per `CodeRowBody` (`dev-card-transcript.tsx`), a row interleaves a *sequence* of heterogeneous blocks — multiple `TugMarkdownBlock`s (one per `assistant_text` message, each with its own `streamingPath` source string), `DevThinkingBlock`s, and **tool blocks** between them. A user selection can run prose → Bash block → more prose. There is no single source string to substring; reconstruction must walk the selection across the heterogeneous sequence and stitch per-block markdown in document order. This is the genuinely hard part [P03] commits to.
 
-1. **Attribution** — each rendered top-level block element carries `data-md-start`/`data-md-end` (the source range it was produced from).
-2. **Range → source span** — on copy, read the live `Selection`; for its anchor/focus, walk to the nearest ancestor carrying `data-md-*`; take `min(start)`..`max(end)` across all touched blocks (block-level per [Q02]).
-3. **Slice + normalize** — slice the source markdown to that span; trim partial leading/trailing whitespace to block boundaries; atom chips inside the span serialize via `formatAtomTextForCopy`; fenced code is included verbatim (its fence offsets are inside the block range).
-4. **Full-row path** — the COPY button writes `turnEntryToMarkdown(turn)` (already markdown), unchanged.
+The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per markdown block, `startOffset`/`endOffset` (JS string indices into *that message's* source text), and `buildBlockElement` (`render-incremental.ts`) is the single point where the `.tugx-md-block` wrapper is constructed. Pipeline:
+
+1. **Attribution** — `buildBlockElement` stamps `data-md-start`/`data-md-end` on each `.tugx-md-block` wrapper (the source range *within its message* it was produced from). The wrapper also already sits under a per-message container whose streaming path identifies the source string.
+2. **Selection walk** — on copy, read the live `Selection`; enumerate the top-level transcript blocks it touches **in document order** (markdown blocks, thinking blocks, tool blocks alike), clipping the first and last to the selection boundary.
+3. **Per-block markdown** — emit markdown for each touched block:
+   - *markdown block*: map the touched `Range` portion to `[start, end]` via the nearest `data-md-*` ancestor (block-level per [Q02]); slice that message's source string. Atom chips inside the span serialize via `formatAtomTextForCopy`; fenced code is included verbatim.
+   - *tool block fully/partly inside the selection*: serialize it through the same per-tool markdown path `turnEntryToMarkdown` already uses (reuse, don't reinvent).
+   - *thinking block*: include as the transcript already represents it for copy, or omit per the full-row convention — match `turnEntryToMarkdown`.
+4. **Stitch** — join the per-block markdown in order with the same inter-block spacing `turnEntryToMarkdown` uses, so a whole-row selection reproduces the full-row COPY output exactly.
+5. **Full-row path** — the COPY button writes `turnEntryToMarkdown(turn)` (already markdown), unchanged; the partial path is the selection-scoped generalization of it.
+
+**Pure/DOM split for tests** ([Q02], Steps 6–7): the offset arithmetic — given a touched block's `{start, end}` and the selection's clipped char positions → the source slice range, and the order-preserving stitch of per-block strings — is pure and `bun:test`-able. The DOM-dependent part — resolving a live `Selection`/`Range` to the ordered set of touched blocks and their clip positions — is verified via `just app-test`. No fake DOM.
+
+#### Inline-mode paint deferral {#inline-content-visibility}
+
+Below the windowed thresholds the transcript mounts every cell but defers off-screen *paint* via `content-visibility: auto` + `contain-intrinsic-size` (`dev-card.css`). An off-screen inline cell therefore renders as an empty intrinsic-size box with no painted content — bare card background shows through during fast scroll, the same visual defect as a windowed spacer. The never-blank invariant ([P01]) covers this leg by painting a neutral fill behind the cell so the deferred-paint box is never transparent. This path has no `computeWindow` and no spacers, so Step 1's overscan does nothing here — only Step 2's fill closes it.
 
 #### State Zone Mapping (tugdeck/tugways) {#state-zone-mapping}
 
@@ -290,7 +304,8 @@ The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per block, 
 |-------|------|-----------|-----|
 | scroll direction / last scrollTop | appearance/local-data | `useRef` + DOM read in scroll handler | [L06], [L22] |
 | leading/trailing overscan config | structure (prop/delegate) | prop value, no runtime state | — |
-| skeleton-fill visibility (spacer + unpainted cell) | appearance | CSS + DOM driven by height index / painted flag | [L06] |
+| skeleton-fill visibility (windowed spacer + unpainted cell) | appearance | CSS + DOM driven by height index / painted flag | [L06] |
+| inline `content-visibility` cell fill (deferred-paint box) | appearance | CSS-only neutral fill behind the cell | [L06] |
 | per-tool collapse-default table | structure (constant) | pure module map, no state | — |
 | live-turn collapse boolean | local-data | `useState` + `ToolBlockExpansionState` write-through, [A9]-persisted | [L24], [L26] |
 | selection→markdown copy result | transient (event-handler local) | computed in COPY handler, no persistent state | [L07] |
@@ -371,28 +386,31 @@ The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per block, 
 
 ---
 
-#### Step 2: Never-blank skeleton backstop {#step-2}
+#### Step 2: Never-blank skeleton backstop (both render modes) {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `feat(tugways): skeleton fill so windowed rows never expose bare background [L06]`
+**Commit:** `feat(tugways): skeleton fill so windowed AND inline rows never expose bare background [L06]`
 
-**References:** [P01] Never-blank, [Q03] Skeleton appearance, Risk R01, (#p01-never-blank, #q03-skeleton-appearance)
+**References:** [P01] Never-blank (both modes), [Q03] Skeleton appearance, Risk R01, (#p01-never-blank, #q03-skeleton-appearance, #inline-content-visibility)
 
 **Artifacts:**
-- `tug-list-view.css` — spacer + unpainted-cell neutral fill (row-rhythm), CSS-only [L06].
-- `tug-list-view.tsx` — mark spacers/cells so the fill applies until content paints (reuse the `min-height` lock + a painted flag/`content-visibility` signal).
+- `tug-list-view.css` — windowed top/bottom spacer + unpainted-cell neutral fill (row-rhythm), CSS-only [L06].
+- `tug-list-view.tsx` — mark spacers/cells so the fill applies until content paints (reuse the `min-height` lock + a painted flag).
+- `dev-card.css` — give the inline-mode `content-visibility: auto` cell a neutral fill on its contained (deferred-paint) box so the `contain-intrinsic-size` placeholder is never bare. This is the inline-mode leg of the invariant ([#inline-content-visibility]).
 
 **Tasks:**
-- [ ] Give top/bottom spacers a neutral fill (not transparent) so scrolled-past-but-unmounted regions never read as card background.
-- [ ] For a cell in the window whose content has not yet painted, render a flat neutral fill at its reserved height ([Q03] default flat).
-- [ ] Confirm the fill clears the moment real content paints (no lingering skeleton over content).
+- [ ] Windowed: give top/bottom spacers a neutral fill (not transparent) so scrolled-past-but-unmounted regions never read as card background.
+- [ ] Windowed: for a cell in the window whose content has not yet painted, render a flat neutral fill at its reserved height ([Q03] default flat).
+- [ ] Inline: paint the same neutral fill behind `content-visibility: auto` cells so the deferred-paint intrinsic-size box shows row-rhythm fill, not card background.
+- [ ] Confirm the fill clears the moment real content paints (no lingering skeleton over content), in both modes.
 
 **Tests:**
 - [ ] Unit: a pure helper deciding "fill vs content" from (measured height, painted flag) — table-driven.
 
 **Checkpoint:**
-- [ ] `just app-test` scroll scenario (or `verify`) — fast-scroll a >1200-row transcript; assert no frame shows bare card background. Record `VERDICT: PASS|FAIL`.
+- [ ] `just app-test` / `verify` windowed scenario — fast-scroll a >1200-row transcript; assert no frame shows bare card background. Record `VERDICT: PASS|FAIL`.
+- [ ] `just app-test` / `verify` inline scenario — fast-scroll a <600-message transcript (the `content-visibility` path); assert no bare background. Record `VERDICT: PASS|FAIL`.
 - [ ] Decide [Q03] (default flat) and note it in the commit.
 
 ---
@@ -468,17 +486,18 @@ The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per block, 
 **References:** [P03] Partial copy, [Q02] Offset attribution, Spec (#partial-copy-design)
 
 **Artifacts:**
-- `tug-markdown-view.tsx` / `tug-markdown-block.tsx` — stamp `data-md-start`/`data-md-end` on each rendered top-level block from the parser's `startOffset`/`endOffset`.
+- `lib/markdown/render-incremental.ts` — `buildBlockElement` stamps `data-md-start`/`data-md-end` on the `.tugx-md-block` wrapper from the block's existing `startOffset`/`endOffset`. This is the single construction point for every markdown surface (both `TugMarkdownBlock` modes and `TugMarkdownView` route through it), so attribution lands once here, not in the view/block components.
+- `lib/markdown/selection-to-markdown.ts` (new) — the **pure** offset arithmetic: given a touched block's `{start, end}` + clipped selection char positions → source slice range, and the order-preserving stitch of per-block strings.
 
 **Tasks:**
-- [ ] Thread per-block offsets to the rendered element as data attributes.
-- [ ] Spike a `rangeToSourceSpan(selection, root)` helper: walk touched blocks, return `[minStart, maxEnd]`.
+- [ ] Stamp `data-md-start`/`data-md-end` in `buildBlockElement` (the reconciler preserves wrapper identity across deltas, so attributes persist).
+- [ ] Author the pure `selection-to-markdown` arithmetic (slice-range + stitch); keep it DOM-free so it is `bun:test`-able.
 
 **Tests:**
-- [ ] Unit: `rangeToSourceSpan` over a fixture DOM + offset map → correct block-level span for several selection shapes (mid-paragraph, across blocks, inside a list).
+- [ ] Unit (`bun:test`, pure): slice-range for several clip shapes (mid-block start, mid-block end, whole block); order-preserving stitch of a heterogeneous block list. **No DOM in this test** — the `Range`→touched-blocks resolution is tested in Step 7 via `just app-test`, per the [Q02] pure/DOM split.
 
 **Checkpoint:**
-- [ ] `bun test` for the new helper passes; attributes visible in the gallery DOM.
+- [ ] `cd tugdeck && bun test` for `selection-to-markdown` passes; `data-md-*` attributes visible on `.tugx-md-block` wrappers in the gallery DOM.
 
 ---
 
@@ -486,22 +505,25 @@ The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per block, 
 
 **Depends on:** #step-6
 
-**Commit:** `feat(tugways): copy reconstructs markdown from selection, not plain text [L07]`
+**Commit:** `feat(tugways): copy reconstructs markdown across a selection's blocks, not plain text [L07]`
 
-**References:** [P03] Partial copy, Risk R02, Spec (#partial-copy-design)
+**References:** [P03] Partial copy, Risk R02, Spec (#partial-copy-design), (#partial-copy-design)
 
 **Artifacts:**
-- `dev-card-transcript.tsx` `useTranscriptCellMenu.handleCopy` (+ keyboard COPY) — replace `selection.toString()` with: map Range → source span ([#step-6]) → slice source markdown → normalize; atom chips via `formatAtomTextForCopy`; fenced code verbatim.
+- `lib/markdown/range-to-blocks.ts` (new) — the **DOM-dependent** half: resolve a live `Selection`/`Range` → the ordered set of touched top-level transcript blocks (markdown / thinking / tool) + the clip char-positions for the first/last markdown block.
+- `dev-card-transcript.tsx` `useTranscriptCellMenu.handleCopy` (+ keyboard COPY) — replace `selection.toString()` with: `range-to-blocks` → per-block markdown (markdown blocks via the pure `selection-to-markdown` slice over their message source; tool blocks via the `turnEntryToMarkdown` per-tool path) → stitch in order.
 
 **Tasks:**
-- [ ] Route the cell COPY + context-menu COPY through the reconstruction; keep the full-row COPY button on `turnEntryToMarkdown`.
-- [ ] Handle the source-text access: the assistant block reads its source from the streaming path/committed message; thread it to the copy handler.
+- [ ] Implement `range-to-blocks` walking touched blocks in document order across the heterogeneous sequence ([#partial-copy-design]).
+- [ ] Wire the cell COPY + context-menu COPY through the reconstruction; keep the full-row COPY button on `turnEntryToMarkdown` (the whole-row selection must reproduce it exactly).
+- [ ] Source-text access: each markdown block's source is its message's streaming-path value; thread the per-message sources + the tool-block serializer into the handler.
 
 **Tests:**
-- [ ] Round-trip unit: copied markdown re-parses (`parse-markdown-to-sanitized-blocks`) to the same block structure as the selected source span, across the R02 corpus (paragraph, list, fenced code, inline code, atom chip).
+- [ ] Round-trip unit (`bun:test`, pure): a stitched per-block markdown list re-parses (`parse-markdown-to-sanitized-blocks`) to the expected block structure across the R02 corpus (paragraph, list, fenced code, inline code, atom chip, prose→tool-block→prose).
+- [ ] Real-app (`just app-test`): select sub-ranges in a live transcript (within one block, across blocks, across a tool block), copy, and assert the clipboard markdown matches expectation — this exercises the `range-to-blocks` DOM walk that `bun:test` cannot. Recipe ends with `VERDICT: PASS|FAIL`.
 
 **Checkpoint:**
-- [ ] `bun test` round-trip passes; manual paste into the prompt entry reproduces formatting.
+- [ ] `cd tugdeck && bun test` round-trip passes; `just app-test` selection cases PASS; manual paste into the prompt entry reproduces formatting.
 
 ---
 
@@ -538,7 +560,7 @@ The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per block, 
 
 **Tasks:**
 - [ ] Add the table with [P07] seed; export a `collapseDefaultFor(kind)` resolver.
-- [ ] Replace the `historyCollapsed === true`-only gating so live noisy blocks also default-collapse; preserve [L26] mount identity (wrapper type/key unchanged).
+- [ ] Replace the `historyCollapsed === true`-only gating so live noisy blocks also default-collapse; **always** wrap noisy kinds in `ToolBlockHistoryCollapse` so the wrap policy is kind-stable across the live→committed transition ([P06] [L26]).
 - [ ] Migrate scattered `defaultFolded` props to defer to the table.
 
 **Tests:**
@@ -546,6 +568,7 @@ The markdown parser (`parse-markdown-to-sanitized-blocks.ts`) emits, per block, 
 
 **Checkpoint:**
 - [ ] `bun test` passes; live Read/Grep/Bash blocks mount collapsed in the gallery/`verify`; skill/task/question/web stay expanded.
+- [ ] `verify`: a **live, in-flight Bash** streams to completion then settles collapsed with **no remount and no scroll jump** ([P06] [L26]) — the header dot tracks in-flight → success the whole time.
 
 ---
 
