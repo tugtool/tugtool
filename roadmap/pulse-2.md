@@ -388,7 +388,7 @@ The bridge task adds one select arm:
     Ok(frame)       ->
       inspected = InspectedPayload::from_slice(&frame.payload)
       msg_type  = inspected.msg_type
-      session   = first-field "tug_session_id" (spliced by splice_tug_session_id)
+      session   = inspected.tug_session_id          // new additive field, see below
       if msg_type == "replay_started":  mute.insert(session); continue
       if msg_type == "replay_complete": mute.remove(session); continue
       if msg_type not in ALLOWLIST (List L01): continue
@@ -401,6 +401,12 @@ The `fact_rx` mpsc channel, `PulseFactSender`, and `is_pulse_fact_line` are
 deleted; enabled/teardown/respawn/seed semantics transfer verbatim to the new arm.
 The daemon receives the spliced payload **unmodified** — its first field is
 `tug_session_id`.
+
+`InspectedPayload` does not currently capture the spliced session id; it gains an
+**additive** field — `#[serde(default)] pub tug_session_id: Option<String>` — which
+is zero-risk for the existing dispatcher/merger callers (the deserializer already
+ignores unknown top-level fields, and `None` on un-spliced payloads is handled by
+the bridge as "no session → not mutable, forward if allowlisted").
 
 **List L01: The forward allowlist** {#l01-allowlist}
 
@@ -427,8 +433,10 @@ beats:
   `tool_progress`-sourced duplicates ignored); closes the open call into a
   completed event `{ tool_name, input, is_error, output, elapsedMs }`. Orphan
   results (no open call — daemon started mid-turn) are ignored.
-- `assistant_text` → delta accumulation keyed `(msg_id, block_index)`; harvest per
-  [P04]'s high-water rule at beat build.
+- `assistant_text` → accumulation keyed `(msg_id, block_index)` under the deck
+  reducer's full rule: `is_partial: true` **appends** the delta, `is_partial:
+  false` **replaces** the block (the synthetic / slash-command paths emit complete
+  blocks); harvest per [P04]'s high-water rule at beat build.
 - `task_started` / `task_updated` → job events (description retained for the
   terminal flip, as v1 did).
 - `api_retry` → retry events, source-throttled (attempt 1, then every 5th — v1's
@@ -437,7 +445,10 @@ beats:
 - `turn_complete` / `turn_cancelled` → turn-boundary events (`result` excerpt).
 
 Trigger counting per [P03] rides the same accumulation. Event lists are bounded
-(newest kept) by the scheduler caps in Spec S04.
+(newest kept) by the scheduler caps in Spec S04. Scope state is swept on
+inactivity: a scope with no frames and no pending beat for ~30 minutes is dropped
+(checked at the beat-poll cadence) — session count is bounded in practice, but the
+sweep makes the bound explicit rather than accidental.
 
 **Spec S03: Digest v6 rendering** {#s03-digest-v6}
 
@@ -481,7 +492,9 @@ testable, as v1). The dispatched beat is `{ id, scope, events, harvestedText }`.
 | `pulse_fact_tx` field + `set_pulse_fact_tx` + test call-site args | `tugcast feeds/agent_supervisor.rs` |
 | `is_pulse_fact_line` + its test; `PulseFactSender`; `fact_rx` channel | `tugcast feeds/pulse.rs` |
 | `PULSE_FACT = 0x81` const + name | `tugcast-core protocol.rs`, `tugdeck/src/protocol.ts` |
-| `PulseFact` type + `isPulseFact` guard | `tugcode/src/pulse/types.ts` |
+
+(`PulseFact`/`isPulseFact` and the v1 scheduler/digest API are deleted earlier, in
+#step-3's swap — see that step; this table is #step-4's flip inventory.)
 
 **Spec S06: Prompt v6 contract** {#s06-prompt-v6}
 
@@ -523,8 +536,9 @@ only deck edit is removing the `PULSE_FACT` constant from `protocol.ts`.
 | `PULSE_FORWARD_ALLOWLIST` | const | `tugcast feeds/pulse.rs` | List L01; doc comment names the upstream union |
 | `PulseBridgeConfig.code_tx` | field | `tugcast feeds/pulse.rs` | replaces the fact mpsc; subscribed in-task (Spec S01) |
 | replay mute set | local | `tugcast feeds/pulse.rs` | `HashSet<String>` keyed on spliced `tug_session_id` |
-| `MultiScopeScheduler` (rework of `BeatScheduler`) | class | `tugcode/src/pulse/scheduler.ts` | Spec S04: per-scope queues, gate, round-robin |
-| `buildDigest` (rework) | fn | `tugcode/src/pulse/digest.ts` | Spec S03 single-scope rendering with real excerpts |
+| `InspectedPayload.tug_session_id` | field | `tugcast feeds/payload_inspector.rs` | additive `#[serde(default)]` capture of the spliced id (Spec S01) |
+| `MultiScopeScheduler` | class | `tugcode/src/pulse/scheduler.ts` | Spec S04; **added beside** `BeatScheduler` in #step-2, swap + old-API deletion in #step-3 |
+| `buildScopeDigest` | fn | `tugcode/src/pulse/digest.ts` | Spec S03 single-scope rendering; added beside v1's `buildDigest`/`beatScopes` in #step-2, which die in #step-3 |
 | `PULSE_SYSTEM_PROMPT` (v6) | const | `tugcode/src/pulse/posture.ts` | Spec S06; pinned by #step-1 |
 | stdin intake (rework) | fn | `tugcode/src/pulse/main-pulse.ts` | wire frames → intake → scheduler; `gated` stderr diagnostic added |
 | stdio/scheduler/digest tests (rework) | tests | `tugcode/src/pulse/__tests__/` | wire-frame fixtures; gated-beat assertions |
@@ -625,25 +639,32 @@ only deck edit is removing the `PULSE_FACT` constant from `protocol.ts`.
 **Artifacts:**
 - `pulse/intake.ts`: typed parse of `{tug_session_id} & OutboundMessage` lines +
   `ScopeDigestState` per Spec S02 (open calls, first-result-wins, orphan-result
-  tolerance, text accumulation + high-water harvest, retry stride, trigger
-  counting).
-- `pulse/scheduler.ts`: `MultiScopeScheduler` per Spec S04.
-- `pulse/digest.ts`: v6 single-scope renderer per Spec S03 (absorbing v1's
-  `toolHint`/`clip`/`ordinal` phrasing helpers from the doomed producer where they
-  fit).
-- `pulse/posture.ts`: `PULSE_SYSTEM_PROMPT` v6 from the spike.
-- `pulse/types.ts`: `PulseFact`/`isPulseFact` dropped; `PulseLine` unchanged.
+  tolerance, text accumulation with append/replace + high-water harvest, retry
+  stride, trigger counting, inactivity sweep).
+- `pulse/scheduler.ts`: `MultiScopeScheduler` per Spec S04, **added beside**
+  `BeatScheduler`.
+- `pulse/digest.ts`: `buildScopeDigest`, the v6 single-scope renderer per Spec
+  S03, **added beside** v1's `buildDigest`/`beatScopes` (absorbing the
+  `toolHint`/`clip`/`ordinal` phrasing helpers from the doomed producer where
+  they fit).
+- `pulse/posture.ts`: `PULSE_SYSTEM_PROMPT` v6 from the spike (safe in place — no
+  test pins the prompt text).
 - Unit tests for all of the above (typed fixtures, fake clock).
 
 **Tasks:**
+- [ ] **Strictly additive**: `BeatScheduler`, `buildDigest`/`beatScopes`,
+      `PulseFact`/`isPulseFact`, and their tests remain untouched so
+      `main-pulse.ts` (reworked in #step-3) still compiles and this commit's
+      checkpoint stays green.
 - [ ] Import frame types from `../types.ts`; no hand-rolled shapes anywhere.
 - [ ] Keep all v1 timing constants and `TUGPULSE_*` env overrides.
 - [ ] Surface drop/gate counts for the stderr diagnostics (#step-3).
 
 **Tests:**
 - [ ] Intake: open→close with duration; first-result-wins under a duplicate;
-      orphan result ignored; text harvest yields only since-last-beat text,
-      clipped; trigger counts per [P03].
+      orphan result ignored; text append on `is_partial: true` and replace on
+      `is_partial: false`; harvest yields only since-last-beat text, clipped;
+      trigger counts per [P03]; inactive scope swept, active scope retained.
 - [ ] Scheduler: per-scope coalesce; global min-interval across scopes; gate holds
       text-only accumulation; round-robin alternates two eligible scopes; stale
       reply dropped; caps respected; idle silent.
@@ -669,6 +690,10 @@ only deck edit is removing the `PULSE_FACT` constant from `protocol.ts`.
   driver → shaped line → stdout, with `scopes: [beat.scope]`; per-beat stderr
   diagnostic now distinguishes `gated` / `PASS` / `timeout` / `line Nch` and names
   the event count; `--seed`/`--claude-path`/env handling unchanged.
+- **The v1 API dies here**: `BeatScheduler`, `buildDigest`/`beatScopes`,
+  `PulseFact`/`isPulseFact` (`pulse/types.ts` keeps `PulseLine` only), and their
+  tests are deleted in the same commit as the swap — nothing imports them after
+  `main-pulse.ts` moves over.
 - Reworked `__tests__/stdio.test.ts` + fixture: scripted spliced wire-frame lines
   (two sessions interleaved, an error arc, a text-only stretch) against
   `fake-claude.mjs`.
@@ -677,6 +702,8 @@ only deck edit is removing the `PULSE_FACT` constant from `protocol.ts`.
 - [ ] Keep shutdown/SIGTERM/stdin-EOF semantics and `driver.ts` untouched.
 - [ ] Verify the fake-claude fixture still exercises sequence pairing (a timeout
       slot mid-run).
+- [ ] After the swap, `grep -rn "BeatScheduler\|isPulseFact" tugcode/src` finds
+      nothing.
 
 **Tests:**
 - [ ] Stdio: wire frames in → well-formed single-scope `pulse` lines out; a
