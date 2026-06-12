@@ -438,6 +438,19 @@ export async function defaultJsonlReader(
   }
 }
 
+/**
+ * Count newline characters without allocating a split array — the
+ * `perf.replay_read` line count runs against whale-sized JSONLs where
+ * a `split("\n")` just for counting would double the read cost.
+ */
+function countNewlines(s: string): number {
+  let n = 0;
+  for (let i = s.indexOf("\n"); i !== -1; i = s.indexOf("\n", i + 1)) {
+    n += 1;
+  }
+  return n;
+}
+
 function logReplay(event: string, fields: Record<string, unknown>): void {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(fields)) {
@@ -2254,6 +2267,8 @@ export class SessionManager {
   private replayLiveBufferMax: number;
   /** Replay telemetry sink forwarded into `translateJsonlSession`. */
   private replayTelemetry: ReplayTelemetry | undefined;
+  /** Translate-loop slice override; `undefined` → translator default. */
+  private replayTimeSliceMs: number | undefined;
   /**
    * Read-only handle on tugcast's `sessions.db`. Opened once at
    * construction (so each `runReplay` call reuses one prepared statement
@@ -2368,6 +2383,14 @@ export class SessionManager {
       replayLiveBufferMax?: number;
       replayTelemetry?: ReplayTelemetry;
       /**
+       * Override for the translate loop's continuous-work budget
+       * (`TranslateSessionOptions.timeSliceMs`). Tests pass `0` to
+       * force a yield after every message — the deterministic stand-in
+       * for "the iterator stalls mid-replay" that the hard-timeout
+       * test needs. Omit → the translator's default slice.
+       */
+      replayTimeSliceMs?: number;
+      /**
        * Override for the sessions.db path. Tests pass a tempfile so
        * they don't read the real user's database. Pass `null` to
        * explicitly skip opening any DB (cold-boot fallback paths
@@ -2406,6 +2429,7 @@ export class SessionManager {
     this.replayLiveBufferMax =
       options?.replayLiveBufferMax ?? REPLAY_LIVE_BUFFER_MAX;
     this.replayTelemetry = options?.replayTelemetry;
+    this.replayTimeSliceMs = options?.replayTimeSliceMs;
     this.contextBreakdownEmitter = options?.contextBreakdownEmitter ?? null;
     this.openSessionsDb(options?.sessionsDbPath);
   }
@@ -3136,9 +3160,18 @@ export class SessionManager {
       claude_session_id: claudeSessionId,
       jsonl_path: jsonlPath,
     });
+    logSessionLifecycle("perf.replay_requested", {
+      tug_session_id: this.sessionId,
+    });
 
     const startedAt = Date.now();
     const rawInput = await this.jsonlReader(jsonlPath);
+    logSessionLifecycle("perf.replay_read", {
+      tug_session_id: this.sessionId,
+      ms: Date.now() - startedAt,
+      bytes: rawInput.kind === "ok" ? rawInput.jsonl.length : 0,
+      lines: rawInput.kind === "ok" ? countNewlines(rawInput.jsonl) : 0,
+    });
     // Thread the claude session id into the replay input so the
     // synthesized `system_metadata` IPC at the top of replay carries
     // the right session_id field. Only the `ok` variant carries
@@ -3202,6 +3235,7 @@ export class SessionManager {
     // in [Step 5.6](roadmap/tugplan-dev-mid-turn-replay.md#step-5-6),
     // wrapping this path with a pre-pass over `sessions.db`.
     let count = 0;
+    let messagesEmitted = 0;
     let lastProgressPosted = 0;
     const progressBatch = 16;
     let aborted:
@@ -3221,8 +3255,10 @@ export class SessionManager {
     // event.
     let pendingRowSyntheticsInjected = false;
 
+    const translateStartedAt = Date.now();
     const iter = translateJsonlSession(input, {
       telemetry: this.replayTelemetry,
+      timeSliceMs: this.replayTimeSliceMs,
       // A cycle left open at end-of-JSONL has no live `ActiveTurn` to
       // continue it on a cold resume (`inflight === null`) — ask the
       // translator to synthesize its terminal `turn_complete` so the
@@ -3276,6 +3312,7 @@ export class SessionManager {
             continue;
           }
           writeLine(msg);
+          messagesEmitted += 1;
           // Step 5.6 — pending-row replay. The translator's first
           // emit is `replay_started`; we inject synthetic
           // `add_user_message` frames for journal rows whose
@@ -3326,6 +3363,7 @@ export class SessionManager {
       // replay_complete to close the bracket.
       if (aborted === null && bufferedReplayComplete !== null) {
         writeLine(bufferedReplayComplete);
+        messagesEmitted += 1;
       }
     } finally {
       if (timeoutHandle !== null) clearTimeout(timeoutHandle);
@@ -3344,6 +3382,12 @@ export class SessionManager {
     }
 
     const elapsedMs = Date.now() - startedAt;
+    logSessionLifecycle("perf.replay_translate", {
+      tug_session_id: this.sessionId,
+      ms: Date.now() - translateStartedAt,
+      messages: messagesEmitted,
+      turns: count,
+    });
 
     if (aborted?.kind === "timeout") {
       const complete: ReplayComplete = {

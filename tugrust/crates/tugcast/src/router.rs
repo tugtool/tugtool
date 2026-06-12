@@ -814,11 +814,29 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                         return;
                                     }
                                 }
-                                Err(_lagged) => {
+                                Err(lagged) => {
+                                    // `Lagged(n)` is the only variant — `n` is how many
+                                    // frames this client's receiver fell behind (skipped).
+                                    let tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(
+                                        skipped,
+                                    ) = lagged;
+                                    // Session-lifecycle drop sensor: lag on a per-client
+                                    // stream is the one place CODE_OUTPUT frames can be
+                                    // lost (the bridge→merger hop is awaited mpsc). The
+                                    // Replay policy recovers from its buffer; Warn does
+                                    // not. Either way the count lands in the waterfall
+                                    // grep stream.
+                                    tracing::warn!(
+                                        target: "dev::session-lifecycle",
+                                        event = "perf.frames_lagged",
+                                        client_id,
+                                        feed_id = %feed_id,
+                                        skipped,
+                                    );
                                     let policy = lag_policies.get(&feed_id).cloned().unwrap_or(LagPolicy::Warn);
                                     match policy {
                                         LagPolicy::Bootstrap => {
-                                            warn!(client_id, %feed_id, "Stream lagged, re-entering BOOTSTRAP");
+                                            warn!(client_id, %feed_id, skipped, "Stream lagged, re-entering BOOTSTRAP");
                                             state = ClientState::Bootstrap {
                                                 feed_id,
                                                 buffer: Vec::new(),
@@ -826,7 +844,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                             break;
                                         }
                                         LagPolicy::Replay(replay_buf) => {
-                                            warn!(client_id, %feed_id, "Stream lagged, replaying from buffer");
+                                            warn!(client_id, %feed_id, skipped, "Stream lagged, replaying from buffer");
                                             // Send lag_recovery control frame
                                             if !send_control_json(&mut socket, feed_id, &serde_json::json!({
                                                 "type": "lag_recovery",
@@ -854,7 +872,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                             // Continue live streaming
                                         }
                                         LagPolicy::Warn => {
-                                            warn!(client_id, %feed_id, "Stream lagged, frames lost");
+                                            warn!(client_id, %feed_id, skipped, "Stream lagged, frames lost");
                                         }
                                     }
                                 }

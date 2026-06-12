@@ -76,13 +76,17 @@ import type {
 const IPC_VERSION = 2;
 
 /**
- * Default batch size for the session-level async iterator. After
- * yielding this many OutboundMessages, the iterator awaits a yielded
- * `setImmediate` so the IPC pipe stays responsive during replay of
- * very large JSONLs (the largest observed session JSONLs run to tens
- * of thousands of lines).
+ * Default continuous-work budget for the session-level async
+ * iterator. After this much uninterrupted translate work the
+ * iterator awaits one macrotask so the IPC pipe stays responsive
+ * during replay of very large JSONLs (the largest observed session
+ * JSONLs run to tens of thousands of lines). Deliberately coarse —
+ * a medium session translates inside one slice — and deliberately
+ * not zero: while delivery remains one IPC line per message, the
+ * slice doubles as the flood guard for downstream broadcast
+ * capacity.
  */
-const DEFAULT_BATCH_SIZE = 16;
+const DEFAULT_TIME_SLICE_MS = 8;
 
 /**
  * One content block inside a JSONL `message.content` array. Fields are
@@ -1420,14 +1424,27 @@ export type ReplayInput =
   | { kind: "unreadable"; message: string };
 
 export interface TranslateSessionOptions {
-  /** Number of OutboundMessages to yield before awaiting a yielded
-   * `setImmediate`. Default: {@link DEFAULT_BATCH_SIZE} (16). */
-  batchSize?: number;
+  /** Continuous-work budget before the translate loop yields the
+   * event loop once. Default: {@link DEFAULT_TIME_SLICE_MS} (8ms).
+   * The slice keeps the IPC pipe responsive on whale-sized sessions
+   * without taxing the common case (a medium session translates in
+   * ~2ms — zero yields), and deliberately stays coarse (not zero) as
+   * the flood guard for the broadcast channel while delivery remains
+   * per-frame. */
+  timeSliceMs?: number;
+  /** Clock for the time-slice check. Default `performance.now`.
+   * Tests inject a fake to force or forbid slice expiry
+   * deterministically. */
+  now?: () => number;
+  /** Test seam — invoked immediately before each event-loop yield.
+   * Lets tests observe that (and how often) the slice fired without
+   * racing real timers. Production never sets it. */
+  onYield?: () => void;
   /** Telemetry sink. Default: stderr-forwarding. Tests inject a
    * capturing sink. */
   telemetry?: ReplayTelemetry;
-  /** Disable the inter-batch yield. Tests set this to keep
-   * synchronous; production never sets it. */
+  /** Disable the time-slice yield entirely. Tests set this to keep
+   * the translate synchronous; production never sets it. */
   disableYield?: boolean;
   /**
    * When `true`, an open turn at EOF that no live turn will resolve
@@ -1493,16 +1510,20 @@ export interface TranslateSessionResult {
  * `replay_complete` carries an `error` payload identifying the
  * failure mode; tugdeck surfaces this via `lastReplayResult`.
  *
- * Yields are batched so a very long JSONL doesn't hold the IPC pipe
- * for seconds. The caller awaits the iterator one OutboundMessage at
- * a time; the inter-batch `setImmediate` yields the event loop so
- * the IPC writer can drain.
+ * The loop yields the event loop on a TIME budget, not a count: after
+ * `timeSliceMs` (default 8ms) of continuous work it awaits one
+ * macrotask so the IPC writer can drain and inbound verbs stay
+ * responsive. A medium session translates inside a single slice
+ * (zero yields); a whale pays a handful — not the hundreds of forced
+ * idles the old per-16-messages pacing cost (~600ms at 8k messages).
  */
 export async function* translateJsonlSession(
   input: ReplayInput,
   opts: TranslateSessionOptions = {},
 ): AsyncGenerator<OutboundMessage, TranslateSessionResult> {
-  const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
+  const timeSliceMs = opts.timeSliceMs ?? DEFAULT_TIME_SLICE_MS;
+  const now = opts.now ?? (() => performance.now());
+  const onYield = opts.onYield;
   const telemetry = opts.telemetry ?? DEFAULT_TELEMETRY;
   const yieldBetweenBatches = opts.disableYield !== true;
   const synthesizeDanglingTerminal = opts.synthesizeDanglingTerminal === true;
@@ -1558,7 +1579,7 @@ export async function* translateJsonlSession(
   // post-replay.
   let emittedSystemMetadata = false;
   let sawAnyMalformed = false;
-  let emittedSinceYield = 0;
+  let sliceStartedAt = now();
 
   // Split on newlines without losing trailing-no-newline content. The
   // tail (after the final \n) is included if non-empty so the last
@@ -1679,10 +1700,10 @@ export async function* translateJsonlSession(
     const messages = translateJsonlEntry(parsed, ctx, { suppressTurnComplete });
     for (const msg of messages) {
       yield msg;
-      emittedSinceYield += 1;
-      if (yieldBetweenBatches && emittedSinceYield >= batchSize) {
-        emittedSinceYield = 0;
+      if (yieldBetweenBatches && now() - sliceStartedAt >= timeSliceMs) {
+        onYield?.();
         await yieldToEventLoop();
+        sliceStartedAt = now();
       }
     }
   }
@@ -1756,4 +1777,4 @@ function yieldToEventLoop(): Promise<void> {
 export const REPLAY_NOOP_TELEMETRY = NOOP_TELEMETRY;
 
 /** Re-export for test ergonomics — avoids a separate const import. */
-export { DEFAULT_BATCH_SIZE as REPLAY_DEFAULT_BATCH_SIZE };
+export { DEFAULT_TIME_SLICE_MS as REPLAY_TIME_SLICE_MS };

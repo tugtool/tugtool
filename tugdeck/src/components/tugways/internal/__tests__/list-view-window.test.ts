@@ -228,3 +228,58 @@ describe("offsetForIndex", () => {
     expect(offsetForIndex(3, 0, fixed(40))).toBe(0);
   });
 });
+
+describe("computeWindow — pinnedRange ([L23] selection/focus pin)", () => {
+  const base = {
+    itemCount: 100,
+    scrollTop: 2000, // viewport covers items 50..52 at h=40
+    viewportHeight: 100,
+    overscanCount: 1,
+    estimatedHeightForIndex: fixed(40),
+  };
+
+  test("a pin below the window widens it downward; spacers follow", () => {
+    const plain = computeWindow(base);
+    const pinned = computeWindow({ ...base, pinnedRange: { first: 80, last: 82 } });
+    expect(pinned.firstIndex).toBe(plain.firstIndex);
+    expect(pinned.lastIndex).toBe(83);
+    expect(pinned.topSpacerHeight).toBe(plain.topSpacerHeight);
+    expect(pinned.bottomSpacerHeight).toBe((100 - 83) * 40);
+    expect(pinned.totalHeight).toBe(plain.totalHeight);
+  });
+
+  test("a pin above the window widens it upward", () => {
+    const pinned = computeWindow({ ...base, pinnedRange: { first: 5, last: 7 } });
+    expect(pinned.firstIndex).toBe(5);
+    expect(pinned.topSpacerHeight).toBe(5 * 40);
+  });
+
+  test("a pin inside the window changes nothing", () => {
+    const plain = computeWindow(base);
+    const pinned = computeWindow({
+      ...base,
+      pinnedRange: { first: plain.firstIndex, last: plain.lastIndex - 1 },
+    });
+    expect(pinned).toEqual(plain);
+  });
+
+  test("a pin straddling the window covers both sides", () => {
+    const pinned = computeWindow({ ...base, pinnedRange: { first: 10, last: 90 } });
+    expect(pinned.firstIndex).toBe(10);
+    expect(pinned.lastIndex).toBe(91);
+  });
+
+  test("out-of-range pin bounds clamp to [0, itemCount)", () => {
+    const pinned = computeWindow({ ...base, pinnedRange: { first: -10, last: 500 } });
+    expect(pinned.firstIndex).toBe(0);
+    expect(pinned.lastIndex).toBe(100);
+    expect(pinned.topSpacerHeight).toBe(0);
+    expect(pinned.bottomSpacerHeight).toBe(0);
+  });
+
+  test("null pin behaves exactly as omitted", () => {
+    expect(computeWindow({ ...base, pinnedRange: null })).toEqual(
+      computeWindow(base),
+    );
+  });
+});

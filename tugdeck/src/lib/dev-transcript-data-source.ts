@@ -75,6 +75,7 @@
 
 import { useEffect, useMemo } from "react";
 
+import { recordRowMemoHit } from "@/lib/markdown/parse-counters";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type {
   ActiveTurnSnapshot,
@@ -595,6 +596,63 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
   getVersion(): CodeSessionSnapshot {
     return this._codeSessionStore.getSnapshot();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Row-data equality — the memoization gate for transcript cells
+// ---------------------------------------------------------------------------
+
+/**
+ * Field-wise equality over the row data a transcript cell renders
+ * from. Finalized rows are immutable, so their fields are
+ * reference-stable across snapshots (`turn` is the committed
+ * `TurnEntry` reference, `queued` the queue entry reference) — equal
+ * fields mean the cell would render identical output. The in-flight
+ * row's `activeTurn` projection is rebuilt per snapshot, so it
+ * compares unequal whenever any state changed — exactly the one row
+ * that must stay live.
+ */
+export function sameTranscriptRowData(
+  a: DevRowDescriptor,
+  b: DevRowDescriptor,
+): boolean {
+  return (
+    a.kind === b.kind &&
+    a.turnKey === b.turnKey &&
+    a.turn === b.turn &&
+    a.activeTurn === b.activeTurn &&
+    a.queued === b.queued &&
+    a.perTurnTokens === b.perTurnTokens
+  );
+}
+
+/**
+ * `React.memo` props-equality for transcript cells: every prop except
+ * `row` must be `Object.is`-identical (they all are for a mounted
+ * cell — index, id, kind, stores, renderer callbacks are stable for
+ * the card's lifetime, so any identity change is a real reason to
+ * re-render), then {@link sameTranscriptRowData} decides. A skipped
+ * re-render of a finalized row is the memo-hit the parse-economy
+ * counters report.
+ *
+ * Lives here (React-free, props-generic) so the gate is pure-logic
+ * testable; the cell components in `dev-card-transcript.tsx` wrap
+ * themselves with it.
+ */
+export function transcriptCellPropsEqual<
+  P extends { row: DevRowDescriptor },
+>(prev: P, next: P): boolean {
+  const prevKeys = Object.keys(prev) as Array<keyof P>;
+  const nextKeys = Object.keys(next) as Array<keyof P>;
+  if (prevKeys.length !== nextKeys.length) return false;
+  for (const key of nextKeys) {
+    if (key === "row") continue;
+    if (!(key in prev)) return false;
+    if (!Object.is(prev[key], next[key])) return false;
+  }
+  const equal = sameTranscriptRowData(prev.row, next.row);
+  if (equal) recordRowMemoHit();
+  return equal;
 }
 
 // ---------------------------------------------------------------------------

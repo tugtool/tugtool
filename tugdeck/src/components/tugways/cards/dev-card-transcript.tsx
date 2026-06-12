@@ -115,6 +115,12 @@ import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { CodeSessionStore } from "@/lib/code-session-store";
+import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
+import {
+  snapshotRowParseCounters,
+  type RowParseCountersSnapshot,
+} from "@/lib/markdown/parse-counters";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { Message } from "@/lib/code-session-store/types";
 import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
@@ -122,7 +128,9 @@ import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
   DevTranscriptDataSource,
   readUserMessage,
+  transcriptCellPropsEqual,
   useDevTranscriptDataSource,
+  type DevRowDescriptor,
 } from "@/lib/dev-transcript-data-source";
 import type { PropertyStore } from "@/components/tugways/property-store";
 
@@ -367,17 +375,25 @@ const ASSISTANT_DEFAULT_IDENTIFIER = "Code";
 const USER_IDENTIFIER = "You";
 
 interface UserMessageCellProps extends TugListViewCellProps<DevTranscriptDataSource> {
+  /**
+   * Typed row descriptor, resolved by the host's renderer lambda
+   * (`dataSource.rowAt(index)`) and passed as a prop so the memo gate
+   * ({@link transcriptCellPropsEqual}) can compare the PREVIOUS
+   * render's row data against the current row's — an imperative
+   * `rowAt` read inside the comparator would see only live state on
+   * both sides and could never detect a change.
+   */
+  row: DevRowDescriptor;
   renderTurnTrailing?: TurnTrailingRenderer;
   codeSessionStore: CodeSessionStore;
 }
 
-const UserMessageCell: React.FC<UserMessageCellProps> = ({
+const UserMessageCell = React.memo(function UserMessageCell({
   index,
-  dataSource,
+  row,
   renderTurnTrailing,
   codeSessionStore,
-}) => {
-  const row = dataSource.rowAt(index);
+}: UserMessageCellProps) {
   // Read the user submission from the `user_message` Message at the
   // head of `turn.messages` (committed) or `activeTurn.messages`
   // (in-flight). The data source only emits a `user` row when one is
@@ -526,7 +542,7 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
       {menu}
     </ResponderScope>
   );
-};
+}, transcriptCellPropsEqual);
 
 // ---------------------------------------------------------------------------
 // `GhostRowCell` — a queued send awaiting dispatch.
@@ -542,15 +558,15 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
 
 interface GhostRowCellProps
   extends TugListViewCellProps<DevTranscriptDataSource> {
+  /** Resolved row descriptor — see {@link UserMessageCellProps.row}. */
+  row: DevRowDescriptor;
   codeSessionStore: CodeSessionStore;
 }
 
-const GhostRowCell: React.FC<GhostRowCellProps> = ({
-  index,
-  dataSource,
+const GhostRowCell = React.memo(function GhostRowCell({
+  row,
   codeSessionStore,
-}) => {
-  const row = dataSource.rowAt(index);
+}: GhostRowCellProps) {
   const queued = row.queued;
   // The adapter only emits a `ghost` kind alongside a `queued`
   // payload; this guard is defensive against an out-of-range read.
@@ -584,7 +600,7 @@ const GhostRowCell: React.FC<GhostRowCellProps> = ({
       />
     </div>
   );
-};
+}, transcriptCellPropsEqual);
 
 // ---------------------------------------------------------------------------
 // `AssistantTurnCell` — single renderer for the assistant row.
@@ -733,6 +749,8 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
 };
 
 interface AssistantTurnCellProps extends TugListViewCellProps<DevTranscriptDataSource> {
+  /** Resolved row descriptor — see {@link UserMessageCellProps.row}. */
+  row: DevRowDescriptor;
   /**
    * Per-card `SessionMetadataStore`. Each `AssistantTurnCell` subscribes
    * to it directly via `useSessionModelName` rather than receiving
@@ -751,14 +769,14 @@ interface AssistantTurnCellProps extends TugListViewCellProps<DevTranscriptDataS
   renderTurnTrailing?: TurnTrailingRenderer;
 }
 
-const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
+const AssistantTurnCell = React.memo(function AssistantTurnCell({
   index,
-  dataSource,
+  row,
   sessionMetadataStore,
   codeSessionStore,
   streamingStore,
   renderTurnTrailing,
-}) => {
+}: AssistantTurnCellProps) {
   // Subscribe to the metadata store HERE in the cell — not at the
   // host — so the model-name read does not flow through the
   // `assistantRenderer` lambda's dependency array. The renderer stays
@@ -766,7 +784,6 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
   // cell mounted across the (one-time at session-init, occasional
   // mid-session) `modelName` resolution. [L02] / [L26].
   const modelName = useSessionModelName(sessionMetadataStore);
-  const row = dataSource.rowAt(index);
   // `turnKey` is set for every assistant row by `rowAt`. The fallback
   // throws in dev (data-source contract violation) and falls back to
   // an index-scoped string in prod so different rows can't
@@ -1010,7 +1027,7 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
       {menu}
     </ResponderScope>
   );
-};
+}, transcriptCellPropsEqual);
 
 
 // ---------------------------------------------------------------------------
@@ -1025,6 +1042,34 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
  */
 const ESTIMATED_HEIGHT_USER = 56;
 const ESTIMATED_HEIGHT_ASSISTANT = 120;
+
+/**
+ * Mount-weight limits above which the transcript switches from
+ * `inline` (every cell mounted; `content-visibility` defers
+ * off-screen paint) to windowed mounting (off-window rows unmount to
+ * spacers, with selection/focus rows pinned mounted by the list
+ * view). Two axes, because either alone misrepresents the mount
+ * cost:
+ *
+ *  - ROWS: prose-heavy transcripts scale by row count. Measured:
+ *    all-mounted is comfortable at ~1k rows (2.4s build, ~4ms
+ *    full-range layout jumps) and degrades hard by 5k (40s build) —
+ *    paint deferral skips paint, not the DOM build.
+ *  - MESSAGES: tool-heavy transcripts pack hundreds of message
+ *    components (tool blocks, thinking, fenced code with
+ *    enhancement passes) into FEW rows. A real working session of
+ *    ~100 rows carrying ~2,300 message blocks froze the main thread
+ *    ~20s in the single inline mount commit — content weight, not
+ *    row count, was the bill.
+ *
+ * Below both limits the inline mode's visual stability
+ * (fully-measured height index, full-document native selection) is
+ * worth the DOM weight; above either, windowed mounting bounds the
+ * commit to the visible window. Crossings preserve mount identity
+ * for rows present on both sides ([L26]).
+ */
+const WINDOWED_TRANSCRIPT_ROW_THRESHOLD = 1200;
+const WINDOWED_TRANSCRIPT_MESSAGE_THRESHOLD = 600;
 
 export interface DevTranscriptHostProps {
   codeSessionStore: CodeSessionStore;
@@ -1136,12 +1181,81 @@ export const DevTranscriptHost = forwardRef<
   const lifecycle = useLifecycleState(codeSessionStore);
   const isReplaying = lifecycle.state === "replaying";
 
+  // Perf instrumentation — pure observability, no behavior. On the
+  // commit where the [DT10] replay gate drops (`isReplaying` flips
+  // false), this layout effect runs synchronously post-commit: the
+  // wall-clock delta from the store's replay-window start IS the
+  // "Open → transcript committed" number, and the parse-counter
+  // delta across the window is the `perf.row_parse` replay leg. The
+  // effect reads the store's dev accessor imperatively (effects may
+  // read stores directly; [L02] governs render-path reads) and emits
+  // to the session-lifecycle grep stream + the dev-panel log.
+  const wasReplayingRef = useRef(false);
+  const parseBaselineRef = useRef<RowParseCountersSnapshot | null>(null);
+  useLayoutEffect(() => {
+    const was = wasReplayingRef.current;
+    wasReplayingRef.current = isReplaying;
+    if (!was && isReplaying) {
+      parseBaselineRef.current = snapshotRowParseCounters();
+      return;
+    }
+    if (was && !isReplaying) {
+      const lastReplay = codeSessionStore._getPerfForDevPanel().lastReplay;
+      const tugSessionId = codeSessionStore.getSnapshot().tugSessionId;
+      const renderSummary = {
+        tug_session_id: tugSessionId,
+        ms: lastReplay !== null ? Date.now() - lastReplay.startedAtMs : -1,
+        rows: dataSource.numberOfItems(),
+      };
+      logSessionLifecycle("perf.replay_render", renderSummary);
+      tugDevLogStore.info("perf", "replay_render", renderSummary);
+      const base = parseBaselineRef.current;
+      parseBaselineRef.current = null;
+      const now = snapshotRowParseCounters();
+      const parseSummary = {
+        tug_session_id: tugSessionId,
+        parses: now.parses - (base?.parses ?? 0),
+        cacheHits: now.cacheHits - (base?.cacheHits ?? 0),
+        memoHits: now.memoHits - (base?.memoHits ?? 0),
+        maxParsesPerIdentity: now.maxParsesPerIdentity,
+      };
+      logSessionLifecycle("perf.row_parse", parseSummary);
+      tugDevLogStore.info("perf", "row_parse", parseSummary);
+    }
+  }, [isReplaying, codeSessionStore, dataSource]);
+
   // Compaction divider header — present iff this session was born from
   // `/compact` (the seed flagged it). Subscribed via [L02]; appearance is
   // CSS-only ([L06]).
   const compactionSeed = useSyncExternalStore(
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().compactionSeed,
+  );
+
+  // Windowed-mounting flip ([L02] — the boolean selector means the
+  // host re-renders only when a threshold actually crosses, not on
+  // every row append). Below both weight limits the transcript keeps
+  // `inline` mounting (visual stability + native selection across the
+  // whole document); above either, off-window rows unmount to spacers
+  // and the list view pins selection/focus rows mounted. The message
+  // walk is O(turns) per snapshot read — trivial against the commit
+  // it guards.
+  const windowedTranscript = useSyncExternalStore(
+    useCallback(
+      (cb: () => void) => dataSource.subscribe(cb),
+      [dataSource],
+    ),
+    useCallback(() => {
+      if (dataSource.numberOfItems() > WINDOWED_TRANSCRIPT_ROW_THRESHOLD) {
+        return true;
+      }
+      let messages = 0;
+      for (const turn of codeSessionStore.getSnapshot().transcript) {
+        messages += turn.messages.length;
+        if (messages > WINDOWED_TRANSCRIPT_MESSAGE_THRESHOLD) return true;
+      }
+      return false;
+    }, [dataSource, codeSessionStore]),
   );
 
   // One renderer per kind ([L26] — renderer reference is the third
@@ -1178,12 +1292,19 @@ export const DevTranscriptHost = forwardRef<
   // any in-flight `TugProgressIndicator` wave animation. Per-cell metadata
   // reads happen INSIDE `AssistantTurnCell` via `useSessionModelName` so the
   // renderer lambda stays inert.
+  // Each renderer resolves the typed row descriptor HERE (`rowAt` is
+  // memoized per snapshot, so the per-render cost is a binary search)
+  // and passes it as a prop. The prop is what makes the cells'
+  // `React.memo` gate work: the comparator sees the PREVIOUS render's
+  // row data against the new row's — an imperative `rowAt` read
+  // inside the cell could never expose that delta to a comparator.
   const assistantRenderer = useCallback<
     TugListViewCellRenderer<DevTranscriptDataSource>
   >(
     (p) => (
       <AssistantTurnCell
         {...p}
+        row={p.dataSource.rowAt(p.index)}
         sessionMetadataStore={sessionMetadataStore}
         codeSessionStore={codeSessionStore}
         streamingStore={streamingStore}
@@ -1198,6 +1319,7 @@ export const DevTranscriptHost = forwardRef<
     (p) => (
       <UserMessageCell
         {...p}
+        row={p.dataSource.rowAt(p.index)}
         renderTurnTrailing={renderTurnTrailing}
         codeSessionStore={codeSessionStore}
       />
@@ -1211,7 +1333,13 @@ export const DevTranscriptHost = forwardRef<
   const ghostRenderer = useCallback<
     TugListViewCellRenderer<DevTranscriptDataSource>
   >(
-    (p) => <GhostRowCell {...p} codeSessionStore={codeSessionStore} />,
+    (p) => (
+      <GhostRowCell
+        {...p}
+        row={p.dataSource.rowAt(p.index)}
+        codeSessionStore={codeSessionStore}
+      />
+    ),
     [codeSessionStore],
   );
   const cellRenderers = useMemo<
@@ -1309,7 +1437,7 @@ export const DevTranscriptHost = forwardRef<
         scrollKey="dev-card-transcript"
         followBottom
         onFollowBottomChange={handleFollowBottomChange}
-        inline
+        inline={!windowedTranscript}
         pageByEntry
       />
       <DevJumpToBottomButton ref={jumpButtonRef} onClick={handleJumpToBottom} />

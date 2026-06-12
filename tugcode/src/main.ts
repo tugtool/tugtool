@@ -8,9 +8,16 @@ import { SessionManager } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
+import { logSessionLifecycle } from "./session-lifecycle-log.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { realpathSync } from "node:fs";
+
+// Process-start wall clock for the boot-latency split. Captured at
+// module evaluation — before arg parsing, settings reads, or the
+// protocol handshake — so `perf.boot` measures everything the user
+// waits on between subprocess exec and "ready to serve verbs".
+const PROCESS_STARTED_AT = Date.now();
 
 // Redirect console.log/warn/error to stderr to keep stdout clean for JSON-lines
 const originalLog = console.log;
@@ -267,6 +274,16 @@ async function main() {
           process.exit(1);
         }
 
+        // Ready to serve verbs: the synthetic session_init is on the
+        // wire and the supervisor can promote Spawning→Live. The
+        // background claude spawn below is NOT part of this split —
+        // the user-visible replay path doesn't wait on it.
+        logSessionLifecycle("perf.boot", {
+          ms: Date.now() - PROCESS_STARTED_AT,
+          session_id: sessionId,
+          session_mode: sessionMode,
+        });
+
         // Background claude spawn. The IPC loop continues; the
         // returned Promise is the readiness gate that
         // `handleUserMessage` awaits.
@@ -302,6 +319,11 @@ async function main() {
           });
           process.exit(1);
         }
+        logSessionLifecycle("perf.boot", {
+          ms: Date.now() - PROCESS_STARTED_AT,
+          session_id: sessionId,
+          session_mode: sessionMode,
+        });
       }
     } else if (isUserMessage(msg)) {
       // Stub mode: dispatch the next recorded turn. Out-of-bounds

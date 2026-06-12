@@ -58,6 +58,20 @@ export interface ComputeWindowInput {
    * heights when known and estimates otherwise.
    */
   estimatedHeightForIndex: (index: number) => number;
+  /**
+   * Inclusive index range that MUST be inside the rendered window
+   * regardless of the scroll position — the pin that keeps rows
+   * holding the user's selection or focus mounted while the visible
+   * window moves elsewhere (the [L23] obligation under windowed
+   * mounting). The window stays one contiguous range: it CLAMPS
+   * outward to cover the pinned range, so a selection far from the
+   * viewport widens the window rather than splitting it. The
+   * degenerate cost (a selection spanning the whole document mounts
+   * everything) exists only while such a selection exists and is
+   * strictly bounded by user action. Out-of-range bounds clamp;
+   * `null`/omitted means no pin.
+   */
+  pinnedRange?: { first: number; last: number } | null;
 }
 
 export interface ComputeWindowResult {
@@ -145,8 +159,19 @@ export function computeWindow(input: ComputeWindowInput): ComputeWindowResult {
   }
 
   // Apply overscan symmetrically. Clamp to [0, itemCount).
-  const firstIndex = Math.max(0, firstVisibleIndex - safeOverscan);
-  const lastIndexInclusive = Math.min(itemCount - 1, lastVisibleIndex + safeOverscan);
+  let firstIndex = Math.max(0, firstVisibleIndex - safeOverscan);
+  let lastIndexInclusive = Math.min(itemCount - 1, lastVisibleIndex + safeOverscan);
+
+  // Pinned-range clamp: widen the window outward until it covers the
+  // pinned (selection/focus) rows. One contiguous range, so spacer
+  // math below is untouched.
+  const pinned = input.pinnedRange ?? null;
+  if (pinned !== null) {
+    const pinFirst = Math.max(0, Math.min(itemCount - 1, Math.floor(pinned.first)));
+    const pinLast = Math.max(0, Math.min(itemCount - 1, Math.floor(pinned.last)));
+    firstIndex = Math.min(firstIndex, Math.min(pinFirst, pinLast));
+    lastIndexInclusive = Math.max(lastIndexInclusive, Math.max(pinFirst, pinLast));
+  }
   const lastIndex = lastIndexInclusive + 1;
 
   // Compute spacer heights. Two more single-pass walks; total

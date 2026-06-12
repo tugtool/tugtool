@@ -232,6 +232,35 @@ export function renderIncremental(
     transformers: options?.transformers ?? DEFAULT_BLOCK_TRANSFORMERS,
   };
   const blocks = parseMarkdownToSanitizedBlocks(text, mergedOptions);
+  return renderIncrementalFromBlocks(container, blocks, prev);
+}
+
+/**
+ * Apply already-parsed blocks against `container`'s children —
+ * the DOM half of {@link renderIncremental}, split out so a caller
+ * holding a cached parse (the render-once cache) can skip the
+ * lex/parse/sanitize pass entirely and still flow through exactly
+ * the same reconcile/apply machinery. Cached and uncached renders
+ * therefore cannot diverge in output: they share this one apply
+ * path.
+ *
+ * An empty `blocks` array clears the container (the parse of
+ * non-empty text never yields zero blocks, but a defensive caller
+ * gets the same semantics `renderIncremental` gives empty text).
+ */
+export function renderIncrementalFromBlocks(
+  container: HTMLElement,
+  blocks: ReadonlyArray<SanitizedMarkdownBlock>,
+  prev: RenderState | null,
+): RenderResult {
+  if (blocks.length === 0) {
+    const removeCount = prev?.hashes.length ?? 0;
+    container.replaceChildren();
+    return {
+      state: { hashes: [], kinds: [] },
+      plan: { stableCount: 0, updateCount: 0, appendCount: 0, removeCount },
+    };
+  }
   const newHashes = blocks.map((b) => b.contentHash);
   const newKinds = blocks.map((b) => b.type);
   const prevHashes = prev?.hashes ?? [];

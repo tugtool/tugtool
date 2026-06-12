@@ -15,9 +15,61 @@ their expensive work happens exactly once) and verified by measured budgets.
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented — superseded by the real-corpus restart (see #superseded) |
 | Target branch | main |
 | Last updated | 2026-06-12 |
+
+---
+
+### SUPERSEDED — real-corpus restart required {#superseded}
+
+This plan was built, measured, and verified against **synthesized
+prose-only fixtures**, and its wins are real but unrepresentative:
+the first real working session resumed against it (~12MB, ~4,900
+wire messages, 937 tool_use + 937 tool_result + 457 thinking blocks
+across ~46 turns) still froze the deck **~20 seconds** in a single
+inline mount commit, with a blank card and no feedback. Server side
+measured 420ms on that same resume — the entire bill is deck-side
+mount cost for tool-dominated content this plan's fixtures never
+contained. Ken's ruling: restart from real content. A follow-on plan
+replaces this one; its non-negotiables, recorded here so they survive
+the handoff:
+
+**Problems this plan demonstrably did not solve:**
+
+1. **Tool-block render cost is uncached.** The render-once cache
+   covers markdown prose only; tool blocks redo their work on every
+   mount, and the bottom rows windowing still mounts can each carry
+   ~a hundred of them. Windowing is a stopgap that cuts 20s to
+   seconds, not to sub-second.
+2. **No feedback during the replay window.** The paint gate hides
+   everything and a long mount commit cannot paint progress by
+   definition. A resuming card must show visible progress/skeleton
+   state from the first moment — a success criterion, not a
+   footnote. "Fast" alone does not satisfy it.
+3. **The fixture suite itself.** Real-shape fixtures must be the
+   default; the synthetic prose generators get deleted. (at0184's
+   tool-heavy leg is the seed, not the answer.)
+
+**Shape of the restart:**
+
+1. **The corpus comes from disk, not generators.** Step zero
+   harvests `~/.claude/projects/`: survey every session JSONL on the
+   machine, classify by shape (tool-heavy, thinking-heavy,
+   image-bearing, prose; by size and turn count), snapshot a
+   representative set — including session `763cd1d8` itself — as the
+   fixture corpus.
+2. **Baseline on real sessions before touching anything.** The
+   instrumentation from this plan (Spec S02, `getSessionPerf`, the
+   waterfall) is the proven survivor — it located the 20s precisely.
+   Baseline the whole corpus and let the real waterfall name the
+   costs: tool-block render weight, per-message mount weight, the
+   blank-window UX.
+3. **The UX requirement is a success criterion.** Visible progress
+   from the first moment of a resume.
+4. **No win is claimed until it reproduces on real sessions.** The
+   waterfall check on a real resume is the acceptance test for every
+   step.
 
 ---
 
@@ -234,7 +286,13 @@ pre-existing identity instability would silently defeat memoization.
 **Plan to resolve:** #step-1's audit task — answers recorded in this plan under
 the baseline-numbers anchor.
 
-**Resolution:** OPEN (resolved by #step-1).
+**Resolution:** DECIDED — resolved by the #step-1 audit; full answers
+in `#render-shape-audit`. Headlines: all rows mount eagerly
+(`TugListView` `inline` mode), no cell-level memoization (every
+commit re-renders every cell — the dominant replay cost), [L26]
+identity already stable (cache key substrate exists), markdown
+parses once per mount + once per streaming emission through
+`renderIncremental` (block-level content hashes already available).
 
 #### [Q03] Is cold translate cost ever the long pole? (OPEN → gates #step-8) {#q03-translate-cost}
 
@@ -244,8 +302,11 @@ a function of file size justify the replay cache + pre-warm machinery?
 **Plan to resolve:** #step-1 instrumentation across small/medium/whale
 fixtures; revisit after #step-2/#step-3 land.
 
-**Resolution:** OPEN (gates #step-8; may be closed as "not needed" with the
-measured numbers as rationale).
+**Resolution:** OPEN (gates #step-8) — but #step-1's measurement all
+but closes it: cold translate of a 53MB session is **42ms** unpaced
+(`#baseline-numbers`), two orders of magnitude under the ~500ms
+trigger. Formal close-out happens at #step-8's gate check after
+#step-2/#step-3 re-measurement.
 
 #### [Q04] Does `content-visibility` + intrinsic sizing carry the whale case, or is true windowing required? (OPEN → gates #step-6) {#q04-visibility-vs-windowing}
 
@@ -260,7 +321,17 @@ in the plan — it must earn its way in with numbers, and carries the hardest
 **Plan to resolve:** #step-5's whale re-measurement (scroll smoothness, memory,
 commit cost at 1k/5k/10k rows).
 
-**Resolution:** OPEN (gates #step-6).
+**Resolution:** DECIDED — measured by #step-5 (at0183, with the fold,
+render-once cache, warm queue, and `content-visibility` all in
+place): **1k rows** complete in 2.4s with 4ms full-range layout
+jumps (visibility-only carries it); **5k rows** complete but degrade
+hard (40.5s wall, 823ms full-range jumps — the mount still builds
+DOM for every row; the deferral skips paint, not our JS); **10k
+rows** wedge the page past every timeout. Visibility-only deferral
+runs out between 1k and 5k rows — **#step-6 true windowing
+proceeds**, with the content-heavy at0182 whale (WebContent OOM at
+2k eagerly-mounted 26KB rows) as the second prong of the same
+evidence. Numbers in `#baseline-numbers`.
 
 ---
 
@@ -563,6 +634,264 @@ counters are the "parse-once" and "tail-only live renders" surfaces.
 
 ---
 
+### Step-1 Findings (audits + baseline) {#step-1-findings}
+
+Recorded by the #step-1 audit pass (2026-06-12) against the dash
+worktree's code. These tables are the evidence base [P04], #step-4,
+and #step-5 build on.
+
+#### Immutability audit — every reducer event vs "finalized rows never change" {#immutability-audit}
+
+**Verdict: the invariant holds, structurally.** Committed `TurnEntry`
+rows live in the store wrapper's `_transcript` array — *not* in
+reducer state — and the only two effects that can touch it are
+`append-transcript` (copy-on-write append of a new entry) and
+`truncate-transcript` (rewind: drops the anchor turn and everything
+after it **whole**; survivors keep their object references). No
+reducer path edits a committed entry in place. Per-event:
+
+| Event group | Events | Committed-row impact |
+|---|---|---|
+| Live-turn scratch (pre-commit) | `send`, `content_block_start`, `assistant_text`, `thinking_text`, `tool_use`, `tool_result`, `tool_use_structured`, `streaming_usage`, `wake_started`, `prompt_anchor` | None — `pendingTurn` / `scratch` only; rows don't exist yet |
+| Commit | `turn_complete` | **Append-only** — mints a frozen `TurnEntry` (replay inlines persisted telemetry upstream in the bridge, so it arrives *at* commit, never after) |
+| Replay bracket | `replay_started`, `replay_complete`, `add_user_message` | None — phase + `pendingTurn` only |
+| Rewind | `rewind_preview_result`, `request_rewind_preview`, `session_rewind_request` | None (preview cache / wire) |
+| Rewind apply | `rewind_result` | **Whole-row removal** via `truncate-transcript`; surviving rows reference-identical (L26-safe by construction) |
+| Compaction | `compact_boundary`, `mark_compaction_seed` | None — system_note appends to the *active* turn's scratch; seed is session-level |
+| Jobs ledger (incl. monitors-in-jobs `56217182`) | `task_started`, `task_updated`, `clear_jobs_action` | None — Z2 `jobs` state only, confirmed never touches transcript |
+| Session / Z2 | `session_init`, `system_metadata`, `cost_update`, `context_breakdown`, `api_retry`, `unknown_event`, `error`, `resume_failed`, `attachment_rejected` | None |
+| Dialogs / queue | `control_request_forward`, `respond_approval`, `respond_question`, `interrupt_action`, `consume_draft_restore`, `cancel_queued_send` | None (queue + dialog state; CASE A suppression drops a turn *before* commit) |
+| Settings | `set_permission_mode`, `set_model`, `set_effort` | None (wire-only) |
+| Transport | `transport_close`, `transport_open`, `transport_settled`, `session_state_errored`, `session_unknown`, `session_not_owned`, `bind_resume_acknowledged` | `transport_close` may **append** the in-flight turn as `interrupted` — append-only, same path |
+| Replay-clock ticks | `tick_soft_budget`, `tick_timeout_dwell_done`, `tick_preflight_done` | None |
+
+**Cache implication ([R01]):** the only "mutation" is wholesale
+removal at rewind. Truncated rows' cache entries become unreachable
+(turnKeys are UUIDs, never reused) — the render-once cache should
+drop them via its explicit invalidation API at the
+`truncate-transcript` effect, but a missed drop is dead weight, not
+stale serve.
+
+#### Render-shape audit — [Q02] answers {#render-shape-audit}
+
+1. **Mounting: eager, all rows.** The dev transcript mounts
+   `TugListView` with `inline` — windowing is explicitly skipped
+   (every cell rendered from mount, no spacers/overscan; chosen for
+   height-estimate stability per the prop's docs). DOM weight and
+   per-commit reconciliation scale with transcript length.
+2. **Memoization: none at the cell level.** No `React.memo` on
+   `UserMessageCell` / `AssistantTurnCell` / `GhostRowCell`. Every
+   store notify re-renders the host (snapshot identity via
+   `useSyncExternalStore`) and therefore re-renders **all N cells'
+   element trees** — O(N) VDOM + hook work per commit, O(N²) across
+   an N-frame replay. Two per-render amplifiers found:
+   `useTranscriptCellMenu`'s dep-less `useLayoutEffect` constructs a
+   fresh `HighlightSelectionAdapter` per cell per commit, and each
+   `AssistantTurnCell` runs `dataSource.rowAt` + dialog-slot
+   subscriptions per commit.
+   **Constraint for #step-4:** cells read row data *imperatively*
+   (`dataSource.rowAt(index)` during render), not via props — naive
+   `React.memo` would freeze them. Memoization needs row-scoped
+   equality (committed rows are immutable, so `(id, committed,
+   selected)`-style keys suffice) or per-cell row-selector
+   subscriptions; the in-flight cell must stay live.
+3. **[L26] identity: already stable — no instabilities found.** Key
+   `${turnKey}-{user|assistant|ghost}` is byte-identical across
+   streaming→finalized; single `"assistant"` kind; renderer lambdas
+   `useCallback`'d over card-lifetime-stable deps. The identity
+   substrate for the parse cache (Spec S03) exists today; the
+   per-message streaming path `turn.${turnKey}.message.${messageKey}.
+   ${channel}` is the natural per-message cache key.
+4. **Markdown parse location.** All transcript prose (assistant text
+   *and* thinking via `DevThinkingBlock`) renders through
+   `TugMarkdownBlock` → `renderIncremental` →
+   `parseMarkdownToSanitizedBlocks` (WASM lex + pulldown-cmark +
+   DOMPurify), with per-block FNV-1a content hashes already on
+   `SanitizedMarkdownBlock.contentHash`. Parses fire: (a) once at
+   mount (pre-paint G1 read), (b) once per streaming emission
+   (rAF-coalesced — a **pre-existing** rAF in the streaming
+   reconciler, outside this plan's no-new-rAF rule), (c) fully on
+   remount (diff state is a `WeakMap` keyed by container element).
+   React re-renders do *not* re-parse ([L22] imperative DOM). So the
+   replay-window parse bill is ≈ one parse per message — the
+   dominant replay cost is the O(N²) commit/VDOM work in (2), which
+   reorders the [#assumptions] ranking: **commit count × cell count
+   first, parse second, translate pacing third.**
+5. **[DT10] paint gate:** `visibility: hidden` during the window
+   hides the accumulation visually but pays full commit/layout cost
+   underneath — exactly what the fold (#step-2) removes.
+
+#### Baseline numbers {#baseline-numbers}
+
+Recorded 2026-06-12 on the dev machine via the at0182 measurement
+app-test (real picker → spawn → tugcode → JSONL replay → render) and
+a tugcode-level translate benchmark. "wall" is Open-click →
+transcript fully committed; "ingest" is the store's replay window
+(first `replay_started` dispatch → `replay_complete` notify).
+
+**Per-resume waterfall (at0182, `getSessionPerf` + session-lifecycle log):**
+
+| Fixture | JSONL | boot (resume) | read | translate+emit | tugcast forward | deck ingest | frames → commits | wall | parses (max/identity) |
+|---|---|---|---|---|---|---|---|---|---|
+| small (10 turns) | 14KB | 4–5ms | 0ms | 4ms / 43 msgs | 3ms / 42 frames | 150ms | 43 → 42 | **~410–740ms** | 10 (1) |
+| medium (50 turns) | 517KB | 4–5ms | 0ms | 19ms / 203 msgs | 16ms / 202 frames | see note | 204 → 203 | **~1.9–2.6s** | 50 (1) |
+| whale (2000 turns) | 53MB | 5ms | **7ms** | 2189ms / 8003 msgs (paced) | 2151ms / 8002 frames, **0 lagged** | page saturated | 8003 → ∅ | **> 7 min (never settled)** | — |
+
+**Reading:** the server side of a medium resume totals **~25ms**
+(read + translate + forward); the deck pays **~2s** for the same
+work. Where the deck cost lands depends on mount order, both
+measured: when the transcript host is already mounted (rebind / HMR
+case), ingest spreads to ~2.1s across 203 synchronous one-per-frame
+React commits; on a fresh bind the store ingests all 203 frames in
+~5ms *before* the transcript mounts, and the cost concentrates in
+the single post-replay mount render — wall stays ~2s either way.
+**The render bill is the constant; delivery shape only moves it.**
+This confirms (and sharpens) the #render-shape-audit ranking:
+commit-count × cell-count (or one mount of all cells) dominates;
+per-row parse already runs once per identity at baseline; translate
+and IO are noise at medium scale.
+
+**Whale reading:** the 53MB session *lists* in ~1s (cold scan is
+sub-second — typed streaming parse) and the server pipeline
+delivers all 8002 frames in ~2.2s end-to-end with zero broadcast
+lag (capacity 1024, [R04] sensor clean at current pacing). The deck
+then saturates the WebView main thread for **7+ minutes** without
+settling — unresponsive enough that harness RPCs can't complete.
+The at0182 whale leg is committed `test.skip` with this rationale
+and re-enables once the deck-side fold lands.
+
+**Post-fold re-measurement (#step-2, same at0182 path):**
+
+| Fixture | ingest commits (was) | folds | wall (was) |
+|---|---|---|---|
+| small | **2** (42) | 1 | 420ms (~410–740ms) |
+| medium | **2** (203) | 1 | 1976ms (~1.9–2.6s) |
+
+The ≤5-commit goal is met with margin (2 commits: window open +
+window close). Wall time in the fresh-bind flow barely moves because
+there the cost was already concentrated in the single post-replay
+mount render — which is precisely the render bill #step-4 (render
+once) and #step-5 (paint only what's visible) shrink. The
+rebind/HMR flow — where baseline ingest spread to ~2.1s of
+per-frame commits — now collapses to the same 2 commits.
+
+**Post-fold whale ([Q04] evidence):** ingest now folds cleanly, but
+the single mount render of 2000 eagerly-mounted turns × 26KB
+markdown **crashes the WebContent process** (~3.5min in, RPC
+transport closed — OOM-class). Visibility-deferral keeps all DOM
+alive, so [Q04] should weigh that a content-heavy 50MB whale may
+exceed what `content-visibility` alone can carry — #step-5's
+1k/5k/10k-row measurements decide, with #step-6 windowing as the
+escalation. The at0182 whale leg stays skipped until a deferral
+phase lands.
+
+**Post-unpace re-measurement (#step-3, time-slice yield in place):**
+
+| Fixture | translate+emit (was) | tugcast forward (was) | frames lagged |
+|---|---|---|---|
+| small | 3ms (4ms) | 0ms (3ms) | 0 |
+| medium | **7ms** (19ms) | **5ms** (16ms) | 0 |
+| whale | 2197ms (2189ms) | 2162ms (2151ms) | **0** |
+
+[R04] reading: zero lagged frames at every scale — the unpaced burst
+never overruns the CODE_OUTPUT broadcast (capacity 1024) because the
+pipeline's natural backpressure (the IPC pipe plus the bridge's
+awaited mpsc send to the merger) throttles delivery well below
+overrun. The whale's translate+emit wall is UNCHANGED by unpacing:
+at 53MB the bound is IPC/bridge throughput (~25MB/s of per-line
+scanning, session-id splicing, and per-frame forwarding), not the
+old pacing — the in-memory bench (42ms) shows what the translate
+itself costs. That 2.2s bridge leg is the genuine server-side whale
+long pole and is exactly the frame-count pressure #step-7's gated
+coalescer would address if whales need it; medium-scale resumes get
+the full win (translate+forward now ~12ms total).
+
+**Post-render-once re-measurement (#step-4, parse cache + memoized
+rows):** medium replay — parses 50 (one per row, `maxParsesPerIdentity
+= 1`), **memoHits 100** (every committed cell skips the window-close
+re-render), cacheHits 0 on a cold first replay by design (population
+happens at first render; hits arrive on remounts, tab switches, and
+every finalized row's re-render during live turns). Live-path
+consequence: a snapshot tick now re-renders only the in-flight row —
+commit cost no longer grows with transcript length.
+
+**Post-deferral re-measurement (#step-5, `content-visibility` +
+intrinsic sizes + warm queue on top of fold + render-once):**
+
+| Fixture | wall (step-4 was) | baseline was |
+|---|---|---|
+| small | **392ms** (414ms) | ~410–740ms |
+| medium | **774ms** (~1.9s) | ~1.9–2.6s |
+
+The deferral collapsed the medium mount render: off-screen rows skip
+layout and paint, so the window-close commit only pays for the
+viewport. Medium now sits at the plan's 750ms dev-machine target
+(±run variance — the remaining wall is dominated by the spawn →
+`request_replay` round trip, #step-9's territory). The small leg
+also showed the warm queue beating the mounts outright (10/10 rows
+were cache hits on one run).
+
+**Post-windowing re-measurement (#step-6 — transcript flips from
+inline to windowed mounting above 1200 rows; selection/focus rows
+pinned via the window clamp):**
+
+| Fixture | windowed wall | pre-windowing |
+|---|---|---|
+| at0182 whale (53MB, 4k rows × 26KB) | **2.66s end-to-end** (lists 339ms; 34 commits / 33 folds) | WebContent OOM / 7+ min wedge |
+| rows-5k | **626ms** | 40.5s |
+| rows-10k | **832ms** | wedged (>420s) |
+| rows-1k / medium / small | unchanged (stay inline below the threshold) | — |
+
+All six at0182/at0183 legs are now ACTIVE assertion gates (nothing
+skipped). The trade documented in code: above the threshold,
+never-mounted rows use height estimates (scrollbar approximation)
+and cross-document selection is bounded by the pin — below it, the
+inline mode's full fidelity is untouched.
+
+**Row-count scaling ([Q04], at0183 — fold + render-once + warm queue
++ `content-visibility` all in place):**
+
+| Scale | rows | JSONL | wall | full-range scroll jumps | ingest (frames → commits / folds) | parses (max/id) | warm-queue pre-parses |
+|---|---|---|---|---|---|---|---|
+| rows-1k | 1,000 | 769KB | **2.4s** | **4ms** | 2003 → 10 / 8 | 500 (1) | — |
+| rows-5k | 5,000 | 3.9MB | 40.5s | 823ms | 10003 → 42 / 40 | 2500 (1) | **1264 cacheHits** |
+| rows-10k | 10,000 | 7.7MB | wedged (>420s) | — | — | — | — |
+
+[Q04] reading: visibility-only deferral carries ~1k rows comfortably
+and runs out between 1k and 5k — the 5k mount still builds DOM for
+every row (the deferral skips paint, not our JS), and 10k never
+settles. **#step-6 windowing proceeds.** Side validation: the warm
+queue pre-parsed 1264 of the 5k run's rows during the fold window
+([P08] working as designed — those mounts were pure cache hits).
+
+**Cold translate cost ([Q03]) — tugcode-level bench, in-memory JSONL:**
+
+| Corpus | bytes | messages | unpaced (`disableYield`) | paced (production, 16/`setTimeout(0)`) |
+|---|---|---|---|---|
+| medium | 474KB | 203 | 2ms | 15ms |
+| whale rows | 4.7MB | 8003 | 8ms | 644ms |
+| whale bytes | 53.5MB | 8003 | **42ms** | 621ms |
+
+[Q03] reading: cold translate of a 53MB session is **42ms** — two
+orders of magnitude under the ~500ms replay-cache trigger
+([P05]/[P06]). #step-8 is expected to close "not needed" at its gate
+check after #step-2/#step-3 re-measurement. The pacing tax (~600ms
+of forced macrotask idles at 8k messages) is #step-3's measured win.
+
+**Picker fall-through finding (out of this plan's replay scope,
+recorded for follow-up):** the picker's Enter handling can fall
+through to a no-selection submit — which opens a NEW session at the
+typed path and dismisses the picker. The at0181-style
+Tab→Tab→Enter recents commit reproduced this reliably against the
+whale fixture (three runs) while small/medium escaped it; the
+fixed at0182 flow relies on the recents list's mount-time selection
+seed (which fills the path field with no keyboard dance) and the
+fall-through no longer triggers. A user typing a path and pressing
+Enter at the wrong moment can plausibly hit the same fall-through —
+worth a dedicated look outside this plan.
+
+---
+
 ### Test Plan Concepts {#test-plan-concepts}
 
 #### Test Categories {#test-categories}
@@ -593,17 +922,17 @@ counters are the "parse-once" and "tail-only live renders" surfaces.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Instrumentation + baseline + invariant/render audits | pending | — |
-| #step-2 | Deck-side replay fold (one commit per flush) | pending | — |
-| #step-3 | Unpaced translate loop + channel-capacity guard | pending | — |
-| #step-4 | Render-once cache + memoized finalized rows | pending | — |
-| #step-5 | content-visibility deferral + speculative warm | pending | — |
-| #step-6 | True transcript windowing (gated by [Q04]) | pending | — |
-| #step-7 | Wire-level replay_batch coalescer (gated) | pending | — |
-| #step-8 | replay_cache + pre-warm (gated by [Q03]) | pending | — |
-| #step-9 | Startup-path trims (gated) | pending | — |
-| #step-10 | App-test budgets | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | Instrumentation + baseline + invariant/render audits | done | `0a6f15f5` |
+| #step-2 | Deck-side replay fold (one commit per flush) | done | `0c533b3e` |
+| #step-3 | Unpaced translate loop + channel-capacity guard | done | `333c9204` |
+| #step-4 | Render-once cache + memoized finalized rows | done | `085db40c` |
+| #step-5 | content-visibility deferral + speculative warm | done | `13b024af` |
+| #step-6 | True transcript windowing (gated by [Q04]) | done | `68d017ef` |
+| #step-7 | Wire-level replay_batch coalescer (gated) | closed — not needed | see step close-out |
+| #step-8 | replay_cache + pre-warm (gated by [Q03]) | closed — not needed | see step close-out |
+| #step-9 | Startup-path trims (gated) | closed — not needed | see step close-out |
+| #step-10 | App-test budgets | done | `6efaa667` |
+| #step-11 | Integration checkpoint | done | verification only — workspace 1027, tugdeck 3588 + tsc, tugcode 583, budget app-test PASS |
 
 #### Step 1: Instrumentation + baseline + invariant/render audits {#step-1}
 
@@ -804,6 +1133,17 @@ counters are the "parse-once" and "tail-only live renders" surfaces.
 - [ ] Gate check: proceed only if frame-rate vs channel-capacity margins ([R04]) or measured per-frame dispatch overhead demand it
 - [ ] If proceeding: implement per Spec S01; document the "intercepts upstream, coalescing downstream" rule in module docs
 
+**Close-out (not needed, with numbers):** zero `frames_lagged`
+events at every measured scale, including 16,037 frames on the
+10k-row replay (CODE_OUTPUT capacity 1024 never overran — the
+pipeline's natural backpressure throttles the unpaced burst). Deck
+per-frame dispatch is also a non-cost post-fold: 16k frames ingest
+in 437ms across 66 commits. The one remaining frame-count cost is
+the bridge's per-line processing on 50MB-class whales (~2.2s) — but
+that sits UPSTREAM of where Spec S01 would coalesce (the merger),
+so the coalescer wouldn't buy it back. Revisit only if a future
+transport shows real lag (the [R04] sensor stays wired).
+
 **Tests:**
 - [ ] If proceeding — Rust: intercept preservation verbatim; chunk caps; flush on `replay_complete` / window abort / max-hold; capability-absent client gets the legacy stream bit-for-bit. Deck: batch fold reuses #step-2's path (golden equivalence)
 
@@ -829,6 +1169,15 @@ counters are the "parse-once" and "tail-only live renders" surfaces.
 - [ ] Gate check on [Q03] after #step-2/#step-3 re-measurement
 - [ ] If proceeding: table + methods mirroring the scan-cache shape; tugcode cache path; pre-warm with concurrency caps, orchestrated on the detached-work-then-settle pattern the two-phase `list_sessions` established (`7a80fabf`); JSONL paths via the `resolve_to_claude_form` chokepoint
 
+**Close-out (not needed, with numbers):** [Q03] resolved against the
+cache. Cold translate is 42ms at 53MB (two orders of magnitude under
+the ~500ms trigger); read is 7ms. On the user-visible path the
+medium resume's translate+forward totals ~12ms, and the whale's
+2.2s server leg is IPC/bridge THROUGHPUT-bound — a cached translated
+stream would still cross the same pipe and bridge, saving only the
+~42ms parse. The cache cannot buy back anything measurable; the
+[P05] Rust-port trigger is equally unfired.
+
 **Tests:**
 - [ ] If proceeding — Rust: validity key, size cap, sweep, pre-warm caps. tugcode: hit skips translate; stale key re-translates
 
@@ -852,6 +1201,18 @@ counters are the "parse-once" and "tail-only live renders" surfaces.
 
 **Tasks:**
 - [ ] Gate check on Step-1's splits; implement the winning trim(s); re-measure
+
+**Close-out (not needed, with numbers):** the candidate trim — the
+supervisor auto-queueing replay to collapse the `request_replay`
+round trip — turns out to ALREADY exist: the lifecycle timeline
+shows `request_replay.queued reason=spawning_window` 10ms after
+`spawn.supervisor_recv`, drained at the Spawning→Live promotion.
+tugcode boot is 34ms wall from child-invoke to ready (`perf.boot`
+5ms internal). Server-side total for a medium resume is ~55ms of a
+~780ms harness-measured wall; the remainder is deck plumbing, the
+final render, and harness poll quantization — nothing startup-path
+work could trim. Medium sits at the 750ms dev-machine target with
+the 2s ceiling held at 2.5×+ margin.
 
 **Tests:**
 - [ ] Suites green; HMR remount re-replay semantics preserved

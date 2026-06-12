@@ -54,6 +54,12 @@ import {
   type CodeSessionState,
 } from "./code-session-store/reducer";
 import { logSessionLifecycle } from "./session-lifecycle-log";
+import {
+  clearCachedParses,
+  invalidateCachedParsesByPrefix,
+} from "./markdown/parse-cache";
+import { WarmQueue } from "./markdown/warm-queue";
+import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import type { CodeSessionEvent } from "./code-session-store/events";
 import type { Effect } from "./code-session-store/effects";
 import { publishLocalSessionStateChange } from "./session-state-changes-local-events";
@@ -111,6 +117,52 @@ const DEFAULT_TIMER_SOURCE: TimerSource = {
 };
 
 const STREAM_SOURCE_TAG = "code-session-store";
+
+/**
+ * Replay-fold flush threshold. While the reducer's `replaying` phase
+ * is open, wire-origin events reduce immediately but their listener
+ * notification (and snapshot publication) is deferred; every
+ * `REPLAY_FOLD_FLUSH_THRESHOLD` deferred events the fold flushes one
+ * notify so a whale-sized replay paints progressively instead of
+ * holding the UI to the very end. Flushes are event-driven only —
+ * the other triggers are the window closing (`replay_complete` or
+ * any phase exit) and store teardown. No timers, no rAF.
+ */
+export const REPLAY_FOLD_FLUSH_THRESHOLD = 250;
+
+/**
+ * Per-replay-window ingest counters (the `perf.replay_ingest`
+ * instrumentation surface). One record is opened on `replay_started`,
+ * accumulated per dispatched event / listener notification, and
+ * closed + emitted on `replay_complete`.
+ *
+ * `commits` is the store's own `notifyListeners` count inside the
+ * window — the "≤ N commits per replay" assertion surface. `folds`
+ * counts buffered-fold flushes; zero until the replay fold lands and
+ * kept in the shape from day one so consumers never see a field
+ * appear mid-plan.
+ */
+export interface ReplayIngestPerf {
+  startedAtMs: number;
+  completedAtMs: number | null;
+  /** Reducer-relevant events dispatched inside the window. */
+  frames: number;
+  /** Buffered-fold flushes (0 until the replay fold exists). */
+  folds: number;
+  /** Listener notifications (React commit triggers) inside the window. */
+  commits: number;
+}
+
+/**
+ * Per-live-turn commit counters (the `perf.live_commits` surface).
+ * Opened on `send`, closed + emitted on the matching `turn_complete`.
+ */
+export interface LiveTurnPerf {
+  turnKey: string;
+  startedAtMs: number;
+  /** Listener notifications between send and turn_complete. */
+  commits: number;
+}
 
 /**
  * Mint a stable per-turn key. Used as the React-key seed for the
@@ -283,6 +335,39 @@ export class CodeSessionStore {
   private _lifecycleUnsubs: Array<() => void> = [];
   private _lastFrameByFeed: Map<number, unknown> = new Map();
 
+  /**
+   * Perf instrumentation state — pure observability, no behavior.
+   * `_perfReplay` is the open replay window (null between windows);
+   * `_perfLastReplay` retains the most recently completed window so
+   * the transcript host can stamp `perf.replay_render` against its
+   * start time after the replay paint gate drops. `_perfLiveTurn`
+   * is the open live-turn commit counter (null between turns).
+   */
+  private _perfReplay: ReplayIngestPerf | null = null;
+  private _perfLastReplay: ReplayIngestPerf | null = null;
+  private _perfLiveTurn: LiveTurnPerf | null = null;
+  private _perfLastLiveTurn: LiveTurnPerf | null = null;
+
+  /**
+   * Replay-fold deferred-notify count. Non-zero while the `replaying`
+   * phase has reduced wire events whose listener notification (and
+   * snapshot publication — `_cachedSnapshot` stays pinned) has not
+   * flushed yet. The fold is notification-deferral only: every event
+   * still reduces and processes its effects immediately, so the
+   * reducer's semantics are byte-identical to per-frame dispatch —
+   * React simply observes one snapshot tick per flush ([L02]).
+   */
+  private _foldPending = 0;
+
+  /**
+   * Speculative parse warmer ([P08]-style cooperative queue). Fed by
+   * replay-window streaming writes so the window-close mount render
+   * finds every row's markdown already parsed; writes only to the
+   * render-once cache (no DOM, no React, no notifies). Constructed
+   * lazily on first use, cancelled at dispose.
+   */
+  private _warmQueue: WarmQueue | null = null;
+
   constructor(options: CodeSessionStoreOptions) {
     this.conn = options.conn;
     this.lifecycle = options.lifecycle;
@@ -415,7 +500,7 @@ export class CodeSessionStore {
   _ingestFrameForTest = (feedId: number, decoded: unknown): void => {
     if (this._disposed) return;
     const event = this.frameToEvent(feedId, decoded);
-    if (event !== null) this.dispatch(event);
+    if (event !== null) this.dispatch(event, "wire");
   };
 
   /**
@@ -1006,6 +1091,10 @@ export class CodeSessionStore {
    */
   dispose(): void {
     if (this._disposed) return;
+    // Teardown flush of an open replay fold — nothing is ever
+    // stranded: listeners still attached observe the final reduced
+    // state in one last snapshot tick before they're cleared.
+    this._flushReplayFold();
     this._disposed = true;
     if (this._feedStoreUnsub) {
       this._feedStoreUnsub();
@@ -1035,6 +1124,14 @@ export class CodeSessionStore {
     // dies with the store instance, taking its accumulated paths
     // with it. Consumers that survived past dispose would already
     // be in undefined-behaviour territory.
+    //
+    // The render-once parse cache is scoped to the streamingDocument
+    // and would be GC'd with it; the explicit clear keeps the
+    // session-scoped lifetime contract exact rather than
+    // GC-eventual. The warm queue dies with the session too.
+    this._warmQueue?.cancel();
+    this._warmQueue = null;
+    clearCachedParses(this.streamingDocument);
     this._cachedSnapshot = null;
   }
 
@@ -1076,7 +1173,7 @@ export class CodeSessionStore {
         this._lastFrameByFeed.set(feedId, value);
         const event = this.frameToEvent(feedId, value);
         if (event !== null) {
-          this.dispatch(event);
+          this.dispatch(event, "wire");
         }
       }
     }
@@ -1252,15 +1349,159 @@ export class CodeSessionStore {
     return null;
   }
 
-  private dispatch(event: CodeSessionEvent): void {
+  private dispatch(
+    event: CodeSessionEvent,
+    origin: "wire" | "local" = "local",
+  ): void {
+    this._perfBeforeReduce(event);
     const prev = this.state;
     const { state, effects } = reduce(this.state, event);
     this.state = state;
     this.processEffects(effects);
     this.maybePersistStateChange(prev, state);
     if (prev !== state || effects.length > 0) {
-      this._cachedSnapshot = null;
-      this.notifyListeners();
+      // Replay fold ([P03]): while the reducer's `replaying` phase is
+      // open, WIRE events defer their notification — the snapshot
+      // stays pinned (`_cachedSnapshot` untouched) so React observes
+      // one tick per flush instead of one per frame. Deferral is
+      // wire-only: local actions, timer ticks (the soft-budget
+      // banner), and transport events publish immediately so
+      // mid-window UI stays truthful. `replay_started` itself
+      // publishes so the replay paint gate mounts; any event that
+      // exits the phase (`replay_complete`, an error path) lands in
+      // the else-branch and flushes everything pending in its own
+      // notify.
+      const defer =
+        origin === "wire" &&
+        state.phase === "replaying" &&
+        event.type !== "replay_started";
+      if (defer) {
+        this._foldPending += 1;
+        if (this._foldPending >= REPLAY_FOLD_FLUSH_THRESHOLD) {
+          this._flushReplayFold();
+        }
+      } else {
+        this._publishAndNotify();
+      }
+    }
+    this._perfAfterDispatch(event);
+  }
+
+  /**
+   * Publish the current state (invalidate the pinned snapshot) and
+   * notify listeners once. Any deferred fold events ride this notify —
+   * a single snapshot tick covers everything reduced since the last
+   * publication.
+   */
+  private _publishAndNotify(): void {
+    const hadFold = this._foldPending > 0;
+    this._foldPending = 0;
+    this._cachedSnapshot = null;
+    this.notifyListeners();
+    this._perfOnCommit();
+    if (hadFold && this._perfReplay !== null) {
+      this._perfReplay.folds += 1;
+    }
+  }
+
+  /** Threshold / teardown flush of the replay fold. */
+  private _flushReplayFold(): void {
+    if (this._foldPending === 0) return;
+    this._publishAndNotify();
+  }
+
+  // ---------------------------------------------------------------------
+  // Perf instrumentation (pure observability — no behavior, no state
+  // visible to React; counters live beside the dispatch pipeline
+  // because the store is the only place that sees every event AND
+  // every listener notification)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Dev-only read accessor over the perf counters. Consumed by the
+   * transcript host's `perf.replay_render` emission and by tests;
+   * not part of the public L02 contract.
+   *
+   * @internal
+   */
+  _getPerfForDevPanel = (): {
+    replay: ReplayIngestPerf | null;
+    lastReplay: ReplayIngestPerf | null;
+    liveTurn: LiveTurnPerf | null;
+    lastLiveTurn: LiveTurnPerf | null;
+  } => ({
+    replay: this._perfReplay,
+    lastReplay: this._perfLastReplay,
+    liveTurn: this._perfLiveTurn,
+    lastLiveTurn: this._perfLastLiveTurn,
+  });
+
+  /** Open windows and count the dispatched event before it reduces. */
+  private _perfBeforeReduce(event: CodeSessionEvent): void {
+    if (event.type === "replay_started") {
+      this._perfReplay = {
+        startedAtMs: Date.now(),
+        completedAtMs: null,
+        frames: 0,
+        folds: 0,
+        commits: 0,
+      };
+    }
+    if (this._perfReplay !== null) {
+      this._perfReplay.frames += 1;
+    }
+    if (event.type === "send") {
+      this._perfLiveTurn = {
+        turnKey: event.turnKey,
+        startedAtMs: Date.now(),
+        commits: 0,
+      };
+    }
+  }
+
+  /** Count one listener notification against any open window. */
+  private _perfOnCommit(): void {
+    if (this._perfReplay !== null) {
+      this._perfReplay.commits += 1;
+    } else if (this._perfLiveTurn !== null) {
+      this._perfLiveTurn.commits += 1;
+    }
+  }
+
+  /** Close windows + emit summaries after the event fully dispatched. */
+  private _perfAfterDispatch(event: CodeSessionEvent): void {
+    if (event.type === "replay_complete" && this._perfReplay !== null) {
+      const perf = this._perfReplay;
+      perf.completedAtMs = Date.now();
+      this._perfLastReplay = perf;
+      this._perfReplay = null;
+      const summary = {
+        tug_session_id: this.tugSessionId,
+        ms: perf.completedAtMs - perf.startedAtMs,
+        frames: perf.frames,
+        folds: perf.folds,
+        commits: perf.commits,
+      };
+      logSessionLifecycle("perf.replay_ingest", summary);
+      tugDevLogStore.info("perf", "replay_ingest", summary);
+      return;
+    }
+    if (
+      event.type === "turn_complete" &&
+      this._perfReplay === null &&
+      this._perfLiveTurn !== null
+    ) {
+      const turn = this._perfLiveTurn;
+      this._perfLiveTurn = null;
+      this._perfLastLiveTurn = turn;
+      const summary = {
+        tug_session_id: this.tugSessionId,
+        turnKey: turn.turnKey,
+        commits: turn.commits,
+        ms: Date.now() - turn.startedAtMs,
+      };
+      logSessionLifecycle("perf.live_commits", summary);
+      tugDevLogStore.info("perf", "live_commits", summary);
     }
   }
 
@@ -1319,19 +1560,33 @@ export class CodeSessionStore {
   private processEffects(effects: Effect[]): void {
     for (const effect of effects) {
       switch (effect.kind) {
-        case "write-inflight":
+        case "write-inflight": {
           // Per-Message path `turn.${turnKey}.message.${messageKey}.${channel}`
           // ([D07]). Each Message's path is stable from mint through
           // commit (the cell wrapper subscribing to it survives the
           // inflight → committed transition without a React unmount);
           // each new Message of the same turn writes to its own path
           // so streaming subscriptions don't cross-pollinate.
-          this.streamingDocument.set(
-            `turn.${effect.turnKey}.message.${effect.messageKey}.${effect.channel}`,
-            effect.value,
-            STREAM_SOURCE_TAG,
-          );
+          const path = `turn.${effect.turnKey}.message.${effect.messageKey}.${effect.channel}`;
+          this.streamingDocument.set(path, effect.value, STREAM_SOURCE_TAG);
+          // Replay-window speculative warm: rows reduced inside the
+          // fold haven't mounted yet (snapshot pinned), so their
+          // markdown can parse in cooperative background slices and
+          // the window-close mount render becomes a pure cache hit.
+          // Text channels only — tool channels don't flow through
+          // `TugMarkdownBlock`. The lazy read warms the path's FINAL
+          // value at drain time.
+          if (this.state.phase === "replaying" && effect.channel === "text") {
+            if (this._warmQueue === null) {
+              this._warmQueue = new WarmQueue(this.streamingDocument);
+            }
+            this._warmQueue.enqueue(path, () => {
+              const v = this.streamingDocument.get(path);
+              return typeof v === "string" ? v : null;
+            });
+          }
           break;
+        }
         case "clear-inflight":
           // No-op under the per-turn-paths architecture. Each turn
           // writes to its own path; nothing needs clearing at
@@ -1358,10 +1613,27 @@ export class CodeSessionStore {
           // (and thus `turnKey`/`msgId`) so React preserves their mounts. The
           // pure helper returns the SAME array reference when the anchor
           // isn't present, so a stale ack is a true no-op (no snapshot churn).
+          const before = this._transcript;
           this._transcript = truncateTranscriptAtAnchor(
-            this._transcript,
+            before,
             effect.promptUuid,
           );
+          // Row removal is the one structural "mutation" of finalized
+          // rows — drop the removed turns' render-once parse entries
+          // through the explicit invalidation API. (TurnKeys are
+          // UUIDs, never reused, so a missed drop would only be dead
+          // weight — this keeps the cache exact anyway.)
+          if (this._transcript !== before) {
+            const surviving = new Set(this._transcript.map((t) => t.turnKey));
+            for (const turn of before) {
+              if (!surviving.has(turn.turnKey)) {
+                invalidateCachedParsesByPrefix(
+                  this.streamingDocument,
+                  `turn.${turn.turnKey}.`,
+                );
+              }
+            }
+          }
           break;
         }
         case "schedule_timer": {

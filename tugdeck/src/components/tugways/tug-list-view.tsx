@@ -1250,6 +1250,72 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // the component body and recompute the windowed slice.
     const [, scrollTick] = React.useReducer((x: number) => x + 1, 0);
 
+    // Selection/focus pin ([L23] under windowed mounting): rows whose
+    // DOM holds the user's selection endpoints or keyboard focus must
+    // not unmount when the visible window moves elsewhere. Tracked
+    // imperatively (document `selectionchange` + container
+    // `focusin`/`focusout` — direct DOM observation per [L22]) into a
+    // ref; a change pokes `scrollTick` so the next window computation
+    // reads the new pin. The window CLAMPS outward to cover the pin
+    // (one contiguous range — see `computeWindow.pinnedRange`), so a
+    // selection far from the viewport widens the window instead of
+    // splitting it. Inline mode mounts everything and skips the
+    // machinery entirely.
+    const pinnedRangeRef = React.useRef<{ first: number; last: number } | null>(
+      null,
+    );
+    React.useLayoutEffect(() => {
+      if (inline === true) return;
+      const container = scrollContainerRef.current;
+      if (container === null) return;
+
+      const recomputePin = (): void => {
+        let first = Infinity;
+        let last = -Infinity;
+        const addNode = (node: Node | null): void => {
+          if (node === null) return;
+          const el = node instanceof Element ? node : node.parentElement;
+          if (el === null || !container.contains(el)) return;
+          const cell = el.closest("[data-tug-list-cell-index]");
+          if (cell === null) return;
+          const idx = Number(cell.getAttribute("data-tug-list-cell-index"));
+          if (!Number.isFinite(idx)) return;
+          if (idx < first) first = idx;
+          if (idx > last) last = idx;
+        };
+        const sel = document.getSelection();
+        if (sel !== null && sel.rangeCount > 0 && !sel.isCollapsed) {
+          addNode(sel.anchorNode);
+          addNode(sel.focusNode);
+        }
+        addNode(document.activeElement);
+        const next = first <= last ? { first, last } : null;
+        const prev = pinnedRangeRef.current;
+        const changed =
+          (next === null) !== (prev === null) ||
+          (next !== null &&
+            prev !== null &&
+            (next.first !== prev.first || next.last !== prev.last));
+        if (changed) {
+          pinnedRangeRef.current = next;
+          scrollTick();
+        }
+      };
+
+      document.addEventListener("selectionchange", recomputePin);
+      container.addEventListener("focusin", recomputePin);
+      container.addEventListener("focusout", recomputePin);
+      return () => {
+        document.removeEventListener("selectionchange", recomputePin);
+        container.removeEventListener("focusin", recomputePin);
+        container.removeEventListener("focusout", recomputePin);
+        pinnedRangeRef.current = null;
+      };
+      // `scrollTick` is a stable reducer dispatch; `inline` is the only
+      // real dependency.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inline]);
+
     // Read scroll geometry from the live DOM at render time. On the
     // first render `scrollContainerRef.current` is null (the ref
     // attaches in the same commit), producing a degenerate window
@@ -1308,6 +1374,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           viewportHeight,
           overscanCount: OVERSCAN_COUNT,
           estimatedHeightForIndex: heightForIndex,
+          pinnedRange: pinnedRangeRef.current,
         });
 
     // Mount-tick: after the first commit attaches the scroll-container

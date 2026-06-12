@@ -198,6 +198,7 @@ function mockClaudeChild(opts?: { stderr?: string[] }): MockChildHandle {
 async function makePrimedManager(opts: {
   jsonlReader?: (path: string) => Promise<JsonlReadResult>;
   replayTimeoutMs?: number;
+  replayTimeSliceMs?: number;
   stderr?: string[];
 }): Promise<{
   manager: SessionManager;
@@ -217,6 +218,7 @@ async function makePrimedManager(opts: {
         opts.jsonlReader ??
         (async () => ({ kind: "ok" as const, jsonl: twoTurnJsonl() })),
       replayTimeoutMs: opts.replayTimeoutMs ?? 10_000,
+      replayTimeSliceMs: opts.replayTimeSliceMs,
     },
   );
   const claudeHandle = mockClaudeChild({ stderr: opts.stderr });
@@ -597,10 +599,10 @@ describe("runReplay — hard timeout", () => {
     // the iteration step itself by injecting a JSONL of synthetic
     // entries plus a timeout below the iterator's natural pace.
     //
-    // Since `translateJsonlSession` runs in batches of 16 and yields
-    // via setTimeout(0) between batches, a 5ms timeout combined with
-    // batched yields produces a deterministic timeout outcome on a
-    // moderately-sized JSONL.
+    // `replayTimeSliceMs: 0` forces the translator to yield the event
+    // loop after every message — the deterministic stand-in for an
+    // iterator that stalls mid-replay — so a 1ms timeout reliably
+    // wins the race on a moderately-sized JSONL.
     const lines: string[] = [];
     for (let i = 0; i < 200; i++) {
       lines.push(
@@ -627,6 +629,7 @@ describe("runReplay — hard timeout", () => {
     const { manager } = await makePrimedManager({
       jsonlReader: async () => ({ kind: "ok", jsonl }),
       replayTimeoutMs: 1,
+      replayTimeSliceMs: 0,
     });
 
     const { emitted } = await captureIpc(async () => {

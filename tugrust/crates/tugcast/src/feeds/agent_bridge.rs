@@ -696,6 +696,16 @@ pub async fn relay_session_io(
         std::collections::HashMap<String, crate::session_ledger::TurnTelemetryRow>,
     > = None;
 
+    // Replay-window forward instrumentation: wall-clock anchor + count
+    // of frames forwarded to the merger inside the window. Emitted as
+    // a `perf.replay_forward` session-lifecycle trace on the bracket
+    // close so the per-resume waterfall has the tugcast leg. The mpsc
+    // send to the merger is awaited (backpressure, never dropped);
+    // the lossy hop is the per-client broadcast downstream, counted
+    // separately at the router's lag-recovery branch.
+    let mut replay_forward_started: Option<std::time::Instant> = None;
+    let mut replay_frames_forwarded: u64 = 0;
+
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
     let protocol_init = b"{\"type\":\"protocol_init\",\"version\":1}\n";
     if let Err(e) = stdin.write_all(protocol_init).await {
@@ -866,6 +876,8 @@ pub async fn relay_session_io(
                         // the ledger's `turn_count`.
                         if line.contains("\"type\":\"replay_started\"") {
                             in_replay = true;
+                            replay_forward_started = Some(std::time::Instant::now());
+                            replay_frames_forwarded = 0;
                             // Lazily populate the per-replay-window
                             // telemetry index. The claude session id is
                             // set by a prior `session_init` (cold-boot
@@ -1009,6 +1021,15 @@ pub async fn relay_session_io(
                         if line.contains("\"type\":\"replay_complete\"") {
                             in_replay = false;
                             replay_telemetry = None;
+                            if let Some(t0) = replay_forward_started.take() {
+                                tracing::info!(
+                                    target: "dev::session-lifecycle",
+                                    event = "perf.replay_forward",
+                                    tug_session_id = %tug_session_id,
+                                    frames = replay_frames_forwarded,
+                                    ms = t0.elapsed().as_millis() as u64,
+                                );
+                            }
                         }
 
                         // `turn_complete` events mark the end of an
@@ -1115,6 +1136,9 @@ pub async fn relay_session_io(
 
                         let spliced = splice_tug_session_id(&line_to_emit, tug_session_id.as_str());
                         let frame = Frame::new(FeedId::CODE_OUTPUT, spliced);
+                        if in_replay {
+                            replay_frames_forwarded += 1;
+                        }
                         if merger_tx.send(frame).await.is_err() {
                             warn!(session = %tug_session_id, "merger receiver closed; ending relay");
                             return RelayOutcome::Cancelled;

@@ -395,6 +395,25 @@
   --tugx-pin-stack-top: 36px;
 }
 
+/* Off-screen paint deferral — CSS-only, appearance zone ([L06]).
+   `content-visibility: auto` lets the browser skip layout and paint
+   for transcript rows outside the viewport while keeping their DOM
+   alive: selection, find-in-page, and scroll anchoring keep working
+   natively ([L23] satisfied for free — the deliberate contrast with
+   true windowing, which unmounts). `contain-intrinsic-size`'s `auto`
+   keyword makes the browser remember each row's last-rendered size
+   once it has painted; the per-kind length is only the pre-first-
+   paint placeholder and mirrors the list view's own height-delegate
+   estimates (56px user / 120px assistant). */
+.dev-card-transcript .tug-list-view-cell {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
+.dev-card-transcript .tug-list-view-cell[data-tug-list-cell-kind="user"] {
+  contain-intrinsic-size: auto 56px;
+}
+
 /* Tighten the gap between an entry's body and its trailing controls
    (e.g. the per-entry copy button). The base token reads as standard
    editorial spacing for transcript-style rows; in this consumer the

@@ -80,8 +80,11 @@ import "./tug-markdown-block.css";
 import React from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
+import { ensureParsed } from "@/lib/markdown/parse-cache";
+import { recordRowParse } from "@/lib/markdown/parse-counters";
 import {
   renderIncremental,
+  renderIncrementalFromBlocks,
   type RenderState,
 } from "@/lib/markdown/render-incremental";
 
@@ -160,7 +163,11 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     if (streamingStore !== undefined) return;
     const el = containerRef.current;
     if (el === null) return;
-    renderIncremental(el, initialText ?? "", null);
+    const text = initialText ?? "";
+    // Parse-economy counter: `renderIncremental` skips the parse
+    // entirely for empty text, so only non-empty renders count.
+    if (text !== "") recordRowParse("static");
+    renderIncremental(el, text, null);
     // Empty deps — `initialText` changes after mount are intentionally
     // ignored per the [#md-block-api] mount-once contract. A consumer
     // that wants to swap content remounts via a fresh React key.
@@ -187,7 +194,25 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
 
     const reconcile = (text: string): void => {
       const prev = STREAMING_RENDER_STATE.get(el) ?? null;
-      const { state } = renderIncremental(el, text, prev);
+      if (text === "") {
+        const { state } = renderIncremental(el, "", prev);
+        STREAMING_RENDER_STATE.set(el, state);
+        return;
+      }
+      // Render-once cache, scoped to the session's streaming store and
+      // keyed by the row's stable streaming-path identity
+      // (`turn.${turnKey}.message.${messageKey}.text`). A finalized
+      // row's text never changes, so after its last parse every
+      // subsequent render — re-mounts included (the per-container diff
+      // state is gone, the cache isn't) — skips the WASM
+      // lex/parse/sanitize pass and goes straight to the shared DOM
+      // apply. A streaming row's text changes per delta, so it misses
+      // and parses exactly as before; its final delta's parse IS the
+      // warm finalized entry. `ensureParsed` is the shared chokepoint
+      // the speculative warm queue also parses through, so a warmed
+      // row's mount is a pure cache hit.
+      const blocks = ensureParsed(streamingStore, streamingPath, text);
+      const { state } = renderIncrementalFromBlocks(el, blocks, prev);
       STREAMING_RENDER_STATE.set(el, state);
     };
 

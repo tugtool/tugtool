@@ -49,6 +49,14 @@ import { dispatchAction, getResponderChainManager } from "./action-dispatch";
 import type { RateLimitInfo } from "./protocol";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import type { TaggedValue } from "./lib/tugbank-client";
+import type {
+  LiveTurnPerf,
+  ReplayIngestPerf,
+} from "./lib/code-session-store";
+import {
+  snapshotRowParseCounters,
+  type RowParseCountersSnapshot,
+} from "./lib/markdown/parse-counters";
 
 // ---------------------------------------------------------------------------
 // Public types (`TugTestSurface`)
@@ -128,8 +136,14 @@ import type { TaggedValue } from "./lib/tugbank-client";
  * sheet app-test ([#step-10b]) can render the per-file accordion without a
  * live tugcast git round-trip (which [#step-10a]'s subprocess test proves).
  * Additive; major stays `1`.
+ *
+ * `1.12.0`: adds {@link TugTestSurface.getSessionPerf} — reads a bound dev
+ * card's perf instrumentation (replay-ingest / live-turn commit counters +
+ * row-parse counters) so the resume-performance baseline and budget
+ * app-tests assert internal splits without scraping the log stream.
+ * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.11.0" as const;
+export const SURFACE_VERSION = "1.12.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -670,6 +684,22 @@ export interface TugTestSurface {
    * git round-trip. Requires a prior `bindDevSession(cardId)`.
    */
   ingestGitDiff(cardId: string, payload: unknown): void;
+
+  /**
+   * Read a bound dev card's perf instrumentation: the
+   * `CodeSessionStore` replay-ingest / live-turn commit counters plus
+   * the (app-global) row-parse counters. Pure read — the
+   * resume-performance baseline and budget app-tests assert internal
+   * splits (commit counts, parse-once) through this instead of
+   * scraping the log stream. Requires a prior bound session.
+   */
+  getSessionPerf(cardId: string): {
+    replay: ReplayIngestPerf | null;
+    lastReplay: ReplayIngestPerf | null;
+    liveTurn: LiveTurnPerf | null;
+    lastLiveTurn: LiveTurnPerf | null;
+    rowParse: RowParseCountersSnapshot;
+  };
 
   /**
    * Read the deck's current `hasFocus` state. The deck's
@@ -1522,6 +1552,26 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         );
       }
       services.gitDiffStore._ingestForTest(payload);
+    },
+
+    getSessionPerf(cardId: string): {
+      replay: ReplayIngestPerf | null;
+      lastReplay: ReplayIngestPerf | null;
+      liveTurn: LiveTurnPerf | null;
+      lastLiveTurn: LiveTurnPerf | null;
+      rowParse: RowParseCountersSnapshot;
+    } {
+      const services = cardServicesStore.getServices(cardId);
+      if (services === null) {
+        throw new Error(
+          `getSessionPerf: card "${cardId}" has no bound session — ` +
+            `call bindDevSession("${cardId}") first`,
+        );
+      }
+      return {
+        ...services.codeSessionStore._getPerfForDevPanel(),
+        rowParse: snapshotRowParseCounters(),
+      };
     },
 
     getHasFocus(): boolean {
