@@ -457,6 +457,11 @@ pub async fn run_session_bridge(
     // unchanged and the client reducer's merge falls back to its
     // zero-telemetry derived block — correct behavior, no crash.
     session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
+    // Optional handle to the app-scoped pulse bridge. When present the
+    // relay diverts `pulse_fact` stdout lines there instead of the
+    // CODE_OUTPUT broadcast; when `None` (tests, pulse disabled at
+    // construction) the lines are dropped by the same divert.
+    pulse_fact_tx: Option<crate::feeds::pulse::PulseFactSender>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -560,6 +565,7 @@ pub async fn run_session_bridge(
             &project_dir_str,
             sessions_recorder.as_ref(),
             session_ledger.as_deref(),
+            pulse_fact_tx.as_ref(),
             &cancel,
         )
         .await;
@@ -666,6 +672,8 @@ pub async fn relay_session_io(
     // during the replay window. `None` in tests that don't wire a
     // ledger — replayed `turn_complete` frames pass through unchanged.
     session_ledger: Option<&crate::session_ledger::SessionLedger>,
+    // Optional pulse-bridge fact sender for the `pulse_fact` divert.
+    pulse_fact_tx: Option<&crate::feeds::pulse::PulseFactSender>,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
     // Captured when tugcode emits `resume_failed`. tugcode then
@@ -1052,6 +1060,21 @@ pub async fn relay_session_io(
                         // reducer's merge function adopts the inline
                         // payload on the replay path. See plan
                         // `#step-20-3-4`.
+                        // `pulse_fact` divert: producer facts ride
+                        // tugcode's stdout but are app-bus traffic for
+                        // the pulse bridge — they must never reach the
+                        // deck-bound CODE_OUTPUT broadcast. Forward the
+                        // raw line and skip the splice/emit entirely.
+                        // `try_send` deliberately: a full pulse queue
+                        // drops the fact rather than backpressuring the
+                        // session relay (commentary never slows work).
+                        if crate::feeds::pulse::is_pulse_fact_line(&line) {
+                            if let Some(tx) = pulse_fact_tx {
+                                let _ = tx.try_send(line.as_bytes().to_vec());
+                            }
+                            continue;
+                        }
+
                         let line_to_emit: Vec<u8> = if line.contains("\"type\":\"turn_complete\"") {
                             if in_replay {
                                 if let Some(ref map) = replay_telemetry {

@@ -10,8 +10,9 @@ build:
     cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank
     cd ..
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
+    bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
     mkdir -p ~/.local/bin
-    for bin in tugcast tugexec tugutil tugcode tugrelaunch tugbank; do
+    for bin in tugcast tugexec tugutil tugcode tugpulse tugrelaunch tugbank; do
         ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
     done
 
@@ -288,6 +289,7 @@ app-release: build wasm
     echo "==> Building release Rust binaries for the bundle"
     (cd tugrust && cargo build --release -p tugcast -p tugexec -p tugutil -p tugrelaunch)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode
+    bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/release/tugpulse
     find tugapp/Sources -name '*.swift' -exec touch {} +
     DERIVED="$(bash tugrust/scripts/derived-data-path.sh release)"
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build
@@ -714,6 +716,7 @@ build-app:
     echo "==> [1/5] Rust debug binaries"
     (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
+    bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
 
     echo "==> [2/5] tugdeck deps + prebuilt dist"
     (cd tugdeck && bun install && bun run build)

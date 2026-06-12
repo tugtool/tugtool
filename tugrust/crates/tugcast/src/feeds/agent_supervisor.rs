@@ -1002,6 +1002,13 @@ pub struct AgentSupervisor {
     /// because the critical section is bounded, non-awaiting, and never
     /// crosses an `.await` point.
     pub spawn_timestamps: Arc<StdMutex<VecDeque<Instant>>>,
+    /// Optional handle to the app-scoped pulse bridge. Threaded into
+    /// every session bridge so the relay can divert `pulse_fact`
+    /// stdout lines off the deck-bound broadcast; also consulted by
+    /// the `list_pulse_lines` CONTROL read. `None` until `main`
+    /// installs it via [`AgentSupervisor::set_pulse_fact_tx`] (tests
+    /// that don't exercise pulse leave it unset).
+    pub pulse_fact_tx: Option<crate::feeds::pulse::PulseFactSender>,
 }
 
 /// Registration sent through [`AgentSupervisor::merger_register_tx`] so the
@@ -1650,8 +1657,17 @@ impl AgentSupervisor {
             registry,
             cancel,
             spawn_timestamps: Arc::new(StdMutex::new(VecDeque::new())),
+            pulse_fact_tx: None,
         };
         (sup, merger_register_rx)
+    }
+
+    /// Install the app-scoped pulse bridge's fact sender. Called once
+    /// from `main.rs` between construction and `Arc::new`; every
+    /// session bridge spawned afterwards diverts `pulse_fact` lines
+    /// to it.
+    pub fn set_pulse_fact_tx(&mut self, tx: crate::feeds::pulse::PulseFactSender) {
+        self.pulse_fact_tx = Some(tx);
     }
 
     /// Handle a CONTROL frame's action. `client_id` is the WebSocket
@@ -1831,6 +1847,11 @@ impl AgentSupervisor {
                     }
                 };
                 self.do_list_session_state_changes(parsed).await;
+                Ok(())
+            }
+            "list_pulse_lines" => {
+                // App-scoped read — no session id, no payload fields.
+                self.do_list_pulse_lines().await;
                 Ok(())
             }
             // Any action not above is not owned by the supervisor.
@@ -3176,6 +3197,35 @@ impl AgentSupervisor {
         ));
     }
 
+    /// Handle a `list_pulse_lines` CONTROL request — the deck's
+    /// PULSE-ledger tail read (the pulse-store sends it on mount, then
+    /// stays live off the PULSE feed). App-scoped: no session id.
+    /// Broadcasts `list_pulse_lines_ok { lines: PulseLineRow[] }`,
+    /// oldest-first; a missing ledger yields an empty array (the
+    /// "no history yet" state, same conduct as the state-changes read).
+    async fn do_list_pulse_lines(&self) {
+        let lines = self
+            .session_ledger
+            .as_ref()
+            .map(|ledger| {
+                ledger
+                    .list_pulse_lines_tail(crate::feeds::pulse::PULSE_TAIL_LEN)
+                    .unwrap_or_else(|err| {
+                        warn!(error = %err, "list_pulse_lines failed");
+                        Vec::new()
+                    })
+            })
+            .unwrap_or_default();
+        let body = serde_json::json!({
+            "action": "list_pulse_lines_ok",
+            "lines": lines,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_pulse_lines_ok serializes"),
+        ));
+    }
+
     /// Handle a `trash_session` CONTROL request. For ledger rows this
     /// deletes the row and moves the JSONL to in-place trash (the
     /// ledger refuses live rows). For external sessions — no ledger
@@ -4093,6 +4143,7 @@ impl AgentSupervisor {
         };
         let sessions_recorder = self.sessions_recorder.clone();
         let session_ledger_for_bridge = self.session_ledger.clone();
+        let pulse_fact_tx = self.pulse_fact_tx.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -4105,6 +4156,7 @@ impl AgentSupervisor {
                 session_mode,
                 sessions_recorder,
                 session_ledger_for_bridge,
+                pulse_fact_tx,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -6266,6 +6318,7 @@ mod tests {
             "/tmp/test-relay-project",
             &recorder,
             None,
+            None,
             &cancel,
         )
         .await;
@@ -6374,6 +6427,7 @@ mod tests {
             lines,
             "/tmp/test-relay-resume-fail",
             &recorder,
+            None,
             None,
             &cancel,
         )
@@ -6547,6 +6601,7 @@ mod tests {
             "/tmp/test-meta-e2e",
             &recorder,
             Some(ledger.as_ref()),
+            None,
             &cancel,
         )
         .await;

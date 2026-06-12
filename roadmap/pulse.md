@@ -138,8 +138,10 @@ must be a claude CLI subprocess riding existing auth — not a direct API client
 
 - A Haiku one-liner (~30 output tokens) generates in well under the stale-drop
   window (~4s) under normal conditions; the Step 1 spike measures it.
-- `--permission-mode plan` (or equivalently a no-tools posture) keeps the
-  commentator text-only with no permission round-trips; the spike confirms.
+- ~~`--permission-mode plan` keeps the commentator text-only~~ — OVERTURNED by
+  the Step 1 spike: plan mode permits read-only tools and the model used them.
+  The pinned no-tools posture is default mode + full `--disallowedTools` +
+  `--setting-sources ""` + `MAX_THINKING_TOKENS=0` (see [Q02] resolution).
 - One app-scoped daemon is sufficient; per-session commentators are never needed
   (cross-source narration is the point).
 
@@ -160,7 +162,9 @@ and that's cheapest to learn before the daemon is built.
 **Plan to resolve:** Step 1 spike feeds scripted two-scope digests to a live Haiku
 session and judges the lines (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1.
+**Resolution:** RESOLVED by the #step-1 spike (`v2.1.173-pulse-spike/README.md`):
+one digest with scope-tag grouping (`[a1b2]` headers, fact bullets) — Haiku weaves
+two scopes coherently and unprompted; no per-scope beats needed.
 
 #### [Q02] Minimal claude driving for the daemon (OPEN) {#q02-minimal-driving}
 
@@ -176,7 +180,14 @@ size.
 needed is what the daemon needs (#step-1). The monitor/jobs probes already
 demonstrated init + send + read with zero control traffic under bypassPermissions.
 
-**Resolution:** OPEN — resolved by #step-1.
+**Resolution:** RESOLVED by the #step-1 spike (`v2.1.173-pulse-spike/README.md`):
+a thin new driver — spawn args + auth scrub + newline-split stdout JSON + user
+sends + **sequence-paired** result reads; zero control traffic observed. None of
+`control.ts`/`session.ts` is needed. Posture correction: `--permission-mode plan`
+was REJECTED (it permits read-only tools; the model ran Bash/Agent
+"investigations") — the daemon uses default mode + full `--disallowedTools`,
+`--setting-sources ""`, `MAX_THINKING_TOKENS=0`, and the exact model id
+`claude-haiku-4-5` (the `haiku` alias silently fell back to sonnet).
 
 #### [Q03] Per-card scope filtering and shelf integration (DEFERRED) {#q03-scope-filtering}
 
@@ -411,8 +422,11 @@ noteworthy. Tone is a swappable preamble (only the default ships).
 Renders beneath the Z2 status row when PULSE is enabled; fixed single-line height
 (reserved once shown — no layout shift per line); shows the newest line with the
 fade-in treatment from the workshop card; empty state before the first line is a
-dimmed placeholder, not collapsed chrome. Lines render app-wide (no scope filter in
-v1, [Q03]).
+dimmed placeholder, not collapsed chrome. AMENDED during integration: the strip
+filters the app-wide log to the card's own session (`latestLineForScope` — own
+scope, woven multi-scope, or `"app"` ambience); the original no-filter v1 put
+another session's line on a brand-new card, rejected on the live walk. The
+shelf-lane/row-item filtering knobs remain with [Q03].
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -491,12 +505,12 @@ v1, [Q03]).
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Voice spike: prompt, latency, multi-scope | pending | — |
-| #step-2 | tugpulse daemon | pending | — |
-| #step-3 | tugcast pulse bridge + ledger + feeds | pending | — |
-| #step-4 | tugcode fact producer | pending | — |
-| #step-5 | Deck: pulse store + Z2 strip | pending | — |
-| #step-6 | Document PULSE | pending | — |
+| #step-1 | Voice spike: prompt, latency, multi-scope | done | 2f87460b |
+| #step-2 | tugpulse daemon | done | b6918f5f |
+| #step-3 | tugcast pulse bridge + ledger + feeds | done | 84ade96a |
+| #step-4 | tugcode fact producer | done | 72872b40 |
+| #step-5 | Deck: pulse store + Z2 strip | done | 90014325 |
+| #step-6 | Document PULSE | done | cf71ec8f |
 | #step-7 | Integration checkpoint | pending | — |
 
 #### Step 1: Voice spike — prompt, latency, multi-scope {#step-1}

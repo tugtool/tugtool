@@ -16,6 +16,7 @@ import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store"
 import { restoreDevSessions } from "./lib/dev-session-restore";
 import { attachDevSessionLedgerStore } from "./lib/dev-session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
+import { attachPulseStore } from "./lib/pulse-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import {
   ConnectionLifecycle,
@@ -327,6 +328,11 @@ if (!container) {
   // `list_session_state_changes` on first observation of a session and
   // appends live triple transitions from the local pub/sub bus.
   attachSessionStateChangesStore(connection);
+
+  // Wire the app-scoped PULSE store: one `list_pulse_lines` tail
+  // fetch on first observation, live `PULSE` frames folded after.
+  // The Z2 strip reads it via `usePulse`.
+  attachPulseStore(connection);
 
   // Re-assert session bindings for dev cards that were alive before
   // this page reload. The deck layout is materialized;

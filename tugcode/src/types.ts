@@ -1057,6 +1057,24 @@ export interface PromptAnchor {
   ipc_version: number;
 }
 
+/**
+ * One PULSE fact — a producer-written sentence about a notable session
+ * event, addressed to the app-wide commentator daemon, not the deck.
+ * Tugcast's session relay diverts these lines to its pulse bridge;
+ * they never reach the CODE_OUTPUT broadcast. Emitted by
+ * `pulse-facts.ts`'s producer through the ordinary `writeLine` path so
+ * stdout framing stays serialized. No `ipc_version`: this frame is
+ * pulse-bus vocabulary (Spec S01 in the pulse design), not deck IPC.
+ */
+export interface PulseFactEvent {
+  type: "pulse_fact";
+  source: "claude-code";
+  scope: string;
+  kind: "turn" | "tool" | "task" | "job" | "error" | "note";
+  fact: string;
+  at: number;
+}
+
 export type OutboundMessage =
   | ProtocolAck
   | SessionInit
@@ -1093,6 +1111,7 @@ export type OutboundMessage =
   | SkillsInventory
   | HooksInventory
   | PromptAnchor
+  | PulseFactEvent
   | UnknownEvent;
 
 // Type guards. `isInboundMessage` is the shared, verb-list-derived guard

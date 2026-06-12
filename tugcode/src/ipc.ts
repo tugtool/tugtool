@@ -73,6 +73,23 @@ export async function* readLine(): AsyncGenerator<InboundMessage, void, unknown>
 let writeTail: Promise<unknown> = Promise.resolve();
 
 /**
+ * Optional tap on the outbound stream. The PULSE fact producer
+ * registers here: every message that goes to the wire (live AND
+ * replayed — the observer reads the replay bracket markers to mute
+ * itself across re-emitted history) is offered to the observer before
+ * serialization. Observer exceptions are swallowed — narration must
+ * never break IPC.
+ */
+let outboundObserver: ((msg: Record<string, unknown>) => void) | null = null;
+
+/** Install (or clear, with `null`) the outbound observer. */
+export function setOutboundObserver(
+  observer: ((msg: Record<string, unknown>) => void) | null,
+): void {
+  outboundObserver = observer;
+}
+
+/**
  * Write an outbound message as a JSON line to stdout.
  *
  * Fire-and-forget for the caller, but **serialized** with all other
@@ -81,6 +98,13 @@ let writeTail: Promise<unknown> = Promise.resolve();
  * for the corruption pattern this prevents.
  */
 export function writeLine(msg: OutboundMessage): void {
+  if (outboundObserver !== null) {
+    try {
+      outboundObserver(msg as unknown as Record<string, unknown>);
+    } catch {
+      // Observer faults are not wire faults.
+    }
+  }
   const json = JSON.stringify(msg) + "\n";
   writeTail = writeTail.then(() => Bun.write(Bun.stdout, json));
 }

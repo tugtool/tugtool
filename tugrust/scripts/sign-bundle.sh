@@ -128,6 +128,17 @@ codesign --force --options runtime --timestamp \
     --entitlements "$TUGCODE_ENTITLEMENTS" \
     --sign "$IDENTITY" "$TUGCODE_BIN"
 
+# (3b) tugpulse — also bun-compiled (the PULSE commentator daemon);
+# same permissive entitlements as tugcode. Present-if-shipped: older
+# bundle configurations without it sign fine.
+TUGPULSE_BIN="$APP_PATH/Contents/MacOS/tugpulse"
+if [ -x "$TUGPULSE_BIN" ]; then
+    echo "    signing tugpulse (bun): permissive entitlements"
+    codesign --force --options runtime --timestamp \
+        --entitlements "$TUGCODE_ENTITLEMENTS" \
+        --sign "$IDENTITY" "$TUGPULSE_BIN"
+fi
+
 # (4) Reserved slot for nested frameworks. Sign them HERE, before
 # the outer seal in (5). Adding one without updating this script
 # will fail notarization (the outer seal won't cover the framework's

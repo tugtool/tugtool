@@ -312,6 +312,24 @@ pub struct SessionStateChangeRow {
     pub interrupt_in_flight: bool,
 }
 
+/// One row of the `pulse_lines` table — a single commentator line from
+/// the app-scoped PULSE daemon. The table is a capped rolling log
+/// (`record_pulse_line` prunes past the cap): the deck reads the tail
+/// via the `list_pulse_lines` CONTROL verb on mount, and the daemon
+/// re-seeds its inner session from the same tail after restarts.
+///
+/// App-scoped by design — no session-id column and no cascade: a line
+/// may cover several scopes (carried in `scopes` as a JSON array of
+/// scope ids) and outlives any one session row.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PulseLineRow {
+    pub id: i64,
+    pub at_ms: i64,
+    pub beat: i64,
+    pub text: String,
+    pub scopes: Vec<String>,
+}
+
 /// One row of the `external_scan_cache` table — the persisted result
 /// of scanning one on-disk session JSONL, keyed by session id and
 /// validated by `(file_size, file_mtime)`. `excluded` remembers a
@@ -674,6 +692,22 @@ impl SessionLedger {
             BEGIN
                 DELETE FROM session_state_changes WHERE session_id = OLD.session_id;
             END;
+
+            -- App-scoped PULSE commentary lines — a capped rolling log
+            -- written by the pulse bridge as daemon lines arrive and
+            -- read two ways: the deck fetches the tail through the
+            -- `list_pulse_lines` CONTROL verb on mount, and the daemon
+            -- is re-seeded from the same tail at spawn. `scopes` is a
+            -- JSON array of the scope ids the line's source beat
+            -- covered. Deliberately NO session cascade: a line may span
+            -- scopes and the narrative log outlives any one session.
+            CREATE TABLE IF NOT EXISTS pulse_lines (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                at_ms  INTEGER NOT NULL,
+                beat   INTEGER NOT NULL,
+                text   TEXT NOT NULL,
+                scopes TEXT NOT NULL
+            );
 
             -- Cache of external-session scan results — one row per
             -- on-disk JSONL the external scanner has parsed, keyed by
@@ -1703,6 +1737,61 @@ impl SessionLedger {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    /// Append a `pulse_lines` row and prune the log to `cap` rows
+    /// (oldest first). `scopes` is persisted as a JSON array string.
+    pub fn record_pulse_line(
+        &self,
+        at_ms: i64,
+        beat: i64,
+        text: &str,
+        scopes: &[String],
+        cap: usize,
+    ) -> Result<(), LedgerError> {
+        let scopes_json =
+            serde_json::to_string(scopes).unwrap_or_else(|_| "[]".to_string());
+        let mut conn = self.db.lock().expect("ledger mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO pulse_lines (at_ms, beat, text, scopes)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![at_ms, beat, text, scopes_json],
+        )?;
+        tx.execute(
+            "DELETE FROM pulse_lines
+             WHERE id NOT IN (
+                 SELECT id FROM pulse_lines ORDER BY id DESC LIMIT ?1
+             )",
+            params![cap as i64],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The newest `limit` pulse lines, returned OLDEST-first (display /
+    /// seed order). Empty vec when the log is empty.
+    pub fn list_pulse_lines_tail(&self, limit: usize) -> Result<Vec<PulseLineRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, at_ms, beat, text, scopes FROM (
+                 SELECT id, at_ms, beat, text, scopes
+                 FROM pulse_lines ORDER BY id DESC LIMIT ?1
+             ) ORDER BY id ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![limit as i64], |row| {
+                let scopes_json: String = row.get(4)?;
+                Ok(PulseLineRow {
+                    id: row.get(0)?,
+                    at_ms: row.get(1)?,
+                    beat: row.get(2)?,
+                    text: row.get(3)?,
+                    scopes: serde_json::from_str(&scopes_json).unwrap_or_default(),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
 }
 
 /// Decode one row from a `SELECT … FROM sessions` cursor matching the column
@@ -2011,6 +2100,35 @@ mod tests {
         ledger
             .record_spawn(id, ws, "/proj", card, now)
             .expect("record_spawn");
+    }
+
+    // ── pulse_lines: capped rolling log + tail read ──────────────────────────
+
+    #[test]
+    fn pulse_lines_cap_and_tail() {
+        let ledger = fresh();
+        // Empty log → empty tail.
+        assert!(ledger.list_pulse_lines_tail(20).unwrap().is_empty());
+
+        // Write past the cap; only the newest `cap` rows survive.
+        let scopes = vec!["scope-a".to_string(), "scope-b".to_string()];
+        for i in 1..=250_i64 {
+            ledger
+                .record_pulse_line(1_000 + i, i, &format!("line {i}"), &scopes, 200)
+                .expect("record_pulse_line");
+        }
+        let all = ledger.list_pulse_lines_tail(1_000).unwrap();
+        assert_eq!(all.len(), 200);
+        assert_eq!(all.first().unwrap().text, "line 51");
+        assert_eq!(all.last().unwrap().text, "line 250");
+
+        // Tail read returns the newest N, OLDEST-first, scopes intact.
+        let tail = ledger.list_pulse_lines_tail(20).unwrap();
+        assert_eq!(tail.len(), 20);
+        assert_eq!(tail.first().unwrap().text, "line 231");
+        assert_eq!(tail.last().unwrap().text, "line 250");
+        assert_eq!(tail.last().unwrap().beat, 250);
+        assert_eq!(tail.last().unwrap().scopes, scopes);
     }
 
     // ── CRUD round-trip per state transition ─────────────────────────────────

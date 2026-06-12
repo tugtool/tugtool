@@ -1,0 +1,70 @@
+/**
+ * tide-pulse-strip.css — the Z2 PULSE strip's scoped styling, the
+ * workshop spike's strip treatment productionized.
+ *
+ * One fixed-height line: a letterspaced mono PULSE legend, then the
+ * newest commentary line in a small italic, ellipsized. The fade-in
+ * animation re-runs per line because the text span is keyed on line
+ * identity ([L06] — appearance via CSS, re-triggered by mount).
+ *
+ * Tuglaw cross-check:
+ *  - [L19] component file pair with `data-slot="tide-pulse-strip"`.
+ *  - [L20] the strip owns its own legend/text/placeholder scope; the
+ *    dev card contributes only the mount position.
+ *  - [L16] color-setting rules pair with `@tug-renders-on` (the strip
+ *    rides the card's status surface).
+ *
+ * @module components/tugways/cards/tide-pulse-strip
+ */
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-pulse-strip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-sm);
+  flex: 0 0 auto;
+  /* Fixed-height contract: one line, never moves as lines change. */
+  padding: 3px var(--tug-space-md);
+  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  overflow: hidden;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-pulse-strip-legend {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.5625rem;
+  letter-spacing: 0.18em;
+  flex: 0 0 auto;
+  opacity: 0.8;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-pulse-strip-text {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: 0.6875rem;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  animation: tide-pulse-strip-in calc(360ms * var(--tug-timing, 1)) ease;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-pulse-strip-placeholder {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  animation: none;
+}
+
+@keyframes tide-pulse-strip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

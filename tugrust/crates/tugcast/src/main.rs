@@ -652,7 +652,7 @@ async fn main() {
     };
     let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
 
-    let (supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
+    let (mut supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
         session_state_tx.clone(),
         session_metadata_tx.clone(),
         code_tx.clone(),
@@ -664,6 +664,42 @@ async fn main() {
         Arc::clone(&registry),
         cancel.clone(),
     );
+
+    // PULSE — app-wide color commentary. One bridge per process: the
+    // session relays divert producer `pulse_fact` lines into it, it
+    // lazily spawns/supervises the tugpulse daemon (gated on the
+    // `pulse/enabled` tugbank default, ON by default), and the daemon's
+    // lines land in the capped ledger + the PULSE broadcast below.
+    let (pulse_tx, _) = broadcast::channel(64);
+    let tugpulse_path = feeds::pulse::resolve_tugpulse_path(&tugcode_path);
+    let pulse_enabled: Arc<dyn Fn() -> bool + Send + Sync> = {
+        let bank = bank_client.clone();
+        Arc::new(move || {
+            let Some(bank) = bank.as_ref() else {
+                return true;
+            };
+            match bank.get(
+                feeds::pulse::PULSE_ENABLED_DOMAIN,
+                feeds::pulse::PULSE_ENABLED_KEY,
+            ) {
+                Ok(Some(tugbank_core::Value::Bool(enabled))) => enabled,
+                // Absent / other-typed / unreadable all read as the
+                // default-ON posture ([P06]).
+                _ => true,
+            }
+        })
+    };
+    let pulse_fact_tx = feeds::pulse::spawn_pulse_bridge(
+        feeds::pulse::PulseBridgeConfig {
+            spawner: Arc::new(feeds::pulse::TugpulseSpawner { tugpulse_path }),
+            enabled: pulse_enabled,
+            ledger: Some(Arc::clone(&ledger)),
+            pulse_tx: pulse_tx.clone(),
+        },
+        cancel.clone(),
+    );
+    supervisor.set_pulse_fact_tx(pulse_fact_tx);
+
     let supervisor = Arc::new(supervisor);
 
     // Rebind persisted ledger rows. Per [F15] this only populates the
@@ -724,6 +760,10 @@ async fn main() {
         session_metadata_tx,
         LagPolicy::Warn,
     );
+    // PULSE commentary lines fan out to every connected deck; the tail
+    // a reconnecting deck needs comes from the `list_pulse_lines`
+    // CONTROL read, not feed replay ([P09]).
+    feed_router.register_stream(FeedId::PULSE, pulse_tx, LagPolicy::Warn);
 
     // Register input sinks (client → server backends). CODE_INPUT points
     // at the supervisor's dispatcher (spawned above); the dispatcher

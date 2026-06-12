@@ -1,7 +1,8 @@
 // Session lifecycle management via direct claude CLI spawning
 
 import { PermissionManager } from "./permissions.ts";
-import { writeLine, writeLineAndExit } from "./ipc.ts";
+import { setOutboundObserver, writeLine, writeLineAndExit } from "./ipc.ts";
+import { PulseFactProducer } from "./pulse-facts.ts";
 import {
   sendControlRequest,
   sendControlResponse,
@@ -2174,6 +2175,8 @@ export class SessionManager {
    * resume), and tugcode keys the sessions record by it.
    */
   private sessionId: string;
+  /** PULSE fact producer — see the constructor's installation note. */
+  private pulseFacts!: PulseFactProducer;
   /**
    * `"new"` spawns claude with `--session-id <id>` (claiming the id);
    * `"resume"` spawns claude with `--resume <id>` (loading an existing
@@ -2432,6 +2435,16 @@ export class SessionManager {
     this.replayTimeSliceMs = options?.replayTimeSliceMs;
     this.contextBreakdownEmitter = options?.contextBreakdownEmitter ?? null;
     this.openSessionsDb(options?.sessionsDbPath);
+    // PULSE fact producer: observes every outbound wire message (the
+    // replay bracket mutes re-emitted history) and emits `pulse_fact`
+    // frames through the same serialized writeLine path; tugcast's
+    // relay diverts them to the pulse bridge. Module-global observer
+    // slot — one SessionManager per tugcode process by design.
+    this.pulseFacts = new PulseFactProducer({
+      scope: this.sessionId,
+      write: (frame) => writeLine(frame),
+    });
+    setOutboundObserver((msg) => this.pulseFacts.observeOutbound(msg));
   }
 
   /**
@@ -4693,6 +4706,21 @@ export class SessionManager {
     // wire shape IS the Anthropic API shape post-Step-5c; no
     // construction step. Per [Step 5c](roadmap/dev-atoms.md#step-5c).
     const contentBlocks = msg.content;
+
+    // PULSE: the turn's request preview. User messages are inbound
+    // (never re-emitted outbound live), so the producer's outbound
+    // observer can't see them — this explicit hook is the one
+    // fact site that isn't observation-driven.
+    this.pulseFacts.onTurnStart(
+      contentBlocks
+        .filter(
+          (b): b is { type: "text"; text: string } =>
+            (b as { type?: string }).type === "text" &&
+            typeof (b as { text?: unknown }).text === "string",
+        )
+        .map((b) => b.text)
+        .join(" "),
+    );
 
     const userInput = JSON.stringify({
       type: "user",

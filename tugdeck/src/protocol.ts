@@ -45,6 +45,9 @@ export const FeedId = {
   SHELL_INPUT: 0x61,
   // TugFeed (reserved for Phase T3+)
   TUG_FEED: 0x70,
+  // Pulse (app-wide color commentary)
+  PULSE: 0x80,
+  PULSE_FACT: 0x81,
   // Router-internal
   CONTROL: 0xc0,
   HEARTBEAT: 0xff,
@@ -712,6 +715,65 @@ export function encodeListSessionStateChanges(tugSessionId: string): Frame {
 export interface ListSessionStateChangesOk {
   tug_session_id: string;
   rows: SessionStateChangeWireRow[];
+}
+
+/**
+ * One row of the `list_pulse_lines_ok` response — a persisted PULSE
+ * commentary line from tugcast's capped ledger, oldest-first.
+ */
+export interface PulseLineWireRow {
+  id: number;
+  at_ms: number;
+  beat: number;
+  text: string;
+  scopes: string[];
+}
+
+/** Decoded `list_pulse_lines_ok` response payload (app-scoped). */
+export interface ListPulseLinesOk {
+  lines: PulseLineWireRow[];
+}
+
+/**
+ * Request the PULSE ledger tail. App-scoped — no session id. The
+ * response is `list_pulse_lines_ok { lines }`; the pulse-store sends
+ * this once on mount, then stays live off the PULSE feed.
+ */
+export function encodeListPulseLines(): Frame {
+  return controlFrame("list_pulse_lines", {});
+}
+
+/**
+ * Decoded live `PULSE` feed frame — one commentator line as broadcast
+ * by tugcast's pulse bridge (Spec S01 in the pulse design).
+ */
+export interface PulseFramePayload {
+  text: string;
+  scopes: string[];
+  beat: number;
+  at: number;
+}
+
+/** Parse a PULSE feed frame's payload; null on malformed/foreign shapes. */
+export function parsePulseFrame(payload: Uint8Array): PulseFramePayload | null {
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(payload));
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const p = parsed as Record<string, unknown>;
+    if (p.type !== "pulse" || typeof p.text !== "string" || p.text.length === 0) {
+      return null;
+    }
+    return {
+      text: p.text,
+      scopes: Array.isArray(p.scopes)
+        ? p.scopes.filter((s): s is string => typeof s === "string")
+        : [],
+      beat: typeof p.beat === "number" ? p.beat : 0,
+      at: typeof p.at === "number" ? p.at : 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -70,6 +70,8 @@ import { TugBox } from "../tug-box";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPushButton } from "../tug-push-button";
 import { AlertTriangle, Maximize2, Minimize2, Trash2 } from "lucide-react";
+
+import { TidePulseStrip } from "./tide-pulse-strip";
 import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,
@@ -3498,6 +3500,17 @@ export function DevCardBody({
                 </>
               )}
             </div>
+            {/*
+              The PULSE strip — one ambient line of color commentary
+              beneath the Z2 status row, filtered to THIS card's
+              session (one app-wide commentator, per-card display).
+              Gated like the status bar (no Z2 content → no strip);
+              the component additionally hides itself while the
+              `pulse/enabled` default is off.
+            */}
+            {effectiveStatusBarContent != null && (
+              <TidePulseStrip codeSessionStore={codeSessionStore} />
+            )}
           </div>
         {/*
           Prompt-entry region — content-sized and pinned to the card bottom.
