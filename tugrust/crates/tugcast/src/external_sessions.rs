@@ -369,9 +369,15 @@ pub fn scan_external_sessions(
     candidates
         .into_iter()
         .filter_map(|c| {
-            parse_session_file(&c.path, &canonical, &c.session_id, c.file_size, c.file_mtime)
-                .ok()
-                .flatten()
+            parse_session_file(
+                &c.path,
+                &canonical,
+                &c.session_id,
+                c.file_size,
+                c.file_mtime,
+            )
+            .ok()
+            .flatten()
         })
         .collect()
 }
@@ -538,7 +544,11 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
     }
     match ledger.prune_scan_cache_except(project_dir, &seen_ids) {
         Ok(pruned) if pruned > 0 => {
-            tracing::debug!(pruned, project_dir, "external scan: pruned stale cache rows");
+            tracing::debug!(
+                pruned,
+                project_dir,
+                "external scan: pruned stale cache rows"
+            );
         }
         Ok(_) => {}
         Err(err) => {
@@ -593,7 +603,12 @@ mod tests {
     #[test]
     fn extracts_turn_count_prompt_and_title() {
         let root = tempfile::tempdir().unwrap();
-        seed(root.path(), PROJECT, SESSION_A, &tui_shaped_jsonl(SESSION_A, PROJECT));
+        seed(
+            root.path(),
+            PROJECT,
+            SESSION_A,
+            &tui_shaped_jsonl(SESSION_A, PROJECT),
+        );
         let metas = scan_external_sessions(root.path(), PROJECT);
         assert_eq!(metas.len(), 1);
         let m = &metas[0];
@@ -650,7 +665,11 @@ mod tests {
         fs::create_dir_all(dir.join(format!("{SESSION_A}/subagents"))).unwrap();
         fs::write(dir.join(".DS_Store"), "x").unwrap();
         fs::write(dir.join("notes.jsonl"), "{}").unwrap();
-        fs::write(dir.join("UPPERCASE-2222-3333-4444-555555555555.jsonl"), "{}").unwrap();
+        fs::write(
+            dir.join("UPPERCASE-2222-3333-4444-555555555555.jsonl"),
+            "{}",
+        )
+        .unwrap();
         assert!(scan_external_sessions(root.path(), PROJECT).is_empty());
     }
 
@@ -674,11 +693,8 @@ mod tests {
     }
 
     fn ledger_with_root(root: &Path) -> SessionLedger {
-        SessionLedger::open_with_claude_root(
-            root.join("sessions.db"),
-            root.join("projects"),
-        )
-        .unwrap()
+        SessionLedger::open_with_claude_root(root.join("sessions.db"), root.join("projects"))
+            .unwrap()
     }
 
     #[test]
@@ -707,7 +723,12 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let ledger = ledger_with_root(root.path());
         let projects = root.path().join("projects");
-        seed(&projects, PROJECT, SESSION_A, &tui_shaped_jsonl(SESSION_A, PROJECT));
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &tui_shaped_jsonl(SESSION_A, PROJECT),
+        );
         scan_external_sessions_cached(&ledger, PROJECT);
 
         // Append a third submission: size changes → re-parse.
@@ -722,7 +743,10 @@ mod tests {
         let rescan = scan_external_sessions_cached(&ledger, PROJECT);
         assert_eq!(rescan.parsed, 1);
         assert_eq!(rescan.metas[0].turn_count, 3);
-        assert_eq!(rescan.metas[0].last_user_prompt.as_deref(), Some("third prompt"));
+        assert_eq!(
+            rescan.metas[0].last_user_prompt.as_deref(),
+            Some("third prompt")
+        );
 
         // Delete the file: candidate gone, cache row pruned.
         fs::remove_file(&path).unwrap();

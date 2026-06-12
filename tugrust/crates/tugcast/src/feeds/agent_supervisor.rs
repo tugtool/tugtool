@@ -1184,9 +1184,7 @@ fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
 /// `project_dir` is optional — the picker supplies it for external rows
 /// (sessions with no ledger row) so the JSONL can be located without a
 /// `project_dir` column to consult.
-fn parse_trash_session_payload(
-    payload: &[u8],
-) -> Result<(String, Option<String>), ControlError> {
+fn parse_trash_session_payload(payload: &[u8]) -> Result<(String, Option<String>), ControlError> {
     let session_id = parse_session_id_payload(payload)?;
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
@@ -2629,7 +2627,8 @@ impl AgentSupervisor {
                     Vec::new()
                 });
                 let live = Self::read_terminal_live_sessions(registry_root.as_deref());
-                let scan = crate::external_sessions::scan_external_sessions_cached(&ledger_arc, &pd);
+                let scan =
+                    crate::external_sessions::scan_external_sessions_cached(&ledger_arc, &pd);
                 build_listed_union(rows, &live, Some(scan))
             })
             .await;
@@ -7406,7 +7405,9 @@ mod tests {
         session_id: &str,
         last_prompt: &str,
     ) -> std::path::PathBuf {
-        let dir = claude_root.join(crate::session_ledger::encode_claude_project_name(project_dir));
+        let dir = claude_root.join(crate::session_ledger::encode_claude_project_name(
+            project_dir,
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("{session_id}.jsonl"));
         let content = format!(
@@ -7455,12 +7456,16 @@ mod tests {
         );
         // Bookkeeping fully undone: no in-memory entry, no affinity row.
         assert!(
-            !sup.ledger.lock().await.contains_key(&TugSessionId("ext-held".to_string())),
+            !sup.ledger
+                .lock()
+                .await
+                .contains_key(&TugSessionId("ext-held".to_string())),
             "rejected fresh insert must not leave a ledger entry behind"
         );
         let cs = sup.client_sessions.lock().await;
         assert!(
-            cs.values().all(|set| !set.contains(&TugSessionId("ext-held".to_string()))),
+            cs.values()
+                .all(|set| !set.contains(&TugSessionId("ext-held".to_string()))),
             "rejected resume must not leave an affinity row behind"
         );
     }
@@ -7535,12 +7540,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let claude_root = tmp.path().join("projects");
         let ledger = Arc::new(
-            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
-                .unwrap(),
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
         );
         let (sup, _ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
-        let jsonl_path =
-            seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "to trash");
+        let jsonl_path = seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "to trash");
 
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "trash_session",
@@ -7554,9 +7561,14 @@ mod tests {
 
         let response = drain_until_action(&mut rx, "trash_session_ok");
         assert_eq!(response["session_id"], EXTERNAL_ID);
-        assert!(!jsonl_path.exists(), "JSONL must be moved out of the project dir");
+        assert!(
+            !jsonl_path.exists(),
+            "JSONL must be moved out of the project dir"
+        );
         let trash_root = claude_root
-            .join(crate::session_ledger::encode_claude_project_name("/proj/alpha"))
+            .join(crate::session_ledger::encode_claude_project_name(
+                "/proj/alpha",
+            ))
             .join(".tug-trash");
         assert!(trash_root.exists(), "JSONL must land in .tug-trash");
 
@@ -7596,8 +7608,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let claude_root = tmp.path().join("projects");
         let ledger = Arc::new(
-            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
-                .unwrap(),
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
         );
         let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
 
@@ -7676,7 +7691,11 @@ mod tests {
 
         let response = drain_until_list_sessions_settled(&mut rx).await;
         let sessions = response["sessions"].as_array().expect("sessions array");
-        assert_eq!(sessions.len(), 1, "alias query finds the canonical-dir session: {response}");
+        assert_eq!(
+            sessions.len(),
+            1,
+            "alias query finds the canonical-dir session: {response}"
+        );
         assert_eq!(sessions[0]["session_id"], EXTERNAL_ID);
         assert_eq!(sessions[0]["origin"], "external");
         // The row carries the canonical dir so downstream consumers
@@ -7689,8 +7708,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let claude_root = tmp.path().join("projects");
         let ledger = Arc::new(
-            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
-                .unwrap(),
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
         );
         let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
 
@@ -7734,8 +7756,11 @@ mod tests {
         )
         .unwrap();
         let ledger = Arc::new(
-            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
-                .unwrap(),
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
         );
         let (sup, _ledger, mut rx) = make_supervisor_for_ledger(ledger, Some(registry_root));
         seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "held by terminal");

@@ -1870,10 +1870,7 @@ pub fn encode_claude_project_name(project_dir: &str) -> String {
 /// (on-disk dir name, ledger `workspace_key`, this canonical string)
 /// agree. Returns both the resolved directory under `claude_projects_root`
 /// and the canonical project-dir string, so callers never re-derive either.
-pub fn claude_project_dir(
-    claude_projects_root: &Path,
-    project_dir: &str,
-) -> (PathBuf, String) {
+pub fn claude_project_dir(claude_projects_root: &Path, project_dir: &str) -> (PathBuf, String) {
     let canonical = resolve_to_claude_form(Path::new(project_dir))
         .to_str()
         .map(|s| s.to_owned())
@@ -2339,11 +2336,9 @@ mod tests {
         let jsonl = session_dir.join("s1.jsonl");
         std::fs::write(&jsonl, "{}").unwrap();
 
-        let l = SessionLedger::open_with_claude_root(
-            tmp_real.join("sessions.db"),
-            claude_root.clone(),
-        )
-        .unwrap();
+        let l =
+            SessionLedger::open_with_claude_root(tmp_real.join("sessions.db"), claude_root.clone())
+                .unwrap();
         l.record_spawn("s1", WS_A, alias.to_str().unwrap(), "c1", millis(0))
             .unwrap();
         l.mark_closed("s1").unwrap();

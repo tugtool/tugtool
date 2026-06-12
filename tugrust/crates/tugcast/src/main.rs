@@ -6,13 +6,13 @@ mod defaults;
 mod dev;
 mod external_sessions;
 mod feeds;
+mod fs_complete;
+mod host;
 /// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives
 /// at the root, not under `feeds/`, because both `feeds` (file watching) and
 /// `session_ledger` (storage) depend on it — keeping it a leaf avoids a
 /// storage→feeds back-reference.
 mod path_resolver;
-mod fs_complete;
-mod host;
 mod permissions;
 mod resources;
 mod router;

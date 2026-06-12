@@ -314,7 +314,9 @@ mod tests {
         let json = format!(r#"{{"pid":{},"sessionId":"sess-nostart"}}"#, own_pid());
         write_entry(dir.path(), "4", &json);
         let live = read_live_sessions(dir.path());
-        let entry = live.get("sess-nostart").expect("entry without procStart accepted");
+        let entry = live
+            .get("sess-nostart")
+            .expect("entry without procStart accepted");
         assert_eq!(entry.status, TerminalStatus::Unknown);
     }
 
