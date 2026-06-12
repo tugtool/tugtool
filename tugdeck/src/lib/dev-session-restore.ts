@@ -322,8 +322,7 @@ function installRegistrySubscriptions(connection: TugConnection): void {
       devRestoreRegistry._clear(cardId);
       pickerNoticeStore.set(cardId, {
         category: "resume_failed",
-        message:
-          msg.detail ?? `Could not resume session for "${expectation.projectDir}".`,
+        message: resumeRejectionMessage(msg.detail, expectation.projectDir),
         staleTugSessionId: expectation.tugSessionId,
         staleProjectDir: expectation.projectDir,
       });
@@ -335,6 +334,24 @@ function installRegistrySubscriptions(connection: TugConnection): void {
       break;
     }
   });
+}
+
+/**
+ * Map a resume-rejection `detail` token to picker-notice copy. Known
+ * gate rejections get friendly lines (the terminal-live race — the
+ * session was free at list time, then a terminal grabbed it before
+ * Open); unknown tokens surface verbatim, matching the previous
+ * behavior so new backend reasons stay legible.
+ */
+function resumeRejectionMessage(detail: string | null, projectDir: string): string {
+  switch (detail) {
+    case "session_live_in_terminal":
+      return "This session is open in a terminal. Close it there, then resume.";
+    case "session_live_elsewhere":
+      return "This session is live on another card.";
+    default:
+      return detail ?? `Could not resume session for "${projectDir}".`;
+  }
 }
 
 /**

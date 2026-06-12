@@ -71,6 +71,9 @@ body {
      the cursor row, but the space is always held so nothing reflows. */
   --tugx-list-row-indicator-gutter:  0.2rem;
   --tugx-list-row-content-gap:       var(--tug-space-2xs);
+  /* Gap between trailing accessories (a status badge sitting next to a
+     trash button must not touch it). */
+  --tugx-list-row-trailing-gap:      var(--tug-space-xs);
   --tugx-list-row-pill-radius:       var(--tug-radius-md);
 
   /* Typography — title + string subtitle sizes are set via the
@@ -198,6 +201,7 @@ body {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  gap: var(--tugx-list-row-trailing-gap);
 }
 
 /* ---- Title / subtitle ----

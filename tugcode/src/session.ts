@@ -48,6 +48,7 @@ import {
   translateJsonlSession,
 } from "./replay.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
+import { isSessionHeldByOtherProcess } from "./terminal-liveness.ts";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -5130,6 +5131,25 @@ export class SessionManager {
 
     const lines = read.jsonl.split("\n");
     const truncated = lines.slice(0, truncation.boundary).join("\n") + "\n";
+
+    // Destructive in-place rewind only: refuse while a live process
+    // other than our own claude child holds this session (a terminal
+    // resumed it after this card opened it). Truncating under a live
+    // holder yanks history out from under its in-memory conversation.
+    // Fork mode stays ungated — it only writes a brand-new file.
+    if (!fork) {
+      const ownPid = this.claudeProcess?.pid;
+      const held = isSessionHeldByOtherProcess(liveId, {
+        excludePids: ownPid !== undefined ? [ownPid] : [],
+      });
+      if (held) {
+        return {
+          canRewind: false,
+          error:
+            "This session is open in a terminal; rewinding in place would truncate it out from under that process. Close it there and retry.",
+        };
+      }
+    }
 
     // Subprocess DOWN before any disk write — no race against claude.
     await this.killAndCleanup();

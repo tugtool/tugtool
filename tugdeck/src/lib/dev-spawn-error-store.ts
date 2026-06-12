@@ -99,6 +99,8 @@ export function spawnErrorMessage(reason: string): string {
     case "concurrent_session_cap_exceeded":
     case "spawn_rate_limited":
       return "Too many sessions are starting at once. Try again in a moment.";
+    case "session_live_in_terminal":
+      return "This session is open in a terminal. Close it there, then resume.";
     default:
       return "The session could not be started.";
   }

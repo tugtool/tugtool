@@ -533,6 +533,9 @@ const SKIPPED_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set([
   "ai-title",
   "system",
   "permission-mode",
+  // Terminal-app transcripts open with a `mode` record (the TUI's
+  // normal/plan toggle) — chrome state, not transcript content.
+  "mode",
 ]);
 
 /**

@@ -52,10 +52,9 @@ import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store"
 import { appInfoStore } from "./lib/app-info-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
-import { decodeSessionUpdated } from "./protocol";
+import { decodeSessionUpdated, normalizeSessionRow } from "./protocol";
 import type {
   CardBinding,
-  SessionRow,
   SessionStateChangeWireRow,
 } from "./protocol";
 import {
@@ -692,7 +691,9 @@ export function initActionDispatch(
     // spawn-error banner is the backstop.
     const dirExists =
       typeof payload.dir_exists === "boolean" ? payload.dir_exists : true;
-    const rows = sessions as SessionRow[];
+    const rows = (sessions as Parameters<typeof normalizeSessionRow>[0][]).map(
+      normalizeSessionRow,
+    );
     // Seed the chip's name cache from the listed rows ([#step-13d]) so a bound
     // session whose name was set in a prior run reads correctly once listed.
     for (const row of rows) {

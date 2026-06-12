@@ -303,6 +303,11 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
   const row = data.row;
   const isLive = row.state === "live";
   const isFailed = row.state === "failed";
+  // A session currently held by a live process outside this Tug — the
+  // Claude Code terminal app, another instance. Unresumable and
+  // untrashable until that process exits (the supervisor hard-refuses
+  // both); the row renders disabled with an "in use" badge.
+  const isTerminalLive = row.terminal_live !== null;
   const isSelected =
     selection?.kind === "session-resume" &&
     selection.sessionId === row.session_id;
@@ -325,26 +330,44 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
 
   const subtitleText = isLive
     ? "Live in another card"
-    : isFailed
-      ? "Couldn't resume — JSONL missing"
-      : formatSessionRowSubtitle(row);
+    : isTerminalLive
+      ? row.terminal_live?.status === "busy"
+        ? "In use in a terminal — busy"
+        : row.terminal_live?.status === "idle"
+          ? "In use in a terminal — idle"
+          : "In use in a terminal"
+      : isFailed
+        ? "Couldn't resume — JSONL missing"
+        : formatSessionRowSubtitle(row);
 
   const idShort = row.session_id.slice(0, 8);
 
-  // Trailing accessory: a live/failed status badge, a trash action, or
-  // both (a failed row can still be trashed). The trash reveals on row
-  // engagement (hover, focus-within, selected, keyboard cursor) for the
-  // plain case; when a badge is present the trailing stays visible.
+  // Trailing accessory: a live/in-use/failed status badge, a
+  // provenance badge for terminal-created sessions, a trash action, or
+  // a combination (a failed row can still be trashed). The trash
+  // reveals on row engagement (hover, focus-within, selected, keyboard
+  // cursor) for the plain case; when a badge is present the trailing
+  // stays visible. An in-use row shows only the "in use" badge — the
+  // subtitle already says where it's in use, so a second provenance
+  // badge would be noise.
   const badge = isLive ? (
     <TugBadge emphasis="tinted" role="action">
       live
+    </TugBadge>
+  ) : isTerminalLive ? (
+    <TugBadge emphasis="tinted" role="action">
+      in use
     </TugBadge>
   ) : isFailed ? (
     <TugBadge emphasis="tinted" role="danger">
       failed
     </TugBadge>
+  ) : row.origin === "external" ? (
+    <TugBadge emphasis="tinted" role="data">
+      terminal
+    </TugBadge>
   ) : null;
-  const trash = !isLive ? (
+  const trash = !isLive && !isTerminalLive ? (
     <TugIconButton
       icon={<Trash2 size={14} aria-hidden="true" />}
       aria-label={`Move session ${idShort} to Trash`}
@@ -377,11 +400,13 @@ export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> =
       title={snippet ?? "No prompts yet"}
       subtitle={subtitleText}
       selected={isSelected}
-      disabled={isLive}
+      disabled={isLive || isTerminalLive}
       trailing={trailing}
       trailingReveal={badge !== null ? "always" : "engaged"}
       data-testid="dev-card-picker-session-resume"
       data-state={row.state}
+      data-origin={row.origin}
+      data-terminal-live={isTerminalLive ? "true" : undefined}
       data-session-id={row.session_id}
       data-pending-trash={isPendingTrash ? "true" : undefined}
     />

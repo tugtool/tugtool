@@ -801,6 +801,11 @@ pub struct AgentSupervisorConfig {
     /// Reconnects (spawns for an existing ledger entry) do not consume
     /// budget.
     pub max_spawns_per_minute: usize,
+    /// Override for the Claude Code terminal-liveness registry root
+    /// (`~/.claude/sessions/` in production). `None` resolves the
+    /// default at use time; tests inject a tempdir (or a nonexistent
+    /// path) so they never read the developer's real registry.
+    pub terminal_registry_root: Option<PathBuf>,
 }
 
 impl Default for AgentSupervisorConfig {
@@ -809,6 +814,7 @@ impl Default for AgentSupervisorConfig {
             tugcode_path: PathBuf::new(),
             max_concurrent_sessions: 8,
             max_spawns_per_minute: 20,
+            terminal_registry_root: None,
         }
     }
 }
@@ -1002,6 +1008,32 @@ pub struct AgentSupervisor {
 /// merger task learns about a newly-spawned session worker's output stream.
 pub type MergerRegistration = (TugSessionId, mpsc::Receiver<Frame>);
 
+/// Wire shape of the `terminal_live` annotation on a listed session:
+/// present iff a live process outside this supervisor (typically the
+/// Claude Code terminal app) currently holds the session, carrying its
+/// busy/idle status.
+#[derive(Debug, serde::Serialize)]
+pub struct TerminalLiveWire {
+    pub status: &'static str,
+}
+
+/// One row of `list_sessions_ok` — the persisted/synthesized
+/// `SessionRow` fields plus provenance (`origin`) and the
+/// terminal-liveness annotation. `origin: "tug"` rows come from the
+/// sqlite ledger; `origin: "external"` rows were discovered on disk
+/// (sessions Tug never spawned, typically terminal-created) and have
+/// their `SessionRow` fields synthesized: `state: "closed"`,
+/// `card_id: null`, `workspace_key` set to the encoded claude project
+/// directory name (no canonical workspace was ever registered for
+/// them).
+#[derive(Debug, serde::Serialize)]
+pub struct ListedSession {
+    #[serde(flatten)]
+    pub row: crate::session_ledger::SessionRow,
+    pub origin: &'static str,
+    pub terminal_live: Option<TerminalLiveWire>,
+}
+
 /// Owned form of a parsed CONTROL payload.
 struct OwnedControlPayload {
     card_id: String,
@@ -1077,6 +1109,24 @@ fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
         .ok_or(ControlError::MissingSessionId)?
         .to_string();
     Ok(id)
+}
+
+/// Parse a `trash_session` CONTROL payload: `{ session_id, project_dir? }`.
+/// `project_dir` is optional — the picker supplies it for external rows
+/// (sessions with no ledger row) so the JSONL can be located without a
+/// `project_dir` column to consult.
+fn parse_trash_session_payload(
+    payload: &[u8],
+) -> Result<(String, Option<String>), ControlError> {
+    let session_id = parse_session_id_payload(payload)?;
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    Ok((session_id, project_dir))
 }
 
 /// Parse a `rename_session` CONTROL payload: `{ session_id, name }`. A missing /
@@ -1639,9 +1689,10 @@ impl AgentSupervisor {
                 self.do_list_card_bindings().await;
                 Ok(())
             }
-            "trash_session" => match parse_session_id_payload(payload) {
-                Ok(session_id) => {
-                    self.do_trash_session(&session_id).await;
+            "trash_session" => match parse_trash_session_payload(payload) {
+                Ok((session_id, project_dir)) => {
+                    self.do_trash_session(&session_id, project_dir.as_deref())
+                        .await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -2026,6 +2077,73 @@ impl AgentSupervisor {
             }
         }
 
+        // Terminal-liveness gate: a resume whose target session is
+        // currently held by a live process outside this supervisor —
+        // the Claude Code terminal app, or another Tug instance — is
+        // refused outright. Double-holding makes both processes append
+        // divergent parentUuid branches into one JSONL; closing the
+        // terminal frees the session immediately (its registry entry
+        // is removed on exit).
+        //
+        // This check runs for BOTH Phase-1 outcomes. The fresh-insert
+        // path is the primary case: the first-ever resume of an
+        // external (terminal-created) session mints a new entry, so a
+        // gate placed inside the `!inserted` reconnect branch above
+        // would miss it entirely. Only resume mode is gated — a `new`
+        // session has a fresh id no other process can hold. The
+        // registry read shells out to `ps` and walks a directory, so
+        // it runs on a blocking thread.
+        if effective_session_mode == SessionMode::Resume {
+            let registry_root = self.terminal_registry_root();
+            let sid = tug_session_id.as_str().to_owned();
+            let held = tokio::task::spawn_blocking(move || {
+                Self::read_terminal_live_sessions(registry_root.as_deref()).contains_key(&sid)
+            })
+            .await
+            .unwrap_or(false);
+            if held {
+                // Undo this call's bookkeeping. A fresh insert takes
+                // its just-minted Idle entry and the Phase-0 workspace
+                // refcount with it; a reconnect already released the
+                // extra refcount above and keeps its pre-existing
+                // entry. The affinity row this call added goes either
+                // way. Lock order: ledger, then client_sessions.
+                {
+                    let mut ledger = self.ledger.lock().await;
+                    if inserted {
+                        ledger.remove(&tug_session_id);
+                    }
+                    let mut cs = self.client_sessions.lock().await;
+                    if let Some(set) = cs.get_mut(&client_id) {
+                        set.remove(&tug_session_id);
+                    }
+                }
+                if inserted {
+                    if let Err(e) = self.registry.release(&workspace_key) {
+                        warn!(
+                            card_id,
+                            session = %tug_session_id,
+                            error = %e,
+                            "spawn_session: terminal-gate workspace release failed (ignored)"
+                        );
+                    }
+                }
+                warn!(
+                    card_id,
+                    session = %tug_session_id,
+                    "spawn_session: resume rejected — session live in terminal"
+                );
+                let _ = self.session_state_tx.send(build_session_state_frame(
+                    &tug_session_id,
+                    "errored",
+                    Some("session_live_in_terminal"),
+                ));
+                return Err(ControlError::CapExceeded {
+                    reason: "session_live_in_terminal",
+                });
+            }
+        }
+
         // Persistence of the (card_id → session) binding happens
         // through the sqlite-backed `SessionLedger` row that the bridge
         // writes on `session_init` (in `relay_session_io`). The
@@ -2278,12 +2396,45 @@ impl AgentSupervisor {
         }
     }
 
-    /// Handle a `list_sessions` CONTROL request. Reads the ledger directly
-    /// (read-only) and broadcasts a `list_sessions_ok` response carrying
-    /// the rows whose `project_dir` matches the requested path, ordered
-    /// newest-first. The picker passes the user's typed path, which
-    /// matches the value originally recorded at `record_spawn` time —
-    /// so no client-side canonicalization is needed.
+    /// Resolved terminal-liveness registry root: the configured
+    /// override, else the production default (`~/.claude/sessions/`).
+    fn terminal_registry_root(&self) -> Option<PathBuf> {
+        self.config
+            .terminal_registry_root
+            .clone()
+            .or_else(crate::terminal_registry::default_registry_root)
+    }
+
+    /// Read the terminal-liveness registry. Fail-open: no resolvable
+    /// root → empty map (no liveness data, never an error).
+    fn read_terminal_live_sessions(
+        registry_root: Option<&std::path::Path>,
+    ) -> HashMap<String, crate::terminal_registry::TerminalLiveEntry> {
+        match registry_root {
+            Some(root) => crate::terminal_registry::read_live_sessions(root),
+            None => HashMap::new(),
+        }
+    }
+
+    /// Handle a `list_sessions` CONTROL request. Broadcasts a
+    /// `list_sessions_ok` response carrying the **union** of:
+    ///
+    /// - sqlite ledger rows whose `project_dir` matches the requested
+    ///   path (`origin: "tug"`), and
+    /// - on-disk session JSONLs discovered under the encoded claude
+    ///   project directory that have no ledger row
+    ///   (`origin: "external"` — typically terminal-created sessions).
+    ///
+    /// Deduped by session id (ledger wins — it carries richer,
+    /// Tug-authored metadata), sorted newest-first by `last_used_at`.
+    /// Every row — both origins — is annotated with `terminal_live`
+    /// when a live process registered in `~/.claude/sessions/`
+    /// currently holds it.
+    ///
+    /// The ledger read, directory scan, and registry read all perform
+    /// blocking I/O (sqlite, file streaming, `ps`), so they run on a
+    /// `spawn_blocking` thread — a cold scan of a large project dir
+    /// must never stall the supervisor's control loop.
     ///
     /// The response also carries `dir_exists` — a filesystem check on
     /// `project_dir` — so the picker can disable its Open button before
@@ -2313,9 +2464,25 @@ impl AgentSupervisor {
             ));
             return;
         };
-        let rows = match ledger.list_for_project_dir(project_dir) {
-            Ok(r) => r,
-            Err(err) => {
+        // The scan resolves the typed path to claude's canonical
+        // directory internally (the `claude_project_dir` chokepoint in
+        // `session_ledger.rs` — symlink aliases like `/u/src/tugtool`
+        // are its problem, not ours). The ledger query stays literal:
+        // rows store the user-typed path recorded at spawn time, by
+        // contract.
+        let ledger_arc = Arc::clone(ledger);
+        let pd = project_dir.to_owned();
+        let registry_root = self.terminal_registry_root();
+        let gathered = tokio::task::spawn_blocking(move || {
+            let rows = ledger_arc.list_for_project_dir(&pd)?;
+            let scan = crate::external_sessions::scan_external_sessions_cached(&ledger_arc, &pd);
+            let live = Self::read_terminal_live_sessions(registry_root.as_deref());
+            Ok::<_, crate::session_ledger::LedgerError>((rows, scan, live))
+        })
+        .await;
+        let (rows, scan, live) = match gathered {
+            Ok(Ok(t)) => t,
+            Ok(Err(err)) => {
                 warn!(error = %err, project_dir, "list_sessions failed");
                 let body = serde_json::json!({
                     "action": "list_sessions_err",
@@ -2328,12 +2495,72 @@ impl AgentSupervisor {
                 ));
                 return;
             }
+            Err(join_err) => {
+                warn!(error = %join_err, project_dir, "list_sessions worker panicked");
+                let body = serde_json::json!({
+                    "action": "list_sessions_err",
+                    "project_dir": project_dir,
+                    "reason": "ledger_read_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("list_sessions_err serializes"),
+                ));
+                return;
+            }
         };
+        let terminal_live_for = |session_id: &str| {
+            live.get(session_id).map(|entry| TerminalLiveWire {
+                status: entry.status.as_wire_str(),
+            })
+        };
+        let known: HashSet<String> = rows.iter().map(|r| r.session_id.clone()).collect();
+        let mut listed: Vec<ListedSession> = rows
+            .into_iter()
+            .map(|row| {
+                let terminal_live = terminal_live_for(&row.session_id);
+                ListedSession {
+                    row,
+                    origin: "tug",
+                    terminal_live,
+                }
+            })
+            .collect();
+        // External rows carry the CANONICAL project dir the scan
+        // resolved: the trash path re-derives the JSONL location from
+        // `row.project_dir`, and the canonical form is the one claude's
+        // directory name encodes.
+        let scan_project_dir = scan.canonical_project_dir.clone();
+        let synthetic_workspace_key =
+            crate::session_ledger::encode_claude_project_name(&scan_project_dir);
+        for meta in scan.metas {
+            if known.contains(&meta.session_id) {
+                continue;
+            }
+            let terminal_live = terminal_live_for(&meta.session_id);
+            listed.push(ListedSession {
+                row: crate::session_ledger::SessionRow {
+                    session_id: meta.session_id,
+                    workspace_key: synthetic_workspace_key.clone(),
+                    project_dir: scan_project_dir.clone(),
+                    created_at: meta.created_at,
+                    last_used_at: meta.last_used_at,
+                    turn_count: meta.turn_count,
+                    last_user_prompt: meta.last_user_prompt,
+                    state: crate::session_ledger::SessionState::Closed,
+                    card_id: None,
+                    name: meta.name,
+                },
+                origin: "external",
+                terminal_live,
+            });
+        }
+        listed.sort_by(|a, b| b.row.last_used_at.cmp(&a.row.last_used_at));
         let body = serde_json::json!({
             "action": "list_sessions_ok",
             "project_dir": project_dir,
             "dir_exists": dir_exists,
-            "sessions": rows,
+            "sessions": listed,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
@@ -2855,7 +3082,12 @@ impl AgentSupervisor {
         ));
     }
 
-    async fn do_trash_session(&self, session_id: &str) {
+    /// Handle a `trash_session` CONTROL request. For ledger rows this
+    /// deletes the row and moves the JSONL to in-place trash (the
+    /// ledger refuses live rows). For external sessions — no ledger
+    /// row, `project_dir` supplied by the picker — the JSONL move is
+    /// the whole operation. Both paths are gated on terminal liveness.
+    async fn do_trash_session(&self, session_id: &str, project_dir: Option<&str>) {
         let Some(ledger) = self.session_ledger.as_ref() else {
             let body = serde_json::json!({
                 "action": "trash_session_err",
@@ -2868,6 +3100,29 @@ impl AgentSupervisor {
             ));
             return;
         };
+        // Terminal-liveness gate: trashing moves the JSONL out from
+        // under any process holding the session — refuse while a live
+        // terminal process is registered against it, mirroring the
+        // ledger's own live-row refusal.
+        let registry_root = self.terminal_registry_root();
+        let sid = session_id.to_owned();
+        let held = tokio::task::spawn_blocking(move || {
+            Self::read_terminal_live_sessions(registry_root.as_deref()).contains_key(&sid)
+        })
+        .await
+        .unwrap_or(false);
+        if held {
+            let body = serde_json::json!({
+                "action": "trash_session_err",
+                "session_id": session_id,
+                "reason": "session_live_in_terminal",
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("trash_session_err serializes"),
+            ));
+            return;
+        }
         match ledger.trash(session_id) {
             Ok(_) => {
                 let _ = self
@@ -2894,6 +3149,33 @@ impl AgentSupervisor {
                 ));
             }
             Err(crate::session_ledger::LedgerError::NotFound(_)) => {
+                // No ledger row. With a project_dir in the payload this
+                // is an external session: the JSONL move is the whole
+                // trash operation.
+                if let Some(pd) = project_dir {
+                    let ledger_arc = Arc::clone(ledger);
+                    let pd_owned = pd.to_owned();
+                    let sid = session_id.to_owned();
+                    let moved = tokio::task::spawn_blocking(move || {
+                        ledger_arc.trash_external_jsonl(&pd_owned, &sid)
+                    })
+                    .await
+                    .unwrap_or(None);
+                    if moved.is_some() {
+                        let _ = self
+                            .control_tx
+                            .send(build_session_removed_frame(session_id));
+                        let body = serde_json::json!({
+                            "action": "trash_session_ok",
+                            "session_id": session_id,
+                        });
+                        let _ = self.control_tx.send(Frame::new(
+                            FeedId::CONTROL,
+                            serde_json::to_vec(&body).expect("trash_session_ok serializes"),
+                        ));
+                        return;
+                    }
+                }
                 let body = serde_json::json!({
                     "action": "trash_session_err",
                     "session_id": session_id,
@@ -4104,6 +4386,15 @@ mod tests {
         let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let cancel = CancellationToken::new();
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
+        // Hermetic terminal-registry default: tests must never read the
+        // developer's real ~/.claude/sessions. Tests that exercise the
+        // liveness gate inject their own tempdir root.
+        let config = AgentSupervisorConfig {
+            terminal_registry_root: Some(config.terminal_registry_root.unwrap_or_else(|| {
+                std::path::PathBuf::from("/nonexistent/tugcast-test-terminal-registry")
+            })),
+            ..config
+        };
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
             meta_tx,
@@ -6757,6 +7048,21 @@ mod tests {
         broadcast::Receiver<Frame>,
     ) {
         let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        make_supervisor_for_ledger(ledger, None)
+    }
+
+    /// Harness variant for union/liveness tests: a ledger with a real
+    /// tempdir claude-projects root, and an injectable terminal
+    /// registry root. The default registry root is a nonexistent path
+    /// so tests never read the developer's real `~/.claude/sessions`.
+    fn make_supervisor_for_ledger(
+        ledger: Arc<SessionLedger>,
+        terminal_registry_root: Option<std::path::PathBuf>,
+    ) -> (
+        Arc<AgentSupervisor>,
+        Arc<SessionLedger>,
+        broadcast::Receiver<Frame>,
+    ) {
         let (state_tx, _state_rx) = broadcast::channel(64);
         let (meta_tx, _meta_rx) = broadcast::channel(8);
         let (code_tx, _code_rx) = broadcast::channel(8);
@@ -6767,6 +7073,12 @@ mod tests {
         ));
         let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let cancel = CancellationToken::new();
+        let config = AgentSupervisorConfig {
+            terminal_registry_root: Some(terminal_registry_root.unwrap_or_else(|| {
+                std::path::PathBuf::from("/nonexistent/tugcast-test-terminal-registry")
+            })),
+            ..AgentSupervisorConfig::default()
+        };
         let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
             state_tx,
             meta_tx,
@@ -6775,7 +7087,7 @@ mod tests {
             recorder,
             Some(Arc::clone(&ledger)),
             stall_spawner_factory(),
-            AgentSupervisorConfig::default(),
+            config,
             registry,
             cancel,
         );
@@ -6960,6 +7272,363 @@ mod tests {
         assert_eq!(sessions.len(), 2, "/proj/alpha has exactly 2 rows");
         assert_eq!(sessions[0]["session_id"], "s-new");
         assert_eq!(sessions[1]["session_id"], "s-old");
+    }
+
+    /// Seed an external (no ledger row) session JSONL under the
+    /// ledger's claude root for `project_dir`. Returns the file path.
+    fn seed_external_jsonl(
+        claude_root: &std::path::Path,
+        project_dir: &str,
+        session_id: &str,
+        last_prompt: &str,
+    ) -> std::path::PathBuf {
+        let dir = claude_root.join(crate::session_ledger::encode_claude_project_name(project_dir));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{session_id}.jsonl"));
+        let content = format!(
+            "{{\"type\":\"mode\",\"mode\":\"normal\",\"sessionId\":\"{session_id}\"}}\n\
+             {{\"type\":\"user\",\"sessionId\":\"{session_id}\",\"cwd\":\"{project_dir}\",\"timestamp\":\"2026-06-01T10:00:00.000Z\",\"message\":{{\"role\":\"user\",\"content\":\"{last_prompt}\"}}}}"
+        );
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    const EXTERNAL_ID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+    /// Write a registry entry into `root` for `session_id` with `pid`.
+    fn write_registry_entry(root: &std::path::Path, session_id: &str, pid: u32, stem: &str) {
+        std::fs::create_dir_all(root).unwrap();
+        std::fs::write(
+            root.join(format!("{stem}.json")),
+            format!(r#"{{"pid":{pid},"sessionId":"{session_id}","status":"busy"}}"#),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn resume_of_terminal_live_session_is_rejected_on_fresh_insert() {
+        // The primary gate case: no prior in-memory entry for the
+        // session (first-ever resume of an external session), so the
+        // gate must fire on the fresh-insert path, not just reconnects.
+        let tmp = tempfile::tempdir().unwrap();
+        let registry_root = tmp.path().join("registry");
+        write_registry_entry(&registry_root, "ext-held", std::process::id(), "1");
+        let config = AgentSupervisorConfig {
+            terminal_registry_root: Some(registry_root),
+            ..AgentSupervisorConfig::default()
+        };
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
+
+        let err = sup
+            .handle_control("spawn_session", &resume_payload("card-1", "ext-held"), 10)
+            .await
+            .expect_error();
+        assert_eq!(
+            err,
+            ControlError::CapExceeded {
+                reason: "session_live_in_terminal"
+            }
+        );
+        // Bookkeeping fully undone: no in-memory entry, no affinity row.
+        assert!(
+            !sup.ledger.lock().await.contains_key(&TugSessionId("ext-held".to_string())),
+            "rejected fresh insert must not leave a ledger entry behind"
+        );
+        let cs = sup.client_sessions.lock().await;
+        assert!(
+            cs.values().all(|set| !set.contains(&TugSessionId("ext-held".to_string()))),
+            "rejected resume must not leave an affinity row behind"
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_with_dead_pid_registry_entry_proceeds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let registry_root = tmp.path().join("registry");
+        // macOS pids cap below 100000; this entry is a crash leftover.
+        write_registry_entry(&registry_root, "ext-stale", 999_999, "1");
+        let config = AgentSupervisorConfig {
+            terminal_registry_root: Some(registry_root),
+            ..AgentSupervisorConfig::default()
+        };
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
+
+        sup.handle_control("spawn_session", &resume_payload("card-1", "ext-stale"), 10)
+            .await
+            .expect_handled_with("stale registry entry must not block resume");
+    }
+
+    #[tokio::test]
+    async fn new_mode_spawn_ignores_terminal_liveness() {
+        // A `new` spawn mints a fresh id; even a (pathological)
+        // registry entry with the same id must not gate it — the gate
+        // is resume-only by design.
+        let tmp = tempfile::tempdir().unwrap();
+        let registry_root = tmp.path().join("registry");
+        write_registry_entry(&registry_root, "fresh-id", std::process::id(), "1");
+        let config = AgentSupervisorConfig {
+            terminal_registry_root: Some(registry_root),
+            ..AgentSupervisorConfig::default()
+        };
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store_config(config);
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "fresh-id"), 10)
+            .await
+            .expect_handled_with("new-mode spawn is not gated on terminal liveness");
+    }
+
+    #[tokio::test]
+    async fn trash_of_terminal_live_session_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let registry_root = tmp.path().join("registry");
+        write_registry_entry(&registry_root, "held-row", std::process::id(), "1");
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        ledger
+            .record_spawn("held-row", "ws-1", "/proj/alpha", "c1", 1_000)
+            .unwrap();
+        ledger.mark_closed("held-row").unwrap();
+        let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, Some(registry_root));
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "trash_session",
+            "session_id": "held-row",
+        }))
+        .unwrap();
+        sup.handle_control("trash_session", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "trash_session_err");
+        assert_eq!(response["reason"], "session_live_in_terminal");
+        assert!(
+            ledger.get("held-row").unwrap().is_some(),
+            "refused trash must leave the row intact"
+        );
+    }
+
+    #[tokio::test]
+    async fn trash_external_session_moves_jsonl_without_ledger_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
+                .unwrap(),
+        );
+        let (sup, _ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+        let jsonl_path =
+            seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "to trash");
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "trash_session",
+            "session_id": EXTERNAL_ID,
+            "project_dir": "/proj/alpha",
+        }))
+        .unwrap();
+        sup.handle_control("trash_session", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "trash_session_ok");
+        assert_eq!(response["session_id"], EXTERNAL_ID);
+        assert!(!jsonl_path.exists(), "JSONL must be moved out of the project dir");
+        let trash_root = claude_root
+            .join(crate::session_ledger::encode_claude_project_name("/proj/alpha"))
+            .join(".tug-trash");
+        assert!(trash_root.exists(), "JSONL must land in .tug-trash");
+
+        // Second trash of the same id: nothing on disk, no row → not_found.
+        sup.handle_control("trash_session", &payload, 10)
+            .await
+            .expect_handled();
+        let response = drain_until_action(&mut rx, "trash_session_err");
+        assert_eq!(response["reason"], "not_found");
+    }
+
+    #[tokio::test]
+    async fn trash_unledgered_session_without_project_dir_errors_cleanly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                tmp.path().join("projects"),
+            )
+            .unwrap(),
+        );
+        let (sup, _ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "trash_session",
+            "session_id": "no-such-session",
+        }))
+        .unwrap();
+        sup.handle_control("trash_session", &payload, 10)
+            .await
+            .expect_handled();
+        let response = drain_until_action(&mut rx, "trash_session_err");
+        assert_eq!(response["reason"], "not_found");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_unions_external_sessions_with_ledger_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
+                .unwrap(),
+        );
+        let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+
+        ledger
+            .record_spawn("tug-row", "ws-1", "/proj/alpha", "c1", 9_000)
+            .unwrap();
+        ledger.mark_closed("tug-row").unwrap();
+        seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "external prompt");
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+            "project_dir": "/proj/alpha",
+        }))
+        .unwrap();
+        sup.handle_control("list_sessions", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 2, "ledger row + external row: {response}");
+        let by_id: std::collections::HashMap<&str, &serde_json::Value> = sessions
+            .iter()
+            .map(|s| (s["session_id"].as_str().unwrap(), s))
+            .collect();
+        let tug = by_id["tug-row"];
+        assert_eq!(tug["origin"], "tug");
+        assert_eq!(tug["terminal_live"], serde_json::Value::Null);
+        let ext = by_id[EXTERNAL_ID];
+        assert_eq!(ext["origin"], "external");
+        assert_eq!(ext["state"], "closed");
+        assert_eq!(ext["card_id"], serde_json::Value::Null);
+        assert_eq!(ext["turn_count"], 1);
+        assert_eq!(ext["last_user_prompt"], "external prompt");
+        assert_eq!(ext["terminal_live"], serde_json::Value::Null);
+        // Sorted newest-first: the external row's last_used_at is the
+        // file's real mtime (now), which postdates the ledger row's
+        // synthetic 9000ms-epoch timestamp.
+        assert_eq!(sessions[0]["session_id"], EXTERNAL_ID);
+        assert_eq!(sessions[1]["session_id"], "tug-row");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_scans_canonical_dir_for_symlinked_project_path() {
+        // A project typed through a symlink alias (e.g. `/u/src/tugtool`)
+        // must still find sessions: claude names its per-project
+        // directory after the CANONICAL cwd, so the scan canonicalizes
+        // the typed path before encoding.
+        let tmp = tempfile::tempdir().unwrap();
+        // Canonicalize the tempdir itself (`/var` → `/private/var` on
+        // macOS) so the seeded encoding matches what the supervisor's
+        // canonicalize resolves.
+        let tmp_real = std::fs::canonicalize(tmp.path()).unwrap();
+        let real_project = tmp_real.join("real-project");
+        std::fs::create_dir_all(&real_project).unwrap();
+        let alias = tmp_real.join("alias-project");
+        std::os::unix::fs::symlink(&real_project, &alias).unwrap();
+
+        let claude_root = tmp_real.join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(tmp_real.join("sessions.db"), claude_root.clone())
+                .unwrap(),
+        );
+        let (sup, _ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+        let real_project_str = real_project.to_str().unwrap();
+        seed_external_jsonl(&claude_root, real_project_str, EXTERNAL_ID, "via alias");
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+            "project_dir": alias.to_str().unwrap(),
+        }))
+        .unwrap();
+        sup.handle_control("list_sessions", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 1, "alias query finds the canonical-dir session: {response}");
+        assert_eq!(sessions[0]["session_id"], EXTERNAL_ID);
+        assert_eq!(sessions[0]["origin"], "external");
+        // The row carries the canonical dir so downstream consumers
+        // (trash) re-derive the JSONL location correctly.
+        assert_eq!(sessions[0]["project_dir"], real_project_str);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_dedupes_by_session_id_ledger_wins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
+                .unwrap(),
+        );
+        let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+
+        // Same id on disk AND in the ledger — an adopted session.
+        ledger
+            .record_spawn(EXTERNAL_ID, "ws-1", "/proj/alpha", "c1", 9_000)
+            .unwrap();
+        ledger.mark_closed(EXTERNAL_ID).unwrap();
+        seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "adopted");
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+            "project_dir": "/proj/alpha",
+        }))
+        .unwrap();
+        sup.handle_control("list_sessions", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 1, "deduped: {response}");
+        assert_eq!(sessions[0]["origin"], "tug");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_annotates_terminal_live_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let registry_root = tmp.path().join("registry");
+        std::fs::create_dir_all(&registry_root).unwrap();
+        // A live registry entry for the external session, using the
+        // test process's own (genuinely alive) pid. No procStart →
+        // accepted fail-open.
+        std::fs::write(
+            registry_root.join("1.json"),
+            format!(
+                r#"{{"pid":{},"sessionId":"{EXTERNAL_ID}","status":"busy"}}"#,
+                std::process::id()
+            ),
+        )
+        .unwrap();
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
+                .unwrap(),
+        );
+        let (sup, _ledger, mut rx) = make_supervisor_for_ledger(ledger, Some(registry_root));
+        seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "held by terminal");
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+            "project_dir": "/proj/alpha",
+        }))
+        .unwrap();
+        sup.handle_control("list_sessions", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_sessions_ok");
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0]["terminal_live"]["status"], "busy");
     }
 
     #[tokio::test]

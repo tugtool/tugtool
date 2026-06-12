@@ -4,6 +4,7 @@ mod cli;
 mod control;
 mod defaults;
 mod dev;
+mod external_sessions;
 mod feeds;
 mod fs_complete;
 mod host;
@@ -13,6 +14,7 @@ mod router;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
+mod terminal_registry;
 
 #[cfg(test)]
 mod integration_tests;

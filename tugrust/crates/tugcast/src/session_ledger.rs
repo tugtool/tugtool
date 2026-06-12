@@ -310,6 +310,26 @@ pub struct SessionStateChangeRow {
     pub interrupt_in_flight: bool,
 }
 
+/// One row of the `external_scan_cache` table — the persisted result
+/// of scanning one on-disk session JSONL, keyed by session id and
+/// validated by `(file_size, file_mtime)`. `excluded` remembers a
+/// deliberate scanner rejection so the file isn't re-streamed on every
+/// scan. See the schema comment in `bootstrap_schema` for why this
+/// table carries no cascade trigger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanCacheRow {
+    pub session_id: String,
+    pub project_dir: String,
+    pub file_size: i64,
+    pub file_mtime: i64,
+    pub excluded: bool,
+    pub turn_count: i64,
+    pub last_user_prompt: Option<String>,
+    pub name: Option<String>,
+    pub created_at: i64,
+    pub last_used_at: i64,
+}
+
 /// Result of a successful `trash` call.
 ///
 /// `jsonl_moved_to` is `None` when the JSONL file is missing or the
@@ -652,6 +672,38 @@ impl SessionLedger {
             BEGIN
                 DELETE FROM session_state_changes WHERE session_id = OLD.session_id;
             END;
+
+            -- Cache of external-session scan results — one row per
+            -- on-disk JSONL the external scanner has parsed, keyed by
+            -- session id and validated by (file_size, file_mtime).
+            -- A matching pair means the cached metadata is current and
+            -- the file is not re-read; appends/edits change the pair
+            -- and force a re-parse. `excluded` marks files the scanner
+            -- deliberately rejected (cwd mismatch from the lossy path
+            -- encoding, sessionId/filename mismatch) so rejection is
+            -- also remembered and the file isn't re-streamed per scan.
+            --
+            -- Deliberately NO cascade trigger on `sessions`: this
+            -- table is independent of ledger rows by design — external
+            -- sessions are never bulk-imported into `sessions`, and a
+            -- cached scan row must survive the adoption/eviction
+            -- lifecycle of any ledger row that shares its id. Rows are
+            -- pruned by the scan itself when the backing file is gone.
+            CREATE TABLE IF NOT EXISTS external_scan_cache (
+                session_id        TEXT PRIMARY KEY,
+                project_dir       TEXT NOT NULL,
+                file_size         INTEGER NOT NULL,
+                file_mtime        INTEGER NOT NULL,
+                excluded          INTEGER NOT NULL DEFAULT 0,
+                turn_count        INTEGER NOT NULL DEFAULT 0,
+                last_user_prompt  TEXT,
+                name              TEXT,
+                created_at        INTEGER NOT NULL DEFAULT 0,
+                last_used_at      INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS external_scan_cache_project
+                ON external_scan_cache(project_dir);
             ",
         )?;
         Ok(())
@@ -1179,6 +1231,98 @@ impl SessionLedger {
         Ok(names)
     }
 
+    /// Move an external session's JSONL to in-place trash. The
+    /// no-ledger-row counterpart of [`trash`]: external sessions
+    /// (discovered on disk, never adopted) have no row to delete, so
+    /// the file move is the whole operation. Returns the trash
+    /// destination, or `None` when the file is missing or the move
+    /// failed (logged at warn level by the move helper).
+    pub fn trash_external_jsonl(&self, project_dir: &str, session_id: &str) -> Option<PathBuf> {
+        move_jsonl_to_trash(
+            &self.claude_projects_root,
+            project_dir,
+            session_id,
+            now_millis(),
+        )
+    }
+
+    // ── external scan cache ──────────────────────────────────────────────────
+
+    /// Look up the cached scan result for `session_id`. Validity
+    /// against the current `(file_size, file_mtime)` is the caller's
+    /// check — the cache stores what was true at parse time.
+    pub fn get_scan_cache(&self, session_id: &str) -> Result<Option<ScanCacheRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT session_id, project_dir, file_size, file_mtime, excluded,
+                    turn_count, last_user_prompt, name, created_at, last_used_at
+             FROM external_scan_cache
+             WHERE session_id = ?1
+             LIMIT 1",
+        )?;
+        let row = stmt
+            .query_row(params![session_id], scan_cache_row_from_query)
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Insert or overwrite the cached scan result for a session file.
+    pub fn upsert_scan_cache(&self, row: &ScanCacheRow) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT OR REPLACE INTO external_scan_cache (
+                session_id, project_dir, file_size, file_mtime, excluded,
+                turn_count, last_user_prompt, name, created_at, last_used_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                row.session_id,
+                row.project_dir,
+                row.file_size,
+                row.file_mtime,
+                row.excluded as i64,
+                row.turn_count,
+                row.last_user_prompt,
+                row.name,
+                row.created_at,
+                row.last_used_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Delete cache rows under `project_dir` whose session id is not in
+    /// `keep` — the backing files vanished (trash, manual delete) since
+    /// the rows were written. Returns the number of rows pruned.
+    pub fn prune_scan_cache_except(
+        &self,
+        project_dir: &str,
+        keep: &[String],
+    ) -> Result<usize, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        if keep.is_empty() {
+            let n = conn.execute(
+                "DELETE FROM external_scan_cache WHERE project_dir = ?1",
+                params![project_dir],
+            )?;
+            return Ok(n);
+        }
+        let placeholders = (0..keep.len())
+            .map(|i| format!("?{}", i + 2))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "DELETE FROM external_scan_cache
+             WHERE project_dir = ?1 AND session_id NOT IN ({placeholders})"
+        );
+        let mut values: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(keep.len() + 1);
+        values.push(&project_dir);
+        for id in keep {
+            values.push(id);
+        }
+        let n = conn.execute(&sql, values.as_slice())?;
+        Ok(n)
+    }
+
     // ── submission journal ───────────────────────────────────────────────────
     //
     // The `turns` table is a journal of pending user submissions: tugcast
@@ -1563,6 +1707,21 @@ impl SessionLedger {
 /// order documented inline at every callsite. The closure type makes
 /// `query_map` happy: it returns `rusqlite::Result<Result<SessionRow, LedgerError>>`
 /// so the outer collector can flatten with `?`.
+fn scan_cache_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScanCacheRow> {
+    Ok(ScanCacheRow {
+        session_id: row.get(0)?,
+        project_dir: row.get(1)?,
+        file_size: row.get(2)?,
+        file_mtime: row.get(3)?,
+        excluded: row.get::<_, i64>(4)? != 0,
+        turn_count: row.get(5)?,
+        last_user_prompt: row.get(6)?,
+        name: row.get(7)?,
+        created_at: row.get(8)?,
+        last_used_at: row.get(9)?,
+    })
+}
+
 fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow, LedgerError>> {
     let session_id: String = row.get(0)?;
     let workspace_key: String = row.get(1)?;
@@ -1678,11 +1837,41 @@ pub fn default_claude_projects_root() -> PathBuf {
 /// `~/.claude/projects/`. claude's convention replaces `/` and `.` in the
 /// absolute path with `-`, producing a flat name that's filesystem-safe
 /// and hashable. Mirrors what's been observed on macOS installs.
+///
+/// **Do not call this directly with a user-supplied path** — claude
+/// derives the directory name from the *canonical* cwd, so a path typed
+/// through a symlink alias (`/u/src/tugtool`) encodes to a directory
+/// that doesn't exist. [`claude_project_dir`] is the chokepoint that
+/// canonicalizes first; this raw encoder exists for callers that
+/// already hold a canonical path (and for tests seeding fixtures).
 pub fn encode_claude_project_name(project_dir: &str) -> String {
     project_dir
         .chars()
         .map(|c| if c == '/' || c == '.' { '-' } else { c })
         .collect()
+}
+
+/// THE mapping from a user-supplied project path to claude's on-disk
+/// per-project directory — the single chokepoint every production
+/// consumer (scan, trash, row synthesis) must route through.
+///
+/// Canonicalizes the path first (claude names the directory after the
+/// canonical cwd; user-typed paths may arrive through symlink aliases
+/// like `/u/src/tugtool`), falling back to the literal path when
+/// canonicalization fails (the project dir was deleted; the encoded
+/// literal is then the best available guess). Returns both the
+/// resolved directory under `claude_projects_root` and the canonical
+/// project-dir string, so callers never re-derive either themselves.
+pub fn claude_project_dir(
+    claude_projects_root: &Path,
+    project_dir: &str,
+) -> (PathBuf, String) {
+    let canonical = std::fs::canonicalize(project_dir)
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_owned()))
+        .unwrap_or_else(|| project_dir.to_owned());
+    let dir = claude_projects_root.join(encode_claude_project_name(&canonical));
+    (dir, canonical)
 }
 
 /// Move `<root>/<encoded>/<sessionId>.jsonl` to
@@ -1698,8 +1887,10 @@ fn move_jsonl_to_trash(
     session_id: &str,
     deleted_at_ms: i64,
 ) -> Option<PathBuf> {
-    let encoded = encode_claude_project_name(project_dir);
-    let project_root = claude_projects_root.join(&encoded);
+    // Chokepoint resolution: ledger rows record the user-typed path,
+    // which may be a symlink alias of the canonical dir claude's
+    // directory name encodes.
+    let (project_root, _canonical) = claude_project_dir(claude_projects_root, project_dir);
     let source = project_root.join(format!("{session_id}.jsonl"));
     if !source.exists() {
         // Nothing to move — the JSONL was never created or already
@@ -2117,6 +2308,45 @@ mod tests {
         let l = fresh();
         let err = l.trash("nope").unwrap_err();
         assert!(matches!(err, LedgerError::NotFound(ref id) if id == "nope"));
+    }
+
+    #[test]
+    fn trash_resolves_symlink_aliased_project_dir_to_canonical_jsonl() {
+        // A row recorded with a symlink-aliased project_dir (the
+        // user-typed path) must still find — and move — the JSONL that
+        // lives under the CANONICAL dir's encoding. This is the
+        // `claude_project_dir` chokepoint working inside
+        // `move_jsonl_to_trash`.
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp_real = std::fs::canonicalize(tmp.path()).unwrap();
+        let real_project = tmp_real.join("real-project");
+        std::fs::create_dir_all(&real_project).unwrap();
+        let alias = tmp_real.join("alias-project");
+        std::os::unix::fs::symlink(&real_project, &alias).unwrap();
+
+        let claude_root = tmp_real.join("projects");
+        let canonical_str = real_project.to_str().unwrap();
+        let session_dir = claude_root.join(encode_claude_project_name(canonical_str));
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let jsonl = session_dir.join("s1.jsonl");
+        std::fs::write(&jsonl, "{}").unwrap();
+
+        let l = SessionLedger::open_with_claude_root(
+            tmp_real.join("sessions.db"),
+            claude_root.clone(),
+        )
+        .unwrap();
+        l.record_spawn("s1", WS_A, alias.to_str().unwrap(), "c1", millis(0))
+            .unwrap();
+        l.mark_closed("s1").unwrap();
+
+        let outcome = l.trash("s1").unwrap();
+        assert!(
+            outcome.jsonl_moved_to.is_some(),
+            "alias-recorded row must locate the canonical-dir JSONL"
+        );
+        assert!(!jsonl.exists(), "JSONL must be moved to trash");
+        assert!(session_dir.join(".tug-trash").exists());
     }
 
     // ── eviction ─────────────────────────────────────────────────────────────

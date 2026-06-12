@@ -1393,8 +1393,14 @@ function DevProjectPickerForm({
       const store = getDevSessionLedgerStore();
       if (store === null) return;
       const row = ledgerRows.find((r) => r.session_id === sessionId);
-      if (row === undefined || row.state === "live") return;
-      void store.trashSession(sessionId);
+      // Live-in-Tug and terminal-live rows are untrashable (the cell
+      // hides the control; this is the defensive backstop — the
+      // supervisor refuses both anyway).
+      if (row === undefined || row.state === "live" || row.terminal_live !== null)
+        return;
+      // Always pass the project dir: external rows (no ledger row
+      // server-side) need it to locate the JSONL; ledger rows ignore it.
+      void store.trashSession(sessionId, row.project_dir);
       setSelection((prev) =>
         prev?.kind === "session-resume" && prev.sessionId === sessionId
           ? { kind: "session-new" }

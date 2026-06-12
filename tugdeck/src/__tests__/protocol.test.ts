@@ -282,8 +282,36 @@ describe("session ledger CONTROL encoders / decoders", () => {
         state: "live",
         card_id: "card-1",
         name: null,
+        // Bare ledger-row pushes never carry origin/terminal_live; the
+        // decoder normalizes them to the tug/not-live defaults.
+        origin: "tug",
+        terminal_live: null,
       },
     });
+  });
+
+  test("decodeSessionUpdated preserves explicit origin and terminal_live", async () => {
+    const { decodeSessionUpdated } = await import("../protocol");
+    const decoded = decodeSessionUpdated({
+      action: "session_updated",
+      session_id: "sess-ext",
+      fields: {
+        session_id: "sess-ext",
+        workspace_key: "ws-1",
+        project_dir: "/proj",
+        created_at: 1,
+        last_used_at: 2,
+        turn_count: 3,
+        last_user_prompt: "hi",
+        state: "closed",
+        card_id: null,
+        name: null,
+        origin: "external",
+        terminal_live: { status: "busy" },
+      },
+    });
+    expect(decoded?.fields?.origin).toBe("external");
+    expect(decoded?.fields?.terminal_live).toEqual({ status: "busy" });
   });
 
   test("decodeSessionUpdated returns removed marker for delete push", async () => {

@@ -562,17 +562,17 @@ mocks of the OS.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Terminal-liveness registry reader | pending | — |
-| #step-2 | External-session scanner | pending | — |
-| #step-3 | Scan cache in SessionLedger | pending | — |
-| #step-4 | list_sessions union + wire shape | pending | — |
-| #step-5 | Resume and trash gates | pending | — |
-| #step-6 | Trash for external sessions | pending | — |
-| #step-7 | tugdeck protocol + stores | pending | — |
-| #step-8 | Picker UI: badge, blocked rows, external trash | pending | — |
-| #step-9 | tugcode rewind guard + TUI replay tolerance | pending | — |
-| #step-10 | End-to-end app-test | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | Terminal-liveness registry reader | done | 7114679e |
+| #step-2 | External-session scanner | done | 48161bce |
+| #step-3 | Scan cache in SessionLedger | done | beb0fbaa |
+| #step-4 | list_sessions union + wire shape | done | e3f2ffd0 |
+| #step-5 | Resume and trash gates | done | 40c68d17 |
+| #step-6 | Trash for external sessions | done | 52ac3ccc |
+| #step-7 | tugdeck protocol + stores | done | 17c47ed3 |
+| #step-8 | Picker UI: badge, blocked rows, external trash | done | 7997d847 |
+| #step-9 | tugcode rewind guard + TUI replay tolerance | done | 324b272b |
+| #step-10 | End-to-end app-test | done | 5668f448 |
+| #step-11 | Integration checkpoint | done | N/A (verification only) |
 
 #### Step 1: Terminal-liveness registry reader {#step-1}
 

@@ -130,10 +130,10 @@ export class DevSessionLedgerStore {
     return PENDING_SNAPSHOT;
   };
 
-  trashSession(sessionId: string): Promise<TrashSessionResult> {
+  trashSession(sessionId: string, projectDir?: string): Promise<TrashSessionResult> {
     return new Promise((resolve) => {
       this.pendingTrash.set(sessionId, resolve);
-      const frame = encodeTrashSession(sessionId);
+      const frame = encodeTrashSession(sessionId, projectDir);
       this.conn.send(frame.feedId, frame.payload);
     });
   }

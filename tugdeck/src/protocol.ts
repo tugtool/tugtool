@@ -98,6 +98,44 @@ export interface SessionRow {
   card_id: string | null;
   /** User-assigned session name (`/rename`, [#step-13d]); `null` when unnamed. */
   name: string | null;
+  /**
+   * Provenance of the row: `"tug"` rows come from the sqlite ledger
+   * (sessions Tug spawned or adopted); `"external"` rows were
+   * discovered on disk with no ledger row — typically sessions created
+   * by the Claude Code terminal app. External rows synthesize
+   * `state: "closed"` / `card_id: null` and adopt into the ledger
+   * automatically on first resume.
+   */
+  origin: "tug" | "external";
+  /**
+   * Present iff a live process outside this tugcast (the Claude Code
+   * terminal app, another Tug instance) currently holds the session,
+   * per the `~/.claude/sessions` registry. Such rows are unresumable
+   * and untrashable until that process exits.
+   */
+  terminal_live: TerminalLive | null;
+}
+
+/** Busy/idle detail of a terminal-live session. */
+export interface TerminalLive {
+  status: "busy" | "idle" | "unknown";
+}
+
+/**
+ * Normalize a wire session row to the full `SessionRow` shape.
+ * `origin` and `terminal_live` default (`"tug"` / `null`) when absent —
+ * `session_updated` pushes are built from bare ledger rows and never
+ * carry them, and an older tugcast won't send them on listings either.
+ */
+export function normalizeSessionRow(
+  row: Omit<SessionRow, "origin" | "terminal_live"> &
+    Partial<Pick<SessionRow, "origin" | "terminal_live">>,
+): SessionRow {
+  return {
+    ...row,
+    origin: row.origin === "external" ? "external" : "tug",
+    terminal_live: row.terminal_live ?? null,
+  };
 }
 
 /**
@@ -478,10 +516,16 @@ export function encodeListSessions(projectDir: string): Frame {
  * `trash_session_ok` (or `_err`) ack. Refused for `state="live"` rows —
  * the user must close the card first.
  */
-export function encodeTrashSession(sessionId: string): Frame {
-  return controlFrame(CONTROL_ACTION_TRASH_SESSION, {
-    session_id: sessionId,
-  });
+export function encodeTrashSession(sessionId: string, projectDir?: string): Frame {
+  return controlFrame(
+    CONTROL_ACTION_TRASH_SESSION,
+    projectDir !== undefined
+      ? // `project_dir` lets the supervisor trash an external session
+        // (no ledger row to look the directory up from). Harmless for
+        // ledger rows — the row path never consults it.
+        { session_id: sessionId, project_dir: projectDir }
+      : { session_id: sessionId },
+  );
 }
 
 /**
@@ -702,6 +746,9 @@ export function decodeSessionUpdated(payload: unknown): SessionUpdatedPush | nul
   const sessionId = obj.session_id;
   if (typeof sessionId !== "string" || sessionId.length === 0) return null;
   const removed = obj.removed === true ? true : undefined;
-  const fields = (obj.fields as SessionRow | undefined) ?? undefined;
+  const rawFields = obj.fields as
+    | Parameters<typeof normalizeSessionRow>[0]
+    | undefined;
+  const fields = rawFields === undefined ? undefined : normalizeSessionRow(rawFields);
   return removed ? { session_id: sessionId, removed: true } : { session_id: sessionId, fields };
 }
