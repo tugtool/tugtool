@@ -92,9 +92,20 @@ export function TugStableOverlay({
     measure();
     // Observe the root: it grows whenever the widest child exceeds the current
     // reservation, which is exactly when the high-water mark must advance.
-    const observer = new ResizeObserver(measure);
+    // Coalesce via rAF — `measure()` writes `min-width` on the observed element
+    // itself, so a synchronous write would queue a second notification in the
+    // same delivery pass ("ResizeObserver loop completed with undelivered
+    // notifications"). The high-water mark keeps it self-terminating either way.
+    let rafId = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(measure);
+    });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
   }, []);
 
   return (

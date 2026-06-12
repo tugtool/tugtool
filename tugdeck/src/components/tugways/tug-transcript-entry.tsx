@@ -225,6 +225,11 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
     // paint already has the right value; the observer fires for
     // subsequent changes only.
     write(header.getBoundingClientRect().height);
+    // Coalesce the callback write via rAF to avoid "ResizeObserver loop
+    // completed with undelivered notifications" — the write sets a CSS
+    // var consumed by sticky descendant chrome, whose relayout can queue
+    // a sibling observer notification within the same delivery pass.
+    let rafId = 0;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry === undefined) return;
@@ -236,10 +241,14 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
         boxes !== undefined && boxes.length > 0
           ? boxes[0].blockSize
           : entry.contentRect.height;
-      write(next);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        write(next);
+      });
     });
     observer.observe(header);
     return () => {
+      cancelAnimationFrame(rafId);
       observer.disconnect();
     };
   }, []);
