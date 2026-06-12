@@ -133,7 +133,10 @@ describe("runReplay perf instrumentation", () => {
 
   test("missing JSONL still emits the read split with zero bytes/lines", async () => {
     const lifecycle = await runReplayCapturingLifecycle({
-      jsonlReader: async () => ({ kind: "missing" as const }),
+      jsonlReader: async () => ({
+        kind: "missing" as const,
+        message: "no session JSONL on disk",
+      }),
     });
 
     const read = lifecycle.find((f) => f.event === "perf.replay_read")!;
