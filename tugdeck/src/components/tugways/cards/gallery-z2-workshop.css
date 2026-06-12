@@ -436,22 +436,6 @@
   padding: 0;
 }
 
-/* The customize sheet — Finder's palette, translated. */
-.z2ws-rack-sheet {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-sm);
-  padding: var(--tug-space-sm) var(--tug-space-md);
-  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-default-rest) */
-.z2ws-rack-sheet-title {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: 0.6875rem;
-}
-
 .z2ws-rack-palette {
   display: flex;
   flex-wrap: wrap;
@@ -472,34 +456,67 @@
   user-select: none;
 }
 
-/* Shelf-lane arrangement — a strip of ordered lane chips above the
-   unused-lane palette. */
-.z2ws-rack-lane-section {
+/* Per-section config panel — sits DIRECTLY under the section it
+   edits (row palette under the row, lane palette under the shelf), so
+   the live surface and its options stay visually joined. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-default-rest) */
+.z2ws-config-panel {
   display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-xs);
+  align-items: center;
+  gap: var(--tug-space-md);
+  flex: 0 0 auto;
+  padding: var(--tug-space-xs) var(--tug-space-md);
+  border-block-start: 1px dashed var(--tug7-element-global-border-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-default-rest) */
-.z2ws-rack-lane-strip {
+.z2ws-config-panel-title {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.6875rem;
+  flex: 0 0 auto;
+}
+
+/* Global configure footer — actions that span sections (restore /
+   done); per-section options live in the panels above. */
+.z2ws-config-footer {
   display: flex;
   align-items: center;
-  gap: var(--tug-space-xs);
-  min-height: 30px;
-  padding: 3px var(--tug-space-xs);
-  border: 1px dashed var(--tug7-element-global-border-normal-default-rest);
-  border-radius: 4px;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  flex: 0 0 auto;
+  padding: var(--tug-space-xs) var(--tug-space-md);
+  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+.z2ws-rack-sheet-actions {
+  display: flex;
+  gap: var(--tug-space-sm);
+}
+
+/* In-place lane editing — a customizing lane reads as a draggable
+   tile, mirroring the row cells' affordances. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.z2ws-lane[data-customizing] {
+  outline: 1px dashed var(--tug7-element-global-border-normal-default-rest);
+  outline-offset: 2px;
+  border-radius: 3px;
+  cursor: grab;
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-.z2ws-rack-lane-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+/* The editing legend is a plain div (focus toggling pauses while
+   customizing): grip · label · spacer · remove. */
+.z2ws-lane-legend-editing {
+  cursor: inherit;
 }
 
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-default-rest) */
-.z2ws-rack-lane-remove {
+.z2ws-lane-legend-editing .z2ws-lane-legend-text {
+  flex: 1 1 auto;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.z2ws-lane-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -507,21 +524,14 @@
   border: 0;
   background: transparent;
   padding: 0;
-  margin-inline-start: 2px;
+  flex: 0 0 auto;
   color: var(--tug7-element-global-text-normal-muted-rest);
   cursor: pointer;
 }
 
-.z2ws-rack-sheet-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--tug-space-md);
-}
-
-.z2ws-rack-sheet-actions {
-  display: flex;
-  gap: var(--tug-space-sm);
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.z2ws-lane-remove:hover {
+  color: var(--tug7-element-global-text-normal-danger-rest);
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-default-rest) */

@@ -439,89 +439,217 @@ function LaneRows({
  * affordance — chevrons-apart to expand, chevrons-together to share
  * again — so the focus interaction is discoverable, not a secret
  * click target.
+ *
+ * While customizing, the shelf IS the lane editor — no schematic
+ * elsewhere: lanes get drag grips and an × in their legends (focus
+ * toggling pauses), drag a lane to reorder in place, and the lane
+ * palette sits directly beneath the shelf.
  */
 function Shelf({
   session,
   lanes,
   open,
+  customizing,
+  onLanesChange,
 }: {
   session: MockSession;
   lanes: LaneId[];
   open: boolean;
+  customizing: boolean;
+  onLanesChange: (lanes: LaneId[]) => void;
 }): React.ReactElement {
   const [focused, setFocused] = useState<LaneId | null>(null);
+  const laneDragFrom = useRef<{ source: "palette" | "shelf"; index: number } | null>(
+    null,
+  );
+  const laneAvailable = ALL_LANES.filter((id) => !lanes.includes(id));
+
+  const laneDropAt = useCallback(
+    (targetIndex: number) => {
+      const from = laneDragFrom.current;
+      if (from === null) return;
+      const next = lanes.slice();
+      if (from.source === "shelf") {
+        const [moved] = next.splice(from.index, 1);
+        next.splice(
+          targetIndex > from.index ? targetIndex - 1 : targetIndex,
+          0,
+          moved,
+        );
+      } else {
+        const id = laneAvailable[from.index];
+        if (id === undefined || next.includes(id) || next.length >= 3) return;
+        next.splice(targetIndex, 0, id);
+      }
+      laneDragFrom.current = null;
+      onLanesChange(next);
+    },
+    [lanes, laneAvailable, onLanesChange],
+  );
+
   const overflow = lanes
     .map((id) => ({ id, count: laneOverflowCount(id, session) }))
     .filter((o) => o.count > 0)
     .map((o) => `${LANE_LABELS[o.id].toLowerCase()} +${o.count}`);
-  return (
-    <div className="z2ws-shelf" data-open={open ? "true" : "false"}>
-      {lanes.length === 0 ? (
-        <div className="z2ws-lane-empty z2ws-shelf-none">
-          No lanes configured — add some with the gear.
-        </div>
-      ) : (
-        <div className="z2ws-lanes" data-lane-count={lanes.length}>
-          {lanes.map((id) => (
-            <div
-              key={id}
-              className="z2ws-lane"
-              data-lane={id}
-              data-focus={
-                focused === null ? "none" : focused === id ? "self" : "other"
-              }
-            >
-              <button
-                type="button"
-                className="z2ws-lane-legend"
-                aria-pressed={focused === id}
-                title={
-                  focused === id
-                    ? "Contract — share the shelf again"
-                    : "Expand this lane"
-                }
-                onClick={() => setFocused((f) => (f === id ? null : id))}
-                disabled={lanes.length < 2}
-              >
-                <span className="z2ws-lane-legend-text">{LANE_LABELS[id]}</span>
-                {lanes.length > 1 ? (
-                  <span className="z2ws-lane-legend-affordance" aria-hidden>
-                    {focused === id ? (
-                      <ChevronsRightLeft size={11} />
-                    ) : (
-                      <ChevronsLeftRight size={11} />
-                    )}
-                  </span>
-                ) : null}
-              </button>
-              <LaneRows id={id} session={session} />
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Sixth row — controls + overflow counts. Always present, so
-          the shelf's height never moves once it is open. */}
-      <div className="z2ws-shelf-footer" data-slot="z2ws-shelf-footer">
-        <span className="z2ws-shelf-overflow">
-          {overflow.length > 0 ? overflow.join(" · ") : " "}
-        </span>
-        <div className="z2ws-shelf-actions">
-          <TugPushButton emphasis="ghost" role="action" size="xs">
-            More…
-          </TugPushButton>
-          <TugPushButton emphasis="ghost" role="action" size="xs">
-            Clear
-          </TugPushButton>
+  return (
+    <>
+      <div className="z2ws-shelf" data-open={open ? "true" : "false"}>
+        {lanes.length === 0 ? (
+          <div className="z2ws-lane-empty z2ws-shelf-none">
+            No lanes configured — drag some in below.
+          </div>
+        ) : (
+          <div
+            className="z2ws-lanes"
+            data-lane-count={lanes.length}
+            onDragOver={(e) => {
+              if (!customizing) return;
+              e.preventDefault();
+            }}
+            onDrop={(e) => {
+              if (!customizing) return;
+              e.preventDefault();
+              laneDropAt(lanes.length);
+            }}
+          >
+            {lanes.map((id, index) => (
+              <div
+                key={id}
+                className="z2ws-lane"
+                data-lane={id}
+                data-customizing={customizing ? "true" : undefined}
+                data-focus={
+                  customizing || focused === null
+                    ? "none"
+                    : focused === id
+                      ? "self"
+                      : "other"
+                }
+                draggable={customizing}
+                onDragStart={() => {
+                  laneDragFrom.current = { source: "shelf", index };
+                }}
+                onDragOver={(e) => {
+                  if (!customizing) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={(e) => {
+                  if (!customizing) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const before = e.clientX < rect.left + rect.width / 2;
+                  laneDropAt(before ? index : index + 1);
+                }}
+              >
+                {customizing ? (
+                  <div className="z2ws-lane-legend z2ws-lane-legend-editing">
+                    <span className="z2ws-rack-grip" aria-hidden>
+                      <GripVertical size={10} />
+                    </span>
+                    <span className="z2ws-lane-legend-text">
+                      {LANE_LABELS[id]}
+                    </span>
+                    <button
+                      type="button"
+                      className="z2ws-lane-remove"
+                      aria-label={`Remove the ${LANE_LABELS[id]} lane`}
+                      onClick={() =>
+                        onLanesChange(lanes.filter((_, i) => i !== index))
+                      }
+                    >
+                      <X size={9} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="z2ws-lane-legend"
+                    aria-pressed={focused === id}
+                    title={
+                      focused === id
+                        ? "Contract — share the shelf again"
+                        : "Expand this lane"
+                    }
+                    onClick={() => setFocused((f) => (f === id ? null : id))}
+                    disabled={lanes.length < 2}
+                  >
+                    <span className="z2ws-lane-legend-text">
+                      {LANE_LABELS[id]}
+                    </span>
+                    {lanes.length > 1 ? (
+                      <span className="z2ws-lane-legend-affordance" aria-hidden>
+                        {focused === id ? (
+                          <ChevronsRightLeft size={11} />
+                        ) : (
+                          <ChevronsLeftRight size={11} />
+                        )}
+                      </span>
+                    ) : null}
+                  </button>
+                )}
+                <LaneRows id={id} session={session} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sixth row — controls + overflow counts. Always present, so
+            the shelf's height never moves once it is open. */}
+        <div className="z2ws-shelf-footer" data-slot="z2ws-shelf-footer">
+          <span className="z2ws-shelf-overflow">
+            {overflow.length > 0 ? overflow.join(" · ") : " "}
+          </span>
+          <div className="z2ws-shelf-actions">
+            <TugPushButton emphasis="ghost" role="action" size="xs">
+              More…
+            </TugPushButton>
+            <TugPushButton emphasis="ghost" role="action" size="xs">
+              Clear
+            </TugPushButton>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* The lane palette — directly under the section it edits. */}
+      {customizing ? (
+        <div className="z2ws-config-panel" data-slot="z2ws-lane-palette">
+          <span className="z2ws-config-panel-title">
+            {laneAvailable.length > 0
+              ? "Drag lanes into the shelf (three max)…"
+              : "All lanes are on the shelf."}
+          </span>
+          <div className="z2ws-rack-palette">
+            {laneAvailable.map((id, index) => (
+              <div
+                key={id}
+                className="z2ws-rack-chip"
+                draggable
+                onDragStart={() => {
+                  laneDragFrom.current = { source: "palette", index };
+                }}
+                onDoubleClick={() =>
+                  lanes.length < 3 && onLanesChange([...lanes, id])
+                }
+                title="Drag into the shelf (or double-click to append)"
+              >
+                {LANE_LABELS[id]}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
 // ---------------------------------------------------------------------------
-// The unified demo — one Z2 area: configurable row, PULSE, shelf,
-// and the gear-opened customize sheet.
+// The unified demo — one Z2 area: configurable row, PULSE, shelf.
+// Each section edits IN PLACE while customizing, with its palette
+// directly beneath it — the live surface is the configurator; there
+// is no separate schematic.
 // ---------------------------------------------------------------------------
 
 function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElement {
@@ -530,20 +658,20 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
   const [shelfOpen, setShelfOpen] = useState(true);
   const [customizing, setCustomizing] = useState(false);
   const dragFrom = useRef<{ source: "palette" | "row"; index: number } | null>(null);
-  const laneDragFrom = useRef<{ source: "palette" | "strip"; index: number } | null>(
-    null,
-  );
 
   const available = RACK_ITEMS.filter(
     (i) => i.repeatable === true || !row.includes(i.id),
   );
-  const laneAvailable = ALL_LANES.filter((id) => !lanes.includes(id));
+
+  // Customizing edits the shelf in place, so the shelf shows while the
+  // gear is open even if the user keeps it closed otherwise.
+  const effectiveShelfOpen = shelfOpen || customizing;
 
   // PULSE surfaces exactly once, by priority: row item → open shelf
   // lane → the ambient strip. The strip is the fallback, never a
   // duplicate.
   const pulseInRow = row.includes("pulse");
-  const pulseInOpenShelf = shelfOpen && lanes.includes("pulse");
+  const pulseInOpenShelf = effectiveShelfOpen && lanes.includes("pulse");
   const showStrip = !pulseInRow && !pulseInOpenShelf;
 
   const dropAt = useCallback(
@@ -570,29 +698,6 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
       dragFrom.current = null;
     },
     [available],
-  );
-
-  const laneDropAt = useCallback(
-    (targetIndex: number) => {
-      const from = laneDragFrom.current;
-      if (from === null) return;
-      const next = lanes.slice();
-      if (from.source === "strip") {
-        const [moved] = next.splice(from.index, 1);
-        next.splice(
-          targetIndex > from.index ? targetIndex - 1 : targetIndex,
-          0,
-          moved,
-        );
-      } else {
-        const id = laneAvailable[from.index];
-        if (id === undefined || next.includes(id) || next.length >= 3) return;
-        next.splice(targetIndex, 0, id);
-      }
-      laneDragFrom.current = null;
-      setLanes(next);
-    },
-    [lanes, laneAvailable],
   );
 
   return (
@@ -692,7 +797,7 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
         <TugPushButton
           subtype="icon"
           icon={<Settings size={12} />}
-          aria-label={customizing ? "Close the configure sheet" : "Configure the status area"}
+          aria-label={customizing ? "Finish configuring the status area" : "Configure the status area"}
           title="Configure status area"
           emphasis={customizing ? "tinted" : "ghost"}
           role="action"
@@ -710,27 +815,12 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
         />
       </div>
 
-      {/* The PULSE strip — fallback surface only (see the priority
-          rule above): suppressed while PULSE lives in the row or in
-          an open shelf lane. */}
-      {showStrip ? (
-        <div className="z2ws-strip" data-slot="z2ws-strip">
-          <span className="z2ws-strip-legend">PULSE</span>
-          <span key={session.beat} className="z2ws-strip-text">
-            {session.commentary}
-          </span>
-        </div>
-      ) : null}
-
-      <Shelf session={session} lanes={lanes} open={shelfOpen} />
-
-      {/* The customize sheet — Finder's "drag your favorite items…",
-          plus the shelf-lane arrangement. */}
+      {/* The row's item palette — directly under the section it edits. */}
       {customizing ? (
-        <div className="z2ws-rack-sheet" data-slot="z2ws-rack-sheet">
-          <div className="z2ws-rack-sheet-title">
-            Drag your favorite items into the status row…
-          </div>
+        <div className="z2ws-config-panel" data-slot="z2ws-row-palette">
+          <span className="z2ws-config-panel-title">
+            Drag items into the status row…
+          </span>
           <div className="z2ws-rack-palette">
             {available.map((spec, index) => (
               <div
@@ -753,104 +843,56 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
               </div>
             ))}
           </div>
+        </div>
+      ) : null}
 
-          <div className="z2ws-rack-sheet-title">
-            …and arrange the shelf lanes (three max):
-          </div>
-          <div className="z2ws-rack-lane-section">
-            <div
-              className="z2ws-rack-lane-strip"
-              data-slot="z2ws-rack-lane-strip"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                laneDropAt(lanes.length);
+      {/* The PULSE strip — fallback surface only (see the priority
+          rule above): suppressed while PULSE lives in the row or in
+          an open shelf lane. */}
+      {showStrip ? (
+        <div className="z2ws-strip" data-slot="z2ws-strip">
+          <span className="z2ws-strip-legend">PULSE</span>
+          <span key={session.beat} className="z2ws-strip-text">
+            {session.commentary}
+          </span>
+        </div>
+      ) : null}
+
+      <Shelf
+        session={session}
+        lanes={lanes}
+        open={effectiveShelfOpen}
+        customizing={customizing}
+        onLanesChange={setLanes}
+      />
+
+      {/* Configure footer — global actions only; each section's
+          options live directly beneath that section. */}
+      {customizing ? (
+        <div className="z2ws-config-footer" data-slot="z2ws-config-footer">
+          <span className="z2ws-rack-sheet-hint">
+            Labels stay on — bare values mostly lose their meaning.
+          </span>
+          <div className="z2ws-rack-sheet-actions">
+            <TugPushButton
+              emphasis="outlined"
+              role="action"
+              size="xs"
+              onClick={() => {
+                setRow(RACK_DEFAULT);
+                setLanes(DEFAULT_LANES);
               }}
             >
-              {lanes.length === 0 ? (
-                <span className="z2ws-rack-empty">No lanes — drag some in…</span>
-              ) : (
-                lanes.map((id, index) => (
-                  <div
-                    key={id}
-                    className="z2ws-rack-chip z2ws-rack-lane-chip"
-                    draggable
-                    onDragStart={() => {
-                      laneDragFrom.current = { source: "strip", index };
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const before = e.clientX < rect.left + rect.width / 2;
-                      laneDropAt(before ? index : index + 1);
-                    }}
-                  >
-                    <GripVertical size={10} aria-hidden />
-                    {LANE_LABELS[id]}
-                    <button
-                      type="button"
-                      className="z2ws-rack-lane-remove"
-                      aria-label={`Remove the ${LANE_LABELS[id]} lane`}
-                      onClick={() =>
-                        setLanes((prev) => prev.filter((_, i) => i !== index))
-                      }
-                    >
-                      <X size={9} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="z2ws-rack-palette">
-              {laneAvailable.map((id, index) => (
-                <div
-                  key={id}
-                  className="z2ws-rack-chip"
-                  draggable
-                  onDragStart={() => {
-                    laneDragFrom.current = { source: "palette", index };
-                  }}
-                  onDoubleClick={() =>
-                    lanes.length < 3 && setLanes((prev) => [...prev, id])
-                  }
-                  title="Drag into the lane strip (or double-click to append)"
-                >
-                  {LANE_LABELS[id]}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="z2ws-rack-sheet-controls">
-            <span className="z2ws-rack-sheet-hint">
-              Labels stay on — bare values mostly lose their meaning.
-            </span>
-            <div className="z2ws-rack-sheet-actions">
-              <TugPushButton
-                emphasis="outlined"
-                role="action"
-                size="xs"
-                onClick={() => {
-                  setRow(RACK_DEFAULT);
-                  setLanes(DEFAULT_LANES);
-                }}
-              >
-                Restore Defaults
-              </TugPushButton>
-              <TugPushButton
-                emphasis="filled"
-                role="action"
-                size="xs"
-                onClick={() => setCustomizing(false)}
-              >
-                Done
-              </TugPushButton>
-            </div>
+              Restore Defaults
+            </TugPushButton>
+            <TugPushButton
+              emphasis="filled"
+              role="action"
+              size="xs"
+              onClick={() => setCustomizing(false)}
+            >
+              Done
+            </TugPushButton>
           </div>
         </div>
       ) : null}
