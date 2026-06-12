@@ -123,6 +123,18 @@
   animation: z2ws-strip-in calc(360ms * var(--tug-timing, 1)) ease;
 }
 
+/* While customizing, a suppressed strip keeps its slot mounted at the
+   same height, with a muted note in place of the live line. */
+.z2ws-strip[data-suppressed="true"] {
+  opacity: 0.75;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.z2ws-strip-placeholder {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  animation: none;
+}
+
 @keyframes z2ws-strip-in {
   from {
     opacity: 0;
@@ -162,6 +174,15 @@
   gap: var(--tug-space-md);
   height: calc(5 * 20px + 22px);
   flex: 0 0 auto;
+  /* Anchors the absolutely-positioned insertion caret. */
+  position: relative;
+}
+
+/* The zero-lane state keeps the lane band's exact height (and stays a
+   drop target), so emptying the shelf never moves the configurator. */
+.z2ws-lanes-none {
+  align-items: center;
+  justify-content: center;
 }
 
 .z2ws-lane {
@@ -328,6 +349,8 @@
   min-height: 44px;
   padding: var(--tug-space-xs) var(--tug-space-sm);
   border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* Anchors the absolutely-positioned insertion caret. */
+  position: relative;
 }
 
 /* While customizing, the row reads as a drop target. */
@@ -436,10 +459,16 @@
   padding: 0;
 }
 
+/* Single-line, fixed-height chip strip (no wrap — wrap would change
+   the panel's height as chips come and go); overflows scroll. */
 .z2ws-rack-palette {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--tug-space-xs);
+  min-height: 26px;
+  overflow-x: auto;
+  min-width: 0;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-default-rest) */
@@ -456,6 +485,55 @@
   user-select: none;
 }
 
+/* ----------------------------------------------------------------------------
+   Drag visuals — the TugTabBar grammar: a styled ghost follows the
+   pointer, the source dims, and a 2px insertion caret glides to the
+   resolved drop position.
+   ------------------------------------------------------------------------- */
+
+/* Ghost — transient clone handed to `setDragImage`; mirrors
+   `.tug-tab-ghost` (control surface, border, rounded, translucent). */
+.z2ws-drag-ghost {
+  position: absolute;
+  top: -1000px;
+  left: -1000px;
+  z-index: 5000;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background-color: var(--tug7-surface-global-primary-normal-control-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  opacity: 0.85;
+  pointer-events: none;
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Insertion caret — thin vertical bar inside the drop container,
+   positioned via style.left; `transition: left` makes it glide
+   between candidate positions (the tab bar's exact treatment). */
+.z2ws-insert-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--tug7-element-global-fill-normal-accent-rest);
+  pointer-events: none;
+  transition: left calc(120ms * var(--tug-timing, 1)) ease;
+}
+
+/* Dim the drag source so the ghost reads as the dragged item. */
+.z2ws-rack-cell[data-dragging="true"],
+.z2ws-lane[data-dragging="true"] {
+  opacity: 0.3;
+}
+
 /* Per-section config panel — sits DIRECTLY under the section it
    edits (row palette under the row, lane palette under the shelf), so
    the live surface and its options stay visually joined. */
@@ -465,7 +543,11 @@
   align-items: center;
   gap: var(--tug-space-md);
   flex: 0 0 auto;
-  padding: var(--tug-space-xs) var(--tug-space-md);
+  /* Fixed height — emptying or filling the palette never moves the
+     configurator. */
+  height: 36px;
+  padding-block: 0;
+  padding-inline: var(--tug-space-md);
   border-block-start: 1px dashed var(--tug7-element-global-border-normal-default-rest);
   color: var(--tug7-element-global-text-normal-muted-rest);
 }

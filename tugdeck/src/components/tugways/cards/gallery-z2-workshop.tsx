@@ -433,6 +433,53 @@ function LaneRows({
 }
 
 /**
+ * Drag visuals — the TugTabBar grammar translated to HTML5 dnd:
+ * a styled ghost follows the pointer (via `setDragImage` on a
+ * transient clone), the source dims (`data-dragging`), and an
+ * absolute 2px insertion caret glides (`transition: left`) to the
+ * resolved drop position inside the target container.
+ */
+function startDragGhost(e: React.DragEvent, label: string): void {
+  e.dataTransfer.effectAllowed = "move";
+  const ghost = document.createElement("div");
+  ghost.className = "z2ws-drag-ghost";
+  ghost.textContent = label;
+  document.body.appendChild(ghost);
+  e.dataTransfer.setDragImage(ghost, 14, 14);
+  window.setTimeout(() => ghost.remove(), 0);
+}
+
+interface InsertionPoint {
+  index: number;
+  /** Caret x in px, relative to the drop container's left edge. */
+  x: number;
+}
+
+/**
+ * Resolve the insertion point from the pointer x vs item midpoints —
+ * the same approach as the tab bar's reorder math — plus the caret's
+ * x (the left edge of the item at `index`, or the right edge of the
+ * last item for an append).
+ */
+function computeInsertion(
+  container: HTMLElement,
+  itemSelector: string,
+  clientX: number,
+): InsertionPoint {
+  const containerRect = container.getBoundingClientRect();
+  const els = Array.from(container.querySelectorAll<HTMLElement>(itemSelector));
+  if (els.length === 0) return { index: 0, x: 8 };
+  for (let i = 0; i < els.length; i++) {
+    const r = els[i].getBoundingClientRect();
+    if (clientX < r.left + r.width / 2) {
+      return { index: i, x: r.left - containerRect.left - 2 };
+    }
+  }
+  const last = els[els.length - 1].getBoundingClientRect();
+  return { index: els.length, x: last.right - containerRect.left + 2 };
+}
+
+/**
  * The shelf body — lanes per the configured arrangement, then the
  * always-present sixth controls row. Each lane legend (in a
  * multi-lane arrangement) carries an explicit expand/contract
@@ -442,8 +489,10 @@ function LaneRows({
  *
  * While customizing, the shelf IS the lane editor — no schematic
  * elsewhere: lanes get drag grips and an × in their legends (focus
- * toggling pauses), drag a lane to reorder in place, and the lane
- * palette sits directly beneath the shelf.
+ * toggling pauses), drag a lane to reorder in place with a live
+ * insertion caret, and the lane palette sits directly beneath the
+ * shelf. The zero-lane state keeps the lane band's exact height and
+ * remains a drop target, so emptying the shelf never moves anything.
  */
 function Shelf({
   session,
@@ -459,12 +508,14 @@ function Shelf({
   onLanesChange: (lanes: LaneId[]) => void;
 }): React.ReactElement {
   const [focused, setFocused] = useState<LaneId | null>(null);
+  const [caret, setCaret] = useState<InsertionPoint | null>(null);
+  const [draggingLane, setDraggingLane] = useState<LaneId | null>(null);
   const laneDragFrom = useRef<{ source: "palette" | "shelf"; index: number } | null>(
     null,
   );
   const laneAvailable = ALL_LANES.filter((id) => !lanes.includes(id));
 
-  const laneDropAt = useCallback(
+  const commitLaneDrop = useCallback(
     (targetIndex: number) => {
       const from = laneDragFrom.current;
       if (from === null) return;
@@ -487,6 +538,11 @@ function Shelf({
     [lanes, laneAvailable, onLanesChange],
   );
 
+  const clearDragVisuals = useCallback(() => {
+    setCaret(null);
+    setDraggingLane(null);
+  }, []);
+
   const overflow = lanes
     .map((id) => ({ id, count: laneOverflowCount(id, session) }))
     .filter((o) => o.count > 0)
@@ -496,13 +552,8 @@ function Shelf({
     <>
       <div className="z2ws-shelf" data-open={open ? "true" : "false"}>
         {lanes.length === 0 ? (
-          <div className="z2ws-lane-empty z2ws-shelf-none">
-            No lanes configured — drag some in below.
-          </div>
-        ) : (
           <div
-            className="z2ws-lanes"
-            data-lane-count={lanes.length}
+            className="z2ws-lanes z2ws-lanes-none"
             onDragOver={(e) => {
               if (!customizing) return;
               e.preventDefault();
@@ -510,7 +561,40 @@ function Shelf({
             onDrop={(e) => {
               if (!customizing) return;
               e.preventDefault();
-              laneDropAt(lanes.length);
+              commitLaneDrop(0);
+              clearDragVisuals();
+            }}
+          >
+            <span className="z2ws-lane-empty">
+              No lanes configured — drag some in below.
+            </span>
+          </div>
+        ) : (
+          <div
+            className="z2ws-lanes"
+            data-lane-count={lanes.length}
+            onDragOver={(e) => {
+              if (!customizing || laneDragFrom.current === null) return;
+              e.preventDefault();
+              setCaret(
+                computeInsertion(e.currentTarget, ".z2ws-lane", e.clientX),
+              );
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setCaret(null);
+              }
+            }}
+            onDrop={(e) => {
+              if (!customizing) return;
+              e.preventDefault();
+              const point = computeInsertion(
+                e.currentTarget,
+                ".z2ws-lane",
+                e.clientX,
+              );
+              commitLaneDrop(point.index);
+              clearDragVisuals();
             }}
           >
             {lanes.map((id, index) => (
@@ -519,6 +603,7 @@ function Shelf({
                 className="z2ws-lane"
                 data-lane={id}
                 data-customizing={customizing ? "true" : undefined}
+                data-dragging={draggingLane === id ? "true" : undefined}
                 data-focus={
                   customizing || focused === null
                     ? "none"
@@ -527,22 +612,12 @@ function Shelf({
                       : "other"
                 }
                 draggable={customizing}
-                onDragStart={() => {
+                onDragStart={(e) => {
                   laneDragFrom.current = { source: "shelf", index };
+                  setDraggingLane(id);
+                  startDragGhost(e, LANE_LABELS[id]);
                 }}
-                onDragOver={(e) => {
-                  if (!customizing) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onDrop={(e) => {
-                  if (!customizing) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const before = e.clientX < rect.left + rect.width / 2;
-                  laneDropAt(before ? index : index + 1);
-                }}
+                onDragEnd={clearDragVisuals}
               >
                 {customizing ? (
                   <div className="z2ws-lane-legend z2ws-lane-legend-editing">
@@ -593,6 +668,13 @@ function Shelf({
                 <LaneRows id={id} session={session} />
               </div>
             ))}
+            {caret !== null ? (
+              <div
+                className="z2ws-insert-indicator"
+                style={{ left: `${caret.x}px` }}
+                aria-hidden
+              />
+            ) : null}
           </div>
         )}
 
@@ -613,7 +695,9 @@ function Shelf({
         </div>
       </div>
 
-      {/* The lane palette — directly under the section it edits. */}
+      {/* The lane palette — directly under the section it edits. A
+          fixed-height single-line strip, so adding or removing lanes
+          never moves the configurator. */}
       {customizing ? (
         <div className="z2ws-config-panel" data-slot="z2ws-lane-palette">
           <span className="z2ws-config-panel-title">
@@ -627,9 +711,11 @@ function Shelf({
                 key={id}
                 className="z2ws-rack-chip"
                 draggable
-                onDragStart={() => {
+                onDragStart={(e) => {
                   laneDragFrom.current = { source: "palette", index };
+                  startDragGhost(e, LANE_LABELS[id]);
                 }}
+                onDragEnd={clearDragVisuals}
                 onDoubleClick={() =>
                   lanes.length < 3 && onLanesChange([...lanes, id])
                 }
@@ -649,7 +735,8 @@ function Shelf({
 // The unified demo — one Z2 area: configurable row, PULSE, shelf.
 // Each section edits IN PLACE while customizing, with its palette
 // directly beneath it — the live surface is the configurator; there
-// is no separate schematic.
+// is no separate schematic. Every configure surface is height-stable:
+// adding or removing items never moves the layout.
 // ---------------------------------------------------------------------------
 
 function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElement {
@@ -657,6 +744,8 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
   const [lanes, setLanes] = useState<LaneId[]>(DEFAULT_LANES);
   const [shelfOpen, setShelfOpen] = useState(true);
   const [customizing, setCustomizing] = useState(false);
+  const [rowCaret, setRowCaret] = useState<InsertionPoint | null>(null);
+  const [draggingCell, setDraggingCell] = useState<number | null>(null);
   const dragFrom = useRef<{ source: "palette" | "row"; index: number } | null>(null);
 
   const available = RACK_ITEMS.filter(
@@ -669,12 +758,14 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
 
   // PULSE surfaces exactly once, by priority: row item → open shelf
   // lane → the ambient strip. The strip is the fallback, never a
-  // duplicate.
+  // duplicate. While customizing, the strip SLOT stays mounted either
+  // way (live strip or a placeholder note) so toggling PULSE between
+  // its homes never shifts the configurator's height.
   const pulseInRow = row.includes("pulse");
   const pulseInOpenShelf = effectiveShelfOpen && lanes.includes("pulse");
   const showStrip = !pulseInRow && !pulseInOpenShelf;
 
-  const dropAt = useCallback(
+  const commitRowDrop = useCallback(
     (targetIndex: number) => {
       const from = dragFrom.current;
       if (from === null) return;
@@ -700,6 +791,11 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
     [available],
   );
 
+  const clearRowDragVisuals = useCallback(() => {
+    setRowCaret(null);
+    setDraggingCell(null);
+  }, []);
+
   return (
     <div className="z2ws-frame" data-slot="z2ws-demo">
       <FakeTranscript />
@@ -711,13 +807,27 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
         className="z2ws-rack-row"
         data-customizing={customizing ? "true" : "false"}
         onDragOver={(e) => {
-          if (!customizing) return;
+          if (!customizing || dragFrom.current === null) return;
           e.preventDefault();
+          setRowCaret(
+            computeInsertion(e.currentTarget, ".z2ws-rack-cell", e.clientX),
+          );
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setRowCaret(null);
+          }
         }}
         onDrop={(e) => {
           if (!customizing) return;
           e.preventDefault();
-          dropAt(row.length);
+          const point = computeInsertion(
+            e.currentTarget,
+            ".z2ws-rack-cell",
+            e.clientX,
+          );
+          commitRowDrop(point.index);
+          clearRowDragVisuals();
         }}
       >
         <TugPushButton
@@ -739,23 +849,14 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
                 className="z2ws-rack-cell"
                 data-kind={id}
                 data-flexible={spec.flexible ? "true" : undefined}
+                data-dragging={draggingCell === index ? "true" : undefined}
                 draggable={customizing}
-                onDragStart={() => {
+                onDragStart={(e) => {
                   dragFrom.current = { source: "row", index };
+                  setDraggingCell(index);
+                  startDragGhost(e, spec.label);
                 }}
-                onDragOver={(e) => {
-                  if (!customizing) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onDrop={(e) => {
-                  if (!customizing) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const before = e.clientX < rect.left + rect.width / 2;
-                  dropAt(before ? index : index + 1);
-                }}
+                onDragEnd={clearRowDragVisuals}
               >
                 {customizing ? (
                   <span className="z2ws-rack-grip" aria-hidden>
@@ -813,13 +914,24 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
           size="xs"
           onClick={() => setShelfOpen((o) => !o)}
         />
+        {rowCaret !== null ? (
+          <div
+            className="z2ws-insert-indicator"
+            style={{ left: `${rowCaret.x}px` }}
+            aria-hidden
+          />
+        ) : null}
       </div>
 
-      {/* The row's item palette — directly under the section it edits. */}
+      {/* The row's item palette — directly under the section it edits.
+          Fixed-height single-line strip: adding or removing items
+          never moves the configurator. */}
       {customizing ? (
         <div className="z2ws-config-panel" data-slot="z2ws-row-palette">
           <span className="z2ws-config-panel-title">
-            Drag items into the status row…
+            {available.length > 0
+              ? "Drag items into the status row…"
+              : "Every item is in the row."}
           </span>
           <div className="z2ws-rack-palette">
             {available.map((spec, index) => (
@@ -827,9 +939,11 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
                 key={spec.id}
                 className="z2ws-rack-chip"
                 draggable
-                onDragStart={() => {
+                onDragStart={(e) => {
                   dragFrom.current = { source: "palette", index };
+                  startDragGhost(e, spec.label);
                 }}
+                onDragEnd={clearRowDragVisuals}
                 onDoubleClick={() =>
                   setRow((prev) =>
                     !spec.repeatable && prev.includes(spec.id)
@@ -847,13 +961,23 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
       ) : null}
 
       {/* The PULSE strip — fallback surface only (see the priority
-          rule above): suppressed while PULSE lives in the row or in
-          an open shelf lane. */}
+          rule above). While customizing, the slot stays mounted at
+          fixed height with a placeholder when suppressed, so moving
+          PULSE between its homes never shifts the layout. */}
       {showStrip ? (
         <div className="z2ws-strip" data-slot="z2ws-strip">
           <span className="z2ws-strip-legend">PULSE</span>
           <span key={session.beat} className="z2ws-strip-text">
             {session.commentary}
+          </span>
+        </div>
+      ) : customizing ? (
+        <div className="z2ws-strip" data-suppressed="true" data-slot="z2ws-strip">
+          <span className="z2ws-strip-legend">PULSE</span>
+          <span className="z2ws-strip-text z2ws-strip-placeholder">
+            {pulseInRow
+              ? "in the status row — the strip stands down"
+              : "pinned on the shelf — the strip stands down"}
           </span>
         </div>
       ) : null}
