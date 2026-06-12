@@ -103,7 +103,8 @@ import {
   clearTerminalJobs,
   EMPTY_JOBS_LEDGER,
   insertJob,
-  jobKindFromTaskType,
+  isJobLaunch,
+  jobKindForLaunch,
   markRunningJobsStopped,
   parseBackgroundLaunchResult,
   terminalJobStatusFromWire,
@@ -1783,10 +1784,12 @@ function handleToolResult(
       typeof mutated.input === "object" && mutated.input !== null
         ? (mutated.input as Record<string, unknown>)
         : null;
-    if (input?.run_in_background === true) {
-      // Background launch — the `tool_result` echo carries the job id
-      // (and usually the output file). The `task_started` frame is the
-      // other insert path; `insertJob` composes the two idempotently.
+    if (isJobLaunch(mutated.toolName, input)) {
+      // Background launch (explicitly backgrounded, or a Monitor
+      // watcher) — the `tool_result` echo carries the job id (and,
+      // for bash/agent, the output file). The `task_started` frame is
+      // the other insert path; `insertJob` composes the two
+      // idempotently.
       const echo = parseBackgroundLaunchResult(mutated.result);
       if (echo !== undefined) {
         jobs = insertJob(jobs, {
@@ -1795,7 +1798,7 @@ function handleToolResult(
           kind: echo.kind,
           toolUseId: mutated.toolUseId,
           description:
-            typeof input.description === "string" ? input.description : "",
+            typeof input?.description === "string" ? input.description : "",
           ...(echo.outputFile !== undefined
             ? { outputFile: echo.outputFile }
             : {}),
@@ -3921,12 +3924,21 @@ function handleWakeStarted(
   // Jobs-ledger fold: the wake trigger carries the job's terminal
   // status, so a matching `running` row flips here even if the
   // sibling `task_updated` frame was missed (first terminal flip
-  // wins; an unknown id — e.g. a Monitor wake — is a no-op). During
-  // replay the ledger is structurally empty (launch inserts are
-  // suppressed), so a synthesized replay wake cannot flip anything.
+  // wins). Monitor rows are exempt: a watcher reaches terminal only
+  // via `task_updated`. On the captured wire this is defense in
+  // depth — mid-life monitor events wake via task-id-less re-inits
+  // and a monitor's only notification is terminal with an agreeing
+  // status (test-monitor-lifecycle-raw.jsonl) — but the exemption
+  // pins the invariant structurally against future per-event
+  // notifications. During replay the ledger is structurally empty
+  // (launch inserts are suppressed), so a synthesized replay wake
+  // cannot flip anything.
   const wireStatus = terminalJobStatusFromWire(trigger.status);
+  const foldTarget = state.jobs.find((j) => j.jobId === trigger.taskId);
   const jobs =
-    wireStatus !== undefined
+    wireStatus !== undefined &&
+    foldTarget !== undefined &&
+    foldTarget.kind !== "monitor"
       ? applyJobFlip(state.jobs, trigger.taskId, wireStatus, Date.now())
       : state.jobs;
   if (state.phase === "waking") {
@@ -4015,12 +4027,15 @@ function handleWakeStarted(
 /**
  * `task_started` — primary ledger insert. The frame fires for
  * foreground subagents too (no backgrounded discriminant on the
- * wire), so the insert is gated on the launching tool call's
- * `input.run_in_background === true`, looked up by `toolUseId` in
- * the in-flight turn's scratch. A frame whose launching call isn't
- * visible in our stream (e.g. an async subagent's internal jobs) or
- * isn't backgrounded is ignored. Replay never reaches here — task
- * frames aren't part of the replay stream.
+ * wire), so the insert is gated on the launching tool call — looked
+ * up by `toolUseId` in the in-flight turn's scratch — via
+ * `isJobLaunch`: explicitly backgrounded, or a `Monitor` watcher
+ * (background activity by nature; its frame's `task_type` reads
+ * `local_bash` and cannot discriminate, so kind derives from the
+ * tool name). A frame whose launching call isn't visible in our
+ * stream (e.g. an async subagent's internal jobs) or isn't a job
+ * launch is ignored. Replay never reaches here — task frames aren't
+ * part of the replay stream.
  */
 function handleTaskStarted(
   state: CodeSessionState,
@@ -4047,13 +4062,13 @@ function handleTaskStarted(
     typeof launching.input === "object" && launching.input !== null
       ? (launching.input as Record<string, unknown>)
       : null;
-  if (input?.run_in_background !== true) {
+  if (!isJobLaunch(launching.toolName, input)) {
     return { state, effects: [] };
   }
   const jobs = insertJob(state.jobs, {
     jobId: event.taskId,
     source: "claude",
-    kind: jobKindFromTaskType(event.taskType),
+    kind: jobKindForLaunch(launching.toolName, event.taskType),
     toolUseId: event.toolUseId,
     description: event.description,
     status: "running",

@@ -138,7 +138,14 @@ the fixture-replay test needs the real frames.
 **Plan to resolve:** Step 1 capture — a monitor whose script emits two events before
 exiting (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1.
+**Resolution:** DECIDED — pinned by `test-monitor-lifecycle-raw.jsonl`. Mid-life
+events do **not** fire `task_notification` at all: each event wakes claude via a
+`system/init` re-init (the scheduled-wake mechanism), which tugcode forwards as a
+synthetic `wake_started` with an **empty `task_id`** — structurally unable to flip
+any row. A monitor's only `task_notification` is terminal, fired alongside the
+terminal `task_updated`, with agreeing statuses. [P02]'s exemption is therefore
+defense-in-depth against future wire drift rather than a fix for a live corruption
+path; it ships anyway (cheap, and pins the invariant structurally).
 
 #### [Q02] Terminal status vocabulary for monitors (OPEN) {#q02-terminal-vocabulary}
 
@@ -152,7 +159,11 @@ ledger exists to prevent).
 
 **Plan to resolve:** Step 1 captures all three endings (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1.
+**Resolution:** DECIDED — natural script exit → `task_updated{status:"completed"}`
+(+ terminal `notification{completed, "stream ended"}`); timeout → `killed` (+
+`notification{stopped}`); control-request `stop_task` → `killed` (+
+`notification{stopped}`). All inside `terminalJobStatusFromWire`'s existing
+vocabulary — no additions needed.
 
 #### [Q03] Does `stop_task` kill a live watcher? (OPEN) {#q03-stop-kills-watcher}
 
@@ -164,8 +175,9 @@ Bash; monitors live in the same registry, so it should work identically — veri
 **Plan to resolve:** Step 1's persistent-watcher phase sends the control request
 (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1; expected yes (same registry, same
-`task_id` namespace).
+**Resolution:** DECIDED — **yes.** The capture's persistent watcher died on the
+control request with `task_updated{killed}` + `notification{stopped}` and a
+`control_response` ack — identical to the background-Bash stop.
 
 ---
 
@@ -404,10 +416,10 @@ ledger.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Capture monitor lifecycle fixtures | pending | — |
-| #step-2 | Gate, kind, echo, and summary helpers | pending | — |
-| #step-3 | Reducer gate + monitor flip rule | pending | — |
-| #step-4 | Docs: [D102] amendment + fixture README | pending | — |
+| #step-1 | Capture monitor lifecycle fixtures | done | e41be1ca |
+| #step-2 | Gate, kind, echo, and summary helpers | done | dab23ce6 |
+| #step-3 | Reducer gate + monitor flip rule | done | 04a5a989 |
+| #step-4 | Docs: [D102] amendment + fixture README | done | 82d35e0b |
 | #step-5 | Integration checkpoint | pending | — |
 
 #### Step 1: Capture monitor lifecycle fixtures {#step-1}

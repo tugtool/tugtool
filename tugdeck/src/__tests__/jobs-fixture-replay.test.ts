@@ -52,16 +52,21 @@ interface CapturedJob {
 const jobs = new Map<string, CapturedJob>();
 
 beforeAll(async () => {
-  const fixturePath = new URL(
+  const fixtureDir = new URL(
     "../../../tugrust/crates/tugcast/tests/fixtures/" +
-      "stream-json-catalog/v2.1.173-jobs-spike/test-jobs-lifecycle-raw.jsonl",
+      "stream-json-catalog/v2.1.173-jobs-spike/",
     import.meta.url,
   ).pathname;
-  const raw = await Bun.file(fixturePath).text();
-  const events = raw
-    .split("\n")
-    .filter((l) => l.length > 0)
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  const events: Array<Record<string, unknown>> = [];
+  for (const name of [
+    "test-jobs-lifecycle-raw.jsonl",
+    "test-monitor-lifecycle-raw.jsonl",
+  ]) {
+    const raw = await Bun.file(fixtureDir + name).text();
+    for (const l of raw.split("\n")) {
+      if (l.length > 0) events.push(JSON.parse(l) as Record<string, unknown>);
+    }
+  }
 
   // Pass 1 — task_started seeds the per-job record.
   for (const ev of events) {
@@ -123,6 +128,8 @@ const ID_CLEAN = "bkn113zww"; // bg bash, completed
 const ID_FAILED = "bmvgzc1fh"; // bg bash, exit 7
 const ID_KILLED = "btq9s0fcy"; // bg bash, control-request stop
 const ID_FG_AGENT = "ac57e6163e2ab0290"; // FOREGROUND agent control case
+const ID_MON_EXIT = "b45wg0dww"; // monitor, two events then natural exit
+const ID_MON_KILLED = "be0zn8grq"; // persistent monitor, control-request stop
 
 // -----------------------------------------------------------------------------
 // Store + frame helpers
@@ -406,5 +413,82 @@ describe("jobs fixture replay — replay suppression", () => {
     emit(conn, { type: "replay_complete", count: 1, ipc_version: IPC_VERSION });
 
     expect(store.getSnapshot().jobs).toHaveLength(0);
+  });
+});
+
+describe("jobs fixture replay — monitor watchers", () => {
+  it("the monitor capture carries the expected scenario jobs", () => {
+    const exit = jobs.get(ID_MON_EXIT)!;
+    expect(exit.toolName).toBe("Monitor");
+    expect(exit.input.run_in_background).toBeUndefined();
+    expect((exit.updated!.patch as Record<string, unknown>).status).toBe("completed");
+    expect(
+      (jobs.get(ID_MON_KILLED)!.updated!.patch as Record<string, unknown>).status,
+    ).toBe("killed");
+  });
+
+  it("arming a monitor inserts a running watcher row (kind from the tool name)", () => {
+    const { store, conn } = makeStore();
+    runLaunchTurn(store, conn, jobs.get(ID_MON_EXIT)!);
+    const ledger = store.getSnapshot().jobs;
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0].kind).toBe("monitor");
+    expect(ledger[0].status).toBe("running");
+  });
+
+  it("event wakes never flip a watcher: neither the captured task-id-less re-init form nor a hypothetical per-event notification", () => {
+    const { store, conn } = makeStore();
+    const job = jobs.get(ID_MON_EXIT)!;
+    runLaunchTurn(store, conn, job);
+
+    // The captured mid-life event wake: a synthetic re-init wake with
+    // an empty task_id (tugcode's scheduled-wake form).
+    emit(conn, {
+      type: "wake_started",
+      session_id: "claude-sess",
+      wake_trigger: {
+        task_id: "",
+        tool_use_id: "",
+        status: "completed",
+        summary: "scheduled wake",
+        output_file: "",
+      },
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().jobs[0].status).toBe("running");
+
+    // Defense in depth: a future per-event notification carrying the
+    // REAL watcher id must not flip it either — monitor rows reach
+    // terminal only via task_updated.
+    emit(conn, {
+      type: "wake_started",
+      session_id: "claude-sess",
+      wake_trigger: {
+        task_id: job.taskId,
+        tool_use_id: job.toolUseId,
+        status: "completed",
+        summary: "event",
+        output_file: "",
+      },
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().jobs[0].status).toBe("running");
+
+    // The genuine terminal flips exactly once.
+    emit(conn, taskUpdatedFrame(job));
+    expect(store.getSnapshot().jobs[0].status).toBe("completed");
+  });
+
+  it("a control-request-stopped persistent watcher flips stopped (killed on the wire)", () => {
+    const { store, conn } = makeStore();
+    const job = jobs.get(ID_MON_KILLED)!;
+    runLaunchTurn(store, conn, job);
+    expect(store.getSnapshot().jobs[0].status).toBe("running");
+    emit(conn, taskUpdatedFrame(job));
+    const ledger = store.getSnapshot().jobs;
+    expect(ledger[0].status).toBe("stopped");
+    expect(ledger[0].endedAtMs).toBe(
+      (job.updated!.patch as Record<string, unknown>).end_time as number,
+    );
   });
 });

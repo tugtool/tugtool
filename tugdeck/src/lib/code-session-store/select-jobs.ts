@@ -12,12 +12,15 @@
  * the job vocabulary throughout; only wire-frame spellings keep
  * claude's `task_*` prefix.
  *
- * Wire shapes are pinned by the captured fixture at
+ * Wire shapes are pinned by the captured fixtures at
  * `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/`
  * `v2.1.173-jobs-spike/` — notably: `task_started` fires for
  * foreground subagents too, with no backgrounded discriminant on the
- * frame, so consumers gate on the launching tool call's
- * `input.run_in_background` via `toolUseId`.
+ * frame, so consumers gate on the launching tool call via `toolUseId`
+ * ({@link isJobLaunch}: backgrounded, or a `Monitor` watcher). A
+ * monitor's only `task_notification` is terminal (mid-life events
+ * wake claude via task-id-less re-inits), and its terminal statuses
+ * agree with `task_updated`.
  *
  * @module lib/code-session-store/select-jobs
  */
@@ -51,7 +54,7 @@ export function isTerminalJobStatus(status: JobStatus): boolean {
 export interface JobItem {
   jobId: string;
   source: "claude";
-  kind: "bash" | "agent" | "unknown";
+  kind: "bash" | "agent" | "monitor" | "unknown";
   toolUseId: string;
   description: string;
   outputFile?: string;
@@ -156,6 +159,39 @@ export function jobKindFromTaskType(taskType: string): JobItem["kind"] {
   return "unknown";
 }
 
+/**
+ * The ledger's insert gate, shared by the `task_started` and
+ * launch-echo insert paths: a tool call launches a trackable job when
+ * it is explicitly backgrounded OR it is a `Monitor` — a watcher is
+ * background activity by nature (no flag involved). The gate is
+ * meaning-based ("is this background work?") rather than
+ * mechanism-based ("is the flag set?"); foreground subagents and
+ * async-subagent-internal tasks still fail it, the former by the flag,
+ * the latter because their launching calls never appear in the deck's
+ * stream.
+ */
+export function isJobLaunch(
+  toolName: string,
+  input: Record<string, unknown> | null,
+): boolean {
+  return input?.run_in_background === true || toolName === "Monitor";
+}
+
+/**
+ * Kind for a launch, from the launching tool's name first. The frame's
+ * `task_type` cannot discriminate monitors — a watcher's script reports
+ * `"local_bash"` (captured in `test-monitor-lifecycle-raw.jsonl`) — so
+ * the tool name is the only honest source; `task_type` remains the
+ * fallback for bash/agent.
+ */
+export function jobKindForLaunch(
+  toolName: string,
+  taskType: string,
+): JobItem["kind"] {
+  if (toolName === "Monitor") return "monitor";
+  return jobKindFromTaskType(taskType);
+}
+
 // ---------------------------------------------------------------------------
 // Launch-echo parsing (pure)
 // ---------------------------------------------------------------------------
@@ -176,6 +212,9 @@ export interface BackgroundLaunchEcho {
  *  - Agent: an array of text blocks whose first lines read `"Async
  *    agent launched successfully.\nagentId: <id> (…)"` with a later
  *    `"output_file: <path>"` line.
+ *  - Monitor: `"Monitor started (task <id>, timeout <n>ms)."` or
+ *    `"Monitor started (task <id>, persistent — runs until TaskStop or
+ *    session end)."` — no output file.
  *
  * Returns `undefined` when neither pattern matches — callers fall
  * back to the `task_started` insert path, so a drifted echo degrades
@@ -198,6 +237,10 @@ export function parseBackgroundLaunchResult(
       kind: "bash",
       ...(bash[2] !== undefined ? { outputFile: bash[2] } : {}),
     };
+  }
+  const monitor = /Monitor started \(task (\S+?)[,)]/.exec(text);
+  if (monitor !== null) {
+    return { jobId: monitor[1], kind: "monitor" };
   }
   const agent = /agentId: (\S+) /.exec(text);
   if (agent !== null && text.includes("Async agent launched successfully")) {
@@ -328,7 +371,10 @@ export function clearTerminalJobs(
 /** Per-status counts plus the `finished/total` cell reading. */
 export interface JobCounts {
   total: number;
+  /** ALL running rows, watchers included (`watching` is a subset). */
   running: number;
+  /** Running rows of kind `"monitor"` — live watchers. */
+  watching: number;
   completed: number;
   failed: number;
   stopped: number;
@@ -338,18 +384,22 @@ export interface JobCounts {
 
 export function countJobs(jobs: readonly JobItem[]): JobCounts {
   let running = 0;
+  let watching = 0;
   let completed = 0;
   let failed = 0;
   let stopped = 0;
   for (const j of jobs) {
-    if (j.status === "running") running += 1;
-    else if (j.status === "completed") completed += 1;
+    if (j.status === "running") {
+      running += 1;
+      if (j.kind === "monitor") watching += 1;
+    } else if (j.status === "completed") completed += 1;
     else if (j.status === "failed") failed += 1;
     else stopped += 1;
   }
   return {
     total: jobs.length,
     running,
+    watching,
     completed,
     failed,
     stopped,
@@ -382,13 +432,18 @@ export function jobsCellPose(
 }
 
 /**
- * Footer summary with zero-bucket drop — `"1 running, 2 done,
- * 1 failed"` (completed reads "done", stopped reads "stopped").
- * An empty ledger reads `"no jobs"`.
+ * Footer summary with zero-bucket drop — `"1 running, 1 watching,
+ * 2 done, 1 failed"` (completed reads "done", stopped reads
+ * "stopped"). Live watchers are split out of the running bucket as
+ * "watching" so finite work and monitors read distinctly; the cell's
+ * `finished/total` and pose treat them identically. An empty ledger
+ * reads `"no jobs"`.
  */
 export function composeJobsSummary(counts: JobCounts): string {
   const parts: string[] = [];
-  if (counts.running > 0) parts.push(`${counts.running} running`);
+  const runningJobs = counts.running - counts.watching;
+  if (runningJobs > 0) parts.push(`${runningJobs} running`);
+  if (counts.watching > 0) parts.push(`${counts.watching} watching`);
   if (counts.completed > 0) parts.push(`${counts.completed} done`);
   if (counts.failed > 0) parts.push(`${counts.failed} failed`);
   if (counts.stopped > 0) parts.push(`${counts.stopped} stopped`);

@@ -16,7 +16,9 @@ import {
   composeJobsSummary,
   countJobs,
   insertJob,
+  isJobLaunch,
   jobsCellPose,
+  jobKindForLaunch,
   jobKindFromTaskType,
   markRunningJobsStopped,
   narrowTaskStartedFrame,
@@ -269,6 +271,7 @@ describe("display derivation", () => {
     expect(counts).toEqual({
       total: 4,
       running: 1,
+      watching: 0,
       completed: 1,
       failed: 1,
       stopped: 1,
@@ -313,5 +316,92 @@ describe("display derivation", () => {
         ]),
       ),
     ).toBe("1 running, 2 done, 1 failed");
+  });
+});
+
+// Captured monitor launch echoes (test-monitor-lifecycle-raw.jsonl).
+const MONITOR_ECHO_TIMEOUT =
+  "Monitor started (task b45wg0dww, timeout 60000ms). You will be notified" +
+  " on each event. Keep working — do not poll or sleep.";
+const MONITOR_ECHO_PERSISTENT =
+  "Monitor started (task be0zn8grq, persistent — runs until TaskStop or" +
+  " session end). You will be notified on each event.";
+
+describe("monitor launch gate and kind", () => {
+  test("isJobLaunch admits backgrounded calls and Monitor, rejects the rest", () => {
+    expect(isJobLaunch("Bash", { run_in_background: true })).toBe(true);
+    expect(isJobLaunch("Agent", { run_in_background: true })).toBe(true);
+    expect(isJobLaunch("Monitor", { command: "tail -f x", timeout_ms: 5000 })).toBe(
+      true,
+    );
+    expect(isJobLaunch("Monitor", null)).toBe(true);
+    expect(isJobLaunch("Agent", { prompt: "hi" })).toBe(false);
+    expect(isJobLaunch("Bash", null)).toBe(false);
+  });
+
+  test("jobKindForLaunch: Monitor wins over the local_bash task_type ambiguity", () => {
+    // A watcher's frame reports local_bash (its script is a shell
+    // command) — the tool name is the only honest discriminant.
+    expect(jobKindForLaunch("Monitor", "local_bash")).toBe("monitor");
+    expect(jobKindForLaunch("Bash", "local_bash")).toBe("bash");
+    expect(jobKindForLaunch("Agent", "local_agent")).toBe("agent");
+    expect(jobKindForLaunch("Bash", "weird")).toBe("unknown");
+  });
+});
+
+describe("monitor launch echo", () => {
+  test("parses both captured forms (timeout and persistent), no output file", () => {
+    expect(parseBackgroundLaunchResult(MONITOR_ECHO_TIMEOUT)).toEqual({
+      jobId: "b45wg0dww",
+      kind: "monitor",
+    });
+    expect(parseBackgroundLaunchResult(MONITOR_ECHO_PERSISTENT)).toEqual({
+      jobId: "be0zn8grq",
+      kind: "monitor",
+    });
+  });
+
+  test("bash and agent echoes still parse unchanged", () => {
+    expect(parseBackgroundLaunchResult(BASH_ECHO)?.kind).toBe("bash");
+    expect(parseBackgroundLaunchResult(AGENT_ECHO)?.kind).toBe("agent");
+  });
+});
+
+describe("watching bucket", () => {
+  test("countJobs separates live watchers; finished/pose semantics unchanged", () => {
+    const ledger = [
+      job({ jobId: "a" }),
+      job({ jobId: "m", kind: "monitor" }),
+      job({ jobId: "b", status: "completed", endedAtMs: 1 }),
+    ];
+    const counts = countJobs(ledger);
+    expect(counts.running).toBe(2);
+    expect(counts.watching).toBe(1);
+    expect(counts.finished).toBe(1);
+    expect(jobsCellPose(ledger)).toBe("running");
+  });
+
+  test("composeJobsSummary splits watching out of running with zero-drop", () => {
+    expect(
+      composeJobsSummary(
+        countJobs([
+          job({ jobId: "a" }),
+          job({ jobId: "m", kind: "monitor" }),
+          job({ jobId: "b", status: "completed", endedAtMs: 1 }),
+        ]),
+      ),
+    ).toBe("1 running, 1 watching, 1 done");
+    // Watchers only — no vestigial "0 running".
+    expect(
+      composeJobsSummary(countJobs([job({ jobId: "m", kind: "monitor" })])),
+    ).toBe("1 watching");
+    // A finished watcher counts as done, not watching.
+    expect(
+      composeJobsSummary(
+        countJobs([
+          job({ jobId: "m", kind: "monitor", status: "completed", endedAtMs: 1 }),
+        ]),
+      ),
+    ).toBe("1 done");
   });
 });
