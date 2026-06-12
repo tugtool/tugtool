@@ -97,14 +97,14 @@ describe("PulseFactProducer", () => {
   test("tool facts fire at the RESULT with the true outcome; repeats earn ordinals", () => {
     setSystemTime(new Date(1_000_000));
     const { producer, facts } = harness();
-    producer.observeOutbound({ type: "tool_use", name: "Read", tool_use_id: "t1", input: { file_path: "/x/a.ts" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Read", tool_use_id: "t1", input: { file_path: "/x/a.ts" } });
     // No fact until the result lands — calls without outcomes are
     // exactly what made the commentator fabricate.
     expect(facts.length).toBe(0);
     producer.observeOutbound({ type: "tool_result", tool_use_id: "t1" });
-    producer.observeOutbound({ type: "tool_use", name: "Edit", tool_use_id: "t2", input: { file_path: "/x/a.ts" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Edit", tool_use_id: "t2", input: { file_path: "/x/a.ts" } });
     producer.observeOutbound({ type: "tool_result", tool_use_id: "t2" });
-    producer.observeOutbound({ type: "tool_use", name: "Edit", tool_use_id: "t3", input: { file_path: "/x/a.ts" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Edit", tool_use_id: "t3", input: { file_path: "/x/a.ts" } });
     producer.observeOutbound({ type: "tool_result", tool_use_id: "t3", is_error: true });
     expect(facts.map((f) => [f.kind, f.fact])).toEqual([
       ["tool", "Read on a.ts — ok"],
@@ -112,7 +112,7 @@ describe("PulseFactProducer", () => {
       ["error", "Edit on a.ts — failed (2nd time this turn)"],
     ]);
     producer.onTurnStart("next turn");
-    producer.observeOutbound({ type: "tool_use", name: "Edit", tool_use_id: "t4", input: { file_path: "/x/a.ts" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Edit", tool_use_id: "t4", input: { file_path: "/x/a.ts" } });
     producer.observeOutbound({ type: "tool_result", tool_use_id: "t4" });
     expect(facts.at(-1)!.fact).toBe("Edit on a.ts — ok");
   });
@@ -120,8 +120,8 @@ describe("PulseFactProducer", () => {
   test("notable durations surface in the outcome fact; fast ones stay terse", () => {
     setSystemTime(new Date(1_000_000));
     const { producer, facts } = harness();
-    producer.observeOutbound({ type: "tool_use", name: "Bash", tool_use_id: "slow", input: { command: "cargo build" } });
-    producer.observeOutbound({ type: "tool_use", name: "Read", tool_use_id: "fast", input: { file_path: "/x/a.ts" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Bash", tool_use_id: "slow", input: { command: "cargo build" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Read", tool_use_id: "fast", input: { file_path: "/x/a.ts" } });
     setSystemTime(new Date(1_000_000 + TOOL_DURATION_MS - 1));
     producer.observeOutbound({ type: "tool_result", tool_use_id: "fast" });
     setSystemTime(new Date(1_000_000 + 12_000));
@@ -134,8 +134,8 @@ describe("PulseFactProducer", () => {
 
   test("TaskCreate and TaskUpdate phrase as task facts, not tool calls", () => {
     const { producer, facts } = harness();
-    producer.observeOutbound({ type: "tool_use", name: "TaskCreate", tool_use_id: "t1", input: { subject: "Wire the JOBS cell" } });
-    producer.observeOutbound({ type: "tool_use", name: "TaskUpdate", tool_use_id: "t2", input: { taskId: "1", status: "completed" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "TaskCreate", tool_use_id: "t1", input: { subject: "Wire the JOBS cell" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "TaskUpdate", tool_use_id: "t2", input: { taskId: "1", status: "completed" } });
     expect(facts.map((f) => [f.kind, f.fact])).toEqual([
       ["task", 'task added: "Wire the JOBS cell"'],
       ["task", "task marked completed"],
@@ -176,11 +176,11 @@ describe("PulseFactProducer", () => {
 
   test("turn_complete phrases tool count + ok-edited files and resets", () => {
     const { producer, facts } = harness();
-    producer.observeOutbound({ type: "tool_use", name: "Read", tool_use_id: "t1", input: { file_path: "/x/a.ts" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Read", tool_use_id: "t1", input: { file_path: "/x/a.ts" } });
     producer.observeOutbound({ type: "tool_result", tool_use_id: "t1" });
-    producer.observeOutbound({ type: "tool_use", name: "Edit", tool_use_id: "t2", input: { file_path: "/x/b.ts" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Edit", tool_use_id: "t2", input: { file_path: "/x/b.ts" } });
     producer.observeOutbound({ type: "tool_result", tool_use_id: "t2" });
-    producer.observeOutbound({ type: "tool_use", name: "Write", tool_use_id: "t3", input: { file_path: "/x/c.css" } });
+    producer.observeOutbound({ type: "tool_use", tool_name: "Write", tool_use_id: "t3", input: { file_path: "/x/c.css" } });
     // A FAILED write is not an edited file — the turn-end fact lists
     // only what actually landed.
     producer.observeOutbound({ type: "tool_result", tool_use_id: "t3", is_error: true });

@@ -262,7 +262,7 @@ export class PulseFactProducer {
   // -------------------------------------------------------------------------
 
   private onToolUse(message: Record<string, unknown>): void {
-    const name = typeof message.name === "string" ? message.name : "";
+    const name = typeof message.tool_name === "string" ? message.tool_name : "";
     if (name.length === 0) return;
     this.toolCount++;
     const toolUseId =
