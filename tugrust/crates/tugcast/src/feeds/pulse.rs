@@ -67,8 +67,7 @@ pub struct TugpulseSpawner {
 
 impl PulseSpawner for TugpulseSpawner {
     fn spawn(&self, seed_lines: &[String]) -> io::Result<PulseChild> {
-        let seed_json =
-            serde_json::to_string(seed_lines).unwrap_or_else(|_| "[]".to_string());
+        let seed_json = serde_json::to_string(seed_lines).unwrap_or_else(|_| "[]".to_string());
         let mut child = Command::new(&self.tugpulse_path)
             .arg("--seed")
             .arg(seed_json)
@@ -139,10 +138,7 @@ pub type PulseFactSender = mpsc::Sender<Vec<u8>>;
 
 /// Spawn the bridge task. Returns the fact sender; the task lives
 /// until `cancel` fires (killing any live daemon via keepalive drop).
-pub fn spawn_pulse_bridge(
-    config: PulseBridgeConfig,
-    cancel: CancellationToken,
-) -> PulseFactSender {
+pub fn spawn_pulse_bridge(config: PulseBridgeConfig, cancel: CancellationToken) -> PulseFactSender {
     let (fact_tx, fact_rx) = mpsc::channel::<Vec<u8>>(256);
     tokio::spawn(pulse_bridge_task(config, fact_rx, cancel));
     fact_tx
@@ -340,10 +336,7 @@ mod tests {
     impl PulseSpawner for FakeSpawner {
         fn spawn(&self, seed_lines: &[String]) -> io::Result<PulseChild> {
             self.spawns.fetch_add(1, Ordering::SeqCst);
-            self.seeds_seen
-                .lock()
-                .unwrap()
-                .push(seed_lines.to_vec());
+            self.seeds_seen.lock().unwrap().push(seed_lines.to_vec());
             self.children
                 .lock()
                 .unwrap()

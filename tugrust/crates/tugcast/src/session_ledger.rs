@@ -1002,8 +1002,11 @@ impl SessionLedger {
             .optional()?;
         let (seed_turns, seed_prompt, seed_name, seed_created_at) =
             seed.unwrap_or((0, None, None, 0));
-        let created_at = existing_created_at
-            .unwrap_or(if seed_created_at > 0 { seed_created_at } else { now });
+        let created_at = existing_created_at.unwrap_or(if seed_created_at > 0 {
+            seed_created_at
+        } else {
+            now
+        });
         tx.execute(
             "INSERT INTO sessions (
                 session_id, workspace_key, project_dir,
@@ -1832,8 +1835,7 @@ impl SessionLedger {
         scopes: &[String],
         cap: usize,
     ) -> Result<(), LedgerError> {
-        let scopes_json =
-            serde_json::to_string(scopes).unwrap_or_else(|_| "[]".to_string());
+        let scopes_json = serde_json::to_string(scopes).unwrap_or_else(|_| "[]".to_string());
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         tx.execute(

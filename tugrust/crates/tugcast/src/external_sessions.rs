@@ -256,7 +256,11 @@ struct ScanRecord<'a> {
 /// positioned at the offset and the window is returned (it primes the
 /// rolling fingerprint); on a mismatch the prefix was rewritten and the
 /// caller falls back to a full parse.
-fn try_resume(file: &mut fs::File, seed: &ResumeSeed, file_size: i64) -> std::io::Result<Option<Vec<u8>>> {
+fn try_resume(
+    file: &mut fs::File,
+    seed: &ResumeSeed,
+    file_size: i64,
+) -> std::io::Result<Option<Vec<u8>>> {
     if seed.offset <= 0 || seed.offset > file_size {
         return Ok(None);
     }
@@ -972,9 +976,8 @@ mod tests {
     /// Terminated-lines fixture (every record ends in `\n`) so the
     /// scan records a resumable frontier.
     fn terminated_jsonl(session_id: &str, cwd: &str, prompts: &[&str]) -> String {
-        let mut out = format!(
-            "{{\"type\":\"mode\",\"mode\":\"normal\",\"sessionId\":\"{session_id}\"}}\n"
-        );
+        let mut out =
+            format!("{{\"type\":\"mode\",\"mode\":\"normal\",\"sessionId\":\"{session_id}\"}}\n");
         for p in prompts {
             out.push_str(&format!(
                 "{{\"type\":\"user\",\"sessionId\":\"{session_id}\",\"cwd\":\"{cwd}\",\"timestamp\":\"2026-06-01T10:00:00.000Z\",\"message\":{{\"role\":\"user\",\"content\":\"{p}\"}}}}\n"
@@ -988,8 +991,8 @@ mod tests {
     /// same filesystem-timestamp granule would otherwise read as
     /// "unchanged".
     fn bump_mtime(path: &Path, unix_secs: i64) {
-        let t = std::time::SystemTime::UNIX_EPOCH
-            + std::time::Duration::from_secs(unix_secs as u64);
+        let t =
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(unix_secs as u64);
         let f = fs::File::options().append(true).open(path).unwrap();
         f.set_modified(t).unwrap();
     }

@@ -2707,8 +2707,7 @@ impl AgentSupervisor {
                         });
                         let _ = progress_tx.send(Frame::new(
                             FeedId::CONTROL,
-                            serde_json::to_vec(&body)
-                                .expect("list_sessions_progress serializes"),
+                            serde_json::to_vec(&body).expect("list_sessions_progress serializes"),
                         ));
                     },
                 );
