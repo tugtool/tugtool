@@ -66,6 +66,7 @@ import { GalleryTugInlineDialog } from "./gallery-tug-inline-dialog";
 import { GalleryTugDialogButton } from "./gallery-tug-dialog-button";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
+import { GalleryZ2Workshop } from "./gallery-z2-workshop";
 import { GalleryPaneBulletin } from "./gallery-pane-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryListView } from "./gallery-list-view";
@@ -1141,6 +1142,22 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  // Design spike: configurable Z2 status area (the Shelf and Rack
+  // proposals — pinned lanes + color commentary, and macOS-style
+  // toolbar customization).
+  registerCard({
+    componentId: "gallery-z2-workshop",
+    contentFactory: (_cardId) => <GalleryZ2Workshop />,
+    defaultMeta: { title: "Z2 Status Workshop", icon: "PanelBottom", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: {
+      min: { width: 560, height: 460 },
+      preferred: { width: 800, height: 620 },
+    },
     category: CATEGORIES.feedback,
   });
 
