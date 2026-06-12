@@ -6,6 +6,8 @@
  *     each successful ledger write.
  *   - `list_sessions_ok { workspace_key, sessions }` ack frames in response
  *     to a `list_sessions` CONTROL request.
+ *   - `list_sessions_progress { project_dir, parsed, total }` throttled
+ *     ticks while the phase-2 JSONL scan parses cache misses.
  *   - `trash_session_ok { session_id }` / `trash_session_err { reason }`
  *     ack frames in response to a `trash_session` request.
  *   - `trash_workspace_sessions_ok { workspace_key, count }` /
@@ -72,6 +74,16 @@ const listSessionsOkBus = makeBus<{
   scanning?: boolean;
 }>();
 const listSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
+/**
+ * Throttled scan-progress ticks while the host's phase-2 JSONL scan
+ * parses cache misses: `parsed` of `total` files done. Emitted only
+ * when there are misses to parse — a warm pure-hit scan is silent.
+ */
+const listSessionsProgressBus = makeBus<{
+  project_dir: string;
+  parsed: number;
+  total: number;
+}>();
 const listCardBindingsOkBus = makeBus<{ bindings: CardBinding[] }>();
 const listCardBindingsErrBus = makeBus<{ reason: string }>();
 const trashSessionOkBus = makeBus<{ session_id: string }>();
@@ -89,6 +101,9 @@ export const publishListSessionsOk = listSessionsOkBus.publish;
 
 export const subscribeToListSessionsErr = listSessionsErrBus.subscribe;
 export const publishListSessionsErr = listSessionsErrBus.publish;
+
+export const subscribeToListSessionsProgress = listSessionsProgressBus.subscribe;
+export const publishListSessionsProgress = listSessionsProgressBus.publish;
 
 export const subscribeToListCardBindingsOk = listCardBindingsOkBus.subscribe;
 export const publishListCardBindingsOk = listCardBindingsOkBus.publish;
@@ -118,6 +133,7 @@ export function _resetDevSessionLedgerEventsForTest(): void {
   sessionUpdatedBus.reset();
   listSessionsOkBus.reset();
   listSessionsErrBus.reset();
+  listSessionsProgressBus.reset();
   listCardBindingsOkBus.reset();
   listCardBindingsErrBus.reset();
   trashSessionOkBus.reset();

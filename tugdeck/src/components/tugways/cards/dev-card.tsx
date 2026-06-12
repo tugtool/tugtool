@@ -1217,6 +1217,11 @@ function parseString(entry: TaggedValue | undefined): string {
 /** Stable `[]` reference — useTugbankValue's `fallback` must be reference-stable. */
 const EMPTY_STRING_ARRAY: ReadonlyArray<string> = [];
 
+/** `formatValue` for the picker's scan-progress bar — "465 of 1,022". */
+function formatScanProgressValue(value: number, max: number): string {
+  return `${value.toLocaleString()} of ${max.toLocaleString()}`;
+}
+
 /**
  * Map a picker notice to user-facing copy. `resume_failed` uses a
  * generic sentence; `restore_canceled` and `restore_timed_out`
@@ -1320,6 +1325,20 @@ function DevProjectPickerForm({
   const [path, setPath] = useState("");
   const trimmedPath = path.trim();
   const sessionLedger = useSessionLedger(trimmedPath);
+
+  // Re-validate the session list once per picker open. The ledger
+  // store's snapshot is fetched once per connection, but terminal
+  // sessions and other out-of-band JSONL writers never push
+  // `session_updated` — without this the list freezes at whatever the
+  // first open saw. Stale-while-revalidate: cached rows stay on screen
+  // while the refresh scan runs ([L02] — the store owns the state; this
+  // is an event kick, not a state mirror).
+  const didRefreshLedgerRef = useRef(false);
+  useLayoutEffect(() => {
+    if (didRefreshLedgerRef.current || trimmedPath === "") return;
+    didRefreshLedgerRef.current = true;
+    getDevSessionLedgerStore()?.refresh(trimmedPath);
+  }, [trimmedPath]);
 
   // One-shot input seed — the effect lives just below the data sources (the
   // Recents data source must be in scope to read the most-recent path).
@@ -1868,7 +1887,31 @@ function DevProjectPickerForm({
                 aria-live="polite"
                 data-testid="dev-card-picker-scanning"
               >
-                scanning terminal sessions…
+                {sessionLedger.scanProgress !== undefined &&
+                sessionLedger.scanProgress.total > 0 ? (
+                  // Determinate ticks from the host's scan: the same
+                  // labeled-bar recipe as the restore strip, sized for
+                  // the section header.
+                  <TugProgressIndicator
+                    variant="bar"
+                    size={6}
+                    role="action"
+                    state="running"
+                    label="Scanning…"
+                    glyphPosition="right"
+                    value={Math.min(
+                      sessionLedger.scanProgress.parsed,
+                      sessionLedger.scanProgress.total,
+                    )}
+                    max={sessionLedger.scanProgress.total}
+                    showValue
+                    formatValue={formatScanProgressValue}
+                    className="dev-card-picker-scanning-bar"
+                    aria-label="Scanning sessions"
+                  />
+                ) : (
+                  "scanning sessions…"
+                )}
               </span>
             ) : null}
           </span>

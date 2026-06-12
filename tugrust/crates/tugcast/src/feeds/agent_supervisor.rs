@@ -1065,14 +1065,8 @@ fn build_listed_union(
             status: e.status.as_wire_str(),
         })
     };
-    // Only the union (phase 2) needs the dedupe set; the preview skips it.
-    let need_known = scan.is_some();
-    let mut known: HashSet<String> = HashSet::new();
     let mut listed: Vec<ListedSession> = Vec::with_capacity(rows.len());
     for row in rows {
-        if need_known {
-            known.insert(row.session_id.clone());
-        }
         let terminal_live = annotate(&row.session_id);
         listed.push(ListedSession {
             row,
@@ -1081,12 +1075,43 @@ fn build_listed_union(
         });
     }
     if let Some(scan) = scan {
+        // Index the scan metas so ledger rows can absorb fresher on-disk
+        // content; whatever remains un-absorbed becomes a synthesized
+        // external row.
+        let mut metas_by_id: HashMap<String, crate::external_sessions::ExternalSessionMeta> = scan
+            .metas
+            .into_iter()
+            .map(|m| (m.session_id.clone(), m))
+            .collect();
+        for entry in &mut listed {
+            let Some(meta) = metas_by_id.remove(&entry.row.session_id) else {
+                continue;
+            };
+            // The ledger row owns identity and lifecycle (state, card
+            // binding, user-assigned name); the transcript on disk owns
+            // content. When the JSONL is newer than the ledger's last
+            // write — a session continued in the terminal, or a ledger
+            // row that predates the transcript's tail — surface the
+            // scan's content fields. Holes (zero turns, missing
+            // prompt/name) backfill from the scan regardless of
+            // recency: a sparser row never beats a richer one.
+            let disk_fresher = meta.file_mtime > entry.row.last_used_at;
+            if disk_fresher {
+                entry.row.last_used_at = meta.last_used_at;
+            }
+            if (disk_fresher && meta.last_user_prompt.is_some())
+                || entry.row.last_user_prompt.is_none()
+            {
+                entry.row.last_user_prompt = meta.last_user_prompt;
+            }
+            entry.row.turn_count = entry.row.turn_count.max(meta.turn_count);
+            if entry.row.name.is_none() {
+                entry.row.name = meta.name;
+            }
+        }
         let synthetic_workspace_key =
             crate::session_ledger::encode_claude_project_name(&scan.canonical_project_dir);
-        for meta in scan.metas {
-            if known.contains(&meta.session_id) {
-                continue;
-            }
+        for (_, meta) in metas_by_id {
             let terminal_live = annotate(&meta.session_id);
             listed.push(ListedSession {
                 row: crate::session_ledger::SessionRow {
@@ -2642,14 +2667,51 @@ impl AgentSupervisor {
         // ever spinning forever).
         let preview_fallback = ledger_preview;
         tokio::spawn(async move {
+            let progress_tx = control_tx.clone();
             let built = tokio::task::spawn_blocking(move || {
                 let rows = ledger_arc.list_for_project_dir(&pd).unwrap_or_else(|err| {
                     warn!(error = %err, "list_sessions phase 2 ledger re-read failed");
                     Vec::new()
                 });
                 let live = Self::read_terminal_live_sessions(registry_root.as_deref());
-                let scan =
-                    crate::external_sessions::scan_external_sessions_cached(&ledger_arc, &pd);
+                // Throttled scan progress: `list_sessions_progress` frames
+                // (≤ ~10 Hz, first and last ticks always) keyed by the
+                // typed path — the client's cache key — so a cold or
+                // whale-heavy scan reads as a moving count in the picker
+                // instead of a silent stall. Pure-hit warm scans emit
+                // nothing.
+                let progress_pd = pd.clone();
+                let last_emit: std::sync::Mutex<Option<std::time::Instant>> =
+                    std::sync::Mutex::new(None);
+                let scan = crate::external_sessions::scan_external_sessions_cached_with_progress(
+                    &ledger_arc,
+                    &pd,
+                    |done, total| {
+                        let now = std::time::Instant::now();
+                        {
+                            let mut last = last_emit.lock().expect("progress throttle mutex");
+                            let boundary = done == 0 || done == total;
+                            let due = last.is_none_or(|t| {
+                                now.duration_since(t) >= std::time::Duration::from_millis(100)
+                            });
+                            if !boundary && !due {
+                                return;
+                            }
+                            *last = Some(now);
+                        }
+                        let body = serde_json::json!({
+                            "action": "list_sessions_progress",
+                            "project_dir": progress_pd,
+                            "parsed": done,
+                            "total": total,
+                        });
+                        let _ = progress_tx.send(Frame::new(
+                            FeedId::CONTROL,
+                            serde_json::to_vec(&body)
+                                .expect("list_sessions_progress serializes"),
+                        ));
+                    },
+                );
                 build_listed_union(rows, &live, Some(scan))
             })
             .await;
@@ -7791,6 +7853,60 @@ mod tests {
         let sessions = response["sessions"].as_array().expect("sessions array");
         assert_eq!(sessions.len(), 1, "deduped: {response}");
         assert_eq!(sessions[0]["origin"], "tug");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_merges_disk_content_into_sparse_ledger_row() {
+        // A resumed external session leaves a ledger row that knows
+        // lifecycle but not content (zero turns, no prompt). The union
+        // must surface the transcript's content on that row instead of
+        // letting the sparse row shadow it — a zero-turn row is hidden
+        // by the picker, so without the merge the session vanishes.
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
+        );
+        let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+
+        seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "rich prompt");
+        // Spawn with NO scan-cache row (cold ledger): the row is sparse.
+        ledger
+            .record_spawn(EXTERNAL_ID, "ws-1", "/proj/alpha", "c1", 9_000)
+            .unwrap();
+        ledger.mark_closed(EXTERNAL_ID).unwrap();
+        {
+            let row = ledger.get(EXTERNAL_ID).unwrap().unwrap();
+            assert_eq!(row.turn_count, 0, "precondition: sparse ledger row");
+            assert_eq!(row.last_user_prompt, None);
+        }
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+            "project_dir": "/proj/alpha",
+        }))
+        .unwrap();
+        sup.handle_control("list_sessions", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_list_sessions_settled(&mut rx).await;
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 1, "still one row: {response}");
+        let row = &sessions[0];
+        assert_eq!(row["origin"], "tug", "ledger row keeps identity");
+        assert_eq!(row["turn_count"], 1, "turn count absorbed from disk");
+        assert_eq!(row["last_user_prompt"], "rich prompt");
+        // The file's real mtime (now) postdates the synthetic 9000ms
+        // ledger stamp, so the row also rides the fresher timestamp.
+        assert!(
+            row["last_used_at"].as_i64().unwrap() > 9_000,
+            "fresher disk mtime surfaces: {row}"
+        );
     }
 
     #[tokio::test]

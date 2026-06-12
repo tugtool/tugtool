@@ -62,6 +62,7 @@ import { publishListPulseLinesOk } from "./lib/pulse-store";
 import {
   publishSessionUpdated,
   publishListSessionsOk,
+  publishListSessionsProgress,
   publishListSessionsErr,
   publishListCardBindingsOk,
   publishListCardBindingsErr,
@@ -742,6 +743,23 @@ export function initActionDispatch(
       return;
     }
     publishListSessionsErr({ project_dir: projectDir, reason });
+  });
+  // list_sessions_progress: throttled scan-progress ticks emitted while
+  // the phase-2 JSONL scan parses cache misses. Drives the picker's
+  // determinate "N of M" indicator next to the Sessions label.
+  registerAction("list_sessions_progress", (payload) => {
+    const projectDir = payload.project_dir;
+    const parsed = payload.parsed;
+    const total = payload.total;
+    if (
+      typeof projectDir !== "string" ||
+      typeof parsed !== "number" ||
+      typeof total !== "number"
+    ) {
+      console.warn("list_sessions_progress: missing or invalid fields", payload);
+      return;
+    }
+    publishListSessionsProgress({ project_dir: projectDir, parsed, total });
   });
 
   // list_card_bindings_ok / _err: response to a startup/reconnect

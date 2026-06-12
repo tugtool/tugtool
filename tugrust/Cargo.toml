@@ -101,3 +101,23 @@ tuglog = { path = "crates/tuglog" }
 tower = { version = "0.5", features = ["util"] }
 tokio-tungstenite = "0.28"
 http-body-util = "0.1"
+
+# The external-session scan streams multi-GB JSONL at picker-open time;
+# unoptimized serde is ~12x slower than release and turns a ~1.5s cold
+# scan into ~17s on dev builds. Optimizing just the serde stack (and the
+# std readers they lean on) recovers most of it without touching tugcast's
+# own debuggability or build time.
+[profile.dev.package.serde]
+opt-level = 3
+
+[profile.dev.package.serde_json]
+opt-level = 3
+
+[profile.dev.package.memchr]
+opt-level = 3
+
+[profile.dev.package.ryu]
+opt-level = 3
+
+[profile.dev.package.itoa]
+opt-level = 3

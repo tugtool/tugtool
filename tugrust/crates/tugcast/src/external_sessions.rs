@@ -26,7 +26,7 @@
 #![allow(dead_code)]
 
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -61,6 +61,94 @@ enum Exclusion {
     CwdMismatch,
     SessionIdMismatch,
     Unreadable,
+}
+
+/// Bytes of resumable-prefix tail covered by the fingerprint. Claude
+/// session JSONLs are append-only in steady state; a rewind/compaction
+/// rewrite that somehow preserves the final `TAIL_FINGERPRINT_BYTES`
+/// at the recorded offset while changing earlier bytes would go
+/// undetected — accepted: such a rewrite also restarts the file from
+/// scratch in practice, changing the tail wholesale.
+const TAIL_FINGERPRINT_BYTES: usize = 256;
+
+/// FNV-1a 64 — the prefix fingerprint. Stored bit-cast to `i64` in the
+/// scan cache.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// Slide `bytes` into the fingerprint window, keeping only the last
+/// `TAIL_FINGERPRINT_BYTES`.
+fn push_tail(window: &mut Vec<u8>, bytes: &[u8]) {
+    if bytes.len() >= TAIL_FINGERPRINT_BYTES {
+        window.clear();
+        window.extend_from_slice(&bytes[bytes.len() - TAIL_FINGERPRINT_BYTES..]);
+        return;
+    }
+    let overflow = (window.len() + bytes.len()).saturating_sub(TAIL_FINGERPRINT_BYTES);
+    if overflow > 0 {
+        window.drain(..overflow);
+    }
+    window.extend_from_slice(bytes);
+}
+
+/// The accumulator state a resumed parse starts from — the cached
+/// tallies for the complete lines in `[0, offset)`, plus the
+/// fingerprint that proves the prefix is unchanged.
+#[derive(Debug, Clone)]
+pub struct ResumeSeed {
+    pub offset: i64,
+    pub tail_hash: i64,
+    pub cwd_checked: bool,
+    pub created_at_found: bool,
+    pub turn_count: i64,
+    pub last_user_prompt: Option<String>,
+    pub name: Option<String>,
+    pub created_at: i64,
+}
+
+/// Build a resume seed from a non-excluded cache row. `None` when the
+/// row carries no resumable frontier (`parse_offset == 0` — pre-
+/// migration rows, or excluded entries).
+pub fn resume_seed_from_cache(row: &ScanCacheRow) -> Option<ResumeSeed> {
+    if row.excluded || row.parse_offset <= 0 {
+        return None;
+    }
+    Some(ResumeSeed {
+        offset: row.parse_offset,
+        tail_hash: row.tail_hash,
+        cwd_checked: row.cwd_checked,
+        created_at_found: row.created_at_found,
+        turn_count: row.turn_count,
+        last_user_prompt: row.last_user_prompt.clone(),
+        name: row.name.clone(),
+        created_at: row.created_at,
+    })
+}
+
+/// The parse frontier recorded alongside a scan result, for the next
+/// incremental resume.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumeMark {
+    pub parse_offset: i64,
+    pub tail_hash: i64,
+    pub cwd_checked: bool,
+    pub created_at_found: bool,
+}
+
+/// A parsed session: the picker-facing meta plus the resume frontier.
+#[derive(Debug, Clone)]
+pub struct ParsedSession {
+    pub meta: ExternalSessionMeta,
+    pub resume: ResumeMark,
+    /// Whether this parse actually resumed from a verified frontier
+    /// (vs streaming from byte 0). Drives the scan's `resumed` counter.
+    pub resumed: bool,
 }
 
 /// True when `stem` looks like a claude session UUID
@@ -163,43 +251,108 @@ struct ScanRecord<'a> {
     message: Option<&'a serde_json::value::RawValue>,
 }
 
+/// Verify a resume seed against the file: read the fingerprint window
+/// ending at `seed.offset` and compare. On a match the file is left
+/// positioned at the offset and the window is returned (it primes the
+/// rolling fingerprint); on a mismatch the prefix was rewritten and the
+/// caller falls back to a full parse.
+fn try_resume(file: &mut fs::File, seed: &ResumeSeed, file_size: i64) -> std::io::Result<Option<Vec<u8>>> {
+    if seed.offset <= 0 || seed.offset > file_size {
+        return Ok(None);
+    }
+    let k = (seed.offset as usize).min(TAIL_FINGERPRINT_BYTES);
+    file.seek(SeekFrom::Start(seed.offset as u64 - k as u64))?;
+    let mut window = vec![0u8; k];
+    file.read_exact(&mut window)?;
+    if fnv1a64(&window) as i64 != seed.tail_hash {
+        return Ok(None);
+    }
+    Ok(Some(window))
+}
+
 /// Stream one candidate JSONL and extract its metadata.
 ///
 /// `Ok(None)` means the file was deliberately excluded (cwd mismatch,
 /// sessionId mismatch); `Err` means it could not be read at all.
 /// Malformed lines are skipped silently, matching the permissiveness of
 /// tugcode's translator.
+///
+/// With a verified `resume` seed the stream starts at the cached parse
+/// frontier instead of byte 0 — the dominant repeat cost of the scan is
+/// a live multi-hundred-MB session re-streaming in full on every
+/// append, and this drops it to just the appended tail. Only complete
+/// (newline-terminated) lines advance the frontier; an unterminated
+/// final line is a write in progress and is left for the next scan.
 fn parse_session_file(
     path: &Path,
     project_dir: &str,
     expected_stem: &str,
     file_size: i64,
     file_mtime: i64,
-) -> std::io::Result<Option<ExternalSessionMeta>> {
-    let file = fs::File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut line = String::new();
+    resume: Option<&ResumeSeed>,
+) -> std::io::Result<Option<ParsedSession>> {
+    let mut file = fs::File::open(path)?;
 
     let mut turn_count: i64 = 0;
     let mut last_prompt: Option<String> = None;
     let mut name: Option<String> = None;
     let mut created_at: Option<i64> = None;
     let mut cwd_checked = false;
+    let mut consumed: u64 = 0;
+    let mut window: Vec<u8> = Vec::with_capacity(TAIL_FINGERPRINT_BYTES);
+    let mut resumed = false;
+
+    if let Some(seed) = resume {
+        if let Some(verified_window) = try_resume(&mut file, seed, file_size)? {
+            turn_count = seed.turn_count;
+            last_prompt = seed.last_user_prompt.clone();
+            name = seed.name.clone();
+            created_at = seed.created_at_found.then_some(seed.created_at);
+            cwd_checked = seed.cwd_checked;
+            consumed = seed.offset as u64;
+            window = verified_window;
+            resumed = true;
+        } else {
+            file.seek(SeekFrom::Start(0))?;
+        }
+    }
+
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    // Cleared when the final line arrives unterminated (a write in
+    // progress, or a fixture without a trailing newline): the line still
+    // counts toward THIS scan's meta, but the frontier can't include it
+    // — a resume would re-read it and double-count — so the result is
+    // recorded as non-resumable and the next change re-streams in full.
+    let mut resumable = true;
 
     loop {
         line.clear();
         if reader.read_line(&mut line)? == 0 {
             break;
         }
+        let terminated = line.ends_with('\n');
+        if terminated {
+            consumed += line.len() as u64;
+            push_tail(&mut window, line.as_bytes());
+        } else {
+            resumable = false;
+        }
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            continue;
+            if terminated {
+                continue;
+            }
+            break;
         }
         // Typed extraction: scans the line structurally but builds no tree
         // for the bulk fields. A non-object or malformed line fails here
         // and is skipped — same tolerance as the prior `Value` path.
         let Ok(rec) = serde_json::from_str::<ScanRecord>(trimmed) else {
-            continue;
+            if terminated {
+                continue;
+            }
+            break;
         };
 
         if let Some(sid) = rec.session_id.as_deref() {
@@ -258,17 +411,39 @@ fn parse_session_file(
             }
             _ => {}
         }
+        if !terminated {
+            break;
+        }
     }
 
-    Ok(Some(ExternalSessionMeta {
-        session_id: expected_stem.to_owned(),
-        turn_count,
-        last_user_prompt: last_prompt,
-        name,
-        created_at: created_at.unwrap_or(file_mtime),
-        last_used_at: file_mtime,
-        file_size,
-        file_mtime,
+    let resume = if resumable && consumed > 0 {
+        ResumeMark {
+            parse_offset: consumed as i64,
+            tail_hash: fnv1a64(&window) as i64,
+            cwd_checked,
+            created_at_found: created_at.is_some(),
+        }
+    } else {
+        ResumeMark {
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked,
+            created_at_found: created_at.is_some(),
+        }
+    };
+    Ok(Some(ParsedSession {
+        meta: ExternalSessionMeta {
+            session_id: expected_stem.to_owned(),
+            turn_count,
+            last_user_prompt: last_prompt,
+            name,
+            created_at: created_at.unwrap_or(file_mtime),
+            last_used_at: file_mtime,
+            file_size,
+            file_mtime,
+        },
+        resume,
+        resumed,
     }))
 }
 
@@ -368,32 +543,25 @@ pub fn scan_external_sessions(
     let (candidates, canonical) = list_session_file_candidates(claude_projects_root, project_dir);
     candidates
         .into_iter()
-        .filter_map(|c| {
-            parse_session_file(
-                &c.path,
-                &canonical,
-                &c.session_id,
-                c.file_size,
-                c.file_mtime,
-            )
-            .ok()
-            .flatten()
-        })
+        .filter_map(|c| parse_candidate(&c, &canonical, None).map(|p| p.meta))
         .collect()
 }
 
-/// Parse one already-stat'ed candidate. Exposed for the cached scan
-/// path on `SessionLedger`.
+/// Parse one already-stat'ed candidate, optionally resuming from a
+/// cached frontier. Exposed for the cached scan path on
+/// `SessionLedger`.
 pub fn parse_candidate(
     candidate: &SessionFileCandidate,
     project_dir: &str,
-) -> Option<ExternalSessionMeta> {
+    resume: Option<&ResumeSeed>,
+) -> Option<ParsedSession> {
     parse_session_file(
         &candidate.path,
         project_dir,
         &candidate.session_id,
         candidate.file_size,
         candidate.file_mtime,
+        resume,
     )
     .ok()
     .flatten()
@@ -401,12 +569,15 @@ pub fn parse_candidate(
 
 /// Outcome of a cached scan: the metas, plus counters that make cache
 /// behavior assertable (a warm scan of an unchanged directory reports
-/// `parsed == 0`).
+/// `parsed == 0`; an append-only growth reports `resumed > 0`).
 #[derive(Debug, Default)]
 pub struct ScanOutcome {
     pub metas: Vec<ExternalSessionMeta>,
     /// Candidate files streamed this scan (cache misses).
     pub parsed: usize,
+    /// Of `parsed`, how many resumed from a cached frontier instead of
+    /// re-streaming from byte 0.
+    pub resumed: usize,
     /// Candidate files served from the cache.
     pub cache_hits: usize,
     /// The canonical project dir the scan resolved (via the
@@ -415,7 +586,8 @@ pub struct ScanOutcome {
     pub canonical_project_dir: String,
 }
 
-fn cache_row_from_meta(meta: &ExternalSessionMeta, project_dir: &str) -> ScanCacheRow {
+fn cache_row_from_parsed(parsed: &ParsedSession, project_dir: &str) -> ScanCacheRow {
+    let meta = &parsed.meta;
     ScanCacheRow {
         session_id: meta.session_id.clone(),
         project_dir: project_dir.to_owned(),
@@ -427,6 +599,10 @@ fn cache_row_from_meta(meta: &ExternalSessionMeta, project_dir: &str) -> ScanCac
         name: meta.name.clone(),
         created_at: meta.created_at,
         last_used_at: meta.last_used_at,
+        parse_offset: parsed.resume.parse_offset,
+        tail_hash: parsed.resume.tail_hash,
+        cwd_checked: parsed.resume.cwd_checked,
+        created_at_found: parsed.resume.created_at_found,
     }
 }
 
@@ -456,16 +632,37 @@ fn meta_from_cache_row(row: ScanCacheRow) -> ExternalSessionMeta {
 /// so a straggler chunk would otherwise dominate wall-clock. `par_iter`
 /// preserves input order in the collected `Vec`.
 fn parse_candidates_parallel(
-    misses: &[&SessionFileCandidate],
+    misses: &[(&SessionFileCandidate, Option<ResumeSeed>)],
     project_dir: &str,
-) -> Vec<Option<ExternalSessionMeta>> {
+    progress: &(impl Fn(usize, usize) + Sync),
+) -> Vec<Option<ParsedSession>> {
+    let total = misses.len();
+    let done = std::sync::atomic::AtomicUsize::new(0);
     misses
         .par_iter()
-        .map(|c| parse_candidate(c, project_dir))
+        .map(|(c, seed)| {
+            let parsed = parse_candidate(c, project_dir, seed.as_ref());
+            let d = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            progress(d, total);
+            parsed
+        })
         .collect()
 }
 
 pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) -> ScanOutcome {
+    scan_external_sessions_cached_with_progress(ledger, project_dir, |_, _| {})
+}
+
+/// Cache-backed scan with a parse-progress callback: invoked with
+/// `(0, total)` once the cache-miss set is known, then `(done, total)`
+/// after each miss finishes streaming (from rayon worker threads — the
+/// callback must be cheap and `Sync`). Not called at all when the scan
+/// is a pure cache hit, so a warm picker open emits no progress noise.
+pub fn scan_external_sessions_cached_with_progress(
+    ledger: &SessionLedger,
+    project_dir: &str,
+    progress: impl Fn(usize, usize) + Sync,
+) -> ScanOutcome {
     let (candidates, canonical) =
         list_session_file_candidates(ledger.claude_projects_root(), project_dir);
     // Everything below operates on the canonical form — the cache keys,
@@ -478,10 +675,12 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
     };
     // Pass 1 (sequential, fast): stat-validate each candidate against the
     // sqlite cache. Cache hits resolve here; misses are collected for the
-    // parallel parse below. Cache I/O stays single-threaded — the ledger
-    // owns one connection behind a mutex.
+    // parallel parse below — carrying a resume seed when the file only
+    // GREW past a recorded frontier (the append-only steady state), so
+    // pass 2 streams just the tail. Cache I/O stays single-threaded — the
+    // ledger owns one connection behind a mutex.
     let mut seen_ids: Vec<String> = Vec::with_capacity(candidates.len());
-    let mut misses: Vec<&SessionFileCandidate> = Vec::new();
+    let mut misses: Vec<(&SessionFileCandidate, Option<ResumeSeed>)> = Vec::new();
     for candidate in &candidates {
         seen_ids.push(candidate.session_id.clone());
         let cached = ledger
@@ -498,8 +697,13 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
                 }
                 continue;
             }
+            let seed = (candidate.file_size > row.file_size)
+                .then(|| resume_seed_from_cache(&row))
+                .flatten();
+            misses.push((candidate, seed));
+            continue;
         }
-        misses.push(candidate);
+        misses.push((candidate, None));
     }
     outcome.parsed = misses.len();
 
@@ -508,20 +712,26 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
     // multi-GB cold scan is dominated by per-line JSON work, not disk, so
     // fanning out across cores is the dominant speedup. Results stay
     // index-aligned with `misses` for the write-back below.
-    let parsed = parse_candidates_parallel(&misses, project_dir);
+    if !misses.is_empty() {
+        progress(0, misses.len());
+    }
+    let parsed = parse_candidates_parallel(&misses, project_dir, &progress);
 
     // Pass 3 (sequential): write parse results back to the cache and
     // collect surfaced rows. Exclusions are cached too (with `excluded:
     // true`) so a cwd/sessionId-mismatch file isn't re-streamed every scan;
     // the (size, mtime) key still invalidates if the file changes.
-    for (candidate, meta_opt) in misses.iter().zip(parsed) {
-        match meta_opt {
-            Some(meta) => {
-                let row = cache_row_from_meta(&meta, project_dir);
+    for ((candidate, _seed), parsed_opt) in misses.iter().zip(parsed) {
+        match parsed_opt {
+            Some(parsed) => {
+                if parsed.resumed {
+                    outcome.resumed += 1;
+                }
+                let row = cache_row_from_parsed(&parsed, project_dir);
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
                     tracing::warn!(error = %err, "external scan: cache write failed");
                 }
-                outcome.metas.push(meta);
+                outcome.metas.push(parsed.meta);
             }
             None => {
                 let row = ScanCacheRow {
@@ -535,6 +745,10 @@ pub fn scan_external_sessions_cached(ledger: &SessionLedger, project_dir: &str) 
                     name: None,
                     created_at: 0,
                     last_used_at: 0,
+                    parse_offset: 0,
+                    tail_hash: 0,
+                    cwd_checked: false,
+                    created_at_found: false,
                 };
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
                     tracing::warn!(error = %err, "external scan: cache write failed");
@@ -753,6 +967,178 @@ mod tests {
         let empty = scan_external_sessions_cached(&ledger, PROJECT);
         assert!(empty.metas.is_empty());
         assert!(ledger.get_scan_cache(SESSION_A).unwrap().is_none());
+    }
+
+    /// Terminated-lines fixture (every record ends in `\n`) so the
+    /// scan records a resumable frontier.
+    fn terminated_jsonl(session_id: &str, cwd: &str, prompts: &[&str]) -> String {
+        let mut out = format!(
+            "{{\"type\":\"mode\",\"mode\":\"normal\",\"sessionId\":\"{session_id}\"}}\n"
+        );
+        for p in prompts {
+            out.push_str(&format!(
+                "{{\"type\":\"user\",\"sessionId\":\"{session_id}\",\"cwd\":\"{cwd}\",\"timestamp\":\"2026-06-01T10:00:00.000Z\",\"message\":{{\"role\":\"user\",\"content\":\"{p}\"}}}}\n"
+            ));
+        }
+        out
+    }
+
+    /// Set a file's mtime far enough from the previous write that the
+    /// `(size, mtime)` validity key always misses — appends within the
+    /// same filesystem-timestamp granule would otherwise read as
+    /// "unchanged".
+    fn bump_mtime(path: &Path, unix_secs: i64) {
+        let t = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(unix_secs as u64);
+        let f = fs::File::options().append(true).open(path).unwrap();
+        f.set_modified(t).unwrap();
+    }
+
+    #[test]
+    fn grown_file_resumes_from_cached_frontier() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &terminated_jsonl(SESSION_A, PROJECT, &["first", "second"]),
+        );
+        let path = projects
+            .join(encode_claude_project_name(PROJECT))
+            .join(format!("{SESSION_A}.jsonl"));
+        bump_mtime(&path, 1_000_000);
+
+        let cold = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(cold.parsed, 1);
+        assert_eq!(cold.resumed, 0);
+        assert_eq!(cold.metas[0].turn_count, 2);
+        let cached = ledger.get_scan_cache(SESSION_A).unwrap().unwrap();
+        assert!(cached.parse_offset > 0, "frontier recorded: {cached:?}");
+
+        // Append a turn (append-only growth) → the rescan resumes.
+        let mut content = fs::read_to_string(&path).unwrap();
+        content.push_str(&format!(
+            "{{\"type\":\"user\",\"sessionId\":\"{SESSION_A}\",\"message\":{{\"role\":\"user\",\"content\":\"third\"}}}}\n"
+        ));
+        fs::write(&path, content).unwrap();
+        bump_mtime(&path, 2_000_000);
+
+        let warm = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(warm.parsed, 1);
+        assert_eq!(warm.resumed, 1, "tail-only parse: {warm:?}");
+        assert_eq!(warm.metas[0].turn_count, 3);
+        assert_eq!(warm.metas[0].last_user_prompt.as_deref(), Some("third"));
+        // The frontier advanced; a further unchanged scan is a pure hit.
+        let again = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(again.parsed, 0);
+        assert_eq!(again.cache_hits, 1);
+        assert_eq!(again.metas[0].turn_count, 3);
+    }
+
+    #[test]
+    fn rewritten_prefix_falls_back_to_full_parse() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &terminated_jsonl(SESSION_A, PROJECT, &["first", "second"]),
+        );
+        let path = projects
+            .join(encode_claude_project_name(PROJECT))
+            .join(format!("{SESSION_A}.jsonl"));
+        bump_mtime(&path, 1_000_000);
+        scan_external_sessions_cached(&ledger, PROJECT);
+
+        // Rewrite history (a rewind/compaction): the file GROWS but the
+        // bytes at the old frontier change — the fingerprint must catch
+        // it and the parse must restart from byte 0, not double-count.
+        fs::write(
+            &path,
+            terminated_jsonl(SESSION_A, PROJECT, &["rewritten", "history", "entirely"]),
+        )
+        .unwrap();
+        bump_mtime(&path, 2_000_000);
+
+        let rescan = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(rescan.parsed, 1);
+        assert_eq!(rescan.resumed, 0, "fingerprint mismatch: {rescan:?}");
+        assert_eq!(rescan.metas[0].turn_count, 3);
+        assert_eq!(
+            rescan.metas[0].last_user_prompt.as_deref(),
+            Some("entirely")
+        );
+    }
+
+    #[test]
+    fn shrunken_file_falls_back_to_full_parse() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &terminated_jsonl(SESSION_A, PROJECT, &["first", "second", "third"]),
+        );
+        let path = projects
+            .join(encode_claude_project_name(PROJECT))
+            .join(format!("{SESSION_A}.jsonl"));
+        bump_mtime(&path, 1_000_000);
+        scan_external_sessions_cached(&ledger, PROJECT);
+
+        fs::write(&path, terminated_jsonl(SESSION_A, PROJECT, &["only"])).unwrap();
+        bump_mtime(&path, 2_000_000);
+        let rescan = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(rescan.parsed, 1);
+        assert_eq!(rescan.resumed, 0);
+        assert_eq!(rescan.metas[0].turn_count, 1);
+        assert_eq!(rescan.metas[0].last_user_prompt.as_deref(), Some("only"));
+    }
+
+    #[test]
+    fn unterminated_tail_line_is_counted_but_not_resumable() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        // Mid-write capture: the final line has no trailing newline.
+        let mut content = terminated_jsonl(SESSION_A, PROJECT, &["first"]);
+        content.push_str(&format!(
+            "{{\"type\":\"user\",\"sessionId\":\"{SESSION_A}\",\"message\":{{\"role\":\"user\",\"content\":\"partial\"}}}}"
+        ));
+        seed(&projects, PROJECT, SESSION_A, &content);
+        let path = projects
+            .join(encode_claude_project_name(PROJECT))
+            .join(format!("{SESSION_A}.jsonl"));
+        bump_mtime(&path, 1_000_000);
+
+        let cold = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(
+            cold.metas[0].turn_count, 2,
+            "the in-flight line still counts toward this scan"
+        );
+        let cached = ledger.get_scan_cache(SESSION_A).unwrap().unwrap();
+        assert_eq!(
+            cached.parse_offset, 0,
+            "no frontier past an unterminated line — a resume would double-count"
+        );
+
+        // The writer finishes the line; the rescan is full (seedless)
+        // and correct.
+        let mut content = fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        fs::write(&path, content).unwrap();
+        bump_mtime(&path, 2_000_000);
+        let warm = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(warm.parsed, 1);
+        assert_eq!(warm.resumed, 0);
+        assert_eq!(warm.metas[0].turn_count, 2);
+        let cached = ledger.get_scan_cache(SESSION_A).unwrap().unwrap();
+        assert!(cached.parse_offset > 0, "frontier recorded once terminated");
     }
 
     #[test]

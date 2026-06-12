@@ -20,6 +20,12 @@
  *    re-issues `list_sessions`. This catches any push the server emitted
  *    while the wire was down.
  *
+ * 4. **Picker-open refresh** — `refresh(projectDir)` re-issues
+ *    `list_sessions` for an already-settled path without dropping the
+ *    cached rows (stale-while-revalidate). Terminal sessions and other
+ *    out-of-band JSONL writers never emit `session_updated`, so the
+ *    picker re-validates every time it opens.
+ *
  * **Laws:** [L02] Picker reads enter React via `useSyncExternalStore` only.
  * The hook `useSessionLedger(workspaceKey)` wraps that contract.
  *
@@ -38,6 +44,7 @@ import {
   subscribeToTrashSessionOk,
   subscribeToListSessionsErr,
   subscribeToListSessionsOk,
+  subscribeToListSessionsProgress,
   subscribeToSessionUpdated,
 } from "./dev-session-ledger-events";
 import { getConnectionLifecycle } from "./connection-lifecycle";
@@ -65,6 +72,14 @@ export interface WorkspaceSnapshot {
    * never a freeze. `false` once settled.
    */
   scanning?: boolean;
+  /**
+   * Determinate scan progress: `parsed` of `total` JSONLs streamed so
+   * far, from the host's throttled `list_sessions_progress` ticks.
+   * Present only while `scanning` and only when the scan actually had
+   * files to parse (a warm pure-hit scan emits no ticks); cleared by
+   * the phase-2 settle.
+   */
+  scanProgress?: { parsed: number; total: number };
 }
 
 const EMPTY_ROWS: readonly SessionRow[] = Object.freeze([]);
@@ -140,6 +155,34 @@ export class DevSessionLedgerStore {
     return PENDING_SNAPSHOT;
   };
 
+  /**
+   * Stale-while-revalidate re-fetch for an already-settled path. The
+   * session list has out-of-band writers — terminal sessions append to
+   * their JSONLs, new sessions appear on disk — that emit no
+   * `session_updated` push, so a snapshot fetched once per connection
+   * drifts stale. The picker calls this when it opens: the cached rows
+   * stay on screen (status stays `ready`), `scanning` flips on for the
+   * indicator, and the server's two-phase response refreshes the
+   * snapshot in place (phase-1 ledger rows MERGE with the cached rows —
+   * see `installSubscriptions` — so the list never flickers down to the
+   * ledger-only subset while the JSONL scan runs).
+   *
+   * No-ops while a fetch is already in flight (pending or scanning);
+   * unseen paths fall through to the normal `getSnapshot` request path.
+   */
+  refresh = (projectDir: string): void => {
+    if (projectDir.length === 0) return;
+    const cached = this.snapshots.get(projectDir);
+    if (cached === undefined) {
+      this.getSnapshot(projectDir);
+      return;
+    }
+    if (cached.status !== "ready" || cached.scanning === true) return;
+    this.snapshots.set(projectDir, { ...cached, scanning: true });
+    this.tick();
+    this.requestList(projectDir);
+  };
+
   trashSession(sessionId: string, projectDir?: string): Promise<TrashSessionResult> {
     return new Promise((resolve) => {
       this.pendingTrash.set(sessionId, resolve);
@@ -173,7 +216,46 @@ export class DevSessionLedgerStore {
   private installSubscriptions(): void {
     this.disposers.push(
       subscribeToListSessionsOk(({ project_dir, sessions, dir_exists, scanning }) => {
-        const sorted = [...sessions].sort(
+        // Phase-1 frames (scanning: true) carry ledger rows only. When a
+        // previous settle is on screen — the refresh-on-open path — keep
+        // its rows for any session the phase-1 set doesn't cover, so the
+        // list never collapses to the ledger subset while the JSONL scan
+        // runs; and backfill content holes in the incoming rows from the
+        // previous settle (same semantics as the host's union merge — a
+        // sparser row never beats a richer one, so a zero-turn ledger
+        // row can't transiently hide a session the last settle showed).
+        // The phase-2 frame (scanning: false) is authoritative and
+        // replaces wholesale.
+        let merged: readonly SessionRow[] = sessions;
+        const prev = this.snapshots.get(project_dir);
+        if (
+          scanning === true &&
+          prev !== undefined &&
+          prev.status === "ready" &&
+          prev.rows.length > 0
+        ) {
+          const prevById = new Map(prev.rows.map((r) => [r.session_id, r]));
+          const backfilled = sessions.map((row) => {
+            const old = prevById.get(row.session_id);
+            if (old === undefined) return row;
+            prevById.delete(row.session_id);
+            if (
+              row.turn_count >= old.turn_count &&
+              row.last_user_prompt !== null &&
+              row.name !== null
+            ) {
+              return row;
+            }
+            return {
+              ...row,
+              turn_count: Math.max(row.turn_count, old.turn_count),
+              last_user_prompt: row.last_user_prompt ?? old.last_user_prompt,
+              name: row.name ?? old.name,
+            };
+          });
+          merged = [...backfilled, ...prevById.values()];
+        }
+        const sorted = [...merged].sort(
           (a, b) => b.last_used_at - a.last_used_at,
         );
         // Refresh the reverse index for this projectDir: drop any stale ids
@@ -187,12 +269,17 @@ export class DevSessionLedgerStore {
         // Status settles to "ready" on the phase-1 emit already — the
         // ledger rows are usable immediately, so the picker is interactive
         // (pick "New session", resume a recent) while `scanning` is still
-        // true and external rows are en route.
+        // true and external rows are en route. Progress ticks survive the
+        // phase-1 frame (they may have started arriving first) and clear
+        // on the settled phase-2 frame.
         this.snapshots.set(project_dir, {
           status: "ready",
           rows: Object.freeze(sorted),
           dirExists: dir_exists,
           scanning,
+          ...(scanning === true && prev?.scanProgress !== undefined
+            ? { scanProgress: prev.scanProgress }
+            : {}),
         });
         this.tick();
       }),
@@ -201,6 +288,20 @@ export class DevSessionLedgerStore {
           status: "error",
           rows: EMPTY_ROWS,
           error: { reason },
+        });
+        this.tick();
+      }),
+      subscribeToListSessionsProgress(({ project_dir, parsed, total }) => {
+        const cached = this.snapshots.get(project_dir);
+        // Ticks only decorate an in-flight scan: pending (first fetch,
+        // phase-1 not yet seen) or ready+scanning (refresh). A settled
+        // snapshot ignores stragglers.
+        if (cached === undefined) return;
+        if (cached.status === "ready" && cached.scanning !== true) return;
+        if (cached.status !== "ready" && cached.status !== "pending") return;
+        this.snapshots.set(project_dir, {
+          ...cached,
+          scanProgress: { parsed, total },
         });
         this.tick();
       }),
@@ -275,6 +376,7 @@ export class DevSessionLedgerStore {
       rows: Object.freeze(nextRows),
       dirExists: cached.dirExists,
       scanning: cached.scanning,
+      scanProgress: cached.scanProgress,
     });
     this.tick();
   }
@@ -292,6 +394,7 @@ export class DevSessionLedgerStore {
       rows: Object.freeze(nextRows),
       dirExists: cached.dirExists,
       scanning: cached.scanning,
+      scanProgress: cached.scanProgress,
     });
     this.tick();
   }

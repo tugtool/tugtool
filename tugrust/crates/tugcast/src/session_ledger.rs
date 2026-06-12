@@ -348,6 +348,23 @@ pub struct ScanCacheRow {
     pub name: Option<String>,
     pub created_at: i64,
     pub last_used_at: i64,
+    /// Byte offset of the resumable parse frontier: the tallies above
+    /// cover exactly the complete lines in `[0, parse_offset)`. `0`
+    /// means "no resumable state" — the next change re-streams the
+    /// whole file. Claude session JSONLs are append-only in steady
+    /// state, so a grown file usually re-parses only its tail.
+    pub parse_offset: i64,
+    /// FNV-1a 64 (bit-cast to i64) over the last
+    /// `TAIL_FINGERPRINT_BYTES` of the resumable prefix. A mismatch on
+    /// resume means the prefix was rewritten (rewind/compaction) and
+    /// the parse falls back to a full re-stream.
+    pub tail_hash: i64,
+    /// Whether the prefix contained a `cwd`-bearing record (the
+    /// project-dir collision check already ran).
+    pub cwd_checked: bool,
+    /// Whether `created_at` came from a record timestamp (vs the
+    /// file-mtime fallback) — a resumed parse keeps looking when false.
+    pub created_at_found: bool,
 }
 
 /// Result of a successful `trash` call.
@@ -492,6 +509,7 @@ impl SessionLedger {
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
         Self::migrate_sessions_add_name(conn)?;
+        Self::migrate_scan_cache_add_resume_columns(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -735,7 +753,11 @@ impl SessionLedger {
                 last_user_prompt  TEXT,
                 name              TEXT,
                 created_at        INTEGER NOT NULL DEFAULT 0,
-                last_used_at      INTEGER NOT NULL DEFAULT 0
+                last_used_at      INTEGER NOT NULL DEFAULT 0,
+                parse_offset      INTEGER NOT NULL DEFAULT 0,
+                tail_hash         INTEGER NOT NULL DEFAULT 0,
+                cwd_checked       INTEGER NOT NULL DEFAULT 0,
+                created_at_found  INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS external_scan_cache_project
@@ -792,6 +814,33 @@ impl SessionLedger {
         }
         if !cols.iter().any(|(n, _)| n == "name") {
             conn.execute("ALTER TABLE sessions ADD COLUMN name TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    /// Self-healing add of the scan cache's incremental-parse columns
+    /// (`parse_offset`, `tail_hash`, `cwd_checked`, `created_at_found`).
+    /// Pre-existing rows get `parse_offset = 0` — no resumable state, so
+    /// their next change re-streams the whole file once and records a
+    /// fresh frontier. No-op on a fresh DB (the CREATE TABLE defines the
+    /// columns directly) or when already migrated.
+    fn migrate_scan_cache_add_resume_columns(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "external_scan_cache")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        for (name, decl) in [
+            ("parse_offset", "INTEGER NOT NULL DEFAULT 0"),
+            ("tail_hash", "INTEGER NOT NULL DEFAULT 0"),
+            ("cwd_checked", "INTEGER NOT NULL DEFAULT 0"),
+            ("created_at_found", "INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            if !cols.iter().any(|(n, _)| n == name) {
+                conn.execute(
+                    &format!("ALTER TABLE external_scan_cache ADD COLUMN {name} {decl}"),
+                    [],
+                )?;
+            }
         }
         Ok(())
     }
@@ -915,6 +964,16 @@ impl SessionLedger {
 
     /// Insert a new live row, or transition an existing row back to live and
     /// rebind it to `card_id`. `created_at` is preserved across resumes.
+    ///
+    /// The row is hydrated from `external_scan_cache` when the scanner has
+    /// already streamed this session's JSONL (the resume-an-external-session
+    /// path: the picker row the user clicked came from that cache). A bare
+    /// `turn_count = 0 / NULL prompt / NULL name` insert would otherwise
+    /// shadow the rich on-disk metadata in the picker union — and the picker
+    /// hides zero-turn rows entirely, so the just-resumed session would
+    /// vanish from the list. The conflict path backfills the same fields
+    /// without ever overwriting richer ledger values (`MAX` on turn_count,
+    /// `COALESCE` keeps an existing prompt/name).
     pub fn record_spawn(
         &self,
         session_id: &str,
@@ -932,17 +991,32 @@ impl SessionLedger {
                 |row| row.get(0),
             )
             .optional()?;
-        let created_at = existing_created_at.unwrap_or(now);
+        let seed: Option<(i64, Option<String>, Option<String>, i64)> = tx
+            .query_row(
+                "SELECT turn_count, last_user_prompt, name, created_at
+                 FROM external_scan_cache
+                 WHERE session_id = ?1 AND excluded = 0",
+                params![session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        let (seed_turns, seed_prompt, seed_name, seed_created_at) =
+            seed.unwrap_or((0, None, None, 0));
+        let created_at = existing_created_at
+            .unwrap_or(if seed_created_at > 0 { seed_created_at } else { now });
         tx.execute(
             "INSERT INTO sessions (
                 session_id, workspace_key, project_dir,
                 created_at, last_used_at, turn_count,
-                last_user_prompt, state, card_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 0, NULL, 'live', ?6)
+                last_user_prompt, name, state, card_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'live', ?9)
              ON CONFLICT(session_id) DO UPDATE SET
                 workspace_key = excluded.workspace_key,
                 project_dir   = excluded.project_dir,
                 last_used_at  = excluded.last_used_at,
+                turn_count    = MAX(sessions.turn_count, excluded.turn_count),
+                last_user_prompt = COALESCE(sessions.last_user_prompt, excluded.last_user_prompt),
+                name          = COALESCE(sessions.name, excluded.name),
                 state         = 'live',
                 card_id       = excluded.card_id",
             params![
@@ -951,6 +1025,9 @@ impl SessionLedger {
                 project_dir,
                 created_at,
                 now,
+                seed_turns,
+                seed_prompt,
+                seed_name,
                 card_id
             ],
         )?;
@@ -978,8 +1055,9 @@ impl SessionLedger {
     }
 
     /// Set (or clear) the user-assigned session `name` ([#step-13d], `/rename`).
-    /// `None` clears it. Survives re-spawn/resume since `record_spawn` never
-    /// touches the column. `NotFound` if the session id is unknown.
+    /// `None` clears it. Survives re-spawn/resume since `record_spawn` only
+    /// backfills a NULL name (it never overwrites a set one). `NotFound` if
+    /// the session id is unknown.
     pub fn rename(&self, session_id: &str, name: Option<&str>) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let affected = conn.execute(
@@ -1291,7 +1369,8 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, project_dir, file_size, file_mtime, excluded,
-                    turn_count, last_user_prompt, name, created_at, last_used_at
+                    turn_count, last_user_prompt, name, created_at, last_used_at,
+                    parse_offset, tail_hash, cwd_checked, created_at_found
              FROM external_scan_cache
              WHERE session_id = ?1
              LIMIT 1",
@@ -1308,8 +1387,9 @@ impl SessionLedger {
         conn.execute(
             "INSERT OR REPLACE INTO external_scan_cache (
                 session_id, project_dir, file_size, file_mtime, excluded,
-                turn_count, last_user_prompt, name, created_at, last_used_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                turn_count, last_user_prompt, name, created_at, last_used_at,
+                parse_offset, tail_hash, cwd_checked, created_at_found
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 row.session_id,
                 row.project_dir,
@@ -1321,6 +1401,10 @@ impl SessionLedger {
                 row.name,
                 row.created_at,
                 row.last_used_at,
+                row.parse_offset,
+                row.tail_hash,
+                row.cwd_checked as i64,
+                row.created_at_found as i64,
             ],
         )?;
         Ok(())
@@ -1810,6 +1894,10 @@ fn scan_cache_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScanCa
         name: row.get(7)?,
         created_at: row.get(8)?,
         last_used_at: row.get(9)?,
+        parse_offset: row.get(10)?,
+        tail_hash: row.get(11)?,
+        cwd_checked: row.get::<_, i64>(12)? != 0,
+        created_at_found: row.get::<_, i64>(13)? != 0,
     })
 }
 
@@ -2150,6 +2238,121 @@ mod tests {
         assert_eq!(row.last_user_prompt, None);
         assert_eq!(row.state, SessionState::Live);
         assert_eq!(row.card_id.as_deref(), Some("card-1"));
+    }
+
+    #[test]
+    fn record_spawn_hydrates_from_scan_cache() {
+        // Resuming an external session: the picker row came from the
+        // scan cache, so the freshly-inserted ledger row must carry the
+        // transcript's content — a bare zero-turn row would vanish from
+        // the picker (turn_count == 0 rows are hidden).
+        let l = fresh();
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: "ext-1".into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 42,
+            last_user_prompt: Some("the last prompt".into()),
+            name: Some("Scanned title".into()),
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+        })
+        .unwrap();
+
+        let now = millis(10);
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", now)
+            .unwrap();
+        let row = l.get("ext-1").unwrap().expect("row exists");
+        assert_eq!(row.turn_count, 42);
+        assert_eq!(row.last_user_prompt.as_deref(), Some("the last prompt"));
+        assert_eq!(row.name.as_deref(), Some("Scanned title"));
+        assert_eq!(row.created_at, millis(1), "transcript birth, not now");
+        assert_eq!(row.last_used_at, now);
+        assert_eq!(row.state, SessionState::Live);
+    }
+
+    #[test]
+    fn record_spawn_backfills_sparse_existing_row_from_scan_cache() {
+        // A row left behind by an earlier resume that predates the
+        // hydration (zero turns, no prompt) heals on the next spawn —
+        // without ever clobbering richer ledger values.
+        let l = fresh();
+        let t0 = millis(0);
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", t0)
+            .unwrap();
+        l.mark_closed("ext-1").unwrap();
+        assert_eq!(l.get("ext-1").unwrap().unwrap().turn_count, 0);
+
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: "ext-1".into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 7,
+            last_user_prompt: Some("from disk".into()),
+            name: None,
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+        })
+        .unwrap();
+
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-2", millis(10))
+            .unwrap();
+        let row = l.get("ext-1").unwrap().unwrap();
+        assert_eq!(row.turn_count, 7, "backfilled from scan cache");
+        assert_eq!(row.last_user_prompt.as_deref(), Some("from disk"));
+        assert_eq!(row.created_at, t0, "existing created_at preserved");
+
+        // Richer ledger values win: a recorded prompt and a higher turn
+        // count survive a later spawn whose cache row is staler.
+        l.record_user_prompt("ext-1", "typed in tug").unwrap();
+        for i in 0..10 {
+            l.record_turn("ext-1", millis(20 + i)).unwrap();
+        }
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-3", millis(40))
+            .unwrap();
+        let row = l.get("ext-1").unwrap().unwrap();
+        assert_eq!(row.turn_count, 17, "MAX keeps the richer count");
+        assert_eq!(row.last_user_prompt.as_deref(), Some("typed in tug"));
+    }
+
+    #[test]
+    fn record_spawn_ignores_excluded_scan_cache_rows() {
+        let l = fresh();
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: "ext-1".into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: true,
+            turn_count: 0,
+            last_user_prompt: None,
+            name: None,
+            created_at: 0,
+            last_used_at: 0,
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+        })
+        .unwrap();
+        let now = millis(10);
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", now)
+            .unwrap();
+        let row = l.get("ext-1").unwrap().unwrap();
+        assert_eq!(row.turn_count, 0);
+        assert_eq!(row.created_at, now, "no seed: created_at falls to now");
     }
 
     #[test]

@@ -21,6 +21,7 @@ import {
   publishTrashSessionOk,
   publishListSessionsErr,
   publishListSessionsOk,
+  publishListSessionsProgress,
   publishSessionUpdated,
 } from "@/lib/dev-session-ledger-events";
 
@@ -232,6 +233,149 @@ describe("DevSessionLedgerStore", () => {
     const next = store.getSnapshot("ws-1");
     expect(next.status).toBe("pending");
     expect(conn.recordedFrames.length).toBe(beforeInvalidate + 1);
+    store.dispose();
+  });
+
+  it("refresh re-issues list_sessions for a settled path without dropping rows", () => {
+    const { store, conn } = newStore();
+    store.getSnapshot("ws-1");
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: false,
+      sessions: [makeRow({ session_id: "s1", last_used_at: 100 })],
+    });
+    const before = conn.recordedFrames.length;
+
+    store.refresh("ws-1");
+    const snap = store.getSnapshot("ws-1");
+    expect(snap.status).toBe("ready");
+    expect(snap.scanning).toBe(true);
+    expect(snap.rows.map((r) => r.session_id)).toEqual(["s1"]);
+    expect(conn.recordedFrames.length).toBe(before + 1);
+
+    // A second refresh while the first is in flight is a no-op.
+    store.refresh("ws-1");
+    expect(conn.recordedFrames.length).toBe(before + 1);
+    store.dispose();
+  });
+
+  it("refresh on an unseen path falls through to the normal request", () => {
+    const { store, conn } = newStore();
+    store.refresh("ws-new");
+    expect(store.getSnapshot("ws-new").status).toBe("pending");
+    const frames = conn.recordedFrames.filter((f) => f.feedId === FeedId.CONTROL);
+    expect(frames.length).toBe(1);
+    store.dispose();
+  });
+
+  it("phase-1 of a refresh merges with the previous settle instead of collapsing", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    // First settle: full union with an external row.
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: false,
+      sessions: [
+        makeRow({ session_id: "tug", last_used_at: 100 }),
+        makeRow({ session_id: "ext", last_used_at: 200, origin: "external" }),
+      ],
+    });
+    store.refresh("ws-1");
+    // Phase 1 of the refresh carries ledger rows only — the external
+    // row must survive from the previous settle.
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: true,
+      sessions: [makeRow({ session_id: "tug", last_used_at: 300 })],
+    });
+    const phase1 = store.getSnapshot("ws-1");
+    expect(phase1.scanning).toBe(true);
+    expect(phase1.rows.map((r) => r.session_id)).toEqual(["tug", "ext"]);
+    // Phase 2 replaces wholesale (a trashed/vanished file drops out).
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: false,
+      sessions: [makeRow({ session_id: "tug", last_used_at: 300 })],
+    });
+    const phase2 = store.getSnapshot("ws-1");
+    expect(phase2.scanning).toBe(false);
+    expect(phase2.rows.map((r) => r.session_id)).toEqual(["tug"]);
+    store.dispose();
+  });
+
+  it("phase-1 backfills a sparser incoming row from the previous settle", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    // Previous settle: the union showed the session rich (50 turns,
+    // prompt, title — merged from its on-disk transcript).
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: false,
+      sessions: [
+        makeRow({
+          session_id: "s1",
+          last_used_at: 100,
+          turn_count: 50,
+          last_user_prompt: "rich prompt",
+          name: "Rich title",
+        }),
+      ],
+    });
+    store.refresh("ws-1");
+    // Phase 1 re-emits the raw ledger row — sparse (zero turns, no
+    // prompt). The picker hides zero-turn rows, so without backfill
+    // the session would vanish for the scan window.
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: true,
+      sessions: [
+        makeRow({ session_id: "s1", last_used_at: 200, turn_count: 0 }),
+      ],
+    });
+    const row = store.getSnapshot("ws-1").rows[0];
+    expect(row.turn_count).toBe(50);
+    expect(row.last_user_prompt).toBe("rich prompt");
+    expect(row.name).toBe("Rich title");
+    expect(row.last_used_at).toBe(200);
+    store.dispose();
+  });
+
+  it("scan progress ticks decorate an in-flight scan and clear on settle", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: true,
+      sessions: [makeRow({ session_id: "tug" })],
+    });
+    publishListSessionsProgress({ project_dir: "ws-1", parsed: 0, total: 40 });
+    expect(store.getSnapshot("ws-1").scanProgress).toEqual({
+      parsed: 0,
+      total: 40,
+    });
+    publishListSessionsProgress({ project_dir: "ws-1", parsed: 25, total: 40 });
+    expect(store.getSnapshot("ws-1").scanProgress).toEqual({
+      parsed: 25,
+      total: 40,
+    });
+    // The settled phase-2 frame clears the progress decoration.
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: false,
+      sessions: [makeRow({ session_id: "tug" })],
+    });
+    expect(store.getSnapshot("ws-1").scanProgress).toBeUndefined();
+    // A straggler tick after settle is ignored.
+    publishListSessionsProgress({ project_dir: "ws-1", parsed: 40, total: 40 });
+    expect(store.getSnapshot("ws-1").scanProgress).toBeUndefined();
     store.dispose();
   });
 

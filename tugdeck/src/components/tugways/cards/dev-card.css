@@ -776,6 +776,16 @@
   text-transform: none;
   letter-spacing: normal;
   opacity: 0.65;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Determinate scan-progress bar (host emitting `list_sessions_progress`
+   ticks): the labeled-bar recipe inline in the section header. The bar
+   needs an explicit track width to render inside the inline-flex
+   header span. */
+.dev-card-picker-scanning .dev-card-picker-scanning-bar {
+  inline-size: 16rem;
 }
 
 /* Project-path input — mono family so the typed path and the recent
