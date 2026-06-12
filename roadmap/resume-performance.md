@@ -1,11 +1,12 @@
 <!-- devise-skeleton v4 -->
 
-## Resume Performance — Snappy Transcript Replay {#resume-performance}
+## Resume Performance — Snappy Transcript Replay and Render {#resume-performance}
 
-**Purpose:** Make resuming a session feel instant: a medium session's transcript
-(≈50 turns) fully rendered within a few hundred milliseconds of Open, with large
-sessions degrading gracefully — measured first, optimized second, verified by an
-app-test latency budget.
+**Purpose:** Make session transcripts fast everywhere they are slow: resume replay
+(batch) renders a medium session within a few hundred milliseconds, live turns
+(incremental) stay cheap no matter how long the transcript grows, and whales
+degrade gracefully — built on one invariant (finalized rows never change, so
+their expensive work happens exactly once) and verified by measured budgets.
 
 ---
 
@@ -16,7 +17,7 @@ app-test latency budget.
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-06-11 |
+| Last updated | 2026-06-12 |
 
 ---
 
@@ -32,123 +33,145 @@ KB in milliseconds):
 1. **Per-entry pacing in tugcode.** `translateJsonlSession` yields the event loop
    every 16 entries via `setTimeout(0)` (`yieldToEventLoop` in
    `tugcode/src/replay.ts`; tests bypass it with `disableYield`), and `runReplay`
-   writes **one IPC line per wire message**. The replay window was designed as a
+   writes one IPC line per wire message. The replay window was designed as a
    stream with a 10s hard budget (`REPLAY_HARD_TIMEOUT_MS`), not a bulk load.
-2. **One websocket frame per message, one React commit per frame.** Each replayed
-   line becomes its own CODE_OUTPUT frame through tugcast's merger, and tugdeck's
-   `CodeSessionStore.dispatch` calls `notifyListeners()` after every
-   state-changing frame (`code-session-store.ts`) — so a 50-turn replay is
-   ~hundreds of reducer passes and React commits, each re-running markdown and
-   highlight work for the rows it touches.
-3. **Serial startup ahead of the first frame.** Open → `spawn_session` → tugcode
-   process boot → synthetic `session_init` → `spawn_session_ok` → tugdeck
-   constructs services → `request_replay` round-trip → translate begins. (The
-   claude spawn itself is already off this path — the cold-boot order work made
-   replay request-driven with claude spawning in the background.)
+2. **One React commit per frame.** Each replayed line becomes its own CODE_OUTPUT
+   frame, and tugdeck's `CodeSessionStore.dispatch` calls `notifyListeners()`
+   after every state-changing frame — a 50-turn replay is hundreds of reducer
+   passes and React commits.
+3. **The render bill itself.** Every commit re-runs markdown parsing and
+   highlight work for the rows it touches, and the transcript pays render cost
+   for rows nowhere near the viewport. Batching delivery amortizes the *commit
+   count*; it does not shrink this bill — and the same bill is what makes long
+   transcripts progressively heavier during **live** turns too.
 
-One architectural constraint discovered up front: **tugcast rewrites replayed
-frames in flight** — the supervisor inlines persisted `turn_telemetry` onto
-replayed `turn_complete` events, and the bridge merges persisted
-`system_metadata` payloads. Any batching scheme must keep those per-line
-intercepts working, which is why batching belongs in tugcast *after* the
-intercepts, not in tugcode ([P03]).
+The structural insight that drives the cure: **finalized transcript rows are
+immutable.** Once a turn commits, its rows never change — so parse, structure
+derivation, and rendered output can be computed exactly once per row, cached by
+stable row identity, and reused across replay, live appends, scrolls, and tab
+switches. The deck store already models the replay window (`replaying` phase off
+`replay_started`/`replay_complete`), giving batch ingest a **semantic** boundary
+to fold on — no timers, no `requestAnimationFrame` (banned for this purpose by
+[L05]/[L13]).
+
+Two constraints discovered up front, preserved from the earlier draft: tugcast
+rewrites replayed frames in flight (telemetry inlining, metadata merge), so any
+*wire-level* batching must sit downstream of those intercepts; and the deck and
+tugcast already share first-class replay-window markers at every layer ([Q01],
+resolved).
 
 #### Strategy {#strategy}
 
 - **Measure before optimizing.** The first step instruments the pipeline end to
-  end; every later stage is gated on what the numbers actually say ([P01]).
-- **Fix the shape, not the parser.** The core bet is batching: translate without
-  pacing, coalesce client-bound replay frames in tugcast, ingest each batch as
-  one reducer fold and one React commit.
-- **Batch at the tugcast→tugdeck edge.** tugcode keeps emitting lines (its local
-  pipe is cheap and every existing tugcast intercept keeps working unchanged);
-  tugcast coalesces the *client-bound* stream ([P03]).
-- **Rust owns cache + orchestration; tugcode stays the only translator.** A
-  `replay_cache` keyed `(size, mtime)` — the `external_scan_cache` pattern —
-  plus pre-warming of recently-listed sessions, both gated on measured translate
-  cost ([P05], [P06]).
-- **Degrade gracefully at the whale end.** A 100MB session should stream visibly
-  and stay responsive, not block; chunked batches keep the first paint early.
+  end — including live-turn commit rates and per-row parse counts; every gated
+  stage cites its numbers ([P01]).
+- **Deck first, wire later.** The store folds replay bursts itself using the
+  semantic window it already models — one reducer fold, one notify, zero wire
+  changes ([P03]). Wire-level `replay_batch` coalescing is gated whale-scale
+  armor, not the first move ([P07]).
+- **Render once, ever.** Codify the finalized-row immutability invariant: a
+  parse/derivation cache keyed by stable row identity, memoized row components
+  with [L26]-stable identity, and a cooperative background queue that
+  speculatively warms the cache for off-screen rows ([P08]). This is what makes
+  *both* batch and incremental updates fast — the live path's only hot row
+  becomes the streaming tail.
+- **Pay paint cost only for what's visible.** `content-visibility` +
+  `BlockHeightIndex` intrinsic sizes as the law-friendly first move (CSS-only,
+  preserves selection/find per [L23]); true windowing as the gated whale
+  escalation with selection/focus-pinned rows never unmounting ([P09]).
+- **No rAF anywhere in this plan.** Folding is event-driven off semantic
+  boundaries; speculative work runs on a plain cooperative queue; paint
+  deferral is CSS. [L05] and [L13] are honored by construction.
+- **Rust owns cache + orchestration; tugcode stays the only translator** —
+  `replay_cache` + pre-warm gated on measured translate cost ([P05], [P06]).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- End-to-end stage timings (tugcode boot, file read, translate, last frame
-  emitted, deck ingest done, last React commit) are recorded per resume in the
-  session-lifecycle log and visible in TugDevPanel — verified by reading them off
-  a real resume.
+- Stage timings (tugcode boot, read, translate, frames sent, deck ingest,
+  commits, per-row parse counts) recorded per resume in the session-lifecycle
+  log and visible as a TugDevPanel waterfall — read off a real resume.
 - Medium fixture (50 turns, ~500KB): transcript fully committed within **750ms**
-  of the picker's Open click on the dev machine, asserted by app-test (a 2s hard
-  ceiling guards CI variance; the telemetry numbers assert the tighter internal
-  splits).
-- Replay of the medium fixture produces **≤5 React commits** in tugdeck (down
-  from one per message), asserted via the instrumentation counters in a
-  pure-logic store test (batch → one notify) plus the app-test telemetry leg.
-- A large session (≥50MB JSONL) shows its first transcript rows before
-  translation finishes (chunked batches) and never trips `REPLAY_HARD_TIMEOUT_MS`
-  on the dev machine.
-- No behavioral regression: full existing replay test suites (tugcode, tugdeck,
-  tugcast merger/supervisor) stay green; telemetry inlining and metadata merge
-  still applied to replayed frames.
+  of Open on the dev machine (2s hard app-test ceiling for CI variance), with
+  **≤5 React commits** for the whole replay (counter-asserted).
+- **Parse-once invariant holds:** a finalized row's markdown parses exactly once
+  across replay → live appends → scroll → tab switch and back — asserted by the
+  parse-cache counters in pure-logic tests and read back in the app-test.
+- **Incremental path:** during a live streaming turn on a 200-row transcript,
+  only the streaming tail row re-renders (memo hits on all finalized rows,
+  counter-asserted); commit cost does not grow with transcript length.
+- Whale (≥50MB JSONL / thousands of rows): first rows paint before translation
+  finishes; scrolling does not hit parse cliffs (speculative warm); no
+  `REPLAY_HARD_TIMEOUT_MS` trips.
+- No behavioral regression: replay suites green; telemetry inlining + metadata
+  merge intact; selection/focus/scroll survive everything per [L23].
 
 #### Scope {#scope}
 
-1. Pipeline instrumentation (tugcode, tugcast, tugdeck) with stage timings.
-2. Remove per-entry pacing from the replay translate loop.
-3. tugcast replay batching: coalesce client-bound replayed frames into
-   `replay_batch` frames after the existing intercepts.
-4. tugdeck batch ingest: one reducer fold + one notify per batch.
-5. Transcript render audit: defer off-screen markdown/highlight work if the audit
-   shows eager mounting dominates.
-6. (Gated) `replay_cache` sqlite table + tugcode cache read/write.
-7. (Gated) Pre-warm translation of recently-listed sessions.
-8. (Gated) Startup-path trims (tugcode boot, round-trip collapsing).
-9. App-test latency budget.
+1. Pipeline instrumentation (tugcode, tugcast, tugdeck) with stage timings,
+   commit counters, and parse counters — replay *and* live-turn.
+2. Deck-side replay fold: buffer during the `replaying` phase, one reducer fold
+   + one notify per chunk/completion. No wire changes.
+3. Unpaced translate loop (time-slice yield), with the broadcast-channel
+   capacity interaction named and guarded.
+4. Finalized-row render-once architecture: parse/derivation cache keyed by
+   stable identity + memoized rows with stable mount identity.
+5. Off-screen paint deferral: `content-visibility` + intrinsic heights, plus
+   speculative cache warm via a cooperative background queue.
+6. (Gated) True transcript windowing for whales.
+7. (Gated) Wire-level `replay_batch` coalescer in tugcast.
+8. (Gated) `replay_cache` sqlite table + pre-warm of recently-listed sessions.
+9. (Gated) Startup-path trims.
+10. App-test budgets (medium latency, parse-once, whale first-paint).
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- **Porting `translateJsonlSession` to Rust.** tugcode remains the single
-  translator ([P05] names the trigger that would reopen this).
-- **Changing replay semantics** — what gets replayed (mid-turn pending rows,
-  compaction handling, orphan synthesis) is untouched; only pacing, framing, and
-  caching change.
-- **Live-turn streaming performance.** This plan is about the replay window;
-  live token streaming already renders incrementally by design.
-- **Client-side transcript persistence.** No IndexedDB/localStorage; caching is
-  server-side sqlite only.
+- **Porting `translateJsonlSession` to Rust** ([P05] names the reopen trigger).
+- **Notify throttling / time-based coalescing on the live path.** The live path
+  gets fast by making renders cheap (render-once + visibility deferral), not by
+  delaying notifies behind timers — there is no rAF or timer-driven render
+  scheduling anywhere in this plan.
+- **Changing replay semantics** — what gets replayed (pending rows, compaction,
+  orphan synthesis) is untouched.
+- **Client-side transcript persistence** (no IndexedDB/localStorage; the parse
+  cache is in-memory derived data, rebuilt on reload).
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- Session unification (landed `f5fc76c2`): the `external_scan_cache` pattern,
-  cached scan plumbing, and `claude_project_dir` chokepoint the cache stages
-  reuse.
-- The request-driven replay order (`request_replay` verb, background claude
-  spawn) in `tugcode/src/main.ts` / the supervisor.
-- Existing instrumentation rails: `logSessionLifecycle` (tugcode + tugdeck),
-  `tugDevLogStore` / TugDevPanel telemetry.
+- Session unification (landed `f5fc76c2`): `external_scan_cache` pattern and
+  `claude_project_dir` chokepoint (cache stages), at0181's fixture builder.
+- Request-driven replay (`request_replay`, background claude spawn) and the
+  replay-window markers (`replay_started`/`replay_complete`) at every layer.
+- `BlockHeightIndex` (existing height estimation for markdown blocks).
+- Instrumentation rails: `logSessionLifecycle`, `tugDevLogStore` / TugDevPanel.
 
 #### Constraints {#constraints}
 
 - **Warnings are errors** (`-D warnings`) in the Rust workspace.
 - New sqlite tables via `CREATE TABLE IF NOT EXISTS` only (no-migration policy).
-- tugdeck state changes conform to tuglaws — notably [L02] (external state via
-  `useSyncExternalStore`) for the batch ingest path; cross-check before the deck
-  steps and name laws in commit messages.
-- tugcode is a compiled binary — rebuild to test; tugdeck is HMR-live.
-- Replayed-frame **intercepts must keep working**: telemetry inlining onto
-  `turn_complete`, `system_metadata` merge, journal pending-row deletion.
-- Wire compatibility during rollout: a deck that doesn't know `replay_batch`
-  must not break — the batch frame ships behind a client-advertised capability
-  or a tugcast config default that can be reverted ([P04]).
+- **Tuglaws compliance is load-bearing, not aspirational:** [L02] for all store
+  → React flow; [L05]/[L13] — no rAF for anything render-coupled; [L23] —
+  selection, focus, and scroll survive every visibility/windowing change;
+  [L26] — row mount identity (key, component type, renderer reference) stable
+  across streaming→finalized transitions and window membership changes.
+  Cross-check tuglaws before each deck step; name touched laws in commits.
+- Replayed-frame intercepts must keep working (telemetry inline, metadata
+  merge, journal pending-row deletion).
+- tugcode is a compiled binary (rebuild to test); tugdeck is HMR-live.
+- If the gated wire step lands: capability-gated with bit-exact per-frame
+  fallback ([P07]).
 
 #### Assumptions {#assumptions}
 
-- The dominant cost is deck-side per-frame commits (markdown/highlight × N
-  messages), with translate pacing second — Step 1's numbers will confirm or
-  reorder the later stages.
-- A single websocket frame can safely carry a few hundred KB of batched payload
-  (chunk cap verified against tugcast's frame limits during the batching step).
-- `(file_size, file_mtime)` remains an exact validity key for append-only
-  session JSONLs (same assumption the scan cache already relies on).
+- Deck-side per-frame commits and the per-row render bill dominate; translate
+  pacing is second; raw parse/IO is a distant third. Step 1 confirms or
+  reorders.
+- Finalized rows are genuinely immutable on the wire: no event mutates a
+  committed turn's content. (Edits arrive as *new* events — e.g. rewind
+  truncates and re-binds rather than editing rows in place. Step 1's audit
+  verifies and documents the full event inventory against this claim.)
+- `(file_size, file_mtime)` remains an exact validity key for session JSONLs.
+- A single websocket frame can carry a few hundred KB (verified if/when the
+  gated wire step proceeds).
 
 ---
 
@@ -160,8 +183,8 @@ execution steps, per `tuglaws/devise-skeleton.md`:
 - Every heading cited elsewhere carries an explicit `{#anchor}` (kebab-case, no
   phase numbers).
 - Plan-local design decisions are `[P##]` (`[D##]` is reserved for the global
-  `tuglaws/design-decisions.md`); open questions `[Q##]`; specs `S##`; risks
-  `R##`. Two digits, never reused.
+  `tuglaws/design-decisions.md`; `[L##]` cites tuglaws); open questions
+  `[Q##]`; specs `S##`; risks `R##`. Two digits, never reused.
 - Execution steps cite plan artifacts by label and anchor — never line numbers —
   and declare ordering with `**Depends on:** #step-N` lines referencing real
   step anchors.
@@ -170,52 +193,56 @@ execution steps, per `tuglaws/devise-skeleton.md`:
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Where exactly does the replay window begin and end in tugcast? (DECIDED) {#q01-replay-window-markers}
+#### [Q01] Where exactly does the replay window begin and end? (DECIDED) {#q01-replay-window-markers}
 
-**Question:** The merger/supervisor must know which client-bound frames are
-"replay" (coalesce) vs live (forward immediately). `replay_complete` marks the
-end; what marks the start, and is the marker visible at the coalescing point?
+**Resolution:** DECIDED — resolved by code survey (2026-06-11). The window is
+first-class at every layer: tugcode emits `replay_started` before its first
+replayed message; the bridge flips its replay-window flag on it; the merger
+keeps a saturating open-window counter; the deck store models a `replaying`
+phase off the same pair. Both the deck-side fold (#step-2) and the gated wire
+coalescer (#step-7) consume existing markers — no wire changes needed for
+window detection.
 
-**Why it matters:** Batching must never delay live frames; a wrong window turns
-a live turn into a laggy one.
+#### [Q02] What is the transcript's current mounting/render shape? (OPEN → resolve in #step-1) {#q02-transcript-render-shape}
 
-**Resolution:** DECIDED — resolved by code survey (2026-06-11, vet pass). The
-window is already first-class on the wire at every layer the coalescer needs:
-tugcode emits `replay_started` before its first replayed message; the bridge
-flips its replay-window flag on it (and builds its per-window telemetry index
-there — `agent_bridge.rs`); the merger maintains a saturating open-window
-counter incremented on `replay_started` and decremented on `replay_complete`
-(`agent_supervisor.rs`, `LedgerEntry` replay-depth field); and the deck store
-models a `replaying` phase off the same pair. #step-3 consumes the existing
-markers — no wire changes are needed to detect the window.
+**Question:** Do all transcript rows mount eagerly with full markdown parse?
+Are row components memoized today? Are mount identities ([L26] key / type /
+renderer reference) already stable across the streaming→finalized transition?
+Where exactly is markdown parsed relative to render?
 
-#### [Q02] Are transcript rows virtualized, or do all rows mount eagerly? (OPEN → resolve in #step-1) {#q02-transcript-virtualization}
+**Why it matters:** #step-4 and #step-5 build directly on the answers; a
+pre-existing identity instability would silently defeat memoization.
 
-**Question:** `BlockHeightIndex` maps markdown block heights, but whether
-`dev-card-transcript` defers off-screen row rendering is unconfirmed.
-
-**Why it matters:** If every row mounts and parses markdown eagerly, batching
-alone still pays the full render cost in one commit — better than N commits, but
-the long-session tail then needs deferred rendering (#step-5).
-
-**Plan to resolve:** #step-1's audit task answers this with the instrumentation
-numbers (commit count × commit duration vs row count).
+**Plan to resolve:** #step-1's audit task — answers recorded in this plan under
+the baseline-numbers anchor.
 
 **Resolution:** OPEN (resolved by #step-1).
 
-#### [Q03] Is cold translate cost ever the long pole? (OPEN → gates #step-6/#step-7) {#q03-translate-cost}
+#### [Q03] Is cold translate cost ever the long pole? (OPEN → gates #step-8) {#q03-translate-cost}
 
-**Question:** With pacing removed and batching in place, does translate time as
-a function of file size justify the cache + pre-warm stages?
+**Question:** With pacing removed and folding in place, does translate time as
+a function of file size justify the replay cache + pre-warm machinery?
 
-**Why it matters:** The cache stages are real machinery; if translate of a p95
-session is <100ms they're dead weight.
+**Plan to resolve:** #step-1 instrumentation across small/medium/whale
+fixtures; revisit after #step-2/#step-3 land.
 
-**Plan to resolve:** #step-1 instrumentation across small/medium/whale fixtures;
-revisit after #step-4 lands.
+**Resolution:** OPEN (gates #step-8; may be closed as "not needed" with the
+measured numbers as rationale).
 
-**Resolution:** OPEN (gates #step-6 and #step-7; either may be closed as
-"not needed" in the ledger with the measured numbers as rationale).
+#### [Q04] Does `content-visibility` + intrinsic sizing carry the whale case, or is true windowing required? (OPEN → gates #step-6) {#q04-visibility-vs-windowing}
+
+**Question:** CSS visibility deferral keeps the DOM (selection/find intact,
+[L23] free) but pays DOM-node count and reconciliation walk on huge
+transcripts. At what row count does that break down on real hardware?
+
+**Why it matters:** True windowing (#step-6) is the most invasive deck change
+in the plan — it must earn its way in with numbers, and carries the hardest
+[L23]/[L26] obligations.
+
+**Plan to resolve:** #step-5's whale re-measurement (scroll smoothness, memory,
+commit cost at 1k/5k/10k rows).
+
+**Resolution:** OPEN (gates #step-6).
 
 ---
 
@@ -223,49 +250,76 @@ revisit after #step-4 lands.
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Batching breaks a replayed-frame intercept | high | med | Batch after intercepts in tugcast ([P03]); merger tests pin telemetry-inline + metadata-merge on batched replays ([R01]) | Any intercept test red |
-| One giant batch commit jank on whales | med | med | Chunked batches (count/byte cap), first chunk flushes early ([R02]) | Whale fixture first-paint > 1s |
-| Old/new wire mismatch during rollout | med | low | Capability-gated `replay_batch` with per-frame fallback ([P04]) | Mixed-version session breakage |
-| Cache staleness vs rewrites (rewind truncates JSONL in place) | med | low | `(size, mtime)` key invalidates on any byte change — same contract the scan cache relies on ([R03]) | Stale transcript after rewind |
-| Latency app-test flakes on CI variance | med | med | Generous hard ceiling + telemetry-split assertions instead of one tight wall-clock number ([R04]) | Flaky at0-test |
+| Immutability assumption has an exception (some event edits a finalized row) | high | low | Step-1 audit inventories every reducer event against the invariant; cache entries are invalidated by identity, and any mutating event drops the row's cache entry ([R01]) | Audit finds a mutating event |
+| Mount-identity instability defeats memoization silently | med | med | [L26] three-input audit (key, type, renderer ref) is an explicit #step-4 task with a remount-detection test ([R02]) | Memo-hit counters lower than expected |
+| Visibility/windowing destroys selection, focus, or scroll | high | med | content-visibility first (DOM survives, [L23] free); windowing pins selection/focus rows mounted; scroll anchored via height index ([R03]) | Any L23 regression in app-test |
+| Unpaced replay overruns tugcast broadcast channels (frame drops) | high | med | Keep a generous time-slice yield until the gated wire coalescer lands; verify channel capacity vs measured peak frame rate in #step-3 ([R04]) | Dropped-frame telemetry nonzero |
+| Parse-cache memory growth on whales | med | low | Cache keyed per session, bounded by transcript size; entries are plain parse results; evict with the session store ([R05]) | Memory telemetry on whale fixture |
+| Latency app-test flakes on CI variance | med | med | Generous hard ceiling + machine-insensitive internal splits (commit/parse counters) as the CI gate ([R06]) | Flaky at-test |
 
-**Risk R01: Intercept regression under batching** {#r01-intercept-regression}
+**Risk R01: The immutability invariant has an exception** {#r01-immutability-exception}
 
-- **Risk:** Replayed `turn_complete` frames lose their inlined telemetry, or
-  `system_metadata` loses its merge, once frames travel inside a batch.
-- **Mitigation:** Coalescing happens strictly downstream of the supervisor's
-  rewrite point; Rust tests assert a batched replay carries the inlined
-  telemetry fields verbatim.
-- **Residual risk:** A future intercept added upstream of the coalescer is
-  unaffected by construction; one added downstream must handle batches — the
-  coalescer's module docs say so loudly.
+- **Risk:** A reducer event mutates an already-finalized row (an edit, a
+  late telemetry attach, a redaction), and the render-once cache serves stale
+  content.
+- **Mitigation:** #step-1 audits the full event inventory against the
+  invariant and documents the result; the cache API requires explicit
+  invalidation-by-identity so any future mutating event has a one-line correct
+  path; turn-telemetry attaches to turn chrome, not row content (verified in
+  the audit).
+- **Residual risk:** A future event type added without reading the invariant
+  doc — the cache module docs and the audit table make that hard to miss.
 
-**Risk R02: Single-commit jank on very large sessions** {#r02-whale-jank}
+**Risk R02: Silent memoization defeat** {#r02-memo-defeat}
 
-- **Risk:** Folding 10k messages into one commit trades N small jank for one
-  multi-second freeze.
-- **Mitigation:** Chunked batches with a flush-early first chunk (fast first
-  paint), subsequent chunks at animation-frame cadence; deferred off-screen row
-  work (#step-5) bounds per-chunk render cost.
-- **Residual risk:** Whales still cost what they cost; the budget only promises
-  graceful streaming, not instant whales.
+- **Risk:** Unstable keys, split components, or per-render lambda renderer
+  references ([L26]'s three inputs) cause finalized rows to remount or
+  re-render despite the cache, and nothing *looks* broken.
+- **Mitigation:** The #step-4 audit covers all three identity inputs together;
+  a pure-logic test asserts memo-hit/parse counters across a
+  streaming→finalized transition and a window-membership change.
+- **Residual risk:** Future row-component refactors; the counters stay wired
+  into TugDevPanel so regressions are visible, not silent.
 
-**Risk R03: Replay cache serves a stale transcript** {#r03-cache-staleness}
+**Risk R03: User-visible state loss under visibility/windowing ([L23])** {#r03-l23-loss}
 
-- **Risk:** A cached translation outlives an in-place JSONL rewrite (destructive
-  rewind truncates the live file).
-- **Mitigation:** `(size, mtime)` validity check on every read — identical to
-  the scan cache contract that already guards the same files.
-- **Residual risk:** Same-size same-mtime rewrites are theoretically possible
-  and practically not (truncation changes size).
+- **Risk:** Deferring or unmounting rows destroys selection, focus, find
+  highlights, or scroll position.
+- **Mitigation:** Phase order is deliberate: `content-visibility` keeps all
+  DOM alive (selection/find work natively). If windowing proceeds (#step-6),
+  rows intersecting selection or focus are pinned mounted; scroll anchoring
+  rides `BlockHeightIndex`; the app-test asserts selection survival.
+- **Residual risk:** Browser quirks in find-in-page interaction with
+  `content-visibility` — checked during #step-5 on the real app.
 
-**Risk R04: Flaky latency assertions** {#r04-flaky-latency}
+**Risk R04: Broadcast-channel overrun after unpacing** {#r04-channel-overrun}
 
-- **Risk:** Wall-clock budgets on a shared dev machine flake.
-- **Mitigation:** App-test asserts a generous end-to-end ceiling (2s) plus the
-  *internal* telemetry splits (translate ms, commit count) which are
-  machine-load-insensitive; the tight 750ms number is a by-hand dev-machine
-  criterion recorded in the checkpoint, not a CI gate.
+- **Risk:** Removing translate pacing floods tugcast's bounded CODE_OUTPUT
+  broadcast channel faster than a lagging ws writer drains it; frames drop and
+  the transcript silently corrupts.
+- **Mitigation:** #step-3 measures peak frame rate against channel capacity
+  before shipping; the time-slice yield stays generous (≥8ms work slices, not
+  zero) until the gated wire coalescer (#step-7) reduces frame count at the
+  source; dropped-frame telemetry added in #step-1.
+- **Residual risk:** Pathological consumers; the wire coalescer closes this
+  fully if it lands.
+
+**Risk R05: Parse-cache memory growth** {#r05-cache-memory}
+
+- **Risk:** Caching parse results for every finalized row of a whale grows
+  resident memory.
+- **Mitigation:** Cache is per-session, holds derived structures comparable in
+  size to the source text, and is dropped with the session store on card
+  close; whale fixture memory is measured in #step-5.
+- **Residual risk:** Many simultaneously-open whale cards — acceptable for a
+  single-developer tool; revisit if telemetry says otherwise.
+
+**Risk R06: Flaky latency assertions** {#r06-flaky-latency}
+
+- **Risk:** Wall-clock budgets on shared machines flake.
+- **Mitigation:** CI gates on the machine-insensitive internals (commit count,
+  parse-once counters, ordering) plus a generous 2s ceiling; the tight 750ms
+  number is a dev-machine checkpoint recorded in the ledger, not a CI gate.
 
 ---
 
@@ -273,119 +327,159 @@ revisit after #step-4 lands.
 
 #### [P01] Measurement gates every optimization stage (DECIDED) {#p01-measure-first}
 
-**Decision:** #step-1 lands stage-timing instrumentation before any optimization;
-#step-5 through #step-8 are explicitly gated on its numbers and may be closed as
-"not needed" with the measurements as rationale.
+**Decision:** #step-1 lands instrumentation before any optimization; gated
+steps (#step-6 through #step-9) cite its numbers to proceed or close as
+"not needed" with rationale recorded in the ledger.
 
-**Rationale:**
-- The investigation's cost ranking is structural inference, not measurement; the
-  per-frame-commit hypothesis is strong but unproven.
-- Instrumentation is permanently useful (TugDevPanel) and cheap.
+**Rationale:** The cost ranking is structural inference until measured;
+instrumentation is permanently useful (TugDevPanel waterfall) and cheap.
 
-**Implications:**
-- The Step Status Ledger may legitimately end with gated steps marked
-  `closed (not needed)` — that is success, not abandonment.
+**Implications:** A ledger ending with gated steps closed-by-numbers is
+success, not abandonment.
 
 #### [P02] Translate runs unpaced; cooperative yield by time slice (DECIDED) {#p02-unpaced-translate}
 
 **Decision:** `runReplay`'s translate loop drops the every-16-entries
-`setTimeout(0)` pacing in favor of a coarse time-slice yield (only after ≥8ms of
-continuous work), keeping the IPC pipe responsive on whales without taxing the
-common case.
+`setTimeout(0)` pacing for a coarse time-slice yield (after ≥8ms of continuous
+work), keeping the IPC pipe responsive on whales without taxing the common
+case. The slice stays at 8ms (not zero) deliberately while per-frame delivery
+remains, as the flood guard for [R04].
+
+**Rationale:** Hundreds of forced ≥1ms macrotask idles for no responsiveness
+benefit at medium sizes; the slice preserves the original intent at ~zero cost.
+
+**Implications:** `disableYield` test semantics survive (bypasses the slice
+check).
+
+#### [P03] Replay batching is a deck-side fold on the semantic window — no wire changes, no timers (DECIDED) {#p03-deck-side-fold}
+
+**Decision:** `CodeSessionStore` buffers decoded replay events while its
+existing `replaying` phase is active and folds them through the reducer with
+notifies deferred — one fold + one notify per flush. Flushes are event-driven
+off semantic boundaries only: `replay_complete`, a buffered-count threshold
+(e.g. every 250 events, bounding single-fold latency on whales), and
+transport close / store teardown (nothing is ever stranded). **No
+`requestAnimationFrame`, no timers** — [L05]/[L13] honored by construction;
+state still enters React through one `useSyncExternalStore` tick per flush
+([L02]).
 
 **Rationale:**
-- `setTimeout(0)` is a ≥1ms macrotask delay; hundreds of entries pay hundreds of
-  forced idle milliseconds for no responsiveness benefit at medium sizes.
-- A time-slice yield preserves the original intent (pipe responsiveness during
-  whale replays) at ~zero cost for medium sessions.
+- The deck already knows the window; a fold here achieves the ≤5-commit goal
+  with zero wire/protocol/capability machinery and lands in a fraction of the
+  effort of a wire format.
+- Folding N events into one state is also the cure for immutable-append
+  copying costs (one array build instead of N incremental copies).
+- The wire-level coalescer remains available as gated whale armor (#step-7)
+  for frame-count pressure — a different problem than commit count.
 
 **Implications:**
-- `disableYield` test option survives unchanged (it now bypasses the time-slice
-  check).
+- The fold must be semantically transparent: folding a buffered event sequence
+  yields a state deep-equal to dispatching the same events singly (golden
+  contract test).
+- Mid-replay live frames (the live-buffer bracket) arrive after
+  `replay_complete` and are untouched.
 
-#### [P03] Batching lives in tugcast, downstream of the intercepts (DECIDED) {#p03-batch-in-tugcast}
+#### [P04] Finalized rows are immutable — render-once is the data-model contract (DECIDED) {#p04-render-once}
 
-**Decision:** tugcode keeps emitting one IPC line per message; tugcast coalesces
-*client-bound* replayed CODE_OUTPUT frames into `replay_batch` frames (chunked
-by count/byte caps) strictly after the supervisor/bridge rewrites (telemetry
-inlining, metadata merge, journal intercepts).
+**Decision:** Codify the invariant: once a transcript row is finalized (its
+turn committed), its content never changes. Expensive per-row work — markdown
+parse, block structure, anything derivable from content — is computed at most
+once per row, stored in a per-session derived-data cache keyed by **stable row
+identity** (the same identity that satisfies [L26]), and reused for every
+subsequent render: replay, live appends, scroll, tab switches, window
+membership changes.
 
 **Rationale:**
-- tugcast actively rewrites replayed frames; batching upstream (in tugcode)
-  would hide lines from those intercepts or force them all to learn the batch
-  envelope.
-- The tugcode→tugcast pipe is local and cheap; the expensive edge is
-  tugcast→tugdeck framing plus the deck's per-frame work.
-- Rust-side coalescing is the natural home for the later cache stage too —
-  the batch payload is exactly what `replay_cache` would store.
+- This is the only fix that shrinks the render *bill* rather than amortizing
+  delivery — and it serves incremental and batch updates with one mechanism.
+- The live path's hot set collapses to the streaming tail; finalized rows are
+  memo hits backed by cached parses, so commit cost stops growing with
+  transcript length.
 
 **Implications:**
-- New wire message `replay_batch` (Spec S01); the merger/supervisor learns the
-  replay window ([Q01]).
-- tugcode's only change in the batching stage is [P02] (pacing) and, if [Q01]
-  requires it, a replay-start marker line.
-
-#### [P04] `replay_batch` is capability-gated with per-frame fallback (DECIDED) {#p04-capability-gated}
-
-**Decision:** tugcast emits `replay_batch` only when the connected client has
-advertised support (or a tugcast default flag enables it); otherwise the
-existing per-frame stream is preserved bit-for-bit.
-
-**Rationale:**
-- HMR/reload windows can pair an old deck with a new tugcast (and vice versa);
-  a silent contract change bricks replay exactly when iterating on it.
-- The fallback doubles as the instant rollback lever.
-
-**Implications:**
-- Capability rides the existing connection handshake; the fallback path stays
-  tested (the legacy replay tests keep running against it).
+- The cache is derived data in the structure zone — a plain per-session store
+  read during render (pure lookup), never React state, never DOM-resident
+  ([L24]); dropped with the session store.
+- Streaming (unfinalized) rows bypass the cache and parse live, exactly as
+  today; finalization populates the cache once.
+- The cache API carries explicit invalidation-by-identity so any future
+  mutating event has a correct one-line path ([R01]).
 
 #### [P05] tugcode remains the single translator; the Rust-port trigger is named (DECIDED) {#p05-single-translator}
 
-**Decision:** `translateJsonlSession` stays the only JSONL→wire translator. Rust
-owns caching and orchestration only. The trigger to revisit a Rust port: after
-the cache + pre-warm stages, if **cold** translation of a p95 session still
-exceeds ~500ms in Step-1 instrumentation and that cold path is user-visible
-(cache misses on first resume of large sessions users actually open).
+**Decision:** `translateJsonlSession` stays the only JSONL→wire translator;
+Rust owns caching/orchestration only. Reopen trigger: after the cache stages,
+cold translation of a p95 session still exceeds ~500ms in instrumentation on a
+user-visible path. Any future port requires a shared golden-fixture suite both
+translators pass first.
 
-**Rationale:**
-- The translator encodes a large body of surveyed JSONL lore (orphan synthesis,
-  compaction markers, isMeta rules, TUI record types); two implementations
-  drift, and drift here corrupts transcripts silently.
-- Caching makes the hot path translation-free regardless of language.
+#### [P06] Replay cache stores the translated stream, keyed (size, mtime) (DECIDED, gated by [Q03]) {#p06-replay-cache}
 
-**Implications:**
-- Any future port must come with a shared golden-fixture suite both translators
-  pass before the Rust one ships.
-
-#### [P06] Replay cache stores the translated stream, keyed (size, mtime), written and read by tugcode (DECIDED, gated by [Q03]) {#p06-replay-cache}
-
-**Decision:** A `replay_cache` table in tugcast's sqlite (same db, same
+**Decision:** If [Q03] fires: a `replay_cache` table in tugcast's sqlite (same
 no-migration bootstrap as `external_scan_cache`) stores tugcode's translated
-wire-message stream per session, keyed by session id and validated by
-`(file_size, file_mtime)`. tugcode writes it after a cold translate and reads it
-instead of re-translating on a hit (via its existing cross-process `bun:sqlite`
-handle). Pre-warming (#step-7) populates it for recently-listed sessions via a
-translate-only tugcode invocation orchestrated by tugcast.
+pre-intercept stream per session, keyed by `(file_size, file_mtime)`; tugcode
+writes after cold translate and reads on hit via its existing bun:sqlite
+handle. Pre-warm: a headless `--translate-only` tugcode mode, orchestrated and
+concurrency-capped by the supervisor after `list_sessions`. Caching
+pre-intercept keeps telemetry/metadata inlining live on every serve.
 
-**Rationale:**
-- Caching the *pre-intercept* translated stream keeps telemetry/metadata
-  inlining live on every serve — cached payloads never go stale against ledger
-  state, only against file bytes (which the key covers).
-- tugcode reading/writing keeps the single-translator rule ([P05]) intact;
-  tugcast never interprets transcript content.
+#### [P07] Wire-level `replay_batch` is gated whale armor, capability-gated with bit-exact fallback (DECIDED, gated) {#p07-wire-batch-gated}
 
-**Implications:**
-- Cache rows can be large (MBs for whales) — a per-row size cap and a total-size
-  sweep policy land with the table.
-- The pre-warm invocation is a new headless tugcode mode (`--translate-only`),
-  budgeted and concurrency-capped by the supervisor.
+**Decision:** The tugcast coalescer (Spec S01) proceeds only if measurements
+show frame-count pressure the deck-side fold can't address — broadcast-channel
+overrun risk at whale frame rates ([R04]) or material per-frame dispatch
+overhead. If it lands: coalescing sits strictly downstream of the
+telemetry/metadata intercepts, flush triggers guarantee no frame is held
+hostage (chunk cap, `replay_complete`, window abort, ~50ms max-hold), and the
+frame ships behind a client-advertised capability with the legacy per-frame
+stream preserved bit-for-bit as fallback and rollback lever.
+
+**Rationale:** Demoted from the primary move (earlier draft) because the
+deck-side fold achieves the commit-count goal without wire machinery; what
+remains unique to the wire layer is frame *count*, which only whales stress.
+
+#### [P08] Speculative warm runs on a cooperative background queue — plain scheduling, no rAF, no React coupling (DECIDED) {#p08-speculative-warm}
+
+**Decision:** After a fold commits (and during idle moments thereafter), a
+cooperative queue parses not-yet-cached finalized rows outside the viewport —
+nearest-to-viewport first (overscan order) — in small time-sliced chunks via
+plain deferred tasks (`setTimeout`-class scheduling). It writes only to the
+[P04] cache (pure data; no DOM, no React state, no notifies — a row that
+renders later simply finds its parse ready). The queue yields immediately to
+real work (any user-triggered parse takes priority synchronously) and is
+cancelled with the session store.
+
+**Rationale:** This is the "massively parallel supercomputer" dividend with
+zero law exposure: scrolling never hits a parse cliff because the cache is
+warm ahead of the viewport, and because the queue touches only derived data,
+it cannot interact with React scheduling, paint, or [L05]/[L13] at all.
+
+**Implications:** The queue's only observable effects are cache-hit counters
+(TugDevPanel) and the absence of scroll jank.
+
+#### [P09] Paint deferral phases: content-visibility first; true windowing gated, with [L23] pinning (DECIDED) {#p09-visibility-phases}
+
+**Decision:** Off-screen paint cost is attacked in two phases. **Phase one
+(#step-5):** `content-visibility: auto` + `contain-intrinsic-size` from
+`BlockHeightIndex` estimates on transcript rows — CSS-only (appearance zone,
+[L06]), DOM stays alive so selection, find, and scroll anchoring work natively
+([L23] satisfied for free). **Phase two (#step-6, gated by [Q04]):** true
+windowing — rows far outside the overscan range unmount to placeholders —
+only if whale measurements demand it, under hard constraints: rows
+intersecting the current selection or focus are pinned mounted; mount identity
+stays [L26]-stable across membership changes; scroll position is anchored
+through the height index; the [P04] cache makes re-mounting cheap (parse
+already done).
+
+**Rationale:** Phase one buys most of the paint win at near-zero risk; phase
+two's costs (selection pinning, identity discipline, placeholder correctness)
+should only be paid where phase one measurably runs out.
 
 ---
 
 ### Specification {#specification}
 
-**Spec S01: `replay_batch` wire frame** {#s01-replay-batch}
+**Spec S01: `replay_batch` wire frame (gated — ships only with #step-7)** {#s01-replay-batch}
 
 A CODE_OUTPUT frame whose payload is:
 
@@ -394,45 +488,60 @@ A CODE_OUTPUT frame whose payload is:
   "messages": [ { ...wire message... }, ... ] }
 ```
 
-- `messages` preserves the exact per-frame payloads (post-intercept) in emission
-  order — a client folding them one-by-one must produce a state identical to the
-  legacy stream.
-- Chunk caps: ≤256 messages and ≤512KB serialized per frame (verified against
-  tugcast frame limits in #step-3); the first chunk flushes as soon as it fills
-  *or* 32 messages arrive, whichever is first, for early first paint.
-- **Flush triggers — no frame is ever held hostage.** A pending (partial) batch
-  flushes on the first of: chunk cap reached; `replay_complete` observed;
-  **window abort** (the replay window closes without `replay_complete` — tugcode
-  exit/crash mid-replay, which the merger's saturating window counter already
-  detects); or a **max-hold timer (~50ms)** since the batch's first message, so
-  a stalled translate never delays already-emitted frames.
-- `replay_complete` still travels as its own frame after the last batch
-  (`final: true` is advisory).
+- `messages` preserves exact per-frame payloads (post-intercept) in emission
+  order — folding them one-by-one must produce a state identical to the legacy
+  stream.
+- Chunk caps ≤256 messages / ≤512KB serialized (verified against tugcast frame
+  limits); first chunk flushes at 32 messages for early first paint.
+- **Flush triggers — no frame held hostage:** chunk cap; `replay_complete`;
+  window abort (merger's saturating window counter detects tugcode death
+  mid-replay); ~50ms max-hold timer since the batch's first message.
+- `replay_complete` still travels as its own frame.
 
-**Spec S02: Stage-timing instrumentation points** {#s02-timings}
+**Spec S02: Stage-timing and counter instrumentation** {#s02-timings}
 
-| Stage | Where | Emitted as |
-|-------|-------|-----------|
+| Signal | Where | Emitted as |
+|--------|-------|-----------|
 | tugcode boot → ready | tugcode main | `logSessionLifecycle("perf.boot", {ms})` |
 | `request_replay` received | tugcode | `perf.replay_requested` |
 | JSONL read | tugcode runReplay | `perf.replay_read` `{ms, bytes, lines}` |
 | translate + emit | tugcode runReplay | `perf.replay_translate` `{ms, messages}` |
-| coalesce + forward | tugcast replay path | tracing + frame-count counter |
-| first/last batch ingested | tugdeck store | `perf.replay_ingest` `{ms, frames, commits}` |
+| forward (+ drops if any) | tugcast replay path | tracing + frame/drop counters |
+| replay folds + commits | tugdeck store | `perf.replay_ingest` `{ms, frames, folds, commits}` |
 | last React commit | tugdeck transcript | `perf.replay_render` `{ms, rows}` |
+| live-turn commit rate | tugdeck store | `perf.live_commits` `{turnKey, commits, ms}` |
+| per-row parse + memo counters | parse cache / row components | `perf.row_parse` `{parses, cacheHits, memoHits}` |
 
-All deck-side numbers also land in `tugDevLogStore` so TugDevPanel shows a
-per-resume waterfall. The store counts its own `notifyListeners` calls between
-replay start and `replay_complete` — that counter is the "≤5 commits" assertion
-surface.
+Deck-side numbers land in `tugDevLogStore`; TugDevPanel shows a per-resume
+waterfall. The store counts its own `notifyListeners` calls inside the replay
+window — that counter is the "≤5 commits" assertion surface; the parse/memo
+counters are the "parse-once" and "tail-only live renders" surfaces.
+
+**Spec S03: Render-once cache contract** {#s03-render-cache}
+
+- **Key:** the row's stable identity — the same value that serves as the
+  [L26] React key (message/turn-stable, minted before finalization, unchanged
+  through it).
+- **Value:** parse output and derived structures for the row's content
+  (markdown AST/blocks, highlight results — exact set per the #step-4 audit).
+- **Population:** on first render of a finalized row (lazy), or by the
+  speculative queue ([P08]) ahead of need. Streaming rows never populate.
+- **Invalidation:** explicit by identity only; session-scoped lifetime
+  (dropped with the session store). No TTL, no LRU within a session — the
+  invariant says entries cannot go stale.
+- **Zone:** derived data, structure zone — plain per-session store, read as a
+  pure lookup during render; never React state, never serialized.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
 | State | Zone (appearance / local-data / structure) | Mechanism | Law |
 |-------|--------------------------------------------|-----------|-----|
-| Batched replay ingest | external state (server frames) | existing `CodeSessionStore` reducer; batch = loop of existing events with deferred notify, one `useSyncExternalStore` tick | [L02] |
-| Replay perf counters | external state (diagnostics) | `tugDevLogStore` / telemetry store (existing) | [L02] |
-| Deferred off-screen row rendering (#step-5, if needed) | appearance/structure per audit | CSS/content-visibility or windowing at the list layer — decided by the audit, named in that step's commit | [L06], [L24] |
+| Replay fold buffer | store-internal (pre-React) | array inside `CodeSessionStore`; folds → one `useSyncExternalStore` tick per flush | [L02] |
+| Render-once parse cache | structure (derived data) | per-session store, pure lookup at render; explicit invalidation API | [L24], [L02] |
+| Speculative warm queue | background derived-data work | cooperative `setTimeout`-class slices; writes cache only; no DOM, no React, **no rAF** | [L05], [L13] honored |
+| Off-screen paint deferral (phase one) | appearance | `content-visibility` + `contain-intrinsic-size` via CSS | [L06] |
+| Window membership (phase two, gated) | structure | visible-range data → row mount/unmount via normal render; selection/focus rows pinned | [L24], [L26], [L23] |
+| Perf counters | external diagnostics | `tugDevLogStore` (existing) | [L02] |
 
 ---
 
@@ -442,19 +551,19 @@ surface.
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit (bun, pure logic)** | Translate-loop pacing, batch fold = N single folds (state equivalence), notify counting | tugcode + tugdeck stores, no DOM |
-| **Unit (Rust)** | Coalescer chunking, intercept preservation on batched frames, replay_cache validity/sweep | tugcast merger/supervisor/ledger |
-| **Golden / Contract** | Batched stream folds to identical store state as legacy stream | shared fixture, both paths |
-| **App-test** | End-to-end latency budget + telemetry splits on medium fixture; whale first-paint leg | `just app-test` |
+| **Unit (bun, pure logic)** | Fold = N single dispatches (state equivalence); parse/memo/commit counters; cache key/invalidation; warm-queue ordering and cancellation | tugcode + tugdeck stores, no DOM |
+| **Unit (Rust)** | (Gated steps) coalescer chunking/flush triggers, intercept preservation, replay_cache validity/sweep | tugcast |
+| **Golden / Contract** | Folded ingest deep-equals per-frame ingest on a shared fixture | both store paths |
+| **App-test** | Latency budget, parse-once across real interactions (resume → live turn → tab switch), whale first-paint + scroll, [L23] selection survival | `just app-test` |
 
 #### What stays out of tests {#test-non-goals}
 
-- Mock-store call-count tests — the commit counter is real store
-  instrumentation, asserted through the real reducer, not a hand-rolled mock.
-- Fake-DOM render timing — render cost is measured in the app-test against the
-  real app; no jsdom substitutes.
-- Tight wall-clock CI gates — see [R04]; CI asserts ceilings and internal
-  splits, the tight target is a dev-machine checkpoint.
+- Mock-store call-count tests — all counters are real store/cache
+  instrumentation asserted through the real reducer and real cache.
+- Fake-DOM render tests — render behavior (visibility deferral, selection
+  survival, scroll) is asserted in the app-test against the real app.
+- Tight wall-clock CI gates — CI asserts machine-insensitive counters and a
+  generous ceiling ([R06]); the 750ms target is a dev-machine checkpoint.
 
 ---
 
@@ -466,269 +575,310 @@ surface.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Pipeline instrumentation + baseline numbers | pending | — |
-| #step-2 | Unpaced translate loop | pending | — |
-| #step-3 | tugcast replay coalescer (`replay_batch`) | pending | — |
-| #step-4 | tugdeck batch ingest, single commit | pending | — |
-| #step-5 | Transcript render audit + deferred off-screen work (gated) | pending | — |
-| #step-6 | replay_cache table + tugcode read/write (gated) | pending | — |
-| #step-7 | Pre-warm recently-listed sessions (gated) | pending | — |
-| #step-8 | Startup-path trims (gated) | pending | — |
-| #step-9 | App-test latency budget | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Instrumentation + baseline + invariant/render audits | pending | — |
+| #step-2 | Deck-side replay fold (one commit per flush) | pending | — |
+| #step-3 | Unpaced translate loop + channel-capacity guard | pending | — |
+| #step-4 | Render-once cache + memoized finalized rows | pending | — |
+| #step-5 | content-visibility deferral + speculative warm | pending | — |
+| #step-6 | True transcript windowing (gated by [Q04]) | pending | — |
+| #step-7 | Wire-level replay_batch coalescer (gated) | pending | — |
+| #step-8 | replay_cache + pre-warm (gated by [Q03]) | pending | — |
+| #step-9 | Startup-path trims (gated) | pending | — |
+| #step-10 | App-test budgets | pending | — |
+| #step-11 | Integration checkpoint | pending | — |
 
-#### Step 1: Pipeline instrumentation + baseline numbers {#step-1}
+#### Step 1: Instrumentation + baseline + invariant/render audits {#step-1}
 
-**Commit:** `Instrument the resume replay pipeline end to end`
+**Commit:** `Instrument the transcript pipeline; audit row immutability and render shape`
 
-**References:** [P01] Measure first, Spec S02, [Q02], [Q03], (#context, #s02-timings)
+**References:** [P01] Measure first, Spec S02, [Q02], [Q03], Risk R01, (#context, #s02-timings)
 
 **Artifacts:**
-- Stage-timing emissions at every Spec S02 point (tugcode, tugcast tracing,
-  tugdeck store + transcript)
-- Store-level notify/commit counter scoped to the replay window
-- A baseline table (small / medium / whale fixture timings) recorded in this
-  plan under a `#baseline-numbers` anchor, answering [Q02] (commit count vs row
-  count) and seeding [Q03]
+- Spec S02 emissions at every point (replay stages, live-turn commit rate,
+  parse/memo counters wired even before the cache exists — counting raw parses)
+- Dropped-frame telemetry on the tugcast forward path ([R04] sensor)
+- **Immutability audit:** every reducer event inventoried against "finalized
+  rows never change," result table recorded in this plan ([R01])
+- **Render-shape audit ([Q02]):** mounting, memoization, [L26] identity-input
+  status, where markdown parses — recorded alongside
+- Baseline waterfall (small ~10 turns / medium ~50 turns ~500KB / whale ≥50MB)
+  recorded under `#baseline-numbers`
 
 **Tasks:**
-- [ ] Emit Spec S02 timings via `logSessionLifecycle` / tracing / `tugDevLogStore`
-- [ ] Count store notifies between replay start and `replay_complete`
-- [ ] Audit transcript mounting (eager vs deferred) and record the answer to [Q02]
-- [ ] Resume three fixtures (small ~10 turns, medium ~50 turns/500KB, whale ≥50MB) and record the waterfall in the plan
+- [ ] Emit Spec S02 signals via `logSessionLifecycle` / tracing / `tugDevLogStore`
+- [ ] Count store notifies inside the replay window; count live-turn commits per turn
+- [ ] Count markdown parses per row identity (pre-cache: every parse increments)
+- [ ] Run both audits; record tables + baseline numbers in the plan
+- [ ] Resume the three fixtures and record the waterfall
 
 **Tests:**
-- [ ] Pure-logic: the notify counter increments per notify and resets per replay window
+- [ ] Pure-logic: counters increment/reset correctly per replay window and per turn
 - [ ] tugcode unit: perf lines emitted with plausible (>0) values during a fixture replay
 
 **Checkpoint:**
 - [ ] `cd tugcode && bun test` and `cd tugdeck && bun test && bunx tsc --noEmit`
-- [ ] Baseline table committed into the plan with real numbers
+- [ ] Baseline + audit tables committed into the plan with real numbers
 
 ---
 
-#### Step 2: Unpaced translate loop {#step-2}
+#### Step 2: Deck-side replay fold (one commit per flush) {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `Fold replay-window events into single store commits (L02)`
+
+**References:** [P03] Deck-side fold, Spec S02, [Q01], (#state-zone-mapping, #success-criteria)
+
+**Artifacts:**
+- `CodeSessionStore` buffers decoded events while `replaying`; folds + notifies
+  once per flush (semantic triggers only: `replay_complete`, 250-event
+  threshold, transport close/teardown — no timers, no rAF)
+- Medium-fixture commit count ≤5 in the counters
+
+**Tasks:**
+- [ ] Implement the fold with deferred notifies; flush triggers exactly as [P03]
+- [ ] Cross-check tuglaws; name [L02] (and the deliberate absence of rAF per [L05]/[L13]) in the commit body
+- [ ] Re-measure fixtures; update the baseline table
+
+**Tests:**
+- [ ] Golden: folded ingest of a fixture stream deep-equals per-frame ingest (same final state)
+- [ ] Pure-logic: one notify per flush; teardown mid-replay flushes (nothing stranded); commit counter ≤5 on the medium fixture
+- [ ] Pure-logic: live frames after `replay_complete` dispatch singly, untouched
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test && bunx tsc --noEmit`
+- [ ] Recorded medium-fixture commits ≤5 and ingest time materially down
+
+---
+
+#### Step 3: Unpaced translate loop + channel-capacity guard {#step-3}
 
 **Depends on:** #step-1
 
 **Commit:** `Replace per-16-entries replay pacing with a time-slice yield`
 
-**References:** [P02] Unpaced translate, (#q03-translate-cost, #s02-timings)
+**References:** [P02] Unpaced translate, Risk R04, (#q03-translate-cost, #s02-timings)
 
 **Artifacts:**
 - `translateJsonlSession` yields only after ≥8ms of continuous work
-- Before/after translate timings for the three fixtures appended to the baseline table
+- Measured peak frame rate vs tugcast broadcast capacity recorded ([R04]);
+  dropped-frame telemetry confirmed zero on all three fixtures
 
 **Tasks:**
-- [ ] Swap the batch-count yield for a time-slice check; keep `disableYield` semantics
-- [ ] Re-measure the fixtures
+- [ ] Swap the batch-count yield for the time-slice check; keep `disableYield` semantics
+- [ ] Verify channel capacity headroom against the measured whale frame rate; record the margin
+- [ ] Re-measure fixtures
 
 **Tests:**
-- [ ] Existing replay suites green unchanged (pacing is invisible to outputs)
-- [ ] Pure-logic: yield fires under a forced-slow clock, not for fast medium runs
+- [ ] Existing replay suites green unchanged
+- [ ] Pure-logic: yield fires under a forced-slow clock, not on fast medium runs
 
 **Checkpoint:**
 - [ ] `cd tugcode && bun test`
-- [ ] Medium-fixture translate time drops in the recorded numbers
+- [ ] Whale replay shows zero dropped frames; medium translate time drops in the numbers
 
 ---
 
-#### Step 3: tugcast replay coalescer (`replay_batch`) {#step-3}
+#### Step 4: Render-once cache + memoized finalized rows {#step-4}
 
-**Depends on:** #step-1
+**Depends on:** #step-1, #step-2
 
-**Commit:** `Coalesce replayed frames into replay_batch after the supervisor intercepts`
+**Commit:** `Render finalized transcript rows once: identity-keyed parse cache + stable memoization (L26, L02)`
 
-**References:** [P03] Batch in tugcast, [P04] Capability gate, Spec S01, [Q01], Risk R01, Risk R02, (#s01-replay-batch)
-
-**Artifacts:**
-- Replay-window detection in the merger using the existing `replay_started` /
-  `replay_complete` markers and the merger's open-window counter ([Q01])
-- Coalescer with Spec S01 chunk caps, early first flush, and the full flush-
-  trigger set (cap / `replay_complete` / window abort / ~50ms max-hold timer),
-  strictly downstream of telemetry-inline / metadata-merge
-- Capability gate with bit-exact per-frame fallback
-
-**Tasks:**
-- [ ] Wire the coalescer to the existing window markers; document the window
-      contract — and the "intercepts upstream, coalescing downstream" rule —
-      in the coalescer's module docs
-- [ ] Implement chunking + every Spec S01 flush trigger (cap, `replay_complete`,
-      window abort via the merger's window counter, max-hold timer)
-- [ ] Implement the capability gate; verify the 512KB cap against tugcast frame limits
-- [ ] Keep `replay_complete` as its own frame
-
-**Tests:**
-- [ ] Rust: batched replay preserves inlined telemetry fields and merged metadata verbatim (R01 pin)
-- [ ] Rust: chunk caps respected; first chunk flushes early; live frames after `replay_complete` are never batched
-- [ ] Rust: a partial batch flushes on `replay_complete`; a window that aborts without `replay_complete` (subprocess death mid-replay) flushes the pending buffer rather than dropping it
-- [ ] Rust: a stalled window (no new messages, no completion) flushes the pending batch within the max-hold bound
-- [ ] Rust: capability-absent client receives the legacy stream bit-for-bit
-
-**Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast`
-
----
-
-#### Step 4: tugdeck batch ingest, single commit {#step-4}
-
-**Depends on:** #step-3
-
-**Commit:** `Ingest replay_batch as one reducer fold and one notify (L02)`
-
-**References:** [P03], [P04], Spec S01, Spec S02, (#state-zone-mapping, #success-criteria)
+**References:** [P04] Render-once, Spec S03, [Q02], Risk R01, Risk R02, (#s03-render-cache, #state-zone-mapping)
 
 **Artifacts:**
-- `replay_batch` protocol type + capability advertisement on the connection handshake
-- Store folds a batch through the existing reducer with notifies deferred to one tick
-- Commit counter shows ≤5 commits for the medium fixture
+- Per-session parse/derivation cache per Spec S03, with parse/cache-hit/memo-hit counters
+- Row components memoized with all three [L26] identity inputs audited and
+  stabilized (key, component type, renderer reference) across the
+  streaming→finalized transition
+- Live path: streaming tail parses live; finalization populates the cache once
 
 **Tasks:**
-- [ ] Protocol type + guard; advertise the capability
-- [ ] Batch fold with single notify; cross-check tuglaws and name [L02] in the commit
-- [ ] Re-measure the fixtures; update the baseline table
+- [ ] Implement the cache (structure-zone store, pure render-time lookup, explicit invalidation API)
+- [ ] Fix any identity instabilities the #step-1 audit found; memoize rows
+- [ ] Wire the counters into TugDevPanel; re-measure fixtures + a live-turn run
 
 **Tests:**
-- [ ] Golden: folding a batched stream yields a store state deep-equal to folding the same messages per-frame (contract test on a shared fixture)
-- [ ] Pure-logic: one notify per batch frame; counter assertion for the medium fixture
+- [ ] Pure-logic: parse-once across finalize → re-render → identity-stable remount; invalidation drops exactly the named entry
+- [ ] Pure-logic: memo/parse counters — a live append to a 200-row transcript parses only the tail ([R02] pin)
+- [ ] Golden: cached and uncached renders produce identical row output for a fixture corpus
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test && bunx tsc --noEmit`
-- [ ] Recorded medium-fixture commit count ≤5 and ingest+render time materially down
+- [ ] Counters: zero re-parses of finalized rows across the medium fixture's full replay + one live turn
 
 ---
 
-#### Step 5: Transcript render audit + deferred off-screen work (gated) {#step-5}
+#### Step 5: content-visibility deferral + speculative warm {#step-5}
 
 **Depends on:** #step-4
 
-**Commit:** `Defer off-screen transcript row rendering` *(or close as not-needed with numbers)*
+**Commit:** `Defer off-screen transcript paint via content-visibility; warm the parse cache speculatively`
 
-**References:** [P01], [Q02], Risk R02, (#state-zone-mapping, #q02-transcript-virtualization)
+**References:** [P08] Speculative warm, [P09] Visibility phases, [Q04], Risk R03, Risk R05, (#state-zone-mapping)
 
 **Artifacts:**
-- Either: deferred rendering for off-screen rows (mechanism per the audit — content-visibility / windowing at the list layer, leaning on `BlockHeightIndex` estimates), or a ledger entry closing this step with the Step-4 numbers as rationale
+- `content-visibility: auto` + `contain-intrinsic-size` (from `BlockHeightIndex`
+  estimates) on transcript rows — CSS only
+- Cooperative warm queue per [P08]: nearest-to-viewport-first, time-sliced,
+  cache-writes only, cancelled with the session; **no rAF**
+- Whale measurements for [Q04]: scroll smoothness, memory, commit cost at
+  1k/5k/10k rows — recorded in the plan
 
 **Tasks:**
-- [ ] Decide from the #step-4 re-measurement whether single-commit render cost still breaches the medium budget or whale first-paint
-- [ ] If proceeding: implement, name the tuglaws zones touched, re-measure
+- [ ] Apply visibility CSS; verify selection/find/scroll on the real app ([R03])
+- [ ] Implement the warm queue; verify it yields to user-triggered work
+- [ ] Record [Q04] numbers; decide #step-6's gate
 
 **Tests:**
-- [ ] If proceeding: pure-logic tests for the windowing/height math; behavior to the app-test
+- [ ] Pure-logic: warm-queue ordering (overscan-first), time-slicing, cancellation, and synchronous-priority handoff
+- [ ] App-test additions deferred to #step-10 (scroll/selection legs)
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test && bunx tsc --noEmit`
+- [ ] Whale scroll hits warm cache (cache-hit counter ≈ 100% during scroll); [Q04] numbers recorded
+
+---
+
+#### Step 6: True transcript windowing (gated by [Q04]) {#step-6}
+
+**Depends on:** #step-5
+
+**Commit:** `Window the transcript for whale-scale transcripts` *(or close as not-needed with numbers)*
+
+**References:** [P09] Visibility phases, [Q04], Risk R03, (#state-zone-mapping)
+
+**Artifacts:**
+- Either: windowed mounting with selection/focus-pinned rows, [L26]-stable
+  identity across membership changes, height-index scroll anchoring — or a
+  ledger close-out citing [Q04]'s numbers
+
+**Tasks:**
+- [ ] Gate check on [Q04]
+- [ ] If proceeding: implement under the [P09] constraints; name [L23]/[L26]/[L24] in the commit; re-measure whales
+
+**Tests:**
+- [ ] If proceeding: pure-logic window-range/pinning math; selection survival to the app-test
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test && bunx tsc --noEmit`; numbers recorded either way
 
 ---
 
-#### Step 6: replay_cache table + tugcode read/write (gated) {#step-6}
+#### Step 7: Wire-level replay_batch coalescer (gated) {#step-7}
 
 **Depends on:** #step-2, #step-3
 
-**Commit:** `Cache translated replay streams keyed by (size, mtime)` *(or close as not-needed)*
+**Commit:** `Coalesce replayed frames into replay_batch in tugcast` *(or close as not-needed with numbers)*
 
-**References:** [P05] Single translator, [P06] Replay cache, [Q03], Risk R03, (#p06-replay-cache)
+**References:** [P07] Wire batch gated, Spec S01, [Q01], Risk R04, (#s01-replay-batch)
 
 **Artifacts:**
-- `replay_cache` table (CREATE IF NOT EXISTS; per-row size cap; total-size sweep) in tugcast's sqlite
-- tugcode writes after cold translate, reads on `(size, mtime)` hit via its existing bun:sqlite handle
+- Either: the Spec S01 coalescer in the merger (downstream of intercepts, full
+  flush-trigger set, capability gate, bit-exact fallback) — or a ledger
+  close-out citing #step-3's channel-headroom numbers
 
 **Tasks:**
-- [ ] Gate check: proceed only if [Q03]'s numbers show cold translate as a user-visible cost
-- [ ] Table + ledger methods (Rust) mirroring the scan-cache shape; sweep policy
-- [ ] tugcode cache path; cold path unchanged
+- [ ] Gate check: proceed only if frame-rate vs channel-capacity margins ([R04]) or measured per-frame dispatch overhead demand it
+- [ ] If proceeding: implement per Spec S01; document the "intercepts upstream, coalescing downstream" rule in module docs
 
 **Tests:**
-- [ ] Rust: validity key, size cap, sweep
-- [ ] tugcode pure-logic: hit skips translate (counter), miss writes back; stale `(size, mtime)` re-translates (R03 pin)
+- [ ] If proceeding — Rust: intercept preservation verbatim; chunk caps; flush on `replay_complete` / window abort / max-hold; capability-absent client gets the legacy stream bit-for-bit. Deck: batch fold reuses #step-2's path (golden equivalence)
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast && cd ../tugcode && bun test`
+- [ ] `cd tugrust && cargo nextest run -p tugcast`; numbers recorded either way
 
 ---
 
-#### Step 7: Pre-warm recently-listed sessions (gated) {#step-7}
+#### Step 8: replay_cache + pre-warm (gated by [Q03]) {#step-8}
 
-**Depends on:** #step-6
+**Depends on:** #step-3
 
-**Commit:** `Pre-warm replay translations for recently listed sessions` *(or close as not-needed)*
+**Commit:** `Cache translated replay streams keyed (size, mtime); pre-warm recently listed sessions` *(or close as not-needed)*
 
-**References:** [P06], [Q03], (#p06-replay-cache, #strategy)
+**References:** [P05] Single translator, [P06] Replay cache, [Q03], (#p06-replay-cache)
 
 **Artifacts:**
-- Headless `--translate-only` tugcode mode (read JSONL → write replay_cache → exit)
-- Supervisor pre-warm after `list_sessions`: top-N most-recent uncached sessions, concurrency-capped, cancellable
+- Either: `replay_cache` table (size caps, sweep) + tugcode read/write +
+  headless `--translate-only` pre-warm orchestrated post-`list_sessions` — or
+  a ledger close-out citing [Q03]'s numbers
 
 **Tasks:**
-- [ ] Gate check (same numbers as #step-6, plus observed cache-miss rate on first resumes)
-- [ ] Translate-only mode; supervisor orchestration with caps
+- [ ] Gate check on [Q03] after #step-2/#step-3 re-measurement
+- [ ] If proceeding: table + methods mirroring the scan-cache shape; tugcode cache path; pre-warm with concurrency caps
 
 **Tests:**
-- [ ] Rust: pre-warm respects concurrency cap and skips cached/oversized sessions
-- [ ] tugcode: translate-only writes a valid cache row and exits cleanly
+- [ ] If proceeding — Rust: validity key, size cap, sweep, pre-warm caps. tugcode: hit skips translate; stale key re-translates
 
 **Checkpoint:**
-- [ ] Full `cargo nextest run -p tugcast` + `bun test`; a listed-then-resumed fixture hits the cache (telemetry shows translate ms ≈ 0)
+- [ ] Suites green; a listed-then-resumed fixture shows translate ms ≈ 0 — or close-out recorded
 
 ---
 
-#### Step 8: Startup-path trims (gated) {#step-8}
+#### Step 9: Startup-path trims (gated) {#step-9}
 
 **Depends on:** #step-1
 
 **Commit:** `Trim resume startup latency ahead of the first replay frame` *(or close as not-needed)*
 
-**References:** [P01], Spec S02, (#context, #success-criteria)
+**References:** [P01], Spec S02, (#context)
 
 **Artifacts:**
-- Whatever the boot/round-trip numbers justify — candidates: collapsing the `spawn_session_ok` → `request_replay` round-trip (supervisor auto-queues replay for resume spawns), tugcode boot trims — chosen and documented against the measurements
+- Whatever the boot/round-trip splits justify (candidates: supervisor
+  auto-queues replay for resume spawns collapsing the `request_replay`
+  round-trip; tugcode boot trims) — or a close-out with numbers
 
 **Tasks:**
-- [ ] Gate check on Step-1's boot + round-trip splits
-- [ ] Implement the winning trim(s); re-measure
+- [ ] Gate check on Step-1's splits; implement the winning trim(s); re-measure
 
 **Tests:**
-- [ ] Suites green; replay request semantics preserved (HMR remount re-replay still works)
+- [ ] Suites green; HMR remount re-replay semantics preserved
 
 **Checkpoint:**
-- [ ] Recorded first-frame latency drop, or the step closed with numbers
+- [ ] Recorded first-frame latency drop, or close-out with numbers
 
 ---
 
-#### Step 9: App-test latency budget {#step-9}
+#### Step 10: App-test budgets {#step-10}
 
-**Depends on:** #step-2, #step-4
+**Depends on:** #step-2, #step-3, #step-4, #step-5
 
-**Commit:** `app-test: resumed medium session renders within the latency budget`
+**Commit:** `app-test: transcript latency, parse-once, and whale budgets`
 
-**References:** Spec S01, Spec S02, Risk R04, (#success-criteria, #test-non-goals)
+**References:** Spec S02, Spec S03, Risk R03, Risk R06, (#success-criteria, #test-non-goals)
 
 **Artifacts:**
-- App-test seeding a medium TUI-shaped fixture (≈50 turns / 500KB — generator shared with at0181's builder), resuming it, asserting: full transcript rendered under the 2s hard ceiling; telemetry splits (translate ms, ingest commits ≤5) within budget; whale leg asserting first rows paint before `replay_complete`
-- The 750ms dev-machine number recorded in the checkpoint run
+- App-test(s) seeding fixtures via at0181's builder, asserting: medium resume
+  under the 2s ceiling with internal splits in budget (commits ≤5, parse-once
+  counters clean); parse-once across resume → live turn → tab-switch round
+  trip; whale first rows before `replay_complete` + smooth-scroll cache-hit
+  leg; selection placed in the transcript survives the visibility machinery
+  ([L23] leg)
+- The 750ms dev-machine number recorded in the ledger
 
 **Tasks:**
-- [ ] Fixture generator; resume flow per at0181's proven path
-- [ ] Read the perf telemetry back out of the page (TugDevPanel store) for the split assertions
+- [ ] Fixture generators (medium + whale); resume flow per at0181's proven path
+- [ ] Read counters back out of the page (TugDevPanel store) for split assertions
 
 **Tests:**
 - [ ] The app-test itself, ending with the greppable `VERDICT: PASS|FAIL` line
 
 **Checkpoint:**
-- [ ] `just app-test <file>` → `VERDICT: PASS`, with the dev-machine wall time noted in the ledger
+- [ ] `just app-test <file>` → `VERDICT: PASS`, dev-machine wall time noted in the ledger
 
 ---
 
-#### Step 10: Integration checkpoint {#step-10}
+#### Step 11: Integration checkpoint {#step-11}
 
-**Depends on:** #step-2, #step-4, #step-9
+**Depends on:** #step-10
 
 **Commit:** `N/A (verification only)`
 
-**References:** [P01]–[P06], (#success-criteria, #exit-criteria)
+**References:** [P01]–[P09], (#success-criteria, #exit-criteria)
 
 **Tasks:**
-- [ ] Verify the full surface together, including gated steps' close-out rationales; confirm the legacy per-frame fallback still passes the replay suites
+- [ ] Verify the full surface together, including every gated step's close-out rationale; confirm replay suites green and intercepts intact
 
 **Tests:**
 - [ ] Full suites green
@@ -737,40 +887,43 @@ surface.
 - [ ] `cd tugrust && cargo nextest run`
 - [ ] `cd tugdeck && bun test && bunx tsc --noEmit`
 - [ ] `cd tugcode && bun test`
-- [ ] `just app-test <latency test>` → `VERDICT: PASS`
+- [ ] `just app-test <budget test>` → `VERDICT: PASS`
 
 ---
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Resume replay measured end to end and restructured from
-per-message streaming to batched bulk delivery — medium sessions render in a few
-hundred milliseconds, whales stream gracefully, and the cache/pre-warm machinery
-exists exactly where the measurements justify it.
+**Deliverable:** A transcript pipeline that is fast by architecture: replay
+folds to a handful of commits, finalized rows render exactly once ever,
+off-screen rows cost nothing to keep and are pre-warmed before the user reaches
+them — with every piece of heavier machinery (windowing, wire batching, replay
+cache) either landed on measured evidence or closed out with the numbers that
+made it unnecessary.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Per-resume stage waterfall visible in TugDevPanel (Spec S02)
-- [ ] Medium fixture: ≤5 deck commits and the app-test budget green (#step-9)
-- [ ] Whale fixture: first rows before translation completes; no `REPLAY_HARD_TIMEOUT_MS` trips
-- [ ] Replayed-frame intercepts (telemetry inline, metadata merge) pinned green under batching
-- [ ] Every gated step either landed or closed in the ledger with measured rationale
-- [ ] Legacy per-frame fallback still fully green (rollback lever intact)
+- [ ] Per-resume waterfall + live-turn counters visible in TugDevPanel (Spec S02)
+- [ ] Medium fixture: ≤5 commits, parse-once counters clean, app-test budget green
+- [ ] Incremental path: live appends on a long transcript re-render only the tail (counter-asserted)
+- [ ] Whale: first rows before translation completes; warm-cache scrolling; no timeout trips
+- [ ] [L23] leg green: selection/focus/scroll survive visibility machinery
+- [ ] Immutability and render-shape audit tables recorded in the plan; every gated step landed or closed with numbers
+- [ ] No rAF introduced anywhere by this plan (grep-verifiable)
 
 **Acceptance tests:**
 - [ ] `cargo nextest run` green with `-D warnings`
 - [ ] `bun test` (tugdeck, tugcode) green
-- [ ] Latency app-test `VERDICT: PASS`
+- [ ] Budget app-test `VERDICT: PASS`
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Rust port of the translator — only if the [P05] trigger fires
-- [ ] Replay-cache reuse for the rewind sheet's transcript preview
-- [ ] Extending the perf waterfall to live-turn streaming metrics
+- [ ] Render-once cache reuse for the rewind sheet's transcript preview
+- [ ] Cross-session parse-cache persistence (would require revisiting the no-client-persistence constraint)
 
 | Checkpoint | Verification |
 |------------|--------------|
 | Rust suites | `cd tugrust && cargo nextest run` |
 | Frontend suites | `cd tugdeck && bun test && bunx tsc --noEmit` |
 | Bridge suite | `cd tugcode && bun test` |
-| End to end | `just app-test` latency test → `VERDICT: PASS` |
+| End to end | `just app-test` budget test → `VERDICT: PASS` |
