@@ -58,7 +58,6 @@ import {
   clearCachedParses,
   invalidateCachedParsesByPrefix,
 } from "./markdown/parse-cache";
-import { WarmQueue } from "./markdown/warm-queue";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import type { CodeSessionEvent } from "./code-session-store/events";
 import type { Effect } from "./code-session-store/effects";
@@ -359,15 +358,6 @@ export class CodeSessionStore {
    */
   private _foldPending = 0;
 
-  /**
-   * Speculative parse warmer ([P08]-style cooperative queue). Fed by
-   * replay-window streaming writes so the window-close mount render
-   * finds every row's markdown already parsed; writes only to the
-   * render-once cache (no DOM, no React, no notifies). Constructed
-   * lazily on first use, cancelled at dispose.
-   */
-  private _warmQueue: WarmQueue | null = null;
-
   constructor(options: CodeSessionStoreOptions) {
     this.conn = options.conn;
     this.lifecycle = options.lifecycle;
@@ -625,6 +615,7 @@ export class CodeSessionStore {
       lastContextBreakdown: this.state.lastContextBreakdown,
       lastError: this.state.lastError,
       lastReplayResult: this.state.lastReplayResult,
+      replayEverCompleted: this.state.replayEverCompleted,
       replayPreflightActive: this.state.replayPreflightActive,
       replaySoftBudgetElapsed: this.state.replaySoftBudgetElapsed,
       replayTimeoutDwellActive: this.state.replayTimeoutDwellActive,
@@ -1128,9 +1119,7 @@ export class CodeSessionStore {
     // The render-once parse cache is scoped to the streamingDocument
     // and would be GC'd with it; the explicit clear keeps the
     // session-scoped lifetime contract exact rather than
-    // GC-eventual. The warm queue dies with the session too.
-    this._warmQueue?.cancel();
-    this._warmQueue = null;
+    // GC-eventual.
     clearCachedParses(this.streamingDocument);
     this._cachedSnapshot = null;
   }
@@ -1569,22 +1558,6 @@ export class CodeSessionStore {
           // so streaming subscriptions don't cross-pollinate.
           const path = `turn.${effect.turnKey}.message.${effect.messageKey}.${effect.channel}`;
           this.streamingDocument.set(path, effect.value, STREAM_SOURCE_TAG);
-          // Replay-window speculative warm: rows reduced inside the
-          // fold haven't mounted yet (snapshot pinned), so their
-          // markdown can parse in cooperative background slices and
-          // the window-close mount render becomes a pure cache hit.
-          // Text channels only — tool channels don't flow through
-          // `TugMarkdownBlock`. The lazy read warms the path's FINAL
-          // value at drain time.
-          if (this.state.phase === "replaying" && effect.channel === "text") {
-            if (this._warmQueue === null) {
-              this._warmQueue = new WarmQueue(this.streamingDocument);
-            }
-            this._warmQueue.enqueue(path, () => {
-              const v = this.streamingDocument.get(path);
-              return typeof v === "string" ? v : null;
-            });
-          }
           break;
         }
         case "clear-inflight":

@@ -88,6 +88,7 @@ import {
   GalleryBashToolBlock,
   GalleryBashMountInSavedState,
 } from "./gallery-bash-tool-block";
+import { GalleryCollapsedHistory } from "./gallery-collapsed-history";
 import { GallerySkillToolBlock } from "./gallery-skill-tool-block";
 import { GalleryMonitorToolBlock } from "./gallery-monitor-tool-block";
 import { GalleryWorktreeToolBlock } from "./gallery-worktree-tool-block";
@@ -684,6 +685,23 @@ export function registerGalleryCards(): void {
     contentFactory: (_cardId) => <GalleryBashMountInSavedState />,
     defaultMeta: {
       title: "BashToolBlock — Mount-in-saved-state",
+      icon: "Terminal",
+      closable: true,
+    },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // History-collapsed tool blocks — replayed history mounts
+  // header-only; the body materializes on expand. Collapsed +
+  // expanded readings across representative tool families.
+  registerCard({
+    componentId: "gallery-collapsed-history",
+    contentFactory: (_cardId) => <GalleryCollapsedHistory />,
+    defaultMeta: {
+      title: "Tool Blocks — Collapsed History",
       icon: "Terminal",
       closable: true,
     },

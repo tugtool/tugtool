@@ -133,6 +133,7 @@ import {
   getRestoreStartedAt,
   clearRestoreStartedAt,
   restorePassGate,
+  type ResumeDisplayMetadata,
 } from "@/lib/dev-session-restore";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
@@ -606,28 +607,26 @@ export function DevCardContent({
 // ---------------------------------------------------------------------------
 
 /**
- * Routes between `DevCardBody` and `DevRestoring`. The body renders
- * once the card is genuinely ready; until then the single
- * `DevRestoring` placeholder holds.
- *
- * Two restore windows route to the placeholder:
+ * Routes between `DevCardBody` and `DevRestoring`. Only ONE window
+ * routes to the placeholder now:
  *
  *   - **transport-restoring** — `transportState === "restoring"`
  *     ([D01]), between `transport_open` and `transport_settled`. A
  *     hard-stop with Cancel; the wire is being re-asserted.
- *   - **cold restore** — on a relaunch, a resume-mode card walks
- *     replay preflight → `phase === "replaying"` → `replay_complete`
- *     before its body has ever mounted. `deriveColdRestoreActive`
- *     is true across that window; the body is held unmounted so it
- *     mounts exactly once, against a fully reconstructed transcript,
- *     and reveals in a single paint.
  *
- * The cold-restore branch is gated on a one-shot `revealed` latch:
- * once the body has mounted, a *later* `phase === "replaying"` (a
- * mid-session transport reconnect) must NOT route back to the
- * placeholder — that path stays on [DT10]'s in-body transcript-paint
- * gate, body mounted. The latch flips the first render the cold
- * restore is no longer active and never flips back.
+ * The cold-restore replay window — preflight → `phase === "replaying"`
+ * → `replay_complete` — mounts the BODY instead (progressive reveal,
+ * [P03] of the resume-performance plan): under windowed mounting the
+ * transcript paints progressively as fold flushes commit, anchored at
+ * the live edge by follow-bottom, with the `DevReplayProgress` strip
+ * as the always-on affordance. The previous all-or-nothing reveal
+ * (body held unmounted until `replay_complete`, then one giant mount
+ * commit) was the measured blank-window mechanism on every corpus
+ * class — see the plan's baseline waterfalls.
+ *
+ * `deriveColdRestoreActive` is still read here, but only to settle the
+ * restore bookkeeping (drop the restore-start stamp + resume display
+ * metadata once the window closes).
  *
  * Why a wrapper rather than an early return inside `DevCardBody`:
  * `DevCardBody` calls many hooks after the snapshot read; an early
@@ -668,25 +667,31 @@ function DevCardServicesGate({
     ),
   );
 
-  // One-shot reveal latch — see the component docstring. The cold
-  // restore is over the moment `deriveColdRestoreActive` is false;
-  // from then on the body owns the card for this services instance.
-  const [revealed, setRevealed] = useState(false);
+  // Restore-settled bookkeeping. The body now mounts THROUGH the cold
+  // restore (deferred-content reveal: the transcript host holds its
+  // list unmounted while the replay progress strip carries the
+  // window), so there is no reveal latch holding it back anymore.
+  // What remains is pure cleanup: on the active → settled transition,
+  // drop the restore-start stamp and the resume display metadata so a
+  // much-later reconnect can't read stale values. A ref records the
+  // transition edge — nothing renders from it, so this is local
+  // bookkeeping ([L24] local data), not external state mirrored into
+  // React ([L02] would forbid that).
+  const sawColdRestoreRef = useRef(false);
   useEffect(() => {
-    if (!coldRestoreActive && !revealed) {
-      setRevealed(true);
-      // The restore is done — drop the restore-start stamp so a much-
-      // later reconnect can't read a stale "began at" and flash the
-      // placeholder panel open immediately.
+    if (coldRestoreActive) {
+      sawColdRestoreRef.current = true;
+    } else if (sawColdRestoreRef.current) {
+      sawColdRestoreRef.current = false;
       clearRestoreStartedAt(cardId);
     }
-  }, [coldRestoreActive, revealed, cardId]);
+  }, [coldRestoreActive, cardId]);
 
   // Transport-restoring is a hard-stop backdrop with Cancel; it
   // applies whether or not the body has revealed before (a reconnect
-  // re-asserts the wire). The cold-restore branch applies only before
-  // the first reveal.
-  if (transportState === "restoring" || (!revealed && coldRestoreActive)) {
+  // re-asserts the wire). The cold-restore replay window deliberately
+  // does NOT route here — the body owns it (progressive reveal).
+  if (transportState === "restoring") {
     return (
       <DevRestoring
         variant="binding"
@@ -953,7 +958,7 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
       content: (close) => (
         <DevProjectPickerForm
           notice={noticeRef.current}
-          onOpen={(projectDir, sessionMode, sessionId) => {
+          onOpen={(projectDir, sessionMode, sessionId, display) => {
             const connection = getConnection();
             if (!connection) {
               console.warn("DevProjectPicker: connection unavailable");
@@ -986,7 +991,7 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
                 // `spawn_session_ok` never arrives: the sheet has
                 // already dismissed with `result: "open"` and the
                 // picker's `shownRef` guard blocks a re-present.
-                fireRestore(cardId, sessionId, projectDir, connection);
+                fireRestore(cardId, sessionId, projectDir, connection, display);
               } else {
                 sendSpawnSession(
                   connection,
@@ -1157,6 +1162,12 @@ interface DevProjectPickerFormProps {
     projectDir: string,
     sessionMode: CardSessionMode,
     sessionId: string,
+    /**
+     * Resume display metadata from the selected ledger row (Spec S03
+     * of the resume-performance plan) — what the replay progress
+     * affordance can say from t=0. `undefined` for new-mode opens.
+     */
+    display?: ResumeDisplayMetadata,
   ) => void;
   onCancel: () => void;
   /**
@@ -1606,6 +1617,7 @@ function DevProjectPickerForm({
       let mode: CardSessionMode;
       let sessionId: string;
       let resumeCandidateId: string | null = null;
+      let display: ResumeDisplayMetadata | undefined;
 
       if (effectiveSelection?.kind === "session-resume") {
         resumeCandidateId = effectiveSelection.sessionId;
@@ -1615,6 +1627,10 @@ function DevProjectPickerForm({
         if (row !== undefined && row.state !== "live") {
           mode = "resume";
           sessionId = row.session_id;
+          display = {
+            title: row.name ?? row.last_user_prompt ?? null,
+            turnCount: row.turn_count,
+          };
         } else {
           mode = "new";
           sessionId = crypto.randomUUID();
@@ -1630,7 +1646,7 @@ function DevProjectPickerForm({
         session_id: sessionId,
         resume_candidate_id: resumeCandidateId,
       });
-      onOpen(trimmed, mode, sessionId);
+      onOpen(trimmed, mode, sessionId, display);
     },
     [onOpen, ledgerRows],
   );
@@ -2230,16 +2246,25 @@ export function DevCardBody({
   const inlineDialogPending =
     Boolean(codeSnap.pendingApproval) || Boolean(codeSnap.pendingQuestion);
 
-  // When the dialog resolves, return focus to the prompt — the card's single
-  // focus destination, which reactivates the instant `deactivated` clears.
-  // Without this the caret would not come back until the user clicked.
-  const prevInlineDialogPendingRef = useRef(false);
+  // The resume replay window deactivates the prompt the same way — a
+  // session mid-reconstruction can't accept input, so no blinking
+  // caret until the transcript settles. Same predicate the transcript
+  // host's deferred-content hold reads.
+  const replayHoldActive =
+    codeSnap.phase === "replaying" || deriveColdRestoreActive(codeSnap);
+
+  // When the dialog resolves — or the replay window closes — return focus to
+  // the prompt: the card's single focus destination, which reactivates the
+  // instant `deactivated` clears. Without this the caret would not come back
+  // until the user clicked.
+  const entryStoodDown = inlineDialogPending || replayHoldActive;
+  const prevEntryStoodDownRef = useRef(false);
   useLayoutEffect(() => {
-    if (prevInlineDialogPendingRef.current && !inlineDialogPending) {
+    if (prevEntryStoodDownRef.current && !entryStoodDown) {
       entryDelegateRef.current?.focus();
     }
-    prevInlineDialogPendingRef.current = inlineDialogPending;
-  }, [inlineDialogPending]);
+    prevEntryStoodDownRef.current = entryStoodDown;
+  }, [entryStoodDown]);
 
   // `/rewind` ([#step-7-3]): when a conversation/both rewind is applied, rewind
   // the prompt history alongside the transcript so Cmd-Up/Down stops recalling
@@ -3390,6 +3415,7 @@ export function DevCardBody({
             </div>
             <DevTranscriptHost
               ref={transcriptRef}
+              cardId={cardId}
               codeSessionStore={codeSessionStore}
               sessionMetadataStore={sessionMetadataStore}
               responseStore={responseStore}
@@ -3507,12 +3533,13 @@ export function DevCardBody({
             <TugPromptEntry
               ref={entryDelegateRef}
               id={`${cardId}-entry`}
-              // The editor stands down (read-only + caret off + dimmed) both
-              // while an inline dialog owns the keyboard AND while cycling —
-              // the latter is the cycling-mode indicator ([P12] revised:
-              // reuse the deactivated path as the "blur"). It reactivates when
-              // cycling ends (the Connected → editor effect re-focuses it).
-              deactivated={inlineDialogPending || cycle.cycling}
+              // The editor stands down (read-only + caret off + dimmed) while
+              // an inline dialog owns the keyboard, while cycling (the
+              // cycling-mode indicator, [P12] revised: reuse the deactivated
+              // path as the "blur"), AND through a resume replay window (no
+              // caret while history reconstructs). It reactivates when the
+              // condition clears (the stood-down effect re-focuses it).
+              deactivated={entryStoodDown || cycle.cycling}
               submitFocusGroup={DEV_CYCLE_GROUP}
               submitFocusOrder={DEV_CYCLE_ORDER_SUBMIT}
               routeFocusGroup={DEV_CYCLE_GROUP}

@@ -53,9 +53,11 @@
 import "./tool-call-header.css";
 
 import React from "react";
+import { ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import {
   TOOL_CALL_PHASE_LABELS,
@@ -118,6 +120,14 @@ export interface ToolCallHeaderProps {
    */
   actions?: React.ReactNode;
   /**
+   * History-collapse disclosure ([P02] collapsed history). When set,
+   * a chevron toggle renders between the lifecycle dot and the name;
+   * the chrome withholds the body subtree while `collapsed`. Distinct
+   * from the actions-slot fold cue (which folds content INSIDE a
+   * mounted body): the disclosure controls whether the body exists.
+   */
+  disclosure?: { collapsed: boolean; onToggle: (next: boolean) => void };
+  /**
    * Callback receiving the actions-slot DOM node. The chrome captures it
    * and republishes it through `ChromeActionsTargetContext` so embedded
    * body kinds can `createPortal` their affordances into the header.
@@ -146,6 +156,7 @@ export const ToolCallHeader = React.forwardRef<
     caution,
     actions,
     actionsSlotRef,
+    disclosure,
     className,
   },
   ref,
@@ -182,6 +193,24 @@ export const ToolCallHeader = React.forwardRef<
           aria-label={TOOL_CALL_PHASE_LABELS[phase]}
           className="tool-call-header-dot"
         />
+        {disclosure !== undefined ? (
+          <span
+            className="tool-call-header-disclosure"
+            data-slot="tool-call-header-disclosure"
+            data-collapsed={disclosure.collapsed ? "true" : undefined}
+          >
+            <TugIconButton
+              icon={<ChevronRight size={13} strokeWidth={2.5} />}
+              aria-label={
+                disclosure.collapsed
+                  ? `Expand ${toolName} tool call`
+                  : `Collapse ${toolName} tool call`
+              }
+              size="sm"
+              onClick={() => disclosure.onToggle(!disclosure.collapsed)}
+            />
+          </span>
+        ) : null}
         <span className="tool-call-header-name">{toolName}</span>
         {meta !== undefined ? (
           <span className="tool-call-header-meta" data-slot="tool-call-header-meta">

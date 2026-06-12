@@ -533,6 +533,15 @@ export interface CodeSessionState {
    */
   lastReplayResult: LastReplayResult | null;
   /**
+   * MONOTONIC: has any replay window ever closed on this store?
+   * Unlike `lastReplayResult` (cleared when the next window opens),
+   * this never resets — it distinguishes the INITIAL resume replay
+   * (transcript not yet reconstructed; the deferred-content hold keeps
+   * the list unmounted) from a later reconnect catch-up window (list
+   * mounted with content the user is looking at — never unmount it).
+   */
+  replayEverCompleted: boolean;
+  /**
    * Replay-clock derived flags. Exposed through the snapshot identically-
    * named (`replayPreflightActive`, `replaySoftBudgetElapsed`,
    * `replayTimeoutDwellActive`); see `types.ts` for semantics. Driven
@@ -761,6 +770,7 @@ export function createInitialState(
     lastContextBreakdown: null,
     committedMsgIds: new Set(),
     lastReplayResult: null,
+    replayEverCompleted: false,
     replayPreflightActive: false,
     replaySoftBudgetElapsed: false,
     replayTimeoutDwellActive: false,
@@ -2091,6 +2101,9 @@ function buildTurnEntry(
   return {
     msgId,
     turnKey,
+    // Replay-window stamp: a turn committing while the replay window
+    // is open is reconstructed history, not a watched live turn.
+    ...(state.phase === "replaying" ? { replayed: true } : {}),
     // The `/rewind` anchor captured during the turn ([#step-7-1]); `undefined`
     // for turns whose anchor never arrived (older sessions, wake turns).
     ...(state.pendingTurn?.promptUuid !== undefined
@@ -3747,6 +3760,7 @@ function handleReplayComplete(
           pendingQuestion: state.pendingQuestion,
           awaitingApprovalSince: state.awaitingApprovalSince ?? Date.now(),
           lastReplayResult,
+          replayEverCompleted: true,
           replayPreflightActive: false,
           replaySoftBudgetElapsed: false,
           replayTimeoutDwellActive: isTimeout,
@@ -3766,6 +3780,7 @@ function handleReplayComplete(
         pendingQuestion: null,
         prevPhase: null,
         lastReplayResult,
+        replayEverCompleted: true,
         replayPreflightActive: false,
         replaySoftBudgetElapsed: false,
         replayTimeoutDwellActive: isTimeout,
@@ -3787,6 +3802,7 @@ function handleReplayComplete(
       prevPhase: null,
       pendingTurn: null,
       lastReplayResult,
+      replayEverCompleted: true,
       replayPreflightActive: false,
       replaySoftBudgetElapsed: false,
       replayTimeoutDwellActive: isTimeout,

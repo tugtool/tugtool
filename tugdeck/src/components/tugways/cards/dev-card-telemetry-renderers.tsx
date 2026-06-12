@@ -63,6 +63,7 @@ import {
   turnWindowTokens,
 } from "@/lib/code-session-store/end-state";
 import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
+import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import {
   DEFAULT_CONTEXT_MAX_TOKENS,
   resolveModelContextMax,
@@ -623,6 +624,17 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
+  // Replay-window inerting: while a resume replay is reconstructing
+  // history, every value-oriented cell would otherwise flip wildly as
+  // replayed turns fold through the telemetry derivations — readings
+  // of HISTORY, not of anything happening now. The value cells render
+  // an inert em-dash for the duration (and the row's
+  // `data-replay-inert` attribute dims them + drops pointer events via
+  // CSS, [L06]); only STATE stays live, reading "Replaying".
+  const replayInert =
+    snap.phase === "replaying" || deriveColdRestoreActive(snap);
+  const inertValue = (text: string): string => (replayInert ? "—" : text);
+
   const indicatorState: DevSessionPhaseInput = {
     phase: snap.phase,
     transportState: snap.transportState,
@@ -750,6 +762,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
     <div
       className="dev-telemetry-status-row"
       data-slot="dev-telemetry-status-row"
+      data-replay-inert={replayInert ? "true" : undefined}
     >
       <TugStatusCell
         priority="state"
@@ -784,7 +797,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
         focusPolicy={focusPolicy}
       >
         <span className="dev-telemetry-status-value">
-          {formatTimeMinutesSeconds(perTurnActiveMs)}
+          {inertValue(formatTimeMinutesSeconds(perTurnActiveMs))}
         </span>
       </TugStatusCell>
       <TugStatusCell
@@ -796,7 +809,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
         focusPolicy={focusPolicy}
       >
         <span className="dev-telemetry-status-value">
-          {formatTokensCaps(tokensCellValue)}
+          {inertValue(formatTokensCaps(tokensCellValue))}
         </span>
       </TugStatusCell>
       <TugStatusCell
@@ -813,7 +826,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
           data-context-threshold={contextThreshold}
         >
           <span className="dev-telemetry-status-context-numerator">
-            {formatTokensCaps(contextTotal)}
+            {inertValue(formatTokensCaps(contextTotal))}
           </span>
           <span className="dev-telemetry-status-context-denominator">
             {`/ ${formatTokensCaps(contextMax)}`}
@@ -829,23 +842,27 @@ export const DevTelemetryStatusRow = React.forwardRef<
         focusOrder={cellOrder(4)}
         focusPolicy={focusPolicy}
       >
-        <TugProgressIndicator
-          variant="pulsing-dot"
-          glyphPosition="both"
-          size={10}
-          state={tasksIndicatorState}
-          label={tasksLabelText}
-          labelAlign="center"
-          phaseLabels={{
-            none: "None",
-            max: hasTasks ? `${taskCounts.total}/${taskCounts.total}` : "0/0",
-          }}
-          aria-label={
-            hasTasks
-              ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
-              : "No tasks"
-          }
-        />
+        {replayInert ? (
+          <span className="dev-telemetry-status-value">—</span>
+        ) : (
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            glyphPosition="both"
+            size={10}
+            state={tasksIndicatorState}
+            label={tasksLabelText}
+            labelAlign="center"
+            phaseLabels={{
+              none: "None",
+              max: hasTasks ? `${taskCounts.total}/${taskCounts.total}` : "0/0",
+            }}
+            aria-label={
+              hasTasks
+                ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
+                : "No tasks"
+            }
+          />
+        )}
       </TugStatusCell>
       <TugStatusCell
         priority="jobs"
@@ -856,23 +873,27 @@ export const DevTelemetryStatusRow = React.forwardRef<
         focusOrder={cellOrder(5)}
         focusPolicy={focusPolicy}
       >
-        <TugProgressIndicator
-          variant="pulsing-dot"
-          glyphPosition="both"
-          size={10}
-          state={jobsIndicatorState}
-          label={jobsLabelText}
-          labelAlign="center"
-          phaseLabels={{
-            none: "None",
-            max: hasJobs ? `${jobCounts.total}/${jobCounts.total}` : "0/0",
-          }}
-          aria-label={
-            hasJobs
-              ? `${jobCounts.finished} of ${jobCounts.total} jobs finished`
-              : "No background jobs"
-          }
-        />
+        {replayInert ? (
+          <span className="dev-telemetry-status-value">—</span>
+        ) : (
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            glyphPosition="both"
+            size={10}
+            state={jobsIndicatorState}
+            label={jobsLabelText}
+            labelAlign="center"
+            phaseLabels={{
+              none: "None",
+              max: hasJobs ? `${jobCounts.total}/${jobCounts.total}` : "0/0",
+            }}
+            aria-label={
+              hasJobs
+                ? `${jobCounts.finished} of ${jobCounts.total} jobs finished`
+                : "No background jobs"
+            }
+          />
+        )}
       </TugStatusCell>
     </div>
   );

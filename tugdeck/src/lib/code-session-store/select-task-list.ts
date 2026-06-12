@@ -167,10 +167,14 @@ const EMPTY_STATE = EMPTY_TASK_LIST_STATE;
  * order; concatenation is safe because the in-flight turn carries
  * `tool_use_id`s disjoint from every committed turn.
  *
- * The reducer is pure and order-preserving — it does not sort,
- * dedupe, or rebalance — so a future windowing optimisation (e.g.
- * checkpoint + replay-since) substitutes cleanly. Returns a frozen
- * empty {@link TaskListState} when no Task* events are present.
+ * The reducer is order-preserving within a batch — it does not sort,
+ * dedupe, or rebalance. Across batches it applies ONE boundary rule:
+ * a `TaskCreate` arriving over a fully-completed list supersedes that
+ * list (see the inline note), so the assembled state is always the
+ * CURRENT batch rather than the session's accumulated history. A
+ * `TaskUpdate` whose target was superseded is skipped by the existing
+ * find-miss path. Returns a frozen empty {@link TaskListState} when
+ * no Task* events are present.
  */
 export function reduceTaskListState(
   toolCalls: Iterable<ToolUseMessage>,
@@ -193,6 +197,16 @@ export function reduceTaskListState(
         status: "pending",
       };
       if (tasks === null) tasks = [];
+      // Batch boundary: a `TaskCreate` arriving over a non-empty,
+      // FULLY-COMPLETED list starts a fresh batch — the finished work
+      // is superseded, not accumulated. Without this, a long session
+      // (and a fortiori a replayed one, which folds the entire
+      // history in one pass) buffers every completed batch ever and
+      // the popup overflows with struck-through rows. An unfinished
+      // list keeps accepting creates — additions to the working set.
+      if (tasks.length > 0 && tasks.every((t) => t.status === "completed")) {
+        tasks = [];
+      }
       tasks.push(item);
     } else if (lower === "taskupdate") {
       const input = narrowTaskUpdateInput(call.input);

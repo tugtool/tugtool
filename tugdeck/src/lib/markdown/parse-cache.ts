@@ -84,12 +84,10 @@ export function putCachedParse(
 
 /**
  * The one parse chokepoint for transcript row content: cache lookup,
- * then parse-and-populate on miss. Every consumer — the render path
- * (`TugMarkdownBlock`) and the speculative warm queue — goes through
- * here, so the parse options are identical by construction and the
- * "user-triggered work takes priority" rule is automatic: whichever
- * caller arrives first parses; the other finds the entry warm. The
- * parse-economy counters record one parse or one hit per call.
+ * then parse-and-populate on miss. Every consumer goes through here,
+ * so the parse options are identical by construction; the first call
+ * for an identity parses and every later call finds the entry warm.
+ * The parse-economy counters record one parse or one hit per call.
  */
 export function ensureParsed(
   scope: object,

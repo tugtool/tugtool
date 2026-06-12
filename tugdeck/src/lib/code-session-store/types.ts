@@ -284,6 +284,14 @@ export interface TurnEntry {
   turnKey: string;
   msgId: string;
   /**
+   * True when this turn committed during a replay window (`phase ===
+   * "replaying"` at `turn_complete`) — i.e. it is reconstructed
+   * history, not a turn the user watched stream. Renderers use it to
+   * pick the collapsed-history presentation for tool blocks; live
+   * turns leave it unset.
+   */
+  replayed?: boolean;
+  /**
    * Claude's user-prompt-record `uuid` for this turn — the `/rewind`
    * anchor ([#step-7-1]/[#step-7-3]). Captured from the live `prompt_anchor`
    * frame (steady-state) or `add_user_message.promptUuid` (replay /
@@ -865,6 +873,16 @@ export interface CodeSessionSnapshot {
    * recent window's outcome rather than accumulating history.
    */
   lastReplayResult: LastReplayResult | null;
+
+  /**
+   * MONOTONIC: has any replay window ever closed on this store?
+   * Unlike `lastReplayResult` (cleared when the next window opens),
+   * this never resets. Distinguishes the INITIAL resume replay
+   * (transcript not yet reconstructed) from a later reconnect
+   * catch-up window — consumers like the transcript host's
+   * deferred-content hold key off it.
+   */
+  replayEverCompleted: boolean;
 
   /**
    * True from the moment a resume binding is acknowledged via

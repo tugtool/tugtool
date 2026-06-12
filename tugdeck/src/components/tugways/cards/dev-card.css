@@ -348,16 +348,17 @@
   font-size: 14px;
 }
 
-/* [DT10] transcript-replay paint gate. While the card's lifecycle
-   state is REPLAYING — the JSONL replay window bracketed by
-   `replay_started` / `replay_complete` — the reducer reconstructs the
-   committed turns one `turn_complete` at a time. Painting each
-   intermediate state makes the transcript visibly accumulate while
-   the viewport chases the live edge: the restore FOUC. `DevTranscript
-   Host` sets `data-replaying` for the duration of that window; this
-   rule holds the pane's paint dark until it clears, so the transcript
-   reveals exactly once — fully reconstructed, at the restored scroll
-   anchor.
+/* [DT10] transcript-replay paint gate — NARROWED to the inline
+   (non-windowed) class. `DevTranscriptHost` sets `data-replaying`
+   only when a replay window is open AND the transcript is below the
+   windowed-mounting thresholds: there the whole window is
+   sub-perceptual and a single reveal avoids the accumulation FOUC.
+   Windowed transcripts paint PROGRESSIVELY at fold flushes instead
+   (the resume-performance progressive reveal), so the attribute never
+   appears on them.
+
+   The rule hides the LIST, not the host root, so the replay progress
+   strip above it stays visible through the gated window.
 
    `visibility: hidden`, not `display: none`: the subtree keeps its
    layout box, so the inner list view's `ResizeObserver` still measures
@@ -366,7 +367,7 @@
    transcript height. The subtree is never unmounted ([L06] — paint is
    gated via a data-attr + CSS, never by conditional rendering; [L26] —
    the host keeps its mount identity across the window). */
-.dev-card-transcript[data-replaying] {
+.dev-card-transcript[data-replaying] .tug-list-view {
   visibility: hidden;
 }
 

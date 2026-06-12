@@ -56,6 +56,7 @@ function baseSnap(
     lastContextBreakdown: null,
     lastError: null,
     lastReplayResult: null,
+    replayEverCompleted: false,
     replayPreflightActive: false,
     replaySoftBudgetElapsed: false,
     replayTimeoutDwellActive: false,

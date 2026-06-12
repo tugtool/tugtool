@@ -124,6 +124,27 @@ body {
   color: var(--tugx-block-text-color);
 }
 
+/* ---- History-collapse disclosure ([P02]) ----
+ * The chevron sits between the dot and the name. Rotation is pure CSS
+ * off the `data-collapsed` attribute ([L06]); collapsed points right
+ * (closed), expanded rotates down. */
+
+.tool-call-header-disclosure {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--tugx-block-text-color-muted);
+}
+
+.tool-call-header-disclosure svg {
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.tool-call-header-disclosure[data-collapsed="true"] svg {
+  transform: rotate(0deg);
+}
+
 /* ---- Trailing meta cluster (counts / diff-stats / truncated) ---- */
 
 .tool-call-header-meta {

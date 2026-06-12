@@ -212,6 +212,38 @@ export function getRestoreStartedAt(cardId: string): number | undefined {
 /** Drop the restore-start stamp once the card body has revealed. */
 export function clearRestoreStartedAt(cardId: string): void {
   restoreStartedAt.delete(cardId);
+  resumeDisplayMetadata.delete(cardId);
+}
+
+// ---------------------------------------------------------------------------
+// Resume display metadata — the t=0 progress facts
+// ---------------------------------------------------------------------------
+
+/**
+ * What the replay progress affordance can say about the session BEFORE
+ * any frame arrives ("Restoring <title> — … of 106 turns"). Both
+ * resume entry paths know it at fire time: the picker has the selected
+ * ledger row (name, prompt snippet, turn count); the cold-boot restore
+ * pass has the `list_card_bindings` row (turn count). Same
+ * module-level lifecycle as the restore-start stamp above — stamped by
+ * `fireRestore`, read by the in-body progress strip across the whole
+ * replay window (which outlives the `devRestoreRegistry` entry),
+ * cleared with the stamp when the restore settles.
+ */
+export interface ResumeDisplayMetadata {
+  /** Session display title (name or prompt snippet); null when unknown. */
+  readonly title: string | null;
+  /** Expected committed-turn total from the ledger; null when unknown. */
+  readonly turnCount: number | null;
+}
+
+const resumeDisplayMetadata = new Map<string, ResumeDisplayMetadata>();
+
+/** The in-flight resume's display metadata for `cardId`, if any. */
+export function getResumeDisplayMetadata(
+  cardId: string,
+): ResumeDisplayMetadata | undefined {
+  return resumeDisplayMetadata.get(cardId);
 }
 
 // ---------------------------------------------------------------------------
@@ -513,6 +545,7 @@ export function restoreDevSessions(
           binding.session_id,
           binding.project_dir,
           connection,
+          { title: null, turnCount: binding.turn_count },
         );
         resumedCount += 1;
       } else {
@@ -626,6 +659,7 @@ export function fireRestore(
   tugSessionId: string,
   projectDir: string,
   connection: TugConnection,
+  display?: ResumeDisplayMetadata,
 ): void {
   // If a previous restore was in flight (Retry after cancel/timeout),
   // drop the old timer before arming a new one.
@@ -634,6 +668,14 @@ export function fireRestore(
   // delay-gates its panel on this. Re-stamped on a Retry / reconnect
   // re-fire so the budget always runs from the live attempt.
   restoreStartedAt.set(cardId, Date.now());
+  // Stamp the progress facts so the in-body affordance is informative
+  // from its first paint, before any frame exists (Spec S03 of the
+  // resume-performance plan).
+  if (display !== undefined) {
+    resumeDisplayMetadata.set(cardId, display);
+  } else {
+    resumeDisplayMetadata.delete(cardId);
+  }
   sendSpawnSession(connection, cardId, tugSessionId, projectDir, "resume");
   devRestoreRegistry._register(
     cardId,

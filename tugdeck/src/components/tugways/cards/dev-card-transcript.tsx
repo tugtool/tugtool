@@ -105,9 +105,23 @@ import {
   dispatch as dispatchRenderInput,
   dispatchToolCallState,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+import {
+  ToolBlockExpansionContext,
+  ToolBlockHistoryCollapse,
+} from "@/components/tugways/cards/tool-blocks/collapse-context";
+import {
+  ToolBlockExpansionState,
+  type PersistedExpansionState,
+} from "@/components/tugways/cards/tool-blocks/expansion-state";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "@/components/tugways/use-component-state-preservation";
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
+import { DevReplayProgress } from "@/components/tugways/cards/dev-replay-progress";
+import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
@@ -649,6 +663,13 @@ interface CodeRowBodyProps {
    * Live only — a committed turn never has a pending dialog.
    */
   awaitingToolUseId?: string;
+  /**
+   * History-collapse ([P02]): true for replayed turns — every
+   * top-level tool block wraps in `ToolBlockHistoryCollapse`
+   * (default-collapsed, body materializes on expand). Live turns
+   * leave it unset and render exactly as before.
+   */
+  historyCollapsed?: boolean;
 }
 
 const CodeRowBody: React.FC<CodeRowBodyProps> = ({
@@ -657,6 +678,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   streamingStore,
   session,
   awaitingToolUseId,
+  historyCollapsed,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
   // `parentToolUseId` ([#step-17-5]). Subagent children render
@@ -742,7 +764,25 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       session,
       awaiting,
     );
-    elements.push(<Component key={message.messageKey} {...props} />);
+    // Replayed history mounts header-only ([P02]): the collapse
+    // provider owns the block's boolean (seeded from the card's
+    // expansion overrides) and the chrome withholds the body subtree
+    // while collapsed. The wrapped component's type and key are
+    // unchanged across collapse/expand AND across the live/historical
+    // split for a given turn (a turn's `replayed` flag never changes
+    // post-commit), so mount identity holds ([L26]).
+    elements.push(
+      historyCollapsed === true ? (
+        <ToolBlockHistoryCollapse
+          key={message.messageKey}
+          toolUseId={message.toolUseId}
+        >
+          <Component {...props} />
+        </ToolBlockHistoryCollapse>
+      ) : (
+        <Component key={message.messageKey} {...props} />
+      ),
+    );
   }
 
   return <>{elements}</>;
@@ -956,6 +996,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                   turnKey={turnKey}
                   streamingStore={streamingStore}
                   session={codeSessionStore}
+                  historyCollapsed={turn?.replayed === true}
                   awaitingToolUseId={
                     // Id-join the live pending dialog to its tool row so
                     // that row's lifecycle dot reads `awaiting` ([Q01]).
@@ -1072,6 +1113,11 @@ const WINDOWED_TRANSCRIPT_ROW_THRESHOLD = 1200;
 const WINDOWED_TRANSCRIPT_MESSAGE_THRESHOLD = 600;
 
 export interface DevTranscriptHostProps {
+  /**
+   * Owning card id — keys the replay progress strip's resume display
+   * metadata read (`getResumeDisplayMetadata`).
+   */
+  cardId: string;
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore: SessionMetadataStore;
   /**
@@ -1150,6 +1196,7 @@ export const DevTranscriptHost = forwardRef<
   DevTranscriptHostProps
 >(function DevTranscriptHost(
   {
+    cardId,
     codeSessionStore,
     sessionMetadataStore,
     responseStore,
@@ -1374,6 +1421,52 @@ export const DevTranscriptHost = forwardRef<
     return () => responseStore.unbind();
   }, [responseStore]);
 
+  // Deferred-content hold ([P03] as amended: progressive AFFORDANCE,
+  // deferred CONTENT). While the INITIAL resume replay window is open
+  // — preflight through the first `replay_complete` — the
+  // `TugListView` is not mounted at all: a live list subscriber would
+  // force a full windowed-list commit at every fold flush, and that
+  // render work runs on the same thread the ingest needs (measured:
+  // 255ms → 7.5s ingest on the 12MB motivating session when the list
+  // rode along). The `DevReplayProgress` strip above is the whole
+  // surface during the hold: informative from t=0, ticking at fold
+  // flushes — a one-component re-render instead of a list commit.
+  // Once the initial window closes the list mounts ONCE against the
+  // fully reconstructed transcript (a single bounded windowed commit)
+  // and never unmounts again: `replayEverCompleted` is MONOTONIC in
+  // the store, so a later reconnect catch-up window can never
+  // re-engage the hold — that case keeps the mounted list and rides
+  // the narrowed [DT10] visibility gate instead. The whole decision
+  // is store-derived through `useSyncExternalStore` ([L02]); no
+  // component state, no effect.
+  const listMounted = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(() => {
+      const s = codeSessionStore.getSnapshot();
+      return s.replayEverCompleted || !deriveColdRestoreActive(s);
+    }, [codeSessionStore]),
+  );
+
+  // History-collapse expansion overrides ([P02], Spec S02). ONE
+  // instance per card, owned HERE because the host never unmounts
+  // under windowed mounting — per-block [A9] keys could not survive a
+  // windowed unmount (capture harvests only mounted components), so
+  // the host persists the whole sparse override map under a single
+  // key and blocks read/write through it via context. Seeded once at
+  // mount from the saved value; captured on every [A9] save.
+  const savedExpansion = useSavedComponentState<PersistedExpansionState>(
+    "tool-block-expansion",
+  );
+  const [toolBlockExpansion] = useState<ToolBlockExpansionState>(() => {
+    const state = new ToolBlockExpansionState();
+    state.seed(savedExpansion);
+    return state;
+  });
+  useComponentStatePreservation<PersistedExpansionState | undefined>({
+    componentStatePreservationKey: "tool-block-expansion",
+    captureState: () => toolBlockExpansion.toPersisted(),
+  });
+
   // Inner `TugListView` handle — the parent reaches `scrollToBottom`
   // through the `DevTranscriptHandle` exposed below.
   const listViewRef = useRef<TugListViewHandle | null>(null);
@@ -1411,13 +1504,21 @@ export const DevTranscriptHost = forwardRef<
   }, []);
 
   return (
+    // [DT10], narrowed: the paint gate now applies only to the inline
+    // (non-windowed) class, where the replay window is sub-perceptual
+    // and a single reveal avoids accumulation FOUC. Windowed
+    // transcripts paint PROGRESSIVELY at fold flushes ([P03] of the
+    // resume-performance plan) — bounded commits, follow-bottom
+    // anchoring, with the DevReplayProgress strip as the always-on
+    // affordance above the list.
     <div
       ref={rootRef}
       className="dev-card-transcript"
       data-slot="dev-card-transcript"
       data-testid="dev-card-transcript"
-      data-replaying={isReplaying || undefined}
+      data-replaying={(isReplaying && !windowedTranscript) || undefined}
     >
+      <DevReplayProgress cardId={cardId} codeSessionStore={codeSessionStore} />
       {compactionSeed !== null ? (
         <div
           className="dev-card-transcript-compaction"
@@ -1429,18 +1530,27 @@ export const DevTranscriptHost = forwardRef<
           </span>
         </div>
       ) : null}
-      <TugListView
-        ref={listViewRef}
-        dataSource={dataSource}
-        delegate={delegate}
-        cellRenderers={cellRenderers}
-        scrollKey="dev-card-transcript"
-        followBottom
-        onFollowBottomChange={handleFollowBottomChange}
-        inline={!windowedTranscript}
-        pageByEntry
-      />
-      <DevJumpToBottomButton ref={jumpButtonRef} onClick={handleJumpToBottom} />
+      {listMounted ? (
+        <>
+          <ToolBlockExpansionContext.Provider value={toolBlockExpansion}>
+            <TugListView
+              ref={listViewRef}
+              dataSource={dataSource}
+              delegate={delegate}
+              cellRenderers={cellRenderers}
+              scrollKey="dev-card-transcript"
+              followBottom
+              onFollowBottomChange={handleFollowBottomChange}
+              inline={!windowedTranscript}
+              pageByEntry
+            />
+          </ToolBlockExpansionContext.Provider>
+          <DevJumpToBottomButton
+            ref={jumpButtonRef}
+            onClick={handleJumpToBottom}
+          />
+        </>
+      ) : null}
     </div>
   );
 });

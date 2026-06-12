@@ -227,6 +227,7 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
         await app.nativeType("hello");
         await expectEnabled(app, UNDO, true);
         const undoState = await app.menuItemState(UNDO);
+        if (!undoState.found) throw new Error("Undo menu item not found");
         expect(undoState.title, "Undo names the next step").toBe("Undo Typing");
         await expectEnabled(app, REDO, false);
 

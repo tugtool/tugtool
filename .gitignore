@@ -28,6 +28,10 @@ xcuserdata/
 # Test artifacts
 *.log
 
+# Real-session corpus (harvested locally; session content never reaches git)
+/tests/app-test/corpus/manifest.json
+/tests/app-test/corpus/snapshots/
+
 # project files
 git-commit-message.txt
 aside

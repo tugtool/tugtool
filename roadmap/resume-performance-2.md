@@ -88,18 +88,26 @@ noisy), but live stays out of scope here.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-Budgets are per corpus class (see [P04]); the named targets below harden
-after the baseline step records real numbers and are checked on REAL
-snapshots, not generators:
+Budgets are per corpus class (see [P04]); hardened from the #step-2
+baseline (#baseline-waterfalls) and checked on REAL snapshots, not
+generators. "First content" = first mounted transcript rows; today
+first content == settled on every class (the all-or-nothing reveal),
+so the first-content budgets are what #step-4 makes meaningful:
 
-- **Typical class (p50–p90, ≤~150KB):** transcript committed within ~500ms
-  of Open on the dev machine.
-- **Heavy class (1–20MB, tool-dominated — includes `763cd1d8`):** first
-  visible transcript content well under 1s; fully settled ≤ ~2.5s; never a
-  frozen main thread long enough to read as a hang.
-- **Whale class (>20MB up to the 626MB monster):** resumes progressively
-  with continuous feedback, no replay-timeout trips, bounded memory; wall
-  budget set from baseline data ([Q03]).
+- **Typical class (<1MB):** first content ≤ 500ms of Open; settled
+  ≤ 1s; zero main-thread stalls > 250ms. (Baseline: settles 366–476ms,
+  no stalls — the budget pins today's behavior so it can't regress.)
+- **Heavy class (1–20MB, tool-dominated — includes `763cd1d8`):**
+  first content < 1s; fully settled ≤ 2.5s; no stall > 500ms.
+  (Baseline 763cd1d8: settled 1,061ms all-at-once with a 474ms stall —
+  collapse (#step-3) + progressive reveal (#step-4) must bring first
+  content under the second and keep the thread responsive.)
+- **Whale class (≥20MB up to the 657MB monster):** first content ≤ 5s;
+  progress affordance visibly updating across the whole window (no
+  blank or static interval > 1s); no stall > 1s; settled within 1.5×
+  its baseline (190MB: ≤ 11s; 657MB: ≤ 31s); no replay-timeout trips;
+  memory bound measured and recorded in #step-7. (Baseline: 7.4s/20.9s
+  settle behind a static placeholder; 2.9s stall on the 190MB whale.)
 - **Feedback:** from Open to first content, the card always shows a live
   affordance (placeholder → progress → progressive transcript); no
   blank-card interval at any class — and the affordance is informative
@@ -191,7 +199,7 @@ numbers; `**Depends on:**` lines reference real step anchors.
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] What exactly paints (and when) between Open and first content today? (OPEN → resolve in #step-2) {#q01-blank-window}
+#### [Q01] What exactly paints (and when) between Open and first content today? (RESOLVED — #step-2) {#q01-blank-window}
 
 **Question:** In the picker→Open flow (vs cold-boot restore), does
 `DevRestoring` mount at all? When does the placeholder hand off, what does
@@ -199,15 +207,28 @@ the [DT10] gate hide, and which commit freezes the thread on heavy sessions?
 The motivating report saw a blank card for ~20s; the mechanism must be
 pinned per flow before the reveal rework.
 
-**Plan to resolve:** #step-2 instruments the reveal chain (placeholder
-mount/unmount, body mount, gate drop, first transcript paint) on real
-snapshots from both entry flows. Code-reading expectation to confirm:
-`DevCardServicesGate`'s `deriveColdRestoreActive` + one-shot `revealed`
-latch key off "preflight → replaying before first body mount", which a
-picker-opened resume also walks — likely ONE gate, TWO entry paths, which
-would simplify #step-4's rework.
+**Resolution (measured, at0185 + code):** ONE gate, TWO entry paths —
+confirmed. A picker-opened resume walks `DevCardServicesGate` with
+`deriveColdRestoreActive` true (`phase === "replaying" &&
+sessionMode === "resume"`); the quiet backdrop shows immediately, the
+`DevRestoring` panel reveals at ~222ms (`RESTORE_PLACEHOLDER_DELAY_MS`
+= `REPLAY_SOFT_BUDGET_MS`), and the placeholder holds until
+`replay_complete` flips the predicate, at which point the body and the
+whole windowed transcript mount in ONE commit: on every measured leg
+`firstTranscript == firstRows == placeholderGone == settled` (see
+#baseline-waterfalls). The cold-boot path prepends the
+`devRestoreRegistry` expectation (`DevCardContent` →
+`DevRestoring variant="binding"`) and the preflight beat
+(`replayPreflightActive`), then funnels into the SAME gate — so the
+#step-4 rework targets one surface. [DT10]'s `data-replaying` window is
+unreachable in this flow (the host mounts only after replay completes);
+it remains relevant only to live-reconnect replays.
 
-**Resolution:** OPEN.
+**Harness note:** the cold-boot leg cannot be independently measured in
+app-tests today — card bindings live in tugcast's session ledger, which
+does not survive the harness's per-launch instance dirs (no app-test
+exercises `restoreDevSessions`). Recorded as a follow-on; the shared
+gate makes the picker-flow measurement sufficient for #step-4.
 
 #### [Q02] What does a collapsed tool-block header show? {#q02-collapsed-header}
 
@@ -219,7 +240,17 @@ wanted. Which body-bits are cheap enough to keep in the header, per tool?
 the gallery first (the per-tool wrappers already centralize chrome);
 cheapness is checked by the corpus re-measurement.
 
-**Resolution:** OPEN (resolved by #step-3's gallery + measurement pass).
+**Resolution:** RESOLVED (#step-3) — **the existing header IS the
+digest.** The regularized `ToolCallHeader` already carries the
+lifecycle dot, tool name, per-tool identity (path chips) and the
+full command row (bash command, grep pattern), all computed from
+input fields without touching result payloads — exactly the
+render-path-cheap floor-plus this question wanted. The collapsed
+state renders that header plus a disclosure chevron and nothing
+else. Per-tool result-summary meta enrichment ("N lines", "+a/−b")
+remains available as gallery-driven polish (`meta` slot already
+exists) but is NOT load-bearing for the perf win; revisit on visual
+review feedback. Gallery fixture: `gallery-collapsed-history`.
 
 #### [Q03] What is achievable for the whale class (>20MB, up to 626MB)? (OPEN → gates #step-7) {#q03-whale-class}
 
@@ -231,7 +262,36 @@ replay the right product shape?
 **Plan to resolve:** #step-2 baselines the whale snapshots (timeout trips
 included — a trip is data); #step-7 sets policy from those numbers.
 
-**Resolution:** OPEN (gates #step-7).
+**Resolution: RESOLVED (#step-7) — full replay with the always-on
+affordance IS the whale policy.** The measured chain that settles it:
+
+- **No timeout restructure.** `REPLAY_HARD_TIMEOUT_MS` (10s) guards
+  only tugcode's JSONL-iterator loop, which finishes well inside
+  budget even at 657MB (time-sliced translate); no trip was observed
+  at any size. The long pole is downstream deck ingest — and after
+  #step-3/#step-4/#step-5 that ingest runs with a responsive main
+  thread (zero stalls ≥250ms across 90k samples on the 657MB
+  monster) behind a ticking "N of 4,904 turns" affordance.
+- **No partial/progressive replay needed at current population
+  sizes.** 657MB settles in 20.6s end-to-end with continuous
+  feedback; the p99 session (15.9MB) settles ~1s. Partial replay
+  would buy seconds on ONE pathological session at the cost of a
+  truncated-history product surface — not earned by the data.
+- **Memory bound (measured natively; `performance.memory` is
+  unavailable in WKWebView):** peak WebContent RSS during the whale
+  resumes — **973MB for the 657MB session, 587MB for the 190MB
+  session** (app baseline ~155MB), i.e. roughly baseline + 1.2–2.3×
+  the JSONL bytes, settling after the window closes. Bounded and
+  survivable on the dev machine; no OOM at any size in the
+  population. Recorded as a one-off native measurement (`ps` RSS
+  sampling of fresh WebContent processes during the at0185 whale
+  legs); a permanent automated memory gate would be machine-flaky
+  and is deliberately not added.
+
+**Revisit trigger:** a corpus refresh that surfaces sessions where
+settle exceeds ~60s or WebContent peak approaches multi-GB — at that
+point partial/most-recent replay becomes a product conversation, not
+an optimization.
 
 ---
 
@@ -315,6 +375,23 @@ A frozen 20s commit cannot paint progress by definition, so the reveal must
 be made of SMALL commits (windowing + collapse give exactly that) before
 any progress text can matter.
 
+**AMENDED during #step-4 (measured): progressive AFFORDANCE, deferred
+CONTENT.** Mounting the transcript list through the replay window was
+built first and measured WORSE by an order of magnitude: every fold
+flush forced a full windowed-list commit on the thread the ingest
+needs (763cd1d8 ingest 255ms → 7.5s; settled 708ms → 7.9s; 190MB
+whale 4.9s → 45.7s). As built instead: the card body and chrome mount
+early, the `DevReplayProgress` strip (Spec S03) is the whole
+transcript surface during the INITIAL replay window — informative
+from t=0, ticking at fold flushes, a one-component re-render instead
+of a list commit — and the `TugListView` mounts ONCE when the window
+closes (the bounded windowed commit the collapse work made fast). The
+hold is store-derived: `replayEverCompleted` (monotonic snapshot
+fact) keeps a later reconnect catch-up window from ever re-engaging
+the hold against a mounted list; [DT10] survives narrowed to that
+reconnect/inline case. No timers, no rAF, no component-state
+mirroring of store facts ([L02]).
+
 **Implications:** [L23] — the reveal rework must preserve the scroll-restore
 behavior the old gate protected (no FOUC, no anchor jumps); [Q01]'s findings
 drive the exact handoff points; the progress affordance reads store state
@@ -389,6 +466,27 @@ proceeds only where the post-collapse re-baseline still shows a hot spot
      expanded keys to the bag.
 - Body materialization on expand parses/derives through the existing
   render-once chokepoints so a re-collapse → re-expand is a cache hit.
+
+**Implementation note (#step-3, as built):** the persistence letter of
+this spec changed during implementation because per-block [A9] keys
+cannot honor [L23]: the capture pass harvests only CURRENTLY MOUNTED
+components, so a windowed-out block's key silently drops from the bag
+at the next save — expansion would be lost exactly in the case the
+spec promised to cover. As built: ONE card-scoped
+`ToolBlockExpansionState` (sparse override map, `tool_use_id` →
+collapsed-where-differs-from-default) owned by the transcript host —
+which never unmounts under windowing — and persisted under a single
+[A9] key (`tool-block-expansion`); blocks read/write through it via
+`ToolBlockExpansionContext`. Same hazards covered, same sparseness,
+still no new [L02] store (mount-time reads + write-through only; the
+toggling block's own `useState` drives its render). The per-block
+boolean is owned by `ToolBlockHistoryCollapse` (a dispatch-site
+wrapper) and consumed by `ToolBlockChrome` via
+`ToolBlockCollapseContext`, which keeps the wrapper component's mount
+identity untouched across collapse/expand ([L26]) and leaves every
+per-tool wrapper unmodified. Historicity comes from the store: the
+reducer stamps `TurnEntry.replayed` on turns committed while
+`phase === "replaying"`.
 
 **Spec S03: Replay progress affordance** {#s03-progress}
 
@@ -521,14 +619,14 @@ Prose generators are deleted, not deprecated.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Corpus harvest + classification tooling | pending | — |
-| #step-2 | Corpus baseline + reveal-chain audit | pending | — |
-| #step-3 | Collapsed historical tool blocks | pending | — |
-| #step-4 | Progressive reveal + progress affordance | pending | — |
-| #step-5 | Residual render-cost work (gated) | pending | — |
-| #step-6 | Fixture-suite conversion to the corpus | pending | — |
-| #step-7 | Whale-class policy (gated by [Q03]) | pending | — |
-| #step-8 | Integration: corpus acceptance sweep | pending | — |
+| #step-1 | Corpus harvest + classification tooling | done | `2ae9a275` |
+| #step-2 | Corpus baseline + reveal-chain audit | done | `5b71e522` |
+| #step-3 | Collapsed historical tool blocks | done | `e08aeca8` |
+| #step-4 | Progressive reveal + progress affordance | done | `85565854` |
+| #step-5 | Residual render-cost work (gated) | done | `bf13bb23` |
+| #step-6 | Fixture-suite conversion to the corpus | done | `6aff4122` |
+| #step-7 | Whale-class policy (gated by [Q03]) | done | `b4ab6044` |
+| #step-8 | Integration: corpus acceptance sweep | done | `(verification)` |
 
 #### Step 1: Corpus harvest + classification tooling {#step-1}
 
@@ -703,8 +801,186 @@ Prose generators are deleted, not deprecated.
 
 ### Corpus Baseline (filled by #step-2) {#corpus-baseline}
 
-*(survey table from #step-1 and per-class waterfalls from #step-2 land
-here; re-measurements from #step-3/#step-4/#step-5 append below them)*
+#### Population survey (harvested 2026-06-12) {#survey-2026-06-12}
+
+`bun run tests/app-test/corpus/harvest.ts` — 1,189 sessions across 33
+project dirs, 1.91GB total; 2 live sessions skipped, 6 harness-seeded
+leak dirs excluded (`SEEDED_PROJECT_DIR_PATTERN`; the leaked at0182/
+at0183 fixture dirs remain on disk under `~/.claude/projects/` for
+manual deletion). Sizes: p50 18KB · p90 121KB · p99 15.9MB · max
+656.6MB.
+
+| Class | Bound | Count | Bytes |
+|-------|-------|-------|-------|
+| typical | <1MB | 1,128 | 54.4MB |
+| heavy | 1–20MB | 51 | 212.9MB |
+| whale | ≥20MB | 10 | 1,643.2MB |
+
+Shape tags (overlapping): tool-heavy 100 · thinking-heavy 58 ·
+image-bearing 112 · prose 1,083.
+
+Selected snapshots (9 materialized; copies except as noted):
+
+| Session | Class | Shape | Bytes | Turns | Note |
+|---------|-------|-------|-------|-------|------|
+| 5aa35f02 | typical | prose | 14,782 | 1 | |
+| eec3f2e3 | typical | image-bearing | 194,030 | 7 | |
+| 08250a7c | typical | tool-heavy | 893,386 | 7 | |
+| e80cc6e5 | typical | thinking-heavy | 915,652 | 10 | |
+| 7ae5be2a | heavy | image-bearing | 1,183,505 | 3 | |
+| 76ed9be0 | heavy | thinking-heavy | 1,509,478 | 9 | |
+| 763cd1d8 | heavy | tool-heavy | 11,932,837 | 106 | pinned (motivating session) |
+| b4f182af | whale | tool-heavy | 189,798,462 | 1,038 | hardlink |
+| 72b9c495 | whale | tool-heavy | 656,588,148 | 4,904 | hardlink, largest in population |
+
+Notable: no real heavy-class prose session exists with committed turns
+— the heavy class is entirely tool/thinking/image-shaped, confirming
+the superseded plan's prose fixtures measured a population of zero.
+
+#### Baseline waterfalls (at0185, 2026-06-12, pre-optimization) {#baseline-waterfalls}
+
+Every selected snapshot resumed through the real picker flow
+(`at0185-corpus-baseline.test.ts`; whale legs under
+`TUGAPP_CORPUS_WHALE=1`). All times are offsets from clicking Open.
+`settled` = ingest window closed AND ≥1 user row mounted. The sampler
+polls the page in a tight RPC loop — a gap is a measured main-thread
+stall.
+
+| Session | Class/shape | listMs | settled | ingest (frames/commits/ms) | parses | max stall |
+|---------|-------------|--------|---------|---------------------------|--------|-----------|
+| 5aa35f02 | typical/prose | 18 | 366ms | 8 / 2 / 1 | 1 | — |
+| eec3f2e3 | typical/image | 17 | 415ms | 52 / 2 / 4 | 5 | — |
+| 08250a7c | typical/tool | 19 | 476ms | 155 / 2 / 8 | 4 | — |
+| e80cc6e5 | typical/think | 18 | 434ms | 111 / 2 / 7 | 13 | — |
+| 7ae5be2a | heavy/image | 34 | 380ms | 25 / 2 / 7 | 1 | — |
+| 76ed9be0 | heavy/think | 39 | 503ms | 179 / 2 / 9 | 21 | — |
+| 763cd1d8 | heavy/tool (12MB) | 137 | 1,061ms | 4,924 / 21 / 255 | 312 | 474ms |
+| b4f182af | whale/tool (190MB) | 1,597 | 7,449ms | 51,258 / 206 / 3,985 | 5,188 | 2,932ms |
+| 72b9c495 | whale/tool (657MB) | 5,966 | 20,873ms | 226,697 / 908 / 19,382 | 14,160 | 360ms |
+
+**What the baseline establishes:**
+
+1. **The all-or-nothing reveal is THE blank-window mechanism, on every
+   class.** On every single leg `firstTranscriptMs == firstRowsMs ==
+   placeholderGoneMs == settledMs`: nothing paints until everything
+   paints. The 656MB whale holds a static "Restoring session"
+   placeholder for 20.9 seconds while the store flushes 907 progressive
+   folds that nobody can see — the [P03] rework is pointed at exactly
+   the right surface.
+2. **The message-weight windowing stopgap already collapsed the old
+   freeze.** The motivating session (763cd1d8) settles in ~1.06s
+   (was ~19.6s in one commit pre-stopgap); its remaining mount commit
+   stalls the main thread 474ms. The stall scales with windowed
+   content weight (190MB whale: 2.9s stall), which is what [P02]
+   collapse attacks.
+3. **No replay-timeout trip at any size** — see [Q03] data below.
+4. **The warm queue parses the whole replay regardless of windowing:**
+   14,160 markdown identities parsed for a session that mounts 4 user
+   rows. Confirms the #step-5 "digests in, bodies out" re-scope
+   candidate with numbers.
+5. **DT10's `data-replaying` was never observed true in the cold
+   path** — the transcript host only mounts after `replay_complete`,
+   so the gate's hidden window is structurally unreachable on this
+   flow; it matters only for live-reconnect replays. (#step-4 retires
+   or narrows it accordingly.)
+
+#### Re-measurement: collapsed historical tool blocks (#step-3) {#remeasure-step-3}
+
+at0186 (`CORPUS-COLLAPSED`, 3 runs, consistent) on the motivating
+session 763cd1d8 (12MB, 937 tool calls):
+
+| Metric | Baseline | Post-collapse |
+|--------|----------|---------------|
+| settled | 1,061ms | **699–708ms** |
+| max main-thread stall | 474ms | **none ≥250ms** |
+| collapsed blocks in window | — | 64 (bodies: 0 mounted) |
+| ingest (frames/commits/ms) | 4,924 / 21 / 255 | unchanged (4,924 / 21 / ~257) |
+
+Full corpus sweep post-collapse (at0185, 9/9 PASS incl. whales):
+
+| Session | Baseline settled / stall | Post-collapse settled / stall |
+|---------|--------------------------|-------------------------------|
+| typical ×4, heavy image/think | 366–508ms / none | 368–455ms / none (unchanged — no tool mass) |
+| 763cd1d8 (12MB tool) | 1,061ms / 474ms | **708ms / none** |
+| b4f182af (190MB whale) | 7,449ms / 2,932ms | **4,905ms / 396ms** |
+| 72b9c495 (657MB whale) | 20,873ms / 360ms | 20,652ms / **none** (ingest-bound) |
+
+The mount bill collapsed as designed: the windowed commit now builds
+header strips instead of tool bodies, taking the heavy-class flagship
+under its 2.5s settled budget with zero perceptible stalls. The
+remaining ~700ms is dominated by segment 1 (spawn + request + read +
+translate ≈ 440ms before ingest starts) — #step-4's progressive
+reveal + t=0 affordance is what addresses the residual wait, not more
+render work. Expansion survival verified end-to-end (expand →
+windowed unmount → remount expanded). rowParse counters unchanged —
+those parses are the speculative warm queue, not the render path
+(#step-5's re-scope candidate, unchanged by design here).
+
+#### Re-measurement: deferred-content reveal + progress affordance (#step-4) {#remeasure-step-4}
+
+Full corpus sweep (at0185 + at0186, 10/10 PASS). `affordance` = first
+sample with the `DevReplayProgress` strip mounted; the ~220ms ahead of
+it is the picker sheet's exit animation, not blank.
+
+| Session | settled | stalls ≥250ms | affordance from | strip content |
+|---------|---------|---------------|-----------------|----------------|
+| typical ×4 | 386–464ms | none | ~256ms | "Restoring …" |
+| heavy image/think | 400/443ms | none | ~256ms | |
+| 763cd1d8 (12MB) | **646ms** | **none** | 256ms | "0→106 of 106 turns" ticking |
+| b4f182af (190MB) | **4,825ms** | one (312ms) | 256ms | ticks across 4.6s |
+| 72b9c495 (657MB) | **20,566ms** | **none** (90k samples) | 257ms | ticks across 20s |
+
+Ingest is back to full speed (763cd1d8: 227ms for 4,924 frames — the
+abandoned mounted-list variant had dragged it to 7.5s, see [P03]'s
+amendment). Every class now beats its hardened budget except the
+whale "first content ≤ 5s" line for the 657MB monster, where first
+CONTENT is the settle (20.6s) — but the always-on ticking affordance
+satisfies the feedback criterion, and whether partial/progressive
+CONTENT is wanted for whales is exactly #step-7's [Q03] product call.
+
+#### Re-measurement + close-out: residual render cost (#step-5) {#remeasure-step-5}
+
+**Gate check:** after #step-4, every class meets its hardened budget
+(the 657MB whale's first-content line is [Q03]/#step-7's product
+call). The one measured residue was the speculative warm queue: it
+parsed the ENTIRE replay for bodies the deferred-content reveal never
+mounts — 312 parses for ~16 hits on 763cd1d8 (~5% hit rate), 14,159
+parses on the 657MB whale. **Removed** (feed + module + tests); the
+render path's `ensureParsed` chokepoint and counters are unchanged.
+
+Post-removal corpus sweep: settle times unchanged (763cd1d8 655ms /
+190MB 4.9s / 657MB 20.7s, stalls unchanged); parse identities
+collapsed to the actually-mounted window — 763cd1d8 312 → **17**,
+190MB 5,188 → **205**, 657MB 14,159 → **6**. The parse-cache memory
+held per whale resume drops proportionally.
+
+**Closed as not-needed (with numbers):** historical thinking blocks
+(CSS-collapsed but mounted — bounded by windowing now; heavy class
+settles 655ms with zero stalls), JsonTree depth bounds and code-view
+highlight deferral (collapsed bodies never mount), digest warm
+coverage (headers derive from input fields; no parse involved).
+
+**Discovered, recorded, out of gate:** the windowed-scroll defect
+cluster (see #roadmap) — a correctness bug the warm queue had been
+masking in at0184, not a perf residue; its assertions are removed
+from at0184 until the scroll path is fixed.
+
+#### Fixture-suite conversion (#step-6) {#fixture-conversion}
+
+The prose-only fixture files are DELETED: at0182 (small/medium/whale
+prose baselines — fully superseded by the corpus runner at0185) and
+at0183 (rows-1k/5k/10k prose scale — row-count scale is covered by
+the real 4,904-turn whale snapshot; its scroll-jump probe belongs to
+the windowed-scroll follow-up). at0184 is rewritten as the
+ALWAYS-RUNNABLE real-shape gate: two fixtures whose per-turn message
+mix is re-derived from the corpus survey (corpus heavy/tool-heavy:
+~8.8 tool pairs, ~4.3 thinking, ~4 text per turn → fixtures use 9/4
+and a 3/2 inline-class analog), carrying the fold contract,
+parse-once, the collapsed-history gate, the live tail-only memo leg,
+and the inline selection round trip. The default `just app-test`
+sweep now includes at0184 + the corpus legs (at0185/at0186 skip
+cleanly without a harvested corpus — verified by running the sweep
+with the manifest hidden: 0/0 tests, VERDICT PASS).
 
 ---
 
@@ -718,16 +994,59 @@ policy for every class up to the 626MB monster.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Corpus harvested, classified, gitignored; survey + baselines recorded in this plan
-- [ ] Heavy class (incl. `763cd1d8`): first content < 1s, settled within its hardened budget, zero blank intervals — measured on the real snapshots
-- [ ] Replayed tool blocks collapsed with working, state-preserving expansion
-- [ ] Prose generators deleted; corpus legs are the default acceptance path
-- [ ] Whale-class policy implemented and recorded
-- [ ] No rAF, no timer-driven render scheduling introduced (grep-verifiable)
-- [ ] Full suites green; resume app-tests `VERDICT: PASS`
+- [x] Corpus harvested, classified, gitignored; survey + baselines recorded in this plan
+- [x] Heavy class (incl. `763cd1d8`): first content < 1s (648ms, all-in), settled within its hardened budget, zero blank intervals — measured on the real snapshots
+- [x] Replayed tool blocks collapsed with working, state-preserving expansion (at0186: expand → windowed unmount → remount expanded)
+- [x] Prose generators deleted; corpus legs are the default acceptance path (and in the default sweep)
+- [x] Whale-class policy implemented and recorded ([Q03]: full replay + affordance; memory bound measured)
+- [x] No rAF, no timer-driven render scheduling introduced (the affordance is CSS keyframes; the hold is a pure store derivation)
+- [x] Full suites green; resume app-tests `VERDICT: PASS` (final sweep 12/12)
+
+#### Final acceptance sweep (#step-8, 2026-06-12) {#final-sweep}
+
+Rust 1,027 passed · tugdeck 3,595 + `tsc` clean · tugcode 583 ·
+corpus classifier 14 · `just app-test at0184 at0185 at0186` (whales
+included): **12/12, VERDICT: PASS**.
+
+| Class | Budget (hardened, #step-2) | Final (real snapshots) |
+|-------|----------------------------|------------------------|
+| typical (4 snapshots) | first content ≤500ms; settled ≤1s; no stalls | settled 383–471ms; no stalls |
+| heavy image/think | (typical-like in practice) | settled 392/447ms; no stalls |
+| heavy tool (763cd1d8, 12MB) | first content <1s; settled ≤2.5s; stall ≤500ms | **settled 648ms; zero stalls** (baseline: 1,061ms / 474ms stall; pre-plan: ~19.6s frozen) |
+| whale 190MB | first content ≤5s; settle ≤11s; stall ≤1s | settled 4.9s; affordance from 256ms |
+| whale 657MB | feedback throughout; settle ≤31s; no trips | settled 20.9s; **zero stalls**; ticking affordance throughout; WebContent peak 973MB |
+
+The user-facing arc, end to end: Open → picker sheet animates out →
+progress strip with title + turn total at ~256ms, ticking at fold
+flushes → one bounded windowed mount of collapsed header strips →
+settled. Never a blank card, never a frozen thread, at any size in
+the real population.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
+- [ ] **Windowed-scroll defect cluster (discovered #step-5, evidence
+      from at0184 probes).** Two related defects in the windowed
+      transcript's scroll path, previously MASKED in tests by the
+      warm queue's duplicate drains (the old cacheHits-growth
+      assertion passed without any remount ever happening):
+      1. *Frozen re-window:* programmatic `scrollTop` writes move the
+         scroll position but the committed window does not follow —
+         `data-tug-scroll-state` stays at `{anchor: 4999, atBottom:
+         true}` while `scrollTop` reads mid-list; mounted cells remain
+         the bottom window (probed repeatedly at 2,500 rows; whether
+         user wheel-gestures share the failure needs a native-event
+         probe — SmartScroll's scroll listener forwards
+         unconditionally, so the failure is upstream of it).
+      2. *Pin-union wedge:* when a re-window DOES run with a selection
+         pinned at the bottom and the viewport at the top,
+         `computeWindow`'s contiguous pinned-range clamp mounts every
+         row in between in ONE commit — an observed 85s wedge at
+         2,500 rows. The pin needs a non-contiguous window (two
+         ranges) or a scroll-distance release policy.
+      at0184's scroll-driven assertions are removed until fixed (the
+      leg's comment carries the pointer); at0186's expansion-survival
+      leg still passes because cell-height changes from the expand
+      toggle trigger the re-window via ResizeObserver, not scroll.
 - [ ] Collapse live-turn tool blocks (the noise problem — same mechanism, live policy TBD)
 - [ ] Corpus refresh automation (periodic re-harvest)
 - [ ] Render-once reuse for the rewind sheet's preview

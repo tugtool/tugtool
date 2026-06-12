@@ -186,6 +186,44 @@ describe("reduceTaskListState", () => {
     expect(out.tasks).toEqual([]);
   });
 
+  test("a create over a fully-completed list supersedes the batch", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "old one" }, 1),
+      createCall("t2", { subject: "old two" }, 2),
+      updateCall("u1", { taskId: "1", status: "completed" }),
+      updateCall("u2", { taskId: "2", status: "completed" }),
+      // Fresh batch — the finished work above is superseded, not
+      // accumulated (the replay pathology: a whole session's history
+      // folding into one giant struck-through list).
+      createCall("t3", { subject: "new one" }, 3),
+      createCall("t4", { subject: "new two" }, 4),
+      updateCall("u3", { taskId: "3", status: "completed" }),
+    ]);
+    expect(out.tasks.map((t) => t.subject)).toEqual(["new one", "new two"]);
+    expect(out.tasks.map((t) => t.status)).toEqual(["completed", "pending"]);
+  });
+
+  test("creates over an UNFINISHED list append to the working set", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      updateCall("u1", { taskId: "1", status: "in_progress" }),
+      createCall("t2", { subject: "two" }, 2),
+    ]);
+    expect(out.tasks.map((t) => t.subject)).toEqual(["one", "two"]);
+  });
+
+  test("an update targeting a superseded task is skipped", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "old" }, 1),
+      updateCall("u1", { taskId: "1", status: "completed" }),
+      createCall("t2", { subject: "new" }, 2),
+      // Stale update against the superseded batch — find-miss, no-op.
+      updateCall("u2", { taskId: "1", status: "in_progress" }),
+    ]);
+    expect(out.tasks.map((t) => t.subject)).toEqual(["new"]);
+    expect(out.tasks[0].status).toBe("pending");
+  });
+
   test("non-Task* calls are ignored", () => {
     const out = reduceTaskListState([
       {

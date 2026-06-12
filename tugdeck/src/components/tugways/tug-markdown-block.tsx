@@ -208,9 +208,8 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
       // lex/parse/sanitize pass and goes straight to the shared DOM
       // apply. A streaming row's text changes per delta, so it misses
       // and parses exactly as before; its final delta's parse IS the
-      // warm finalized entry. `ensureParsed` is the shared chokepoint
-      // the speculative warm queue also parses through, so a warmed
-      // row's mount is a pure cache hit.
+      // finalized cache entry, so a later remount of the same row is
+      // a pure cache hit through the `ensureParsed` chokepoint.
       const blocks = ensureParsed(streamingStore, streamingPath, text);
       const { state } = renderIncrementalFromBlocks(el, blocks, prev);
       STREAMING_RENDER_STATE.set(el, state);

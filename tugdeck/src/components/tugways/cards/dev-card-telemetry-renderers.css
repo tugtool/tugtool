@@ -107,6 +107,17 @@
    by `@container` queries on the host's `container-name: dev-status`.
    ========================================================================= */
 
+/* Replay-window inerting: while a resume replay reconstructs history,
+   every value cell is inert — the em-dash values come from the
+   renderer; this rule adds the dimming and drops pointer events so the
+   popovers can't open on stale mid-replay data. STATE stays live (it
+   reads "Replaying"). [L06] appearance via a data attribute. */
+.dev-telemetry-status-row[data-replay-inert]
+  [data-priority]:not([data-priority="state"]) {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .dev-telemetry-status-row {
   /* Flat 5-cell flex row: STATE + TIME + TOKENS + CONTEXT + TASKS as
      direct siblings. `justify-content: center` packs the five cells as

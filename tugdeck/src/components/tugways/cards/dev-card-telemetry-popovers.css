@@ -412,6 +412,10 @@
   flex-direction: column;
   gap: 2px;
   padding-block: var(--tug-space-xs);
+  /* Long lists scroll instead of growing the popover off-screen —
+     roughly sixteen rows visible, the rest reachable by wheel. */
+  max-height: min(28rem, 60vh);
+  overflow-y: auto;
 }
 
 /* Per-row padding so the indicator/label don't hug the popover edges. */

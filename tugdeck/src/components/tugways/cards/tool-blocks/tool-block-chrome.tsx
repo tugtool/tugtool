@@ -105,6 +105,7 @@ import {
   useBlockFoldState,
 } from "@/components/tugways/body-kinds/affordances";
 
+import { ToolBlockCollapseContext } from "./collapse-context";
 import { ToolCallHeader } from "./tool-call-header";
 import type { CautionFlag, ToolBlockStatus } from "./types";
 
@@ -363,6 +364,15 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   // (see below); the no-fold path returns `collapsed = false` and
   // a no-op toggle so the JSX below is uniform.
   const { collapsed, setCollapsed } = useChromeFoldState(fold);
+  // History-collapse handle ([P02]). Non-null when a
+  // `ToolBlockHistoryCollapse` wraps this block (replayed history).
+  // While block-collapsed, the body subtree is NOT mounted — the
+  // header is the whole block — and the footer/error bands and
+  // actions cluster are withheld with it (nothing to act on). The
+  // chrome's own mount identity is untouched across the toggle
+  // ([L26]); only the child subtree appears/disappears.
+  const blockCollapse = React.useContext(ToolBlockCollapseContext);
+  const blockCollapsed = blockCollapse !== null && blockCollapse.collapsed;
   // Latest-ref over copyText so the Copy button's `getText` closure
   // captures the freshest payload without recreating the button when
   // the wrapper re-renders with a new result.
@@ -430,6 +440,8 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
       data-slot={rootSlot}
       data-status={status}
       data-caution={caution?.reason ?? undefined}
+      data-block-collapsed={blockCollapsed ? "true" : undefined}
+      data-tool-use-id={blockCollapse?.toolUseId}
       className={cn("tool-block-chrome", className)}
     >
       {/* The header is now the shared `ToolCallHeader` ([D01]). The
@@ -456,8 +468,16 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
         meta={meta}
         caution={caution}
         actionsSlotRef={setActionsTarget}
+        disclosure={
+          blockCollapse !== null
+            ? {
+                collapsed: blockCollapse.collapsed,
+                onToggle: blockCollapse.toggle,
+              }
+            : undefined
+        }
         actions={
-          copyText !== undefined || fold !== undefined ? (
+          !blockCollapsed && (copyText !== undefined || fold !== undefined) ? (
             <BlockActionsCluster data-slot="tool-block-chrome-actions-cluster">
               {copyText !== undefined ? (
                 <BlockCopyButton
@@ -481,31 +501,35 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
           ) : undefined
         }
       />
-      <div
-        className="tool-block-chrome-body"
-        data-slot="tool-block-body"
-        data-folded={fold !== undefined && collapsed ? "true" : undefined}
-      >
-        <ChromeActionsTargetContext.Provider value={actionsTarget}>
-          {fold !== undefined && collapsed ? null : children}
-        </ChromeActionsTargetContext.Provider>
-      </div>
-      {status === "error" && errorMessage !== undefined ? (
-        <div
-          className="tool-block-chrome-error"
-          data-slot="tool-block-error"
-        >
-          {errorMessage}
-        </div>
-      ) : null}
-      {footerBadges !== undefined ? (
-        <div
-          className="tool-block-chrome-footer"
-          data-slot="tool-block-footer"
-        >
-          {footerBadges}
-        </div>
-      ) : null}
+      {blockCollapsed ? null : (
+        <>
+          <div
+            className="tool-block-chrome-body"
+            data-slot="tool-block-body"
+            data-folded={fold !== undefined && collapsed ? "true" : undefined}
+          >
+            <ChromeActionsTargetContext.Provider value={actionsTarget}>
+              {fold !== undefined && collapsed ? null : children}
+            </ChromeActionsTargetContext.Provider>
+          </div>
+          {status === "error" && errorMessage !== undefined ? (
+            <div
+              className="tool-block-chrome-error"
+              data-slot="tool-block-error"
+            >
+              {errorMessage}
+            </div>
+          ) : null}
+          {footerBadges !== undefined ? (
+            <div
+              className="tool-block-chrome-footer"
+              data-slot="tool-block-footer"
+            >
+              {footerBadges}
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 };
