@@ -1,44 +1,52 @@
 /**
  * gallery-z2-workshop.tsx — design-spike workshop for a configurable
- * Z2 status area.
+ * Z2 status area: one unified demo of the whole experience.
  *
- * Two proposals, switchable, driven by one scripted mock session so
- * the surfaces feel alive:
+ * The surface composes three ideas that earlier iterations explored
+ * as separate proposals:
  *
- *  - **Shelf** — the Z2 row grows an always-on one-line PULSE strip
- *    (the "color commentary" concept: an AI side-channel summarizing
- *    what is actually going on, beyond the STATE label) and a
- *    disclosure that opens a multi-lane shelf below the transcript:
- *    TASKS, JOBS, and the PULSE log pinned permanently visible. The
- *    shelf is **height-stable once configured** — five data rows per
- *    lane plus a sixth controls row (overflow counts, clear) — and
- *    steals that fixed height from the transcript area above it,
- *    exactly as the real Z2 row does (the transcript list is
- *    `flex: 1 1 auto`; the shelf is a sibling). Row chrome models the
- *    proposed Z2 layout: maximize at the LEFT end, the configure gear
- *    at the right end where maximize lives today.
+ *  - **The row** — a configurable instrument row (macOS-toolbar
+ *    style): a registry of status items rendered in user order, with
+ *    spacer / flexible-space items. Chrome models the proposed Z2
+ *    layout: maximize at the LEFT end; at the right end the configure
+ *    gear sits inboard and the shelf disclosure takes the very end.
  *
- *  - **Rack** — macOS-toolbar-style configuration, opened from the
- *    row's gear: a registry of status items, a live row you drag
- *    items into/out of/around (palette below, like Finder's
- *    "Customize Toolbar…" sheet), spacer + flexible-space items, and
- *    a restore-defaults action. PULSE is just another item — a
- *    flexible-width cell that soaks up leftover row space.
+ *  - **The shelf** — pinned lanes below the transcript (TASKS, JOBS,
+ *    PULSE; three max, arranged in the configure sheet), opened by
+ *    the chevron. Height-stable once open: five data rows per lane
+ *    plus a sixth controls row. In a multi-lane arrangement each lane
+ *    legend carries an explicit expand/contract affordance — click to
+ *    focus one lane (the others contract to a peek column), click
+ *    again to share evenly. The shelf steals its fixed height from
+ *    the transcript above (the real Z2 mechanism: the list is
+ *    `flex: 1 1 auto`; the shelf is a sibling).
  *
- * Everything here is a workshop fixture: the session feed is a
- * scripted loop, and the rack config is session-local (production
- * would persist through tugbank defaults). The card exists to judge
- * look + interaction, not to ship plumbing.
+ *  - **PULSE** — the "color commentary" concept: an AI side-channel
+ *    line summarizing what is actually going on, beyond the STATE
+ *    label. PULSE surfaces exactly ONCE, by priority: as a row item
+ *    if configured there; else as a pinned lane when the shelf is
+ *    open with a PULSE lane; else as the ambient one-line strip under
+ *    the row. No duplication.
+ *
+ * The gear opens Finder's "Customize Toolbar…" translated: drag items
+ * between the palette and the live row, reorder, remove; arrange the
+ * shelf lanes the same way. Everything is driven by a looping
+ * scripted mock session (play/pause/restart) so the surfaces feel
+ * alive. Config is session-local in this spike — production would
+ * persist via tugbank defaults. The card exists to judge look +
+ * interaction, not to ship plumbing.
  *
  * @module components/tugways/cards/gallery-z2-workshop
  */
 
 import "./gallery-z2-workshop.css";
 
-import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
+  ChevronsLeftRight,
+  ChevronsRightLeft,
   GripVertical,
   Maximize2,
   Pause,
@@ -48,15 +56,12 @@ import {
   X,
 } from "lucide-react";
 
-import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugStatusCell } from "@/components/tugways/tug-status-cell";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorState,
 } from "@/components/tugways/tug-progress-indicator";
-import { useResponderForm } from "@/components/tugways/use-responder-form";
 
 // ---------------------------------------------------------------------------
 // Mock session script — one looping "match" the surfaces narrate.
@@ -77,7 +82,7 @@ interface MockJob {
 interface Beat {
   /** STATE cell title (the play-by-play). */
   state: string;
-  /** The color commentator's line (the new side channel). */
+  /** The PULSE line (the color-commentary side channel). */
   commentary?: string;
   tasks?: MockTask[];
   jobs?: MockJob[];
@@ -270,178 +275,19 @@ function FakeTranscript(): React.ReactElement {
 }
 
 // ---------------------------------------------------------------------------
-// Proposal A — the Shelf
+// Configuration vocabulary — row items + shelf lanes.
 // ---------------------------------------------------------------------------
 
-/** Per-lane data-row budget — the shelf never grows past this. */
-const SHELF_LANE_ROWS = 5;
+type LaneId = "tasks" | "jobs" | "pulse";
 
-function ShelfProposal({ session }: { session: MockSession }): React.ReactElement {
-  const [open, setOpen] = useState(true);
-  const tasksLabel = countDone(session.tasks);
-  const jobsLabel = countFinished(session.jobs);
-  const pulseLines = session.commentaryLog.slice(-SHELF_LANE_ROWS);
-  const overflow: string[] = [];
-  if (session.tasks.length > SHELF_LANE_ROWS)
-    overflow.push(`tasks +${session.tasks.length - SHELF_LANE_ROWS}`);
-  if (session.jobs.length > SHELF_LANE_ROWS)
-    overflow.push(`jobs +${session.jobs.length - SHELF_LANE_ROWS}`);
-  if (session.commentaryLog.length > SHELF_LANE_ROWS)
-    overflow.push(`pulse +${session.commentaryLog.length - SHELF_LANE_ROWS}`);
-  return (
-    <div className="z2ws-frame" data-slot="z2ws-shelf">
-      <FakeTranscript />
+const LANE_LABELS: Record<LaneId, string> = {
+  tasks: "TASKS",
+  jobs: "JOBS",
+  pulse: "PULSE",
+};
 
-      {/* The Z2 instrument row. Chrome models the proposed layout:
-          maximize moves to the LEFT end; the configure gear takes the
-          right end where maximize lives today; the shelf disclosure
-          sits beside the gear. */}
-      <div className="z2ws-row">
-        <TugPushButton
-          subtype="icon"
-          icon={<Maximize2 size={12} />}
-          aria-label="Maximize the prompt entry (inert in this spike)"
-          title="Maximize (moves to the left end)"
-          emphasis="ghost"
-          size="xs"
-        />
-        <div className="z2ws-cells">
-          <TugStatusCell priority="state" label="STATE" popover={<ShelfHint />}>
-            <span className="z2ws-cell-value">{session.state}</span>
-          </TugStatusCell>
-          <TugStatusCell
-            priority="tasks"
-            label="TASKS"
-            popover={<ShelfHint />}
-            valueEmpty={session.tasks.length === 0}
-          >
-            <span className="z2ws-cell-value">{tasksLabel}</span>
-          </TugStatusCell>
-          <TugStatusCell
-            priority="jobs"
-            label="JOBS"
-            popover={<ShelfHint />}
-            valueEmpty={session.jobs.length === 0}
-          >
-            <span className="z2ws-cell-value">{jobsLabel}</span>
-          </TugStatusCell>
-        </div>
-        <TugPushButton
-          subtype="icon"
-          icon={open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-          aria-label={open ? "Close the status shelf" : "Open the status shelf"}
-          title={open ? "Close shelf" : "Open shelf"}
-          emphasis="ghost"
-          size="xs"
-          onClick={() => setOpen((o) => !o)}
-        />
-        <TugPushButton
-          subtype="icon"
-          icon={<Settings size={12} />}
-          aria-label="Configure the status row (see the Rack proposal)"
-          title="Configure status row — the Rack proposal"
-          emphasis="ghost"
-          size="xs"
-        />
-      </div>
-
-      {/* The PULSE strip — the color-commentary concept, always on,
-          one line, ambient. */}
-      <div className="z2ws-strip" data-slot="z2ws-strip">
-        <span className="z2ws-strip-legend">PULSE</span>
-        <span key={session.beat} className="z2ws-strip-text">
-          {session.commentary}
-        </span>
-      </div>
-
-      {/* The shelf — pinned lanes, height-stable: five data rows per
-          lane, then a sixth controls row. */}
-      <div className="z2ws-shelf" data-open={open ? "true" : "false"}>
-        <div className="z2ws-lanes">
-        <div className="z2ws-lane">
-          <div className="z2ws-lane-legend">TASKS</div>
-          {session.tasks.length === 0 ? (
-            <div className="z2ws-lane-empty">No task list active.</div>
-          ) : (
-            session.tasks.slice(0, SHELF_LANE_ROWS).map((t) => (
-              <TugProgressIndicator
-                key={t.subject}
-                variant="pulsing-dot"
-                glyphPosition="left"
-                size={11}
-                state={taskDotState(t.status)}
-                label={t.subject}
-                className="z2ws-lane-row"
-              />
-            ))
-          )}
-        </div>
-        <div className="z2ws-lane">
-          <div className="z2ws-lane-legend">JOBS</div>
-          {session.jobs.length === 0 ? (
-            <div className="z2ws-lane-empty">No background jobs.</div>
-          ) : (
-            session.jobs.slice(0, SHELF_LANE_ROWS).map((j) => (
-              <div key={j.description} className="z2ws-lane-job">
-                <TugProgressIndicator
-                  variant="pulsing-dot"
-                  size={11}
-                  state={jobDotState(j.status)}
-                  aria-label={j.status}
-                />
-                <span className="z2ws-lane-job-text">{j.description}</span>
-                <span className="z2ws-lane-job-meta">
-                  {j.kind} · {j.elapsedS}s
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-        <div className="z2ws-lane z2ws-lane-wide">
-          <div className="z2ws-lane-legend">PULSE</div>
-          {pulseLines.map((line) => (
-            <div key={line.atBeat} className="z2ws-lane-commentary">
-              <span className="z2ws-lane-commentary-beat">
-                {String(line.atBeat % SCRIPT.length).padStart(2, "0")}
-              </span>
-              <span className="z2ws-lane-commentary-text">{line.text}</span>
-            </div>
-          ))}
-        </div>
-        </div>
-
-        {/* Sixth row — controls + overflow counts. Always present, so
-            the shelf's height never moves once it is open. */}
-        <div className="z2ws-shelf-footer" data-slot="z2ws-shelf-footer">
-          <span className="z2ws-shelf-overflow">
-            {overflow.length > 0 ? overflow.join(" · ") : "\u00a0"}
-          </span>
-          <div className="z2ws-shelf-actions">
-            <TugPushButton emphasis="ghost" role="action" size="xs">
-              More…
-            </TugPushButton>
-            <TugPushButton emphasis="ghost" role="action" size="xs">
-              Clear
-            </TugPushButton>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ShelfHint(): React.ReactElement {
-  return (
-    <div className="z2ws-popover-hint">
-      Popovers stay for quick glances — the shelf is for what you want
-      permanently visible.
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Proposal B — the Rack
-// ---------------------------------------------------------------------------
+const ALL_LANES: LaneId[] = ["tasks", "jobs", "pulse"];
+const DEFAULT_LANES: LaneId[] = ["tasks", "jobs", "pulse"];
 
 type RackItemId =
   | "state"
@@ -502,21 +348,203 @@ function rackValue(id: RackItemId, session: MockSession): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The shelf — pinned lanes, height-stable.
+// ---------------------------------------------------------------------------
+
+/** Per-lane data-row budget — the shelf never grows past this. */
+const SHELF_LANE_ROWS = 5;
+
+function laneOverflowCount(id: LaneId, session: MockSession): number {
+  const total =
+    id === "tasks"
+      ? session.tasks.length
+      : id === "jobs"
+        ? session.jobs.length
+        : session.commentaryLog.length;
+  return Math.max(0, total - SHELF_LANE_ROWS);
+}
+
+/** One lane's data rows — uniform `.z2ws-lane-item` typography. */
+function LaneRows({
+  id,
+  session,
+}: {
+  id: LaneId;
+  session: MockSession;
+}): React.ReactElement {
+  if (id === "tasks") {
+    if (session.tasks.length === 0) {
+      return <div className="z2ws-lane-empty">No task list active.</div>;
+    }
+    return (
+      <>
+        {session.tasks.slice(0, SHELF_LANE_ROWS).map((t) => (
+          <div key={t.subject} className="z2ws-lane-item">
+            <TugProgressIndicator
+              variant="pulsing-dot"
+              size={11}
+              state={taskDotState(t.status)}
+              aria-label={t.status}
+            />
+            <span className="z2ws-lane-item-text">{t.subject}</span>
+          </div>
+        ))}
+      </>
+    );
+  }
+  if (id === "jobs") {
+    if (session.jobs.length === 0) {
+      return <div className="z2ws-lane-empty">No background jobs.</div>;
+    }
+    return (
+      <>
+        {session.jobs.slice(0, SHELF_LANE_ROWS).map((j) => (
+          <div key={j.description} className="z2ws-lane-item">
+            <TugProgressIndicator
+              variant="pulsing-dot"
+              size={11}
+              state={jobDotState(j.status)}
+              aria-label={j.status}
+            />
+            <span className="z2ws-lane-item-text">{j.description}</span>
+            <span className="z2ws-lane-item-meta">
+              {j.kind} · {j.elapsedS}s
+            </span>
+          </div>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      {session.commentaryLog.slice(-SHELF_LANE_ROWS).map((line) => (
+        <div key={line.atBeat} className="z2ws-lane-item">
+          <span className="z2ws-lane-item-meta">
+            {String(line.atBeat % SCRIPT.length).padStart(2, "0")}
+          </span>
+          <span className="z2ws-lane-item-text z2ws-lane-item-prose">
+            {line.text}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
+
 /**
- * The rack — a live Z2 row in macOS "Customize Toolbar…" mode. Drag
- * items from the palette into the row, drag within the row to
- * reorder, remove with the chip's ×; COMMENTARY and FLEX SPACE are
- * flexible-width. Config is session-local in this spike (production
- * persists via tugbank defaults).
+ * The shelf body — lanes per the configured arrangement, then the
+ * always-present sixth controls row. Each lane legend (in a
+ * multi-lane arrangement) carries an explicit expand/contract
+ * affordance — chevrons-apart to expand, chevrons-together to share
+ * again — so the focus interaction is discoverable, not a secret
+ * click target.
  */
-function RackProposal({ session }: { session: MockSession }): React.ReactElement {
+function Shelf({
+  session,
+  lanes,
+  open,
+}: {
+  session: MockSession;
+  lanes: LaneId[];
+  open: boolean;
+}): React.ReactElement {
+  const [focused, setFocused] = useState<LaneId | null>(null);
+  const overflow = lanes
+    .map((id) => ({ id, count: laneOverflowCount(id, session) }))
+    .filter((o) => o.count > 0)
+    .map((o) => `${LANE_LABELS[o.id].toLowerCase()} +${o.count}`);
+  return (
+    <div className="z2ws-shelf" data-open={open ? "true" : "false"}>
+      {lanes.length === 0 ? (
+        <div className="z2ws-lane-empty z2ws-shelf-none">
+          No lanes configured — add some with the gear.
+        </div>
+      ) : (
+        <div className="z2ws-lanes" data-lane-count={lanes.length}>
+          {lanes.map((id) => (
+            <div
+              key={id}
+              className="z2ws-lane"
+              data-lane={id}
+              data-focus={
+                focused === null ? "none" : focused === id ? "self" : "other"
+              }
+            >
+              <button
+                type="button"
+                className="z2ws-lane-legend"
+                aria-pressed={focused === id}
+                title={
+                  focused === id
+                    ? "Contract — share the shelf again"
+                    : "Expand this lane"
+                }
+                onClick={() => setFocused((f) => (f === id ? null : id))}
+                disabled={lanes.length < 2}
+              >
+                <span className="z2ws-lane-legend-text">{LANE_LABELS[id]}</span>
+                {lanes.length > 1 ? (
+                  <span className="z2ws-lane-legend-affordance" aria-hidden>
+                    {focused === id ? (
+                      <ChevronsRightLeft size={11} />
+                    ) : (
+                      <ChevronsLeftRight size={11} />
+                    )}
+                  </span>
+                ) : null}
+              </button>
+              <LaneRows id={id} session={session} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Sixth row — controls + overflow counts. Always present, so
+          the shelf's height never moves once it is open. */}
+      <div className="z2ws-shelf-footer" data-slot="z2ws-shelf-footer">
+        <span className="z2ws-shelf-overflow">
+          {overflow.length > 0 ? overflow.join(" · ") : " "}
+        </span>
+        <div className="z2ws-shelf-actions">
+          <TugPushButton emphasis="ghost" role="action" size="xs">
+            More…
+          </TugPushButton>
+          <TugPushButton emphasis="ghost" role="action" size="xs">
+            Clear
+          </TugPushButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The unified demo — one Z2 area: configurable row, PULSE, shelf,
+// and the gear-opened customize sheet.
+// ---------------------------------------------------------------------------
+
+function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElement {
   const [row, setRow] = useState<RackItemId[]>(RACK_DEFAULT);
-  const [customizing, setCustomizing] = useState(true);
+  const [lanes, setLanes] = useState<LaneId[]>(DEFAULT_LANES);
+  const [shelfOpen, setShelfOpen] = useState(true);
+  const [customizing, setCustomizing] = useState(false);
   const dragFrom = useRef<{ source: "palette" | "row"; index: number } | null>(null);
+  const laneDragFrom = useRef<{ source: "palette" | "strip"; index: number } | null>(
+    null,
+  );
 
   const available = RACK_ITEMS.filter(
     (i) => i.repeatable === true || !row.includes(i.id),
   );
+  const laneAvailable = ALL_LANES.filter((id) => !lanes.includes(id));
+
+  // PULSE surfaces exactly once, by priority: row item → open shelf
+  // lane → the ambient strip. The strip is the fallback, never a
+  // duplicate.
+  const pulseInRow = row.includes("pulse");
+  const pulseInOpenShelf = shelfOpen && lanes.includes("pulse");
+  const showStrip = !pulseInRow && !pulseInOpenShelf;
 
   const dropAt = useCallback(
     (targetIndex: number) => {
@@ -544,166 +572,289 @@ function RackProposal({ session }: { session: MockSession }): React.ReactElement
     [available],
   );
 
-  return (
-      <div className="z2ws-frame" data-slot="z2ws-rack">
-        <FakeTranscript />
+  const laneDropAt = useCallback(
+    (targetIndex: number) => {
+      const from = laneDragFrom.current;
+      if (from === null) return;
+      const next = lanes.slice();
+      if (from.source === "strip") {
+        const [moved] = next.splice(from.index, 1);
+        next.splice(
+          targetIndex > from.index ? targetIndex - 1 : targetIndex,
+          0,
+          moved,
+        );
+      } else {
+        const id = laneAvailable[from.index];
+        if (id === undefined || next.includes(id) || next.length >= 3) return;
+        next.splice(targetIndex, 0, id);
+      }
+      laneDragFrom.current = null;
+      setLanes(next);
+    },
+    [lanes, laneAvailable],
+  );
 
-        {/* The live row — also the drop target while customizing.
-            Chrome models the proposed layout: maximize at the LEFT
-            end, the configure gear at the right end. */}
-        <div
-          className="z2ws-rack-row"
-          data-customizing={customizing ? "true" : "false"}
-          onDragOver={(e) => {
-            if (!customizing) return;
-            e.preventDefault();
-          }}
-          onDrop={(e) => {
-            if (!customizing) return;
-            e.preventDefault();
-            dropAt(row.length);
-          }}
-        >
-          <TugPushButton
-            subtype="icon"
-            icon={<Maximize2 size={12} />}
-            aria-label="Maximize the prompt entry (inert in this spike)"
-            title="Maximize (moves to the left end)"
-            emphasis="ghost"
-            size="xs"
-          />
-          {row.length === 0 ? (
-            <div className="z2ws-rack-empty">Drag items here…</div>
-          ) : (
-            row.map((id, index) => {
-              const spec = rackSpec(id);
-              return (
-                <div
-                  key={`${id}-${index}`}
-                  className="z2ws-rack-cell"
-                  data-kind={id}
-                  data-flexible={spec.flexible ? "true" : undefined}
-                  draggable={customizing}
-                  onDragStart={() => {
-                    dragFrom.current = { source: "row", index };
-                  }}
-                  onDragOver={(e) => {
-                    if (!customizing) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  onDrop={(e) => {
-                    if (!customizing) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const before = e.clientX < rect.left + rect.width / 2;
-                    dropAt(before ? index : index + 1);
-                  }}
-                >
-                  {customizing ? (
-                    <span className="z2ws-rack-grip" aria-hidden>
-                      <GripVertical size={10} />
+  return (
+    <div className="z2ws-frame" data-slot="z2ws-demo">
+      <FakeTranscript />
+
+      {/* The instrument row — renders the configured items; doubles as
+          the drop target while customizing. Chrome: maximize LEFT;
+          gear inboard; shelf disclosure at the very end. */}
+      <div
+        className="z2ws-rack-row"
+        data-customizing={customizing ? "true" : "false"}
+        onDragOver={(e) => {
+          if (!customizing) return;
+          e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (!customizing) return;
+          e.preventDefault();
+          dropAt(row.length);
+        }}
+      >
+        <TugPushButton
+          subtype="icon"
+          icon={<Maximize2 size={12} />}
+          aria-label="Maximize the prompt entry (inert in this spike)"
+          title="Maximize (moves to the left end)"
+          emphasis="ghost"
+          size="xs"
+        />
+        {row.length === 0 ? (
+          <div className="z2ws-rack-empty">Drag items here…</div>
+        ) : (
+          row.map((id, index) => {
+            const spec = rackSpec(id);
+            return (
+              <div
+                key={`${id}-${index}`}
+                className="z2ws-rack-cell"
+                data-kind={id}
+                data-flexible={spec.flexible ? "true" : undefined}
+                draggable={customizing}
+                onDragStart={() => {
+                  dragFrom.current = { source: "row", index };
+                }}
+                onDragOver={(e) => {
+                  if (!customizing) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={(e) => {
+                  if (!customizing) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const before = e.clientX < rect.left + rect.width / 2;
+                  dropAt(before ? index : index + 1);
+                }}
+              >
+                {customizing ? (
+                  <span className="z2ws-rack-grip" aria-hidden>
+                    <GripVertical size={10} />
+                  </span>
+                ) : null}
+                {id === "space" || id === "flex" ? (
+                  <span className="z2ws-rack-space-glyph">
+                    {id === "flex" ? "↔" : "·"}
+                  </span>
+                ) : (
+                  <span className="z2ws-rack-cell-stack">
+                    <span className="z2ws-rack-cell-legend">{spec.label}</span>
+                    <span
+                      className="z2ws-rack-cell-value"
+                      data-kind={id}
+                      title={rackValue(id, session)}
+                    >
+                      {rackValue(id, session)}
                     </span>
-                  ) : null}
-                  {id === "space" || id === "flex" ? (
-                    <span className="z2ws-rack-space-glyph">
-                      {id === "flex" ? "↔" : "·"}
-                    </span>
-                  ) : (
-                    <span className="z2ws-rack-cell-stack">
-                      <span className="z2ws-rack-cell-legend">{spec.label}</span>
-                      <span
-                        className="z2ws-rack-cell-value"
-                        data-kind={id}
-                        title={rackValue(id, session)}
-                      >
-                        {rackValue(id, session)}
-                      </span>
-                    </span>
-                  )}
-                  {customizing ? (
+                  </span>
+                )}
+                {customizing ? (
+                  <button
+                    type="button"
+                    className="z2ws-rack-remove"
+                    aria-label={`Remove ${spec.label} from the row`}
+                    onClick={() =>
+                      setRow((prev) => prev.filter((_, i) => i !== index))
+                    }
+                  >
+                    <X size={9} />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })
+        )}
+        <TugPushButton
+          subtype="icon"
+          icon={<Settings size={12} />}
+          aria-label={customizing ? "Close the configure sheet" : "Configure the status area"}
+          title="Configure status area"
+          emphasis={customizing ? "tinted" : "ghost"}
+          role="action"
+          size="xs"
+          onClick={() => setCustomizing((c) => !c)}
+        />
+        <TugPushButton
+          subtype="icon"
+          icon={shelfOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          aria-label={shelfOpen ? "Close the status shelf" : "Open the status shelf"}
+          title={shelfOpen ? "Close shelf" : "Open shelf"}
+          emphasis="ghost"
+          size="xs"
+          onClick={() => setShelfOpen((o) => !o)}
+        />
+      </div>
+
+      {/* The PULSE strip — fallback surface only (see the priority
+          rule above): suppressed while PULSE lives in the row or in
+          an open shelf lane. */}
+      {showStrip ? (
+        <div className="z2ws-strip" data-slot="z2ws-strip">
+          <span className="z2ws-strip-legend">PULSE</span>
+          <span key={session.beat} className="z2ws-strip-text">
+            {session.commentary}
+          </span>
+        </div>
+      ) : null}
+
+      <Shelf session={session} lanes={lanes} open={shelfOpen} />
+
+      {/* The customize sheet — Finder's "drag your favorite items…",
+          plus the shelf-lane arrangement. */}
+      {customizing ? (
+        <div className="z2ws-rack-sheet" data-slot="z2ws-rack-sheet">
+          <div className="z2ws-rack-sheet-title">
+            Drag your favorite items into the status row…
+          </div>
+          <div className="z2ws-rack-palette">
+            {available.map((spec, index) => (
+              <div
+                key={spec.id}
+                className="z2ws-rack-chip"
+                draggable
+                onDragStart={() => {
+                  dragFrom.current = { source: "palette", index };
+                }}
+                onDoubleClick={() =>
+                  setRow((prev) =>
+                    !spec.repeatable && prev.includes(spec.id)
+                      ? prev
+                      : [...prev, spec.id],
+                  )
+                }
+                title="Drag into the row (or double-click to append)"
+              >
+                {spec.label}
+              </div>
+            ))}
+          </div>
+
+          <div className="z2ws-rack-sheet-title">
+            …and arrange the shelf lanes (three max):
+          </div>
+          <div className="z2ws-rack-lane-section">
+            <div
+              className="z2ws-rack-lane-strip"
+              data-slot="z2ws-rack-lane-strip"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                laneDropAt(lanes.length);
+              }}
+            >
+              {lanes.length === 0 ? (
+                <span className="z2ws-rack-empty">No lanes — drag some in…</span>
+              ) : (
+                lanes.map((id, index) => (
+                  <div
+                    key={id}
+                    className="z2ws-rack-chip z2ws-rack-lane-chip"
+                    draggable
+                    onDragStart={() => {
+                      laneDragFrom.current = { source: "strip", index };
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const before = e.clientX < rect.left + rect.width / 2;
+                      laneDropAt(before ? index : index + 1);
+                    }}
+                  >
+                    <GripVertical size={10} aria-hidden />
+                    {LANE_LABELS[id]}
                     <button
                       type="button"
-                      className="z2ws-rack-remove"
-                      aria-label={`Remove ${spec.label} from the row`}
+                      className="z2ws-rack-lane-remove"
+                      aria-label={`Remove the ${LANE_LABELS[id]} lane`}
                       onClick={() =>
-                        setRow((prev) => prev.filter((_, i) => i !== index))
+                        setLanes((prev) => prev.filter((_, i) => i !== index))
                       }
                     >
                       <X size={9} />
                     </button>
-                  ) : null}
-                </div>
-              );
-            })
-          )}
-          <TugPushButton
-            subtype="icon"
-            icon={<Settings size={12} />}
-            aria-label={customizing ? "Close the configure sheet" : "Configure the status row"}
-            title="Configure status row"
-            emphasis={customizing ? "tinted" : "ghost"}
-            role="action"
-            size="xs"
-            onClick={() => setCustomizing((c) => !c)}
-          />
-        </div>
-
-        {/* The customize sheet — Finder's "drag your favorite items…". */}
-        {customizing ? (
-          <div className="z2ws-rack-sheet" data-slot="z2ws-rack-sheet">
-            <div className="z2ws-rack-sheet-title">
-              Drag your favorite items into the status row…
+                  </div>
+                ))
+              )}
             </div>
             <div className="z2ws-rack-palette">
-              {available.map((spec, index) => (
+              {laneAvailable.map((id, index) => (
                 <div
-                  key={spec.id}
+                  key={id}
                   className="z2ws-rack-chip"
                   draggable
                   onDragStart={() => {
-                    dragFrom.current = { source: "palette", index };
+                    laneDragFrom.current = { source: "palette", index };
                   }}
                   onDoubleClick={() =>
-                    setRow((prev) =>
-                      !spec.repeatable && prev.includes(spec.id)
-                        ? prev
-                        : [...prev, spec.id],
-                    )
+                    lanes.length < 3 && setLanes((prev) => [...prev, id])
                   }
-                  title="Drag into the row (or double-click to append)"
+                  title="Drag into the lane strip (or double-click to append)"
                 >
-                  {spec.label}
+                  {LANE_LABELS[id]}
                 </div>
               ))}
             </div>
-            <div className="z2ws-rack-sheet-controls">
-              <span className="z2ws-rack-sheet-hint">
-                Labels stay on — bare values mostly lose their meaning.
-              </span>
-              <div className="z2ws-rack-sheet-actions">
-                <TugPushButton
-                  emphasis="outlined"
-                  role="action"
-                  size="xs"
-                  onClick={() => setRow(RACK_DEFAULT)}
-                >
-                  Restore Defaults
-                </TugPushButton>
-                <TugPushButton
-                  emphasis="filled"
-                  role="action"
-                  size="xs"
-                  onClick={() => setCustomizing(false)}
-                >
-                  Done
-                </TugPushButton>
-              </div>
+          </div>
+
+          <div className="z2ws-rack-sheet-controls">
+            <span className="z2ws-rack-sheet-hint">
+              Labels stay on — bare values mostly lose their meaning.
+            </span>
+            <div className="z2ws-rack-sheet-actions">
+              <TugPushButton
+                emphasis="outlined"
+                role="action"
+                size="xs"
+                onClick={() => {
+                  setRow(RACK_DEFAULT);
+                  setLanes(DEFAULT_LANES);
+                }}
+              >
+                Restore Defaults
+              </TugPushButton>
+              <TugPushButton
+                emphasis="filled"
+                role="action"
+                size="xs"
+                onClick={() => setCustomizing(false)}
+              >
+                Done
+              </TugPushButton>
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -713,57 +864,36 @@ function RackProposal({ session }: { session: MockSession }): React.ReactElement
 
 export function GalleryZ2Workshop(): React.ReactElement {
   const { session, playing, togglePlaying, reset } = useMockSession();
-  const [proposal, setProposal] = useState<"shelf" | "rack">("shelf");
-
-  const proposalId = useId();
-  const { ResponderScope } = useResponderForm({
-    selectValue: {
-      [proposalId]: (v: string) => setProposal(v as "shelf" | "rack"),
-    },
-  });
-
   return (
-    <ResponderScope>
-      <div className="cg-content z2ws" data-testid="gallery-z2-workshop">
-        <div className="z2ws-toolbar">
-          <TugChoiceGroup
-            items={[
-              { value: "shelf", label: "Shelf — pinned lanes + commentary" },
-              { value: "rack", label: "Rack — customizable row" },
-            ]}
-            value={proposal}
-            senderId={proposalId}
-            size="sm"
+    <div className="cg-content z2ws" data-testid="gallery-z2-workshop">
+      <div className="z2ws-toolbar">
+        <TugLabel emphasis="calm">
+          One Z2 area — the gear configures, the chevron pins, PULSE surfaces once.
+        </TugLabel>
+        <div className="z2ws-player">
+          <TugPushButton
+            subtype="icon"
+            icon={playing ? <Pause size={13} /> : <Play size={13} />}
+            aria-label={playing ? "Pause the mock session" : "Play the mock session"}
+            emphasis="ghost"
+            size="xs"
+            onClick={togglePlaying}
           />
-          <div className="z2ws-player">
-            <TugPushButton
-              subtype="icon"
-              icon={playing ? <Pause size={13} /> : <Play size={13} />}
-              aria-label={playing ? "Pause the mock session" : "Play the mock session"}
-              emphasis="ghost"
-              size="xs"
-              onClick={togglePlaying}
-            />
-            <TugPushButton
-              subtype="icon"
-              icon={<RotateCcw size={13} />}
-              aria-label="Restart the mock session"
-              emphasis="ghost"
-              size="xs"
-              onClick={reset}
-            />
-            <TugLabel className="z2ws-player-beat" mono emphasis="calm">
-              {`beat ${String(session.beat % SCRIPT.length).padStart(2, "0")}`}
-            </TugLabel>
-          </div>
+          <TugPushButton
+            subtype="icon"
+            icon={<RotateCcw size={13} />}
+            aria-label="Restart the mock session"
+            emphasis="ghost"
+            size="xs"
+            onClick={reset}
+          />
+          <TugLabel className="z2ws-player-beat" mono emphasis="calm">
+            {`beat ${String(session.beat % SCRIPT.length).padStart(2, "0")}`}
+          </TugLabel>
         </div>
-
-        {proposal === "shelf" ? (
-          <ShelfProposal session={session} />
-        ) : (
-          <RackProposal session={session} />
-        )}
       </div>
-    </ResponderScope>
+
+      <UnifiedZ2Demo session={session} />
+    </div>
   );
 }
