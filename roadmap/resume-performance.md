@@ -138,11 +138,29 @@ resolved).
 #### Dependencies / Prerequisites {#dependencies}
 
 - Session unification (landed `f5fc76c2`): `external_scan_cache` pattern and
-  `claude_project_dir` chokepoint (cache stages), at0181's fixture builder.
+  at0181's fixture builder.
+- Path resolution authority (landed `7a80fabf`): `resolve_to_claude_form` in
+  crate-root `path_resolver.rs` — the APFS-firmlink-aware resolver
+  `claude_project_dir` now routes through. Any cache stage deriving JSONL
+  paths uses the chokepoint, never ad-hoc canonicalization.
 - Request-driven replay (`request_replay`, background claude spawn) and the
   replay-window markers (`replay_started`/`replay_complete`) at every layer.
 - `BlockHeightIndex` (existing height estimation for markdown blocks).
 - Instrumentation rails: `logSessionLifecycle`, `tugDevLogStore` / TugDevPanel.
+
+**Recent adjacent work this plan builds beside (skimmed 2026-06-12):**
+`7a80fabf` already made the *picker/listing* side fast — two-phase
+`list_sessions` (instant ledger preview, detached scan settling the union via
+a `scanning` flag), a startup warm scan pre-populating the scan cache, and
+rayon-parallel scan parsing. None of it touches the replay/render pipeline
+this plan targets (verified: tugcode `replay.ts`/`session.ts`/`main.ts` and
+`code-session-store.ts` dispatch are unchanged since `f5fc76c2`), but two of
+its patterns are directly reusable here: the **detached-work-then-settle
+orchestration** is the template for #step-8's pre-warm, and **rayon is now a
+tugcast dependency** if any gated stage wants parallelism. Separately,
+`56217182` (monitors-in-jobs) grew the reducer's event inventory — the
+#step-1 immutability audit covers the new monitor/job events like every other
+event.
 
 #### Constraints {#constraints}
 
@@ -598,7 +616,10 @@ counters are the "parse-once" and "tail-only live renders" surfaces.
   parse/memo counters wired even before the cache exists — counting raw parses)
 - Dropped-frame telemetry on the tugcast forward path ([R04] sensor)
 - **Immutability audit:** every reducer event inventoried against "finalized
-  rows never change," result table recorded in this plan ([R01])
+  rows never change," result table recorded in this plan ([R01]) — including
+  the monitor/job-ledger events recently added by monitors-in-jobs
+  (`56217182`), which mutate Z2 JOBS state and must be confirmed to never
+  touch transcript row content
 - **Render-shape audit ([Q02]):** mounting, memoization, [L26] identity-input
   status, where markdown parses — recorded alongside
 - Baseline waterfall (small ~10 turns / medium ~50 turns ~500KB / whale ≥50MB)
@@ -806,7 +827,7 @@ counters are the "parse-once" and "tail-only live renders" surfaces.
 
 **Tasks:**
 - [ ] Gate check on [Q03] after #step-2/#step-3 re-measurement
-- [ ] If proceeding: table + methods mirroring the scan-cache shape; tugcode cache path; pre-warm with concurrency caps
+- [ ] If proceeding: table + methods mirroring the scan-cache shape; tugcode cache path; pre-warm with concurrency caps, orchestrated on the detached-work-then-settle pattern the two-phase `list_sessions` established (`7a80fabf`); JSONL paths via the `resolve_to_claude_form` chokepoint
 
 **Tests:**
 - [ ] If proceeding — Rust: validity key, size cap, sweep, pre-warm caps. tugcode: hit skips translate; stale key re-translates
