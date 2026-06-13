@@ -366,7 +366,7 @@ Below the windowed thresholds the transcript mounts every cell but defers off-sc
 | #step-6 | Source-offset attribution on rendered blocks | done | 29c80f73 |
 | #step-7 | Range→markdown copy reconstruction | done | dd95862f |
 | #step-8 | Markdown integration checkpoint | done | N/A (verify) |
-| #step-9 | Per-tool collapse-default table | pending | — |
+| #step-9 | Per-tool collapse-default table | done | 2b49b3bc |
 | #step-10 | Collapsed-header redesign spike + gallery vet | pending | — |
 | #step-11 | Apply collapsed-header redesign + font sizing | pending | — |
 | #step-12 | Error coloring = header-only | pending | — |
