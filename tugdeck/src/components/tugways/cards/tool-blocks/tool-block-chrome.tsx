@@ -105,7 +105,7 @@ import {
   useBlockFoldState,
 } from "@/components/tugways/body-kinds/affordances";
 
-import { ToolBlockCollapseContext } from "./collapse-context";
+import { ToolBlockCollapseContext, ToolUseIdContext } from "./collapse-context";
 import { ToolCallHeader } from "./tool-call-header";
 import type { CautionFlag, ToolBlockStatus } from "./types";
 
@@ -373,6 +373,12 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   // ([L26]); only the child subtree appears/disappears.
   const blockCollapse = React.useContext(ToolBlockCollapseContext);
   const blockCollapsed = blockCollapse !== null && blockCollapse.collapsed;
+  // The id for `data-tool-use-id`: the collapse handle when wrapped,
+  // else the dispatch-level context the transcript provides around
+  // every top-level tool — so the attribute is present on every tool
+  // root, not just collapsed ones ([P01]).
+  const toolUseIdFromContext = React.useContext(ToolUseIdContext);
+  const toolUseId = blockCollapse?.toolUseId ?? toolUseIdFromContext ?? undefined;
   // Latest-ref over copyText so the Copy button's `getText` closure
   // captures the freshest payload without recreating the button when
   // the wrapper re-renders with a new result.
@@ -450,7 +456,7 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
       data-status={status}
       data-caution={caution?.reason ?? undefined}
       data-block-collapsed={blockCollapsed ? "true" : undefined}
-      data-tool-use-id={blockCollapse?.toolUseId}
+      data-tool-use-id={toolUseId}
       className={cn("tool-block-chrome", className)}
     >
       {/* The header is now the shared `ToolCallHeader` ([D01]). The

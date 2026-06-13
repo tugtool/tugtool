@@ -174,29 +174,10 @@ export function planReconcile(
  */
 const BLOCK_CLASS = "tugx-md-block";
 
-/**
- * Stamp the block's source character range onto its wrapper so the
- * transcript COPY path can reconstruct markdown for an arbitrary DOM
- * selection: a touched wrapper maps back to `[startChar, endChar)` in
- * its message's source text, and a selection's touched wrappers are
- * sliced from that source (block-level attribution). The reconciler
- * preserves wrapper identity across streaming deltas, so the
- * attributes persist for the wrapper's life. CSS/DOM only — no React
- * state ([L06]).
- */
-function attributeSourceRange(
-  el: HTMLElement,
-  block: SanitizedMarkdownBlock,
-): void {
-  el.dataset.mdStart = String(block.startChar);
-  el.dataset.mdEnd = String(block.endChar);
-}
-
 function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
   const el = document.createElement("div");
   el.className = BLOCK_CLASS;
   el.dataset.blockType = block.type;
-  attributeSourceRange(el, block);
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
@@ -211,7 +192,6 @@ function updateBlockElement(
   block: SanitizedMarkdownBlock,
 ): void {
   el.dataset.blockType = block.type;
-  attributeSourceRange(el, block);
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);

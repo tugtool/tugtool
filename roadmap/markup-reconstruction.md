@@ -9,9 +9,41 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | complete on dash (all steps done; awaiting user `dash join`) |
 | Target branch | main |
 | Last updated | 2026-06-13 |
+
+---
+
+### Current Status & Post-Compact Handoff {#handoff}
+
+**Read this first.** The implementation pivoted away from this plan's original source-offset-slicing design partway through. The pivot is the correct, user-validated approach; the earlier source-slicing steps ([P02], [Q01], [#step-5]–[#step-7], the spec at [#inline-segment-model]) are **superseded** — do not resurrect them.
+
+**Governing approach (supersedes [Q02]/[P02]/[P03]/[P06]):** see **[P09] Fragment serialization** below. Copy = serialize the **selected DOM text runs** to markdown. Fidelity is structural (output text == selection by construction); styling is best-effort per run; **overshoot is impossible** (a node with no selected text node — `<hr>`, a grazed empty heading — produces no run).
+
+**Where the work lives:**
+- Dash worktree `tugdash/markup-reconstruction` (NOT joined to main). Build instance: `debug-tugdash-markup-reconstruction` (`just app-debug` / `launch-debug` / `logs-debug` / `stop-debug` from the worktree).
+- **The one file that matters now:** `tugdeck/src/lib/markdown/serialize-selection.ts` — the fragment serializer (`selectionToTranscriptMarkdown(selection, bodyEl)`). Walks text nodes in the range, clips to selection, reads inline marks from ancestors (`strong/em/del/code/a`), block context (heading/li/pre/blockquote), KaTeX→TeX annotation (`$…$`/`$$…$$`), fenced code from `<pre>`.
+- Wiring: `dev-card-transcript.tsx` — `useTranscriptCellMenu(resolveCopyMarkdown)` → `handleCopy` (reads live selection in the gesture, `clipboard.writeText`). `resolveCopyMarkdown = (bodyEl, sel) => selectionToTranscriptMarkdown(sel, bodyEl)`.
+- Test: `tests/app-test/at0188-transcript-copy-wiring.test.ts` + fixture `gallery-transcript-copy.tsx` (mounts the REAL hook over real `TugMarkdownBlock`/`ToolBlockChrome`/`DevThinkingBlock` + a static `PropertyStore`; exposes `window.__tugCopyWiringProbe` for deterministic assertions). Run: `just app-test at0188-transcript-copy-wiring.test.ts`.
+
+**Dash commits (chronological):** `a3d323fd` `f47bf670` `9fe11c5a` `bb5b1dec` (steps 1–4) · `e14d53b0` `b6512f80` `5a7d8408` `069efce4` (steps 5–8, source-slicing — **later retired**) · `271c2878` `dc416969` `58f9652c` (the fix rounds: overshoot guard → fidelity guarantee → **fragment-serialization rework**, the current state).
+
+**Retired (deleted/reverted — do not bring back):** `range-to-blocks.ts`, `inline-offset-map.ts`, `selection-to-markdown.ts` (+ their `bun:test`s), `at0187`; the `data-md-start/end` attribution in `render-incremental.ts`; `data-md-source-path` in `tug-markdown-block.tsx`; the WASM `lex_inline_segments` (`tugmark-wasm/src/lib.rs` + regenerated `pkg/`); `buildCopyResolvers`/`CopyResolvers`. Vestigial-but-harmless leftovers from Step 1 that were NOT reverted: `ToolUseIdContext` + always-on `data-tool-use-id` (collapse-context.tsx, tool-block-chrome.tsx, the CodeRowBody provider) and the exported `groupToolCallsByParent`/`toolCallToMarkdown` (turn-entry-markdown.ts). The serializer doesn't use them; clean up if convenient.
+
+**Hard-won lessons (cost real iterations — don't relearn):**
+1. **Fidelity beats styling, always.** Copy must contain exactly the selected text — never widen to a whole construct/block to preserve markup, never bail to plain text when markup is hard. Apply styling to the selected text, clipped.
+2. **`range.cloneContents()` does NOT preserve an inline ancestor** (`<strong>`) when the selection is wholly inside its text node — so it can't carry styling for within-run selections. That's why we walk live text runs and read ancestors, not the clone.
+3. **WebKit `Selection.toString()` is empty for a programmatically-set selection** (works for real user selections). Use `Range.toString()` in tests/anywhere that reads a scripted selection.
+4. **Overshoot is structural:** only text nodes produce output, so `<hr>`/empty-heading boundary clones can't leak. Keep it that way.
+5. App-test selection helpers: interpolate offsets/needles into the page-script string (`${...}`) — don't reference test-scope vars inside the evalJS string. `nativeKey("c", ["cmd"])` for ⌘C; the cell must be first-responder first (click it).
+
+**Remaining work — ALL DONE (Steps 9–13 reassessed + closed under the new model):**
+- **[#step-9]** (partial=document-order / full-row exact, the `## Response` stitch): **MOOT/superseded** — serialization is inherently document-order and faithful; there is no tools-first stitch. Done-by-supersession.
+- **[#step-10]** Cross-cell copy: **DONE** (`d891753a`), and it needed **no host handler**. The per-cell `handleCopy` reads the live `window.getSelection()` (not cell-scoped), and the serializer walks the whole `Range` from `commonAncestorContainer` — so a selection spanning rows is reconstructed in full by whichever cell owns the COPY gesture. The [P04]/[Q02] design (a host responder that substitutes `turnEntryToMarkdown` for "contained" cells) was **dropped**: under [P09] it would *overshoot* — copying tool I/O the cheap-tier cell doesn't display. A cheap (preview-tier) cell in a cross-cell span contributes its **displayed preview text**, which is faithful-to-display ([P09]). Proven by `at0188` (two/three separate responder-scope cells; cross-cell ⌘C asserts both cells' content in document order, blank-line separated).
+- **[#step-11]** Dual `text/plain` + `text/html` clipboard: **DONE** (`d891753a`). `handleCopy` writes a `ClipboardItem` ({`text/plain`: reconstructed markdown, `text/html`: that markdown re-rendered via `parseMarkdownToSanitizedBlocks` — [Q04]}), built + issued synchronously in the gesture, degrading to `writeText` when `ClipboardItem`/`clipboard.write` is unavailable or rejects ([P07]). New `lib/markdown/transcript-copy-html.ts`. `at0188` asserts `<strong>bold</strong>` in the `text/html` flavor.
+- **[#step-12]** Regression coverage: **DONE** (`d891753a`). `gallery-transcript-copy` grew a rich cell (heading, list, fenced code, inline `$E=mc^2$`, display `$$x=a+b$$`); `at0188` asserts each copies its markdown **source**, never the rendered glyph/highlight text (KaTeX TeX-annotation path waits for `.katex` to render). blockquote/table remain **best-effort** (degrade to plain, never overshoot) — a known limitation, not a bug.
+- **[#step-13]** Final `verify`: **DONE**. `bunx tsc --noEmit` clean; `bun test` 3639 pass; `cargo nextest` 1040 pass; `just app-test at0188` VERDICT: PASS (29 assertions). Ready for `tugutil dash join markup-reconstruction` (user-invoked).
 
 ---
 
@@ -124,7 +156,7 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P01]`; global de
 
 **Plan to resolve:** Spiked in [#step-10].
 
-**Resolution:** OPEN → resolved in [#step-10].
+**Resolution:** RESOLVED in [#step-10] (`d891753a`) — and the answer inverts the original options. COPY is **not** intercepted at a higher scope: the first-responder cell's existing handler reads the un-scoped live selection and the range-global serializer reconstructs the whole span ([P09]/[P04] amendment). A non-rich (cheap-tier) boundary or contained cell contributes its **displayed preview text** — faithful-to-display — rather than a substituted `turnEntryToMarkdown` (which would overshoot beyond what's shown).
 
 #### [Q03] Deterministic transcript seeding for the integration test (OPEN) {#q03-test-seeding}
 
@@ -176,7 +208,19 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P01]`; global de
 
 ### Design Decisions {#design-decisions}
 
-#### [P01] The rendered DOM is the single source of truth for block enumeration (DECIDED) {#p01-dom-source-of-truth}
+#### [P09] Copy is fragment serialization of the selection (GOVERNING — supersedes [P02]/[P03]/[P06] and the source-slice model) {#p09-fragment-serialization}
+
+**Decision:** Reconstruct copy markdown by **serializing the selected DOM text runs**, not by slicing source offsets. Walk the text nodes the range touches in document order, clip the first/last to the selection's offsets (so the text is *exactly* the selection), and for each run emit markdown that decorates only that text: inline marks from the run's ancestor elements (`<strong>`→`**`, `<em>`→`*`, `<del>`→`~~`, `<code>`→`` ` ``, `<a>`→`[…](href)`), block context from the nearest block ancestor (heading level, list item, code fence, blockquote), KaTeX from its embedded TeX annotation (`$…$`/`$$…$$`), fenced code from the `<pre>` text.
+
+**Rationale (the lesson):** Source slicing forces whole-construct boundaries, so it can only *widen* a partial selection (→ copies unselected text) or *bail* to plain (→ drops styling). Both are wrong. Fidelity and styling are not in tension if you build *from* the selected text and layer styling on per run. Two non-obvious facts forced this: (a) `range.cloneContents()` drops an inline ancestor when the selection is wholly inside its text node, so the clone can't carry within-run styling — you must read ancestors off the live tree; (b) only text nodes produce output, so structural/empty boundary nodes (`<hr>`, grazed empty heading) **cannot** leak into the copy — overshoot is impossible by construction.
+
+**Invariant:** the rendered text of the copied markdown equals the selected text, by construction (markers are not text). Styling degrades run-by-run, never wholesale.
+
+**Implications:** Implemented in `lib/markdown/serialize-selection.ts`. Block-level/atomic-widen ([P02]/[Q02]'s slicing), the offset mapper, the WASM inline segments, and the `data-md-*` attribution are all **retired**. blockquote prefixing and tables are best-effort (degrade to plain text, never overshoot). [L07].
+
+#### [P01] The rendered DOM is the single source of truth for block enumeration (DECIDED — partly retained) {#p01-dom-source-of-truth}
+
+> **Note:** the *spirit* (read the rendered DOM, not a mirrored filter) survives in [P09]; the *mechanism* below (data-attribute markers, resolver callbacks, `range-to-blocks`) was **retired** in the fragment-serialization rework. Kept for history.
 
 **Decision:** Stop deriving an ordered `docBlocks` array from a mirror of `CodeRowBody`'s filter. Each top-level transcript child carries `data-transcript-block="markdown|tool|thinking|other"` and the identity the walk needs (markdown: the streaming-path/message key to read source; tool: `data-tool-use-id`). `range-to-blocks` reads kind + identity from the DOM in document order; the cell supplies only *lookups* (source-by-path, tool-markdown-by-id), not an ordered parallel list.
 
@@ -184,7 +228,9 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P01]`; global de
 
 **Implications:** `CodeRowBody` stamps the attributes at the dispatch site; `ToolBlockChrome` (or the dispatch wrapper) stamps `data-tool-use-id` on *every* tool block (not only collapse-wrapped ones); `buildTranscriptDocBlocks` is deleted; `selectionToTranscriptMarkdown` takes resolver callbacks. [L06] DOM attributes; [L26] markers ride stable wrappers.
 
-#### [P02] Inline granularity via construct-aware source segments, not inline DOM attributes (DECIDED) {#p02-inline-segments}
+#### [P02] Inline granularity via construct-aware source segments (RETIRED — superseded by [P09]) {#p02-inline-segments}
+
+> Source-slicing model. Built (Steps 5–7) then retired: it widened partial selections to whole constructs (copying unselected text). Replaced by [P09] fragment serialization. Kept for history.
 
 **Decision:** Surface, per block, an ordered list of inline **segments** from the WASM `into_offset_iter` walk. Each segment is either *splittable* — a plain-text run whose rendered text equals its source 1:1 (char-accurate slicing) — or *atomic* — an inline construct (strong, emphasis, inline code, link, image, autolink, inline math, HTML entity) carrying its **whole** source span *including* its markers. The JS mapper converts a selection's DOM offsets within a block to a rendered-text offset, finds the segment(s) it falls in, splits inside splittable runs, and **widens to the whole span** of any atomic construct it touches. Slicing stays source-based; an unresolvable boundary widens to the whole block.
 
@@ -194,7 +240,9 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P01]`; global de
 
 **Implications:** New WASM export (e.g. `lex_inline_segments`) emitting `{kind: splittable|atomic, renderedLen, sourceStart, sourceEnd}` per block; a pure JS mapper module; `range-to-blocks` uses it for the first/last touched block, interior blocks stay whole.
 
-#### [P03] Partial = document order, no fabricated structure; full-row stays exact (DECIDED) {#p03-partial-semantics}
+#### [P03] Partial = document order, no fabricated structure; full-row stays exact (SUPERSEDED by [P09]) {#p03-partial-semantics}
+
+> Moot under [P09]: serialization is inherently document-order and adds no `## Response`/tools-first stitch. Kept for history.
 
 **Decision:** A partial selection stitches touched blocks in **document order** with no tool-first regrouping and no injected `## Response`. A whole-row selection still reproduces `turnEntryToMarkdown(turn)` byte-for-byte (detected as full coverage, or routed to `turnEntryToMarkdown`).
 
@@ -202,9 +250,11 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P01]`; global de
 
 **Implications:** `stitchSelectionMarkdown` gains a document-order mode; the walk preserves interleave order; a full-coverage detector (or the existing full-row COPY button) routes whole-row to `turnEntryToMarkdown`.
 
-#### [P04] Cross-cell copy assembled at the transcript host (DECIDED) {#p04-cross-cell}
+#### [P04] Cross-cell copy assembled at the transcript host (AMENDED — no host handler under [P09]) {#p04-cross-cell}
 
-**Decision:** When a selection spans more than one cell, COPY is handled at the transcript host scope: walk touched cells in document order, reconstruct each (boundary cells via the per-cell range path, fully-contained cells via `turnEntryToMarkdown`), and join.
+> **Amended by [P09] (implemented `d891753a`).** The host-scope assembly below was **not built** and is not needed. Because `handleCopy` reads the live, un-scoped `window.getSelection()` and the serializer walks the whole `Range` from `commonAncestorContainer`, the per-cell handler already reconstructs a cross-cell span in full — no host responder, no `turnEntryToMarkdown` substitution. The substitution is in fact **wrong** under [P09]: it would copy a contained cell's full turn markdown (tool I/O included) even when that cell is rendered cheap (preview only), overshooting beyond displayed text. A cheap cell contributes its displayed preview text, which is faithful-to-display. Original text kept for history.
+
+**Decision (superseded):** When a selection spans more than one cell, COPY is handled at the transcript host scope: walk touched cells in document order, reconstruct each (boundary cells via the per-cell range path, fully-contained cells via `turnEntryToMarkdown`), and join.
 
 **Rationale:** Per-cell handlers structurally cannot see other cells; the host owns the row set and each row's `TurnEntry`.
 
@@ -218,7 +268,9 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P01]`; global de
 
 **Implications:** Replace `clipboard.writeText` in the transcript path with a `ClipboardItem` write, synchronous in the gesture; reuse `tug-text-editor`'s envelope helper.
 
-#### [P06] The source-slice defense is canonical and regression-guarded (DECIDED) {#p06-source-slice}
+#### [P06] The source-slice defense is canonical and regression-guarded (SUPERSEDED by [P09]) {#p06-source-slice}
+
+> Replaced: copy no longer slices source. The math/code "garbage" concern is handled instead by serializing KaTeX from its TeX annotation and fenced code from `<pre>` ([P09]). Kept for history.
 
 **Decision:** Copy always derives from source offsets, never `Selection.toString()` over rendered math/code. A regression test asserts copying a selection over rendered KaTeX/Shiki yields source, not rendered duplicate text.
 
@@ -252,6 +304,8 @@ Anchors are explicit and kebab-case. Plan-local decisions use `[P01]`; global de
 7. The cell builds `text/plain` (this markdown) + `text/html` (re-rendered slice, [P05]/[Q04]) and writes one `ClipboardItem`.
 
 #### Inline segment model {#inline-segment-model}
+
+> **RETIRED ([P09]).** This source-offset/segment model was built then removed. The live design serializes the selected DOM fragment — see [P09] and `lib/markdown/serialize-selection.ts`. Kept for history.
 
 Per block, the WASM emits an ordered list of **segments** from `into_offset_iter`, each `{ kind: splittable | atomic, renderedLen, sourceStart, sourceEnd }`:
 - **splittable** — a plain-text run; rendered text == source 1:1, so a boundary inside it maps linearly to a source char offset.
@@ -293,19 +347,20 @@ Banned (per project policy): fake-DOM/RTL, mock-store assertion tests.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | DOM-sourced block enumeration; reliable tool-use-id | pending | — |
-| #step-2 | Observable degradation on fallback | pending | — |
-| #step-3 | Integration app-test for the real COPY wiring | pending | — |
-| #step-4 | Robustness checkpoint | pending | — |
-| #step-5 | WASM: per-block inline source segments | pending | — |
-| #step-6 | Pure rendered-offset→source mapper | pending | — |
-| #step-7 | Inline-accurate slicing in range-to-blocks | pending | — |
-| #step-8 | Granularity checkpoint | pending | — |
-| #step-9 | Partial = document order; full-row stays exact | pending | — |
-| #step-10 | Cross-cell / whole-transcript selection copy | pending | — |
-| #step-11 | Dual text/plain + text/html clipboard | pending | — |
-| #step-12 | Source-slice regression guards; tool over-copy | pending | — |
-| #step-13 | Final integration checkpoint | pending | — |
+| #step-1 | DOM-sourced block enumeration; reliable tool-use-id | done | a3d323fd |
+| #step-2 | Observable degradation on fallback | done | f47bf670 |
+| #step-3 | Integration app-test for the real COPY wiring | done | 9fe11c5a |
+| #step-4 | Robustness checkpoint | done | N/A (verify) |
+| #step-5 | WASM inline source segments | retired | e14d53b0 (later removed) |
+| #step-6 | Pure rendered-offset→source mapper | retired | b6512f80 (later removed) |
+| #step-7 | Inline-accurate slicing in range-to-blocks | retired | 5a7d8408 (later removed) |
+| #step-8 | Granularity checkpoint | superseded | — |
+| — | **Fragment-serialization rework ([P09])** — inline accuracy + fidelity guarantee, the current copy path | done | 271c2878 → dc416969 → 58f9652c |
+| #step-9 | Partial = document order; full-row stays exact | superseded by [P09] | — |
+| #step-10 | Cross-cell / whole-transcript selection copy | done | d891753a |
+| #step-11 | Dual text/plain + text/html clipboard | done | d891753a |
+| #step-12 | Regression coverage on rich content (math/lists/headings); blockquote+table best-effort | done | d891753a |
+| #step-13 | Final integration checkpoint | done | N/A (verify) |
 
 ---
 
@@ -399,6 +454,8 @@ Banned (per project policy): fake-DOM/RTL, mock-store assertion tests.
 
 ---
 
+> **Steps 5–7 RETIRED ([P09]).** Built (commits `e14d53b0`/`b6512f80`/`5a7d8408`) then removed in the fragment-serialization rework. The inline-accuracy goal is met by `serialize-selection.ts` instead. Do not re-implement. Kept for history.
+
 #### Step 5: WASM — per-block inline source segments {#step-5}
 
 **Depends on:** #step-4
@@ -480,6 +537,8 @@ Banned (per project policy): fake-DOM/RTL, mock-store assertion tests.
 - [ ] `verify`: sub-sentence copies land exactly; math/code still source-sliced; no regressions.
 
 ---
+
+> **SUPERSEDED ([P09]).** Fragment serialization is inherently document-order and faithful; there is no tools-first stitch or injected `## Response`. Nothing to do here.
 
 #### Step 9: Partial = document order; full-row stays exact {#step-9}
 
@@ -598,14 +657,14 @@ Banned (per project policy): fake-DOM/RTL, mock-store assertion tests.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Block enumeration is DOM-sourced; no mirrored filter; drift is observable ([#step-1], [#step-2], [#step-4]).
-- [ ] Real ⌘C + menu COPY covered by `just app-test` ([#step-3]).
-- [ ] Inline-accurate single-block copy; graceful fallback ([#step-7]).
-- [ ] Partial = document order; full-row exact ([#step-9]).
-- [ ] Cross-cell copy works ([#step-10]).
-- [ ] Clipboard carries markdown + HTML ([#step-11]).
-- [ ] Math/code source-slice guarded ([#step-12]).
-- [ ] `bun test` green, `tsc` clean, Rust green, `verify` PASS ([#step-13]).
+- [x] Block enumeration is DOM-sourced; no mirrored filter; drift is observable ([#step-1], [#step-2], [#step-4]).
+- [x] Real ⌘C + menu COPY covered by `just app-test` ([#step-3]).
+- [x] Inline-accurate single-block copy; graceful fallback — delivered by [P09] fragment serialization (the per-run, clip-to-selection model), not the retired source-slicer.
+- [x] Partial = document order; full-row exact — inherent to [P09] serialization ([#step-9] superseded).
+- [x] Cross-cell copy works ([#step-10]) — via the range-global serializer, no host handler.
+- [x] Clipboard carries markdown + HTML ([#step-11]).
+- [x] Math/code source-faithful copy guarded ([#step-12]) — KaTeX TeX annotation + fenced `<pre>`, asserted in `at0188`.
+- [x] `bun test` green (3639), `tsc` clean, Rust green (1040), `verify` PASS ([#step-13]).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

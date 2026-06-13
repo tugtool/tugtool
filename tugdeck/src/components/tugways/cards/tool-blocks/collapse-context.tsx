@@ -44,6 +44,17 @@ import { ToolBlockExpansionState } from "./expansion-state";
 export const ToolBlockExpansionContext =
   React.createContext<ToolBlockExpansionState | null>(null);
 
+/**
+ * The dispatching tool call's id, provided by the transcript renderer
+ * around every top-level tool block. `ToolBlockChrome` reads it so its
+ * `data-tool-use-id` is present on **every** tool root — not only the
+ * collapse-wrapped ones, which alone get an id from
+ * `ToolBlockCollapseContext`. This is what lets the COPY walk address
+ * any tool block from the DOM ([P01]). No DOM element — a transparent
+ * provider — so it doesn't perturb the transcript's block layout.
+ */
+export const ToolUseIdContext = React.createContext<string | null>(null);
+
 export interface ToolBlockCollapseHandle {
   /** Whether the block is currently collapsed (body unmounted). */
   collapsed: boolean;

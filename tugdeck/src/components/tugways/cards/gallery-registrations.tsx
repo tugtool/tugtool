@@ -70,6 +70,7 @@ import { GalleryZ2Workshop } from "./gallery-z2-workshop";
 import { GalleryPaneBulletin } from "./gallery-pane-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryTranscriptMarkdown } from "./gallery-transcript-markdown";
+import { GalleryTranscriptCopy } from "./gallery-transcript-copy";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
@@ -1118,6 +1119,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-transcript-markdown",
     contentFactory: (_cardId) => <GalleryTranscriptMarkdown />,
     defaultMeta: { title: "Transcript Markdown", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Transcript COPY wiring fixture ([Q03]) — mounts the real
+  // `useTranscriptCellMenu` handler over a static body (markdown + tool +
+  // thinking) so `at0188` can drive real ⌘C / menu-Copy and assert the
+  // clipboard. Exercises the end-to-end reconstruction the probe can't.
+  registerCard({
+    componentId: "gallery-transcript-copy",
+    contentFactory: (_cardId) => <GalleryTranscriptCopy />,
+    defaultMeta: { title: "Transcript Copy", icon: "Clipboard", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
