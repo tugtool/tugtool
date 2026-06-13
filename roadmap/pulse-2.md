@@ -170,6 +170,25 @@ global `tuglaws/design-decisions.md`; `[Q01]` questions; `Spec S01`; `List L01`;
 
 ---
 
+### Amendment: the deterministic ticker {#amendment-ticker}
+
+The live walks falsified the commentator concept itself, not just its data
+path: spoken often it restated the visible transcript; spoken rarely it was
+unpredictable. After eight voices (history: spike README v6–v8 entries) the
+user chose the **deterministic ticker**: `pulse/ticker.ts` replaces
+intake/scheduler/digest/driver/posture — pure rules over the same typed wire
+frames (current call, elapsed refreshes, failures/recoveries always, jobs,
+API-retry stride, per-turn summary; ~1.5s routine throttle, priority bypass).
+Everything else in this plan ships as built: the CODE_OUTPUT tap + allowlist
++ replay mute (Spec S01) feeds the ticker unchanged; ledger, PULSE feed,
+CONTROL tail, deck store/strip/per-card filter/clear-on-submit are
+untouched. [P03]'s substance gate and [P02]'s per-scope beats survive in
+spirit — the ticker is per-scope and silent without events — and the
+fabrication risk class is gone entirely (no model in the loop). D103
+re-amended accordingly.
+
+---
+
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
 #### [Q01] Digest v6 rendering + prompt v6 voice quality (OPEN) {#q01-digest-v6}
@@ -190,7 +209,18 @@ for session A.
 digests (single-scope arc, two interleaved scopes, error/recovery arc,
 assistant-text-rich beats), iterate, record as v6 in the spike README (#step-1).
 
-**Resolution:** OPEN — resolved by #step-1 before any daemon code changes.
+**Resolution:** RESOLVED by the #step-1 re-spike (`v2.1.173-pulse-spike/README.md`
+§ v6): three iterations (v6.0 → v6.2 → v6.4) pinned the format and prompt.
+Thread separation holds (the trap beat speaks); character limits had to be
+reframed as a word limit ("at most SIXTEEN WORDS" — Haiku cannot count
+characters; over-length went 7/18 → 0–1/18 with the daemon's 110 clip covering
+the marginal case); session tags had to be banned twice (plus "say what landed,
+not who finished" for turn-complete beats); the API-retry event needed
+self-disambiguating phrasing ("the assistant's connection to its AI model is
+retrying" — the terse form was misattributed to the session's own subject).
+`assistant says` clip budget pinned at **240 chars**. Latency under the
+unchanged posture: p50 ~830–920ms, max 2.3s across three 18-beat runs, zero
+beats over the 4s stale window.
 
 #### [Q02] Assistant-text harvest discipline (DECIDED) {#q02-text-harvest}
 
@@ -585,12 +615,12 @@ only deck edit is removing the `PULSE_FACT` constant from `protocol.ts`.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Voice re-spike: digest v6 + prompt v6 | pending | — |
-| #step-2 | Daemon core: intake, scheduler v2, digest v6 | pending | — |
-| #step-3 | Daemon wiring: wire-frame stdin + stdio tests | pending | — |
-| #step-4 | The wire flip: tugcast tap + producer deletion | pending | — |
-| #step-5 | Amend D103 | pending | — |
-| #step-6 | Integration checkpoint | pending | — |
+| #step-1 | Voice re-spike: digest v6 + prompt v6 | done | 05c062db |
+| #step-2 | Daemon core: intake, scheduler v2, digest v6 | done | bd06756b |
+| #step-3 | Daemon wiring: wire-frame stdin + stdio tests | done | 57b9e98e |
+| #step-4 | The wire flip: tugcast tap + producer deletion | done | 482e1148 |
+| #step-5 | Amend D103 | done | 0c7d9809 |
+| #step-6 | Integration checkpoint | in progress | iterate rounds: v7 voice 1dc2a949+2d912c89, v8 voice 163c42a9, then the commentator was RETIRED for a deterministic ticker (user decision on the walk) — see #amendment-ticker |
 
 #### Step 1: Voice re-spike — digest v6 + prompt v6 {#step-1}
 

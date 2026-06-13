@@ -47,7 +47,6 @@ export const FeedId = {
   TUG_FEED: 0x70,
   // Pulse (app-wide color commentary)
   PULSE: 0x80,
-  PULSE_FACT: 0x81,
   // Router-internal
   CONTROL: 0xc0,
   HEARTBEAT: 0xff,
@@ -357,6 +356,9 @@ export interface RateLimitInfo {
   overageDisabledReason?: string;
   /** Whether the current turn is consuming overage allotment. */
   isUsingOverage: boolean;
+  /** Window utilization as a 0–1 fraction (CLI ≥ 2.1.17x; absent on
+   *  older payloads). The usage bulletins key their % barriers on it. */
+  utilization?: number;
 }
 
 /**

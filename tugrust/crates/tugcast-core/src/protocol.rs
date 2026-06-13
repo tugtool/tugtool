@@ -91,8 +91,6 @@ impl FeedId {
     // -- Pulse (app-wide color commentary) --
     /// Commentator lines (tugcast → tugdeck)
     pub const PULSE: Self = Self(0x80);
-    /// Producer facts (producer → tugcast; never broadcast to clients)
-    pub const PULSE_FACT: Self = Self(0x81);
 
     // -- Router-internal --
     /// Control commands (tugdeck → tugcast, tugcast → tugdeck)
@@ -127,7 +125,6 @@ impl FeedId {
             Self::SESSION_METADATA => Some("SessionMetadata"),
             Self::SESSION_STATE => Some("SessionState"),
             Self::PULSE => Some("Pulse"),
-            Self::PULSE_FACT => Some("PulseFact"),
             Self::SHELL_OUTPUT => Some("ShellOutput"),
             Self::SHELL_INPUT => Some("ShellInput"),
             Self::TUG_FEED => Some("TugFeed"),

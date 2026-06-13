@@ -3,15 +3,18 @@
 // (the daemon model: a single conversation narrating every beat) with
 // scripted beat digests and judges the replies.
 //
-// What this pins:
+// What this pins (v6, the watch-the-wire rework):
 //   - the commentator system prompt (iterated here, then frozen into
 //     the daemon as a constant)
-//   - the beat digest format (scope-tagged fact groups)
+//   - the v6 beat digest format: SINGLE scope per beat (per-scope
+//     beat queues), real event excerpts, an `assistant says:` line
+//     carrying the assistant's own interstitial narration
+//   - per-thread separation: interleaved beats from two sessions stay
+//     coherent, and the never-repeat rule applies within one session's
+//     thread — the trap beat checks a line isn't suppressed because a
+//     DIFFERENT session got a similar one
 //   - per-beat wall-clock latency against the ~4s stale-drop window
-//   - PASS behavior on uneventful beats
-//   - two-scope interleaving coherence
-//   - the minimal driving surface: init + user sends + result reads,
-//     no control traffic expected under plan mode
+//   - PASS behavior on thin-but-triggered beats
 //
 // Usage: bun probe-pulse-voice.mjs [output.jsonl]
 //
@@ -34,149 +37,253 @@ mkdirSync(dirname(outPath), { recursive: true });
 
 const SYSTEM_PROMPT = [
   "You are PULSE, the color commentator on an AI coding assistant at",
-  "work. Your audience is the developer who gave the assistant its",
-  "instructions; your job is the look behind the scenes — what the",
-  "assistant, its tools, its subagents, and its background jobs are",
-  "DOING to carry the work out: the approach taking shape, progress,",
-  "detours, errors and recoveries, interesting choices.",
+  "work. Your one-line comments appear beneath a live transcript the",
+  "developer is already watching. THE BAR: a line must say something",
+  "the transcript does not — the read BETWEEN events, never a",
+  "restatement of them. Restating what happened is worthless here, no",
+  "matter how well phrased.",
   "",
-  "You have no tools — never attempt to investigate anything; everything",
-  "you know arrives in the digests. Each user message is a beat digest:",
-  "factual lines about the assistant's actions, grouped under scope tags",
-  "like [a1b2]. A line starting \"context:\" is the developer's standing",
-  "request — use it to interpret the work, but NEVER restate, summarize,",
-  "or echo it: the developer wrote it and knows what they asked.",
-  "Narrate only the execution.",
+  "Color comes only from relations between events:",
+  "- pattern reads: repeated edits to one file read as a struggle;",
+  "  many reads before an edit read as reconnaissance; edits blocked",
+  "  before reads read as haste",
+  "- arc and inflection: the first failure of a turn, the first green",
+  "  after red, a reversal, work redone or abandoned",
+  "- intent vs action: the \"assistant says\" line against what is",
+  "  actually happening",
+  "- the stumble and the recovery — its shape, not its error text",
+  "- genuinely notable magnitudes (sizes, counts, durations)",
   "",
-  "THE DIGEST IS YOUR ONLY SOURCE OF TRUTH. Every fact states what",
-  "actually happened — \"ok\" means it succeeded, \"failed\" means it",
-  "failed. Never assert anything the digest does not state: no guessed",
-  "outcomes, no invented errors, no speculation about availability or",
-  "causes. If you cannot say something true and grounded, say PASS.",
+  "Each user message is a beat digest about EXACTLY ONE session, named",
+  "by its header tag (like [a1b2]); different tags are unrelated",
+  "sessions — separate threads, separate memories. A line starting",
+  "\"assistant says:\" is the worker's own words — interpret, never",
+  "quote. Dash lines are events: \"running\" is in flight now,",
+  "\"ok\"/\"failed\" are true outcomes, quoted excerpts are real",
+  "output. \"running now:\" lists work in flight; \"turn so far:\" is",
+  "the turn's arc. THE DIGEST AND YOUR OWN PRIOR LINES ARE YOUR ONLY",
+  "SOURCES OF TRUTH — no guessed outcomes, no invented errors, no",
+  "speculation, no predictions.",
   "",
-  "Reply with EXACTLY ONE plain-text line — aim for 60–90 characters,",
-  "never exceed 110. Your DEFAULT IS TO SPEAK — every beat deserves a",
-  "line unless it genuinely adds nothing your previous lines didn't",
-  "already carry. Reply with exactly PASS for those nothing-new beats.",
-  "Never invent drama; quiet specificity beats hype.",
+  "DEFAULT TO SILENCE. Reply exactly PASS unless the beat — with its",
+  "arc and your memory of that session's thread — yields a genuine",
+  "read. Expect to PASS most beats. A turn's first failure and a hard",
+  "reversal deserve a line; routine progress never does. The recovery",
+  "after a failure you noted closes the arc — say how it resolved.",
   "",
-  "When you speak:",
-  "- Present tense. Name specifics: files, commands, counts, durations.",
-  "- Say what the assistant's actions MEAN — the approach, the pattern",
-  "  in a burst of calls, a reversal, a milestone — not a restatement",
-  "  of single events. Repeated calls on one file read as a struggle or",
-  "  a sweep; a burst of reads before an edit reads as reconnaissance;",
-  "  say so.",
-  "- Never repeat information any of your previous lines already carried.",
-  "- When two scopes appear, weave them or pick the more notable one.",
-  "- No filler, no hype, no emoji, no markdown, no surrounding quotes.",
+  "When you speak: ONE plain line, at most sixteen words, never more",
+  "than 110 characters. Ground the read in stated facts — name the",
+  "files, counts, outcomes it rests on. Present tense. Never the words",
+  "\"assistant\", \"user\", \"developer\", \"AI\", and never a model",
+  "name (Haiku, Sonnet, Opus, Claude, GPT). Never name a session or",
+  "its tag. No filler, no hype, no emoji, no markdown, no quotes",
+  "around your line.",
+  "",
+  "EXAMPLES — digest, then the line (or PASS):",
+  "",
+  "- Edit on todo-list-block.tsx — ok (4th time this turn)",
+  "- Edit on todo-list-block.tsx — failed: \"String to replace not found\"",
+  "- Read on todo-list-block.tsx — ok",
+  "- Edit on todo-list-block.tsx — ok (5th time this turn)",
+  "REPLY: todo-list-block going stitch by stitch — five edits, one missed anchor, recovered.",
+  "",
+  "- Edit on tug-pane-banner.tsx — failed: \"File has not been read yet\"",
+  "- Edit on tide-card-transcript.tsx — failed: \"File has not been read yet\"",
+  "turn so far: 14 tool calls; 2 failed",
+  "REPLY: Two edits blocked for writing before reading — pace outrunning process.",
+  "",
+  "assistant says: \"Rerunning the probe after the prompt rewrite.\"",
+  "- Bash: bun probe-pulse-voice.mjs — ok (94s)",
+  "(when your own earlier line for that session noted failures)",
+  "REPLY: The prompt rewrite lands — the rerun comes back clean.",
+  "",
+  "- Bash: tokei — ok (6s)",
+  "assistant says: \"294k lines across 1,790 files, TypeScript ahead of Rust.\"",
+  "REPLY: 294k lines sized up in six seconds.",
+  "",
+  "- Read on reducer.ts — ok",
+  "- Read on dev-card-telemetry-renderers.tsx — ok",
+  "- Grep for \"task_started\" — running",
+  "REPLY: PASS",
+  "",
+  "- turn complete: \"Hello! What can I help with today?\"",
+  "REPLY: PASS",
+  "",
+  "- Bash: cargo nextest run — still running (14s so far)",
+  "turn so far: 6 tool calls; files touched: select-jobs.ts",
+  "REPLY: PASS",
 ].join("\n");
 
 // ---------------------------------------------------------------------------
-// Scripted beats — a believable two-card session. Scope tags use short
-// ids the way the daemon's digests will. Beats marked expectPass are
-// deliberately uneventful.
+// Scripted beats — the v6 digest format: SINGLE scope per beat (the
+// daemon keeps one beat queue per session), real event excerpts, and
+// an optional `assistant says:` line harvested from assistant_text.
+// Beats marked expectPass are thin-but-triggered (one routine ok
+// event); the trap beat checks per-thread repeat isolation.
 // ---------------------------------------------------------------------------
 
 const BEATS = [
   {
-    label: "turn start",
-    digest:
-      "[a1b2]\n- turn start: user asked \"track background jobs in a JOBS status cell on the Z2 row\"",
-  },
-  {
-    label: "read burst",
-    digest:
-      "[a1b2]\n- tool burst: Read dev-card-telemetry-renderers.tsx, Read reducer.ts, Grep \"task_started\"",
-  },
-  {
-    label: "task list up",
-    digest:
-      "[a1b2]\n- task list created: 4 tasks (ledger selectors; reducer handlers; JOBS cell; popover)\n- task 1 in progress",
-  },
-  {
-    label: "first edit",
-    digest: "[a1b2]\n- Write select-jobs.ts (new file, 210 lines)",
-  },
-  {
-    label: "job launch",
-    digest:
-      "[a1b2]\n- background job launched: bun test (full sweep) in a background shell",
-  },
-  {
-    label: "routine read",
+    label: "greeting turn completes (strict bar: silence)",
     expectPass: true,
-    digest: "[a1b2]\n- Read reducer.ts (second read this turn)",
+    digest: [
+      "[a1b2]",
+      "assistant says: \"Hello! I see you're working on the tugdash branch. What can I help with?\"",
+      "- turn complete: \"Hello! I see you're working on the tugdash branch.\"",
+    ].join("\n"),
   },
   {
-    label: "tests green + task done",
-    digest:
-      "[a1b2]\n- background job finished: bun test completed in 14s, 3546 passing\n- task 1 completed; task 2 in progress",
+    label: "recon burst with work in flight",
+    digest: [
+      "[a1b2]",
+      "assistant says: \"I'll map how the reducer handles task transitions before touching anything.\"",
+      "- Read on reducer.ts — ok",
+      "- Read on dev-card-telemetry-renderers.tsx — ok",
+      "- Grep for \"task_started\" — running",
+    ].join("\n"),
   },
   {
-    label: "routine grep",
+    label: "first write + task",
+    digest: [
+      "[a1b2]",
+      "assistant says: \"The ledger selectors are the cleanest seam for this — writing those first.\"",
+      "- Write on select-jobs.ts — ok",
+      "- task added: \"Wire JOBS cell selectors\"",
+    ].join("\n"),
+  },
+  {
+    label: "long build still running (routine progress: silence)",
     expectPass: true,
-    digest: "[a1b2]\n- Grep \"applyJobFlip\" (1 match)",
-  },
-  {
-    label: "type error",
-    digest:
-      "[a1b2]\n- error: tsc failed — TS2322 in select-jobs.ts:88 (JobKind mismatch)",
-  },
-  {
-    label: "fix lands",
-    digest:
-      "[a1b2]\n- Edit select-jobs.ts (narrow the kind union)\n- tsc clean",
-  },
-  {
-    label: "turn end",
-    digest:
-      "[a1b2]\n- turn end: 3 files changed, all 4 tasks complete, 2m 40s active",
-  },
-  {
-    label: "two scopes open",
-    digest:
-      "[a1b2]\n- turn start: user asked \"polish the jobs popover rows\"\n[c3d4]\n- turn start: user asked \"write a probe for the Monitor tool lifecycle\"",
-  },
-  {
-    label: "parallel work",
-    digest:
-      "[a1b2]\n- Edit dev-card-telemetry-popovers.tsx (two-line rows)\n[c3d4]\n- background job launched: probe-monitor-lifecycle.mjs (expected ~90s)",
-  },
-  {
-    label: "monitor event",
-    digest:
-      "[c3d4]\n- monitor event: probe phase M1 complete — both notifications observed",
-  },
-  {
-    label: "mixed progress",
-    digest:
-      "[a1b2]\n- task list: 2/3 complete\n[c3d4]\n- background job still running (60s elapsed)",
-  },
-  {
-    label: "both land",
-    digest:
-      "[a1b2]\n- turn end: popover two-line rows landed, 1 file changed\n[c3d4]\n- background job finished: probe wrote 412 capture lines",
-  },
-  {
-    label: "routine css read",
-    expectPass: true,
-    digest: "[a1b2]\n- Read tug-status-cell.css",
+    digest: [
+      "[a1b2]",
+      "- Bash: cargo nextest run — still running (14s so far)",
+      "running now:",
+      "- Bash: cargo nextest run (14s so far)",
+      "turn so far: 6 tool calls; files touched: select-jobs.ts",
+    ].join("\n"),
   },
   {
     label: "routine re-read",
     expectPass: true,
-    digest: "[c3d4]\n- Read monitor-lifecycle-raw.jsonl (reviewing capture)",
+    digest: [
+      "[a1b2]",
+      "- Read on reducer.ts — ok (2nd time this turn)",
+    ].join("\n"),
   },
   {
-    label: "app-test fail",
-    digest:
-      "[a1b2]\n- error: just app-test finished — VERDICT: FAIL (focus-cycle test, popover did not restore editor focus)",
+    label: "tests green + task done",
+    digest: [
+      "[a1b2]",
+      "- background job completed: bun test — 3546 passing (14s)",
+      "- task marked completed",
+    ].join("\n"),
+  },
+  {
+    label: "second session opens",
+    digest: [
+      "[c3d4]",
+      "assistant says: \"Starting from the monitor spike's harness and adapting its lifecycle hooks.\"",
+      "- Read on probe-monitor-lifecycle.mjs — ok",
+      "- Write on probe-task-wake.mjs — ok",
+    ].join("\n"),
+  },
+  {
+    label: "type error with real excerpt",
+    digest: [
+      "[a1b2]",
+      "- Bash: bunx tsc --noEmit — failed: \"select-jobs.ts(88,5): error TS2322: Type 'string' is not assignable to type 'JobKind'\"",
+    ].join("\n"),
+  },
+  {
+    label: "probe run lands",
+    digest: [
+      "[c3d4]",
+      "assistant says: \"Both wake notifications arrived in order — capturing the raw stream now.\"",
+      "- Bash: bun probe-task-wake.mjs — ok (92s)",
+    ].join("\n"),
+  },
+  {
+    label: "fix + clean check with arc",
+    digest: [
+      "[a1b2]",
+      "assistant says: \"Narrowed the union; the kind check holds now.\"",
+      "- Edit on select-jobs.ts — ok",
+      "- Bash: bunx tsc --noEmit — ok",
+      "turn so far: 9 tool calls; files touched: select-jobs.ts; 1 failed",
+    ].join("\n"),
+  },
+  {
+    label: "first turn completes",
+    digest: [
+      "[a1b2]",
+      "- turn complete: \"Jobs cell selectors landed with tests green\"",
+    ].join("\n"),
+  },
+  {
+    label: "TRAP: similar event, other thread",
+    // a1b2 already got a tests-green line (beat 5). c3d4 running its
+    // own tests green must STILL get a line — per-thread isolation.
+    digest: [
+      "[c3d4]",
+      "- Bash: bun test probe-fixtures — ok — 412 passing (8s)",
+    ].join("\n"),
+  },
+  {
+    label: "second session turn completes",
+    digest: [
+      "[c3d4]",
+      "- turn complete: \"Probe captured the full task wake lifecycle\"",
+    ].join("\n"),
+  },
+  {
+    label: "routine css read",
+    expectPass: true,
+    digest: [
+      "[a1b2]",
+      "- Read on tug-status-cell.css — ok",
+    ].join("\n"),
+  },
+  {
+    label: "app-test fails with verdict excerpt",
+    digest: [
+      "[a1b2]",
+      "assistant says: \"The popover steals focus on close — checking the responder chain.\"",
+      "- Bash: just app-test focus-cycle — failed: \"VERDICT: FAIL — popover did not restore editor focus\"",
+    ].join("\n"),
   },
   {
     label: "app-test recovers",
-    digest:
-      "[a1b2]\n- background job finished: just app-test re-run — VERDICT: PASS (re-sign fixed the AX grant)",
+    digest: [
+      "[a1b2]",
+      "- Edit on responder-chain.ts — ok",
+      "- Bash: just app-test focus-cycle — ok (41s)",
+    ].join("\n"),
+  },
+  {
+    label: "api retry",
+    digest: [
+      "[c3d4]",
+      "- the assistant's connection to its AI model is retrying (attempt 1/10): \"529 overloaded_error\"",
+    ].join("\n"),
+  },
+  {
+    label: "hardening edit",
+    digest: [
+      "[c3d4]",
+      "assistant says: \"Hardening the probe against the slow-spawn case the capture showed.\"",
+      "- Edit on probe-task-wake.mjs — ok",
+      "- Bash: bun probe-task-wake.mjs — ok (95s)",
+    ].join("\n"),
+  },
+  {
+    label: "long sweep with repeats",
+    digest: [
+      "[a1b2]",
+      "- Edit on tide-pulse-strip.css — ok",
+      "- Edit on tide-pulse-strip.css — ok (2nd time this turn)",
+      "- Edit on tide-pulse-strip.css — ok (3rd time this turn)",
+      "- Bash: bun test pulse — ok — 41 passing",
+    ].join("\n"),
   },
 ];
 

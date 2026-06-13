@@ -53,6 +53,13 @@ export interface PulseSnapshot {
   lines: readonly PulseLineEntry[];
   /** Convenience: newest line app-wide, or null before the first. */
   latest: PulseLineEntry | null;
+  /**
+   * Per-scope cleared watermarks: submitting a new message clears
+   * that card's strip, so `cleared.get(scope)` holds the line keys
+   * that existed at submit time — the selector skips them; lines
+   * arriving afterwards show normally.
+   */
+  cleared: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /**
@@ -66,10 +73,12 @@ export interface PulseSnapshot {
 export function latestLineForScope(
   lines: readonly PulseLineEntry[],
   scope: string,
+  clearedKeys?: ReadonlySet<string>,
 ): PulseLineEntry | null {
   if (scope.length === 0) return null;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
+    if (clearedKeys?.has(line.key) === true) continue;
     if (
       line.scopes.length === 0 ||
       line.scopes.includes(scope) ||
@@ -82,11 +91,13 @@ export function latestLineForScope(
 }
 
 const EMPTY_LINES: readonly PulseLineEntry[] = Object.freeze([]);
+const EMPTY_CLEARED: ReadonlyMap<string, ReadonlySet<string>> = new Map();
 const IDLE_SNAPSHOT: PulseSnapshot = Object.freeze({
   enabled: true,
   status: "idle",
   lines: EMPTY_LINES,
   latest: null,
+  cleared: EMPTY_CLEARED,
 });
 
 // ---------------------------------------------------------------------------
@@ -170,6 +181,20 @@ export class PulseStore {
   };
 
   /**
+   * A new message was submitted for `scope`: everything currently on
+   * the log is "before" for that card — its strip clears until the
+   * next line arrives. Called by `CodeSessionStore.send`.
+   */
+  clearScope(scope: string): void {
+    if (scope.length === 0) return;
+    const keys = new Set(this.snapshot.lines.map((l) => l.key));
+    const cleared = new Map(this.snapshot.cleared);
+    cleared.set(scope, keys);
+    this.snapshot = Object.freeze({ ...this.snapshot, cleared });
+    this.tick();
+  }
+
+  /**
    * Current snapshot. The first call kicks the one-shot ledger-tail
    * CONTROL request; live folds keep working regardless of its fate.
    */
@@ -228,6 +253,7 @@ export class PulseStore {
       status,
       lines: Object.freeze(capped) as readonly PulseLineEntry[],
       latest: capped.length > 0 ? capped[capped.length - 1] : null,
+      cleared: this.snapshot.cleared,
     });
     this.tick();
   }

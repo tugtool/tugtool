@@ -1,0 +1,395 @@
+/**
+ * voice — the PULSE strip as the machine thinking out loud.
+ *
+ * The strip shows the worker's running monologue, verbatim from the
+ * wire: `assistant_text` frames carry the interstitial narration the
+ * assistant writes between tool calls ("Now checking how the reducer
+ * handles task transitions…", "That didn't work — re-reading the
+ * file."). The voice mirror surfaces the latest settled thought while
+ * the turn works, says `done` when the turn completes (`stopped` when
+ * cancelled), and goes quiet when the user submits (the deck clears
+ * the strip per scope).
+ *
+ * In the machine's own words — so there is nothing to fabricate, no
+ * second model, no phrasing layer. Earlier architectures (a model
+ * commentator, a status mirror, a notability latch) and why they
+ * failed live in the spike README.
+ *
+ * Mechanics: text accumulates per `(msg_id, block_index)` under the
+ * deck reducer's rule (partial appends, complete replaces); only the
+ * NEWEST block speaks (the latest thought). Display extraction takes
+ * the last complete sentence — or the in-progress tail once it is
+ * long enough to read — RAW (the deck renders the markdown; the
+ * daemon never rewrites the machine's words) and clipped to the
+ * strip's single-line budget. Emission is change-driven and
+ * throttled (~1s) by the flush loop so streaming deltas don't strobe
+ * the strip. Every method takes explicit wall-clock ms.
+ *
+ * @module pulse/voice
+ */
+
+import type {
+  AssistantText,
+  OutboundMessage,
+  TurnCancelled,
+  TurnComplete,
+} from "../types";
+
+/** Minimum spacing between monologue updates per scope. */
+export const VOICE_THROTTLE_MS = 1_000;
+/** An in-progress thought this long may show before any sentence
+ *  settles (marked with a streaming ellipsis). */
+const PARTIAL_MIN_CHARS = 40;
+/** Raw-markdown budget per line. Generous: LaTeX source is several
+ *  times wider than its rendered form, and the strip's CSS ellipsis
+ *  owns VISUAL overflow — this cap only bounds wire/ledger rows. */
+const LINE_CLIP = 300;
+/** A math-only segment borrows a label this short from the segment
+ *  before it ("**2. Gauss's Law** $$…$$"). */
+const LABEL_MAX_CHARS = 80;
+/** Scopes silent this long are swept. */
+export const SCOPE_IDLE_SWEEP_MS = 30 * 60 * 1000;
+
+/** One emitted voice line, scoped to its session. */
+export interface VoiceLine {
+  scope: string;
+  text: string;
+}
+
+/** Collapse whitespace to one line. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * `$…$` / `$$…$$` spans, conservatively matched (mirrors the deck's
+ * inline-math walker grammar): `$$` pairs may span anything; single
+ * `$` must hug its content (no space after the opener or before the
+ * closer, no digit after the closer). Math is ATOMIC for extraction —
+ * no sentence boundary and no clip point ever lands inside a span.
+ */
+export function findMathSpans(text: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== "$" || text[i - 1] === "\\") {
+      i++;
+      continue;
+    }
+    if (text[i + 1] === "$") {
+      const close = text.indexOf("$$", i + 2);
+      if (close === -1) break; // unclosed display math: no partial match
+      spans.push({ start: i, end: close + 2 });
+      i = close + 2;
+      continue;
+    }
+    // Inline `$`: not followed by whitespace; closer not preceded by
+    // whitespace, not followed by a digit.
+    if (text[i + 1] === undefined || /\s/.test(text[i + 1])) {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    let close = -1;
+    while (j < text.length) {
+      if (text[j] === "$" && text[j - 1] !== "\\" && !/\s/.test(text[j - 1]) && !/[0-9]/.test(text[j + 1] ?? "")) {
+        close = j;
+        break;
+      }
+      j++;
+    }
+    if (close === -1) {
+      i++;
+      continue;
+    }
+    spans.push({ start: i, end: close + 1 });
+    i = close + 1;
+  }
+  return spans;
+}
+
+function insideSpan(index: number, spans: Array<{ start: number; end: number }>): boolean {
+  return spans.some((s) => index >= s.start && index < s.end);
+}
+
+/** Does the text carry any math span? */
+function hasMath(text: string): boolean {
+  return findMathSpans(text).length > 0;
+}
+
+/**
+ * Sentence boundaries OUTSIDE math spans, tolerating a closing
+ * `)`/`"`, and skipping list enumerators ("2.") — an enumerator's dot
+ * introduces an item; it never ends a thought.
+ */
+function sentenceEnds(text: string): number[] {
+  const spans = findMathSpans(text);
+  const ends: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch !== "." && ch !== "!" && ch !== "?") continue;
+    if (insideSpan(i, spans)) continue;
+    // Enumerator: the token before the dot is digits only.
+    let t = i - 1;
+    while (t >= 0 && /[0-9]/.test(text[t])) t--;
+    if (t < i - 1 && (t < 0 || text[t] === " " || text[t] === "*")) continue;
+    let j = i + 1;
+    if (text[j] === ")" || text[j] === '"' || text[j] === "\u201d") j++;
+    // A bold/italic span may close right after the terminator
+    // ("…the same thing.**") — the markers belong to the sentence.
+    while (text[j] === "*") j++;
+    if (j >= text.length || text[j] === " ") ends.push(j - 1);
+  }
+  return ends;
+}
+
+/** Drop one stray `**` when a slice ends up with an odd count — a
+ *  literal double-asterisk is worse than losing one bold span. */
+function balanceEmphasis(text: string): string {
+  const count = (text.match(/\*\*/g) ?? []).length;
+  if (count % 2 === 0) return text;
+  const last = text.lastIndexOf("**");
+  return oneLine(text.slice(0, last) + text.slice(last + 2));
+}
+
+/** A prose chunk worth pinning: a real clause, or any math at all. */
+function isShowable(chunk: string): boolean {
+  if (hasMath(chunk)) return true;
+  return chunk.length >= 12 && chunk.includes(" ");
+}
+
+/** A segment counts as settled when it ends like a finished thought. */
+function endsSettled(segment: string): boolean {
+  const t = segment.trimEnd();
+  if (t.endsWith("$$")) return true;
+  const last = t[t.length - 1];
+  const beforeQuote = t[t.length - 2];
+  if (last === "." || last === "!" || last === "?") return true;
+  if ((last === ")" || last === '"') && (beforeQuote === "." || beforeQuote === "!" || beforeQuote === "?")) {
+    return true;
+  }
+  return false;
+}
+
+/** Clip to `n`, cutting at a space and never inside a math span. */
+export function clipOutsideMath(text: string, n: number): string {
+  if (text.length <= n) return text;
+  const spans = findMathSpans(text);
+  let cut = n - 1;
+  while (cut > 0 && (text[cut] !== " " || insideSpan(cut, spans))) cut--;
+  if (cut <= 0) return `${text.slice(0, n - 1)}…`;
+  return `${text.slice(0, cut).trimEnd()}…`;
+}
+
+/**
+ * The display chunk of an accumulating thought, sliced along the
+ * document's own structure so markup never tears:
+ *
+ *  - segments are blank-line paragraphs; the newest SETTLED segment
+ *    speaks (every segment but the last is settled; the last counts
+ *    once it ends like a finished thought);
+ *  - a math-only segment borrows its short label segment ("**2.
+ *    Gauss's Law** $$…$$") so equations keep their names;
+ *  - a long prose segment narrows to its last showable sentence
+ *    (math-atomic, enumerator-aware boundaries);
+ *  - before anything settles, a long clean tail shows with a
+ *    streaming ellipsis;
+ *  - the byte clip never cuts inside a math span — rendered math is
+ *    far narrower than its source, and the strip's CSS owns visual
+ *    overflow.
+ *
+ * Returns RAW MARKDOWN — the deck renders it with full transcript
+ * parity; the daemon never rewrites the machine's words.
+ */
+export function extractDisplay(raw: string): string | null {
+  const segments = raw
+    .split(/\n[ \t]*\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (segments.length === 0) return null;
+
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const settled = i < segments.length - 1 || endsSettled(segments[i]);
+    if (!settled) continue;
+    let display = oneLine(segments[i]);
+    if (!isShowable(display)) continue;
+    const spans = findMathSpans(display);
+    const mathOnly =
+      spans.length > 0 &&
+      oneLine(
+        spans.reduce((acc, s) => acc.slice(0, s.start) + " ".repeat(s.end - s.start) + acc.slice(s.end), display),
+      ).length < 4;
+    if (mathOnly && i > 0) {
+      const label = oneLine(segments[i - 1]);
+      if (label.length <= LABEL_MAX_CHARS) display = `${label} ${display}`;
+    }
+    if (!hasMath(display)) {
+      // Long prose narrows to its freshest showable sentence.
+      const ends = sentenceEnds(display);
+      for (let s = ends.length - 1; s >= 0; s--) {
+        const start = s === 0 ? 0 : ends[s - 1] + 1;
+        const sentence = display.slice(start, ends[s] + 1).trim();
+        if (isShowable(sentence)) {
+          display = sentence;
+          break;
+        }
+      }
+    }
+    return clipOutsideMath(balanceEmphasis(display), LINE_CLIP);
+  }
+
+  // Nothing settled yet: show the streaming tail once it reads as a
+  // thought — cut before any unclosed math rather than inside it.
+  let tail = oneLine(segments[segments.length - 1]);
+  const lastOpen = tail.lastIndexOf("$$");
+  if (lastOpen !== -1 && !insideSpan(lastOpen, findMathSpans(tail))) {
+    tail = tail.slice(0, lastOpen).trimEnd();
+  }
+  const ends = sentenceEnds(tail);
+  if (ends.length > 0) {
+    // The tail segment itself contains finished sentences (it just
+    // hasn't closed its paragraph) — show the freshest one.
+    for (let s = ends.length - 1; s >= 0; s--) {
+      const start = s === 0 ? 0 : ends[s - 1] + 1;
+      const sentence = tail.slice(start, ends[s] + 1).trim();
+      if (isShowable(sentence)) {
+        return clipOutsideMath(balanceEmphasis(sentence), LINE_CLIP);
+      }
+    }
+  }
+  if (tail.length >= PARTIAL_MIN_CHARS && isShowable(tail)) {
+    return `${clipOutsideMath(balanceEmphasis(tail), LINE_CLIP - 1)}…`;
+  }
+  return null;
+}
+
+/**
+ * Parse one stdin line into a spliced frame. Returns null (no throw)
+ * for malformed JSON, missing `type`, or missing the spliced
+ * `tug_session_id` — the bridge only forwards spliced relay lines.
+ */
+export function parseWireLine(
+  line: string,
+): { scope: string; frame: OutboundMessage } | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.type !== "string") return null;
+  if (typeof v.tug_session_id !== "string" || v.tug_session_id.length === 0) {
+    return null;
+  }
+  return { scope: v.tug_session_id, frame: value as OutboundMessage };
+}
+
+class ScopeVoiceState {
+  /** The newest text block — the latest thought is the only speaker. */
+  blockKey: string | null = null;
+  blockText = "";
+  /** The line currently on the strip (dedupe for change-driven emits). */
+  shownText: string | null = null;
+  lastEmitAt = Number.NEGATIVE_INFINITY;
+  lastActivityAt = 0;
+
+  resetTurn(): void {
+    this.blockKey = null;
+    this.blockText = "";
+    this.shownText = null;
+  }
+}
+
+export class PulseVoice {
+  private readonly scopes = new Map<string, ScopeVoiceState>();
+
+  private scopeState(scope: string, atMs: number): ScopeVoiceState {
+    let state = this.scopes.get(scope);
+    if (state === undefined) {
+      state = new ScopeVoiceState();
+      this.scopes.set(scope, state);
+    }
+    state.lastActivityAt = atMs;
+    return state;
+  }
+
+  /**
+   * Ingest one frame. Turn boundaries speak immediately; text only
+   * accumulates — the {@link flush} loop emits monologue updates.
+   */
+  onFrame(scope: string, frame: OutboundMessage, atMs: number): VoiceLine | null {
+    const state = this.scopeState(scope, atMs);
+    switch (frame.type) {
+      case "assistant_text":
+        this.onAssistantText(state, frame);
+        return null;
+      case "turn_complete":
+        return this.onTurnEnd(state, scope, atMs, "Done", frame);
+      case "turn_cancelled":
+        return this.onTurnEnd(state, scope, atMs, "Stopped", frame);
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Change-driven, throttled monologue updates. Call on a ~0.5–1s
+   * cadence; emits at most one line per scope per call.
+   */
+  flush(atMs: number): VoiceLine[] {
+    const lines: VoiceLine[] = [];
+    for (const [scope, state] of this.scopes) {
+      if (state.blockText.length === 0) continue;
+      if (atMs - state.lastEmitAt < VOICE_THROTTLE_MS) continue;
+      const display = extractDisplay(state.blockText);
+      if (display === null || display === state.shownText) continue;
+      state.shownText = display;
+      state.lastEmitAt = atMs;
+      lines.push({ scope, text: display });
+    }
+    return lines;
+  }
+
+  /** Drop scopes idle past {@link SCOPE_IDLE_SWEEP_MS}. */
+  sweepInactive(atMs: number): string[] {
+    const swept: string[] = [];
+    for (const [scope, state] of this.scopes) {
+      if (atMs - state.lastActivityAt >= SCOPE_IDLE_SWEEP_MS) {
+        this.scopes.delete(scope);
+        swept.push(scope);
+      }
+    }
+    return swept;
+  }
+
+  // -------------------------------------------------------------------------
+
+  private onAssistantText(state: ScopeVoiceState, frame: AssistantText): void {
+    if (typeof frame.text !== "string") return;
+    const key = `${frame.msg_id}:${frame.block_index}`;
+    if (state.blockKey !== key) {
+      // A new block starts a new thought; the old one is history.
+      state.blockKey = key;
+      state.blockText = frame.is_partial ? frame.text : frame.text;
+      return;
+    }
+    // The deck reducer's rule: partial appends, complete replaces.
+    state.blockText = frame.is_partial ? state.blockText + frame.text : frame.text;
+  }
+
+  private onTurnEnd(
+    state: ScopeVoiceState,
+    scope: string,
+    atMs: number,
+    marker: "Done" | "Stopped",
+    frame: TurnComplete | TurnCancelled,
+  ): VoiceLine {
+    void frame;
+    state.resetTurn();
+    state.lastEmitAt = atMs;
+    state.shownText = marker;
+    return { scope, text: marker };
+  }
+}

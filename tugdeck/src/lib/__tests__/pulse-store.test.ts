@@ -173,3 +173,40 @@ describe("PulseStore", () => {
     expect(store.getSnapshot()).toBe(c);
   });
 });
+
+describe("clearScope", () => {
+  it("hides existing lines for the scope until a new one arrives", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame(liveLine(1, "before submit"));
+    let snap = store.getSnapshot();
+    expect(
+      latestLineForScope(snap.lines, "s1", snap.cleared.get("s1"))?.text,
+    ).toBe("before submit");
+
+    store.clearScope("s1");
+    snap = store.getSnapshot();
+    expect(
+      latestLineForScope(snap.lines, "s1", snap.cleared.get("s1")),
+    ).toBeNull();
+
+    conn.pushPulseFrame(liveLine(2, "fresh commentary"));
+    snap = store.getSnapshot();
+    expect(
+      latestLineForScope(snap.lines, "s1", snap.cleared.get("s1"))?.text,
+    ).toBe("fresh commentary");
+  });
+
+  it("clearing one scope leaves another scope's view intact", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushPulseFrame({ type: "pulse", text: "s2 line", scopes: ["s2"], beat: 1, at: 1_001 });
+    store.clearScope("s1");
+    const snap = store.getSnapshot();
+    expect(
+      latestLineForScope(snap.lines, "s2", snap.cleared.get("s2"))?.text,
+    ).toBe("s2 line");
+  });
+});

@@ -90,3 +90,86 @@ export function formatResetCountdown(resetsAtSec: number, nowMs: number): string
   if (mins > 0) return `${mins}m`;
   return "<1m";
 }
+
+// ---------------------------------------------------------------------------
+// Usage bulletins — the non-blocking replacement for the old banner.
+// ---------------------------------------------------------------------------
+
+/**
+ * The % barriers that each fire ONE bulletin per reset window. The UI
+ * must never block on quota — the server enforces the real limit; the
+ * deck's whole job is a calm heads-up at each barrier.
+ */
+export const USAGE_BULLETIN_THRESHOLDS = [80, 85, 90, 95, 100] as const;
+
+/** One bulletin the policy wants fired. */
+export interface UsageBulletinFire {
+  /** `caution` below 100; `danger` at 100 / hard-rejected. */
+  tone: "caution" | "danger";
+  message: string;
+}
+
+/**
+ * The policy's memory: which barriers already fired in the current
+ * reset window. The window is keyed by `(rateLimitType, resetsAt)` —
+ * when either changes, a new window opened and every barrier re-arms.
+ */
+export interface UsageBulletinState {
+  windowKey: string;
+  fired: number[];
+}
+
+export const USAGE_BULLETIN_IDLE: UsageBulletinState = Object.freeze({
+  windowKey: "",
+  fired: [],
+});
+
+/**
+ * Decide whether a fresh quota frame fires a bulletin. Pure: feeds the
+ * previous state and the frame, returns the next state plus at most
+ * one fire — the HIGHEST newly-crossed barrier (a reconnect at 93%
+ * fires 90 once, not 80/85/90 separately).
+ *
+ * `utilization` is the CLI's 0–1 fraction; when absent (older CLIs)
+ * the status enum falls back: `allowed_warning` arms the 90 barrier,
+ * `rejected` the 100 barrier.
+ */
+export function nextUsageBulletin(
+  state: UsageBulletinState,
+  info: RateLimitInfo,
+  nowMs: number,
+): { state: UsageBulletinState; fire: UsageBulletinFire | null } {
+  const windowKey = `${info.rateLimitType}:${info.resetsAt}`;
+  const fired = state.windowKey === windowKey ? state.fired : [];
+
+  const pct =
+    typeof info.utilization === "number"
+      ? Math.round(info.utilization * 100)
+      : info.status === STATUS_REJECTED
+        ? 100
+        : info.status === STATUS_WARNING
+          ? 90
+          : 0;
+
+  let highestNew: number | null = null;
+  const nextFired = [...fired];
+  for (const threshold of USAGE_BULLETIN_THRESHOLDS) {
+    if (pct < threshold || fired.includes(threshold)) continue;
+    nextFired.push(threshold);
+    highestNew = threshold;
+  }
+  if (highestNew === null) {
+    return { state: { windowKey, fired: nextFired }, fire: null };
+  }
+  const resets = formatResetCountdown(info.resetsAt, nowMs);
+  const limited = highestNew >= 100 || info.status === STATUS_REJECTED;
+  return {
+    state: { windowKey, fired: nextFired },
+    fire: {
+      tone: limited ? "danger" : "caution",
+      message: limited
+        ? `Usage limit reached — resets in ${resets}`
+        : `Usage at ${pct}% — resets in ${resets}`,
+    },
+  };
+}

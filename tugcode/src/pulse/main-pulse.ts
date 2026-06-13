@@ -1,24 +1,26 @@
 /**
- * tugpulse — the PULSE commentator daemon.
+ * tugpulse — the PULSE voice daemon.
  *
  * Stdio contract with tugcast (which spawns and supervises this
  * process app-scoped):
  *
- *   stdin   `pulse_fact` JSON lines from all producers
- *   stdout  `pulse` JSON lines (one per spoken beat; PASS emits nothing)
+ *   stdin   spliced CODE_OUTPUT lines — tugcode outbound frames with
+ *           `tug_session_id` spliced in, pre-filtered to the pulse
+ *           allowlist by tugcast's bridge tap
+ *   stdout  `pulse` JSON lines (monologue updates, per scope)
  *   stderr  diagnostics
  *
  * Flags:
- *   --seed '<json string array>'   prior ledger-tail lines, oldest
- *                                  first — restores narrative memory
- *                                  across daemon restarts
- *   --claude-path <path>           override the claude binary (tests
- *                                  point this at a fake child; also
- *                                  honored via TUGPULSE_CLAUDE_PATH)
+ *   --seed '<json string array>'   accepted for spawn-contract
+ *                                  compatibility; the voice keeps no
+ *                                  narrative memory, so it is ignored
  *
- * The beat discipline lives in {@link BeatScheduler} (pure logic); the
- * claude session in {@link HaikuDriver}. This file is only the wiring:
- * stdin facts → scheduler → digest → driver → shaped line → stdout.
+ * The line logic lives in {@link PulseVoice} (pure rules, explicit
+ * clocks): the strip is the machine thinking out loud — its latest
+ * settled thought, verbatim from the wire's `assistant_text` frames,
+ * `done`/`stopped` at turn boundaries, cleared deck-side when the
+ * user submits. In the machine's own words: nothing to fabricate, no
+ * second model (that history lives in the spike README).
  *
  * One-way isolation invariant: nothing read here ever flows toward a
  * work session — the only outputs are stdout pulse lines and stderr
@@ -27,71 +29,41 @@
  * @module pulse/main-pulse
  */
 
-import { BeatScheduler, BEAT_DEFAULTS } from "./scheduler";
-import { buildDigest, beatScopes } from "./digest";
-import { HaikuDriver } from "./driver";
-import { shapeLine } from "./line-shape";
-import { isPulseFact, type PulseLine } from "./types";
+import { PulseVoice, parseWireLine, type VoiceLine } from "./voice";
+import type { PulseLine } from "./types";
 
-const POLL_MS = 50;
+/** Monologue flush cadence (change-driven; throttle in the voice). */
+const FLUSH_MS = 500;
+/** Inactive-scope sweep cadence, in flush ticks (~30s). */
+const SWEEP_EVERY_FLUSHES = 60;
 
-/** Optional env override for one scheduler timing (tests tighten these). */
-function envMs(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
+function main(): void {
+  const voice = new PulseVoice();
+  let emitted = 0;
+  let flushCount = 0;
 
-const TIMINGS = {
-  coalesceMs: envMs("TUGPULSE_COALESCE_MS", BEAT_DEFAULTS.coalesceMs),
-  minIntervalMs: envMs("TUGPULSE_MIN_INTERVAL_MS", BEAT_DEFAULTS.minIntervalMs),
-  staleMs: envMs("TUGPULSE_STALE_MS", BEAT_DEFAULTS.staleMs),
-};
-
-/** Ask timeout: past the stale window the reply is unusable anyway. */
-const ASK_TIMEOUT_MS = TIMINGS.staleMs + 2_000;
-
-function parseArgs(argv: string[]): { seedLines: string[]; claudePath: string | undefined } {
-  let seedLines: string[] = [];
-  let claudePath = process.env.TUGPULSE_CLAUDE_PATH;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--seed" && argv[i + 1] !== undefined) {
-      try {
-        const parsed: unknown = JSON.parse(argv[++i]);
-        if (Array.isArray(parsed)) {
-          seedLines = parsed.filter((l): l is string => typeof l === "string");
-        }
-      } catch {
-        console.error("[tugpulse] ignoring unparseable --seed payload");
-      }
-    } else if (argv[i] === "--claude-path" && argv[i + 1] !== undefined) {
-      claudePath = argv[++i];
-    }
-  }
-  return { seedLines, claudePath };
-}
-
-async function main(): Promise<void> {
-  const { seedLines, claudePath } = parseArgs(process.argv.slice(2));
-  const scheduler = new BeatScheduler(TIMINGS);
-  const driver = new HaikuDriver({ claudePath, seedLines });
-
-  let emittedBeats = 0;
-  let askInFlight = false;
+  const writeLine = (line: VoiceLine): void => {
+    emitted++;
+    const pulse: PulseLine = {
+      type: "pulse",
+      text: line.text,
+      scopes: [line.scope],
+      beat: emitted,
+      at: Date.now(),
+    };
+    process.stdout.write(`${JSON.stringify(pulse)}\n`);
+  };
 
   const shutdown = (code: number): void => {
-    clearInterval(pollTimer);
-    driver.shutdown();
+    clearInterval(flushTimer);
     process.exit(code);
   };
   process.on("SIGTERM", () => shutdown(0));
   process.on("SIGINT", () => shutdown(130));
 
-  await driver.start();
-  console.error("[tugpulse] commentator session up");
+  console.error("[tugpulse] voice up");
 
-  // --- stdin: fact intake -------------------------------------------------
+  // --- stdin: spliced wire-frame intake ------------------------------------
   void (async () => {
     const decoder = new TextDecoder();
     let buf = "";
@@ -99,61 +71,32 @@ async function main(): Promise<void> {
       buf += decoder.decode(chunk as Uint8Array, { stream: true });
       let nl: number;
       while ((nl = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, nl);
+        const raw = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
-        if (line.trim().length === 0) continue;
-        try {
-          const parsed: unknown = JSON.parse(line);
-          if (isPulseFact(parsed)) {
-            scheduler.addFact(parsed, Date.now());
-          }
-        } catch {
-          console.error(`[tugpulse] unparseable fact line: ${line.slice(0, 80)}`);
+        if (raw.trim().length === 0) continue;
+        const parsed = parseWireLine(raw);
+        if (parsed === null) {
+          console.error(`[tugpulse] unparseable frame line: ${raw.slice(0, 80)}`);
+          continue;
         }
+        const line = voice.onFrame(parsed.scope, parsed.frame, Date.now());
+        if (line !== null) writeLine(line);
       }
     }
-    // Producer side closed — tugcast is going away. Drain and exit.
+    // Producer side closed — tugcast is going away.
     console.error("[tugpulse] stdin closed; shutting down");
     shutdown(0);
   })();
 
-  // --- beat loop ----------------------------------------------------------
-  const pollTimer = setInterval(() => {
-    if (askInFlight) return; // driver serialization mirrors the scheduler's
-    const beat = scheduler.takeBeat(Date.now());
-    if (beat === null) return;
-    askInFlight = true;
-    const digest = buildDigest(beat.id, beat.facts);
-    void driver
-      .ask(digest, ASK_TIMEOUT_MS)
-      .then(async (raw) => {
-        const { emit } = scheduler.resolveBeat(beat.id, Date.now());
-        const text = shapeLine(raw);
-        // One diagnostic line per beat (beats are seconds apart) — the
-        // only way an operator can tell PASS from timeout from drop.
-        console.error(
-          `[tugpulse] beat ${beat.id}: ${
-            raw === null ? "no reply (timeout)" : text === null ? "PASS" : `line ${text.length}ch`
-          }${emit ? "" : " (dropped: stale)"} — ${beat.facts.length} fact(s)`,
-        );
-        if (emit && text !== null) {
-          emittedBeats++;
-          const line: PulseLine = {
-            type: "pulse",
-            text,
-            scopes: beatScopes(beat.facts),
-            beat: emittedBeats,
-            at: Date.now(),
-          };
-          process.stdout.write(`${JSON.stringify(line)}\n`);
-          driver.noteEmitted(text);
-        }
-        await driver.maybeRestart();
-      })
-      .finally(() => {
-        askInFlight = false;
-      });
-  }, POLL_MS);
+  // --- monologue flush ------------------------------------------------------
+  const flushTimer = setInterval(() => {
+    if (++flushCount % SWEEP_EVERY_FLUSHES === 0) {
+      voice.sweepInactive(Date.now());
+    }
+    for (const line of voice.flush(Date.now())) {
+      writeLine(line);
+    }
+  }, FLUSH_MS);
 }
 
-void main();
+main();

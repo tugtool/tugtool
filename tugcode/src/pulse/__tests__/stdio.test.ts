@@ -1,42 +1,29 @@
 /**
- * tugpulse end-to-end over stdio with a fake claude child — asserts
- * the wiring (facts in → shaped pulse lines out) without model
- * nondeterminism. The fake child PASSes priming messages and any
- * digest mentioning "routine"; everything else echoes the BEAT header.
- *
- * Timings are tightened via the daemon's env overrides so the whole
- * suite runs in a few seconds of wall clock.
+ * tugpulse end-to-end over stdio — spliced wire frames in, monologue
+ * lines out. Fully deterministic: the voice is the worker's own
+ * words, mirrored.
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
 
 const DAEMON = new URL("../main-pulse.ts", import.meta.url).pathname;
-const FAKE_CLAUDE = new URL("./fake-claude.mjs", import.meta.url).pathname;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface DaemonHandle {
   proc: ReturnType<typeof Bun.spawn>;
   lines: () => Record<string, unknown>[];
-  writeFact: (fact: Record<string, unknown>) => void;
+  writeFrame: (frame: Record<string, unknown>) => void;
   stop: () => void;
 }
 
 function spawnDaemon(extraArgs: string[] = []): DaemonHandle {
-  const proc = Bun.spawn(
-    ["bun", DAEMON, "--claude-path", FAKE_CLAUDE, ...extraArgs],
-    {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "ignore",
-      env: {
-        ...process.env,
-        TUGPULSE_COALESCE_MS: "100",
-        TUGPULSE_MIN_INTERVAL_MS: "250",
-        TUGPULSE_STALE_MS: "2000",
-      },
-    },
-  );
+  const proc = Bun.spawn(["bun", DAEMON, ...extraArgs], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "ignore",
+    env: { ...process.env },
+  });
   const collected: Record<string, unknown>[] = [];
   void (async () => {
     const decoder = new TextDecoder();
@@ -63,30 +50,41 @@ function spawnDaemon(extraArgs: string[] = []): DaemonHandle {
   return {
     proc,
     lines: () => collected,
-    writeFact: (fact) => {
-      stdin.write(`${JSON.stringify(fact)}\n`);
+    writeFrame: (frame) => {
+      stdin.write(`${JSON.stringify(frame)}\n`);
       stdin.flush?.();
     },
     stop: () => proc.kill(),
   };
 }
 
-function fact(text: string, scope = "scope-1"): Record<string, unknown> {
+function assistantText(scope: string, text: string): Record<string, unknown> {
   return {
-    type: "pulse_fact",
-    source: "test",
-    scope,
-    kind: "note",
-    fact: text,
-    at: Date.now(),
+    tug_session_id: scope,
+    type: "assistant_text",
+    msg_id: "m1",
+    block_index: 0,
+    seq: 1,
+    rev: 1,
+    text,
+    is_partial: true,
+    status: "partial",
+    ipc_version: 2,
   };
 }
 
-async function waitFor(
-  pred: () => boolean,
-  ms: number,
-  step = 50,
-): Promise<boolean> {
+function turnComplete(scope: string): Record<string, unknown> {
+  return {
+    tug_session_id: scope,
+    type: "turn_complete",
+    msg_id: "m1",
+    seq: 9,
+    result: "done",
+    ipc_version: 2,
+  };
+}
+
+async function waitFor(pred: () => boolean, ms: number, step = 50): Promise<boolean> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     if (pred()) return true;
@@ -100,59 +98,37 @@ afterAll(() => {
   for (const h of handles) h.stop();
 });
 
-describe("tugpulse stdio", () => {
-  test("facts in → shaped pulse lines out; PASS and bursts behave", async () => {
-    const daemon = spawnDaemon();
+describe("tugpulse stdio (voice)", () => {
+  test("the worker's words mirror to the strip; done closes the turn", async () => {
+    const daemon = spawnDaemon(["--seed", JSON.stringify(["ignored prior line"])]);
     handles.push(daemon);
+    await sleep(300);
 
-    // Give the daemon time to spawn + prime the fake child (the
-    // priming PASS consumes result slot 0 — sequence pairing under test).
-    await sleep(600);
-
-    // An eventful fact → exactly one pulse line echoing beat 1's digest.
-    daemon.writeFact(fact("turn start: build the thing"));
-    expect(await waitFor(() => daemon.lines().length === 1, 3_000)).toBe(true);
+    // Streamed narration surfaces via the flush loop, verbatim.
+    daemon.writeFrame(assistantText("sess-1", "Mapping the reducer's task "));
+    daemon.writeFrame(assistantText("sess-1", "transitions before any edit."));
+    expect(await waitFor(() => daemon.lines().length === 1, 4_000)).toBe(true);
     const first = daemon.lines()[0];
     expect(first.type).toBe("pulse");
-    expect(first.text).toBe("echo:BEAT 1");
-    expect(first.scopes).toEqual(["scope-1"]);
+    expect(first.text).toBe("Mapping the reducer's task transitions before any edit.");
+    expect(first.scopes).toEqual(["sess-1"]);
     expect(first.beat).toBe(1);
-    expect(typeof first.at).toBe("number");
 
-    // A routine fact → the fake child PASSes → nothing is emitted.
-    daemon.writeFact(fact("routine read of reducer.ts"));
-    await sleep(900);
-    expect(daemon.lines().length).toBe(1);
-
-    // A two-scope burst coalesces into ONE beat covering both scopes.
-    daemon.writeFact(fact("tests went green", "scope-1"));
-    daemon.writeFact(fact("probe finished", "scope-2"));
-    expect(await waitFor(() => daemon.lines().length === 2, 3_000)).toBe(true);
-    const burst = daemon.lines()[1];
-    expect(burst.scopes).toEqual(["scope-1", "scope-2"]);
-    // Beat counter counts EMITTED beats — the PASS beat did not consume one.
-    expect(burst.beat).toBe(2);
-
-    // Malformed stdin lines are ignored without killing the daemon.
+    // Malformed lines are tolerated.
     const stdin = daemon.proc.stdin as unknown as { write(c: string): void };
     stdin.write("not json at all\n");
-    daemon.writeFact(fact("another development", "scope-1"));
-    expect(await waitFor(() => daemon.lines().length === 3, 3_000)).toBe(true);
 
-    daemon.stop();
-  }, 15_000);
+    // Turn completion speaks immediately, in its own scope.
+    daemon.writeFrame(turnComplete("sess-1"));
+    expect(await waitFor(() => daemon.lines().length === 2, 3_000)).toBe(true);
+    expect(daemon.lines()[1].text).toBe("Done");
+    expect(daemon.lines()[1].scopes).toEqual(["sess-1"]);
 
-  test("--seed primes without emitting and replies stay paired", async () => {
-    const daemon = spawnDaemon(["--seed", JSON.stringify(["prior line one"])]);
-    handles.push(daemon);
-    await sleep(600);
-
-    // Nothing emitted from priming…
-    expect(daemon.lines().length).toBe(0);
-    // …and the first real beat still pairs with its own reply.
-    daemon.writeFact(fact("first real development"));
-    expect(await waitFor(() => daemon.lines().length === 1, 3_000)).toBe(true);
-    expect(daemon.lines()[0].text).toBe("echo:BEAT 1");
+    // A second scope's monologue is independent.
+    daemon.writeFrame(assistantText("sess-2", "Adapting the probe harness lifecycle hooks."));
+    expect(await waitFor(() => daemon.lines().length === 3, 4_000)).toBe(true);
+    expect(daemon.lines()[2].scopes).toEqual(["sess-2"]);
+    expect(daemon.lines()[2].text).toBe("Adapting the probe harness lifecycle hooks.");
 
     daemon.stop();
   }, 15_000);

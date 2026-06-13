@@ -652,7 +652,7 @@ async fn main() {
     };
     let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
 
-    let (mut supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
+    let (supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
         session_state_tx.clone(),
         session_metadata_tx.clone(),
         code_tx.clone(),
@@ -665,11 +665,12 @@ async fn main() {
         cancel.clone(),
     );
 
-    // PULSE — app-wide color commentary. One bridge per process: the
-    // session relays divert producer `pulse_fact` lines into it, it
-    // lazily spawns/supervises the tugpulse daemon (gated on the
-    // `pulse/enabled` tugbank default, ON by default), and the daemon's
-    // lines land in the capped ledger + the PULSE broadcast below.
+    // PULSE — app-wide color commentary. One bridge per process: it
+    // taps the shared CODE_OUTPUT broadcast for the allowlisted frame
+    // subset, lazily spawns/supervises the tugpulse daemon (gated on
+    // the `pulse/enabled` tugbank default, ON by default), and the
+    // daemon's lines land in the capped ledger + the PULSE broadcast
+    // below.
     let (pulse_tx, _) = broadcast::channel(64);
     let tugpulse_path = feeds::pulse::resolve_tugpulse_path(&tugcode_path);
     let pulse_enabled: Arc<dyn Fn() -> bool + Send + Sync> = {
@@ -689,16 +690,16 @@ async fn main() {
             }
         })
     };
-    let pulse_fact_tx = feeds::pulse::spawn_pulse_bridge(
+    feeds::pulse::spawn_pulse_bridge(
         feeds::pulse::PulseBridgeConfig {
             spawner: Arc::new(feeds::pulse::TugpulseSpawner { tugpulse_path }),
             enabled: pulse_enabled,
             ledger: Some(Arc::clone(&ledger)),
             pulse_tx: pulse_tx.clone(),
+            code_tx: code_tx.clone(),
         },
         cancel.clone(),
     );
-    supervisor.set_pulse_fact_tx(pulse_fact_tx);
 
     let supervisor = Arc::new(supervisor);
 

@@ -1,23 +1,34 @@
 //! pulse — the app-scoped PULSE bridge: spawns and supervises the
-//! `tugpulse` commentator daemon, routes producer facts into its
-//! stdin, and turns its stdout lines into ledger rows + `PULSE` feed
-//! broadcasts.
+//! `tugpulse` commentator daemon, taps the CODE_OUTPUT broadcast for
+//! the frames it narrates from, and turns its stdout lines into
+//! ledger rows + `PULSE` feed broadcasts.
 //!
-//! Topology (`roadmap/pulse.md`):
+//! Topology (`roadmap/pulse-2.md`):
 //!
-//!   producers (per-session bridges) ──pulse_fact──▶ fact_tx ─▶ daemon stdin
+//!   CODE_OUTPUT broadcast ──allowlist tap──▶ daemon stdin
 //!   daemon stdout ──pulse line──▶ ledger (capped) + PULSE broadcast ─▶ decks
 //!
+//! The tap consumes the same spliced frames every deck receives —
+//! the daemon sees the real game (typed tugcode frames with
+//! `tug_session_id` spliced in), not a hand-phrased re-telling. Only
+//! allowlisted frame types cross the pipe; everything between a
+//! session's `replay_started`/`replay_complete` brackets is muted
+//! here, so reconnect floods never re-narrate history; a lagging
+//! broadcast receiver drops frames rather than backpressuring
+//! anything (commentary never slows work).
+//!
 //! One bridge per tugcast process; the daemon is spawned LAZILY on the
-//! first fact while the `pulse/enabled` tugbank default reads true —
-//! disabled means facts are dropped and no subprocess ever exists.
-//! On daemon death the next fact respawns it (rate-limited), re-seeded
-//! from the ledger tail so the narrative thread survives.
+//! first forwardable frame while the `pulse/enabled` tugbank default
+//! reads true — disabled means frames are dropped and no subprocess
+//! ever exists. On daemon death the next frame respawns it
+//! (rate-limited), re-seeded from the ledger tail so the narrative
+//! thread survives.
 //!
 //! One-way isolation: nothing in this module writes toward any work
 //! session — the only outputs are the ledger, the PULSE broadcast, and
 //! tracing.
 
+use std::collections::HashSet;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -32,17 +43,38 @@ use tugcast_core::{FeedId, Frame};
 
 use crate::session_ledger::SessionLedger;
 
-/// Rolling-log row cap ([P09]).
+use super::payload_inspector::InspectedPayload;
+
+/// Rolling-log row cap.
 pub const PULSE_LEDGER_CAP: usize = 200;
 /// Tail length used both for deck reads and daemon re-seeding.
 pub const PULSE_TAIL_LEN: usize = 20;
-/// Tugbank default for the kill switch ([P06]): `Value::Bool`; absent
+/// Tugbank default for the kill switch: `Value::Bool`; absent
 /// or unreadable reads as ENABLED (PULSE is on by default). The deck's
 /// settings surface writes the same `(domain, key)` as a `bool`.
 pub const PULSE_ENABLED_DOMAIN: &str = "dev.tugtool.pulse";
 pub const PULSE_ENABLED_KEY: &str = "enabled";
 /// Minimum spacing between daemon (re)spawn attempts.
 const RESPAWN_MIN_INTERVAL: Duration = Duration::from_secs(5);
+
+/// The frame types forwarded to the daemon — the narratable subset of
+/// tugcode's outbound vocabulary (`tugcode/src/types.ts`,
+/// `OutboundMessage`). Streaming deltas other than assistant text,
+/// metadata/cost/usage frames, and everything else stay on the deck
+/// side of the pipe. `replay_started`/`replay_complete` are consumed
+/// here as mute brackets, never forwarded.
+const PULSE_FORWARD_ALLOWLIST: &[&str] = &[
+    "tool_use",
+    "tool_result",
+    "assistant_text",
+    "turn_complete",
+    "turn_cancelled",
+    "task_started",
+    "task_updated",
+    "api_retry",
+    "error",
+    "wake_started",
+];
 
 /// Active daemon subprocess handles, mirrored on `SessionChild`'s
 /// shape: boxed stdio + an opaque keepalive whose drop kills the child.
@@ -67,7 +99,8 @@ pub struct TugpulseSpawner {
 
 impl PulseSpawner for TugpulseSpawner {
     fn spawn(&self, seed_lines: &[String]) -> io::Result<PulseChild> {
-        let seed_json = serde_json::to_string(seed_lines).unwrap_or_else(|_| "[]".to_string());
+        let seed_json =
+            serde_json::to_string(seed_lines).unwrap_or_else(|_| "[]".to_string());
         let mut child = Command::new(&self.tugpulse_path)
             .arg("--seed")
             .arg(seed_json)
@@ -123,25 +156,22 @@ pub fn resolve_tugpulse_path(tugcode_path: &std::path::Path) -> PathBuf {
 }
 
 /// Everything the bridge task needs. `enabled` is consulted per
-/// spawn-opportunity (a fact arriving with no live daemon), so a
-/// toggle flip takes effect without a tugcast restart.
+/// spawn-opportunity (a forwardable frame arriving with no live
+/// daemon), so a toggle flip takes effect without a tugcast restart.
 pub struct PulseBridgeConfig {
     pub spawner: Arc<dyn PulseSpawner>,
     pub enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     pub ledger: Option<Arc<SessionLedger>>,
     pub pulse_tx: broadcast::Sender<Frame>,
+    /// The shared CODE_OUTPUT broadcast — the bridge subscribes inside
+    /// its task (receivers can't be cloned) and taps every frame.
+    pub code_tx: broadcast::Sender<Frame>,
 }
 
-/// Cheap-to-clone handle producers use to submit raw `pulse_fact`
-/// JSON lines (newline NOT included).
-pub type PulseFactSender = mpsc::Sender<Vec<u8>>;
-
-/// Spawn the bridge task. Returns the fact sender; the task lives
-/// until `cancel` fires (killing any live daemon via keepalive drop).
-pub fn spawn_pulse_bridge(config: PulseBridgeConfig, cancel: CancellationToken) -> PulseFactSender {
-    let (fact_tx, fact_rx) = mpsc::channel::<Vec<u8>>(256);
-    tokio::spawn(pulse_bridge_task(config, fact_rx, cancel));
-    fact_tx
+/// Spawn the bridge task. It lives until `cancel` fires (killing any
+/// live daemon via keepalive drop).
+pub fn spawn_pulse_bridge(config: PulseBridgeConfig, cancel: CancellationToken) {
+    tokio::spawn(pulse_bridge_task(config, cancel));
 }
 
 /// Internal: events from the daemon-stdout reader task.
@@ -150,15 +180,53 @@ enum DaemonEvent {
     Died,
 }
 
-async fn pulse_bridge_task(
-    config: PulseBridgeConfig,
-    mut fact_rx: mpsc::Receiver<Vec<u8>>,
-    cancel: CancellationToken,
-) {
+/// Classify one CODE_OUTPUT frame for the tap. Returns the spliced
+/// session id when the frame should cross the pipe; maintains the
+/// replay-mute set as brackets pass (even while the daemon is
+/// unspawned or PULSE is disabled — mute state must track the wire,
+/// not the toggle).
+fn forwardable_session(
+    payload: &[u8],
+    muted: &mut HashSet<String>,
+) -> Option<String> {
+    let inspected = InspectedPayload::from_slice(payload)?;
+    let msg_type = inspected.msg_type.as_deref()?;
+    let session = inspected.tug_session_id.clone();
+    match msg_type {
+        "replay_started" => {
+            if let Some(session) = session {
+                muted.insert(session);
+            }
+            None
+        }
+        "replay_complete" => {
+            if let Some(session) = session {
+                muted.remove(&session);
+            }
+            None
+        }
+        t if PULSE_FORWARD_ALLOWLIST.contains(&t) => {
+            let session = session?;
+            if muted.contains(&session) {
+                None
+            } else {
+                Some(session)
+            }
+        }
+        _ => None,
+    }
+}
+
+async fn pulse_bridge_task(config: PulseBridgeConfig, cancel: CancellationToken) {
     let mut daemon_stdin: Option<Box<dyn AsyncWrite + Send + Unpin>> = None;
     let mut daemon_keepalive: Option<Box<dyn Send>> = None;
     let (event_tx, mut event_rx) = mpsc::channel::<DaemonEvent>(64);
     let mut last_spawn_attempt: Option<Instant> = None;
+    let mut code_rx = config.code_tx.subscribe();
+    let mut code_closed = false;
+    // Sessions inside a replay bracket — their frames are history
+    // being re-emitted, not live work.
+    let mut muted: HashSet<String> = HashSet::new();
 
     loop {
         tokio::select! {
@@ -168,17 +236,27 @@ async fn pulse_bridge_task(
                 drop(daemon_keepalive.take());
                 return;
             }
-            maybe_fact = fact_rx.recv() => {
-                let Some(fact) = maybe_fact else {
-                    info!("pulse bridge: all fact senders dropped; exiting");
-                    drop(daemon_stdin.take());
-                    drop(daemon_keepalive.take());
-                    return;
+            recv = code_rx.recv(), if !code_closed => {
+                let frame = match recv {
+                    Ok(frame) => frame,
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        // Commentary never backpressures: skip and move on.
+                        warn!(skipped, "pulse bridge: code broadcast lagged; frames dropped");
+                        continue;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("pulse bridge: code broadcast closed");
+                        code_closed = true;
+                        continue;
+                    }
                 };
+                if forwardable_session(&frame.payload, &mut muted).is_none() {
+                    continue;
+                }
                 if !(config.enabled)() {
-                    // Disabled: drop facts, never spawn. A live daemon
+                    // Disabled: drop frames, never spawn. A live daemon
                     // from before the flip is torn down here so the
-                    // toggle takes effect at the next fact.
+                    // toggle takes effect at the next frame.
                     if daemon_keepalive.is_some() {
                         info!("pulse bridge: disabled; stopping daemon");
                         drop(daemon_stdin.take());
@@ -190,7 +268,7 @@ async fn pulse_bridge_task(
                     let throttled = last_spawn_attempt
                         .is_some_and(|t| t.elapsed() < RESPAWN_MIN_INTERVAL);
                     if throttled {
-                        continue; // drop the fact; next one may retry
+                        continue; // drop the frame; the next one may retry
                     }
                     last_spawn_attempt = Some(Instant::now());
                     let seed = config
@@ -213,7 +291,7 @@ async fn pulse_bridge_task(
                     }
                 }
                 if let Some(stdin) = daemon_stdin.as_mut() {
-                    let mut line = fact;
+                    let mut line = frame.payload.clone();
                     line.push(b'\n');
                     if let Err(err) = stdin.write_all(&line).await {
                         warn!(error = %err, "pulse bridge: stdin write failed; daemon marked dead");
@@ -305,20 +383,6 @@ fn handle_pulse_line(config: &PulseBridgeConfig, line: &str) {
         .send(Frame::new(FeedId::PULSE, line.as_bytes().to_vec()));
 }
 
-/// Is this tugcode stdout line a `pulse_fact` frame? The session
-/// relay calls this on every line (cheap substring pre-filter, then
-/// the payload inspector's parse) to divert producer facts to the
-/// pulse bridge instead of the deck-bound CODE_OUTPUT broadcast.
-pub fn is_pulse_fact_line(line: &str) -> bool {
-    if !line.contains("\"pulse_fact\"") {
-        return false;
-    }
-    super::payload_inspector::InspectedPayload::from_slice(line.as_bytes())
-        .and_then(|p| p.msg_type.clone())
-        .as_deref()
-        == Some("pulse_fact")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,7 +400,10 @@ mod tests {
     impl PulseSpawner for FakeSpawner {
         fn spawn(&self, seed_lines: &[String]) -> io::Result<PulseChild> {
             self.spawns.fetch_add(1, Ordering::SeqCst);
-            self.seeds_seen.lock().unwrap().push(seed_lines.to_vec());
+            self.seeds_seen
+                .lock()
+                .unwrap()
+                .push(seed_lines.to_vec());
             self.children
                 .lock()
                 .unwrap()
@@ -345,45 +412,50 @@ mod tests {
         }
     }
 
-    fn fact_line(scope: &str, fact: &str) -> Vec<u8> {
-        serde_json::json!({
-            "type": "pulse_fact",
-            "source": "test",
-            "scope": scope,
-            "kind": "note",
-            "fact": fact,
-            "at": 1,
-        })
-        .to_string()
-        .into_bytes()
+    fn code_frame(json: serde_json::Value) -> Frame {
+        Frame::new(FeedId::CODE_OUTPUT, json.to_string().into_bytes())
+    }
+
+    fn tool_result_frame(session: &str, output: &str) -> Frame {
+        code_frame(serde_json::json!({
+            "tug_session_id": session,
+            "type": "tool_result",
+            "tool_use_id": "t1",
+            "output": output,
+            "is_error": false,
+            "ipc_version": 2,
+        }))
     }
 
     #[tokio::test]
-    async fn disabled_toggle_drops_facts_and_never_spawns() {
+    async fn disabled_toggle_drops_frames_and_never_spawns() {
         let spawner = Arc::new(FakeSpawner {
             spawns: AtomicUsize::new(0),
             children: std::sync::Mutex::new(vec![]),
             seeds_seen: std::sync::Mutex::new(vec![]),
         });
         let (pulse_tx, _keep) = broadcast::channel(8);
+        let (code_tx, _keep_code) = broadcast::channel(8);
         let cancel = CancellationToken::new();
-        let fact_tx = spawn_pulse_bridge(
+        spawn_pulse_bridge(
             PulseBridgeConfig {
                 spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
                 enabled: Arc::new(|| false),
                 ledger: None,
                 pulse_tx,
+                code_tx: code_tx.clone(),
             },
             cancel.clone(),
         );
-        fact_tx.send(fact_line("s1", "hello")).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        code_tx.send(tool_result_frame("s1", "hello")).unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(spawner.spawns.load(Ordering::SeqCst), 0);
         cancel.cancel();
     }
 
     #[tokio::test]
-    async fn facts_route_to_daemon_and_lines_broadcast() {
+    async fn allowlisted_frames_reach_daemon_and_lines_broadcast() {
         // Far ends the test drives: read the daemon's stdin, write its
         // stdout.
         let (test_reads_stdin, bridge_stdin) = tokio::io::duplex(4096);
@@ -398,26 +470,38 @@ mod tests {
             seeds_seen: std::sync::Mutex::new(vec![]),
         });
         let (pulse_tx, mut pulse_rx) = broadcast::channel(8);
+        let (code_tx, _keep_code) = broadcast::channel(8);
         let cancel = CancellationToken::new();
-        let fact_tx = spawn_pulse_bridge(
+        spawn_pulse_bridge(
             PulseBridgeConfig {
                 spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
                 enabled: Arc::new(|| true),
                 ledger: None,
                 pulse_tx,
+                code_tx: code_tx.clone(),
             },
             cancel.clone(),
         );
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Fact flows to daemon stdin.
-        fact_tx.send(fact_line("s1", "tests green")).await.unwrap();
+        // A non-allowlisted frame type is dropped at the tap…
+        code_tx
+            .send(code_frame(serde_json::json!({
+                "tug_session_id": "s1",
+                "type": "thinking_text",
+                "text": "never forwarded",
+            })))
+            .unwrap();
+        // …then an allowlisted frame flows to daemon stdin verbatim.
+        code_tx.send(tool_result_frame("s1", "tests green")).unwrap();
         let mut stdin_lines = BufReader::new(test_reads_stdin).lines();
         let received = tokio::time::timeout(Duration::from_secs(2), stdin_lines.next_line())
             .await
-            .expect("daemon received fact in time")
+            .expect("daemon received frame in time")
             .unwrap()
             .expect("a line");
         assert!(received.contains("\"tests green\""));
+        assert!(received.contains("\"tug_session_id\":\"s1\""));
         assert_eq!(spawner.spawns.load(Ordering::SeqCst), 1);
 
         // Daemon line flows out as a PULSE frame.
@@ -444,16 +528,118 @@ mod tests {
         cancel.cancel();
     }
 
+    #[tokio::test]
+    async fn replay_brackets_mute_a_session_without_blocking_others() {
+        let (test_reads_stdin, bridge_stdin) = tokio::io::duplex(4096);
+        let (bridge_stdout, _test_writes_stdout) = tokio::io::duplex(4096);
+        let spawner = Arc::new(FakeSpawner {
+            spawns: AtomicUsize::new(0),
+            children: std::sync::Mutex::new(vec![PulseChild {
+                stdin: Box::new(bridge_stdin),
+                stdout: Box::new(bridge_stdout),
+                keepalive: Box::new(()),
+            }]),
+            seeds_seen: std::sync::Mutex::new(vec![]),
+        });
+        let (pulse_tx, _keep) = broadcast::channel(8);
+        let (code_tx, _keep_code) = broadcast::channel(16);
+        let cancel = CancellationToken::new();
+        spawn_pulse_bridge(
+            PulseBridgeConfig {
+                spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
+                enabled: Arc::new(|| true),
+                ledger: None,
+                pulse_tx,
+                code_tx: code_tx.clone(),
+            },
+            cancel.clone(),
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // s1 enters replay: its frames are muted; s2 still flows.
+        code_tx
+            .send(code_frame(serde_json::json!({
+                "tug_session_id": "s1", "type": "replay_started", "ipc_version": 2,
+            })))
+            .unwrap();
+        code_tx.send(tool_result_frame("s1", "replayed history")).unwrap();
+        code_tx.send(tool_result_frame("s2", "live work")).unwrap();
+        let mut stdin_lines = BufReader::new(test_reads_stdin).lines();
+        let first = tokio::time::timeout(Duration::from_secs(2), stdin_lines.next_line())
+            .await
+            .expect("daemon received the live frame")
+            .unwrap()
+            .expect("a line");
+        assert!(first.contains("\"live work\""));
+        assert!(!first.contains("replayed history"));
+
+        // The bracket closes: s1 flows again.
+        code_tx
+            .send(code_frame(serde_json::json!({
+                "tug_session_id": "s1", "type": "replay_complete", "ipc_version": 2,
+            })))
+            .unwrap();
+        code_tx.send(tool_result_frame("s1", "post-replay live")).unwrap();
+        let second = tokio::time::timeout(Duration::from_secs(2), stdin_lines.next_line())
+            .await
+            .expect("daemon received the post-replay frame")
+            .unwrap()
+            .expect("a line");
+        assert!(second.contains("\"post-replay live\""));
+
+        cancel.cancel();
+    }
+
     #[test]
-    fn pulse_fact_line_detection() {
-        assert!(is_pulse_fact_line(
-            r#"{"type":"pulse_fact","source":"claude-code","scope":"s","kind":"note","fact":"x","at":1}"#
-        ));
-        // Mentions the string but isn't the frame type.
-        assert!(!is_pulse_fact_line(
-            r#"{"type":"assistant_message","text":"discussing \"pulse_fact\" frames"}"#
-        ));
-        assert!(!is_pulse_fact_line(r#"{"type":"turn_complete"}"#));
-        assert!(!is_pulse_fact_line("not json"));
+    fn forwardable_session_classification() {
+        let mut muted = HashSet::new();
+        // Allowlisted + spliced → forwarded with its session.
+        assert_eq!(
+            forwardable_session(
+                br#"{"tug_session_id":"s1","type":"tool_use","tool_name":"Bash"}"#,
+                &mut muted,
+            ),
+            Some("s1".to_string())
+        );
+        // Not allowlisted.
+        assert_eq!(
+            forwardable_session(
+                br#"{"tug_session_id":"s1","type":"system_metadata"}"#,
+                &mut muted,
+            ),
+            None
+        );
+        // Allowlisted but unspliced (defensive — relay lines are
+        // always spliced).
+        assert_eq!(
+            forwardable_session(br#"{"type":"tool_use"}"#, &mut muted),
+            None
+        );
+        // Brackets maintain the mute set and are themselves dropped.
+        assert_eq!(
+            forwardable_session(
+                br#"{"tug_session_id":"s1","type":"replay_started"}"#,
+                &mut muted,
+            ),
+            None
+        );
+        assert!(muted.contains("s1"));
+        assert_eq!(
+            forwardable_session(
+                br#"{"tug_session_id":"s1","type":"tool_result"}"#,
+                &mut muted,
+            ),
+            None
+        );
+        assert_eq!(
+            forwardable_session(
+                br#"{"tug_session_id":"s1","type":"replay_complete"}"#,
+                &mut muted,
+            ),
+            None
+        );
+        assert!(muted.is_empty());
+        // Malformed JSON never panics.
+        assert_eq!(forwardable_session(b"not json", &mut muted), None);
     }
 }

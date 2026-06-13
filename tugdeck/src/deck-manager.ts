@@ -48,7 +48,7 @@ import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugDevPanel } from "./components/tug-dev-panel/tug-dev-panel";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
-import { RateLimitBannerProvider } from "./components/chrome/rate-limit-banner-bridge";
+import { RateLimitBulletinBridge } from "./components/chrome/rate-limit-bulletin-bridge";
 import { RateLimitStore } from "./lib/rate-limit-store";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
@@ -200,7 +200,7 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * App-level, account-global subscription-quota store ([#step-3.5]). Feeds
-   * the single deck-wide `RateLimitBannerProvider`. Constructed once with the
+   * the single deck-wide `RateLimitBulletinBridge`. Constructed once with the
    * connection; the harness reaches it via {@link getRateLimitStore} to drive
    * the banner without a live claude round-trip.
    */
@@ -538,7 +538,7 @@ export class DeckManager implements IDeckManagerStore {
           React.createElement(TugBannerProvider, {
             connection: this.connection,
           }),
-          React.createElement(RateLimitBannerProvider, {
+          React.createElement(RateLimitBulletinBridge, {
             store: this.rateLimitStore,
           }),
           React.createElement(DeckCanvas, {}),
@@ -604,7 +604,7 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * App-level account-global quota store, for the `__tug` test surface's
    * `ingestRateLimit` seam ([#step-3.5]). Production code reaches it only
-   * through the mounted `RateLimitBannerProvider`.
+   * through the mounted `RateLimitBulletinBridge`.
    */
   getRateLimitStore(): RateLimitStore {
     return this.rateLimitStore;

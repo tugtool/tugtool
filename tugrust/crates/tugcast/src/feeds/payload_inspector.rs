@@ -45,6 +45,14 @@ pub struct InspectedPayload {
     #[serde(rename = "type", default)]
     pub msg_type: Option<String>,
 
+    /// The session id tugcast spliced into the line
+    /// (`splice_tug_session_id`) before the CODE_OUTPUT broadcast.
+    /// `None` on inbound payloads and anything not yet spliced. The
+    /// pulse bridge keys its replay-mute set and per-scope forwarding
+    /// on this.
+    #[serde(default)]
+    pub tug_session_id: Option<String>,
+
     /// `content` blocks on inbound `user_message` post-Step-5c. The
     /// dispatcher uses [`derive_legacy_journal_view`] to project this
     /// into the legacy `text` + `attachments` columns the journal

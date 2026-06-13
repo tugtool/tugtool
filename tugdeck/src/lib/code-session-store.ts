@@ -54,6 +54,7 @@ import {
   type CodeSessionState,
 } from "./code-session-store/reducer";
 import { logSessionLifecycle } from "./session-lifecycle-log";
+import { getPulseStore } from "./pulse-store";
 import {
   clearCachedParses,
   invalidateCachedParsesByPrefix,
@@ -665,6 +666,12 @@ export class CodeSessionStore {
    */
   send(text: string, atoms: AtomSegment[], opts?: { suppress?: boolean }): void {
     if (this._disposed) return;
+    // A fresh submission makes prior PULSE commentary stale for this
+    // card — clear its strip; the new turn's lines repopulate it.
+    // Suppressed (programmatic) sends are not user submissions.
+    if (opts?.suppress !== true) {
+      getPulseStore()?.clearScope(this.tugSessionId);
+    }
     // `turnKey` is generated in the impure wrapper layer (not in the
     // reducer) so the reducer remains pure and time-independent —
     // mirrors how timers live outside the reducer.

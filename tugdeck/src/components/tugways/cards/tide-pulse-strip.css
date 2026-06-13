@@ -1,16 +1,17 @@
 /**
- * tide-pulse-strip.css — the Z2 PULSE strip's scoped styling, the
- * workshop spike's strip treatment productionized.
+ * tide-pulse-strip.css — the Z2 PULSE strip's scoped styling.
  *
  * One fixed-height line: a letterspaced mono PULSE legend, then the
- * newest commentary line in a small italic, ellipsized. The fade-in
- * animation re-runs per line because the text span is keyed on line
- * identity ([L06] — appearance via CSS, re-triggered by mount).
+ * machine's latest thought in a small italic, ellipsized. Replacement
+ * lines CROSS-FADE: the stage holds the incoming text in flow with
+ * the outgoing text absolutely layered over it; TugAnimator drives
+ * both opacities ([L06] — appearance through WAAPI on DOM, no CSS
+ * keyframes and no React state).
  *
  * Tuglaw cross-check:
  *  - [L19] component file pair with `data-slot="tide-pulse-strip"`.
- *  - [L20] the strip owns its own legend/text/placeholder scope; the
- *    dev card contributes only the mount position.
+ *  - [L20] the strip owns its own legend/stage/text/placeholder
+ *    scope; the dev card contributes only the mount position.
  *  - [L16] color-setting rules pair with `@tug-renders-on` (the strip
  *    rides the card's status surface).
  *
@@ -19,12 +20,18 @@
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-pulse-strip {
+  /* Fixed-height contract: one CONSTANT height, sized so typeset
+   * math (fractions, operators) fits without ever moving layout —
+   * prose centers in the same box. */
+  --tide-pulse-strip-height: 28px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--tug-space-sm);
   flex: 0 0 auto;
-  /* Fixed-height contract: one line, never moves as lines change. */
-  padding: 3px var(--tug-space-md);
+  height: var(--tide-pulse-strip-height);
+  box-sizing: border-box;
+  padding-block: 0;
+  padding-inline: var(--tug-space-md);
   border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;
@@ -40,31 +47,89 @@
   opacity: 0.8;
 }
 
+/* The cross-fade stage: a fixed box both text layers center within. */
+.tide-pulse-strip-stage {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-pulse-strip-text {
+  /* Both layers share the same absolute geometry, vertically centered
+   * in the fixed stage: a tall KaTeX line box can NEVER move layout —
+   * extreme overshoot crops symmetrically instead. */
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--tug7-element-global-text-normal-default-rest);
   font-size: 0.6875rem;
-  font-style: italic;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  animation: tide-pulse-strip-in calc(360ms * var(--tug-timing, 1)) ease;
+}
+
+/* The outgoing layer rides atop the incoming during the fade (same
+ * geometry; only opacity differs while TugAnimator runs). */
+.tide-pulse-strip-outgoing {
+  z-index: 1;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-pulse-strip-placeholder {
   color: var(--tug7-element-global-text-normal-muted-rest);
-  animation: none;
 }
 
-@keyframes tide-pulse-strip-in {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Rendered markdown flattens to one inline run: the strip is a single
+ * line; block wrappers from the parse lose their box behavior. */
+.tide-pulse-strip-text :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.tide-pulse-strip-text li {
+  list-style: none;
+}
+
+.tide-pulse-strip-text code {
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.95em;
+}
+
+/* Transcript parity inside one line: display math flows inline, media
+ * shrinks to text height, tables flatten to an inline run. */
+.tide-pulse-strip-text .katex-display {
+  display: inline;
+  margin: 0;
+}
+
+.tide-pulse-strip-text .katex-display > .katex {
+  display: inline;
+  white-space: nowrap;
+}
+
+.tide-pulse-strip-text :is(img, svg, video) {
+  max-height: 1.1em;
+  width: auto;
+  vertical-align: text-bottom;
+}
+
+.tide-pulse-strip-text :is(table, thead, tbody, tr, th, td) {
+  display: inline;
+  padding: 0;
+  border: none;
+}
+
+/* KaTeX inside the strip: clamp the engine's 1.21em default so a
+ * fraction stack fits the fixed box. */
+.tide-pulse-strip-text .katex {
+  font-size: 1.05em;
 }
