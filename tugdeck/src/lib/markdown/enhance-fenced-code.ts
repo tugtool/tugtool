@@ -47,27 +47,38 @@ const CHECK_ICON_PATHS: ReadonlyArray<{ tag: string; attrs: Record<string, strin
   { tag: "path", attrs: { d: "M20 6 9 17l-5-5" } },
 ];
 
+/** Lucide `ChevronsDown` (collapsed → click to expand). */
+const CHEVRONS_DOWN_PATHS: ReadonlyArray<{ tag: string; attrs: Record<string, string> }> = [
+  { tag: "path", attrs: { d: "m7 6 5 5 5-5" } },
+  { tag: "path", attrs: { d: "m7 13 5 5 5-5" } },
+];
+
+/** Lucide `ChevronsUp` (expanded → click to collapse). */
+const CHEVRONS_UP_PATHS: ReadonlyArray<{ tag: string; attrs: Record<string, string> }> = [
+  { tag: "path", attrs: { d: "m17 11-5-5-5 5" } },
+  { tag: "path", attrs: { d: "m17 18-5-5-5 5" } },
+];
+
 /**
- * Build a 14×14 SVG icon element with the standard lucide stroke
- * styling. The size is small enough to sit inline within the header
- * row without crowding the language label.
+ * Build a 24×24-viewBox SVG icon element with the standard lucide stroke
+ * styling, classed `{baseClass}` + `{baseClass}--{variant}` so the CSS
+ * can swap which of a button's two icons is visible by state.
  */
 function buildIcon(
   paths: ReadonlyArray<{ tag: string; attrs: Record<string, string> }>,
-  variant: "default" | "copied",
+  baseClass: string,
+  variant: string,
 ): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
   svg.setAttribute("stroke-width", "2");
   svg.setAttribute("stroke-linecap", "round");
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("aria-hidden", "true");
-  svg.classList.add("tugx-md-fenced-code-copy-icon");
-  svg.classList.add(`tugx-md-fenced-code-copy-icon--${variant}`);
+  svg.classList.add(baseClass);
+  svg.classList.add(`${baseClass}--${variant}`);
   for (const p of paths) {
     const child = document.createElementNS(SVG_NS, p.tag);
     for (const [k, v] of Object.entries(p.attrs)) child.setAttribute(k, v);
@@ -131,6 +142,32 @@ function attachCopyHandler(button: HTMLButtonElement, codeEl: HTMLElement): void
 }
 
 // ---------------------------------------------------------------------------
+// Collapse interaction
+// ---------------------------------------------------------------------------
+
+/**
+ * Toggle the wrapper's `data-collapsed` attribute on click. Markdown
+ * fences default EXPANDED (no attribute), so the first click collapses;
+ * the CSS hides the `<pre>` while collapsed and swaps which chevron
+ * shows. Mirrors the tool-block header's whole-block Expand/Collapse.
+ */
+function attachCollapseHandler(button: HTMLButtonElement, wrapper: HTMLElement): void {
+  button.addEventListener("click", (e) => {
+    e.preventDefault();
+    const collapsed = wrapper.hasAttribute("data-collapsed");
+    if (collapsed) {
+      wrapper.removeAttribute("data-collapsed");
+      button.setAttribute("aria-expanded", "true");
+      button.setAttribute("aria-label", "Collapse code");
+    } else {
+      wrapper.setAttribute("data-collapsed", "");
+      button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-label", "Expand code");
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -183,20 +220,37 @@ export function enhanceFencedCode(container: HTMLElement): void {
 
     // Icon-only copy, matching the tool-block headers' `BlockCopyButton
     // subtype="icon"`: a Copy glyph that swaps to a Check on success (the
-    // `is-copied` class drives the CSS swap). The accessible name carries
-    // the action; `title` gives a hover tooltip in lieu of a visible label.
+    // `is-copied` class drives the CSS swap). Accessible name only (no
+    // `title`) — same as the React Copy button, no browser tooltip.
     const button = document.createElement("button");
     button.type = "button";
     button.className = "tugx-md-fenced-code-copy";
     button.setAttribute("aria-label", "Copy code");
-    button.title = "Copy";
 
-    button.appendChild(buildIcon(COPY_ICON_PATHS, "default"));
-    button.appendChild(buildIcon(CHECK_ICON_PATHS, "copied"));
+    button.appendChild(buildIcon(COPY_ICON_PATHS, "tugx-md-fenced-code-copy-icon", "default"));
+    button.appendChild(buildIcon(CHECK_ICON_PATHS, "tugx-md-fenced-code-copy-icon", "copied"));
 
     if (codeEl !== null) attachCopyHandler(button, codeEl);
 
     actions.appendChild(button);
+
+    // Collapse chevron — icon-only, matching the tool-block header's
+    // `BlockFoldCue subtype="icon"`. Default EXPANDED (no `data-collapsed`
+    // on the wrapper) so markdown code reads in full; click collapses.
+    const collapse = document.createElement("button");
+    collapse.type = "button";
+    collapse.className = "tugx-md-fenced-code-collapse";
+    collapse.setAttribute("aria-label", "Collapse code");
+    collapse.setAttribute("aria-expanded", "true");
+    collapse.appendChild(
+      buildIcon(CHEVRONS_UP_PATHS, "tugx-md-fenced-code-collapse-icon", "expanded"),
+    );
+    collapse.appendChild(
+      buildIcon(CHEVRONS_DOWN_PATHS, "tugx-md-fenced-code-collapse-icon", "collapsed"),
+    );
+    attachCollapseHandler(collapse, wrapper);
+
+    actions.appendChild(collapse);
     header.appendChild(actions);
 
     // Replace the `<pre>` with the wrapper. The order of operations

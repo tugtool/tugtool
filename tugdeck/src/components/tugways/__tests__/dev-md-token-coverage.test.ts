@@ -134,18 +134,14 @@ describe("markdown token coverage", () => {
       "--tugx-md-inline-code-padding",
       "--tugx-md-inline-code-radius",
       "--tugx-md-inline-code-size",
-      // Fenced code geometry (chrome comes from --tugx-block-*; the
-      // Copy button's height / padding-inline / font-size / icon-size
-      // come from the published `--tug-button-2xs-*` metric tokens
-      // in `tug-button.css`. Only the radius stays markdown-local
-      // because the Copy button uses a slightly different
-      // border-radius than TugPushButton's pill default.)
+      // Fenced code geometry (chrome + buttons come from --tugx-block-*,
+      // --tug-button-xs-*, and --tug7-* ghost-action tokens — the fence
+      // matches the tool-block header directly, so no fence-specific
+      // header/button geometry tokens remain).
       "--tugx-md-fenced-code-padding",
       "--tugx-md-fenced-code-size",
       "--tugx-md-fenced-code-line-height",
       "--tugx-md-fenced-code-margin",
-      "--tugx-md-fenced-code-lang-weight",
-      "--tugx-md-fenced-code-copy-radius",
       // Blockquote / hr / lists / table / image / footnote — bespoke
       // dimensions only; colors come from --tugx-block-*
       "--tugx-md-blockquote-border-width",

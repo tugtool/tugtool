@@ -104,28 +104,10 @@ body {
   --tugx-md-fenced-code-line-height: 1.5;
   --tugx-md-fenced-code-margin:      var(--tug-space-md);
 
-  /* Fenced code header — Copy button geometry. Sized to match
-   * `TugPushButton size="2xs"` so the imperative Copy button reads
-   * consistently with the React body-kind affordances (FileBlock fold
-   * cue, DiffBlock view-toggle, TerminalBlock Copy). Per tuglaw rule
-   * 6: imperative-DOM rendering paths may use raw `<button>` markup
-   * but must match the Tug primitive equivalent visually.
-   *
-   * The height / padding-inline / font-size / icon-size pull
-   * directly from `--tug-button-2xs-*` global metric tokens
-   * published by `tug-button.css`, so a future TugButton size
-   * change propagates automatically. */
-  --tugx-md-fenced-code-lang-weight: var(--tug-font-weight-semibold);
-  --tugx-md-fenced-code-copy-radius: var(--tug-radius-lg);
-
-  /* Approximate height of `.tugx-md-fenced-code-header` — used by
-   * the actions row to compute its sticky `top` so the two bars stack
-   * when both pin. Imperative `enhanceFencedCode` doesn't run a
-   * ResizeObserver (it's a DOM helper, not a React component), so the
-   * offset is a static-token approximation: padding-vertical * 2 plus
-   * the font line-height. If a theme tunes the strip padding or font
-   * size, override this token at the same time. */
-  --tugx-md-fenced-code-header-height: 28px;
+  /* The fenced-code header + buttons match the tool-block header and its
+   * `.tug-button-ghost-action` controls directly off the shared
+   * `--tugx-block-*` / `--tug-button-xs-*` / `--tug7-*` tokens — no
+   * fence-specific geometry tokens needed. */
 
   /* Blockquote — bespoke left-rail rhythm */
   --tugx-md-blockquote-border-width: 3px;
@@ -400,13 +382,18 @@ body {
 
 /* Fenced code chrome — `enhanceFencedCode` wraps each `<pre>` in a
    `.tugx-md-fenced-code` div with a `.tugx-md-fenced-code-header`
-   containing the language label and a copy-to-clipboard button. The
-   wrapper owns the bg / radius / margin so the header sits flush
-   inside the same surface as the code. */
-/* @tug-renders-on: --tugx-block-bg */
+   (language label + Copy + collapse chevron). Framed to MATCH the
+   tool-block chrome (`.tool-block-chrome`): a raised `--tugx-block-
+   chrome-bg` card with a `--tugx-block-border` and the same radius, so a
+   code fence in prose reads as the same family as a Bash / Write tool
+   block rather than a foreign dark-body code surface. The `<pre>` body
+   stays transparent (shows the chrome surface), so there's no separate
+   near-black code panel. */
+/* @tug-renders-on: --tugx-block-chrome-bg */
 .tugx-md-block .tugx-md-fenced-code {
-  background: var(--tugx-block-bg);
+  background: var(--tugx-block-chrome-bg);
   color: var(--tugx-block-text-color);
+  border: 1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
   margin: var(--tugx-md-fenced-code-margin) 0;
   /* `overflow: clip` clips to the rounded border-radius without
@@ -415,12 +402,22 @@ body {
   overflow: clip;
 }
 
+/* Collapsed (default is EXPANDED for markdown): hide the code body and
+   drop the header's bottom divider, so the header reads as the whole
+   block — same as a collapsed tool block. */
+.tugx-md-block .tugx-md-fenced-code[data-collapsed] > pre {
+  display: none;
+}
+.tugx-md-block .tugx-md-fenced-code[data-collapsed] .tugx-md-fenced-code-header {
+  border-bottom: none;
+}
+
 /* Header — language label at the left, trailing affordances cluster
  * (Copy) at the right. Affordances live in this single sticky row;
  * there is no separate `.tugx-md-fenced-code-actions` strip. Pinned
  * (`position: sticky`) so it stays visible while scrolling deep into
  * a long fenced-code block. */
-/* @tug-renders-on: --tugx-block-bg */
+/* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-md-block .tugx-md-fenced-code-header {
   position: sticky;
   top: var(--tugx-pin-stack-top, 0);
@@ -428,19 +425,25 @@ body {
   display: flex;
   align-items: center;
   gap: var(--tugx-block-strip-gap);
-  min-height: var(--tugx-md-fenced-code-header-height);
+  /* No forced min-height — the padding + the xs control height set the
+     bar height, identical to the tool-call header. */
   padding: var(--tugx-block-strip-padding);
   background: var(--tugx-block-strip-bg);
   border-bottom: 1px solid var(--tugx-block-strip-border);
-  font-family: var(--tugx-block-code-font);
+  /* Sans strip font (NOT the mono code font) so the language label reads
+     like a tool name. */
+  font-family: var(--tugx-block-strip-font);
   font-size: var(--tugx-block-strip-size);
   user-select: none;
 }
 
+/* Language label — the fence's "identity", styled like a tool name:
+   sans, semibold, `sm` size, full text color (matching
+   `--tugx-toolheader-name-*`). */
 .tugx-md-block .tugx-md-fenced-code-lang {
-  color: var(--tugx-block-text-color-muted);
-  font-weight: var(--tugx-md-fenced-code-lang-weight);
-  letter-spacing: 0.02em;
+  color: var(--tugx-block-text-color);
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-semibold);
   text-transform: lowercase;
 }
 
@@ -457,49 +460,75 @@ body {
   align-items: center;
   flex: 0 0 auto;
   gap: var(--tug-space-2xs);
+  /* Vertical rule dividing the language label from the controls, with
+     equal gaps — matching the tool-call header's trailing separator. */
+  margin-left: var(--tug-space-sm);
+  padding-left: var(--tug-space-sm);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
-/* Copy button — sized to match `TugPushButton size="2xs"
- * emphasis="ghost"` so the imperative-DOM render reads consistently
- * with the React body-kind affordances. Icon + "Copy" text at rest;
- * swaps to Check icon + "Copied!" briefly after a successful
- * clipboard write (CSS-driven display toggle on the `is-copied`
- * class). Geometry reads from the published `--tug-button-2xs-*`
- * metric tokens (`tug-button.css`) so a future button-size change
- * propagates here automatically. */
-/* @tug-renders-on: --tugx-block-bg */
-.tugx-md-block .tugx-md-fenced-code-copy {
+/* Copy + collapse — icon-only buttons that replicate the tool-block
+ * header's `BlockCopyButton` / `BlockFoldCue` at `subtype="icon"
+ * size="xs"`. Since markdown is sanitized HTML (not React), these are
+ * raw `<button>`s styled to MATCH `.tug-button-ghost-action` exactly:
+ * the `xs` square geometry, the 999px pill radius, and the ghost-action
+ * rest/hover surface + icon tokens — so they read as the same control,
+ * same size, same hover, as the tool-block header buttons. */
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
+.tugx-md-block .tugx-md-fenced-code-copy,
+.tugx-md-block .tugx-md-fenced-code-collapse {
   display: inline-flex;
   align-items: center;
-  gap: var(--tug-space-2xs);
-  height: var(--tug-button-2xs-height);
-  padding: 0 var(--tug-button-2xs-padding-inline);
-  border: none;
-  background: transparent;
-  color: var(--tugx-block-text-color-muted);
-  border-radius: var(--tugx-md-fenced-code-copy-radius);
+  justify-content: center;
+  width: var(--tug-button-xs-height);
+  height: var(--tug-button-xs-height);
+  padding: 0;
+  border: 1px solid var(--tug7-element-control-border-ghost-action-rest);
+  background-color: var(--tug7-surface-control-primary-ghost-action-rest);
+  color: var(--tug7-element-control-text-ghost-action-rest);
+  /* Rounded rect (NOT a pill/circle) — matches `TugButton`'s inline
+     radius for an `xs` button: `SIZE_ROUNDED_DEFAULT.xs` → `lg` → 0.5rem
+     (8px). The CSS `.tug-button { border-radius: 999px }` is only a
+     fallback the component overrides inline, so the rendered tool-block
+     icon button is an 8px rounded rect, not a circle. */
+  border-radius: 0.5rem;
   cursor: pointer;
-  font-family: inherit;
-  font-size: var(--tug-button-2xs-font-size);
-  font-weight: var(--tug-font-weight-medium);
-  /* Sentence-case "Copy" / "Copied" to match the React `BlockCopyButton`
-   * (no uppercase / letter-spacing) so the fence affordance reads as the
-   * same control as the tool-block Copy. */
   line-height: 1;
   transition:
-    background var(--tug-motion-duration-fast) var(--tug-motion-easing-standard),
-    color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
+    background-color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard),
+    color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard),
+    border-color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
 }
 
-.tugx-md-block .tugx-md-fenced-code-copy svg {
-  width: var(--tug-button-2xs-icon-size);
-  height: var(--tug-button-2xs-icon-size);
+.tugx-md-block .tugx-md-fenced-code-copy svg,
+.tugx-md-block .tugx-md-fenced-code-collapse svg {
+  width: var(--tug-button-xs-icon-size);
+  height: var(--tug-button-xs-icon-size);
+  color: var(--tug7-element-control-icon-ghost-action-rest);
 }
 
-/* @tug-renders-on: --tugx-block-row-hover-bg */
-.tugx-md-block .tugx-md-fenced-code-copy:hover {
-  background: var(--tugx-block-row-hover-bg);
-  color: var(--tugx-block-text-color);
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-action-hover */
+.tugx-md-block .tugx-md-fenced-code-copy:hover,
+.tugx-md-block .tugx-md-fenced-code-collapse:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+  color: var(--tug7-element-control-text-ghost-action-hover);
+  border-color: var(--tug7-element-control-border-ghost-action-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tugx-md-block .tugx-md-fenced-code-copy:hover svg,
+.tugx-md-block .tugx-md-fenced-code-collapse:hover svg {
+  color: var(--tug7-element-control-icon-ghost-action-hover);
+}
+
+/* Suppress WebKit's default focus outline on these raw `<button>`s. The
+   app's focus ring is engine-owned (keyboard-only, on engine-tracked
+   controls); these DOM buttons aren't engine-tracked, so without this a
+   mouse click would paint a stray native ring — the React header buttons
+   show none. */
+.tugx-md-block .tugx-md-fenced-code-copy:focus,
+.tugx-md-block .tugx-md-fenced-code-collapse:focus {
+  outline: none;
 }
 
 /* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
@@ -517,7 +546,22 @@ body {
 
 .tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--copied {
   display: inline;
-  color: var(--tugx-block-tone-add-color);
+  /* No success-green tint — the confirmed Check uses the same ghost-action
+     icon color as the Copy glyph, matching the tool-block header's Copy
+     (the icon swap alone signals success). */
+}
+
+/* Collapse chevron icon swap — keyed off the wrapper's `data-collapsed`.
+   Default (expanded): ChevronsUp ("collapse me"). Collapsed: ChevronsDown
+   ("expand me"). Mirrors the tool-header `BlockFoldCue` direction. */
+.tugx-md-block .tugx-md-fenced-code-collapse-icon--collapsed {
+  display: none;
+}
+.tugx-md-block .tugx-md-fenced-code[data-collapsed] .tugx-md-fenced-code-collapse-icon--expanded {
+  display: none;
+}
+.tugx-md-block .tugx-md-fenced-code[data-collapsed] .tugx-md-fenced-code-collapse-icon--collapsed {
+  display: inline;
 }
 
 /* Code body — sits flush below the header. The wrapper owns the
@@ -536,12 +580,13 @@ body {
 
 /* Pre-enhancement fallback: any `<pre>` that *isn't* yet wrapped (e.g.,
    measurement pass before `enhanceFencedCode` runs, or a consumer
-   that bypasses the helper) still renders correctly with the same
-   chrome on the `<pre>` directly. */
-/* @tug-renders-on: --tugx-block-bg */
+   that bypasses the helper) still renders with the tool-block chrome
+   surface — so there's no flash of a foreign near-black code panel. */
+/* @tug-renders-on: --tugx-block-chrome-bg */
 .tugx-md-block > pre {
-  background: var(--tugx-block-bg);
+  background: var(--tugx-block-chrome-bg);
   color: var(--tugx-block-text-color);
+  border: 1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
   padding: var(--tugx-md-fenced-code-padding);
   font-size: var(--tugx-md-fenced-code-size);
