@@ -887,39 +887,33 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       session,
       awaiting,
     );
-    // Collapse-by-default is governed by the per-tool table ([P06]/[P07]),
-    // not by replay state: a noisy file/shell tool mounts header-only
-    // whether it is in-flight or replayed, and the collapse provider owns
-    // its boolean (seeded from the card's expansion overrides), so the
-    // chrome withholds the body subtree while collapsed and the header
-    // keeps tracking phase via its lifecycle dot. The wrap policy is
-    // derived from the tool kind, which never changes for a given call,
-    // so it is stable across the live→committed transition and mount
-    // identity holds ([L26]). Non-noisy tools render unwrapped, exactly
-    // as a live block always has.
+    // EVERY tool block is collapsible — the header's whole-block chevron
+    // is the single fold and the header owns Copy in both states, so a
+    // run of tool calls reads uniformly. The per-tool table ([P06]/[P07])
+    // governs only the DEFAULT (noisy file/shell tools mount header-only;
+    // content tools mount open); the collapse provider owns the boolean
+    // (seeded from the card's expansion overrides), so the chrome withholds
+    // the body subtree while collapsed and the header keeps tracking phase
+    // via its lifecycle dot. The wrap policy is derived from the tool kind,
+    // which never changes for a given call, so it is stable across the
+    // live→committed transition and mount identity holds ([L26]).
     //
-    // The `ToolUseIdContext` provider wraps every top-level tool (a
-    // transparent context, no DOM) so the chrome stamps `data-tool-use-id`
-    // whether or not it's collapse-wrapped — the COPY walk resolves tool
-    // blocks by that id ([P01]). The provider carries the stable React
-    // key, preserving mount identity ([L26]).
+    // The `ToolUseIdContext` provider carries the stable React key
+    // (preserving mount identity, [L26]) and a fallback id; the collapse
+    // handle also carries `toolUseId`, which the chrome prefers.
     const collapseByDefault = collapseDefaultFor(message.toolName);
     elements.push(
       <ToolUseIdContext.Provider
         key={message.messageKey}
         value={message.toolUseId}
       >
-        {collapseByDefault ? (
-          <ToolBlockHistoryCollapse
-            toolUseId={message.toolUseId}
-            defaultCollapsed
-            copyText={toolCallToMarkdown(message, childrenByParent)}
-          >
-            <Component {...props} />
-          </ToolBlockHistoryCollapse>
-        ) : (
+        <ToolBlockHistoryCollapse
+          toolUseId={message.toolUseId}
+          defaultCollapsed={collapseByDefault}
+          copyText={toolCallToMarkdown(message, childrenByParent)}
+        >
           <Component {...props} />
-        )}
+        </ToolBlockHistoryCollapse>
       </ToolUseIdContext.Provider>,
     );
   }

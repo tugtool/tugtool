@@ -832,7 +832,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // affordance library (`body-kinds/affordances/`), so the contract
   // (position-stable click, ghost typography, 2xs scale, focus-
   // refuse) is uniform across body kinds.
-  const affordances = (
+  // Under a chrome (embedded), the chrome header owns Copy + the whole-block
+  // fold, so FileBlock contributes no affordances of its own — it has no
+  // body-specific controls (Find/view-mode). The standalone composition
+  // (gallery / RenderInput) still carries Copy + the in-body fold cue.
+  const affordances = embedded ? null : (
     <>
       <BlockCopyButton
         data-slot="file-copy"

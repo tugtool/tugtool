@@ -83,7 +83,7 @@
 import "./ask-user-question-tool-block.css";
 
 import React from "react";
-import { Check, Circle, MessageCircleQuestion } from "lucide-react";
+import { Check, Circle } from "lucide-react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
@@ -422,21 +422,15 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
       ? Array.from(salvagedAnswers.values()).filter((v) => v.length > 0).length
       : summary.filter((s) => s.answers.length > 0).length;
   const args = composeQuestionCountLabel(questions.length, headlineCount);
-  // Render the question-count chip as a `TugBadge` in the family
-  // status-chip vocabulary. `emphasis="ghost"` keeps the chip
-  // visually quiet — the count is informational, not a primary
-  // signal — and the leading `MessageCircleQuestion` icon mirrors
-  // the tool-block chrome's own glyph so the chip reads as "this
-  // many questions" at a glance. `role="action"` is the neutral
-  // tone (no success / danger / caution semantics).
-  const argsSummary =
+  // The question count rides the header's right-edge meta slot as a quiet
+  // `TugBadge` in the family status-chip vocabulary. `emphasis="ghost"`
+  // keeps it visually quiet (the count is informational, not a primary
+  // signal) and `role="action"` is the neutral tone. No leading icon —
+  // the header already carries the tool's question glyph, so a second one
+  // would just duplicate it.
+  const countMeta =
     args === "" ? undefined : (
-      <TugBadge
-        emphasis="ghost"
-        role="action"
-        size="sm"
-        icon={<MessageCircleQuestion size={14} aria-hidden="true" />}
-      >
+      <TugBadge emphasis="ghost" role="action" size="sm">
         {args}
       </TugBadge>
     );
@@ -508,7 +502,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="ask-user-question-tool-block"
       toolName={toolName}
-      argsSummary={argsSummary}
+      meta={countMeta}
       status={chromeStatus}
       phase={phase}
       caution={caution}

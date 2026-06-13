@@ -1402,7 +1402,10 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // empty.
   const isStreaming = streamingStore !== undefined;
   const copyDisabled = !isStreaming && !hasContent(data);
-  const affordances = (
+  // Under a chrome the header owns Copy + the whole-block fold, and the
+  // terminal has no body-specific controls — so it portals nothing. The
+  // standalone composition (gallery) still carries Copy + the fold cue.
+  const affordances = embedded ? null : (
     <>
       <BlockCopyButton
         disabled={copyDisabled}
@@ -1425,7 +1428,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   );
 
   const portaledAffordances =
-    embedded && chromeActionsTarget !== null
+    embedded && chromeActionsTarget !== null && affordances !== null
       ? createPortal(
           <BlockActionsCluster data-slot="terminal-actions">
             {affordances}

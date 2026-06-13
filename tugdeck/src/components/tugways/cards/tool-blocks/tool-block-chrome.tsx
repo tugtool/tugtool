@@ -98,13 +98,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import type { ToolCallPhase } from "@/lib/code-session-store/tool-call-phase-visual";
-import {
-  BlockActionsCluster,
-  BlockCopyButton,
-  BlockFoldCue,
-  BlockFoldSuppressedContext,
-  useBlockFoldState,
-} from "@/components/tugways/body-kinds/affordances";
+import { BlockFoldSuppressedContext } from "@/components/tugways/body-kinds/affordances";
 
 import { ToolBlockCollapseContext, ToolUseIdContext } from "./collapse-context";
 import { ToolCallHeader } from "./tool-call-header";
@@ -304,49 +298,22 @@ export interface ToolBlockChromeProps {
    */
   rootSlot?: string;
   /**
-   * Opt-in fold affordance. When set, the chrome renders a
-   * `BlockFoldCue` in the actions slot and toggles `children`
-   * visibility based on fold state. See `ToolBlockFoldOptions`.
-   *
-   * Only for wrappers whose body composes `body-bits/` primitives.
-   * Wrappers that compose embedded body kinds get fold via the
-   * embedded affordance portal already; passing this prop on top of
-   * one of those would render two cues. The chrome doesn't try to
-   * detect / merge — opt-in keeps the contract explicit.
+   * Superseded — ignored by the chrome. Every block is now collapsible
+   * via the header's whole-block chevron, so a separate body fold cue is
+   * redundant. Body-bits wrappers may still pass it harmlessly; the chrome
+   * no longer renders a `BlockFoldCue` and the body always mounts when the
+   * block is expanded.
    */
   fold?: ToolBlockFoldOptions;
   /**
-   * Opt-in Copy affordance. When set, the chrome renders a
-   * `BlockCopyButton` in the actions slot whose payload is this
-   * text. Typically the wrapper passes its result text (e.g. the
-   * formatted task list, the monitor tail) so the user can copy
-   * what they see without expanding the body.
-   *
-   * Same opt-in caveat as `fold` — wrappers with embedded body kinds
-   * already get Copy via the portal and MUST NOT pass this.
+   * Copy payload for the header's built-in Copy. A wrapper passes its
+   * tailored result text (e.g. the formatted task list, the monitor tail)
+   * and the header's Copy writes it in both states; when omitted the
+   * header falls back to the collapse handle's command+result markdown.
    */
   copyText?: string;
   /** Forwarded class name. */
   className?: string;
-}
-
-/**
- * Resolve the chrome's fold state in a way that satisfies the
- * Rules-of-Hooks even when the wrapper didn't pass a `fold` prop —
- * by always calling `useBlockFoldState` with safe defaults derived
- * from `options`. When `options` is undefined the hook still runs
- * (with `defaultCollapsed: false` and no preservation key); the
- * returned `collapsed` will be `false` and `setCollapsed` is a
- * harmless local toggle that nothing reads.
- */
-function useChromeFoldState(options: ToolBlockFoldOptions | undefined): {
-  collapsed: boolean;
-  setCollapsed: (next: boolean) => void;
-} {
-  return useBlockFoldState({
-    defaultCollapsed: options?.defaultFolded ?? false,
-    componentStatePreservationKey: options?.preservationKey,
-  });
 }
 
 export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
@@ -365,24 +332,18 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   errorMessage,
   children,
   rootSlot = "tool-block-chrome",
-  fold,
   copyText,
   className,
 }) => {
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const headerRef = React.useRef<HTMLDivElement | null>(null);
-  // Fold-state resolution — only runs the hook when the caller opted
-  // in. The hook itself is unconditional within the wrapper closure
-  // (see below); the no-fold path returns `collapsed = false` and
-  // a no-op toggle so the JSX below is uniform.
-  const { collapsed, setCollapsed } = useChromeFoldState(fold);
   // History-collapse handle ([P02]). Non-null when a
-  // `ToolBlockHistoryCollapse` wraps this block (replayed history).
-  // While block-collapsed, the body subtree is NOT mounted — the
-  // header is the whole block — and the footer/error bands and
-  // actions cluster are withheld with it (nothing to act on). The
-  // chrome's own mount identity is untouched across the toggle
-  // ([L26]); only the child subtree appears/disappears.
+  // `ToolBlockHistoryCollapse` wraps this block — which the transcript now
+  // does for EVERY tool, so every block is collapsible. While
+  // block-collapsed the body subtree is NOT mounted (the header is the
+  // whole block) and the footer/error bands are withheld with it. The
+  // chrome's own mount identity is untouched across the toggle ([L26]);
+  // only the child subtree appears/disappears.
   const blockCollapse = React.useContext(ToolBlockCollapseContext);
   const blockCollapsed = blockCollapse !== null && blockCollapse.collapsed;
   // The id for `data-tool-use-id`: the collapse handle when wrapped,
@@ -391,13 +352,6 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   // root, not just collapsed ones ([P01]).
   const toolUseIdFromContext = React.useContext(ToolUseIdContext);
   const toolUseId = blockCollapse?.toolUseId ?? toolUseIdFromContext ?? undefined;
-  // Latest-ref over copyText so the Copy button's `getText` closure
-  // captures the freshest payload without recreating the button when
-  // the wrapper re-renders with a new result.
-  const copyTextRef = React.useRef<string>(copyText ?? "");
-  React.useLayoutEffect(() => {
-    copyTextRef.current = copyText ?? "";
-  }, [copyText]);
   // The actions-slot target is a real DOM node that descendants portal
   // into. Tracking it in React state (rather than a ref alone) so the
   // context value re-publishes once the node mounts — the body kind's
@@ -499,43 +453,18 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
         summary={resultSummary}
         meta={meta}
         caution={caution}
-        copyText={blockCollapse?.copyText}
+        // The header owns Copy in both states. Prefer a wrapper's tailored
+        // `copyText` (body-bits wrappers compute a formatted payload); fall
+        // back to the collapse handle's command+result markdown.
+        copyText={copyText ?? blockCollapse?.copyText}
         disclosure={disclosure}
         actionsSlotRef={setActionsTarget}
-        actions={
-          copyText !== undefined || fold !== undefined ? (
-            <BlockActionsCluster data-slot="tool-block-chrome-actions-cluster">
-              {copyText !== undefined ? (
-                <BlockCopyButton
-                  getText={() => copyTextRef.current}
-                  disabled={copyTextRef.current.length === 0}
-                  aria-label="Copy tool result"
-                />
-              ) : null}
-              {fold !== undefined ? (
-                <BlockFoldCue
-                  collapsed={collapsed}
-                  onToggle={setCollapsed}
-                  collapsedLabel={fold.collapsedLabel}
-                  expandedLabel={fold.expandedLabel ?? "Collapse"}
-                  ariaLabelCollapse={fold.ariaLabelCollapse ?? "Collapse tool block"}
-                  ariaLabelExpand={fold.ariaLabelExpand ?? "Expand tool block"}
-                  data-slot="tool-block-fold-cue"
-                />
-              ) : null}
-            </BlockActionsCluster>
-          ) : undefined
-        }
       />
       {blockCollapsed ? null : (
         <BlockFoldSuppressedContext.Provider value={blockCollapse !== null}>
-          <div
-            className="tool-block-chrome-body"
-            data-slot="tool-block-body"
-            data-folded={fold !== undefined && collapsed ? "true" : undefined}
-          >
+          <div className="tool-block-chrome-body" data-slot="tool-block-body">
             <ChromeActionsTargetContext.Provider value={actionsTarget}>
-              {fold !== undefined && collapsed ? null : children}
+              {children}
             </ChromeActionsTargetContext.Provider>
           </div>
           {status === "error" && errorMessage !== undefined ? (

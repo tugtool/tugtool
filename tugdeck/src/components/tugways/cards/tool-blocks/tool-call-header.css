@@ -67,11 +67,15 @@ body {
   border-bottom: 1px solid var(--tugx-block-strip-border);
 }
 
-/* Cross-row items: one line box tall, content centered. `min-height` so a
- * taller affordance (a portaled body-kind control) grows rather than clips,
- * while the common one-line case still reads centered on the first row. */
+/* First-row items each ride a one-line box and center their content, so a
+ * single-line row reads vertically centered and a multi-line command keeps
+ * these pinned to row 1. `min-height` (not `height`) so a taller affordance
+ * (a portaled body-kind control) grows rather than clips. The row itself is
+ * `align-items: flex-start`, so every item starts at the top — and because
+ * each is exactly one line tall in the common case, that top IS the center. */
 .tool-call-header-dot,
 .tool-call-header-icon,
+.tool-call-header-name,
 .tool-call-header-summary,
 .tool-call-header-meta,
 .tool-call-header-actions {
@@ -87,25 +91,16 @@ body {
   color: var(--tugx-block-text-color-muted);
 }
 
-/* Name + detail share the flexible middle column. */
-.tool-call-header-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  gap: var(--tugx-toolheader-row-gap);
-  align-items: baseline;
-}
-
 .tool-call-header-name {
-  flex: 0 0 auto;
   font-size: var(--tugx-toolheader-name-size);
   font-weight: var(--tugx-toolheader-name-weight);
-  line-height: var(--tugx-toolheader-line);
   color: var(--tugx-block-text-color);
 }
 
-/* Detail — a path atom-chip (file tools) or command text (command tools).
- * Command text wraps to more rows; a chip sizes itself. */
+/* Detail — a path atom-chip (file tools) or command text (command tools);
+ * also the flexible spacer when empty. Command text wraps to more rows (each
+ * line one line-box tall, first line on row 1); a chip sizes itself and
+ * centers on the line via `vertical-align`. */
 .tool-call-header-detail {
   flex: 1 1 auto;
   min-width: 0;
@@ -142,18 +137,15 @@ body {
   gap: var(--tugx-toolheader-meta-gap);
 }
 
-/* Trailing actions — controls at the row's trailing edge. */
+/* Trailing actions — the controls cluster at the row's trailing edge, in
+ * both states: a vertical rule divides the result (summary / meta) from the
+ * controls (body-specific portal · Copy · chevron), with equal gaps on each
+ * side (result→rule = rule→controls = controls→edge, all
+ * `--tugx-toolheader-sep-gap`). The cluster always carries Copy + chevron in
+ * the app, so the rule never dangles. */
 .tool-call-header-actions {
   gap: var(--tugx-toolheader-actions-gap);
   margin-left: var(--tugx-toolheader-sep-gap);
-}
-
-/* Collapsed only: a vertical rule divides the quiet result summary from the
- * Copy + Expand controls, with equal gaps on each side (result→rule =
- * rule→buttons = buttons→edge, all `--tugx-toolheader-sep-gap`). The
- * expanded state hosts a body kind's portaled affordances (which may be
- * empty), so it carries no rule — just the trailing-edge gap above. */
-.tool-call-header[data-collapsed="true"] .tool-call-header-actions {
   padding-left: var(--tugx-toolheader-sep-gap);
   border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
@@ -179,8 +171,8 @@ body {
   transform: rotate(180deg);
 }
 
-/* Atom chips sit a touch low on the baseline — nudge to optically center
- * on the detail line. */
+/* Atom chips are inline SVGs; center them on the detail line-box rather
+ * than letting them sit on the text baseline. */
 .tool-call-header .tug-atom-chip {
-  transform: translateY(-1.5px);
+  vertical-align: middle;
 }

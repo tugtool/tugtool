@@ -1041,20 +1041,26 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // Copy disabled when there's no composable text — empty memo
   // means async hunks still loading, or hunks parsed to nothing.
   const copyDisabled = copyText.length === 0;
+  // The view-mode toggle is the diff's body-specific control — kept in
+  // both compositions. Copy and the whole-block fold are owned by the
+  // chrome header, so they render only in the standalone header below.
+  const viewToggle = empty ? null : (
+    <TugChoiceGroup
+      ref={viewToggleRef}
+      className="tugx-diff-view-toggle"
+      data-slot={DATA_SLOT_VIEW_TOGGLE}
+      items={viewToggleItems}
+      value={viewMode}
+      senderId={viewToggleSenderId}
+      size="2xs"
+      emphasis="ghost"
+      disabled={collapsed}
+      aria-label="Diff view mode"
+    />
+  );
   const affordances = empty ? null : (
     <>
-      <TugChoiceGroup
-        ref={viewToggleRef}
-        className="tugx-diff-view-toggle"
-        data-slot={DATA_SLOT_VIEW_TOGGLE}
-        items={viewToggleItems}
-        value={viewMode}
-        senderId={viewToggleSenderId}
-        size="2xs"
-        emphasis="ghost"
-        disabled={collapsed}
-        aria-label="Diff view mode"
-      />
+      {viewToggle}
       <BlockCopyButton
         data-slot="diff-copy"
         disabled={copyDisabled}
@@ -1073,11 +1079,12 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     </>
   );
 
+  // Embedded: portal only the body-specific view-mode toggle.
   const portaledAffordances =
-    embedded && chromeActionsTarget !== null && affordances !== null
+    embedded && chromeActionsTarget !== null && viewToggle !== null
       ? createPortal(
           <BlockActionsCluster data-slot="diff-actions">
-            {affordances}
+            {viewToggle}
           </BlockActionsCluster>,
           chromeActionsTarget,
         )

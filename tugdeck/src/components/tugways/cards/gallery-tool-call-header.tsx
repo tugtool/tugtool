@@ -46,6 +46,16 @@ const LONG_COMMAND =
 
 const SAMPLE_PATH = "tugdeck/src/lib/markdown/dompurify-instance.ts";
 
+// Every block is collapsible and the header owns Copy in both states, so
+// the showcase rows carry a (no-op) disclosure + copyText — matching how
+// the transcript mounts them, and keeping the trailing controls cluster
+// (and its separator) populated.
+const noop = (): void => {};
+const demoControls = {
+  disclosure: { collapsed: false, onToggle: noop },
+  copyText: "demo copy payload",
+};
+
 export const GalleryToolCallHeader: React.FC = () => {
   return (
     <div className="gallery-tool-call-header">
@@ -53,7 +63,7 @@ export const GalleryToolCallHeader: React.FC = () => {
         <TugLabel>Lifecycle phases (the leftmost dot)</TugLabel>
         <div className="gallery-tch-stack">
           {PHASES.map((phase) => (
-            <ToolCallHeader
+            <ToolCallHeader {...demoControls}
               key={phase}
               phase={phase}
               toolName="Bash"
@@ -68,7 +78,7 @@ export const GalleryToolCallHeader: React.FC = () => {
       <section className="gallery-tch-section">
         <TugLabel>Icon on / off (dot is always leftmost)</TugLabel>
         <div className="gallery-tch-stack">
-          <ToolCallHeader
+          <ToolCallHeader {...demoControls}
             phase="in_flight"
             toolName="Read"
             showIcon
@@ -81,7 +91,7 @@ export const GalleryToolCallHeader: React.FC = () => {
               />
             }
           />
-          <ToolCallHeader
+          <ToolCallHeader {...demoControls}
             phase="in_flight"
             toolName="Read"
             showIcon={false}
@@ -102,7 +112,7 @@ export const GalleryToolCallHeader: React.FC = () => {
       <section className="gallery-tch-section">
         <TugLabel>Chip identity — no clipping (was Image #1)</TugLabel>
         <div className="gallery-tch-stack">
-          <ToolCallHeader
+          <ToolCallHeader {...demoControls}
             phase="success"
             toolName="Read"
             target={
@@ -122,7 +132,7 @@ export const GalleryToolCallHeader: React.FC = () => {
       <section className="gallery-tch-section">
         <TugLabel>Meta cluster — counts, diff-stats, truncated (one idiom)</TugLabel>
         <div className="gallery-tch-stack">
-          <ToolCallHeader
+          <ToolCallHeader {...demoControls}
             phase="success"
             toolName="Grep"
             target={<code>useState</code>}
@@ -133,7 +143,7 @@ export const GalleryToolCallHeader: React.FC = () => {
               </>
             }
           />
-          <ToolCallHeader
+          <ToolCallHeader {...demoControls}
             phase="success"
             toolName="Edit"
             target={
@@ -146,7 +156,7 @@ export const GalleryToolCallHeader: React.FC = () => {
             }
             meta={<ToolHeaderDiffStat added={42} removed={7} />}
           />
-          <ToolCallHeader
+          <ToolCallHeader {...demoControls}
             phase="success"
             toolName="Glob"
             target={<code>**/*.ts</code>}
@@ -160,7 +170,7 @@ export const GalleryToolCallHeader: React.FC = () => {
       <section className="gallery-tch-section">
         <TugLabel>Long command — full, multi-line, no ellipsis</TugLabel>
         <div className="gallery-tch-stack">
-          <ToolCallHeader
+          <ToolCallHeader {...demoControls}
             phase="awaiting"
             toolName="Bash"
             target={<code>{LONG_COMMAND}</code>}

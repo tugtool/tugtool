@@ -588,7 +588,10 @@ export const JsonTreeBlock: React.FC<JsonTreeBlockProps> = ({
   // The actions cluster — Expand-all / Collapse-all / Copy. Composed
   // once; rendered inline in `.tugx-json-header` (standalone) or
   // portaled into the host chrome's actions slot (embedded).
-  const actions = (
+  // Expand-all / Collapse-all are the tree's body-specific controls —
+  // kept in both compositions. Copy is owned by the chrome header, so it
+  // renders only in the standalone header.
+  const treeControls = (
     <>
       <TugIconButton
         className="tugx-json-expand-all"
@@ -604,6 +607,11 @@ export const JsonTreeBlock: React.FC<JsonTreeBlockProps> = ({
         title="Collapse all"
         onClick={handleCollapseAll}
       />
+    </>
+  );
+  const actions = (
+    <>
+      {treeControls}
       <BlockCopyButton
         data-slot="json-copy"
         aria-label="Copy JSON"
@@ -612,11 +620,12 @@ export const JsonTreeBlock: React.FC<JsonTreeBlockProps> = ({
     </>
   );
 
+  // Embedded: portal only the body-specific tree controls.
   const portaledActions =
     embedded && chromeActionsTarget !== null
       ? createPortal(
           <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
-            {actions}
+            {treeControls}
           </BlockActionsCluster>,
           chromeActionsTarget,
         )

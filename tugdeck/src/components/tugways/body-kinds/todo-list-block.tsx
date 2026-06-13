@@ -452,7 +452,9 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
   // The actions cluster — Copy only (no sort: task order is
   // producer-assigned and meaningful, not user-tunable like
   // PathList's "found" vs. "name").
-  const actions = (
+  // Under a chrome the header owns Copy; with no body-specific controls,
+  // the todo list portals nothing. The standalone header still carries Copy.
+  const actions = embedded ? null : (
     <BlockCopyButton
       data-slot="todo-list-copy"
       aria-label="Copy todo list"
@@ -461,7 +463,7 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
   );
 
   const portaledActions =
-    embedded && chromeActionsTarget !== null
+    embedded && chromeActionsTarget !== null && actions !== null
       ? createPortal(
           <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}

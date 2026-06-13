@@ -463,21 +463,25 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
   // The actions cluster — Copy + (when long enough) the sort toggle.
   // Composed once; rendered inline in `.tugx-paths-header` (standalone)
   // or portaled into the host chrome's actions slot (embedded).
+  // The sort toggle is the path list's body-specific control — kept in
+  // both compositions. Copy is owned by the chrome header, so it renders
+  // only in the standalone header.
+  const sortToggle = showSortToggle ? (
+    <TugIconButton
+      className="tugx-paths-sort"
+      icon={sortByName ? <ArrowDownAZ /> : <ListOrdered />}
+      aria-label={
+        sortByName
+          ? "Sorted by name — click to restore found order"
+          : "Sorted as found — click to sort by name"
+      }
+      title={sortByName ? "Sorted A–Z" : "Sorted as found"}
+      onClick={handleSortToggle}
+    />
+  ) : null;
   const actions = (
     <>
-      {showSortToggle ? (
-        <TugIconButton
-          className="tugx-paths-sort"
-          icon={sortByName ? <ArrowDownAZ /> : <ListOrdered />}
-          aria-label={
-            sortByName
-              ? "Sorted by name — click to restore found order"
-              : "Sorted as found — click to sort by name"
-          }
-          title={sortByName ? "Sorted A–Z" : "Sorted as found"}
-          onClick={handleSortToggle}
-        />
-      ) : null}
+      {sortToggle}
       <BlockCopyButton
         data-slot="path-list-copy"
         aria-label="Copy paths"
@@ -486,11 +490,12 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
     </>
   );
 
+  // Embedded: portal only the body-specific sort toggle (when shown).
   const portaledActions =
-    embedded && chromeActionsTarget !== null
+    embedded && chromeActionsTarget !== null && sortToggle !== null
       ? createPortal(
           <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
-            {actions}
+            {sortToggle}
           </BlockActionsCluster>,
           chromeActionsTarget,
         )

@@ -19,15 +19,16 @@
  * collapsible, always expanded):
  *  - **Trailing result**: the quiet one-line `summary` when collapsed;
  *    the rich `meta` badge cluster when expanded.
- *  - **Actions**: when collapsed the body is not mounted, so the header
- *    renders a built-in Copy (the call's command + result, from
- *    `copyText`). When expanded the header exposes the actions-slot DOM
- *    node via `actionsSlotRef` so an embedded body kind can `createPortal`
- *    its own resting affordances (Find / Copy / view-mode / fold) into the
- *    header — and renders any `actions` node (the chrome's copy/fold
- *    cluster for body-bits wrappers) in the same slot.
- *  - **Chevron**: present only when collapsible; DOWN to expand
- *    (collapsed), UP to collapse (expanded).
+ *  - **Actions**: the header owns Copy (the call's command + result, from
+ *    `copyText`) and the whole-block chevron, both visible in BOTH states
+ *    so the affordance cluster reads identically collapsed or expanded.
+ *    When expanded it also exposes the actions-slot DOM node via
+ *    `actionsSlotRef` so a body kind can `createPortal` its body-specific,
+ *    expanded-only controls (Find, view-mode, expand-all) into the slot,
+ *    where they sit LEFT of Copy. Body kinds no longer portal their own
+ *    Copy or block-level fold — the header owns those.
+ *  - **Chevron**: present when collapsible; DOWN to expand (collapsed),
+ *    UP to collapse (expanded).
  *
  * Laws:
  *  - [L02] `phase` arrives via props from the consumer's store read.
@@ -185,12 +186,11 @@ export const ToolCallHeader = React.forwardRef<
           {iconNode}
         </span>
       ) : null}
-      <span className="tool-call-header-main">
-        <span className="tool-call-header-name">{toolName}</span>
-        {target !== undefined ? (
-          <span className="tool-call-header-detail">{target}</span>
-        ) : null}
-      </span>
+      <span className="tool-call-header-name">{toolName}</span>
+      {/* The detail column is always present — it holds the target (chip
+          or wrapping command) and otherwise serves as the flexible spacer
+          that pushes the trailing result + actions to the right edge. */}
+      <span className="tool-call-header-detail">{target}</span>
       {/* Trailing result — the quiet one-line summary when collapsed, the
           rich meta badge cluster when expanded. */}
       {collapsed
@@ -210,21 +210,14 @@ export const ToolCallHeader = React.forwardRef<
           : null}
       {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}
       <span className="tool-call-header-actions">
-        {collapsed ? (
-          hasCopy ? (
-            <BlockCopyButton
-              subtype="icon"
-              size="xs"
-              getText={() => copyText ?? ""}
-              aria-label={`Copy ${toolName} command and result`}
-              data-slot="tool-call-header-copy"
-            />
-          ) : null
-        ) : (
-          // Always present in the expanded state so the published node
-          // exists from first paint — the chrome's portal-target context
-          // can then be non-null on the first descendant render. Layout
-          // only; the children's own tokens drive appearance ([L20]).
+        {/* Body-specific, expanded-only controls (Find, view-mode,
+            expand-all) portal into this slot, sitting LEFT of the
+            header-owned Copy + chevron. Present only when expanded (the
+            body is mounted); the published node lets a body kind's
+            `createPortal` find a target on its first render. The header
+            owns Copy + whole-block fold, so body kinds no longer portal
+            those — see the body-kind affordance composition. */}
+        {!collapsed ? (
           <div
             ref={actionsSlotRef}
             className="tool-call-header-actions-slot"
@@ -232,7 +225,16 @@ export const ToolCallHeader = React.forwardRef<
           >
             {actions}
           </div>
-        )}
+        ) : null}
+        {hasCopy ? (
+          <BlockCopyButton
+            subtype="icon"
+            size="xs"
+            getText={() => copyText ?? ""}
+            aria-label={`Copy ${toolName} command and result`}
+            data-slot="tool-call-header-copy"
+          />
+        ) : null}
         {collapsible ? (
           <span
             className="tool-call-header-disclosure"

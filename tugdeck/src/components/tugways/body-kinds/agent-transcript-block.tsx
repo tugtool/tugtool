@@ -434,17 +434,23 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   // The actions cluster — the fold cue + Copy. Composed once; rendered
   // inline in `.tugx-agent-header` (standalone) or portaled into the
   // host chrome's actions slot (embedded).
+  // The nested-calls fold is the transcript's body-specific control —
+  // kept in both compositions. Copy and the whole-block fold are owned by
+  // the chrome header, so Copy renders only in the standalone header.
+  const nestedFoldCue = (
+    <BlockFoldCue
+      collapsed={collapsed}
+      onToggle={setCollapsed}
+      collapsedLabel={composeNestedCallsLabel(nestedCallCount)}
+      ariaLabelCollapse="Collapse subagent transcript"
+      ariaLabelExpand="Expand subagent transcript"
+      data-slot="agent-transcript-fold-cue"
+      className="tugx-agent-fold-cue"
+    />
+  );
   const actions = (
     <>
-      <BlockFoldCue
-        collapsed={collapsed}
-        onToggle={setCollapsed}
-        collapsedLabel={composeNestedCallsLabel(nestedCallCount)}
-        ariaLabelCollapse="Collapse subagent transcript"
-        ariaLabelExpand="Expand subagent transcript"
-        data-slot="agent-transcript-fold-cue"
-        className="tugx-agent-fold-cue"
-      />
+      {nestedFoldCue}
       <BlockCopyButton
         data-slot="agent-transcript-copy"
         aria-label="Copy subagent transcript"
@@ -453,11 +459,12 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
     </>
   );
 
+  // Embedded: portal only the body-specific nested-calls fold.
   const portaledActions =
     embedded && chromeActionsTarget !== null
       ? createPortal(
           <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
-            {actions}
+            {nestedFoldCue}
           </BlockActionsCluster>,
           chromeActionsTarget,
         )

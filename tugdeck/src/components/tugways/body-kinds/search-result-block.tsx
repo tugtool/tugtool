@@ -625,7 +625,9 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
   // The actions cluster — Copy. Composed once; rendered inline in
   // `.tugx-search-header` (standalone) or portaled into the host
   // chrome's actions slot (embedded).
-  const actions = (
+  // Under a chrome the header owns Copy; with no body-specific controls,
+  // SearchResult portals nothing. The standalone header still carries Copy.
+  const actions = embedded ? null : (
     <BlockCopyButton
       data-slot="search-result-copy"
       aria-label="Copy search results"
@@ -634,7 +636,7 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
   );
 
   const portaledActions =
-    embedded && chromeActionsTarget !== null
+    embedded && chromeActionsTarget !== null && actions !== null
       ? createPortal(
           <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {actions}
