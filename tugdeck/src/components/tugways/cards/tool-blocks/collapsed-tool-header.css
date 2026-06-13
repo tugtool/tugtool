@@ -1,0 +1,128 @@
+/* @tug-pairings:
+   - --tugx-block-strip-bg / --tugx-block-strip-padding / --tugx-block-strip-font  (shared chrome strip surface)
+   - --tugx-block-text-color / --tugx-block-text-color-muted                        (shared chrome text tones)
+   - --tugx-block-code-font                                                         (shared mono family for detail/summary)
+*/
+
+/**
+ * collapsed-tool-header.css — the Quiet Line collapsed tool-block header
+ * ([P09], [#step-11]).
+ *
+ * One row: [dot] [icon] Name detail … [result] [Copy] [⌄]. A long detail
+ * wraps to more rows while the dot, icon, result, and buttons stay on the
+ * FIRST line — every cross-row item rides a one-line box
+ * (`--tugx-collapsedheader-line`) and the row top-aligns, so a single-line
+ * row still reads vertically centered. The flexible detail wraps within
+ * its own column rather than shoving the trailing cluster around.
+ *
+ * Tuglaws: [L06] appearance via attributes / the dot's DOM; [L17]
+ * `--tugx-collapsedheader-*` resolves to `--tug*` in one hop; [L19] file
+ * pair, docstring, `data-slot`; [L20] owns the `--tugx-collapsedheader-*`
+ * family, reuses the shared `--tugx-block-*` surface/text tones.
+ */
+
+body {
+  --tugx-collapsedheader-name-size: var(--tug-font-size-sm);
+  --tugx-collapsedheader-name-weight: var(--tug-font-weight-semibold);
+  --tugx-collapsedheader-detail-size: var(--tug-font-size-xs);
+  --tugx-collapsedheader-summary-size: var(--tug-font-size-xs);
+  /* The one line box every cross-row item rides. */
+  --tugx-collapsedheader-line: calc(var(--tug-font-size-sm) * 1.6);
+  --tugx-collapsedheader-row-gap: var(--tug-space-sm);
+}
+
+.collapsed-tool-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tugx-collapsedheader-row-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  font-family: var(--tugx-block-strip-font);
+  color: var(--tugx-block-text-color);
+}
+
+/* Cross-row items: one line box tall, content centered. */
+.collapsed-tool-header-dot,
+.collapsed-tool-header-icon,
+.collapsed-tool-header-summary,
+.collapsed-tool-header-actions {
+  flex: 0 0 auto;
+  height: var(--tugx-collapsedheader-line);
+  display: inline-flex;
+  align-items: center;
+}
+
+.collapsed-tool-header-dot,
+.collapsed-tool-header-icon {
+  justify-content: center;
+  color: var(--tugx-block-text-color-muted);
+}
+
+/* Name + detail share the flexible middle column. */
+.collapsed-tool-header-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: var(--tugx-collapsedheader-row-gap);
+  align-items: baseline;
+}
+
+.collapsed-tool-header-name {
+  flex: 0 0 auto;
+  font-size: var(--tugx-collapsedheader-name-size);
+  font-weight: var(--tugx-collapsedheader-name-weight);
+  line-height: var(--tugx-collapsedheader-line);
+  color: var(--tugx-block-text-color);
+}
+
+/* Detail — a path atom-chip (file tools) or command text (command tools).
+ * Command text wraps to more rows; a chip sizes itself. */
+.collapsed-tool-header-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-collapsedheader-detail-size);
+  line-height: var(--tugx-collapsedheader-line);
+  color: var(--tugx-block-text-color-muted);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.collapsed-tool-header-detail code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+}
+
+/* Result summary — a quiet trailing column before the affordances. */
+.collapsed-tool-header-summary {
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-collapsedheader-summary-size);
+  color: var(--tugx-block-text-color-muted);
+  white-space: nowrap;
+}
+
+.collapsed-tool-header-actions {
+  gap: var(--tug-space-2xs);
+}
+
+/* Chevron: down to expand (collapsed), up to collapse (expanded). The
+ * base glyph is a ChevronDown; expanded rotates it to point up. */
+.collapsed-tool-header-expand svg {
+  transition: transform 120ms ease;
+}
+.collapsed-tool-header-expand:not([data-collapsed="true"]) svg {
+  transform: rotate(180deg);
+}
+
+/* Atom chips sit a touch low on the baseline — nudge to optically center
+ * on the detail line (matches the expanded header). */
+.collapsed-tool-header .tug-atom-chip {
+  transform: translateY(-1.5px);
+}

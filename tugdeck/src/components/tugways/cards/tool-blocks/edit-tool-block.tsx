@@ -93,6 +93,7 @@ import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import { ToolHeaderDiffStat } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
@@ -401,12 +402,19 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
     body = null;
   }
 
+  // Collapsed-header one-line result ([P09]): the diff stat.
+  const resultSummary: ToolResultSummary | undefined =
+    changeCounts !== undefined
+      ? { kind: "diff", added: changeCounts.added, removed: changeCounts.removed }
+      : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="edit-tool-block"
       toolName={toolName}
       identity={identity}
       meta={meta}
+      resultSummary={resultSummary}
       status={status}
       phase={phase}
       caution={caution}

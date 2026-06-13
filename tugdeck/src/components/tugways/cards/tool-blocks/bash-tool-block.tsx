@@ -78,6 +78,7 @@ import { parseUnifiedDiffText } from "@/lib/diff/parse-unified-diff";
 import type { DiffHunk } from "@/lib/diff/types";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -370,11 +371,23 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     );
   }
 
+  // Collapsed-header one-line result ([P09]): the exit code (or
+  // "interrupted"). Unlike the footer — which suppresses `exit 0` as
+  // noise once a body is present — the collapsed line shows the exit
+  // explicitly, since it is the whole result the user sees while closed.
+  const resultSummary: ToolResultSummary | undefined =
+    terminalData.interrupted === true
+      ? { kind: "text", text: "interrupted" }
+      : terminalData.exitCode !== undefined
+        ? { kind: "exit", code: terminalData.exitCode }
+        : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="bash-tool-block"
       toolName={toolName}
       command={command}
+      resultSummary={resultSummary}
       status={status}
       phase={phase}
       caution={caution}

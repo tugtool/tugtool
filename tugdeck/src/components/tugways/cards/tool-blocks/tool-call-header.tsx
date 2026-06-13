@@ -53,7 +53,7 @@
 import "./tool-call-header.css";
 
 import React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
@@ -200,7 +200,7 @@ export const ToolCallHeader = React.forwardRef<
             data-collapsed={disclosure.collapsed ? "true" : undefined}
           >
             <TugIconButton
-              icon={<ChevronRight size={13} strokeWidth={2.5} />}
+              icon={<ChevronDown size={13} strokeWidth={2.5} />}
               aria-label={
                 disclosure.collapsed
                   ? `Expand ${toolName} tool call`

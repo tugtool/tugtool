@@ -44,3 +44,5 @@ export type {
   BlockFoldState,
   UseBlockFoldStateOptions,
 } from "./use-block-fold-state";
+
+export { BlockFoldSuppressedContext } from "./block-fold-suppression";

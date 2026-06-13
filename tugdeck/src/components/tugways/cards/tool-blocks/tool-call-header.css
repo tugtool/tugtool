@@ -136,8 +136,11 @@ body {
   color: var(--tugx-block-text-color-muted);
 }
 
+/* Down to expand, up to collapse. The base glyph is a ChevronDown:
+ * collapsed points down (click to open downward); expanded rotates to
+ * point up (click to close). */
 .tool-call-header-disclosure svg {
-  transform: rotate(90deg);
+  transform: rotate(180deg);
   transition: transform 120ms ease;
 }
 
@@ -225,3 +228,4 @@ body {
 .tool-call-header .tug-atom-chip {
   transform: translateY(-1.5px);
 }
+

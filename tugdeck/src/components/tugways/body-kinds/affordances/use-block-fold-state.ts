@@ -59,6 +59,8 @@ import {
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
 
+import { BlockFoldSuppressedContext } from "./block-fold-suppression";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -144,15 +146,27 @@ export function useBlockFoldState(
     componentStatePreservationKey,
   } = options;
 
+  // When an OUTER fold governs this body (a collapse-wrapped tool
+  // block's Quiet Line chevron), the body's own threshold self-fold is
+  // redundant — defaulting it open avoids the "double-dip" where the
+  // user expands the block and the content is still folded. The block's
+  // chevron is the single fold.
+  const foldSuppressed = React.useContext(BlockFoldSuppressedContext);
+
   // Mount-in-saved-state: read the saved fold synchronously in render
   // so `useState`'s initializer seeds local state with the user's
   // last-saved value. The initializer runs once; there is no
-  // post-mount apply path.
+  // post-mount apply path. Under suppression the body starts OPEN
+  // regardless of the threshold default or a stale saved-collapsed.
   const saved = useSavedComponentState<FoldPersistedState>(
     componentStatePreservationKey,
   );
   const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(() =>
-    typeof saved?.collapsed === "boolean" ? saved.collapsed : defaultCollapsed,
+    foldSuppressed
+      ? false
+      : typeof saved?.collapsed === "boolean"
+        ? saved.collapsed
+        : defaultCollapsed,
   );
 
   // Computed-value resolution — the prop wins when provided, local

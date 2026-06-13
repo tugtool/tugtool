@@ -119,7 +119,10 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
-import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
+import {
+  toolCallToMarkdown,
+  turnEntryToMarkdown,
+} from "@/components/tugways/cards/turn-entry-markdown";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
 import { TieredCell } from "@/components/tugways/cards/transcript-tier";
@@ -907,7 +910,11 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
         value={message.toolUseId}
       >
         {collapseByDefault ? (
-          <ToolBlockHistoryCollapse toolUseId={message.toolUseId} defaultCollapsed>
+          <ToolBlockHistoryCollapse
+            toolUseId={message.toolUseId}
+            defaultCollapsed
+            copyText={toolCallToMarkdown(message, childrenByParent)}
+          >
             <Component {...props} />
           </ToolBlockHistoryCollapse>
         ) : (

@@ -83,6 +83,7 @@ import {
 } from "@/components/tugways/body-kinds/search-result-block";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import { ToolHeaderCount, ToolHeaderTruncated } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
@@ -446,12 +447,21 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
     body = null;
   }
 
+  // Collapsed-header one-line result ([P09]): matches if known, else files.
+  const resultSummary: ToolResultSummary | undefined =
+    matchCount !== undefined
+      ? { kind: "count", count: matchCount, noun: "match", pluralNoun: "matches" }
+      : fileCount !== undefined
+        ? { kind: "count", count: fileCount, noun: "file" }
+        : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="grep-tool-block"
       toolName={toolName}
       command={command}
       meta={meta}
+      resultSummary={resultSummary}
       status={status}
       phase={phase}
       caution={caution}

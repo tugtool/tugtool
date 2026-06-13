@@ -83,6 +83,7 @@ import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -337,12 +338,19 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
     body = null;
   }
 
+  // Collapsed-header one-line result ([P09]): the lines read.
+  const resultSummary: ToolResultSummary | undefined =
+    fileData?.numLines !== undefined
+      ? { kind: "count", count: fileData.numLines, noun: "line" }
+      : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="read-tool-block"
       toolName={toolName}
       identity={identity}
       meta={meta}
+      resultSummary={resultSummary}
       status={status}
       phase={phase}
       caution={caution}

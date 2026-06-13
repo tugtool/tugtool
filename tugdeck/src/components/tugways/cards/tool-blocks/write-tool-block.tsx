@@ -84,6 +84,7 @@ import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockPre } from "./body-bits";
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -275,12 +276,17 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
     body = null;
   }
 
+  // Collapsed-header one-line result ([P09]): the size label ("N lines").
+  const resultSummary: ToolResultSummary | undefined =
+    sizeLabel !== undefined ? { kind: "text", text: sizeLabel } : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="write-tool-block"
       toolName={toolName}
       identity={identity}
       meta={meta}
+      resultSummary={resultSummary}
       status={status}
       phase={phase}
       caution={caution}

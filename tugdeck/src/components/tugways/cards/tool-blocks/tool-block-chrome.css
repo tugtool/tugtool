@@ -130,6 +130,13 @@ body {
   border-left: 3px solid var(--tugx-toolblock-stripe-ready);
 }
 
+/* Quiet Line ([P09]): the collapse-wrapped tools carry status on the
+ * lifecycle dot, not a left-edge stripe — drop it so the row reads as
+ * the calm single line the design vetted (no left-edge treatment). */
+.tool-block-chrome[data-quiet="true"] {
+  border-left: 1px solid var(--tugx-block-border);
+}
+
 /* ---- Header ---- */
 
 /* The header row moved out to `ToolCallHeader` (`tool-call-header.css`)

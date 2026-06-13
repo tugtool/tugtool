@@ -133,6 +133,15 @@ export interface BlockCopyButtonProps {
    * reads at the same scale as its neighbours.
    */
   size?: BlockCopyButtonSize;
+  /**
+   * Button shape. `"icon-text"` (default) is the action-row chip with a
+   * "Copy"/"Copied" label beside the glyph. `"icon"` is glyph-only — for
+   * compact affordance rows like the collapsed tool header's Copy, where
+   * a label would crowd the line. The confirmation still swaps the icon
+   * (Copy → Check); the text-only width stabilization is dropped since
+   * there is no label to jostle.
+   */
+  subtype?: "icon-text" | "icon";
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +155,7 @@ export function BlockCopyButton({
   "data-slot": dataSlot = "block-copy",
   className,
   size = "2xs",
+  subtype = "icon-text",
 }: BlockCopyButtonProps): React.ReactElement {
   const [copied, setCopied] = React.useState<boolean>(false);
   const copiedTimerRef = React.useRef<number | null>(null);
@@ -211,7 +221,7 @@ export function BlockCopyButton({
       className={className}
       data-slot={dataSlot}
       icon={<Copy />}
-      subtype="icon-text"
+      subtype={subtype}
       emphasis="ghost"
       size={size}
       disabled={disabled}
@@ -222,11 +232,12 @@ export function BlockCopyButton({
         label: "Copied",
       }}
       isConfirming={copied}
-      // Both rest ("Copy") and confirm ("Copied") labels share the
-      // same grid cell so the button's intrinsic width is invariant
-      // across the swap. Without this, clicking Copy grows the
-      // button width and jostles every sibling in the action row.
-      widthStabilize={{ alternateLabel: "Copied" }}
+      // Both rest ("Copy") and confirm ("Copied") labels share the same
+      // grid cell so the button's intrinsic width is invariant across the
+      // swap — no sibling-jostling on click. Only meaningful for the
+      // labeled `icon-text` shape; the glyph-only `icon` shape has no
+      // label to stabilize.
+      widthStabilize={subtype === "icon-text" ? { alternateLabel: "Copied" } : undefined}
     >
       Copy
     </TugPushButton>

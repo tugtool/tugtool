@@ -66,6 +66,14 @@ export interface ToolBlockCollapseHandle {
    * address a specific block across windowed unmount/remount.
    */
   toolUseId: string;
+  /**
+   * Markdown for the whole tool call (command + result) — what the
+   * collapsed header's Copy button writes ([P09]). Supplied by the
+   * dispatch site (which holds the `ToolUseMessage`) so collapsed Copy
+   * yields the same payload as the expanded block and a selection copy.
+   * `undefined` when none was provided.
+   */
+  copyText?: string;
 }
 
 /**
@@ -85,6 +93,11 @@ export interface ToolBlockHistoryCollapseProps {
    * whatever it decides.
    */
   defaultCollapsed?: boolean;
+  /**
+   * Markdown for the whole tool call (command + result), surfaced on the
+   * collapse handle for the collapsed header's Copy button ([P09]).
+   */
+  copyText?: string;
   children: React.ReactNode;
 }
 
@@ -95,7 +108,7 @@ export interface ToolBlockHistoryCollapseProps {
  */
 export const ToolBlockHistoryCollapse: React.FC<
   ToolBlockHistoryCollapseProps
-> = ({ toolUseId, defaultCollapsed = true, children }) => {
+> = ({ toolUseId, defaultCollapsed = true, copyText, children }) => {
   const expansion = React.useContext(ToolBlockExpansionContext);
   const [collapsed, setCollapsed] = React.useState<boolean>(() =>
     expansion !== null
@@ -110,8 +123,9 @@ export const ToolBlockHistoryCollapse: React.FC<
         setCollapsed(next);
       },
       toolUseId,
+      copyText,
     }),
-    [collapsed, expansion, toolUseId, defaultCollapsed],
+    [collapsed, expansion, toolUseId, defaultCollapsed, copyText],
   );
   return (
     <ToolBlockCollapseContext.Provider value={handle}>
