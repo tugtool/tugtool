@@ -373,7 +373,7 @@ Below the windowed thresholds the transcript mounts every cell but defers off-sc
 | #step-8 | Markdown integration checkpoint | done | N/A (verify) |
 | #step-9 | Per-tool collapse-default table | done | 2b49b3bc |
 | #step-10 | Collapsed-header redesign spike + gallery vet | done | 17ef7cb6 |
-| #step-11 | Apply collapsed-header redesign + font sizing | pending | — |
+| #step-11 | Apply collapsed-header redesign + font sizing | done | 51a18308 |
 | #step-12 | Error coloring = header-only | pending | — |
 | #step-13 | Tool-block integration checkpoint | pending | — |
 | #step-14 | Fix skill slash-command classification | pending | — |
