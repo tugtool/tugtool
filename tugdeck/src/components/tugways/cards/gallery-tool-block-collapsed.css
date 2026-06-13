@@ -1,0 +1,151 @@
+/**
+ * gallery-tool-block-collapsed.css — the Quiet Line collapsed tool-block
+ * header ([#step-10]).
+ *
+ * Pure gallery scaffolding: no shipped-component tokens are declared. The
+ * muted/default text colors map once to local `--cg-*` aliases. A vetted
+ * winner re-sources proper `--tugx-toolheader-*` tokens when it graduates
+ * ([#step-11]).
+ *
+ * Column discipline: `.cg-flow` is one grid defining five column tracks;
+ * each `.cg-quiet` row is a `subgrid` spanning them. So the result-summary
+ * and the Copy/Expand buttons hold fixed, aligned columns across every
+ * row, while a long detail wraps WITHIN its own (flexible) column rather
+ * than shoving the metadata around.
+ */
+
+.gallery-tool-block-collapsed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+  padding: var(--tug-space-md);
+
+  --cg-c-muted: var(--tug7-element-global-text-normal-muted-rest);
+  --cg-c-default: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.cg-intro,
+.cg-blurb {
+  margin: 0;
+  font-size: var(--tug-font-size-xs);
+  color: var(--cg-c-muted);
+  line-height: 1.5;
+}
+
+.cg-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+}
+
+/* ===========================================================================
+ * The flow grid + its subgrid rows
+ * ======================================================================== */
+
+.cg-flow {
+  display: grid;
+  /* dot | icon | name+detail | result | copy+expand. The detail track is
+   * the only flexible one; the result + actions are content-sized columns
+   * that align across all rows. */
+  grid-template-columns:
+    var(--cg-glyph)
+    var(--cg-glyph)
+    minmax(0, 1fr)
+    max-content
+    max-content;
+  column-gap: var(--tug-space-sm);
+  padding-inline: var(--tug-space-sm);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  overflow: clip;
+  background: var(--tugx-block-strip-bg);
+
+  /* Leading glyph column width, and the one line-box height every cross-row
+   * item rides so single-line rows read centered and wrapped rows keep
+   * their leading/trailing items on the first line. */
+  --cg-glyph: 1.25rem;
+  --cg-line: calc(var(--tug-font-size-sm) * 1.6);
+}
+
+.cg-quiet {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
+  column-gap: var(--tug-space-sm);
+  padding-block: var(--tug-space-xs);
+  font-size: var(--tug-font-size-sm);
+  color: var(--cg-c-default);
+}
+
+/* Hairline between stacked rows. */
+.cg-quiet + .cg-quiet {
+  border-top: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* ===========================================================================
+ * Cross-row items — one line-box tall, content centered on the first line.
+ * Fixed height (not min-height) so the 24px icon buttons can't stretch the
+ * row past the line box; they center within it.
+ * ======================================================================== */
+
+.cg-quiet-dot,
+.cg-quiet-icon,
+.cg-quiet-summary,
+.cg-collapsed-actions {
+  height: var(--cg-line);
+  display: inline-flex;
+  align-items: center;
+}
+
+.cg-quiet-dot,
+.cg-quiet-icon {
+  justify-content: center;
+  color: var(--cg-c-muted);
+}
+
+/* ===========================================================================
+ * Name + detail — the flexible middle column. Name stays on the first line;
+ * the detail wraps within the column when long.
+ * ======================================================================== */
+
+.cg-quiet-main {
+  min-width: 0;
+  display: flex;
+  gap: var(--tug-space-sm);
+  align-items: baseline;
+}
+
+.cg-quiet-name {
+  flex: 0 0 auto;
+  font-weight: var(--tug-font-weight-semibold);
+  line-height: var(--cg-line);
+}
+
+.cg-quiet-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--cg-line);
+  color: var(--cg-c-muted);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ===========================================================================
+ * Result column + affordances column — aligned right-hand columns.
+ * ======================================================================== */
+
+.cg-quiet-summary {
+  justify-self: end;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--cg-c-muted);
+  white-space: nowrap;
+}
+
+.cg-collapsed-actions {
+  gap: var(--tug-space-2xs);
+}

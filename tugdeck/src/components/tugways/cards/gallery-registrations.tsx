@@ -106,6 +106,7 @@ import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryToolBlockNetwork } from "./gallery-tool-block-network";
 import { GalleryToolBlockSearch } from "./gallery-tool-block-search";
+import { GalleryToolBlockCollapsed } from "./gallery-tool-block-collapsed";
 import { GalleryImageBlock } from "./gallery-image-block";
 import { GalleryDevChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
@@ -838,6 +839,19 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tool-block-search",
     contentFactory: (_cardId) => <GalleryToolBlockSearch />,
     defaultMeta: { title: "Search Tool Blocks", icon: "Search", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Collapsed tool-block header design spike — candidate collapsed-header
+  // layouts (Quiet Line / Category Tile / Status Rail) across the full
+  // supported tool range, for vetting [P09]/[#step-10].
+  registerCard({
+    componentId: "gallery-tool-block-collapsed",
+    contentFactory: (_cardId) => <GalleryToolBlockCollapsed />,
+    defaultMeta: { title: "Collapsed Tool Headers", icon: "PanelTopClose", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
