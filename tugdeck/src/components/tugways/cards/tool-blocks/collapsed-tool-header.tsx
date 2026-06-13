@@ -37,7 +37,7 @@ import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import {
@@ -142,6 +142,7 @@ export const CollapsedToolHeader = React.forwardRef<
         {hasCopy ? (
           <BlockCopyButton
             subtype="icon"
+            size="xs"
             getText={() => copyText ?? ""}
             aria-label={`Copy ${toolName} command and result`}
             data-slot="collapsed-tool-copy"
@@ -152,12 +153,17 @@ export const CollapsedToolHeader = React.forwardRef<
           data-slot="collapsed-tool-expand"
           data-collapsed={collapsed ? "true" : undefined}
         >
-          <TugIconButton
-            icon={<ChevronDown size={14} strokeWidth={2.5} />}
+          {/* Same primitive + size as the Copy button (icon / ghost / 2xs)
+              so the two affordances are pixel-identical at rest and on
+              hover. */}
+          <TugPushButton
+            subtype="icon"
+            emphasis="ghost"
+            size="xs"
+            icon={<ChevronDown />}
             aria-label={
               collapsed ? `Expand ${toolName} tool call` : `Collapse ${toolName} tool call`
             }
-            size="sm"
             onClick={() => onToggle(!collapsed)}
           />
         </span>
