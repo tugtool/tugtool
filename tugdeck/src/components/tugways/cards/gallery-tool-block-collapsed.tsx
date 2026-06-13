@@ -140,6 +140,7 @@ function Row({ sample }: { sample: ToolSample }): React.ReactElement {
   );
 }
 
+
 export const GalleryToolBlockCollapsed: React.FC = () => {
   return (
     <div className="gallery-tool-block-collapsed">

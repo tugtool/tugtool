@@ -29,6 +29,9 @@ body {
   /* The one line box every cross-row item rides. */
   --tugx-collapsedheader-line: calc(var(--tug-font-size-sm) * 1.6);
   --tugx-collapsedheader-row-gap: var(--tug-space-sm);
+  /* The separator gap, used in THREE places so they read equal:
+     result→rule, rule→buttons, and buttons→right edge. */
+  --tugx-collapsedheader-sep-gap: var(--tug-space-sm);
 }
 
 .collapsed-tool-header {
@@ -36,6 +39,9 @@ body {
   align-items: flex-start;
   gap: var(--tugx-collapsedheader-row-gap);
   padding: var(--tugx-block-strip-padding);
+  /* Right edge gap = the separator gap, so buttons→edge matches
+     result→rule and rule→buttons (all three equal). */
+  padding-inline-end: var(--tugx-collapsedheader-sep-gap);
   background: var(--tugx-block-strip-bg);
   font-family: var(--tugx-block-strip-font);
   color: var(--tugx-block-text-color);
@@ -110,6 +116,11 @@ body {
 
 .collapsed-tool-header-actions {
   gap: var(--tug-space-2xs);
+  /* Vertical rule dividing the result from the controls, with equal gaps
+     on each side ([#step-11] vetted separator B). */
+  margin-left: var(--tugx-collapsedheader-sep-gap);
+  padding-left: var(--tugx-collapsedheader-sep-gap);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
 /* Chevron: down to expand (collapsed), up to collapse (expanded). The
