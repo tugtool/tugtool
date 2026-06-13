@@ -43,13 +43,6 @@
 /* ---- Component-tier aliases — toolblock-specific only [L17] ---- */
 
 body {
-  /* Status stripe — left-edge color encodes lifecycle (streaming / ready
-   * / error). These are status-semantic colors, not the generic block
-   * tone family, so they stay toolblock-local. */
-  --tugx-toolblock-stripe-streaming: var(--tug7-element-global-text-normal-link-rest);
-  --tugx-toolblock-stripe-ready:     var(--tug7-element-global-border-normal-muted-rest);
-  --tugx-toolblock-stripe-error:     var(--tug7-element-global-text-normal-danger-rest);
-
   /* Header text size — larger (sm) than the shared strip-size (2xs)
    * because the chrome header carries the tool name + args, not just
    * a tagline. The tool name rides this size; the mono args row drops
@@ -118,24 +111,10 @@ body {
   overflow: clip;
 }
 
-.tool-block-chrome[data-status="streaming"] {
-  border-left: 3px solid var(--tugx-toolblock-stripe-streaming);
-}
-
-.tool-block-chrome[data-status="error"] {
-  border-left: 3px solid var(--tugx-toolblock-stripe-error);
-}
-
-.tool-block-chrome[data-status="ready"] {
-  border-left: 3px solid var(--tugx-toolblock-stripe-ready);
-}
-
-/* Quiet Line ([P09]): the collapse-wrapped tools carry status on the
- * lifecycle dot, not a left-edge stripe — drop it so the row reads as
- * the calm single line the design vetted (no left-edge treatment). */
-.tool-block-chrome[data-quiet="true"] {
-  border-left: 1px solid var(--tugx-block-border);
-}
+/* No left-edge status stripe: the header's lifecycle dot is the single
+ * status signal (the Quiet Line). Every block keeps the uniform 1px frame
+ * border declared on `.tool-block-chrome` above — collapsed, expanded, and
+ * non-collapsing tools all read the same, with no left-edge treatment. */
 
 /* ---- Header ---- */
 

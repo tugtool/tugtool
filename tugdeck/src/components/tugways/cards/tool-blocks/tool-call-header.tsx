@@ -1,51 +1,42 @@
 /**
- * `ToolCallHeader` — the one designed-once header every tool-call block
- * wears ([D01] of roadmap/tool-call-header.md).
+ * `ToolCallHeader` — the one header every tool-call block wears, in every
+ * state (the vetted Quiet Line).
  *
- * Before the regularization, 21 wrappers each hand-rolled the header
- * inside `ToolBlockChrome`: a streaming ring floating in the body, a
- * border stripe nobody read as state, atom chips that clipped, single-
- * line ellipsized commands, and five different idioms for counts. This
- * component collapses all of that into a single structured header:
+ * One calm row carries tool + target + a trailing result + lifecycle
+ * status:
  *
- *   Row 1 (identity):  [dot] [icon?] Name  <identity>  <meta>  <caution> [actions]
- *   Row 2 (command):   <command — full, wrapping, never truncated>
+ *   [dot] [icon] Name  target …  <result>  | [actions] [⌄]
  *
- * Pieces:
- *  - **Lifecycle dot** ([D02]/[D03]). A leftmost
- *    `TugProgressIndicator variant="pulsing-dot"` driven by `phase`
- *    through {@link toolCallPhaseVisual} — the single authoritative
- *    state signal (in-flight → awaiting → success / error / interrupted).
- *    Replaces the in-body streaming ring AND demotes the chrome's
- *    border stripe to secondary.
- *  - **Icon** ([D07]). Per-tool glyph from the central
- *    {@link toolIconFor} registry, suppressible via `showIcon={false}`
- *    when it would crowd the dot.
- *  - **Name**. One typographic treatment (`--tugx-toolheader-name-*`).
- *  - **Identity**. The single-row identifier — a path atom-chip, a short
- *    label. Chips align to the line-box without clipping ([D04]).
- *  - **Command**. A full, wrapping, non-truncating row for command-shaped
- *    args (bash / grep / cron) ([D05]). Absent for chip-identity tools.
- *  - **Meta**. The trailing metadata cluster — counts / diff-stats /
- *    truncated, all via the shared [D06] primitives ([Q02]: header, not
- *    footer).
- *  - **Actions slot**. The trailing host body kinds portal their resting
- *    affordances into. Published to the chrome via `actionsSlotRef` so
- *    the chrome's `ChromeActionsTargetContext` keeps working unchanged.
+ * The SAME component renders whether the block is collapsed (header is
+ * the whole block), expanded (header above a mounted body), or a tool
+ * that never collapses (no chevron). There is no second header component
+ * and no fork in the chrome — so the collapsed and expanded presentations
+ * cannot drift apart. A long target wraps to more rows while the dot,
+ * icon, trailing result, and actions stay on the first row; color comes
+ * only from the lifecycle dot (no left-edge status stripe).
  *
- * The root forwards a ref (the chrome's `ResizeObserver` measures it for
- * telescoping-pin height) and is a sticky strip so it pins under an
- * outer pin context exactly as the old `.tool-block-chrome-header` did.
+ * State differences, all driven by `disclosure` (absent ⇒ not
+ * collapsible, always expanded):
+ *  - **Trailing result**: the quiet one-line `summary` when collapsed;
+ *    the rich `meta` badge cluster when expanded.
+ *  - **Actions**: when collapsed the body is not mounted, so the header
+ *    renders a built-in Copy (the call's command + result, from
+ *    `copyText`). When expanded the header exposes the actions-slot DOM
+ *    node via `actionsSlotRef` so an embedded body kind can `createPortal`
+ *    its own resting affordances (Find / Copy / view-mode / fold) into the
+ *    header — and renders any `actions` node (the chrome's copy/fold
+ *    cluster for body-bits wrappers) in the same slot.
+ *  - **Chevron**: present only when collapsible; DOWN to expand
+ *    (collapsed), UP to collapse (expanded).
  *
  * Laws:
  *  - [L02] `phase` arrives via props from the consumer's store read.
- *  - [L06] all visible state lives on `data-phase` / the dot's own DOM;
- *    no React state drives appearance here.
+ *  - [L06] visible state lives on `data-phase` / `data-collapsed` / the
+ *    dot's own DOM; no React state drives appearance here.
  *  - [L13] the dot's motion runs through the indicator's TugAnimator path.
- *  - [L19] file pair (`.tsx` + `.css`), module docstring, exported props,
- *    `data-slot="tool-call-header"`.
+ *  - [L19] file pair (`.tsx` + `.css`), docstring, `data-slot`.
  *  - [L20] owns the `--tugx-toolheader-*` token family; reuses the shared
- *    `--tugx-block-strip-*` surface tokens for chrome-consistent framing.
+ *    `--tugx-block-*` surface/text tones for chrome-consistent framing.
  *
  * @module components/tugways/cards/tool-blocks/tool-call-header
  */
@@ -57,8 +48,9 @@ import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import {
   TOOL_CALL_PHASE_LABELS,
   toolCallPhaseVisual,
@@ -66,71 +58,76 @@ import {
 } from "@/lib/code-session-store/tool-call-phase-visual";
 
 import { toolIconFor } from "./tool-icons";
+import {
+  formatToolResultSummary,
+  type ToolResultSummary,
+} from "./tool-result-summary";
 import type { CautionFlag } from "./types";
 
-/** Glyph-box diameter of the lifecycle dot, in CSS px. */
+/** Glyph-box diameter of the lifecycle dot, in CSS px (matches the icon). */
 const DOT_SIZE = 14;
 
 export interface ToolCallHeaderProps {
   /**
-   * Lifecycle phase the leftmost dot paints ([D03]). Defaults to
-   * `idle` (the quiet resting pose) so a standalone/gallery mount that
-   * doesn't compute a phase still renders a sane dot.
+   * Lifecycle phase the leftmost dot paints. Defaults to `idle` (the
+   * quiet resting pose) so a standalone/gallery mount that doesn't
+   * compute a phase still renders a sane dot.
    */
   phase?: ToolCallPhase;
-  /** Canonical tool name shown in the header (e.g. "Bash"). */
+  /** Canonical tool name (e.g. "Bash"). */
   toolName: string;
   /**
-   * Explicit icon node. When omitted and `showIcon` is true, the icon
-   * is resolved from the central {@link toolIconFor} registry by
-   * `toolName`. Pass `null` with `showIcon` true to render no icon for
-   * a tool the registry would otherwise give a glyph.
+   * Explicit icon node. When omitted and `showIcon` is true, resolved from
+   * the central {@link toolIconFor} registry by `toolName`. Pass `null`
+   * with `showIcon` true to render no icon for a tool the registry would
+   * otherwise give a glyph.
    */
   icon?: React.ReactNode;
-  /**
-   * Whether to render the per-tool icon at all ([D07]). Defaults to
-   * `true`. Set `false` on surfaces where the icon would crowd the
-   * leftmost dot.
-   */
+  /** Whether to render the per-tool icon. Defaults to `true`. */
   showIcon?: boolean;
   /**
-   * Single-row identity content — a path atom-chip, a short label. Sits
-   * on the identity row after the name and shrinks/ellipsizes there;
-   * for full command text use `command` instead.
+   * The call's target — a path atom-chip (file tools) or the command text
+   * (command tools). Chips size themselves; command text wraps to more
+   * rows when long. Wrappers pass `command ?? identity`.
    */
-  identity?: React.ReactNode;
+  target?: React.ReactNode;
   /**
-   * Command-shaped args rendered in full on their own wrapping row, never
-   * truncated ([D05]). Use for bash commands, grep patterns, cron
-   * expressions. Omit for chip-identity tools.
+   * One-line result summary as DATA — rendered quietly in the COLLAPSED
+   * state. Tools that collapse by default supply it.
    */
-  command?: React.ReactNode;
+  summary?: ToolResultSummary;
   /**
-   * Trailing metadata cluster — counts, diff-stats, truncated flags via
-   * the shared [D06] primitives. Rendered at the identity row's trailing
-   * edge, before the actions slot.
+   * Trailing metadata cluster (counts / diff-stats / truncated via the
+   * shared meta primitives) — rendered in the EXPANDED state.
    */
   meta?: React.ReactNode;
-  /** Drift caution surfaced as an inline badge on the identity row. */
+  /** Drift caution surfaced as an inline badge. */
   caution?: CautionFlag;
   /**
-   * Content rendered inside the actions slot (the chrome's copy / fold
-   * cluster for body-bits wrappers). Body kinds composed under the
-   * chrome portal into the slot node instead — see `actionsSlotRef`.
+   * Markdown for the whole call (command + result) — what the built-in
+   * Copy writes in the COLLAPSED state, where the body isn't mounted to
+   * supply its own. When absent/empty, no built-in Copy renders.
    */
-  actions?: React.ReactNode;
+  copyText?: string;
   /**
-   * History-collapse disclosure ([P02] collapsed history). When set,
-   * a chevron toggle renders between the lifecycle dot and the name;
-   * the chrome withholds the body subtree while `collapsed`. Distinct
-   * from the actions-slot fold cue (which folds content INSIDE a
-   * mounted body): the disclosure controls whether the body exists.
+   * History-collapse chevron + state. When set, the chevron renders at the
+   * trailing edge (DOWN to expand when collapsed, UP to collapse when
+   * expanded) and `collapsed` selects summary-vs-meta and built-in-Copy-vs
+   * -actions-slot. Omit for tools that never collapse — they render no
+   * chevron and are always in the expanded presentation.
    */
   disclosure?: { collapsed: boolean; onToggle: (next: boolean) => void };
   /**
-   * Callback receiving the actions-slot DOM node. The chrome captures it
-   * and republishes it through `ChromeActionsTargetContext` so embedded
-   * body kinds can `createPortal` their affordances into the header.
+   * Content rendered inside the actions slot in the EXPANDED state — the
+   * chrome's copy / fold cluster for body-bits wrappers. Embedded body
+   * kinds portal into the slot node instead (see `actionsSlotRef`).
+   */
+  actions?: React.ReactNode;
+  /**
+   * Callback receiving the actions-slot DOM node (EXPANDED state). The
+   * chrome captures it and republishes it through
+   * `ChromeActionsTargetContext` so embedded body kinds can `createPortal`
+   * their affordances into the header.
    */
   actionsSlotRef?: (node: HTMLDivElement | null) => void;
   /** Forwarded class name. */
@@ -138,8 +135,8 @@ export interface ToolCallHeaderProps {
 }
 
 /**
- * The tool-call header. `ref` targets the root strip — the chrome
- * measures it with a `ResizeObserver` for telescoping-pin height.
+ * The tool-call header — one quiet row. `ref` targets the root strip; the
+ * chrome measures it with a `ResizeObserver` for telescoping-pin height.
  */
 export const ToolCallHeader = React.forwardRef<
   HTMLDivElement,
@@ -150,98 +147,114 @@ export const ToolCallHeader = React.forwardRef<
     toolName,
     icon,
     showIcon = true,
-    identity,
-    command,
+    target,
+    summary,
     meta,
     caution,
+    copyText,
+    disclosure,
     actions,
     actionsSlotRef,
-    disclosure,
     className,
   },
   ref,
 ) {
-  // Resolve the icon node: explicit `icon` wins (including an explicit
-  // `null` for "no icon"); otherwise the registry decides by name.
-  const iconNode = showIcon
-    ? icon !== undefined
-      ? icon
-      : toolIconFor(toolName)
-    : null;
-
-  // The detail row carries the per-tool identifier — a command for
-  // command-shaped tools, the path chip for file tools. The icon moves
-  // DOWN to this row (in the dot's column, same glyph size) so the dot +
-  // name share the identity row and the icon + detail share the detail
-  // row, with `name` and `detail` aligned on one left margin.
-  const detail = command ?? identity;
-  const showDetailRow = iconNode !== null || detail !== undefined;
+  const iconNode = showIcon ? (icon !== undefined ? icon : toolIconFor(toolName)) : null;
+  const collapsible = disclosure !== undefined;
+  const collapsed = disclosure?.collapsed === true;
+  const hasCopy = copyText !== undefined && copyText.length > 0;
 
   return (
     <div
       ref={ref}
       data-slot="tool-call-header"
       data-phase={phase}
+      data-collapsed={collapsed ? "true" : undefined}
       className={cn("tool-call-header", className)}
     >
-      <div className="tool-call-header-identity" data-slot="tool-call-header-identity">
-        <TugProgressIndicator
-          variant="pulsing-dot"
-          size={DOT_SIZE}
-          phase={phase}
-          phaseVisual={toolCallPhaseVisual}
-          aria-label={TOOL_CALL_PHASE_LABELS[phase]}
-          className="tool-call-header-dot"
-        />
-        {disclosure !== undefined ? (
+      <TugProgressIndicator
+        variant="pulsing-dot"
+        size={DOT_SIZE}
+        phase={phase}
+        phaseVisual={toolCallPhaseVisual}
+        aria-label={TOOL_CALL_PHASE_LABELS[phase]}
+        className="tool-call-header-dot"
+      />
+      {iconNode !== null ? (
+        <span className="tool-call-header-icon" aria-hidden="true">
+          {iconNode}
+        </span>
+      ) : null}
+      <span className="tool-call-header-main">
+        <span className="tool-call-header-name">{toolName}</span>
+        {target !== undefined ? (
+          <span className="tool-call-header-detail">{target}</span>
+        ) : null}
+      </span>
+      {/* Trailing result — the quiet one-line summary when collapsed, the
+          rich meta badge cluster when expanded. */}
+      {collapsed
+        ? summary !== undefined
+          ? (
+            <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
+              {formatToolResultSummary(summary)}
+            </span>
+          )
+          : null
+        : meta !== undefined
+          ? (
+            <span className="tool-call-header-meta" data-slot="tool-call-header-meta">
+              {meta}
+            </span>
+          )
+          : null}
+      {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}
+      <span className="tool-call-header-actions">
+        {collapsed ? (
+          hasCopy ? (
+            <BlockCopyButton
+              subtype="icon"
+              size="xs"
+              getText={() => copyText ?? ""}
+              aria-label={`Copy ${toolName} command and result`}
+              data-slot="tool-call-header-copy"
+            />
+          ) : null
+        ) : (
+          // Always present in the expanded state so the published node
+          // exists from first paint — the chrome's portal-target context
+          // can then be non-null on the first descendant render. Layout
+          // only; the children's own tokens drive appearance ([L20]).
+          <div
+            ref={actionsSlotRef}
+            className="tool-call-header-actions-slot"
+            data-slot="tool-block-actions"
+          >
+            {actions}
+          </div>
+        )}
+        {collapsible ? (
           <span
             className="tool-call-header-disclosure"
             data-slot="tool-call-header-disclosure"
-            data-collapsed={disclosure.collapsed ? "true" : undefined}
+            data-collapsed={collapsed ? "true" : undefined}
           >
-            <TugIconButton
-              icon={<ChevronDown size={13} strokeWidth={2.5} />}
+            {/* Same primitive + size as the Copy button (icon / ghost / xs)
+                so the two affordances are pixel-identical at rest and on
+                hover. */}
+            <TugPushButton
+              subtype="icon"
+              emphasis="ghost"
+              size="xs"
+              icon={<ChevronDown />}
               aria-label={
-                disclosure.collapsed
-                  ? `Expand ${toolName} tool call`
-                  : `Collapse ${toolName} tool call`
+                collapsed ? `Expand ${toolName} tool call` : `Collapse ${toolName} tool call`
               }
-              size="sm"
-              onClick={() => disclosure.onToggle(!disclosure.collapsed)}
+              onClick={() => disclosure?.onToggle(!collapsed)}
             />
           </span>
         ) : null}
-        <span className="tool-call-header-name">{toolName}</span>
-        {meta !== undefined ? (
-          <span className="tool-call-header-meta" data-slot="tool-call-header-meta">
-            {meta}
-          </span>
-        ) : null}
-        {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}
-        {/* Actions slot — always rendered so the published node exists from
-         * first paint (the chrome's portal-target context can be non-null
-         * on the first descendant render). Layout-only here; the children's
-         * own tokens drive their appearance ([L20]). */}
-        <div
-          ref={actionsSlotRef}
-          className="tool-call-header-actions"
-          data-slot="tool-block-actions"
-        >
-          {actions}
-        </div>
-      </div>
-      {showDetailRow ? (
-        <div className="tool-call-header-detail" data-slot="tool-call-header-detail">
-          {iconNode !== null ? (
-            <span className="tool-call-header-icon" aria-hidden="true">
-              {iconNode}
-            </span>
-          ) : null}
-          {detail !== undefined ? (
-            <span className="tool-call-header-detail-content">{detail}</span>
-          ) : null}
-        </div>
-      ) : null}
+      </span>
     </div>
   );
 });

@@ -2,8 +2,8 @@
  * gallery-tool-block-collapsed.css — scaffolding for the collapsed
  * tool-header gallery ([#step-10]/[#step-11]).
  *
- * Pure gallery scaffolding: the rows ARE the production
- * `CollapsedToolHeader` (which owns its own layout + tokens). This file
+ * Pure gallery scaffolding: the rows ARE the production `ToolCallHeader`
+ * in its collapsed state (which owns its own layout + tokens). This file
  * only frames the sections and stacks the rows with hairlines, the way a
  * run of collapsed blocks reads in the transcript.
  */

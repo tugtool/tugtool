@@ -108,7 +108,6 @@ import {
 
 import { ToolBlockCollapseContext, ToolUseIdContext } from "./collapse-context";
 import { ToolCallHeader } from "./tool-call-header";
-import { CollapsedToolHeader } from "./collapsed-tool-header";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { CautionFlag, ToolBlockStatus } from "./types";
 
@@ -460,20 +459,25 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
       cancelAnimationFrame(rafId);
       observer.disconnect();
     };
-    // Re-attach when the header element appears/disappears across a
-    // collapse toggle: collapsed renders `CollapsedToolHeader` (no
-    // `headerRef`), so the observer must re-run to measure the expanded
-    // header once the block opens.
+    // Re-measure across a collapse toggle: the one `ToolCallHeader` keeps
+    // its `headerRef` in both states, but its height changes (summary↔meta,
+    // body appears/disappears), so the observer re-runs to refresh the
+    // telescoping-pin variable once the block opens or closes.
   }, [blockCollapsed]);
 
-  // Collapse-wrapped blocks ([P06] table) wear the Quiet Line ([P09]) in
-  // BOTH states — collapsed shows the header alone; expanded shows the
-  // same header (chevron flipped) above the full body. ONE fold (the
-  // header chevron): the body's own self-fold is suppressed so expanding
-  // the block reveals its content in a single click, and the status
-  // left-stripe is dropped (`data-quiet`) since the lifecycle dot carries
-  // status. Tools that never collapse keep the two-row `ToolCallHeader`.
-  const isQuiet = blockCollapse !== null;
+  // ONE header for every tool, in every state — the Quiet Line
+  // `ToolCallHeader`. There is no fork: the same component renders whether
+  // the block is collapsed (header is the whole block), expanded (header
+  // above the mounted body), or a tool that never collapses (no chevron).
+  // `disclosure` is non-null only for history-collapse-wrapped blocks
+  // ([P06] table); it selects the chevron + summary-vs-meta presentation.
+  // The body's own self-fold is suppressed for those blocks so the header
+  // chevron is the single fold (no double-dip). No left-edge status stripe
+  // anywhere — the lifecycle dot carries status.
+  const disclosure =
+    blockCollapse !== null
+      ? { collapsed: blockCollapse.collapsed, onToggle: blockCollapse.toggle }
+      : undefined;
 
   return (
     <div
@@ -482,82 +486,49 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
       data-status={status}
       data-caution={caution?.reason ?? undefined}
       data-block-collapsed={blockCollapsed ? "true" : undefined}
-      data-quiet={isQuiet ? "true" : undefined}
       data-tool-use-id={toolUseId}
       className={cn("tool-block-chrome", className)}
     >
-      {isQuiet ? (
-        <>
-          <CollapsedToolHeader
-            phase={phase ?? statusToPhase(status)}
-            toolName={toolName}
-            icon={toolIcon}
-            showIcon={showIcon}
-            target={command ?? identity ?? argsSummary}
-            summary={resultSummary}
-            caution={caution}
-            copyText={blockCollapse.copyText}
-            collapsed={blockCollapse.collapsed}
-            onToggle={blockCollapse.toggle}
-          />
-          {blockCollapsed ? null : (
-            <BlockFoldSuppressedContext.Provider value={true}>
-              <div className="tool-block-chrome-body" data-slot="tool-block-body">
-                <ChromeActionsTargetContext.Provider value={actionsTarget}>
-                  {children}
-                </ChromeActionsTargetContext.Provider>
-              </div>
-              {status === "error" && errorMessage !== undefined ? (
-                <div className="tool-block-chrome-error" data-slot="tool-block-error">
-                  {errorMessage}
-                </div>
+      <ToolCallHeader
+        ref={headerRef}
+        phase={phase ?? statusToPhase(status)}
+        toolName={toolName}
+        icon={toolIcon}
+        showIcon={showIcon}
+        target={command ?? identity ?? argsSummary}
+        summary={resultSummary}
+        meta={meta}
+        caution={caution}
+        copyText={blockCollapse?.copyText}
+        disclosure={disclosure}
+        actionsSlotRef={setActionsTarget}
+        actions={
+          copyText !== undefined || fold !== undefined ? (
+            <BlockActionsCluster data-slot="tool-block-chrome-actions-cluster">
+              {copyText !== undefined ? (
+                <BlockCopyButton
+                  getText={() => copyTextRef.current}
+                  disabled={copyTextRef.current.length === 0}
+                  aria-label="Copy tool result"
+                />
               ) : null}
-              {footerBadges !== undefined ? (
-                <div className="tool-block-chrome-footer" data-slot="tool-block-footer">
-                  {footerBadges}
-                </div>
+              {fold !== undefined ? (
+                <BlockFoldCue
+                  collapsed={collapsed}
+                  onToggle={setCollapsed}
+                  collapsedLabel={fold.collapsedLabel}
+                  expandedLabel={fold.expandedLabel ?? "Collapse"}
+                  ariaLabelCollapse={fold.ariaLabelCollapse ?? "Collapse tool block"}
+                  ariaLabelExpand={fold.ariaLabelExpand ?? "Expand tool block"}
+                  data-slot="tool-block-fold-cue"
+                />
               ) : null}
-            </BlockFoldSuppressedContext.Provider>
-          )}
-        </>
-      ) : (
-        <>
-          <ToolCallHeader
-            ref={headerRef}
-            phase={phase ?? statusToPhase(status)}
-            toolName={toolName}
-            icon={toolIcon}
-            showIcon={showIcon}
-            identity={identity ?? argsSummary}
-            command={command}
-            meta={meta}
-            caution={caution}
-            actionsSlotRef={setActionsTarget}
-            actions={
-              copyText !== undefined || fold !== undefined ? (
-                <BlockActionsCluster data-slot="tool-block-chrome-actions-cluster">
-                  {copyText !== undefined ? (
-                    <BlockCopyButton
-                      getText={() => copyTextRef.current}
-                      disabled={copyTextRef.current.length === 0}
-                      aria-label="Copy tool result"
-                    />
-                  ) : null}
-                  {fold !== undefined ? (
-                    <BlockFoldCue
-                      collapsed={collapsed}
-                      onToggle={setCollapsed}
-                      collapsedLabel={fold.collapsedLabel}
-                      expandedLabel={fold.expandedLabel ?? "Collapse"}
-                      ariaLabelCollapse={fold.ariaLabelCollapse ?? "Collapse tool block"}
-                      ariaLabelExpand={fold.ariaLabelExpand ?? "Expand tool block"}
-                      data-slot="tool-block-fold-cue"
-                    />
-                  ) : null}
-                </BlockActionsCluster>
-              ) : undefined
-            }
-          />
+            </BlockActionsCluster>
+          ) : undefined
+        }
+      />
+      {blockCollapsed ? null : (
+        <BlockFoldSuppressedContext.Provider value={blockCollapse !== null}>
           <div
             className="tool-block-chrome-body"
             data-slot="tool-block-body"
@@ -568,22 +539,16 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
             </ChromeActionsTargetContext.Provider>
           </div>
           {status === "error" && errorMessage !== undefined ? (
-            <div
-              className="tool-block-chrome-error"
-              data-slot="tool-block-error"
-            >
+            <div className="tool-block-chrome-error" data-slot="tool-block-error">
               {errorMessage}
             </div>
           ) : null}
           {footerBadges !== undefined ? (
-            <div
-              className="tool-block-chrome-footer"
-              data-slot="tool-block-footer"
-            >
+            <div className="tool-block-chrome-footer" data-slot="tool-block-footer">
               {footerBadges}
             </div>
           ) : null}
-        </>
+        </BlockFoldSuppressedContext.Provider>
       )}
     </div>
   );

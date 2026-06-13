@@ -2,7 +2,7 @@
  * gallery-tool-block-collapsed.tsx — the collapsed tool-block header
  * ([P09] Quiet Line, [#step-10]/[#step-11]).
  *
- * Renders the REAL production `CollapsedToolHeader` across the full
+ * Renders the REAL production `ToolCallHeader` (collapsed state) across the full
  * supported tool range, plus a section of real long Bash commands / deep
  * paths pulled verbatim from session JSONL to stress-test wrapping and
  * column discipline. Because this card mounts the same component the
@@ -24,7 +24,7 @@ import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 import type { ToolCallPhase } from "@/lib/code-session-store/tool-call-phase-visual";
 
-import { CollapsedToolHeader } from "./tool-blocks/collapsed-tool-header";
+import { ToolCallHeader } from "./tool-blocks/tool-call-header";
 import { formatToolResultSummary, type ToolResultSummary } from "./tool-blocks/tool-result-summary";
 
 import "./gallery-tool-block-collapsed.css";
@@ -128,14 +128,13 @@ function sampleCopyText(sample: ToolSample): string {
 
 function Row({ sample }: { sample: ToolSample }): React.ReactElement {
   return (
-    <CollapsedToolHeader
+    <ToolCallHeader
       phase={sample.phase}
       toolName={sample.toolName}
       target={targetNode(sample)}
       summary={sample.summary}
       copyText={sampleCopyText(sample)}
-      collapsed
-      onToggle={noop}
+      disclosure={{ collapsed: true, onToggle: noop }}
     />
   );
 }
@@ -146,8 +145,8 @@ export const GalleryToolBlockCollapsed: React.FC = () => {
     <div className="gallery-tool-block-collapsed">
       <p className="cg-intro">
         The collapsed tool-block header — the production{" "}
-        <code>CollapsedToolHeader</code>, the same component the transcript
-        renders when a tool block is collapsed. One calm row per tool: tool +
+        <code>ToolCallHeader</code> in its collapsed state, the same component
+        the transcript renders for every tool block. One calm row per tool: tool +
         target + result + status, with Copy (command + result) and Expand.
         Color comes only from the lifecycle dot.
       </p>

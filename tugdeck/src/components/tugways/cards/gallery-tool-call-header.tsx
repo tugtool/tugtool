@@ -57,7 +57,7 @@ export const GalleryToolCallHeader: React.FC = () => {
               key={phase}
               phase={phase}
               toolName="Bash"
-              command={<code>{`echo "${TOOL_CALL_PHASE_LABELS[phase]}"`}</code>}
+              target={<code>{`echo "${TOOL_CALL_PHASE_LABELS[phase]}"`}</code>}
             />
           ))}
         </div>
@@ -72,7 +72,7 @@ export const GalleryToolCallHeader: React.FC = () => {
             phase="in_flight"
             toolName="Read"
             showIcon
-            identity={
+            target={
               <TugAtomChip
                 type="file"
                 label={formatAtomLabel(SAMPLE_PATH, "filename")}
@@ -85,7 +85,7 @@ export const GalleryToolCallHeader: React.FC = () => {
             phase="in_flight"
             toolName="Read"
             showIcon={false}
-            identity={
+            target={
               <TugAtomChip
                 type="file"
                 label={formatAtomLabel(SAMPLE_PATH, "filename")}
@@ -105,7 +105,7 @@ export const GalleryToolCallHeader: React.FC = () => {
           <ToolCallHeader
             phase="success"
             toolName="Read"
-            identity={
+            target={
               <TugAtomChip
                 type="file"
                 label={formatAtomLabel(SAMPLE_PATH, "filename")}
@@ -125,7 +125,7 @@ export const GalleryToolCallHeader: React.FC = () => {
           <ToolCallHeader
             phase="success"
             toolName="Grep"
-            identity={<code>useState</code>}
+            target={<code>useState</code>}
             meta={
               <>
                 <ToolHeaderCount count={1234} noun="match" pluralNoun="matches" />
@@ -136,7 +136,7 @@ export const GalleryToolCallHeader: React.FC = () => {
           <ToolCallHeader
             phase="success"
             toolName="Edit"
-            identity={
+            target={
               <TugAtomChip
                 type="file"
                 label={formatAtomLabel(SAMPLE_PATH, "filename")}
@@ -149,7 +149,7 @@ export const GalleryToolCallHeader: React.FC = () => {
           <ToolCallHeader
             phase="success"
             toolName="Glob"
-            identity={<code>**/*.ts</code>}
+            target={<code>**/*.ts</code>}
             meta={<ToolHeaderCount count={1} noun="file" />}
           />
         </div>
@@ -163,7 +163,7 @@ export const GalleryToolCallHeader: React.FC = () => {
           <ToolCallHeader
             phase="awaiting"
             toolName="Bash"
-            command={<code>{LONG_COMMAND}</code>}
+            target={<code>{LONG_COMMAND}</code>}
           />
         </div>
       </section>
