@@ -118,6 +118,8 @@ import {
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
+import { TieredCell } from "@/components/tugways/cards/transcript-tier";
+import { previewTextForMessages } from "@/lib/transcript-preview";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import { DevReplayProgress } from "@/components/tugways/cards/dev-replay-progress";
@@ -214,6 +216,26 @@ function stripUserBodyPrefix(text: string): string {
   if (text.startsWith("> ")) return text.slice(2);
   if (text.startsWith(">")) return text.slice(1);
   return text;
+}
+
+/**
+ * Cheap plain-text preview for a row's always-painted tier ([P01b]).
+ * The user row previews its prompt; the assistant row previews its
+ * content (prose + one-line tool hints, prompt excluded); a ghost row
+ * previews its queued text. Pure + bounded via `previewTextForMessages`.
+ */
+function previewForRow(kind: string, row: DevRowDescriptor): string {
+  if (kind === "ghost") {
+    return row.queued !== undefined ? stripUserBodyPrefix(row.queued.text) : "";
+  }
+  const messages = row.turn?.messages ?? row.activeTurn?.messages ?? [];
+  if (kind === "user") {
+    const user = readUserMessage(messages);
+    return user !== undefined ? stripUserBodyPrefix(user.text) : "";
+  }
+  return previewTextForMessages(
+    messages.filter((m) => m.kind !== "user_message"),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1084,33 +1106,6 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
 const ESTIMATED_HEIGHT_USER = 56;
 const ESTIMATED_HEIGHT_ASSISTANT = 120;
 
-/**
- * Mount-weight limits above which the transcript switches from
- * `inline` (every cell mounted; `content-visibility` defers
- * off-screen paint) to windowed mounting (off-window rows unmount to
- * spacers, with selection/focus rows pinned mounted by the list
- * view). Two axes, because either alone misrepresents the mount
- * cost:
- *
- *  - ROWS: prose-heavy transcripts scale by row count. Measured:
- *    all-mounted is comfortable at ~1k rows (2.4s build, ~4ms
- *    full-range layout jumps) and degrades hard by 5k (40s build) —
- *    paint deferral skips paint, not the DOM build.
- *  - MESSAGES: tool-heavy transcripts pack hundreds of message
- *    components (tool blocks, thinking, fenced code with
- *    enhancement passes) into FEW rows. A real working session of
- *    ~100 rows carrying ~2,300 message blocks froze the main thread
- *    ~20s in the single inline mount commit — content weight, not
- *    row count, was the bill.
- *
- * Below both limits the inline mode's visual stability
- * (fully-measured height index, full-document native selection) is
- * worth the DOM weight; above either, windowed mounting bounds the
- * commit to the visible window. Crossings preserve mount identity
- * for rows present on both sides ([L26]).
- */
-const WINDOWED_TRANSCRIPT_ROW_THRESHOLD = 1200;
-const WINDOWED_TRANSCRIPT_MESSAGE_THRESHOLD = 600;
 
 export interface DevTranscriptHostProps {
   /**
@@ -1279,32 +1274,6 @@ export const DevTranscriptHost = forwardRef<
     () => codeSessionStore.getSnapshot().compactionSeed,
   );
 
-  // Windowed-mounting flip ([L02] — the boolean selector means the
-  // host re-renders only when a threshold actually crosses, not on
-  // every row append). Below both weight limits the transcript keeps
-  // `inline` mounting (visual stability + native selection across the
-  // whole document); above either, off-window rows unmount to spacers
-  // and the list view pins selection/focus rows mounted. The message
-  // walk is O(turns) per snapshot read — trivial against the commit
-  // it guards.
-  const windowedTranscript = useSyncExternalStore(
-    useCallback(
-      (cb: () => void) => dataSource.subscribe(cb),
-      [dataSource],
-    ),
-    useCallback(() => {
-      if (dataSource.numberOfItems() > WINDOWED_TRANSCRIPT_ROW_THRESHOLD) {
-        return true;
-      }
-      let messages = 0;
-      for (const turn of codeSessionStore.getSnapshot().transcript) {
-        messages += turn.messages.length;
-        if (messages > WINDOWED_TRANSCRIPT_MESSAGE_THRESHOLD) return true;
-      }
-      return false;
-    }, [dataSource, codeSessionStore]),
-  );
-
   // One renderer per kind ([L26] — renderer reference is the third
   // identity input React reconciles against; distinct lambdas count
   // as distinct component types). With the data source unified to a
@@ -1348,29 +1317,48 @@ export const DevTranscriptHost = forwardRef<
   const assistantRenderer = useCallback<
     TugListViewCellRenderer<DevTranscriptDataSource>
   >(
-    (p) => (
-      <AssistantTurnCell
-        {...p}
-        row={p.dataSource.rowAt(p.index)}
-        sessionMetadataStore={sessionMetadataStore}
-        codeSessionStore={codeSessionStore}
-        streamingStore={streamingStore}
-        renderTurnTrailing={renderTurnTrailing}
-      />
-    ),
+    (p) => {
+      const row = p.dataSource.rowAt(p.index);
+      // The in-flight assistant row (no committed `turn`) hosts live
+      // streaming + any pending permission/question dialog, so it must
+      // never downgrade to cheap and tear those down.
+      const forceRich = row.turn === undefined;
+      return (
+        <TieredCell previewText={previewForRow("assistant", row)} forceRich={forceRich}>
+          {() => (
+            <AssistantTurnCell
+              {...p}
+              row={row}
+              sessionMetadataStore={sessionMetadataStore}
+              codeSessionStore={codeSessionStore}
+              streamingStore={streamingStore}
+              renderTurnTrailing={renderTurnTrailing}
+            />
+          )}
+        </TieredCell>
+      );
+    },
     [sessionMetadataStore, codeSessionStore, streamingStore, renderTurnTrailing],
   );
   const userRenderer = useCallback<
     TugListViewCellRenderer<DevTranscriptDataSource>
   >(
-    (p) => (
-      <UserMessageCell
-        {...p}
-        row={p.dataSource.rowAt(p.index)}
-        renderTurnTrailing={renderTurnTrailing}
-        codeSessionStore={codeSessionStore}
-      />
-    ),
+    (p) => {
+      const row = p.dataSource.rowAt(p.index);
+      const forceRich = row.turn === undefined;
+      return (
+        <TieredCell previewText={previewForRow("user", row)} forceRich={forceRich}>
+          {() => (
+            <UserMessageCell
+              {...p}
+              row={row}
+              renderTurnTrailing={renderTurnTrailing}
+              codeSessionStore={codeSessionStore}
+            />
+          )}
+        </TieredCell>
+      );
+    },
     [codeSessionStore, renderTurnTrailing],
   );
   // `codeSessionStore` is stable for the card's lifetime (same as the
@@ -1380,13 +1368,20 @@ export const DevTranscriptHost = forwardRef<
   const ghostRenderer = useCallback<
     TugListViewCellRenderer<DevTranscriptDataSource>
   >(
-    (p) => (
-      <GhostRowCell
-        {...p}
-        row={p.dataSource.rowAt(p.index)}
-        codeSessionStore={codeSessionStore}
-      />
-    ),
+    (p) => {
+      const row = p.dataSource.rowAt(p.index);
+      return (
+        <TieredCell previewText={previewForRow("ghost", row)}>
+          {() => (
+            <GhostRowCell
+              {...p}
+              row={row}
+              codeSessionStore={codeSessionStore}
+            />
+          )}
+        </TieredCell>
+      );
+    },
     [codeSessionStore],
   );
   const cellRenderers = useMemo<
@@ -1504,19 +1499,16 @@ export const DevTranscriptHost = forwardRef<
   }, []);
 
   return (
-    // [DT10], narrowed: the paint gate now applies only to the inline
-    // (non-windowed) class, where the replay window is sub-perceptual
-    // and a single reveal avoids accumulation FOUC. Windowed
-    // transcripts paint PROGRESSIVELY at fold flushes ([P03] of the
-    // resume-performance plan) — bounded commits, follow-bottom
-    // anchoring, with the DevReplayProgress strip as the always-on
-    // affordance above the list.
+    // [DT10] paint gate: the transcript is always inline under the
+    // two-tier render ([P01b]), so the single-reveal gate applies for
+    // the whole replay window (avoiding accumulation FOUC), with the
+    // DevReplayProgress strip as the always-on affordance above the list.
     <div
       ref={rootRef}
       className="dev-card-transcript"
       data-slot="dev-card-transcript"
       data-testid="dev-card-transcript"
-      data-replaying={(isReplaying && !windowedTranscript) || undefined}
+      data-replaying={isReplaying || undefined}
     >
       <DevReplayProgress cardId={cardId} codeSessionStore={codeSessionStore} />
       {compactionSeed !== null ? (
@@ -1541,7 +1533,12 @@ export const DevTranscriptHost = forwardRef<
               scrollKey="dev-card-transcript"
               followBottom
               onFollowBottomChange={handleFollowBottomChange}
-              inline={!windowedTranscript}
+              // Two-tier render ([P01b]): the transcript is ALWAYS
+              // inline (every row mounted) so a thumb-drag never lands
+              // on an unmounted spacer. Rows are cheap by default and
+              // upgrade to rich only in the visible window via
+              // `TieredCell`, so all-mounted stays affordable.
+              inline
               pageByEntry
             />
           </ToolBlockExpansionContext.Provider>

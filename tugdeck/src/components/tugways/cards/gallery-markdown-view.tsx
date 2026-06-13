@@ -530,7 +530,11 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
         (no staticContentSize) keeps the default `followBottom: true`
         so live transcript streams pin to the tail.
       */}
-      <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
+      {/* Render at the product's transcript base font (14px) so this
+          harness is a faithful reference for what the dev-card transcript
+          shows — not the app's larger default, which made gallery vs
+          transcript look inconsistent side-by-side. */}
+      <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, position: "relative", fontSize: 14 }}>
         <TugMarkdownView
           ref={markdownRef}
           streamingStore={streamingStore}

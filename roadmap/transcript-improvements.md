@@ -172,7 +172,23 @@ These inform the candidate option sets the gallery cards present; the *decisions
 
 ### Design Decisions {#design-decisions}
 
-#### [P01] Never-blank is a hard invariant via two-layer defense, in BOTH render modes (DECIDED) {#p01-never-blank}
+#### [P01b] Never-blank via two-TIER rendering (SUPERSEDES the overscan+fill approach) (DECIDED) {#p01b-two-tier}
+
+**Decision:** Achieve never-blank by decoupling *mounted* from *rich*. Every row is always mounted as a CHEAP cell — a single block of bounded plain-text preview (`previewTextForMessages`, `lib/transcript-preview.ts`): no markdown parse, no syntax highlighting, no per-tool components. Only rows in the visible window (+ a prefetch margin) upgrade to the RICH rendering, gated per-cell by an IntersectionObserver against the scrollport. The cheap↔rich swap reserves the measured height so layout never shifts.
+
+**Why this supersedes [P01]/[P02]/[P03]'s overscan+skeleton:** in-app testing showed overscan can't cover a thumb-drag jump (the target cells are unmounted), and a skeleton fill only recolors emptiness — the user still sees no content. The blank is paint/mount latency of *expensive* content. A cheap always-painted tier paints in well under a frame, so neither windowed-unmount nor `content-visibility` paint deferral can produce a perceptible blank; rich work stays bounded to the window.
+
+**Rationale:**
+- Mounting N *cheap* cells is affordable; the ~20s freeze the plan cites was N *rich* cells. Rich rendering stays windowed.
+- Removes windowed-unmount (kills thumb-drag blank) AND removes the expensive-paint-on-promote (kills the inline/content-visibility blank that hit small sessions too — confirmed both sizes blank).
+
+**Implications:**
+- New `lib/transcript-preview.ts` (DONE, pure + tested). New cheap cell component. The transcript stops windowing-by-unmount; cells tier cheap/rich via an IntersectionObserver-driven signal. Height reserved from the measured-height index.
+- Steps 1–3 (overscan + skeleton) are **reverted and superseded**; the perf steps will be re-cut around this tier model once the core bet is validated live on the user's real sessions ([real-content fixtures only]).
+
+**Risk:** mounting all cheap cells at extreme N (tens of thousands of messages). Mitigation: measure on real sessions; keep a safety window on the *cheap* layer only if extreme sizes regress.
+
+#### [P01] Never-blank is a hard invariant via two-layer defense, in BOTH render modes (SUPERSEDED by [P01b]) {#p01-never-blank}
 
 **Decision:** A transcript row must never expose bare card background, in **either** render mode — windowed *or* inline. Achieved by (1) render-ahead (directional, tunable overscan, windowed mode only) and (2) a skeleton backstop that paints a neutral row-rhythm fill on any reserved-but-unpainted slot, covering all three blank sources: windowed top/bottom spacers, windowed cells not yet painted, AND inline-mode cells whose paint is deferred by `content-visibility: auto`.
 
@@ -342,11 +358,11 @@ Below the windowed thresholds the transcript mounts every cell but defers off-sc
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Directional + tunable overscan | pending | — |
-| #step-2 | Never-blank skeleton backstop | pending | — |
-| #step-3 | Perf integration checkpoint | pending | — |
-| #step-4 | Markdown typography spike + gallery vet | pending | — |
-| #step-5 | Apply header scale + inline-code tokens | pending | — |
+| #step-1 | Two-tier render: cheap preview tier ([P01b]; replaced overscan) | done | c9effaa8 |
+| #step-2 | Two-tier render: all-mounted + IntersectionObserver rich window ([P01b]; replaced skeleton) | done | c9effaa8 |
+| #step-3 | Perf integration checkpoint — blanks "greatly improved", user-verified in app | done | c9effaa8 |
+| #step-4 | Markdown typography spike + gallery vet (Transcript Markdown card) | done | e79d4685 |
+| #step-5 | Apply header scale + inline-code tokens + wrapper spacing model | done | e79d4685 |
 | #step-6 | Source-offset attribution on rendered blocks | pending | — |
 | #step-7 | Range→markdown copy reconstruction | pending | — |
 | #step-8 | Markdown integration checkpoint | pending | — |

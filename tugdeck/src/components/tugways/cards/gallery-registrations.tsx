@@ -69,6 +69,7 @@ import { GalleryBulletin } from "./gallery-bulletin";
 import { GalleryZ2Workshop } from "./gallery-z2-workshop";
 import { GalleryPaneBulletin } from "./gallery-pane-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
+import { GalleryTranscriptMarkdown } from "./gallery-transcript-markdown";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewFocus } from "./gallery-list-view-focus";
@@ -1103,6 +1104,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-markdown-view",
     contentFactory: (_cardId) => <GalleryMarkdownView />,
     defaultMeta: { title: "TugMarkdownView", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Transcript markdown typography fixture ([P04]/[P09]) — the dev-card
+  // transcript's actual renderer (`TugMarkdownBlock`) in its 14px scope,
+  // with a sample doc covering every heading adjacency. The canonical
+  // surface for locking the transcript markdown look and feel.
+  registerCard({
+    componentId: "gallery-transcript-markdown",
+    contentFactory: (_cardId) => <GalleryTranscriptMarkdown />,
+    defaultMeta: { title: "Transcript Markdown", icon: "FileText", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

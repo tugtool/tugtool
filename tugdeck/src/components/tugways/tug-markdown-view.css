@@ -42,24 +42,40 @@ body {
   --tugx-md-body-line-height: 1.6;
   --tugx-md-paragraph-margin: 0.6em;
 
-  /* Heading scale — Major Third (1.25), capped at the available
-   * `--tug-font-size-*` steps. h1=2xl (24), h2=xl (20), h3=lg (16),
-   * h4-h6=md (14) with descending weight + a muted h6. */
-  --tugx-md-h1-size: var(--tug-font-size-2xl);
-  --tugx-md-h2-size: var(--tug-font-size-xl);
-  --tugx-md-h3-size: var(--tug-font-size-lg);
-  --tugx-md-h4-size: var(--tug-font-size-md);
-  --tugx-md-h5-size: var(--tug-font-size-md);
-  --tugx-md-h6-size: var(--tug-font-size-md);
-  --tugx-md-heading-line-height:   1.25;
-  --tugx-md-heading-margin-top:    1.4em;
-  --tugx-md-heading-margin-bottom: 0.4em;
+  /* Inter-block spacing model ([P04]). ALL vertical spacing between
+   * blocks lives on the block WRAPPER's top margin (see the wrapper
+   * rules near the heading section), never on the inner element — so a
+   * block-formatting-context block (table / fenced code / display math)
+   * cannot stack its margin with the next block's into an oversized gap.
+   * Three gaps: the default between any two blocks, the larger gap
+   * BEFORE a heading (a section break), and the tighter gap AFTER a
+   * heading (so a heading hugs the content it titles). */
+  --tugx-md-block-gap:         0.7em;
+  --tugx-md-heading-gap:       1.6em;
+  --tugx-md-after-heading-gap: 0.5em;
+
+  /* Heading scale — COMPRESSED ([P04]). Headings in a chat-style
+   * transcript read better differentiated by WEIGHT and SPACING than by
+   * large size jumps (the old Major-Third scale topped out at a 24px h1
+   * that shouted). Sizes are `em`-relative to the surrounding body so
+   * they track context, and the whole h1–h3 span is ~4px: the hierarchy
+   * is carried by weight (700 down to 600) and the generous heading
+   * margin-top, not by scale. */
+  --tugx-md-h1-size: 1.35em;
+  --tugx-md-h2-size: 1.18em;
+  --tugx-md-h3-size: 1.05em;
+  --tugx-md-h4-size: 1em;
+  --tugx-md-h5-size: 1em;
+  --tugx-md-h6-size: 1em;
+  --tugx-md-heading-line-height:   1.3;
+  --tugx-md-heading-margin-top:    1.5em;
+  --tugx-md-heading-margin-bottom: 0.45em;
   --tugx-md-h1-weight: 700;
   --tugx-md-h2-weight: 700;
-  --tugx-md-h3-weight: 600;
-  --tugx-md-h4-weight: 700;
+  --tugx-md-h3-weight: 700;
+  --tugx-md-h4-weight: 600;
   --tugx-md-h5-weight: 600;
-  --tugx-md-h6-weight: 500;
+  --tugx-md-h6-weight: 600;
 
   /* Inline emphasis */
   --tugx-md-strong-weight:            700;
@@ -71,10 +87,16 @@ body {
   --tugx-md-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
   --tugx-md-link-decoration:  underline;
 
-  /* Inline code chrome */
-  --tugx-md-inline-code-padding: 0.1em 0.35em;
+  /* Inline code chrome — DE-STYLED ([P05]). Inline `code` kept the body
+   * text color and only a faint tint, near body size: the old treatment
+   * shifted both color and background to the fenced-code surface and
+   * shrank to 0.9em, which broke reading flow mid-sentence. The tint is
+   * derived from `currentColor` so it tracks the theme and sits a hair
+   * off the prose without announcing a separate "code surface". */
+  --tugx-md-inline-code-padding: 0.1em 0.32em;
   --tugx-md-inline-code-radius:  var(--tug-radius-xs);
-  --tugx-md-inline-code-size:    0.9em;
+  --tugx-md-inline-code-size:    0.95em;
+  --tugx-md-inline-code-bg:      color-mix(in srgb, currentColor 8%, transparent);
 
   /* Fenced code body */
   --tugx-md-fenced-code-padding:     var(--tug-space-md) var(--tug-space-lg);
@@ -281,16 +303,45 @@ body {
 .tugx-md-block h6 {
   color: var(--tugx-block-text-color);
   line-height: var(--tugx-md-heading-line-height);
-  margin: var(--tugx-md-heading-margin-top) 0 var(--tugx-md-heading-margin-bottom);
+  /* Margin intentionally omitted — inter-block spacing is owned by the
+     block-wrapper rules below ([P04] spacing model), not the heading
+     element, so it cannot stack against a preceding BFC block. */
 }
 
-.tugx-md-block > h1:first-child,
-.tugx-md-block > h2:first-child,
-.tugx-md-block > h3:first-child,
-.tugx-md-block > h4:first-child,
-.tugx-md-block > h5:first-child,
-.tugx-md-block > h6:first-child {
-  margin-top: 0;
+/* ---- Inter-block spacing model ([P04]) ----
+   All vertical spacing between blocks lives HERE, on the `.tugx-md-block`
+   wrapper's top margin. Because each block is its own wrapper and the
+   spacing is a single top margin (no opposing bottom margin to stack
+   with), the gap is identical whether the previous block is a paragraph,
+   a table, a fenced code block, or a display equation — the margin-
+   collapse / block-formatting-context quirks that produced wildly uneven
+   gaps simply don't apply. The adjacent-sibling selector also means the
+   FIRST block never gets a top margin (it has no preceding `.tugx-md-block`
+   sibling — in the windowed view the top spacer precedes it), so a
+   document opening with a heading stays flush to the top. */
+
+/* Zero the inner element margins so only the wrapper spaces blocks. */
+.tugx-md-block > :is(h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, table, pre, hr, .tugx-md-fenced-code),
+.tugx-md-block .tugx-katex--display,
+.tugx-md-block .katex-display {
+  margin-block: 0;
+}
+
+/* Default gap between any two adjacent blocks. */
+.tugx-md-block + .tugx-md-block {
+  margin-top: var(--tugx-md-block-gap);
+}
+
+/* Larger gap BEFORE a heading block — a section break. */
+.tugx-md-block
+  + .tugx-md-block:is(:has(> h1), :has(> h2), :has(> h3), :has(> h4), :has(> h5), :has(> h6)) {
+  margin-top: var(--tugx-md-heading-gap);
+}
+
+/* Tighter gap AFTER a heading — the heading hugs the content it titles. */
+.tugx-md-block:is(:has(> h1), :has(> h2), :has(> h3), :has(> h4), :has(> h5), :has(> h6))
+  + .tugx-md-block {
+  margin-top: var(--tugx-md-after-heading-gap);
 }
 
 .tugx-md-block h1 { font-size: var(--tugx-md-h1-size); font-weight: var(--tugx-md-h1-weight); }
@@ -334,12 +385,15 @@ body {
 /* Inline code — `<code>` outside of `<pre>`. The descendant rule
    `.tugx-md-block pre code` below resets the inline chrome so that
    fenced blocks aren't double-styled. */
-/* @tug-renders-on: --tugx-block-bg */
+/* Inline code keeps the prose text color ([P05]) — only a faint
+ * `currentColor`-derived tint sets it apart, so it reads as emphasized
+ * prose rather than a foreign "code surface". The `pre code` reset below
+ * still strips this for fenced blocks, which own the full code surface. */
 .tugx-md-block code {
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-md-inline-code-size);
-  color: var(--tugx-block-text-color);
-  background: var(--tugx-block-bg);
+  color: inherit;
+  background: var(--tugx-md-inline-code-bg);
   padding: var(--tugx-md-inline-code-padding);
   border-radius: var(--tugx-md-inline-code-radius);
 }
@@ -517,6 +571,7 @@ body {
   font-size: inherit;
   color: inherit;
 }
+
 
 /* Blockquote */
 /* @tug-renders-on: --tugx-block-bg */
