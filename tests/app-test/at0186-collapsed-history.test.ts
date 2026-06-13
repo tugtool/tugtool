@@ -138,7 +138,7 @@ describe.skipIf(!SHOULD_RUN || heavySnap === null)(
                   return true;
                 }
                 block.scrollIntoView({ block: "center" });
-                var btn = block.querySelector('[data-slot="tool-call-header-disclosure"] button');
+                var btn = block.querySelector('button[data-slot="tool-call-header-disclosure"]');
                 if (btn !== null) {
                   btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
                 }

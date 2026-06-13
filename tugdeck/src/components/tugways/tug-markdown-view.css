@@ -482,8 +482,9 @@ body {
   font-family: inherit;
   font-size: var(--tug-button-2xs-font-size);
   font-weight: var(--tug-font-weight-medium);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  /* Sentence-case "Copy" / "Copied" to match the React `BlockCopyButton`
+   * (no uppercase / letter-spacing) so the fence affordance reads as the
+   * same control as the tool-block Copy. */
   line-height: 1;
   transition:
     background var(--tug-motion-duration-fast) var(--tug-motion-easing-standard),
@@ -503,32 +504,20 @@ body {
 
 /* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
 
-/* The button toggles `is-copied` for ~1.2s after a successful clipboard
-   write; CSS swaps which icon and label are visible. */
-.tugx-md-block .tugx-md-fenced-code-copy-icon--copied,
-.tugx-md-block .tugx-md-fenced-code-copy-label--copied {
+/* Icon-only Copy: the button toggles `is-copied` for ~1.2s after a
+   successful clipboard write; CSS swaps the Copy glyph for a Check —
+   matching the tool-block header's `BlockCopyButton subtype="icon"`. */
+.tugx-md-block .tugx-md-fenced-code-copy-icon--copied {
   display: none;
 }
 
-.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--default,
-.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-label--default {
+.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--default {
   display: none;
 }
 
-.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--copied,
-.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-label--copied {
+.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--copied {
   display: inline;
   color: var(--tugx-block-tone-add-color);
-}
-
-/* Both labels render alongside the icon ("Copy" at rest, "Copied!"
- * during the post-click flash) so the button's shape is invariant
- * across states — matching the icon-text contract of the Tug body-
- * kind affordances (FileBlock fold cue, DiffBlock view-toggle,
- * TerminalBlock Copy). The default label uses tabular-like spacing
- * so the swap to "Copied!" doesn't shift the row width visibly. */
-.tugx-md-block .tugx-md-fenced-code-copy-label--default {
-  display: inline;
 }
 
 /* Code body — sits flush below the header. The wrapper owns the

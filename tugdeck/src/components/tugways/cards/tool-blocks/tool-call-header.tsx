@@ -46,13 +46,12 @@
 import "./tool-call-header.css";
 
 import React from "react";
-import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
+import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import {
   TOOL_CALL_PHASE_LABELS,
   toolCallPhaseVisual,
@@ -212,6 +211,12 @@ export const ToolCallHeader = React.forwardRef<
             {actions}
           </div>
         ) : null}
+        {/* Copy + Expand are the two standard header affordances —
+            icon-only (the `icon` subtype of the shared `BlockCopyButton`
+            / `BlockFoldCue`) and both at the `xs` scale so they read as a
+            matched pair and stay quiet across a run of blocks. The
+            icon+text forms of the same components serve the body kinds'
+            expanded controls. */}
         {hasCopy ? (
           <BlockCopyButton
             subtype="icon"
@@ -222,25 +227,20 @@ export const ToolCallHeader = React.forwardRef<
           />
         ) : null}
         {collapsible ? (
-          <span
-            className="tool-call-header-disclosure"
+          <BlockFoldCue
+            collapsed={collapsed}
+            onToggle={(next) => disclosure?.onToggle(next)}
+            collapsedLabel="Expand"
+            expandedLabel="Collapse"
+            ariaLabelExpand={`Expand ${toolName} tool call`}
+            ariaLabelCollapse={`Collapse ${toolName} tool call`}
+            size="xs"
+            subtype="icon"
+            // Whole-block collapse: the chrome + list windowing own the
+            // scroll response, so skip the body-fold scroll machinery.
+            stabilizeScroll={false}
             data-slot="tool-call-header-disclosure"
-            data-collapsed={collapsed ? "true" : undefined}
-          >
-            {/* Same primitive + size as the Copy button (icon / ghost / xs)
-                so the two affordances are pixel-identical at rest and on
-                hover. */}
-            <TugPushButton
-              subtype="icon"
-              emphasis="ghost"
-              size="xs"
-              icon={<ChevronDown />}
-              aria-label={
-                collapsed ? `Expand ${toolName} tool call` : `Collapse ${toolName} tool call`
-              }
-              onClick={() => disclosure?.onToggle(!collapsed)}
-            />
-          </span>
+          />
         ) : null}
       </span>
     </div>

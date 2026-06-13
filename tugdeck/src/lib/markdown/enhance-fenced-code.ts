@@ -22,7 +22,7 @@
  * or the windowing engine's prune step), the buttons are detached
  * and garbage-collected along with their listeners.
  *
- * Laws: [L06] appearance via DOM, not React state. The "Copied!"
+ * Laws: [L06] appearance via DOM, not React state. The "Copied"
  *       feedback toggles a class via DOM mutation; React never
  *       re-renders for this.
  *
@@ -181,25 +181,18 @@ export function enhanceFencedCode(container: HTMLElement): void {
     actions.className = "tugx-md-fenced-code-actions-cluster";
     actions.dataset.slot = "md-fenced-code-actions";
 
+    // Icon-only copy, matching the tool-block headers' `BlockCopyButton
+    // subtype="icon"`: a Copy glyph that swaps to a Check on success (the
+    // `is-copied` class drives the CSS swap). The accessible name carries
+    // the action; `title` gives a hover tooltip in lieu of a visible label.
     const button = document.createElement("button");
     button.type = "button";
     button.className = "tugx-md-fenced-code-copy";
     button.setAttribute("aria-label", "Copy code");
+    button.title = "Copy";
 
     button.appendChild(buildIcon(COPY_ICON_PATHS, "default"));
     button.appendChild(buildIcon(CHECK_ICON_PATHS, "copied"));
-
-    const labelDefault = document.createElement("span");
-    labelDefault.className =
-      "tugx-md-fenced-code-copy-label tugx-md-fenced-code-copy-label--default";
-    labelDefault.textContent = "Copy";
-    button.appendChild(labelDefault);
-
-    const labelCopied = document.createElement("span");
-    labelCopied.className =
-      "tugx-md-fenced-code-copy-label tugx-md-fenced-code-copy-label--copied";
-    labelCopied.textContent = "Copied!";
-    button.appendChild(labelCopied);
 
     if (codeEl !== null) attachCopyHandler(button, codeEl);
 

@@ -114,6 +114,30 @@ export interface BlockFoldCueProps {
    * a block-specific slot (e.g., `"diff-fold-cue"`, `"file-fold-cue"`).
    */
   "data-slot"?: string;
+  /**
+   * Affordance scale. `"2xs"` (default) is the body-kind action-row
+   * scale; `"xs"` is one step up, for the tool-call header where the
+   * cue sits beside an `xs` Copy and must match it.
+   */
+  size?: "2xs" | "xs";
+  /**
+   * Button shape. `"icon-text"` (default) shows the chevron + label —
+   * the body-kind action-row form. `"icon"` is glyph-only (chevron, no
+   * label) — the compact form for the tool-call header's whole-block
+   * Expand/Collapse, where a run of blocks would be too busy with text.
+   * The chevron still swaps direction to convey state.
+   */
+  subtype?: "icon-text" | "icon";
+  /**
+   * Whether the click runs through the body-fold scroll machinery —
+   * `usePositionStableClick` (hold the cue under the cursor across the
+   * height change) + `useScroller().disengage` (release follow-bottom).
+   * `true` (default) for a fold WITHIN a scrolling body. Pass `false`
+   * for the tool-call header's whole-block Expand/Collapse, where the
+   * surrounding chrome + list windowing own the scroll response and the
+   * body-fold machinery would fight it.
+   */
+  stabilizeScroll?: boolean;
   /** Optional className for cascade-scoped customization. */
   className?: string;
 }
@@ -130,6 +154,9 @@ export function BlockFoldCue({
   ariaLabelCollapse,
   ariaLabelExpand,
   "data-slot": dataSlot = "block-fold-cue",
+  size = "2xs",
+  subtype = "icon-text",
+  stabilizeScroll = true,
   className,
 }: BlockFoldCueProps): React.ReactElement {
   const buttonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -176,9 +203,11 @@ export function BlockFoldCue({
     // no-op when no host is above (standalone gallery, non-list
     // composition). The `"block-fold"` source tags the disengage in
     // the deck trace so a follow-bottom regression is traceable.
-    scroller.disengage("block-fold");
+    // Skipped for whole-block headers (`stabilizeScroll={false}`),
+    // where the chrome + list windowing own the scroll response.
+    if (stabilizeScroll) scroller.disengage("block-fold");
     onToggleRef.current(!collapsedRef.current);
-  }, [scroller]);
+  }, [scroller, stabilizeScroll]);
 
   // Resolve the visible label and, when the two fold states read
   // differently, the off-state label the button must also reserve
@@ -196,14 +225,14 @@ export function BlockFoldCue({
       className={className}
       data-slot={dataSlot}
       icon={collapsed ? <ChevronsDown /> : <ChevronsUp />}
-      subtype="icon-text"
+      subtype={subtype}
       emphasis="ghost"
-      size="2xs"
+      size={size}
       aria-expanded={!collapsed}
       aria-label={collapsed ? ariaLabelExpand : ariaLabelCollapse}
-      onClick={() => stableClick(handleClick)}
+      onClick={() => (stabilizeScroll ? stableClick(handleClick) : handleClick())}
       widthStabilize={
-        visibleLabel === offStateLabel
+        subtype === "icon" || visibleLabel === offStateLabel
           ? undefined
           : { alternateLabel: offStateLabel }
       }

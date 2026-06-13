@@ -161,18 +161,8 @@ body {
   display: none;
 }
 
-/* Chevron: down to expand (collapsed), up to collapse (expanded). The base
- * glyph is a ChevronDown; expanded rotates it to point up. */
-.tool-call-header-disclosure {
-  display: inline-flex;
-  align-items: center;
-}
-.tool-call-header-disclosure svg {
-  transition: transform 120ms ease;
-}
-.tool-call-header-disclosure:not([data-collapsed="true"]) svg {
-  transform: rotate(180deg);
-}
+/* The Expand/Collapse control is a `BlockFoldCue` (icon+text, its own
+ * ChevronsDown/Up swap) — no header-owned chevron rule needed. */
 
 /* Atom chips are inline SVGs; center them on the detail line-box rather
  * than letting them sit on the text baseline. */
