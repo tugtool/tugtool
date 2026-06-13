@@ -143,12 +143,22 @@ body {
   border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
-/* Actions slot — hosts the chrome's copy/fold cluster and the affordances
- * a body kind portals in (expanded). Layout only; children own appearance. */
+/* Actions slot — hosts the affordances a body kind portals in (expanded).
+ * Layout only; children own appearance. */
 .tool-call-header-actions-slot {
   display: inline-flex;
   align-items: center;
   gap: var(--tugx-toolheader-actions-gap);
+}
+
+/* When a body kind portals nothing (Read/Write/Bash/…), the slot stays
+ * empty. Drop it from the flex row so it adds no gap — that keeps the
+ * trailing Copy + chevron + divider pixel-identical to the collapsed
+ * state, so toggling the chevron doesn't shift them when the header
+ * content is unchanged. A body kind that DOES portal a control (Diff
+ * view-mode, JSON expand-all) fills the slot, so it shows. */
+.tool-call-header-actions-slot:empty {
+  display: none;
 }
 
 /* Chevron: down to expand (collapsed), up to collapse (expanded). The base
