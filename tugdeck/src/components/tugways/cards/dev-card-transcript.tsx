@@ -110,6 +110,7 @@ import {
   ToolBlockHistoryCollapse,
   ToolUseIdContext,
 } from "@/components/tugways/cards/tool-blocks/collapse-context";
+import { collapseDefaultFor } from "@/components/tugways/cards/tool-blocks/tool-collapse-defaults";
 import {
   ToolBlockExpansionState,
   type PersistedExpansionState,
@@ -790,13 +791,6 @@ interface CodeRowBodyProps {
    * Live only — a committed turn never has a pending dialog.
    */
   awaitingToolUseId?: string;
-  /**
-   * History-collapse ([P02]): true for replayed turns — every
-   * top-level tool block wraps in `ToolBlockHistoryCollapse`
-   * (default-collapsed, body materializes on expand). Live turns
-   * leave it unset and render exactly as before.
-   */
-  historyCollapsed?: boolean;
 }
 
 const CodeRowBody: React.FC<CodeRowBodyProps> = ({
@@ -805,7 +799,6 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   streamingStore,
   session,
   awaitingToolUseId,
-  historyCollapsed,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
   // `parentToolUseId` ([#step-17-5]). Subagent children render
@@ -891,25 +884,30 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       session,
       awaiting,
     );
-    // Replayed history mounts header-only ([P02]): the collapse
-    // provider owns the block's boolean (seeded from the card's
-    // expansion overrides) and the chrome withholds the body subtree
-    // while collapsed. The wrapped component's type and key are
-    // unchanged across collapse/expand AND across the live/historical
-    // split for a given turn (a turn's `replayed` flag never changes
-    // post-commit), so mount identity holds ([L26]).
-    // Provide the tool-call id around every top-level tool (a
-    // transparent context, no DOM) so the chrome stamps
-    // `data-tool-use-id` whether or not it's collapse-wrapped — the COPY
-    // walk resolves tool blocks by that id ([P01]). The provider carries
-    // the stable React key, preserving mount identity ([L26]).
+    // Collapse-by-default is governed by the per-tool table ([P06]/[P07]),
+    // not by replay state: a noisy file/shell tool mounts header-only
+    // whether it is in-flight or replayed, and the collapse provider owns
+    // its boolean (seeded from the card's expansion overrides), so the
+    // chrome withholds the body subtree while collapsed and the header
+    // keeps tracking phase via its lifecycle dot. The wrap policy is
+    // derived from the tool kind, which never changes for a given call,
+    // so it is stable across the live→committed transition and mount
+    // identity holds ([L26]). Non-noisy tools render unwrapped, exactly
+    // as a live block always has.
+    //
+    // The `ToolUseIdContext` provider wraps every top-level tool (a
+    // transparent context, no DOM) so the chrome stamps `data-tool-use-id`
+    // whether or not it's collapse-wrapped — the COPY walk resolves tool
+    // blocks by that id ([P01]). The provider carries the stable React
+    // key, preserving mount identity ([L26]).
+    const collapseByDefault = collapseDefaultFor(message.toolName);
     elements.push(
       <ToolUseIdContext.Provider
         key={message.messageKey}
         value={message.toolUseId}
       >
-        {historyCollapsed === true ? (
-          <ToolBlockHistoryCollapse toolUseId={message.toolUseId}>
+        {collapseByDefault ? (
+          <ToolBlockHistoryCollapse toolUseId={message.toolUseId} defaultCollapsed>
             <Component {...props} />
           </ToolBlockHistoryCollapse>
         ) : (
@@ -1138,7 +1136,6 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                   turnKey={turnKey}
                   streamingStore={streamingStore}
                   session={codeSessionStore}
-                  historyCollapsed={turn?.replayed === true}
                   awaitingToolUseId={
                     // Id-join the live pending dialog to its tool row so
                     // that row's lifecycle dot reads `awaiting` ([Q01]).
