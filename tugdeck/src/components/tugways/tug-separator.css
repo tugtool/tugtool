@@ -82,7 +82,7 @@
 .tug-separator-label {
   font-family: inherit;
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   line-height: 1;
   letter-spacing: 0.05em;
   text-transform: uppercase;

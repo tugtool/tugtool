@@ -34,7 +34,7 @@
 body {
   /* Tool name — the one typographic treatment for every tool's name. */
   --tugx-toolheader-name-size: var(--tug-font-size-sm);
-  --tugx-toolheader-name-weight: 600;
+  --tugx-toolheader-name-weight: var(--tug-font-weight-semibold);
 
   /* Identity + command share the mono family; the command row drops one
    * size step so a long command reads level with the sans name rather

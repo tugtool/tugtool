@@ -55,7 +55,7 @@ body {
    * a tagline. The tool name rides this size; the mono args row drops
    * one step (see `--tugx-toolblock-args-size`). */
   --tugx-toolblock-header-size:  var(--tug-font-size-sm);
-  --tugx-toolblock-name-weight:  600;
+  --tugx-toolblock-name-weight:  var(--tug-font-weight-semibold);
 
   /* Args text size — one step below the header (xs vs sm). The args
    * are monospace, and a mono glyph reads optically larger than the
@@ -81,7 +81,7 @@ body {
   --tugx-toolblock-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-toolblock-caution-radius:  var(--tug-radius-xs);
   --tugx-toolblock-caution-size:    var(--tug-font-size-2xs);
-  --tugx-toolblock-caution-weight:  600;
+  --tugx-toolblock-caution-weight:  var(--tug-font-weight-semibold);
   --tugx-toolblock-caution-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
   --tugx-toolblock-caution-color:   var(--tug7-element-global-text-normal-caution-rest);
 

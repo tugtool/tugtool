@@ -419,7 +419,7 @@
 .z2ws-rack-cell-value {
   color: var(--tug7-element-global-text-normal-default-rest);
   font-size: 0.6875rem;
-  font-weight: bold;
+  font-weight: var(--tug-font-weight-bold);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -429,7 +429,7 @@
 
 /* The PULSE item reads italic + normal weight — prose, not a figure. */
 .z2ws-rack-cell-value[data-kind="pulse"] {
-  font-weight: normal;
+  font-weight: var(--tug-font-weight-regular);
   font-style: italic;
 }
 

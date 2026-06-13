@@ -352,7 +352,7 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 /* ---- Sheet title ---- */
 
 .tug-sheet-title {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-size: 0.9375rem;
   margin: 0;
   line-height: 1.4;

@@ -36,7 +36,7 @@ body {
   box-sizing: border-box;
   flex-shrink: 0;
   font-family: inherit;
-  font-weight: 400;
+  font-weight: var(--tug-font-weight-regular);
   line-height: 1.4;
   text-align: center;
   background-color: var(--tugx-value-input-bg);

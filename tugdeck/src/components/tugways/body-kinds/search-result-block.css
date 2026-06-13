@@ -124,7 +124,7 @@ body {
 
 /* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-search-label {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   color: var(--tugx-block-text-color);
   white-space: nowrap;
   overflow: hidden;

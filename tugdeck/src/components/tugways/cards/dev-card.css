@@ -670,7 +670,7 @@
 }
 
 .dev-card-restoring-title {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-size: 1rem;
   line-height: 1.4;
   margin: 0;
@@ -768,7 +768,7 @@
    the section legends below read as one family of headings. */
 .dev-card-picker-label {
   font-size: var(--tug-font-size-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--tug7-element-field-text-normal-label-rest);
@@ -781,7 +781,7 @@
    weight so it reads as a transient status, not a second heading. */
 .dev-card-picker-scanning {
   margin-left: 0.5em;
-  font-weight: 400;
+  font-weight: var(--tug-font-weight-regular);
   text-transform: none;
   letter-spacing: normal;
   opacity: 0.65;

@@ -60,10 +60,10 @@ body {
    * default-toned rather than bright) so the index above reads as
    * supporting reference, not as a competing set of questions. */
   --tugx-question-heading-size:    0.875rem;
-  --tugx-question-heading-weight:  600;
+  --tugx-question-heading-weight:  var(--tug-font-weight-semibold);
   --tugx-question-heading-leading: 1.4;
   --tugx-question-rail-heading-size:   0.8125rem;
-  --tugx-question-rail-heading-weight: 500;
+  --tugx-question-rail-heading-weight: var(--tug-font-weight-medium);
   --tugx-question-rail-heading-color:  var(--tug7-element-global-text-normal-default-rest);
 
   /* Answer summary — sits below the rail heading a tone quieter
@@ -342,7 +342,7 @@ body {
   height: 100%;
   font-size:   var(--tugx-idialog-description-size);
   line-height: var(--tugx-idialog-description-leading);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   text-align:  center;
 }
 

@@ -207,7 +207,7 @@
 .tug-checkbox-label {
   font-family: inherit;
   font-size: 0.8125rem;
-  font-weight: 400;
+  font-weight: var(--tug-font-weight-regular);
   line-height: 1.4;
   letter-spacing: 0.01em;
   color: var(--tug7-element-field-text-normal-label-rest);

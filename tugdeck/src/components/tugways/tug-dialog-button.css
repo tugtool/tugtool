@@ -52,7 +52,7 @@ body {
 
   /* ---- Label typography (sentence-case, semibold, NOT uppercased) ---- */
   --tugx-dialog-button-label-size:    var(--tug-font-size-md);
-  --tugx-dialog-button-label-weight:  600;
+  --tugx-dialog-button-label-weight:  var(--tug-font-weight-semibold);
   --tugx-dialog-button-label-leading: 1.4;
 
   /* ---- Description typography (muted secondary explanation) ---- */

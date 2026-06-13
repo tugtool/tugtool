@@ -18,7 +18,7 @@
 body {
   --tugx-toolheader-diffstat-gap: var(--tug-space-2xs);
   --tugx-toolheader-diffstat-size: var(--tug-font-size-2xs);
-  --tugx-toolheader-diffstat-weight: 600;
+  --tugx-toolheader-diffstat-weight: var(--tug-font-weight-semibold);
   --tugx-toolheader-diffstat-add: var(--tugx-block-tone-add-color);
   --tugx-toolheader-diffstat-remove: var(--tugx-block-tone-remove-color);
 }

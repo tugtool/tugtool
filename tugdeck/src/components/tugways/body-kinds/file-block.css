@@ -47,7 +47,7 @@ body {
 
   /* Header — file-specific identity (path + lang badge + counts) */
   --tugx-file-path-color:   var(--tug7-element-global-text-normal-default-rest);
-  --tugx-file-path-weight:  600;
+  --tugx-file-path-weight:  var(--tug-font-weight-semibold);
   --tugx-file-counts-size:  var(--tug-font-size-2xs);
 
   /* Language pill */

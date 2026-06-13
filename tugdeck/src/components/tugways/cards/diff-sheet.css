@@ -89,7 +89,7 @@
   flex: 0 0 auto;
   width: 1.1em;
   text-align: center;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 .diff-sheet-file-status[data-status="added"] {

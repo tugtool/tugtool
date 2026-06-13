@@ -65,7 +65,7 @@ body {
 
 .dev-session-init-banner-field-label {
   color: var(--tugx-banner-label-color);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 .dev-session-init-banner-field-value {

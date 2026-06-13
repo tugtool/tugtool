@@ -335,7 +335,7 @@ body {
   fill: var(--tugx-gauge-value-text-color);
   font-family: var(--tug-font-mono, monospace);
   font-size: var(--tugx-gauge-arc-value-text-size-detailed);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -365,7 +365,7 @@ body {
 .tug-arc-gauge-value {
   color: var(--tugx-gauge-value-text-color);
   font-size: var(--tugx-gauge-value-text-size-compact);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 /* @tug-renders-on var(--tugx-gauge-surface) */

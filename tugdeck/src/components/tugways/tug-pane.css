@@ -252,7 +252,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--tug-font-size-sm);
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   color: var(--tugx-pane-title-fg-inactive);
   pointer-events: none;
 }

@@ -49,6 +49,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
 export const FONT_STACKS: Record<string, string> = {
   "plex-sans": '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
   "inter": '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  "plex-mono": '"IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace',
   "hack": '"Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace',
 };
 
@@ -56,6 +57,7 @@ export const FONT_STACKS: Record<string, string> = {
 export const FONT_DEFAULT_SIZES: Record<string, number> = {
   "plex-sans": 14,
   "inter": 14,
+  "plex-mono": 13,
   "hack": 13,
 };
 

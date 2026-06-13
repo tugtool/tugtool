@@ -51,6 +51,7 @@ import "./settings-general-body.css";
 const EDITOR_FONT_OPTIONS: TugPopupButtonItem<string>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: "plex-sans", label: "IBM Plex Sans" },
   { action: TUG_ACTIONS.SET_VALUE, value: "inter", label: "Inter" },
+  { action: TUG_ACTIONS.SET_VALUE, value: "plex-mono", label: "IBM Plex Mono" },
   { action: TUG_ACTIONS.SET_VALUE, value: "hack", label: "Hack (mono)" },
 ];
 

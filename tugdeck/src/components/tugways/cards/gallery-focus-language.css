@@ -71,7 +71,7 @@
   margin-bottom: 10px;
 }
 .cg-focus-language .fl-section-title {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 .cg-focus-language .fl-branch-tag {
   display: inline-block;
@@ -79,7 +79,7 @@
   padding: 1px 7px;
   border-radius: 999px;
   font-size: 0.68rem;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   vertical-align: middle;
@@ -137,7 +137,7 @@
   border: 1px solid transparent;
   background: transparent;
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -268,7 +268,7 @@
   justify-content: center;
   color: transparent;
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: var(--tug-font-weight-bold);
 }
 /* checked = FILL on the box (role-coloured when the control carries a role) */
 .cg-focus-language .fl-check[data-checked="true"] {
@@ -474,12 +474,12 @@
   padding: 5px 14px;
   border-radius: 7px;
   font-size: 0.78rem;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
 }
 .cg-focus-language .fl-tab[data-fl-selected="true"] {
   background: var(--fl-sel);
   color: var(--fl-thumb-on);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 /* ---- 7 · OptionGroup (multiple · native = a solid fill) ---- */

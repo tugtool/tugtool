@@ -46,7 +46,7 @@
 body {
   /* Header — diff-specific identity (path + stats badge) */
   --tugx-diff-path-color:  var(--tug7-element-global-text-normal-default-rest);
-  --tugx-diff-path-weight: 600;
+  --tugx-diff-path-weight: var(--tug-font-weight-semibold);
   --tugx-diff-stats-size:  var(--tug-font-size-2xs);
   --tugx-diff-stats-font:  var(--tug-font-family-mono);
 

@@ -102,7 +102,7 @@ body {
 /* ---- Title (toast message) ---- */
 
 .tug-bulletin [data-title] {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-size: 1rem;
   line-height: 1.4;
   margin: 0;
@@ -131,7 +131,7 @@ body {
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   line-height: 1.4;
   cursor: pointer;
   border: 1px solid var(--tugx-bulletin-border);

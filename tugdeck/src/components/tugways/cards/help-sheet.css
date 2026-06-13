@@ -39,7 +39,7 @@
 .help-sheet-section-title {
   padding: 1.5rem 0 0.5rem;
   font-size: var(--tug-font-size-xs);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.6;
@@ -61,7 +61,7 @@
 }
 
 .help-sheet-shortcut dt {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   white-space: nowrap;
 }
 
@@ -75,7 +75,7 @@
    renders them uniformly. */
 .help-sheet-shortcut kbd {
   font-family: inherit;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 /* Footer note linking to the unsupported-commands doc. */
@@ -104,7 +104,7 @@
 }
 
 .help-sheet-meta-version {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   opacity: 1;
 }
 

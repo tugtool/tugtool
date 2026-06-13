@@ -162,7 +162,7 @@ body {
 /* ---- Title ---- */
 
 .tug-alert-title {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-size: 1rem;
   margin: 0 0 var(--tugx-alert-space-a) 0;
   /* Vertically center title with icon when no message */

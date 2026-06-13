@@ -56,7 +56,7 @@ body {
 
   /* Structure */
   --tugx-json-key-color:    var(--tug7-element-global-text-normal-default-rest);
-  --tugx-json-key-weight:   600;
+  --tugx-json-key-weight:   var(--tug-font-weight-semibold);
   --tugx-json-punct-color:  var(--tug7-element-global-text-normal-subtle-rest);
   --tugx-json-count-color:  var(--tug7-element-global-text-normal-muted-rest);
   --tugx-json-count-size:   var(--tug-font-size-2xs);

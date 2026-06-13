@@ -114,7 +114,7 @@ body {
 
 /* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-agent-label {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   color: var(--tugx-block-text-color);
   white-space: nowrap;
   overflow: hidden;
@@ -124,7 +124,7 @@ body {
 
 /* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-agent-type {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   color: var(--tugx-agent-type-color);
   white-space: nowrap;
 }

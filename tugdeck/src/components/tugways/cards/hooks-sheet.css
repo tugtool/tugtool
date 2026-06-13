@@ -58,7 +58,7 @@
 }
 
 .hooks-sheet-event {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   flex: 0 0 auto;
 }
 

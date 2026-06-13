@@ -60,7 +60,7 @@ body {
 /* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
 .dev-route-indicator-badge-report-title {
   color: var(--tug7-element-global-text-normal-default-rest);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 /* Running / validated version rows — a label column and a value. */

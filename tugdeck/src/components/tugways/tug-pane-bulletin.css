@@ -113,7 +113,7 @@ body {
 /* ---- Title / description ---- */
 
 .tug-pane-bulletin [data-title] {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-size: 0.9375rem;
   line-height: 1.4;
   margin: 0;
@@ -143,7 +143,7 @@ body {
   background-color: transparent;
   color: var(--tugx-pane-bulletin-fg);
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   line-height: 1.4;
   cursor: pointer;
 }

@@ -45,7 +45,7 @@
   display: block;
   width: 100%;
   font-family: inherit;
-  font-weight: 400;
+  font-weight: var(--tug-font-weight-regular);
   line-height: 1.4;
   letter-spacing: 0.01em;
 

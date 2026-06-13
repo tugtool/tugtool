@@ -109,5 +109,5 @@ body {
    --------------------------------------------------------------------------- */
 
 .tug-completion-match {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }

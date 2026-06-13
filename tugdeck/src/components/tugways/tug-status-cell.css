@@ -123,7 +123,7 @@
 .dev-telemetry-status-cell[data-priority="jobs"]
   .tug-progress-indicator-label-active {
   font-size: 0.8125rem;
-  font-weight: bold;
+  font-weight: var(--tug-font-weight-bold);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -144,7 +144,7 @@
 .dev-telemetry-status-value {
   color: var(--tug7-element-global-text-normal-default-rest);
   font-size: 0.8125rem;
-  font-weight: bold;
+  font-weight: var(--tug-font-weight-bold);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -268,7 +268,7 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-family: var(--tug-font-mono, monospace);
   font-size: 0.5625rem;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   padding: 0 4px;

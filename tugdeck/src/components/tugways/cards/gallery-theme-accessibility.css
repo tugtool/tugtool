@@ -56,7 +56,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-erp-subtitle {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -147,7 +147,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-token-header {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -215,7 +215,7 @@
 }
 
 .gta-dash-summary-count {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-family: var(--tug-font-family-mono, monospace);
 }
 
@@ -235,7 +235,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-dash-col-header {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -288,7 +288,7 @@
   align-items: center;
   justify-content: center;
   font-size: 9px;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-family: var(--tug-font-family-sans);
   letter-spacing: 0.04em;
   border-radius: var(--tug-radius-xs);
@@ -353,7 +353,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-cvd-token-header {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -397,7 +397,7 @@
   height: 14px;
   border-radius: 50%;
   font-size: 9px;
-  font-weight: 700;
+  font-weight: var(--tug-font-weight-bold);
   background-color: var(--tug7-surface-tone-primary-normal-caution-rest);
   color: var(--tug7-element-tone-text-normal-caution-rest);
   border: 1px solid var(--tug7-element-tone-border-normal-caution-rest);
@@ -453,7 +453,7 @@
 .gta-diag-section-title {
   font-size: 11px;
   font-family: var(--tug-font-family-sans);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   color: var(--tug7-element-global-text-normal-muted-rest);
   user-select: none;
 }
@@ -513,7 +513,7 @@
 .gta-doc-name {
   font-size: 12px;
   font-family: var(--tug-font-family-sans);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   color: var(--tug7-element-global-text-normal-default-rest);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -524,7 +524,7 @@
 .gta-doc-source-label {
   font-size: 10px;
   font-family: var(--tug-font-family-sans);
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   color: var(--tug7-element-global-text-normal-muted-rest);
   background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
   border: 1px solid var(--tug7-element-global-border-normal-muted-rest);

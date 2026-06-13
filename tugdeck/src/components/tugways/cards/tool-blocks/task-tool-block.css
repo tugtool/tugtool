@@ -34,7 +34,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 /* The run status — colour-coded by the `data-agent-status` bucket,

@@ -88,7 +88,7 @@ body {
   /* Exit / interrupted badges — terminal-specific geometry */
   --tugx-term-exit-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-term-exit-radius:  var(--tug-radius-xs);
-  --tugx-term-exit-weight:  600;
+  --tugx-term-exit-weight:  var(--tug-font-weight-semibold);
 
   /* Truncation strip size — used for the "lines truncated" hint */
   --tugx-term-truncation-size: var(--tug-font-size-2xs);

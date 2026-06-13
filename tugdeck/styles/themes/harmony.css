@@ -43,7 +43,7 @@ body {
 
   /* Font */
   --tug-font-family-editor: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
-  --tug-font-family-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+  --tug-font-family-mono: "IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
   --tug-font-family-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --tug-font-size-8xs: 5px;
   --tug-font-size-7xs: 6px;

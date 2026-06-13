@@ -103,7 +103,7 @@
 
 .gallery-text-editor-row-label {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
   color: var(--tug7-element-global-text-normal-default-rest);
 }

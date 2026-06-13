@@ -60,11 +60,11 @@ body {
 
   /* Label — strong "Thinking" header text */
   --tugx-thinking-label-size:   var(--tug-font-size-sm);
-  --tugx-thinking-label-weight: 600;
+  --tugx-thinking-label-weight: var(--tug-font-weight-semibold);
 
   /* Preview — collapsed-only one-line summary */
   --tugx-thinking-preview-size:   var(--tug-font-size-sm);
-  --tugx-thinking-preview-weight: 400;
+  --tugx-thinking-preview-weight: var(--tug-font-weight-regular);
 
   /* Content — italic body for streaming reasoning */
   --tugx-thinking-content-padding: var(--tug-space-xs) var(--tug-space-md) var(--tug-space-md);

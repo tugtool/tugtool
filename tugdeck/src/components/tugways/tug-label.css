@@ -45,7 +45,7 @@
   align-items: flex-start;
   gap: 0.35em;
   font-family: inherit;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   line-height: 1.4;
   letter-spacing: 0.01em;
   color: var(--tug7-element-field-text-normal-label-rest);
@@ -112,13 +112,13 @@
    ========================================================================= */
 
 .tug-label-emphasis-shout {
-  font-weight: 700;
+  font-weight: var(--tug-font-weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .tug-label-emphasis-strong {
-  font-weight: 700;
+  font-weight: var(--tug-font-weight-bold);
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
@@ -140,7 +140,7 @@
    the `calm` muted color. For descriptive captions beside an action. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-label-emphasis-proposal {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   font-variant-caps: all-small-caps;
   font-size: 1.0em;
   letter-spacing: 0.06em;

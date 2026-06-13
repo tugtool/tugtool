@@ -325,7 +325,7 @@ body {
   background-color: var(--tugx-tab-badge-bg);
   color: var(--tug7-element-global-text-normal-inverse-rest);
   font-size: var(--tug-font-size-2xs);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   line-height: 1;
   white-space: nowrap;
 }

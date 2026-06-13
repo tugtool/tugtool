@@ -125,7 +125,7 @@
 }
 
 .tug-radio-item-description {
-  font-weight: 400;
+  font-weight: var(--tug-font-weight-regular);
   font-size: var(--tug-font-size-2xs);
   line-height: 1.35;
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -138,7 +138,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-radio-group-label {
   font-family: inherit;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   font-size: var(--tug-font-size-sm);
   line-height: 1.4;
   letter-spacing: 0.01em;

@@ -179,7 +179,7 @@ body {
   align-items: center;
   justify-content: center;
   border-radius: 2px;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   font-family: inherit;
   line-height: 1;
   white-space: nowrap;
@@ -374,7 +374,7 @@ body {
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-badge-label {
   font-size: var(--tugx-badge-label-text-size);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: var(--tugx-badge-label-tracking);
   line-height: 1;

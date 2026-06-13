@@ -181,13 +181,13 @@
   justify-content: flex-end;
   align-items: baseline;
   color: var(--tug7-element-global-text-normal-muted-rest);
-  font-weight: 400;
+  font-weight: var(--tug-font-weight-regular);
 }
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
 .dev-popover-row-value {
   color: var(--tug7-element-global-text-normal-default-rest);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   text-align: right;
   /* A value like "0h 0m 02s" carries spaces — it must read as one
      unit, never broken across lines when the column is tight. */

@@ -114,7 +114,7 @@ body {
 
 /* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-todo-label {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   color: var(--tugx-block-text-color);
   white-space: nowrap;
   overflow: hidden;
@@ -202,7 +202,7 @@ body {
 .tugx-todo-row[data-status="in_progress"] {
   background: var(--tugx-todo-active-bg);
   color: var(--tugx-todo-active-color);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 /* The in_progress row's icon is a {@link TugProgressIndicator} ring

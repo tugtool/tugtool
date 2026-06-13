@@ -28,13 +28,13 @@ body {
   --tugx-transcript-icon-column-gap:    var(--tug-space-xs);
   --tugx-transcript-icon-size:          var(--tug-icon-size-md);
   --tugx-transcript-header-gap:         var(--tug-space-sm);
-  --tugx-transcript-body-margin-top:    var(--tug-space-2xs);
+  --tugx-transcript-body-margin-top:    var(--tug-space-lg);
   --tugx-transcript-body-line-height:   1.5;
   --tugx-transcript-controls-margin-top: var(--tug-space-xs);
   --tugx-transcript-controls-gap:       var(--tug-space-sm);
 
   --tugx-transcript-identifier-color:     var(--tug7-element-global-text-normal-default-rest);
-  --tugx-transcript-identifier-weight:    600;
+  --tugx-transcript-identifier-weight:    var(--tug-font-weight-semibold);
   /* Identifier sits at `lg` (16px against Dev's 14px body). The
    * 2px bump above body text reads as a clear "this is a section
    * header" landmark when scanning a dense transcript. The icon's

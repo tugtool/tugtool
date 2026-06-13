@@ -15,7 +15,7 @@
 .agents-sheet-section {
   padding: 1.75rem 0 0.35rem;
   font-size: var(--tug-font-size-xs);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.6;

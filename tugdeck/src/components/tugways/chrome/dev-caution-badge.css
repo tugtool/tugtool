@@ -27,7 +27,7 @@ body {
   --tugx-caut-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-caut-radius:  var(--tug-radius-xs);
   --tugx-caut-size:    var(--tug-font-size-2xs);
-  --tugx-caut-weight:  600;
+  --tugx-caut-weight:  var(--tug-font-weight-semibold);
 }
 
 .dev-caution-badge {

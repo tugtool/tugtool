@@ -92,7 +92,7 @@
   border: none;
   cursor: pointer;
   font-family: inherit;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   white-space: nowrap;
   color: var(--tug7-element-segment-text-normal-plain-rest);
   gap: 0.375rem;
@@ -345,7 +345,7 @@
   align-self: center;
   line-height: 1;
   margin-right: 0.15em;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   color: var(--tug7-element-control-text-ghost-action-rest);
   opacity: 0.55;
   pointer-events: none;
@@ -360,7 +360,7 @@
   align-self: center;
   line-height: 1;
   margin-left: 0.15em;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   color: var(--tug7-element-control-text-ghost-action-rest);
   opacity: 0.55;
   pointer-events: none;

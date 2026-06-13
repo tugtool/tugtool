@@ -40,7 +40,7 @@ body {
   gap: 8px;
   padding: 16px 24px;
   font-size: 0.875rem;
-  font-weight: 700;
+  font-weight: var(--tug-font-weight-bold);
   line-height: 1.4;
   /* @tug-renders-on: --tugx-banner-strip-bg */
   background-color: var(--tugx-banner-strip-bg);

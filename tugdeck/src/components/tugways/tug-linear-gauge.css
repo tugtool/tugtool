@@ -248,7 +248,7 @@ body {
 /* @tug-renders-on var(--tugx-gauge-surface) */
 .tug-linear-gauge-value {
   color: var(--tugx-gauge-value-text-color);
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
 }
 
 .tug-linear-gauge[data-density="compact"] .tug-linear-gauge-value {

@@ -169,7 +169,7 @@ body {
   cursor: pointer;
   font-family: inherit;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   line-height: 1.4;
   text-align: left;
   color: var(--tug7-element-field-text-normal-label-rest);

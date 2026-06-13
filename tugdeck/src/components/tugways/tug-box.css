@@ -72,7 +72,7 @@
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-box-legend {
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--tug7-element-field-text-normal-label-rest);
@@ -84,7 +84,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-box-label-above {
   display: block;
-  font-weight: 600;
+  font-weight: var(--tug-font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--tug7-element-field-text-normal-label-rest);

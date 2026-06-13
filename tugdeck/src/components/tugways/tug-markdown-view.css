@@ -61,8 +61,8 @@ body {
    * they track context, and the whole h1–h3 span is ~4px: the hierarchy
    * is carried by weight (700 down to 600) and the generous heading
    * margin-top, not by scale. */
-  --tugx-md-h1-size: 1.35em;
-  --tugx-md-h2-size: 1.18em;
+  --tugx-md-h1-size: 1.25em;
+  --tugx-md-h2-size: 1.15em;
   --tugx-md-h3-size: 1.05em;
   --tugx-md-h4-size: 1em;
   --tugx-md-h5-size: 1em;
@@ -70,15 +70,15 @@ body {
   --tugx-md-heading-line-height:   1.3;
   --tugx-md-heading-margin-top:    1.5em;
   --tugx-md-heading-margin-bottom: 0.45em;
-  --tugx-md-h1-weight: 700;
-  --tugx-md-h2-weight: 700;
-  --tugx-md-h3-weight: 700;
-  --tugx-md-h4-weight: 600;
-  --tugx-md-h5-weight: 600;
-  --tugx-md-h6-weight: 600;
+  --tugx-md-h1-weight: var(--tug-font-weight-bold);
+  --tugx-md-h2-weight: var(--tug-font-weight-bold);
+  --tugx-md-h3-weight: var(--tug-font-weight-bold);
+  --tugx-md-h4-weight: var(--tug-font-weight-semibold);
+  --tugx-md-h5-weight: var(--tug-font-weight-semibold);
+  --tugx-md-h6-weight: var(--tug-font-weight-semibold);
 
   /* Inline emphasis */
-  --tugx-md-strong-weight:            700;
+  --tugx-md-strong-weight:            var(--tug-font-weight-bold);
   --tugx-md-em-style:                 italic;
   --tugx-md-strikethrough-decoration: line-through;
 
@@ -115,7 +115,7 @@ body {
    * directly from `--tug-button-2xs-*` global metric tokens
    * published by `tug-button.css`, so a future TugButton size
    * change propagates automatically. */
-  --tugx-md-fenced-code-lang-weight: 600;
+  --tugx-md-fenced-code-lang-weight: var(--tug-font-weight-semibold);
   --tugx-md-fenced-code-copy-radius: var(--tug-radius-lg);
 
   /* Approximate height of `.tugx-md-fenced-code-header` — used by
@@ -146,7 +146,7 @@ body {
    * isn't merged away by the first body row; the stripe tone is the
    * raised surface so the alternation reads against the inset block
    * background, not the same inset that base rows show through. */
-  --tugx-md-table-header-weight: 600;
+  --tugx-md-table-header-weight: var(--tug-font-weight-semibold);
   --tugx-md-table-cell-padding:  var(--tug-space-sm) var(--tug-space-md);
   --tugx-md-table-margin:        var(--tug-space-md);
   --tugx-md-table-scroll-max-h:  60vh;
@@ -481,7 +481,7 @@ body {
   cursor: pointer;
   font-family: inherit;
   font-size: var(--tug-button-2xs-font-size);
-  font-weight: 500;
+  font-weight: var(--tug-font-weight-medium);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   line-height: 1;
