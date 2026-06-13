@@ -265,6 +265,11 @@ These inform the candidate option sets the gallery cards present; the *decisions
 
 **Implications:** `ToolCallHeader` meta cluster + a new collapsed-summary slot; `tool-call-header.css` font sizing bumped; result summaries computed per tool from existing result metadata.
 
+**Resolved ([#step-10], gallery `gallery-tool-block-collapsed`, commit `17ef7cb6`):** the vetted design is the **Quiet Line** —
+- **Layout:** one calm row per tool — lifecycle dot, per-tool icon, tool name, target detail (path → basename, command → full), one-line result summary, then the affordances. Color comes only from the lifecycle dot. A long detail **wraps to more rows** (no truncation), while the dot, icon, summary, and affordances stay pinned to the **top row**. Columns are disciplined by a grid: the flow defines the column tracks and each row is a `subgrid`, so the result summary and the affordances hold aligned columns across every row while the detail wraps within its own flexible column. In-flight calls (no result yet) keep an empty result cell so alignment holds.
+- **Affordances — exactly two, always visible: Copy + Expand.** Uniform across all tools (no per-tool button set — it would reintroduce the noise the Quiet Line removes). The lifecycle **dot** carries status; the path/URL **chip** carries "open." The Expand chevron points **down** to expand (up to collapse). Tool-specific richness (open file, follow URL, sub-copies) lives in the **expanded body** via the existing body-kind affordance portal / clickable chips — never the collapsed bar.
+- **Copy payload = command + result, always** — independent of collapsed/expanded state (tying the clipboard to a transient view state is too clever / surprising). Wired via the existing `toolCallToMarkdown(call)` serializer, so collapsed-Copy, expanded-Copy, and selection-copy all yield identical markdown — one source of truth.
+
 #### [P10] Skill slash-commands classify as command atoms (DECIDED) {#p10-skill-atoms}
 
 **Decision:** Typing a skill name (`/devise`) in the dev prompt entry produces a slash-command atom that routes to claude, not a file atom — by namespace-aware matching against the merged catalog ([Q01]).
@@ -367,7 +372,7 @@ Below the windowed thresholds the transcript mounts every cell but defers off-sc
 | #step-7 | Range→markdown copy reconstruction | done | dd95862f |
 | #step-8 | Markdown integration checkpoint | done | N/A (verify) |
 | #step-9 | Per-tool collapse-default table | done | 2b49b3bc |
-| #step-10 | Collapsed-header redesign spike + gallery vet | pending | — |
+| #step-10 | Collapsed-header redesign spike + gallery vet | done | 17ef7cb6 |
 | #step-11 | Apply collapsed-header redesign + font sizing | pending | — |
 | #step-12 | Error coloring = header-only | pending | — |
 | #step-13 | Tool-block integration checkpoint | pending | — |
