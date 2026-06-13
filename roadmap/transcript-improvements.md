@@ -363,9 +363,9 @@ Below the windowed thresholds the transcript mounts every cell but defers off-sc
 | #step-3 | Perf integration checkpoint — blanks "greatly improved", user-verified in app | done | c9effaa8 |
 | #step-4 | Markdown typography spike + gallery vet (Transcript Markdown card) | done | e79d4685 |
 | #step-5 | Apply header scale + inline-code tokens + wrapper spacing model | done | e79d4685 |
-| #step-6 | Source-offset attribution on rendered blocks | pending | — |
-| #step-7 | Range→markdown copy reconstruction | pending | — |
-| #step-8 | Markdown integration checkpoint | pending | — |
+| #step-6 | Source-offset attribution on rendered blocks | done | 29c80f73 |
+| #step-7 | Range→markdown copy reconstruction | done | dd95862f |
+| #step-8 | Markdown integration checkpoint | done | N/A (verify) |
 | #step-9 | Per-tool collapse-default table | pending | — |
 | #step-10 | Collapsed-header redesign spike + gallery vet | pending | — |
 | #step-11 | Apply collapsed-header redesign + font sizing | pending | — |

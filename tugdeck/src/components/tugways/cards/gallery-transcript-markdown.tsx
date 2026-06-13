@@ -26,6 +26,10 @@
 import React from "react";
 
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import {
+  type DocBlock,
+  selectionToTranscriptMarkdown,
+} from "@/lib/markdown/range-to-blocks";
 
 /** A tiny inline-SVG data URI so the image example renders (not broken). */
 const SAMPLE_IMG =
@@ -118,9 +122,53 @@ A claim that needs a citation.[^note] Another sentence follows.
 The end.`;
 
 /**
+ * App-test probe surface ([Q02] DOM half). The transcript COPY path's
+ * `range-to-blocks` DOM walk maps a live `Range` to the touched
+ * `.tugx-md-block` wrappers and slices their source — logic that can't
+ * run under `bun:test` (no DOM). This card renders that exact markdown
+ * DOM, so the `range-to-blocks` app-test drives a selection here and
+ * invokes the *production* reconstruction through this probe, against
+ * the real rendered wrappers. Set only while the card is mounted; it is
+ * a dev/test surface (gallery is not a production runtime path).
+ */
+interface TranscriptCopyProbe {
+  /** The fixture's source markdown — the expected slice domain. */
+  source: string;
+  /** Reconstruct markdown for the current window selection, or `null`. */
+  run: () => string | null;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __tugTranscriptCopyProbe: TranscriptCopyProbe | undefined;
+}
+
+/**
  * GalleryTranscriptMarkdown — the complete transcript markdown fixture.
  */
 export function GalleryTranscriptMarkdown(): React.ReactElement {
+  const columnRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useLayoutEffect(() => {
+    const column = columnRef.current;
+    if (column === null) return;
+    // One markdown doc block, mirroring a single `assistant_text`
+    // message: the column's lone child is the markdown container whose
+    // `.tugx-md-block` wrappers carry the Step 6 `data-md-*` offsets.
+    const docBlocks: DocBlock[] = [{ kind: "markdown", source: SAMPLE }];
+    globalThis.__tugTranscriptCopyProbe = {
+      source: SAMPLE,
+      run: () => {
+        const sel = window.getSelection();
+        if (sel === null) return null;
+        return selectionToTranscriptMarkdown(sel, column, docBlocks);
+      },
+    };
+    return () => {
+      globalThis.__tugTranscriptCopyProbe = undefined;
+    };
+  }, []);
+
   return (
     <div
       className="cg-content"
@@ -133,6 +181,7 @@ export function GalleryTranscriptMarkdown(): React.ReactElement {
           14px is the transcript root size; `dev-card-transcript-code-body`
           is the transcript's markdown scope. */}
       <div
+        ref={columnRef}
         style={{
           height: "100%",
           minWidth: 0,

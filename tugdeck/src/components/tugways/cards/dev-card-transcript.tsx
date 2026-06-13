@@ -117,7 +117,15 @@ import {
   useComponentStatePreservation,
   useSavedComponentState,
 } from "@/components/tugways/use-component-state-preservation";
-import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
+import {
+  groupToolCallsByParent,
+  toolCallToMarkdown,
+  turnEntryToMarkdown,
+} from "@/components/tugways/cards/turn-entry-markdown";
+import {
+  type DocBlock,
+  selectionToTranscriptMarkdown,
+} from "@/lib/markdown/range-to-blocks";
 import { TieredCell } from "@/components/tugways/cards/transcript-tier";
 import { previewTextForMessages } from "@/lib/transcript-preview";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
@@ -137,7 +145,7 @@ import {
   type RowParseCountersSnapshot,
 } from "@/lib/markdown/parse-counters";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
-import type { Message } from "@/lib/code-session-store/types";
+import type { Message, ToolUseMessage } from "@/lib/code-session-store/types";
 import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
@@ -288,7 +296,19 @@ interface TranscriptCellProps {
   tabIndex: -1;
 }
 
-function useTranscriptCellMenu(): {
+/**
+ * Resolve a live selection within the cell body to markdown. Returns
+ * `null` when nothing copyable was touched (the hook then falls back to
+ * plain text as a last-resort guard). The assistant cell supplies a
+ * resolver that reconstructs markdown across the row's blocks ([P03]);
+ * the user cell omits it and copies plain text.
+ */
+type CopyMarkdownResolver = (
+  bodyEl: HTMLElement,
+  selection: Selection,
+) => string | null;
+
+function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver): {
   ResponderScope: React.FC<{ children: React.ReactNode }>;
   cellProps: TranscriptCellProps;
   bodyRef: React.MutableRefObject<HTMLElement | null>;
@@ -296,6 +316,11 @@ function useTranscriptCellMenu(): {
 } {
   const bodyRef = useRef<HTMLElement | null>(null);
   const adapterRef = useRef<TextSelectionAdapter | null>(null);
+  // Live-ref the resolver ([L07]) so `handleCopy` keeps a stable
+  // identity while always invoking the latest closure (which captures
+  // the current messages / store).
+  const resolveCopyRef = useRef(resolveCopyMarkdown);
+  resolveCopyRef.current = resolveCopyMarkdown;
 
   // Build the adapter once the body element is available. Re-runs
   // whenever the body element identity changes (rare for inline-rendered
@@ -310,7 +335,21 @@ function useTranscriptCellMenu(): {
   const handleCopy = useCallback((): ActionHandlerResult => {
     const sel = window.getSelection();
     if (sel === null || sel.rangeCount === 0 || sel.isCollapsed) return;
-    const text = sel.toString();
+    // Reconstruct markdown for the selection ([P03] — no plain-text
+    // fallback for the markdown path). The plain-text branch is only a
+    // last-resort guard for an unexpected DOM shape or a cell with no
+    // resolver (the user row).
+    const body = bodyRef.current;
+    const resolve = resolveCopyRef.current;
+    let text: string | null = null;
+    if (body !== null && resolve !== undefined) {
+      try {
+        text = resolve(body, sel);
+      } catch {
+        text = null;
+      }
+    }
+    if (text === null) text = sel.toString();
     if (text === "") return;
     void navigator.clipboard?.writeText(text);
   }, []);
@@ -810,6 +849,55 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   return <>{elements}</>;
 };
 
+/**
+ * Describe the body's top-level blocks for COPY's selection→markdown
+ * reconstruction. Mirrors `CodeRowBody`'s top-level iteration exactly —
+ * one entry per rendered block, in order — so entry `i` aligns with the
+ * body's i-th DOM child. `assistant_text` → markdown (source read live
+ * from the streaming store, the string its `data-md-*` offsets index
+ * into); top-level `tool_use` → tool (serialized via the same
+ * `turnEntryToMarkdown` per-tool path); thinking and the compaction
+ * divider → omitted from copy. Messages the renderer skips (user rows,
+ * non-compact notes, subagent tool calls) produce no entry, preserving
+ * the 1:1 alignment.
+ */
+function buildTranscriptDocBlocks(
+  messages: ReadonlyArray<Message>,
+  turnKey: string,
+  streamingStore: PropertyStore,
+): DocBlock[] {
+  const toolCalls = messages.filter(
+    (m): m is ToolUseMessage => m.kind === "tool_use",
+  );
+  const { childrenByParent } = groupToolCallsByParent(toolCalls);
+  const blocks: DocBlock[] = [];
+  for (const message of messages) {
+    if (message.kind === "user_message") continue;
+    if (message.kind === "system_note") {
+      if (message.source === "compact") blocks.push({ kind: "other" });
+      continue;
+    }
+    if (message.kind === "assistant_thinking") {
+      blocks.push({ kind: "thinking" });
+      continue;
+    }
+    if (message.kind === "assistant_text") {
+      const path = `turn.${turnKey}.message.${message.messageKey}.text`;
+      const source = (streamingStore.get(path) as string | undefined) ?? "";
+      blocks.push({ kind: "markdown", source });
+      continue;
+    }
+    // tool_use — top-level only; subagent children render inside their parent.
+    if (message.parentToolUseId !== undefined) continue;
+    const call = message;
+    blocks.push({
+      kind: "tool",
+      serialize: () => toolCallToMarkdown(call, childrenByParent),
+    });
+  }
+  return blocks;
+}
+
 interface AssistantTurnCellProps extends TugListViewCellProps<DevTranscriptDataSource> {
   /** Resolved row descriptor — see {@link UserMessageCellProps.row}. */
   row: DevRowDescriptor;
@@ -962,8 +1050,21 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
     !isCommitted,
   );
 
+  // Reconstruct markdown for any selection in this row ([P03]). The
+  // closure captures the row's live messages + streaming store; the
+  // hook live-refs it so COPY always runs the latest one without
+  // destabilizing the handler identity.
+  const resolveCopyMarkdown = useCallback<CopyMarkdownResolver>(
+    (bodyEl, selection) =>
+      selectionToTranscriptMarkdown(
+        selection,
+        bodyEl,
+        buildTranscriptDocBlocks(messages, turnKey, streamingStore),
+      ),
+    [messages, turnKey, streamingStore],
+  );
   const { ResponderScope, cellProps, bodyRef, menu } =
-    useTranscriptCellMenu();
+    useTranscriptCellMenu(resolveCopyMarkdown);
 
   return (
     <ResponderScope>

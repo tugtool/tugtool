@@ -125,7 +125,7 @@ function toolOutput(call: ToolUseMessage): string {
  * for display: a call with a `parentToolUseId` is a child (rendered
  * inside its parent's section); everything else is top-level.
  */
-function groupToolCallsByParent(
+export function groupToolCallsByParent(
   toolCalls: ReadonlyArray<ToolUseMessage>,
 ): {
   topLevel: ReadonlyArray<ToolUseMessage>;
@@ -170,6 +170,21 @@ function serializeToolCall(
     lines.push("", serializeToolCall(child, depth + 1, childrenByParent));
   }
   return lines.join("\n");
+}
+
+/**
+ * Serialize one top-level tool call (with any subagent children) to the
+ * same markdown section `turnEntryToMarkdown` produces — the per-tool
+ * path the partial-copy reconstruction reuses ([#partial-copy-design])
+ * so a tool block touched by a selection copies identically whether it
+ * was copied alone or as part of the whole row. `childrenByParent` is
+ * the partition from {@link groupToolCallsByParent}.
+ */
+export function toolCallToMarkdown(
+  call: ToolUseMessage,
+  childrenByParent: ReadonlyMap<string, ReadonlyArray<ToolUseMessage>>,
+): string {
+  return serializeToolCall(call, 0, childrenByParent);
 }
 
 // ---------------------------------------------------------------------------
