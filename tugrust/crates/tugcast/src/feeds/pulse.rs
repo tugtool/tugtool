@@ -99,8 +99,7 @@ pub struct TugpulseSpawner {
 
 impl PulseSpawner for TugpulseSpawner {
     fn spawn(&self, seed_lines: &[String]) -> io::Result<PulseChild> {
-        let seed_json =
-            serde_json::to_string(seed_lines).unwrap_or_else(|_| "[]".to_string());
+        let seed_json = serde_json::to_string(seed_lines).unwrap_or_else(|_| "[]".to_string());
         let mut child = Command::new(&self.tugpulse_path)
             .arg("--seed")
             .arg(seed_json)
@@ -185,10 +184,7 @@ enum DaemonEvent {
 /// replay-mute set as brackets pass (even while the daemon is
 /// unspawned or PULSE is disabled — mute state must track the wire,
 /// not the toggle).
-fn forwardable_session(
-    payload: &[u8],
-    muted: &mut HashSet<String>,
-) -> Option<String> {
+fn forwardable_session(payload: &[u8], muted: &mut HashSet<String>) -> Option<String> {
     let inspected = InspectedPayload::from_slice(payload)?;
     let msg_type = inspected.msg_type.as_deref()?;
     let session = inspected.tug_session_id.clone();
@@ -400,10 +396,7 @@ mod tests {
     impl PulseSpawner for FakeSpawner {
         fn spawn(&self, seed_lines: &[String]) -> io::Result<PulseChild> {
             self.spawns.fetch_add(1, Ordering::SeqCst);
-            self.seeds_seen
-                .lock()
-                .unwrap()
-                .push(seed_lines.to_vec());
+            self.seeds_seen.lock().unwrap().push(seed_lines.to_vec());
             self.children
                 .lock()
                 .unwrap()
@@ -493,7 +486,9 @@ mod tests {
             })))
             .unwrap();
         // …then an allowlisted frame flows to daemon stdin verbatim.
-        code_tx.send(tool_result_frame("s1", "tests green")).unwrap();
+        code_tx
+            .send(tool_result_frame("s1", "tests green"))
+            .unwrap();
         let mut stdin_lines = BufReader::new(test_reads_stdin).lines();
         let received = tokio::time::timeout(Duration::from_secs(2), stdin_lines.next_line())
             .await
@@ -562,7 +557,9 @@ mod tests {
                 "tug_session_id": "s1", "type": "replay_started", "ipc_version": 2,
             })))
             .unwrap();
-        code_tx.send(tool_result_frame("s1", "replayed history")).unwrap();
+        code_tx
+            .send(tool_result_frame("s1", "replayed history"))
+            .unwrap();
         code_tx.send(tool_result_frame("s2", "live work")).unwrap();
         let mut stdin_lines = BufReader::new(test_reads_stdin).lines();
         let first = tokio::time::timeout(Duration::from_secs(2), stdin_lines.next_line())
@@ -579,7 +576,9 @@ mod tests {
                 "tug_session_id": "s1", "type": "replay_complete", "ipc_version": 2,
             })))
             .unwrap();
-        code_tx.send(tool_result_frame("s1", "post-replay live")).unwrap();
+        code_tx
+            .send(tool_result_frame("s1", "post-replay live"))
+            .unwrap();
         let second = tokio::time::timeout(Duration::from_secs(2), stdin_lines.next_line())
             .await
             .expect("daemon received the post-replay frame")
