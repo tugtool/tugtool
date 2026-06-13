@@ -2,13 +2,11 @@
  * edit-tool-block.css — `EditToolBlock`.
  *
  * The wrapper composes `ToolBlockChrome` (frame + the shared
- * `ToolCallHeader`) and `DiffBlock` (embedded) for its body. The old
- * header args-row + bespoke `+N −M` rules (`.edit-tool-block-{args,
- * stats,stats-add,stats-remove}`) are gone: the path chip is the
- * header's `identity` and the change count renders through the shared
- * `ToolHeaderDiffStat` primitive ([D06]). No edit-specific header CSS
- * remains; the file is kept as the wrapper's import target ([L19] file
- * pair) for any future edit-only body overlay.
+ * `ToolCallHeader`) and `DiffBlock` (embedded) for its body. The path
+ * chip is the header's `identity` and the change count is the header's
+ * quiet `resultSummary` (`+N −M`). No edit-specific header CSS remains;
+ * the file is kept as the wrapper's import target ([L19] file pair) for
+ * any future edit-only body overlay.
  *
  * Tuglaw cross-check:
  *  - [L19] file pair, `data-slot="edit-tool-block"` (delegated via `rootSlot`).

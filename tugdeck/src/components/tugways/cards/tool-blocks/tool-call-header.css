@@ -36,7 +36,6 @@ body {
   /* The separator gap, used in THREE places so they read equal:
      result→rule, rule→actions, and actions→right edge. */
   --tugx-toolheader-sep-gap: var(--tug-space-sm);
-  --tugx-toolheader-meta-gap: var(--tug-space-sm);
   --tugx-toolheader-actions-gap: var(--tug-space-2xs);
 }
 
@@ -77,7 +76,6 @@ body {
 .tool-call-header-icon,
 .tool-call-header-name,
 .tool-call-header-summary,
-.tool-call-header-meta,
 .tool-call-header-actions {
   flex: 0 0 auto;
   min-height: var(--tugx-toolheader-line);
@@ -130,11 +128,6 @@ body {
   font-size: var(--tugx-toolheader-summary-size);
   color: var(--tugx-block-text-color-muted);
   white-space: nowrap;
-}
-
-/* Expanded meta cluster — counts / diff-stats / truncated badges. */
-.tool-call-header-meta {
-  gap: var(--tugx-toolheader-meta-gap);
 }
 
 /* Trailing actions — the controls cluster at the row's trailing edge, in

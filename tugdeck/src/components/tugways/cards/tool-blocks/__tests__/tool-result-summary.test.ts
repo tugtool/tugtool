@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { formatToolResultSummary } from "../tool-result-summary";
+import { formatCount, formatToolResultSummary } from "../tool-result-summary";
 
 describe("formatToolResultSummary", () => {
   test("count pluralizes and thousands-groups", () => {
@@ -30,5 +30,35 @@ describe("formatToolResultSummary", () => {
   test("text passes through", () => {
     expect(formatToolResultSummary({ kind: "text", text: "committed" })).toBe("committed");
     expect(formatToolResultSummary({ kind: "text", text: "2.3 KB" })).toBe("2.3 KB");
+  });
+});
+
+describe("formatCount", () => {
+  test("pluralizes by default with a trailing s", () => {
+    expect(formatCount(0, "file")).toBe("0 files");
+    expect(formatCount(2, "file")).toBe("2 files");
+    expect(formatCount(100, "match")).toBe("100 matchs"); // default plural is naive
+  });
+
+  test("singular at exactly 1", () => {
+    expect(formatCount(1, "file")).toBe("1 file");
+    expect(formatCount(1, "match", "matches")).toBe("1 match");
+  });
+
+  test("honors an explicit plural noun", () => {
+    expect(formatCount(3, "match", "matches")).toBe("3 matches");
+    expect(formatCount(12, "entry", "entries")).toBe("12 entries");
+  });
+
+  test("thousands-groups via toLocaleString", () => {
+    expect(formatCount(1234, "line")).toBe("1,234 lines");
+    expect(formatCount(1000000, "file")).toBe("1,000,000 files");
+  });
+
+  test("clamps negative / non-finite to 0 and floors fractions", () => {
+    expect(formatCount(-5, "file")).toBe("0 files");
+    expect(formatCount(Number.NaN, "file")).toBe("0 files");
+    expect(formatCount(Number.POSITIVE_INFINITY, "file")).toBe("0 files");
+    expect(formatCount(3.9, "line")).toBe("3 lines");
   });
 });

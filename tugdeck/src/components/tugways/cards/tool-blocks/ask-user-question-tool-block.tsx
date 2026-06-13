@@ -85,7 +85,6 @@ import "./ask-user-question-tool-block.css";
 import React from "react";
 import { Check, Circle } from "lucide-react";
 
-import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
@@ -97,6 +96,7 @@ import {
 import type { ControlRequestForward } from "@/lib/code-session-store";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -422,18 +422,10 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
       ? Array.from(salvagedAnswers.values()).filter((v) => v.length > 0).length
       : summary.filter((s) => s.answers.length > 0).length;
   const args = composeQuestionCountLabel(questions.length, headlineCount);
-  // The question count rides the header's right-edge meta slot as a quiet
-  // `TugBadge` in the family status-chip vocabulary. `emphasis="ghost"`
-  // keeps it visually quiet (the count is informational, not a primary
-  // signal) and `role="action"` is the neutral tone. No leading icon —
-  // the header already carries the tool's question glyph, so a second one
-  // would just duplicate it.
-  const countMeta =
-    args === "" ? undefined : (
-      <TugBadge emphasis="ghost" role="action" size="sm">
-        {args}
-      </TugBadge>
-    );
+  // The question count is the header's trailing result summary — one quiet
+  // line ("3 of 3 answered"), the same plain style every tool uses.
+  const resultSummary: ToolResultSummary | undefined =
+    args === "" ? undefined : { kind: "text", text: args };
 
   let body: React.ReactNode;
   if (salvagedAnswers !== null) {
@@ -502,7 +494,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="ask-user-question-tool-block"
       toolName={toolName}
-      meta={countMeta}
+      resultSummary={resultSummary}
       status={chromeStatus}
       phase={phase}
       caution={caution}

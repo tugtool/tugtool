@@ -3,13 +3,11 @@
  *
  * The wrapper composes `ToolBlockChrome` (frame + the shared
  * `ToolCallHeader`) and either `SearchResultBlock` (content mode) or
- * `PathListBlock` (files-only mode) for its body. The old header
- * args-row rules (`.grep-tool-block-{args,count,truncation}`) are gone:
- * the pattern now renders in the header's wrapping command row, and the
- * match / file counts + truncated flag go through the shared meta
- * primitives (`ToolHeaderCount` / `ToolHeaderTruncated`, [D06]). No
- * grep-specific header CSS remains; the file is kept as the wrapper's
- * import target ([L19] file pair) for any future grep-only body overlay.
+ * `PathListBlock` (files-only mode) for its body. The pattern renders in
+ * the header's wrapping command row and the match / file count is the
+ * header's quiet `resultSummary`. No grep-specific header CSS remains; the
+ * file is kept as the wrapper's import target ([L19] file pair) for any
+ * future grep-only body overlay.
  *
  * Tuglaw cross-check:
  *  - [L19] file pair, `data-slot="grep-tool-block"` (delegated via `rootSlot`).

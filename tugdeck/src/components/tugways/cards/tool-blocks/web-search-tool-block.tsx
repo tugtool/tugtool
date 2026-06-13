@@ -74,7 +74,7 @@
 import "./web-search-tool-block.css";
 
 import React from "react";
-import { List, Search } from "lucide-react";
+import { List } from "lucide-react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLink } from "@/components/tugways/tug-link";
@@ -353,14 +353,6 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
     body = null;
   }
 
-  const hasBody = body !== null && status === "ready";
-  const fold = hasBody
-    ? {
-        defaultFolded: false,
-        preservationKey: `web-search-tool-block/${toolUseId}/fold`,
-        collapsedLabel: countLabel ?? "results",
-      }
-    : undefined;
   const copyText =
     textOutput !== undefined && textOutput.length > 0 ? textOutput : undefined;
 
@@ -373,7 +365,6 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
       phase={phase}
       caution={caution}
       errorMessage={errorMessage}
-      fold={fold}
       copyText={copyText}
     >
       {body}

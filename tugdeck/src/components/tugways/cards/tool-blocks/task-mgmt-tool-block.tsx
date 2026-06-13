@@ -89,7 +89,6 @@
  */
 
 import React from "react";
-import { ListTodo } from "lucide-react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
@@ -282,7 +281,6 @@ export function composeTaskOutputTail(
 // ---------------------------------------------------------------------------
 
 export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
-  toolUseId,
   toolName,
   input,
   textOutput,
@@ -326,14 +324,6 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
   // the prose read as primary with the raw block one click away. Skip
   // the affordance for streaming (the placeholder is the body) and
   // when there's no body to fold in the first place.
-  const hasBody = body !== null;
-  const fold = hasBody && status !== "streaming"
-    ? {
-        defaultFolded: true,
-        preservationKey: `task-mgmt-tool-block/${toolUseId}/fold`,
-        collapsedLabel: composeTaskMgmtCollapsedLabel(verb),
-      }
-    : undefined;
   // Copy collects the result text the user sees in the body. Empty
   // when the tool didn't return anything readable.
   const copyText =
@@ -350,7 +340,6 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
       phase={phase}
       caution={caution}
       errorMessage={errorMessage}
-      fold={fold}
       copyText={copyText}
     >
       {body}

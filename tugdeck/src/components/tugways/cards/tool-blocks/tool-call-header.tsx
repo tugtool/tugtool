@@ -15,10 +15,11 @@
  * icon, trailing result, and actions stay on the first row; color comes
  * only from the lifecycle dot (no left-edge status stripe).
  *
+ * The trailing result is one quiet one-line `summary`, rendered the same
+ * way in both states, so collapsed and expanded read identically.
+ *
  * State differences, all driven by `disclosure` (absent ⇒ not
  * collapsible, always expanded):
- *  - **Trailing result**: the quiet one-line `summary` when collapsed;
- *    the rich `meta` badge cluster when expanded.
  *  - **Actions**: the header owns Copy (the call's command + result, from
  *    `copyText`) and the whole-block chevron, both visible in BOTH states
  *    so the affordance cluster reads identically collapsed or expanded.
@@ -93,15 +94,11 @@ export interface ToolCallHeaderProps {
    */
   target?: React.ReactNode;
   /**
-   * One-line result summary as DATA — rendered quietly in the COLLAPSED
-   * state. Tools that collapse by default supply it.
+   * One-line result summary as DATA — the single trailing-info element,
+   * rendered quietly (plain muted text) in BOTH states. Tools supply it
+   * via `resultSummary` on the chrome.
    */
   summary?: ToolResultSummary;
-  /**
-   * Trailing metadata cluster (counts / diff-stats / truncated via the
-   * shared meta primitives) — rendered in the EXPANDED state.
-   */
-  meta?: React.ReactNode;
   /** Drift caution surfaced as an inline badge. */
   caution?: CautionFlag;
   /**
@@ -113,9 +110,9 @@ export interface ToolCallHeaderProps {
   /**
    * History-collapse chevron + state. When set, the chevron renders at the
    * trailing edge (DOWN to expand when collapsed, UP to collapse when
-   * expanded) and `collapsed` selects summary-vs-meta and built-in-Copy-vs
-   * -actions-slot. Omit for tools that never collapse — they render no
-   * chevron and are always in the expanded presentation.
+   * expanded) and `collapsed` selects the built-in Copy (collapsed) vs the
+   * body-specific actions slot (expanded). Omit for tools that never
+   * collapse — they render no chevron and are always expanded.
    */
   disclosure?: { collapsed: boolean; onToggle: (next: boolean) => void };
   /**
@@ -150,7 +147,6 @@ export const ToolCallHeader = React.forwardRef<
     showIcon = true,
     target,
     summary,
-    meta,
     caution,
     copyText,
     disclosure,
@@ -191,23 +187,13 @@ export const ToolCallHeader = React.forwardRef<
           or wrapping command) and otherwise serves as the flexible spacer
           that pushes the trailing result + actions to the right edge. */}
       <span className="tool-call-header-detail">{target}</span>
-      {/* Trailing result — the quiet one-line summary when collapsed, the
-          rich meta badge cluster when expanded. */}
-      {collapsed
-        ? summary !== undefined
-          ? (
-            <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
-              {formatToolResultSummary(summary)}
-            </span>
-          )
-          : null
-        : meta !== undefined
-          ? (
-            <span className="tool-call-header-meta" data-slot="tool-call-header-meta">
-              {meta}
-            </span>
-          )
-          : null}
+      {/* Trailing result — one quiet one-line summary, rendered identically
+          in BOTH states so collapsed and expanded read the same. */}
+      {summary !== undefined ? (
+        <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
+          {formatToolResultSummary(summary)}
+        </span>
+      ) : null}
       {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}
       <span className="tool-call-header-actions">
         {/* Body-specific, expanded-only controls (Find, view-mode,

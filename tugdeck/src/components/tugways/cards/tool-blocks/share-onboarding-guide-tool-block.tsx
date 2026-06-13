@@ -53,7 +53,6 @@
  */
 
 import React from "react";
-import { BookOpen } from "lucide-react";
 
 import { TugLink } from "@/components/tugways/tug-link";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
@@ -164,7 +163,6 @@ export function extractShareLink(textOutput: string | undefined): string | null 
 // ---------------------------------------------------------------------------
 
 export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
-  toolUseId,
   input,
   textOutput,
   status,
@@ -207,14 +205,6 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
 
   // Default-open fold — the share link IS the user's reason for
   // calling the tool. Folded-by-default would hide it.
-  const hasBody = body !== null;
-  const fold = hasBody && status !== "streaming"
-    ? {
-        defaultFolded: false,
-        preservationKey: `share-onboarding-guide-tool-block/${toolUseId}/fold`,
-        collapsedLabel: "details",
-      }
-    : undefined;
   const copyText =
     textOutput !== undefined && textOutput.length > 0 ? textOutput : undefined;
 
@@ -227,7 +217,6 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
       phase={phase}
       caution={caution}
       errorMessage={errorMessage}
-      fold={fold}
       copyText={copyText}
     >
       {body}

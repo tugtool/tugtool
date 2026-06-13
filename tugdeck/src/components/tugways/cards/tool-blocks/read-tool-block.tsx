@@ -72,13 +72,11 @@ import "./read-tool-block.css";
 import "@/lib/tug-atom-chip.css";
 
 import React from "react";
-import { AlignLeft } from "lucide-react";
 
 import {
   FileBlock,
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
-import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
@@ -192,50 +190,6 @@ export function composeFileData(
   };
 }
 
-/**
- * Compose the line-range badge text shown in the header when the
- * model asked for a windowed read. Returns `undefined` to suppress
- * the badge when no window is configured.
- *
- *   offset=10, limit=20 → "lines 10-29"
- *   offset=10, no limit → "from line 10"
- *   no offset, limit=20 → "first 20 lines"
- *   neither set         → undefined
- */
-export function composeLineRangeBadge(
-  input: ReadToolInput,
-): string | undefined {
-  const { offset, limit } = input;
-  if (offset === undefined && limit === undefined) return undefined;
-  if (offset !== undefined && limit !== undefined) {
-    return `lines ${offset}–${offset + limit - 1}`;
-  }
-  if (offset !== undefined) return `from line ${offset}`;
-  if (limit !== undefined) return `first ${limit} lines`;
-  return undefined;
-}
-
-/**
- * Compose the wrapper-footer "Showing N of M lines" hint. Only fires
- * when the read window is a proper subset of the file (the
- * structured event reported both counts and `numLines < totalLines`).
- * Returns `undefined` to suppress the footer entirely.
- */
-export function composeReadFooterHint(
-  data: FileData | undefined,
-): string | undefined {
-  if (data === undefined) return undefined;
-  const { numLines, totalLines } = data;
-  if (
-    numLines === undefined ||
-    totalLines === undefined ||
-    totalLines <= numLines
-  ) {
-    return undefined;
-  }
-  return `Showing ${numLines} of ${totalLines} lines`;
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -259,19 +213,9 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
     () => composeFileData(readInput, structured),
     [readInput, structured],
   );
-  const lineRange = React.useMemo(
-    () => composeLineRangeBadge(readInput),
-    [readInput],
-  );
-  const showingHint = React.useMemo(
-    () => composeReadFooterHint(fileData),
-    [fileData],
-  );
-
   const filePath = readInput.file_path;
-  // Identity: the path chip. Meta (trailing, in the header per [Q02]):
-  // the input-derived line-range badge plus the result-derived
-  // "Showing N of M lines" hint — the latter moved up from the footer.
+  // Identity: the path chip. The trailing result summary (line count) is
+  // computed below as `resultSummary`.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
       <TugAtomChip
@@ -282,33 +226,6 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
         className="tug-atom-chip"
       />
     ) : undefined;
-  const meta =
-    lineRange !== undefined || showingHint !== undefined ? (
-      <>
-        {lineRange !== undefined ? (
-          <TugBadge
-            data-slot="read-tool-block-line-range"
-            emphasis="ghost"
-            role="action"
-            size="2xs"
-            icon={<AlignLeft size={12} aria-hidden="true" />}
-          >
-            {lineRange}
-          </TugBadge>
-        ) : null}
-        {showingHint !== undefined ? (
-          <TugBadge
-            data-slot="read-tool-block-showing"
-            emphasis="ghost"
-            role="inherit"
-            size="2xs"
-          >
-            {showingHint}
-          </TugBadge>
-        ) : null}
-      </>
-    ) : undefined;
-
   // Errored reads carry the failure message in `textOutput` (e.g.
   // "ENOENT: no such file"). When errored, prefer the chrome's error
   // band — don't double-render through the body.
@@ -349,7 +266,6 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="read-tool-block"
       toolName={toolName}
       identity={identity}
-      meta={meta}
       resultSummary={resultSummary}
       status={status}
       phase={phase}

@@ -77,7 +77,7 @@
 import "./web-fetch-tool-block.css";
 
 import React from "react";
-import { Globe, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
@@ -232,14 +232,6 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
   // for tool blocks whose body is fully restated by the model.
   // Copy collects the raw markdown so the user can paste it elsewhere
   // with formatting intact (the [Cached] prefix is stripped).
-  const hasBody = body !== null && status === "ready";
-  const fold = hasBody
-    ? {
-        defaultFolded: true,
-        preservationKey: `web-fetch-tool-block/${toolUseId}/fold`,
-        collapsedLabel: "summary",
-      }
-    : undefined;
   const copyText = hasMarkdown ? markdownText : undefined;
 
   return (
@@ -251,7 +243,6 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
       phase={phase}
       caution={caution}
       errorMessage={errorMessage}
-      fold={fold}
       copyText={copyText}
     >
       {body}

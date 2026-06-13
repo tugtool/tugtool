@@ -56,27 +56,13 @@
  * affordance node inside the chrome's header in the DOM tree — exactly
  * where it needs to sit for layout, sticky-pin coverage, and accessibility.
  *
- * ## Opt-in chrome-level affordances — for `body-bits/` wrappers
+ * ## Copy — for `body-bits/` wrappers
  *
  * Body-bits wrappers (`SkillToolBlock`, `MonitorToolBlock`,
  * `WorktreeToolBlock`, `TaskMgmtToolBlock`) don't compose an embedded
- * body kind, so they don't get Copy / Fold via the portal. The chrome
- * exposes two opt-in props for them:
- *
- *  - `copyText` — when set, the chrome renders a `BlockCopyButton`
- *    in the actions slot whose payload is this string.
- *  - `fold` — when set, the chrome owns the fold state via
- *    `useBlockFoldState`, renders a `BlockFoldCue` in the actions
- *    slot, and conditionally renders `children` based on the
- *    resolved flag.
- *
- * The two paths (embedded portal vs chrome-owned) are mutually
- * exclusive by convention: a wrapper composes either an embedded
- * body kind (Bash / Read / Edit / Glob / Grep) and uses the portal,
- * or `body-bits/` primitives and opts into these props. Mixing both
- * would render duplicate cues in the actions slot; the chrome doesn't
- * try to detect the collision because the wrapper is the single
- * source of truth for its composition choice.
+ * body kind. They pass `copyText` so the HEADER's built-in Copy writes
+ * their tailored payload; folding is the header's whole-block chevron
+ * (every block is collapsible), so they need nothing else.
  *
  * Laws:
  *  - [L06] all visible state lives on data attributes / class
@@ -148,64 +134,6 @@ export function useChromeActionsTarget(): HTMLDivElement | null {
   return React.useContext(ChromeActionsTargetContext);
 }
 
-/**
- * Opt-in fold-affordance configuration for `ToolBlockChrome`. When
- * supplied, the chrome:
- *
- *  - Owns the fold state via `useBlockFoldState` (controlled +
- *    [A9]-preserved when `preservationKey` is set).
- *  - Renders a `BlockFoldCue` into its actions slot at the trailing
- *    edge of the header.
- *  - Conditionally renders `children` based on the resolved fold
- *    state — children mount only when expanded, so the body's render
- *    cost (and any DOM it produces) collapse along with the visual.
- *
- * Designed for tool-block wrappers whose body composes the shared
- * `body-bits/` primitives (`SkillToolBlock`, `MonitorToolBlock`,
- * `WorktreeToolBlock`, `TaskMgmtToolBlock`) — these wrappers don't
- * compose an embedded body kind, so they don't get fold for free via
- * the body-kind affordance portal. Wrappers that already compose an
- * embedded body kind (`BashToolBlock` → `TerminalBlock`, etc.)
- * receive their fold + copy via the embedded portal and MUST NOT
- * pass this prop — doing so would render two fold cues in the
- * actions slot.
- */
-export interface ToolBlockFoldOptions {
-  /**
-   * Initial collapsed state when no [A9] saved value exists for
-   * `preservationKey`. Defaults to `false` (open). Pass `true` for
-   * wrappers whose folded-by-default reading is the desired one
-   * (e.g. tool blocks where the assistant's prose summary is the
-   * primary surface and the block is one click away as evidence).
-   */
-  defaultFolded?: boolean;
-  /**
-   * [A9] component-state key. When set, the resolved fold flag is
-   * persisted so the user's open/closed choice survives a reload.
-   * Tool-call wrappers typically derive this from `toolUseId` so the
-   * key is per-call-stable across reloads. Omit for fixtures /
-   * gallery cards where preservation isn't wanted.
-   */
-  preservationKey?: string;
-  /**
-   * Label the fold cue shows while the block is COLLAPSED — typically
-   * a count or summary hint ("4 lines", "details", "preview"). The
-   * wrapper formats locale + plural; the cue renders the string.
-   */
-  collapsedLabel: string;
-  /**
-   * Label while EXPANDED. Optional — defaults to `"Collapse"`, the
-   * verb pairing used by every existing body-kind fold cue. Pass a
-   * distinct value only when the expanded reading should differ
-   * (rare for tool blocks).
-   */
-  expandedLabel?: string;
-  /** ARIA label when clicking would collapse the block. */
-  ariaLabelCollapse?: string;
-  /** ARIA label when clicking would expand the block. */
-  ariaLabelExpand?: string;
-}
-
 export interface ToolBlockChromeProps {
   /**
    * Canonical tool name as it should display in the header (e.g.
@@ -240,17 +168,9 @@ export interface ToolBlockChromeProps {
    */
   command?: React.ReactNode;
   /**
-   * Trailing metadata cluster — counts / diff-stats / truncated via the
-   * shared [D06] primitives ([Q02]: header, not footer). The EXPANDED
-   * header's metadata.
-   */
-  meta?: React.ReactNode;
-  /**
-   * The call's one-line result as DATA, for the COLLAPSED header's quiet
-   * summary ([P09]/[#step-11]). Tools that collapse by default
-   * (read/grep/glob/bash/edit/write) provide it; rendered only in the
-   * collapsed state. Distinct from `meta` (the expanded badge cluster) —
-   * see {@link ToolResultSummary}.
+   * The call's one-line result as DATA — the single trailing-info element,
+   * rendered quietly (plain muted text) in BOTH states. Tools supply it so
+   * collapsed and expanded read identically. See {@link ToolResultSummary}.
    */
   resultSummary?: ToolResultSummary;
   /**
@@ -298,14 +218,6 @@ export interface ToolBlockChromeProps {
    */
   rootSlot?: string;
   /**
-   * Superseded — ignored by the chrome. Every block is now collapsible
-   * via the header's whole-block chevron, so a separate body fold cue is
-   * redundant. Body-bits wrappers may still pass it harmlessly; the chrome
-   * no longer renders a `BlockFoldCue` and the body always mounts when the
-   * block is expanded.
-   */
-  fold?: ToolBlockFoldOptions;
-  /**
    * Copy payload for the header's built-in Copy. A wrapper passes its
    * tailored result text (e.g. the formatted task list, the monitor tail)
    * and the header's Copy writes it in both states; when omitted the
@@ -322,7 +234,6 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   argsSummary,
   identity,
   command,
-  meta,
   resultSummary,
   showIcon = true,
   status = "ready",
@@ -414,8 +325,8 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
       observer.disconnect();
     };
     // Re-measure across a collapse toggle: the one `ToolCallHeader` keeps
-    // its `headerRef` in both states, but its height changes (summary↔meta,
-    // body appears/disappears), so the observer re-runs to refresh the
+    // its `headerRef` in both states, but its height changes when the body
+    // appears/disappears, so the observer re-runs to refresh the
     // telescoping-pin variable once the block opens or closes.
   }, [blockCollapsed]);
 
@@ -424,7 +335,7 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   // the block is collapsed (header is the whole block), expanded (header
   // above the mounted body), or a tool that never collapses (no chevron).
   // `disclosure` is non-null only for history-collapse-wrapped blocks
-  // ([P06] table); it selects the chevron + summary-vs-meta presentation.
+  // ([P06] table); it drives the chevron + collapsed/expanded presentation.
   // The body's own self-fold is suppressed for those blocks so the header
   // chevron is the single fold (no double-dip). No left-edge status stripe
   // anywhere — the lifecycle dot carries status.
@@ -451,7 +362,6 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
         showIcon={showIcon}
         target={command ?? identity ?? argsSummary}
         summary={resultSummary}
-        meta={meta}
         caution={caution}
         // The header owns Copy in both states. Prefer a wrapper's tailored
         // `copyText` (body-bits wrappers compute a formatted payload); fall

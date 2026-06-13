@@ -10,8 +10,7 @@
  *    narrowing of the wire props.
  *  - `composeWriteFileData` — `(input, structured)` → `FileData`,
  *    with the structured value preferred over the input.
- *  - `composeWriteSizeLabel` — header `{N} lines` chip text.
- *  - `composeWriteCreatedLabel` — header `new` / `overwrite` chip.
+ *  - `composeWriteSizeLabel` — the `{N} lines` result-summary text.
  *  - The dispatch routes `Write` to the real `WriteToolBlock` (via
  *    `BESPOKE_FACTORY_BY_NAME`).
  *
@@ -23,7 +22,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   WriteToolBlock,
-  composeWriteCreatedLabel,
   composeWriteFileData,
   composeWriteSizeLabel,
   narrowWriteInput,
@@ -137,24 +135,6 @@ describe("composeWriteSizeLabel", () => {
 
   test("undefined when there is no content", () => {
     expect(composeWriteSizeLabel(undefined)).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// composeWriteCreatedLabel
-// ---------------------------------------------------------------------------
-
-describe("composeWriteCreatedLabel", () => {
-  test("created=true → 'new'", () => {
-    expect(composeWriteCreatedLabel(true)).toBe("new");
-  });
-
-  test("created=false → 'overwrite'", () => {
-    expect(composeWriteCreatedLabel(false)).toBe("overwrite");
-  });
-
-  test("undefined → undefined (chip suppressed)", () => {
-    expect(composeWriteCreatedLabel(undefined)).toBeUndefined();
   });
 });
 

@@ -72,24 +72,16 @@ import "./notebook-edit-tool-block.css";
 import "@/lib/tug-atom-chip.css";
 
 import React from "react";
-import {
-  Code,
-  FileText,
-  Hash,
-  Plus,
-  Replace,
-  Trash2,
-} from "lucide-react";
 
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
-import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -216,14 +208,12 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
     () => resolveNotebookEditMode(editInput, structured),
     [editInput, structured],
   );
-  const cellType = structured.cellType ?? editInput.cell_type;
-  const cellId = structured.cellId ?? editInput.cell_id;
   const notebookPath = structured.notebookPath ?? editInput.notebook_path;
   const newSource = structured.newSource ?? editInput.new_source;
   const oldSource = structured.oldSource;
 
-  // Identity: the notebook path chip. Meta: cell id + edit-mode +
-  // cell-type badges, trailing in the header ([Q02]).
+  // Identity: the notebook path chip. The trailing result summary (edit
+  // mode) is computed above as `resultSummary`.
   const identity =
     notebookPath !== undefined && notebookPath.length > 0 ? (
       <TugAtomChip
@@ -234,56 +224,10 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
         className="tug-atom-chip"
       />
     ) : undefined;
-  const meta =
-    notebookPath !== undefined && notebookPath.length > 0 ? (
-      <>
-        {cellId !== undefined ? (
-          <TugBadge
-            data-slot="notebook-edit-tool-block-cell"
-            emphasis="ghost"
-            role="action"
-            size="2xs"
-            icon={<Hash size={12} aria-hidden="true" />}
-          >
-            {cellId}
-          </TugBadge>
-        ) : null}
-        <TugBadge
-          data-slot="notebook-edit-tool-block-edit-mode"
-          emphasis="ghost"
-          role="action"
-          size="2xs"
-          icon={
-            editMode === "insert" ? (
-              <Plus size={12} aria-hidden="true" />
-            ) : editMode === "delete" ? (
-              <Trash2 size={12} aria-hidden="true" />
-            ) : (
-              <Replace size={12} aria-hidden="true" />
-            )
-          }
-        >
-          {editMode}
-        </TugBadge>
-        {cellType !== undefined ? (
-          <TugBadge
-            data-slot="notebook-edit-tool-block-cell-type"
-            emphasis="ghost"
-            role="action"
-            size="2xs"
-            icon={
-              cellType === "code" ? (
-                <Code size={12} aria-hidden="true" />
-              ) : (
-                <FileText size={12} aria-hidden="true" />
-              )
-            }
-          >
-            {cellType}
-          </TugBadge>
-        ) : null}
-      </>
-    ) : undefined;
+  // Trailing info: the edit mode as a quiet one-line summary (plain text,
+  // same style as every other tool). Cell id / cell type live in the body.
+  const resultSummary: ToolResultSummary | undefined =
+    editMode !== undefined ? { kind: "text", text: editMode } : undefined;
 
   const errorMessage =
     status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
@@ -360,7 +304,7 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="notebook-edit-tool-block"
       toolName={toolName}
       identity={identity}
-      meta={meta}
+      resultSummary={resultSummary}
       status={status}
       phase={phase}
       caution={caution}

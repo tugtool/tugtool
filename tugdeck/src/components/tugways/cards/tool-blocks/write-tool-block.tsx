@@ -71,14 +71,12 @@ import "./write-tool-block.css";
 import "@/lib/tug-atom-chip.css";
 
 import React from "react";
-import { AlignLeft, Replace, Sparkles } from "lucide-react";
 
 import {
   FileBlock,
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 
-import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
@@ -162,18 +160,6 @@ export function composeWriteSizeLabel(
   return `${lineCount.toLocaleString()} ${lineCount === 1 ? "line" : "lines"}`;
 }
 
-/**
- * Compose the new-vs-overwrite chip text. Returns `undefined` when
- * `created` is undefined so the chip is suppressed (rather than
- * surfacing an unknown state as an authoritative label).
- */
-export function composeWriteCreatedLabel(
-  created: boolean | undefined,
-): string | undefined {
-  if (created === undefined) return undefined;
-  return created ? "new" : "overwrite";
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -201,14 +187,10 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
     () => composeWriteSizeLabel(fileData?.content),
     [fileData],
   );
-  const createdLabel = React.useMemo(
-    () => composeWriteCreatedLabel(structured.created),
-    [structured.created],
-  );
 
   const filePath = structured.filePath ?? writeInput.file_path;
-  // Identity: the path chip. Meta: size + new/overwrite badges, trailing
-  // in the header ([Q02]).
+  // Identity: the path chip. The trailing result summary (size) is computed
+  // below as `resultSummary`.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
       <TugAtomChip
@@ -219,40 +201,6 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
         className="tug-atom-chip"
       />
     ) : undefined;
-  const meta =
-    sizeLabel !== undefined || createdLabel !== undefined ? (
-      <>
-        {sizeLabel !== undefined ? (
-          <TugBadge
-            data-slot="write-tool-block-size"
-            emphasis="ghost"
-            role="action"
-            size="2xs"
-            icon={<AlignLeft size={12} aria-hidden="true" />}
-          >
-            {sizeLabel}
-          </TugBadge>
-        ) : null}
-        {createdLabel !== undefined ? (
-          <TugBadge
-            data-slot="write-tool-block-created"
-            emphasis="ghost"
-            role="action"
-            size="2xs"
-            icon={
-              structured.created === true ? (
-                <Sparkles size={12} aria-hidden="true" />
-              ) : (
-                <Replace size={12} aria-hidden="true" />
-              )
-            }
-          >
-            {createdLabel}
-          </TugBadge>
-        ) : null}
-      </>
-    ) : undefined;
-
   const errorMessage =
     status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
       <ToolBlockPre>{textOutput}</ToolBlockPre>
@@ -285,7 +233,6 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="write-tool-block"
       toolName={toolName}
       identity={identity}
-      meta={meta}
       resultSummary={resultSummary}
       status={status}
       phase={phase}

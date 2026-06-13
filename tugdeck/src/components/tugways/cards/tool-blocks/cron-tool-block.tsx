@@ -73,7 +73,6 @@
  */
 
 import React from "react";
-import { Clock } from "lucide-react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
@@ -204,7 +203,6 @@ export function composeCronArgsLabel(
 // ---------------------------------------------------------------------------
 
 export const CronToolBlock: React.FC<ToolBlockProps> = ({
-  toolUseId,
   toolName,
   input,
   textOutput,
@@ -237,14 +235,6 @@ export const CronToolBlock: React.FC<ToolBlockProps> = ({
 
   // Default-open fold (result IS the user's answer) + copy of result
   // text. Same pattern as Skill / Monitor / Worktree.
-  const hasBody = body !== null;
-  const fold = hasBody && status !== "streaming"
-    ? {
-        defaultFolded: false,
-        preservationKey: `cron-tool-block/${toolUseId}/fold`,
-        collapsedLabel: "details",
-      }
-    : undefined;
   const copyText =
     textOutput !== undefined && textOutput.length > 0 ? textOutput : undefined;
 
@@ -257,7 +247,6 @@ export const CronToolBlock: React.FC<ToolBlockProps> = ({
       phase={phase}
       caution={caution}
       errorMessage={errorMessage}
-      fold={fold}
       copyText={copyText}
     >
       {body}

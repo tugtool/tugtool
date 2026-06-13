@@ -94,7 +94,6 @@ import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolResultSummary } from "./tool-result-summary";
-import { ToolHeaderDiffStat } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -365,14 +364,6 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
         className="tug-atom-chip"
       />
     ) : undefined;
-  const meta =
-    changeCounts !== undefined ? (
-      <ToolHeaderDiffStat
-        added={changeCounts.added}
-        removed={changeCounts.removed}
-      />
-    ) : undefined;
-
   // Errored edits carry the failure message in `textOutput` (e.g.
   // "old_string not found"). When errored, prefer the chrome's error
   // band — don't double-render through the body.
@@ -413,7 +404,6 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="edit-tool-block"
       toolName={toolName}
       identity={identity}
-      meta={meta}
       resultSummary={resultSummary}
       status={status}
       phase={phase}

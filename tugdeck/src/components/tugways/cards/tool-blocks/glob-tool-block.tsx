@@ -62,7 +62,6 @@ import {
 
 import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolResultSummary } from "./tool-result-summary";
-import { ToolHeaderCount, ToolHeaderTruncated } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -185,15 +184,6 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
     pattern !== undefined ? (
       <code data-slot="glob-tool-block-pattern">{pattern}</code>
     ) : undefined;
-  const meta =
-    fileCount !== undefined || structured.truncated === true ? (
-      <>
-        {fileCount !== undefined ? (
-          <ToolHeaderCount count={fileCount} noun="file" />
-        ) : null}
-        {structured.truncated === true ? <ToolHeaderTruncated /> : null}
-      </>
-    ) : undefined;
 
   // Errored globs carry the failure message in `textOutput`; surface
   // it through the chrome's error band rather than the body.
@@ -234,7 +224,6 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="glob-tool-block"
       toolName={toolName}
       command={command}
-      meta={meta}
       resultSummary={resultSummary}
       status={status}
       phase={phase}

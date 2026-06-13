@@ -25,11 +25,6 @@ import {
 } from "@/lib/code-session-store/tool-call-phase-visual";
 
 import { ToolCallHeader } from "./tool-blocks/tool-call-header";
-import {
-  ToolHeaderCount,
-  ToolHeaderDiffStat,
-  ToolHeaderTruncated,
-} from "./tool-blocks/tool-header-meta";
 
 const PHASES: ReadonlyArray<ToolCallPhase> = [
   "idle",
@@ -130,18 +125,13 @@ export const GalleryToolCallHeader: React.FC = () => {
       <TugSeparator />
 
       <section className="gallery-tch-section">
-        <TugLabel>Meta cluster — counts, diff-stats, truncated (one idiom)</TugLabel>
+        <TugLabel>Result summary — counts, diff-stats (one quiet idiom)</TugLabel>
         <div className="gallery-tch-stack">
           <ToolCallHeader {...demoControls}
             phase="success"
             toolName="Grep"
             target={<code>useState</code>}
-            meta={
-              <>
-                <ToolHeaderCount count={1234} noun="match" pluralNoun="matches" />
-                <ToolHeaderTruncated at={500} />
-              </>
-            }
+            summary={{ kind: "count", count: 1234, noun: "match", pluralNoun: "matches" }}
           />
           <ToolCallHeader {...demoControls}
             phase="success"
@@ -154,13 +144,13 @@ export const GalleryToolCallHeader: React.FC = () => {
                 className="tug-atom-chip"
               />
             }
-            meta={<ToolHeaderDiffStat added={42} removed={7} />}
+            summary={{ kind: "diff", added: 42, removed: 7 }}
           />
           <ToolCallHeader {...demoControls}
             phase="success"
             toolName="Glob"
             target={<code>**/*.ts</code>}
-            meta={<ToolHeaderCount count={1} noun="file" />}
+            summary={{ kind: "count", count: 1, noun: "file" }}
           />
         </div>
       </section>

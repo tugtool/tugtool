@@ -84,7 +84,6 @@ import {
 
 import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolResultSummary } from "./tool-result-summary";
-import { ToolHeaderCount, ToolHeaderTruncated } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -389,25 +388,6 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
     pattern !== undefined ? (
       <code data-slot="grep-tool-block-pattern">{pattern}</code>
     ) : undefined;
-  const meta =
-    matchCount !== undefined ||
-    fileCount !== undefined ||
-    structured.truncated === true ? (
-      <>
-        {matchCount !== undefined ? (
-          <ToolHeaderCount
-            count={matchCount}
-            noun="match"
-            pluralNoun="matches"
-          />
-        ) : null}
-        {fileCount !== undefined ? (
-          <ToolHeaderCount count={fileCount} noun="file" />
-        ) : null}
-        {structured.truncated === true ? <ToolHeaderTruncated /> : null}
-      </>
-    ) : undefined;
-
   // Errored greps carry the failure message in `textOutput`; surface
   // it through the chrome's error band rather than the body.
   const errorMessage =
@@ -460,7 +440,6 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="grep-tool-block"
       toolName={toolName}
       command={command}
-      meta={meta}
       resultSummary={resultSummary}
       status={status}
       phase={phase}

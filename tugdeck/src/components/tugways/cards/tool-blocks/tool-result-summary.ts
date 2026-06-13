@@ -1,20 +1,17 @@
 /**
  * `tool-result-summary.ts` — the typed one-line result a tool block
- * reports for its **collapsed** header ([P09] Quiet Line, [#step-11]).
+ * reports as its header's trailing info.
  *
- * The collapsed header answers "what did this do?" in one quiet line. Each
- * collapsed tool provides its result as DATA — a count, a diff stat, an
- * exit code, or a short label — rather than a pre-built badge node, so the
- * collapsed header renders every tool's summary in one consistent, quiet
- * style. (`tool-header-meta`'s badge primitives stay the *expanded*
- * header's metadata cluster; this is the collapsed-line counterpart.)
+ * The header answers "what did this do?" in one quiet line, rendered the
+ * same plain way in both the collapsed and expanded states. Each tool
+ * provides its result as DATA — a count, a diff stat, an exit code, or a
+ * short label — rather than a pre-built badge node, so every tool's summary
+ * reads in one consistent, quiet style.
  *
  * Pure + tiny so the formatting is unit-testable without a DOM.
  *
  * @module components/tugways/cards/tool-blocks/tool-result-summary
  */
-
-import { formatCount } from "./tool-header-meta";
 
 /** A tool call's one-line result, as data. */
 export type ToolResultSummary =
@@ -23,9 +20,26 @@ export type ToolResultSummary =
   | { kind: "exit"; code: number }
   | { kind: "text"; text: string };
 
-/** Clamp a count to a non-negative integer (mirrors the meta primitives). */
+/** Clamp a count to a non-negative integer. */
 function clampCount(n: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Format a localized count label: `formatCount(100, "file")` →
+ * `"100 files"`, `formatCount(1, "match", "matches")` → `"1 match"`.
+ * Pluralizes by appending `s` to `noun` when `pluralNoun` is omitted;
+ * thousands-group via `toLocaleString`. Negative / non-finite counts
+ * clamp to `0`.
+ */
+export function formatCount(
+  count: number,
+  noun: string,
+  pluralNoun?: string,
+): string {
+  const n = clampCount(count);
+  const word = n === 1 ? noun : (pluralNoun ?? `${noun}s`);
+  return `${n.toLocaleString()} ${word}`;
 }
 
 /**

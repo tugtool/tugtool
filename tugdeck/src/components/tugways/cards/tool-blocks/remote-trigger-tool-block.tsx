@@ -58,7 +58,6 @@
  */
 
 import React from "react";
-import { Zap } from "lucide-react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
@@ -184,7 +183,6 @@ export function formatRemoteTriggerBody(value: Record<string, unknown>): string 
 // ---------------------------------------------------------------------------
 
 export const RemoteTriggerToolBlock: React.FC<ToolBlockProps> = ({
-  toolUseId,
   input,
   textOutput,
   status,
@@ -216,14 +214,6 @@ export const RemoteTriggerToolBlock: React.FC<ToolBlockProps> = ({
     body = renderRemoteTriggerBody({ input: triggerInput, textOutput });
   }
 
-  const hasBody = body !== null;
-  const fold = hasBody && status !== "streaming"
-    ? {
-        defaultFolded: false,
-        preservationKey: `remote-trigger-tool-block/${toolUseId}/fold`,
-        collapsedLabel: "details",
-      }
-    : undefined;
   const copyText =
     textOutput !== undefined && textOutput.length > 0 ? textOutput : undefined;
 
@@ -236,7 +226,6 @@ export const RemoteTriggerToolBlock: React.FC<ToolBlockProps> = ({
       phase={phase}
       caution={caution}
       errorMessage={errorMessage}
-      fold={fold}
       copyText={copyText}
     >
       {body}
