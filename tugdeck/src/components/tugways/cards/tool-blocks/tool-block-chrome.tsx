@@ -295,10 +295,18 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
       root.style.setProperty("--tugx-toolblock-header-height", `${px}px`);
     };
 
-    // Seed the variable from the current header height so the first
-    // paint already has the correct value (the ResizeObserver only
-    // fires for subsequent changes).
-    write(header.offsetHeight);
+    // NOTE: no synchronous `write(header.offsetHeight)` seed here. That
+    // forced layout read, run in EVERY tool block's mount
+    // `useLayoutEffect` and interleaved with the `setProperty` write,
+    // makes an all-rich transcript mount O(n²): a dev session has 2000+
+    // tool blocks, and each read forces a full reflow of the growing
+    // document the previous block's write just dirtied (measured: the
+    // dominant cost of a ~14s, 212-row mount). The `ResizeObserver`
+    // below fires an initial callback on `observe()` with the real
+    // height — rAF-coalesced, so all blocks' writes batch into one
+    // reflow — and consumers read `var(--tugx-toolblock-header-height,
+    // 0)` for the one frame before it lands (nothing is scrolled at
+    // mount, so the pin offset is unobservable until then).
 
     // Coalesce the callback write via rAF to avoid "ResizeObserver loop
     // completed with undelivered notifications" — the write sets a CSS

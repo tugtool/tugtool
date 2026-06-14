@@ -221,10 +221,17 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
         `${Math.ceil(px) + TIER_GAP_PX}px`,
       );
     };
-    // Seed from getBoundingClientRect (float-precise) so the first
-    // paint already has the right value; the observer fires for
-    // subsequent changes only.
-    write(header.getBoundingClientRect().height);
+    // NOTE: do NOT seed synchronously here with
+    // `header.getBoundingClientRect()`. That forced layout read, run in
+    // each entry's mount `useLayoutEffect` and interleaved with the
+    // `style.setProperty` write below, makes an all-rich transcript
+    // mount O(n²): every entry's read forces a full reflow of the
+    // growing document that the previous entry's write just dirtied
+    // (212 entries ≈ 14s). The `ResizeObserver` below fires an initial
+    // callback on `observe()` with the real height — rAF-coalesced, so
+    // all entries' writes batch into one reflow — and the static
+    // `--tugx-pin-stack-top` CSS fallback covers the one frame before it
+    // lands. Measured: ~14s → sub-second on the 212-row session.
     // Coalesce the callback write via rAF to avoid "ResizeObserver loop
     // completed with undelivered notifications" — the write sets a CSS
     // var consumed by sticky descendant chrome, whose relayout can queue

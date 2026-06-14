@@ -511,7 +511,12 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     const write = (px: number): void => {
       root.style.setProperty("--tugx-diff-header-height", `${px}px`);
     };
-    write(header.offsetHeight);
+    // No synchronous `write(header.offsetHeight)` seed — a forced layout
+    // read in each block's mount effect interleaved with the setProperty
+    // write thrashes layout O(n²) across an all-rich transcript mount.
+    // The ResizeObserver below seeds the real height (rAF-batched) on its
+    // initial `observe()` callback; consumers read `var(..., 0)` for the
+    // one frame before it lands.
     // Coalesce the callback write via rAF to avoid "ResizeObserver loop
     // completed with undelivered notifications" — the write sets a CSS
     // var consumed by sticky descendant chrome, whose relayout can queue
