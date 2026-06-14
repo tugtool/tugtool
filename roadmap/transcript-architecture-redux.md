@@ -29,9 +29,9 @@ The three observed defects map to one root cause and two consequences:
 
 2. **Scroll control.** `card-host.tsx` installs a `MutationObserver`-driven region-scroll re-apply loop, designed for *virtualized* scrollers whose `scrollHeight` grows after mount as estimated heights refine. It re-applies the saved `scrollTop` on every cardRoot mutation until the live `scrollTop` lands within `REGION_SCROLL_TOLERANCE_PX = 8` of the saved value. For a transcript saved while following the bottom, this never settles — re-engaging SmartScroll follow-bottom (`source: "scroll-to-bottom"`) and slamming the user down whenever they try to scroll up.
 
-3. **Reload/restore.** Because heights are estimate-driven, the saved pixel position can't be honored on the first commit, which is why the retry loop exists at all. Removing estimates removes the reason for the loop.
+3. **Reload/restore.** The list view *already* implements a correct, anchor-based, real-height restore: `tug-list-view.tsx`'s anchor-state writer serializes `{anchor:{index,offset}, cellHeights, atBottom}` onto `data-tug-scroll-state` every commit, and on restore it hydrates the live `HeightIndex` from `meta.cellHeights` (so `offsetForIndex(anchorIndex)` is exact on the first commit), installs the saved anchor as a `SmartScroll` restore target before paint, and listens for `tug-region-scroll-set` with **anchor** (disengages follow-bottom), **raw**, and **atBottom** (re-engages follow-bottom) branches. The problem is **not** that restore is a raw-`scrollTop`-with-retry mechanism — it is that `TieredCell` *corrupts the inputs* this mechanism consumes: at save time, off-screen cells measure at their **cheap** height, so the captured `cellHeights` and the anchor writer's `indexForOffset(scrollTop)` are computed against cheap heights and shift as cells go rich. The observed slam is specifically the `tug-region-scroll-set` listener's **atBottom branch** re-engaging follow-bottom (`atBottom` is saved whenever `SmartScroll.isFollowingBottom` at capture), re-triggered by CardHost's retry loop re-dispatching the event on every mutation.
 
-The insight that unblocks all five requirements: **render every cell at its true height — no cheap tier, no estimates.** Then the scrollbar is the real cumulative height (never shifts), there are no cheap placeholders (no holes), and pixel-perfect restore becomes a one-shot assignment instead of a fighting loop.
+The insight that unblocks all five requirements: **render every cell at its true height — no cheap tier, no estimates.** Then the scrollbar is the real cumulative height (never shifts), there are no cheap placeholders (no holes), and — crucially — the **already-correct anchor restore is fed real `cellHeights`/anchor data**, so it becomes trustworthy. Concern B is therefore about *verifying and repairing the existing anchor mechanism* (and the `atBottom` save/re-engage semantics), **not** about building a new restore path.
 
 #### Strategy {#strategy}
 
@@ -40,7 +40,8 @@ The insight that unblocks all five requirements: **render every cell at its true
 - **Never use estimates.** No cheap reserved heights, no estimated offsets for the dev transcript. The scrollbar is always the true sum of measured heights. (See [[feedback_no_height_estimates]].)
 - **Measure on the user's real sessions, never assert.** Prove load time on the biggest real session before declaring requirement #1 met. Only if a genuinely huge transcript is too slow do we escalate to *measure-every-row-once → cache real heights → window on real numbers* — a follow-on, not this phase.
 - **Let the all-rich pass adjudicate the reducer question empirically.** If holes/missing messages survive all-rich rendering, investigate the reducer `${msgId}:${blockIndex}` keying; if they vanish, the reducer is exonerated and we don't touch it.
-- **Make user scroll always win.** Redesign restore as one-shot and make follow-bottom re-engage only on genuine user intent — never as a side effect of a restore or a mutation.
+- **Repair the existing anchor restore; do not build a second one.** The list view's anchor-based restore is sound — it was being fed estimate-corrupted heights by `TieredCell`. Verify it works once heights are real (concern A), then fix only the specific residual slam (the `atBottom` save/re-engage semantics and CardHost's retry re-dispatch). Never introduce a parallel raw-`scrollTop` restore that competes with the anchor resolver.
+- **Make user scroll always win.** Follow-bottom re-engages only on genuine user intent or a save that legitimately recorded `atBottom` — never as a side effect of a restore or a mutation.
 - **Observe the real app, don't theorize.** Instrument with `tugDevLogStore.debug(...)` on the live debug instance and read persisted card state via the `tugbank` CLI. (See [[feedback_never_fake]].)
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -57,7 +58,7 @@ The insight that unblocks all five requirements: **render every cell at its true
 1. Retire `TieredCell` and render every dev-transcript cell rich at its real height (no cheap tier, no estimates).
 2. Remove the now-dead cheap-preview plumbing for the dev transcript (`previewForRow`, `previewTextForMessages` usage, `transcript-tier.*`) where no longer referenced.
 3. Empirically confirm whether residual holes/missing messages exist; if so, fix the reducer-level cause.
-4. Redesign scroll-restore so user scroll always wins: one-shot region-scroll restore for the transcript, correct follow-bottom/atBottom semantics.
+4. Make user scroll always win by repairing the existing anchor-based restore (not replacing it): correct `atBottom` save/re-engage semantics and stop the CardHost retry from re-triggering follow-bottom.
 5. Achieve pixel-perfect save/restore across Developer ▸ Reload and HMR on real heights.
 6. Measure and tune Developer ▸ Reload and HMR performance; preserve the HMR-never-reloads-data invariant.
 
@@ -89,7 +90,7 @@ The insight that unblocks all five requirements: **render every cell at its true
 
 - Real transcripts are ~250 rows; the markdown-reconcile fix (`80c246c6`, in baseline) already removed the old all-rich blow-up, so all-rich is expected to be affordable — to be confirmed by measurement, not assumed.
 - Removing `TieredCell` eliminates the holes and the scrollbar shift together (single mechanism). The reducer keying is a *secondary* hypothesis to be tested only if defects survive.
-- With real heights, a transcript's `scrollHeight` is correct on the first commit after replay completes, so restore needs no growth-chasing retry loop for this region.
+- With real heights, a transcript's `scrollHeight` is correct on the first commit after replay completes, so the existing anchor restore resolves exactly and the CardHost growth-chasing retry settles immediately for this region (no fighting).
 
 ---
 
@@ -139,7 +140,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **Risk R01: Scoping the region-scroll restore change** {#r01-region-scope}
 
 - **Risk:** The CardHost MutationObserver retry serves *all* `data-tug-scroll-key` regions (notably virtualized `tug-markdown-view`), not just the transcript.
-- **Mitigation:** Distinguish the transcript region (real heights → one-shot restore) from genuinely virtualized regions (keep growth-chasing). Do not delete the loop wholesale; branch on region capability.
+- **Mitigation:** Distinguish the transcript region (real heights → retry settles on the first commit) from genuinely virtualized regions (keep growth-chasing). Do not delete the loop wholesale; fix only its re-dispatch behavior so it stops re-triggering the `atBottom` re-engage once settled.
 - **Residual risk:** A future region that claims real heights but lies would mis-restore; documented as a region contract.
 
 ---
@@ -169,20 +170,21 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 - Estimate-free is the only way to guarantee a non-shifting scrollbar and pixel-perfect restore.
 
 **Implications:**
-- The dev transcript's `scrollHeight` is correct on the first commit after replay — enabling one-shot restore.
+- The dev transcript's `scrollHeight` is correct on the first commit after replay, so the existing anchor restore resolves exactly with no estimate-then-refine hop.
 - A future huge-transcript escalation must measure real heights once and window on those, never on estimates (#roadmap).
 
-#### [P03] One-shot, real-height region-scroll restore for the transcript (DECIDED) {#p03-one-shot-restore}
+#### [P03] Repair the existing anchor-based restore; never build a second restore path (DECIDED) {#p03-anchor-restore}
 
-**Decision:** For the transcript region, restore saved `scrollTop` once after replay/paint settles, then stop. Do not run the growth-chasing MutationObserver re-apply loop for this region.
+**Decision:** Keep and rely on the list view's existing anchor-based restore (`{anchor:{index,offset}, cellHeights, atBottom}` on `data-tug-scroll-state`; HeightIndex hydration; `tug-region-scroll-set` listener). Once heights are real (concern A), verify it restores pixel-perfectly, then fix only the specific residual slam. **Do not** introduce a parallel raw-`scrollTop` one-shot restore that competes with the anchor resolver.
 
 **Rationale:**
-- The retry loop exists only because virtualized scrollers grow `scrollHeight` after mount as estimates refine. With real heights there is nothing to chase.
-- The never-settling loop is the slam mechanism for an atBottom-saved transcript (#context).
+- The anchor mechanism is the correct pixel-perfect approach and already exists; it was failing only because `TieredCell` fed it cheap (estimate-like) `cellHeights` and a cheap-height anchor (#context).
+- A second restore path would race the anchor resolver and the `tug-region-scroll-set` listener — exactly the kind of two-mechanisms-fighting bug this redo is trying to end.
 
 **Implications:**
-- The CardHost restore path must branch: real-height regions get one-shot restore; genuinely virtualized regions keep growth-chasing (R01).
-- Restore disengages follow-bottom and suppresses idle-reengage for that programmatic write (existing SmartScroll affordances).
+- After concern A, `heightIndexRef.snapshot()` yields real `cellHeights` and the anchor writer's `indexForOffset(scrollTop)` is computed on real heights — the restore should be correct without new code.
+- The slam fix targets the `atBottom` **save** semantics (don't record `atBottom` when the user has scrolled up) and the CardHost retry loop **re-dispatching** `tug-region-scroll-set` (which re-triggers the atBottom re-engage). With real heights the transcript's `scrollHeight` is correct on the first commit, so the growth-chasing retry settles immediately for this region (it need not be deleted, but must stop fighting once settled — see R01).
+- Restore disengages follow-bottom via the existing anchor branch / suppression affordances; no new programmatic raw write is added.
 
 #### [P04] User scroll always wins; follow-bottom re-engages only on genuine user intent (DECIDED) {#p04-user-wins}
 
@@ -217,7 +219,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | Measured cell heights | structure/local-data | `ResizeObserver` → `HeightIndex`/DOM measurement; never React state | [L22], [L06] |
 | Scroll thumb geometry | appearance | true `scrollHeight` from measured layout; CSS/DOM, no estimate math | [L06] |
 | Follow-bottom intent | appearance | DOM attribute (`data-visible`) via `onFollowBottomChange`; never React state | [L06] |
-| Region scroll restore (transcript) | local-data (DOM authority) | one-shot `scrollTop` write gated on paint settle; `tug-region-scroll-set` event to disengage follow-bottom | [L22], [L23] |
+| Region scroll restore (transcript) | local-data (DOM authority) | existing anchor resolver (`{index,offset}` + HeightIndex hydration from real `cellHeights`); `tug-region-scroll-set` listener; no new raw write | [L22], [L23] |
 | Saved card state (scrollTop, anchor, atBottom) | external/persistent | tugbank via `/api/defaults`; enters React only via `useSyncExternalStore` if observed | [L02] |
 | Stable cell wrapper identity | structure | same wrapper element across re-renders so observers/restore stay attached | [L26] |
 
@@ -254,7 +256,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | #step-1 | Retire TieredCell — render all transcript cells rich | pending | — |
 | #step-2 | Vet rendering on the real app; adjudicate residual defects | pending | — |
 | #step-3 | (Conditional) Fix reducer split-entry block keying | pending | — |
-| #step-4 | One-shot real-height region-scroll restore; user scroll wins | pending | — |
+| #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | pending | — |
 | #step-5 | Pixel-perfect restore + load measurement on real sessions | pending | — |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
 | #step-7 | Integration checkpoint — all five requirements on real sessions | pending | — |
@@ -268,12 +270,15 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **References:** [P01] All-rich render, [P02] No estimates, (#context, #rendering-all-rich), Risk R01
 
 **Artifacts:**
-- `dev-card-transcript.tsx`: cell renderers (user/assistant/ghost) render their rich cell directly, not wrapped in `TieredCell`.
-- Removed dead cheap-preview plumbing where unreferenced: `previewForRow`, `previewTextForMessages` import/usage, and `transcript-tier.tsx` / `transcript-tier.css` if no other consumer remains.
+- `dev-card-transcript.tsx`: cell renderers (user/assistant/ghost) render their rich cell directly, not wrapped in `TieredCell`; `forceRich`/`previewForRow` derivation removed.
+- Orphaned files removed (dev transcript is the sole consumer — confirmed by grep): `transcript-tier.tsx`, `transcript-tier.css`, `src/lib/transcript-preview.ts`, and its test `src/lib/__tests__/transcript-preview.test.ts`.
+- `dev-card.css`: the now-dead `.tug-list-view-cell:has(.dev-transcript-tier[data-tier="rich"]) { … }` rule (≈line 437) removed.
 
 **Tasks:**
-- [ ] In `dev-card-transcript.tsx`, replace each `<TieredCell …>{() => <Cell/>}</TieredCell>` with the rich `<Cell/>` directly; remove `forceRich` derivation.
-- [ ] Grep for other consumers of `TieredCell`, `previewTextForMessages`, `previewForRow`; delete the dev-transcript-only ones and remove `transcript-tier.*` only if fully unreferenced.
+- [ ] In `dev-card-transcript.tsx`, replace each `<TieredCell …>{() => <Cell/>}</TieredCell>` with the rich `<Cell/>` directly; remove `forceRich` and `previewForRow`.
+- [ ] Delete `transcript-tier.{tsx,css}`, `transcript-preview.ts`, and `transcript-preview.test.ts`; remove their imports.
+- [ ] Remove the `.dev-transcript-tier[data-tier="rich"]` rule from `dev-card.css`.
+- [ ] Re-grep `TieredCell`/`previewTextForMessages`/`previewForRow`/`transcript-tier`/`dev-transcript-tier` to confirm zero remaining references before committing.
 - [ ] Keep the `inline` prop on `TugListView`; confirm no `estimatedHeightForKind` is supplied for this list.
 - [ ] Cross-check tuglaws (L06/L22/L26) and name them in the commit body.
 
@@ -333,23 +338,25 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 ---
 
-#### Step 4: One-shot real-height region-scroll restore; user scroll wins {#step-4}
+#### Step 4: Repair anchor restore + atBottom semantics; user scroll wins {#step-4}
 
 **Depends on:** #step-2
 
-**Commit:** `One-shot transcript scroll restore; stop slam-to-bottom`
+**Commit:** `Fix transcript atBottom save/re-engage; stop slam-to-bottom`
 
-**References:** [P03] One-shot restore, [P04] User scroll wins, Risk R01, (#scroll-control-model, #r01-region-scope)
+**References:** [P03] Anchor restore (no second path), [P04] User scroll wins, Risk R01, (#scroll-control-model, #r01-region-scope)
+
+> The list view's anchor-based restore (`{anchor:{index,offset}, cellHeights, atBottom}` + HeightIndex hydration + `tug-region-scroll-set` listener) already exists and is correct. **Verify it first** on real heights (post-#step-1); do **not** add a parallel raw-`scrollTop` restore ([P03]). Fix only the residual slam.
 
 **Artifacts:**
-- `card-host.tsx`: transcript region restored one-shot (gated on replay/paint settle), not via the never-settling MutationObserver loop; genuinely virtualized regions keep the existing growth-chasing path (R01).
-- `smart-scroll.ts` / `dev-card-transcript.tsx`: restore disengages follow-bottom and suppresses idle-reengage for the programmatic write; follow-bottom re-engages only on user intent or an `atBottom`-flagged save.
+- `tug-list-view.tsx`: `atBottom` is saved only when the user is genuinely following the bottom (not when they have scrolled up); the `tug-region-scroll-set` atBottom branch re-engages follow-bottom only when that is the user's intent.
+- `card-host.tsx`: the region-scroll retry loop stops re-dispatching `tug-region-scroll-set` for the transcript once settled (real heights → settles on the first commit), so it cannot keep re-triggering the atBottom re-engage; the generic growth-chasing path for genuinely virtualized regions is left intact (R01).
 
 **Tasks:**
-- [ ] Branch the CardHost restore so the transcript region (real heights) restores once and stops; do not delete the loop used by virtualized regions.
-- [ ] Ensure the programmatic restore routes through `tug-region-scroll-set` (disengage follow-bottom) and sets the idle-reengage suppression, so no `idle-reengage`/`scroll-to-bottom` engage follows.
-- [ ] Verify `atBottom` semantics: a transcript saved while following bottom resumes following; a transcript saved scrolled-up restores to the saved pixel and stays.
-- [ ] Cross-check tuglaws (L02/L22/L23) and name them in the commit body.
+- [ ] On real heights, verify the existing anchor restore lands pixel-perfectly across Developer ▸ Reload *before* changing anything; capture saved vs. restored anchor via `tugDevLogStore.debug(...)`.
+- [ ] Trace the observed `disengage{wheel-up} → ENGAGE{scroll-to-bottom}` slam to its source via `followdbg`/deckTrace: confirm whether it is (a) `atBottom` saved true while scrolled up, or (b) CardHost's retry re-dispatching `tug-region-scroll-set` on mutations re-firing the atBottom branch — and fix the confirmed cause(s).
+- [ ] Verify `atBottom` semantics end-to-end: a transcript saved while following bottom resumes following; a transcript saved scrolled-up restores to the saved anchor and stays put under subsequent mutations.
+- [ ] Do not introduce a new programmatic raw `scrollTop` write; rely on the anchor resolver and existing suppression affordances. Cross-check tuglaws (L02/L22/L23/L26) and name them in the commit body.
 
 **Tests:**
 - [ ] `just app-test` real-app test: scroll up on a resumed real session, mutate/settle, assert `scrollTop` stays put (no slam); assert `followdbg` shows no spurious engage. Fast fixture, short timeouts, prompt exit.
@@ -365,7 +372,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Commit:** `Pixel-perfect transcript restore across reload`
 
-**References:** [P03] One-shot restore, [Q02] All-rich perf, (#pixel-perfect-restore, #perf-measurement, #q02-allrich-perf)
+**References:** [P03] Anchor restore (no second path), [Q02] All-rich perf, (#pixel-perfect-restore, #perf-measurement, #q02-allrich-perf)
 
 **Artifacts:**
 - Verified save/restore on real heights; recorded load measurements in this plan's [Q02] resolution.
@@ -373,6 +380,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **Tasks:**
 - [ ] On the live debug instance, scroll to a marked row, note saved `scrollTop` (read tugbank: `tugbank --instance <id> --json read dev.tugtool.deck.cardstate <cardId>`), trigger Developer ▸ Reload, and confirm the restored `scrollTop` matches within ≤2px on the same row. Log saved vs. restored via `tugDevLogStore.debug(...)`.
 - [ ] Measure load time of the largest real session (replay-to-interactive) and record it; resolve [Q02]. Confirm no regression vs. the ~2.2s inline-no-hold baseline.
+- [ ] **Measure the mount-all spike specifically:** with all-rich, the cost lands at the instant the `listMounted` deferred-content hold flips true and every row mounts rich at once. Time that commit (instrument around the `listMounted` flip) — it, not steady-state scroll, is the [Q02] worst case.
 
 **Tests:**
 - [ ] `just app-test` real-app reload test: resume → scroll to anchor → reload → assert landed `scrollTop` within tolerance. Fast fixture, short timeouts.
@@ -391,10 +399,11 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **References:** [P02] No estimates, (#reload-hmr-perf), [[project_hmr_vs_reload]]
 
 **Artifacts:**
-- Reveal/paint gate for Developer ▸ Reload tuned for all-rich; HMR confirmed to never reload transcript data.
+- The two reveal mechanisms tuned for all-rich: the `listMounted` deferred-content hold (list not mounted during the initial resume window; `DevReplayProgress` strip shown instead) and the `[DT10]` `data-replaying` → `visibility:hidden` paint gate. HMR confirmed to never reload transcript data.
 
 **Tasks:**
-- [ ] Time Developer ▸ Reload on real sessions; tune the paint/reveal gate (`data-replaying`/DevReplayProgress) so reveal is single and fast with all-rich, no accumulation FOUC.
+- [ ] Time Developer ▸ Reload on real sessions across both reveal mechanisms; confirm the `listMounted` flip → mount-all-rich → single reveal sequence has no accumulation FOUC and no double reveal between the deferred-content hold and the `[DT10]` gate.
+- [ ] Tune the hold/gate so the (now heavier) mount-all-rich commit reveals once, cleanly — adjust gate timing only, never re-introduce estimates or per-cell tiering to mask cost.
 - [ ] Confirm the HMR-vs-Reload invariant: HMR repaints without re-resuming from JSONL; Developer ▸ Reload is the only true hard refresh. Verify via dev-panel logs that an HMR save does not re-run replay.
 
 **Tests:**
