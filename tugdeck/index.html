@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws: wss:; font-src 'self' data:;">
   <title>tugdeck</title>
+  <!-- Bundled @font-face rules, served statically from /public so they sit
+       OUTSIDE Vite's HMR module graph and are never re-registered on a hot
+       update. This is what keeps transcript text from flashing (blank or
+       wrong-face) on every dev edit — see public/fonts.css for the full
+       rationale. Loaded in <head> so the faces are registered before first
+       paint. -->
+  <link rel="stylesheet" href="/fonts.css">
 </head>
 <body style="margin:0;padding:0;overflow:hidden">
   <div id="deck-container"></div>
