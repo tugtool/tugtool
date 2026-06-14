@@ -58,6 +58,10 @@ export function DevSessionIdBadge({
   // unnamed → the truncated id, full id in the tooltip.
   const { value, tooltip } = sessionChipDisplay(name, tugSessionId);
 
+  // Copy the full value (un-ellipsized name, or the full session id), not the
+  // truncated chip face.
+  const copyValue = name?.trim() ? name.trim() : tugSessionId;
+
   return (
     <TugBadge
       emphasis="tinted"
@@ -66,6 +70,7 @@ export function DevSessionIdBadge({
       layout="label-top"
       label="Session"
       title={tooltip}
+      copyText={`Session: ${copyValue}`}
       disabled={disabled}
     >
       {value}

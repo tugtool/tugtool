@@ -49,6 +49,7 @@
 import React, { useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { formatModelLabel } from "@/lib/model-label";
@@ -127,12 +128,17 @@ export function ModelChip({
     title = "Model not reported by the session";
   }
 
+  const copy = useCopyableButton(`Model: ${content}`);
+
   // `TugPushButton` has no `caution` role (unlike `TugBadge`), so an unknown
   // model is surfaced via the `?` value + a `data-unknown` hook rather than a
   // role escalation or a layout-shifting icon — still "show the gap, don't
   // swallow it", never hides, and the value stays centered.
   return (
+    <>
     <TugPushButton
+      ref={copy.ref as React.Ref<HTMLButtonElement>}
+      onContextMenu={copy.onContextMenu}
       layout="label-top"
       label="Model"
       size="sm"
@@ -157,5 +163,7 @@ export function ModelChip({
         alternates={MODEL_CHIP_SIZER_LABELS}
       />
     </TugPushButton>
+    {copy.contextMenu}
+    </>
   );
 }

@@ -38,6 +38,7 @@ import "./permission-mode-chip.css";
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
@@ -121,8 +122,13 @@ export function PermissionModeChip({
   // the mode through the same helper so menu checkmarks match the chip.
   const mode = resolvePermissionMode(liveMode, persistedMode);
 
+  const copy = useCopyableButton(`Mode: ${formatPermissionMode(mode)}`);
+
   return (
+    <>
     <TugPushButton
+      ref={copy.ref as React.Ref<HTMLButtonElement>}
+      onContextMenu={copy.onContextMenu}
       layout="label-top"
       label="Mode"
       size="sm"
@@ -150,6 +156,8 @@ export function PermissionModeChip({
         alternates={PERMISSION_MODE_MENU.map((m) => formatPermissionMode(m))}
       />
     </TugPushButton>
+    {copy.contextMenu}
+    </>
   );
 }
 

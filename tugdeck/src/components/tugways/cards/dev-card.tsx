@@ -92,6 +92,7 @@ import { presentAlertSheet } from "../tug-alert-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
+import { useCopyableButton } from "../use-copyable-text";
 import { useFocusManager } from "../use-focusable";
 import { useCycleMode } from "../use-cycle-mode";
 import { rowGridOrder, type SpatialOrder } from "../spatial-order";
@@ -3357,20 +3358,27 @@ export function DevCardBody({
 
   const projectChipText =
     projectDir !== null ? formatProjectChipText(projectDir) : null;
+  // Right-click → Copy the full project path (not the ellipsized chip face).
+  const projectCopy = useCopyableButton(`Project: ${projectDir ?? ""}`);
   const projectStatusContent = projectDir !== null ? (
-    <TugPushButton
-      size="sm"
-      emphasis="tinted"
-      role="agent"
-      layout="label-top"
-      label="Project"
-      data-slot="project-chip"
-      aria-label="Open project folder in Finder"
-      title={`Open in Finder: ${projectDir}`}
-      onClick={() => openPathInOS(projectDir, "folder")}
-    >
-      {projectChipText}
-    </TugPushButton>
+    <>
+      <TugPushButton
+        ref={projectCopy.ref as React.Ref<HTMLButtonElement>}
+        onContextMenu={projectCopy.onContextMenu}
+        size="sm"
+        emphasis="tinted"
+        role="agent"
+        layout="label-top"
+        label="Project"
+        data-slot="project-chip"
+        aria-label="Open project folder in Finder"
+        title={`Open in Finder: ${projectDir}`}
+        onClick={() => openPathInOS(projectDir, "folder")}
+      >
+        {projectChipText}
+      </TugPushButton>
+      {projectCopy.contextMenu}
+    </>
   ) : null;
 
   // Dev-only placement-experiment slots. In production this returns

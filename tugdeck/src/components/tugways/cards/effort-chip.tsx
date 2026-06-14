@@ -40,6 +40,7 @@
 import React, { useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import {
@@ -108,8 +109,13 @@ export function EffortChip({
       ? `Reasoning effort: ${content} (default)`
       : `Reasoning effort: ${content}`;
 
+  const copy = useCopyableButton(`Effort: ${content}`);
+
   return (
+    <>
     <TugPushButton
+      ref={copy.ref as React.Ref<HTMLButtonElement>}
+      onContextMenu={copy.onContextMenu}
       layout="label-top"
       label="Effort"
       size="sm"
@@ -129,5 +135,7 @@ export function EffortChip({
         alternates={sizerLabels}
       />
     </TugPushButton>
+    {copy.contextMenu}
+    </>
   );
 }

@@ -298,6 +298,7 @@ export function DevRouteIndicatorBadge({
           className={cls}
           data-route={isShell ? "shell" : "code"}
           data-slot="dev-route-indicator-badge"
+          copyText={`${caption}: ${content}`}
           widthStabilize={{
             alternateLabel: inactiveCaption,
             alternateContent: inactiveContent,

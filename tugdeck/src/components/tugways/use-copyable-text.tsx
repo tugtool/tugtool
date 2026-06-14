@@ -191,3 +191,34 @@ export function useCopyableText({
 
   return { composedRef, handleContextMenu, contextMenu };
 }
+
+// ---------------------------------------------------------------------------
+// useCopyableButton — right-click → Copy for chip-style buttons
+// ---------------------------------------------------------------------------
+
+/** Wiring for a copyable button: attach to its element and render the menu. */
+export interface UseCopyableButtonResult {
+  /** Attach to the button's `ref` prop. */
+  ref: (el: HTMLElement | null) => void;
+  /** Pass to the button's `onContextMenu` prop. */
+  onContextMenu: (e: React.MouseEvent) => void;
+  /** Render alongside the button (holds the Copy menu portal). */
+  contextMenu: React.ReactNode;
+}
+
+/**
+ * Right-click → Copy for a chip-style button (TugPushButton with a
+ * `label-top` layout). Buttons own no intrinsic copy affordance the way
+ * {@link TugBadge} does, so the Z4B control chips (Project / Mode / Model /
+ * Effort) call this to copy their `Label: value` text on right-click —
+ * matching the display badges beside them. `text` is the exact string copied.
+ */
+export function useCopyableButton(text: string): UseCopyableButtonResult {
+  const ref = React.useRef<HTMLElement | null>(null);
+  const { composedRef, handleContextMenu, contextMenu } = useCopyableText({
+    ref,
+    getText: () => text,
+    copyMenu: true,
+  });
+  return { ref: composedRef, onContextMenu: handleContextMenu, contextMenu };
+}

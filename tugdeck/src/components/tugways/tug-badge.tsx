@@ -150,6 +150,14 @@ export interface TugBadgeProps extends Omit<React.ComponentPropsWithoutRef<"span
     alternateLabel?: React.ReactNode;
     alternateContent?: React.ReactNode;
   };
+  /**
+   * Explicit text for the right-click → Copy action. When set, Copy writes
+   * this string instead of the badge's `textContent`. Two-line chips pass
+   * `"Label: value"` so the copied text reads `Session: 96ebc055` rather than
+   * the run-together `Session96ebc055`; width-stabilized chips pass only the
+   * active face's value so the hidden alternate face is never copied.
+   */
+  copyText?: string;
 }
 
 // ---- TugBadge ----
@@ -166,6 +174,7 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     iconGap,
     disabled = false,
     widthStabilize,
+    copyText,
     className,
     style,
     ...rest
@@ -193,6 +202,7 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     const copyable = useCopyableText({
       ref: badgeRef as React.MutableRefObject<HTMLElement | null>,
       forwardedRef: ref as React.Ref<HTMLElement>,
+      getText: copyText !== undefined ? () => copyText : undefined,
       copyMenu: true,
     });
 
