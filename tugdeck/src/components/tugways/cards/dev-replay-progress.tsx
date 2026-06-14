@@ -1,11 +1,15 @@
 /**
- * `DevReplayProgress` — the always-on resume affordance ([P03] /
+ * `DevReplayProgress` — the resume affordance ([P03] /
  * Spec S03 of the resume-performance plan).
  *
- * Visible from the moment the card body mounts on a resume until the
- * replay window closes, replaced by content, never by blank. The wait
- * has three segments and only one produces deck events, so the strip
- * is built to be informative across all of them:
+ * Delay-gated: the strip stays hidden until the restore has run past
+ * `REPLAY_SOFT_BUDGET_MS` (the same threshold `DevRestoring` uses), so a
+ * fast restore — the common local reload — reveals nothing and the body
+ * just appears, with no "Restoring…" bar flashing on and off over a
+ * sub-perceptual wait. Once revealed it stays until the replay window
+ * closes, replaced by content, never by blank. The wait has three
+ * segments and only one produces deck events, so the strip is built to
+ * be informative across all of them:
  *
  *  1. **Open → first frame** (spawn + request + read + translate):
  *     nothing arrives at the deck. The strip shows the t=0 facts the
@@ -47,11 +51,15 @@ import "./dev-replay-progress.css";
 
 import React from "react";
 
-import type { CodeSessionStore } from "@/lib/code-session-store";
+import {
+  REPLAY_SOFT_BUDGET_MS,
+  type CodeSessionStore,
+} from "@/lib/code-session-store";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import {
   getResumeDisplayMetadata,
+  getRestoreStartedAt,
   type ResumeDisplayMetadata,
 } from "@/lib/dev-session-restore";
 
@@ -154,12 +162,54 @@ export const DevReplayProgress: React.FC<DevReplayProgressProps> = ({
     () => codeSessionStore.getSnapshot().transcript.length,
   );
 
+  // Reveal delay — mirror `DevRestoring`'s `RESTORE_PLACEHOLDER_DELAY_MS`
+  // (both `= REPLAY_SOFT_BUDGET_MS`, so "the restore is taking long
+  // enough to explain itself" is one threshold across the codebase).
+  // The strip stays hidden until the restore has been running past the
+  // budget, measured from the persisted restore-start stamp — which
+  // survives this component's remount at the services-null boundary, the
+  // same reason `DevRestoring` reads `getRestoreStartedAt` rather than a
+  // component-local timer. A restore that finishes UNDER the budget (the
+  // common fast local reload) never reveals the bar, so the user no
+  // longer sees a "Restoring…" strip flash on and off over a
+  // sub-perceptual wait. A missing stamp means "treat as just started" —
+  // arm the full delay.
+  const [revealed, setRevealed] = React.useState<boolean>(() => {
+    const startedAt = getRestoreStartedAt(cardId);
+    return (
+      startedAt !== undefined &&
+      Date.now() - startedAt >= REPLAY_SOFT_BUDGET_MS
+    );
+  });
+  // Mirror `revealed` into a ref so the dwell effect can read it without
+  // taking it as a dependency — the dwell effect mutates `revealed`
+  // (re-arming the latch on episode end), and depending on it there
+  // would re-run the effect mid-dwell, firing its cleanup and cancelling
+  // the dismissal timer (the completed bar would then linger forever).
+  const revealedRef = React.useRef(revealed);
+  revealedRef.current = revealed;
+  React.useEffect(() => {
+    if (!active || revealed) return;
+    const startedAt = getRestoreStartedAt(cardId);
+    const elapsed = startedAt === undefined ? 0 : Date.now() - startedAt;
+    const remaining = REPLAY_SOFT_BUDGET_MS - elapsed;
+    if (remaining <= 0) {
+      setRevealed(true);
+      return;
+    }
+    const handle = setTimeout(() => setRevealed(true), remaining);
+    return () => clearTimeout(handle);
+  }, [active, revealed, cardId]);
+
   // Dismissal dwell: the window-close commit would otherwise unmount
   // the strip in the same paint that delivers the final turn count,
   // so the user never sees the bar finish. On the active → settled
   // edge the strip lingers briefly in its completed pose (full bar,
   // `max of max`), then unmounts. The last live view is captured in a
-  // ref because the resume metadata clears with the window.
+  // ref because the resume metadata clears with the window. Gated on
+  // `revealed` (read via ref): a fast restore that never revealed must
+  // not flash a completed bar on its way out either. Resets the reveal
+  // latch on the way down so the next restore episode re-arms the delay.
   const [dwell, setDwell] = React.useState(false);
   const lastViewRef = React.useRef<ReplayProgressView | null>(null);
   const wasActiveRef = React.useRef(false);
@@ -171,6 +221,9 @@ export const DevReplayProgress: React.FC<DevReplayProgressProps> = ({
     }
     if (!wasActiveRef.current) return;
     wasActiveRef.current = false;
+    const didReveal = revealedRef.current;
+    setRevealed(false);
+    if (!didReveal) return;
     setDwell(true);
     const handle = setTimeout(
       () => setDwell(false),
@@ -180,7 +233,7 @@ export const DevReplayProgress: React.FC<DevReplayProgressProps> = ({
   }, [active]);
 
   let view: ReplayProgressView;
-  if (active) {
+  if (active && revealed) {
     view = deriveReplayProgress(turnsSoFar, getResumeDisplayMetadata(cardId));
     lastViewRef.current = view;
   } else if (dwell && lastViewRef.current !== null) {
