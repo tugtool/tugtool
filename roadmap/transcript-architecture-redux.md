@@ -259,7 +259,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | #step-1 | Retire TieredCell — render all transcript cells rich | done | cffcc343 |
 | #step-2 | Vet rendering on the real app; adjudicate residual defects | done (no holes / stable scrollbar; [Q01] exonerated) | (verification only) |
 | #step-3 | (Conditional) Fix reducer split-entry block keying | done — exonerated with evidence (already fixed in tugcode replay + tested; no change) | (verification only) |
-| #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | pending | — |
+| #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | done (live-vetted + at0189 green; awaiting commit) | — |
 | #step-5 | Pixel-perfect restore + load measurement on real sessions | pending | — |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
 | #step-7 | Integration checkpoint — all five requirements on real sessions | pending | — |
@@ -360,21 +360,27 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 > The list view's anchor-based restore (`{anchor:{index,offset}, cellHeights, atBottom}` + HeightIndex hydration + `tug-region-scroll-set` listener) already exists and is correct. **Verify it first** on real heights (post-#step-1); do **not** add a parallel raw-`scrollTop` restore ([P03]). Fix only the residual slam.
 
+**Root cause traced (from code) + fix landed:** the slam is the CardHost region-scroll retry loop. Its settle gate is `scrollTop ≈ saved pos.y`. An `atBottom` region restores by re-pinning to the **live** bottom (taller than at save), so `scrollTop` converges to `scrollHeight − clientHeight`, never the stale `pos.y` → the gate never trips → the `MutationObserver` re-dispatches `tug-region-scroll-set` on every cardRoot mutation, and the list view's at-bottom branch (`smartScroll.scrollToBottom`, which calls `_setFollowingBottom(true,'scroll-to-bottom')`) re-engages follow-bottom each time — slamming a user who has scrolled up (matches the observed `disengage{wheel-up} → ENGAGE{scroll-to-bottom}` trace). **Fix:** `card-host.tsx` treats an `atBottom` region as a **one-shot** — dispatch once to resume following, then mark settled immediately and hand ongoing pin/disengage to SmartScroll (its own follow-bottom + `maybePinToBottom`, which a user wheel-up disengages and a restore never fights). **No `tug-list-view.tsx` change needed:** the save side already records `atBottom` only when `isFollowingBottom`, and one-shot CardHost means the re-engage fires exactly once on cold boot — when resuming-follow *is* the user's intent. No second restore path; no new raw `scrollTop` write. Generic across all `atBottom` regions (R01), not transcript-specific.
+
 **Artifacts:**
 - `tug-list-view.tsx`: `atBottom` is saved only when the user is genuinely following the bottom (not when they have scrolled up); the `tug-region-scroll-set` atBottom branch re-engages follow-bottom only when that is the user's intent.
 - `card-host.tsx`: the region-scroll retry loop stops re-dispatching `tug-region-scroll-set` for the transcript once settled (real heights → settles on the first commit), so it cannot keep re-triggering the atBottom re-engage; the generic growth-chasing path for genuinely virtualized regions is left intact (R01).
 
 **Tasks:**
-- [ ] On real heights, verify the existing anchor restore lands pixel-perfectly across Developer ▸ Reload *before* changing anything; capture saved vs. restored anchor via `tugDevLogStore.debug(...)`.
-- [ ] Trace the observed `disengage{wheel-up} → ENGAGE{scroll-to-bottom}` slam to its source via `followdbg`/deckTrace: confirm whether it is (a) `atBottom` saved true while scrolled up, or (b) CardHost's retry re-dispatching `tug-region-scroll-set` on mutations re-firing the atBottom branch — and fix the confirmed cause(s).
-- [ ] Verify `atBottom` semantics end-to-end: a transcript saved while following bottom resumes following; a transcript saved scrolled-up restores to the saved anchor and stays put under subsequent mutations.
-- [ ] Do not introduce a new programmatic raw `scrollTop` write; rely on the anchor resolver and existing suppression affordances. Cross-check tuglaws (L02/L22/L23/L26) and name them in the commit body.
+- [x] Traced the `disengage{wheel-up} → ENGAGE{scroll-to-bottom}` slam to its source **from code**: cause (b) — CardHost's retry re-dispatching `tug-region-scroll-set` on every mutation because the `atBottom` region never satisfies the `scrollTop ≈ stale pos.y` settle gate, re-firing the at-bottom branch's `scrollToBottom`. (Cause (a) ruled out: the save records `atBottom` only when `isFollowingBottom`, so a scrolled-up save is already `atBottom:false` + anchor.)
+- [x] Fix landed in `card-host.tsx`: `atBottom` regions are one-shot (dispatch once, settle immediately); no `tug-list-view.tsx` change needed; no second restore path; no new raw `scrollTop` write. Cross-checked tuglaws — **L23** (restore preserves the user's scroll position instead of destroying it on every mutation), **L02/L22** (follow-bottom intent stays in SmartScroll/DOM; restore reads geometry off the DOM, not via React state). `bunx tsc --noEmit` clean.
+- [x] **(live vet — user-confirmed)** Anchor restore lands pixel-perfectly across Developer ▸ Reload.
+- [x] **(live vet — user-confirmed)** `atBottom` semantics end-to-end: "No slam, anchor restore lands, atBottom resumes." A transcript saved at the bottom resumes following on reload; a transcript saved scrolled-up holds when content mutates.
 
 **Tests:**
-- [ ] `just app-test` real-app test: scroll up on a resumed real session, mutate/settle, assert `scrollTop` stays put (no slam); assert `followdbg` shows no spurious engage. Fast fixture, short timeouts, prompt exit.
+- [x] `just app-test at0189-transcript-atbottom-no-slam` — **PASS** (10/10, 3.87s). Two-phase save→reload (modeled on `at0014`): Phase A asserts the saved bag is `atBottom`; Phase B restores, scrolls up, fires a cardRoot mutation, and asserts `scrollTop` never reaches the bottom band. Real-content sanitized fixture (`fixtures/sessions/dev-transcript-basic.jsonl`), **not** a gallery fixture — driven through the real picker→resume path; pre-seeds `recent-projects` to the temp dir so it never touches the live archive; both phases in `try/finally` (no process leak).
 
 **Checkpoint:**
-- [ ] On the live debug instance, scrolling up holds; `followdbg` logs show `disengage{wheel-up}` with no follow-on `ENGAGE{scroll-to-bottom}`.
+- [x] **(live vet)** Scrolling up holds; `followdbg` shows `disengage{wheel-up}` with no follow-on `ENGAGE{scroll-to-bottom}`; anchor restore pixel-perfect. **+** automated `at0189` green.
+
+**Test-harness work folded in here (per the no-synthetic-content / no-live-archive rule, [[feedback_real_content_fixtures]]):**
+- New committed real-fixture resource: `tests/app-test/fixtures/{sanitize.ts, resolve.ts, runner.ts, README.md}` + `sessions/dev-transcript-basic.jsonl` (sanitized slice of a real session — paths/identity/email/secrets scrubbed, oversized blocks clipped, screenshots → 1×1 PNG; privacy-reviewed, 0 residual leaks).
+- Deleted `at0186-collapsed-history.test.ts` (obsolete — it asserted windowed unmount/remount, which #step-1's inline render removed).
 
 ---
 
