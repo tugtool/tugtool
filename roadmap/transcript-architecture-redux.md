@@ -210,6 +210,18 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **Implications:**
 - #step-3 is conditional and may close as "exonerated, no change."
 
+#### [P06] Test content is real-derived committed fixtures — never synthetic, never the live archive (DECIDED) {#p06-real-fixtures}
+
+**Decision:** Behavior/correctness app-tests resume small, **sanitized, committed** slices of REAL sessions (`tests/app-test/fixtures/`), produced by `sanitize.ts` and seeded via `resolve.ts` / `runner.ts`. No synthetic/generated session content. No committed test may draw from, or depend on, the live `~/.claude/projects/` archive. The perf corpus (`corpus/`, `at0185`) is the sole exception — real whale-class workloads, gitignored, `skipIf`-absent.
+
+**Rationale:**
+- Real-world content and cases only; synthetic fixtures validate machinery, not workload ("I have no idea what that content is supposed to be doing"). See [[feedback_real_content_fixtures]].
+- The live archive is private, mutating, and non-portable; committed sanitized slices run everywhere (CI, any machine).
+
+**Implications:**
+- `at0181` (picker) and `at0184` (resume-budgets) migrate off synthetic content (#step-4-5).
+- "Real-derived + sanitized + clipped" still counts as real (real wire shapes / cases); truncation ≠ synthetic.
+
 ---
 
 ### Specification {#specification}
@@ -259,7 +271,8 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | #step-1 | Retire TieredCell — render all transcript cells rich | done | cffcc343 |
 | #step-2 | Vet rendering on the real app; adjudicate residual defects | done (no holes / stable scrollbar; [Q01] exonerated) | (verification only) |
 | #step-3 | (Conditional) Fix reducer split-entry block keying | done — exonerated with evidence (already fixed in tugcode replay + tested; no change) | (verification only) |
-| #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | done (live-vetted + at0189 green; awaiting commit) | — |
+| #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | done (live-vetted + at0189 green) | 9020578d |
+| #step-4-5 | Migrate synthetic-content tests (at0181, at0184) to real fixtures | pending | — |
 | #step-5 | Pixel-perfect restore + load measurement on real sessions | pending | — |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
 | #step-7 | Integration checkpoint — all five requirements on real sessions | pending | — |
@@ -381,6 +394,36 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **Test-harness work folded in here (per the no-synthetic-content / no-live-archive rule, [[feedback_real_content_fixtures]]):**
 - New committed real-fixture resource: `tests/app-test/fixtures/{sanitize.ts, resolve.ts, runner.ts, README.md}` + `sessions/dev-transcript-basic.jsonl` (sanitized slice of a real session — paths/identity/email/secrets scrubbed, oversized blocks clipped, screenshots → 1×1 PNG; privacy-reviewed, 0 residual leaks).
 - Deleted `at0186-collapsed-history.test.ts` (obsolete — it asserted windowed unmount/remount, which #step-1's inline render removed).
+
+---
+
+#### Step 4.5: Migrate synthetic-content tests to real committed fixtures {#step-4-5}
+
+**Depends on:** #step-4
+
+**Commit:** `Resume real fixtures in picker + resume-budget tests`
+
+**References:** [P06] Real fixtures (no synthetic / no live archive), (#test-non-goals), [[feedback_real_content_fixtures]]
+
+> Scope is **`at0181`** (external-session-picker) and **`at0184`** (resume-budgets) — the only committed tests that fabricate session content. `at0182`/`at0183` are referenced lore, not extant files (no action). The perf corpus / `at0185` stays as-is ([P06] exception — real whale workloads, gitignored). Builds are seconds; verify each migration with `just app-test` (short timeout, prompt exit).
+
+**Artifacts:**
+- New committed fixtures under `fixtures/sessions/` as needed: a **2nd listable session** (distinct uuid) for `at0181`'s surface / held / free cases; one or two **size-calibrated** slices for `at0184`'s class analogs (tool-light ~100 msgs; a heavier analog if the budget split needs it). Each produced by `sanitize.ts` and privacy-reviewed.
+- `at0181`: seeds the real fixtures (via `seedFixtureSession` / a multi-session variant) instead of hand-built TUI JSONL; keeps the `~/.claude/sessions` held-registry entry so the blocked-resume path is still exercised. (The existing fixture already carries the TUI bookkeeping records — `mode` / `permission-mode` / `ai-title` / `file-history-snapshot` — that the picker needs.)
+- `at0184`: resumes a real fixture sized to the tool-light analog (and a heavier one if needed) instead of generated prose; budget assertions (≤5 replay commits, parse-once, wall ceiling) re-verified — and re-tuned to the real message mix if the structural invariants shift, documenting any threshold change.
+
+**Tasks:**
+- [ ] Produce the needed fixtures with `sanitize.ts` (distinct uuid ids); privacy-review each (0 residual leaks; report clean).
+- [ ] Rewrite `at0181` to seed real fixtures — surface the external rows, block the held one via the registry, resume a free one — and delete the hand-built JSONL generator.
+- [ ] Rewrite `at0184` to resume real fixture(s); re-verify the fold / parse-once / wall budgets on real content and re-tune thresholds to the real mix if needed (document the change).
+- [ ] Grep-confirm no committed test still generates synthetic session content or depends on `~/.claude/projects` content, except the gitignored perf corpus.
+
+**Tests:**
+- [ ] `just app-test at0181-external-session-picker` — green.
+- [ ] `just app-test at0184-resume-budgets` — green.
+
+**Checkpoint:**
+- [ ] Both migrated tests pass on committed fixtures; grep confirms no synthetic session-content generation and no live-archive content dependence outside `corpus/`.
 
 ---
 
