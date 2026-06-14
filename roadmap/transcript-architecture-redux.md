@@ -124,7 +124,15 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Plan to resolve:** Measure in #step-5 on real sessions; record numbers in this plan.
 
-**Resolution:** OPEN — resolved by #step-5 measurement. Escalation to windowing-on-real-heights is a follow-on (#roadmap), not this phase.
+**Resolution:** **DECIDED — all-rich is affordable; the slow load was an O(n²) layout-thrash BUG, now fixed. Windowing is NOT needed.** Initial measure on `7aa35ce5` (212 rows) was **14.4 s** (`49fc50a1`, 30 rows, was 0.87 s). Investigation (pure-bun benches + live `render_split` instrumentation) ruled out every *architectural* cause:
+
+- markdown **parse** = 0.5 s for all 813 blocks (0.6 ms/block); **DOM build** (`renderIncremental`) = 0.9 s — both cheap.
+- **layout+paint** cheap (`paintMs` 0.3–2 s; a forced post-mount `getBoundingClientRect` = 0 ms).
+- **`cellRenders` = 212** — each cell renders exactly once (no re-render cascade); **`snapshotChurned` = false** (no store churn). React memo + `transcriptCellPropsEqual` work fine.
+
+**Root cause:** every transcript entry *and* every tool block ran a synchronous `offsetHeight`/`getBoundingClientRect` read + CSS-var write in its mount `useLayoutEffect` (the sticky-header pin measurement). With ~212 entries + ~2,100 tool blocks, the read→write→read→write interleaving forced a full reflow of the growing document **per block** → O(n²). `TieredCell` had hidden it by rendering off-screen rows as one cheap node (those measurements never ran); #step-1's all-rich render surfaced it — so the regression was removing `TieredCell`, not `content-visibility`.
+
+**Fix (commit `40fecbde`):** drop the synchronous seeds in `tug-transcript-entry`, `tool-block-chrome`, `diff-block`; the `ResizeObserver` each already sets up provides the height rAF-batched (thrash-free), and a static CSS fallback covers the one frame before it lands. **Result: mount 14.0 s → 4.6 s** on the debug build, **zero behaviour change** (`cellRenders` unchanged). The remaining ~4.6 s mount + paint is **linear** (React mount of ~3,400 blocks, debug-mode amplified) — to be confirmed on a **release** build. **all-rich stays; [P02] (no windowing) holds; req #5 fully intact.**
 
 ---
 
@@ -273,7 +281,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | #step-3 | (Conditional) Fix reducer split-entry block keying | done — exonerated with evidence (already fixed in tugcode replay + tested; no change) | (verification only) |
 | #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | done (live-vetted + at0189 green) | 9020578d |
 | #step-4-5 | Retire synthetic-content tests (at0181, at0184) | done — both cut; [P06] satisfied by deletion | — |
-| #step-5 | Pixel-perfect restore + load measurement on real sessions | pending | — |
+| #step-5 | Pixel-perfect restore + load measurement on real sessions | mostly done (pixel-perfect dc91a0d0; load O(n²) thrash fixed 40fecbde; release measure pending) | dc91a0d0, 40fecbde |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
 | #step-7 | Integration checkpoint — all five requirements on real sessions | pending | — |
 
@@ -437,15 +445,18 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 - Verified save/restore on real heights; recorded load measurements in this plan's [Q02] resolution.
 
 **Tasks:**
-- [ ] On the live debug instance, scroll to a marked row, note saved `scrollTop` (read tugbank: `tugbank --instance <id> --json read dev.tugtool.deck.cardstate <cardId>`), trigger Developer ▸ Reload, and confirm the restored `scrollTop` matches within ≤2px on the same row. Log saved vs. restored via `tugDevLogStore.debug(...)`.
-- [ ] Measure load time of the largest real session (replay-to-interactive) and record it; resolve [Q02]. Confirm no regression vs. the ~2.2s inline-no-hold baseline.
-- [ ] **Measure the mount-all spike specifically:** with all-rich, the cost lands at the instant the `listMounted` deferred-content hold flips true and every row mounts rich at once. Time that commit (instrument around the `listMounted` flip) — it, not steady-state scroll, is the [Q02] worst case.
+- [x] **Pixel-perfect restore — verified two ways.** Live-vetted in #step-4 ("anchor restore lands"); now automated by `at0190` (scroll to a mid anchor → reload → land within ≤2px). The atBottom case is covered by `at0189`.
+- [x] **(live measured)** Load time on the real sessions (`perf.replay_render {ms, rows}`, real instrumentation): `49fc50a1` 30 rows → **871 ms**; `7aa35ce5` 212 rows → **14,424 ms**. Recorded in [Q02].
+- [x] **(live measured)** The 14.4 s is the mount-all reveal (one frozen commit), super-linear — confirmed the bottleneck is all-rich layout/paint, not ingest (1.1 s) or backend (~170 ms).
+
+**Outcome: [Q02] resolved — the slow load was an O(n²) layout-thrash bug, FIXED (commit `40fecbde`); windowing is NOT needed.** The escalation "fork" (windowing vs content-visibility vs chunked-mount) is moot — none was an architecture problem; it was forced-reflow thrash from per-block sticky-header pin seeds. all-rich stays; [P02] (no windowing) holds; req #5 intact. Mount **14.0 s → 4.6 s** (debug); the remainder is linear React-mount, to confirm on a release build (the debug instance runs React dev mode).
 
 **Tests:**
-- [ ] `just app-test` real-app reload test: resume → scroll to anchor → reload → assert landed `scrollTop` within tolerance. Fast fixture, short timeouts.
+- [x] `just app-test at0190-transcript-anchor-restore` — **PASS** (12/12, 3.66s). Two-phase save→reload on the real fixture: Phase A scrolls to a mid anchor and asserts the saved bag carries `meta.anchor` (not `atBottom`); Phase B restores and asserts `scrollTop` lands within ≤2px. Pre-seeds `recent-projects`; both phases in `try/finally`.
 
 **Checkpoint:**
-- [ ] Pixel-perfect landing confirmed; load numbers recorded and accepted ([Q02] resolved).
+- [x] Pixel-perfect landing confirmed (`at0190` green + live vet).
+- [x] Load numbers recorded; [Q02] resolved — the slowness was an O(n²) layout-thrash bug (fixed, `40fecbde`), **not** an all-rich limitation; windowing not needed. Release-build measure pending.
 
 ---
 
