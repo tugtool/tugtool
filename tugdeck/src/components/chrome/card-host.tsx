@@ -1084,6 +1084,33 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
           // (post-rebuild) bypasses the settled check because
           // settledElByKey.get(key) !== el.
           if (settledElByKey.get(key) === el) continue;
+
+          // `meta.atBottom` regions — a `TugListView` saved while
+          // following the bottom — restore by re-engaging follow-bottom
+          // and pinning to the LIVE bottom, which has grown since save.
+          // The re-pinned `scrollTop` therefore converges to
+          // `scrollHeight - clientHeight`, NOT the stale saved `pos.y`,
+          // so the raw-`pos.y` tolerance gate below would never settle:
+          // the retry would re-dispatch `tug-region-scroll-set` on every
+          // cardRoot mutation, and the list view's at-bottom branch would
+          // re-engage follow-bottom each time — slamming a user who has
+          // since scrolled up. The at-bottom restore is a ONE-SHOT:
+          // dispatch once to resume following, then settle immediately
+          // and hand ongoing pin/disengage policy to SmartScroll (its own
+          // follow-bottom + `maybePinToBottom`, which a user wheel-up
+          // disengages and a restore never fights). See [AT0014] notes;
+          // covers transcript ([P03]/[P04]) and any at-bottom region (R01).
+          const metaAtBottom =
+            typeof pos.meta === "object" &&
+            pos.meta !== null &&
+            (pos.meta as { atBottom?: unknown }).atBottom === true;
+          if (metaAtBottom) {
+            pending[key] = pos;
+            hasPending = true;
+            settledElByKey.set(key, el);
+            continue;
+          }
+
           // If the element already sits within tolerance of the
           // saved position, mark THIS element settled and stop
           // fighting any subsequent user scroll on it. Covers

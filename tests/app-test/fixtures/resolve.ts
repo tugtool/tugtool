@@ -1,0 +1,124 @@
+/**
+ * resolve.ts — seed a COMMITTED, sanitized session fixture into the
+ * real `~/.claude/projects/` tree so an app-test can resume it through
+ * the production picker → spawn → reveal path.
+ *
+ * Parallel to `corpus/resolve.ts`'s `seedSnapshot`, but the source is a
+ * committed fixture under `fixtures/sessions/` — not a gitignored
+ * harvested snapshot. So these legs run **everywhere** (CI, any
+ * machine) and never touch the user's private live archive.
+ *
+ * Each record's top-level `cwd` is rewritten to the fresh temp project
+ * dir: the external-session scanner excludes a session whose first
+ * `cwd` doesn't match its project dir, so the rewrite is what makes the
+ * fixture listable from the picker (the at0182 pattern).
+ */
+
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+
+export const FIXTURES_DIR = import.meta.dir;
+export const SESSIONS_DIR = join(FIXTURES_DIR, "sessions");
+
+/** Mirror of claude's project-dir encoding (`/` and `.` → `-`). */
+export function encodeProjectDir(dir: string): string {
+  return dir.replace(/[/.]/g, "-");
+}
+
+/** Absolute path of a committed fixture by name (no `.jsonl` suffix). */
+export function fixturePath(name: string): string {
+  return join(SESSIONS_DIR, `${name}.jsonl`);
+}
+
+export interface SeededFixtureSession {
+  /** Fixture name (file stem) that was seeded. */
+  fixture: string;
+  /** Session id as recorded in the fixture's records. */
+  sessionId: string;
+  /** Decoded project path the picker's recents list is seeded with. */
+  projectDir: string;
+  /** `~/.claude/projects/<encoded>` dir holding the seeded JSONL. */
+  seededClaudeDir: string;
+  jsonlPath: string;
+  cleanup(): void;
+}
+
+/**
+ * Seed committed fixture `name` into `~/.claude/projects/` under a
+ * fresh temp project dir, rewriting each record's `cwd`. The seeded
+ * file is named `<sessionId>.jsonl` (the picker keys a session by its
+ * filename stem), where `sessionId` is read from the fixture records.
+ * Fixtures are small committed files, so this reads the whole file.
+ */
+export async function seedFixtureSession(
+  name: string,
+  label: string,
+): Promise<SeededFixtureSession> {
+  const source = fixturePath(name);
+  if (!existsSync(source)) {
+    throw new Error(`fixture not found: ${source}`);
+  }
+  const lines = readFileSync(source, "utf8")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+
+  let sessionId = name;
+  for (const line of lines) {
+    try {
+      const r = JSON.parse(line) as { sessionId?: unknown };
+      if (typeof r.sessionId === "string" && r.sessionId.length > 0) {
+        sessionId = r.sessionId;
+        break;
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  const projectDir = realpathSync(
+    mkdtempSync(join(tmpdir(), `fixture-${label}-`)),
+  );
+  const seededClaudeDir = join(
+    homedir(),
+    ".claude",
+    "projects",
+    encodeProjectDir(projectDir),
+  );
+  mkdirSync(seededClaudeDir, { recursive: true });
+  const jsonlPath = join(seededClaudeDir, `${sessionId}.jsonl`);
+
+  const rewritten = lines.map((line) => {
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>;
+      if (record !== null && typeof record === "object") {
+        if ("cwd" in record) record.cwd = projectDir;
+        return JSON.stringify(record);
+      }
+    } catch {
+      // Committed fixtures are never torn; pass through defensively.
+    }
+    return line;
+  });
+  writeFileSync(jsonlPath, rewritten.join("\n") + "\n", "utf8");
+
+  return {
+    fixture: name,
+    sessionId,
+    projectDir,
+    seededClaudeDir,
+    jsonlPath,
+    cleanup() {
+      rmSync(seededClaudeDir, { recursive: true, force: true });
+      rmSync(projectDir, { recursive: true, force: true });
+    },
+  };
+}
