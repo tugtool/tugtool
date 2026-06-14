@@ -125,8 +125,6 @@ import {
 } from "@/components/tugways/cards/turn-entry-markdown";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
-import { TieredCell } from "@/components/tugways/cards/transcript-tier";
-import { previewTextForMessages } from "@/lib/transcript-preview";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import { DevReplayProgress } from "@/components/tugways/cards/dev-replay-progress";
@@ -223,26 +221,6 @@ function stripUserBodyPrefix(text: string): string {
   if (text.startsWith("> ")) return text.slice(2);
   if (text.startsWith(">")) return text.slice(1);
   return text;
-}
-
-/**
- * Cheap plain-text preview for a row's always-painted tier ([P01b]).
- * The user row previews its prompt; the assistant row previews its
- * content (prose + one-line tool hints, prompt excluded); a ghost row
- * previews its queued text. Pure + bounded via `previewTextForMessages`.
- */
-function previewForRow(kind: string, row: DevRowDescriptor): string {
-  if (kind === "ghost") {
-    return row.queued !== undefined ? stripUserBodyPrefix(row.queued.text) : "";
-  }
-  const messages = row.turn?.messages ?? row.activeTurn?.messages ?? [];
-  if (kind === "user") {
-    const user = readUserMessage(messages);
-    return user !== undefined ? stripUserBodyPrefix(user.text) : "";
-  }
-  return previewTextForMessages(
-    messages.filter((m) => m.kind !== "user_message"),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1437,23 +1415,15 @@ export const DevTranscriptHost = forwardRef<
   >(
     (p) => {
       const row = p.dataSource.rowAt(p.index);
-      // The in-flight assistant row (no committed `turn`) hosts live
-      // streaming + any pending permission/question dialog, so it must
-      // never downgrade to cheap and tear those down.
-      const forceRich = row.turn === undefined;
       return (
-        <TieredCell previewText={previewForRow("assistant", row)} forceRich={forceRich}>
-          {() => (
-            <AssistantTurnCell
-              {...p}
-              row={row}
-              sessionMetadataStore={sessionMetadataStore}
-              codeSessionStore={codeSessionStore}
-              streamingStore={streamingStore}
-              renderTurnTrailing={renderTurnTrailing}
-            />
-          )}
-        </TieredCell>
+        <AssistantTurnCell
+          {...p}
+          row={row}
+          sessionMetadataStore={sessionMetadataStore}
+          codeSessionStore={codeSessionStore}
+          streamingStore={streamingStore}
+          renderTurnTrailing={renderTurnTrailing}
+        />
       );
     },
     [sessionMetadataStore, codeSessionStore, streamingStore, renderTurnTrailing],
@@ -1463,18 +1433,13 @@ export const DevTranscriptHost = forwardRef<
   >(
     (p) => {
       const row = p.dataSource.rowAt(p.index);
-      const forceRich = row.turn === undefined;
       return (
-        <TieredCell previewText={previewForRow("user", row)} forceRich={forceRich}>
-          {() => (
-            <UserMessageCell
-              {...p}
-              row={row}
-              renderTurnTrailing={renderTurnTrailing}
-              codeSessionStore={codeSessionStore}
-            />
-          )}
-        </TieredCell>
+        <UserMessageCell
+          {...p}
+          row={row}
+          renderTurnTrailing={renderTurnTrailing}
+          codeSessionStore={codeSessionStore}
+        />
       );
     },
     [codeSessionStore, renderTurnTrailing],
@@ -1489,15 +1454,11 @@ export const DevTranscriptHost = forwardRef<
     (p) => {
       const row = p.dataSource.rowAt(p.index);
       return (
-        <TieredCell previewText={previewForRow("ghost", row)}>
-          {() => (
-            <GhostRowCell
-              {...p}
-              row={row}
-              codeSessionStore={codeSessionStore}
-            />
-          )}
-        </TieredCell>
+        <GhostRowCell
+          {...p}
+          row={row}
+          codeSessionStore={codeSessionStore}
+        />
       );
     },
     [codeSessionStore],
@@ -1617,10 +1578,10 @@ export const DevTranscriptHost = forwardRef<
   }, []);
 
   return (
-    // [DT10] paint gate: the transcript is always inline under the
-    // two-tier render ([P01b]), so the single-reveal gate applies for
-    // the whole replay window (avoiding accumulation FOUC), with the
-    // DevReplayProgress strip as the always-on affordance above the list.
+    // [DT10] paint gate: every row renders inline at its real height,
+    // so the single-reveal gate applies for the whole replay window
+    // (avoiding accumulation FOUC), with the DevReplayProgress strip as
+    // the always-on affordance above the list.
     <div
       ref={rootRef}
       className="dev-card-transcript"
@@ -1651,11 +1612,11 @@ export const DevTranscriptHost = forwardRef<
               scrollKey="dev-card-transcript"
               followBottom
               onFollowBottomChange={handleFollowBottomChange}
-              // Two-tier render ([P01b]): the transcript is ALWAYS
-              // inline (every row mounted) so a thumb-drag never lands
-              // on an unmounted spacer. Rows are cheap by default and
-              // upgrade to rich only in the visible window via
-              // `TieredCell`, so all-mounted stays affordable.
+              // Inline render: every row is mounted at its real,
+              // measured height — no windowing, no spacers, no cheap
+              // tier. The scroll height is the true sum of row heights,
+              // so the scrollbar never shifts and a thumb-drag never
+              // lands on an unmounted or unpainted row.
               inline
               pageByEntry
             />
