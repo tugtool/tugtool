@@ -114,7 +114,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Plan to resolve:** Spike empirically in #step-2 on the real app against `49fc50a1` and the largest real session, reading the reducer output for the suspect messages.
 
-**Resolution:** OPEN — resolved by #step-2's real-app check; #step-3 is conditional on the outcome.
+**Resolution:** **DECIDED — reducer exonerated.** #step-2 real-app vet (sessions `49fc50a1` and `7aa35ce5` · 199 turns) showed **no lingering holes and no missing/misrendered messages** once rendering catches up, and a **stable scrollbar** (zero `scrollHeight_changed` entries). The split-entry `${msgId}:${blockIndex}` hypothesis is not the cause; the reducer is **not touched** and **#step-3 is skipped**. (Transient blanks *during* a fast scroll that resolve to correct content are a paint/load-perf characteristic, not holes — tracked for #step-5/#step-6, see [Q02].)
 
 #### [Q02] Is all-rich fast enough on the largest real session? {#q02-allrich-perf}
 
@@ -256,9 +256,9 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Retire TieredCell — render all transcript cells rich | done (code complete; awaiting user commit on main) | — |
-| #step-2 | Vet rendering on the real app; adjudicate residual defects | pending | — |
-| #step-3 | (Conditional) Fix reducer split-entry block keying | pending | — |
+| #step-1 | Retire TieredCell — render all transcript cells rich | done | cffcc343 |
+| #step-2 | Vet rendering on the real app; adjudicate residual defects | done (no holes / stable scrollbar; [Q01] exonerated) | (verification only) |
+| #step-3 | (Conditional) Fix reducer split-entry block keying | skipped ([Q01] exonerated — reducer untouched) | — |
 | #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | pending | — |
 | #step-5 | Pixel-perfect restore + load measurement on real sessions | pending | — |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
@@ -290,7 +290,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Checkpoint:**
 - [x] Typecheck clean.
-- [ ] HMR repaints the transcript with rich rows; no `TieredCell`/cheap/`data-tier` markup in the DOM. *(Source-verified: all `data-tier`/`dev-transcript-tier` markup removed. Live HMR repaint is the user's visual confirmation — overlaps with #step-2 real-app vetting.)*
+- [x] HMR repaints the transcript with rich rows; no `TieredCell`/cheap/`data-tier` markup in the DOM. *(User-confirmed in #step-2 on `49fc50a1` and `7aa35ce5`.)*
 
 **Tuglaws (for the commit body):** **L06** — appearance stays in CSS/DOM: removing `content-visibility`/`contain-intrinsic-size` and the cheap-tier min-height keeps row geometry as real measured layout, not estimate-driven appearance state. **L23** — the `content-visibility: auto` comment claimed it preserved selection/find-in-page "for free"; rendering every row rich keeps the DOM fully alive and painted, so that user-visible state is *more* robustly preserved, not lost. **L26** — retiring the cheap↔rich swap *removes* the mount-identity hazard `TieredCell` existed to manage (the wrapper that had to stay stable across the swap); each cell now has one stable subtree. **L22** — measured heights still flow to `HeightIndex` via the list view's `ResizeObserver`, observed off the DOM, never through React state.
 
@@ -305,15 +305,19 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **References:** [P01] All-rich render, [Q01] Residual holes, [P05] Reducer conditional, (#rendering-all-rich, #q01-residual-holes)
 
 **Tasks:**
-- [ ] `just app-debug`; load real session `49fc50a1` and the largest available real session on the live debug instance.
-- [ ] Scroll the full transcript: confirm **no holes** (every row fully rendered) and the **scrollbar does not change height/position** once replay completes. Log `scrollHeight` on scroll via `tugDevLogStore.debug(...)` and confirm it is constant.
-- [ ] Resolve [Q01]: if any holes/missing/misrendered messages remain, capture the offending `msg_id`/`block_index` from the reducer output and proceed to #step-3; if none, mark [Q01] DECIDED (reducer exonerated) and skip #step-3.
+- [x] `just app-debug`; loaded real sessions `49fc50a1` and `7aa35ce5` (199 turns) on the live debug instance (`debug-main`).
+- [x] Scrolled the full transcript: **no lingering holes**, every row renders its real content once caught up; **scrollbar height/position stable**. A throwaway transcript-scoped diagnostic logged `scrollHeight` on scroll (`scrollHeight_changed` only on change) — **zero** change entries; diagnostic then removed (it was non-compliant scaffolding, see note below).
+- [x] Resolved [Q01]: **no holes/missing/misrendered messages** → [Q01] DECIDED, reducer exonerated, **#step-3 skipped**.
 
 **Tests:**
-- [ ] Manual real-app vetting (the only honest test for "no holes"/"stable scrollbar").
+- [x] Manual real-app vetting on `49fc50a1` and `7aa35ce5` — user-confirmed no holes + stable scrollbar.
 
 **Checkpoint:**
-- [ ] User confirms no holes and a stable scrollbar on both sessions, **or** a concrete reducer defect is captured for #step-3.
+- [x] User confirmed no holes and a stable scrollbar on both sessions. (No reducer defect → #step-3 skipped.)
+
+**Note (vet scaffolding):** the `scrollHeight` diagnostic was a temporary `React.useEffect` reading `listMounted` (from `useSyncExternalStore`) and attaching a scroll listener — **not** tuglaws-compliant (**L22**: round-trips store state through React then escapes via `useEffect` to touch the DOM; **L03**: event-dependent registration must be `useLayoutEffect`). Correct resolution for throwaway instrumentation: **removed before commit**, not refactored. Working tree returned to `cffcc343` for code; Step 2 commits only this plan update.
+
+**Open perf items (carried to #step-5/#step-6, not holes):** initial load is slow, and a fast scroll shows transient blanks that resolve to correct content as the rich rows paint. Neither violates req #5 (no *lingering* holes / no estimate scrollbar); both are load/reveal-perf work for concern C.
 
 ---
 
