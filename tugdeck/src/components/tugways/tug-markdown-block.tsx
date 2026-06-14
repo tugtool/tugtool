@@ -21,12 +21,11 @@
  *      Parses + renders the supplied text in `useLayoutEffect` so
  *      the content is painted before the first browser frame.
  *      Subsequent `initialText` prop changes are ignored. Routes
- *      through `renderIncremental(el, text, null)` for code-path
- *      uniformity with streaming mode — the `prev = null` path of
- *      the reconciler is its full-reset render (every block appended
- *      fresh), so the output is identical to a one-shot bulk render.
- *      The returned `RenderState` is discarded since initial-text
- *      mode is mount-once and never re-renders.
+ *      through `renderIncremental(el, text)` for code-path uniformity
+ *      with streaming mode — against an empty container the reconciler
+ *      appends every block fresh, so the output is identical to a
+ *      one-shot bulk render. The returned `RenderState` is discarded
+ *      since initial-text mode is mount-once and never re-renders.
  *
  *   2. **Streaming `streamingStore` mode** —
  *      `<TugMarkdownBlock streamingStore={store} streamingPath="text" />`.
@@ -41,10 +40,13 @@
  *      previous render's hashes and mutates only what changed
  *      (in-place `innerHTML` rewrites preserve wrapper-element
  *      identity, which preserves the browser's scroll anchor).
- *      Per-container `RenderState` is cached in a module-level
- *      `WeakMap` so each mounted instance keeps its own diff
- *      history; when the container is GC'd, the entry goes with it.
- *      Bursts are coalesced via `requestAnimationFrame`.
+ *      The previous render's hashes are recovered from the
+ *      container's own children (`data-content-hash`), so the diff
+ *      is stateless across calls: a Fast Refresh module reload or a
+ *      strict-mode remount that would wipe a module-level cache
+ *      cannot make the reconciler duplicate (or blank) blocks that
+ *      are already on screen. Bursts are coalesced via
+ *      `requestAnimationFrame`.
  *
  * Both modes write sanitized HTML directly to the DOM — there is no
  * React state for the rendered content per [L06]. The only React
@@ -85,17 +87,7 @@ import { recordRowParse } from "@/lib/markdown/parse-counters";
 import {
   renderIncremental,
   renderIncrementalFromBlocks,
-  type RenderState,
 } from "@/lib/markdown/render-incremental";
-
-/**
- * Per-container `RenderState` cache for the streaming-mode
- * reconciler. `WeakMap` keys hold no strong references — when the
- * container element is GC'd (component unmount, React tree
- * reconciliation), the cached state goes with it. No leak path, no
- * cross-instance bleed.
- */
-const STREAMING_RENDER_STATE: WeakMap<HTMLElement, RenderState> = new WeakMap();
 
 const DEFAULT_STREAMING_PATH = "text";
 
@@ -167,7 +159,7 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     // Parse-economy counter: `renderIncremental` skips the parse
     // entirely for empty text, so only non-empty renders count.
     if (text !== "") recordRowParse("static");
-    renderIncremental(el, text, null);
+    renderIncremental(el, text);
     // Empty deps — `initialText` changes after mount are intentionally
     // ignored per the [#md-block-api] mount-once contract. A consumer
     // that wants to swap content remounts via a fresh React key.
@@ -193,32 +185,34 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     if (el === null) return;
 
     const reconcile = (text: string): void => {
-      const prev = STREAMING_RENDER_STATE.get(el) ?? null;
       if (text === "") {
-        const { state } = renderIncremental(el, "", prev);
-        STREAMING_RENDER_STATE.set(el, state);
+        renderIncremental(el, "");
         return;
       }
       // Render-once cache, scoped to the session's streaming store and
       // keyed by the row's stable streaming-path identity
       // (`turn.${turnKey}.message.${messageKey}.text`). A finalized
       // row's text never changes, so after its last parse every
-      // subsequent render — re-mounts included (the per-container diff
-      // state is gone, the cache isn't) — skips the WASM
+      // subsequent render — re-mounts included — skips the WASM
       // lex/parse/sanitize pass and goes straight to the shared DOM
       // apply. A streaming row's text changes per delta, so it misses
       // and parses exactly as before; its final delta's parse IS the
       // finalized cache entry, so a later remount of the same row is
       // a pure cache hit through the `ensureParsed` chokepoint.
+      //
+      // The reconciler recovers the previous render from the container's
+      // own children (`data-content-hash`), so there is no per-container
+      // diff state to thread here and nothing a module reload can wipe —
+      // an emptied parse cache costs at most one extra parse, never a
+      // duplicate-append.
       const blocks = ensureParsed(streamingStore, streamingPath, text);
-      const { state } = renderIncrementalFromBlocks(el, blocks, prev);
-      STREAMING_RENDER_STATE.set(el, state);
+      renderIncrementalFromBlocks(el, blocks);
     };
 
-    // G1 — render the store's current value before paint. Initial
-    // call passes `null` prev state through `WeakMap.get`'s
-    // unset-key behaviour, so the reconciler treats this as a
-    // full-reset render (every block appended fresh).
+    // G1 — render the store's current value before paint. The
+    // reconciler diffs against whatever children the container already
+    // holds (none on a fresh mount → full append; the prior render's
+    // blocks on a remount → all stable, a no-op).
     const initial = (streamingStore.get(streamingPath) as string | undefined) ?? "";
     reconcile(initial);
 
@@ -246,16 +240,15 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
         pendingRaf = null;
       }
       unsubscribe();
-      // Intentionally NOT deleting `STREAMING_RENDER_STATE[el]` here.
-      // React 18 dev strict mode runs effects as
-      // `mount → cleanup → mount` against the same container element;
-      // cleanup tears down subscriptions and pending rAF but leaves
-      // the DOM children intact. If the cached state were dropped on
-      // cleanup, the second mount would see `prev = null` and treat
-      // the existing children as nonexistent — the reconciler would
-      // *append* a fresh set, doubling every block in the container.
-      // The `WeakMap` GCs the entry on its own when the container
-      // element is destroyed.
+      // Cleanup tears down the subscription and any pending rAF but
+      // deliberately leaves the container's DOM children in place.
+      // React 18 dev strict mode (and Vite Fast Refresh) re-run this
+      // effect as `cleanup → setup` against the SAME container; on the
+      // re-setup the reconciler reads the previous render's hashes back
+      // off those surviving children (`data-content-hash`), sees them
+      // unchanged, and does nothing. There is no module-level diff state
+      // to lose, so a reload can neither duplicate the blocks nor blank
+      // them — the worst case is a wasted re-parse on a cache miss.
     };
   }, [streamingStore, streamingPath]);
 

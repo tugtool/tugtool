@@ -27,6 +27,21 @@
    Font Declarations
    ========================================================================= */
 
+/* `font-display: block`, not `swap`, on every bundled face.
+
+   These woff2 are served same-origin from /fonts and are in cache after
+   the first paint, so `swap`'s "paint a fallback immediately, then swap
+   to the real face" trade-off — meant to hide slow network downloads —
+   buys nothing and actively hurts: any event that re-registers these
+   @font-face rules resets their load state, and `swap` then paints one
+   frame of fallback (e.g. Menlo for "IBM Plex Mono") before the cached
+   face re-binds. In dev that re-registration happens on every HMR CSS
+   re-injection — visible as the transcript's monospace flashing to a
+   different monospace and back. `block` holds the text invisibly through
+   the (sub-millisecond, local) load instead of painting the wrong face,
+   so there is no wrong-font frame, and the brand face always wins (no
+   permanent fallback, unlike `optional`). */
+
 /* IBM Plex Sans — complete family (Thin..Bold incl. Text/450, upright + italic).
    Bundled in full: the app runs locally, so there is no download-size reason
    to ship a weight subset — every weight + italic maps here so CSS can request
@@ -36,7 +51,7 @@
   src: url("/fonts/IBMPlexSans-Thin.woff2") format("woff2");
   font-weight: 100;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -44,7 +59,7 @@
   src: url("/fonts/IBMPlexSans-ThinItalic.woff2") format("woff2");
   font-weight: 100;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -52,7 +67,7 @@
   src: url("/fonts/IBMPlexSans-ExtraLight.woff2") format("woff2");
   font-weight: 200;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -60,7 +75,7 @@
   src: url("/fonts/IBMPlexSans-ExtraLightItalic.woff2") format("woff2");
   font-weight: 200;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -68,7 +83,7 @@
   src: url("/fonts/IBMPlexSans-Light.woff2") format("woff2");
   font-weight: 300;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -76,7 +91,7 @@
   src: url("/fonts/IBMPlexSans-LightItalic.woff2") format("woff2");
   font-weight: 300;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -84,7 +99,7 @@
   src: url("/fonts/IBMPlexSans-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -92,7 +107,7 @@
   src: url("/fonts/IBMPlexSans-Italic.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -100,7 +115,7 @@
   src: url("/fonts/IBMPlexSans-Text.woff2") format("woff2");
   font-weight: 450;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -108,7 +123,7 @@
   src: url("/fonts/IBMPlexSans-TextItalic.woff2") format("woff2");
   font-weight: 450;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -116,7 +131,7 @@
   src: url("/fonts/IBMPlexSans-Medium.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -124,7 +139,7 @@
   src: url("/fonts/IBMPlexSans-MediumItalic.woff2") format("woff2");
   font-weight: 500;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -132,7 +147,7 @@
   src: url("/fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -140,7 +155,7 @@
   src: url("/fonts/IBMPlexSans-SemiBoldItalic.woff2") format("woff2");
   font-weight: 600;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -148,7 +163,7 @@
   src: url("/fonts/IBMPlexSans-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -156,7 +171,7 @@
   src: url("/fonts/IBMPlexSans-BoldItalic.woff2") format("woff2");
   font-weight: 700;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 /* IBM Plex Mono — complete family, paired with IBM Plex Sans (shared
@@ -166,7 +181,7 @@
   src: url("/fonts/IBMPlexMono-Thin.woff2") format("woff2");
   font-weight: 100;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -174,7 +189,7 @@
   src: url("/fonts/IBMPlexMono-ThinItalic.woff2") format("woff2");
   font-weight: 100;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -182,7 +197,7 @@
   src: url("/fonts/IBMPlexMono-ExtraLight.woff2") format("woff2");
   font-weight: 200;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -190,7 +205,7 @@
   src: url("/fonts/IBMPlexMono-ExtraLightItalic.woff2") format("woff2");
   font-weight: 200;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -198,7 +213,7 @@
   src: url("/fonts/IBMPlexMono-Light.woff2") format("woff2");
   font-weight: 300;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -206,7 +221,7 @@
   src: url("/fonts/IBMPlexMono-LightItalic.woff2") format("woff2");
   font-weight: 300;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -214,7 +229,7 @@
   src: url("/fonts/IBMPlexMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -222,7 +237,7 @@
   src: url("/fonts/IBMPlexMono-Italic.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -230,7 +245,7 @@
   src: url("/fonts/IBMPlexMono-Text.woff2") format("woff2");
   font-weight: 450;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -238,7 +253,7 @@
   src: url("/fonts/IBMPlexMono-TextItalic.woff2") format("woff2");
   font-weight: 450;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -246,7 +261,7 @@
   src: url("/fonts/IBMPlexMono-Medium.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -254,7 +269,7 @@
   src: url("/fonts/IBMPlexMono-MediumItalic.woff2") format("woff2");
   font-weight: 500;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -262,7 +277,7 @@
   src: url("/fonts/IBMPlexMono-SemiBold.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -270,7 +285,7 @@
   src: url("/fonts/IBMPlexMono-SemiBoldItalic.woff2") format("woff2");
   font-weight: 600;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -278,7 +293,7 @@
   src: url("/fonts/IBMPlexMono-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -286,7 +301,7 @@
   src: url("/fonts/IBMPlexMono-BoldItalic.woff2") format("woff2");
   font-weight: 700;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -294,7 +309,7 @@
   src: url("/fonts/hack-regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 /* B612 Mono — Airbus cockpit display font (SIL OFL 1.1).
@@ -307,7 +322,7 @@
   src: url("/fonts/B612Mono-Regular.ttf") format("truetype");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -315,7 +330,7 @@
   src: url("/fonts/B612Mono-Bold.ttf") format("truetype");
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 /* JetBrains Mono — designed for code editors, ships tabular figures
@@ -326,7 +341,7 @@
   src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -334,7 +349,7 @@
   src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -342,7 +357,7 @@
   src: url("/fonts/Inter-VariableFont_opsz,wght.ttf") format("truetype");
   font-weight: 100 900;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -350,7 +365,7 @@
   src: url("/fonts/Inter-Italic-VariableFont_opsz,wght.ttf") format("truetype");
   font-weight: 100 900;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -358,7 +373,7 @@
   src: url("/fonts/SourceSans3-VariableFont_wght.ttf") format("truetype");
   font-weight: 200 900;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -366,7 +381,7 @@
   src: url("/fonts/SourceSans3-Italic-VariableFont_wght.ttf") format("truetype");
   font-weight: 200 900;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -374,7 +389,7 @@
   src: url("/fonts/NunitoSans-VariableFont_YTLC,opsz,wdth,wght.ttf") format("truetype");
   font-weight: 200 1000;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -382,7 +397,7 @@
   src: url("/fonts/NunitoSans-Italic-VariableFont_YTLC,opsz,wdth,wght.ttf") format("truetype");
   font-weight: 200 1000;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -390,7 +405,7 @@
   src: url("/fonts/AtkinsonHyperlegible-Regular.ttf") format("truetype");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -398,7 +413,7 @@
   src: url("/fonts/AtkinsonHyperlegible-Italic.ttf") format("truetype");
   font-weight: 400;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -406,7 +421,7 @@
   src: url("/fonts/AtkinsonHyperlegible-Bold.ttf") format("truetype");
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -414,7 +429,7 @@
   src: url("/fonts/AtkinsonHyperlegible-BoldItalic.ttf") format("truetype");
   font-weight: 700;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
 /* ============================================================================

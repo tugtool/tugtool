@@ -21,10 +21,14 @@
  *     unit-tested.
  *
  *  2. `renderIncremental` — DOM-mutating wrapper. Parses the new text,
- *     calls `planReconcile`, then applies the plan against the
- *     container's children. Returns the new `RenderState` for the
- *     consumer to pass back on the next call. HMR-vetted (no
- *     fake-DOM render tests per project policy).
+ *     recovers the previous render's hashes from the container's own
+ *     children (`data-content-hash`), calls `planReconcile`, then
+ *     applies the plan in place. The DOM is the diff's sole source of
+ *     truth: there is no carried-over state for a module reload or a
+ *     strict-mode remount to desynchronize, so a wiped module-level
+ *     cache can never cause a duplicate-append on top of children that
+ *     are already on screen. HMR-vetted (no fake-DOM render tests per
+ *     project policy).
  *
  * **Hash source.** Per-block FNV-1a 64-bit hashes computed in Rust
  * during the `lex_blocks` pass and surfaced on
@@ -174,10 +178,17 @@ export function planReconcile(
  */
 const BLOCK_CLASS = "tugx-md-block";
 
+/**
+ * `data-content-hash` carries each wrapper's source-range content hash
+ * on the DOM node itself, so the rendered children ARE the record of
+ * the previous render. See {@link domHashes} for why the DOM, not a
+ * module-level cache, is the diff's source of truth.
+ */
 function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
   const el = document.createElement("div");
   el.className = BLOCK_CLASS;
   el.dataset.blockType = block.type;
+  el.dataset.contentHash = block.contentHash.toString();
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
@@ -192,6 +203,7 @@ function updateBlockElement(
   block: SanitizedMarkdownBlock,
 ): void {
   el.dataset.blockType = block.type;
+  el.dataset.contentHash = block.contentHash.toString();
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
@@ -201,21 +213,63 @@ function updateBlockElement(
 }
 
 /**
- * Reconcile `container`'s children against `text`'s parsed blocks,
- * mutating only what changed. Returns the new {@link RenderState} for
- * the consumer to pass back on the next call.
+ * Recover the previous render's per-block hashes from the DOM itself.
+ * Each `.tugx-md-block` wrapper carries its source-range content hash
+ * in `data-content-hash`, so the children actually on screen are the
+ * authoritative record of what was last rendered — no module-level
+ * cache required.
  *
- * Empty input clears the container and returns an empty state — the
- * consumer can treat the next call as a fresh start.
+ * This is the load-bearing invariant that makes the reconciler survive
+ * a Vite Fast Refresh module re-evaluation (which wipes any
+ * module-level `WeakMap` while React preserves the container and its
+ * children) and a React strict-mode `mount → cleanup → mount` (same
+ * container, children intact). In both cases the prev hashes come from
+ * the children that are genuinely present, so an empty cache can no
+ * longer make the diff mistake live children for nonexistent ones and
+ * append a duplicate set on top of them.
+ *
+ * A wrapper with a missing or unparseable `data-content-hash` — e.g. a
+ * block painted by an older build still on screen the instant this code
+ * hot-swaps in — yields a unique negative sentinel. Real content hashes
+ * are unsigned 64-bit values (always ≥ 0), so a sentinel never matches
+ * a new block's hash: that block is rewritten in place, never
+ * duplicated, and the count still equals the child count so the plan's
+ * append/remove math stays anchored to the real DOM.
+ */
+function domHashes(children: ReadonlyArray<Element>): bigint[] {
+  const out: bigint[] = new Array(children.length);
+  for (let i = 0; i < children.length; i += 1) {
+    const raw = (children[i] as HTMLElement).dataset?.contentHash;
+    if (raw === undefined) {
+      out[i] = -1n - BigInt(i);
+      continue;
+    }
+    try {
+      out[i] = BigInt(raw);
+    } catch {
+      out[i] = -1n - BigInt(i);
+    }
+  }
+  return out;
+}
+
+/**
+ * Reconcile `container`'s children against `text`'s parsed blocks,
+ * mutating only what changed. The previous render's per-block hashes
+ * are recovered from the container's own children ({@link domHashes}),
+ * so the reconciler is stateless across calls — there is nothing for a
+ * module reload or a strict-mode remount to desynchronize. Returns the
+ * new {@link RenderState} for instrumentation / tests.
+ *
+ * Empty input clears the container and returns an empty state.
  */
 export function renderIncremental(
   container: HTMLElement,
   text: string,
-  prev: RenderState | null,
   options?: ParseMarkdownOptions,
 ): RenderResult {
   if (text === "") {
-    const removeCount = prev?.hashes.length ?? 0;
+    const removeCount = container.children.length;
     container.replaceChildren();
     return {
       state: { hashes: [], kinds: [] },
@@ -232,7 +286,7 @@ export function renderIncremental(
     transformers: options?.transformers ?? DEFAULT_BLOCK_TRANSFORMERS,
   };
   const blocks = parseMarkdownToSanitizedBlocks(text, mergedOptions);
-  return renderIncrementalFromBlocks(container, blocks, prev);
+  return renderIncrementalFromBlocks(container, blocks);
 }
 
 /**
@@ -251,10 +305,14 @@ export function renderIncremental(
 export function renderIncrementalFromBlocks(
   container: HTMLElement,
   blocks: ReadonlyArray<SanitizedMarkdownBlock>,
-  prev: RenderState | null,
 ): RenderResult {
+  // Snapshot existing children once. The reconciler's contract is
+  // that it owns every child of `container` (no foreign nodes); the
+  // consumer (the streaming `useLayoutEffect`) is the only writer.
+  const existing = Array.from(container.children) as HTMLElement[];
+
   if (blocks.length === 0) {
-    const removeCount = prev?.hashes.length ?? 0;
+    const removeCount = existing.length;
     container.replaceChildren();
     return {
       state: { hashes: [], kinds: [] },
@@ -263,13 +321,12 @@ export function renderIncrementalFromBlocks(
   }
   const newHashes = blocks.map((b) => b.contentHash);
   const newKinds = blocks.map((b) => b.type);
-  const prevHashes = prev?.hashes ?? [];
+  // Previous render's hashes come from the DOM children themselves, not
+  // a carried-in state object — so the diff is anchored to what is
+  // actually on screen and cannot append duplicates after an HMR reload
+  // or strict-mode remount wiped a module-level cache ({@link domHashes}).
+  const prevHashes = domHashes(existing);
   const plan = planReconcile(prevHashes, newHashes);
-
-  // Snapshot existing children once. The reconciler's contract is
-  // that it owns every child of `container` (no foreign nodes); the
-  // consumer (the streaming `useLayoutEffect`) is the only writer.
-  const existing = Array.from(container.children) as HTMLElement[];
 
   // Phase 1 — in-place updates over the divergent matching range.
   // Preserves wrapper element identity (browser scroll anchor stays
