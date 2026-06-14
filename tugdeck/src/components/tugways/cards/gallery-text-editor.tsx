@@ -93,6 +93,12 @@ import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { FeedId } from "@/protocol";
 import { getFixtureSessionMetadataStore } from "./completion-fixtures/system-metadata-fixture";
+import {
+  LOCAL_SLASH_COMMANDS,
+  type LocalSlashCommandSpec,
+} from "@/lib/slash-commands";
+import { resolveArgumentHint } from "@/lib/slash-argument-hint";
+import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type {
   CompletionProvider,
@@ -513,6 +519,27 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
     [],
   );
 
+  // Argument-hint resolver mirroring the dev card's: accepting a skill /
+  // agent command atom (or a `takesArgs` local) paints a ghost placeholder.
+  // Lets the slot be vetted here without the full app.
+  const argumentHintResolver = useMemo<ArgumentHintResolver>(() => {
+    const store = getFixtureSessionMetadataStore();
+    return (value: string): string | null => {
+      const hit = store
+        .getSnapshot()
+        .slashCommands.find((c) => c.name === value);
+      const local: LocalSlashCommandSpec | undefined = LOCAL_SLASH_COMMANDS.find(
+        (c) => c.name === value,
+      );
+      return resolveArgumentHint({
+        name: value,
+        category: hit?.category,
+        argumentHint: hit?.argumentHint,
+        takesArgs: local?.takesArgs,
+      });
+    };
+  }, []);
+
   // Submit handler: capture the current editing state, append it to
   // the per-card history, reset the provider's cursor / draft, then
   // clear the editor for the next draft. The capture happens on the
@@ -672,6 +699,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
                 onSubmit={handleSubmit}
                 historyProvider={historyProvider}
                 completionProviders={completionProviders}
+                argumentHintResolver={argumentHintResolver}
                 dropHandler={galleryDropHandler}
               />
             </div>

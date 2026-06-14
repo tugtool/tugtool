@@ -9,12 +9,14 @@
  * scrolling horizontally (no horizontal scroll on body content; the
  * transcript's vertical scroll is the only scroll surface).
  *
- * The tile is a 64×64 thumbnail (per [Spec S06] — "fixed-aspect 64×64
- * tile") with a small caption beneath. The thumbnail itself fits
- * within the tile via `object-fit: cover` so the inscribed image
- * fills the square; the underlying data URL is at most 256 px max
- * edge (per [Spec S04]), so the browser downscales further into the
- * 64-px tile.
+ * The tile is a fixed-aspect square thumbnail with a small caption
+ * beneath. [Spec S06]'s original 64×64 tile read too small to be a
+ * useful preview, so the default tile is enlarged here (the
+ * `--tugx-attachment-strip-tile-size` slot below); clicking a tile
+ * opens the full-resolution zoom preview. The thumbnail fits within
+ * the tile via `object-fit: cover` so the inscribed image fills the
+ * square; the underlying data URL is at most 256 px max edge (per
+ * [Spec S04]), so the browser downscales into the tile.
  *
  * Atom-position labels (`#NNNN-image-N`) are intentionally monospaced
  * (matching the inline chip's label font) so a reader pairing a chip
@@ -30,6 +32,14 @@
  */
 
 [data-slot="tug-attachment-strip"] {
+  /* Tile dimension slot, declared on the component root so every
+     descendant `var(--tugx-attachment-strip-tile-size)` reference (tile
+     width, thumbnail box) resolves to one value. Enlarged from [Spec
+     S06]'s 64px to a useful preview size; the inline `var(…, 128px)`
+     fallbacks below match, so a consumer that doesn't inherit this still
+     gets the same size. */
+  --tugx-attachment-strip-tile-size: 128px;
+
   /* Layout: horizontal flex with wrap; the gap separates tiles in
      both axes so a multi-row wrap reads as a grid. */
   display: flex;
@@ -59,13 +69,13 @@
   display: inline-flex;
   flex-direction: column;
   align-items: stretch;
-  /* Fixed tile width — the thumbnail's intrinsic 64px, plus the
+  /* Fixed tile width — the thumbnail's tile size, plus the
      caption sits beneath at the same width (the caption may
      ellipsize if the `#NNNN-image-N` label ever grows past the
      tile's width, which doesn't happen at the planned ≤9999
      message-number range with 1-digit per-message image counts).
      This keeps the strip's tile grid uniform. */
-  width: var(--tugx-attachment-strip-tile-size, 64px);
+  width: var(--tugx-attachment-strip-tile-size, 128px);
   /* Spacing between tiles is handled by the parent's `gap` — keep
      the tile itself flush. */
   /* Subtle focus ring for keyboard navigation; reuses the platform
@@ -83,8 +93,8 @@
   /* Inscribed thumbnail container. Square aspect (1:1) so the tile
      reads as a uniform grid regardless of source image proportions. */
   display: block;
-  width: var(--tugx-attachment-strip-tile-size, 64px);
-  height: var(--tugx-attachment-strip-tile-size, 64px);
+  width: var(--tugx-attachment-strip-tile-size, 128px);
+  height: var(--tugx-attachment-strip-tile-size, 128px);
   border-radius: var(--tugx-attachment-strip-tile-radius, 4px);
   /* Background slot for the placeholder + a subtle frame around the
      thumbnail when it lands. The token follows the existing
@@ -154,7 +164,7 @@
   text-align: center;
   /* Don't allow any single line to overflow the tile width — at the
      planned `messageNumber` and `image-N` ranges (≤9999, ≤99), the
-     monospace widths fit comfortably inside a 64-px tile. The
+     monospace widths fit comfortably inside the tile. The
      `overflow-wrap` here is defensive against a future label growth
      past the tile width: rather than truncating, the line would
      wrap at any character, which is uglier than the budgeted layout

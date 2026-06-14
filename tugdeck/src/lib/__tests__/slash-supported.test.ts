@@ -9,6 +9,7 @@ import {
   classifySlashCommand,
   isHiddenSlashCommand,
   isUnknownRemoteCommand,
+  resolveRemoteCommand,
 } from "@/lib/slash-supported";
 import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
 
@@ -87,5 +88,43 @@ describe("isUnknownRemoteCommand", () => {
     // even if absent from the catalog.
     expect(isUnknownRemoteCommand("permissions", catalog)).toBe(false);
     expect(isUnknownRemoteCommand("vim", catalog)).toBe(false);
+  });
+
+  test("a bare skill name resolving to a namespaced catalog entry is NOT unknown", () => {
+    // The crux of the skill-classification fix: claude catalogs skills
+    // namespaced (`tugplug:devise`), the user types the bare `/devise`. A
+    // namespace-blind check would call it an unknown typo and swallow it;
+    // namespace-aware matching routes it to the skill instead.
+    const skillCatalog = ["init", "tugplug:devise", "tugplug:commit"];
+    expect(isUnknownRemoteCommand("devise", skillCatalog)).toBe(false);
+    expect(isUnknownRemoteCommand("commit", skillCatalog)).toBe(false);
+    // A real typo still reads as unknown.
+    expect(isUnknownRemoteCommand("devize", skillCatalog)).toBe(true);
+  });
+});
+
+describe("resolveRemoteCommand", () => {
+  const catalog = ["init", "insights", "tugplug:devise", "tugplug:commit"];
+
+  test("an exact catalog name resolves to itself (bare or fully-qualified)", () => {
+    expect(resolveRemoteCommand("init", catalog)).toBe("init");
+    expect(resolveRemoteCommand("tugplug:devise", catalog)).toBe("tugplug:devise");
+  });
+
+  test("a bare name resolves to its unique namespaced catalog entry", () => {
+    expect(resolveRemoteCommand("devise", catalog)).toBe("tugplug:devise");
+    expect(resolveRemoteCommand("commit", catalog)).toBe("tugplug:commit");
+  });
+
+  test("a name matching nothing resolves to null", () => {
+    expect(resolveRemoteCommand("devize", catalog)).toBeNull();
+    expect(resolveRemoteCommand("nope", catalog)).toBeNull();
+  });
+
+  test("an ambiguous suffix (same leaf in two namespaces) does NOT guess", () => {
+    const ambiguous = ["tugplug:review", "acme:review"];
+    expect(resolveRemoteCommand("review", ambiguous)).toBeNull();
+    // The fully-qualified form is still exact and unambiguous.
+    expect(resolveRemoteCommand("acme:review", ambiguous)).toBe("acme:review");
   });
 });

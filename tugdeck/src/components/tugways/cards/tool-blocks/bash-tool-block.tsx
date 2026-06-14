@@ -15,12 +15,12 @@
  *     stdout looks like a unified diff (i.e. `git diff`, `git show`,
  *     `git log -p`), `DiffBlock` renders instead — see the
  *     diff-routing helpers below.
- *   - **Footer badges:** non-zero exit code (red), `interrupted`
- *     indicator, "(no output)" hint for empty-success cases, and
- *     `durationMs` when known. `exit 0` is intentionally suppressed
- *     — a successful command reads more cleanly without it. The
- *     footer chrome is hidden entirely when none of these would
- *     render (the dominant `exit 0 + has output` case).
+ *   - **Footer badges:** "(no output)" hint for empty-success cases and
+ *     `durationMs` when known. The exit code and `interrupted` reading
+ *     live in the header's result summary, not the footer — repeating
+ *     them at the bottom read as a tiny duplicate. The footer chrome is
+ *     hidden entirely when neither would render (the dominant
+ *     `exit 0 + has output` case).
  *
  * Streaming behavior:
  *
@@ -292,32 +292,23 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
       </pre>
     ) : undefined;
 
-  // Whether the footer would surface anything visible. Exit-zero is
-  // intentionally NOT a footer signal — a successful command without
-  // output is the dominant case and "exit 0" reads as noise.
-  // Failures (`exit N`), interrupts, the explicit "(no output)" hint,
-  // and durations are the only fields the footer carries.
+  // Whether the footer would surface anything visible. The exit code and
+  // the `interrupted` reading now live in the header's result summary, so
+  // the footer no longer repeats them — it carries only the "(no output)"
+  // hint and the duration, the two signals the header doesn't show.
   const noBody =
     (terminalData.stdout?.length ?? 0) === 0 &&
     (terminalData.stderr?.length ?? 0) === 0 &&
     status !== "streaming";
-  const showExitBadge =
-    terminalData.exitCode !== undefined &&
-    terminalData.exitCode !== 0 &&
-    terminalData.interrupted !== true;
-  const showInterrupted = terminalData.interrupted === true;
   const showNoOutputHint =
     noBody &&
     terminalData.exitCode === 0 &&
     terminalData.interrupted !== true;
   const showDuration = durationMs !== undefined;
-  const hasFooterContent =
-    showExitBadge || showInterrupted || showNoOutputHint || showDuration;
+  const hasFooterContent = showNoOutputHint || showDuration;
   const footerBadges = hasFooterContent ? (
     <BashFooterBadges
-      exitCode={terminalData.exitCode}
       durationMs={durationMs}
-      interrupted={showInterrupted}
       showNoOutputHint={showNoOutputHint}
     />
   ) : undefined;
@@ -371,14 +362,15 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     );
   }
 
-  // Collapsed-header one-line result ([P09]): the exit code (or
-  // "interrupted"). Unlike the footer — which suppresses `exit 0` as
-  // noise once a body is present — the collapsed line shows the exit
-  // explicitly, since it is the whole result the user sees while closed.
+  // Header one-line result: `interrupted`, or a non-zero exit code. `exit 0`
+  // is suppressed — a successful command's success is implicit, and showing
+  // "exit 0" on every clean run reads as noise (the same reasoning the
+  // footer applies). A failure shows its exit code; the lifecycle dot
+  // carries the danger color.
   const resultSummary: ToolResultSummary | undefined =
     terminalData.interrupted === true
       ? { kind: "text", text: "interrupted" }
-      : terminalData.exitCode !== undefined
+      : terminalData.exitCode !== undefined && terminalData.exitCode !== 0
         ? { kind: "exit", code: terminalData.exitCode }
         : undefined;
 
@@ -406,63 +398,33 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
 // ---------------------------------------------------------------------------
 
 interface BashFooterBadgesProps {
-  exitCode?: number;
   durationMs?: number;
-  interrupted: boolean;
   showNoOutputHint: boolean;
 }
 
 /**
- * Compose the footer badge row. Three signals can land here, in
- * priority order:
+ * Compose the footer badge row. Two signals can land here:
  *
- *   1. `interrupted` — user / system stopped the command mid-run.
- *      Wins over the exit code (the underlying process was killed,
- *      not exited).
- *   2. Non-zero `exitCode` — the command failed. Painted with the
- *      strong-red "nonzero" variant. `exit 0` is deliberately
- *      suppressed: a successful command's success is implicit and
- *      the badge reads as noise on every successful row.
- *   3. `(no output)` hint — the command succeeded with no stdout /
+ *   1. `(no output)` hint — the command succeeded with no stdout /
  *      stderr. Surfaced so the row doesn't read as "missing data"
  *      when the command had nothing to print (e.g. `cd /tmp`).
+ *   2. `durationMs` — appended on the right when known.
  *
- * `durationMs` is appended on the right when known.
+ * The exit code and the `interrupted` reading are NOT footer signals —
+ * the header's result summary already shows them, so repeating them here
+ * is redundant (and the "exit N" badge in particular read as a second,
+ * tiny duplicate at the bottom of the block).
  *
  * The caller (`BashToolBlock`) is expected to pass `undefined` for
- * `footerBadges` when none of these would render — that hides the
+ * `footerBadges` when neither of these would render — that hides the
  * footer chrome entirely so successful runs with output don't paint
  * an empty bar.
  */
 const BashFooterBadges: React.FC<BashFooterBadgesProps> = ({
-  exitCode,
   durationMs,
-  interrupted,
   showNoOutputHint,
 }) => {
   const elements: React.ReactNode[] = [];
-  if (interrupted) {
-    elements.push(
-      <span
-        key="interrupted"
-        data-slot="bash-tool-block-interrupted"
-        className="bash-tool-block-interrupted"
-      >
-        interrupted
-      </span>,
-    );
-  } else if (exitCode !== undefined && exitCode !== 0) {
-    elements.push(
-      <span
-        key="exit"
-        data-slot="bash-tool-block-exit"
-        data-exit="nonzero"
-        className="bash-tool-block-exit bash-tool-block-exit--nonzero"
-      >
-        {`exit ${exitCode}`}
-      </span>,
-    );
-  }
   if (showNoOutputHint) {
     elements.push(
       <span

@@ -18,16 +18,18 @@
  * tool-specific bits (e.g., the shell-syntax-highlighted command on
  * `BashToolBlock`).
  *
- * Status states map to the [Spec S03] `ToolBlockStatus` enum:
+ * Status states map to the [Spec S03] `ToolBlockStatus` enum. The
+ * header's lifecycle dot is the single status signal (the Quiet Line) —
+ * there is no stripe; the chrome frame is uniform across states:
  *
  *   - `streaming` — the tool input is partial; the wrapper passes a
  *     placeholder body (`<ToolBlockChrome.StreamingPlaceholder />`)
- *     into `children` and the chrome paints a streaming-color stripe
- *     on the header.
- *   - `ready`    — steady-state render. Chrome is the default color.
- *   - `error`    — `tool_result.is_error === true`. Chrome paints
- *     an error stripe; consumers may also pass an
- *     `errorMessage` slot for inline detail.
+ *     into `children`. The header dot pulses in-flight.
+ *   - `ready`    — steady-state render. The dot reads success.
+ *   - `error`    — `tool_result.is_error === true`. The header's
+ *     lifecycle dot reads danger; everything else (name, result, body)
+ *     stays neutral — the dot is the only red. Consumers may also pass
+ *     an `errorMessage` slot for inline detail.
  *
  * `caution` is rendered as an inline `DevCautionBadge` in the header
  * per [D04] / [Q03] — three reasons surface: `unknown_tool`,
@@ -348,7 +350,6 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
     <div
       ref={rootRef}
       data-slot={rootSlot}
-      data-status={status}
       data-caution={caution?.reason ?? undefined}
       data-block-collapsed={blockCollapsed ? "true" : undefined}
       data-tool-use-id={toolUseId}

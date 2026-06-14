@@ -24,6 +24,15 @@ export interface SlashCommandInfo {
   name: string;
   description?: string;
   category: "local" | "agent" | "skill";
+  /**
+   * Free-text argument hint for the command, when the emitter supplies one
+   * (`{ name, argumentHint }` in a `session_capabilities` / `system_metadata`
+   * command entry — e.g. `"<idea> → <output-path>"`). Drives the prompt
+   * entry's post-acceptance argument placeholder; absent when the emitter
+   * ships bare-string entries, in which case the placeholder falls back to a
+   * generic slot for argument-taking command shapes.
+   */
+  argumentHint?: string;
 }
 
 /**
@@ -259,6 +268,14 @@ function parseEntry(
   if (raw && typeof raw === "object") {
     const entry = raw as Record<string, unknown>;
     if (typeof entry.name !== "string" || !entry.name) return null;
+    // The emitter has used both `argumentHint` and `argument_hint`; accept
+    // either so a hint lands whichever the live build ships.
+    const argHintRaw =
+      typeof entry.argumentHint === "string"
+        ? entry.argumentHint
+        : typeof entry.argument_hint === "string"
+          ? entry.argument_hint
+          : undefined;
     return {
       name: entry.name,
       description:
@@ -267,6 +284,10 @@ function parseEntry(
         typeof entry.category === "string"
           ? toCategory(entry.category)
           : defaultCategory,
+      argumentHint:
+        argHintRaw !== undefined && argHintRaw.trim() !== ""
+          ? argHintRaw
+          : undefined,
     };
   }
   return null;

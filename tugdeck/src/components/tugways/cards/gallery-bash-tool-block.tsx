@@ -1,9 +1,10 @@
 /**
  * gallery-bash-tool-block.tsx — visual fixture for `BashToolBlock`.
  *
- * Mounts the wrapper across the smart-pick routing (introduced in
- * #step-10-7) and the footer-badge states, without standing up a live
- * tugcode bridge:
+ * Mounts the wrapper across the smart-pick routing and the result states,
+ * without standing up a live tugcode bridge. The exit code / `interrupted`
+ * reading shows in the header's result summary (the footer carries only the
+ * "(no output)" hint and duration):
  *
  *  1. `echo "hello from bash"` — success path. TerminalBlock body, exit 0,
  *     footer chrome suppressed (the dominant non-error case).
@@ -16,10 +17,10 @@
  *  4. `git status` — plain bash output that mentions "branch" / "commit"
  *     but is NOT a diff. Stays on TerminalBlock; the heuristic must not
  *     false-positive.
- *  5. `npm run build` — non-zero exit. `isError` synthesizes `exit 1`;
- *     the footer paints the strong-red exit badge.
- *  6. `sleep 600` — interrupted. The footer shows the `interrupted`
- *     badge, which wins over any exit code.
+ *  5. `npm run build` — non-zero exit. `isError` synthesizes `exit 1`,
+ *     shown in the header summary; the only red is the header dot.
+ *  6. `sleep 600` — interrupted. The header summary reads `interrupted`,
+ *     which wins over any exit code.
  *  7. `ls --color` — ANSI-rich stdout. TerminalBlock renders the SGR
  *     escape sequences as styled spans.
  *  8. `cd /tmp` — empty-success. No body; the footer shows the

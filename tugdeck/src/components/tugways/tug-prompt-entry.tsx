@@ -68,6 +68,7 @@ import {
   TugTextEditor,
   type TugTextEditorDelegate,
 } from "./tug-text-editor";
+import type { ArgumentHintResolver } from "./tug-text-editor/argument-hint-extension";
 import {
   getAtomsInState,
   regenerateAtomsEffect,
@@ -479,6 +480,13 @@ export interface TugPromptEntryProps {
    * Leave undefined to disable all trigger completions.
    */
   completionProviders?: Record<string, CompletionProvider>;
+  /**
+   * Resolver for the post-acceptance argument placeholder, forwarded to
+   * `TugTextEditor` ({@link TugTextEditorProps.argumentHintResolver}). Maps an
+   * accepted command atom's value to its placeholder, or `null` for no-arg
+   * commands.
+   */
+  argumentHintResolver?: ArgumentHintResolver;
   /** Drop handler for dragging files from Finder. Forwarded to TugTextEditor. */
   dropHandler?: DropHandler;
   /**
@@ -709,6 +717,7 @@ export const TugPromptEntry = React.forwardRef<
     sessionMetadataStore,
     historyStore,
     completionProviders,
+    argumentHintResolver,
     dropHandler,
     onBeforeSubmit,
     onAfterSubmit,
@@ -1777,6 +1786,7 @@ export const TugPromptEntry = React.forwardRef<
               disabled={deactivated}
               placeholder={placeholderByRoute?.[route] ?? ""}
               completionProviders={completionProviders}
+              argumentHintResolver={argumentHintResolver}
               dropHandler={dropHandler}
               attachmentBytesStore={attachmentBytesStore}
               onAttachmentError={publishAttachmentError}

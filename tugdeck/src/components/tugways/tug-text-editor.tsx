@@ -134,6 +134,12 @@ import {
   pendingAtomTheme,
   regenerateAtomsEffect,
 } from "./tug-text-editor/atom-decoration";
+import {
+  argumentHintPlugin,
+  argumentHintResolverFacet,
+  argumentHintTheme,
+  type ArgumentHintResolver,
+} from "./tug-text-editor/argument-hint-extension";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
 import {
   clipboardExtension,
@@ -525,6 +531,15 @@ export interface TugTextEditorProps
    */
   completionProviders?: Record<string, CompletionProvider>;
   /**
+   * Resolver mapping an accepted command atom's value (e.g.
+   * `"tugplug:devise"`) to the argument placeholder shown after it
+   * (`/devise ┆ type arguments…`), or `null` for a no-arg command. The host
+   * builds this from its command catalog + local registry; read live, so a
+   * hint that lands after the `initialize` handshake takes effect on the next
+   * edit. Omitted (gallery / standalone) ⇒ no placeholder is ever painted.
+   */
+  argumentHintResolver?: ArgumentHintResolver;
+  /**
    * Preferred direction for the completion popup relative to the
    * trigger character. `"down"` (default) places the popup below the
    * trigger when there's room; `"up"` places it above. The substrate
@@ -869,6 +884,7 @@ function buildExtensions(
   getCompletionProviders: () => Record<string, CompletionProvider>,
   getDropHandler: () => DropHandler | null,
   getBytesStore: () => AtomBytesStore | null,
+  getArgumentHintResolver: () => ArgumentHintResolver,
   onAttachmentError: (message: string) => void,
   initial: {
     placeholder: string;
@@ -1004,6 +1020,13 @@ function buildExtensions(
     // registered (facet default thunk returns `null`).
     pendingAtomSyncPlugin,
     pendingAtomTheme,
+    // Argument-hint ghost slot — reads the resolver thunk (live catalog +
+    // local registry) and paints a muted placeholder after a lone accepted
+    // command atom (`/devise ┆ type arguments…`). No-op when no resolver is
+    // registered (gallery / standalone). [L06] appearance-only widget.
+    argumentHintResolverFacet.of(getArgumentHintResolver),
+    argumentHintPlugin,
+    argumentHintTheme,
     clipboardExtension(getBytesStore, onAttachmentError),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
@@ -1022,6 +1045,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       onSubmit,
       historyProvider,
       completionProviders,
+      argumentHintResolver,
       completionDirection = "down",
       onTypeaheadChange,
       dropHandler,
@@ -1188,6 +1212,17 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       completionProvidersRef.current = completionProviders ?? {};
     }, [completionProviders]);
+
+    // Live argument-hint resolver ref — read through a thunk by the
+    // placeholder plugin, so a resolver swapped across renders (the catalog
+    // growing after the handshake) takes effect without rebuilding the
+    // editor [L07]. Default no-op when the host supplies none.
+    const argumentHintResolverRef = useRef<ArgumentHintResolver>(
+      argumentHintResolver ?? (() => null),
+    );
+    useLayoutEffect(() => {
+      argumentHintResolverRef.current = argumentHintResolver ?? (() => null);
+    }, [argumentHintResolver]);
 
     // Live observer ref for the optional `onTypeaheadChange` callback
     // — same [L07] pattern: the field-listener captured below reads
@@ -1930,6 +1965,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           () => completionProvidersRef.current,
           () => dropHandlerRef.current,
           () => attachmentBytesStoreRef.current,
+          () => (value: string) => argumentHintResolverRef.current(value),
           (message) => onAttachmentErrorRef.current(message),
           {
             placeholder: initialPlaceholder,

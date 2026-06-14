@@ -4,9 +4,10 @@
  * The header's lifecycle dot is the point of the regularization, and
  * three of its five phases — `awaiting`, `error`, `interrupted` — are
  * hard to reproduce in a live transcript on demand. This gallery paints
- * every phase side by side, plus the icon on/off choice, a chip
- * identity (no clipping), and a long multi-line command (no
- * truncation).
+ * every phase side by side, the dot-only failure reading (only the
+ * lifecycle dot is red — the name and result stay neutral), the icon
+ * on/off choice, a chip identity (no clipping), and a long multi-line
+ * command (no truncation).
  *
  * @module components/tugways/cards/gallery-tool-call-header
  */
@@ -65,6 +66,29 @@ export const GalleryToolCallHeader: React.FC = () => {
               target={<code>{`echo "${TOOL_CALL_PHASE_LABELS[phase]}"`}</code>}
             />
           ))}
+        </div>
+      </section>
+
+      <TugSeparator />
+
+      <section className="gallery-tch-section">
+        <TugLabel>Failure reads from the lifecycle dot — nothing else is red</TugLabel>
+        <div className="gallery-tch-stack">
+          {/* A failed / canceled call is conveyed by the lifecycle dot alone;
+              the name and trailing result stay neutral (an exit code is data,
+              not an alarm), and the body keeps its neutral surface. */}
+          <ToolCallHeader {...demoControls}
+            phase="error"
+            toolName="Bash"
+            target={<code>npm run build</code>}
+            summary={{ kind: "exit", code: 1 }}
+          />
+          <ToolCallHeader {...demoControls}
+            phase="interrupted"
+            toolName="Bash"
+            target={<code>cargo test --workspace</code>}
+            summary={{ kind: "text", text: "interrupted" }}
+          />
         </div>
       </section>
 

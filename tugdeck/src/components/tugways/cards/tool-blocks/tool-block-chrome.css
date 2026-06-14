@@ -5,9 +5,11 @@
    - --tugx-block-tone-remove-bg / --tugx-block-tone-remove-color   (shared error band)
    The chrome paints a subtle bordered card around tool-call content
    with a header row (icon + name + args summary) and an optional
-   footer for badges. The `data-status` attribute on the root selects
-   the streaming / ready / error stripe color. Shared block-surface
-   scaffold lives in `styles/tugx-block.css`.
+   footer for badges. The header's lifecycle dot is the single status
+   signal — there is no stripe and the frame is uniform across states;
+   on a failure the dot is the only red, and the body / error text keep
+   neutral tones. Shared block-surface scaffold lives in
+   `styles/tugx-block.css`.
 */
 
 /**
@@ -141,11 +143,12 @@ body {
 
 /* ---- Error message (between body and footer) ---- */
 
+/* The failure text reads as plain body content — neutral surface, normal
+ * text color. The only red on an errored block is the header's lifecycle
+ * dot; an all-red error band overweights the failure and is hard to read. */
 .tool-block-chrome-error {
   padding: var(--tugx-toolblock-error-padding);
-  background: var(--tugx-block-tone-remove-bg);
-  border-top: 1px solid var(--tugx-block-border);
-  color: var(--tugx-block-tone-remove-color);
+  color: var(--tugx-block-text-color);
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-toolblock-error-size);
 }

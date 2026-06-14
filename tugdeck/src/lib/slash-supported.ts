@@ -152,6 +152,37 @@ export function isHiddenSlashCommand(name: string): boolean {
 }
 
 /**
+ * Resolve a typed `/name` to its canonical entry in claude's command catalog,
+ * accounting for namespacing. Claude reports plugin skills and agents
+ * namespaced — `tugplug:devise`, not `devise` — but the user types the bare
+ * `/devise`. Matching the typed name against the catalog by equality alone
+ * never finds it, so a perfectly valid skill reads as a genuine unknown.
+ *
+ * The match is, in order:
+ *  - **exact** — the typed name is a catalog entry verbatim (`/init`,
+ *    or the fully-qualified `/tugplug:devise`);
+ *  - **namespace suffix** — exactly one catalog entry's part after the last
+ *    `:` equals the typed name (`devise` → `tugplug:devise`). A unique
+ *    suffix match resolves; an ambiguous one (two namespaces expose the same
+ *    leaf name) does NOT — we can't pick for the user, so it stays
+ *    unresolved and is treated as unknown rather than guessed.
+ *
+ * Returns the canonical catalog name on a hit, or `null` when the name
+ * matches nothing (a genuine unknown / typo). Pure lookup.
+ */
+export function resolveRemoteCommand(
+  name: string,
+  catalogNames: readonly string[],
+): string | null {
+  if (catalogNames.includes(name)) return name;
+  const suffixHits = catalogNames.filter((entry) => {
+    const colon = entry.lastIndexOf(":");
+    return colon >= 0 && entry.slice(colon + 1) === name;
+  });
+  return suffixHits.length === 1 ? suffixHits[0]! : null;
+}
+
+/**
  * Whether a typed `/name` is a *genuine unknown* — a command claude does not
  * recognize — given the names claude reports in its command catalog
  * (`slash_commands` ∪ `skills` ∪ `agents`). True only when:
@@ -162,7 +193,10 @@ export function isHiddenSlashCommand(name: string): boolean {
  * - the name is a `pass-through` (not a local command, not hidden) — a local
  *   command is dispatched to its surface and a hidden one is swallowed
  *   silently, neither is "unknown"; and
- * - the catalog does not contain the name.
+ * - the name resolves to no catalog entry, **namespace-aware** — a bare
+ *   `/devise` resolves to the catalogued `tugplug:devise` (see
+ *   {@link resolveRemoteCommand}) and so is NOT unknown; only a name that
+ *   matches nothing (a typo) is.
  *
  * The dev card uses this at submit to surface an "unknown command" alert
  * instead of sending the line to claude (which would waste a turn and reply
@@ -174,5 +208,5 @@ export function isUnknownRemoteCommand(
 ): boolean {
   if (catalogNames.length === 0) return false;
   if (classifySlashCommand(name) !== "pass-through") return false;
-  return !catalogNames.includes(name);
+  return resolveRemoteCommand(name, catalogNames) === null;
 }

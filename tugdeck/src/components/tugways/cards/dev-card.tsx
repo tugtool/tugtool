@@ -60,7 +60,13 @@ import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
 import { useRoute } from "@/lib/route-lifecycle";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
-import type { LocalCommandName } from "@/lib/slash-commands";
+import {
+  LOCAL_SLASH_COMMANDS,
+  type LocalCommandName,
+  type LocalSlashCommandSpec,
+} from "@/lib/slash-commands";
+import { resolveArgumentHint } from "@/lib/slash-argument-hint";
+import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { isPermissionMode } from "@/lib/permission-mode";
 import { openPathInOS } from "@/lib/os-open";
@@ -438,6 +444,12 @@ export interface DevCardServices {
   sessionMetadataStore: SessionMetadataStore;
   historyStore: PromptHistoryStore;
   completionProviders: Record<string, CompletionProvider>;
+  /**
+   * Resolves an accepted command atom's value to its argument placeholder
+   * (`/devise ┆ type arguments…`), reading the live command catalog + local
+   * registry. Forwarded to `TugPromptEntry`.
+   */
+  argumentHintResolver: ArgumentHintResolver;
   editorStore: EditorSettingsStore;
   responseStore: ResponseSettingsStore;
   /** Single-shot `/diff` request/response store ([#step-10b]). */
@@ -518,6 +530,31 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
     [services],
   );
 
+  // Argument-hint resolver: maps an accepted command atom's value to its
+  // placeholder by reading the LIVE command catalog (skill/agent category +
+  // any explicit hint the emitter shipped) and the local registry (its
+  // `takesArgs` flag), deferring the decision to the pure `resolveArgumentHint`.
+  // Read live so a hint that lands after the `initialize` handshake takes
+  // effect without rebuilding the editor.
+  const argumentHintResolver = useMemo<ArgumentHintResolver>(() => {
+    if (services === null) return () => null;
+    const store = services.sessionMetadataStore;
+    return (value: string): string | null => {
+      const catalogHit = store
+        .getSnapshot()
+        .slashCommands.find((c) => c.name === value);
+      const local: LocalSlashCommandSpec | undefined = LOCAL_SLASH_COMMANDS.find(
+        (c) => c.name === value,
+      );
+      return resolveArgumentHint({
+        name: value,
+        category: catalogHit?.category,
+        argumentHint: catalogHit?.argumentHint,
+        takesArgs: local?.takesArgs,
+      });
+    };
+  }, [services]);
+
   return useMemo<DevCardServices | null>(() => {
     if (services === null) return null;
     return {
@@ -525,6 +562,7 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       sessionMetadataStore: services.sessionMetadataStore,
       historyStore: getDevPromptHistoryStore(),
       completionProviders,
+      argumentHintResolver,
       editorStore: services.editorStore,
       responseStore: services.responseStore,
       gitDiffStore: services.gitDiffStore,
@@ -532,7 +570,7 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       hooksInventoryStore: services.hooksInventoryStore,
       entryDelegateRef,
     };
-  }, [services, completionProviders]);
+  }, [services, completionProviders, argumentHintResolver]);
 }
 
 // ---------------------------------------------------------------------------
@@ -2257,7 +2295,7 @@ export function DevCardBody({
   renderTurnTrailing,
   footerContent,
 }: DevCardBodyProps) {
-  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
+  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
   useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
@@ -3613,6 +3651,7 @@ export function DevCardBody({
               sessionMetadataStore={sessionMetadataStore}
               historyStore={historyStore}
               completionProviders={completionProviders}
+              argumentHintResolver={argumentHintResolver}
               onAfterSubmit={handleAfterSubmit}
               maximized={maximized}
               indicatorsContent={

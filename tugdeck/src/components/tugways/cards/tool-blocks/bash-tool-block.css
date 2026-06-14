@@ -55,35 +55,10 @@
   border-radius: 0;
 }
 
-/* Footer badge — exit code (matches TerminalBlock footer semantics). */
-.bash-tool-block-exit {
-  display: inline-flex;
-  align-items: center;
-  padding: var(--tugx-term-exit-padding);
-  border-radius: var(--tugx-term-exit-radius);
-  font-weight: var(--tugx-term-exit-weight);
-}
-
-.bash-tool-block-exit--zero {
-  background: var(--tugx-term-exit-bg-zero);
-  color: var(--tugx-term-exit-color-zero);
-}
-
-.bash-tool-block-exit--nonzero {
-  background: var(--tugx-term-exit-bg-nonzero);
-  color: var(--tugx-term-exit-color-nonzero);
-}
-
-.bash-tool-block-interrupted {
-  display: inline-flex;
-  align-items: center;
-  padding: var(--tugx-term-exit-padding);
-  border-radius: var(--tugx-term-exit-radius);
-  background: var(--tugx-term-interrupted-bg);
-  color: var(--tugx-term-interrupted-color);
-  font-weight: var(--tugx-term-exit-weight);
-}
-
+/* Footer badges: the exit code and the `interrupted` reading now live in
+ * the header's result summary, so the footer carries only the "(no output)"
+ * hint and the duration — their exit / interrupted badge rules are retired
+ * with them. */
 .bash-tool-block-no-output {
   display: inline-flex;
   align-items: center;
