@@ -114,7 +114,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Plan to resolve:** Spike empirically in #step-2 on the real app against `49fc50a1` and the largest real session, reading the reducer output for the suspect messages.
 
-**Resolution:** **DECIDED — reducer exonerated.** #step-2 real-app vet (sessions `49fc50a1` and `7aa35ce5` · 199 turns) showed **no lingering holes and no missing/misrendered messages** once rendering catches up, and a **stable scrollbar** (zero `scrollHeight_changed` entries). The split-entry `${msgId}:${blockIndex}` hypothesis is not the cause; the reducer is **not touched** and **#step-3 is skipped**. (Transient blanks *during* a fast scroll that resolve to correct content are a paint/load-perf characteristic, not holes — tracked for #step-5/#step-6, see [Q02].)
+**Resolution:** **DECIDED — reducer exonerated, with positive mechanistic evidence.** #step-2 real-app vet (sessions `49fc50a1` and `7aa35ce5` · 199 turns) showed **no lingering holes and no missing/misrendered messages** once rendering catches up, and a **stable scrollbar** (zero `scrollHeight_changed` entries). #step-3 then investigated the split-entry hypothesis directly: the pattern **is** present (`49fc50a1`'s `msg_01FnuRgQLUMsimWc11j9tdFU` spans thinking/text/tool_use records) yet renders correctly because tugcode replay (`blockCountByMsgId`) already assigns consecutive `block_index` (0,1,2) across continuation entries — so the reducer's `${msgId}:${blockIndex}` keys never collide. Already covered by `replay.test.ts`'s `same-msg_id continuation` suite (8 pass). The reducer is **not touched**. (Transient blanks *during* a fast scroll that resolve to correct content are a paint/load-perf characteristic, not holes — tracked for #step-5/#step-6, see [Q02].)
 
 #### [Q02] Is all-rich fast enough on the largest real session? {#q02-allrich-perf}
 
@@ -258,7 +258,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 |---|---|---|---|
 | #step-1 | Retire TieredCell — render all transcript cells rich | done | cffcc343 |
 | #step-2 | Vet rendering on the real app; adjudicate residual defects | done (no holes / stable scrollbar; [Q01] exonerated) | (verification only) |
-| #step-3 | (Conditional) Fix reducer split-entry block keying | skipped ([Q01] exonerated — reducer untouched) | — |
+| #step-3 | (Conditional) Fix reducer split-entry block keying | done — exonerated with evidence (already fixed in tugcode replay + tested; no change) | (verification only) |
 | #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | pending | — |
 | #step-5 | Pixel-perfect restore + load measurement on real sessions | pending | — |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
@@ -325,25 +325,28 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Depends on:** #step-2
 
-**Commit:** `Disambiguate split-entry blocks in transcript reducer`
+**Commit:** `N/A (verification only — exonerated, no code change)`
 
 **References:** [P05] Reducer conditional, [Q01] Residual holes, (#open-questions)
 
 > Execute only if #step-2 confirmed residual defects. Otherwise close as "exonerated — no change" in the ledger.
 
-**Artifacts:**
-- `lib/code-session-store/reducer.ts`: keying that disambiguates a `block_index` restart when one assistant message spans two JSONL entries (thinking-only then text).
+**Outcome: EXONERATED with positive evidence — no code change.** Investigation found the split-entry `block_index` collision is **already fixed**, and **at the tugcode replay layer**, not the reducer the plan suspected:
+
+1. **The pattern is real and present in a tested session.** In `49fc50a1`, the single assistant message `msg_01FnuRgQLUMsimWc11j9tdFU` spans **three** JSONL records — `content:[thinking]`, then `content:[text]`, then `content:[tool_use]`, all same `msg_id`. This is exactly the "split across entries, each `content[0]`" shape that would collide on `${msg_id}:0` if indexed per-record.
+2. **The disambiguation lives in `tugcode/src/replay.ts`.** A per-`msg_id` running counter `blockCountByMsgId` makes each continuation entry start its `block_index` at the prior count (`baseBlockIndex = blockCountByMsgId.get(entryMsgId) ?? 0`; each block → `baseBlockIndex + localBlockIndex`; counter bumped after the entry). So the three records emit `block_index` **0, 1, 2** — distinct keys, no collision. The reducer's `${msg_id}:${block_index}` keying then works correctly because its inputs are already distinct. (The fix predates this plan — its regression test cites session `ecc343d8`.)
+3. **Why `49fc50a1` rendered clean in #step-2:** because (1)+(2) — the suspect pattern *is* in that session and it paints correctly, which is positive proof the mechanism works, not merely "we didn't hit the case."
 
 **Tasks:**
-- [ ] Reproduce the captured defect from real JSONL; identify where two blocks collide on `${msgId}:${blockIndex}` within a turn's scratch entry.
-- [ ] Adjust the key (e.g. incorporate entry/sequence) so split-entry blocks never collide; preserve dedupe semantics for `turn_complete` and live/replay parity.
-- [ ] Cross-check correctness against existing reducer behavior; fix any pre-existing issue in touched code.
+- [x] Looked for the defect in real JSONL — the split pattern is present (`49fc50a1` / `msg_01FnuRgQLUMsimWc11j9tdFU`), but it does **not** collide: tugcode replay assigns consecutive `block_index` across continuation entries.
+- [x] No key change needed — the reducer already receives distinct `${msg_id}:${block_index}` keys; the disambiguation is correctly placed in tugcode replay, not the reducer.
+- [x] Cross-checked correctness: live path (`session.ts`) uses the API's native per-message `event.index` (monotonic within a stream); replay path uses `blockCountByMsgId`. Both paths produce distinct indices.
 
 **Tests:**
-- [ ] `bun:test` pure-logic test feeding the real split-entry event sequence and asserting both blocks survive distinctly (no fake-DOM, no mock store).
+- [x] **Already covered** — `tugcode/src/__tests__/replay.test.ts` › `describe("translateJsonlSession — same-msg_id continuation")`: per-entry consecutive indices (the `ecc343d8` regression, asserts `0,1`), three-way continuation (`[0,1,2]`), per-entry-multi-block + continuation monotonic (`[0,1,2]`), and distinct-`msg_id` independent counters. Ran on current `main`: **8 pass / 0 fail (40ms)**. Adding another test would duplicate this real coverage, so none added ([[feedback_no_mock_store_tests]]).
 
 **Checkpoint:**
-- [ ] The previously-missing message renders; full real-app re-vet from #step-2 passes.
+- [x] No message was ever missing (the pattern renders correctly in `49fc50a1`, vetted in #step-2); the existing real-data regression suite passes on `main`. Reducer untouched.
 
 ---
 
