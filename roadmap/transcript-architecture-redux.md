@@ -25,7 +25,7 @@ The dev-card transcript has accumulated three tangled defects that resisted piec
 
 The three observed defects map to one root cause and two consequences:
 
-1. **Rendering (root cause).** Every transcript row is wrapped in `TieredCell` (`transcript-tier.tsx`): a row renders a *cheap* muted-text preview at a reserved (estimate-like) height until a shared `IntersectionObserver` (`useInRichWindow`, `RICH_WINDOW_MARGIN = 1500px`) upgrades it to *rich*. A row that has never been rich sits at its cheap height. This single mechanism produces **both** the empty "holes" the user sees when scrolling (cheap previews of tool/complex cells) **and** the scrollbar that changes height as you scroll (the total height is `Σ(cheap) + Σ(rich)` and shifts every time a cell first goes rich). The user's requirement #5 forbids exactly this.
+1. **Rendering (root cause).** Two estimate mechanisms stack here. (a) Every transcript row is wrapped in `TieredCell` (`transcript-tier.tsx`): a row renders a *cheap* muted-text preview at a reserved (estimate-like) height until a shared `IntersectionObserver` (`useInRichWindow`, `RICH_WINDOW_MARGIN = 1500px`) upgrades it to *rich*. (b) **Discovered during #step-1:** every cell also carried `content-visibility: auto` + `contain-intrinsic-size: auto 120px/56px` in `dev-card.css` — a CSS-layer paint-deferral whose intrinsic-size is itself a placeholder *estimate* and which leaves off-screen rows unpainted (a rich-but-unpainted row is a blank "hole"). Either mechanism alone produces **both** the empty "holes" when scrolling **and** the scrollbar that changes height as you scroll (total height shifts every time a cell first goes rich / first paints). The user's requirement #5 forbids exactly this. #step-1 removes **both**.
 
 2. **Scroll control.** `card-host.tsx` installs a `MutationObserver`-driven region-scroll re-apply loop, designed for *virtualized* scrollers whose `scrollHeight` grows after mount as estimated heights refine. It re-applies the saved `scrollTop` on every cardRoot mutation until the live `scrollTop` lands within `REGION_SCROLL_TOLERANCE_PX = 8` of the saved value. For a transcript saved while following the bottom, this never settles — re-engaging SmartScroll follow-bottom (`source: "scroll-to-bottom"`) and slamming the user down whenever they try to scroll up.
 
@@ -151,15 +151,18 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Decision:** Retire `TieredCell` for the dev transcript. Each row renders its full (rich) cell directly; there is no cheap tier and no reserved/estimated height.
 
+**Decision (amended in #step-1):** retiring `TieredCell` is necessary but **not sufficient** — the `content-visibility: auto` / `contain-intrinsic-size` paint-deferral in `dev-card.css` is a second estimate mechanism and is removed in the same step.
+
 **Rationale:**
-- The cheap/rich tiering is the single mechanism behind both the holes and the estimate-driven scrollbar shift (#context).
+- The cheap/rich tiering and the `content-visibility: auto` deferral are *both* sources of holes + estimate-driven scrollbar shift (#context); removing one without the other leaves the defect.
 - The transcript already mounts `inline` (all rows), so the rich subtrees are the only honest thing to mount.
-- Estimates are banned ([[feedback_no_height_estimates]]); a real-height-only list satisfies requirements #4 and #5 by construction.
+- Estimates are banned ([[feedback_no_height_estimates]]); a real-height-only, always-painted list satisfies requirements #4 and #5 by construction.
 
 **Implications:**
 - The scrollbar height equals `Σ(measured heights)` and is stable once replay completes.
-- `previewForRow` / `previewTextForMessages` / `transcript-tier.*` become dead for the transcript and are removed where unreferenced.
+- `previewForRow` / `previewTextForMessages` / `transcript-tier.*` become dead for the transcript and are removed; `content-visibility`/`contain-intrinsic-size` rules for the transcript are removed.
 - `forceRich` is moot (all rows rich); the in-flight streaming row stays rich automatically.
+- Every row is always painted → the per-row paint cost is no longer deferred. This is the cost [Q02]/#step-5 measures on real sessions; if a genuinely huge transcript regresses, the escalation is windowing-on-real-heights (#roadmap), never re-introducing `content-visibility`/intrinsic-size estimates.
 
 #### [P02] No estimates and no windowing for the dev transcript (DECIDED) {#p02-no-estimates}
 
@@ -253,7 +256,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Retire TieredCell — render all transcript cells rich | pending | — |
+| #step-1 | Retire TieredCell — render all transcript cells rich | done (code complete; awaiting user commit on main) | — |
 | #step-2 | Vet rendering on the real app; adjudicate residual defects | pending | — |
 | #step-3 | (Conditional) Fix reducer split-entry block keying | pending | — |
 | #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | pending | — |
@@ -270,24 +273,26 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **References:** [P01] All-rich render, [P02] No estimates, (#context, #rendering-all-rich), Risk R01
 
 **Artifacts:**
-- `dev-card-transcript.tsx`: cell renderers (user/assistant/ghost) render their rich cell directly, not wrapped in `TieredCell`; `forceRich`/`previewForRow` derivation removed.
+- `dev-card-transcript.tsx`: cell renderers (user/assistant/ghost) render their rich cell directly, not wrapped in `TieredCell`; `forceRich`/`previewForRow` derivation removed; tier/two-tier comments updated to the inline real-height model. `stripUserBodyPrefix` and `readUserMessage` kept (used by the real cells).
 - Orphaned files removed (dev transcript is the sole consumer — confirmed by grep): `transcript-tier.tsx`, `transcript-tier.css`, `src/lib/transcript-preview.ts`, and its test `src/lib/__tests__/transcript-preview.test.ts`.
-- `dev-card.css`: the now-dead `.tug-list-view-cell:has(.dev-transcript-tier[data-tier="rich"]) { … }` rule (≈line 437) removed.
+- `dev-card.css`: removed the **entire `content-visibility: auto` paint-deferral block** — the base `.tug-list-view-cell { content-visibility: auto; contain-intrinsic-size: auto 120px; }`, the user-kind `contain-intrinsic-size: auto 56px`, and the dead `:has(.dev-transcript-tier[data-tier="rich"])` override. **Discovery:** this CSS was a *second, independent* estimate mechanism — `contain-intrinsic-size` is a placeholder estimate for off-screen rows, and `content-visibility: auto` leaves a rich-but-unpainted row blank (a hole). Removing only `TieredCell` would have left holes + a shifting scrollbar at the CSS layer; the all-rich goal requires removing this too.
 
 **Tasks:**
-- [ ] In `dev-card-transcript.tsx`, replace each `<TieredCell …>{() => <Cell/>}</TieredCell>` with the rich `<Cell/>` directly; remove `forceRich` and `previewForRow`.
-- [ ] Delete `transcript-tier.{tsx,css}`, `transcript-preview.ts`, and `transcript-preview.test.ts`; remove their imports.
-- [ ] Remove the `.dev-transcript-tier[data-tier="rich"]` rule from `dev-card.css`.
-- [ ] Re-grep `TieredCell`/`previewTextForMessages`/`previewForRow`/`transcript-tier`/`dev-transcript-tier` to confirm zero remaining references before committing.
-- [ ] Keep the `inline` prop on `TugListView`; confirm no `estimatedHeightForKind` is supplied for this list.
-- [ ] Cross-check tuglaws (L06/L22/L26) and name them in the commit body.
+- [x] In `dev-card-transcript.tsx`, replace each `<TieredCell …>{() => <Cell/>}</TieredCell>` with the rich `<Cell/>` directly; remove `forceRich` and `previewForRow`.
+- [x] Delete `transcript-tier.{tsx,css}`, `transcript-preview.ts`, and `transcript-preview.test.ts`; remove their imports.
+- [x] Remove the dead `content-visibility`/`contain-intrinsic-size` rules from `dev-card.css` (see Artifacts — the whole deferral block, not just the `[data-tier="rich"]` override).
+- [x] Re-grep `TieredCell`/`previewTextForMessages`/`previewForRow`/`transcript-tier`/`dev-transcript-tier`/`content-visibility`/`contain-intrinsic` — zero remaining references in the dev-transcript path (only unrelated gallery `content-visibility` rules remain).
+- [x] Keep the `inline` prop on `TugListView`. **Note:** `estimatedHeightForKind` *is* still supplied and is **intentionally retained for Step 1** — it feeds the list view's anchor-writer / restore machinery (`estimatedHeightForKindOnly` → `heightIndex.prepare`, `indexForOffset`/`offsetForIndex`) even in `inline` mode, and does **not** affect the inline scrollbar (which is the true sum of mounted heights). [P02]'s "no `estimatedHeightForKind`" is moved to **#step-4**, where the anchor restore is verified on real heights before its inputs change.
+- [x] Cross-check tuglaws (L06/L22/L23/L26) — see commit-body note below.
 
 **Tests:**
-- [ ] `bunx tsc --noEmit` clean; zero new warnings.
+- [x] `bunx tsc --noEmit` clean; zero findings. (tugdeck's only lint gate is `tsc`; no biome/eslint config.)
 
 **Checkpoint:**
-- [ ] Typecheck clean.
-- [ ] HMR repaints the transcript with rich rows; no `TieredCell`/cheap markup in the DOM (`data-tier` attribute gone).
+- [x] Typecheck clean.
+- [ ] HMR repaints the transcript with rich rows; no `TieredCell`/cheap/`data-tier` markup in the DOM. *(Source-verified: all `data-tier`/`dev-transcript-tier` markup removed. Live HMR repaint is the user's visual confirmation — overlaps with #step-2 real-app vetting.)*
+
+**Tuglaws (for the commit body):** **L06** — appearance stays in CSS/DOM: removing `content-visibility`/`contain-intrinsic-size` and the cheap-tier min-height keeps row geometry as real measured layout, not estimate-driven appearance state. **L23** — the `content-visibility: auto` comment claimed it preserved selection/find-in-page "for free"; rendering every row rich keeps the DOM fully alive and painted, so that user-visible state is *more* robustly preserved, not lost. **L26** — retiring the cheap↔rich swap *removes* the mount-identity hazard `TieredCell` existed to manage (the wrapper that had to stay stable across the swap); each cell now has one stable subtree. **L22** — measured heights still flow to `HeightIndex` via the list view's `ResizeObserver`, observed off the DOM, never through React state.
 
 ---
 
