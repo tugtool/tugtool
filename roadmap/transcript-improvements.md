@@ -375,11 +375,11 @@ Below the windowed thresholds the transcript mounts every cell but defers off-sc
 | #step-10 | Collapsed-header redesign spike + gallery vet | done | 17ef7cb6 |
 | #step-11 | Apply collapsed-header redesign + font sizing | done | 51a18308 |
 | #step-12 | Error coloring = header-only | done | dfe9766d |
-| #step-13 | Tool-block integration checkpoint | pending | — |
+| #step-13 | Tool-block integration checkpoint | done | N/A (verify) |
 | #step-14 | Fix skill slash-command classification | done | 9291eda7 |
 | #step-15 | Skill argument placeholder slots | done | a431d817 |
 | #step-16 | Enlarge image previews + click-to-zoom | done | 2a5ceb22 |
-| #step-17 | Phase integration checkpoint | pending | — |
+| #step-17 | Phase integration checkpoint | done | N/A (verify) |
 
 ---
 
