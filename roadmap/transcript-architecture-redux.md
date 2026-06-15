@@ -136,6 +136,18 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Amended resolution — the residual ~4 s was NOT linear-and-acceptable; it was WebKit off-screen render, fixed by [P07].** Clean release instrumentation (a render-phase-stamped synchronous-mount split, free of the StrictMode/Profiler artifacts that made the debug windows lie) localized the remaining cost precisely: React reconciliation 367 ms, every layout effect in the app summed 379 ms, a forced post-mount layout flush 0 ms — yet first paint was ~6.7 s. The cost is **WebKit synchronously resolving style + layout/paint for the ~95% of the 86k nodes that are off-screen, as React inserts them.** `content-visibility: auto` seeded with cached real heights ([P07]) defers exactly that: release `replay_render` **3690 ms → 1094 ms**, synchronous mount **~4.4 s → 781 ms**, node count unchanged (all-rich intact, no windowing). So [P02]'s no-windowing holds; the "never content-visibility" half of [P01]/[P02] is narrowed to "never *blind-estimate* content-visibility" — see [P07].
 
+#### [Q03] Send-gating semantics during restore (OPEN → resolve in #step-6-1) {#q03-send-gating}
+
+**Brought forward from `transcript-architecture.md` [Q03].**
+
+**Question:** The prompt-entry "drop/defer a send while `replaying`" logic is partly *semantic* (don't dispatch a prompt into a mid-replay session), not just visual. When the `TugSheet` ([P08]) replaces the prompt-entry replay-disabling, is the semantic guard fully covered by the sheet's `inert` lockout, or must a thin store-level send guard remain?
+
+**Why it matters:** Removing the prompt-entry disabling without an equivalent guard could let a programmatic/queued send race a mid-replay session.
+
+**Plan to resolve:** Read the submit path (`tug-prompt-entry` route-prefix + `performSubmit`) in #step-6-1; keep a store-level guard if the `inert` lockout isn't sufficient. **Redux-specific caveat:** the sheet only mounts for restores ≥ 0.75 s ([P09]), so a sub-0.75 s restore has **no** sheet and therefore no `inert` lockout — any guard must cover the whole `replaying` window, not just the sheet window.
+
+**Resolution:** OPEN → resolved in #step-6-1.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -249,6 +261,41 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Known follow-up (not blocking):** a fast scrollbar-thumb drag over an already-seen section re-skips/re-renders rather than reusing the remembered render — the `content-visibility` re-render isn't being cached across rapid re-entry. Tracked as a later perf-polish item; does not affect correctness, the scrollbar, or restore.
 
+#### [P08] Restore progress lives in a `TugSheet` pane-modal (DECIDED) {#p08-restore-sheet}
+
+**Brought forward from `transcript-architecture.md` [P06], rebased onto the all-rich / no-windowing redux.** This governs the restore-progress *surface* and is independent of how rows render.
+
+**Decision:** A `TugSheet` presents restore progress: it houses the `TugProgressIndicator` bar (reusing `DevReplayProgress`'s pure view helpers `deriveReplayProgress` / `completeReplayProgress` / `formatReplayProgressValue`), disables the card via the sheet's built-in `inert` + scrim, and carries a **Cancel** button wired to stop the load (`cancelDevRestore`) **and** close the card (`TUG_ACTIONS.CLOSE`). The bespoke `DevReplayProgress` strip and the prompt-entry replay-disabling are retired.
+
+**Rationale:**
+- `TugSheet` is the project's pane-modal primitive and already does card-disable + dismissal ([[feedback_use_tug_components]]); the strip re-implemented a worse version. `TugBulletin` / `TugPaneBulletin` are non-blocking toasts — wrong shape for a blocking load.
+- In redux the `listMounted` deferred-content hold is **retained** (#step-6): the list isn't mounted during the initial resume window. The `TugSheet` is the surface shown *during that hold* for a slow restore (delay-gated, [P09]); at `replay_complete` the list mounts all-rich and reveals once.
+
+**Implications:**
+- Cancel semantics change from "drop to picker" to "stop load + close card."
+- [Q03] (send-gating) must be resolved when removing the prompt-entry disabling — the guard must cover the whole `replaying` window, including sub-0.75 s restores where no sheet mounts.
+- New file `dev-restore-sheet.tsx`; the `DevReplayProgress` component shell is retired but its pure view helpers are kept and reused.
+
+#### [P09] Restore reveal is delay-gated at 0.75 s (DECIDED) {#p09-reveal-gate}
+
+**Brought forward from `transcript-architecture.md` [P07].**
+
+**Decision:** If a cold restore completes under 0.75 s, no modal is presented — the final state reveals once (the existing reveal-once via the deferred hold + `[DT10]` gate, #step-6). At/over 0.75 s, the `TugSheet` ([P08]) is presented. The delay timer is local-data, measured from `getRestoreStartedAt(cardId)` (persists across the card's services-null remount — read it, do not use a component-local timer), mirroring the existing `DevRestoring` pattern but at a **0.75 s** threshold (not `REPLAY_SOFT_BUDGET_MS` = 2000).
+
+**Rationale:** Liveliness rule — fast → reveal once (no flash); slow → communicate progress *promptly*. The 0.75 s threshold (tightened from the old 1.5 s) is deliberately aggressive: light sessions complete under it and reveal once, while anything denser or large-ingest crosses it and gets immediate progress feedback rather than a longer silent wait. With content-visibility ([P07]) the render is cheap, so a restore that exceeds 0.75 s is ingest-bound — exactly the case where the sheet (and Cancel) earns its place.
+
+**Implications:** Supersedes the committed `DevReplayProgress` delay-gate (`f93f3775`); the gate logic moves into the sheet-present decision at the 0.75 s threshold.
+
+#### [P10] No materialize fade on restore-mount (DECIDED) {#p10-fade-gate}
+
+**Brought forward from `transcript-architecture.md` [P08].**
+
+**Decision:** The `.dev-card` opacity `0→1` materialize fade fires only on genuine picker→new-card creation, not on a restore-mount (Developer ▸ Reload / cold-boot rehydration). The first-mount fade effect in `dev-card.tsx` gates on the existing fresh-create-vs-restore signal (`coldRestoreActive` / `sawColdRestoreRef` / `deriveColdRestoreActive`): cold-restore active at mount ⇒ skip the fade.
+
+**Rationale:** The fade was written to coordinate with the picker sheet's exit; on restore there is no picker to coordinate with, so it reads as a gratuitous flash on top of the reveal.
+
+**Implications:** Pairs with [P09] — a fast restore reveals once with neither a fade nor a modal. New-card creation from the picker still fades.
+
 ---
 
 ### Specification {#specification}
@@ -265,6 +312,10 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | Region scroll restore (transcript) | local-data (DOM authority) | existing anchor resolver (`{index,offset}` + HeightIndex hydration from real `cellHeights`); `tug-region-scroll-set` listener; no new raw write | [L22], [L23] |
 | Saved card state (scrollTop, anchor, atBottom) | external/persistent | tugbank via `/api/defaults`; enters React only via `useSyncExternalStore` if observed | [L02] |
 | Stable cell wrapper identity | structure | same wrapper element across re-renders so observers/restore stay attached | [L26] |
+| Restore-sheet presented ([P08]/[P09]) | structure | `useSyncExternalStore`(coldRestoreActive) + delay timer ⇒ mount `TugSheet` | [L02] |
+| Reveal/sheet delay timer ([P09]) | local-data | `useState` + `setTimeout`, stamp from `getRestoreStartedAt(cardId)` | [L24], [L02] |
+| Materialize-fade suppression on restore ([P10]) | appearance | WAAPI fade gated on cold-restore-at-mount signal; CSS/DOM, never React state | [L06] |
+| Send-gating during replay ([Q03]) | structure/local-data | sheet `inert` + (if needed) a thin store-level guard while `replaying` | [L02] |
 
 (Confirm exact law numbers against `tuglaws/tuglaws.md` at implement time and name them in each dash commit.)
 
@@ -301,8 +352,10 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | #step-3 | (Conditional) Fix reducer split-entry block keying | done — exonerated with evidence (already fixed in tugcode replay + tested; no change) | (verification only) |
 | #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | done (live-vetted + at0189 green) | 9020578d |
 | #step-4-5 | Retire synthetic-content tests (at0181, at0184) | done — both cut; [P06] satisfied by deletion | — |
-| #step-5 | Pixel-perfect restore + load measurement on real sessions | done (pixel-perfect dc91a0d0; O(n²) thrash fixed 40fecbde; residual off-screen-render load cost fixed via content-visibility + cached heights [P07] — release `replay_render` 3690→1094 ms) | dc91a0d0, 40fecbde, _(content-visibility commit pending)_ |
+| #step-5 | Pixel-perfect restore + load measurement on real sessions | done (pixel-perfect dc91a0d0; O(n²) thrash fixed 40fecbde; residual off-screen-render load cost fixed via content-visibility + cached heights [P07] — release `replay_render` 3690→1094 ms) | dc91a0d0, 40fecbde, 8397b2e3 |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
+| #step-6-1 | TugSheet restore modal (delay-gated, Cancel=stop+close) | pending | — |
+| #step-6-2 | Suppress materialize fade on restore-mount | pending | — |
 | #step-7 | Integration checkpoint — all five requirements on real sessions | pending | — |
 
 ---
@@ -504,16 +557,74 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 ---
 
+#### Step 6.1: TugSheet restore modal (delay-gated, Cancel=stop+close) {#step-6-1}
+
+**Depends on:** #step-6
+
+**Commit:** `TugSheet restore modal; retire DevReplayProgress strip`
+
+**References:** [P08] Restore sheet, [P09] Reveal gate, [Q03] Send-gating, (#reload-hmr-perf), [[feedback_use_tug_components]], [[feedback_substrate_responder]]
+
+**Brought forward from `transcript-architecture.md` Step 7, rebased onto the all-rich / no-windowing redux: the deferred hold + `[DT10]` gate from #step-6 stay; the `TugSheet` replaces the `DevReplayProgress` strip as the slow-restore surface. Independent of the rendering approach.**
+
+**Artifacts:**
+- New `dev-restore-sheet.tsx`: a `TugSheet` (via `useTugSheet()`) housing `TugProgressIndicator`, reusing `deriveReplayProgress` / `completeReplayProgress` / `formatReplayProgressValue` from `dev-replay-progress.tsx`. Cancel = `cancelDevRestore(cardId)` + `TUG_ACTIONS.CLOSE`. Presented only when restore exceeds 0.75 s (stamp from `getRestoreStartedAt`).
+- `DevReplayProgress` strip usage removed from `dev-card-transcript.tsx`; its pure view helpers kept.
+- Prompt-entry replay-disabling removed, or replaced by a thin store-level send guard per [Q03].
+
+**Tasks:**
+- [ ] Build `DevRestoreSheet` via `useTugSheet()`; delay-gated present at 0.75 s from `getRestoreStartedAt(cardId)` (mirror the existing `DevRestoring` timer pattern; threshold **0.75 s**, not `REPLAY_SOFT_BUDGET_MS`).
+- [ ] Wire Cancel → `cancelDevRestore` (stop load) **and** `CLOSE` (close card) through the chain action.
+- [ ] Remove the `DevReplayProgress` strip from `dev-card-transcript.tsx`; keep + reuse its pure view helpers in the sheet.
+- [ ] Resolve [Q03]: read `tug-prompt-entry` route-prefix + `performSubmit`; since a sub-0.75 s restore has no sheet (no `inert`), keep a thin store-level guard that drops/defers a send while the session is `replaying` if the lockout doesn't already cover the whole window.
+- [ ] Cross-check tuglaws and name them in the commit: **L02** (sheet-present derives from `useSyncExternalStore`(coldRestoreActive) + the delay timer), **L06** (card-disable via the sheet's `inert`/scrim, not React appearance state), **L23** (substrate-responder coverage only if the sheet hosts text entry — it should not).
+
+**Tests:**
+- [ ] Pure-logic: present/dismiss gate (under vs over 0.75 s); Cancel handler dispatches stop + close.
+- [ ] Real-app vet (`just app-test`): a slow restore (large real session) shows the sheet over a disabled card, Cancel stops + closes; a fast restore (< 0.75 s) shows no sheet and reveals once.
+
+**Checkpoint:**
+- [ ] `bun test` for the gate passes; `bunx tsc --noEmit` clean.
+- [ ] Real-app: ≥ 0.75 s restore → sheet + Cancel(stop+close); < 0.75 s → no sheet, reveal-once; [Q03] resolved (guard kept or proven unnecessary).
+
+---
+
+#### Step 6.2: Suppress materialize fade on restore-mount {#step-6-2}
+
+**Depends on:** #step-6-1
+
+**Commit:** `No materialize fade on transcript restore-mount`
+
+**References:** [P10] Fade gate, (#reload-hmr-perf), [[project_hmr_vs_reload]]
+
+**Brought forward from `transcript-architecture.md` Step 8.**
+
+**Artifacts:**
+- The `.dev-card` first-mount fade in `dev-card.tsx` (a `useLayoutEffect` that sets `opacity:0` then animates `0→1`) fires only on fresh picker→body creation; a restore-mount skips it via the `coldRestoreActive` / `sawColdRestoreRef` signal already in that file.
+
+**Tasks:**
+- [ ] Gate the fade effect on cold-restore-at-mount (`deriveColdRestoreActive` / `sawColdRestoreRef`): skip the fade when restoring; keep it for picker→new-card creation.
+- [ ] Cross-check **L06** (the fade is WAAPI on the DOM, gated by a derived signal — no React appearance state) and name it in the commit.
+
+**Tests:**
+- [ ] Real-app vet: Developer ▸ Reload shows no card-materialize fade; creating a new card from the picker still fades.
+
+**Checkpoint:**
+- [ ] `bunx tsc --noEmit` clean; real-app reload has no card fade; new-card creation still fades.
+
+---
+
 #### Step 7: Integration checkpoint — all five requirements on real sessions {#step-7}
 
-**Depends on:** #step-1, #step-2, #step-4, #step-5, #step-6
+**Depends on:** #step-1, #step-2, #step-4, #step-5, #step-6, #step-6-1, #step-6-2
 
 **Commit:** `N/A (verification only)`
 
-**References:** (#success-criteria), [P01]–[P05]
+**References:** (#success-criteria), [P01]–[P10]
 
 **Tasks:**
 - [ ] On the live debug instance with real session `49fc50a1` and the largest real session, verify all five requirements together: load perf (#1), full scroll control / no slam (#2), reload+HMR perf (#3), pixel-perfect restore (#4), accurate rendering — no holes / no estimate-driven scrollbar / no missing messages (#5).
+- [ ] Verify the restore UX (#3): a fast restore (< 0.75 s) reveals once with **no** sheet and **no** materialize fade ([P09]/[P10]); a slow restore (≥ 0.75 s) presents the `TugSheet` with progress + Cancel(stop+close) ([P08]); a send attempted mid-replay is correctly gated ([Q03]).
 
 **Tests:**
 - [ ] Aggregate real-app pass: the `just app-test` reload/scroll tests green; manual vetting of holes + scrollbar stability confirmed by the user.
@@ -534,6 +645,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 - [ ] Pixel-perfect restore across Developer ▸ Reload (req #4). (#pixel-perfect-restore)
 - [ ] Load + reload times measured and accepted (req #1, #3). (#perf-measurement, #reload-hmr-perf)
 - [ ] No estimates anywhere in the dev-transcript render/scroll path (req #5).
+- [ ] Restore UX (req #3): < 0.75 s reveal-once with no fade / no sheet; ≥ 0.75 s `TugSheet` + Cancel(stop+close); no restore-mount fade; mid-replay send gated ([P08]–[P10], [Q03]). (#step-6-1, #step-6-2)
 
 **Acceptance tests:**
 - [ ] `just app-test` reload + scroll-control tests green (fast, prompt exit).
