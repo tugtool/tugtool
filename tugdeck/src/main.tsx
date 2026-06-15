@@ -22,7 +22,7 @@ import {
   ConnectionLifecycle,
   registerConnectionLifecycle,
 } from "./lib/connection-lifecycle";
-import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality } from "./settings-api";
+import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality, pruneOrphanedCardStates } from "./settings-api";
 import { keyboardAccessStore, normalizeKeyboardAccessMode } from "./keyboard-access-store";
 import { focusRingModalityStore, normalizeFocusRingModality } from "./focus-ring-modality-store";
 import { getThemeSetter } from "./action-dispatch";
@@ -155,7 +155,7 @@ if (!container) {
 
   // Wait for initial DEFAULTS frame + WASM init in parallel.
   await Promise.all([
-    tugbankClient.ready(),
+//     tugbankClient.ready(),
     initTugmark({ module_or_path: wasmUrl }),
   ]);
 
@@ -296,6 +296,16 @@ if (!container) {
   // user-close gestures flow through deck-manager.removeCard, and the
   // services store reacts on its own.
   cardServicesStore.attachDeckManager(deck);
+
+  // Sweep durable card-state bags for cards no longer in the deck. The
+  // close path flushes a card's last bag to tugbank but never deletes it,
+  // so orphaned bags would accumulate unbounded across the app's life —
+  // the leak that bloated the cardstate domain to 18 MB and stalled the
+  // boot DEFAULTS frame. Fire-and-forget, post-mount.
+  pruneOrphanedCardStates(
+    tugbankClient,
+    new Set(deck.getSnapshot().cards.map((c) => c.id)),
+  );
 
   // Wire the dev panel to deck-manager so it clears its selectedCardId
   // when the selected card is closed. Subscribes once at boot; checks

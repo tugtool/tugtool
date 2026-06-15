@@ -20,6 +20,7 @@ import {
   getPromptHistory,
   readDevRecentProjects,
   insertDevRecentProject,
+  capDurableCardState,
   DEV_RECENT_PROJECTS_MAX,
 } from "../settings-api";
 import type { CardStateBag } from "../layout-tree";
@@ -392,3 +393,75 @@ describe("readDevRecentProjects", () => {
 // `fetch`, but dev-card.test.tsx process-globally replaces the
 // exported `putDevRecentProjects` with a recorder to keep dev-card's
 // bind effect from racing with other test files' fetch stubs.
+
+describe("capDurableCardState — bound durable cellHeights", () => {
+  const CAP = 400;
+
+  test("keeps a small (windowed) cellHeights seed", () => {
+    const bag: CardStateBag = {
+      regionScroll: {
+        "dev-card-transcript": {
+          x: 0,
+          y: 1200,
+          meta: { anchor: { index: 10, offset: 4 }, cellHeights: new Array(50).fill(60) },
+        },
+      },
+    };
+    // Under the cap → returned unchanged (same reference, seed intact).
+    expect(capDurableCardState(bag)).toBe(bag);
+  });
+
+  test("drops an over-cap (load-all) cellHeights, keeps anchor + scroll", () => {
+    const bag: CardStateBag = {
+      scroll: { x: 0, y: 9 },
+      regionScroll: {
+        "dev-card-transcript": {
+          x: 0,
+          y: 5000,
+          meta: { anchor: { index: 900, offset: 2 }, cellHeights: new Array(CAP + 1).fill(60) },
+        },
+      },
+    };
+    const out = capDurableCardState(bag);
+    const region = out.regionScroll!["dev-card-transcript"];
+    expect((region.meta as Record<string, unknown>).cellHeights).toBeUndefined();
+    expect((region.meta as Record<string, unknown>).anchor).toEqual({ index: 900, offset: 2 });
+    expect(region.y).toBe(5000);
+    expect(out.scroll).toEqual({ x: 0, y: 9 });
+    // The input bag (the in-memory copy) is NOT mutated — its seed survives.
+    expect(
+      ((bag.regionScroll!["dev-card-transcript"].meta as Record<string, unknown>)
+        .cellHeights as number[]).length,
+    ).toBe(CAP + 1);
+  });
+
+  test("exactly at the cap is kept; one over is dropped", () => {
+    const at: CardStateBag = {
+      regionScroll: { r: { x: 0, y: 0, meta: { cellHeights: new Array(CAP).fill(1) } } },
+    };
+    expect(capDurableCardState(at)).toBe(at); // ≤ cap → unchanged
+    const over: CardStateBag = {
+      regionScroll: { r: { x: 0, y: 0, meta: { cellHeights: new Array(CAP + 1).fill(1) } } },
+    };
+    expect(
+      (capDurableCardState(over).regionScroll!.r.meta as Record<string, unknown>).cellHeights,
+    ).toBeUndefined();
+  });
+
+  test("a bag with no regionScroll is returned unchanged", () => {
+    const bag: CardStateBag = { scroll: { x: 0, y: 0 } };
+    expect(capDurableCardState(bag)).toBe(bag);
+  });
+
+  test("only the over-cap region is dropped; small regions survive", () => {
+    const bag: CardStateBag = {
+      regionScroll: {
+        big: { x: 0, y: 0, meta: { cellHeights: new Array(CAP + 5).fill(1) } },
+        small: { x: 0, y: 0, meta: { cellHeights: new Array(3).fill(1) } },
+      },
+    };
+    const out = capDurableCardState(bag);
+    expect((out.regionScroll!.big.meta as Record<string, unknown>).cellHeights).toBeUndefined();
+    expect((out.regionScroll!.small.meta as Record<string, unknown>).cellHeights).toEqual([1, 1, 1]);
+  });
+});

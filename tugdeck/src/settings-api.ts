@@ -14,12 +14,57 @@
  * values and `{"kind":"string","value":"brio"}` for strings.
  */
 
-import type { CardStateBag } from "./layout-tree";
+import type { CardStateBag, RegionScrollSnapshot } from "./layout-tree";
 import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
 import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
+
+/**
+ * Largest `cellHeights` array we persist durably. A recency-windowed load
+ * renders ~50 rows, so its snapshot is well under this and keeps its
+ * estimate-free first-paint seed across a true reload (redux [P07]). A
+ * "load all" on a whale produces thousands of entries (~1.5 MB) — past the
+ * cap we drop it from the durable copy; that reload re-measures (the price
+ * of having loaded everything), and the durable store stays bounded.
+ */
+const CELL_HEIGHTS_DURABLE_CAP = 400;
+
+/**
+ * Bound the durable size of a card-state bag before the tugbank write by
+ * dropping an over-cap `regionScroll[*].meta.cellHeights` (the per-cell
+ * measured-height seed — one float per transcript row). The array is a
+ * regenerable first-paint optimization (seed `content-visibility`
+ * intrinsic-size on reload); under the cap it's cheap and worth keeping,
+ * over the cap it's the bloat that accumulated to 18 MB and stalled the
+ * boot-time DEFAULTS frame. The full bag — including an over-cap
+ * `cellHeights` — still lives in DeckManager's in-memory cache, so
+ * same-session tab-switch + Fast-Refresh restore stay estimate-free; only
+ * the durable copy is bounded. The tiny `anchor` is always kept so a true
+ * reload still restores to the right cell (settling exactly once heights
+ * re-measure).
+ *
+ * Exported for unit testing; callers use {@link putCardState}.
+ */
+export function capDurableCardState(bag: CardStateBag): CardStateBag {
+  if (bag.regionScroll === undefined || bag.regionScroll === null) return bag;
+  let changed = false;
+  const capped: RegionScrollSnapshot = {};
+  for (const [key, snap] of Object.entries(bag.regionScroll)) {
+    const meta = snap.meta as Record<string, unknown> | undefined | null;
+    const cellHeights = meta?.cellHeights;
+    if (Array.isArray(cellHeights) && cellHeights.length > CELL_HEIGHTS_DURABLE_CAP) {
+      const { cellHeights: _drop, ...restMeta } = meta as Record<string, unknown>;
+      void _drop;
+      capped[key] = { x: snap.x, y: snap.y, meta: restMeta };
+      changed = true;
+    } else {
+      capped[key] = snap;
+    }
+  }
+  return changed ? { ...bag, regionScroll: capped } : bag;
+}
 
 // ── Read functions (TugbankClient cache) ─────────────────────────────────────
 
@@ -205,7 +250,9 @@ export function putFocusRingModality(mode: string): void {
  */
 export function putCardState(cardId: string, bag: CardStateBag, options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
   const url = `/api/defaults/${CARDSTATE_DOMAIN}/${encodeURIComponent(cardId)}`;
-  const body = JSON.stringify({ kind: "json", value: bag });
+  // Durable copy only — an over-cap cellHeights seed is dropped so the
+  // store stays bounded; the in-memory cache keeps the full bag.
+  const body = JSON.stringify({ kind: "json", value: capDurableCardState(bag) });
 
   if (options?.sync) {
     try {
@@ -227,6 +274,39 @@ export function putCardState(cardId: string, bag: CardStateBag, options?: { keep
   }).then(() => {}).catch((err) => {
     console.warn("[settings] PUT cardState failed for card", cardId, err);
   });
+}
+
+/** DELETE a single per-card state bag from tugbank. Fire-and-forget. */
+export function deleteCardState(cardId: string): Promise<void> {
+  const url = `/api/defaults/${CARDSTATE_DOMAIN}/${encodeURIComponent(cardId)}`;
+  return fetch(url, { method: "DELETE" })
+    .then(() => {})
+    .catch((err) => {
+      console.warn("[settings] DELETE cardState failed for card", cardId, err);
+    });
+}
+
+/**
+ * Delete durable card-state bags for cards no longer present in the deck.
+ * Run once at startup after the deck mounts: the close path flushes a
+ * card's last bag to tugbank but never removes it, so without this sweep
+ * the cardstate domain grows unbounded across the app's life — the leak
+ * that bloated the store to 18 MB and stalled the boot-time DEFAULTS
+ * frame. Reads the cardstate keys from the (already-populated)
+ * TugbankClient cache and DELETEs any whose card id is not live.
+ * Fire-and-forget; a failed delete just lingers until the next boot.
+ */
+export function pruneOrphanedCardStates(
+  client: TugbankClient,
+  liveCardIds: Set<string>,
+): void {
+  const domain = client.readDomain(CARDSTATE_DOMAIN);
+  if (domain === undefined) return;
+  for (const cardId of Object.keys(domain)) {
+    if (!liveCardIds.has(cardId)) {
+      void deleteCardState(cardId);
+    }
+  }
 }
 
 /**
