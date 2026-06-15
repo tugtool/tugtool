@@ -49,13 +49,15 @@ body {
   --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
 
   /* Keyboard movement-cursor fill — the cursor row's "you are here" tint: a
-     REDUCED (lighter) version of the row selection fill, so the list reads as two
-     levels of one blue (cursor tint < selection fill < container ring). Derived
-     from the same (toned-back, per-theme) quiet selection token, so it tracks the
-     theme and stays a fixed fraction lighter than the selection. Tune the
-     fraction here. */
+     REDUCED (lighter) wash of the row selection fill, so the list reads as one
+     blue at four rising strengths: hover wash (22%) < CURSOR wash (45%) <
+     selection fill (quiet-rest) < selection+pointer (quiet-strong). The cursor
+     wash sits clearly above hover (it marks the keyboard position, which outranks
+     a transient mouse hover) yet below the committed selection. Derived from the
+     same (toned-back, per-theme) quiet selection token, so it tracks the theme.
+     Tune the fraction here. */
   --tugx-list-view-cursor-tint:
-    color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 25%, transparent);
+    color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 45%, transparent);
 
   /* Row-layout slots — consumed only when `rowLayout` is set. */
   --tugx-list-view-pill-row-gap:       var(--tug-space-sm);

@@ -216,6 +216,12 @@ body {
      row. */
   --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(blue, i: 42, t: 42);
   --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(blue, i: 44, t: 38);
+  /* The "pointer is on the selected row" fill — a selected row gains this when the
+     keyboard cursor or the mouse hover lands on it. A moderate, deliberate step
+     above `quiet-rest` so the bit reads clearly, well short of the vibrant
+     `selected` ramp. The fourth rung of the single-blue list ramp: hover wash <
+     cursor wash < quiet-rest (selected) < quiet-strong (selected + pointer). */
+  --tug7-surface-selection-primary-normal-quiet-strong: --tug-color(blue, i: 54, t: 44);
   /* Demoted selection — a selected list row whose descended trailing
      accessory holds the keyboard key view yields its fill to the live
      control: the row drops to a calmer wash TINGED BY THE ACCESSORY'S ROLE

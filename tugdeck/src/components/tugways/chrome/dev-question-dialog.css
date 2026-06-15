@@ -371,35 +371,32 @@ body {
   height: auto;
   padding-inline: 0;
   --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-block-start: 0;
+  --tugx-list-view-padding-block-end: 0;
   --tugx-list-view-row-gap: 0;
 }
 
 /* The options keep the base `TugListView` appearance — the cursor-row fill tint,
  * hover fill, and the selected-row fill — so a question reads with the same
- * tint/hover/select language as every other list in the app. The leading glyph
- * (radio dot / checkbox) adds the selection affordance on top; the container's
- * perimeter ring marks that the list holds the keyboard. The commit-advance flash
- * (see the dialog's flash effect) blinks a transient ring on each selected row.
- *
- * All four row states must read distinctly: unselected/unhovered (no fill),
- * unselected/hovered (ghost wash), selected/unhovered (calm quiet fill), and
- * selected/hovered. The base flush selected-hover steps only within the quiet
- * ramp and reads too close to selected/unhovered, so pin a clearly brighter
- * highlight for the hover-over-selected state — a selected row must still show an
- * unmistakable hover. */
-.dev-question-dialog-options-list .tug-list-row[data-variant="flush"] {
-  --tugx-list-row-selected-hover-bg: var(--tug7-surface-selection-primary-normal-selected-hover);
-}
+ * tint/hover/select language as every other list in the app (the four-level
+ * single-blue ramp lives in `tug-list-row.css` / `tug-list-view.css`, tuned at
+ * the theme level). The leading glyph (radio dot / checkbox) adds the selection
+ * affordance on top; the container's perimeter ring marks that the list holds the
+ * keyboard. The commit-advance flash (see the dialog's flash effect) blinks each
+ * selected row's tint. */
 
 /* The dialog renders inside `.dev-card-transcript`, whose own list-view rule
- * (`dev-card.css`) sets a large inter-TURN `--tugx-list-view-row-gap` /
- * `padding-block`. Those custom properties target every `.tug-list-view`
- * descendant — including this nested option list — and tie on specificity with
- * `rowLayout="flush"`'s reset, bleeding the transcript's between-turn margin into
- * the option rows as spurious gaps. Re-assert the flush values one level more
- * specific so the option rows stay tight. */
+ * (`dev-card.css`) sets a large inter-TURN `--tugx-list-view-row-gap` and a 24px
+ * bottom `--tugx-list-view-padding-block-end`. Those custom properties target
+ * every `.tug-list-view` descendant — including this nested option list — and the
+ * bottom spacer in particular padded an empty band INSIDE the option list's
+ * frame, under the last row. Re-assert ALL the flush spacing values (block,
+ * row-gap, and BOTH block-end / block-start) one level more specific so the list
+ * hugs its rows with no gap. */
 .dev-card-transcript .dev-question-dialog-options-list.tug-list-view {
   --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-block-start: 0;
+  --tugx-list-view-padding-block-end: 0;
   --tugx-list-view-row-gap: 0;
 }
 
