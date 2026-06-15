@@ -1,0 +1,27 @@
+/**
+ * dev-load-control-bar.css — content layouts inside the Z0 TugControlBar.
+ *
+ * The bar band itself (surface, visibility, scrim) is owned by
+ * tug-control-bar.css; these rules lay out the dev transcript's content
+ * variants — the load prompt and the loading progress row.
+ */
+
+.dev-load-control-bar-prompt,
+.dev-load-control-bar-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tug-space-sm);
+  width: 100%;
+}
+
+.dev-load-control-bar-label,
+.dev-load-control-bar-actions-label {
+  opacity: 0.7;
+}
+
+/* The progress bar stretches; the Cancel button stays content-sized. */
+.dev-load-control-bar-bar {
+  flex: 1 1 auto;
+  max-width: 28rem;
+}

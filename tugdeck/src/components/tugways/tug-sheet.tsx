@@ -76,6 +76,7 @@ import React, {
   useId,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -86,6 +87,7 @@ import { CardIdContext } from "@/lib/card-id-context";
 import { useSheetLifecycle } from "@/lib/sheet-lifecycle";
 import { group } from "@/components/tugways/tug-animator";
 import { useTugPaneScrim } from "@/components/tugways/use-tug-pane-scrim";
+import { usePaneInert } from "@/components/tugways/use-pane-inert";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { useFocusTrap } from "./use-focus-trap";
@@ -984,25 +986,21 @@ export function TugSheetContent({
   // window-resize listener are gone — when the pane moves or resizes,
   // the panel follows via the frame's own layout. [D19]
 
-  // Inertness management: set/remove `inert` on .tug-pane-body synchronized with open state [L03].
+  // Inertness management: `.tug-pane-body` is `inert` while the sheet is
+  // open ([L03]/[L06]). The toggle is the shared `usePaneInert` primitive
+  // (also used by `TugControlBar`); the trigger capture below stays here
+  // because focus-restore-on-close is sheet-specific.
+  const paneBody = useMemo(
+    () => cardEl?.querySelector(".tug-pane-body") ?? null,
+    [cardEl],
+  );
+  // Capture the focused element before the body becomes inert (setting
+  // `inert` blurs focus into the body), so close can restore it. Declared
+  // before `usePaneInert` so this layout effect runs first.
   useLayoutEffect(() => {
-    if (!cardEl) return;
-    const body = cardEl.querySelector(".tug-pane-body");
-    if (!body) return;
-
-    if (open) {
-      // Capture trigger before body becomes inert.
-      triggerElRef.current = document.activeElement;
-      body.setAttribute("inert", "");
-    } else {
-      body.removeAttribute("inert");
-    }
-
-    return () => {
-      // Cleanup on unmount: always ensure inert is removed.
-      body.removeAttribute("inert");
-    };
-  }, [open, cardEl]);
+    if (open) triggerElRef.current = document.activeElement;
+  }, [open]);
+  usePaneInert(paneBody, open);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     // Escape is owned by the engine's Escape ladder ([P02]) via the trap's

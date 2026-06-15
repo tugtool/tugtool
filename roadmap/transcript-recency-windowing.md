@@ -294,7 +294,7 @@ The lifecycle is a small state machine:
 | #step-3 | Reducer + data source: prepend older turns; stable-id height keying | done | da32e558 (height-cache id-keying folded into #step-4) |
 | #step-4 | TugListView: prepend with scroll-position hold | done | (committed below; live scroll-hold verified end-to-end with #step-5 trigger) |
 | #step-5 | "Load previous M" affordance + "load all" via TugSheet | done | on main (live vet pending) |
-| #step-5-5 | TugControlBar in Z0 — unify load prompt + progress + initial-load indicator | pending | — |
+| #step-5-5 | TugControlBar in Z0 — unify load prompt + progress + initial-load indicator | done | on main (live vet pending) |
 | #step-6 | Faithful restore — load-to-anchor on reload | pending | — |
 | #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | pending | — |
 
@@ -450,19 +450,19 @@ The load-previous modal `TugSheet` presents **only if the load is still in fligh
 
 **Tasks:**
 - [x] Spike [Q05] (resolved 2026-06-15 — extract `usePaneInert`, region-local scrim; see [Q05]).
-- [ ] Extract `usePaneInert(target, active)`; refactor `TugSheet` to consume it (no behavior change). Build `TugControlBar` (generic shell + region inert/scrim) + its CSS (Z2-borrowed tokens). Cross-check tuglaws (L06 visibility/scrim via DOM; L02 content from snapshot; L26 the bar is one stable node across state transitions).
-- [ ] Build the dev-transcript state machine + content; wire scroll-to-bottom (`onFollowBottomChange`/at-bottom) and submit as the lingering-dismiss signals; reuse `onAtTopChange` for the prompt reveal.
-- [ ] Route Cancel by active load: cold-restore Cancel = stop + close card (current restore behavior); load-previous Cancel = `cancelLoadPrevious()` abort + keep window.
-- [ ] Retire `DevRestoreSheetHost`; remove the #step-5 standalone bar + load-previous sheet; mount `TugControlBar` in `Z0`. Reconsider the `data-replaying` cold-restore blank now that the bar carries progress.
-- [ ] Name the laws touched in the commit.
+- [x] Extract `usePaneInert(target, active)` (`use-pane-inert.ts`); refactored `TugSheet` to consume it (behavior-neutral — its restore/sheet tests still green). Built `TugControlBar` (`tug-control-bar.tsx` + `.css`) — generic shell, `usePaneInert` + region scrim (`data-tug-control-bar-modal`), Z2-borrowed band tokens, `data-visible` DOM visibility ([L06]/[L03]/[L20]/[L26]).
+- [x] Built the dev state machine (`dev-load-control-bar-state.ts`, pure) + content (`dev-load-control-bar.tsx`): Loading/Prompt/Hidden, lingering tracker; wired `onAtTopChange` (prompt reveal) + `onFollowBottomChange` (at-bottom dismiss) + submit (phase) as lingering signals; visibility toggled imperatively ([L06]).
+- [x] Cancel routes by active load: cold-restore = stop + close card; load-previous = `cancelLoadPrevious()` abort + keep window.
+- [x] Retired `DevRestoreSheetHost` / `DevRestoreSheetContent` + the #step-5 standalone bar/sheet (`dev-load-previous.tsx`, `dev-restore-sheet*.{tsx,css,ts}` deleted); mounted `DevLoadControlBar` in `Z0`, wrapped the list in a `.tug-control-bar-region`. `data-replaying` cold-restore blank **kept** (the semi-transparent scrim alone can't hide incremental FOUC; the full reveal-once still wins for cold restore; suppressed for load-previous so content stays visible).
+- [x] Laws named: L02 (content/flags via `useSyncExternalStore`), L06 (modality + visibility via DOM, not React state), L03 (inert in layout effect), L20 (band tokens), L26 (one stable bar node across content swaps).
 
 **Tests:**
-- [ ] Pure-logic: the bar state-machine selector (snapshot + atTop + atBottom + lingering → {hidden | prompt | loading | lingering-prompt}); Cancel routing by active load; lingering set on load-previous complete, cleared on scroll-bottom/submit.
-- [ ] Real-app (`just app-test`): cold restore shows the Z0 bar progress (modal), releases on completion; load-previous locks then releases + lingers; scroll-to-bottom/submit dismisses the lingering bar; no centered sheet appears.
+- [x] Pure-logic: the bar state-machine selector (`loadActive`/`hasOlder`/`atTop`/`lingering` → {hidden | loading | prompt}) + lingering transitions (set on load-previous complete; cleared on scroll-bottom/submit) — `dev-load-control-bar-state.test.ts` (9). Cancel routing exercised live (DOM/responder, not a pure unit). `usePaneInert` extraction verified behavior-neutral via the surviving sheet/restore tests.
+- [ ] Real-app (`just app-test`): cold restore shows the Z0 bar progress (modal), releases on completion; load-previous locks then releases + lingers; scroll-to-bottom/submit dismisses the lingering bar; no centered sheet appears. *(pairs with live vet on the rebuilt instance.)*
 
 **Checkpoint:**
-- [ ] `bun test` + `bunx tsc --noEmit` clean.
-- [ ] Live: one Z0 bar handles cold restore (modal progress), load-previous (modal → lingering prompt), and the scroll-to-top prompt; no flashing; visual treatment reads as a distinct Z0 band.
+- [x] `bun test` (tugdeck 3686) + `bunx tsc --noEmit` clean.
+- [ ] Live: one Z0 bar handles cold restore (modal progress), load-previous (modal → lingering prompt), and the scroll-to-top prompt; no flashing; visual treatment reads as a distinct Z0 band. *(user vet on the rebuilt instance.)*
 
 #### Step 6: Faithful restore — load-to-anchor on reload {#step-6}
 

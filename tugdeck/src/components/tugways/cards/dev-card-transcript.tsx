@@ -127,8 +127,10 @@ import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selectio
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
-import { DevRestoreSheetHost } from "@/components/tugways/cards/dev-restore-sheet";
-import { DevLoadPreviousHost } from "@/components/tugways/cards/dev-load-previous";
+import {
+  DevLoadControlBar,
+  type DevLoadControlBarHandle,
+} from "@/components/tugways/cards/dev-load-control-bar";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -1535,10 +1537,10 @@ export const DevTranscriptHost = forwardRef<
   // force a full windowed-list commit at every fold flush, and that
   // render work runs on the same thread the ingest needs (measured:
   // 255ms → 7.5s ingest on the 12MB motivating session when the list
-  // rode along). `DevRestoreSheetHost` above owns the surface during a
-  // *slow* hold: past the reveal gate it presents a card-covering
-  // progress sheet with Cancel; a fast restore presents nothing and the
-  // reconstructed content reveals once.
+  // rode along). The `Z0` `DevLoadControlBar` above owns the surface
+  // during the hold: it shows determinate restore progress + Cancel and
+  // holds the card modal (region inert + scrim) until the reconstructed
+  // content reveals once.
   // Once the initial window closes the list mounts ONCE against the
   // fully reconstructed transcript (a single bounded windowed commit)
   // and never unmounts again: `replayEverCompleted` is MONOTONIC in
@@ -1600,17 +1602,21 @@ export const DevTranscriptHost = forwardRef<
   // DOM node as the list view's SmartScroll engages / disengages
   // follow-bottom. The follow-bottom intent never enters React state.
   const jumpButtonRef = useRef<HTMLButtonElement | null>(null);
+  // The Z0 load control bar ([P09], #step-5-5). The host feeds it scroll
+  // edges imperatively ([L06]); the bar derives its own visibility +
+  // modality. `regionEl` (the transcript scroll region) is the bar's
+  // inert + scrim target when modal — held as state so the bar gets a
+  // stable element once it mounts.
+  const controlBarRef = useRef<DevLoadControlBarHandle | null>(null);
+  const [regionEl, setRegionEl] = useState<HTMLDivElement | null>(null);
   const handleFollowBottomChange = useCallback((following: boolean): void => {
     const btn = jumpButtonRef.current;
     if (btn !== null) btn.dataset.visible = String(!following);
+    // Following the bottom dismisses the lingering load prompt.
+    controlBarRef.current?.setAtBottom(following);
   }, []);
-  // "Load previous" affordance shows only at the top of the transcript.
-  // Visibility is a DOM attribute toggled off the list view's top-edge
-  // callback ([L06]) — never React state — mirroring the jump button.
-  const loadPrevBarRef = useRef<HTMLDivElement | null>(null);
   const handleAtTopChange = useCallback((atTop: boolean): void => {
-    const bar = loadPrevBarRef.current;
-    if (bar !== null) bar.dataset.atTop = String(atTop);
+    controlBarRef.current?.setAtTop(atTop);
   }, []);
   const handleJumpToBottom = useCallback((): void => {
     // Non-animated clamp — the same definite jump to the true bottom
@@ -1622,8 +1628,8 @@ export const DevTranscriptHost = forwardRef<
   return (
     // [DT10] paint gate: every row renders inline at its real height,
     // so the single-reveal gate applies for the whole replay window
-    // (avoiding accumulation FOUC), with `DevRestoreSheetHost` presenting
-    // a delay-gated progress sheet over the pane for a slow restore.
+    // (avoiding accumulation FOUC), with the `Z0` `DevLoadControlBar`
+    // carrying restore progress (modal) over the region until reveal.
     <div
       ref={rootRef}
       className="dev-card-transcript"
@@ -1631,11 +1637,14 @@ export const DevTranscriptHost = forwardRef<
       data-testid="dev-card-transcript"
       data-replaying={(isReplaying && !loadingPrevious) || undefined}
     >
-      <DevRestoreSheetHost cardId={cardId} codeSessionStore={codeSessionStore} />
-      <DevLoadPreviousHost
+      {/* Z0 ([D97]): the single load surface — prompt, progress, and the
+          initial-restore indicator — modal (over the region below) while
+          loading, per [P09]. */}
+      <DevLoadControlBar
+        ref={controlBarRef}
         cardId={cardId}
         codeSessionStore={codeSessionStore}
-        barRef={loadPrevBarRef}
+        regionEl={regionEl}
       />
       {compactionSeed !== null ? (
         <div
@@ -1649,7 +1658,9 @@ export const DevTranscriptHost = forwardRef<
         </div>
       ) : null}
       {listMounted ? (
-        <>
+        // The transcript region: the bar's inert + scrim target when
+        // modal. The bar is a sibling *above* it, never inerted.
+        <div className="tug-control-bar-region" ref={setRegionEl}>
           <ToolBlockExpansionContext.Provider value={toolBlockExpansion}>
             <TugListView
               ref={listViewRef}
@@ -1673,7 +1684,7 @@ export const DevTranscriptHost = forwardRef<
             ref={jumpButtonRef}
             onClick={handleJumpToBottom}
           />
-        </>
+        </div>
       ) : null}
     </div>
   );

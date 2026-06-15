@@ -1,0 +1,65 @@
+/**
+ * tug-control-bar.css — the Z0 control band + its region scrim.
+ *
+ * The band borrows the Z2 status-bar surface token so it reads as a
+ * distinct chrome strip (not transcript-colored). Visibility is a DOM
+ * attribute the host toggles ([L06]); the band is `display:none` until
+ * `data-visible="true"`. The modal scrim is a pointer-blocking overlay
+ * drawn over the content region via `data-tug-control-bar-modal`.
+ */
+
+.tug-control-bar {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tug-space-sm);
+  width: 100%;
+  padding-block: var(--tug-space-xs);
+  padding-inline: var(--tug-space-md);
+  /* Distinct Z0 band — borrows the Z2 status-bar surface ([P09]). */
+  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  font-size: 0.85em;
+  user-select: none;
+  /* The band sits above the region scrim. */
+  position: relative;
+  z-index: 2;
+}
+
+.tug-control-bar[data-visible="true"] {
+  display: flex;
+}
+
+/* Region scrim: a pointer-blocking overlay over the content region below
+   the bar while modal. The region element is the host's wrapper around
+   the scrollable content; it establishes the positioning context for the
+   scrim (and the host's own floating chrome) and fills the column below
+   the bar so the inner scroller sizes against it. */
+.tug-control-bar-region {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.tug-control-bar-region[data-tug-control-bar-modal]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-color: var(--tug7-surface-overlay-primary-normal-scrim-rest);
+  /* The overlay captures pointer + wheel events — the pointer dead zone
+     that pairs with `inert`'s focus/tab dead zone. */
+  pointer-events: auto;
+  /* Motion belongs to tokens; a quick fade reads as "locking". */
+  animation: tug-control-bar-scrim-in var(--tug-motion-duration-fast, 120ms)
+    ease-out;
+}
+
+@keyframes tug-control-bar-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
