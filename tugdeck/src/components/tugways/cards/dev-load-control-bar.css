@@ -5,6 +5,11 @@
  * by tug-control-bar.css; these rules lay out the dev transcript's content
  * variants — the load prompt and the loading progress row.
  *
+ * Both content rows are always mounted (the host self-subscribes per [L02]);
+ * the host writes `data-mode` on the band ([L06]/[L22]) and the rules below
+ * reveal exactly one row per mode. A row is hidden until its mode is active,
+ * so the loading→prompt swap is a pure DOM toggle with no React re-render.
+ *
  * Two tunable knobs live here:
  *   --tugx-control-bar-track-width  — the progress track length.
  *   --tugx-control-bar-label-size   — the band's label text size.
@@ -16,10 +21,12 @@
   --tugx-control-bar-label-size: var(--tug-font-size-lg);
   --tugx-control-bar-label-nudge: -1px;
   /* ▲▲ TUNE ▲▲ */
+  /* Hidden until the band's `data-mode` selects this row (rules below). */
+  display: none;
 }
 
-/* The prompt stays centered: [label] Load: [N] [All]. */
-.dev-load-control-bar-prompt {
+/* The prompt stays centered: [label] Load: [N]. */
+.tug-control-bar[data-mode="prompt"] .dev-load-control-bar-prompt {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -29,7 +36,7 @@
 
 /* The loading row spans the band; the progress indicator (below) centers its
    own content. */
-.dev-load-control-bar-loading {
+.tug-control-bar[data-mode="loading"] .dev-load-control-bar-loading {
   display: flex;
   align-items: center;
   gap: var(--tug-space-md);

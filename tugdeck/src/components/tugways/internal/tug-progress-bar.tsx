@@ -68,15 +68,27 @@ export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarPro
     const isIndeterminate =
       !isDeterminate && (state === "running" || state === "paused");
 
-    // Suppress the width transition on indeterminate → determinate switch [L06].
+    // Suppress the width transition whenever the fill would otherwise animate
+    // BACKWARD: the indeterminate → determinate switch, or any *decrease* in
+    // width — a reset to 0 for a new operation, or a completed → running
+    // restart. Progress should snap to its new (lower) value, never slide
+    // down: a slide-down reads as "un-progressing," and (for a reused bar
+    // that retains its last full fill) as the new operation starting full and
+    // emptying. Forward growth keeps the smooth 300ms transition. [L06]
     const prevDeterminateRef = useRef(isDeterminate);
+    const prevWidthRef = useRef(widthPct);
     const fillRef = useRef<HTMLDivElement>(null);
 
     useLayoutEffect(() => {
       const wasDeterminate = prevDeterminateRef.current;
+      const prevWidth = prevWidthRef.current;
       prevDeterminateRef.current = isDeterminate;
+      prevWidthRef.current = widthPct;
 
-      if (!wasDeterminate && isDeterminate && fillRef.current) {
+      const switchedToDeterminate = !wasDeterminate && isDeterminate;
+      const decreased =
+        prevWidth !== undefined && widthPct !== undefined && widthPct < prevWidth;
+      if ((switchedToDeterminate || decreased) && fillRef.current) {
         fillRef.current.style.transition = "none";
         requestAnimationFrame(() => {
           if (fillRef.current) {
@@ -84,7 +96,7 @@ export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarPro
           }
         });
       }
-    }, [isDeterminate]);
+    }, [isDeterminate, widthPct]);
 
     const sizeStyle: React.CSSProperties = {
       height: `${size}px`,

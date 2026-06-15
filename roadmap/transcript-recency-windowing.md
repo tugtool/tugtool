@@ -214,6 +214,11 @@ This is option (b) for inert (one shared, tested toggle) + a region-scoped scrim
 
 **Implications:** Thread the stable id into the height cache + the `content-visibility` `contain-intrinsic-size` seed ([`transcript-architecture-redux.md` P07]); the bag's `cellHeights` migrate from index-keyed to id-keyed (or carry both).
 
+**Reconciliation (implemented 2026-06-15 — diverged from the above, deliberately).** The shipped code does **not** id-key heights. Two separate concerns were split:
+- **Mount identity across prepend** — handled by **[L26]** instead: the cell wrapper's React `key` is `idForIndex(i)` (a stable `turnKey`-derived id), so a prepend never remounts a row (scroll, observers, `content-visibility` remembered sizes survive). This is the load-bearing guarantee [P06] was reaching for, and it holds.
+- **The height *cache*** (`HeightIndex`) stays **index-keyed** with an explicit `shift(by)` remap applied on each prepend — in-session this re-aligns measured heights exactly, so the live prepend is correct.
+- **Persisted `cellHeights`** stay **index-keyed and are capped/dropped** (`capDurableCardState`, cap 400) — *intentionally*: carrying heights in the bag is what caused the boot-stall bloat (`948a2721`), so the bag deliberately holds at most a bounded slice. Consequence: a reload whose window differs from the save-time window (the deep paged-reload case) hydrates misaligned (or absent) heights, so first paint uses estimates and the anchor *converges* via `ResizeObserver` re-measure rather than landing pixel-perfect on the first frame. Accepted as a v1 limitation — the common case (default window, no paging) aligns and is first-paint-perfect; the deep case still lands correctly, just with a brief settle. Id-keyed bag heights are an explicitly-declined option (the bloat lesson outweighs first-paint perfection for the uncommon deep reload).
+
 #### [P07] Deliberate pagination is not a missing message (req #5 clarification) {#p07-pagination-not-holes}
 
 **Decision:** Older turns absent because they haven't been paged in are **not** "holes" / "missing messages." req #5 forbids *render bugs* (an unrendered loaded row, an estimate-driven scrollbar); it does not forbid intentional backward pagination behind a visible affordance. Once loaded, every older turn renders fully.
@@ -446,6 +451,8 @@ The load-previous modal `TugSheet` presents **only if the load is still in fligh
   - **Prompt** (idle) — `hasOlder && atTop && !loading && !lingering` → "There are N earlier messages in this session. Load: [N] [All]" (the #step-5 affordance, capped to remaining, `size="sm"`); non-modal.
   - **Hidden** — otherwise.
 - **Visibility** is DOM-driven ([L06]) — the host toggles the bar's state attribute off the store snapshot + the list view's `onAtTopChange` / `onFollowBottomChange` (scroll-to-bottom) + submit signals; never React appearance state.
+
+  **L06 reconciliation (audited + fixed 2026-06-15).** An interim rework (the dwell + trim) briefly routed the bar's mode/visibility through `useState`, which an audit flagged as an [L06] transgression. Restored to the intended shape: the host holds the dwell + prompt-summon flags in **refs**, observes the store **directly** in a `useLayoutEffect` ([L22]), and writes the resolved mode onto `data-visible` + `data-mode` (DOM); both content slots are always mounted and self-subscribe for their data ([L02]); the dev CSS reveals one per `data-mode`. The only React-bound value is `loadActive` (session *data*, [L02]) driving the `modal` prop. No appearance state lives in React.
 - **Retire `DevRestoreSheetHost` / `DevRestoreSheetContent`** ([P11]); migrate its delay-gated progress + Cancel (stop + close card) into the bar's Loading state for the cold-restore case. The load-previous `TugSheet` from #step-5 is removed in favor of the bar.
 
 **Tasks:**
@@ -553,7 +560,7 @@ Implementation + automated tests are complete for every criterion; the live
 - [ ] Opening a thousands-of-turns session loads only the last N — `replay_ingest`/`replay_render` independent of total turns (#perf-gate, #step-7). *Implemented: tugcode windows to `lastMessages: N` at the source ([P01], #step-1). **Perf win = user's real-session measurement** (45k/147k-line corpus fixtures committed for it); not claimed here.*
 - [x] "Load previous" pages older turns above the view with no scroll jump (#prepend-scroll-hold, #step-4). *Implemented + pure-tested (compensation math); live scroll-hold = user vet.*
 - [x] "Load all" presents Cancel that leaves the loaded window intact (#load-all-sheet, #step-5). *Implemented; per [P09]/[P11] this is now the Z0 `TugControlBar`'s modal Loading state + Cancel (real `cancel_replay` abort, window kept), superseding the standalone sheet.*
-- [x] Faithful restore lands pixel-perfect even when the saved anchor is above the window (#faithful-restore, #step-6). *Implemented (`depthFromEnd` window sizing + anchor relocation) + pure-tested; deep round-trip feel = user vet.*
+- [x] Faithful restore lands at the saved anchor even when it is above the window (#faithful-restore, #step-6). *Implemented (`depthFromEnd` window sizing + anchor relocation) + pure-tested. The common case (within the default window) is first-paint pixel-perfect; the **deep paged-reload** case lands correctly but converges over a brief settle rather than first-paint-perfect, because persisted heights are bounded by design ([P06] reconciliation — the bag-bloat lesson). Deep round-trip feel = user vet.*
 - [x] The "load previous" affordance appears iff older turns exist; loaded turns render fully (no false holes) (#pagination-not-holes). *Implemented: prompt derived from `hasOlder` ([P07]); loaded rows render inline at real heights.*
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}

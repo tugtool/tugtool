@@ -659,8 +659,8 @@ export function DevCardContent({
  * → `replay_complete` — mounts the BODY instead (progressive reveal,
  * [P03] of the resume-performance plan): under windowed mounting the
  * transcript paints progressively as fold flushes commit, anchored at
- * the live edge by follow-bottom, with the `DevReplayProgress` strip
- * as the always-on affordance. The previous all-or-nothing reveal
+ * the live edge by follow-bottom, with the `Z0` `TugControlBar`
+ * carrying restore progress. The previous all-or-nothing reveal
  * (body held unmounted until `replay_complete`, then one giant mount
  * commit) was the measured blank-window mechanism on every corpus
  * class — see the plan's baseline waterfalls.

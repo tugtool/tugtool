@@ -19,11 +19,19 @@
  *
  * The progress dwell and the prompt persistence are the same shape for a
  * cold restore, a load-previous, and a scroll-to-top — one consistent
- * lifecycle. The tail's end and the prompt's summon are committed in one
- * batch so the loading→prompt swap never flashes a gap. Content + visibility
- * are store-/state-derived ([L02]); the bar's *visibility* is mirrored to a
- * DOM attribute ([L06]). The host feeds scroll edges via the imperative
- * handle; it reads load completion + submit from the store.
+ * lifecycle.
+ *
+ * **Zone discipline ([L24]).** The bar's *mode* (loading / prompt / hidden)
+ * and *visibility* are pure appearance — their only consumer is the renderer
+ * — so they live in the DOM, never React state ([L06]). The host holds the
+ * dwell + prompt-summon flags in refs, observes the store *directly* in a
+ * layout effect ([L22]), and writes the resolved mode onto the band's
+ * `data-visible` / `data-mode` attributes; a scroll-edge crossing or a dwell
+ * tick therefore never re-renders. The two content slots are always mounted
+ * and self-subscribe for their data ([L02]); the dev CSS reveals one per
+ * `data-mode`. The load-in-flight flag (`modal`) is session *data*, so it
+ * alone enters React via `useSyncExternalStore` to drive the region
+ * inert + scrim.
  *
  * This version is deliberately trimmed: paging is a single fixed step (50) —
  * no "All", and no Cancel (a 50-row page, and the restore, are quick enough
@@ -40,7 +48,10 @@ import { TugControlBar } from "@/components/tugways/tug-control-bar";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { type CodeSessionStore } from "@/lib/code-session-store";
+import {
+  type CodeSessionStore,
+  type CodeSessionSnapshot,
+} from "@/lib/code-session-store";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import {
   controlBarVisible,
@@ -51,10 +62,20 @@ import {
 /** Default numeric "load previous" step, capped to the messages that remain. */
 const LOAD_PREVIOUS_STEP = 50;
 
-/** How long the progress bar lingers, at full, after the last progress tick
- *  before the bar transitions to the "load more" prompt (or hides). Anchored
- *  on the final update so the determinate bar visibly reaches the end. */
+/** How long the progress bar lingers, at full, after a load lands before the
+ *  bar transitions to the "load more" prompt (or hides) — so the determinate
+ *  bar visibly reaches the end. */
 const PROGRESS_DWELL_MS = 1000;
+
+/** A load is in flight: a load-previous, or a cold restore (the restore gate
+ *  open, or still replaying). Pure read over the store snapshot. */
+function readLoadActive(snap: CodeSessionSnapshot): boolean {
+  return (
+    snap.loadingPrevious ||
+    deriveColdRestoreActive(snap) ||
+    snap.phase === "replaying"
+  );
+}
 
 export interface DevLoadControlBarHandle {
   /** The user reached / left the top of the transcript. */
@@ -75,133 +96,103 @@ export const DevLoadControlBar = React.forwardRef<
 >(function DevLoadControlBar({ codeSessionStore, regionEl }, ref) {
   const barRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Structural reads (content + modal). Primitives so `useSyncExternalStore`
-  // stays `Object.is`-stable across snapshot rebuilds.
-  const loadingPrevious = React.useSyncExternalStore(
+  // Appearance refs ([L06]): the post-load dwell and the "load more" summon
+  // live here, never React state — so a dwell tick or a scroll-edge crossing
+  // mutates the DOM without a re-render.
+  const tailActiveRef = React.useRef(false); // within the post-load dwell
+  const promptShownRef = React.useRef(false); // prompt summoned, not dismissed
+  const tailTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevLoadActiveRef = React.useRef(false);
+
+  // `loadActive` is session DATA (the reducer/banner read it), so it alone
+  // enters React via `useSyncExternalStore` ([L02]) — it drives the `modal`
+  // prop (region inert + scrim while a load is in flight). It changes only
+  // when a load starts/ends (rare); the re-render is cheap and never reaches
+  // the transcript (a sibling).
+  const loadActive = React.useSyncExternalStore(
     codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().loadingPrevious,
+    () => readLoadActive(codeSessionStore.getSnapshot()),
   );
-  const coldRestore = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => {
-      const s = codeSessionStore.getSnapshot();
-      return (
-        !s.loadingPrevious &&
-        (deriveColdRestoreActive(s) || s.phase === "replaying")
-      );
-    },
-  );
-  const hasOlder = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().replayWindow?.hasOlder ?? false,
-  );
-  const earlierCount = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () =>
-      codeSessionStore.getSnapshot().replayWindow?.firstLoadedMessageIndex ?? 0,
-  );
-  const phase = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().phase,
-  );
-  // The live progress numerator — committed messages for a cold restore,
-  // the paged-in count for a load-previous. Its changes anchor the dwell
-  // tail (so the bar lingers a beat past the final tick).
-  const messagesLoaded = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => {
-      let n = 0;
-      for (const turn of codeSessionStore.getSnapshot().transcript) {
-        n += turn.messages.length;
+
+  // Resolve the bar's visual state from the live snapshot + the appearance
+  // refs and mirror it onto the band's DOM attributes ([L06]/[L22]): the
+  // generic `data-visible` (TugControlBar's show/hide) and `data-mode` (which
+  // content slot the dev CSS reveals). Never React state.
+  const updateBar = React.useCallback(() => {
+    const bar = barRef.current;
+    if (bar === null) return;
+    const snap = codeSessionStore.getSnapshot();
+    const state = deriveControlBarState({
+      loadingDisplay: readLoadActive(snap) || tailActiveRef.current,
+      hasOlder: snap.replayWindow?.hasOlder ?? false,
+      earlierCount: snap.replayWindow?.firstLoadedMessageIndex ?? 0,
+      promptShown: promptShownRef.current,
+    });
+    bar.dataset.visible = String(controlBarVisible(state));
+    bar.dataset.mode = state.kind;
+  }, [codeSessionStore]);
+
+  // Observe the store directly ([L22]) — the bar's mode is a DOM mutation,
+  // not React-rendered state. This handler also runs the dwell tail (hold the
+  // full progress for `PROGRESS_DWELL_MS` after a load lands, then summon the
+  // prompt) and the submit dismiss. Flipping `tailActive` + `promptShown`
+  // together when the tail fires (then one `updateBar`) keeps the
+  // loading→prompt swap from ever passing through a hidden frame.
+  React.useLayoutEffect(() => {
+    const onChange = (): void => {
+      const snap = codeSessionStore.getSnapshot();
+      const active = readLoadActive(snap);
+      if (active) {
+        if (tailTimerRef.current !== null) {
+          clearTimeout(tailTimerRef.current);
+          tailTimerRef.current = null;
+        }
+        tailActiveRef.current = false;
+      } else if (prevLoadActiveRef.current) {
+        // A load just landed → hold the full progress for the dwell, then
+        // summon the prompt (the derive gates it on `hasOlder`).
+        tailActiveRef.current = true;
+        if (tailTimerRef.current !== null) clearTimeout(tailTimerRef.current);
+        tailTimerRef.current = setTimeout(() => {
+          tailTimerRef.current = null;
+          tailActiveRef.current = false;
+          promptShownRef.current = true;
+          updateBar();
+        }, PROGRESS_DWELL_MS);
       }
-      return n;
-    },
-  );
-  const loadingPreviousLoaded = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().loadingPreviousLoaded,
-  );
-
-  const loadActive = loadingPrevious || coldRestore;
-  const loadKind: ControlBarLoadKind | null = loadingPrevious
-    ? "previous"
-    : coldRestore
-      ? "restore"
-      : null;
-  // The load kind outlives `loadActive` through the dwell tail; remember it
-  // so the lingering progress keeps the right label/cancel routing.
-  const loadKindRef = React.useRef<ControlBarLoadKind>("restore");
-  if (loadKind !== null) loadKindRef.current = loadKind;
-  const progressNum = loadingPrevious ? loadingPreviousLoaded : messagesLoaded;
-
-  // Progress display = a load in flight, OR the dwell tail that holds the
-  // bar at full for `PROGRESS_DWELL_MS` past the final progress tick (so the
-  // determinate bar always reaches the end before the bar moves on). `tail`
-  // carries only the post-load lingering; OR-ing `loadActive` in the render
-  // means the bar appears the instant a load starts (no effect-tick lag).
-  // The tail timer is keyed on `progressNum`, so every tick refreshes it.
-  const [tail, setTail] = React.useState(false);
-  // `promptShown`: the "load more" prompt has been *summoned* (a load's dwell
-  // tail ended, or the user reached the top) and not yet dismissed (scroll /
-  // submit). Same lifecycle for restore / load-previous / scroll-to-top.
-  const [promptShown, setPromptShown] = React.useState(false);
-
-  React.useEffect(() => {
-    if (loadActive) {
-      setTail(true);
-      return;
-    }
-    if (!tail) return;
-    const timer = setTimeout(() => {
-      // End the tail and summon the prompt in the SAME batch so the
-      // loading→prompt swap never passes through a frame where neither shows
-      // (the gap): otherwise `loadingDisplay` flips false this render while
-      // `promptShown` is still set by a later effect, so the derive yields
-      // `hidden` for one frame. The derive gates the prompt on `hasOlder`.
-      setTail(false);
-      setPromptShown(true);
-    }, PROGRESS_DWELL_MS);
-    return () => clearTimeout(timer);
-  }, [loadActive, progressNum, tail]);
-  const loadingDisplay = loadActive || tail;
-
-  // Submit dismisses the prompt.
-  React.useEffect(() => {
-    if (phase === "submitting") setPromptShown(false);
-  }, [phase]);
+      if (snap.phase === "submitting") promptShownRef.current = false;
+      prevLoadActiveRef.current = active;
+      updateBar();
+    };
+    const unsubscribe = codeSessionStore.subscribe(onChange);
+    onChange();
+    return () => {
+      unsubscribe();
+      if (tailTimerRef.current !== null) clearTimeout(tailTimerRef.current);
+    };
+  }, [codeSessionStore, updateBar]);
 
   // Scroll edges (imperative, fed by the transcript): reaching the top
   // summons the prompt; leaving the top, or scrolling up off the bottom,
-  // dismisses it. Dismiss only on *leaving* the bottom (`following` false) —
-  // a programmatic re-pin to the bottom right after a restore must not
-  // dismiss the prompt the dwell just summoned.
+  // dismisses it — all DOM-only ([L06]), no re-render. Dismiss only on
+  // *leaving* the bottom (`following` false) — a programmatic re-pin right
+  // after a restore must not dismiss the prompt the dwell just summoned.
   React.useImperativeHandle(
     ref,
     (): DevLoadControlBarHandle => ({
       setAtTop(atTop) {
-        setPromptShown(atTop);
+        promptShownRef.current = atTop;
+        updateBar();
       },
       setAtBottom(following) {
-        if (!following) setPromptShown(false);
+        if (!following) {
+          promptShownRef.current = false;
+          updateBar();
+        }
       },
     }),
-    [],
+    [updateBar],
   );
-
-  // Resolve the visual state and mirror visibility to the band's DOM
-  // attribute ([L06]). Re-rendering this (small, transcript-sibling) host on
-  // a scroll-edge crossing is cheap and does not touch the transcript.
-  const state = deriveControlBarState({
-    loadingDisplay,
-    hasOlder,
-    earlierCount,
-    promptShown,
-  });
-  const visible = controlBarVisible(state);
-  React.useLayoutEffect(() => {
-    const bar = barRef.current;
-    if (bar !== null) bar.dataset.visible = String(visible);
-  }, [visible]);
 
   const onLoad = React.useCallback(
     (amount: number) => {
@@ -210,19 +201,13 @@ export const DevLoadControlBar = React.forwardRef<
     [codeSessionStore],
   );
 
-  const content: React.ReactNode =
-    state.kind === "loading" ? (
-      <ControlBarLoading
-        codeSessionStore={codeSessionStore}
-        loadKind={loadKindRef.current}
-      />
-    ) : state.kind === "prompt" ? (
-      <ControlBarPrompt earlierCount={earlierCount} onLoad={onLoad} />
-    ) : null;
-
+  // Both content slots are always mounted and self-subscribe for their data
+  // ([L02]); the dev CSS reveals one per `data-mode` ([L06]). Because neither
+  // is gated on React appearance state, the mode swap is a pure DOM change.
   return (
     <TugControlBar ref={barRef} modal={loadActive} regionEl={regionEl}>
-      {content}
+      <ControlBarLoading codeSessionStore={codeSessionStore} />
+      <ControlBarPrompt codeSessionStore={codeSessionStore} onLoad={onLoad} />
     </TugControlBar>
   );
 });
@@ -235,10 +220,8 @@ export const DevLoadControlBar = React.forwardRef<
  *  50, so there's nothing slow to abort; the restore likewise just runs.) */
 function ControlBarLoading({
   codeSessionStore,
-  loadKind,
 }: {
   codeSessionStore: CodeSessionStore;
-  loadKind: ControlBarLoadKind;
 }): React.ReactElement {
   // Messages committed so far across the live transcript — the cold-restore
   // progress numerator (the window is sized in messages, not turns).
@@ -282,6 +265,15 @@ function ControlBarLoading({
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().loadingPreviousTarget,
   );
+
+  // Sticky load kind: which load this progress represents. Set while a load
+  // is in flight; retained through the dwell tail (both flags false) so the
+  // label/format stay correct after the load lands. Self-determined so the
+  // slot needs no prop and can stay mounted.
+  const loadKindRef = React.useRef<ControlBarLoadKind>("restore");
+  if (loadingPrevious) loadKindRef.current = "previous";
+  else if (restoreActive) loadKindRef.current = "restore";
+  const loadKind = loadKindRef.current;
 
   // Is the represented load still in flight? When false we're in the dwell
   // tail: the bar holds at full.
@@ -350,12 +342,18 @@ function formatLoadPreviousValue(value: number, max: number): string {
  *  load action. ("All" was removed — paging is a quick fixed 50 at a time; a
  *  whole-session load is intentionally not offered in this version.) */
 function ControlBarPrompt({
-  earlierCount,
+  codeSessionStore,
   onLoad,
 }: {
-  earlierCount: number;
+  codeSessionStore: CodeSessionStore;
   onLoad: (amount: number) => void;
 }): React.ReactElement {
+  // Self-subscribed ([L02]) so the slot needs no count prop and stays mounted.
+  const earlierCount = React.useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () =>
+      codeSessionStore.getSnapshot().replayWindow?.firstLoadedMessageIndex ?? 0,
+  );
   const focusGroup = React.useId();
   const step = Math.min(LOAD_PREVIOUS_STEP, earlierCount);
   return (
