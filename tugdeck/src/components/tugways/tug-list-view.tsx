@@ -487,6 +487,19 @@ export interface TugListViewProps<
   onFollowBottomChange?: (following: boolean) => void;
 
   /**
+   * Fires on the transition in/out of the top edge — `atTop === true`
+   * when the scroll position reaches the very top of the content. The
+   * "load previous" affordance keys its visibility on this so it shows
+   * only when the user has scrolled up to the oldest loaded message,
+   * never pinned.
+   *
+   * [L06] consumers drive appearance from this callback through DOM
+   * attributes, never React state — same discipline as
+   * `onFollowBottomChange`.
+   */
+  onAtTopChange?: (atTop: boolean) => void;
+
+  /**
    * Skip windowing — render every cell in document order with no
    * spacers, no overscan, no `computeWindow` math. Use for lists
    * where rendering every cell is acceptable (transcripts, settings
@@ -770,6 +783,10 @@ const DEFAULT_ESTIMATED_HEIGHT = 60;
  */
 const OVERSCAN_COUNT = 3;
 
+/** Top-edge tolerance (CSS px) for the `onAtTopChange` signal — a few
+ *  pixels of slop so a sub-pixel resting `scrollTop` still reads "at top." */
+const AT_TOP_EPSILON = 4;
+
 /**
  * `scrollToIndex` two-pass correction threshold (CSS pixels). If the
  * measured offset for the target row differs from the estimated
@@ -911,6 +928,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       selectionRequired = false,
       onSelectionChange,
       onFollowBottomChange,
+      onAtTopChange,
       focusGroup,
       focusOrder = 0,
       focusPolicy,
@@ -1078,6 +1096,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // fresh callback each render is still observed. [L07]
     const onFollowBottomChangeRef = React.useRef(onFollowBottomChange);
     onFollowBottomChangeRef.current = onFollowBottomChange;
+
+    // Latest `onAtTopChange` + the last-fired edge state, so the scroll
+    // callback (installed once) fires only on a top-edge transition.
+    const onAtTopChangeRef = React.useRef(onAtTopChange);
+    onAtTopChangeRef.current = onAtTopChange;
+    const prevAtTopRef = React.useRef<boolean | null>(null);
 
     // Follow-bottom façade published to descendants via
     // `ScrollerProvider`. Its methods delegate to the live
@@ -1654,6 +1678,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         callbacks: {
           onScroll: () => {
             scrollTick();
+            // Top-edge transition for the "load previous" affordance.
+            // `scrollTop <= AT_TOP_EPSILON` is "at the top"; fire only on
+            // a change so the consumer's DOM toggle isn't churned each
+            // frame ([L06] — the consumer drives a data-attribute).
+            const atTop = el.scrollTop <= AT_TOP_EPSILON;
+            if (atTop !== prevAtTopRef.current) {
+              prevAtTopRef.current = atTop;
+              onAtTopChangeRef.current?.(atTop);
+            }
           },
           onFollowBottomChanged: (_ss, following) => {
             onFollowBottomChangeRef.current?.(following);
@@ -1665,6 +1698,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // fires only on transitions, so a consumer's observer would
       // otherwise miss the mount-time state.
       onFollowBottomChangeRef.current?.(smartScroll.isFollowingBottom);
+      // Same for the top edge — seed from the live scrollTop so a list
+      // that mounts already at the top reports it.
+      {
+        const atTop0 = el.scrollTop <= AT_TOP_EPSILON;
+        prevAtTopRef.current = atTop0;
+        onAtTopChangeRef.current?.(atTop0);
+      }
 
       // Cold-boot scroll restore is owned by `SmartScroll` (its
       // `setRestoreTarget` / `applyRestoreTarget` API). The list

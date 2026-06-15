@@ -894,6 +894,25 @@ export interface CodeSessionSnapshot {
   replayWindow: ReplayWindowMeta | null;
 
   /**
+   * True while a load-previous (older-range) replay bracket is in flight
+   * — from the `begin_load_previous` dispatch (the instant the user
+   * activates "load previous") until its `replay_complete` (commit or
+   * abort). Drives the load-previous modal sheet's lifetime and hides
+   * the affordance during the load. Mirrors the reducer's internal
+   * `replayPrependActive`.
+   */
+  loadingPrevious: boolean;
+
+  /**
+   * Determinate progress for the in-flight load-previous, in messages
+   * (rows): `loadingPreviousLoaded` of `loadingPreviousTarget`. Both `0`
+   * when no load is in flight. Drives the load sheet's progress bar in
+   * the same "N of M" form as the initial restore sheet.
+   */
+  loadingPreviousTarget: number;
+  loadingPreviousLoaded: number;
+
+  /**
    * True from the moment a resume binding is acknowledged via
    * `CodeSessionStore.notifyResumeBindingLanded()` until the *first
    * of*: `phase` becomes `"replaying"`, `lastReplayResult` lands,

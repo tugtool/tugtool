@@ -249,7 +249,7 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 | #step-2 | tugdeck: send window spec; reducer records oldestLoadedTurn/hasOlder | done | 88dc2365 |
 | #step-3 | Reducer + data source: prepend older turns; stable-id height keying | done | da32e558 (height-cache id-keying folded into #step-4) |
 | #step-4 | TugListView: prepend with scroll-position hold | done | (committed below; live scroll-hold verified end-to-end with #step-5 trigger) |
-| #step-5 | "Load previous M" affordance + "load all" via TugSheet | pending | — |
+| #step-5 | "Load previous M" affordance + "load all" via TugSheet | done | on main (live vet pending) |
 | #step-6 | Faithful restore — load-to-anchor on reload | pending | — |
 | #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | pending | — |
 
@@ -362,22 +362,24 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 - A "load previous" control at the transcript top, shown iff `hasOlder`, offering **50 / 100 / all** (reuse an existing Tug control — `TugChoiceGroup` / menu — not a hand-rolled one).
 - 50/100 → a load-previous windowed request ([#step-3]/[#step-4]); **all** → a full older-range request that, if it crosses 0.5 s, presents the redux `TugSheet` with progress + Cancel. Cancel stops the in-flight translate and **leaves the already-loaded window intact** (distinct from restore-Cancel's close-card).
 
-**[P08] Sheet locks out interaction immediately on every load-previous (user decision, 2026-06-14).** {#p08-sheet-on-interaction}
-When the user activates the load-previous control, present the redux `TugSheet` **immediately** (not only "all", not only after the 0.5 s gate) so the pane goes `inert` + scrim for the whole load. The modal does the interaction-lockout for free, which **simplifies** #step-4: the prepend (and its `scrollHeight`-delta `scrollTop` hold) happens while the user cannot scroll or click, so there is no concurrent-input race against the DOM growth — the scroll-hold lands against a quiescent viewport. Supersedes the earlier "small windowed loads reveal once with no sheet" framing in [P04] for the *load-previous* path (restore-side small loads still follow [P04]). The 0.5 s gate still governs whether the sheet shows *progress + Cancel chrome*, but the inert lock is immediate.
+**[P08] Load-previous sheet is gated by the 0.5 s reveal threshold (user decisions, 2026-06-14 / refined 2026-06-15).** {#p08-sheet-on-interaction}
+The load-previous modal `TugSheet` presents **only if the load is still in flight past the 0.5 s reveal gate** (the same constant the restore sheet uses). A *fast* page-in — the common 50 / "all"-when-small case — settles before the gate and pages in **silently**: older turns prepend above with held scroll ([P03], #step-4) and no modal ever shows. A *slow* load ("all" on a whale) crosses the gate and presents the sheet with **determinate** "N of M messages" progress + Cancel; the inert scrim then locks the pane for the rest of the load, so the remaining prepend lands against a quiescent viewport.
+
+*Refinement note:* the original 2026-06-14 decision presented the sheet *immediately* (inert at once, chrome gated). Live testing showed that flashed a scrim for fast loads, so the presentation itself is now gated — fast loads have no sheet at all. The blank-and-reveal gate ([DT10]) and the restore sheet are both suppressed during a load-previous (the existing content must stay visible while older turns prepend above it). Restore-side small loads still follow [P04].
 
 **Tasks:**
-- [ ] Render the affordance from `hasOlder`; wire 50/100/all to load-previous requests.
-- [ ] On activation, immediately present the `TugSheet` (pane inert + scrim) for the load duration ([P08]); dismiss when the prepend commits. Route the in-flight progress + Cancel through the redux sheet + 0.5 s gate. Cancel = stop translate, keep loaded window. Resolve [Q04] (one-shot + Cancel for v1).
-- [ ] Dispatch `store.beginLoadPreviousBracket()` (lands in #step-3) immediately before sending the older-range `request_replay`, so the bracket prepends.
-- [ ] Cross-check tuglaws (L02 affordance derivation, L06 visibility, L02 sheet mapping) and name them.
+- [x] Render the affordance from `hasOlder`; wire 50/100/all to load-previous requests. (`dev-load-previous.tsx` top-of-transcript bar; `store.loadPrevious(amount)` → `olderMessages` window.)
+- [x] On activation, immediately present the `TugSheet` (pane inert + scrim) for the load duration ([P08]); dismiss when the load completes (`loadingPrevious` clears). Progress + Cancel chrome gated past 0.5 s. Cancel = real tugcode abort (`cancel_replay` → `replay_complete{aborted}` → `discard-prepend`), keeping the loaded window. Resolved [Q04] (one-shot + real abort for v1).
+- [x] Dispatch `store.beginLoadPreviousBracket()` immediately before sending the older-range `request_replay` (inside `store.loadPrevious`).
+- [x] Cross-check tuglaws (L02 `hasOlder`/`loadingPrevious` via `useSyncExternalStore`; L06 pane disabled by sheet inert/scrim, affordance visibility derived; L23 prepend scroll-hold; L13 progress motion).
 
 **Tests:**
-- [ ] Pure-logic: affordance shown iff `hasOlder`; option → request-range mapping.
-- [ ] Real-app: "all" on the real long session shows the sheet + Cancel; Cancel leaves the prior window usable; 50/100 prepend without a sheet.
+- [x] Pure-logic: affordance derivation (`hasOlder`); option → request-range mapping + `all`=all-older + no-op when `!hasOlder` (`load-previous.test.ts`); abort discards staged batch (`replay-prepend.test.ts`); tugcode `olderMessages` resolution + `cancel_replay` abort (`replay-window.test.ts` / `replay-spawn.test.ts`).
+- [ ] Real-app: "all" on the real long session shows the sheet + Cancel; Cancel leaves the prior window usable; 50/100 page in. *(pairs with live vet on the rebuilt instance — modal + abort timing best confirmed live; a `just app-test` fixture is the follow-on.)*
 
 **Checkpoint:**
-- [ ] `bun test` + `bunx tsc --noEmit` clean.
-- [ ] Live: 50/100 page in (held scroll, no sheet); "all" on a whale shows the sheet + working Cancel.
+- [x] `bun test` (tugdeck 3682 / tugcode 585) + `bunx tsc --noEmit` clean.
+- [ ] Live: 50/100 page in (held scroll); "all" on a whale shows the sheet + working Cancel. *(user vet on the rebuilt instance.)*
 
 #### Step 6: Faithful restore — load-to-anchor on reload {#step-6}
 

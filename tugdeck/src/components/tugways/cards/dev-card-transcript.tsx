@@ -128,6 +128,7 @@ import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import { DevRestoreSheetHost } from "@/components/tugways/cards/dev-restore-sheet";
+import { DevLoadPreviousHost } from "@/components/tugways/cards/dev-load-previous";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -1343,6 +1344,14 @@ export const DevTranscriptHost = forwardRef<
   const lifecycle = useLifecycleState(codeSessionStore);
   const isReplaying = lifecycle.state === "replaying";
 
+  // A load-previous bracket is also `replaying`, but the existing
+  // content must stay visible (older turns prepend above it) — so the
+  // [DT10] blank-and-reveal gate is suppressed for it. [L02]
+  const loadingPrevious = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () => codeSessionStore.getSnapshot().loadingPrevious,
+  );
+
   // Perf instrumentation — pure observability, no behavior. On the
   // commit where the [DT10] replay gate drops (`isReplaying` flips
   // false), this layout effect runs synchronously post-commit: the
@@ -1595,6 +1604,14 @@ export const DevTranscriptHost = forwardRef<
     const btn = jumpButtonRef.current;
     if (btn !== null) btn.dataset.visible = String(!following);
   }, []);
+  // "Load previous" affordance shows only at the top of the transcript.
+  // Visibility is a DOM attribute toggled off the list view's top-edge
+  // callback ([L06]) — never React state — mirroring the jump button.
+  const loadPrevBarRef = useRef<HTMLDivElement | null>(null);
+  const handleAtTopChange = useCallback((atTop: boolean): void => {
+    const bar = loadPrevBarRef.current;
+    if (bar !== null) bar.dataset.atTop = String(atTop);
+  }, []);
   const handleJumpToBottom = useCallback((): void => {
     // Non-animated clamp — the same definite jump to the true bottom
     // the End key performs. The animated path eases toward a sentinel
@@ -1612,9 +1629,14 @@ export const DevTranscriptHost = forwardRef<
       className="dev-card-transcript"
       data-slot="dev-card-transcript"
       data-testid="dev-card-transcript"
-      data-replaying={isReplaying || undefined}
+      data-replaying={(isReplaying && !loadingPrevious) || undefined}
     >
       <DevRestoreSheetHost cardId={cardId} codeSessionStore={codeSessionStore} />
+      <DevLoadPreviousHost
+        cardId={cardId}
+        codeSessionStore={codeSessionStore}
+        barRef={loadPrevBarRef}
+      />
       {compactionSeed !== null ? (
         <div
           className="dev-card-transcript-compaction"
@@ -1637,6 +1659,7 @@ export const DevTranscriptHost = forwardRef<
               scrollKey="dev-card-transcript"
               followBottom
               onFollowBottomChange={handleFollowBottomChange}
+              onAtTopChange={handleAtTopChange}
               // Inline render: every row is mounted at its real,
               // measured height — no windowing, no spacers, no cheap
               // tier. The scroll height is the true sum of row heights,

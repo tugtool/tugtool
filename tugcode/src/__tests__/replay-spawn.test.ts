@@ -650,6 +650,73 @@ describe("runReplay — hard timeout", () => {
 });
 
 // ---------------------------------------------------------------------------
+// runReplay — cancel (abort) mid-replay
+// ---------------------------------------------------------------------------
+
+describe("runReplay — cancel_replay aborts in flight", () => {
+  test("cancelReplay() closes the bracket with replay_complete{aborted}", async () => {
+    // Same deterministic stall as the timeout test: `replayTimeSliceMs: 0`
+    // yields after every message on a 200-turn JSONL, so the loop is
+    // provably mid-iteration when we cancel. An already-resolved abort
+    // promise wins the next race ahead of the macrotask-deferred
+    // `iter.next()`, so the bracket closes promptly with `aborted`.
+    const lines: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      lines.push(
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: `prompt ${i}` }] },
+        }),
+      );
+      lines.push(
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            id: `msg_${i}`,
+            role: "assistant",
+            model: "claude-opus-4-6",
+            stop_reason: "end_turn",
+            content: [{ type: "text", text: `reply ${i}` }],
+          },
+        }),
+      );
+    }
+    const jsonl = lines.join("\n") + "\n";
+
+    const { manager } = await makePrimedManager({
+      jsonlReader: async () => ({ kind: "ok", jsonl }),
+      replayTimeSliceMs: 0,
+    });
+
+    const { emitted } = await captureIpc(async () => {
+      const p = manager.runReplay({ lastMessages: 400 });
+      // Let runReplay pass the reader await and install the abort
+      // resolver, then cancel mid-loop.
+      await new Promise((r) => setTimeout(r, 5));
+      manager.cancelReplay();
+      await p;
+    });
+
+    const completes = emitted.filter(
+      (e) => e.type === "replay_complete",
+    ) as ReplayComplete[];
+    expect(completes.length).toBeGreaterThanOrEqual(1);
+    const terminal = completes[completes.length - 1];
+    expect(terminal.aborted).toBe(true);
+    expect(terminal.error).toBeUndefined();
+    // Aborted before all 200 turns committed.
+    expect(terminal.count).toBeLessThan(200);
+  });
+
+  test("cancelReplay() with no replay running is a harmless no-op", async () => {
+    const { manager } = await makePrimedManager({
+      jsonlReader: async () => ({ kind: "missing", message: "none" }),
+    });
+    expect(() => manager.cancelReplay()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runReplay — claude crash mid-replay
 // ---------------------------------------------------------------------------
 

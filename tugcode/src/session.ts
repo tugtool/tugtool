@@ -2240,6 +2240,16 @@ export class SessionManager {
    */
   private replayActive: boolean = false;
   /**
+   * Resolver for the in-flight replay's abort race, or `null` when no
+   * replay is running. `runReplay` installs it while iterating the
+   * JSONL bracket; a `cancel_replay` verb calls it to make the loop's
+   * `Promise.race` resolve on the abort branch, which stops pulling the
+   * translator and closes the bracket with `replay_complete{aborted}`.
+   * Cleared in `runReplay`'s `finally`. Idempotent — calling it when no
+   * replay is in flight is a no-op.
+   */
+  private replayAbortResolve: (() => void) | null = null;
+  /**
    * True while a spontaneous-wake bracket is open on the wire — set
    * when `handleInterTurnEvent` emits a `wake_started` IPC frame in
    * response to a `system/task_notification` event, cleared when the
@@ -3075,6 +3085,18 @@ export class SessionManager {
    * chatty claude. {@link REPLAY_LIVE_BUFFER_MAX} stays available as
    * a documented threshold; it is not load-bearing post-R1e.
    */
+
+  /**
+   * Abort the in-flight replay, if any (the `cancel_replay` verb). Wakes
+   * the `runReplay` loop's abort race so it stops pulling the translator
+   * at the next time-slice yield and closes the bracket with
+   * `replay_complete{aborted:true}`. A no-op when no replay is running
+   * (`replayAbortResolve` is null), so a stray cancel is harmless.
+   */
+  cancelReplay(): void {
+    this.replayAbortResolve?.();
+  }
+
   async runReplay(window?: ReplayWindow): Promise<void> {
     // Pre-Step-5 the early-return `if (this.sessionMode !== "resume") return;`
     // gated runReplay by the original spawn mode. That assumption (mode=new
@@ -3209,6 +3231,17 @@ export class SessionManager {
       );
     });
 
+    // Abort race: a `cancel_replay` verb resolves this promise, making
+    // the loop below break at its next iteration (≤ one translator
+    // time-slice later). The user cancelled a load-previous / load-all;
+    // we stop pulling the translator and close the bracket cleanly with
+    // `replay_complete{aborted:true}` so the client discards the partial
+    // older batch. The resolver is published on the instance for the
+    // verb handler and cleared in `finally`.
+    const abortPromise = new Promise<{ kind: "abort" }>((resolve) => {
+      this.replayAbortResolve = () => resolve({ kind: "abort" });
+    });
+
     // Snapshot the active turn at entry. Only adopt it as in-flight
     // when the drain hasn't yet observed its terminal event — a
     // turn that already latched gotResult/interrupted is "done" from
@@ -3245,6 +3278,7 @@ export class SessionManager {
     let aborted:
       | { kind: "timeout" }
       | { kind: "exit"; code: number | null }
+      | { kind: "abort" }
       | null = null;
     // The translator yields `replay_complete` BEFORE returning. Buffer
     // the bracket-close so we can write it last after the loop, in case
@@ -3288,8 +3322,9 @@ export class SessionManager {
             | { kind: "next"; value: IteratorResult<OutboundMessage, { count: number }> }
             | { kind: "timeout" }
             | { kind: "exit"; code: number | null }
+            | { kind: "abort" }
           >
-        > = [nextPromise, timeoutPromise];
+        > = [nextPromise, timeoutPromise, abortPromise];
         if (exitPromise !== null) racers.push(exitPromise);
         const winner = await Promise.race(racers);
 
@@ -3377,6 +3412,9 @@ export class SessionManager {
     } finally {
       if (timeoutHandle !== null) clearTimeout(timeoutHandle);
       this.replayActive = false;
+      // Drop the abort resolver — this replay is no longer cancellable.
+      // A `cancel_replay` arriving after this point finds it null (no-op).
+      this.replayAbortResolve = null;
       // Clear suppressEmit AFTER replay_complete is on the wire so
       // post-suppression live deltas land outside the bracket and
       // observe the reducer's idle/streaming phase, not replaying.
@@ -3397,6 +3435,25 @@ export class SessionManager {
       messages: messagesEmitted,
       turns: count,
     });
+
+    if (aborted?.kind === "abort") {
+      // User cancelled the load. Close the bracket cleanly with the
+      // abort marker so the client discards the partial older batch and
+      // keeps its prior window. Not an error — no `error` payload.
+      const complete: ReplayComplete = {
+        type: "replay_complete",
+        count,
+        aborted: true,
+        ipc_version: 2,
+      };
+      writeLine(complete);
+      logReplay("aborted", {
+        session_id: this.sessionId,
+        count,
+        elapsed_ms: elapsedMs,
+      });
+      return;
+    }
 
     if (aborted?.kind === "timeout") {
       const complete: ReplayComplete = {

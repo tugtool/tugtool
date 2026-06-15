@@ -72,9 +72,13 @@ import {
   restoreSheetRevealDelayMs,
 } from "./dev-restore-sheet-gate";
 
-/** The cold-restore / replay window predicate — the strip's activity rule. */
+/** The cold-restore / replay window predicate — the strip's activity rule.
+ *  A load-previous bracket is also `phase === "replaying"`, but it owns its
+ *  OWN sheet (the load-previous host) and must not blank/cover existing
+ *  content, so it is explicitly excluded here. */
 function isRestoreActive(store: CodeSessionStore): boolean {
   const s = store.getSnapshot();
+  if (s.loadingPrevious) return false;
   return deriveColdRestoreActive(s) || s.phase === "replaying";
 }
 

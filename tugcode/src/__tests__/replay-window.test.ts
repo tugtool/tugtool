@@ -140,6 +140,53 @@ describe("translateJsonlSession — last-N-messages window", () => {
 });
 
 // ---------------------------------------------------------------------------
+// backward paging (olderMessages) — "load previous M"
+// ---------------------------------------------------------------------------
+
+describe("translateJsonlSession — olderMessages (load-previous) window", () => {
+  test("loads the N messages immediately older than a turn", async () => {
+    // 5 turns / 10 messages. Already viewing from turn 3; page the 4
+    // messages older than turn 3 → turns 1 and 2.
+    const out = await collectSession(cleanSession(5), {
+      window: { olderMessages: { beforeTurnIndex: 3, count: 4 } },
+    });
+
+    expect(userTextsOf(out)).toEqual(["u1", "u2"]);
+    expect(turnCompletesOf(out)).toHaveLength(2);
+
+    const complete = replayCompleteOf(out);
+    expect(complete?.count).toBe(2);
+    expect(complete?.firstLoadedTurnIndex).toBe(1);
+    expect(complete?.firstLoadedMessageIndex).toBe(2);
+    expect(complete?.totalMessages).toBe(10);
+    expect(complete?.hasOlder).toBe(true);
+  });
+
+  test("a count covering everything older loads to turn 0 (hasOlder false)", async () => {
+    // "load all older" — count beyond the older span → start at turn 0.
+    const out = await collectSession(cleanSession(5), {
+      window: { olderMessages: { beforeTurnIndex: 3, count: 9999 } },
+    });
+
+    expect(userTextsOf(out)).toEqual(["u0", "u1", "u2"]);
+    const complete = replayCompleteOf(out);
+    expect(complete?.firstLoadedTurnIndex).toBe(0);
+    expect(complete?.firstLoadedMessageIndex).toBe(0);
+    expect(complete?.hasOlder).toBe(false);
+  });
+
+  test("rounds up to a whole turn at the older-message boundary", async () => {
+    // count 3 lands mid-turn; round up to the 2 turns (4 messages) just
+    // before turn 3.
+    const out = await collectSession(cleanSession(5), {
+      window: { olderMessages: { beforeTurnIndex: 3, count: 3 } },
+    });
+    expect(userTextsOf(out)).toEqual(["u1", "u2"]);
+    expect(replayCompleteOf(out)?.firstLoadedTurnIndex).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // explicit turn range
 // ---------------------------------------------------------------------------
 

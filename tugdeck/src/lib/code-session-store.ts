@@ -25,6 +25,7 @@ import {
   encodeRecordContextBreakdown,
   encodeRecordSessionStateChange,
   encodeRecordTurnTelemetry,
+  encodeRequestReplay,
   type ContentBlock,
   type FeedIdValue,
 } from "@/protocol";
@@ -282,6 +283,21 @@ export interface CodeSessionStoreOptions {
 }
 
 /**
+ * Count the transcript rows (messages) a staged load-previous batch
+ * contributes: 2 for a turn with a user row (its `messages[0]` is a
+ * `user_message`), else 1 (a wake turn). Matches the row model the
+ * transcript numbers + tugcode's window-sizing, so the load sheet's
+ * "N of M" reads in the same unit as the request.
+ */
+function stagedMessageCount(turns: ReadonlyArray<TurnEntry>): number {
+  let total = 0;
+  for (const turn of turns) {
+    total += turn.messages[0]?.kind === "user_message" ? 2 : 1;
+  }
+  return total;
+}
+
+/**
  * L02 external store for a single Claude Code session's turn state.
  * See module JSDoc for scope and phasing.
  */
@@ -325,6 +341,10 @@ export class CodeSessionStore {
   // arrival order. `flush-prepend` commits this batch to the FRONT of
   // `_transcript` at the bracket's `replay_complete`, then clears it.
   private _prependStaging: TurnEntry[] = [];
+  // Target message count of the in-flight load-previous (0 when none),
+  // for the load sheet's determinate progress. The loaded-so-far value
+  // is derived from `_prependStaging` at snapshot time.
+  private _loadPreviousTarget = 0;
   private _listeners: Array<() => void> = [];
   private _cachedSnapshot: CodeSessionSnapshot | null = null;
   private _disposed = false;
@@ -622,6 +642,15 @@ export class CodeSessionStore {
       lastReplayResult: this.state.lastReplayResult,
       replayEverCompleted: this.state.replayEverCompleted,
       replayWindow: this.state.replayWindow,
+      loadingPrevious: this.state.replayPrependActive,
+      // Determinate load-previous progress: target messages requested vs
+      // messages staged so far. Both 0 when no load is in flight.
+      loadingPreviousTarget: this.state.replayPrependActive
+        ? this._loadPreviousTarget
+        : 0,
+      loadingPreviousLoaded: this.state.replayPrependActive
+        ? stagedMessageCount(this._prependStaging)
+        : 0,
       replayPreflightActive: this.state.replayPreflightActive,
       replaySoftBudgetElapsed: this.state.replaySoftBudgetElapsed,
       replayTimeoutDwellActive: this.state.replayTimeoutDwellActive,
@@ -818,6 +847,54 @@ export class CodeSessionStore {
   beginLoadPreviousBracket(): void {
     if (this._disposed) return;
     this.dispatch({ type: "begin_load_previous" });
+  }
+
+  /**
+   * Page older messages in above the current view ("load previous M").
+   * Marks the next replay bracket as a prepend, then sends a windowed
+   * `request_replay` for the `amount` messages immediately older than the
+   * oldest currently-loaded turn — `"all"` loads everything older. The
+   * supervisor forwards the window to tugcode, which translates only that
+   * older range; the reducer prepends it (held scroll via [L23]) and
+   * re-bases the absolute numbering from the new `replay_complete`
+   * metadata. No-op when nothing older exists (`hasOlder` false) or the
+   * window is unknown (a full / legacy load). The caller (the transcript
+   * affordance) is responsible for the modal sheet ([P08]).
+   */
+  loadPrevious(amount: number | "all"): void {
+    if (this._disposed) return;
+    const win = this.state.replayWindow;
+    if (win === null || !win.hasOlder) return;
+    // Cap a numeric request to what's actually older, so the displayed
+    // target matches what loads (and the progress bar reaches full).
+    const count =
+      amount === "all"
+        ? win.firstLoadedMessageIndex
+        : Math.min(Math.max(0, amount), win.firstLoadedMessageIndex);
+    if (count <= 0) return;
+    this._loadPreviousTarget = count;
+    this.beginLoadPreviousBracket();
+    const frame = encodeRequestReplay(this.tugSessionId, {
+      olderMessages: { beforeTurnIndex: win.firstLoadedTurnIndex, count },
+    });
+    this.conn.send(frame.feedId, frame.payload);
+  }
+
+  /**
+   * Cancel an in-flight load-previous / load-all. Sends `cancel_replay`;
+   * tugcode aborts the bracket and closes it with
+   * `replay_complete{aborted}`, which the reducer turns into a
+   * `discard-prepend` so the partial older batch is dropped and the prior
+   * loaded window stays intact. The transcript sheet dismisses when the
+   * aborted bracket lands. Direct CODE_INPUT (tugcode is live mid-replay),
+   * mirroring `interrupt` / `stopJob`.
+   */
+  cancelLoadPrevious(): void {
+    if (this._disposed) return;
+    this.conn.send(
+      FeedId.CODE_INPUT,
+      encodeCodeInputPayload({ type: "cancel_replay" }, this.tugSessionId),
+    );
   }
 
   /**
@@ -1624,6 +1701,11 @@ export class CodeSessionStore {
             this._transcript = [...this._prependStaging, ...this._transcript];
             this._prependStaging = [];
           }
+          break;
+        case "discard-prepend":
+          // Cancelled load-previous: drop the staged older turns; the
+          // prior transcript/window is untouched.
+          this._prependStaging = [];
           break;
         case "truncate-transcript": {
           // L26-safe local truncation ([#step-7-3]): drop the anchor turn

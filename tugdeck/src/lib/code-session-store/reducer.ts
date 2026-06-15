@@ -3710,6 +3710,37 @@ function handleReplayComplete(
     );
     return { state, effects: [] };
   }
+  // Cancelled load-previous: the bracket was aborted in flight. Discard
+  // the staged older batch and return to idle with the prior window and
+  // last-result untouched — nothing was committed, so this is not a new
+  // outcome (no banner, no window change). A load-previous always runs
+  // from a fully-loaded idle card, so there is no in-flight cycle to
+  // preserve.
+  if (event.aborted === true) {
+    return {
+      state: {
+        ...state,
+        phase: "idle",
+        activeMsgId: null,
+        scratch: new Map(),
+        toolUseStartedAt: new Map(),
+        pendingApproval: null,
+        pendingQuestion: null,
+        prevPhase: null,
+        pendingTurn: null,
+        replayPrependActive: false,
+        replayEverCompleted: true,
+        replayPreflightActive: false,
+        replaySoftBudgetElapsed: false,
+        replayTimeoutDwellActive: false,
+      },
+      effects: [
+        { kind: "cancel_timer", name: "preflight" },
+        { kind: "cancel_timer", name: "soft_budget" },
+        { kind: "discard-prepend" },
+      ],
+    };
+  }
   const lastReplayResult: LastReplayResult = event.error
     ? {
         kind: event.error.kind,

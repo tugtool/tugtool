@@ -85,6 +85,17 @@ export interface FlushPrependEffect {
 }
 
 /**
+ * Discard a staged load-previous batch without committing it: clear the
+ * staging buffer the prepend bracket accumulated. Emitted by
+ * `replay_complete{aborted}` — the user cancelled the load, so the
+ * partial older turns are dropped and the prior loaded window stays
+ * intact. Idempotent — an empty staging buffer is a no-op.
+ */
+export interface DiscardPrependEffect {
+  kind: "discard-prepend";
+}
+
+/**
  * Schedule a named timer that dispatches `fire` on expiry. The store's
  * dispatch loop tracks pending timers in a `Map<string, TimerHandle>`;
  * a second `schedule_timer` with the same `name` cancels the prior
@@ -180,6 +191,7 @@ export type Effect =
   | SendFrameEffect
   | AppendTranscriptEffect
   | FlushPrependEffect
+  | DiscardPrependEffect
   | ScheduleTimerEffect
   | CancelTimerEffect
   | RecordTelemetryEffect

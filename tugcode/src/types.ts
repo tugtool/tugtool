@@ -20,6 +20,7 @@ import type {
   StopTask,
   RequestReplay,
   ReplayWindow,
+  CancelReplay,
   RewindPreview,
   SessionRewind,
   SkillsInventoryQuery,
@@ -41,6 +42,7 @@ export type {
   StopTask,
   RequestReplay,
   ReplayWindow,
+  CancelReplay,
   RewindPreview,
   SessionRewind,
   SkillsInventoryQuery,
@@ -992,6 +994,14 @@ export interface ReplayComplete {
   totalTurns?: number;
   totalMessages?: number;
   hasOlder?: boolean;
+  /**
+   * Set when the replay was cancelled in flight (a `cancel_replay`
+   * arrived before the bracket finished). The client discards the
+   * partial older batch this bracket staged and leaves the prior loaded
+   * window intact. Window metadata is omitted on an aborted bracket —
+   * nothing new was committed.
+   */
+  aborted?: boolean;
   ipc_version: number;
 }
 
@@ -1172,6 +1182,10 @@ export function isStopTask(msg: InboundMessage): msg is StopTask {
 
 export function isRequestReplay(msg: InboundMessage): msg is RequestReplay {
   return msg.type === "request_replay";
+}
+
+export function isCancelReplay(msg: InboundMessage): msg is CancelReplay {
+  return msg.type === "cancel_replay";
 }
 
 export function isRewindPreview(msg: InboundMessage): msg is RewindPreview {

@@ -151,13 +151,19 @@ export interface StopTask {
  *     (rows), cut at a turn boundary: the default cold-resume load. A
  *     message is a user or assistant row, so this bounds the load by the
  *     unit the transcript actually numbers.
+ *   - `{ olderMessages: { beforeTurnIndex, count } }` — backward paging:
+ *     the `count` messages immediately *older* than turn
+ *     `beforeTurnIndex` (the current oldest-loaded turn), cut at a turn
+ *     boundary. Drives "load previous M" — older turns prepend above the
+ *     view. A `count` ≥ the whole older span loads everything older.
  *   - `{ turnRange: [start, end) }` — an explicit half-open turn-index
- *     range (used to page older turns in above the current view).
+ *     range (the general form; used by tests).
  *
  * Absent ⇒ load the whole session (the legacy, unbounded behavior).
  */
 export type ReplayWindow =
   | { lastMessages: number }
+  | { olderMessages: { beforeTurnIndex: number; count: number } }
   | { turnRange: [number, number] };
 
 /** Ask tugcode to replay the session JSONL ([D12]). */
@@ -170,6 +176,17 @@ export interface RequestReplay {
    * `hasOlder`). Absent ⇒ the full session (backward-compatible).
    */
   window?: ReplayWindow;
+}
+
+/**
+ * Abort the in-flight replay (the user cancelled a load-previous / load-all
+ * before it finished). tugcode stops pulling the translator at its next
+ * time-slice yield and closes the bracket with `replay_complete{aborted:true}`,
+ * so the client discards the partial older batch and leaves the prior
+ * loaded window intact. A no-op when no replay is in flight.
+ */
+export interface CancelReplay {
+  type: "cancel_replay";
 }
 
 /**
@@ -223,6 +240,7 @@ export type InboundMessage =
   | SessionCommand
   | StopTask
   | RequestReplay
+  | CancelReplay
   | RewindPreview
   | SessionRewind
   | SkillsInventoryQuery
@@ -248,6 +266,7 @@ export const INBOUND_VERBS = [
   "session_command",
   "stop_task",
   "request_replay",
+  "cancel_replay",
   "rewind_preview",
   "session_rewind",
   "skills_inventory_query",

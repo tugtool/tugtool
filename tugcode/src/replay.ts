@@ -1679,6 +1679,20 @@ function resolveWindow(
       acc += turns[firstTurn].messages;
     }
     endTurn = totalTurns;
+  } else if ("olderMessages" in window) {
+    // Backward paging: the `count` messages immediately older than
+    // `beforeTurnIndex`, cut at a turn boundary. Walk backward from
+    // that turn accumulating rows until we cover `count` (or reach the
+    // start). The emitted range is [firstTurn, beforeTurnIndex).
+    const { beforeTurnIndex, count } = window.olderMessages;
+    endTurn = Math.max(0, Math.min(Math.floor(beforeTurnIndex), totalTurns));
+    const n = Math.max(0, Math.floor(count));
+    firstTurn = endTurn;
+    let acc = 0;
+    while (firstTurn > 0 && acc < n) {
+      firstTurn -= 1;
+      acc += turns[firstTurn].messages;
+    }
   } else {
     const [rawStart, rawEnd] = window.turnRange;
     firstTurn = Math.max(0, Math.min(Math.floor(rawStart), totalTurns));

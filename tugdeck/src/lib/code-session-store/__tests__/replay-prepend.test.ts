@@ -122,6 +122,34 @@ describe("load-previous prepend", () => {
     expect(after[5]).toBe(recent[2]);
   });
 
+  it("a cancelled (aborted) load-previous discards the staged batch, window intact", () => {
+    const { store, conn } = makeStore();
+
+    replayRange(conn, 5, 7, {
+      firstLoadedTurnIndex: 5,
+      totalTurns: 8,
+      hasOlder: true,
+    });
+    const before = store.getSnapshot();
+    const beforeKeys = before.transcript.map((t) => t.turnKey);
+    const beforeWindow = before.replayWindow;
+
+    // Begin a load-previous bracket, stage some older turns, then the
+    // bracket is aborted (user cancelled).
+    store.beginLoadPreviousBracket();
+    emit(conn, { type: "replay_started" });
+    emitTurn(conn, 3);
+    emitTurn(conn, 4);
+    emit(conn, { type: "replay_complete", count: 2, aborted: true });
+
+    const after = store.getSnapshot();
+    // Staged older turns dropped — transcript and window unchanged.
+    expect(after.transcript.map((t) => t.turnKey)).toEqual(beforeKeys);
+    expect(after.transcript).toHaveLength(3);
+    expect(after.replayWindow).toEqual(beforeWindow);
+    expect(after.phase).toBe("idle");
+  });
+
   it("keeps row ids content-addressed across the prepend ([P06])", () => {
     const { store, conn } = makeStore();
     const ds = new DevTranscriptDataSource(store);

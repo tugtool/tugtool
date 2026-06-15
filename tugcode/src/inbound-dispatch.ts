@@ -125,6 +125,13 @@ export const INBOUND_HANDLERS: InboundHandlers = {
     });
   },
 
+  // Abort an in-flight replay (user cancelled a load-previous / load-all).
+  // Synchronous + idempotent: `cancelReplay` is a no-op when nothing is
+  // running, so a late cancel after the bracket already closed is harmless.
+  cancel_replay: (_msg, { sessionManager }) => {
+    sessionManager?.cancelReplay();
+  },
+
   // `/rewind` diff-stat preview ([#step-7-1]). On throw, surface a failed
   // preview ack rather than an unhandled rejection.
   rewind_preview: (msg, { sessionManager, writeLine }) => {
