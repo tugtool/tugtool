@@ -1,8 +1,8 @@
 <!-- plan authored against devise-skeleton v4 -->
 
-## Fast Refresh Boundary Hygiene — Restore the HMR-never-reloads Invariant {#fast-refresh-hygiene}
+## Fast Refresh Boundary Hygiene — Restore the HMR-never-reloads Invariant (Tier 1) {#fast-refresh-hygiene}
 
-**Purpose:** Stop the transcript's import graph from triggering full page reloads under HMR by converting the spine and the frequently-edited child modules into clean, component-only React Fast Refresh boundaries that self-accept.
+**Purpose:** Stop transcript edits from triggering full page reloads under HMR by (a) making the two transcript spine files clean React Fast Refresh boundaries and (b) detaching the dev-only gallery graph from the entry via a dynamic import — and lock in the invariant that any reload that *does* still happen restores the deck faithfully (cards survive, no orphan sessions).
 
 ---
 
@@ -21,57 +21,64 @@
 
 #### Context {#context}
 
-`@vitejs/plugin-react` treats a module as a self-accepting Fast Refresh boundary **only when every runtime export is a React component** (types/interfaces are erased and don't count). A module that exports a component *plus* a value (a hook, a constant, a `composeX` helper) — "mixed" — is not a boundary; nor is a pure value/util module. When such a module is edited, the HMR update propagates to its importers, and if it reaches the entry (`main.tsx`) **without crossing a component-only boundary**, Vite performs a full page reload.
+`@vitejs/plugin-react` treats a module as a self-accepting Fast Refresh boundary **only when every runtime export is a React component** (types/interfaces are erased and don't count). A "mixed" module (component + a hook/const/helper) or a pure value/util module is non-accepting: when edited, the HMR update propagates to its importers, and if it reaches the entry (`main.tsx`) **without crossing a component-only boundary**, Vite does a full page reload. A full reload re-resumes the transcript from JSONL — a multi-second lock — and violates the project's baked-in invariant that HMR must never reload data/transcript.
 
-A sweep (`tugdeck/scripts/fast-refresh-sweep.ts`) found that the transcript host sits on a **boundary-free spine** — `dev-card-transcript.tsx → dev-card.tsx → main.tsx`, all non-accepting — so editing **any** of ~288 modules in the transcript subtree reaches the entry boundary-free and full-reloads. This violates the project's baked-in invariant that HMR must never reload (it remounts the transcript, a multi-second lock). The prior `dev-restore-sheet` → `dev-restore-sheet-gate.ts` split fixed exactly one file by making it a clean boundary; this plan generalizes that fix to the spine and the hot-path children.
+A sweep (`tugdeck/scripts/fast-refresh-sweep.ts`) found the transcript host sits on a **boundary-free spine** — `dev-card-transcript.tsx → dev-card.tsx → main.tsx`, all non-accepting — so editing anything in the transcript subtree reaches the entry boundary-free and full-reloads. The leaf modules (tool-blocks, body-kinds) are reachable from the entry through **two** static graphs: the spine, and the dev-only gallery graph (`main.tsx → gallery-registrations.tsx → gallery-*.tsx → leaf`). This phase is deliberately **scoped to maximum bang-for-buck with minimum churn**: fix the two spine files, and sever the gallery graph from the entry rather than rewriting dozens of leaves. A separate concern surfaced during investigation — a recent boot regression rebuilt the deck from an empty tugbank cache on reload, blowing away cards and stranding "live in another card" sessions — so this phase also locks in the faithful-restore invariant so that any reload that still occurs is non-destructive.
 
 #### Strategy {#strategy}
 
-- **Fix the file itself, not the file above it.** The robust cure for any module is to make *that module* a clean boundary so it self-accepts — then its import paths are irrelevant. A boundary placed *above* a module only helps modules reachable **only** through it; it does nothing when a second importer (e.g. a gallery) reaches root by another path. The leaves here have exactly that: tool-blocks and body-kinds are imported directly by many `gallery-*` files (and `main.tsx` registers the galleries), a parallel boundary-free graph. So each target must become a boundary **itself**. See [P01].
-- **Land the oracle first.** Make the sweep script importable with an assert/exit-code mode and add a pure-logic drift test, so every later step has a falsifiable, regenerable checkpoint and regressions fail CI ([P05]).
-- **Tier 1 = the spine (2 files).** Evict value exports from `dev-card.tsx` and `dev-card-transcript.tsx` into transparent sibling modules; both become component-only boundaries. This makes the **two spine files themselves** (and the descendants reachable *only* through them) stop reloading — measured ~289 → 208 escapers. It does **not** shield the rest of the subtree: the ~208 leaves still full-reload via their gallery import paths until Tier 2 fixes them.
-- **Tier 2 = hot-path children, grouped — required, not polish.** Apply the same eviction to the modules edited most during transcript work — tool-blocks, body-kinds, transcript chrome/cards, and contexts. Because those leaves are gallery-imported, Tier 2 is what actually **stops the full page reload** for them (self-acceptance is path-independent), not merely an avoid-the-host-remount nicety.
-- **Each move follows one pattern:** non-component exports go to a transparent `*-helpers.ts` / `*-context.ts` sibling; the `.tsx` keeps only components (and erased types). Mirrors the existing `dev-restore-sheet-gate.ts` precedent.
-- **Defer the broad sweep.** Shared tugways primitives (`tug-*`) and lib stores reach root through other graphs and have app-wide consumer fan-out; they are explicit follow-ons, not part of this phase ([P06]).
+- **Frequency and severity are two different problems.** Boundary hygiene reduces *how often* HMR reloads ([P01], [P06]); the faithful-restore guard ensures that any reload that still happens is *non-destructive* ([P07]). This phase does both, but they are independent — the guard is the safety net, the boundaries are the convenience.
+- **Land the oracle first.** Make the sweep importable with an assert/exit-code mode, teach it to model dynamic `import()` as a graph cut, and add a pure-logic drift test — so every later step has a falsifiable, regenerable checkpoint ([P05]).
+- **Fix the spine itself, not the file above it.** The robust cure for the spine is to make `dev-card.tsx` and `dev-card-transcript.tsx` component-only so they self-accept ([P01], [P02]). This stops the full reload for the whole transcript subtree reachable through the spine.
+- **Detach the galleries instead of rewriting every leaf.** The gallery graph is the *other* static path that drags leaves to the entry. Converting `registerGalleryCards()` to a dynamic `import()` ([P06]) severs that path in one move — far less churn than evicting value exports from ~40 leaf modules, which is explicitly **out of scope** ([#non-goals]).
+- **Accept a transcript-host remount on leaf edits.** With the boundary on the spine (not on each leaf), editing a tool-block refreshes at the `dev-card-transcript.tsx` boundary — a transcript-host remount, not a full page reload. No re-resume from JSONL. This is the deliberate bang-for-buck tradeoff; true per-leaf in-place refresh is a deferred follow-on ([#roadmap]).
+- **No codebase reorganization.** Every move is the existing `dev-restore-sheet.tsx → dev-restore-sheet-gate.ts` pattern: non-component exports go to a transparent sibling; the `.tsx` keeps only components. No new abstractions, no runtime/visual change.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- After Tier 1, `bun run scripts/fast-refresh-sweep.ts` reports **0** escaping (full-reload) entries for `dev-card.tsx` and `dev-card-transcript.tsx`. (sweep output)
-- After Tier 1, the transcript-graph full-reload count drops from ~289 to ~208 — i.e. it clears the spine files and spine-only descendants, **not** the whole subtree (the ~208 remaining leaves still reach root via gallery paths). Verified by the sweep's printed total. (sweep output)
-- After each Tier 2 group step, the sweep reports **0** escaping entries for every file in that group's directory — this is the path-independent, authoritative gate (it holds regardless of gallery imports). (sweep `--assert`)
-- A `bun test` drift test fails if any frozen-clean file regains a value export (re-introduces mixed exports). (test run)
-- `bunx tsc --noEmit` is clean after every step (no dangling imports from the moves). (tsc)
+- `bun run scripts/fast-refresh-sweep.ts --assert src/components/tugways/cards/dev-card.tsx src/components/tugways/cards/dev-card-transcript.tsx` exits 0 (neither spine file escapes). (sweep `--assert`)
+- After the gallery detach, the sweep's transcript-graph full-reload total drops materially from its current baseline; the before/after totals are recorded in the integration checkpoint. (sweep output — actual numbers measured, not predicted)
+- Dev smoke: editing `dev-card-transcript.tsx` and editing one transcript tool-block each refresh **without a full page reload** (a transcript-host remount on the leaf edit is acceptable). (manual dev observation)
+- A `bun test` drift test fails if `dev-card.tsx` or `dev-card-transcript.tsx` regains a value export. (test run)
+- A `bun test` guard fails if `main.tsx` constructs the `DeckManager` without first awaiting `tugbankClient.ready()` (faithful-restore invariant). (test run)
+- `bunx tsc --noEmit` is clean after every step. (tsc)
 
 #### Scope {#scope}
 
-1. Refactor `fast-refresh-sweep.ts` into an importable analyzer with a `--assert <files…>` exit-code mode; add a drift test.
-2. Tier 1: make `dev-card.tsx` and `dev-card-transcript.tsx` component-only boundaries by extracting their value exports to new transparent sibling modules and updating the (small) set of importers.
-3. Tier 2: same treatment for the transcript hot-path groups — tool-blocks, body-kinds, transcript chrome/cards, and contexts.
+1. Refactor `fast-refresh-sweep.ts` into an importable analyzer with a `--assert <files…>` exit-code mode, model dynamic `import()` as a graph cut, and add a drift test.
+2. Lock in the faithful-restore invariant: a pure-logic guard test that `main.tsx` awaits `tugbankClient.ready()` before `new DeckManager`, plus a documented decision ([P07]).
+3. Tier 1: make `dev-card.tsx` and `dev-card-transcript.tsx` component-only boundaries by evicting their value exports to transparent sibling modules.
+4. Detach the gallery graph from the entry by converting `registerGalleryCards()` to a dynamic `import()`.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- Splitting shared tugways primitives (`tug-sheet`, `tug-popover`, `tug-alert`, `tug-list-row`, `tug-dialog-button`, `tug-animator`, `theme-provider`, …) — deferred to follow-on ([P06], #roadmap).
-- Splitting lib stores / value-only modules (`lib/code-session-store*`, `lib/tug-dev-log-store*`, `protocol.ts`) — these are value-only (no component to split); they stop reloading once **every** importer path crosses a boundary, which the hot-path tiers achieve for transcript-only consumers (those still imported by `gallery-*` remain — see #roadmap) ([P06]).
-- Any runtime/visual change. This is a pure module-organization refactor; behavior, DOM, and state zones are unchanged.
-- A runtime HMR integration test (fake-DOM is banned; the sweep is the oracle — [P05]).
+- **Tier 2 and beyond — dropped from scope.** Per-leaf eviction of value exports from tool-blocks, body-kinds, transcript chrome/cards, and contexts is **not** done in this phase. With the galleries detached, those leaves stop escaping via the gallery path and refresh at the spine boundary; making each leaf its own boundary (true in-place refresh, no host remount) is a deferred follow-on ([#roadmap]). It is polish, not a requirement.
+- Splitting shared tugways primitives (`tug-sheet`, `tug-popover`, `tug-list-row`, `theme-provider`, …) — deferred ([#roadmap]).
+- Splitting lib stores / value-only modules (`lib/code-session-store*`, `protocol.ts`, …) — deferred ([#roadmap]).
+- Any runtime/visual/state-zone change. This is pure module organization plus a boot-ordering guard; behavior, DOM, and state are unchanged.
+- A runtime/fake-DOM HMR integration test — banned; the sweep is the oracle ([P05]).
+- Re-fixing the `tugbankClient.ready()` boot race — the await is **already restored** in `main.tsx`. This phase only adds the regression guard, it does not re-author the fix.
 
 #### Dependencies / Prerequisites {#dependencies}
 
 - `tugdeck/scripts/fast-refresh-sweep.ts` (already committed) — the analysis oracle this plan extends.
+- `tugbankClient.ready()` await already restored in `main.tsx` boot (committed) — [P07] only guards against its regression.
 - HMR is always running in dev; no manual builds. Checkpoints use `bunx tsc --noEmit`, `bun test`, and the sweep CLI.
 
 #### Constraints {#constraints}
 
 - **WARNINGS ARE ERRORS** (workspace policy); `bunx tsc --noEmit` must stay clean.
 - Use `bun`, never `npm`/`npx`.
-- Tuglaws apply (tugdeck work): one `root.render()` [L01]; external state via `useSyncExternalStore` [L02]; registrations via `useLayoutEffect` [L03]; appearance via CSS/DOM [L06]. The context moves must preserve these — the `createContext` value and consumer hook relocate, but their zone/mechanism is unchanged.
+- Tuglaws apply (tugdeck work): one `root.render()` [L01]; external state via `useSyncExternalStore` [L02]; registrations via `useLayoutEffect` [L03]; appearance via CSS/DOM [L06]. The hook relocation in Tier 1a preserves its zone/mechanism unchanged.
 - Types/interfaces may remain in a `.tsx` boundary file (erased at runtime — they do not break the boundary).
+- No fake-DOM tests (happy-dom is deleted); the faithful-restore guard and the boundary drift test are both **pure-logic** `bun test`.
 
 #### Assumptions {#assumptions}
 
-- The export classifier in the sweep is heuristic but the spine result is confirmed by direct reading; per-step checkpoints catch any misclassification.
-- `registerDevCard` only needs `dev-card.tsx`'s exported `DevCardContent` (it JSX-renders it via a factory) plus `registerCard`/`FeedId` — no unexported internals (verified by reading the function; re-confirm in #step-2).
-- Moving a hook/value to a sibling module preserves identity for all consumers (same symbol, new path).
+- The sweep's export classifier is heuristic but the spine result is confirmed by direct reading; per-step checkpoints catch any misclassification.
+- `registerDevCard` only needs `dev-card.tsx`'s exported `DevCardContent` (it JSX-renders it via a factory) plus `registerCard`/`FeedId` — no unexported internals (re-confirmed in #step-3, [Q02]).
+- Galleries are dev demo surfaces; deferring their registration behind an awaited dynamic `import()` during boot preserves registration-before-construction ordering, so a persisted gallery card still rehydrates ([Q01]).
+- Vite treats a dynamic `import()` as a code-split point, so editing a module reachable from the entry *only* through that dynamic edge does not full-reload the main app chunk — confirmed by the dev smoke in #step-6 ([Q01]).
 
 ---
 
@@ -83,19 +90,19 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Do any context consumers import the Provider and the hook/Context from one path? (OPEN) {#q01-context-barrel}
+#### [Q01] Does detaching the galleries via dynamic `import()` actually stop the full reload for transcript leaves? (OPEN) {#q01-gallery-dynamic-cut}
 
-**Question:** When splitting `createContext` value + consumer hook out of a context `.tsx` (Provider stays), do consumers import both the Provider and the hook from the same module specifier, requiring a re-export/barrel to avoid churn?
+**Question:** When `registerGalleryCards()` becomes a dynamic `import()`, do the gallery-imported leaf modules (tool-blocks, body-kinds) stop reaching the entry along a static non-accepting path — in both the sweep's model **and** Vite's actual full-reload decision?
 
-**Why it matters:** If many consumers import both, a naive split doubles their import lines or forces a barrel that would re-mix the boundary.
+**Why it matters:** The entire bang-for-buck of this phase rests on severing the gallery path instead of rewriting ~40 leaves. If Vite still walks the dynamic-import edge up to the entry on a leaf edit, the leaves keep full-reloading and the cheap path fails.
 
 **Options (if known):**
-- Provider-only stays in `.tsx`; hook + Context move to `*-context.ts`; consumers of the hook update their path (Provider consumers are usually few — mount sites).
-- Add a type-only re-export if a consumer needs the `Context` type from the Provider file.
+- Await the dynamic import inside the boot IIFE before `new DeckManager` so registration timing is unchanged; the `import()` is still a separate chunk regardless of `await`.
+- If a persisted gallery card must rehydrate before galleries load, the awaited-import option covers it; a lazy-on-open option would not and is rejected.
 
-**Plan to resolve:** Per-context `grep` of importers at the start of #step-8; resolve each context individually inside that step.
+**Plan to resolve:** In #step-1 teach the sweep to treat dynamic `import()` as a graph cut (the regex already ignores it — make it explicit and tested). In #step-6, re-run the sweep and perform a dev smoke: edit a tool-block, confirm the page does not reload.
 
-**Resolution:** OPEN — resolved per-context during #step-8.
+**Resolution:** OPEN — confirmed by sweep model in #step-1 and dev smoke in #step-6.
 
 #### [Q02] Does `registerDevCard` reference any non-exported `dev-card.tsx` internal? (OPEN) {#q02-register-internals}
 
@@ -103,9 +110,9 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 **Why it matters:** If it closes over a module-private helper, that helper must also be exported (or moved), enlarging the change.
 
-**Plan to resolve:** Read the full `registerDevCard` body in #step-2 before moving it. Initial read shows it uses only `registerCard`, `<DevCardContent>`, and `FeedId` — all importable.
+**Plan to resolve:** Read the full `registerDevCard` body in #step-3 before moving it. Initial read shows it uses only `registerCard`, `<DevCardContent>`, and `FeedId` — all importable.
 
-**Resolution:** OPEN — confirmed in #step-2.
+**Resolution:** OPEN — confirmed in #step-3.
 
 ---
 
@@ -113,38 +120,45 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
+| Dynamic-import gallery cut doesn't stop Vite full reload | high | med | [Q01]: model in sweep + dev smoke in #step-6 before declaring done | dev smoke still reloads on leaf edit |
 | A "boundary" still has a missed value export | med | med | sweep `--assert` per step proves `escapes=false` | sweep still lists the file |
-| Moved hook/value breaks import paths app-wide | med | low | `tsc --noEmit` checkpoint; Tier-1 fan-out verified at 1 site each | tsc errors |
-| Tier-1-only still **full-reloads** gallery-imported children (not merely a host remount) | med | high (until Tier 2) | the leaves are gallery-imported, so only self-acceptance fixes them; sequence the hot-path Tier 2 groups promptly after Tier 1 | sweep still lists tool-blocks/body-kinds after Tier 1 (expected — they clear in Tier 2) |
-| Context split churns many consumers | med | med | [Q01] per-context grep; Provider-only stays, hook/Context move | large diff in #step-8 |
+| Deferring gallery registration breaks a persisted gallery card | med | low | await the dynamic import before `new DeckManager` ([Q01]) | gallery card fails to rehydrate at boot |
+| Moved hook/value breaks import paths | med | low | `tsc --noEmit` checkpoint; Tier-1 fan-out is 1 site each | tsc errors |
+| Faithful-restore guard is brittle (source-text match) | low | med | match a stable token (`tugbankClient.ready()` awaited before `new DeckManager`), not whitespace | guard fails on an innocuous edit |
 
 **Risk R01: A boundary that isn't.** {#r01-not-a-boundary}
 
-- **Risk:** A file is declared "clean" but retains a value export (or a PascalCase const the eye reads as a component), so it still escapes.
-- **Mitigation:** Every step's checkpoint runs the sweep against the touched files; `escapes=false` is the gate.
+- **Risk:** A spine file is declared "clean" but retains a value export (or a PascalCase const the eye reads as a component), so it still escapes.
+- **Mitigation:** Every step's checkpoint runs the sweep against the touched files; `escapes=false` is the gate; the drift test freezes the cleaned files.
 - **Residual risk:** The classifier could mis-call a genuine component as a value; the drift test freezes only files proven clean, so a false alarm is visible, not silent.
+
+**Risk R02: A reload slips through and is destructive.** {#r02-destructive-reload}
+
+- **Risk:** Boundary hygiene cannot remove *every* reload trigger (editing `main.tsx`, `hmr-bridge.ts` self-invalidating, vite config, the deferred galleries/primitives). If such a reload rebuilds the deck from a pre-DEFAULTS cache, cards vanish and sessions strand — the exact regression that motivated this plan.
+- **Mitigation:** [P07] documents the invariant; #step-2 adds a guard test that `main.tsx` awaits `tugbankClient.ready()` before `new DeckManager`.
+- **Residual risk:** The guard is a source-text assertion, not a live boot test; a real reload app-test is a deferred follow-on ([#roadmap]).
 
 ---
 
 ### Design Decisions {#design-decisions}
 
-#### [P01] Make the edited file itself the boundary (DECIDED) {#p01-file-is-boundary}
+#### [P01] Make the spine file itself the boundary (DECIDED) {#p01-file-is-boundary}
 
-**Decision:** The fix for each target is to make *that module* component-only so it self-accepts; we do not rely on installing a boundary above it.
+**Decision:** The fix for each spine target is to make *that module* component-only so it self-accepts; we do not install a boundary above it.
 
 **Rationale:**
-- A boundary above only converts a page reload into a transcript-host remount (still a multi-second lock).
-- `dev-card-transcript.tsx` is imported by both the spine and `gallery-transcript-copy.tsx`; a boundary above on the spine would not stop the gallery path from making it escape. A self-accepting file is immune to import path.
+- A boundary above only converts a page reload into a remount of whatever the boundary wraps.
+- `dev-card-transcript.tsx` is imported by both the spine and the gallery graph; making the file itself a boundary is immune to import path (it self-accepts regardless of which graph reaches it).
 
-**Implications:** Every target `.tsx` ends the phase exporting only components (+ erased types). All non-component exports relocate.
+**Implications:** `dev-card.tsx` and `dev-card-transcript.tsx` end the phase exporting only components (+ erased types). Their non-component exports relocate.
 
 #### [P02] Evict value exports to transparent sibling modules (DECIDED) {#p02-sibling-eviction}
 
-**Decision:** Non-component exports move to a sibling `*-helpers.ts` / `*-format.ts` / `*-context.ts`, following the existing `dev-restore-sheet.tsx` → `dev-restore-sheet-gate.ts` precedent. Types/interfaces may stay in the `.tsx`.
+**Decision:** Non-component exports move to a sibling `*-helpers.ts` / `*-context.ts`, following the existing `dev-restore-sheet.tsx → dev-restore-sheet-gate.ts` precedent. Types/interfaces may stay in the `.tsx`.
 
-**Rationale:** Smallest, idiomatic change; the sibling is transparent (gets absorbed by the boundary above) and keeps the `.tsx` clean.
+**Rationale:** Smallest, idiomatic change; the sibling is transparent (absorbed by the boundary above) and keeps the `.tsx` clean. No new abstractions.
 
-**Implications:** New sibling files per target; importers of the moved symbols update their specifier.
+**Implications:** New sibling files per spine target; importers of the moved symbols update their specifier.
 
 #### [P03] `registerDevCard` moves to a registration shim (DECIDED) {#p03-registration-shim}
 
@@ -156,27 +170,55 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 #### [P04] `useDevCardServices` moves to its own hook module (DECIDED) {#p04-use-dev-card-services}
 
-**Decision:** `useDevCardServices` moves to a new `use-dev-card-services.ts`, importing `cardServicesStore` from `lib/card-services-store.ts` and the `DevCardServices` type from `dev-card.tsx` (type import — erased). Its single real consumer (`dev-card-transcript.tsx`) updates its import.
+**Decision:** `useDevCardServices` moves to a new `use-dev-card-services.ts`, importing `cardServicesStore` from `lib/card-services-store.ts` and the `DevCardServices` type from `dev-card.tsx` (type import — erased). Its consumer (`dev-card-transcript.tsx`) updates its import.
 
-**Rationale:** The hook is a thin `useSyncExternalStore` wrapper over the existing store ([L02]); a dedicated module keeps `dev-card.tsx` clean without entangling the store file's responsibilities.
+**Rationale:** The hook is a thin `useSyncExternalStore` wrapper over the existing store ([L02]); a dedicated module keeps `dev-card.tsx` clean without entangling the store file.
 
 **Implications:** New file `use-dev-card-services.ts`; one import change in `dev-card-transcript.tsx`. `DevCardServices` interface stays in `dev-card.tsx` (erased; safe).
 
 #### [P05] The sweep is the regression oracle; no fake-DOM HMR test (DECIDED) {#p05-sweep-oracle}
 
-**Decision:** Extend `fast-refresh-sweep.ts` with an importable `analyze()` and a `--assert <files…>` mode (non-zero exit if any named file escapes); add a pure-logic `bun test` drift test over a frozen-clean file set. No runtime/fake-DOM HMR test.
+**Decision:** Extend `fast-refresh-sweep.ts` with an importable `analyze()`, a `--assert <files…>` mode (non-zero exit if any named file escapes), and explicit dynamic-`import()`-as-cut modeling; add a pure-logic `bun test` drift test over a frozen-clean file set. No runtime/fake-DOM HMR test.
 
-**Rationale:** happy-dom is deleted and fake-DOM render tests are banned; the static reachability analysis is the faithful, fast oracle for "would this edit reload?". The industry-standard guard, `eslint-plugin-react-refresh` (its `only-export-components` rule), would catch mixed exports at author-time in *every* file — but the project ships no eslint, so adding it is net-new tooling out of scope here; the sweep oracle is the deliberate substitute.
+**Rationale:** happy-dom is deleted and fake-DOM render tests are banned; the static reachability analysis is the faithful, fast oracle for "would this edit reload?". Modeling dynamic imports as cuts is required to make the gallery-detach lever measurable ([P06], [Q01]).
 
 **Implications:** The script gains a small CLI/exported surface; one new test file.
 
-#### [P06] Scope to transcript hot-path; defer shared primitives (DECIDED) {#p06-scope}
+#### [P06] Detach the gallery graph via dynamic import — the bang-for-buck lever (DECIDED) {#p06-gallery-detach}
 
-**Decision:** This phase covers the spine + tool-blocks + body-kinds + transcript chrome/cards + contexts. Shared `tug-*` primitives, `dev-assistant-renderer-dispatch.ts`, and lib stores are follow-ons.
+**Decision:** Convert `registerGalleryCards()` in `main.tsx` from a static import + sync call to an awaited dynamic `import()` inside the boot IIFE, before `new DeckManager`. This severs the `main.tsx → gallery-registrations → gallery-* → leaf` static path. We do **not** evict value exports from individual gallery-imported leaves (the dropped Tier 2).
 
-**Rationale:** The hot-path groups are what developers edit during transcript work; shared primitives have broad consumer fan-out and reach root via other graphs — higher blast radius, lower transcript-edit frequency.
+**Rationale:**
+- The galleries are the *other* static graph (besides the spine) that drags transcript leaves to the entry. Cutting it is one edit; rewriting ~40 leaves is a codebase reorganization the owner explicitly declined.
+- Galleries are dev-only demo surfaces, rarely edited during transcript work; a code-split for them is reasonable on its own merits.
+- The sweep's import scan ignores dynamic `import()` (it matches only `… from '…'`), and Vite treats `import()` as a code-split point — so the leaves' only remaining static path to the entry is the spine, which Tier 1 closes.
 
-**Implications:** Residual escapers remain after this phase but are not on the transcript edit hot path; tracked in #roadmap.
+**Implications:** Registration becomes async; awaited before `new DeckManager` so a persisted gallery card still rehydrates ([Q01]). One import/call-site change in `main.tsx`. Leaves still refresh at the spine boundary (host remount), not in place — accepted ([#strategy]).
+
+#### [P07] Reloads stay possible and must be non-destructive — faithful restore (DECIDED) {#p07-faithful-restore}
+
+**Decision:** Boundary hygiene reduces reload *frequency* but cannot eliminate it; the invariant is that any reload that still occurs must restore the deck faithfully. Concretely: `main.tsx` must **never construct or persist the deck from a tugbank cache that has not received its first DEFAULTS frame** — i.e. it must `await tugbankClient.ready()` before `new DeckManager`. The await is already restored in code; this phase guards it against regression.
+
+**Rationale:**
+- A recent boot change commented out `tugbankClient.ready()`, so a reload raced the DEFAULTS frame; on a cold cache `readLayout` returned null → `buildDefaultLayout()` (empty deck) → the card was blown away, and the still-live server session showed as an orphan "Live in another card" row in the picker.
+- The sweep oracle proves "did we avoid a reload"; nothing proves "a reload that slips through is non-destructive." This decision closes that gap.
+
+**Implications:** A pure-logic guard test asserts the await precedes `new DeckManager` in `main.tsx`. A live reload app-test is a deferred follow-on ([#roadmap]).
+
+---
+
+### Deep Dives (Optional) {#deep-dives}
+
+#### Why two graphs, and why detaching one is enough {#two-graphs}
+
+The boundary rule (below) makes a full reload happen iff an edited module's HMR propagation reaches the entry along non-accepting modules only. A transcript leaf (e.g. a `*-tool-block.tsx`) reaches the entry two ways:
+
+1. **Spine:** `leaf → dev-assistant-renderer-dispatch.ts (mixed/non-accepting) → dev-card-transcript.tsx → dev-card.tsx → dev-card-registration.tsx → main.tsx`.
+2. **Galleries:** `leaf → gallery-*.tsx → gallery-registrations.tsx → main.tsx`.
+
+Tier 1 ([P01]) makes `dev-card-transcript.tsx` a boundary, so propagation along path 1 is **absorbed** at the transcript host (remount, no reload). But path 2 is still boundary-free, so a leaf edit *still* full-reloads via the galleries. Detaching the galleries ([P06]) removes path 2 from the static graph, leaving only path 1 — which Tier 1 already absorbs. Net: editing a leaf remounts the transcript host; it does not reload the page. Editing the spine files refreshes them in place. No per-leaf rewrite required.
+
+The remaining cost — a transcript-host remount when a leaf is edited — is the price of *not* making each leaf its own boundary. Eliminating that remount (true per-leaf in-place refresh) is the deferred follow-on, and is polish, not a requirement.
 
 ---
 
@@ -184,20 +226,45 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 #### Boundary rule (normative) {#boundary-rule}
 
-- **Boundary (self-accepting):** ≥1 component export, **zero** runtime non-component exports (types/interfaces excluded). Editing it refreshes in place; propagation stops.
+- **Boundary (self-accepting):** ≥1 component export, **zero** runtime non-component exports (types/interfaces excluded), or a manual `import.meta.hot.accept()`. Editing it refreshes in place; propagation stops.
 - **Mixed:** ≥1 component + ≥1 value export → non-accepting → propagates.
 - **Transparent:** zero component exports (value/util/type/css only) → non-accepting → propagates, absorbed by the nearest boundary above.
-- **Full page reload** occurs iff an edited module's propagation reaches a no-importer entry along non-accepting modules only.
+- **Dynamic-import edge:** a module reached from the entry *only* via a dynamic `import()` is not on the static propagation path to the entry; Vite code-splits it.
+- **Full page reload** occurs iff an edited module's propagation reaches a no-importer entry along static, non-accepting modules only.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
-> This phase introduces **no new state**. It relocates existing exports (including `createContext` values and hooks) without changing their zone or mechanism. The table records the touched state-bearing exports and confirms their zone is preserved.
+> This phase introduces **no new state**. It relocates one existing hook and the gallery registration call without changing zone or mechanism.
 
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
 | `cardServicesStore` services (via `useDevCardServices`) | structure / external-data | module store + `useSyncExternalStore` (unchanged; hook only relocates) | [L02] |
-| context values (`ToolBlock*Context`, `Scroller*`, `OuterScrollport`, `CardData`, `ResponderChain`, `TugPane*`) | structure | `createContext` + Provider (Provider stays in `.tsx`; Context+hook move to `*-context.ts`) | [L02], [L03] |
-| transcript cell-menu / model-name (`useTranscriptCellMenu`, `useSessionModelName`) | local-data | `useState`/`useRef`/`useMemo` (unchanged; hook only relocates) | [L06] |
+| gallery card-type registry (via `registerGalleryCards`) | structure | `registerCard` call (unchanged; only deferred behind an awaited dynamic `import()`) | [L02] |
+| boot deck construction order | structure | `await tugbankClient.ready()` before `new DeckManager` (unchanged; guarded) | [L02] |
+
+---
+
+### Definitive Symbol Inventory {#symbol-inventory}
+
+#### New files {#new-files}
+
+| File | Purpose |
+|------|---------|
+| `src/lib/__tests__/fast-refresh-boundary.test.ts` | Pure-logic drift test: frozen-clean files report `escapes=false`. |
+| `src/__tests__/boot-faithful-restore.test.ts` | Pure-logic guard: `main.tsx` awaits `tugbankClient.ready()` before `new DeckManager` ([P07]). |
+| `src/components/tugways/cards/dev-card-registration.tsx` | Transparent shim exporting `registerDevCard` ([P03]). |
+| `src/components/tugways/cards/use-dev-card-services.ts` | Hook module for `useDevCardServices` ([P04]). |
+| `src/components/tugways/cards/transcript-host-helpers.ts` | Sibling for `dev-card-transcript.tsx`'s evicted value exports ([P02]). Exact symbol set confirmed by the sweep in #step-4. |
+
+#### Symbols to add / modify {#symbols}
+
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `analyze()` | fn (new export) | `scripts/fast-refresh-sweep.ts` | Exposes graph build + `escapes()` for the drift test/CLI. |
+| `--assert` mode | CLI flag | `scripts/fast-refresh-sweep.ts` | Non-zero exit if any named file escapes. |
+| `registerDevCard` | fn (relocate) | → `dev-card-registration.tsx` | [P03]; `main.tsx` import updates. |
+| `useDevCardServices` | hook (relocate) | → `use-dev-card-services.ts` | [P04]; `dev-card-transcript.tsx` import updates. |
+| `registerGalleryCards` | call (defer) | `main.tsx` | [P06]; static import → awaited dynamic `import()`. |
 
 ---
 
@@ -207,14 +274,15 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Drift Prevention** | Assert frozen-clean files stay boundary-clean (no re-mixed exports) | Every step after Tier 1 |
-| **Contract (sweep)** | `--assert` reports `escapes=false` for touched files | Every step checkpoint |
+| **Contract (sweep)** | `--assert` reports `escapes=false` for touched files | Every Tier 1 / gallery step checkpoint |
+| **Drift Prevention** | Frozen-clean spine files stay boundary-clean; `main.tsx` keeps the `ready()` await before deck construction | #step-1, #step-2, and after each Tier 1 step |
 | **Type check** | `tsc --noEmit` clean after each move | Every step |
 
 #### What stays out of tests {#test-non-goals}
 
-- Runtime/visual HMR behavior — covered by the static sweep oracle; fake-DOM tests are banned ([P05]).
-- Per-symbol unit tests for moved helpers — pure relocation, no logic change; `tsc` + existing tests cover them.
+- Runtime/visual HMR behavior — covered by the static sweep oracle + a manual dev smoke; fake-DOM tests are banned ([P05]).
+- A live reload app-test for faithful restore — deferred follow-on ([#roadmap]); this phase uses the pure-logic source guard.
+- Per-symbol unit tests for relocated hooks/helpers — pure relocation, no logic change; `tsc` + existing tests cover them.
 - Mock-store assertion tests — banned project-wide.
 
 ---
@@ -227,41 +295,61 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Sweep oracle: importable analyzer + `--assert` + drift test | pending | — |
-| #step-2 | Tier 1a: make `dev-card.tsx` a boundary | pending | — |
-| #step-3 | Tier 1b: make `dev-card-transcript.tsx` a boundary | pending | — |
-| #step-4 | Tier 1 integration checkpoint | pending | — |
-| #step-5 | Tier 2: tool-blocks group | pending | — |
-| #step-6 | Tier 2: body-kinds group | pending | — |
-| #step-7 | Tier 2: transcript chrome/cards group | pending | — |
-| #step-8 | Tier 2: contexts group | pending | — |
-| #step-9 | Tier 2 integration checkpoint | pending | — |
+| #step-1 | Sweep oracle: importable analyzer + `--assert` + dynamic-import modeling + drift test | pending | — |
+| #step-2 | Faithful-restore guard: assert `ready()` awaited before deck construction | pending | — |
+| #step-3 | Tier 1a: make `dev-card.tsx` a boundary | pending | — |
+| #step-4 | Tier 1b: make `dev-card-transcript.tsx` a boundary | pending | — |
+| #step-5 | Detach galleries via dynamic import | pending | — |
+| #step-6 | Integration checkpoint: sweep totals + dev smoke | pending | — |
 
-#### Step 1: Sweep oracle — importable analyzer + `--assert` + drift test {#step-1}
+#### Step 1: Sweep oracle — importable analyzer + `--assert` + dynamic-import modeling + drift test {#step-1}
 
-**Commit:** `tugdeck(hmr): make fast-refresh-sweep importable with --assert mode + drift test`
+**Commit:** `tugdeck(hmr): make fast-refresh-sweep importable with --assert + dynamic-import cuts + drift test`
 
-**References:** [P05] (#p05-sweep-oracle, #boundary-rule, #success-criteria)
+**References:** [P05] (#p05-sweep-oracle), [Q01] (#q01-gallery-dynamic-cut), (#boundary-rule, #success-criteria)
 
 **Artifacts:**
-- `scripts/fast-refresh-sweep.ts` refactored: export `analyze(): { reloaders, census, focusGraph }`; keep the human report under a `main()`; add `--assert <file…>` that exits non-zero if any named file escapes.
+- `scripts/fast-refresh-sweep.ts` refactored: export `analyze(): { reloaders, census, focusGraph }`; keep the human report under a `main()`; add `--assert <file…>` that exits non-zero if any named file escapes; make the dynamic-`import()`-as-cut behavior explicit and covered (today the import scan silently ignores `import()` — assert that a dynamically-imported-only module is treated as off the static path).
 - New `src/lib/__tests__/fast-refresh-boundary.test.ts` (pure-logic `bun test`) asserting a frozen set of files report `escapes=false`.
 
 **Tasks:**
 - [ ] Extract the graph build + `escapes()` into an exported `analyze()`; preserve current CLI output via `main()`.
-- [ ] Add `--assert` mode (accepts file globs/paths; exit 1 + print offenders if any escape).
-- [ ] Seed the drift test's frozen list with the files this phase will clean (initially the spine targets; extend per step).
+- [ ] Add `--assert` mode (accepts file paths; exit 1 + print offenders if any escape).
+- [ ] Add a focused assertion/test that a module reached from the entry only via a dynamic `import()` is not flagged as escaping (grounds [Q01]).
+- [ ] Seed the drift test's frozen list empty (extended per later step); assert the oracle wiring itself.
 
 **Tests:**
-- [ ] `bun test src/lib/__tests__/fast-refresh-boundary.test.ts` runs and (pre-fix) is allowed to assert only the oracle wiring, not yet the spine.
+- [ ] `bun test src/lib/__tests__/fast-refresh-boundary.test.ts` runs (pre-fix: asserts only oracle wiring + the dynamic-import-cut behavior, not yet the spine).
 
 **Checkpoint:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts --assert src/main.tsx` exits non-zero (main is the entry — proves assert mode detects an escaper).
+- [ ] `bun run scripts/fast-refresh-sweep.ts --assert src/main.tsx` exits non-zero (entry is an escaper — proves `--assert` detects one).
 - [ ] `bunx tsc --noEmit` clean.
 
 ---
 
-#### Step 2: Tier 1a — make `dev-card.tsx` a boundary {#step-2}
+#### Step 2: Faithful-restore guard — assert `ready()` awaited before deck construction {#step-2}
+
+**Commit:** `tugdeck(hmr): guard that boot awaits tugbankClient.ready() before constructing the deck`
+
+**References:** [P07] (#p07-faithful-restore), Risk R02 (#r02-destructive-reload), (#context)
+
+**Artifacts:**
+- New `src/__tests__/boot-faithful-restore.test.ts` (pure-logic `bun test`): reads `src/main.tsx` source and asserts `await tugbankClient.ready()` appears and is **not** commented out, and that it precedes `new DeckManager(`. Match a stable token, tolerant of whitespace/formatting.
+
+**Tasks:**
+- [ ] Confirm `main.tsx` currently awaits `tugbankClient.ready()` before `new DeckManager` (already restored — verify).
+- [ ] Write the guard test against the source text; fail clearly if the await is removed, commented, or reordered after construction.
+
+**Tests:**
+- [ ] `bun test src/__tests__/boot-faithful-restore.test.ts` green on the current (restored) boot.
+
+**Checkpoint:**
+- [ ] `bun test src/__tests__/boot-faithful-restore.test.ts` passes; temporarily commenting the await locally makes it fail (sanity-check the guard, then revert).
+- [ ] `bunx tsc --noEmit` clean.
+
+---
+
+#### Step 3: Tier 1a — make `dev-card.tsx` a boundary {#step-3}
 
 **Depends on:** #step-1
 
@@ -272,7 +360,7 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 **Artifacts:**
 - New `src/components/tugways/cards/dev-card-registration.tsx` exporting `registerDevCard`.
 - New `src/components/tugways/cards/use-dev-card-services.ts` exporting `useDevCardServices`.
-- `dev-card.tsx` left exporting only `DevCardContent`, `DevCardBody` (+ erased types `DevCardContentProps`, `DevCardServices`, `DevTurnTrailingRenderer`, `DevTurnTrailingContext`).
+- `dev-card.tsx` left exporting only `DevCardContent`, `DevCardBody` (+ erased types).
 - Updated importers: `main.tsx` (registerDevCard from shim), `dev-card-transcript.tsx` (useDevCardServices from new hook module).
 
 **Tasks:**
@@ -282,34 +370,35 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 - [ ] Update `main.tsx` and `dev-card-transcript.tsx` import specifiers.
 
 **Tests:**
-- [ ] Extend the drift test's frozen list with `dev-card.tsx`.
+- [ ] Extend the drift frozen list with `dev-card.tsx`.
 
 **Checkpoint:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts --assert src/components/tugways/cards/dev-card.tsx` exits 0 (no longer escapes).
+- [ ] `bun run scripts/fast-refresh-sweep.ts --assert src/components/tugways/cards/dev-card.tsx` exits 0.
 - [ ] `bunx tsc --noEmit` clean.
 
 ---
 
-#### Step 3: Tier 1b — make `dev-card-transcript.tsx` a boundary {#step-3}
+#### Step 4: Tier 1b — make `dev-card-transcript.tsx` a boundary {#step-4}
 
-**Depends on:** #step-2
+**Depends on:** #step-3
 
 **Commit:** `tugdeck(hmr): split transcript helpers out of dev-card-transcript to make it a refresh boundary`
 
 **References:** [P01] (#p01-file-is-boundary), [P02] (#p02-sibling-eviction), (#state-zone-mapping)
 
 **Artifacts:**
-- New sibling(s) under `cards/` (e.g. `transcript-host-helpers.ts`) exporting `useSessionModelName`, `formatTranscriptTimestamp`, `useTranscriptCellMenu`.
+- New sibling `src/components/tugways/cards/transcript-host-helpers.ts` exporting the value exports the sweep flags on `dev-card-transcript.tsx` (e.g. `useSessionModelName`, `formatTranscriptTimestamp`, `useTranscriptCellMenu` — confirm the exact set at step time).
 - `dev-card-transcript.tsx` left exporting only `DevTranscriptHost` (+ erased types).
-- Updated importer: `gallery-transcript-copy.tsx` (useTranscriptCellMenu from the new sibling).
+- Updated importer(s): any external consumer (e.g. `gallery-transcript-copy.tsx` consuming `useTranscriptCellMenu`) updates its import.
 
 **Tasks:**
-- [ ] Move the three hooks/fns to the sibling; keep `CopyMarkdownResolver`/`TurnTrailing*`/`DevTranscriptHandle` types in place (erased).
-- [ ] Update `gallery-transcript-copy.tsx` import (the only external consumer of `useTranscriptCellMenu`).
+- [ ] Run the sweep to get the authoritative value-export list on `dev-card-transcript.tsx`.
+- [ ] Move those hooks/fns to the sibling; keep erased types in place.
+- [ ] Update each external consumer's import specifier.
 - [ ] Verify no remaining value export on `dev-card-transcript.tsx`.
 
 **Tests:**
-- [ ] Add `dev-card-transcript.tsx` to the drift test frozen list.
+- [ ] Add `dev-card-transcript.tsx` to the drift frozen list.
 
 **Checkpoint:**
 - [ ] `bun run scripts/fast-refresh-sweep.ts --assert src/components/tugways/cards/dev-card-transcript.tsx` exits 0.
@@ -317,167 +406,81 @@ Anchors are explicit, kebab-case, and stable. Plan-local decisions use `[P01]` (
 
 ---
 
-#### Step 4: Tier 1 integration checkpoint {#step-4}
+#### Step 5: Detach galleries via dynamic import {#step-5}
 
-**Depends on:** #step-2, #step-3
+**Depends on:** #step-4
+
+**Commit:** `tugdeck(hmr): defer registerGalleryCards behind a dynamic import to detach the gallery graph`
+
+**References:** [P06] (#p06-gallery-detach), [Q01] (#q01-gallery-dynamic-cut), (#two-graphs)
+
+**Artifacts:**
+- `main.tsx`: replace the static `import { registerGalleryCards } from ".../gallery-registrations"` + sync call with an awaited dynamic `import(".../gallery-registrations").then((m) => m.registerGalleryCards())` placed in the boot IIFE before `new DeckManager`.
+
+**Tasks:**
+- [ ] Confirm `registerGalleryCards` is the only static import that pulls `gallery-registrations` (and thus the gallery graph) into the entry chunk.
+- [ ] Convert to the awaited dynamic import before deck construction; verify a persisted gallery card still rehydrates ([Q01]).
+- [ ] Re-run the sweep; confirm gallery-imported leaves are no longer reachable from the entry via the gallery path.
+
+**Tests:**
+- [ ] No new test file; covered by the sweep delta in #step-6 and the dev smoke.
+
+**Checkpoint:**
+- [ ] `bun run scripts/fast-refresh-sweep.ts` — the gallery graph no longer connects leaves to the entry (gallery files drop out of the entry-reachable escaper set).
+- [ ] `bunx tsc --noEmit` clean.
+
+---
+
+#### Step 6: Integration checkpoint — sweep totals + dev smoke {#step-6}
+
+**Depends on:** #step-2, #step-3, #step-4, #step-5
 
 **Commit:** `N/A (verification only)`
 
-**References:** [P01] (#p01-file-is-boundary), (#success-criteria)
+**References:** [P01] (#p01-file-is-boundary), [P06] (#p06-gallery-detach), [P07] (#p07-faithful-restore), [Q01] (#q01-gallery-dynamic-cut), (#success-criteria)
 
 **Tasks:**
-- [ ] Re-run the full sweep; confirm both spine files cleared and record the new transcript-graph full-reload total (expected: ~289 → ~208 — the spine files plus spine-only descendants clear; the ~208 gallery-imported leaves are *expected to remain* and are cleared in Tier 2).
+- [ ] Re-run the full sweep; record the transcript-graph full-reload total before/after this phase (actual measured numbers).
+- [ ] Confirm both spine files report `escapes=false`.
 
 **Tests:**
 - [ ] `bun test src/lib/__tests__/fast-refresh-boundary.test.ts` green with both spine files frozen.
+- [ ] `bun test src/__tests__/boot-faithful-restore.test.ts` green.
 
 **Checkpoint:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts` — neither spine file appears in the escaper list and the total is ~208 (down from ~289; a non-zero residual here is correct, not a failure).
-- [ ] Manual smoke (optional): edit `dev-card-transcript.tsx` in dev → HMR refreshes without a page reload.
-
----
-
-#### Step 5: Tier 2 — tool-blocks group {#step-5}
-
-**Depends on:** #step-4
-
-**Commit:** `tugdeck(hmr): make tool-block components clean refresh boundaries`
-
-**References:** [P01] (#p01-file-is-boundary), [P02] (#p02-sibling-eviction), [P06] (#p06-scope)
-
-**Artifacts:**
-- For each `src/components/tugways/cards/tool-blocks/*-tool-block.tsx` (ask-user-question, bash, cron, default, edit, glob, grep, monitor, notebook-edit, read, remote-trigger, share-onboarding-guide, skill, task-inline, task-mgmt, task, web-fetch, web-search, worktree, write) plus `middle-ellipsis-path.tsx` and `tool-block-chrome.tsx`: evict `narrowX`/`composeX`/`deriveX`/constant exports to a `*-helpers.ts` sibling; leave the `.tsx` component-only. (`collapse-context.tsx` is handled in #step-8.)
-
-**Tasks:**
-- [ ] Run the sweep to get the authoritative current list of escaping `tool-blocks/*` files.
-- [ ] For each, move non-component exports to a sibling; update intra-group import sites.
-
-**Tests:**
-- [ ] Extend the drift frozen list with the cleaned tool-block files.
-
-**Checkpoint:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts --assert 'src/components/tugways/cards/tool-blocks/*-tool-block.tsx'` exits 0.
-- [ ] `bunx tsc --noEmit` clean.
-
----
-
-#### Step 6: Tier 2 — body-kinds group {#step-6}
-
-**Depends on:** #step-4
-
-**Commit:** `tugdeck(hmr): make body-kind blocks clean refresh boundaries`
-
-**References:** [P01] (#p01-file-is-boundary), [P02] (#p02-sibling-eviction)
-
-**Artifacts:**
-- For `src/components/tugways/body-kinds/{agent-transcript,diff,file,json-tree,path-list,search-result,terminal,todo-list}-block.tsx` and `body-kinds/affordances/{block-copy-button.tsx,index.ts}`: evict formatters/parsers/constants to siblings; `.tsx` component-only. For the `affordances/index.ts` barrel, ensure it re-exports only components or is split so it isn't a mixed boundary.
-
-**Tasks:**
-- [ ] Sweep for the current body-kinds escaper list; move helpers per file.
-- [ ] Resolve the `affordances/index.ts` barrel (components-only re-export, or move `useBlockFoldState`/constants out).
-
-**Tests:**
-- [ ] Extend the drift frozen list with the cleaned body-kinds files.
-
-**Checkpoint:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts --assert 'src/components/tugways/body-kinds/**'` exits 0.
-- [ ] `bunx tsc --noEmit` clean.
-
----
-
-#### Step 7: Tier 2 — transcript chrome/cards group {#step-7}
-
-**Depends on:** #step-4
-
-**Commit:** `tugdeck(hmr): make transcript chrome/cards clean refresh boundaries`
-
-**References:** [P01] (#p01-file-is-boundary), [P02] (#p02-sibling-eviction)
-
-**Artifacts:**
-- For `chrome/{dev-error-block,dev-permission-dialog,dev-question-dialog,dev-session-init-banner,dev-thinking-block}.tsx` and `cards/{dev-card-telemetry-renderers,dev-card-z1c,tug-atom-text-body,tug-attachment-strip}.tsx`: evict constants/parsers/format helpers to siblings; `.tsx` component-only. (Dialogs carry preservation-key constants and `parseX`/`composeX` helpers — move those out.)
-
-**Tasks:**
-- [ ] Sweep for the current escaper list in this group; move helpers per file; update import sites.
-
-**Tests:**
-- [ ] Extend the drift frozen list with the cleaned chrome/cards files.
-
-**Checkpoint:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts --assert` over the listed files exits 0.
-- [ ] `bunx tsc --noEmit` clean.
-
----
-
-#### Step 8: Tier 2 — contexts group {#step-8}
-
-**Depends on:** #step-4
-
-**Commit:** `tugdeck(hmr): split context values from providers to make context modules clean boundaries`
-
-**References:** [P01] (#p01-file-is-boundary), [P02] (#p02-sibling-eviction), [Q01] (#q01-context-barrel), (#state-zone-mapping)
-
-**Artifacts:**
-- For `cards/tool-blocks/collapse-context.tsx`, `internal/scroller-context.tsx`, `internal/outer-scrollport-context.tsx`, `hooks/use-card-data.ts`, `responder-chain-provider.tsx`, `chrome/tug-pane.tsx`: move the `createContext` value + consumer hook to a `*-context.ts` (transparent); keep the Provider component in the `.tsx` (boundary). Preserve [L02]/[L03] zones.
-
-**Tasks:**
-- [ ] Resolve [Q01] per context: grep importers, confirm Provider-only stays in `.tsx`.
-- [ ] Move Context + hook to `*-context.ts`; update consumer import paths.
-- [ ] For `tug-pane.tsx` (multiple contexts + `CARD_TITLE_BAR_HEIGHT` + `useCardDirty`): move all value exports out, keep `CardTitleBar`/`TugPane` components.
-
-**Tests:**
-- [ ] Extend the drift frozen list with the cleaned context Provider files.
-
-**Checkpoint:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts --assert` over the listed Provider `.tsx` files exits 0.
-- [ ] `bunx tsc --noEmit` clean.
-
----
-
-#### Step 9: Tier 2 integration checkpoint {#step-9}
-
-**Depends on:** #step-5, #step-6, #step-7, #step-8
-
-**Commit:** `N/A (verification only)`
-
-**References:** [P06] (#p06-scope), (#success-criteria, #roadmap)
-
-**Tasks:**
-- [ ] Re-run the full sweep; confirm every hot-path group reports 0 escapers; record residual escapers (expected: only the deferred shared primitives / lib stores per [P06]).
-
-**Tests:**
-- [ ] `bun test src/lib/__tests__/fast-refresh-boundary.test.ts` green with the full cleaned set frozen.
-
-**Checkpoint:**
-- [ ] Sweep shows 0 escapers in `tool-blocks/`, `body-kinds/`, the listed chrome/cards files, and the context Providers.
+- [ ] Dev smoke: edit `dev-card-transcript.tsx` → refreshes in place, no page reload. Edit one transcript tool-block → transcript-host remount, **no full page reload** ([Q01] resolved).
 - [ ] `bunx tsc --noEmit` clean.
 
 ---
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** The transcript spine and its hot-path child modules are clean, self-accepting Fast Refresh boundaries; editing any of them refreshes in place under HMR with no full page reload, enforced by a regenerable sweep oracle and a drift test.
+**Deliverable:** The two transcript spine files are clean, self-accepting Fast Refresh boundaries and the dev-only gallery graph is detached from the entry, so editing the spine or a transcript leaf no longer triggers a full page reload (a leaf edit costs at most a transcript-host remount); any reload that still occurs restores the deck faithfully, enforced by a guard test, a sweep oracle, and a drift test.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `dev-card.tsx` and `dev-card-transcript.tsx` report `escapes=false` (sweep).
-- [ ] All Tier 2 group files report `escapes=false` (sweep `--assert`).
-- [ ] `bun test` drift test passes with the full cleaned set frozen.
+- [ ] `dev-card.tsx` and `dev-card-transcript.tsx` report `escapes=false` (sweep `--assert`).
+- [ ] After the gallery detach, the recorded transcript-graph reload total is materially below the starting baseline (sweep output; numbers recorded in #step-6).
+- [ ] Dev smoke: editing the spine and editing a transcript tool-block each occur without a full page reload.
+- [ ] `bun test` drift test passes with both spine files frozen.
+- [ ] `bun test` faithful-restore guard passes (boot awaits `ready()` before deck construction).
 - [ ] `bunx tsc --noEmit` clean on the final tree.
-- [ ] Every remaining escaper is outside the transcript **component** hot-path — i.e. it is a `gallery-*` demo surface, a shared `tug-*` primitive, or a shared `lib/*` utility (all explicitly deferred in #roadmap). No transcript tool-block / body-kind / dialog / context Provider still escapes.
 
 **Acceptance tests:**
-- [ ] `bun run scripts/fast-refresh-sweep.ts` — transcript-graph reload total reduced to the deferred residual only.
+- [ ] `bun run scripts/fast-refresh-sweep.ts --assert src/components/tugways/cards/dev-card.tsx src/components/tugways/cards/dev-card-transcript.tsx`.
 - [ ] `bun test src/lib/__tests__/fast-refresh-boundary.test.ts`.
+- [ ] `bun test src/__tests__/boot-faithful-restore.test.ts`.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] **Gallery surfaces** (`gallery-*.tsx`, imported by `main.tsx` via `registerGalleryCards`): a parallel boundary-free graph that keeps shared leaves/utilities escaping. Out of scope here (dev-only demo surfaces, rarely edited during transcript work); fix with the same eviction pattern if gallery editing becomes a pain.
-- [ ] Shared tugways primitives: `tug-sheet`, `tug-popover`, `tug-alert`, `tug-bulletin`, `tug-list-row`, `tug-dialog-button`, `tug-inline-dialog`, `tug-link`, `tug-arc-gauge`, `tug-progress-indicator`, `tug-progress-wave`, `tug-animator`, `tug-transcript-entry`, `use-component-state-preservation`, `use-responder`, `theme-provider`.
-- [ ] `dev-assistant-renderer-dispatch.ts` (registry: move `NullToolBlock` out to fully flatten it to transparent).
-- [ ] Confirm value-only lib modules (`lib/code-session-store*`, `lib/tug-dev-log-store*`, `lib/tug-dev-panel-store*`, `lib/diff/*`, `lib/markdown/*`, `protocol.ts`) need no change. Note: a lib module only stops reloading once **every** importer path crosses a boundary — those still imported by `gallery-*` will keep reloading on edit until the galleries are addressed.
+- [ ] **Per-leaf in-place refresh (the dropped Tier 2).** Evict value exports from tool-blocks, body-kinds, transcript chrome/cards, and contexts so each becomes its own boundary — eliminates the transcript-host remount on a leaf edit. Polish; do a group only if its host-remount-on-edit becomes a real annoyance.
+- [ ] **Live reload app-test for faithful restore.** A `just app-test` that reloads with a card open and asserts the card survives and no orphan "live" session appears — the runtime counterpart to the [P07] source guard.
+- [ ] **Gallery editing ergonomics.** If editing `gallery-*.tsx` during gallery work full-reloads (now that they are a dynamic chunk, an edit refreshes the gallery chunk, not the app), revisit only if it becomes painful.
+- [ ] **Shared tugways primitives** (`tug-sheet`, `tug-popover`, `tug-list-row`, `theme-provider`, …) and **value-only lib modules** (`lib/code-session-store*`, `protocol.ts`, …) — deferred; broad consumer fan-out, low transcript-edit frequency.
 
 | Checkpoint | Verification |
 |------------|--------------|
 | Spine cleaned | `fast-refresh-sweep.ts --assert` on both spine files exits 0 |
-| Tier 2 groups cleaned | `fast-refresh-sweep.ts --assert` per group exits 0 |
+| Galleries detached | sweep shows gallery graph no longer entry-reachable; dev smoke: leaf edit does not full-reload |
+| Faithful restore guarded | `bun test` boot guard green |
 | No regressions | `bun test` drift test green; `tsc --noEmit` clean |
