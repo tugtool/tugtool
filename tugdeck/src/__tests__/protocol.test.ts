@@ -282,10 +282,11 @@ describe("session ledger CONTROL encoders / decoders", () => {
         state: "live",
         card_id: "card-1",
         name: null,
-        // Bare ledger-row pushes never carry origin/terminal_live; the
-        // decoder normalizes them to the tug/not-live defaults.
+        // Bare ledger-row pushes never carry origin/terminal_live/file_size;
+        // the decoder normalizes them to the tug/not-live/no-size defaults.
         origin: "tug",
         terminal_live: null,
+        file_size: null,
       },
     });
   });

@@ -125,6 +125,13 @@ export interface SessionRow {
    * and untrashable until that process exits.
    */
   terminal_live: TerminalLive | null;
+  /**
+   * On-disk JSONL size in bytes — the picker's size readout (an orthogonal
+   * "how big" signal, deliberately *not* a message/turn proxy). Present only
+   * on `list_sessions` rows that have been scanned; `null`/absent for
+   * live-only ledger rows, `session_updated` pushes, and older tugcast.
+   */
+  file_size?: number | null;
 }
 
 /** Busy/idle detail of a terminal-live session. */
@@ -146,6 +153,7 @@ export function normalizeSessionRow(
     ...row,
     origin: row.origin === "external" ? "external" : "tug",
     terminal_live: row.terminal_live ?? null,
+    file_size: row.file_size ?? null,
   };
 }
 

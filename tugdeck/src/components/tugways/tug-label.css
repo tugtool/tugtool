@@ -137,12 +137,20 @@
    `font-size` (relative `em`, so it still composes with the `size` prop)
    lands the caps at a comfortable caption height — smaller than `shout`'s
    full uppercase, but not as tiny as raw x-height small caps. Painted at
-   the `calm` muted color. For descriptive captions beside an action. */
+   the `calm` muted color. For descriptive captions beside an action.
+
+   `font-synthesis: small-caps` re-enables the browser-synthesized small
+   caps here: the global `body { font-synthesis: none }` (which stops fake
+   bold/italic) also suppressed synthesized small caps, and IBM Plex Sans
+   ships no true small-caps face — so without this opt-in the variant
+   silently rendered as plain mixed case. Weight/style synthesis stays off
+   (this value lists only `small-caps`), so the no-fake-weight policy holds. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-label-emphasis-proposal {
   font-weight: var(--tug-font-weight-semibold);
+  font-synthesis: small-caps;
   font-variant-caps: all-small-caps;
-  font-size: 1.0em;
+  font-size: 1.05em;
   letter-spacing: 0.06em;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }

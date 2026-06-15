@@ -1,13 +1,25 @@
 /**
  * dev-load-control-bar.css — content layouts inside the Z0 TugControlBar.
  *
- * The bar band itself (surface, visibility, scrim) is owned by
- * tug-control-bar.css; these rules lay out the dev transcript's content
+ * The bar band itself (surface, visibility, scrim, constant height) is owned
+ * by tug-control-bar.css; these rules lay out the dev transcript's content
  * variants — the load prompt and the loading progress row.
+ *
+ * Two tunable knobs live here:
+ *   --tugx-control-bar-track-width  — the progress track length.
+ *   --tugx-control-bar-label-size   — the band's label text size.
  */
-
 .dev-load-control-bar-prompt,
 .dev-load-control-bar-loading {
+  /* ▼▼ TUNE ▼▼ */
+  --tugx-control-bar-track-width: 220px;
+  --tugx-control-bar-label-size: var(--tug-font-size-lg);
+  --tugx-control-bar-label-nudge: -1px;
+  /* ▲▲ TUNE ▲▲ */
+}
+
+/* The prompt stays centered: [label] Load: [N] [All]. */
+.dev-load-control-bar-prompt {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15,13 +27,59 @@
   width: 100%;
 }
 
-.dev-load-control-bar-label,
-.dev-load-control-bar-actions-label {
-  opacity: 0.7;
+/* The loading row spans the band; Cancel is pinned out of flow (far right)
+   and the progress indicator (below) centers its own content. */
+.dev-load-control-bar-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  width: 100%;
+  /* Anchor for the absolutely-pinned Cancel so it never shifts the centered
+     progress group (the group stays put whether Cancel is present or not). */
+  position: relative;
 }
 
-/* The progress bar stretches; the Cancel button stays content-sized. */
+/* The bar-variant indicator is `width: 100%` (its own CSS), so it fills the
+   row; center its [label][track][readout] group within that width instead of
+   leaving it at the leading edge. (Label muting is owned by the `proposal`
+   TugLabel emphasis, so no opacity here.) */
 .dev-load-control-bar-bar {
-  flex: 1 1 auto;
-  max-width: 28rem;
+  justify-content: center;
+}
+
+/* The bar variant renders its track in the glyph slot — fix it to the tuned
+   track width. The selector must out-specify the indicator's own
+   `.tug-progress-indicator[data-variant="bar"] .tug-progress-indicator-glyph`
+   (which sets `flex: 1 1 auto; width: 100%`); the extra ancestor + the
+   `[data-variant]` match push this past it. */
+.tug-control-bar .dev-load-control-bar-bar[data-variant="bar"] .tug-progress-indicator-glyph {
+  flex: 0 0 var(--tugx-control-bar-track-width);
+  width: var(--tugx-control-bar-track-width);
+}
+
+/* Cancel pinned to the far right, out of flow so the progress group stays
+   centered in the band. */
+.dev-load-control-bar-cancel {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Band labels read at the tuned size; the `proposal` emphasis still supplies
+   the small-caps / weight / muted color. Scoped to beat the emphasis class's
+   own font-size (two classes vs one). `line-height: 1` centers the small-caps
+   optically — at the default 1.4 the caps (no ascenders/descenders) sit low
+   in the line-box and read as bottom-heavy. */
+.tug-control-bar .dev-load-control-bar-label,
+.tug-control-bar .dev-load-control-bar-actions-label,
+.tug-control-bar .tug-progress-indicator-label-active {
+  font-size: calc(var(--tugx-control-bar-label-size) + 1px);
+  line-height: 1;
+  /* `.tug-label` aligns text to flex-start; center it, then nudge up by the
+     tunable amount to optically center the small-caps (which sit low on the
+     baseline within the line-box). */
+  align-items: center;
+  position: relative;
+  top: var(--tugx-control-bar-label-nudge);
 }

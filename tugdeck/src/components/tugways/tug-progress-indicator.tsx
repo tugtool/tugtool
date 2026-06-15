@@ -81,7 +81,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
-import { TugLabel } from "@/components/tugways/tug-label";
+import { TugLabel, type TugLabelEmphasis } from "@/components/tugways/tug-label";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { TugProgressRing } from "./internal/tug-progress-ring";
 import { TugProgressBar } from "./internal/tug-progress-bar";
@@ -322,6 +322,15 @@ export interface TugProgressIndicatorProps
   label?: string;
 
   /**
+   * Optional `TugLabel` emphasis for the visible label. When omitted the
+   * label renders as a bare span (the historical default — inherits the
+   * host's type). When set, the active label is wrapped in a `TugLabel` at
+   * that emphasis (e.g. `proposal` for a muted small-caps caption). Opt-in,
+   * so existing callers are unaffected.
+   */
+  labelEmphasis?: TugLabelEmphasis;
+
+  /**
    * Where to render the visible label.
    *   inline   — render alongside the glyph(s)
    *   tooltip  — suppress inline; surface in a hover tooltip
@@ -402,6 +411,7 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
       phaseLabels,
       phaseVisual,
       label,
+      labelEmphasis,
       labelPosition = "inline",
       labelAlign = "start",
       glyphPosition = "left",
@@ -488,7 +498,18 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
             ))}
           </>
         )}
-        <span className="tug-progress-indicator-label-active">{visibleLabel}</span>
+        {labelEmphasis !== undefined ? (
+          <TugLabel
+            emphasis={labelEmphasis}
+            className="tug-progress-indicator-label-active"
+          >
+            {visibleLabel}
+          </TugLabel>
+        ) : (
+          <span className="tug-progress-indicator-label-active">
+            {visibleLabel}
+          </span>
+        )}
       </span>
     ) : null;
 

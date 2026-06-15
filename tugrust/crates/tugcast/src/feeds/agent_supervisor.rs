@@ -1032,6 +1032,12 @@ pub struct ListedSession {
     pub row: crate::session_ledger::SessionRow,
     pub origin: &'static str,
     pub terminal_live: Option<TerminalLiveWire>,
+    /// On-disk JSONL size in bytes, from the external scan. `None` when the
+    /// session has not been scanned (e.g. a live ledger row in the phase-1
+    /// preview, before the scan settles). The picker renders this instead of
+    /// a turn count — an orthogonal "how big" signal, not a message proxy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_size: Option<i64>,
 }
 
 /// Build the picker's `list_sessions` row union from a ledger snapshot, a
@@ -1065,6 +1071,9 @@ fn build_listed_union(
             row,
             origin: "tug",
             terminal_live,
+            // Backfilled below from the scan meta when this session is on
+            // disk; stays None for live-only ledger rows.
+            file_size: None,
         });
     }
     if let Some(scan) = scan {
@@ -1080,6 +1089,8 @@ fn build_listed_union(
             let Some(meta) = metas_by_id.remove(&entry.row.session_id) else {
                 continue;
             };
+            // Surface the on-disk size for the picker's size readout.
+            entry.file_size = Some(meta.file_size);
             // The ledger row owns identity and lifecycle (state, card
             // binding, user-assigned name); the transcript on disk owns
             // content. When the JSONL is newer than the ledger's last
@@ -1106,6 +1117,7 @@ fn build_listed_union(
             crate::session_ledger::encode_claude_project_name(&scan.canonical_project_dir);
         for (_, meta) in metas_by_id {
             let terminal_live = annotate(&meta.session_id);
+            let file_size = Some(meta.file_size);
             listed.push(ListedSession {
                 row: crate::session_ledger::SessionRow {
                     session_id: meta.session_id,
@@ -1121,6 +1133,7 @@ fn build_listed_union(
                 },
                 origin: "external",
                 terminal_live,
+                file_size,
             });
         }
     }

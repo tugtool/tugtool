@@ -2,19 +2,27 @@
  * tug-control-bar.css — the Z0 control band + its region scrim.
  *
  * The band borrows the Z2 status-bar surface token so it reads as a
- * distinct chrome strip (not transcript-colored). Visibility is a DOM
- * attribute the host toggles ([L06]); the band is `display:none` until
- * `data-visible="true"`. The modal scrim is a pointer-blocking overlay
- * drawn over the content region via `data-tug-control-bar-modal`.
+ * distinct chrome strip (not transcript-colored). The host writes the
+ * visibility to `data-visible` ([L06]); the band is `display:none` until
+ * `data-visible="true"` — the timing (a progress dwell, the persisting load
+ * prompt) is owned by the host, so the band itself just shows/hides
+ * instantly. The modal scrim is a pointer-blocking overlay drawn over the
+ * content region via `data-tug-control-bar-modal`.
  */
 
 .tug-control-bar {
+  /* Constant band height: the Z0 strip must NEVER change height between its
+     contents (progress with/without Cancel, the prompt with buttons, …).
+     Content is centered within it; the value comfortably clears a `sm`
+     button (1.75rem). Tune here. */
+  --tugx-control-bar-height: 2.5rem;
+  box-sizing: border-box;
+  min-height: var(--tugx-control-bar-height);
   display: none;
   align-items: center;
-  justify-content: center;
   gap: var(--tug-space-sm);
   width: 100%;
-  padding-block: var(--tug-space-xs);
+  padding-block: 0;
   padding-inline: var(--tug-space-md);
   /* Distinct Z0 band — borrows the Z2 status-bar surface ([P09]). */
   background-color: var(--tug7-surface-card-primary-normal-status-rest);

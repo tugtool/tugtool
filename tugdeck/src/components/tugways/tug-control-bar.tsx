@@ -22,10 +22,12 @@
  *
  * Visibility is the consumer's job, driven through the bar's DOM (the
  * forwarded ref → `data-visible`), never React state ([L06]) — the host
- * toggles it off scroll-edge + store signals. Tuglaws: [L06] (modality +
- * visibility are DOM, not React appearance state), [L03] (applied in
- * layout effects so the dead zone is live before paint), [L20] (the band
- * keeps its own tokens), [L26] (one stable bar node across content swaps).
+ * toggles it off scroll-edge + store signals, and owns any timing (the
+ * progress dwell, the persisting load prompt). The band itself shows/hides
+ * instantly. Tuglaws: [L06] (modality + visibility are DOM, not React
+ * appearance state), [L03] (applied in layout effects so the dead zone is
+ * live before paint), [L20] (the band keeps its own tokens), [L26] (one
+ * stable bar node across content swaps).
  *
  * @module components/tugways/tug-control-bar
  */
@@ -49,8 +51,8 @@ export interface TugControlBarProps {
 
 /**
  * The `Z0` control band. Forward the ref to drive `data-visible`
- * imperatively from the host's scroll/store signals ([L06]); the band is
- * `display:none` until `data-visible="true"`.
+ * imperatively from the host's scroll/store signals ([L06]); the band shows
+ * (`display:flex`) only while `data-visible="true"`.
  */
 export const TugControlBar = React.forwardRef<HTMLDivElement, TugControlBarProps>(
   function TugControlBar({ modal, regionEl, children }, ref) {
@@ -75,7 +77,7 @@ export const TugControlBar = React.forwardRef<HTMLDivElement, TugControlBarProps
         className="tug-control-bar"
         data-slot="tug-control-bar"
         // Default hidden; the host flips `data-visible` per its state
-        // machine. Kept as an attribute (not React state) per [L06].
+        // machine. Kept as a DOM attribute (not React state) per [L06].
         data-visible="false"
       >
         {children}

@@ -50,17 +50,30 @@ export function formatRelativeTimestamp(then: number, now: number): string {
 }
 
 /**
- * Build the subtitle line for a session row: relative timestamp,
- * turn count, and short identifier. The picker shows this under the
- * snippet to give the user enough context to recognize one session
- * vs another.
+ * Format a byte count as a compact human-readable size: "B", "KB", "MB".
+ * One decimal under 10 of a unit (e.g. "3.4 KB"), whole numbers above.
+ */
+export function formatByteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+
+/**
+ * Build the subtitle line for a session row: relative timestamp, on-disk
+ * JSONL size, and short identifier. Size is an orthogonal "how big" signal —
+ * deliberately not a turn/message count, which only the transcript shows (in
+ * messages). The picker shows this under the snippet to help recognize one
+ * session vs another.
  */
 export function formatSessionRowSubtitle(row: SessionRow): string {
-  const turns =
-    row.turn_count > 0
-      ? `${row.turn_count} ${row.turn_count === 1 ? "turn" : "turns"}`
+  const size =
+    row.file_size != null && row.file_size > 0
+      ? formatByteSize(row.file_size)
       : null;
   const ts = formatRelativeTimestamp(row.last_used_at, Date.now());
   const id = `id ${row.session_id.slice(0, 8)}`;
-  return [ts, turns, id].filter((p) => p !== null).join(" · ");
+  return [ts, size, id].filter((p) => p !== null).join(" · ");
 }
