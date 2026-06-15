@@ -398,6 +398,14 @@ body {
   --tugx-list-view-padding-block-start: 0;
   --tugx-list-view-padding-block-end: 0;
   --tugx-list-view-row-gap: 0;
+  /* The transcript forces `overflow-y: scroll` + `scrollbar-gutter: stable` on
+     every list-view so a scrollbar's arrival never reflows the column. But this
+     option list is `height: auto` and never scrolls (the whole dialog scrolls in
+     the transcript), so that reserved gutter is dead space on the right — the
+     selection fill and rows stop short of the frame. Opt out: no scroll container,
+     no reserved gutter, so rows + fill run flush to the list's right edge. */
+  overflow-y: visible;
+  scrollbar-gutter: auto;
 }
 
 /* ---- Card-modal dialog ([P16]/[P17]/[P18]) ---- */

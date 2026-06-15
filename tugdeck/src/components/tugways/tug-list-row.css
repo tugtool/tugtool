@@ -298,6 +298,35 @@ body {
   border-color: var(--tugx-list-row-checkbox-on-hover);
 }
 
+/* ---- Indicator on a SELECTED row — invert to the contrast tone ----
+   The whole list speaks one blue, so on a selected row the row fill IS that blue
+   and a blue-filled indicator (radio dot / checkbox box) would vanish into it.
+   This is the one place a second tone is essential: switch the shown indicator to
+   the high-contrast selected-text color (the same light tone the row's label
+   uses) over a transparent interior, so it reads as a crisp light radio / checkbox
+   sitting on the blue fill — legible in every selected state (rest, hover,
+   cursor), since all of them set `data-selected`. Placed after the fill rules so
+   it wins their specificity tie.
+   @tug-renders-on: --tugx-list-row-selected-bg */
+.tug-list-row[data-selected="true"]
+  .tug-list-row-check[data-state="shown"]
+  .tug-list-row-radio {
+  background-color: transparent;
+  border-color: var(--tugx-list-row-selected-text);
+}
+.tug-list-row[data-selected="true"]
+  .tug-list-row-check[data-state="shown"]
+  .tug-list-row-radio-dot {
+  background-color: var(--tugx-list-row-selected-text);
+}
+.tug-list-row[data-selected="true"]
+  .tug-list-row-check[data-state="shown"]
+  .tug-list-row-checkbox {
+  background-color: transparent;
+  border-color: var(--tugx-list-row-selected-text);
+  color: var(--tugx-list-row-selected-text);
+}
+
 /* The content column flexes to fill the row; `min-width: 0` lets a
    long title truncate instead of forcing the row wider than its
    container. */
