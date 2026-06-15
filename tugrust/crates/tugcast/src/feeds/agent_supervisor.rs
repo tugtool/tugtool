@@ -1263,6 +1263,20 @@ fn parse_tug_session_id_payload(payload: &[u8]) -> Result<TugSessionId, ControlE
     Ok(TugSessionId::new(id))
 }
 
+/// Extract the optional recency `window` from a `request_replay` CONTROL
+/// payload. The supervisor forwards it verbatim into the `request_replay`
+/// verb it pushes to tugcode, which validates the shape at its handler
+/// boundary; an absent / null / malformed payload yields `None` ⇒ a full
+/// replay (the legacy behavior). Parse failures are intentionally
+/// swallowed here — `parse_tug_session_id_payload` already rejected a
+/// truly malformed payload before this is called.
+fn parse_request_replay_window(payload: &[u8]) -> Option<serde_json::Value> {
+    serde_json::from_slice::<serde_json::Value>(payload)
+        .ok()
+        .and_then(|v| v.get("window").cloned())
+        .filter(|w| !w.is_null())
+}
+
 /// Parsed payload of the `record_turn_telemetry` CONTROL action.
 /// Tugdeck → tugcast: the reducer dispatches this from
 /// `handleTurnComplete` (live path only — replayed turns aren't
@@ -1811,7 +1825,8 @@ impl AgentSupervisor {
                         return ControlOutcome::Error(e);
                     }
                 };
-                self.do_request_replay(&tug_session_id).await;
+                let window = parse_request_replay_window(payload);
+                self.do_request_replay(&tug_session_id, window).await;
                 Ok(())
             }
             "record_turn_telemetry" => {
@@ -2845,7 +2860,11 @@ impl AgentSupervisor {
     /// from the same Spawning window — the natural ordering since
     /// the verb is "rehydrate the freshly-mounted store" and the
     /// store should be rehydrated before user-facing work begins.
-    async fn do_request_replay(&self, tug_session_id: &TugSessionId) {
+    async fn do_request_replay(
+        &self,
+        tug_session_id: &TugSessionId,
+        window: Option<serde_json::Value>,
+    ) {
         let entry_arc = {
             let ledger = self.ledger.lock().await;
             match ledger.get(tug_session_id) {
@@ -2863,9 +2882,20 @@ impl AgentSupervisor {
         };
 
         // Build the wire frame once; the body is the same regardless of
-        // whether we forward immediately (Live) or queue (Spawning).
-        let body = b"{\"type\":\"request_replay\"}";
-        let frame = Frame::new(FeedId::CODE_INPUT, body.to_vec());
+        // whether we forward immediately (Live) or queue (Spawning). The
+        // optional recency `window` is forwarded verbatim — the supervisor
+        // doesn't interpret it; tugcode validates the shape at its handler
+        // boundary. The no-window path stays byte-identical to the legacy
+        // full-replay request.
+        let body: Vec<u8> = match &window {
+            Some(w) => serde_json::to_vec(&serde_json::json!({
+                "type": "request_replay",
+                "window": w,
+            }))
+            .expect("request_replay payload serializes"),
+            None => b"{\"type\":\"request_replay\"}".to_vec(),
+        };
+        let frame = Frame::new(FeedId::CODE_INPUT, body);
 
         // For the Spawning branch we need the entry mutex held while we
         // mutate `queue`. For the Live branch we want to release the

@@ -13,7 +13,7 @@
  * - Length: big-endian u32, max MAX_PAYLOAD_SIZE.
  */
 
-import type { InboundMessage } from "@tugproto/inbound";
+import type { InboundMessage, ReplayWindow } from "@tugproto/inbound";
 
 /** Feed identifiers for different data streams (open u8 namespace) */
 export const FeedId = {
@@ -72,6 +72,15 @@ export const CONTROL_ACTION_TRASH_SESSION = "trash_session";
 export const CONTROL_ACTION_RENAME_SESSION = "rename_session";
 export const CONTROL_ACTION_TRASH_PROJECT_DIR_SESSIONS = "trash_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
+/**
+ * Default recency-window size (in transcript messages / rows) for a
+ * cold-resume replay: load only the most recent N messages, paging older
+ * turns in on demand. A "message" is a user or assistant row — the unit
+ * the transcript numbers — so the load is bounded by what the user
+ * actually reads, not by turn density. Tunable in one place. A session
+ * with ≤ N messages loads whole and shows no "load previous" affordance.
+ */
+export const DEFAULT_REPLAY_WINDOW_MESSAGES = 50;
 export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";
 export const CONTROL_ACTION_RECORD_CONTEXT_BREAKDOWN = "record_context_breakdown";
 export const CONTROL_ACTION_RECORD_SESSION_STATE_CHANGE =
@@ -583,10 +592,20 @@ export function encodeTrashProjectDirSessions(projectDir: string): Frame {
  * Maker > Reload, future card mounts). The fresh store has no
  * replay history of its own; this verb tells the supervisor "send me
  * the JSONL again so I can rehydrate."
+ *
+ * The optional `window` bounds the replay by recency — the default
+ * cold-resume load sends `{ lastMessages: DEFAULT_REPLAY_WINDOW_MESSAGES }`
+ * so a long session loads only its most relevant tail. The supervisor
+ * forwards the window verbatim; tugcode reports the resulting slice on
+ * `replay_complete`. Absent ⇒ the whole session (legacy).
  */
-export function encodeRequestReplay(tugSessionId: string): Frame {
+export function encodeRequestReplay(
+  tugSessionId: string,
+  window?: ReplayWindow,
+): Frame {
   return controlFrame(CONTROL_ACTION_REQUEST_REPLAY, {
     tug_session_id: tugSessionId,
+    ...(window !== undefined ? { window } : {}),
   });
 }
 

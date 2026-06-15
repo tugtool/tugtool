@@ -434,6 +434,32 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
   }
 
   /**
+   * Whether older turns precede the loaded window — the signal the
+   * "load previous" affordance keys off. Derived from the recency-window
+   * metadata recorded at `replay_complete`; `false` when no window was
+   * reported (a full / legacy load has everything). Deliberate
+   * pagination is not a "hole": absence of older turns here means they
+   * simply haven't been paged in yet.
+   */
+  hasOlder(): boolean {
+    return (
+      this._codeSessionStore.getSnapshot().replayWindow?.hasOlder ?? false
+    );
+  }
+
+  /**
+   * Absolute index (counting from the oldest committed turn) of the
+   * oldest turn currently loaded, or `null` when no window was reported.
+   * A load-previous request pages the older range that ends here.
+   */
+  oldestLoadedTurnIndex(): number | null {
+    return (
+      this._codeSessionStore.getSnapshot().replayWindow?.firstLoadedTurnIndex ??
+      null
+    );
+  }
+
+  /**
    * Stable React-key seed per the id-stability protocol:
    *
    *  - Normal committed pair: `${turnKey}-user` at the turn's first

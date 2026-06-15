@@ -885,6 +885,15 @@ export interface CodeSessionSnapshot {
   replayEverCompleted: boolean;
 
   /**
+   * Recency-window metadata from the most recent `replay_complete`:
+   * which slice of the session is loaded and whether older turns remain
+   * to page in. `null` until a windowed replay completes (a full /
+   * legacy replay reports no window). The transcript derives the "load
+   * previous" affordance from `hasOlder`.
+   */
+  replayWindow: ReplayWindowMeta | null;
+
+  /**
    * True from the moment a resume binding is acknowledged via
    * `CodeSessionStore.notifyResumeBindingLanded()` until the *first
    * of*: `phase` becomes `"replaying"`, `lastReplayResult` lands,
@@ -1019,4 +1028,32 @@ export interface LastReplayResult {
   count: number;
   /** `Date.now()` at the moment `replay_complete` landed. */
   at: number;
+}
+
+/**
+ * Recency-window metadata from the most recent `replay_complete` — which
+ * slice of the session is currently loaded. `null` until a windowed
+ * replay completes (a full / legacy replay reports no window). Drives the
+ * "load previous" affordance and faithful restore.
+ */
+export interface ReplayWindowMeta {
+  /**
+   * Absolute index (counting from the oldest committed turn) of the
+   * oldest turn currently loaded. `0` means the very first turn is
+   * loaded. The boundary for the next backward-paging request.
+   */
+  firstLoadedTurnIndex: number;
+  /**
+   * Absolute index (counting from the oldest row) of the oldest
+   * message/row currently loaded. The transcript adds this to a row's
+   * window-relative index so each row is numbered by its true session
+   * position, not its position within the loaded slice.
+   */
+  firstLoadedMessageIndex: number;
+  /** The whole session's committed-turn count, independent of the window. */
+  totalTurns: number;
+  /** The whole session's message (row) count, independent of the window. */
+  totalMessages: number;
+  /** Whether any turns precede the loaded window (older turns to page in). */
+  hasOlder: boolean;
 }

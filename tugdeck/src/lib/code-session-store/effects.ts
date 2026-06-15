@@ -63,6 +63,25 @@ export interface SendFrameEffect {
 export interface AppendTranscriptEffect {
   kind: "append-transcript";
   entry: TurnEntry;
+  /**
+   * When true, this turn belongs to a load-previous (older) replay
+   * bracket: the store stages it (in arrival order) rather than
+   * appending, and `flush-prepend` commits the whole staged batch
+   * ahead of the existing transcript at `replay_complete`. Absent /
+   * false ⇒ the normal append (newest at the end).
+   */
+  prepend?: boolean;
+}
+
+/**
+ * Commit a staged load-previous batch: move the turns staged by
+ * `append-transcript { prepend: true }` to the FRONT of the transcript,
+ * in arrival order, then clear the staging buffer. Emitted by
+ * `replay_complete` when the bracket was a prepend. Idempotent — an
+ * empty staging buffer is a no-op.
+ */
+export interface FlushPrependEffect {
+  kind: "flush-prepend";
 }
 
 /**
@@ -160,6 +179,7 @@ export type Effect =
   | ClearInflightEffect
   | SendFrameEffect
   | AppendTranscriptEffect
+  | FlushPrependEffect
   | ScheduleTimerEffect
   | CancelTimerEffect
   | RecordTelemetryEffect

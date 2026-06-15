@@ -36,6 +36,7 @@ import type {
   SessionRewind,
   RewindPreviewResult,
   RewindResult,
+  ReplayWindow,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
@@ -3074,7 +3075,7 @@ export class SessionManager {
    * chatty claude. {@link REPLAY_LIVE_BUFFER_MAX} stays available as
    * a documented threshold; it is not load-bearing post-R1e.
    */
-  async runReplay(): Promise<void> {
+  async runReplay(window?: ReplayWindow): Promise<void> {
     // Pre-Step-5 the early-return `if (this.sessionMode !== "resume") return;`
     // gated runReplay by the original spawn mode. That assumption (mode=new
     // ⇒ no JSONL to replay) holds at the moment of spawn but rots once the
@@ -3270,6 +3271,11 @@ export class SessionManager {
       // still streaming (reload-mid-stream); leave it for the live
       // drain + `emitInflightTurnFromActiveTurn` as before.
       synthesizeDanglingTerminal: inflight === null,
+      // Recency window threaded from the request (absent ⇒ whole
+      // session). The translator emits only the requested turn range
+      // and reports the window on `replay_complete`, which the buffered
+      // bracket-close below forwards verbatim.
+      window,
     });
 
     try {

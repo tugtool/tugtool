@@ -90,6 +90,10 @@ import React from "react";
 import { SmartScroll } from "@/lib/smart-scroll";
 
 import { HeightIndex } from "./internal/list-view-height-index";
+import {
+  detectPrepend,
+  prependScrollAdjustment,
+} from "./internal/list-view-prepend";
 import { computePageNavigation } from "./internal/list-view-page-navigation";
 import { computeWindow } from "./internal/list-view-window";
 import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
@@ -1157,6 +1161,22 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // items pins itself to the bottom on first paint.
     const prevItemCountRef = React.useRef<number>(0);
 
+    // Front-insert (prepend) scroll-hold ([L23]). When older turns page
+    // in above the view, the data source grows at the FRONT: the row id
+    // at index 0 changes. These trackers hold the previously-committed
+    // first-row id + count so a commit can be classified as a prepend
+    // (vs the common append, where the first id is unchanged and the
+    // whole path stays dormant). A detected prepend captures pre-commit
+    // scroll geometry in render; the compensation layout effect below
+    // holds the viewport by the `scrollHeight` delta after commit.
+    const prevFirstIdRef = React.useRef<string | null>(null);
+    const prevPrependCountRef = React.useRef<number>(0);
+    const pendingPrependRef = React.useRef<{
+      added: number;
+      oldScrollHeight: number;
+      oldScrollTop: number;
+    } | null>(null);
+
     // Set to `true` by signals that legitimately request an auto-pin
     // (mount with `followBottom`, item-count growth, cell ResizeObserver
     // flush, container ResizeObserver). The post-commit pin effect
@@ -1332,6 +1352,35 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // and the imperative-handle `scrollToIndex` so every height read
     // sees the same fallback chain.
     const itemCount = dataSource.numberOfItems();
+
+    // Front-insert detection ([L23], inline transcript). The first row's
+    // stable id changes only when rows are inserted ahead of it (a
+    // prepend); an append leaves it unchanged. Capture pre-commit scroll
+    // geometry NOW — the compensation layout effect runs after the new
+    // rows are in the DOM, too late to read the old `scrollHeight`. The
+    // ref-write-in-render is the function-component scroll-anchoring
+    // escape hatch (a read of the live DOM + a ref stash, no React
+    // state); the `pending === null` guard makes a StrictMode double
+    // render capture once. Gated to `inline` (the transcript's mode);
+    // the windowed path keeps its own spacer-based scroll machinery.
+    const firstRowId =
+      inline === true && itemCount > 0 ? dataSource.idForIndex(0) : null;
+    if (inline === true && scrollEl !== null && pendingPrependRef.current === null) {
+      const prepend = detectPrepend(
+        prevFirstIdRef.current,
+        prevPrependCountRef.current,
+        firstRowId,
+        itemCount,
+      );
+      if (prepend !== null) {
+        pendingPrependRef.current = {
+          added: prepend.added,
+          oldScrollHeight: scrollEl.scrollHeight,
+          oldScrollTop: scrollEl.scrollTop,
+        };
+      }
+    }
+
     const estimatedHeightForKind = delegate?.estimatedHeightForKind;
     const estimatedHeightForKindOnly = React.useCallback(
       (index: number): number => {
@@ -1397,6 +1446,34 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // tracked (matches the SmartScroll-install effect's pattern).
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Front-insert scroll-hold ([L23], [L06], [L22]). Runs after every
+    // commit; updates the prepend trackers and, when render captured a
+    // pending prepend, applies the compensation now that the older rows
+    // are in the DOM:
+    //   1. shift the height index by the inserted count so each existing
+    //      row keeps its measured height at its new index ([L22]);
+    //   2. hold the viewport by the real `scrollHeight` delta so the
+    //      content the user was reading stays under the same Y — a DOM
+    //      `scrollTop` write, not React state ([L06]).
+    // `scrollTick` re-windows against the shifted heights. Dormant on an
+    // append (no pending capture), so steady-state growth is untouched.
+    React.useLayoutEffect(() => {
+      const pending = pendingPrependRef.current;
+      prevFirstIdRef.current = firstRowId;
+      prevPrependCountRef.current = itemCount;
+      if (pending === null) return;
+      pendingPrependRef.current = null;
+      const el = scrollContainerRef.current;
+      if (el === null) return;
+      heightIndexRef.current.shift(pending.added);
+      el.scrollTop = prependScrollAdjustment(
+        pending.oldScrollHeight,
+        el.scrollHeight,
+        pending.oldScrollTop,
+      );
+      scrollTick();
+    });
 
     // Install the `ResizeObserver` once per list-view instance.
     // Created in `useLayoutEffect` ([L03]) so the constructor runs

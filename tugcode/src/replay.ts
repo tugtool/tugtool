@@ -65,6 +65,7 @@ import type {
   TurnComplete,
   WakeStarted,
 } from "./types.ts";
+import type { ReplayWindow } from "@tugproto/inbound";
 
 /**
  * IPC version stamped onto every emitted OutboundMessage. Held local
@@ -1474,6 +1475,20 @@ export interface TranslateSessionOptions {
    * continuation.
    */
   synthesizeDanglingTerminal?: boolean;
+  /**
+   * Recency window. When present, the translator emits only the
+   * requested committed-turn range — `{ lastTurns: N }` for the most
+   * recent N turns, or `{ turnRange: [start, end) }` for an explicit
+   * half-open range — and reports the window on `replay_complete`
+   * (`firstLoadedTurnIndex` / `totalTurns` / `hasOlder`). Absent ⇒ the
+   * whole session (the unbounded legacy behavior, no metadata).
+   *
+   * Turn boundaries are located by {@link computeTurnStartIndices}, a
+   * dry run of the real per-entry translator, so the window edge can't
+   * drift from the emit path across same-`message.id` continuations and
+   * orphan-synthesized turns.
+   */
+  window?: ReplayWindow;
 }
 
 /**
@@ -1496,6 +1511,192 @@ export interface TranslateSessionOptions {
  */
 export interface TranslateSessionResult {
   count: number;
+}
+
+/**
+ * Walk forward from `start` (inclusive, up to `limit` exclusive)
+ * returning the index of the next entry the per-entry translator would
+ * process — skipping nulls (empty / malformed lines) and
+ * `SKIPPED_TOP_LEVEL_TYPES` entries (claude bookkeeping the translator
+ * silently drops). Returns `-1` when no such entry exists.
+ *
+ * The peek is needed to detect the same-`message.id` continuation case
+ * (see {@link continuationSuppressed}). `limit` lets a windowed pass
+ * stop peeking at its own upper edge.
+ */
+function nextSignificantIndex(
+  parsedEntries: ReadonlyArray<JsonlEntry | null>,
+  start: number,
+  limit: number = parsedEntries.length,
+): number {
+  for (let j = start; j < limit; j++) {
+    const e = parsedEntries[j];
+    if (e === null) continue;
+    const t = typeof e.type === "string" ? e.type : "";
+    if (SKIPPED_TOP_LEVEL_TYPES.has(t)) continue;
+    return j;
+  }
+  return -1;
+}
+
+/**
+ * Whether the entry at `i` is the leading half of a same-`message.id`
+ * continuation — two consecutive `assistant` entries sharing a
+ * `message.id` (the SDK split one assistant message across two JSONL
+ * records). The leading entry's terminal `turn_complete` must be
+ * deferred so the trailing record's content lands in the same turn and
+ * exactly one terminal fires. `limit` bounds the peek so a windowed
+ * pass never reaches across its own upper edge.
+ */
+function continuationSuppressed(
+  parsedEntries: ReadonlyArray<JsonlEntry | null>,
+  i: number,
+  limit: number = parsedEntries.length,
+): boolean {
+  const parsed = parsedEntries[i];
+  if (
+    parsed === null ||
+    parsed.type !== "assistant" ||
+    typeof parsed.message?.id !== "string" ||
+    parsed.message.id.length === 0
+  ) {
+    return false;
+  }
+  const currentMsgId = parsed.message.id;
+  const nextIdx = nextSignificantIndex(parsedEntries, i + 1, limit);
+  if (nextIdx === -1) return false;
+  const next = parsedEntries[nextIdx]!;
+  return (
+    next.type === "assistant" &&
+    typeof next.message?.id === "string" &&
+    next.message.id === currentMsgId
+  );
+}
+
+/**
+ * Locate the JSONL entry index at which each committed turn begins, by
+ * dry-running the real per-entry translator over a throwaway context
+ * and watching its opener-id counter — which bumps exactly once per
+ * turn open (a user/wake opener, or the synthesized opener an
+ * `assistant` entry mints when no turn is open). Reusing the real
+ * translator — rather than re-deriving turn boundaries — keeps the
+ * window edge in lockstep with the emit path across the tricky cases
+ * (same-`message.id` continuations, orphan-synthesized turns), so a
+ * window never splits or duplicates a turn at its edge.
+ *
+ * Returns one entry per committed turn, in order: its JSONL `startIndex`
+ * and its `messages` count — the number of transcript rows the turn
+ * produces (matching the dev transcript's row model so the window can be
+ * sized, and numbered, in *messages* rather than turns). A turn always
+ * contributes its one assistant row (the eventual `turn_complete`); a
+ * turn that emits an `add_user_message` (a user/synth opener — not a
+ * wake) also contributes a user row, so `messages` is `2`, else `1`.
+ *
+ * Total length is the session's committed-turn count. The throwaway
+ * context uses a no-op telemetry sink so the scan doesn't double-count
+ * the malformed/unknown-shape signals the real pass already reports.
+ *
+ * The scan walks every entry (its cost is O(total) translate work with
+ * no emit / IPC), so the bounded win is on the emit + downstream side;
+ * a turn-boundary index that bounds even this scan is a measured
+ * follow-on.
+ */
+interface TurnInfo {
+  /** JSONL entry index at which this turn opens. */
+  startIndex: number;
+  /** Transcript rows this turn produces: 2 (user + assistant) or 1 (wake). */
+  messages: number;
+}
+
+function computeTurns(
+  parsedEntries: ReadonlyArray<JsonlEntry | null>,
+): TurnInfo[] {
+  const scanCtx = makeTranslateContext(NOOP_TELEMETRY);
+  const turns: TurnInfo[] = [];
+  for (let i = 0; i < parsedEntries.length; i++) {
+    const parsed = parsedEntries[i];
+    if (parsed === null) continue;
+    const suppressTurnComplete = continuationSuppressed(parsedEntries, i);
+    const before = scanCtx.orphanCounter;
+    const msgs = translateJsonlEntry(parsed, scanCtx, { suppressTurnComplete });
+    if (scanCtx.orphanCounter > before) {
+      // This entry opened a new turn. It carries a user row iff it
+      // emitted an `add_user_message` (user / synth opener); a wake
+      // opener emits `wake_started` instead → assistant row only. The
+      // turn's assistant row is the +1 every committed turn earns from
+      // its eventual `turn_complete`.
+      const hasUserRow = msgs.some((m) => m.type === "add_user_message");
+      turns.push({ startIndex: i, messages: hasUserRow ? 2 : 1 });
+    }
+  }
+  return turns;
+}
+
+/**
+ * Resolve a {@link ReplayWindow} against the located turn boundaries
+ * into the concrete JSONL entry range `[startIndex, endIndex)` to emit
+ * plus the metadata to report. The window is *sized by messages* (rows)
+ * but always cut at turn boundaries — `{ lastMessages: N }` loads the
+ * minimal trailing turns whose combined row count reaches N. A window
+ * covering the whole session yields `hasOlder: false` (load-all).
+ *
+ * Reports both turn and message offsets: `firstLoadedTurnIndex` for
+ * backward paging (the next older request), `firstLoadedMessageIndex`
+ * for absolute row numbering in the transcript.
+ */
+function resolveWindow(
+  window: ReplayWindow,
+  turns: ReadonlyArray<TurnInfo>,
+  entryCount: number,
+): {
+  startIndex: number;
+  endIndex: number;
+  firstLoadedTurnIndex: number;
+  firstLoadedMessageIndex: number;
+  totalTurns: number;
+  totalMessages: number;
+  hasOlder: boolean;
+} {
+  const totalTurns = turns.length;
+  // Cumulative message count before each turn (length totalTurns + 1).
+  const messagesBefore: number[] = new Array(totalTurns + 1);
+  messagesBefore[0] = 0;
+  for (let k = 0; k < totalTurns; k++) {
+    messagesBefore[k + 1] = messagesBefore[k] + turns[k].messages;
+  }
+  const totalMessages = messagesBefore[totalTurns];
+
+  let firstTurn: number;
+  let endTurn: number; // exclusive
+  if ("lastMessages" in window) {
+    const n = Math.max(0, Math.floor(window.lastMessages));
+    // Walk turns from the end, accumulating rows until we cover N (or
+    // run out) — the window starts at the minimal trailing turn set.
+    firstTurn = totalTurns;
+    let acc = 0;
+    while (firstTurn > 0 && acc < n) {
+      firstTurn -= 1;
+      acc += turns[firstTurn].messages;
+    }
+    endTurn = totalTurns;
+  } else {
+    const [rawStart, rawEnd] = window.turnRange;
+    firstTurn = Math.max(0, Math.min(Math.floor(rawStart), totalTurns));
+    endTurn = Math.max(firstTurn, Math.min(Math.floor(rawEnd), totalTurns));
+  }
+  const startIndex =
+    firstTurn < totalTurns ? turns[firstTurn].startIndex : entryCount;
+  const endIndex =
+    endTurn < totalTurns ? turns[endTurn].startIndex : entryCount;
+  return {
+    startIndex,
+    endIndex,
+    firstLoadedTurnIndex: firstTurn,
+    firstLoadedMessageIndex: messagesBefore[firstTurn],
+    totalTurns,
+    totalMessages,
+    hasOlder: firstTurn > 0,
+  };
 }
 
 /**
@@ -1527,6 +1728,7 @@ export async function* translateJsonlSession(
   const telemetry = opts.telemetry ?? DEFAULT_TELEMETRY;
   const yieldBetweenBatches = opts.disableYield !== true;
   const synthesizeDanglingTerminal = opts.synthesizeDanglingTerminal === true;
+  const window = opts.window;
 
   const started: ReplayStarted = {
     type: "replay_started",
@@ -1612,23 +1814,51 @@ export async function* translateJsonlSession(
     }
   });
 
-  // Walk forward from `start` (inclusive) returning the index of the
-  // next entry that the per-entry translator would process — i.e.
-  // skipping nulls (empty / malformed) and `SKIPPED_TOP_LEVEL_TYPES`
-  // entries (claude bookkeeping the translator silently drops).
-  // Returns `-1` when no such entry exists.
-  const nextSignificantIndex = (start: number): number => {
-    for (let j = start; j < parsedEntries.length; j++) {
-      const e = parsedEntries[j];
-      if (e === null) continue;
-      const t = typeof e.type === "string" ? e.type : "";
-      if (SKIPPED_TOP_LEVEL_TYPES.has(t)) continue;
-      return j;
-    }
-    return -1;
-  };
+  // Recency window. When requested, locate every turn's start entry
+  // (a dry run of the real translator — see {@link computeTurnStartIndices})
+  // and resolve the window into the `[windowStartIndex, windowEndIndex)`
+  // entry range to emit plus the metadata to report. Absent ⇒ the whole
+  // session and no metadata (legacy). The scan runs only when a window
+  // is requested, so the unbounded path pays nothing extra.
+  let windowStartIndex = 0;
+  let windowEndIndex = parsedEntries.length;
+  let windowMeta:
+    | {
+        firstLoadedTurnIndex: number;
+        firstLoadedMessageIndex: number;
+        totalTurns: number;
+        totalMessages: number;
+        hasOlder: boolean;
+      }
+    | null = null;
+  if (window !== undefined) {
+    const resolved = resolveWindow(
+      window,
+      computeTurns(parsedEntries),
+      parsedEntries.length,
+    );
+    windowStartIndex = resolved.startIndex;
+    windowEndIndex = resolved.endIndex;
+    windowMeta = {
+      firstLoadedTurnIndex: resolved.firstLoadedTurnIndex,
+      firstLoadedMessageIndex: resolved.firstLoadedMessageIndex,
+      totalTurns: resolved.totalTurns,
+      totalMessages: resolved.totalMessages,
+      hasOlder: resolved.hasOlder,
+    };
+  }
+  // A bounded window that stops before real EOF (paging in an older
+  // range) must commit its last in-range turn at the cut: a turn that
+  // historically closed via the next opener's orphan synthesis would
+  // otherwise be left open, since the next opener is outside the window.
+  // That commit is identical (`turn_complete{interrupted}`) to what the
+  // next-opener orphan would have produced, so the older slice is
+  // faithful. At real EOF the existing `synthesizeDanglingTerminal` rule
+  // governs (a live drain may still continue the tail on reload-mid-stream).
+  const synthesizeAtCut =
+    synthesizeDanglingTerminal || windowEndIndex < parsedEntries.length;
 
-  for (let i = 0; i < parsedEntries.length; i++) {
+  for (let i = windowStartIndex; i < windowEndIndex; i++) {
     const parsed = parsedEntries[i];
     if (parsed === null) {
       continue;
@@ -1672,30 +1902,15 @@ export async function* translateJsonlSession(
       emittedSystemMetadata = true;
     }
 
-    // Peek ahead for the same-msg_id continuation case. Only fires
-    // for assistant entries with a string `message.id`; the next
-    // significant entry must also be an assistant entry sharing that
-    // id. A `user` entry, an unknown-shape entry, or EOF in between
-    // ends the run and the current entry behaves normally.
-    let suppressTurnComplete = false;
-    if (
-      parsed.type === "assistant" &&
-      typeof parsed.message?.id === "string" &&
-      parsed.message.id.length > 0
-    ) {
-      const currentMsgId = parsed.message.id;
-      const nextIdx = nextSignificantIndex(i + 1);
-      if (nextIdx !== -1) {
-        const next = parsedEntries[nextIdx]!;
-        if (
-          next.type === "assistant" &&
-          typeof next.message?.id === "string" &&
-          next.message.id === currentMsgId
-        ) {
-          suppressTurnComplete = true;
-        }
-      }
-    }
+    // Peek ahead for the same-msg_id continuation case, bounded to the
+    // window's upper edge so a windowed pass never reaches across it.
+    // (The window cuts on turn boundaries, so a continuation pair never
+    // straddles the edge — the bound is defensive.)
+    const suppressTurnComplete = continuationSuppressed(
+      parsedEntries,
+      i,
+      windowEndIndex,
+    );
 
     const messages = translateJsonlEntry(parsed, ctx, { suppressTurnComplete });
     for (const msg of messages) {
@@ -1737,7 +1952,7 @@ export async function* translateJsonlSession(
   //     synthetic so the resumed transcript shows an `interrupted`
   //     TurnEntry instead of stranding an in-flight row that animates
   //     its thinking indicator forever ([replay-1] / [W2]).
-  if (synthesizeDanglingTerminal) {
+  if (synthesizeAtCut) {
     for (const msg of emitOrphanIfOpen(ctx)) {
       yield msg;
     }
@@ -1747,6 +1962,15 @@ export async function* translateJsonlSession(
     type: "replay_complete",
     count: ctx.turnsCommitted,
     ipc_version: IPC_VERSION,
+    ...(windowMeta !== null
+      ? {
+          firstLoadedTurnIndex: windowMeta.firstLoadedTurnIndex,
+          firstLoadedMessageIndex: windowMeta.firstLoadedMessageIndex,
+          totalTurns: windowMeta.totalTurns,
+          totalMessages: windowMeta.totalMessages,
+          hasOlder: windowMeta.hasOlder,
+        }
+      : {}),
     ...(sawAnyMalformed
       ? {
           error: {

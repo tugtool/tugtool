@@ -44,6 +44,7 @@ import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
 import { encodeTrashProjectDirSessions } from "../protocol";
+import { DEFAULT_REPLAY_WINDOW_MESSAGES } from "../protocol";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
@@ -430,7 +431,14 @@ class CardServicesStore {
     if (binding.sessionMode === "resume") {
       codeSessionStore.notifyResumeBindingLanded();
     }
-    sendRequestReplay(connection, binding.tugSessionId);
+    // Bound the cold-resume load by recency: replay only the most
+    // recent N messages (rows). A long session loads its relevant tail
+    // fast; older turns page in on demand. tugcode reports the loaded
+    // slice (oldest turn/message index, totals, hasOlder) on
+    // `replay_complete`.
+    sendRequestReplay(connection, binding.tugSessionId, {
+      lastMessages: DEFAULT_REPLAY_WINDOW_MESSAGES,
+    });
 
     return {
       tugSessionId: binding.tugSessionId,

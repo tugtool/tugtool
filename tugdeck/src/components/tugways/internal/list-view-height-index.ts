@@ -177,6 +177,31 @@ export class HeightIndex {
   }
 
   /**
+   * Remap every measured height by `+by` indices — the transform a
+   * front-insert (prepend) needs so each already-measured cell keeps its
+   * height as its index shifts. After `M` rows are inserted at the front,
+   * the cell formerly at index `i` is now at `i + M`; calling
+   * `shift(M)` moves its measurement accordingly so the height index
+   * stays aligned with the DOM without re-measuring the existing rows.
+   *
+   * `by <= 0` is a no-op. Invalidates any prepared cache — the next
+   * `prepare` rebuilds the Fenwick tree over the shifted indices.
+   */
+  shift(by: number): void {
+    const delta = Math.floor(by);
+    if (delta <= 0 || this.heights.size === 0) return;
+    const shifted = new Map<number, number>();
+    for (const [i, h] of this.heights) {
+      shifted.set(i + delta, h);
+    }
+    this.heights.clear();
+    for (const [i, h] of shifted) {
+      this.heights.set(i, h);
+    }
+    this.cache = null;
+  }
+
+  /**
    * Build (or refresh) the internal Fenwick cache for the supplied
    * `(itemCount, estimateFn)` pair. After calling this, `totalHeight`,
    * `offsetForIndex`, and `indexForOffset` all run in O(log n) (or

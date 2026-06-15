@@ -84,6 +84,7 @@ import type {
   ControlRequestForward,
   CostSnapshot,
   LastReplayResult,
+  ReplayWindowMeta,
   LiveMessageUsage,
   Message,
   PermissionDenial,
@@ -542,6 +543,23 @@ export interface CodeSessionState {
    */
   replayEverCompleted: boolean;
   /**
+   * Recency-window metadata from the most recent `replay_complete`
+   * (which slice is loaded; whether older turns remain). `null` until
+   * a windowed replay completes. Mirrored to
+   * `CodeSessionSnapshot.replayWindow`.
+   */
+  replayWindow: ReplayWindowMeta | null;
+  /**
+   * True while a load-previous (older-range) replay bracket is in
+   * flight: set by `begin_load_previous` (the store dispatches it just
+   * before sending the older-range request), read by
+   * `handleTurnComplete` to route the bracket's turns to prepend
+   * staging, and cleared at `replay_complete` (which also flushes the
+   * staged batch to the front of the transcript). Internal-only — not
+   * surfaced on the snapshot.
+   */
+  replayPrependActive: boolean;
+  /**
    * Replay-clock derived flags. Exposed through the snapshot identically-
    * named (`replayPreflightActive`, `replaySoftBudgetElapsed`,
    * `replayTimeoutDwellActive`); see `types.ts` for semantics. Driven
@@ -771,6 +789,8 @@ export function createInitialState(
     committedMsgIds: new Set(),
     lastReplayResult: null,
     replayEverCompleted: false,
+    replayWindow: null,
+    replayPrependActive: false,
     replayPreflightActive: false,
     replaySoftBudgetElapsed: false,
     replayTimeoutDwellActive: false,
@@ -2336,7 +2356,15 @@ function handleTurnComplete(
         ...resetPerTurnTelemetry(),
         ...closedPauseSegments,
       },
-      effects: [{ kind: "append-transcript", entry }],
+      // A load-previous bracket stages its turns for a front-commit at
+      // `replay_complete`; a normal bracket appends newest-at-the-end.
+      effects: [
+        {
+          kind: "append-transcript",
+          entry,
+          ...(state.replayPrependActive ? { prepend: true } : {}),
+        },
+      ],
     };
   }
 
@@ -3695,6 +3723,22 @@ function handleReplayComplete(
         count: event.count,
         at: Date.now(),
       };
+  // Recency-window metadata: present only on a windowed replay. When
+  // absent (a full / legacy / error replay) keep whatever the prior
+  // window recorded rather than nulling it.
+  const replayWindow: ReplayWindowMeta | null =
+    typeof event.firstLoadedTurnIndex === "number" &&
+    typeof event.firstLoadedMessageIndex === "number" &&
+    typeof event.totalTurns === "number" &&
+    typeof event.totalMessages === "number"
+      ? {
+          firstLoadedTurnIndex: event.firstLoadedTurnIndex,
+          firstLoadedMessageIndex: event.firstLoadedMessageIndex,
+          totalTurns: event.totalTurns,
+          totalMessages: event.totalMessages,
+          hasOlder: event.hasOlder === true,
+        }
+      : state.replayWindow;
   // Replay-clock: closing the window cancels preflight (defensive — it
   // would already be cleared by the preceding replay_started) and the
   // soft-budget timer. A timeout outcome opens the timeout-dwell timer
@@ -3704,6 +3748,11 @@ function handleReplayComplete(
     { kind: "cancel_timer", name: "preflight" },
     { kind: "cancel_timer", name: "soft_budget" },
   ];
+  // A load-previous bracket staged its older turns; commit them to the
+  // front of the transcript now that the bracket has closed.
+  if (state.replayPrependActive) {
+    effects.push({ kind: "flush-prepend" });
+  }
   if (isTimeout) {
     effects.push({
       kind: "schedule_timer",
@@ -3760,6 +3809,8 @@ function handleReplayComplete(
           pendingQuestion: state.pendingQuestion,
           awaitingApprovalSince: state.awaitingApprovalSince ?? Date.now(),
           lastReplayResult,
+          replayWindow,
+          replayPrependActive: false,
           replayEverCompleted: true,
           replayPreflightActive: false,
           replaySoftBudgetElapsed: false,
@@ -3780,6 +3831,8 @@ function handleReplayComplete(
         pendingQuestion: null,
         prevPhase: null,
         lastReplayResult,
+        replayWindow,
+        replayPrependActive: false,
         replayEverCompleted: true,
         replayPreflightActive: false,
         replaySoftBudgetElapsed: false,
@@ -3802,6 +3855,8 @@ function handleReplayComplete(
       prevPhase: null,
       pendingTurn: null,
       lastReplayResult,
+      replayWindow,
+      replayPrependActive: false,
       replayEverCompleted: true,
       replayPreflightActive: false,
       replaySoftBudgetElapsed: false,
@@ -4365,6 +4420,10 @@ export function reduce(
       return handleClearJobs(state);
     case "bind_resume_acknowledged":
       return handleBindResumeAcknowledged(state);
+    case "begin_load_previous":
+      // Mark the next replay bracket as a prepend (older range). Pure
+      // flag flip; the request itself is sent by the store wrapper.
+      return { state: { ...state, replayPrependActive: true }, effects: [] };
     case "tick_soft_budget":
       return handleTickSoftBudget(state);
     case "tick_timeout_dwell_done":

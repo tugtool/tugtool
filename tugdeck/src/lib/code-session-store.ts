@@ -321,6 +321,10 @@ export class CodeSessionStore {
 
   private state: CodeSessionState;
   private _transcript: ReadonlyArray<TurnEntry> = [];
+  // Older turns staged by a load-previous (prepend) replay bracket, in
+  // arrival order. `flush-prepend` commits this batch to the FRONT of
+  // `_transcript` at the bracket's `replay_complete`, then clears it.
+  private _prependStaging: TurnEntry[] = [];
   private _listeners: Array<() => void> = [];
   private _cachedSnapshot: CodeSessionSnapshot | null = null;
   private _disposed = false;
@@ -617,6 +621,7 @@ export class CodeSessionStore {
       lastError: this.state.lastError,
       lastReplayResult: this.state.lastReplayResult,
       replayEverCompleted: this.state.replayEverCompleted,
+      replayWindow: this.state.replayWindow,
       replayPreflightActive: this.state.replayPreflightActive,
       replaySoftBudgetElapsed: this.state.replaySoftBudgetElapsed,
       replayTimeoutDwellActive: this.state.replayTimeoutDwellActive,
@@ -798,6 +803,21 @@ export class CodeSessionStore {
   notifyResumeBindingLanded(): void {
     if (this._disposed) return;
     this.dispatch({ type: "bind_resume_acknowledged" });
+  }
+
+  /**
+   * Mark the next replay bracket as a load-previous (older-range)
+   * prepend: the reducer routes that bracket's committed turns to the
+   * prepend-staging buffer and flushes them ahead of the existing
+   * transcript at `replay_complete`. Dispatch this immediately before
+   * sending the older-range `request_replay` (the send itself is the
+   * caller's job). Internal-vocabulary routing kept here so callers
+   * stay free of the reducer event names, mirroring
+   * `notifyResumeBindingLanded()`.
+   */
+  beginLoadPreviousBracket(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "begin_load_previous" });
   }
 
   /**
@@ -1585,7 +1605,25 @@ export class CodeSessionStore {
         case "append-transcript":
           // Copy-on-write so old snapshot refs remain valid for
           // useSyncExternalStore consumers.
-          this._transcript = [...this._transcript, effect.entry];
+          if (effect.prepend === true) {
+            // Load-previous bracket: stage older turns (arrival order)
+            // for a single front-commit at flush-prepend. Staging keeps
+            // the prepended block's order correct and lets the list view
+            // observe one structural growth at the front rather than M.
+            this._prependStaging.push(effect.entry);
+          } else {
+            this._transcript = [...this._transcript, effect.entry];
+          }
+          break;
+        case "flush-prepend":
+          // Commit the staged older batch ahead of the existing
+          // transcript. Copy-on-write; existing `TurnEntry` refs (and
+          // their `turnKey`s) are reused, so React preserves the
+          // already-mounted rows' identity across the index shift ([L26]).
+          if (this._prependStaging.length > 0) {
+            this._transcript = [...this._prependStaging, ...this._transcript];
+            this._prependStaging = [];
+          }
           break;
         case "truncate-transcript": {
           // L26-safe local truncation ([#step-7-3]): drop the anchor turn

@@ -431,3 +431,52 @@ describe("HeightIndex — snapshot / hydrate", () => {
     expect(idx.get(10)).toBe(999);
   });
 });
+
+describe("HeightIndex — shift (prepend remap)", () => {
+  const est = (_: number) => 10;
+
+  test("remaps measured heights by +by, leaving values intact", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 100);
+    idx.set(1, 200);
+    idx.set(2, 300);
+
+    idx.shift(2);
+
+    // Old indices 0,1,2 now live at 2,3,4 with the same heights.
+    expect(idx.get(0)).toBeUndefined();
+    expect(idx.get(1)).toBeUndefined();
+    expect(idx.get(2)).toBe(100);
+    expect(idx.get(3)).toBe(200);
+    expect(idx.get(4)).toBe(300);
+    expect(idx.size).toBe(3);
+  });
+
+  test("offsets after shift account for the now-unmeasured front rows", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 100);
+    idx.set(1, 100);
+    // Before shift: offset of index 2 is 200.
+    expect(idx.offsetForIndex(2, est)).toBe(200);
+
+    idx.shift(2);
+    idx.prepare(4, est);
+    // Two new front rows fall back to the estimate (10 each); the
+    // measured pair now sits at 2,3.
+    expect(idx.offsetForIndex(2, est)).toBe(20); // 10 + 10
+    expect(idx.totalHeight(4, est)).toBe(10 + 10 + 100 + 100);
+  });
+
+  test("shift(0) and negative are no-ops; empty index is a no-op", () => {
+    const idx = new HeightIndex();
+    idx.set(0, 42);
+    idx.shift(0);
+    expect(idx.get(0)).toBe(42);
+    idx.shift(-3);
+    expect(idx.get(0)).toBe(42);
+
+    const empty = new HeightIndex();
+    empty.shift(5);
+    expect(empty.size).toBe(0);
+  });
+});

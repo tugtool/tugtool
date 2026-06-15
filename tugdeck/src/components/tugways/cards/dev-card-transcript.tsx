@@ -177,6 +177,25 @@ export function useSessionModelName(
 }
 
 /**
+ * The absolute message-number offset for the loaded window — the count
+ * of older messages (rows) that precede the first loaded row. Added to a
+ * row's window-relative index so every row is numbered by its true
+ * session position rather than its position within the loaded slice.
+ * `0` when the whole session is loaded (no recency window). Enters React
+ * via `useSyncExternalStore` ([L02]); updates (e.g. after a prepend
+ * shifts the window) re-number every visible row.
+ */
+function useMessageNumberBase(codeSessionStore: CodeSessionStore): number {
+  return useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().replayWindow?.firstLoadedMessageIndex ?? 0,
+      [codeSessionStore],
+    ),
+  );
+}
+
+/**
  * Format an absolute millisecond timestamp as a short clock-style
  * string for display next to a transcript row's identifier.
  *
@@ -517,6 +536,9 @@ const UserMessageCell = React.memo(function UserMessageCell({
   renderTurnTrailing,
   codeSessionStore,
 }: UserMessageCellProps) {
+  // Number the row by its true session position: the window offset plus
+  // its window-relative index ([L02]).
+  const messageNumber = useMessageNumberBase(codeSessionStore) + index + 1;
   // Read the user submission from the `user_message` Message at the
   // head of `turn.messages` (committed) or `activeTurn.messages`
   // (in-flight). The data source only emits a `user` row when one is
@@ -614,7 +636,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
           participant="user"
           identifier={USER_IDENTIFIER}
           timestamp={timestamp === "" ? undefined : timestamp}
-          sequenceNumber={index + 1}
+          sequenceNumber={messageNumber}
           body={
             <>
               <TugAtomTextBody
@@ -623,10 +645,10 @@ const UserMessageCell = React.memo(function UserMessageCell({
                 data-testid="dev-card-transcript-user-body"
                 text={text}
                 atoms={atoms}
-                messageNumber={index + 1}
+                messageNumber={messageNumber}
               />
               <TugAttachmentStrip
-                messageNumber={index + 1}
+                messageNumber={messageNumber}
                 atoms={imageAtoms}
                 bytesStore={bytesStore}
                 onAttachmentClick={handleAttachmentClick}
@@ -935,6 +957,8 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // cell mounted across the (one-time at session-init, occasional
   // mid-session) `modelName` resolution. [L02] / [L26].
   const modelName = useSessionModelName(sessionMetadataStore);
+  // True session row number: window offset + window-relative index ([L02]).
+  const messageNumber = useMessageNumberBase(codeSessionStore) + index + 1;
   // `turnKey` is set for every assistant row by `rowAt`. The fallback
   // throws in dev (data-source contract violation) and falls back to
   // an index-scoped string in prod so different rows can't
@@ -1075,7 +1099,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
             timestamp={
               timestamp === "" || timestamp === undefined ? undefined : timestamp
             }
-            sequenceNumber={index + 1}
+            sequenceNumber={messageNumber}
             body={
               // Body order — per [D07] sequence substrate, the wire's
               // arrival order drives the visual order. The renderer

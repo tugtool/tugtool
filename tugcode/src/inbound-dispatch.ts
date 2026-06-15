@@ -114,13 +114,13 @@ export const INBOUND_HANDLERS: InboundHandlers = {
   // Replay the session JSONL ([D12]). Fire-and-forget: runReplay's re-entrancy
   // guard drops a request that races an in-flight replay, and awaiting would
   // block the loop behind the replay tail.
-  request_replay: (_msg, { sessionManager, sessionId }) => {
+  request_replay: (msg, { sessionManager, sessionId }) => {
     if (!sessionManager) {
       console.error("request_replay received before session initialized");
       return;
     }
     console.log(`[dev::replay::request] session_id=${sessionId}`);
-    sessionManager.runReplay().catch((err) => {
+    sessionManager.runReplay(msg.window).catch((err) => {
       console.error("request_replay failed:", err);
     });
   },

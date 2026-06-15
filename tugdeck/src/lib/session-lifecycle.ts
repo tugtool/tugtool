@@ -29,6 +29,7 @@ import {
   encodeSpawnSession,
   type SpawnSessionMode,
 } from "../protocol";
+import type { ReplayWindow } from "@tugproto/inbound";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 
@@ -133,10 +134,11 @@ export function sendCloseSessionKeepingBinding(
 export function sendRequestReplay(
   connection: TugConnection,
   tugSessionId: string,
+  window?: ReplayWindow,
 ): void {
   logSessionLifecycle("request_replay.dispatch", {
     tug_session_id: tugSessionId,
   });
-  const frame = encodeRequestReplay(tugSessionId);
+  const frame = encodeRequestReplay(tugSessionId, window);
   connection.send(frame.feedId, frame.payload);
 }

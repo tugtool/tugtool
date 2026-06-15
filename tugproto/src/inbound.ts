@@ -142,9 +142,34 @@ export interface StopTask {
   task_id: string;
 }
 
+/**
+ * A recency window for a replay request. Bounds the replay to a turn
+ * range so a long session loads only the most relevant tail rather
+ * than the whole transcript:
+ *
+ *   - `{ lastMessages: N }` — the most recent N transcript messages
+ *     (rows), cut at a turn boundary: the default cold-resume load. A
+ *     message is a user or assistant row, so this bounds the load by the
+ *     unit the transcript actually numbers.
+ *   - `{ turnRange: [start, end) }` — an explicit half-open turn-index
+ *     range (used to page older turns in above the current view).
+ *
+ * Absent ⇒ load the whole session (the legacy, unbounded behavior).
+ */
+export type ReplayWindow =
+  | { lastMessages: number }
+  | { turnRange: [number, number] };
+
 /** Ask tugcode to replay the session JSONL ([D12]). */
 export interface RequestReplay {
   type: "request_replay";
+  /**
+   * Optional recency window. When present, tugcode translates and
+   * emits only the requested turn range and reports the window in
+   * `replay_complete` (`firstLoadedTurnIndex` / `totalTurns` /
+   * `hasOlder`). Absent ⇒ the full session (backward-compatible).
+   */
+  window?: ReplayWindow;
 }
 
 /**

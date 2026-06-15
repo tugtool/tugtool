@@ -907,6 +907,25 @@ export interface ReplayCompleteEvent {
       | "replay_timeout";
     message: string;
   };
+  /**
+   * Recency-window metadata, present only when the replay request
+   * carried a window (absent on a full / legacy replay). The reducer
+   * records these so the transcript knows which slice loaded and
+   * whether older turns remain to page in:
+   *   - `firstLoadedTurnIndex` — absolute index (from the oldest turn)
+   *     of the first loaded turn; i.e. the oldest loaded turn index.
+   *   - `firstLoadedMessageIndex` — absolute index (from the oldest row)
+   *     of the first loaded message/row; the transcript adds it to a
+   *     row's window-relative index for true session numbering.
+   *   - `totalTurns` / `totalMessages` — the whole session's committed
+   *     turn / row counts.
+   *   - `hasOlder` — whether any turns precede the loaded window.
+   */
+  firstLoadedTurnIndex?: number;
+  firstLoadedMessageIndex?: number;
+  totalTurns?: number;
+  totalMessages?: number;
+  hasOlder?: boolean;
   tug_session_id?: string;
   [key: string]: unknown;
 }
@@ -921,6 +940,20 @@ export interface ReplayCompleteEvent {
  */
 export interface BindResumeAcknowledgedEvent {
   type: "bind_resume_acknowledged";
+}
+
+/**
+ * Internal action dispatched by the store immediately before it sends a
+ * load-previous (older-range) replay request. Marks the next replay
+ * bracket as a *prepend*: the reducer routes the bracket's committed
+ * turns to the store's prepend-staging buffer (`append-transcript
+ * { prepend: true }`) and flushes them ahead of the existing transcript
+ * at `replay_complete`. The flag is set here (not derived from window
+ * metadata) because turns commit during the bracket, before
+ * `replay_complete`'s metadata lands. Cleared at `replay_complete`.
+ */
+export interface BeginLoadPreviousEvent {
+  type: "begin_load_previous";
 }
 
 /**
@@ -1001,6 +1034,7 @@ export type CodeSessionEvent =
   | TaskUpdatedEvent
   | ClearJobsActionEvent
   | BindResumeAcknowledgedEvent
+  | BeginLoadPreviousEvent
   | TickSoftBudgetEvent
   | TickTimeoutDwellDoneEvent
   | TickPreflightDoneEvent

@@ -19,6 +19,7 @@ import type {
   SessionCommand,
   StopTask,
   RequestReplay,
+  ReplayWindow,
   RewindPreview,
   SessionRewind,
   SkillsInventoryQuery,
@@ -39,6 +40,7 @@ export type {
   SessionCommand,
   StopTask,
   RequestReplay,
+  ReplayWindow,
   RewindPreview,
   SessionRewind,
   SkillsInventoryQuery,
@@ -967,6 +969,29 @@ export interface ReplayComplete {
       | "replay_timeout";
     message: string;
   };
+  /**
+   * Recency-window metadata. Present only when the replay request
+   * carried a window; absent on a full / legacy replay. Together they
+   * tell the reducer which slice of the session loaded and whether
+   * older turns remain to be paged in:
+   *
+   *   - `firstLoadedTurnIndex` — the absolute turn index (0-based,
+   *     counting from the oldest committed turn) of the first turn in
+   *     this window; the boundary for the next backward-paging request.
+   *   - `firstLoadedMessageIndex` — the absolute message (row) index of
+   *     the first loaded row; the transcript adds this to a row's
+   *     window-relative index to number it by its true session position.
+   *   - `totalTurns` / `totalMessages` — the whole session's committed
+   *     turn / row counts, independent of how many this window emitted.
+   *   - `hasOlder` — whether any turns precede the window
+   *     (`firstLoadedTurnIndex > 0`); drives the "load previous"
+   *     affordance.
+   */
+  firstLoadedTurnIndex?: number;
+  firstLoadedMessageIndex?: number;
+  totalTurns?: number;
+  totalMessages?: number;
+  hasOlder?: boolean;
   ipc_version: number;
 }
 

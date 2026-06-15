@@ -245,10 +245,10 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | tugcode: window the replay (RequestReplay window + sliced translate + metadata) | pending | — |
-| #step-2 | tugdeck: send window spec; reducer records oldestLoadedTurn/hasOlder | pending | — |
-| #step-3 | Reducer + data source: prepend older turns; stable-id height keying | pending | — |
-| #step-4 | TugListView: prepend with scroll-position hold | pending | — |
+| #step-1 | tugcode: window the replay (RequestReplay window + sliced translate + metadata) | done | 84c139ea |
+| #step-2 | tugdeck: send window spec; reducer records oldestLoadedTurn/hasOlder | done | 88dc2365 |
+| #step-3 | Reducer + data source: prepend older turns; stable-id height keying | done | da32e558 (height-cache id-keying folded into #step-4) |
+| #step-4 | TugListView: prepend with scroll-position hold | done | (committed below; live scroll-hold verified end-to-end with #step-5 trigger) |
 | #step-5 | "Load previous M" affordance + "load all" via TugSheet | pending | — |
 | #step-6 | Faithful restore — load-to-anchor on reload | pending | — |
 | #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | pending | — |
@@ -362,10 +362,14 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 - A "load previous" control at the transcript top, shown iff `hasOlder`, offering **50 / 100 / all** (reuse an existing Tug control — `TugChoiceGroup` / menu — not a hand-rolled one).
 - 50/100 → a load-previous windowed request ([#step-3]/[#step-4]); **all** → a full older-range request that, if it crosses 0.5 s, presents the redux `TugSheet` with progress + Cancel. Cancel stops the in-flight translate and **leaves the already-loaded window intact** (distinct from restore-Cancel's close-card).
 
+**[P08] Sheet locks out interaction immediately on every load-previous (user decision, 2026-06-14).** {#p08-sheet-on-interaction}
+When the user activates the load-previous control, present the redux `TugSheet` **immediately** (not only "all", not only after the 0.5 s gate) so the pane goes `inert` + scrim for the whole load. The modal does the interaction-lockout for free, which **simplifies** #step-4: the prepend (and its `scrollHeight`-delta `scrollTop` hold) happens while the user cannot scroll or click, so there is no concurrent-input race against the DOM growth — the scroll-hold lands against a quiescent viewport. Supersedes the earlier "small windowed loads reveal once with no sheet" framing in [P04] for the *load-previous* path (restore-side small loads still follow [P04]). The 0.5 s gate still governs whether the sheet shows *progress + Cancel chrome*, but the inert lock is immediate.
+
 **Tasks:**
 - [ ] Render the affordance from `hasOlder`; wire 50/100/all to load-previous requests.
-- [ ] Route "all" through the redux `TugSheet` + 0.5 s gate; Cancel = stop translate, keep loaded window. Resolve [Q04] (one-shot + Cancel for v1).
-- [ ] Cross-check tuglaws (L02 affordance derivation, L06 visibility) and name them.
+- [ ] On activation, immediately present the `TugSheet` (pane inert + scrim) for the load duration ([P08]); dismiss when the prepend commits. Route the in-flight progress + Cancel through the redux sheet + 0.5 s gate. Cancel = stop translate, keep loaded window. Resolve [Q04] (one-shot + Cancel for v1).
+- [ ] Dispatch `store.beginLoadPreviousBracket()` (lands in #step-3) immediately before sending the older-range `request_replay`, so the bracket prepends.
+- [ ] Cross-check tuglaws (L02 affordance derivation, L06 visibility, L02 sheet mapping) and name them.
 
 **Tests:**
 - [ ] Pure-logic: affordance shown iff `hasOlder`; option → request-range mapping.
