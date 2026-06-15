@@ -85,8 +85,14 @@ export type TugListRowVariant = "flush" | "pill";
 /** Reveal policy for the trailing accessory. */
 export type TugListRowTrailingReveal = "always" | "engaged";
 
-/** Leading single-select checkmark column mode. */
-export type TugListRowSelectedGlyph = "check" | "none";
+/** Leading selection-indicator column mode.
+ *  - `"check"` — a bare checkmark (shown when selected, blank otherwise);
+ *  - `"radio"` — a radio dot matching `TugRadioGroup` (a hollow ring, filled with
+ *    a center dot when selected — always visible);
+ *  - `"checkbox"` — a checkbox box matching `TugCheckbox` (an outlined box, filled
+ *    with a check when selected — always visible);
+ *  - `"none"` — no column. */
+export type TugListRowSelectedGlyph = "check" | "radio" | "checkbox" | "none";
 
 export interface TugListRowProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "title"> {
@@ -184,13 +190,15 @@ export interface TugListRowProps
   mono?: boolean;
 
   /**
-   * Leading single-select checkmark column. `"check"` reserves a
-   * fixed-width column on every row — showing a check when `selected`,
-   * empty otherwise — so titles align whether or not a row carries the
-   * mark. The check inherits the row's text color. Coexists with an
-   * independent `leading` accessory (the check sits leading-most).
-   * `"none"` (default) renders no column.
-   * @selector .tug-list-row-check[data-state="shown"|"reserved"]
+   * Leading selection-indicator column. Reserves a fixed-width column on every
+   * row so titles align whether or not a row carries the mark, and coexists with
+   * an independent `leading` accessory (the indicator sits leading-most).
+   *  - `"check"` — a checkmark shown when `selected`, blank (reserved) otherwise;
+   *    inherits the row's text color. The multi-select idiom.
+   *  - `"radio"` — a radio dot: a hollow ring always visible, filled with a
+   *    center dot when `selected`. The single-select idiom.
+   *  - `"none"` (default) — no column.
+   * @selector .tug-list-row-check[data-state="shown"|"reserved"][data-glyph]
    * @default "none"
    */
   selectedGlyph?: TugListRowSelectedGlyph;
@@ -265,7 +273,7 @@ export function resolveListRowSelectedGlyph(
   glyph: TugListRowSelectedGlyph | undefined,
   selected: boolean | undefined,
 ): TugListRowGlyphState {
-  if (glyph !== "check") return "none";
+  if (glyph !== "check" && glyph !== "radio" && glyph !== "checkbox") return "none";
   return selected === true ? "shown" : "reserved";
 }
 
@@ -360,9 +368,20 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
             className="tug-list-row-check"
             data-slot="tug-list-row-check"
             data-state={glyphState}
+            data-glyph={selectedGlyph}
             aria-hidden="true"
           >
-            {glyphState === "shown" ? <Check /> : null}
+            {selectedGlyph === "radio" ? (
+              <span className="tug-list-row-radio">
+                <span className="tug-list-row-radio-dot" />
+              </span>
+            ) : selectedGlyph === "checkbox" ? (
+              <span className="tug-list-row-checkbox">
+                <Check />
+              </span>
+            ) : glyphState === "shown" ? (
+              <Check />
+            ) : null}
           </span>
         ) : null}
         {hasLeading ? (

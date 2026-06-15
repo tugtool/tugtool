@@ -73,7 +73,6 @@ body {
  * `align-items: flex-start`, so every item starts at the top — and because
  * each is exactly one line tall in the common case, that top IS the center. */
 .tool-call-header-dot,
-.tool-call-header-icon,
 .tool-call-header-name,
 .tool-call-header-summary,
 .tool-call-header-actions {
@@ -83,8 +82,7 @@ body {
   align-items: center;
 }
 
-.tool-call-header-dot,
-.tool-call-header-icon {
+.tool-call-header-dot {
   justify-content: center;
   color: var(--tugx-block-text-color-muted);
 }

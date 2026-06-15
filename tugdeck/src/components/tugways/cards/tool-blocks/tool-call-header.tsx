@@ -5,14 +5,14 @@
  * One calm row carries tool + target + a trailing result + lifecycle
  * status:
  *
- *   [dot] [icon] Name  target …  <result>  | [actions] [⌄]
+ *   [dot] Name  target …  <result>  | [actions] [⌄]
  *
  * The SAME component renders whether the block is collapsed (header is
  * the whole block), expanded (header above a mounted body), or a tool
  * that never collapses (no chevron). There is no second header component
  * and no fork in the chrome — so the collapsed and expanded presentations
  * cannot drift apart. A long target wraps to more rows while the dot,
- * icon, trailing result, and actions stay on the first row; color comes
+ * trailing result, and actions stay on the first row; color comes
  * only from the lifecycle dot (no left-edge status stripe).
  *
  * The trailing result is one quiet one-line `summary`, rendered the same
@@ -58,7 +58,6 @@ import {
   type ToolCallPhase,
 } from "@/lib/code-session-store/tool-call-phase-visual";
 
-import { toolIconFor } from "./tool-icons";
 import {
   formatToolResultSummary,
   type ToolResultSummary,
@@ -77,15 +76,6 @@ export interface ToolCallHeaderProps {
   phase?: ToolCallPhase;
   /** Canonical tool name (e.g. "Bash"). */
   toolName: string;
-  /**
-   * Explicit icon node. When omitted and `showIcon` is true, resolved from
-   * the central {@link toolIconFor} registry by `toolName`. Pass `null`
-   * with `showIcon` true to render no icon for a tool the registry would
-   * otherwise give a glyph.
-   */
-  icon?: React.ReactNode;
-  /** Whether to render the per-tool icon. Defaults to `true`. */
-  showIcon?: boolean;
   /**
    * The call's target — a path atom-chip (file tools) or the command text
    * (command tools). Chips size themselves; command text wraps to more
@@ -142,8 +132,6 @@ export const ToolCallHeader = React.forwardRef<
   {
     phase = "idle",
     toolName,
-    icon,
-    showIcon = true,
     target,
     summary,
     caution,
@@ -155,7 +143,6 @@ export const ToolCallHeader = React.forwardRef<
   },
   ref,
 ) {
-  const iconNode = showIcon ? (icon !== undefined ? icon : toolIconFor(toolName)) : null;
   const collapsible = disclosure !== undefined;
   const collapsed = disclosure?.collapsed === true;
   const hasCopy = copyText !== undefined && copyText.length > 0;
@@ -176,11 +163,6 @@ export const ToolCallHeader = React.forwardRef<
         aria-label={TOOL_CALL_PHASE_LABELS[phase]}
         className="tool-call-header-dot"
       />
-      {iconNode !== null ? (
-        <span className="tool-call-header-icon" aria-hidden="true">
-          {iconNode}
-        </span>
-      ) : null}
       <span className="tool-call-header-name">{toolName}</span>
       {/* The detail column is always present — it holds the target (chip
           or wrapping command) and otherwise serves as the flexible spacer

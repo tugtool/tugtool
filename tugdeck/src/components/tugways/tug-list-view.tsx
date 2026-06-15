@@ -110,7 +110,12 @@ import {
 } from "./internal/list-view-separator";
 import { useFocusable, useFocusManager } from "./use-focusable";
 import { FocusModeContext } from "./focus-manager";
-import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
+import type {
+  FocusPolicy,
+  KeyViewBehavior,
+  SpatialCursorHandle,
+} from "./focus-manager";
+import { CardIdContext } from "@/lib/card-id-context";
 import { KEY_CURSOR_ATTRIBUTE } from "./use-focus-cursor";
 
 // Re-export the `rowSeparator` prop types so consumers import them
@@ -278,15 +283,26 @@ export interface TugListViewDelegate {
   didEndDisplaying?(index: number): void;
 
   /**
-   * Fires when the user activates a cell (click / Space / Enter).
-   * Selection ownership lives with the consumer by default — the list
-   * view stores no selected-index state. The exception is opt-in
-   * `selectionRequired` mode (see `TugListViewProps`), where the list
-   * view owns a never-null selected index and mirrors it out through
-   * `onSelectionChange`; `onSelect` still fires alongside on every
-   * activation.
+   * Fires when the user selects a cell (click / Space, and Enter unless
+   * {@link TugListViewProps.commitOnEnter} is `"act"`). Selection ownership
+   * lives with the consumer by default — the list view stores no selected-index
+   * state. The exception is opt-in `selectionRequired` mode (see
+   * `TugListViewProps`), where the list view owns a never-null selected index
+   * and mirrors it out through `onSelectionChange`; `onSelect` still fires
+   * alongside on every selection.
    */
   onSelect?(index: number): void;
+
+  /**
+   * Fires on the **Enter/act** of the cursor row, when the list opts into
+   * {@link TugListViewProps.commitOnEnter} `"act"`. The act-on-Enter path that
+   * is DISTINCT from {@link onSelect} (click / Space): a container whose Space
+   * (e.g. a toggle) and Enter (e.g. commit-and-advance) are different actions
+   * routes them to separate callbacks. The list still commits its own selection
+   * (`data-selected`) on the cursor row before invoking this. Omit it (or omit
+   * `commitOnEnter`) and Enter falls back to the [P24] bubble-to-default rule.
+   */
+  onActivate?(index: number): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -755,6 +771,59 @@ export interface TugListViewProps<
    * @default false
    */
   seedSelection?: boolean;
+
+  /**
+   * How **Enter** on the cursor row behaves when the list is authored into a
+   * {@link focusGroup} (the multi-select item-group shape, [P24]). By default an
+   * item container does not consume Enter — it bubbles to the scope's default
+   * button. Opt in here when the list IS the surface's commit-advance control:
+   *
+   *  - `"act"` — Enter performs a DISTINCT act, routed to
+   *    {@link TugListViewDelegate.onActivate}, separate from Space's
+   *    {@link TugListViewDelegate.onSelect}. The list still commits its own
+   *    selection on the cursor row first. For a list whose Space (toggle) and
+   *    Enter (commit-and-advance) differ — the question wizard's multi-select
+   *    options.
+   *
+   * Ignored unless the list is registered into a `focusGroup` and not
+   * `singleSelect` (a single-select list never consumes Enter; Right is its
+   * descend gesture).
+   *
+   * @default undefined (Enter bubbles to the scope default)
+   */
+  commitOnEnter?: "act";
+
+  /**
+   * ARIA role for the scroll container. Defaults to `"list"`. Override for a
+   * list that is semantically a selection group — e.g. `"radiogroup"` (a
+   * single-select option list) or `"group"` (a multi-select one). The cell
+   * renderer then stamps the matching item role (`role="radio"` / `"checkbox"`)
+   * + `aria-checked` on its row, and {@link itemRole} flattens the wrapper.
+   * @default "list"
+   */
+  listRole?: string;
+
+  /**
+   * ARIA role for each cell wrapper. Defaults to `"listitem"`. Set to
+   * `"presentation"` when the row itself carries the semantic role (e.g. a
+   * `radiogroup` whose rows are `role="radio"`), so the wrapper doesn't insert a
+   * spurious `listitem` between the group and its items.
+   * @default "listitem"
+   */
+  itemRole?: string;
+
+  /**
+   * Register a spatial-cursor handle so the **spatial navigator** drives in-group
+   * arrows — roving the movement cursor over the rows — when this list is also a
+   * node in a declared spatial order ([P22] / [Q12]). Without it, a list that
+   * shares a spatial grid with sibling controls (e.g. a dialog's option list next
+   * to its buttons) loses its arrows to ring movement: an arrow jumps the ring out
+   * to the neighbor instead of moving the cursor. Opt in for a list that lives in
+   * such a grid; a standalone authored list (its own arrow handling suffices)
+   * leaves it off. Ignored unless authored into a `focusGroup`.
+   * @default false
+   */
+  spatialCursor?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -940,6 +1009,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       singleSelect = false,
       initialSelectedIndex,
       seedSelection = false,
+      commitOnEnter,
+      listRole = "list",
+      itemRole = "listitem",
+      spatialCursor = false,
     },
     ref,
   ) {
@@ -2396,6 +2469,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // no cursor) for un-authored / subordinate lists.
     // -----------------------------------------------------------------------
     const manager = useFocusManager();
+    const cardId = React.useContext(CardIdContext);
     const focusableId = React.useId();
     const focusEngineActiveRef = React.useRef(focusEngineActive);
     focusEngineActiveRef.current = focusEngineActive;
@@ -2553,6 +2627,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       delegateRef.current?.onSelect?.(i);
       scrollIndexIntoView(i, "nearest");
     }, [isCursorableRow, scrollIndexIntoView]);
+    // Enter/act on the cursor row, the `commitOnEnter: "act"` path. Commits the
+    // list's own selection (so `data-selected` lands before the consumer reads
+    // it) then fires `delegate.onActivate` — the DISTINCT Enter callback, not
+    // Space's `onSelect`. A list that opts in but supplies no `onActivate` still
+    // commits its selection (the no-op fallback).
+    const actCursorRow = React.useCallback((): void => {
+      const i = cursorIndexRef.current;
+      if (!isCursorableRow(i)) return;
+      setSelectedIndex(i);
+      delegateRef.current?.onActivate?.(i);
+      scrollIndexIntoView(i, "nearest");
+    }, [isCursorableRow, scrollIndexIntoView]);
     const descendCursorRow = React.useCallback((): void => {
       if (manager === null) return;
       const i = cursorIndexRef.current;
@@ -2649,6 +2735,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
     // The thin declaration the engine's act dispatch reads at Space/Enter/Escape
     // ([P01]) — `currentItemDescendable` is evaluated live against the cursor row.
+    // `commitOnEnter: "act"` only applies to a non-single-select, authored list
+    // (the multi-select item-group shape); a single-select list owns Enter as
+    // passthrough (Right descends), so the opt-in is suppressed there.
+    const enterActs = commitOnEnter === "act" && !singleSelect;
     const behavior = React.useCallback(
       (): KeyViewBehavior => ({
         container: "item",
@@ -2659,14 +2749,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // list never descends on ENTER (Right is its descend gesture, handled in
         // the movement-key listener), so Enter resolves to passthrough and reaches
         // the surface default. A multi/descendable list moves a cursor only; Enter
-        // descends a navigable row, else bubbles to the scope default ([P24]).
+        // descends a navigable row, else (when `commitOnEnter: "act"`) acts on the
+        // cursor row via `onAct`, else bubbles to the scope default ([P24]).
         currentItemDescendable:
           !singleSelect && rowFirstFocusableId(cursorIndexRef.current) !== null,
+        commitOnEnter: enterActs ? "act" : undefined,
         onSelect: selectCursorRow,
-        onAct: selectCursorRow,
+        onAct: enterActs ? actCursorRow : selectCursorRow,
         onDescend: descendCursorRow,
       }),
-      [singleSelect, rowFirstFocusableId, selectCursorRow, descendCursorRow],
+      [
+        singleSelect,
+        enterActs,
+        rowFirstFocusableId,
+        selectCursorRow,
+        actCursorRow,
+        descendCursorRow,
+      ],
     );
 
     // Register the scroll container as the single item-container stop. The
@@ -2682,6 +2781,88 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       behavior,
     });
     engineFocusableRef.current = engineFocusable;
+
+    // Spatial-cursor handle ([P22] / [Q12]). When this list is authored into a
+    // `focusGroup`, the spatial navigator drives in-group arrows through this
+    // handle — roving the movement cursor over the rows — instead of moving the
+    // ring off to an adjacent grid node. Without it, a list that is also a node in
+    // a declared spatial order would lose its arrows to ring movement (the bug the
+    // radio group avoids via `use-item-group-keyboard`). The navigator reads
+    // `length` / `cursorIndex` to detect the group's edges (where Up/Down then
+    // cross a seam) and calls `moveCursor` for an interior step. Both indices are
+    // expressed over the *cursorable* rows so a header/footer between cells doesn't
+    // skew the edge math. The handle reads its callbacks through a live ref so it
+    // can register once yet always run the current closures ([L07]).
+    const cursorNavRef = React.useRef({
+      isCursorableRow,
+      firstCursorableRow,
+      lastCursorableRow,
+      stepCursorableRow,
+      moveCursorTo,
+      selectCursorRow,
+      rowFirstFocusableId,
+      descendCursorRow,
+    });
+    cursorNavRef.current = {
+      isCursorableRow,
+      firstCursorableRow,
+      lastCursorableRow,
+      stepCursorableRow,
+      moveCursorTo,
+      selectCursorRow,
+      rowFirstFocusableId,
+      descendCursorRow,
+    };
+    const cursorHandleRef = React.useRef<SpatialCursorHandle | null>(null);
+    if (cursorHandleRef.current === null) {
+      cursorHandleRef.current = {
+        length: () => {
+          const total = dataSourceRef.current.numberOfItems();
+          const { isCursorableRow: cursorable } = cursorNavRef.current;
+          let n = 0;
+          for (let i = 0; i < total; i += 1) if (cursorable(i)) n += 1;
+          return n;
+        },
+        cursorIndex: () => {
+          const cur = cursorIndexRef.current;
+          if (cur < 0) return -1;
+          const total = dataSourceRef.current.numberOfItems();
+          const { isCursorableRow: cursorable } = cursorNavRef.current;
+          let pos = -1;
+          for (let i = 0; i <= cur && i < total; i += 1) if (cursorable(i)) pos += 1;
+          return pos;
+        },
+        moveCursor: (delta) => {
+          const nav = cursorNavRef.current;
+          const cur = cursorIndexRef.current;
+          const next =
+            cur < 0
+              ? delta > 0
+                ? nav.firstCursorableRow()
+                : nav.lastCursorableRow()
+              : nav.stepCursorableRow(cur, delta);
+          if (next >= 0 && next !== cur) {
+            nav.moveCursorTo(next, true);
+            // Single-select: selection follows the cursor (the picker shape).
+            if (singleSelectRef.current) nav.selectCursorRow();
+          }
+        },
+        tryDescendRight: () => {
+          const nav = cursorNavRef.current;
+          if (nav.rowFirstFocusableId(cursorIndexRef.current) !== null) {
+            nav.descendCursorRow();
+            return true;
+          }
+          return false;
+        },
+      };
+    }
+    React.useLayoutEffect(() => {
+      if (manager === null || !focusEngineActive || !spatialCursor) return;
+      const ctx = manager.contextFor(cardId);
+      ctx.registerCursorHandle(focusableId, cursorHandleRef.current!);
+      return () => ctx.unregisterCursorHandle(focusableId);
+    }, [manager, cardId, focusableId, focusEngineActive, spatialCursor]);
 
     // Land / clear the cursor as the container gains or loses the keyboard key
     // view. On gain, seed the cursor on the selected row (else the first
@@ -3093,7 +3274,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
         style={separatorStyle}
-        role="list"
+        role={listRole}
         // A subordinate list adds no Tab stop of its own (the filter input owns
         // focus); every other list is a native / engine focus stop at `0`.
         tabIndex={keyboardSubordinate ? -1 : 0}
@@ -3207,7 +3388,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 data-tug-list-cell-kind={kind}
                 data-list-cell-role={wrapperRoleAttr}
                 data-selected={wrapperSelectedAttr}
-                role="listitem"
+                role={itemRole}
                 tabIndex={wrapperTabIndex}
                 ref={getCellCallbacks(index).ref}
                 onClick={getCellCallbacks(index).click}

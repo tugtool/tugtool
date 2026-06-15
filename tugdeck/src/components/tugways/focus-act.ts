@@ -46,12 +46,21 @@ export interface ComponentKeyDeclaration {
   currentItemDescendable?: boolean;
   /**
    * Whether this item container is a **commit-advances** primary control with no
-   * separate scope default — the question wizard's single-select options. When
-   * set, `Enter` commits the ringed item like Space (the default for an item
-   * container is to bubble Enter to the scope default, [P24]). Only meaningful
-   * for `item` containers; ignored when {@link currentItemDescendable}.
+   * separate scope default — the question wizard's options. When set, `Enter`
+   * commits the ringed item rather than bubbling to the scope default (the item
+   * container default, [P24]). Two flavors:
+   *
+   *  - `true` — Enter commits like Space: it resolves to `select` → `onSelect`.
+   *    The single-select radio, where Space and Enter both pick the ringed item.
+   *  - `"act"` — Enter resolves to a **distinct** `act` → `onAct`, separate from
+   *    Space's `select` → `onSelect`. For a container whose Space (toggle) and
+   *    Enter (commit-and-advance) are different actions — the wizard's
+   *    multi-select option list: Space toggles the cursor item, Enter checks it
+   *    and advances.
+   *
+   * Only meaningful for `item` containers; ignored when {@link currentItemDescendable}.
    */
-  commitOnEnter?: boolean;
+  commitOnEnter?: boolean | "act";
   /**
    * Whether the component's scope is modal (trapped). At a modal scope `Escape`
    * **cancels** the scope rather than ascending one level.
@@ -144,12 +153,16 @@ export function resolveFocusAct(
       // By default an item container does NOT consume Enter ([P24]): Return
       // bubbles to the scope default, reaching the ringed default button (a
       // dialog's Allow, a picker's Open). A **commit-advances** group opts out:
-      // the question wizard's single-select options have no separate per-question
-      // default to bubble to — committing the answer IS the forward action — so
-      // Enter commits the ringed item exactly like Space (then the wizard
-      // auto-advances). The opt-in keeps Enter-bubbles the rule for every group
-      // that has a default; only a primary commit-advance group flips it.
-      return declaration.commitOnEnter ? "select" : "passthrough";
+      // the question wizard's options have no separate per-question default to
+      // bubble to — committing the answer IS the forward action. `commitOnEnter:
+      // true` commits the ringed item exactly like Space (`select`); the `"act"`
+      // flavor routes Enter to a DISTINCT `act` so a group whose Space (toggle)
+      // and Enter (commit-advance) differ — the multi-select option list — can
+      // carry them out via separate callbacks. The opt-in keeps Enter-bubbles the
+      // rule for every group that has a default; only a primary commit-advance
+      // group flips it.
+      if (!declaration.commitOnEnter) return "passthrough";
+      return declaration.commitOnEnter === "act" ? "act" : "select";
     }
     // A leaf or component performs its plain act.
     return "act";

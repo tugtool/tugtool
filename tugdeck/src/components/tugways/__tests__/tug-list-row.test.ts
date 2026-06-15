@@ -91,6 +91,12 @@ describe("resolveListRowSelectedGlyph", () => {
     expect(resolveListRowSelectedGlyph("check", undefined)).toBe("reserved");
   });
 
+  test('"radio" tracks selection like "check" (shown / reserved)', () => {
+    expect(resolveListRowSelectedGlyph("radio", true)).toBe("shown");
+    expect(resolveListRowSelectedGlyph("radio", false)).toBe("reserved");
+    expect(resolveListRowSelectedGlyph("radio", undefined)).toBe("reserved");
+  });
+
   test('"none" / omitted renders no column regardless of selection', () => {
     expect(resolveListRowSelectedGlyph("none", true)).toBe("none");
     expect(resolveListRowSelectedGlyph("none", false)).toBe("none");

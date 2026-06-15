@@ -95,40 +95,6 @@ export const GalleryToolCallHeader: React.FC = () => {
       <TugSeparator />
 
       <section className="gallery-tch-section">
-        <TugLabel>Icon on / off (dot is always leftmost)</TugLabel>
-        <div className="gallery-tch-stack">
-          <ToolCallHeader {...demoControls}
-            phase="in_flight"
-            toolName="Read"
-            showIcon
-            target={
-              <TugAtomChip
-                type="file"
-                label={formatAtomLabel(SAMPLE_PATH, "filename")}
-                value={SAMPLE_PATH}
-                className="tug-atom-chip"
-              />
-            }
-          />
-          <ToolCallHeader {...demoControls}
-            phase="in_flight"
-            toolName="Read"
-            showIcon={false}
-            target={
-              <TugAtomChip
-                type="file"
-                label={formatAtomLabel(SAMPLE_PATH, "filename")}
-                value={SAMPLE_PATH}
-                className="tug-atom-chip"
-              />
-            }
-          />
-        </div>
-      </section>
-
-      <TugSeparator />
-
-      <section className="gallery-tch-section">
         <TugLabel>Chip identity — no clipping (was Image #1)</TugLabel>
         <div className="gallery-tch-stack">
           <ToolCallHeader {...demoControls}

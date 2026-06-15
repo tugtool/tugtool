@@ -365,7 +365,7 @@ body {
  * scrolls in the transcript), run the rows + dividers flush to the list frame,
  * and drop the list's block-axis breathing pseudo-elements so the rows sit tight.
  * On open the list holds the key view and wears its perimeter ring (the picker
- * shape — the cursor-row fill marks the cursor inside it). The rows keep their
+ * shape — the cursor-row ring marks the cursor inside it). The rows keep their
  * own internal text padding ([L20] cascade-scoped instance override). */
 .dev-question-dialog-options-list.tug-list-view {
   height: auto;
@@ -374,12 +374,21 @@ body {
   --tugx-list-view-row-gap: 0;
 }
 
-/* Mutually-exclusive questions render a `TugRadioGroup`. Stretch its items to the
- * full options width so long, prose descriptions wrap at the dialog's right edge
- * instead of overflowing (the group is full-width here, unlike the centered,
- * shrink-to-content PermissionDialog scope). */
-.dev-question-dialog-options-radio .tug-radio-group-items {
-  align-items: stretch;
+/* The options keep the base `TugListView` appearance — the cursor-row fill tint,
+ * hover fill, and the selected-row fill — so a question reads with the same
+ * tint/hover/select language as every other list in the app. The leading glyph
+ * (radio dot / checkbox) adds the selection affordance on top; the container's
+ * perimeter ring marks that the list holds the keyboard. The commit-advance flash
+ * (see the dialog's flash effect) blinks a transient ring on each selected row.
+ *
+ * All four row states must read distinctly: unselected/unhovered (no fill),
+ * unselected/hovered (ghost wash), selected/unhovered (calm quiet fill), and
+ * selected/hovered. The base flush selected-hover steps only within the quiet
+ * ramp and reads too close to selected/unhovered, so pin a clearly brighter
+ * highlight for the hover-over-selected state — a selected row must still show an
+ * unmistakable hover. */
+.dev-question-dialog-options-list .tug-list-row[data-variant="flush"] {
+  --tugx-list-row-selected-hover-bg: var(--tug7-surface-selection-primary-normal-selected-hover);
 }
 
 /* The dialog renders inside `.dev-card-transcript`, whose own list-view rule

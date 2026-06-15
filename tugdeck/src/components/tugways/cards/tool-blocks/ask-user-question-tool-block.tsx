@@ -28,8 +28,8 @@
  *      what they answered.
  *
  * Composition (Spec S03, [#bk-conformance]):
- *  - `ToolBlockChrome` owns the frame: a question-mark icon + the
- *    tool name + a short args summary (the question count).
+ *  - `ToolBlockChrome` owns the frame: the tool name + a short args
+ *    summary (the question count).
  *  - **Body — ready state:** a numbered list of `Q → A` pairs. The
  *    question text reads as the prompt, the chosen label (or
  *    comma-separated labels for multi-select) reads as the response.

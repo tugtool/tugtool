@@ -56,6 +56,26 @@ describe("resolveFocusAct — act tier", () => {
     ).toBe("descend");
   });
 
+  test("`commitOnEnter: \"act\"` routes Enter to a distinct act, leaving Space as select", () => {
+    // The multi-select option list: Space toggles the cursor item (`select` →
+    // onSelect), Enter checks-and-advances via a SEPARATE callback (`act` →
+    // onAct). The two gestures must resolve to different acts.
+    expect(
+      resolveFocusAct(k("Enter"), { container: "item", commitOnEnter: "act" }),
+    ).toBe("act");
+    expect(
+      resolveFocusAct(k(" "), { container: "item", commitOnEnter: "act" }),
+    ).toBe("select");
+    // Descendable still wins over the opt-in.
+    expect(
+      resolveFocusAct(k("Enter"), {
+        container: "item",
+        commitOnEnter: "act",
+        currentItemDescendable: true,
+      }),
+    ).toBe("descend");
+  });
+
   test("Enter descends when the current target is navigable (descendable wins)", () => {
     // A descendable accordion section / list row, or the editor stop that resumes
     // typing — descends regardless of container kind.

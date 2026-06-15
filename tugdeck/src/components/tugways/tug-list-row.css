@@ -36,10 +36,15 @@
  * | --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg    | content | .tug-list-row[data-selected="true"]:hover (color)|
  * | --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg          | control | .tug-list-row[data-variant="pill"][data-selected] (border) |
  * | --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg        | control | .tug-list-row[data-selected][data-selected-accent] (accent border) |
+ * | --tugx-list-row-radio-dot            | --tugx-list-row-radio-on             | control | .tug-list-row-check[data-state="shown"] .tug-list-row-radio-dot (dot on filled ring) |
+ * | --tugx-list-row-checkbox-check       | --tugx-list-row-checkbox-on          | control | .tug-list-row-check[data-state="shown"] .tug-list-row-checkbox svg (check on filled box) |
  *
  * The `flush` variant is transparent and paints no foreground of its
  * own — its text color is inherited from the host surface — so it
- * contributes no pairings.
+ * contributes no pairings. The radio/checkbox glyph rings + boxes at
+ * rest are likewise transparent on the host surface; only their
+ * filled (selected) state pairs a foreground (dot / check) against an
+ * owned surface (the fill).
  */
 
 /* @tug-pairings {
@@ -52,6 +57,8 @@
   --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg | content
   --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg       | control
   --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg     | control
+  --tugx-list-row-radio-dot            | --tugx-list-row-radio-on          | control
+  --tugx-list-row-checkbox-check       | --tugx-list-row-checkbox-on       | control
 } */
 
 /* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
@@ -70,6 +77,22 @@ body {
      appears/disappears. Reserved unconditionally — the chevron only paints on
      the cursor row, but the space is always held so nothing reflows. */
   --tugx-list-row-indicator-gutter:  0.2rem;
+  /* Radio-dot glyph (`selectedGlyph="radio"`) — borrows TugRadioGroup's own base
+     tokens so a list-row radio reads identically: a muted ring that fills the
+     selection blue with a center dot when selected. */
+  --tugx-list-row-radio-border:        var(--tug7-element-radio-border-normal-off-rest);
+  --tugx-list-row-radio-border-hover:  var(--tug7-element-radio-border-normal-off-hover);
+  --tugx-list-row-radio-on:            var(--tug7-surface-toggle-primary-normal-on-rest);
+  --tugx-list-row-radio-on-hover:      var(--tug7-surface-toggle-primary-normal-on-hover);
+  --tugx-list-row-radio-dot:           var(--tug7-element-radio-dot-normal-plain-rest);
+  /* Checkbox glyph (`selectedGlyph="checkbox"`) — borrows TugCheckbox's base
+     tokens: an outlined box that fills the selection blue with a check when
+     selected. */
+  --tugx-list-row-checkbox-border:       var(--tug7-surface-toggle-primary-normal-off-rest);
+  --tugx-list-row-checkbox-border-hover: var(--tug7-surface-toggle-primary-normal-off-hover);
+  --tugx-list-row-checkbox-on:           var(--tug7-surface-toggle-primary-normal-on-rest);
+  --tugx-list-row-checkbox-on-hover:     var(--tug7-surface-toggle-primary-normal-on-hover);
+  --tugx-list-row-checkbox-check:        var(--tug7-element-checkmark-icon-normal-plain-rest);
   --tugx-list-row-content-gap:       var(--tug-space-2xs);
   /* Gap between trailing accessories (a status badge sitting next to a
      trash button must not touch it). */
@@ -184,6 +207,88 @@ body {
 .tug-list-row-check svg {
   width: 0.875rem;
   height: 0.875rem;
+}
+
+/* Radio-dot glyph (`selectedGlyph="radio"`) — mirrors TugRadioGroup's indicator.
+   A muted ring always visible (unlike the check, which is blank when unselected);
+   on selection the ring fills the selection blue and a center dot appears. Four
+   states keyed off the column's `data-state` (selected) and the row's `:hover`:
+   unselected/unhovered, unselected/hovered, selected/unhovered, selected/hovered.
+   Same reserved column + alignment as the check, so glyph kinds interleave
+   without shifting titles. */
+.tug-list-row-radio {
+  width: 0.875rem;
+  height: 0.875rem;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--tugx-list-row-radio-border);
+  background-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+.tug-list-row-radio-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background-color: transparent;
+}
+/* unselected / hovered */
+.tug-list-row:hover .tug-list-row-check[data-state="reserved"] .tug-list-row-radio {
+  border-color: var(--tugx-list-row-radio-border-hover);
+}
+/* selected / unhovered */
+.tug-list-row-check[data-state="shown"] .tug-list-row-radio {
+  background-color: var(--tugx-list-row-radio-on);
+  border-color: var(--tugx-list-row-radio-on);
+}
+.tug-list-row-check[data-state="shown"] .tug-list-row-radio-dot {
+  background-color: var(--tugx-list-row-radio-dot);
+}
+/* selected / hovered */
+.tug-list-row:hover .tug-list-row-check[data-state="shown"] .tug-list-row-radio {
+  background-color: var(--tugx-list-row-radio-on-hover);
+  border-color: var(--tugx-list-row-radio-on-hover);
+}
+
+/* Checkbox glyph (`selectedGlyph="checkbox"`) — mirrors TugCheckbox. An outlined
+   box always visible; on selection it fills the selection blue and the check
+   fades in. Same four states as the radio. */
+.tug-list-row-checkbox {
+  width: 0.875rem;
+  height: 0.875rem;
+  box-sizing: border-box;
+  border-radius: 0.25rem;
+  border: 1px solid var(--tugx-list-row-checkbox-border);
+  background-color: transparent;
+  color: var(--tugx-list-row-checkbox-check);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+.tug-list-row-check .tug-list-row-checkbox svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  opacity: 0;
+}
+/* unselected / hovered */
+.tug-list-row:hover .tug-list-row-check[data-state="reserved"] .tug-list-row-checkbox {
+  border-color: var(--tugx-list-row-checkbox-border-hover);
+}
+/* selected / unhovered */
+.tug-list-row-check[data-state="shown"] .tug-list-row-checkbox {
+  background-color: var(--tugx-list-row-checkbox-on);
+  border-color: var(--tugx-list-row-checkbox-on);
+}
+.tug-list-row-check[data-state="shown"] .tug-list-row-checkbox svg {
+  opacity: 1;
+}
+/* selected / hovered */
+.tug-list-row:hover .tug-list-row-check[data-state="shown"] .tug-list-row-checkbox {
+  background-color: var(--tugx-list-row-checkbox-on-hover);
+  border-color: var(--tugx-list-row-checkbox-on-hover);
 }
 
 /* The content column flexes to fill the row; `min-width: 0` lets a

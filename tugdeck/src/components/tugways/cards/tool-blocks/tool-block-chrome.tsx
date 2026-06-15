@@ -144,11 +144,6 @@ export interface ToolBlockChromeProps {
    */
   toolName: string;
   /**
-   * Optional icon for the header. Lucide-react icons fit naturally;
-   * any inline element works.
-   */
-  toolIcon?: React.ReactNode;
-  /**
    * Args summary — typically the most-relevant single field of the
    * tool input rendered as a one-liner (e.g. the shell command, the
    * file path being read). Wrappers pass a `<code>` element for
@@ -175,10 +170,6 @@ export interface ToolBlockChromeProps {
    * collapsed and expanded read identically. See {@link ToolResultSummary}.
    */
   resultSummary?: ToolResultSummary;
-  /**
-   * Whether to show the per-tool icon ([D07]). Defaults to `true`.
-   */
-  showIcon?: boolean;
   /** Lifecycle state per Spec S03's `ToolBlockStatus`. */
   status?: ToolBlockStatus;
   /**
@@ -232,12 +223,10 @@ export interface ToolBlockChromeProps {
 
 export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   toolName,
-  toolIcon,
   argsSummary,
   identity,
   command,
   resultSummary,
-  showIcon = true,
   status = "ready",
   phase,
   caution,
@@ -367,8 +356,6 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
         ref={headerRef}
         phase={phase ?? statusToPhase(status)}
         toolName={toolName}
-        icon={toolIcon}
-        showIcon={showIcon}
         target={command ?? identity ?? argsSummary}
         summary={resultSummary}
         caution={caution}

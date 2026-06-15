@@ -35,7 +35,8 @@
  *
  * Per-tool description (`PermissionDescription`):
  *
- *   - `Bash` →  `"This command requires approval · {Shell-icon} Bash · `{command}`"`
+ *   - `Bash` →  `"This command requires approval · {Shell-icon} Bash"` (the
+ *     command renders below as its own block — see the body picker)
  *   - `Edit` / `MultiEdit` →  `"This will edit `{file_path}`."`
  *   - `Read` →  `"This will read `{file_path}` ({line range})."`  (range when set)
  *   - `Write` →  `"This will write `{file_path}`."`
@@ -58,8 +59,12 @@
  *     row share one rendering by construction.
  *   - `json` (genuinely unknown tool — no bespoke wrapper, not in
  *     the bespoke-dialog set) → `JsonTreeBlock` over the raw input.
- *   - `bash` / `path` → `null`. The relevant input fragment is
- *     already in the description.
+ *   - `bash` → a centered block of left-aligned monospace command
+ *     text. The command moves out of the description (where a long,
+ *     multi-line command wrapped badly when centered) into its own
+ *     `children`-slot block; the description keeps the lead-in + tool
+ *     identity.
+ *   - `path` → `null`. The file path is already in the description.
  *
  * Laws:
  *  - [L02] external state (is this request still pending?) enters
@@ -180,8 +185,8 @@ export type PermissionBodyKind = "bash" | "edit" | "path" | "dispatch" | "json";
  * circuit ahead of the bespoke check by design. Their bespoke
  * dialog previews are *more dialog-appropriate* than the transcript
  * wrapper's output — `"path"` shows just the path, no chrome;
- * `"bash"` keeps the long command inline with the description.
- * Routing those through the transcript wrapper would regress the
+ * `"bash"` shows the command as a dedicated left-aligned block, no
+ * transcript chrome. Routing those through the transcript wrapper would regress the
  * preview shape. The `"dispatch"` branch is only for tools that
  * previously fell through to `"json"` and now have a wrapper that
  * does a better job than `JsonTreeBlock` over raw input.
@@ -548,6 +553,10 @@ const PermissionDescription: React.FC<DescriptionProps> = ({
   switch (kind) {
     case "bash": {
       const command = readStringField(input, "command");
+      // The command itself is NOT inlined here — a long, multi-line shell
+      // command read badly wrapped inside the centered description. It moves
+      // to its own left-aligned block in the `children` slot (`PendingBody`);
+      // the description keeps only the cohesive lead-in + tool identity.
       primary =
         command !== undefined ? (
           <>
@@ -557,7 +566,7 @@ const PermissionDescription: React.FC<DescriptionProps> = ({
               aria-hidden="true"
               className="dev-permission-dialog-inline-icon"
             />{" "}
-            Bash · <code>{command}</code>
+            Bash
           </>
         ) : (
           <>This Bash command requires approval.</>
@@ -641,6 +650,23 @@ const PendingBody: React.FC<PendingBodyProps> = ({
   requestId,
 }) => {
   const kind = selectPermissionBodyKind(toolName);
+  if (kind === "bash") {
+    // The Bash command as a centered block of left-aligned monospace text.
+    // `white-space: pre-wrap` preserves the command's own line breaks and
+    // wraps long single lines; the block is shrink-to-content and centered
+    // in the dialog (echoing the centered description above), but its text
+    // stays left-aligned so a multi-line command reads like a code listing
+    // rather than ragged centered prose.
+    const command = readStringField(input, "command");
+    if (command !== undefined) {
+      return (
+        <div className="dev-permission-dialog-command-wrap">
+          <code className="dev-permission-dialog-command">{command}</code>
+        </div>
+      );
+    }
+    return null;
+  }
   if (kind === "edit") {
     const before = readStringField(input, "old_string");
     const after = readStringField(input, "new_string");
@@ -677,8 +703,7 @@ const PendingBody: React.FC<PendingBodyProps> = ({
       />
     );
   }
-  // bash / path — description carries the relevant input fragment;
-  // no body picker needed.
+  // path — the description already carries the file path; no body needed.
   return null;
 };
 
