@@ -2975,10 +2975,35 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             // React state.
             const savedCellHeight =
               hydratedCellHeightsRef.current?.[index] ?? 0;
-            const cellWrapperStyle =
+            // Off-screen deferral via `content-visibility: auto`
+            // (inline mode only — windowed mode already virtualizes).
+            // WebKit skips style/layout/paint for cells outside the
+            // viewport, which is the dominant mount cost for a large
+            // all-rich list (measured: a 212-row transcript's
+            // synchronous mount fell 4.4s → ~1s). `contain-intrinsic-
+            // size` supplies the placeholder geometry for skipped
+            // cells: the REAL cached height when the bag carried it
+            // (pixel-accurate scrollbar, no estimate), else the kind
+            // estimate as a self-correcting fallback (`auto` remembers
+            // the real size once the cell has rendered once). [L06]
+            const cellIntrinsicHeight =
               savedCellHeight > 0
-                ? ({ minHeight: `${savedCellHeight}px` } as React.CSSProperties)
-                : undefined;
+                ? savedCellHeight
+                : estimatedHeightForKindOnly(index);
+            const cellWrapperStyle: React.CSSProperties | undefined =
+              inline === true
+                ? {
+                    ...(savedCellHeight > 0
+                      ? { minHeight: `${savedCellHeight}px` }
+                      : null),
+                    contentVisibility: "auto",
+                    containIntrinsicSize: `auto ${Math.round(
+                      cellIntrinsicHeight,
+                    )}px`,
+                  }
+                : savedCellHeight > 0
+                  ? ({ minHeight: `${savedCellHeight}px` } as React.CSSProperties)
+                  : undefined;
             const Renderer = cellRenderers[kind];
             if (Renderer === undefined) {
               // Unknown kind — no renderer registered. Render an

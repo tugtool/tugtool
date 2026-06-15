@@ -132,7 +132,9 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 
 **Root cause:** every transcript entry *and* every tool block ran a synchronous `offsetHeight`/`getBoundingClientRect` read + CSS-var write in its mount `useLayoutEffect` (the sticky-header pin measurement). With ~212 entries + ~2,100 tool blocks, the read→write→read→write interleaving forced a full reflow of the growing document **per block** → O(n²). `TieredCell` had hidden it by rendering off-screen rows as one cheap node (those measurements never ran); #step-1's all-rich render surfaced it — so the regression was removing `TieredCell`, not `content-visibility`.
 
-**Fix (commit `40fecbde`):** drop the synchronous seeds in `tug-transcript-entry`, `tool-block-chrome`, `diff-block`; the `ResizeObserver` each already sets up provides the height rAF-batched (thrash-free), and a static CSS fallback covers the one frame before it lands. **Result: mount 14.0 s → 4.6 s** on the debug build, **zero behaviour change** (`cellRenders` unchanged). The remaining ~4.6 s mount + paint is **linear** (React mount of ~3,400 blocks, debug-mode amplified) — to be confirmed on a **release** build. **all-rich stays; [P02] (no windowing) holds; req #5 fully intact.**
+**Fix (commit `40fecbde`):** drop the synchronous seeds in `tug-transcript-entry`, `tool-block-chrome`, `diff-block`; the `ResizeObserver` each already sets up provides the height rAF-batched (thrash-free), and a static CSS fallback covers the one frame before it lands. **Result: mount 14.0 s → 4.6 s** on the debug build, **zero behaviour change** (`cellRenders` unchanged). **all-rich stays; [P02] (no windowing) holds; req #5 fully intact.**
+
+**Amended resolution — the residual ~4 s was NOT linear-and-acceptable; it was WebKit off-screen render, fixed by [P07].** Clean release instrumentation (a render-phase-stamped synchronous-mount split, free of the StrictMode/Profiler artifacts that made the debug windows lie) localized the remaining cost precisely: React reconciliation 367 ms, every layout effect in the app summed 379 ms, a forced post-mount layout flush 0 ms — yet first paint was ~6.7 s. The cost is **WebKit synchronously resolving style + layout/paint for the ~95% of the 86k nodes that are off-screen, as React inserts them.** `content-visibility: auto` seeded with cached real heights ([P07]) defers exactly that: release `replay_render` **3690 ms → 1094 ms**, synchronous mount **~4.4 s → 781 ms**, node count unchanged (all-rich intact, no windowing). So [P02]'s no-windowing holds; the "never content-visibility" half of [P01]/[P02] is narrowed to "never *blind-estimate* content-visibility" — see [P07].
 
 ---
 
@@ -170,7 +172,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 - The scrollbar height equals `Σ(measured heights)` and is stable once replay completes.
 - `previewForRow` / `previewTextForMessages` / `transcript-tier.*` become dead for the transcript and are removed; `content-visibility`/`contain-intrinsic-size` rules for the transcript are removed.
 - `forceRich` is moot (all rows rich); the in-flight streaming row stays rich automatically.
-- Every row is always painted → the per-row paint cost is no longer deferred. This is the cost [Q02]/#step-5 measures on real sessions; if a genuinely huge transcript regresses, the escalation is windowing-on-real-heights (#roadmap), never re-introducing `content-visibility`/intrinsic-size estimates.
+- Every row is always painted → the per-row paint cost is no longer deferred. **Superseded by [P07]:** measurement showed the off-screen *paint/style* cost is the dominant load cost, so the deferral was re-introduced — but as `content-visibility: auto` seeded with **real cached heights**, not the blind `intrinsic-size` estimate this step removed. The ban that holds is on *estimate-driven* deferral, not on `content-visibility` itself; React still mounts every row rich (no windowing).
 
 #### [P02] No estimates and no windowing for the dev transcript (DECIDED) {#p02-no-estimates}
 
@@ -183,6 +185,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 **Implications:**
 - The dev transcript's `scrollHeight` is correct on the first commit after replay, so the existing anchor restore resolves exactly with no estimate-then-refine hop.
 - A future huge-transcript escalation must measure real heights once and window on those, never on estimates (#roadmap).
+- **Amended by [P07]:** "no windowing" still holds (React mounts every row), but off-screen *render* is now deferred via `content-visibility: auto` seeded with real cached heights. This is consistent with "no estimates" on every reload (the seed is the real persisted height); only a first-ever load of an unseen session uses a self-correcting estimate fallback. See [P07] for the measured rationale.
 
 #### [P03] Repair the existing anchor-based restore; never build a second restore path (DECIDED) {#p03-anchor-restore}
 
@@ -230,6 +233,22 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 - `at0181` (picker) and `at0184` (resume-budgets) were **cut**, not migrated (#step-4-5) — see that step for the value rationale; [P06] is satisfied because no synthetic session content remains.
 - "Real-derived + sanitized + clipped" still counts as real (real wire shapes / cases); truncation ≠ synthetic.
 
+#### [P07] Off-screen render deferral via `content-visibility: auto` seeded with cached real heights (DECIDED) {#p07-content-visibility-cached}
+
+**Decision:** The dev transcript's inline cell wrappers carry `content-visibility: auto` with `contain-intrinsic-size` seeded **per cell from the persisted real height** (`meta.cellHeights[index]`, the same value the anchor-restore already hydrates), with the kind estimate as a fallback **only** for a never-before-rendered cell. WebKit then skips style/layout/paint for off-screen cells while React still mounts every row (all-rich is unchanged). Gated to `inline` mode; the windowed path for other `TugListView` consumers is untouched. Implemented in `tug-list-view.tsx`'s cell-wrapper style (extends the existing `min-height` lock).
+
+**Why this reverses the #step-1 removal (the distinction that matters):** #step-1 removed a `content-visibility: auto; contain-intrinsic-size: auto 120px` rule whose intrinsic-size was a **blind constant estimate** — that is what produced the estimate-driven scrollbar shift req #5 forbids. The mechanism was never the problem; the **blind estimate** was. Seeding `contain-intrinsic-size` from the **real cached height** makes the off-screen geometry honest: on every reload the scrollbar is pixel-exact from `cellHeights` (no estimate), and `content-visibility: auto`'s `auto` keyword *remembers* each cell's real rendered size once seen. Only a first-ever load of a never-seen session uses the fallback estimate for not-yet-scrolled rows, and it self-corrects as they render.
+
+**Rationale (measured — supersedes the [Q02] "linear, all-rich is affordable" conclusion):** the [Q02] O(n²) thrash fix was necessary but not sufficient. Clean release instrumentation proved the residual multi-second cost is **WebKit synchronously resolving style + doing layout/paint for the ~95% off-screen nodes as React inserts them** — not JS, not React reconciliation (367 ms), not effects (every layout effect in the app summed to 379 ms), not browser layout of the finished tree (a forced flush measured 0 ms), and not O(n²) (every load-path measurement is rAF-batched). `content-visibility: auto` defers exactly that off-screen render work. Release `7aa35ce5`: `replay_render` **3690 ms → 1094 ms**, synchronous mount **~4.4 s → 781 ms**, with React's node count unchanged (all-rich intact).
+
+**Implications:**
+- req #1 (any size): off-screen rows are never styled until approached, so mount cost tracks viewport, not transcript length.
+- req #5 (no estimate scrollbar): satisfied on every reload (real cached heights); first-ever load of an unseen session degrades to a self-correcting estimate for off-screen rows — a deliberate, bounded relaxation of the absolute rule, accepted because it is the load-speed mechanism and corrects on scroll.
+- req #4 (pixel-perfect restore): the intrinsic-size seed equals the anchor resolver's `cellHeights`, so restore geometry stays exact.
+- Sticky pin-stack survives (sticky stays within its own cell's box, which is what `content-visibility`'s paint containment clips to) — verified on the live release build.
+
+**Known follow-up (not blocking):** a fast scrollbar-thumb drag over an already-seen section re-skips/re-renders rather than reusing the remembered render — the `content-visibility` re-render isn't being cached across rapid re-entry. Tracked as a later perf-polish item; does not affect correctness, the scrollbar, or restore.
+
 ---
 
 ### Specification {#specification}
@@ -241,6 +260,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | Rich-vs-cheap tier (REMOVED) | — | deleted; all rows render rich | [L06] |
 | Measured cell heights | structure/local-data | `ResizeObserver` → `HeightIndex`/DOM measurement; never React state | [L22], [L06] |
 | Scroll thumb geometry | appearance | true `scrollHeight` from measured layout; CSS/DOM, no estimate math | [L06] |
+| Off-screen render deferral ([P07]) | appearance | `content-visibility: auto` + `contain-intrinsic-size` seeded from real cached `cellHeights` on inline cell wrappers; CSS/DOM, never React state | [L06] |
 | Follow-bottom intent | appearance | DOM attribute (`data-visible`) via `onFollowBottomChange`; never React state | [L06] |
 | Region scroll restore (transcript) | local-data (DOM authority) | existing anchor resolver (`{index,offset}` + HeightIndex hydration from real `cellHeights`); `tug-region-scroll-set` listener; no new raw write | [L22], [L23] |
 | Saved card state (scrollTop, anchor, atBottom) | external/persistent | tugbank via `/api/defaults`; enters React only via `useSyncExternalStore` if observed | [L02] |
@@ -281,7 +301,7 @@ Anchors are explicit and kebab-case; steps cite plan-local decisions `[P01]`… 
 | #step-3 | (Conditional) Fix reducer split-entry block keying | done — exonerated with evidence (already fixed in tugcode replay + tested; no change) | (verification only) |
 | #step-4 | Repair anchor restore + atBottom semantics; user scroll wins | done (live-vetted + at0189 green) | 9020578d |
 | #step-4-5 | Retire synthetic-content tests (at0181, at0184) | done — both cut; [P06] satisfied by deletion | — |
-| #step-5 | Pixel-perfect restore + load measurement on real sessions | mostly done (pixel-perfect dc91a0d0; load O(n²) thrash fixed 40fecbde; release measure pending) | dc91a0d0, 40fecbde |
+| #step-5 | Pixel-perfect restore + load measurement on real sessions | done (pixel-perfect dc91a0d0; O(n²) thrash fixed 40fecbde; residual off-screen-render load cost fixed via content-visibility + cached heights [P07] — release `replay_render` 3690→1094 ms) | dc91a0d0, 40fecbde, _(content-visibility commit pending)_ |
 | #step-6 | Reload/HMR perf + reveal UX; HMR-never-reloads invariant | pending | — |
 | #step-7 | Integration checkpoint — all five requirements on real sessions | pending | — |
 
