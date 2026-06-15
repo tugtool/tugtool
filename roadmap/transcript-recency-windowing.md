@@ -126,6 +126,21 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 
 **Resolution:** OPEN → DECIDED in #step-5 (one-shot + Cancel for v1).
 
+#### [Q05] How `TugControlBar` engages card modality (DEFER to #step-5-5 spike) {#q05-control-bar-modality}
+
+**Question:** `TugControlBar` ([P09]/[P10]) must inert + scrim the transcript region while keeping the bar itself above the scrim and interactive — a *top-anchored* modal, unlike `TugSheet`'s centered presentation. Does it (a) reuse `useTugSheet`'s pane-inert mechanism somehow, (b) extract a lower-level `usePaneModality()` / pane-inert primitive that both `TugSheet` and `TugControlBar` consume, or (c) implement its own inert+scrim against the card content region?
+
+**Why it matters:** `TugSheet` couples modality (pane inert + scrim) to its centered overlay presentation. `TugControlBar` needs the modality without the centered overlay (its content lives in `Z0`). Forcing it through `showSheet` would mis-position the content; hand-rolling a second inert+scrim risks drift from the sheet's behavior (focus trap, responder-chain interaction, `cascadeTargetId`).
+
+**Plan to resolve:** Spike in #step-5-5 — inspect `tug-sheet.tsx` for where it sets the pane `inert` + scrim, and prefer **(b)**: lift that into a small `usePaneModality()` (or equivalent) primitive the sheet keeps using and the bar also consumes, so both share one tested modality path. Fall back to (c) only if extraction is disproportionate. Cross-check the responder chain / `cascadeTargetId` interaction.
+
+**Resolution (spiked 2026-06-15 — `tug-sheet.tsx`, `use-tug-pane-scrim.ts`):** `TugSheet`'s modality is two already-separated pieces — **scrim** via `useTugPaneScrim()` (a clean standalone hook: ref-counted `{ show, hide }` → the pane's `data-scrim` attribute, [L06]/[L24]) and **inert** via a ~12-line inline `useLayoutEffect` in `tug-sheet.tsx` that toggles `inert` on `.tug-pane-body`. Both are **whole-pane** — they would scrim/inert the `Z0` bar itself, which must stay interactive. So neither is reused wholesale. Decision:
+- **Inert** → extract the inline effect into a tiny generic `usePaneInert(target, active)` hook; **refactor `TugSheet` to consume it** (target `.tug-pane-body`), and `TugControlBar` consumes it targeting the **transcript region** (a sibling element *below* the bar — `TugListView`'s wrapper), so the bar is never inerted.
+- **Scrim** → `TugControlBar` owns a **region-local scrim** over the transcript region (DOM attribute + CSS, [L06]; borrow the pane-scrim/`Z2` tokens), **not** the whole-pane `useTugPaneScrim` (which would cover the bar). The pane-level scrim hook is left for `TugSheet`.
+This is option (b) for inert (one shared, tested toggle) + a region-scoped scrim — small extraction, no responder-chain entanglement (the bar's Cancel/Load buttons dispatch as ordinary controls; modality is pure DOM inert+scrim on the region). Captured into #step-5-5 artifacts.
+
+**Resolution:** OPEN → **DECIDED in #step-5-5 (spiked):** extract `usePaneInert(target, active)` (shared with `TugSheet`); region-local scrim owned by the bar; modal scoped to the transcript region, not the whole pane.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -207,6 +222,35 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 
 **Implications:** The "load previous" control is the explicit signal that older content exists; the scrollbar reflects only loaded content (honest), and grows by real heights as older turns prepend.
 
+#### [P09] One Z0 `TugControlBar` for every load surface; modal during load, released after {#p09-control-bar}
+
+**Decision (user, 2026-06-15):** Replace the three load surfaces — the centered restore sheet ([`transcript-architecture-redux.md` P08/P09]), the load-previous sheet ([P08] above), and the top-of-transcript load-previous bar (#step-5) — with **one** component anchored in zone **`Z0`** ([D97]): a `TugControlBar`. It occupies the reserved `Z0` slot above the scrollable transcript and carries, over its lifetime, three pieces of content: the **load prompt** ("There are N earlier messages in this session. Load: [50] [All]"), the **load progress** indicator (determinate "N of M"), and — superseding the centered restore sheet — the **initial session-load** progress. It can put the card into a **modal** state (inert + scrim over the transcript region, the `TugControlBar` itself staying above the scrim and interactive) and **release** it.
+
+The lifecycle is a small state machine:
+- **Loading** (a cold restore *or* a load-previous in flight) → the bar shows determinate progress and the card is **modal** for the duration (so the prepend + scroll-hold land against a quiescent viewport — [P03]/[P08] rationale, now expressed as bar modality rather than a sheet).
+- The instant the load lands, modality **releases**. After a *load-previous*, the bar **lingers** (non-modal) showing the prompt again iff older turns still remain, until the next **scroll-to-bottom or submit** dismisses it (lets the user page again without scrolling back to the top). A cold restore lands at the bottom, so its dismiss condition is already met → the bar hides.
+- **Prompt** (idle) → outside a load/linger, the prompt shows iff `hasOlder` **and** the user has scrolled to the top (the #step-5 scroll-to-top reveal), and hides otherwise. Non-modal.
+
+**Rationale:** The user's notes — one surface, not three; the modal lock is a property of that surface, toggled per phase; the bar's home is exactly `Z0`, the zone [D97] already named "what you see first." Folding the initial-load indicator in too removes the centered-sheet/​bar split and the flashing it caused.
+
+**Implications:** `Z0` (`TideCard.headerContent`) becomes the single load surface; `DevRestoreSheetHost` (centered restore sheet) is **retired** ([P11]); the [P08] gated-presentation/anti-flash behavior is reframed as "bar visible per the state machine, modal only while Loading." Visual treatment borrows the `Z2` status-bar tokens (#step-5-5 spec). The `data-replaying` blank-and-reveal gate stays suppressed during a load-previous and is reconsidered for cold restore now that the bar (not a full blank) carries the progress.
+
+#### [P10] `TugControlBar` is a generic Z0 host; the card supplies content {#p10-generic-control-bar}
+
+**Decision (user, 2026-06-15):** `TugControlBar` is a **reusable tugways component** — the modal-capable `Z0` bar shell (layout, `Z2`-borrowed styling, the inert+scrim modality toggle, the above-scrim positioning) — and the **card supplies the content** (the dev transcript passes its prompt/progress nodes + the modal flag). It is not dev-transcript-specific; a future `Z0` control bar reuses the shell.
+
+**Rationale:** It lives in `Z0`, generic card chrome ([D97]); naming it `TugControlBar` (tugways prefix) signals a primitive. Separating the shell (generic) from the content (card-specific) keeps the modality/positioning logic in one reusable place.
+
+**Implications:** New `components/tugways/tug-control-bar.tsx` (+ `.css`) — the shell. The dev transcript owns a `DevLoadControlBarContent` (or similar) that computes the state-machine content from the `CodeSessionStore` snapshot and feeds it to `TugControlBar`. The modality mechanism it engages is [Q05].
+
+#### [P11] Retire the centered restore sheet; the Z0 bar is the only load surface {#p11-retire-restore-sheet}
+
+**Decision (user, 2026-06-15):** With [P09], the initial cold-restore progress renders in the `Z0` `TugControlBar` (modal during the restore), so `DevRestoreSheetHost` / `DevRestoreSheetContent` (the centered `TugSheet` restore modal from `transcript-architecture-redux.md` Step 6.1) is **retired**, and the load-previous `TugSheet` from #step-5 is **subsumed** into the bar. One surface for every load.
+
+**Rationale:** Two surfaces (centered sheet for cold restore, bar for load-previous) is the split the user is removing; it also caused the load↔reveal flashing. The restore sheet's progress/Cancel semantics carry over into the bar's Loading state.
+
+**Implications:** Remove `DevRestoreSheetHost` from the transcript; migrate its delay-gated progress + Cancel semantics into the bar's Loading state. The redux `TugSheet` primitive itself stays (other callers); only the *restore-sheet host* is retired. Cancel during a cold restore keeps its current meaning (stop + close the card — distinct from load-previous Cancel, which aborts + keeps the window); the bar routes Cancel by which load is active.
+
 ---
 
 ### Specification {#specification}
@@ -250,6 +294,7 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 | #step-3 | Reducer + data source: prepend older turns; stable-id height keying | done | da32e558 (height-cache id-keying folded into #step-4) |
 | #step-4 | TugListView: prepend with scroll-position hold | done | (committed below; live scroll-hold verified end-to-end with #step-5 trigger) |
 | #step-5 | "Load previous M" affordance + "load all" via TugSheet | done | on main (live vet pending) |
+| #step-5-5 | TugControlBar in Z0 — unify load prompt + progress + initial-load indicator | pending | — |
 | #step-6 | Faithful restore — load-to-anchor on reload | pending | — |
 | #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | pending | — |
 
@@ -381,13 +426,53 @@ The load-previous modal `TugSheet` presents **only if the load is still in fligh
 - [x] `bun test` (tugdeck 3682 / tugcode 585) + `bunx tsc --noEmit` clean.
 - [ ] Live: 50/100 page in (held scroll); "all" on a whale shows the sheet + working Cancel. *(user vet on the rebuilt instance.)*
 
-#### Step 6: Faithful restore — load-to-anchor on reload {#step-6}
+#### Step 5.5: TugControlBar in Z0 — unify load prompt + progress + initial-load indicator {#step-5-5}
 
 **Depends on:** #step-5
 
+**Commit:** `tugways: TugControlBar in Z0; unify transcript load surfaces`
+
+**References:** [P09] One Z0 control bar, [P10] Generic Z0 host, [P11] Retire restore sheet, [Q05] Modality mechanism, [D97] zone Z0, `transcript-architecture-redux.md` Step 6.1 (restore sheet being retired), [[feedback_use_tug_components]]
+
+**Context.** Today three surfaces carry "a load is happening / older content exists": the centered restore sheet (cold load), the load-previous sheet (#step-5), and the top-of-transcript load-previous bar (#step-5). The user wants **one** surface in `Z0` — a `TugControlBar` — that does all three and can lock/release the card. Live testing of #step-5 also showed the centered-sheet ↔ bar split is the flashing source ([P08] refinement); folding everything into one Z0 bar removes it.
+
+**Artifacts:**
+- **`components/tugways/tug-control-bar.tsx` (+ `.css`)** — a generic, modal-capable Z0 bar shell ([P10]): renders supplied content in a bar anchored above the card's scrollable region, borrows `Z2` status-bar tokens for its visual treatment (a distinct band, not transcript-colored — see image ref). Takes the content node, a `modal` flag, and a ref to the **transcript region element** it inerts+scrims when modal. The bar itself is never inerted (it is a sibling *above* that region).
+- **`usePaneInert(target, active)`** — extract `TugSheet`'s inline inert effect into this shared hook ([Q05] resolution); **refactor `TugSheet` to consume it** (target `.tug-pane-body`). `TugControlBar` consumes it on the transcript region.
+- **Region-local scrim** — the bar owns a scrim element over the transcript region (DOM attribute + CSS, [L06]; pane-scrim/`Z2` tokens), *not* the whole-pane `useTugPaneScrim`. A `region` wrapper around `TugListView` is the inert+scrim target (sibling below the bar).
+- **Dev-transcript content + state machine** — a `DevLoadControlBarContent` that derives the bar's state from the `CodeSessionStore` snapshot and feeds `TugControlBar`:
+  - **Loading** — `phase === "replaying"` (cold restore) **or** `loadingPrevious` (load-previous) → determinate "N of M" progress (restore: existing restore progress; load-previous: `loadingPreviousLoaded`/`Target` from #step-5) + Cancel; **card modal**.
+  - **Lingering** (post load-previous) — on load-previous completion, release modal; keep the bar showing the prompt iff `hasOlder`, until **scroll-to-bottom or submit**.
+  - **Prompt** (idle) — `hasOlder && atTop && !loading && !lingering` → "There are N earlier messages in this session. Load: [N] [All]" (the #step-5 affordance, capped to remaining, `size="sm"`); non-modal.
+  - **Hidden** — otherwise.
+- **Visibility** is DOM-driven ([L06]) — the host toggles the bar's state attribute off the store snapshot + the list view's `onAtTopChange` / `onFollowBottomChange` (scroll-to-bottom) + submit signals; never React appearance state.
+- **Retire `DevRestoreSheetHost` / `DevRestoreSheetContent`** ([P11]); migrate its delay-gated progress + Cancel (stop + close card) into the bar's Loading state for the cold-restore case. The load-previous `TugSheet` from #step-5 is removed in favor of the bar.
+
+**Tasks:**
+- [x] Spike [Q05] (resolved 2026-06-15 — extract `usePaneInert`, region-local scrim; see [Q05]).
+- [ ] Extract `usePaneInert(target, active)`; refactor `TugSheet` to consume it (no behavior change). Build `TugControlBar` (generic shell + region inert/scrim) + its CSS (Z2-borrowed tokens). Cross-check tuglaws (L06 visibility/scrim via DOM; L02 content from snapshot; L26 the bar is one stable node across state transitions).
+- [ ] Build the dev-transcript state machine + content; wire scroll-to-bottom (`onFollowBottomChange`/at-bottom) and submit as the lingering-dismiss signals; reuse `onAtTopChange` for the prompt reveal.
+- [ ] Route Cancel by active load: cold-restore Cancel = stop + close card (current restore behavior); load-previous Cancel = `cancelLoadPrevious()` abort + keep window.
+- [ ] Retire `DevRestoreSheetHost`; remove the #step-5 standalone bar + load-previous sheet; mount `TugControlBar` in `Z0`. Reconsider the `data-replaying` cold-restore blank now that the bar carries progress.
+- [ ] Name the laws touched in the commit.
+
+**Tests:**
+- [ ] Pure-logic: the bar state-machine selector (snapshot + atTop + atBottom + lingering → {hidden | prompt | loading | lingering-prompt}); Cancel routing by active load; lingering set on load-previous complete, cleared on scroll-bottom/submit.
+- [ ] Real-app (`just app-test`): cold restore shows the Z0 bar progress (modal), releases on completion; load-previous locks then releases + lingers; scroll-to-bottom/submit dismisses the lingering bar; no centered sheet appears.
+
+**Checkpoint:**
+- [ ] `bun test` + `bunx tsc --noEmit` clean.
+- [ ] Live: one Z0 bar handles cold restore (modal progress), load-previous (modal → lingering prompt), and the scroll-to-top prompt; no flashing; visual treatment reads as a distinct Z0 band.
+
+#### Step 6: Faithful restore — load-to-anchor on reload {#step-6}
+
+**Depends on:** #step-5-5
+
 **Commit:** `transcript: restore loads to saved anchor above the window`
 
-**References:** [P05] Faithful restore, [P04] Reuse sheet, (#faithful-restore), `at0190`
+**References:** [P05] Faithful restore, [P09] Z0 control bar (the load surface; supersedes [P04]'s sheet for this path), (#faithful-restore), `at0190`
+
+> Note: post-[P11], a deep faithful-restore surfaces its progress through the `Z0` `TugControlBar`'s Loading state (modal), not the retired centered sheet.
 
 **Artifacts:**
 - On Developer ▸ Reload, restore computes the window depth needed to include the saved anchor's turn; if that's above the default window, the resume request loads to the anchor (sheet-gated if it crosses 0.5 s), then restores pixel-perfect. A reload landing within the default window is unchanged (fast, no extra load).
