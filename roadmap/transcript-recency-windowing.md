@@ -11,8 +11,8 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
-| Target branch | `tugutil dash` worktree (joined to `main` by the user) |
+| Status | implemented on `main` — final live/perf vet pending |
+| Target branch | `main` (implemented directly; no `tugutil dash` worktree was used) |
 | Last updated | 2026-06-15 |
 
 ---
@@ -296,7 +296,7 @@ The lifecycle is a small state machine:
 | #step-5 | "Load previous M" affordance + "load all" via TugSheet | done | on main (live vet pending) |
 | #step-5-5 | TugControlBar in Z0 — unify load prompt + progress + initial-load indicator | done | on main (live vet pending) |
 | #step-6 | Faithful restore — load-to-anchor on reload | done | on main (live vet pending) |
-| #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | pending | — |
+| #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | automated green; live perf/feel = user vet | on main |
 
 #### Step 1: tugcode — window the replay {#step-1}
 
@@ -511,28 +511,50 @@ helpers in `dev-restore-window.ts` (`anchorDepthFromEnd` /
 
 **References:** (#success-criteria), [P01]–[P07]
 
+> **Landed on `main` directly.** The user ran #step-5 … #step-6 on `main`
+> (not a `tugutil dash` worktree), so there is no `dash join` — the
+> implementation is already on `main` (commits `e5de5df3`, `882eb82a`,
+> `9bd4d51d`, `e7a3876c`, …). Step 7's "join" clause is N/A; what remains is
+> the live integration sign-off.
+
+**Automated foundation (verified 2026-06-15).** Full suites green —
+tugdeck `bun test` 3696, tugcode `bun test` 615, `bunx tsc --noEmit` clean.
+The pure-logic core of every layer is covered: tugcode window slice
+(`replay-window.test.ts`), reducer prepend/abort (`replay-prepend.test.ts`),
+load-previous mapping (`load-previous.test.ts`), the Z0 bar state machine
+(`dev-load-control-bar-state.test.ts`), and faithful-restore window math
+(`dev-restore-window.test.ts`). Real long-session JSONLs for the perf gate are
+committed in `tests/app-test/corpus/snapshots/` (45,303- and 146,770-line
+sessions).
+
 **Tasks:**
-- [ ] On the live debug instance with a **real long session** (thousands of turns), verify: bounded ingest (default load = last N, `replay_ingest`/`replay_render` independent of total turns); held-scroll prepend; load-all sheet + Cancel; faithful restore; affordance present iff older exists.
+- [~] On the live debug instance with a **real long session** (thousands of turns), verify: bounded ingest (default load = last N, `replay_ingest`/`replay_render` independent of total turns); held-scroll prepend; load-all → Z0 bar modal + Cancel ([P09], supersedes the sheet); faithful restore; affordance present iff older exists. *(User live vet — the perf measurement can only be claimed on the user's real session per the real-corpus rule [[feedback_real_content_fixtures]]; the long-session fixtures above are available to drive it.)*
 
 **Tests:**
-- [ ] Aggregate real-app pass: the `just app-test` paging/restore tests green; manual vet of the load feel + scroll-hold + no false holes confirmed by the user.
+- [x] Aggregate automated pass: tugdeck 3696 + tugcode 615 `bun test` green, `bunx tsc --noEmit` clean (2026-06-15).
+- [ ] Manual vet of the load feel + scroll-hold + no false holes on a real long session — user sign-off.
 
 **Checkpoint:**
-- [ ] User signs off that load is bounded by recency (not size) and paging/restore behave per #success-criteria on the real long session. Then `tugutil dash join`.
+- [x] Automated suites green; implementation of #step-1 … #step-6 on `main`.
+- [ ] User signs off that load is bounded by recency (not size) and paging/restore behave per #success-criteria on a real long session. *(No `tugutil dash join` — work landed on `main` directly.)*
 
 ---
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A dev transcript whose default load cost is bounded by recency (last N turns) rather than total session size — older turns paged in on demand, prepended above the view with the user's scroll position held, "load all" behind the redux `TugSheet` with Cancel, and pixel-perfect faithful restore — composing with `content-visibility` ([`transcript-architecture-redux.md` P07]) into O(viewport) at both ingest and render.
+**Deliverable:** A dev transcript whose default load cost is bounded by recency (last N message-rows) rather than total session size — older turns paged in on demand, prepended above the view with the user's scroll position held, every load surface unified in the modal-capable `Z0` `TugControlBar` ([P09]–[P11]: cold restore, load-previous, "load all", and the load prompt — with Cancel during a load), and pixel-perfect faithful restore that loads to the saved anchor ([P05]) — composing with `content-visibility` ([`transcript-architecture-redux.md` P07]) into O(viewport) at both ingest and render. Landed on `main` (#step-1 … #step-6); final perf + live-feel vet on a real long session is the user's sign-off (#step-7).
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Opening a thousands-of-turns session loads only the last N — `replay_ingest`/`replay_render` independent of total turns (#perf-gate, #step-7).
-- [ ] "Load previous" pages older turns above the view with no scroll jump (#prepend-scroll-hold, #step-4).
-- [ ] "Load all" presents the sheet + Cancel that leaves the loaded window intact (#load-all-sheet, #step-5).
-- [ ] Faithful restore lands pixel-perfect even when the saved anchor is above the window (#faithful-restore, #step-6).
-- [ ] The "load previous" affordance appears iff older turns exist; loaded turns render fully (no false holes) (#pagination-not-holes).
+Implementation + automated tests are complete for every criterion; the live
+*feel* and the perf measurement are the user's sign-off on a real long session
+(the perf win is unclaimable without it — [[feedback_real_content_fixtures]]).
+
+- [ ] Opening a thousands-of-turns session loads only the last N — `replay_ingest`/`replay_render` independent of total turns (#perf-gate, #step-7). *Implemented: tugcode windows to `lastMessages: N` at the source ([P01], #step-1). **Perf win = user's real-session measurement** (45k/147k-line corpus fixtures committed for it); not claimed here.*
+- [x] "Load previous" pages older turns above the view with no scroll jump (#prepend-scroll-hold, #step-4). *Implemented + pure-tested (compensation math); live scroll-hold = user vet.*
+- [x] "Load all" presents Cancel that leaves the loaded window intact (#load-all-sheet, #step-5). *Implemented; per [P09]/[P11] this is now the Z0 `TugControlBar`'s modal Loading state + Cancel (real `cancel_replay` abort, window kept), superseding the standalone sheet.*
+- [x] Faithful restore lands pixel-perfect even when the saved anchor is above the window (#faithful-restore, #step-6). *Implemented (`depthFromEnd` window sizing + anchor relocation) + pure-tested; deep round-trip feel = user vet.*
+- [x] The "load previous" affordance appears iff older turns exist; loaded turns render fully (no false holes) (#pagination-not-holes). *Implemented: prompt derived from `hasOlder` ([P07]); loaded rows render inline at real heights.*
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
