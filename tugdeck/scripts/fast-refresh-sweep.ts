@@ -1,5 +1,5 @@
 /**
- * Fast Refresh full-reload analysis (one-off).
+ * Fast Refresh full-reload analysis.
  *
  * Models @vitejs/plugin-react's refresh-boundary propagation to find which
  * modules, when edited, trigger a FULL PAGE RELOAD (the HMR-never-reloads
@@ -16,18 +16,27 @@
  *     i.e. no component-only boundary sits above it on that path.
  *
  * Heuristic export classifier (not a type-checker) — eyeball flagged files.
+ *
+ * Usage:
+ *   bun run scripts/fast-refresh-sweep.ts [focusFile]
+ *       Print the human report. `focusFile` (optional) restricts the reported
+ *       census/reloader list to the import subtree of that module.
+ *   bun run scripts/fast-refresh-sweep.ts --assert <file> [<file>…]
+ *       Exit non-zero (and print offenders) if any named file escapes, i.e.
+ *       editing it would full-reload. The regression gate for boundary work.
+ *   import { analyze } from "./fast-refresh-sweep"
+ *       Programmatic access for the drift test — returns the graph, the
+ *       per-module classifier, and `escapesPath()` for arbitrary files.
  */
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve, relative } from "node:path";
 
 const SRC = resolve(import.meta.dir, "..", "src");
 const ENTRY = resolve(SRC, "main.tsx");
-const FOCUS = process.argv[2]
-  ? resolve(process.cwd(), process.argv[2])
-  : resolve(SRC, "components/tugways/cards/dev-card-transcript.tsx");
+const DEFAULT_FOCUS = resolve(SRC, "components/tugways/cards/dev-card-transcript.tsx");
 
 const EXTS = [".tsx", ".ts", ".jsx", ".js"];
-type Kind = "component" | "value" | "type";
+export type Kind = "component" | "value" | "type";
 
 function resolveImport(fromFile: string, spec: string): string | null {
   let base: string;
@@ -105,8 +114,7 @@ function refine(src: string, exps: { name: string; kind: Kind }[]) {
   });
 }
 
-// ---- Build the graph from the real entry ----
-type Mod = {
+export type Mod = {
   file: string;
   comps: string[];
   values: string[];
@@ -114,146 +122,221 @@ type Mod = {
   imports: string[];
   importers: Set<string>;
 };
-const mods = new Map<string, Mod>();
-const queue = [ENTRY];
-while (queue.length) {
-  const file = queue.shift()!;
-  if (mods.has(file)) continue;
-  if (!file.startsWith(SRC)) continue;
-  let src: string;
-  try { src = readFileSync(file, "utf8"); } catch { continue; }
-  const exps = refine(src, exportsOf(src));
-  const comps = exps.filter((e) => e.kind === "component").map((e) => e.name);
-  const values = exps.filter((e) => e.kind === "value").map((e) => e.name);
-  const manualAccept = /import\.meta\.hot[\s\S]{0,40}\.accept\s*\(\s*\)/.test(src)
-    || /\bhot\.accept\s*\(\s*\)/.test(src)
-    || /\bhot\.accept\s*\(\s*\(\s*\)\s*=>/.test(src);
-  const deps = importsOf(src)
-    .map((s) => resolveImport(file, s))
-    .filter((d): d is string => !!d);
-  mods.set(file, { file, comps, values, manualAccept, imports: deps, importers: new Set() });
-  for (const d of deps) if (!mods.has(d)) queue.push(d);
-}
-for (const m of mods.values())
-  for (const d of m.imports) mods.get(d)?.importers.add(m.file);
 
-// ---- Classify ----
-function accepting(m: Mod): boolean {
-  if (m.manualAccept) return true;
-  return m.comps.length > 0 && m.values.length === 0; // component-only boundary
+export type Category = "boundary" | "mixed" | "transparent";
+
+export interface AnalyzeResult {
+  /** Every module reachable from the entry, keyed by absolute path. */
+  mods: Map<string, Mod>;
+  /** Modules reachable from the focus root (restricts the report). */
+  focusGraph: Set<string>;
+  /** Focus-graph modules that full-reload on edit, sorted by path. */
+  reloaders: Mod[];
+  /** Focus-graph census by category. */
+  census: { boundaries: number; mixed: number; transparent: number };
+  /** True if editing this module triggers a full page reload. */
+  escapes: (file: string) => boolean;
+  /** Like `escapes`, but resolves a user-supplied path (absolute, cwd-, or repo-relative). Throws if not in graph. */
+  escapesPath: (path: string) => boolean;
+  accepting: (m: Mod) => boolean;
+  cat: (m: Mod) => Category;
+  SRC: string;
+  ENTRY: string;
+  FOCUS: string;
 }
 
-// ---- escapes(M): does a propagation from M reach a no-importer entry
-//      along non-accepting modules? (true => full page reload on edit) ----
-const memo = new Map<string, boolean>();
-const stack = new Set<string>();
-function escapes(file: string): boolean {
-  const m = mods.get(file);
-  if (!m) return false;
-  if (accepting(m)) return false; // self-accepts -> absorbed
-  if (memo.has(file)) return memo.get(file)!;
-  if (stack.has(file)) return false; // cycle guard
-  stack.add(file);
-  let result: boolean;
-  if (m.importers.size === 0) {
-    result = true; // reached entry / orphan with no boundary above
-  } else {
-    result = false;
-    for (const imp of m.importers) {
-      const im = mods.get(imp)!;
-      if (accepting(im)) continue; // this branch absorbed by a boundary
-      if (escapes(imp)) { result = true; break; }
+/**
+ * Build the module graph from the real entry and classify every module's
+ * full-reload behavior. `focus` only narrows the reported census/reloaders;
+ * `escapes` / `escapesPath` see the whole app graph regardless of focus.
+ */
+export function analyze(opts: { focus?: string } = {}): AnalyzeResult {
+  const FOCUS = opts.focus ? resolve(process.cwd(), opts.focus) : DEFAULT_FOCUS;
+
+  const mods = new Map<string, Mod>();
+  const queue = [ENTRY];
+  while (queue.length) {
+    const file = queue.shift()!;
+    if (mods.has(file)) continue;
+    if (!file.startsWith(SRC)) continue;
+    let src: string;
+    try { src = readFileSync(file, "utf8"); } catch { continue; }
+    const exps = refine(src, exportsOf(src));
+    const comps = exps.filter((e) => e.kind === "component").map((e) => e.name);
+    const values = exps.filter((e) => e.kind === "value").map((e) => e.name);
+    const manualAccept = /import\.meta\.hot[\s\S]{0,40}\.accept\s*\(\s*\)/.test(src)
+      || /\bhot\.accept\s*\(\s*\)/.test(src)
+      || /\bhot\.accept\s*\(\s*\(\s*\)\s*=>/.test(src);
+    const deps = importsOf(src)
+      .map((s) => resolveImport(file, s))
+      .filter((d): d is string => !!d);
+    mods.set(file, { file, comps, values, manualAccept, imports: deps, importers: new Set() });
+    for (const d of deps) if (!mods.has(d)) queue.push(d);
+  }
+  for (const m of mods.values())
+    for (const d of m.imports) mods.get(d)?.importers.add(m.file);
+
+  function accepting(m: Mod): boolean {
+    if (m.manualAccept) return true;
+    return m.comps.length > 0 && m.values.length === 0; // component-only boundary
+  }
+
+  const memo = new Map<string, boolean>();
+  const stack = new Set<string>();
+  function escapes(file: string): boolean {
+    const m = mods.get(file);
+    if (!m) return false;
+    if (accepting(m)) return false; // self-accepts -> absorbed
+    if (memo.has(file)) return memo.get(file)!;
+    if (stack.has(file)) return false; // cycle guard
+    stack.add(file);
+    let result: boolean;
+    if (m.importers.size === 0) {
+      result = true; // reached entry / orphan with no boundary above
+    } else {
+      result = false;
+      for (const imp of m.importers) {
+        const im = mods.get(imp)!;
+        if (accepting(im)) continue; // this branch absorbed by a boundary
+        if (escapes(imp)) { result = true; break; }
+      }
     }
+    stack.delete(file);
+    memo.set(file, result);
+    return result;
   }
-  stack.delete(file);
-  memo.set(file, result);
-  return result;
-}
 
-// ---- Restrict to the transcript import graph (reachable from FOCUS) ----
-const focusGraph = new Set<string>();
-(function walk(f: string) {
-  if (focusGraph.has(f)) return;
-  const m = mods.get(f);
-  if (!m) return;
-  focusGraph.add(f);
-  for (const d of m.imports) walk(d);
-})(FOCUS);
-
-const cat = (m: Mod) =>
-  accepting(m) ? "boundary" : m.comps.length ? "mixed" : "transparent";
-
-const reloaders = [...focusGraph]
-  .map((f) => mods.get(f)!)
-  .filter((m) => !m.file.includes("__tests__") && escapes(m.file))
-  .sort((a, b) => a.file.localeCompare(b.file));
-
-const mixedReloaders = reloaders.filter((m) => m.comps.length > 0);
-const transparentReloaders = reloaders.filter((m) => m.comps.length === 0);
-
-console.log(`Entry: ${relative(SRC, ENTRY)}`);
-console.log(`Focus root: ${relative(SRC, FOCUS)}`);
-console.log(`Modules in app graph: ${mods.size} | in transcript graph: ${focusGraph.size}`);
-console.log(`Full-reload triggers in transcript graph: ${reloaders.length}`);
-console.log(`  mixed (component + value): ${mixedReloaders.length}`);
-console.log(`  transparent (value/util only): ${transparentReloaders.length}\n`);
-
-console.log("=== MIXED full-reload triggers (split these) ===");
-for (const m of mixedReloaders) {
-  console.log("• " + relative(SRC, m.file) + "   [" + cat(m) + "]");
-  console.log("    components: " + m.comps.join(", "));
-  console.log("    values:     " + m.values.join(", "));
-}
-
-console.log("\n=== TRANSPARENT full-reload triggers (value/util/type only) ===");
-console.log("(edit also reloads — they reach root with no boundary above)\n");
-for (const m of transparentReloaders)
-  console.log("• " + relative(SRC, m.file) + "  values: " + (m.values.join(", ") || "—"));
-
-// Show the boundary-free spine from FOCUS up to the entry (why these escape).
-console.log("\n=== Spine: a boundary-free path FOCUS -> entry ===");
-let cur: string | null = FOCUS;
-const seen = new Set<string>();
-while (cur && !seen.has(cur)) {
-  seen.add(cur);
-  const m = mods.get(cur)!;
-  console.log(`  ${relative(SRC, cur)}  [${cat(m)}]`);
-  if (m.importers.size === 0) break;
-  // pick an importer that still escapes (boundary-free continuation)
-  let next: string | null = null;
-  for (const imp of m.importers) {
-    const im = mods.get(imp)!;
-    if (!accepting(im) && (escapes(imp) || im.importers.size === 0)) { next = imp; break; }
+  function escapesPath(path: string): boolean {
+    for (const c of [resolve(path), resolve(process.cwd(), path), resolve(SRC, path), resolve(SRC, "..", path)]) {
+      if (mods.has(c)) return escapes(c);
+    }
+    throw new Error(
+      `fast-refresh-sweep: '${path}' is not in the module graph reachable from ${relative(SRC, ENTRY)}`,
+    );
   }
-  cur = next;
+
+  const focusGraph = new Set<string>();
+  (function walk(f: string) {
+    if (focusGraph.has(f)) return;
+    const m = mods.get(f);
+    if (!m) return;
+    focusGraph.add(f);
+    for (const d of m.imports) walk(d);
+  })(FOCUS);
+
+  const cat = (m: Mod): Category =>
+    accepting(m) ? "boundary" : m.comps.length ? "mixed" : "transparent";
+
+  const reloaders = [...focusGraph]
+    .map((f) => mods.get(f)!)
+    .filter((m) => !m.file.includes("__tests__") && escapes(m.file))
+    .sort((a, b) => a.file.localeCompare(b.file));
+
+  let boundaries = 0, mixed = 0, transparent = 0;
+  for (const f of focusGraph) {
+    const m = mods.get(f)!;
+    if (m.file.includes("__tests__")) continue;
+    const c = cat(m);
+    if (c === "boundary") boundaries++; else if (c === "mixed") mixed++; else transparent++;
+  }
+
+  return {
+    mods, focusGraph, reloaders, census: { boundaries, mixed, transparent },
+    escapes, escapesPath, accepting, cat, SRC, ENTRY, FOCUS,
+  };
 }
 
-// ---- Census ----
-let bN = 0, mN = 0, tN = 0;
-for (const f of focusGraph) {
-  const m = mods.get(f)!;
-  if (m.file.includes("__tests__")) continue;
-  const c = cat(m);
-  if (c === "boundary") bN++; else if (c === "mixed") mN++; else tN++;
-}
-console.log(`\n=== Census of transcript graph ===`);
-console.log(`  boundaries (component-only, self-accepting): ${bN}`);
-console.log(`  mixed (component + value):                    ${mN}`);
-console.log(`  transparent (value/util/type/css only):       ${tN}`);
+// ---- Human report ----
 
-// directory rollup of transparent reloaders
-const byDir = new Map<string, number>();
-for (const m of transparentReloaders) {
-  const d = relative(SRC, dirname(m.file));
-  byDir.set(d, (byDir.get(d) ?? 0) + 1);
-}
-console.log(`\n=== Transparent reloaders by directory ===`);
-[...byDir.entries()].sort((a,b)=>b[1]-a[1]).forEach(([d,n])=>console.log(`  ${n}\t${d}`));
+function main(focusArg?: string): void {
+  const r = analyze({ focus: focusArg });
+  const { mods, focusGraph, reloaders, census, accepting, escapes, cat, FOCUS } = r;
 
-// mixed files that are SHIELDED (every importer is a boundary) -> safe today
-const mixedShielded = [...focusGraph]
-  .map((f)=>mods.get(f)!)
-  .filter((m)=>!m.file.includes("__tests__") && m.comps.length>0 && m.values.length>0 && !escapes(m.file))
-  .sort((a,b)=>a.file.localeCompare(b.file));
-console.log(`\n=== MIXED but SHIELDED today (safe — every importer is a boundary): ${mixedShielded.length} ===`);
-for (const m of mixedShielded) console.log("  • "+relative(SRC,m.file));
+  const mixedReloaders = reloaders.filter((m) => m.comps.length > 0);
+  const transparentReloaders = reloaders.filter((m) => m.comps.length === 0);
+
+  console.log(`Entry: ${relative(SRC, ENTRY)}`);
+  console.log(`Focus root: ${relative(SRC, FOCUS)}`);
+  console.log(`Modules in app graph: ${mods.size} | in transcript graph: ${focusGraph.size}`);
+  console.log(`Full-reload triggers in transcript graph: ${reloaders.length}`);
+  console.log(`  mixed (component + value): ${mixedReloaders.length}`);
+  console.log(`  transparent (value/util only): ${transparentReloaders.length}\n`);
+
+  console.log("=== MIXED full-reload triggers (split these) ===");
+  for (const m of mixedReloaders) {
+    console.log("• " + relative(SRC, m.file) + "   [" + cat(m) + "]");
+    console.log("    components: " + m.comps.join(", "));
+    console.log("    values:     " + m.values.join(", "));
+  }
+
+  console.log("\n=== TRANSPARENT full-reload triggers (value/util/type only) ===");
+  console.log("(edit also reloads — they reach root with no boundary above)\n");
+  for (const m of transparentReloaders)
+    console.log("• " + relative(SRC, m.file) + "  values: " + (m.values.join(", ") || "—"));
+
+  // Show the boundary-free spine from FOCUS up to the entry (why these escape).
+  console.log("\n=== Spine: a boundary-free path FOCUS -> entry ===");
+  let cur: string | null = FOCUS;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const m: Mod | undefined = mods.get(cur);
+    if (!m) break;
+    console.log(`  ${relative(SRC, cur)}  [${cat(m)}]`);
+    if (m.importers.size === 0) break;
+    let next: string | null = null;
+    for (const imp of m.importers) {
+      const im: Mod | undefined = mods.get(imp);
+      if (im && !accepting(im) && (escapes(imp) || im.importers.size === 0)) { next = imp; break; }
+    }
+    cur = next;
+  }
+
+  console.log(`\n=== Census of transcript graph ===`);
+  console.log(`  boundaries (component-only, self-accepting): ${census.boundaries}`);
+  console.log(`  mixed (component + value):                    ${census.mixed}`);
+  console.log(`  transparent (value/util/type/css only):       ${census.transparent}`);
+
+  const byDir = new Map<string, number>();
+  for (const m of transparentReloaders) {
+    const d = relative(SRC, dirname(m.file));
+    byDir.set(d, (byDir.get(d) ?? 0) + 1);
+  }
+  console.log(`\n=== Transparent reloaders by directory ===`);
+  [...byDir.entries()].sort((a, b) => b[1] - a[1]).forEach(([d, n]) => console.log(`  ${n}\t${d}`));
+
+  const mixedShielded = [...focusGraph]
+    .map((f) => mods.get(f)!)
+    .filter((m) => !m.file.includes("__tests__") && m.comps.length > 0 && m.values.length > 0 && !escapes(m.file))
+    .sort((a, b) => a.file.localeCompare(b.file));
+  console.log(`\n=== MIXED but SHIELDED today (safe — every importer is a boundary): ${mixedShielded.length} ===`);
+  for (const m of mixedShielded) console.log("  • " + relative(SRC, m.file));
+}
+
+// ---- Assert mode: regression gate for boundary work ----
+
+function runAssert(files: string[]): never {
+  if (files.length === 0) {
+    console.error("--assert needs at least one file path");
+    process.exit(2);
+  }
+  const r = analyze();
+  const offenders: string[] = [];
+  for (const f of files) {
+    if (r.escapesPath(f)) offenders.push(f);
+  }
+  if (offenders.length) {
+    console.error("FAIL: editing these files triggers a full page reload (they escape):");
+    for (const f of offenders) console.error("  • " + f);
+    process.exit(1);
+  }
+  console.log(`OK: ${files.length} file(s) are refresh boundaries (no full reload on edit).`);
+  process.exit(0);
+}
+
+if (import.meta.main) {
+  const args = process.argv.slice(2);
+  const ai = args.indexOf("--assert");
+  if (ai !== -1) runAssert(args.slice(ai + 1));
+  else main(args[0]);
+}

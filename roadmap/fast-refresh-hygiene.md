@@ -260,11 +260,11 @@ Sealing every cluster exit (e.g. detaching the galleries, or evicting value expo
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Sweep oracle: importable analyzer + `--assert` + drift test | pending | — |
-| #step-2 | Faithful-restore guard: assert `ready()` awaited before deck construction | pending | — |
-| #step-3 | Make `dev-card.tsx` a boundary | pending | — |
-| #step-4 | Make `dev-card-transcript.tsx` a boundary | pending | — |
-| #step-5 | Integration checkpoint: spine boundaries + guards | pending | — |
+| #step-1 | Sweep oracle: importable analyzer + `--assert` + drift test | done | cfe77f54 |
+| #step-2 | Faithful-restore guard: assert `ready()` awaited before deck construction | done | cb9cb80c |
+| #step-3 | Make `dev-card.tsx` a boundary | done | 5c6c7faf |
+| #step-4 | Make `dev-card-transcript.tsx` a boundary | done | 4fd4101a |
+| #step-5 | Integration checkpoint: spine boundaries + guards | done | verify only |
 
 #### Step 1: Sweep oracle — importable analyzer + `--assert` + drift test {#step-1}
 

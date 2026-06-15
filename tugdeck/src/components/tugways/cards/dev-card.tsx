@@ -60,12 +60,8 @@ import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
 import { useRoute } from "@/lib/route-lifecycle";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
-import {
-  LOCAL_SLASH_COMMANDS,
-  type LocalCommandName,
-  type LocalSlashCommandSpec,
-} from "@/lib/slash-commands";
-import { resolveArgumentHint } from "@/lib/slash-argument-hint";
+import { useDevCardServices } from "./use-dev-card-services";
+import { type LocalCommandName } from "@/lib/slash-commands";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { isPermissionMode } from "@/lib/permission-mode";
@@ -116,8 +112,6 @@ import type { EditorSettingsStore } from "@/lib/editor-settings-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getConnection } from "@/lib/connection-singleton";
-import { registerCard } from "@/card-registry";
-import { FeedId } from "@/protocol";
 import type { CompletionProvider } from "@/lib/tug-text-types";
 import {
   cardSessionBindingStore,
@@ -165,13 +159,6 @@ import {
 } from "@/lib/dev-session-ledger-store";
 import type { SessionRow } from "@/protocol";
 import type { TaggedValue } from "@/lib/tugbank-client";
-import { wrapPositionZero } from "./completion-providers/position-zero";
-import {
-  filterCommandProvider,
-  localCommandCompletionProvider,
-  mergeCommandProviders,
-} from "./completion-providers/local-commands";
-import { isHiddenSlashCommand } from "@/lib/slash-supported";
 import {
   TugPaneBulletinProvider,
   useTugPaneBulletin,
@@ -311,8 +298,6 @@ function DevRouteShellGate({
   return <>{children(useRoute() === ROUTE_SHELL)}</>;
 }
 
-/** Stable empty completion provider for the unbound / no-connection window. */
-const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
 
 /**
  * Human-readable labels for the `lastError` causes the card surfaces as
@@ -406,39 +391,18 @@ export interface DevTurnTrailingContext {
   turn?: import("@/lib/code-session-store").TurnEntry;
 }
 
-// ---------------------------------------------------------------------------
-// Shared singletons
-// ---------------------------------------------------------------------------
-
-/**
- * Module-scoped `PromptHistoryStore`. Shared across every Dev card,
- * constructed lazily on first access, never disposed — the singleton
- * outlives any individual card so history survives close + reopen.
- *
- * The store is internally keyed by session id (see
- * `lib/prompt-history-store.ts`); per-session persistence via
- * `getPromptHistory` / `putPromptHistory` is already baked in and
- * runs on every `push()`. Cross-card-reuse of history for the same
- * project arrives once a stable per-workspace session id exists.
- */
-let _devPromptHistoryStore: PromptHistoryStore | null = null;
-function getDevPromptHistoryStore(): PromptHistoryStore {
-  if (_devPromptHistoryStore === null) {
-    _devPromptHistoryStore = new PromptHistoryStore();
-  }
-  return _devPromptHistoryStore;
-}
 
 // ---------------------------------------------------------------------------
-// useDevCardServices
+// DevCardServices
 // ---------------------------------------------------------------------------
 
 /**
  * Per-card services consumed by `DevCardContent`. Constructed once a
  * binding for this card appears in `cardSessionBindingStore`, torn
- * down when the binding clears or the card unmounts. The hook
- * returns `null` while the card is unbound — the caller renders the
- * project-picker (arriving in sub-step 4c) in that state.
+ * down when the binding clears or the card unmounts. The consuming hook
+ * `useDevCardServices` lives in `./use-dev-card-services`; it returns
+ * `null` while the card is unbound — the caller renders the
+ * project-picker in that state.
  */
 export interface DevCardServices {
   codeSessionStore: CodeSessionStore;
@@ -466,112 +430,6 @@ export interface DevCardServices {
    * `<TugPromptEntry ref={...}>` and to the atom-regenerate callback.
    */
   entryDelegateRef: RefObject<TugPromptEntryDelegate | null>;
-}
-
-export function useDevCardServices(cardId: string): DevCardServices | null {
-  // Read services from the module-scope `cardServicesStore` via
-  // `useSyncExternalStore` ([L02]). The store handles all lifecycle:
-  // it subscribes to `cardSessionBindingStore` and constructs/disposes
-  // services in response to binding events. React only reads.
-  //
-  // Earlier this hook stored services in `useState` and populated them
-  // via `useLayoutEffect` keyed on the binding. That violated [L02]
-  // and produced a class of bugs where any React-side dep change tore
-  // services down, sent a stray `close_session` frame, and remounted
-  // the picker mid-session. The wire close is now sent only by
-  // explicit `cardServicesStore.closeCard(cardId)` calls from the
-  // deck-canvas's user-close handler.
-  const services = useSyncExternalStore<CardServices | null>(
-    cardServicesStore.subscribe,
-    useCallback(() => cardServicesStore.getServices(cardId), [cardId]),
-  );
-
-  // True ref: the delegate instance arrives after the child
-  // TugPromptEntry commits, so it cannot be initialized eagerly. Kept
-  // here so the `/` position-0 gate (in `completionProviders`) reads
-  // the same identity the component passes to `<TugPromptEntry ref>`.
-  const entryDelegateRef = useRef<TugPromptEntryDelegate | null>(null);
-
-  // Completion providers. Null-safe on `services` so this can be
-  // memoized unconditionally (rules of hooks); the caller only reads
-  // it when `services` is non-null. The `@` provider falls back to
-  // an empty stable closure when services aren't ready, so the
-  // trigger stays wired regardless of timing. The `/` provider is
-  // wrapped with the position-0 gate so `/` mid-text yields an empty
-  // popup.
-  const completionProviders = useMemo<Record<string, CompletionProvider>>(
-    () => ({
-      "@": services?.fileCompletionProvider ?? EMPTY_FILE_COMPLETION_PROVIDER,
-      // Local (graphical) slash commands are merged in here at the
-      // composition layer — listed first so a name claude also reports
-      // resolves to the local entry. The store stays generic per
-      // [#step-1c]; the gallery (which calls the store provider directly)
-      // never sees them.
-      "/": services
-        ? wrapPositionZero(
-            entryDelegateRef,
-            mergeCommandProviders(
-              // Every local command is always offered. `/rewind` in particular
-              // is NOT gated on having a rewind target: the command must always
-              // be discoverable, and opening it with nothing to rewind to shows
-              // an explanatory empty-state sheet rather than silently no-opping.
-              localCommandCompletionProvider(),
-              // Apply the [D14] allowlist over claude's reported commands:
-              // drop the known-unsupported `hidden` tier from the popup
-              // ([#step-13a]). Local commands need no filter — every registry
-              // entry is supported by construction.
-              filterCommandProvider(
-                services.sessionMetadataStore.getCommandCompletionProvider(),
-                (name) => !isHiddenSlashCommand(name),
-              ),
-            ),
-          )
-        : EMPTY_FILE_COMPLETION_PROVIDER,
-    }),
-    [services],
-  );
-
-  // Argument-hint resolver: maps an accepted command atom's value to its
-  // placeholder by reading the LIVE command catalog (skill/agent category +
-  // any explicit hint the emitter shipped) and the local registry (its
-  // `takesArgs` flag), deferring the decision to the pure `resolveArgumentHint`.
-  // Read live so a hint that lands after the `initialize` handshake takes
-  // effect without rebuilding the editor.
-  const argumentHintResolver = useMemo<ArgumentHintResolver>(() => {
-    if (services === null) return () => null;
-    const store = services.sessionMetadataStore;
-    return (value: string): string | null => {
-      const catalogHit = store
-        .getSnapshot()
-        .slashCommands.find((c) => c.name === value);
-      const local: LocalSlashCommandSpec | undefined = LOCAL_SLASH_COMMANDS.find(
-        (c) => c.name === value,
-      );
-      return resolveArgumentHint({
-        name: value,
-        category: catalogHit?.category,
-        argumentHint: catalogHit?.argumentHint,
-        takesArgs: local?.takesArgs,
-      });
-    };
-  }, [services]);
-
-  return useMemo<DevCardServices | null>(() => {
-    if (services === null) return null;
-    return {
-      codeSessionStore: services.codeSessionStore,
-      sessionMetadataStore: services.sessionMetadataStore,
-      historyStore: getDevPromptHistoryStore(),
-      completionProviders,
-      argumentHintResolver,
-      editorStore: services.editorStore,
-      responseStore: services.responseStore,
-      gitDiffStore: services.gitDiffStore,
-      skillsInventoryStore: services.skillsInventoryStore,
-      hooksInventoryStore: services.hooksInventoryStore,
-      entryDelegateRef,
-    };
-  }, [services, completionProviders, argumentHintResolver]);
 }
 
 // ---------------------------------------------------------------------------
@@ -3743,50 +3601,3 @@ export function DevCardBody({
   );
 }
 
-// ---------------------------------------------------------------------------
-// registerDevCard
-// ---------------------------------------------------------------------------
-
-/**
- * Register the Dev card in the global card registry.
- *
- * Must be called before `DeckManager.addCard("dev")` is invoked.
- * Call from `main.tsx` alongside `registerGitCard()`.
- */
-export function registerDevCard(): void {
-  registerCard({
-    componentId: "dev",
-    contentFactory: (cardId) => <DevCardContent cardId={cardId} />,
-    defaultMeta: { title: "Dev", icon: "MessageSquareText", closable: true, confirmClose: true },
-    defaultFeedIds: [
-      FeedId.CODE_INPUT,
-      FeedId.CODE_OUTPUT,
-      FeedId.SESSION_METADATA,
-      FeedId.FILETREE,
-    ],
-    sizePolicy: {
-      // The width floor is set by the Z2 status row, the card's
-      // widest fixed-content surface: four 21ch instrument cells plus
-      // inter-cell/edge gaps (≈ 674px) and a sash grip at each end
-      // with its gaps + padding (≈ 96px) ≈ 770px, rounded to 800 for
-      // breathing room. `getStackSizePolicy` lifts the hosting pane's
-      // resize floor to this value (or higher, if a wider card shares
-      // the pane), so the instrument readout never clips. The height
-      // floor must fit the prompt entry (the fixed 200px text area + its
-      // toolbar/indicator rows) AND leave the transcript its minimum
-      // (`--dev-transcript-min`), so the entry never crowds the transcript
-      // out even at the smallest card size.
-      min: { width: 800, height: 500 },
-      // Default size opens the card tall enough for an extended
-      // transcript to read as a continuous column, not a porthole,
-      // and wide enough to give the Choose Session sheet (caps at
-      // 460px) room to breathe alongside the card body. Both
-      // dimensions intentionally exceed many laptop canvases;
-      // `addCard` clamps width AND height to 90% of the live canvas
-      // at creation, so on a smaller screen the card opens at
-      // canvas * 0.9 instead of pushing past the viewport.
-      preferred: { width: 900, height: 1200 },
-    },
-    engineKind: "em",
-  });
-}

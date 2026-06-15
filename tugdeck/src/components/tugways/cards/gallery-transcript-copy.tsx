@@ -35,7 +35,7 @@ import { ToolUseIdContext } from "@/components/tugways/cards/tool-blocks/collaps
 import {
   type CopyMarkdownResolver,
   useTranscriptCellMenu,
-} from "@/components/tugways/cards/dev-card-transcript";
+} from "@/components/tugways/cards/transcript-host-helpers";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 
 const TURN_KEY = "fixture";
