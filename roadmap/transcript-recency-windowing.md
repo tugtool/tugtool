@@ -1,0 +1,436 @@
+<!-- devise-skeleton v4 -->
+
+## Transcript Recency Windowing — Load Recent, Page Older On Demand {#transcript-recency-windowing}
+
+**Purpose:** Bound transcript load cost by session *recency*, not session *size*: resume only the most recent N turns by default, with on-demand "load previous M" (and "load all") paging older turns *above* the current view while holding scroll position — so the most relevant content is always loaded fast, regardless of total session length.
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Ken Kocienda |
+| Status | draft |
+| Target branch | `tugutil dash` worktree (joined to `main` by the user) |
+| Last updated | 2026-06-15 |
+
+---
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+The redux render work ([`transcript-architecture-redux.md`](transcript-architecture-redux.md) `[P07]`, landed `8397b2e3`) bounded the **render** cost via `content-visibility` — WebKit no longer styles off-screen rows, so the synchronous mount of a 212-row session fell ~4.4 s → ~1 s. But it did **nothing** for the **ingest** cost: tugcode still reads and translates the *entire* per-session JSONL, and the reducer still builds *every* turn entry in `CodeSessionStore`. `replay_ingest` is a separate, measured cost (~300 ms–1.1 s for ~200 turns) that grows **unbounded** with session length — for a 10,000-turn session it dominates, and `content-visibility` cannot touch it because the store still holds all 10k turns and tugcode replayed all of them.
+
+Recency-windowing bounds *that*. The observation is the one every serious chat UI relies on: the most relevant content is the most recent. So load the last N turns by default (cheap ingest), render them cheap (`content-visibility`), and page older turns in on demand — above the current view, holding the user's scroll position. The two layers compose into O(viewport) at *both* ingest and render, which is what finally makes req #1 ("any size") true.
+
+#### Strategy {#strategy}
+
+- **Window at the replay source (tugcode), not the render.** The ingest cost lives in `translateJsonlSession` + the IPC frames + the reducer's per-turn build. Slicing to the last N turns saves all of that. Windowing only at the data-source/render layer saves nothing on ingest (already covered by `content-visibility`).
+- **Extend the existing request-driven path.** Replay is already `RequestReplay` → `runReplay` → `translateJsonlSession`. Add an optional window spec to that one verb rather than inventing a protocol.
+- **Default-load the last N turns; page older backward only.** Recent turns stay mounted forever; "load previous M" (M ∈ {50, 100, all}) pulls older turns in *above* the view. No forward unloading.
+- **Prepend with scroll-position hold.** When older turns land above, compensate `scrollTop` by the `scrollHeight` delta so the content the user is looking at stays put — content grows upward, invisibly.
+- **Reuse the redux `TugSheet`.** A "load all" (or a deep faithful-restore) that crosses the 0.75 s gate ([`transcript-architecture-redux.md` P08/P09]) shows that sheet with progress + Cancel. Small windowed loads reveal once.
+- **Faithful restore.** On reload, load enough older turns to include the saved anchor so pixel-perfect restore (req #4) holds in every case — sheet-gated if it's a deep load.
+- **Measure on a real long session.** No claimed win until reproduced on a genuinely long (thousands-of-turns) real JSONL.
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+- **Bounded ingest:** opening a long session (thousands of turns) ingests + mounts only the last N turns — `replay_ingest` ms and `syncMount`/`replay_render` are bounded by N, independent of total turn count (verified via the existing `perf.replay_ingest` / `perf.replay_render` logs on a real long session). (#perf-gate)
+- **Held scroll on prepend:** "load previous M" prepends M older turns with the previously-visible content holding its viewport position — the turn the user was looking at stays under the same viewport Y (verified visually + an app-test asserting `scrollTop` compensation within ≤ 2 px). (#prepend-scroll-hold)
+- **Load-all feedback:** "load all" on a large session presents the `TugSheet` (when it crosses 0.75 s) with progress + Cancel; Cancel stops the load and leaves the already-loaded window intact and usable. (#load-all-sheet)
+- **Faithful restore (req #4):** a reload whose saved anchor is above the default window loads to the anchor and lands pixel-perfect — extends `at0190`. (#faithful-restore)
+- **No false holes (req #5):** the "load previous" affordance is present **iff** older turns exist; once loaded, every older turn renders fully — deliberate pagination is not a hole. (#pagination-not-holes)
+
+#### Scope {#scope}
+
+1. **tugcode** — extend `RequestReplay` with an optional window spec; `translateJsonlSession` / `runReplay` translate only the requested turn range (last N, or `[start, end)`); `replay_complete` carries window metadata (`firstLoadedTurnIndex`, `totalTurns` / `hasOlder`).
+2. **tugdeck protocol + reducer** — send the window spec; the reducer handles a *windowed* default-load bracket (append, as today) and records `oldestLoadedTurn` / `hasOlder`.
+3. **reducer + data source** — a *load-previous* bracket **prepends** older turns above existing rows; `DevTranscriptDataSource` exposes `hasOlder` / `oldestLoadedTurnIndex`.
+4. **TugListView** — prepend with scroll-position hold (`scrollHeight`-delta compensation, [L23]).
+5. **"Load previous" affordance** at the transcript top (M = 50 / 100 / all); "load all" routed through the redux `TugSheet`.
+6. **Faithful restore** — load-to-anchor on reload when the saved anchor is above the default window.
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- Changing the JSONL/wire protocol beyond the `RequestReplay` window field + the `replay_complete` metadata.
+- Forward pagination or unloading recent turns — paging is backward-only; recent content stays mounted.
+- Re-deriving the render approach — `content-visibility` + cached heights ([`transcript-architecture-redux.md` P07], landed) already bounds render; this plan is the *ingest* layer.
+- A turn-boundary index file or backward-JSONL-parse optimization — v1 may still `JSON.parse` every line but only *translate* the requested tail (the parse-all optimization is a measured follow-on, [#roadmap]).
+- Persisting loaded transcript content across a hard refresh — the bag holds no content; reload re-replays the window ([`transcript-architecture.md` P09]).
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- **`transcript-architecture-redux.md` Step 6.1 (TugSheet restore modal) must land first** — "load all" ([#step-5]) and the deep-faithful-restore sheet ([#step-6]) reuse that sheet + its 0.75 s gate.
+- `content-visibility` cached-height render ([`transcript-architecture-redux.md` P07]) — already landed (`8397b2e3`); the cached heights make prepend stable.
+- The request-driven replay path: `RequestReplay` (`tugproto/src/inbound.ts`) → `Session.runReplay` (`tugcode/src/session.ts`) → `translateJsonlSession` (`tugcode/src/replay.ts`).
+- `DevTranscriptDataSource` / `buildRowLayout` (`tugdeck/src/lib/dev-transcript-data-source.ts`); `CodeSessionStore` reducer (`tugdeck/src/lib/code-session-store/reducer.ts`); `TugListView` anchor/`HeightIndex` (`tugdeck/src/components/tugways/tug-list-view.tsx`); the persistent scroll/height bag.
+- A **real long session** JSONL (thousands of turns) from the user for the perf gate ([P08]-style real-corpus rule).
+
+#### Constraints {#constraints}
+
+- Tuglaws: **[L02]** (window/`hasOlder` enter React via `useSyncExternalStore`), **[L06]** ("load previous" visibility + prepend are appearance/DOM, not React appearance state), **[L22]** (measured heights flow via `ResizeObserver`/`HeightIndex`), **[L23]** (prepend preserves the user's scroll position — the core obligation here), **[L26]** (stable cell identity across prepend so `content-visibility` remembered sizes + observers survive). Cross-check `tuglaws/tuglaws.md`, `pane-model.md`, `component-authoring.md`; name the laws in each dash commit.
+- **tugcode is bun-compiled — no HMR.** Every tugcode change needs a rebuild (`just app-debug`); edits don't take effect until `target/debug/tugcode` is rebuilt. ([[feedback_tugcode_compile]])
+- A new client→tugcode message field rides the single inbound verb list (`tugproto/src/inbound.ts` `INBOUND_VERBS` + the `InboundMessage` union); extend `RequestReplay` in place rather than adding a verb. ([[reference_tugcode_inbound_allowlist]])
+- No fake-DOM/RTL tests, no mock-store assertion tests (banned). Pure-logic (`bun:test`) + real-app (`just app-test`) only. Perf claims on the user's real long session only.
+
+#### Assumptions {#assumptions}
+
+- Finalized turns are immutable (the reducer never mutates a committed turn), so an older turn translated once is stable for the session's life.
+- "Recent is most relevant" — the user works near the bottom, so the common reload lands within the default window and pays no extra load.
+- Turn boundaries are derivable from the parsed entries: `translateJsonlSession` already counts committed turns for `replay_complete.count`, so the same boundary logic locates "the last N turns."
+- `RequestReplay` carries no payload today (`{ type: "request_replay" }`), so adding an optional `window` field is backward-compatible (absent ⇒ load-all, current behavior).
+
+---
+
+### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
+
+Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P01]`…; global decisions (`design-decisions.md`) are cited by `[D##]`. Cross-plan citations name the other plan file + its label (e.g. `transcript-architecture-redux.md P08`).
+
+---
+
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
+
+#### [Q01] Window unit + defaults (DECIDED) {#q01-window-defaults}
+
+**Question:** Is the window counted in turns or rows, and what are N (default) and the M options?
+
+**Resolution:** **DECIDED — turns.** A turn is the natural unit (user + assistant; wake turns are a single row). Default **N = 50 turns**; "load previous" offers **M ∈ {50, 100, all}** (user-specified). Both live as named constants so they're tunable. Sessions with ≤ N turns load whole and show no "load previous" affordance.
+
+#### [Q02] Where tugcode performs the slice (DEFER to #step-1 spike) {#q02-slice-mechanism}
+
+**Question:** Slice inside `translateJsonlSession` (a `window` option that computes the start index by walking `parsedEntries` and counting turn boundaries) vs. in `runReplay` before calling the translator?
+
+**Why it matters:** The translator already tracks turn commits; duplicating boundary logic in `runReplay` risks edge-case drift (continuation entries sharing a `message.id`, orphan synthesis).
+
+**Plan to resolve:** Spike in #step-1 — prefer a `window` option *inside* `translateJsonlSession` so turn-boundary detection stays with the code that already owns it (`replay_complete.count`). The translator still `JSON.parse`s all lines (cheap relative to translate); it just begins *emitting* at the windowed start index.
+
+**Resolution:** OPEN → DECIDED in #step-1 (preference: translator-internal window option).
+
+#### [Q03] Reducer representation of prepended older turns (DEFER to #step-3) {#q03-prepend-representation}
+
+**Question:** Prepend older turns into the same `turns` array (re-index everything) vs. hold a separate "older" segment the data source concatenates?
+
+**Why it matters:** Prepending re-indexes rows, which interacts with the **height/anchor cache keying**. The redux render keys cached heights by **index** (`meta.cellHeights[index]`, `[P07]`); a prepend shifts every index and would misalign the cache → scroll jump.
+
+**Plan to resolve:** #step-3 — resolve toward **stable-id-keyed** heights (`DevTranscriptDataSource.idForIndex` already mints `${turnKey}-…`), so a prepend never invalidates a cached height. This is the same lesson the superseded `transcript-architecture.md` `[Q01]` reached. Capture as [P06].
+
+**Resolution:** OPEN → DECIDED in #step-3 (preference: stable-id height keying; prepend representation chosen to keep ids stable).
+
+#### [Q04] "Load all" on a whale — one-shot vs chunked (DEFER to #step-5) {#q04-load-all-shape}
+
+**Question:** If "all" is enormous (tens of thousands of turns), do we translate it one-shot behind the sheet, or chunk it (page repeatedly) so the UI stays responsive and Cancel is granular?
+
+**Plan to resolve:** #step-5 — v1 is **one-shot behind the `TugSheet` with Cancel**; the translator's existing time-slice yield ([`replay.ts` `timeSliceMs`]) already keeps IPC responsive. If a real whale makes one-shot "all" unacceptable, chunked paging is a follow-on ([#roadmap]).
+
+**Resolution:** OPEN → DECIDED in #step-5 (one-shot + Cancel for v1).
+
+---
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| Prepend causes a scroll jump (the central UX risk) | high | med | `scrollHeight`-delta `scrollTop` compensation ([P03]) + cached heights ([P06]/redux P07) for older rows | Any visible jump on "load previous" in #step-4 vet |
+| Index-keyed height/anchor cache breaks on prepend | high | high (if [Q03] skipped) | Stable-id height keying ([P06]) | Cache miss / shift after a prepend |
+| tugcode turn-boundary slice drops/dupes a turn at the window edge | high | med | Reuse the translator's turn tracking; pure-logic slice tests incl. continuation + orphan cases ([Q02]) | Window edge shows a partial/duplicate turn in #step-1 |
+| Faithful restore loads a lot (scrolled-way-up reload) | med | low | Sheet + Cancel; bounded by the user's own prior scroll depth ([P05]) | Deep restore feels unbounded in #step-6 |
+| Live/streaming turn interaction | med | low | The live turn is always the most-recent (bottom) → always in the default window; paging only touches older turns | Stream flickers when paging older |
+
+**Risk R01: Prepend scroll-jump** {#r01-prepend-jump}
+- **Risk:** Inserting M turns above the viewport shifts `scrollHeight`; the browser keeps `scrollTop`, so the content visually jumps up by the inserted height.
+- **Mitigation:** Capture `scrollHeight` immediately before the prepend commit; after it lands, set `scrollTop += (newScrollHeight − oldScrollHeight)` so the viewed content holds. Cached heights ([P06]) + `content-visibility` intrinsic-size make the inserted block's height known on the first commit; a never-seen older turn uses the estimate for one frame, which the delta compensation absorbs.
+- **Residual risk:** Sub-pixel rounding across many inserted rows; bounded and within the ≤ 2 px restore tolerance already used by `at0190`.
+
+**Risk R02: Cross-plan ordering** {#r02-cross-plan-order}
+- **Risk:** "Load all" / deep-restore need the redux `TugSheet` (redux Step 6.1) which may not be merged when this plan starts.
+- **Mitigation:** Sequence — implement redux Steps 6 → 6.1 → 6.2 → 7 first ([#dependencies]); this plan's #step-5/#step-6 hard-depend on the sheet.
+
+---
+
+### Design Decisions {#design-decisions}
+
+#### [P01] Window at the replay source (tugcode) {#p01-window-at-source}
+
+**Decision:** Recency-windowing happens in `translateJsonlSession` / `runReplay` — tugcode translates only the requested turn range. The render layer is *not* the windowing point (it's already bounded by `content-visibility`).
+
+**Rationale:** The ingest cost (translate + IPC frames + reducer per-turn build) is what grows with session length; only slicing at the source removes it. Windowing the data source while replaying everything saves nothing on ingest.
+
+**Implications:** `RequestReplay` gains an optional `window`; `replay_complete` gains window metadata; the reducer learns "this bracket is a window, here's the oldest turn and whether older exists."
+
+#### [P02] Default last N turns; backward-only paging {#p02-backward-paging}
+
+**Decision:** Default load = the most recent N turns (N = 50). Older turns are pulled in only by an explicit "load previous M" (M ∈ {50, 100, all}). Recent turns never unload.
+
+**Rationale:** Recent is most relevant and is what the user lands on; bounding the default load is the whole win. Forward unloading would add complexity for no benefit (recent content is cheap to keep under `content-visibility`).
+
+**Implications:** A "load previous" affordance at the transcript top, shown iff older turns exist; the live/streaming turn is always in-window.
+
+#### [P03] Page older turns by prepend with scroll-position hold {#p03-prepend-hold}
+
+**Decision:** "Load previous" prepends older turns *above* the current rows; `TugListView` compensates `scrollTop` by the `scrollHeight` delta so the previously-visible content holds its viewport position. Content grows upward; the user's reading position does not move.
+
+**Rationale:** The product idea — "the most relevant content is always right there." Prepend-with-hold is the only behavior that keeps the recent content put while older content appears above.
+
+**Implications:** A new prepend path in `TugListView` (capture `scrollHeight` pre-commit, adjust `scrollTop` post-commit); pairs with [P06] stable heights so the delta is exact.
+
+#### [P04] Reuse the redux TugSheet + 0.75 s gate for slow loads {#p04-reuse-sheet}
+
+**Decision:** A "load all" or a deep faithful-restore that crosses the 0.75 s gate presents the redux `TugSheet` ([`transcript-architecture-redux.md` P08/P09]) with progress + Cancel. Small windowed loads (the default and small "load previous M") reveal once with no sheet.
+
+**Rationale:** Don't build a second progress surface; the sheet + gate already exist for exactly "a load that takes long enough to warrant feedback + Cancel."
+
+**Implications:** Hard dependency on redux Step 6.1; Cancel on a "load previous"/"load all" stops the in-flight translate and leaves the already-loaded window intact (distinct from restore-Cancel, which closes the card).
+
+#### [P05] Faithful restore — load to the saved anchor {#p05-faithful-restore}
+
+**Decision:** On Developer ▸ Reload, if the saved anchor is above the default window, load enough older turns to include it, then restore to it exactly. Restore never lands at the window edge when the user was parked deeper.
+
+**Rationale:** req #4 (pixel-perfect restore) is a hard requirement (user decision). The common case — reloaded near the bottom — is within the default window and pays nothing; only a reload-while-parked-on-old-content loads more, bounded by the user's own prior scroll depth, sheet-gated if slow.
+
+**Implications:** Restore computes the needed window from the saved anchor's turn index; the windowed replay request carries that depth.
+
+#### [P06] Stable-id-keyed heights/anchors (prepend-safe) {#p06-stable-id-heights}
+
+**Decision:** Cached cell heights and the restore anchor key off the stable row id (`idForIndex` → `${turnKey}-…`), not the flat index, so a prepend (which shifts every index) never invalidates a cached height or mis-resolves the anchor.
+
+**Rationale:** The redux render keys `meta.cellHeights` by index; under prepend that breaks. Id-keying is the same conclusion the superseded `transcript-architecture.md` `[Q01]` reached, now load-bearing because prepend is real here.
+
+**Implications:** Thread the stable id into the height cache + the `content-visibility` `contain-intrinsic-size` seed ([`transcript-architecture-redux.md` P07]); the bag's `cellHeights` migrate from index-keyed to id-keyed (or carry both).
+
+#### [P07] Deliberate pagination is not a missing message (req #5 clarification) {#p07-pagination-not-holes}
+
+**Decision:** Older turns absent because they haven't been paged in are **not** "holes" / "missing messages." req #5 forbids *render bugs* (an unrendered loaded row, an estimate-driven scrollbar); it does not forbid intentional backward pagination behind a visible affordance. Once loaded, every older turn renders fully.
+
+**Rationale:** Keeps this plan consistent with the redux req #5 decisions rather than appearing to contradict them.
+
+**Implications:** The "load previous" control is the explicit signal that older content exists; the scrollbar reflects only loaded content (honest), and grows by real heights as older turns prepend.
+
+---
+
+### Specification {#specification}
+
+#### State Zone Mapping (tugdeck/tugways) {#state-zone-mapping}
+
+| State | Zone | Mechanism | Law |
+|-------|------|-----------|-----|
+| Requested window spec (last N / range) | local-data (request) | built in the resume/load-previous request path; sent over IPC | [L02] |
+| `oldestLoadedTurn` / `hasOlder` | structure (external) | from `replay_complete` metadata into `CodeSessionStore`; enters React via `useSyncExternalStore` | [L02] |
+| "Load previous" affordance visibility | appearance (derived) | derived from `hasOlder`; rendered at transcript top, no React appearance state | [L06] |
+| Prepend scroll compensation | local-data (DOM authority) | capture `scrollHeight` pre-commit, adjust `scrollTop` post-commit in `TugListView` | [L23] |
+| Id-keyed cell heights | local-data (derived) | `HeightIndex` / bag keyed by `idForIndex`; written from `ResizeObserver`, read for `contain-intrinsic-size` | [L22], [L06] |
+| Load sheet presented (load-all / deep restore) | structure | reuse redux `TugSheet` mapping ([`transcript-architecture-redux.md` P08/P09]) | [L02] |
+| Stable cell identity across prepend | structure | same wrapper id across re-index so observers / remembered sizes survive | [L26] |
+
+---
+
+### Test Plan Concepts {#test-plan-concepts}
+
+| Category | Purpose | When |
+|----------|---------|------|
+| **Pure-logic** (`bun:test`) | tugcode turn-boundary slice (last N; range; continuation + orphan edges); reducer prepend/re-index; id-keyed height resolution across a prepend; "load previous" affordance derivation from `hasOlder` | #step-1, #step-2, #step-3, #step-5 |
+| **Real-app** (`just app-test`) | prepend scroll-hold (no jump); faithful restore to an above-window anchor; load-all sheet + Cancel | #step-4, #step-5, #step-6 |
+| **Perf measurement** | `replay_ingest` / `replay_render` bounded by N on a real long session, independent of total turns | #step-1, #step-7 |
+
+**Out of tests:** no fake-DOM/RTL (banned, happy-dom deleted); no mock-store assertion tests (exercise the real reducer/replay on real JSONL); no synthetic long-session fixtures for the perf gate — use the user's real long session ([[feedback_real_content_fixtures]]).
+
+---
+
+### Execution Steps {#execution-steps}
+
+> Work on a `tugutil dash` worktree (absolute paths into the worktree); commit each step via `tugutil dash commit`; the user joins to `main`. **tugcode is compiled — rebuild (`just app-debug`) after every tugcode change; no HMR.** Redux Steps 6 → 6.1 → 6.2 must be merged before #step-5/#step-6.
+
+#### Step Status Ledger {#step-status-ledger}
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-1 | tugcode: window the replay (RequestReplay window + sliced translate + metadata) | pending | — |
+| #step-2 | tugdeck: send window spec; reducer records oldestLoadedTurn/hasOlder | pending | — |
+| #step-3 | Reducer + data source: prepend older turns; stable-id height keying | pending | — |
+| #step-4 | TugListView: prepend with scroll-position hold | pending | — |
+| #step-5 | "Load previous M" affordance + "load all" via TugSheet | pending | — |
+| #step-6 | Faithful restore — load-to-anchor on reload | pending | — |
+| #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | pending | — |
+
+#### Step 1: tugcode — window the replay {#step-1}
+
+**Commit:** `tugcode: window replay to last-N / turn-range; emit window metadata`
+
+**References:** [P01] Window at source, [Q01] Defaults, [Q02] Slice mechanism, (#perf-gate), [[feedback_tugcode_compile]], [[reference_tugcode_inbound_allowlist]]
+
+**Artifacts:**
+- `RequestReplay` (`tugproto/src/inbound.ts`) gains an optional `window?: { lastTurns: number } | { turnRange: [number, number] }` (absent ⇒ load-all, unchanged).
+- `translateJsonlSession` (`tugcode/src/replay.ts`) accepts a `window` option, computes the start index by counting turn boundaries (reusing its turn-commit tracking), and emits only the windowed turns between `replay_started` / `replay_complete`.
+- `replay_complete` carries `firstLoadedTurnIndex`, `totalTurns`, `hasOlder`.
+- `runReplay` (`tugcode/src/session.ts`) threads the request's window into the translator.
+
+**Tasks:**
+- [ ] Add the `window` field to `RequestReplay` (in place on the existing verb — no new verb); update the `InboundMessage` union / guards consumers as needed.
+- [ ] Add the `window` option + boundary-walk to `translateJsonlSession`; add window metadata to `replay_complete`. Resolve [Q02] (prefer translator-internal).
+- [ ] Thread the window from `runReplay` into the translator.
+- [ ] Rebuild tugcode (`just app-debug`); confirm a windowed request emits only the last N turns + correct metadata.
+
+**Tests:**
+- [ ] Pure-logic (`bun:test`, `tugcode`): last-N slice; explicit range; window larger than the session (= load-all); continuation entries sharing a `message.id` and orphan-synthesis turns land on the correct side of the window edge (no partial/duplicate turn).
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` n/a; tugcode `bun test` green; `bunx tsc --noEmit` (tugcode) clean.
+- [ ] A windowed `request_replay` on a real long session emits exactly the last N turns with correct `firstLoadedTurnIndex` / `hasOlder`; `replay_ingest` bounded by N (not total turns).
+
+#### Step 2: tugdeck — send window spec; record window metadata {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `tugdeck: send replay window; store oldestLoadedTurn/hasOlder`
+
+**References:** [P01] Window at source, [P02] Backward paging, (#state-zone-mapping)
+
+**Artifacts:**
+- The resume/replay request path (`tugdeck/src/protocol.ts` + the store's replay request) sends `window: { lastTurns: N }` by default.
+- `CodeSessionStore` records `oldestLoadedTurn` / `hasOlder` from `replay_complete`; both reachable via the snapshot ([L02]).
+
+**Tasks:**
+- [ ] Build + send the default window (`lastTurns: N`) on cold resume.
+- [ ] Parse window metadata in the reducer's `replay_complete` path; expose `hasOlder` / `oldestLoadedTurnIndex` on the snapshot.
+- [ ] Confirm a ≤ N-turn session reports `hasOlder: false` (loads whole, no affordance).
+
+**Tests:**
+- [ ] Pure-logic: reducer records window metadata; `hasOlder` derivation for `< N`, `= N`, `> N` total turns.
+
+**Checkpoint:**
+- [ ] `bun test` reducer suite green; `bunx tsc --noEmit` clean.
+- [ ] A real long session resumes showing only the last N turns; the snapshot reports `hasOlder: true` with the correct oldest index.
+
+#### Step 3: Reducer + data source — prepend older turns; stable-id heights {#step-3}
+
+**Depends on:** #step-2
+
+**Commit:** `tugdeck: prepend older turns on load-previous; id-keyed heights`
+
+**References:** [P02] Backward paging, [P06] Stable-id heights, [Q03] Prepend representation, (#r01-prepend-jump)
+
+**Artifacts:**
+- A *load-previous* replay bracket (window = the older range) whose turns the reducer **prepends** ahead of existing turns; `DevTranscriptDataSource` exposes `oldestLoadedTurnIndex` / `hasOlder` and lays out prepended turns in order.
+- Cell heights + the restore anchor key off `idForIndex` (stable `turnKey`-derived id), so a prepend doesn't invalidate them ([P06]); the `content-visibility` `contain-intrinsic-size` seed reads the id-keyed height.
+
+**Tasks:**
+- [ ] Add a prepend path: the reducer distinguishes a default/append bracket from a load-previous/prepend bracket (a flag on the request echoed in `replay_complete`, or inferred from `firstLoadedTurnIndex < oldestLoadedTurn`).
+- [ ] Resolve [Q03]: choose the representation that keeps stable ids; migrate `cellHeights` keying from index to `idForIndex` (carry both if a migration window is needed).
+- [ ] Update `buildRowLayout` / `numberOfItems` / `idForIndex` for the prepended range.
+
+**Tests:**
+- [ ] Pure-logic: prepending older turns preserves the stable ids of existing rows; an id-keyed height survives an index shift; `buildRowLayout` orders prepended-then-existing correctly.
+
+**Checkpoint:**
+- [ ] `bun test` green; `bunx tsc --noEmit` clean.
+- [ ] A simulated load-previous bracket prepends turns with existing rows' ids unchanged and their cached heights intact.
+
+#### Step 4: TugListView — prepend with scroll-position hold {#step-4}
+
+**Depends on:** #step-3
+
+**Commit:** `tug-list-view: hold scroll position across prepend`
+
+**References:** [P03] Prepend-hold, [P06] Stable-id heights, (#prepend-scroll-hold, #r01-prepend-jump), `tuglaws/tuglaws.md` [L23]
+
+**Artifacts:**
+- `TugListView` detects a prepend (the item count grew at the *front*, oldest id changed) and compensates: capture `scrollHeight` before the prepend commit, set `scrollTop += (newScrollHeight − oldScrollHeight)` after, so the previously-visible content holds its viewport Y. Works under `inline` + `content-visibility`.
+
+**Tasks:**
+- [ ] Detect a front-insert (vs the normal bottom-append) from the data-source delta.
+- [ ] Implement the `scrollHeight`-delta `scrollTop` compensation in the appropriate layout effect ([L03]/[L23]); ensure it composes with the `content-visibility` intrinsic-size of the inserted rows (cached heights make the delta exact on the first commit).
+- [ ] Cross-check tuglaws and name them in the commit: **L23** (scroll preserved across a DOM-down/grow transition), **L06** (the `scrollTop` write is DOM, not React state), **L26** (existing rows keep identity).
+
+**Tests:**
+- [ ] Pure-logic: the compensation math (old/new `scrollHeight` → `scrollTop` delta).
+- [ ] Real-app (`just app-test`): a save→load-previous sequence on the real long fixture asserts the anchored row holds its viewport Y within ≤ 2 px after the prepend (no jump).
+
+**Checkpoint:**
+- [ ] `bun test` + `bunx tsc --noEmit` clean.
+- [ ] Live + app-test: "load previous" grows content upward with zero visible jump.
+
+#### Step 5: "Load previous M" affordance + "load all" via TugSheet {#step-5}
+
+**Depends on:** #step-4, **transcript-architecture-redux.md #step-6-1 (TugSheet)**
+
+**Commit:** `transcript: load-previous affordance (50/100/all); load-all sheet`
+
+**References:** [P02] Backward paging, [P04] Reuse sheet, [Q04] Load-all shape, (#load-all-sheet), [[feedback_use_tug_components]]
+
+**Artifacts:**
+- A "load previous" control at the transcript top, shown iff `hasOlder`, offering **50 / 100 / all** (reuse an existing Tug control — `TugChoiceGroup` / menu — not a hand-rolled one).
+- 50/100 → a load-previous windowed request ([#step-3]/[#step-4]); **all** → a full older-range request that, if it crosses 0.75 s, presents the redux `TugSheet` with progress + Cancel. Cancel stops the in-flight translate and **leaves the already-loaded window intact** (distinct from restore-Cancel's close-card).
+
+**Tasks:**
+- [ ] Render the affordance from `hasOlder`; wire 50/100/all to load-previous requests.
+- [ ] Route "all" through the redux `TugSheet` + 0.75 s gate; Cancel = stop translate, keep loaded window. Resolve [Q04] (one-shot + Cancel for v1).
+- [ ] Cross-check tuglaws (L02 affordance derivation, L06 visibility) and name them.
+
+**Tests:**
+- [ ] Pure-logic: affordance shown iff `hasOlder`; option → request-range mapping.
+- [ ] Real-app: "all" on the real long session shows the sheet + Cancel; Cancel leaves the prior window usable; 50/100 prepend without a sheet.
+
+**Checkpoint:**
+- [ ] `bun test` + `bunx tsc --noEmit` clean.
+- [ ] Live: 50/100 page in (held scroll, no sheet); "all" on a whale shows the sheet + working Cancel.
+
+#### Step 6: Faithful restore — load-to-anchor on reload {#step-6}
+
+**Depends on:** #step-5
+
+**Commit:** `transcript: restore loads to saved anchor above the window`
+
+**References:** [P05] Faithful restore, [P04] Reuse sheet, (#faithful-restore), `at0190`
+
+**Artifacts:**
+- On Developer ▸ Reload, restore computes the window depth needed to include the saved anchor's turn; if that's above the default window, the resume request loads to the anchor (sheet-gated if it crosses 0.75 s), then restores pixel-perfect. A reload landing within the default window is unchanged (fast, no extra load).
+
+**Tasks:**
+- [ ] Map the saved anchor (`{turnKey/id, offset}`) to a needed window depth; request that depth on restore when it exceeds N.
+- [ ] Restore to the anchor after the windowed load lands (reuse the existing anchor resolver + id-keyed heights [P06]).
+- [ ] Route a deep restore through the redux sheet when it crosses 0.75 s.
+
+**Tests:**
+- [ ] Real-app: extend `at0190` — scroll up to an above-window anchor, reload, assert it lands within ≤ 2 px (faithful restore); a near-bottom anchor reloads fast with no extra load.
+
+**Checkpoint:**
+- [ ] `at0190` (extended) green; `bunx tsc --noEmit` clean.
+- [ ] Live: reload-while-parked-on-old-content lands exactly where the user left off.
+
+#### Step 7: Integration checkpoint — long-session load/paging/restore {#step-7}
+
+**Depends on:** #step-1, #step-2, #step-3, #step-4, #step-5, #step-6
+
+**Commit:** `N/A (verification only)`
+
+**References:** (#success-criteria), [P01]–[P07]
+
+**Tasks:**
+- [ ] On the live debug instance with a **real long session** (thousands of turns), verify: bounded ingest (default load = last N, `replay_ingest`/`replay_render` independent of total turns); held-scroll prepend; load-all sheet + Cancel; faithful restore; affordance present iff older exists.
+
+**Tests:**
+- [ ] Aggregate real-app pass: the `just app-test` paging/restore tests green; manual vet of the load feel + scroll-hold + no false holes confirmed by the user.
+
+**Checkpoint:**
+- [ ] User signs off that load is bounded by recency (not size) and paging/restore behave per #success-criteria on the real long session. Then `tugutil dash join`.
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** A dev transcript whose default load cost is bounded by recency (last N turns) rather than total session size — older turns paged in on demand, prepended above the view with the user's scroll position held, "load all" behind the redux `TugSheet` with Cancel, and pixel-perfect faithful restore — composing with `content-visibility` ([`transcript-architecture-redux.md` P07]) into O(viewport) at both ingest and render.
+
+#### Phase Exit Criteria ("Done means…") {#exit-criteria}
+
+- [ ] Opening a thousands-of-turns session loads only the last N — `replay_ingest`/`replay_render` independent of total turns (#perf-gate, #step-7).
+- [ ] "Load previous" pages older turns above the view with no scroll jump (#prepend-scroll-hold, #step-4).
+- [ ] "Load all" presents the sheet + Cancel that leaves the loaded window intact (#load-all-sheet, #step-5).
+- [ ] Faithful restore lands pixel-perfect even when the saved anchor is above the window (#faithful-restore, #step-6).
+- [ ] The "load previous" affordance appears iff older turns exist; loaded turns render fully (no false holes) (#pagination-not-holes).
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+- [ ] Backward-JSONL-parse / turn-boundary index so even `JSON.parse` is bounded by N (v1 parses all lines, translates only the tail) — only if the parse cost is measured to matter on a real whale ([Q02]).
+- [ ] Chunked "load all" with granular Cancel, if one-shot proves too heavy on a real whale ([Q04]).
+- [ ] Forward unloading of very old paged-in turns under extreme memory pressure (not expected to be needed under `content-visibility`).
