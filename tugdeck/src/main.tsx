@@ -155,7 +155,7 @@ if (!container) {
 
   // Wait for initial DEFAULTS frame + WASM init in parallel.
   await Promise.all([
-//     tugbankClient.ready(),
+    tugbankClient.ready(),
     initTugmark({ module_or_path: wasmUrl }),
   ]);
 
