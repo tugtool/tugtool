@@ -193,13 +193,18 @@
 }
 
 /* The validation border holds through focus too ([P07]) — overrides the plain
-   focus border above (equal specificity, authored later). */
+   focus border above (equal specificity, authored later). On focus the field's
+   own background shifts to `plain-focus` (see `.tug-input:focus`), so the
+   validation border renders on that surface, not the resting one. */
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
 .tug-input-invalid:focus {
   border-color: var(--tug7-element-field-border-normal-danger-rest);
 }
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
 .tug-input-valid:focus {
   border-color: var(--tug7-element-field-border-normal-success-rest);
 }
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
 .tug-input-warning:focus {
   border-color: var(--tug7-element-field-border-normal-caution-rest);
 }

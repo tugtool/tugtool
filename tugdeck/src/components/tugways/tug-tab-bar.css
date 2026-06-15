@@ -50,7 +50,10 @@ body {
      accent. Keeps the whole control family cohesive ([P01] native fill = action,
      not the legacy accent). The overflow badge and the drag insert-indicator are
      not selection, so they stay on accent. */
-  --tugx-tab-underline-active: var(--tugx-focus-fill);
+  /* The focus-language selection fill itself (`--tugx-focus-fill` resolves to
+     this same token); aliased directly to the base so the component token stays
+     one hop ([L17]) rather than chaining through the axis alias. */
+  --tugx-tab-underline-active: var(--tug7-surface-toggle-primary-normal-on-rest);
   --tugx-tab-badge-bg: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-tab-insertIndicator: var(--tug7-element-global-fill-normal-accent-rest);
 }
