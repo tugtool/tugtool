@@ -2733,6 +2733,17 @@ export function DevCardBody({
   useLayoutEffect(() => {
     const el = devCardRootRef.current;
     if (el === null) return;
+    // No materialize fade on a restore-mount (Developer ▸ Reload /
+    // cold-boot rehydration). The fade exists only to coordinate the
+    // picker → body handoff (share a beat with the picker sheet's
+    // exit); a restore has no picker to coordinate with, so the fade
+    // reads as a gratuitous flash on top of the reveal. Skip it when
+    // the card mounts into the cold-restore / replay window; keep it
+    // for a genuine picker → new-card creation. The signal is read
+    // fresh from the store at mount ([L02] effects may read stores
+    // directly), the same predicate `replayHoldActive` derives.
+    const snap = codeSessionStore.getSnapshot();
+    if (snap.phase === "replaying" || deriveColdRestoreActive(snap)) return;
     // Set the start state inline so the first paint after commit
     // shows opacity:0 — WAAPI's pending-phase doesn't apply the
     // first keyframe with the default `fill: forwards`. Cleared on

@@ -31,7 +31,7 @@ Recency-windowing bounds *that*. The observation is the one every serious chat U
 - **Extend the existing request-driven path.** Replay is already `RequestReplay` → `runReplay` → `translateJsonlSession`. Add an optional window spec to that one verb rather than inventing a protocol.
 - **Default-load the last N turns; page older backward only.** Recent turns stay mounted forever; "load previous M" (M ∈ {50, 100, all}) pulls older turns in *above* the view. No forward unloading.
 - **Prepend with scroll-position hold.** When older turns land above, compensate `scrollTop` by the `scrollHeight` delta so the content the user is looking at stays put — content grows upward, invisibly.
-- **Reuse the redux `TugSheet`.** A "load all" (or a deep faithful-restore) that crosses the 0.75 s gate ([`transcript-architecture-redux.md` P08/P09]) shows that sheet with progress + Cancel. Small windowed loads reveal once.
+- **Reuse the redux `TugSheet`.** A "load all" (or a deep faithful-restore) that crosses the 0.5 s gate ([`transcript-architecture-redux.md` P08/P09]) shows that sheet with progress + Cancel. Small windowed loads reveal once.
 - **Faithful restore.** On reload, load enough older turns to include the saved anchor so pixel-perfect restore (req #4) holds in every case — sheet-gated if it's a deep load.
 - **Measure on a real long session.** No claimed win until reproduced on a genuinely long (thousands-of-turns) real JSONL.
 
@@ -39,7 +39,7 @@ Recency-windowing bounds *that*. The observation is the one every serious chat U
 
 - **Bounded ingest:** opening a long session (thousands of turns) ingests + mounts only the last N turns — `replay_ingest` ms and `syncMount`/`replay_render` are bounded by N, independent of total turn count (verified via the existing `perf.replay_ingest` / `perf.replay_render` logs on a real long session). (#perf-gate)
 - **Held scroll on prepend:** "load previous M" prepends M older turns with the previously-visible content holding its viewport position — the turn the user was looking at stays under the same viewport Y (verified visually + an app-test asserting `scrollTop` compensation within ≤ 2 px). (#prepend-scroll-hold)
-- **Load-all feedback:** "load all" on a large session presents the `TugSheet` (when it crosses 0.75 s) with progress + Cancel; Cancel stops the load and leaves the already-loaded window intact and usable. (#load-all-sheet)
+- **Load-all feedback:** "load all" on a large session presents the `TugSheet` (when it crosses 0.5 s) with progress + Cancel; Cancel stops the load and leaves the already-loaded window intact and usable. (#load-all-sheet)
 - **Faithful restore (req #4):** a reload whose saved anchor is above the default window loads to the anchor and lands pixel-perfect — extends `at0190`. (#faithful-restore)
 - **No false holes (req #5):** the "load previous" affordance is present **iff** older turns exist; once loaded, every older turn renders fully — deliberate pagination is not a hole. (#pagination-not-holes)
 
@@ -62,7 +62,7 @@ Recency-windowing bounds *that*. The observation is the one every serious chat U
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- **`transcript-architecture-redux.md` Step 6.1 (TugSheet restore modal) must land first** — "load all" ([#step-5]) and the deep-faithful-restore sheet ([#step-6]) reuse that sheet + its 0.75 s gate.
+- **`transcript-architecture-redux.md` Step 6.1 (TugSheet restore modal) must land first** — "load all" ([#step-5]) and the deep-faithful-restore sheet ([#step-6]) reuse that sheet + its 0.5 s gate.
 - `content-visibility` cached-height render ([`transcript-architecture-redux.md` P07]) — already landed (`8397b2e3`); the cached heights make prepend stable.
 - The request-driven replay path: `RequestReplay` (`tugproto/src/inbound.ts`) → `Session.runReplay` (`tugcode/src/session.ts`) → `translateJsonlSession` (`tugcode/src/replay.ts`).
 - `DevTranscriptDataSource` / `buildRowLayout` (`tugdeck/src/lib/dev-transcript-data-source.ts`); `CodeSessionStore` reducer (`tugdeck/src/lib/code-session-store/reducer.ts`); `TugListView` anchor/`HeightIndex` (`tugdeck/src/components/tugways/tug-list-view.tsx`); the persistent scroll/height bag.
@@ -175,9 +175,9 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 
 **Implications:** A new prepend path in `TugListView` (capture `scrollHeight` pre-commit, adjust `scrollTop` post-commit); pairs with [P06] stable heights so the delta is exact.
 
-#### [P04] Reuse the redux TugSheet + 0.75 s gate for slow loads {#p04-reuse-sheet}
+#### [P04] Reuse the redux TugSheet + 0.5 s gate for slow loads {#p04-reuse-sheet}
 
-**Decision:** A "load all" or a deep faithful-restore that crosses the 0.75 s gate presents the redux `TugSheet` ([`transcript-architecture-redux.md` P08/P09]) with progress + Cancel. Small windowed loads (the default and small "load previous M") reveal once with no sheet.
+**Decision:** A "load all" or a deep faithful-restore that crosses the 0.5 s gate presents the redux `TugSheet` ([`transcript-architecture-redux.md` P08/P09]) with progress + Cancel. Small windowed loads (the default and small "load previous M") reveal once with no sheet.
 
 **Rationale:** Don't build a second progress surface; the sheet + gate already exist for exactly "a load that takes long enough to warrant feedback + Cancel."
 
@@ -360,11 +360,11 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 
 **Artifacts:**
 - A "load previous" control at the transcript top, shown iff `hasOlder`, offering **50 / 100 / all** (reuse an existing Tug control — `TugChoiceGroup` / menu — not a hand-rolled one).
-- 50/100 → a load-previous windowed request ([#step-3]/[#step-4]); **all** → a full older-range request that, if it crosses 0.75 s, presents the redux `TugSheet` with progress + Cancel. Cancel stops the in-flight translate and **leaves the already-loaded window intact** (distinct from restore-Cancel's close-card).
+- 50/100 → a load-previous windowed request ([#step-3]/[#step-4]); **all** → a full older-range request that, if it crosses 0.5 s, presents the redux `TugSheet` with progress + Cancel. Cancel stops the in-flight translate and **leaves the already-loaded window intact** (distinct from restore-Cancel's close-card).
 
 **Tasks:**
 - [ ] Render the affordance from `hasOlder`; wire 50/100/all to load-previous requests.
-- [ ] Route "all" through the redux `TugSheet` + 0.75 s gate; Cancel = stop translate, keep loaded window. Resolve [Q04] (one-shot + Cancel for v1).
+- [ ] Route "all" through the redux `TugSheet` + 0.5 s gate; Cancel = stop translate, keep loaded window. Resolve [Q04] (one-shot + Cancel for v1).
 - [ ] Cross-check tuglaws (L02 affordance derivation, L06 visibility) and name them.
 
 **Tests:**
@@ -384,12 +384,12 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions use `[P
 **References:** [P05] Faithful restore, [P04] Reuse sheet, (#faithful-restore), `at0190`
 
 **Artifacts:**
-- On Developer ▸ Reload, restore computes the window depth needed to include the saved anchor's turn; if that's above the default window, the resume request loads to the anchor (sheet-gated if it crosses 0.75 s), then restores pixel-perfect. A reload landing within the default window is unchanged (fast, no extra load).
+- On Developer ▸ Reload, restore computes the window depth needed to include the saved anchor's turn; if that's above the default window, the resume request loads to the anchor (sheet-gated if it crosses 0.5 s), then restores pixel-perfect. A reload landing within the default window is unchanged (fast, no extra load).
 
 **Tasks:**
 - [ ] Map the saved anchor (`{turnKey/id, offset}`) to a needed window depth; request that depth on restore when it exceeds N.
 - [ ] Restore to the anchor after the windowed load lands (reuse the existing anchor resolver + id-keyed heights [P06]).
-- [ ] Route a deep restore through the redux sheet when it crosses 0.75 s.
+- [ ] Route a deep restore through the redux sheet when it crosses 0.5 s.
 
 **Tests:**
 - [ ] Real-app: extend `at0190` — scroll up to an above-window anchor, reload, assert it lands within ≤ 2 px (faithful restore); a near-bottom anchor reloads fast with no extra load.

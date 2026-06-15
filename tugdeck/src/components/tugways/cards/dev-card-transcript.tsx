@@ -127,7 +127,7 @@ import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selectio
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
-import { DevReplayProgress } from "@/components/tugways/cards/dev-replay-progress";
+import { DevRestoreSheetHost } from "@/components/tugways/cards/dev-restore-sheet";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -1502,9 +1502,10 @@ export const DevTranscriptHost = forwardRef<
   // force a full windowed-list commit at every fold flush, and that
   // render work runs on the same thread the ingest needs (measured:
   // 255ms → 7.5s ingest on the 12MB motivating session when the list
-  // rode along). The `DevReplayProgress` strip above is the whole
-  // surface during the hold: informative from t=0, ticking at fold
-  // flushes — a one-component re-render instead of a list commit.
+  // rode along). `DevRestoreSheetHost` above owns the surface during a
+  // *slow* hold: past the reveal gate it presents a card-covering
+  // progress sheet with Cancel; a fast restore presents nothing and the
+  // reconstructed content reveals once.
   // Once the initial window closes the list mounts ONCE against the
   // fully reconstructed transcript (a single bounded windowed commit)
   // and never unmounts again: `replayEverCompleted` is MONOTONIC in
@@ -1580,8 +1581,8 @@ export const DevTranscriptHost = forwardRef<
   return (
     // [DT10] paint gate: every row renders inline at its real height,
     // so the single-reveal gate applies for the whole replay window
-    // (avoiding accumulation FOUC), with the DevReplayProgress strip as
-    // the always-on affordance above the list.
+    // (avoiding accumulation FOUC), with `DevRestoreSheetHost` presenting
+    // a delay-gated progress sheet over the pane for a slow restore.
     <div
       ref={rootRef}
       className="dev-card-transcript"
@@ -1589,7 +1590,7 @@ export const DevTranscriptHost = forwardRef<
       data-testid="dev-card-transcript"
       data-replaying={isReplaying || undefined}
     >
-      <DevReplayProgress cardId={cardId} codeSessionStore={codeSessionStore} />
+      <DevRestoreSheetHost cardId={cardId} codeSessionStore={codeSessionStore} />
       {compactionSeed !== null ? (
         <div
           className="dev-card-transcript-compaction"
