@@ -88,6 +88,10 @@ import "./tug-list-view.css";
 import React from "react";
 
 import { SmartScroll } from "@/lib/smart-scroll";
+import {
+  anchorDepthFromEnd,
+  anchorRowIndexInWindow,
+} from "@/lib/dev-restore-window";
 
 import { HeightIndex } from "./internal/list-view-height-index";
 import {
@@ -1724,12 +1728,31 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // anchor cell is outside the data source (content not yet
       // populated) — `applyRestoreTarget` waits for a later commit.
       const makeAnchorResolver =
-        (anchorIndex: number, anchorOffset: number): (() => number | null) =>
+        (
+          anchorIndex: number,
+          anchorOffset: number,
+          depthFromEnd: number | undefined,
+        ): (() => number | null) =>
         () => {
           const total = dataSource.numberOfItems();
-          if (anchorIndex < 0 || anchorIndex >= total) return null;
+          if (total <= 0) return null;
+          // Faithful restore ([recency P05], #step-6): when the bag carries
+          // `depthFromEnd` (rows from the anchor to the bottom), relocate the
+          // anchor against the freshly-loaded window — `total - depthFromEnd`.
+          // Return null until the window is deep enough to include it, so
+          // `applyRestoreTarget` waits for the load-to-anchor to land instead
+          // of resolving against a too-shallow window. Legacy bags (no
+          // `depthFromEnd`) fall back to the raw saved index.
+          let rowIndex: number;
+          if (depthFromEnd !== undefined) {
+            if (total < depthFromEnd) return null;
+            rowIndex = anchorRowIndexInWindow(total, depthFromEnd);
+          } else {
+            if (anchorIndex < 0 || anchorIndex >= total) return null;
+            rowIndex = anchorIndex;
+          }
           const cellTop = heightIndexRef.current.offsetForIndex(
-            anchorIndex,
+            rowIndex,
             estimatedHeightForKindOnly,
           );
           return Math.max(0, cellTop + anchorOffset);
@@ -1739,7 +1762,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // or `null` when absent / malformed.
       const parseAnchor = (
         meta: unknown,
-      ): { index: number; offset: number } | null => {
+      ): {
+        index: number;
+        offset: number;
+        depthFromEnd: number | undefined;
+      } | null => {
         if (meta === null || typeof meta !== "object" || !("anchor" in meta)) {
           return null;
         }
@@ -1752,11 +1779,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         ) {
           return null;
         }
-        const ax = a as { index: unknown; offset: unknown };
+        const ax = a as { index: unknown; offset: unknown; depthFromEnd?: unknown };
         if (typeof ax.index !== "number" || typeof ax.offset !== "number") {
           return null;
         }
-        return { index: ax.index, offset: ax.offset };
+        // `depthFromEnd` rides newer bags ([recency #step-6]); absent on older
+        // ones → undefined → resolver falls back to the raw index.
+        const depthFromEnd =
+          typeof ax.depthFromEnd === "number" ? ax.depthFromEnd : undefined;
+        return { index: ax.index, offset: ax.offset, depthFromEnd };
       };
 
       // `meta.atBottom` — true when the list was following the bottom
@@ -1790,7 +1821,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         : parseAnchor(savedRegionScroll?.meta);
       if (seedAnchor !== null) {
         smartScroll.setRestoreTarget(
-          makeAnchorResolver(seedAnchor.index, seedAnchor.offset),
+          makeAnchorResolver(
+            seedAnchor.index,
+            seedAnchor.offset,
+            seedAnchor.depthFromEnd,
+          ),
         );
       }
 
@@ -1845,7 +1880,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const anchor = parseAnchor(ce.detail.meta);
         if (anchor !== null) {
           smartScroll.setRestoreTarget(
-            makeAnchorResolver(anchor.index, anchor.offset),
+            makeAnchorResolver(
+              anchor.index,
+              anchor.offset,
+              anchor.depthFromEnd,
+            ),
           );
           return;
         }
@@ -2024,6 +2063,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         estimatedHeightForKindOnly,
       );
       const anchorOffset = Math.max(0, scrollTop - anchorTop);
+      // Rows from the anchor (inclusive) to the bottom — invariant across a
+      // reload because the loaded window is always bottom-contiguous. Used by
+      // faithful restore ([recency P05], #step-6) to size the resume window
+      // and relocate the anchor in whatever window lands, regardless of how
+      // much was paged in. Robust where the raw `index` is not: a save with
+      // older turns paged in (a deep window) reloads against the default
+      // window, which `index` would over-run.
+      const anchorDepth = anchorDepthFromEnd(total, anchorIndex);
       // Also serialize the live `heightIndex` snapshot into
       // `meta.cellHeights`. At restore the framework hydrates this
       // back into the live index BEFORE first paint, so the
@@ -2036,12 +2083,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // → "Saving geometry for first-paint accuracy."
       const cellHeights = heightIndexRef.current.snapshot();
       const meta: {
-        anchor: { index: number; offset: number };
+        anchor: { index: number; offset: number; depthFromEnd: number };
         cellHeights?: number[];
         scrollHeight?: number;
         atBottom?: boolean;
       } = {
-        anchor: { index: anchorIndex, offset: anchorOffset },
+        anchor: {
+          index: anchorIndex,
+          offset: anchorOffset,
+          depthFromEnd: anchorDepth,
+        },
       };
       if (cellHeights.length > 0) meta.cellHeights = cellHeights;
       // Validation field — total content height at save time. Not

@@ -48,7 +48,6 @@ import {
   deriveControlBarState,
   type ControlBarLoadKind,
 } from "./dev-load-control-bar-state";
-import { DEFAULT_REPLAY_WINDOW_MESSAGES } from "@/protocol";
 
 /** Default numeric "load previous" step, capped to the messages that remain. */
 const LOAD_PREVIOUS_STEP = 50;
@@ -297,6 +296,12 @@ function ControlBarLoading({
       );
     },
   );
+  // The window this resume requested — the restore progress denominator
+  // (default N, or deeper for a faithful restore to an above-window anchor).
+  const restoreWindow = React.useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () => codeSessionStore.getSnapshot().restoreWindowMessages,
+  );
   const loadingPrevious = React.useSyncExternalStore(
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().loadingPrevious,
@@ -328,9 +333,11 @@ function ControlBarLoading({
   if (loadKind === "restore") {
     // One stable state: the bar reports progress against the load window
     // only — the session-wide total lives in the picker (as JSONL size), not
-    // here, so there's no late-arriving total to make the label flip.
-    label = `Restoring the most recent ${DEFAULT_REPLAY_WINDOW_MESSAGES} messages…`;
-    max = DEFAULT_REPLAY_WINDOW_MESSAGES;
+    // here, so there's no late-arriving total to make the label flip. The
+    // window is the resume request's size: the default N, or deeper for a
+    // faithful restore to a saved anchor above it ([recency #step-6]).
+    label = `Restoring the most recent ${restoreWindow} messages…`;
+    max = restoreWindow;
     value = active ? Math.min(messagesLoaded, max) : max;
     formatValue = formatWindowValue;
   } else {

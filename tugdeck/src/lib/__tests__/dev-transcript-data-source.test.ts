@@ -89,6 +89,7 @@ function snapshotWith(args: {
     tugSessionId: "s",
     displayLabel: "test",
     sessionMode: "new",
+    restoreWindowMessages: 50,
     activeMsgId: null,
     canSubmit: true,
     canInterrupt: false,

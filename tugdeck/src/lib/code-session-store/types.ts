@@ -676,6 +676,15 @@ export interface CodeSessionSnapshot {
    */
   sessionMode: CardSessionMode;
 
+  /**
+   * Message-rows this resume requested ([recency #step-6]): the default
+   * window, or deeper for a faithful restore to a saved anchor parked above
+   * it. The Z0 load bar reads this as the restore progress denominator so it
+   * reflects the real load size, not a fixed 50. Constant for the store's
+   * life (set at construction from the resume request).
+   */
+  restoreWindowMessages: number;
+
   activeMsgId: string | null;
   canSubmit: boolean;
   canInterrupt: boolean;

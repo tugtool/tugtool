@@ -295,7 +295,7 @@ The lifecycle is a small state machine:
 | #step-4 | TugListView: prepend with scroll-position hold | done | (committed below; live scroll-hold verified end-to-end with #step-5 trigger) |
 | #step-5 | "Load previous M" affordance + "load all" via TugSheet | done | on main (live vet pending) |
 | #step-5-5 | TugControlBar in Z0 — unify load prompt + progress + initial-load indicator | done | on main (live vet pending) |
-| #step-6 | Faithful restore — load-to-anchor on reload | pending | — |
+| #step-6 | Faithful restore — load-to-anchor on reload | done | on main (live vet pending) |
 | #step-7 | Integration checkpoint — long-session load/paging/restore on real sessions | pending | — |
 
 #### Step 1: tugcode — window the replay {#step-1}
@@ -477,17 +477,31 @@ The load-previous modal `TugSheet` presents **only if the load is still in fligh
 **Artifacts:**
 - On Developer ▸ Reload, restore computes the window depth needed to include the saved anchor's turn; if that's above the default window, the resume request loads to the anchor (sheet-gated if it crosses 0.5 s), then restores pixel-perfect. A reload landing within the default window is unchanged (fast, no extra load).
 
+**Resolution note (implemented 2026-06-15).** The saved anchor is a flat
+`{index, offset}`, not a turn id — and under windowing the flat index is not
+stable across a reload (the loaded window can differ). The invariant that *is*
+stable is the anchor's **distance from the bottom** in message-rows
+(`depthFromEnd`), because the loaded window is always bottom-contiguous (last
+N; load-previous prepends older). That one number does both jobs — sizes the
+resume window and relocates the anchor — with no `totalMessages` needed at
+request time, and it is backward-compatible with the common case
+(`depthFromEnd ≤ N` ⇒ default window ⇒ same row position as today). Pure
+helpers in `dev-restore-window.ts` (`anchorDepthFromEnd` /
+`resolveRestoreWindow` / `anchorRowIndexInWindow`).
+
 **Tasks:**
-- [ ] Map the saved anchor (`{turnKey/id, offset}`) to a needed window depth; request that depth on restore when it exceeds N.
-- [ ] Restore to the anchor after the windowed load lands (reuse the existing anchor resolver + id-keyed heights [P06]).
-- [ ] Route a deep restore through the redux sheet when it crosses 0.5 s.
+- [x] Map the saved anchor to a needed window depth and request it when it exceeds N. The transcript persists `meta.anchor.depthFromEnd` (`tug-list-view.tsx`); `card-services-store._construct` reads it from the card bag (`deckManager.getCardState`) and sends `lastMessages: resolveRestoreWindow(depth, N)` on cold resume (resume-mode only; a miss falls back to N).
+- [x] Restore to the anchor after the windowed load lands. `makeAnchorResolver` relocates via `numberOfItems - depthFromEnd` and returns null until the window is deep enough (waits for the load-to-anchor), reusing the existing resolver + id-keyed heights [P06]; legacy bags fall back to the raw index.
+- [x] Deep restore surfaces through the `Z0` `TugControlBar` Loading state (modal), per the [P11] note — *not* a separate sheet. The store carries `restoreWindowMessages` (the requested window) so the bar's determinate progress reports against the real target (default N or deeper), not a fixed 50.
 
 **Tests:**
-- [ ] Real-app: extend `at0190` — scroll up to an above-window anchor, reload, assert it lands within ≤ 2 px (faithful restore); a near-bottom anchor reloads fast with no extra load.
+- [x] Pure-logic (`bun:test`): the window math — depth capture, window sizing (within-N vs deep), and anchor relocation round-trip incl. clamps (`dev-restore-window.test.ts`, 9).
+- [x] Real-app (`at0190`): asserts the save records `anchor.depthFromEnd` (> 0) for a scrolled-up anchor; the common-case pixel-perfect restore still holds.
+- [ ] Real-app deep round-trip (page older in → park above the window → reload → ≤ 2 px): the load-previous-driven setup is best confirmed live on the rebuilt instance (a dedicated `just app-test` leg is the follow-on, same pattern as #step-5/#step-5-5).
 
 **Checkpoint:**
-- [ ] `at0190` (extended) green; `bunx tsc --noEmit` clean.
-- [ ] Live: reload-while-parked-on-old-content lands exactly where the user left off.
+- [x] `bun test` (tugdeck 3696) + `bunx tsc --noEmit` clean.
+- [ ] Live: reload-while-parked-on-old-content lands exactly where the user left off (deep restore loads to the anchor through the Z0 bar). *(user vet on the rebuilt instance.)*
 
 #### Step 7: Integration checkpoint — long-session load/paging/restore {#step-7}
 

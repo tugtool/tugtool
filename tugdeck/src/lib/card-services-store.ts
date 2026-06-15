@@ -45,6 +45,7 @@ import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
 import { encodeTrashProjectDirSessions } from "../protocol";
 import { DEFAULT_REPLAY_WINDOW_MESSAGES } from "../protocol";
+import { resolveRestoreWindow } from "./dev-restore-window";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
@@ -107,11 +108,41 @@ export interface CardServices {
   readonly fileCompletionProvider: CompletionProvider;
 }
 
+/** The dev transcript's scroll region key — matches `TugListView`'s
+ *  `scrollKey="dev-card-transcript"`. */
+const TRANSCRIPT_SCROLL_KEY = "dev-card-transcript";
+
+/**
+ * Read the saved transcript anchor's `depthFromEnd` (message-rows from the
+ * anchor to the bottom) from the card's persisted bag, or `undefined` when
+ * there's no usable anchor (fresh card, at-bottom save, legacy bag, or a
+ * cache miss before hydration). Drives faithful-restore window sizing
+ * ([recency P05], #step-6); a miss falls back to the default window.
+ */
+function readSavedAnchorDepth(
+  deckManager: DeckManager | null,
+  cardId: string,
+): number | undefined {
+  // `getCardState?.()` guards both a null deck and a partial test stub that
+  // omits the method.
+  const region =
+    deckManager?.getCardState?.(cardId)?.regionScroll?.[TRANSCRIPT_SCROLL_KEY];
+  const meta = region?.meta as
+    | { anchor?: { depthFromEnd?: unknown } }
+    | undefined
+    | null;
+  const depth = meta?.anchor?.depthFromEnd;
+  return typeof depth === "number" && depth > 0 ? depth : undefined;
+}
+
 class CardServicesStore {
   private readonly _services = new Map<string, CardServices>();
   private readonly _listeners = new Set<() => void>();
   private _bindingUnsub: (() => void) | null = null;
   private _deckUnsub: (() => void) | null = null;
+  /** The attached deck, read at construct time for the saved scroll anchor
+   *  (faithful restore window sizing, #step-6). */
+  private _deckManager: DeckManager | null = null;
   private _knownCardIds = new Set<string>();
   private _initialized = false;
 
@@ -159,6 +190,7 @@ class CardServicesStore {
     // `getServices` / `subscribe` still covers tests that don't call
     // `attachDeckManager`.
     this._ensureInitialized();
+    this._deckManager = deckManager;
 
     if (this._deckUnsub) {
       this._deckUnsub();
@@ -250,6 +282,20 @@ class CardServicesStore {
       return null;
     }
 
+    // Faithful restore ([recency P05], #step-6): size the cold-resume window
+    // to include the saved scroll anchor. The transcript persists its anchor's
+    // distance-from-bottom (`depthFromEnd`, in message-rows) into the card
+    // bag; if the user was parked above the default window, load deep enough
+    // to reach it (else the default N). Only for `resume` — a fresh spawn has
+    // nothing to restore (a stale bag from a prior session is ignored).
+    const restoreWindowMessages =
+      binding.sessionMode === "resume"
+        ? resolveRestoreWindow(
+            readSavedAnchorDepth(this._deckManager, cardId),
+            DEFAULT_REPLAY_WINDOW_MESSAGES,
+          )
+        : DEFAULT_REPLAY_WINDOW_MESSAGES;
+
     const codeSessionStore = new CodeSessionStore({
       conn: connection,
       lifecycle,
@@ -261,6 +307,10 @@ class CardServicesStore {
       // for the store's lifetime — a re-bind builds a fresh services
       // bag with a fresh store, so the mode field never goes stale.
       sessionMode: binding.sessionMode,
+      // The window this resume requests, so the Z0 load bar reports progress
+      // against the real target (the default N, or deeper for a faithful
+      // restore) instead of a hard-coded 50.
+      restoreWindowMessages,
     });
     const editorStore = new EditorSettingsStore();
     const responseStore = new ResponseSettingsStore();
@@ -437,7 +487,7 @@ class CardServicesStore {
     // slice (oldest turn/message index, totals, hasOlder) on
     // `replay_complete`.
     sendRequestReplay(connection, binding.tugSessionId, {
-      lastMessages: DEFAULT_REPLAY_WINDOW_MESSAGES,
+      lastMessages: restoreWindowMessages,
     });
 
     return {
