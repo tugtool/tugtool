@@ -27,16 +27,13 @@
   width: 100%;
 }
 
-/* The loading row spans the band; Cancel is pinned out of flow (far right)
-   and the progress indicator (below) centers its own content. */
+/* The loading row spans the band; the progress indicator (below) centers its
+   own content. */
 .dev-load-control-bar-loading {
   display: flex;
   align-items: center;
   gap: var(--tug-space-md);
   width: 100%;
-  /* Anchor for the absolutely-pinned Cancel so it never shifts the centered
-     progress group (the group stays put whether Cancel is present or not). */
-  position: relative;
 }
 
 /* The bar-variant indicator is `width: 100%` (its own CSS), so it fills the
@@ -55,15 +52,6 @@
 .tug-control-bar .dev-load-control-bar-bar[data-variant="bar"] .tug-progress-indicator-glyph {
   flex: 0 0 var(--tugx-control-bar-track-width);
   width: var(--tugx-control-bar-track-width);
-}
-
-/* Cancel pinned to the far right, out of flow so the progress group stays
-   centered in the band. */
-.dev-load-control-bar-cancel {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
 }
 
 /* Band labels read at the tuned size; the `proposal` emphasis still supplies

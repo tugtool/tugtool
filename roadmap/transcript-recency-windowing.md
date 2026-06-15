@@ -559,5 +559,5 @@ Implementation + automated tests are complete for every criterion; the live
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Backward-JSONL-parse / turn-boundary index so even `JSON.parse` is bounded by N (v1 parses all lines, translates only the tail) — only if the parse cost is measured to matter on a real whale ([Q02]).
-- [ ] Chunked "load all" with granular Cancel, if one-shot proves too heavy on a real whale ([Q04]).
+- [ ] **"Load all" + Cancel — pulled from v1 (2026-06-15).** The shipped version trims the affordance to a single fixed step (50) and removes Cancel from both the restore and load-previous states: a 50-row page (and the restore) is quick enough that there's nothing slow to abort, and live testing showed "All" → Cancel bogged down. The store/tugcode abort path (`cancelLoadPrevious`, `cancel_replay`) and the `loadPrevious("all")` API are left dormant for a future revival. Chunked "load all" with granular Cancel remains the follow-on if a real whale ever needs paging beyond 50-at-a-time ([Q04]).
 - [ ] Forward unloading of very old paged-in turns under extreme memory pressure (not expected to be needed under `content-visibility`).

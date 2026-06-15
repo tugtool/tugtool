@@ -1642,7 +1642,6 @@ export const DevTranscriptHost = forwardRef<
           loading, per [P09]. */}
       <DevLoadControlBar
         ref={controlBarRef}
-        cardId={cardId}
         codeSessionStore={codeSessionStore}
         regionEl={regionEl}
       />
