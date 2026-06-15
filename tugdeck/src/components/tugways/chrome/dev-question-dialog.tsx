@@ -872,6 +872,17 @@ const QuestionOptions: React.FC<QuestionOptionsProps> = ({
   onActivateRef.current = onActivate;
   const optionsRef = React.useRef(question.options);
   optionsRef.current = question.options;
+  // Seed the movement cursor on the question's currently-selected option (the
+  // first one for a multi-select) rather than the top row, so when the wizard
+  // advances into this question the cursor lands on a chosen row. Return then
+  // re-commits that row (no change) and advances — `return, return, return` walks
+  // the whole wizard without making unintended picks, and backing up to review
+  // never silently re-answers a question. Falls back to the first option when
+  // nothing is selected (the seed always pre-selects one, so this is defensive).
+  const seedIndex = React.useMemo(() => {
+    const i = question.options.findIndex((o) => selection.includes(o.label));
+    return i >= 0 ? i : 0;
+  }, [question.options, selection]);
   const delegate = React.useMemo<TugListViewDelegate>(
     () => ({
       // Space / click → `onSelect` (single replaces + advances; multi toggles).
@@ -902,6 +913,7 @@ const QuestionOptions: React.FC<QuestionOptionsProps> = ({
         focusOrder={focusOrder}
         commitOnEnter="act"
         spatialCursor
+        initialSelectedIndex={seedIndex}
         listRole={multi ? "group" : "radiogroup"}
         itemRole="presentation"
         aria-label={question.question}
@@ -1240,8 +1252,9 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
 
   /** `Back` from the current row: don't mark the row we're leaving
    *  as visited. A user who back-tracked without engaging hasn't
-   *  taken a stance. Focus STAYS on Back across the Return, unless this
-   *  reaches the first question (Back becomes disabled) → shift to Next. */
+   *  taken a stance. Focus STAYS on Back across the Return (so the user can
+   *  Back, Back, Back), unless this reaches the first question (Back becomes
+   *  disabled) → shift to Next. */
   const handleBack = React.useCallback(() => {
     if (currentIndex <= 0) return;
     const newIndex = currentIndex - 1;
@@ -1252,9 +1265,10 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
 
   /** `Next` from the current row IS a commit — even on multi-select,
    *  the click says "I'm done with this question". Mark visited and
-   *  advance. Focus STAYS on Next across the Return, unless this reaches
-   *  the review step (no next question; Next becomes disabled) → shift to
-   *  Submit if every question is answered, else Back. */
+   *  advance. Focus STAYS on Next across the Return (so the user can Next,
+   *  Next, Next), unless this reaches the review step (no next question; Next
+   *  becomes disabled) → shift to Submit if every question is answered, else
+   *  Back. */
   const handleAdvance = React.useCallback(() => {
     const total = questions.length;
     const newIndex = nextAdvanceIndex(currentIndex, total);

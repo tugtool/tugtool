@@ -747,12 +747,13 @@ export interface TugListViewProps<
   singleSelect?: boolean;
 
   /**
-   * The row the {@link singleSelect} cursor + selection seed onto when the list
-   * first gains the key view — the currently-active choice. Ignored unless
-   * `singleSelect` is set; a value that is not a selectable (`"cell"`-role) row
-   * falls back to the first selectable row. Used by confirm-style pickers that
-   * own their selection outside the list (so the cursor opens on the active row
-   * rather than the top).
+   * The row the movement cursor seeds onto when the list first gains the key view
+   * — the currently-active choice. Honored for ANY authored list (not only
+   * `singleSelect`): a consumer whose selection lives outside the list points the
+   * opening cursor at the chosen row instead of the top. A value that is not a
+   * selectable (`"cell"`-role) row falls back to the first selectable row. The
+   * seed is cursor-only; only a `singleSelect` + `seedSelection` list also commits
+   * the seeded row.
    */
   initialSelectedIndex?: number;
 
@@ -2877,20 +2878,21 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const kbd = el.hasAttribute("data-key-view-kbd");
         if (kbd && !wasKbdRef.current) {
           if (cursorIndexRef.current < 0) {
-            // Seed the cursor on the active row. Single-select prefers the
-            // surface-supplied active row (`initialSelectedIndex`); both models
-            // fall back to the list-owned selection, then the first cursorable
-            // row. The seed is cursor-only by default — selection follows
-            // explicit arrow movement, so merely cycling the key view onto a
-            // list never commits a row (a recents list must not clobber a typed
-            // path on focus). A surface whose list IS the opening default
-            // (`seedSelection`) commits the seeded row so it opens with exactly
-            // one selected row (a pick-first picker that enables its default
-            // action on open).
-            const preferred =
-              singleSelectRef.current && isCursorableRow(initialSelectedIndexRef.current ?? -1)
-                ? (initialSelectedIndexRef.current as number)
-                : (selectedIndexRef.current ?? -1);
+            // Seed the cursor on the active row. The surface-supplied active row
+            // (`initialSelectedIndex`) wins when given — for ANY list, not just
+            // single-select — so a consumer whose selection lives outside the list
+            // (the question wizard, whose options carry consumer-owned selection)
+            // can land the cursor on the chosen row; the list then falls back to
+            // its own selection, then the first cursorable row. The seed is
+            // cursor-only by default — selection follows explicit arrow movement,
+            // so merely cycling the key view onto a list never commits a row (a
+            // recents list must not clobber a typed path on focus). A surface whose
+            // list IS the opening default (`seedSelection`, single-select only)
+            // commits the seeded row so it opens with exactly one selected row (a
+            // pick-first picker that enables its default action on open).
+            const preferred = isCursorableRow(initialSelectedIndexRef.current ?? -1)
+              ? (initialSelectedIndexRef.current as number)
+              : (selectedIndexRef.current ?? -1);
             const seed = isCursorableRow(preferred) ? preferred : firstCursorableRow();
             if (seed >= 0) {
               moveCursorTo(seed, true);
