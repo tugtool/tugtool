@@ -2512,5 +2512,125 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "decorative",
   },
 
+  // =========================================================================
+  // Reconciled from component CSS `@tug-pairings` blocks.
+  //
+  // These foreground-on-surface pairings are declared (and `@tug-renders-on`
+  // annotated) in the listed component stylesheets but had drifted out of this
+  // map as those components evolved. Re-registered here so the map stays the
+  // single source of truth and `audit:tokens verify` reports no gaps. Roles are
+  // taken verbatim from each component's own pairing table.
+  // =========================================================================
+
+  // ---- internal/tug-button.css ----
+  { element: "--tug7-element-control-border-filled-data-hover", surface: "--tug7-surface-control-primary-filled-data-hover", role: "control" },
+  { element: "--tug7-element-control-border-filled-data-active", surface: "--tug7-surface-control-primary-filled-data-active", role: "control" },
+
+  // ---- tug-pane.css ----
+  { element: "--tugx-pane-border", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tugx-pane-title-fg-active", surface: "--tug7-surface-card-primary-normal-titlebar-active", role: "content" },
+  { element: "--tugx-pane-title-fg-inactive", surface: "--tug7-surface-card-primary-normal-titlebar-inactive", role: "content" },
+  { element: "--tugx-pane-title-bar-icon-active", surface: "--tug7-surface-card-primary-normal-titlebar-active", role: "control" },
+  { element: "--tugx-pane-title-bar-icon-inactive", surface: "--tug7-surface-card-primary-normal-titlebar-inactive", role: "control" },
+  { element: "--tugx-pane-control-on-fg-rest", surface: "--tug7-surface-card-primary-normal-titlebar-active", role: "control" },
+  { element: "--tugx-pane-control-on-fg-hover", surface: "--tug7-surface-card-control-normal-plain-hover", role: "control" },
+  { element: "--tugx-pane-control-off-fg-rest", surface: "--tug7-surface-card-primary-normal-titlebar-inactive", role: "control" },
+  { element: "--tugx-pane-control-off-fg-hover", surface: "--tug7-surface-card-control-normal-muted-hover", role: "control" },
+
+  // ---- tug-tab-bar.css ----
+  { element: "--tug7-element-global-border-normal-default-rest", surface: "--tugx-tab-bar-bg", role: "content" },
+  { element: "--tugx-tab-fg-rest", surface: "--tug7-surface-tab-primary-normal-plain-inactive", role: "content" },
+  { element: "--tugx-tab-fg-active", surface: "--tugx-tab-bg-active", role: "content" },
+  { element: "--tugx-tab-fg-hover", surface: "--tugx-tab-bg-hover", role: "content" },
+  { element: "--tugx-tab-close-fg-hover", surface: "--tugx-tab-close-bg-hover", role: "content" },
+  { element: "--tug7-element-global-text-normal-inverse-rest", surface: "--tugx-tab-badge-bg", role: "content" },
+
+  // ---- tug-menu.css ----
+  { element: "--tugx-menu-border", surface: "--tugx-menu-bg", role: "informational" },
+  { element: "--tugx-menu-fg", surface: "--tugx-menu-bg", role: "content" },
+  { element: "--tugx-menu-fg", surface: "--tug7-surface-global-primary-normal-overlay-rest", role: "content" },
+  { element: "--tug7-element-selection-text-normal-selected-rest", surface: "--tug7-surface-selection-primary-normal-selected-rest", role: "content" },
+  { element: "--tugx-menu-item-chevron", surface: "--tug7-surface-global-primary-normal-overlay-rest", role: "informational" },
+
+  // ---- tug-dialog.css ----
+  { element: "--tugx-dialog-fg", surface: "--tugx-dialog-bg", role: "content" },
+  { element: "--tugx-alert-fg", surface: "--tugx-alert-bg", role: "content" },
+  { element: "--tugx-toast-info-fg", surface: "--tugx-toast-info-bg", role: "content" },
+  { element: "--tugx-badge-neutral-fg", surface: "--tugx-badge-neutral-bg", role: "informational" },
+  { element: "--tugx-kbd-fg", surface: "--tugx-kbd-bg", role: "informational" },
+
+  // ---- tug-badge.css ----
+  { element: "--tug7-element-badge-text-outlined-accent-rest", surface: "--tug7-surface-badge-primary-outlined-accent-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-outlined-accent-rest", surface: "--tug7-surface-badge-primary-outlined-accent-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-outlined-action-rest", surface: "--tug7-surface-badge-primary-outlined-action-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-outlined-action-rest", surface: "--tug7-surface-badge-primary-outlined-action-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-outlined-agent-rest", surface: "--tug7-surface-badge-primary-outlined-agent-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-outlined-agent-rest", surface: "--tug7-surface-badge-primary-outlined-agent-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-outlined-data-rest", surface: "--tug7-surface-badge-primary-outlined-data-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-outlined-data-rest", surface: "--tug7-surface-badge-primary-outlined-data-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-outlined-danger-rest", surface: "--tug7-surface-badge-primary-outlined-danger-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-outlined-danger-rest", surface: "--tug7-surface-badge-primary-outlined-danger-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-outlined-success-rest", surface: "--tug7-surface-badge-primary-outlined-success-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-outlined-success-rest", surface: "--tug7-surface-badge-primary-outlined-success-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-outlined-caution-rest", surface: "--tug7-surface-badge-primary-outlined-caution-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-outlined-caution-rest", surface: "--tug7-surface-badge-primary-outlined-caution-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-ghost-accent-rest", surface: "--tug7-surface-badge-primary-ghost-accent-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-ghost-accent-rest", surface: "--tug7-surface-badge-primary-ghost-accent-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-ghost-action-rest", surface: "--tug7-surface-badge-primary-ghost-action-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-ghost-action-rest", surface: "--tug7-surface-badge-primary-ghost-action-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-ghost-agent-rest", surface: "--tug7-surface-badge-primary-ghost-agent-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-ghost-agent-rest", surface: "--tug7-surface-badge-primary-ghost-agent-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-ghost-data-rest", surface: "--tug7-surface-badge-primary-ghost-data-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-ghost-data-rest", surface: "--tug7-surface-badge-primary-ghost-data-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-ghost-danger-rest", surface: "--tug7-surface-badge-primary-ghost-danger-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-ghost-danger-rest", surface: "--tug7-surface-badge-primary-ghost-danger-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-ghost-success-rest", surface: "--tug7-surface-badge-primary-ghost-success-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-ghost-success-rest", surface: "--tug7-surface-badge-primary-ghost-success-rest", role: "informational" },
+  { element: "--tug7-element-badge-text-ghost-caution-rest", surface: "--tug7-surface-badge-primary-ghost-caution-rest", role: "informational" },
+  { element: "--tug7-element-badge-border-ghost-caution-rest", surface: "--tug7-surface-badge-primary-ghost-caution-rest", role: "informational" },
+
+  // ---- tug-switch.css ----
+  { element: "--tugx-toggle-on-color", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tugx-toggle-on-hover-color", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tugx-toggle-disabled-color", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tug7-element-toggle-thumb-normal-plain-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "control" },
+  { element: "--tug7-element-toggle-thumb-normal-on-rest", surface: "--tugx-toggle-on-color", role: "control" },
+  { element: "--tug7-element-toggle-thumb-normal-plain-disabled", surface: "--tugx-toggle-disabled-color", role: "control" },
+  { element: "--tug7-element-global-outline-normal-accentCool-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+
+  // ---- tug-checkbox.css ----
+  { element: "--tug7-surface-toggle-primary-normal-off-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tug7-surface-toggle-primary-normal-off-hover", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tug7-element-checkmark-icon-normal-plain-rest", surface: "--tugx-toggle-on-color", role: "control" },
+  { element: "--tug7-element-checkmark-icon-normal-plain-mixed", surface: "--tugx-toggle-on-color", role: "control" },
+
+  // ---- tug-text-editor.css ----
+  { element: "--tug7-element-highlight-stroke-normal-drop-rest", surface: "--tug7-surface-field-primary-normal-plain-rest", role: "informational" },
+
+  // ---- tug-input.css ----
+  { element: "--tug7-element-field-border-normal-caution-rest", surface: "--tug7-surface-field-primary-normal-plain-rest", role: "informational" },
+
+  // ---- tug-label.css ----
+  { element: "--tug7-element-field-text-normal-plain-disabled", surface: "--tug7-surface-global-primary-normal-default-rest", role: "content" },
+
+  // ---- tug-data.css ----
+  { element: "--tugx-table-header-fg", surface: "--tugx-table-header-bg", role: "informational" },
+
+  // ---- tug-code.css ----
+  { element: "--tugx-syntax-comment", surface: "--tugx-codeBlock-bg", role: "informational" },
+  { element: "--tugx-syntax-operator", surface: "--tugx-codeBlock-bg", role: "content" },
+  { element: "--tugx-codeBlock-header-fg", surface: "--tugx-codeBlock-header-bg", role: "informational" },
+  { element: "--tugx-chat-attachment-fg", surface: "--tugx-chat-attachment-bg", role: "informational" },
+  { element: "--tugx-feed-step-fg", surface: "--tugx-feed-step-bg", role: "informational" },
+  { element: "--tugx-terminal-fg", surface: "--tugx-terminal-bg", role: "content" },
+  { element: "--tugx-terminal-fg-muted", surface: "--tugx-terminal-bg", role: "informational" },
+
+  // ---- tug-dock.css ----
+  { element: "--tugx-dock-button-fg", surface: "--tugx-dock-bg", role: "control" },
+  { element: "--tugx-dock-button-badge-fg", surface: "--tugx-dock-button-badge-bg", role: "control" },
+
+  // ---- cards/gallery-theme-accessibility.css ----
+  { element: "--tug7-element-global-border-normal-muted-rest", surface: "--tug7-surface-global-primary-normal-sunken-rest", role: "informational" },
+
 ];
 
