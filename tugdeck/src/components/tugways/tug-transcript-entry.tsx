@@ -117,20 +117,19 @@ export interface TugTranscriptEntryProps {
   /** Optional small timestamp rendered next to the identifier. */
   timestamp?: React.ReactNode;
   /**
-   * Optional turn/message address for this entry. Rendered as
-   * `#t{turn}m{message}` (turn padded to four digits, message to two,
-   * both growing naturally past their pad width) alongside the timestamp.
-   * The turn is the canonical session unit (`tuglaws/turn-metric.md`);
-   * the message addresses the entry's position within the turn. Helps the
-   * reader anchor on a specific entry when scanning a dense card.
+   * Optional turn address for this entry, rendered as `#{speaker}{turn}`
+   * (e.g. `#u0017` / `#a0017`) pinned to the right edge of the attribution
+   * row. The turn is the canonical session unit (`tuglaws/turn-metric.md`);
+   * the speaker prefix distinguishes a turn's user and assistant rows, which
+   * share the same number. One address per attribution row — the inline
+   * messages of a turn carry none.
    *
    * Four digits is the turn budget: a single session can plausibly
    * accumulate four-digit turn counts (long debugging back-and-forths,
-   * long-running agent loops), and a fixed-width address pinned to the
-   * right edge of the header reads cleanly through that range without
-   * re-aligning siblings as the count grows.
+   * long-running agent loops), and a fixed-width address reads cleanly
+   * through that range without re-aligning siblings as the count grows.
    */
-  address?: TurnMessageAddress;
+  address?: TurnAddress;
   /** Row body content. The primitive imposes no opinion on text rendering. */
   body: React.ReactNode;
   /**
@@ -154,12 +153,26 @@ export interface TugTranscriptEntryProps {
 }
 
 /**
- * A transcript entry's turn/message address: which 1-based turn it
- * belongs to, and which 1-based message within that turn.
+ * Who an entry is attributed to. Drives the address prefix: `u` user,
+ * `a` assistant (a wake/cron turn is the assistant speaking, so it is `a`
+ * too), `x` other (reserved), `s` shell (reserved).
  */
-export interface TurnMessageAddress {
+export type TurnSpeaker = "user" | "assistant" | "other" | "shell";
+
+const TURN_SPEAKER_PREFIX: Record<TurnSpeaker, string> = {
+  user: "u",
+  assistant: "a",
+  other: "x",
+  shell: "s",
+};
+
+/**
+ * A transcript entry's address: the canonical session turn it belongs to,
+ * plus who is speaking. One address rides each attribution row.
+ */
+export interface TurnAddress {
+  speaker: TurnSpeaker;
   turn: number;
-  message: number;
 }
 
 /**
@@ -167,7 +180,7 @@ export interface TurnMessageAddress {
  * to four digits up to 9999, then growing naturally. Pure function
  * exported for tests so the formatting rule is pin-able without
  * rendering. Used for plain row/index stamps (telemetry, atom captions);
- * the transcript badge uses {@link formatTurnMessageAddress}.
+ * the transcript badge uses {@link formatTurnAddress}.
  */
 export function formatSequenceNumber(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "";
@@ -178,24 +191,18 @@ export function formatSequenceNumber(n: number): string {
 }
 
 /**
- * Format a turn/message address as `#t{turn}m{message}` — turn padded to
- * four digits, message to two, both padded-not-capped (a turn ≥ 10000 or a
- * message ≥ 100 grows naturally past its pad width). Turn is the canonical
- * unit (`tuglaws/turn-metric.md`); message addresses a position within the
- * turn. Pure, exported for tests.
+ * Format a turn address as `#{speaker}{turn}` — a single speaker-prefixed
+ * turn number (`#u0017` user, `#a0017` assistant), zero-padded to four
+ * digits and growing naturally past 9999. The turn is the canonical session
+ * unit (`tuglaws/turn-metric.md`); a normal turn's user and assistant rows
+ * share the same number, so the prefix is what tells them apart. Pure,
+ * exported for tests.
  */
-export function formatTurnMessageAddress(turn: number, message: number): string {
-  if (
-    !Number.isFinite(turn) ||
-    turn < 0 ||
-    !Number.isFinite(message) ||
-    message < 0
-  ) {
-    return "";
-  }
-  const t = Math.floor(turn).toString().padStart(4, "0");
-  const m = Math.floor(message).toString().padStart(2, "0");
-  return `#t${t}m${m}`;
+export function formatTurnAddress(address: TurnAddress): string {
+  const { speaker, turn } = address;
+  if (!Number.isFinite(turn) || turn < 0) return "";
+  const n = Math.floor(turn).toString().padStart(4, "0");
+  return `#${TURN_SPEAKER_PREFIX[speaker]}${n}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -317,9 +324,9 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
             <span
               className="tug-transcript-entry__sequence"
               data-slot="tug-transcript-entry-sequence"
-              aria-label={`Turn ${address.turn}, message ${address.message}`}
+              aria-label={`Turn ${address.turn}`}
             >
-              {formatTurnMessageAddress(address.turn, address.message)}
+              {formatTurnAddress(address)}
             </span>
           )}
         </div>

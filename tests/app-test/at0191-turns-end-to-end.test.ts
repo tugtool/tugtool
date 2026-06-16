@@ -7,8 +7,9 @@
  *
  * "Turn" is the one canonical session metric. tugcode emits `totalTurns`
  * and `firstLoadedTurnIndex` on `replay_complete`; the transcript paints a
- * `#t{turn}m{message}` address on every entry, where the turn is
- * `firstLoadedTurnIndex + localTurnIndex + 1`. The tugcode-side equality
+ * `#{speaker}{turn}` address on each attribution row (`#u…` user, `#a…`
+ * assistant), where the turn is `firstLoadedTurnIndex + localTurnIndex + 1`.
+ * The tugcode-side equality
  * (`totalTurns == reconciled ledger == scanner`) is proven on the JSONL
  * corpus by the Phase 1 contract test; the picker subtitle reads
  * `turn_count` straight from that authority (the Step 16 pure-logic test).
@@ -20,11 +21,11 @@
  *   1. A windowed resume (last 3 of 8 turns): the highest turn address
  *      equals `totalTurns` (8), and the oldest loaded turn reads its true
  *      session turn (6), NOT a window-local "1".
- *   2. Per-message addresses increment within a turn (a turn with a tool
- *      call shows m02, m03) and reset across turns (the next turn's first
- *      assistant message is m02 again).
+ *   2. Each turn shows one `#u{turn}` and one `#a{turn}` sharing the turn
+ *      number; a turn with a tool call adds no extra markers (one per
+ *      attribution row, none inline).
  *   3. Paging in the older history (loadPrevious) does NOT renumber an
- *      already-loaded turn — turn 8 stays `#t0008`, and the window now
+ *      already-loaded turn — turn 8 stays `#a0008`, and the window now
  *      reaches turn 1.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -131,21 +132,18 @@ describe.skipIf(!SHOULD_RUN)(
             feedId: CODE_OUTPUT_FEED,
             decoded,
           });
-        // Collect every rendered transcript address in card A: the user-row
-        // header badge (`#t…m01`) and each assistant inline message's
-        // `data-message-address`.
+        // Collect every rendered transcript address in card A — one
+        // `#{speaker}{turn}` marker per attribution row (`#u…` user, `#a…`
+        // assistant). The inline messages of a turn carry no marker.
         const ADDRS_JS = `JSON.stringify(
-          Array.from(document.querySelectorAll('[data-card-id="A"] [data-message-address]'))
-            .map((e) => e.getAttribute('data-message-address'))
-            .concat(
-              Array.from(document.querySelectorAll('[data-card-id="A"] [data-slot="tug-transcript-entry-sequence"]'))
-                .map((e) => (e.textContent || '').trim())
-            )
+          Array.from(document.querySelectorAll('[data-card-id="A"] [data-slot="tug-transcript-entry-sequence"]'))
+            .map((e) => (e.textContent || '').trim())
+            .filter((s) => s.length > 0)
         )`;
         const readAddrs = async (): Promise<string[]> =>
           JSON.parse(await app.evalJS<string>(ADDRS_JS));
-        const turnOf = (addr: string): number =>
-          parseInt(addr.slice(addr.indexOf("t") + 1, addr.indexOf("m")), 10);
+        // Turn number is the digits after the single speaker-prefix letter.
+        const turnOf = (addr: string): number => parseInt(addr.slice(2), 10);
 
         try {
           await app.enableDeckTrace(true);
@@ -160,8 +158,9 @@ describe.skipIf(!SHOULD_RUN)(
           });
 
           // --- Phase 1: windowed resume — last 3 of 8 turns (6,7,8) -------
-          // Turn 7 carries a tool call so its assistant row shows m02 (text)
-          // and m03 (tool); turns 6 and 8 are plain (user m01 + asst m02).
+          // Turn 7 carries a tool call inline in its assistant row; turns 6
+          // and 8 are plain (user row + assistant row). Each turn yields one
+          // #u and one #a marker regardless of inline content.
           await ingest(replayStarted());
           await ingest(userMsg("u6"));
           await ingest(asstText("m6", "a6", 0));
@@ -187,14 +186,15 @@ describe.skipIf(!SHOULD_RUN)(
           // The oldest loaded turn reads its TRUE session turn (6), not a
           // window-local reset to 1.
           expect(Math.min(...turns)).toBe(6);
-          // Per-message: turn 7 increments (m02 text, m03 tool); turn 8's
-          // first assistant message resets to m02.
-          expect(addrs).toContain("#t0007m02");
-          expect(addrs).toContain("#t0007m03");
-          expect(addrs).toContain("#t0008m02");
-          // User rows carry m01 at their true turn.
-          expect(addrs).toContain("#t0006m01");
-          expect(addrs).toContain("#t0008m01");
+          // Each turn shows a user (#u) and an assistant (#a) marker sharing
+          // the turn number — one per attribution row, none inline. Turn 7's
+          // tool call does NOT add extra markers.
+          expect(addrs).toContain("#u0006");
+          expect(addrs).toContain("#a0006");
+          expect(addrs).toContain("#u0007");
+          expect(addrs).toContain("#a0007");
+          expect(addrs).toContain("#u0008");
+          expect(addrs).toContain("#a0008");
 
           // --- Phase 2: page in the older history (turns 1..5) ------------
           await app.driveDevSession("A", { op: "loadPrevious", amount: "all" });
@@ -207,7 +207,7 @@ describe.skipIf(!SHOULD_RUN)(
           await ingest(replayComplete(5, 0, 8, false));
 
           await app.waitForCondition<boolean>(
-            `JSON.parse(${ADDRS_JS}).some((a) => a === "#t0001m01")`,
+            `JSON.parse(${ADDRS_JS}).some((a) => a === "#u0001")`,
             { timeoutMs: 8000 },
           );
 
@@ -217,9 +217,9 @@ describe.skipIf(!SHOULD_RUN)(
           expect(Math.min(...turns2)).toBe(1);
           expect(Math.max(...turns2)).toBe(8);
           // The already-loaded turns did NOT renumber across the prepend.
-          expect(addrs).toContain("#t0008m02");
-          expect(addrs).toContain("#t0007m03");
-          expect(addrs).toContain("#t0006m01");
+          expect(addrs).toContain("#a0008");
+          expect(addrs).toContain("#a0007");
+          expect(addrs).toContain("#u0006");
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

@@ -1,7 +1,7 @@
 /**
  * Pure-logic tests for the transcript entry address formatters
- * ([P04] badge format). `formatTurnMessageAddress` renders the canonical
- * `#t{turn}m{message}` address; `formatSequenceNumber` is the plain
+ * ([P04] badge format). `formatTurnAddress` renders the canonical
+ * `#{speaker}{turn}` address; `formatSequenceNumber` is the plain
  * `#NNNN` integer stamp still used by row/index surfaces.
  */
 
@@ -9,32 +9,37 @@ import { describe, expect, test } from "bun:test";
 
 import {
   formatSequenceNumber,
-  formatTurnMessageAddress,
+  formatTurnAddress,
 } from "../tug-transcript-entry";
 
-describe("formatTurnMessageAddress", () => {
-  test("pads turn to 4 and message to 2", () => {
-    expect(formatTurnMessageAddress(1, 1)).toBe("#t0001m01");
-    expect(formatTurnMessageAddress(42, 2)).toBe("#t0042m02");
-    expect(formatTurnMessageAddress(9999, 9)).toBe("#t9999m09");
+describe("formatTurnAddress", () => {
+  test("speaker prefix + turn padded to 4", () => {
+    expect(formatTurnAddress({ speaker: "user", turn: 1 })).toBe("#u0001");
+    expect(formatTurnAddress({ speaker: "assistant", turn: 17 })).toBe("#a0017");
+    expect(formatTurnAddress({ speaker: "other", turn: 42 })).toBe("#x0042");
+    expect(formatTurnAddress({ speaker: "shell", turn: 9999 })).toBe("#s9999");
   });
 
-  test("padded-not-capped: grows past the pad width", () => {
-    // A turn ≥ 10000 keeps all its digits.
-    expect(formatTurnMessageAddress(10000, 1)).toBe("#t10000m01");
-    // A message ≥ 100 keeps all its digits (a turn with many inline messages).
-    expect(formatTurnMessageAddress(7, 100)).toBe("#t0007m100");
+  test("a turn's user and assistant rows share the number, differ by prefix", () => {
+    expect(formatTurnAddress({ speaker: "user", turn: 17 })).toBe("#u0017");
+    expect(formatTurnAddress({ speaker: "assistant", turn: 17 })).toBe("#a0017");
   });
 
-  test("floors fractional inputs", () => {
-    expect(formatTurnMessageAddress(3.9, 2.9)).toBe("#t0003m02");
+  test("padded-not-capped: grows past 9999", () => {
+    expect(formatTurnAddress({ speaker: "assistant", turn: 10000 })).toBe(
+      "#a10000",
+    );
   });
 
-  test("empty string for invalid inputs", () => {
-    expect(formatTurnMessageAddress(-1, 1)).toBe("");
-    expect(formatTurnMessageAddress(1, -1)).toBe("");
-    expect(formatTurnMessageAddress(Number.NaN, 1)).toBe("");
-    expect(formatTurnMessageAddress(1, Number.POSITIVE_INFINITY)).toBe("");
+  test("floors fractional turns", () => {
+    expect(formatTurnAddress({ speaker: "user", turn: 3.9 })).toBe("#u0003");
+  });
+
+  test("empty string for invalid turns", () => {
+    expect(formatTurnAddress({ speaker: "user", turn: -1 })).toBe("");
+    expect(formatTurnAddress({ speaker: "assistant", turn: Number.NaN })).toBe(
+      "",
+    );
   });
 });
 
