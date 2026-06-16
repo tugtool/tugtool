@@ -88,20 +88,15 @@ Standard devise-skeleton conventions apply: explicit kebab-case anchors, `[P##]`
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] How does tugcode obtain the engine's count for the wire window metadata? (OPEN) {#q01-wire-count-source}
+#### [Q01] How is the count sourced so there is exactly one authority? (DECIDED) {#q01-wire-count-source}
 
-**Question:** The client needs `totalTurns` / `firstLoadedTurnIndex` on `replay_complete` for windowing. If the Rust engine is the single count producer, tugcode (which emits the wire frame) must source the count from it rather than computing its own.
+**Question:** The ledger count is written today by three paths — `record_spawn` (scan-cache seed), `set_turn_count` from `parse_replay_complete_total_turns` (tugcode's wire `totalTurns`), and `record_turn` (+1 per live `turn_complete`). The client also needs `totalTurns`/`firstLoadedTurnIndex` on the wire for windowing. With three writers and a wire-authored number, "one authority" is a contradiction.
 
-**Why it matters:** If tugcode computes its own `totalTurns` independently, we are back to two producers and the same drift risk this plan exists to kill.
-
-**Options (if known):**
-- tugcast stamps/overrides the wire `totalTurns` (and the window indices) from the engine after tugcode translates — tugcode never authors the count.
-- tugcode requests the engine's segmentation (turn boundaries by byte offset) from tugcast and uses it both to slice the window and to report the count.
-- tugcode computes the count and it is held equal to the engine by the #step-7 contract (weakest; two producers).
-
-**Plan to resolve:** Spike in #step-4 — inspect where `replay_complete` window metadata is assembled (tugcode `resolveWindow`) and where tugcast reconciles it (`parse_replay_complete_total_turns`), and pick the path that leaves exactly one count producer.
-
-**Resolution:** OPEN — resolve during #step-4; default lean is the engine-stamps-the-wire path.
+**Resolution:** DECIDED (see [P08]). The engine is the single count authority and the count is `engine(session file)`:
+- **Resume:** `set_turn_count` is fed by the engine — the fingerprint-validated cached `engine(file)`, or, when there is no cache entry (a resume that bypassed a picker scan), the engine run on the resolved file path (`project_dir` + `claude_session_id` + `.jsonl`). `parse_replay_complete_total_turns` as a count source is removed.
+- **Live:** `record_turn`'s `turn_count + 1` increment is removed as a count authority; its `last_used_at` touch is preserved separately. A live session's ledger count is refreshed by the **existing scan-on-`list_sessions`** path (picker open), not a new per-append trigger; between scans the live card's badge (tugcode rendering) is the live truth, and live-row *visibility* rides `is_alive`, not `turn_count`, so a stale-between-scans count hides nothing.
+- **Wire (validate-and-stamp, not blind stamp):** `resolveWindow` derives **both** `totalTurns` and `firstLoadedTurnIndex` from tugcode's `computeTurns`; the headline equality (*highest rendered address == count*) is `firstLoadedTurnIndex + loadedTurns`, so the window base must agree with the engine, not just `totalTurns`. At the `replay_complete` rewrite point (where `agent_bridge` already rewrites outbound frames via `inject_replay_telemetry`), tugcast **asserts tugcode's wire `totalTurns` equals `engine(file)` and stamps the engine value**. When they agree (the healthy case) the window indices are coherent by construction; a mismatch is logged loudly as a contract breach, the engine value wins, and the divergent session is surfaced — a runtime signal, never a silent split.
+- The only place tugcode segments independently is the **in-flight live turn's rendering** (not yet on disk) — rendering, not a count authority, and the lone transient ([P08]).
 
 #### [Q02] Counting policy and addressing for non-user turns (DECIDED) {#q02-counting-policy}
 
@@ -127,8 +122,9 @@ Standard devise-skeleton conventions apply: explicit kebab-case anchors, `[P##]`
 |------|--------|------------|------------|--------------------|
 | Engine (Rust) and tugcode (TS) segmentation drift | high | med | Real-corpus contract on count + per-turn origin; runtime highest-badge == engine assertion | any contract failure |
 | Incremental scan undercount recurs | high | med | Carry engine state across the frontier; test real incremental appends | count != full re-scan |
-| Migration of stale ledger/cache counts | med | high | Epoch bump invalidates caches; re-scan on next list | wrong count after upgrade |
+| Migration of stale ledger/cache counts | med | high | Epoch bump invalidates caches AND re-`set_turn_count`s every ledger row from the engine on re-scan (#step-4) | wrong count after upgrade |
 | Realistic corpus is local-only (not CI-portable) | med | high | Accept local-only verification; document; keep a small portable smoke set drawn from real shapes | CI needs a gate |
+| Live badge leads `engine(file)` by the in-flight turn | low | high | It is rendering, not a count authority; picker at-rest and resumed counts are always `engine(file)` (R05) | live badge != at-rest count after idle |
 
 **Risk R01: Two-language segmentation drift** {#r01-segmentation-drift}
 
@@ -144,9 +140,15 @@ Standard devise-skeleton conventions apply: explicit kebab-case anchors, `[P##]`
 
 **Risk R03: Headline count change for some sessions** {#r03-count-change}
 
-- **Risk:** If the engine's honest segmentation differs from tugcode's current total for some session, the displayed count changes on upgrade.
-- **Mitigation:** The engine is built to reproduce tugcode's *current* total (all containers count), so values are expected to be stable; any change is a real correction surfaced by the contract, not silent.
+- **Risk:** If the engine's honest segmentation differs from tugcode's current total for some session, the displayed count changes on upgrade — and existing ledger rows hold stale values the cache epoch alone won't fix.
+- **Mitigation:** The engine reproduces tugcode's *current* total (all containers count), so values are stable; the #step-4 migration re-`set_turn_count`s existing rows from the engine on re-scan; any change is a surfaced correction, not silent.
 - **Residual risk:** A genuinely mis-counted historical session will show a corrected number — acceptable and desirable.
+
+**Risk R05: Live count leads the at-rest count by one in-flight turn** {#r05-live-transient}
+
+- **Risk:** During a live session the open card's badge (tugcode rendering) can show one more turn than `engine(file)` until the JSONL flushes and the next engine pass runs.
+- **Mitigation:** This is rendering of an in-flight (uncommitted-to-disk) turn, not a second count authority; the picker's at-rest count and the resumed count are always `engine(file)`; the in-flight turn commits to disk and is then counted by the engine like any other.
+- **Residual risk:** A momentary +1 on the live card vs a freshly-scanned picker row while a turn is mid-flight — bounded to one turn, self-resolving at idle.
 
 ---
 
@@ -209,7 +211,7 @@ Standard devise-skeleton conventions apply: explicit kebab-case anchors, `[P##]`
 
 **Implications:**
 - The scanner's `user_submission_opens_turn` counting is replaced by the full engine.
-- The resume reconcile reads the engine, not a tugcode-authored total (see [Q01]).
+- The resume reconcile reads the engine, not a tugcode-authored total — and the live and scan writers also resolve to the engine ([P08], [Q01]). There is exactly one count writer.
 
 #### [P06] The picker count never shifts (DECIDED) {#p06-no-shift}
 
@@ -219,8 +221,8 @@ Standard devise-skeleton conventions apply: explicit kebab-case anchors, `[P##]`
 - A number that changes when you open a session is the precise symptom the user rejected.
 
 **Implications:**
-- Remove the path where a divergent scan estimate seeds the ledger and a resume later overwrites it with a different value.
-- For an unchanged file, opening a session causes no count mutation.
+- Remove the path where a divergent scan estimate seeds the ledger and a resume later overwrites it with a different value — both now resolve to `engine(file)` ([P08]).
+- For an unchanged file, opening a session causes no count mutation (scan and resume produce the identical engine value).
 
 #### [P07] Verify against the real local corpus; no sanitized fixtures (DECIDED) {#p07-real-corpus}
 
@@ -233,6 +235,21 @@ Standard devise-skeleton conventions apply: explicit kebab-case anchors, `[P##]`
 - The contract (#step-7) runs over `~/.claude/projects/<project>/*.jsonl`.
 - `scanner_turn_counts_match_golden_corpus` and its fixtures are removed or repurposed.
 - A small portable smoke set may be kept, but only if drawn from real shapes (continue/compact/slash/wake/orphan), never invented-tidy.
+
+#### [P08] The engine is the single count authority; the ledger is a cache of `engine(file)` (DECIDED) {#p08-single-authority}
+
+**Decision:** A session's canonical turn count is defined as `engine(session file)` and nothing else. The ledger's `turn_count` is a cache of that value, refreshed only via the engine; there is exactly one writer of the count. All competing count writers are removed.
+
+**Rationale:**
+- "One authority" is meaningless while three paths write the count (`record_spawn` seed, wire-`totalTurns` reconcile, live `record_turn`+1) and the authority's number is parsed off tugcode's wire. The divergence we hit (59/66/81) is the direct result.
+- Defining the count as a pure function of the file gives one number, recomputable anywhere, that cannot drift from itself.
+
+**Implications:**
+- `parse_replay_complete_total_turns` is removed as a count source; resume `set_turn_count` reads the engine — cached `engine(file)` (fingerprint-validated), or the engine run on the resolved file path when no cache entry exists ([Q01]).
+- `record_turn`'s `turn_count + 1` is removed as a count authority; it keeps only its `last_used_at` touch. The live ledger count is refreshed by the existing scan-on-`list_sessions` path, not a per-append trigger; live-row visibility rides `is_alive`, not `turn_count`, so a stale-between-scans count hides nothing.
+- **Validate-and-stamp (not blind stamp):** because `firstLoadedTurnIndex` (the window base, from tugcode `computeTurns`) co-determines the highest rendered address, tugcast asserts tugcode's wire `totalTurns` equals `engine(file)` at the `replay_complete` rewrite point and stamps the engine value; a mismatch is logged as a contract breach (engine wins) so window indices can never silently diverge from the count ([Q01]).
+- The migration (#step-4): the epoch bump invalidates the scan cache **and** the next scan re-`set_turn_count`s every existing ledger row from the engine (not only sparse/absent rows), correcting stale values — gated so it never clobbers a live row mid-flight.
+- **Known, bounded transient:** during a live session the open card's badge (tugcode rendering) may lead `engine(file)` by the single in-flight turn until the file flushes and the next engine pass runs. This is rendering, not a second count authority; the picker's at-rest count and the resumed count are always `engine(file)`. Captured as Risk R05.
 
 ---
 
@@ -263,11 +280,16 @@ The canonical count = number of turns (all origins). The highest rendered addres
 - A single open primitive opens a turn with a given `origin` and seeds the scratch with `[userMessage]` **iff** `origin === "user"`, else `[]`. The no-user-content turn is the natural product of opening with `origin: "assistant"` — there is no `user_message` to fabricate.
 - Layout / addressing reads `origin` (not `messages[0]`): `origin: "user"` → user row (`#u`) + assistant row (`#a`); `origin: "assistant"` → assistant row only (`#a`).
 
-**Spec S03: Count production and consumption** {#s03-count-production}
+**Spec S03: Count production and consumption (one authority)** {#s03-count-production}
 
-- The Rust engine (`turn_engine`) is the sole count producer.
-- Picker: the disk scan runs the engine; the cache stores the engine's output (count + origins + frontier state), keyed by `(file_size, file_mtime, rule_epoch)`; `rule_epoch` is bumped.
-- Authority: on resume, the count for the ledger and the wire window metadata is sourced from the engine (see [Q01]); the picker and authority counts are therefore equal by construction.
+The canonical count is `engine(session file)`. The Rust engine is the **only** writer of the count; every consumer reads it ([P08], [Q01]):
+
+- **Picker / scan:** the disk scan runs the engine; the cache stores its output (count + origins + frontier state), keyed by `(file_size, file_mtime, rule_epoch)`; `rule_epoch` is bumped.
+- **Resume:** `set_turn_count` reads the engine — cached `engine(file)` (fingerprint-validated), or the engine run on the resolved file path (`project_dir` + `claude_session_id` + `.jsonl`) when no cache entry exists — **not** `parse_replay_complete_total_turns`. The picker and resume counts are equal by construction.
+- **Live:** `record_turn`'s `turn_count + 1` is removed; only its `last_used_at` touch remains. A live session's ledger count is refreshed by the existing scan-on-`list_sessions` path (picker open), not a per-append trigger; the live card badge is the live truth between scans, and `is_alive` (not `turn_count`) gates live-row visibility.
+- **Wire (validate-and-stamp):** `resolveWindow` derives both `totalTurns` and `firstLoadedTurnIndex` from tugcode `computeTurns`, and the highest rendered address is `firstLoadedTurnIndex + loadedTurns` — so stamping only `totalTurns` would split sources. At the `replay_complete` rewrite point, tugcast asserts tugcode's wire `totalTurns` equals `engine(file)` and stamps the engine value; agreement makes the window indices coherent, a mismatch is logged as a contract breach (engine wins) and surfaces the session. Never a silent split.
+- **Migration:** the `rule_epoch` bump invalidates the scan cache **and** the next scan re-`set_turn_count`s every existing ledger row from the engine (not only sparse rows), correcting stale values; gated to never clobber a live row mid-flight.
+- **The engine segments the JSONL file directly** — it is the single file→turns authority. The Step 5/6 wire opener vocabulary is only how tugcode *represents* that segmentation to the reducer for rendering; the #step-7 contract ties the two. tugcode's sole independent segmentation is the in-flight live turn (rendering, the lone transient; Risk R05).
 
 #### State Zone Mapping (tugdeck) {#state-zone-mapping}
 
@@ -300,7 +322,11 @@ The canonical count = number of turns (all origins). The highest rendered addres
 | `isWake` boolean | field (remove) | `tugdeck/src/lib/code-session-store/types.ts`, `reducer.ts` | Removed; `wakeTrigger` survives as an annotation on `origin: "assistant"` |
 | origin-parameterized turn-open | fn | `tugdeck/src/lib/code-session-store/reducer.ts` | Seeds scratch `[userMessage]` iff `origin==="user"`, else `[]` (generalizes `handleWakeStarted`) |
 | `turnHasUserMessage` inference | logic (replace) | `tugdeck/src/lib/dev-transcript-data-source.ts` | Keyed on `origin`, not `messages[0]` |
-| `parse_replay_complete_total_turns` | fn (rework) | `tugcast/src/session_ledger.rs` / `feeds/agent_bridge.rs` | Count sourced from the engine, not the wire-authored total |
+| `parse_replay_complete_total_turns` | fn (remove as count source) | `tugcast/src/feeds/agent_bridge.rs` | Deleted as a count input; resume `set_turn_count` reads the engine ([P08]) |
+| `record_turn` count increment | fn (modify) | `tugcast/src/session_ledger.rs` | `turn_count + 1` removed; keeps only the `last_used_at` touch; live count refreshed via the engine ([P08]) |
+| wire `totalTurns` stamp | emit | `tugcast/src/feeds/agent_bridge.rs` | tugcast stamps `replay_complete.totalTurns` from the engine; tugcode no longer authors it ([Q01]) |
+| ledger migration on epoch bump | fn | `tugcast/src/session_ledger.rs` / scan path | Re-`set_turn_count` existing rows from the engine; never clobber a live row (#step-4) |
+| `tugcode segment <file>` | batch entrypoint (new) | `tugcode/src/` | Emits tugcode's ordered turn list for a file (reuses `computeTurns`) — the contract's tugcode side (#step-7) |
 
 ---
 
@@ -332,7 +358,7 @@ The canonical count = number of turns (all origins). The highest rendered addres
 | #step-1 | Spec: origin model, opener vocabulary, counting policy | pending | — |
 | #step-2 | Rust turn-segmentation engine (pure, real-file unit tests) | pending | — |
 | #step-3 | Picker/scan count sourced from the engine; epoch bump; incremental correctness | pending | — |
-| #step-4 | Resume authority sourced from the engine; remove seed-then-reconcile shift | pending | — |
+| #step-4 | Single count authority: remove wire + live count writers; migrate ledger | pending | — |
 | #step-5 | tugcode: honest assistant-originated opener; delete synth `add_user_message` | pending | — |
 | #step-6 | tugdeck: origin-explicit `TurnEntry`; assistant-only render; `#u`/`#a` | pending | — |
 | #step-7 | Real-corpus contract: engine == rendering; delete sanitized corpus | pending | — |
@@ -372,9 +398,10 @@ The canonical count = number of turns (all origins). The highest rendered addres
 - `turn_engine.rs`: `segment_turns` producing ordered `{origin, ...}` turns + count, with a carry-in/carry-out frontier state (open-turn state) for incremental resume.
 
 **Tasks:**
-- [ ] Implement the full state machine: user openers (excluding meta/interrupt/tool-result/compact/scaffolding) AND assistant-originated openers (wake / orphan assistant with no open turn), mirroring tugcode's decisions per S01.
+- [ ] Implement the full state machine: user openers (excluding meta/interrupt/tool-result/compact/scaffolding) AND assistant-originated openers (wake / orphan assistant with no open turn), mirroring tugcode's decisions per S01. Output ordered turns with `{origin, byte/entry boundary, count}`.
 - [ ] Express incremental resume as carry-over of frontier open-turn state, not just an offset+count.
 - [ ] Delete/retire `user_submission_opens_turn` user-record-only counting.
+- [ ] **Preserve the scanner's non-count outputs** that `external_sessions.rs` produces today — `last_user_prompt`, `ai-title` name, `created_at`, and the cwd-/sessionId-mismatch exclusions — they feed the picker subtitle/title/visibility and must survive the engine swap.
 
 **Tests:**
 - [ ] `cargo nextest` unit tests over **real** session files copied locally (continue/compact/slash/wake/leading-orphan), asserting per-turn origin and total.
@@ -408,26 +435,31 @@ The canonical count = number of turns (all origins). The highest rendered addres
 
 ---
 
-#### Step 4: Resume authority from the engine; kill the shift {#step-4}
+#### Step 4: Single count authority — remove the wire and live count writers; migrate the ledger {#step-4}
 
 **Depends on:** #step-3
 
-**Commit:** `refactor(tugcast): resume count from the engine, one producer`
+**Commit:** `refactor(tugcast): engine is the only count writer`
 
-**References:** [P05] one engine, [P06] no shift, [Q01] wire count source, Spec S03, (#q01-wire-count-source)
+**References:** [P05] one engine, [P06] no shift, [P08] single authority, [Q01] (DECIDED), Spec S03, Risk R03, Risk R05, (#p08-single-authority, #s03-count-production)
 
 **Artifacts:**
-- The ledger/reconcile count and the wire window metadata sourced from the engine (resolve [Q01]); the seed-then-reconcile-to-a-different-value path removed.
+- Resume `set_turn_count` fed by the engine (cached `engine(file)`), not `parse_replay_complete_total_turns` (removed as a count source); `record_turn`'s `turn_count + 1` removed (its `last_used_at` touch kept); tugcast stamps `replay_complete.totalTurns` from the engine; a migration pass that re-`set_turn_count`s existing ledger rows from the engine on re-scan.
 
 **Tasks:**
-- [ ] Resolve [Q01]: make the engine the count behind `replay_complete` window metadata (engine stamps the wire, or tugcode consumes engine segmentation).
-- [ ] Remove the path where a divergent estimate seeds the ledger and resume overwrites it with a different number.
+- [ ] Resume: source `set_turn_count` from the engine — cache lookup by `claude_session_id`, with a **fallback that runs the engine on the resolved file path when no cache entry exists**; delete `parse_replay_complete_total_turns` as a count input.
+- [ ] Live: remove the `record_turn` count increment (keep `last_used_at`); the live ledger count rides the existing scan-on-`list_sessions` refresh — no per-append trigger.
+- [ ] Wire (validate-and-stamp): at the `replay_complete` rewrite point (reuse the `line_to_emit`/`inject_replay_telemetry` mechanism), assert tugcode's wire `totalTurns == engine(file)` and stamp the engine value; on mismatch, log a contract breach (engine wins) and surface the session. tugcode no longer authors the count.
+- [ ] Migration: on the `rule_epoch` re-scan, re-`set_turn_count` every existing ledger row from the engine (not only sparse rows), gated to never clobber a live row mid-flight.
 
 **Tests:**
-- [ ] `cargo nextest` reconcile test: for an unchanged file, the post-resume ledger count equals the pre-resume scan count (no mutation).
+- [ ] `cargo nextest` reconcile test: for an unchanged file, the post-resume ledger count equals the pre-resume scan count (no mutation, no second writer).
+- [ ] `cargo nextest` no-cache test: a resume with no scan-cache entry runs the engine on the file and reconciles to `engine(file)`.
+- [ ] `cargo nextest` validate-and-stamp test: a wire `totalTurns` that disagrees with the engine logs a breach and the engine value wins.
+- [ ] `cargo nextest` migration test: an existing row with a stale count (e.g. 59) is corrected to `engine(file)` on the next scan; a live row is not clobbered.
 
 **Checkpoint:**
-- [ ] `cargo nextest run` green; opening `49e9aec6` does not change its ledger turn count (already 81 from scan).
+- [ ] `cargo nextest run` green; opening `49e9aec6` does not change its ledger turn count; a pre-seeded stale `49e9aec6` row migrates to **81** on re-scan; grep confirms no `parse_replay_complete_total_turns` count path and no `record_turn` increment remain.
 
 ---
 
@@ -443,8 +475,9 @@ The canonical count = number of turns (all origins). The highest rendered addres
 - An assistant-originated opener (generalized `wake_started`) emitted for orphan assistant content; the synthesized `add_user_message{content:[]}` removed from `handleAssistantEntry` (replay) and the live empty-opener follow-up in `session.ts`.
 
 **Tasks:**
-- [ ] Replace the synth opener with the assistant-originated opener carrying `origin: assistant`.
+- [ ] Replace the synth opener with the assistant-originated opener carrying `origin: assistant` (add the wire type in `tugcode/src/types.ts`; remove the synth in `replay.ts` `handleAssistantEntry` and the live empty-opener follow-up in `session.ts`).
 - [ ] Ensure `add_user_message` is emitted only for genuine user submissions.
+- [ ] **Wire-decode the new opener on the tugdeck side** — `frameToEvent`/`events.ts` must recognize the assistant-originated opener and produce the reducer event (not only the Step 6 reducer handler); otherwise the frame is received but never decoded.
 - [ ] Keep the engine ([P05]) and this emit aligned per S01 (the contract in #step-7 enforces it).
 
 **Tests:**
@@ -469,6 +502,7 @@ The canonical count = number of turns (all origins). The highest rendered addres
 **Tasks:**
 - [ ] Add `origin: "user" | "assistant"` to `PendingTurn` and `TurnEntry`; the reducer's turn-open handler sets it from the opener and seeds the scratch empty for `origin: "assistant"` (mirrors today's `handleWakeStarted` empty-scratch construction).
 - [ ] Remove the `isWake` boolean discriminator and the `turnHasUserMessage`/`messages[0]` inference; keep `wakeTrigger` only as an annotation on an `origin: "assistant"` turn.
+- [ ] **Re-express every `isWake` behavioral consumer in terms of `origin` + `wakeTrigger`/phase, not a field rename.** Concretely: `handleWakeStarted`'s `phase: "waking"` bracket; `isWakePulldown` (which suppresses the inflight user message and gates `wakeTrigger`); the jobs-ledger fold keyed on the wake trigger; and `handleTurnComplete`'s `waking → idle` branch. Wake *behavior* (the bracket, the jobs fold, the phase) rides `wakeTrigger`/phase; `origin` carries attribution only. Enumerate and convert each consumer.
 - [ ] Key row layout + `#u`/`#a` addressing on `origin`; confirm no path can render a user row for an `origin: "assistant"` turn (no `user_message` exists to render).
 
 **Tests:**
@@ -489,17 +523,18 @@ The canonical count = number of turns (all origins). The highest rendered addres
 **References:** [P05] one engine, [P07] real corpus, Risk R01, (#r01-segmentation-drift)
 
 **Artifacts:**
-- A contract that, over `~/.claude/projects/<project>/*.jsonl`, asserts the engine's count+origins equal tugcode/tugdeck's rendered segmentation; deletion of `scanner_turn_counts_match_golden_corpus` and its sanitized fixtures.
+- A concrete contract harness with three named parts: (1) a tugcode batch entrypoint — `tugcode segment <file>` (or a bun test that calls the existing `computeTurns`) — that emits tugcode's ordered turn list for a session file as `[{origin}]`; (2) a Rust path that runs the engine over the same file to the same shape; (3) a diff harness that, for every file under `~/.claude/projects/<project>/`, asserts the two lists are equal **per-turn (origin + ordinal), not just total count**, and prints the exact diverging sessions. Plus deletion of `scanner_turn_counts_match_golden_corpus` and its sanitized fixtures.
 
 **Tasks:**
-- [ ] Build the contract harness over the real local corpus (count + per-turn origin).
-- [ ] Delete the sanitized golden corpus and any test it props up; keep at most a real-shape smoke subset.
+- [ ] Add the tugcode batch turn-list entrypoint (reusing `computeTurns`/`translateJsonlEntry`) so tugcode's segmentation is observable per file without a live session. **`computeTurns` today returns a row-count proxy (`messages: hasUserRow ? 2 : 1`), not origin — extend it to emit per-turn `origin`** (depends on Step 5's origin-explicit openers) so the contract can compare attribution, not just totals.
+- [ ] Build the diff harness over the real local corpus comparing per-turn origin + ordinal; emit the diverging-session list on failure.
+- [ ] Delete the sanitized golden corpus and any test it props up; keep at most a real-shape smoke subset ([P07]).
 
 **Tests:**
-- [ ] The contract passes over the full real corpus (or reports the exact divergent sessions to fix).
+- [ ] The contract passes over the full real corpus (or reports the exact divergent sessions to fix), per-turn, not count-only.
 
 **Checkpoint:**
-- [ ] The contract is green over the real corpus; `cargo nextest` / `bun test` no longer reference the deleted sanitized fixtures.
+- [ ] The harness runs `tugcode segment` + the engine over every real session and reports zero per-turn divergences (or a named fix list); `cargo nextest` / `bun test` no longer reference the deleted sanitized fixtures.
 
 ---
 
@@ -509,10 +544,10 @@ The canonical count = number of turns (all origins). The highest rendered addres
 
 **Commit:** `N/A (verification only)`
 
-**References:** [P04] count-all, [P06] no shift, Spec S03, (#success-criteria)
+**References:** [P04] count-all, [P06] no shift, [P08] single authority, Spec S03, (#success-criteria)
 
 **Tasks:**
-- [ ] Verify on real sessions across the spread that picker count == opened count == highest rendered address.
+- [ ] Verify on real sessions across the spread that picker count == opened count == highest rendered address, and that a pre-upgrade stale ledger count migrates to `engine(file)` without opening the session.
 
 **Tests:**
 - [ ] `just app-test` aggregate: open `49e9aec6` (and a wake/`--continue`/`/compact` session); assert the picker shows the same number before and after; assert no turn renders a `#u` row without a real user submission; assert highest `#a`/`#u` == engine count.
@@ -529,8 +564,10 @@ The canonical count = number of turns (all origins). The highest rendered addres
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] No fabricated user messages anywhere; assistant-originated turns render `#a`-only. (#step-5, #step-6)
+- [ ] Exactly one count writer: `parse_replay_complete_total_turns` (count source) and `record_turn`'s increment are gone; resume, scan, and live all resolve to `engine(file)`; tugcast stamps the wire count. (#step-4, [P08])
 - [ ] One engine produces the count for both picker and authority; picker count == opened count for every real session. (#step-3, #step-4, #step-8)
-- [ ] Engine == rendering over the full real corpus. (#step-7)
+- [ ] Existing stale ledger counts migrate to `engine(file)` on re-scan without opening the session. (#step-4)
+- [ ] Engine == tugcode rendering **per-turn (origin + ordinal)** over the full real corpus. (#step-7)
 - [ ] `49e9aec6` shows the same number before and after opening, equal to the highest rendered address. (#step-8)
 - [ ] The sanitized golden corpus is gone; verification is real-data-driven. (#step-7)
 
