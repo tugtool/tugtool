@@ -89,7 +89,6 @@ import {
   TugListView,
   type TugListViewCellProps,
   type TugListViewCellRenderer,
-  type TugListViewDelegate,
   type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
@@ -925,14 +924,6 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
 // Host
 // ---------------------------------------------------------------------------
 
-/**
- * Estimated heights per kind, in CSS pixels. Used by the height index
- * before any cell has been measured by `ResizeObserver`. The estimates
- * are intentionally rough — the height index swaps in measured values
- * as soon as a cell mounts and the observer fires.
- */
-const ESTIMATED_HEIGHT_USER = 56;
-const ESTIMATED_HEIGHT_ASSISTANT = 120;
 
 
 export interface DevTranscriptHostProps {
@@ -1230,13 +1221,6 @@ export const DevTranscriptHost = forwardRef<
     [userRenderer, assistantRenderer, ghostRenderer],
   );
 
-  const delegate = useMemo<TugListViewDelegate>(
-    () => ({
-      estimatedHeightForKind: (kind: string) =>
-        kind === "assistant" ? ESTIMATED_HEIGHT_ASSISTANT : ESTIMATED_HEIGHT_USER,
-    }),
-    [],
-  );
 
   // Bind the transcript root for response-settings CSS variable
   // cascade. The store sets inline custom properties (header /
@@ -1391,7 +1375,6 @@ export const DevTranscriptHost = forwardRef<
             <TugListView
               ref={listViewRef}
               dataSource={dataSource}
-              delegate={delegate}
               cellRenderers={cellRenderers}
               scrollKey="dev-card-transcript"
               followBottom

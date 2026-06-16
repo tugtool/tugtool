@@ -22,28 +22,16 @@ import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
 
 /**
- * Largest `cellHeights` array we persist durably. A recency-windowed load
- * renders ~50 rows, so its snapshot is well under this and keeps its
- * estimate-free first-paint seed across a true reload (redux [P07]). A
- * "load all" on a whale produces thousands of entries (~1.5 MB) — past the
- * cap we drop it from the durable copy; that reload re-measures (the price
- * of having loaded everything), and the durable store stays bounded.
- */
-const CELL_HEIGHTS_DURABLE_CAP = 400;
-
-/**
- * Bound the durable size of a card-state bag before the tugbank write by
- * dropping an over-cap `regionScroll[*].meta.cellHeights` (the per-cell
- * measured-height seed — one float per transcript row). The array is a
- * regenerable first-paint optimization (seed `content-visibility`
- * intrinsic-size on reload); under the cap it's cheap and worth keeping,
- * over the cap it's the bloat that accumulated to 18 MB and stalled the
- * boot-time DEFAULTS frame. The full bag — including an over-cap
- * `cellHeights` — still lives in DeckManager's in-memory cache, so
- * same-session tab-switch + Fast-Refresh restore stay estimate-free; only
- * the durable copy is bounded. The tiny `anchor` is always kept so a true
- * reload still restores to the right cell (settling exactly once heights
- * re-measure).
+ * Strip the dead `regionScroll[*].meta.cellHeights` field from a card-state
+ * bag before the tugbank write. `cellHeights` was a per-cell measured-height
+ * seed for the old `content-visibility` / estimate first-paint path; that
+ * path is gone — the transcript renders every row at its real, measured
+ * height, so the scrollbar never shifts and there is no estimate to seed.
+ * The field is never written anymore, so this is purely a **migration**: it
+ * removes `cellHeights` from any legacy durable bag on the next save (an old
+ * "load all" on a whale persisted thousands of entries — the bloat that
+ * accumulated to ~18 MB and stalled the boot-time DEFAULTS frame). The tiny
+ * `anchor` is always kept so a true reload still restores to the right cell.
  *
  * Exported for unit testing; callers use {@link putCardState}.
  */
@@ -53,9 +41,8 @@ export function capDurableCardState(bag: CardStateBag): CardStateBag {
   const capped: RegionScrollSnapshot = {};
   for (const [key, snap] of Object.entries(bag.regionScroll)) {
     const meta = snap.meta as Record<string, unknown> | undefined | null;
-    const cellHeights = meta?.cellHeights;
-    if (Array.isArray(cellHeights) && cellHeights.length > CELL_HEIGHTS_DURABLE_CAP) {
-      const { cellHeights: _drop, ...restMeta } = meta as Record<string, unknown>;
+    if (meta !== null && meta !== undefined && "cellHeights" in meta) {
+      const { cellHeights: _drop, ...restMeta } = meta;
       void _drop;
       capped[key] = { x: snap.x, y: snap.y, meta: restMeta };
       changed = true;

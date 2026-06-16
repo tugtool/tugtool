@@ -1139,40 +1139,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // from data, not React's render cycle).
     const heightIndexRef = React.useRef<HeightIndex>(new HeightIndex());
 
-    // Mount-in-saved-state: per-cell `min-height` lock sourced from
-    // the saved `meta.cellHeights` (set by the hydration effect
-    // below). Cells with a known saved height render with
-    // `style.minHeight = ${savedHeight}px`, so async sub-content
-    // (markdown, image embeds, code highlighting) fills its
-    // destined slot without shifting siblings — the anchor cell
-    // stays at the saved viewport position from the very first
-    // paint.
-    //
-    // The lock is RELEASED per-cell once that cell's measured
-    // height reaches or exceeds the saved value. The ResizeObserver
-    // callback clears `hydratedCellHeightsRef.current[index]` (set
-    // to 0) when `newHeight >= saved - 0.5`, and the next render
-    // reads the cleared entry → no more `min-height` on that cell's
-    // wrapper. This makes user-action shrinks honored: a hydrated
-    // Bash / diff cell that mounts expanded at its saved height
-    // (lock releases on first measurement) can subsequently
-    // collapse, and the wrapper shrinks with its content — no ghost
-    // space below.
-    //
-    // A permanent lock (held for the whole mount) would leave ghost
-    // space in the shrink case. The release is safe because the
-    // "siblings shifting" concern the lock guards against only
-    // applies to the async-content-fill-in window; once a cell has
-    // been measured at its saved size, sub-content is settled and
-    // releasing the lock costs nothing — the user-action collapse
-    // case is then unblocked.
-    //
-    // Held in a ref so cell-render reads are appearance-only
-    // ([L06]) — no React state for the lock map.
-    const hydratedCellHeightsRef = React.useRef<readonly number[] | null>(
-      null,
-    );
-
     // Single `ResizeObserver` per list-view instance — created in
     // `useLayoutEffect` so the constructor runs after the global
     // (potentially test-overridden) `ResizeObserver` is in place. Cell
@@ -1241,64 +1207,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       disengage: (source) => smartScrollRef.current?.disengage(source),
     });
 
-    // Mount-in-saved-state for the outer scroller.
-    //
-    // Read the bag synchronously at render time via
-    // `useSavedRegionScroll`. The hydration effect below runs on the
-    // FIRST commit; the SmartScroll-install effect (later in the same
-    // commit) reads the same `savedRegionScroll` to install the
-    // restore target, and the restore-target heartbeat effect (later
-    // still) applies it before paint — so the first paint reflects
-    // the exact saved anchor / heightIndex, with no `scrollTop=0`
-    // flash and no estimated-then-refined hop.
-    //
-    // This effect's job is the geometry hydration: saved cell heights
-    // (`meta.cellHeights`) populate the live `HeightIndex` so
-    // `offsetForIndex(anchorIndex)` returns the exact saved offset on
-    // commit 1 instead of an estimate, and the `min-height` lock ref
-    // so cell wrappers render at their saved heights (locking sibling
-    // layout against async content settle). The saved anchor
-    // (`meta.anchor`) is consumed by the SmartScroll-install effect,
-    // which installs it as a `SmartScroll` restore target.
-    //
-    // Saved values from prior session also hydrate `prevItemCountRef`
-    // (declared below) implicitly — `cellHeights.length` counts as a
-    // previous-item-count snapshot for the auto-follow-bottom
-    // growth-detection heuristic, but that's incidental.
-    //
-    // [L02] saved state enters React via `useSyncExternalStore` (the
-    // `useSavedRegionScroll` hook). [L03] hydration runs in
-    // `useLayoutEffect` so first paint reflects the hydrated state.
-    // [L23] this is the L23 strengthening — first paint reproduces
-    // the layout that made the saved scroll position user-visible.
-    // See `tuglaws/state-preservation.md` → "Saving geometry for
-    // first-paint accuracy."
+    // Mount-in-saved-state for the outer scroller. Read the bag
+    // synchronously at render time via `useSavedRegionScroll`; the
+    // SmartScroll-install effect reads the same `savedRegionScroll`
+    // to install the saved **anchor** (`meta.anchor`) as a restore
+    // target. The anchor is a turn-depth-from-bottom + a sub-row
+    // offset within the anchored turn — independent of any per-cell
+    // height geometry. (The former `meta.cellHeights` geometry-
+    // hydration bag is gone: cells render at their real, measured
+    // height, so there is no estimate to pre-seed and nothing to
+    // pixel-lock.) [L02] saved state via `useSavedRegionScroll`;
+    // [L23] anchor restore — see `tuglaws/state-preservation.md`.
     const savedRegionScroll = useSavedRegionScroll(scrollKey);
-    React.useLayoutEffect(() => {
-      if (savedRegionScroll === undefined) return;
-      const meta = savedRegionScroll.meta;
-      if (meta === null || typeof meta !== "object") return;
-
-      // Hydrate cell-height geometry into both the live `HeightIndex`
-      // (so anchor-resolve math is exact) and the `min-height` lock
-      // ref (so cell wrappers render at their saved heights, locking
-      // sibling layout against async content settle).
-      const cellHeights = (meta as { cellHeights?: unknown }).cellHeights;
-      if (Array.isArray(cellHeights)) {
-        // Narrow to a number[] for the hook & ref. Non-number entries
-        // (shouldn't happen with a well-formed bag) drop to 0 so the
-        // lock check below treats them as "no saved height."
-        const sanitized: number[] = cellHeights.map((v) =>
-          typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0,
-        );
-        heightIndexRef.current.hydrate(sanitized);
-        hydratedCellHeightsRef.current = sanitized;
-      }
-      // Mount-time only — runs once. Subsequent saves write into
-      // `data-tug-scroll-state`; subsequent restores would mount a
-      // fresh component instance and re-hydrate.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     // Previous-commit `numberOfItems()` snapshot used to detect
     // data-source growth. Any `itemCount > prev` qualifies as a
@@ -1637,11 +1557,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // height).
     //
     // The clear is gated on an ACTUAL dataSource change, NOT on every
-    // effect run. On the initial mount the height index was just
-    // populated by the hydration effect above from the saved bag's
-    // `meta.cellHeights`; clearing it there would discard the
-    // geometry the cold-boot restore needs to land accurately on the
-    // first paint. Gating on `prev !== dataSource` (rather than a
+    // effect run. Clearing on a mere effect re-run would drop the
+    // measured geometry the live `HeightIndex` accumulated for the
+    // current source. Gating on `prev !== dataSource` (rather than a
     // run-counter) is also correct under React StrictMode's
     // mount/unmount/mount double-invoke — the second invoke sees an
     // unchanged dataSource and skips the clear.
@@ -1657,15 +1575,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const total = dataSource.numberOfItems();
         let anyChanged = false;
         const heightIndex = heightIndexRef.current;
-        // Mutable view of the hydration-lock array — the ref's
-        // `readonly number[]` type is a contract about EXTERNAL
-        // mutation (the consumer that reads `?.[index]` shouldn't
-        // mutate). We OWN the underlying array and may release
-        // entries in place as cells reach their saved heights.
-        const hydratedHeights =
-          hydratedCellHeightsRef.current === null
-            ? null
-            : (hydratedCellHeightsRef.current as number[]);
         for (const entry of entries) {
           const target = entry.target as HTMLElement;
           const indexAttr = target.getAttribute("data-tug-list-cell-index");
@@ -1680,26 +1589,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           }
           const newHeight = entry.contentRect.height;
           const currentHeight = heightIndex.get(index);
-
-          // Hydration-lock release. When a cell's measurement
-          // reaches or exceeds its saved-at-hydration height, drop
-          // the `min-height` lock on that cell so
-          // subsequent shrinks (user collapses an expanded Bash /
-          // diff hunk, etc.) are honored — the wrapper follows
-          // the content down instead of holding ghost space.
-          //
-          // Runs BEFORE the sub-pixel no-op gate below so a
-          // measurement that exactly matches the heightIndex (and
-          // therefore would be skipped) still releases the lock —
-          // and sets `anyChanged = true` so the rAF flush re-
-          // renders to drop the now-stale `min-height` style.
-          if (hydratedHeights !== null) {
-            const saved = hydratedHeights[index] ?? 0;
-            if (saved > 0 && newHeight >= saved - 0.5) {
-              hydratedHeights[index] = 0;
-              anyChanged = true;
-            }
-          }
 
           // Skip no-op updates — sub-pixel ResizeObserver noise
           // shouldn't force a re-window.
@@ -2223,17 +2112,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         estimatedHeightForKindOnly,
       );
       const anchorOffset = Math.max(0, scrollTop - basisTop);
-      // Also serialize the live `heightIndex` snapshot into
-      // `meta.cellHeights`. At restore the framework hydrates this
-      // back into the live index BEFORE first paint, so the
-      // anchor-resolve math reads exact heights instead of
-      // estimates. Empty array (no measurements yet) is omitted to
-      // keep the on-disk bag clean — the restore path treats
-      // absent `cellHeights` as "fall back to estimates." Capture
-      // is O(n) over measured cells —
-      // free at human-scale list sizes. See `state-preservation.md`
-      // → "Saving geometry for first-paint accuracy."
-      const cellHeights = heightIndexRef.current.snapshot();
       const anchor: {
         index: number;
         offset: number;
@@ -2247,11 +2125,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
       const meta: {
         anchor: typeof anchor;
-        cellHeights?: number[];
         scrollHeight?: number;
         atBottom?: boolean;
       } = { anchor };
-      if (cellHeights.length > 0) meta.cellHeights = cellHeights;
       // Validation field — total content height at save time. Not
       // consumed at restore today; documented in the schema so
       // future cross-version layout checks have a hook.
@@ -3414,44 +3290,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             // is off, keeping the default-cell DOM shape unchanged.
             const cellSelected = effectiveSelectedIndex === index;
             const wrapperSelectedAttr = cellSelected ? "true" : undefined;
-            // `min-height` lock: when the bag carried
-            // `meta.cellHeights[index]`, render the cell wrapper
-            // at the saved height so async sub-content fills its
-            // destined slot without shifting the anchor cell.
-            // No saved height → no inline style (existing
-            // behavior). [L06] appearance via inline style, never
-            // React state.
-            const savedCellHeight =
-              hydratedCellHeightsRef.current?.[index] ?? 0;
-            // Off-screen deferral via `content-visibility: auto`
-            // (inline mode only — windowed mode already virtualizes).
-            // WebKit skips style/layout/paint for cells outside the
-            // viewport, which is the dominant mount cost for a large
-            // all-rich list (measured: a 212-row transcript's
-            // synchronous mount fell 4.4s → ~1s). `contain-intrinsic-
-            // size` supplies the placeholder geometry for skipped
-            // cells: the REAL cached height when the bag carried it
-            // (pixel-accurate scrollbar, no estimate), else the kind
-            // estimate as a self-correcting fallback (`auto` remembers
-            // the real size once the cell has rendered once). [L06]
-            const cellIntrinsicHeight =
-              savedCellHeight > 0
-                ? savedCellHeight
-                : estimatedHeightForKindOnly(index);
-            const cellWrapperStyle: React.CSSProperties | undefined =
-              inline === true
-                ? {
-                    ...(savedCellHeight > 0
-                      ? { minHeight: `${savedCellHeight}px` }
-                      : null),
-                    contentVisibility: "auto",
-                    containIntrinsicSize: `auto ${Math.round(
-                      cellIntrinsicHeight,
-                    )}px`,
-                  }
-                : savedCellHeight > 0
-                  ? ({ minHeight: `${savedCellHeight}px` } as React.CSSProperties)
-                  : undefined;
+            // No per-cell height styling. `inline` mode mounts every cell
+            // at its real, measured height — no `content-visibility`
+            // off-screen deferral, no `contain-intrinsic-size` estimate,
+            // no saved-height min-height. The scroll height is the true sum
+            // of row heights, so the scrollbar never shifts.
             const Renderer = cellRenderers[kind];
             if (Renderer === undefined) {
               // Unknown kind — no renderer registered. Render an
@@ -3475,7 +3318,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   ref={getCellCallbacks(index).ref}
                   onClick={getCellCallbacks(index).click}
                   onKeyDown={getCellCallbacks(index).keyDown}
-                  style={cellWrapperStyle}
                 />
               );
             }
@@ -3492,7 +3334,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 ref={getCellCallbacks(index).ref}
                 onClick={getCellCallbacks(index).click}
                 onKeyDown={getCellCallbacks(index).keyDown}
-                style={cellWrapperStyle}
               >
                 {focusEngineActive ? (
                   // The row's content joins the row's own focus mode, so its
