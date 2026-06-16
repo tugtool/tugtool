@@ -1,12 +1,13 @@
 // Recency windowing — the translator emits only the requested
 // committed-turn range and reports the window on `replay_complete`.
 //
-// These pin the turn-boundary slice (last-N; explicit range; a window
-// larger than the session = load-all) and the two edge cases that make
-// boundary detection tricky: a same-`message.id` continuation (one turn
-// split across two JSONL records must not be split by the window) and an
-// orphan-synthesized turn (interrupted, no clean terminal) landing on the
-// correct side of the cut with no partial / duplicate turn.
+// These pin the turn-boundary slice (last-N turns; explicit range,
+// including load-previous paging; a window larger than the session =
+// load-all) and the two edge cases that make boundary detection tricky:
+// a same-`message.id` continuation (one turn split across two JSONL
+// records must not be split by the window) and an orphan-synthesized
+// turn (interrupted, no clean terminal) landing on the correct side of
+// the cut with no partial / duplicate turn.
 
 import { describe, expect, test } from "bun:test";
 
@@ -87,15 +88,15 @@ const cleanSession = (k: number): string => {
 };
 
 // ---------------------------------------------------------------------------
-// last-N slice
+// last-N turns slice
 // ---------------------------------------------------------------------------
 
-describe("translateJsonlSession — last-N-messages window", () => {
+describe("translateJsonlSession — last-N-turns window", () => {
   // Each clean turn is 2 messages (user row + assistant row).
-  test("emits the trailing turns covering the last N messages", async () => {
-    // 5 turns = 10 messages; last 4 messages = the last 2 turns.
+  test("emits the trailing N turns", async () => {
+    // 5 turns; last 2 turns.
     const out = await collectSession(cleanSession(5), {
-      window: { lastMessages: 4 },
+      window: { lastTurns: 2 },
     });
 
     expect(userTextsOf(out)).toEqual(["u3", "u4"]);
@@ -104,94 +105,33 @@ describe("translateJsonlSession — last-N-messages window", () => {
     const complete = replayCompleteOf(out);
     expect(complete?.count).toBe(2);
     expect(complete?.totalTurns).toBe(5);
-    expect(complete?.totalMessages).toBe(10);
     expect(complete?.firstLoadedTurnIndex).toBe(3);
-    expect(complete?.firstLoadedMessageIndex).toBe(6); // 3 turns × 2 rows
     expect(complete?.hasOlder).toBe(true);
   });
 
-  test("rounds up to a whole turn at the message boundary", async () => {
-    // lastMessages 3 lands mid-turn; round up to load the last 2 turns
-    // (4 messages ≥ 3) — never a partial turn.
-    const out = await collectSession(cleanSession(5), {
-      window: { lastMessages: 3 },
-    });
-    expect(userTextsOf(out)).toEqual(["u3", "u4"]);
-    const complete = replayCompleteOf(out);
-    expect(complete?.firstLoadedTurnIndex).toBe(3);
-    expect(complete?.firstLoadedMessageIndex).toBe(6);
-  });
-
-  test("a session with <= N messages loads whole and reports hasOlder false", async () => {
-    // 3 turns = 6 messages, window of 50 → all.
+  test("a session with <= N turns loads whole and reports hasOlder false", async () => {
+    // 3 turns, window of 50 → all.
     const out = await collectSession(cleanSession(3), {
-      window: { lastMessages: 50 },
+      window: { lastTurns: 50 },
     });
 
     expect(userTextsOf(out)).toEqual(["u0", "u1", "u2"]);
     const complete = replayCompleteOf(out);
     expect(complete?.count).toBe(3);
     expect(complete?.totalTurns).toBe(3);
-    expect(complete?.totalMessages).toBe(6);
     expect(complete?.firstLoadedTurnIndex).toBe(0);
-    expect(complete?.firstLoadedMessageIndex).toBe(0);
     expect(complete?.hasOlder).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// backward paging (olderMessages) — "load previous M"
-// ---------------------------------------------------------------------------
-
-describe("translateJsonlSession — olderMessages (load-previous) window", () => {
-  test("loads the N messages immediately older than a turn", async () => {
-    // 5 turns / 10 messages. Already viewing from turn 3; page the 4
-    // messages older than turn 3 → turns 1 and 2.
-    const out = await collectSession(cleanSession(5), {
-      window: { olderMessages: { beforeTurnIndex: 3, count: 4 } },
-    });
-
-    expect(userTextsOf(out)).toEqual(["u1", "u2"]);
-    expect(turnCompletesOf(out)).toHaveLength(2);
-
-    const complete = replayCompleteOf(out);
-    expect(complete?.count).toBe(2);
-    expect(complete?.firstLoadedTurnIndex).toBe(1);
-    expect(complete?.firstLoadedMessageIndex).toBe(2);
-    expect(complete?.totalMessages).toBe(10);
-    expect(complete?.hasOlder).toBe(true);
-  });
-
-  test("a count covering everything older loads to turn 0 (hasOlder false)", async () => {
-    // "load all older" — count beyond the older span → start at turn 0.
-    const out = await collectSession(cleanSession(5), {
-      window: { olderMessages: { beforeTurnIndex: 3, count: 9999 } },
-    });
-
-    expect(userTextsOf(out)).toEqual(["u0", "u1", "u2"]);
-    const complete = replayCompleteOf(out);
-    expect(complete?.firstLoadedTurnIndex).toBe(0);
-    expect(complete?.firstLoadedMessageIndex).toBe(0);
-    expect(complete?.hasOlder).toBe(false);
-  });
-
-  test("rounds up to a whole turn at the older-message boundary", async () => {
-    // count 3 lands mid-turn; round up to the 2 turns (4 messages) just
-    // before turn 3.
-    const out = await collectSession(cleanSession(5), {
-      window: { olderMessages: { beforeTurnIndex: 3, count: 3 } },
-    });
-    expect(userTextsOf(out)).toEqual(["u1", "u2"]);
-    expect(replayCompleteOf(out)?.firstLoadedTurnIndex).toBe(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// explicit turn range
+// explicit turn range (the general form; load-previous paging builds on it)
 // ---------------------------------------------------------------------------
 
 describe("translateJsonlSession — turnRange window", () => {
   test("emits the half-open [start, end) range above the bottom", async () => {
+    // Also models load-previous: viewing from turn 3, page the 2 turns
+    // older than it via `[firstLoadedTurnIndex − N, firstLoadedTurnIndex]`.
     const out = await collectSession(cleanSession(5), {
       window: { turnRange: [1, 3] },
     });
@@ -202,10 +142,21 @@ describe("translateJsonlSession — turnRange window", () => {
     const complete = replayCompleteOf(out);
     expect(complete?.count).toBe(2);
     expect(complete?.totalTurns).toBe(5);
-    expect(complete?.totalMessages).toBe(10);
     expect(complete?.firstLoadedTurnIndex).toBe(1);
-    expect(complete?.firstLoadedMessageIndex).toBe(2); // turn 0 = 2 rows
     expect(complete?.hasOlder).toBe(true);
+  });
+
+  test("clamps a start below zero to turn 0 (load-all-older, hasOlder false)", async () => {
+    // Load-previous past the older span: N beyond what remains drives the
+    // start below 0, which clamps to turn 0 and loads everything older.
+    const out = await collectSession(cleanSession(5), {
+      window: { turnRange: [-100, 3] },
+    });
+
+    expect(userTextsOf(out)).toEqual(["u0", "u1", "u2"]);
+    const complete = replayCompleteOf(out);
+    expect(complete?.firstLoadedTurnIndex).toBe(0);
+    expect(complete?.hasOlder).toBe(false);
   });
 });
 
@@ -221,9 +172,7 @@ describe("translateJsonlSession — no window (legacy)", () => {
     const complete = replayCompleteOf(out);
     expect(complete?.count).toBe(4);
     expect(complete?.firstLoadedTurnIndex).toBeUndefined();
-    expect(complete?.firstLoadedMessageIndex).toBeUndefined();
     expect(complete?.totalTurns).toBeUndefined();
-    expect(complete?.totalMessages).toBeUndefined();
     expect(complete?.hasOlder).toBeUndefined();
   });
 });
@@ -247,9 +196,9 @@ describe("translateJsonlSession — continuation at the window edge", () => {
   ].join("\n");
 
   test("counts a split-message turn once; window keeps it whole", async () => {
-    // 3 turns × 2 rows = 6 messages; last 4 messages = the last 2 turns.
+    // 3 turns total; the last-2-turns window is turns 1 (split) + 2.
     const out = await collectSession(continuationSession, {
-      window: { lastMessages: 4 },
+      window: { lastTurns: 2 },
     });
 
     // Three committed turns total (the two msgB records are one turn);
@@ -302,16 +251,14 @@ describe("translateJsonlSession — interrupted turn at the window edge", () => 
     const complete = replayCompleteOf(out);
     expect(complete?.count).toBe(1);
     expect(complete?.totalTurns).toBe(2);
-    expect(complete?.totalMessages).toBe(4); // each turn has a user row
     expect(complete?.firstLoadedTurnIndex).toBe(0);
-    expect(complete?.firstLoadedMessageIndex).toBe(0);
     expect(complete?.hasOlder).toBe(false);
   });
 
-  test("last-N-messages past an interrupted older turn loads only the clean tail", async () => {
-    // 2 turns × 2 rows = 4 messages; last 2 messages = just turn 1.
+  test("last-N-turns past an interrupted older turn loads only the clean tail", async () => {
+    // 2 turns; last 1 turn = just turn 1.
     const out = await collectSession(interruptedFirst, {
-      window: { lastMessages: 2 },
+      window: { lastTurns: 1 },
     });
 
     expect(userTextsOf(out)).toEqual(["u1"]);
@@ -321,7 +268,6 @@ describe("translateJsonlSession — interrupted turn at the window edge", () => 
 
     const complete = replayCompleteOf(out);
     expect(complete?.firstLoadedTurnIndex).toBe(1);
-    expect(complete?.firstLoadedMessageIndex).toBe(2);
     expect(complete?.hasOlder).toBe(true);
   });
 });

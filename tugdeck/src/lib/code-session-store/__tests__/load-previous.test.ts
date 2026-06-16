@@ -1,9 +1,9 @@
 /**
  * Load-previous request mapping — `store.loadPrevious(amount)` builds the
- * right windowed `request_replay` (the `olderMessages` range) from the
- * current window metadata, and `cancelLoadPrevious()` emits `cancel_replay`.
- * Driven through the real store + the recording connection double (the
- * wire contract the store produces, not a mock call-count).
+ * right windowed `request_replay` (a `turnRange`) from the current window
+ * metadata, and `cancelLoadPrevious()` emits `cancel_replay`. Driven
+ * through the real store + the recording connection double (the wire
+ * contract the store produces, not a mock call-count).
  */
 
 import { describe, it, expect } from "bun:test";
@@ -32,14 +32,12 @@ function emit(conn: TestFrameChannel, evt: Record<string, unknown>): void {
   conn.dispatchDecoded(FeedId.CODE_OUTPUT, { ...evt, tug_session_id: TUG });
 }
 
-/** Land a windowed replay leaving older messages unloaded. */
+/** Land a windowed replay leaving older turns unloaded. */
 function primeWindow(
   conn: TestFrameChannel,
   meta: {
     firstLoadedTurnIndex: number;
-    firstLoadedMessageIndex: number;
     totalTurns: number;
-    totalMessages: number;
     hasOlder: boolean;
   },
 ): void {
@@ -59,13 +57,11 @@ function controlFramesOf(conn: TestFrameChannel): Array<Record<string, unknown>>
 }
 
 describe("loadPrevious — windowed request mapping", () => {
-  it("maps a numeric step to olderMessages{beforeTurnIndex, count}", () => {
+  it("maps a numeric step to turnRange [first − N, first]", () => {
     const { store, conn } = makeStore();
     primeWindow(conn, {
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
 
@@ -75,18 +71,15 @@ describe("loadPrevious — windowed request mapping", () => {
       (f) => f.action === "request_replay",
     );
     expect(replay).toBeDefined();
-    expect(replay!.window).toEqual({
-      olderMessages: { beforeTurnIndex: 175, count: 50 },
-    });
+    // The 50 turns immediately older than the current oldest (175).
+    expect(replay!.window).toEqual({ turnRange: [125, 175] });
   });
 
-  it("maps 'all' to a count covering every older message", () => {
+  it("maps 'all' to a turnRange reaching turn 0", () => {
     const { store, conn } = makeStore();
     primeWindow(conn, {
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
 
@@ -95,19 +88,15 @@ describe("loadPrevious — windowed request mapping", () => {
     const replay = controlFramesOf(conn).find(
       (f) => f.action === "request_replay",
     );
-    // "all older" = the count of messages before the window (350).
-    expect(replay!.window).toEqual({
-      olderMessages: { beforeTurnIndex: 175, count: 350 },
-    });
+    // "all older" = every turn before the window (down to turn 0).
+    expect(replay!.window).toEqual({ turnRange: [0, 175] });
   });
 
   it("marks the bracket as a prepend (loadingPrevious flips true)", () => {
     const { store, conn } = makeStore();
     primeWindow(conn, {
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
     expect(store.getSnapshot().loadingPrevious).toBe(false);
@@ -119,9 +108,7 @@ describe("loadPrevious — windowed request mapping", () => {
     const { store, conn } = makeStore();
     primeWindow(conn, {
       firstLoadedTurnIndex: 0,
-      firstLoadedMessageIndex: 0,
       totalTurns: 10,
-      totalMessages: 20,
       hasOlder: false,
     });
 

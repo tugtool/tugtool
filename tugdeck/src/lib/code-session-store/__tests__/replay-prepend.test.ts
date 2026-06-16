@@ -55,9 +55,8 @@ function emitTurn(conn: TestFrameChannel, n: number): void {
 }
 
 /**
- * Replay a turn range `[lo, hi]` inside one bracket carrying window
- * meta. Each turn here is 2 messages (user + assistant), so the message
- * offsets/totals derive from the turn ones.
+ * Replay a turn range `[lo, hi]` inside one bracket carrying turn-based
+ * window meta.
  */
 function replayRange(
   conn: TestFrameChannel,
@@ -71,9 +70,7 @@ function replayRange(
     type: "replay_complete",
     count: hi - lo + 1,
     firstLoadedTurnIndex: meta.firstLoadedTurnIndex,
-    firstLoadedMessageIndex: meta.firstLoadedTurnIndex * 2,
     totalTurns: meta.totalTurns,
-    totalMessages: meta.totalTurns * 2,
     hasOlder: meta.hasOlder,
   });
 }

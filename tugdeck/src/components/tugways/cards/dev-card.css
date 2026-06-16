@@ -547,6 +547,23 @@
   --tugx-md-block-padding-x: 0;
 }
 
+/* Per-message turn/message address ([P05]). Each inline message in the
+   assistant body is wrapped so it can carry a subdued `#t{turn}m{message}`
+   marker. The wrapper is a plain block — it imposes no spacing of its own so
+   the message run reads exactly as before; the marker is a small, low-
+   contrast tab pinned to the message's leading edge. */
+.dev-card-transcript-message {
+  position: relative;
+}
+.dev-card-transcript-message-address {
+  display: block;
+  font-size: var(--tugx-transcript-sequence-font-size);
+  color: var(--tugx-transcript-sequence-color);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+  user-select: none;
+}
+
 /* Markdown content typography. Body text uses 1em so it anchors to
    the transcript root. Heading sizes are intentionally NOT overridden
    here: the transcript uses the one global compressed heading scale

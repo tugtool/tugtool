@@ -42,56 +42,45 @@ function replayWith(complete: Record<string, unknown>): CodeSessionStore {
 
 describe("replay_complete — recency-window metadata", () => {
   it("records a windowed slice with older turns remaining", () => {
-    // A long session: 200 total turns / 400 messages, the recent tail
-    // loaded → oldest loaded turn is index 175 (message 350).
+    // A long session: 200 total turns, the recent tail loaded → oldest
+    // loaded turn is index 175.
     const store = replayWith({
       count: 25,
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
     expect(store.getSnapshot().replayWindow).toEqual({
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
   });
 
   it("records hasOlder:false when the whole session fits the window", () => {
-    // 30 turns / 60 messages, window of 50 messages → all loaded.
+    // 30 turns, window of 50 turns → all loaded.
     const store = replayWith({
       count: 30,
       firstLoadedTurnIndex: 0,
-      firstLoadedMessageIndex: 0,
       totalTurns: 30,
-      totalMessages: 60,
       hasOlder: false,
     });
     expect(store.getSnapshot().replayWindow).toEqual({
       firstLoadedTurnIndex: 0,
-      firstLoadedMessageIndex: 0,
       totalTurns: 30,
-      totalMessages: 60,
       hasOlder: false,
     });
   });
 
-  it("exposes the absolute message offset for numbering", () => {
+  it("exposes the first-loaded turn index as the addressing base", () => {
     const store = replayWith({
       count: 25,
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
     const win = store.getSnapshot().replayWindow;
-    expect(win?.firstLoadedMessageIndex).toBe(350);
-    expect(win?.totalMessages).toBe(400);
+    expect(win?.firstLoadedTurnIndex).toBe(175);
   });
 
   it("leaves replayWindow null on a full / legacy replay (no window fields)", () => {
@@ -106,9 +95,7 @@ describe("replay_complete — recency-window metadata", () => {
       type: "replay_complete",
       count: 25,
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
     // A later windowless replay (e.g. an error or legacy reconnect)
@@ -117,9 +104,7 @@ describe("replay_complete — recency-window metadata", () => {
     emit(conn, { type: "replay_complete", count: 0 });
     expect(store.getSnapshot().replayWindow).toEqual({
       firstLoadedTurnIndex: 175,
-      firstLoadedMessageIndex: 350,
       totalTurns: 200,
-      totalMessages: 400,
       hasOlder: true,
     });
   });

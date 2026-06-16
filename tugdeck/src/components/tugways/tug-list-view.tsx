@@ -249,6 +249,32 @@ export interface TugListViewDataSource {
    * fresh per call compare unequal and force re-renders every tick.
    */
   getVersion(): unknown;
+
+  /**
+   * Optional turn-aware anchor depth, for data sources whose content is
+   * windowed in **turns** (the transcript). Given the flat row index of the
+   * topmost visible row, return its distance from the end measured in turns
+   * — the count of turns from the anchored turn (inclusive) down to the
+   * newest loaded turn. The list view persists this in the saved anchor bag
+   * so a cold resume can both size the replay window and re-find the anchored
+   * turn in a single turn quantity ([P06]).
+   *
+   * Return `undefined` when the row does not map to a committed turn (an
+   * in-flight or ghost row), or when the source has no turn concept. The list
+   * view then falls back to the row-depth path ({@link anchorDepthFromEnd}),
+   * which suits genuinely rowful, non-windowed lists.
+   */
+  turnDepthFromEnd?(rowIndex: number): number | undefined;
+
+  /**
+   * Optional inverse of {@link turnDepthFromEnd}: given a saved turn depth,
+   * return the flat row index of that turn's **first** row in the
+   * freshly-loaded window, or `null` when the window has not yet paged in
+   * enough turns to include it (the anchored turn is older than everything
+   * loaded). The list view waits — leaving the restore target unresolved —
+   * until a later commit pages the turn in, then relocates exactly.
+   */
+  rowIndexForTurnDepthFromEnd?(turnDepth: number): number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1805,22 +1831,30 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         (
           anchorIndex: number,
           anchorOffset: number,
-          depthFromEnd: number | undefined,
+          turnDepth: number | undefined,
+          rowDepth: number | undefined,
         ): (() => number | null) =>
         () => {
           const total = dataSource.numberOfItems();
           if (total <= 0) return null;
-          // Faithful restore ([recency P05], #step-6): when the bag carries
-          // `depthFromEnd` (rows from the anchor to the bottom), relocate the
-          // anchor against the freshly-loaded window — `total - depthFromEnd`.
-          // Return null until the window is deep enough to include it, so
-          // `applyRestoreTarget` waits for the load-to-anchor to land instead
-          // of resolving against a too-shallow window. Legacy bags (no
-          // `depthFromEnd`) fall back to the raw saved index.
+          // Faithful restore ([recency P05], #step-6/#step-13). Relocate the
+          // anchor against the freshly-loaded window, preferring the
+          // canonical **turn** path: a turn-windowed source re-finds the
+          // anchored turn's first row by depth ([P06]); when the turn is not
+          // yet paged in it returns null and we wait for a later commit. A
+          // non-turn source uses a row depth (`total - rowDepth`); legacy
+          // bags with neither fall back to the raw saved index.
           let rowIndex: number;
-          if (depthFromEnd !== undefined) {
-            if (total < depthFromEnd) return null;
-            rowIndex = anchorRowIndexInWindow(total, depthFromEnd);
+          if (
+            turnDepth !== undefined &&
+            dataSource.rowIndexForTurnDepthFromEnd !== undefined
+          ) {
+            const r = dataSource.rowIndexForTurnDepthFromEnd(turnDepth);
+            if (r === null) return null;
+            rowIndex = r;
+          } else if (rowDepth !== undefined) {
+            if (total < rowDepth) return null;
+            rowIndex = anchorRowIndexInWindow(total, rowDepth);
           } else {
             if (anchorIndex < 0 || anchorIndex >= total) return null;
             rowIndex = anchorIndex;
@@ -1839,7 +1873,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       ): {
         index: number;
         offset: number;
-        depthFromEnd: number | undefined;
+        turnDepth: number | undefined;
+        rowDepth: number | undefined;
       } | null => {
         if (meta === null || typeof meta !== "object" || !("anchor" in meta)) {
           return null;
@@ -1853,15 +1888,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         ) {
           return null;
         }
-        const ax = a as { index: unknown; offset: unknown; depthFromEnd?: unknown };
+        const ax = a as {
+          index: unknown;
+          offset: unknown;
+          turnDepthFromEnd?: unknown;
+          depthFromEnd?: unknown;
+        };
         if (typeof ax.index !== "number" || typeof ax.offset !== "number") {
           return null;
         }
-        // `depthFromEnd` rides newer bags ([recency #step-6]); absent on older
-        // ones → undefined → resolver falls back to the raw index.
-        const depthFromEnd =
+        // A turn-windowed source persists `turnDepthFromEnd` ([P06]); a
+        // non-turn source persists a row `depthFromEnd`. Either rides newer
+        // bags; older/legacy bags carry neither → both undefined → resolver
+        // falls back to the raw index.
+        const turnDepth =
+          typeof ax.turnDepthFromEnd === "number"
+            ? ax.turnDepthFromEnd
+            : undefined;
+        const rowDepth =
           typeof ax.depthFromEnd === "number" ? ax.depthFromEnd : undefined;
-        return { index: ax.index, offset: ax.offset, depthFromEnd };
+        return { index: ax.index, offset: ax.offset, turnDepth, rowDepth };
       };
 
       // `meta.atBottom` — true when the list was following the bottom
@@ -1898,7 +1944,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           makeAnchorResolver(
             seedAnchor.index,
             seedAnchor.offset,
-            seedAnchor.depthFromEnd,
+            seedAnchor.turnDepth,
+            seedAnchor.rowDepth,
           ),
         );
       }
@@ -1957,7 +2004,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             makeAnchorResolver(
               anchor.index,
               anchor.offset,
-              anchor.depthFromEnd,
+              anchor.turnDepth,
+              anchor.rowDepth,
             ),
           );
           return;
@@ -2132,19 +2180,29 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         total,
         estimatedHeightForKindOnly,
       );
-      const anchorTop = heightIndexRef.current.offsetForIndex(
-        anchorIndex,
+      // Anchor depth, invariant across a reload because the loaded window is
+      // always bottom-contiguous. A turn-windowed source (the transcript)
+      // reports a **turn** depth ([P06]): one quantity sizes the resume
+      // window and re-finds the anchored turn, with no row↔turn unit to
+      // bridge. A non-turn source reports a row depth. Either is robust where
+      // the raw `index` is not: a save with older content paged in (a deep
+      // window) reloads against the default window, which `index` would
+      // over-run.
+      const turnDepth = dataSource.turnDepthFromEnd?.(anchorIndex);
+      // Offset basis: for the turn path, the anchored turn's first row, so the
+      // persisted pixel offset is measured within the anchored turn and the
+      // restore relocates to the same row via the same resolver. Otherwise the
+      // anchor row itself.
+      let basisRow = anchorIndex;
+      if (typeof turnDepth === "number") {
+        const tr = dataSource.rowIndexForTurnDepthFromEnd?.(turnDepth);
+        if (typeof tr === "number") basisRow = tr;
+      }
+      const basisTop = heightIndexRef.current.offsetForIndex(
+        basisRow,
         estimatedHeightForKindOnly,
       );
-      const anchorOffset = Math.max(0, scrollTop - anchorTop);
-      // Rows from the anchor (inclusive) to the bottom — invariant across a
-      // reload because the loaded window is always bottom-contiguous. Used by
-      // faithful restore ([recency P05], #step-6) to size the resume window
-      // and relocate the anchor in whatever window lands, regardless of how
-      // much was paged in. Robust where the raw `index` is not: a save with
-      // older turns paged in (a deep window) reloads against the default
-      // window, which `index` would over-run.
-      const anchorDepth = anchorDepthFromEnd(total, anchorIndex);
+      const anchorOffset = Math.max(0, scrollTop - basisTop);
       // Also serialize the live `heightIndex` snapshot into
       // `meta.cellHeights`. At restore the framework hydrates this
       // back into the live index BEFORE first paint, so the
@@ -2156,18 +2214,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // free at human-scale list sizes. See `state-preservation.md`
       // → "Saving geometry for first-paint accuracy."
       const cellHeights = heightIndexRef.current.snapshot();
+      const anchor: {
+        index: number;
+        offset: number;
+        turnDepthFromEnd?: number;
+        depthFromEnd?: number;
+      } = { index: anchorIndex, offset: anchorOffset };
+      if (typeof turnDepth === "number") {
+        anchor.turnDepthFromEnd = turnDepth;
+      } else {
+        anchor.depthFromEnd = anchorDepthFromEnd(total, anchorIndex);
+      }
       const meta: {
-        anchor: { index: number; offset: number; depthFromEnd: number };
+        anchor: typeof anchor;
         cellHeights?: number[];
         scrollHeight?: number;
         atBottom?: boolean;
-      } = {
-        anchor: {
-          index: anchorIndex,
-          offset: anchorOffset,
-          depthFromEnd: anchorDepth,
-        },
-      };
+      } = { anchor };
       if (cellHeights.length > 0) meta.cellHeights = cellHeights;
       // Validation field — total content height at save time. Not
       // consumed at restore today; documented in the schema so

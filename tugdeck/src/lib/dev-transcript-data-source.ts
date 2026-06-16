@@ -460,6 +460,68 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
   }
 
   /**
+   * Turn-aware anchor depth ([P06]). Given the flat row index of the topmost
+   * visible row, return its distance from the end in **turns** — the count of
+   * turns from the anchored turn (inclusive) down to the newest loaded turn —
+   * or `undefined` when the row is not a committed-turn row (an in-flight or
+   * ghost row). The loaded window is always bottom-contiguous, so this depth
+   * is invariant across a reload: it both sizes the resume window and
+   * re-finds the anchored turn, with no row↔turn unit to bridge.
+   */
+  turnDepthFromEnd(rowIndex: number): number | undefined {
+    const snap = this._codeSessionStore.getSnapshot();
+    const n = snap.transcript.length;
+    if (n === 0) return undefined;
+    const layout = this.layout(snap);
+    const last = n - 1;
+    const committedRowEnd =
+      layout.turnStartRow[last] + (layout.turnHasUserPerTurn[last] ? 2 : 1);
+    if (rowIndex < 0 || rowIndex >= committedRowEnd) return undefined;
+    const { turnIndex } = locateCommittedRow(rowIndex, layout);
+    return n - turnIndex;
+  }
+
+  /**
+   * Inverse of {@link turnDepthFromEnd}: the flat row index of the anchored
+   * turn's **first** row in the current window, or `null` when that turn is
+   * older than everything loaded (the window must page in more turns first).
+   * Both save (offset basis) and restore (relocation) resolve through this,
+   * so the persisted pixel offset is measured within the anchored turn and
+   * reproduces exactly.
+   */
+  rowIndexForTurnDepthFromEnd(turnDepth: number): number | null {
+    const snap = this._codeSessionStore.getSnapshot();
+    const n = snap.transcript.length;
+    if (n === 0) return null;
+    const turnIndex = n - turnDepth;
+    if (turnIndex < 0) return null;
+    const clamped = Math.min(turnIndex, n - 1);
+    return this.layout(snap).turnStartRow[clamped];
+  }
+
+  /**
+   * Window-relative turn index for a flat row — the value added to
+   * `replayWindow.firstLoadedTurnIndex` to number a row by its true
+   * session turn. A committed row reports its turn's local index; an
+   * in-flight row reports `transcript.length` (the active turn is the next
+   * turn after the last committed one, so its 1-based number lands at
+   * `totalTurns + 1`). Used by the `#t…m…` transcript address ([P04]).
+   */
+  localTurnIndexForRow(index: number): number {
+    const snap = this._codeSessionStore.getSnapshot();
+    const n = snap.transcript.length;
+    if (n === 0) return 0;
+    const layout = this.layout(snap);
+    const last = n - 1;
+    const committedRowEnd =
+      layout.turnStartRow[last] + (layout.turnHasUserPerTurn[last] ? 2 : 1);
+    if (index < committedRowEnd) {
+      return locateCommittedRow(index, layout).turnIndex;
+    }
+    return n;
+  }
+
+  /**
    * Stable React-key seed per the id-stability protocol:
    *
    *  - Normal committed pair: `${turnKey}-user` at the turn's first

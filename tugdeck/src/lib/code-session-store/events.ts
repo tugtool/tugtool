@@ -913,18 +913,14 @@ export interface ReplayCompleteEvent {
    * records these so the transcript knows which slice loaded and
    * whether older turns remain to page in:
    *   - `firstLoadedTurnIndex` — absolute index (from the oldest turn)
-   *     of the first loaded turn; i.e. the oldest loaded turn index.
-   *   - `firstLoadedMessageIndex` — absolute index (from the oldest row)
-   *     of the first loaded message/row; the transcript adds it to a
-   *     row's window-relative index for true session numbering.
-   *   - `totalTurns` / `totalMessages` — the whole session's committed
-   *     turn / row counts.
+   *     of the first loaded turn; i.e. the oldest loaded turn index. The
+   *     transcript adds it to a row's window-relative turn index for true
+   *     session turn addressing.
+   *   - `totalTurns` — the whole session's committed turn count.
    *   - `hasOlder` — whether any turns precede the loaded window.
    */
   firstLoadedTurnIndex?: number;
-  firstLoadedMessageIndex?: number;
   totalTurns?: number;
-  totalMessages?: number;
   hasOlder?: boolean;
   tug_session_id?: string;
   [key: string]: unknown;

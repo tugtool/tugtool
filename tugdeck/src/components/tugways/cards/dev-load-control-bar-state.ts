@@ -5,7 +5,7 @@
  * The bar carries three things over its life — a **loading** progress
  * indicator (a cold restore or a load-previous, plus a brief dwell tail
  * after the last progress tick), a **prompt** ("There are N earlier
- * messages…"), or **nothing**.
+ * turns…"), or **nothing**.
  *
  *   - {@link deriveControlBarState} — maps the current inputs to the visual
  *     state. `loadingDisplay` (load in flight OR within the post-load dwell)
@@ -27,16 +27,16 @@ export type ControlBarLoadKind = "restore" | "previous";
 export type ControlBarState =
   | { kind: "hidden" }
   | { kind: "loading" }
-  | { kind: "prompt"; earlierCount: number };
+  | { kind: "prompt"; earlierTurns: number };
 
 export interface ControlBarInputs {
   /** Progress is displayed: a load is in flight, or the host is within the
    *  dwell tail that holds the bar a beat past the final progress tick. */
   loadingDisplay: boolean;
-  /** Whether older messages remain to page in (drives the prompt). */
+  /** Whether older turns remain to page in (drives the prompt). */
   hasOlder: boolean;
-  /** Count of older (unloaded) messages, for the prompt copy. */
-  earlierCount: number;
+  /** Count of older (unloaded) turns, for the prompt copy. */
+  earlierTurns: number;
   /** The "load more" prompt has been summoned (load completed, or the user
    *  reached the top) and not yet dismissed (scroll / submit). */
   promptShown: boolean;
@@ -53,7 +53,7 @@ export function deriveControlBarState(input: ControlBarInputs): ControlBarState 
     return { kind: "loading" };
   }
   if (input.hasOlder && input.promptShown) {
-    return { kind: "prompt", earlierCount: input.earlierCount };
+    return { kind: "prompt", earlierTurns: input.earlierTurns };
   }
   return { kind: "hidden" };
 }

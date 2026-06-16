@@ -479,12 +479,12 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 | #step-9 | Store: restoreWindowTurns + firstLoadedTurnIndex | done | 42603e43 |
 | #step-10 | Window sizing in turns (dev-restore-window) | done | 42603e43 |
 | #step-11 | Load bar speaks turns | done | 1fc0a582 |
-| #step-12 | Retire the row unit on the wire (turns-only `ReplayWindow`) | pending | — |
-| #step-13 | Canonicalize the restore anchor to turns | pending | — |
-| #step-14 | `#t…m…` badge formatter + turn-based base | pending | — |
-| #step-15 | Per-message badge rendering | pending | — |
-| #step-16 | Picker subtitle shows turns + bytes | pending | — |
-| #step-17 | Phase 2 integration + windowed equality | pending | — |
+| #step-12 | Retire the row unit on the wire (turns-only `ReplayWindow`) | done | 7f9f17a8 |
+| #step-13 | Canonicalize the restore anchor to turns | done | 6ede129e |
+| #step-14 | `#t…m…` badge formatter + turn-based base | done | 7f8c4310 |
+| #step-15 | Per-message badge rendering | done | 2407f988 |
+| #step-16 | Picker subtitle shows turns + bytes | done | 19dbd7db |
+| #step-17 | Phase 2 integration + windowed equality | done | e51bf042 |
 
 ---
 

@@ -11,8 +11,8 @@
  *     flight). The progress lingers, at full, for {@link PROGRESS_DWELL_MS}
  *     past the final tick so the bar visibly reaches the end before it moves
  *     on (`loadingDisplay`).
- *   - **Prompt** — older messages remain → "There are N earlier messages…
- *     Load: [50]"; *summoned* when a load finishes or the user reaches the
+ *   - **Prompt** — older turns remain → "There are N earlier turns…
+ *     Load: [25]"; *summoned* when a load finishes or the user reaches the
  *     top, and it **stays in view** until dismissed by a scroll or a submit.
  *     Non-modal.
  *   - **Hidden** — otherwise.
@@ -59,8 +59,8 @@ import {
   type ControlBarLoadKind,
 } from "./dev-load-control-bar-state";
 
-/** Default numeric "load previous" step, capped to the messages that remain. */
-const LOAD_PREVIOUS_STEP = 50;
+/** Default numeric "load previous" step in turns, capped to the turns that remain. */
+const LOAD_PREVIOUS_STEP = 25;
 
 /** How long the progress bar lingers, at full, after a load lands before the
  *  bar transitions to the "load more" prompt (or hides) — so the determinate
@@ -125,7 +125,7 @@ export const DevLoadControlBar = React.forwardRef<
     const state = deriveControlBarState({
       loadingDisplay: readLoadActive(snap) || tailActiveRef.current,
       hasOlder: snap.replayWindow?.hasOlder ?? false,
-      earlierCount: snap.replayWindow?.firstLoadedMessageIndex ?? 0,
+      earlierTurns: snap.replayWindow?.firstLoadedTurnIndex ?? 0,
       promptShown: promptShownRef.current,
     });
     bar.dataset.visible = String(controlBarVisible(state));
@@ -290,7 +290,7 @@ function ControlBarLoading({
     formatValue = formatWindowValue;
   } else {
     const effTarget = active ? target : lastTargetRef.current;
-    label = "Loading earlier messages…";
+    label = "Loading earlier turns…";
     max = effTarget > 0 ? effTarget : 1;
     value = active ? Math.min(loaded, effTarget) : max;
     formatValue = formatLoadPreviousValue;
@@ -344,11 +344,11 @@ function formatWindowValue(value: number, max: number): string {
 
 /** `formatValue` for the load-previous determinate readout. */
 function formatLoadPreviousValue(value: number, max: number): string {
-  return `${value.toLocaleString()} of ${max.toLocaleString()} messages`;
+  return `${value.toLocaleString()} of ${max.toLocaleString()} turns`;
 }
 
-/** Prompt state — "There are N earlier messages…" + a single fixed-step
- *  load action. ("All" was removed — paging is a quick fixed 50 at a time; a
+/** Prompt state — "There are N earlier turns…" + a single fixed-step
+ *  load action. ("All" was removed — paging is a quick fixed step at a time; a
  *  whole-session load is intentionally not offered in this version.) */
 function ControlBarPrompt({
   codeSessionStore,
@@ -358,18 +358,17 @@ function ControlBarPrompt({
   onLoad: (amount: number) => void;
 }): React.ReactElement {
   // Self-subscribed ([L02]) so the slot needs no count prop and stays mounted.
-  const earlierCount = React.useSyncExternalStore(
+  const earlierTurns = React.useSyncExternalStore(
     codeSessionStore.subscribe,
-    () =>
-      codeSessionStore.getSnapshot().replayWindow?.firstLoadedMessageIndex ?? 0,
+    () => codeSessionStore.getSnapshot().replayWindow?.firstLoadedTurnIndex ?? 0,
   );
   const focusGroup = React.useId();
-  const step = Math.min(LOAD_PREVIOUS_STEP, earlierCount);
+  const step = Math.min(LOAD_PREVIOUS_STEP, earlierTurns);
   return (
     <div className="dev-load-control-bar-prompt">
       <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
-        {`There ${earlierCount === 1 ? "is" : "are"} ${earlierCount} earlier message${
-          earlierCount === 1 ? "" : "s"
+        {`There ${earlierTurns === 1 ? "is" : "are"} ${earlierTurns} earlier turn${
+          earlierTurns === 1 ? "" : "s"
         } in this session.`}
       </TugLabel>
       <TugLabel emphasis="proposal" className="dev-load-control-bar-actions-label">

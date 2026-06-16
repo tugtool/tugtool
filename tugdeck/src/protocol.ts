@@ -73,21 +73,11 @@ export const CONTROL_ACTION_RENAME_SESSION = "rename_session";
 export const CONTROL_ACTION_TRASH_PROJECT_DIR_SESSIONS = "trash_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
 /**
- * Default recency-window size (in transcript messages / rows) for a
- * cold-resume replay: load only the most recent N messages, paging older
- * turns in on demand. A "message" is a user or assistant row — the unit
- * the transcript numbers — so the load is bounded by what the user
- * actually reads, not by turn density. Tunable in one place. A session
- * with ≤ N messages loads whole and shows no "load previous" affordance.
- */
-export const DEFAULT_REPLAY_WINDOW_MESSAGES = 50;
-/**
  * Default cold-resume window in **turns** — the canonical unit
  * (`tuglaws/turn-metric.md`). A turn is one committed response cycle, so
  * this bounds the load by intent rather than row density: a session with
  * ≤ N committed turns loads whole and shows no "load previous" affordance.
- * Tunable in one place; supersedes `DEFAULT_REPLAY_WINDOW_MESSAGES` as the
- * cold-resume default once `dev-restore-window` sizes in turns.
+ * Tunable in one place.
  */
 export const DEFAULT_REPLAY_WINDOW_TURNS = 25;
 export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";

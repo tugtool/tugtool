@@ -3,33 +3,31 @@
  * windowing ([recency P05]/[P06], #step-6).
  *
  * The loaded transcript window is always contiguous to the bottom (default =
- * the last N message-rows; load-previous prepends older rows above), so a
- * saved scroll anchor's *distance from the bottom* in rows — `depthFromEnd` —
- * is **invariant across a reload**: the bottom and the on-disk JSONL are
- * unchanged, so only the rows above the anchor differ by how much got paged
- * in. That single number does both jobs:
+ * the last N turns; load-previous prepends older turns above), so a saved
+ * scroll anchor's *distance from the bottom* is **invariant across a reload**:
+ * the bottom and the on-disk JSONL are unchanged, so only the content above
+ * the anchor differs by how much got paged in.
  *
- *   1. **Size the resume window** — load enough recent rows to include the
- *      anchor (the default N when the anchor is within it; deeper when the
- *      user was parked above it).
- *   2. **Relocate the anchor** — within whatever window lands, the anchor's
- *      row index is `numberOfItems - depthFromEnd`.
+ * The canonical unit is the **turn** (`tuglaws/turn-metric.md`). The window is
+ * sized in turns and requested as `RequestReplay.lastTurns`, and the
+ * transcript anchor's depth is a **turn** count too ([P06]): one turn quantity
+ * both sizes the resume window and re-finds the anchored turn — there is no
+ * row↔turn unit to bridge. The only non-turn quantity that survives a restore
+ * is the sub-row pixel offset *within* the anchored turn.
  *
- * The window is now sized in **turns** (the canonical unit,
- * `tuglaws/turn-metric.md`) and requested as `RequestReplay.lastTurns`, while
- * the scroll anchor stays row-based ([P06]): a saved `depthFromEnd` is a
- * row distance, and the anchor's relocation within whatever rows land is row
- * arithmetic. The two meet at load time — a turn-sized request yields a set
- * of rows, and the anchor is placed within them. Because every turn is at
- * least one row, requesting N turns always loads at least N rows, which makes
- * the row-anchor coverage check below a safe lower bound.
+ * Lists that have no concept of turns (the gallery, the sheets) are never
+ * windowed, so their `numberOfItems` is stable across a reload and the raw
+ * saved row index relocates faithfully on its own. The row helpers below
+ * ({@link anchorDepthFromEnd}, {@link anchorRowIndexInWindow}) serve those
+ * genuinely rowful lists; the transcript uses the turn path exclusively.
  *
  * @module lib/dev-restore-window
  */
 
 /**
  * Rows from the saved anchor (inclusive) down to the bottom, captured at save
- * time: `numberOfItems - anchorIndex`. Clamped at 0.
+ * time: `numberOfItems - anchorIndex`. Clamped at 0. For non-turn lists whose
+ * data source supplies no turn-depth resolver.
  */
 export function anchorDepthFromEnd(
   numberOfItems: number,
@@ -41,26 +39,19 @@ export function anchorDepthFromEnd(
 /**
  * The resume window (in **turns**) needed to include the saved anchor: the
  * default window when the anchor is within it (or no anchor was saved), else
- * deep enough to reach the anchor. Never smaller than the default — recent
- * content is always loaded.
+ * deep enough to reach the anchored turn. Never smaller than the default —
+ * recent content is always loaded.
  *
- * `depthFromEnd` is a row distance, `defaultWindowTurns` a turn count. They
- * are comparable as a *guarantee* because every turn yields at least one row:
- * a window of K turns loads ≥ K rows, so when `depthFromEnd ≤ defaultWindowTurns`
- * the default window is certain to reach the anchor. When the anchor is
- * deeper, returning `depthFromEnd` turns still guarantees coverage (≥ that
- * many rows) — an over-approximation for multi-row turns that loads somewhat
- * more than a row-window would, which is acceptable and visible in the load
- * bar ([R02]).
+ * Both arguments are turn counts, so this is a plain `max`: load whichever is
+ * larger of the default window and the saved anchor's turn depth. No row↔turn
+ * bridging — the anchor speaks the same unit the window does.
  */
 export function resolveRestoreWindow(
-  depthFromEnd: number | undefined,
+  anchorTurnDepth: number | undefined,
   defaultWindowTurns: number,
 ): number {
-  if (depthFromEnd === undefined || depthFromEnd <= defaultWindowTurns) {
-    return defaultWindowTurns;
-  }
-  return depthFromEnd;
+  if (anchorTurnDepth === undefined) return defaultWindowTurns;
+  return Math.max(anchorTurnDepth, defaultWindowTurns);
 }
 
 /**

@@ -37,7 +37,7 @@ describe("restoreBarValueMax — turns committed of turns requested", () => {
 const base: ControlBarInputs = {
   loadingDisplay: false,
   hasOlder: false,
-  earlierCount: 0,
+  earlierTurns: 0,
   promptShown: false,
 };
 
@@ -53,14 +53,14 @@ describe("deriveControlBarState", () => {
     expect(controlBarVisible(s)).toBe(true);
   });
 
-  test("older messages + summoned prompt → prompt", () => {
+  test("older turns + summoned prompt → prompt", () => {
     const s = deriveControlBarState({
       ...base,
       hasOlder: true,
-      earlierCount: 162,
+      earlierTurns: 162,
       promptShown: true,
     });
-    expect(s).toEqual({ kind: "prompt", earlierCount: 162 });
+    expect(s).toEqual({ kind: "prompt", earlierTurns: 162 });
     expect(controlBarVisible(s)).toBe(true);
   });
 

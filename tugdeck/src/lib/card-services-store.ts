@@ -113,13 +113,17 @@ export interface CardServices {
 const TRANSCRIPT_SCROLL_KEY = "dev-card-transcript";
 
 /**
- * Read the saved transcript anchor's `depthFromEnd` (message-rows from the
- * anchor to the bottom) from the card's persisted bag, or `undefined` when
- * there's no usable anchor (fresh card, at-bottom save, legacy bag, or a
- * cache miss before hydration). Drives faithful-restore window sizing
- * ([recency P05], #step-6); a miss falls back to the default window.
+ * Read the saved transcript anchor's `turnDepthFromEnd` (turns from the
+ * anchored turn to the bottom) from the card's persisted bag, or `undefined`
+ * when there's no usable anchor (fresh card, at-bottom save, legacy row-only
+ * bag, or a cache miss before hydration). Drives faithful-restore window
+ * sizing ([P06]); a miss falls back to the default window. A legacy bag that
+ * carries only a row `depthFromEnd` is deliberately ignored here — feeding a
+ * row distance into the turn-sized window is the unit mismatch #step-13
+ * removes; such a bag simply resumes at the default window and its raw index
+ * relocates the anchor.
  */
-function readSavedAnchorDepth(
+function readSavedAnchorTurnDepth(
   deckManager: DeckManager | null,
   cardId: string,
 ): number | undefined {
@@ -128,10 +132,10 @@ function readSavedAnchorDepth(
   const region =
     deckManager?.getCardState?.(cardId)?.regionScroll?.[TRANSCRIPT_SCROLL_KEY];
   const meta = region?.meta as
-    | { anchor?: { depthFromEnd?: unknown } }
+    | { anchor?: { turnDepthFromEnd?: unknown } }
     | undefined
     | null;
-  const depth = meta?.anchor?.depthFromEnd;
+  const depth = meta?.anchor?.turnDepthFromEnd;
   return typeof depth === "number" && depth > 0 ? depth : undefined;
 }
 
@@ -284,16 +288,16 @@ class CardServicesStore {
 
     // Faithful restore ([P06]): size the cold-resume window in turns to
     // include the saved scroll anchor. The transcript persists its anchor's
-    // distance-from-bottom (`depthFromEnd`, in message-rows) into the card
+    // distance-from-bottom in **turns** (`turnDepthFromEnd`) into the card
     // bag; if the user was parked above the default window, load deep enough
-    // (in turns) to reach it (else the default N turns). The anchor stays
-    // row-based — every turn is ≥ 1 row, so a turn-sized window always covers
-    // at least that many rows. Only for `resume` — a fresh spawn has nothing
-    // to restore (a stale bag from a prior session is ignored).
+    // (in turns) to reach the anchored turn (else the default N turns). The
+    // anchor speaks the same unit the window does — a plain `max`, no row↔turn
+    // bridging. Only for `resume` — a fresh spawn has nothing to restore (a
+    // stale bag from a prior session is ignored).
     const restoreWindowTurns =
       binding.sessionMode === "resume"
         ? resolveRestoreWindow(
-            readSavedAnchorDepth(this._deckManager, cardId),
+            readSavedAnchorTurnDepth(this._deckManager, cardId),
             DEFAULT_REPLAY_WINDOW_TURNS,
           )
         : DEFAULT_REPLAY_WINDOW_TURNS;

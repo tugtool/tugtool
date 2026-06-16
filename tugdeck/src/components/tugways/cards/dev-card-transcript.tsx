@@ -135,7 +135,10 @@ import {
 } from "@/components/tugways/cards/dev-load-control-bar";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
-import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
+import {
+  TugTranscriptEntry,
+  formatTurnMessageAddress,
+} from "@/components/tugways/tug-transcript-entry";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
@@ -162,19 +165,20 @@ import type { PropertyStore } from "@/components/tugways/property-store";
 // ---------------------------------------------------------------------------
 
 /**
- * The absolute message-number offset for the loaded window — the count
- * of older messages (rows) that precede the first loaded row. Added to a
- * row's window-relative index so every row is numbered by its true
- * session position rather than its position within the loaded slice.
- * `0` when the whole session is loaded (no recency window). Enters React
- * via `useSyncExternalStore` ([L02]); updates (e.g. after a prepend
- * shifts the window) re-number every visible row.
+ * The absolute turn-number offset for the loaded window — the count of
+ * older turns that precede the first loaded turn. Added to a row's
+ * window-relative turn index so every row is addressed by its true session
+ * turn rather than its position within the loaded slice. `0` when the whole
+ * session is loaded (no recency window). Enters React via
+ * `useSyncExternalStore` ([L02]); updates (e.g. after a prepend shifts the
+ * window) re-number every visible row.
  */
-function useMessageNumberBase(codeSessionStore: CodeSessionStore): number {
+function useTurnNumberBase(codeSessionStore: CodeSessionStore): number {
   return useSyncExternalStore(
     codeSessionStore.subscribe,
     useCallback(
-      () => codeSessionStore.getSnapshot().replayWindow?.firstLoadedMessageIndex ?? 0,
+      () =>
+        codeSessionStore.getSnapshot().replayWindow?.firstLoadedTurnIndex ?? 0,
       [codeSessionStore],
     ),
   );
@@ -224,12 +228,19 @@ interface UserMessageCellProps extends TugListViewCellProps<DevTranscriptDataSou
 const UserMessageCell = React.memo(function UserMessageCell({
   index,
   row,
+  dataSource,
   renderTurnTrailing,
   codeSessionStore,
 }: UserMessageCellProps) {
-  // Number the row by its true session position: the window offset plus
-  // its window-relative index ([L02]).
-  const messageNumber = useMessageNumberBase(codeSessionStore) + index + 1;
+  // Address the row by its true session turn: the window's turn offset plus
+  // the row's window-relative turn index ([L02]/[P04]). The user row is the
+  // first message of its turn (`m01`). Image-atom captions carry the same
+  // turn number so the inline chip and the attachment-strip tile agree.
+  const turnNumber =
+    useTurnNumberBase(codeSessionStore) +
+    dataSource.localTurnIndexForRow(index) +
+    1;
+  const address = { turn: turnNumber, message: 1 };
   // Read the user submission from the `user_message` Message at the
   // head of `turn.messages` (committed) or `activeTurn.messages`
   // (in-flight). The data source only emits a `user` row when one is
@@ -327,7 +338,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
           participant="user"
           identifier={USER_IDENTIFIER}
           timestamp={timestamp === "" ? undefined : timestamp}
-          sequenceNumber={messageNumber}
+          address={address}
           body={
             <>
               <TugAtomTextBody
@@ -336,10 +347,10 @@ const UserMessageCell = React.memo(function UserMessageCell({
                 data-testid="dev-card-transcript-user-body"
                 text={text}
                 atoms={atoms}
-                messageNumber={messageNumber}
+                messageNumber={turnNumber}
               />
               <TugAttachmentStrip
-                messageNumber={messageNumber}
+                messageNumber={turnNumber}
                 atoms={imageAtoms}
                 bytesStore={bytesStore}
                 onAttachmentClick={handleAttachmentClick}
@@ -476,6 +487,14 @@ const GhostRowCell = React.memo(function GhostRowCell({
 interface CodeRowBodyProps {
   messages: ReadonlyArray<import("@/lib/code-session-store").Message>;
   turnKey: string;
+  /**
+   * 1-based session turn number for this row's turn. Each rendered inline
+   * message paints a subdued `#t{turn}m{message}` address ([P05]), where
+   * `message` is the Message's 1-based index within `turn.messages` — so
+   * addresses increment within a turn (the user message is `m01`, the first
+   * assistant message `m02`, …) and reset across turns.
+   */
+  turnNumber: number;
   streamingStore: PropertyStore;
   session: CodeSessionStore;
   /**
@@ -490,6 +509,7 @@ interface CodeRowBodyProps {
 const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   messages,
   turnKey,
+  turnNumber,
   streamingStore,
   session,
   awaitingToolUseId,
@@ -514,7 +534,37 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   }, [messages]);
 
   const elements: React.ReactNode[] = [];
-  for (const message of messages) {
+  // Wrap a rendered inline message with its subdued turn/message address
+  // ([P05]). `msgIndex` is the Message's position in `turn.messages`, so the
+  // address is `#t{turn}m{msgIndex + 1}` — the user message at index 0 is
+  // `m01` on its own row, the first assistant message `m02`, and so on. The
+  // wrapper is keyed by `messageKey` so the inline component keeps its mount
+  // identity and streaming subscription across re-renders ([L26]).
+  const pushBadged = (
+    messageKey: string,
+    msgIndex: number,
+    node: React.ReactNode,
+  ): void => {
+    const addr = formatTurnMessageAddress(turnNumber, msgIndex + 1);
+    elements.push(
+      <div
+        key={messageKey}
+        className="dev-card-transcript-message"
+        data-slot="transcript-message"
+        data-message-address={addr}
+      >
+        <span
+          className="dev-card-transcript-message-address"
+          aria-hidden="true"
+        >
+          {addr}
+        </span>
+        {node}
+      </div>,
+    );
+  };
+  for (let msgIndex = 0; msgIndex < messages.length; msgIndex++) {
+    const message = messages[msgIndex];
     if (message.kind === "user_message") {
       // Rendered separately by the user row — skip in the assistant body.
       continue;
@@ -544,9 +594,10 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     }
     if (message.kind === "assistant_thinking") {
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
-      elements.push(
+      pushBadged(
+        message.messageKey,
+        msgIndex,
         <DevThinkingBlock
-          key={message.messageKey}
           streamingStore={streamingStore}
           streamingPath={path}
         />,
@@ -555,9 +606,10 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     }
     if (message.kind === "assistant_text") {
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
-      elements.push(
+      pushBadged(
+        message.messageKey,
+        msgIndex,
         <TugMarkdownBlock
-          key={message.messageKey}
           streamingStore={streamingStore}
           streamingPath={path}
           className="dev-card-transcript-code-body"
@@ -593,11 +645,10 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     // (preserving mount identity, [L26]) and a fallback id; the collapse
     // handle also carries `toolUseId`, which the chrome prefers.
     const collapseByDefault = collapseDefaultFor(message.toolName);
-    elements.push(
-      <ToolUseIdContext.Provider
-        key={message.messageKey}
-        value={message.toolUseId}
-      >
+    pushBadged(
+      message.messageKey,
+      msgIndex,
+      <ToolUseIdContext.Provider value={message.toolUseId}>
         <ToolBlockHistoryCollapse
           toolUseId={message.toolUseId}
           defaultCollapsed={collapseByDefault}
@@ -636,6 +687,7 @@ interface AssistantTurnCellProps extends TugListViewCellProps<DevTranscriptDataS
 const AssistantTurnCell = React.memo(function AssistantTurnCell({
   index,
   row,
+  dataSource,
   sessionMetadataStore,
   codeSessionStore,
   streamingStore,
@@ -648,8 +700,14 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // cell mounted across the (one-time at session-init, occasional
   // mid-session) `modelName` resolution. [L02] / [L26].
   const modelName = useSessionModelName(sessionMetadataStore);
-  // True session row number: window offset + window-relative index ([L02]).
-  const messageNumber = useMessageNumberBase(codeSessionStore) + index + 1;
+  // Address the row by its true session turn ([L02]/[P04]). The assistant
+  // row carries no single header address — each inline message paints its
+  // own `#t{turn}m{message}` in the body ([P05]); the turn number is the
+  // shared base.
+  const turnNumber =
+    useTurnNumberBase(codeSessionStore) +
+    dataSource.localTurnIndexForRow(index) +
+    1;
   // `turnKey` is set for every assistant row by `rowAt`. The fallback
   // throws in dev (data-source contract violation) and falls back to
   // an index-scoped string in prod so different rows can't
@@ -790,7 +848,6 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
             timestamp={
               timestamp === "" || timestamp === undefined ? undefined : timestamp
             }
-            sequenceNumber={messageNumber}
             body={
               // Body order — per [D07] sequence substrate, the wire's
               // arrival order drives the visual order. The renderer
@@ -828,6 +885,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                 <CodeRowBody
                   messages={messages}
                   turnKey={turnKey}
+                  turnNumber={turnNumber}
                   streamingStore={streamingStore}
                   session={codeSessionStore}
                   awaitingToolUseId={

@@ -117,21 +117,20 @@ export interface TugTranscriptEntryProps {
   /** Optional small timestamp rendered next to the identifier. */
   timestamp?: React.ReactNode;
   /**
-   * Optional 1-based sequence number for this entry within its
-   * transcript. Rendered as `#NNNN` (zero-padded to four digits for
-   * the typical case; counts above 9999 grow naturally — `#10000`,
-   * `#10001`, …) alongside the timestamp. Helps the reader anchor
-   * on a specific entry when scanning a dense card.
+   * Optional turn/message address for this entry. Rendered as
+   * `#t{turn}m{message}` (turn padded to four digits, message to two,
+   * both growing naturally past their pad width) alongside the timestamp.
+   * The turn is the canonical session unit (`tuglaws/turn-metric.md`);
+   * the message addresses the entry's position within the turn. Helps the
+   * reader anchor on a specific entry when scanning a dense card.
    *
-   * Four digits is the design budget: a single session can plausibly
-   * accumulate four-digit entry counts (long debugging back-and-
-   * forths, long-running agent loops), and a fixed-width counter
-   * pinned to the right edge of the header reads cleanly through
-   * that range without re-aligning siblings as the count grows. A
-   * five-digit session is the worst case the format degrades into,
-   * with our apologies.
+   * Four digits is the turn budget: a single session can plausibly
+   * accumulate four-digit turn counts (long debugging back-and-forths,
+   * long-running agent loops), and a fixed-width address pinned to the
+   * right edge of the header reads cleanly through that range without
+   * re-aligning siblings as the count grows.
    */
-  sequenceNumber?: number;
+  address?: TurnMessageAddress;
   /** Row body content. The primitive imposes no opinion on text rendering. */
   body: React.ReactNode;
   /**
@@ -155,10 +154,20 @@ export interface TugTranscriptEntryProps {
 }
 
 /**
+ * A transcript entry's turn/message address: which 1-based turn it
+ * belongs to, and which 1-based message within that turn.
+ */
+export interface TurnMessageAddress {
+  turn: number;
+  message: number;
+}
+
+/**
  * Format a 1-based entry sequence number as `#NNNN` — zero-padded
  * to four digits up to 9999, then growing naturally. Pure function
  * exported for tests so the formatting rule is pin-able without
- * rendering.
+ * rendering. Used for plain row/index stamps (telemetry, atom captions);
+ * the transcript badge uses {@link formatTurnMessageAddress}.
  */
 export function formatSequenceNumber(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "";
@@ -166,6 +175,27 @@ export function formatSequenceNumber(n: number): string {
   // toString().padStart only pads when needed; numbers >= 10000 stay
   // their natural width.
   return `#${asInt.toString().padStart(4, "0")}`;
+}
+
+/**
+ * Format a turn/message address as `#t{turn}m{message}` — turn padded to
+ * four digits, message to two, both padded-not-capped (a turn ≥ 10000 or a
+ * message ≥ 100 grows naturally past its pad width). Turn is the canonical
+ * unit (`tuglaws/turn-metric.md`); message addresses a position within the
+ * turn. Pure, exported for tests.
+ */
+export function formatTurnMessageAddress(turn: number, message: number): string {
+  if (
+    !Number.isFinite(turn) ||
+    turn < 0 ||
+    !Number.isFinite(message) ||
+    message < 0
+  ) {
+    return "";
+  }
+  const t = Math.floor(turn).toString().padStart(4, "0");
+  const m = Math.floor(message).toString().padStart(2, "0");
+  return `#t${t}m${m}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +206,7 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
   participant,
   identifier,
   timestamp,
-  sequenceNumber,
+  address,
   body,
   inflightFooter,
   controls,
@@ -283,13 +313,13 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
           {timestamp !== undefined && (
             <span className="tug-transcript-entry__timestamp">{timestamp}</span>
           )}
-          {sequenceNumber !== undefined && (
+          {address !== undefined && (
             <span
               className="tug-transcript-entry__sequence"
               data-slot="tug-transcript-entry-sequence"
-              aria-label={`Entry ${sequenceNumber}`}
+              aria-label={`Turn ${address.turn}, message ${address.message}`}
             >
-              {formatSequenceNumber(sequenceNumber)}
+              {formatTurnMessageAddress(address.turn, address.message)}
             </span>
           )}
         </div>

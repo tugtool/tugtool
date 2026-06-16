@@ -62,18 +62,24 @@ export function formatByteSize(bytes: number): string {
 }
 
 /**
- * Build the subtitle line for a session row: relative timestamp, on-disk
- * JSONL size, and short identifier. Size is an orthogonal "how big" signal —
- * deliberately not a turn/message count, which only the transcript shows (in
- * messages). The picker shows this under the snippet to help recognize one
- * session vs another.
+ * Build the subtitle line for a session row: relative timestamp, turn count,
+ * on-disk JSONL size, and short identifier. The turn count is the canonical
+ * session metric (`tuglaws/turn-metric.md`) — read straight from
+ * `row.turn_count` (the authority the scanner/ledger already reconciled), not
+ * recomputed client-side ([P07]). Size remains an orthogonal "how big"
+ * signal alongside it. Segments with no value (a session with zero turns, or
+ * a tug/live row whose `file_size` is null) drop out so the line stays clean.
  */
 export function formatSessionRowSubtitle(row: SessionRow): string {
+  const turns =
+    row.turn_count > 0
+      ? `${row.turn_count} ${row.turn_count === 1 ? "turn" : "turns"}`
+      : null;
   const size =
     row.file_size != null && row.file_size > 0
       ? formatByteSize(row.file_size)
       : null;
   const ts = formatRelativeTimestamp(row.last_used_at, Date.now());
   const id = `id ${row.session_id.slice(0, 8)}`;
-  return [ts, size, id].filter((p) => p !== null).join(" · ");
+  return [ts, turns, size, id].filter((p) => p !== null).join(" · ");
 }

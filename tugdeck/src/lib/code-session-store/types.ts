@@ -914,10 +914,10 @@ export interface CodeSessionSnapshot {
   loadingPrevious: boolean;
 
   /**
-   * Determinate progress for the in-flight load-previous, in messages
-   * (rows): `loadingPreviousLoaded` of `loadingPreviousTarget`. Both `0`
-   * when no load is in flight. Drives the load sheet's progress bar in
-   * the same "N of M" form as the initial restore sheet.
+   * Determinate progress for the in-flight load-previous, in **turns**:
+   * `loadingPreviousLoaded` of `loadingPreviousTarget`. Both `0` when no
+   * load is in flight. Drives the load sheet's progress bar in the same
+   * "N of M" form as the initial restore sheet.
    */
   loadingPreviousTarget: number;
   loadingPreviousLoaded: number;
@@ -1069,20 +1069,14 @@ export interface ReplayWindowMeta {
   /**
    * Absolute index (counting from the oldest committed turn) of the
    * oldest turn currently loaded. `0` means the very first turn is
-   * loaded. The boundary for the next backward-paging request.
+   * loaded. The boundary for the next backward-paging request, and the
+   * base the transcript adds to a row's window-relative turn index so each
+   * row is addressed by its true session turn, not its position within the
+   * loaded slice.
    */
   firstLoadedTurnIndex: number;
-  /**
-   * Absolute index (counting from the oldest row) of the oldest
-   * message/row currently loaded. The transcript adds this to a row's
-   * window-relative index so each row is numbered by its true session
-   * position, not its position within the loaded slice.
-   */
-  firstLoadedMessageIndex: number;
   /** The whole session's committed-turn count, independent of the window. */
   totalTurns: number;
-  /** The whole session's message (row) count, independent of the window. */
-  totalMessages: number;
   /** Whether any turns precede the loaded window (older turns to page in). */
   hasOlder: boolean;
 }

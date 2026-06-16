@@ -689,7 +689,7 @@ describe("runReplay — cancel_replay aborts in flight", () => {
     });
 
     const { emitted } = await captureIpc(async () => {
-      const p = manager.runReplay({ lastMessages: 400 });
+      const p = manager.runReplay({ lastTurns: 400 });
       // Let runReplay pass the reader await and install the abort
       // resolver, then cancel mid-loop.
       await new Promise((r) => setTimeout(r, 5));

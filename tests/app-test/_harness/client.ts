@@ -758,6 +758,9 @@ export type DevSessionDriveAction =
   | { op: "interrupt" }
   | { op: "transportClose" }
   | { op: "transportReconnect" }
+  // Page older turns above the loaded window; inject the response replay
+  // bracket via `ingestFrame` afterward.
+  | { op: "loadPrevious"; amount: number | "all" }
   // Flag the session as `/compact`-born so the transcript renders the
   // compaction divider header (exercises the render without the full
   // real-claude summarize→spawn→seed flow).

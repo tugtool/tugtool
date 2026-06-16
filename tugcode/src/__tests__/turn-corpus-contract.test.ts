@@ -48,7 +48,7 @@ async function replayLoadAll(jsonl: string): Promise<OutboundMessage[]> {
   for await (const msg of translateJsonlSession(
     { kind: "ok", jsonl },
     // Load-all window: emits every committed turn and reports totalTurns.
-    { disableYield: true, window: { lastMessages: Number.MAX_SAFE_INTEGER } },
+    { disableYield: true, window: { lastTurns: Number.MAX_SAFE_INTEGER } },
   )) {
     out.push(msg);
   }

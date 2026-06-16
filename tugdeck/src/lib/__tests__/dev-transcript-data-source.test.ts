@@ -303,3 +303,92 @@ describe("userRowIndexForTurn / assistantRowIndexForTurn", () => {
     expect(userRowIndexForTurn(2, transcript)).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Turn-aware anchor depth ([P06]) — the restore anchor speaks turns
+// ---------------------------------------------------------------------------
+
+describe("turnDepthFromEnd / rowIndexForTurnDepthFromEnd", () => {
+  test("normal-only: every row maps to its turn's depth-from-end", () => {
+    // [t1,t2,t3] → rows t1:0,1  t2:2,3  t3:4,5 (n = 3 turns)
+    const snap = snapshotWith({
+      transcript: [
+        normalTurn("t1", "a", "A"),
+        normalTurn("t2", "b", "B"),
+        normalTurn("t3", "c", "C"),
+      ],
+    });
+    const ds = new DevTranscriptDataSource(storeWith(snap));
+    // Both rows of a turn report the same depth (n − turnIndex).
+    expect(ds.turnDepthFromEnd(0)).toBe(3);
+    expect(ds.turnDepthFromEnd(1)).toBe(3);
+    expect(ds.turnDepthFromEnd(2)).toBe(2);
+    expect(ds.turnDepthFromEnd(3)).toBe(2);
+    expect(ds.turnDepthFromEnd(4)).toBe(1);
+    expect(ds.turnDepthFromEnd(5)).toBe(1);
+  });
+
+  test("relocation lands on the anchored turn's FIRST row (canonicalizes the half)", () => {
+    const snap = snapshotWith({
+      transcript: [
+        normalTurn("t1", "a", "A"),
+        normalTurn("t2", "b", "B"),
+        normalTurn("t3", "c", "C"),
+      ],
+    });
+    const ds = new DevTranscriptDataSource(storeWith(snap));
+    // Anchored on the assistant row (3) → depth 2 → relocates to the turn's
+    // user row (2). The within-turn delta lives in the pixel offset.
+    const depth = ds.turnDepthFromEnd(3)!;
+    expect(depth).toBe(2);
+    expect(ds.rowIndexForTurnDepthFromEnd(depth)).toBe(2);
+    // Round-trip the other turns to their first rows.
+    expect(ds.rowIndexForTurnDepthFromEnd(3)).toBe(0);
+    expect(ds.rowIndexForTurnDepthFromEnd(1)).toBe(4);
+  });
+
+  test("wake-in-middle: variable rows-per-turn map correctly both ways", () => {
+    // [t1 normal, t2 wake, t3 normal] → rows t1:0,1  t2:2  t3:3,4 (n = 3)
+    const snap = snapshotWith({
+      transcript: [
+        normalTurn("t1", "a", "A"),
+        wakeTurn("t2", "Wake"),
+        normalTurn("t3", "c", "C"),
+      ],
+    });
+    const ds = new DevTranscriptDataSource(storeWith(snap));
+    expect(ds.turnDepthFromEnd(2)).toBe(2); // the wake row
+    expect(ds.rowIndexForTurnDepthFromEnd(2)).toBe(2); // back to the wake row
+    expect(ds.turnDepthFromEnd(4)).toBe(1);
+    expect(ds.rowIndexForTurnDepthFromEnd(1)).toBe(3);
+    expect(ds.rowIndexForTurnDepthFromEnd(3)).toBe(0);
+  });
+
+  test("anchored turn older than everything loaded → null (window must page in)", () => {
+    const snap = snapshotWith({
+      transcript: [normalTurn("t1", "a", "A"), normalTurn("t2", "b", "B")],
+    });
+    const ds = new DevTranscriptDataSource(storeWith(snap));
+    // n = 2; a saved depth of 5 turns is older than the 2 loaded.
+    expect(ds.rowIndexForTurnDepthFromEnd(5)).toBeNull();
+  });
+
+  test("non-committed rows (in-flight, ghost) have no turn depth", () => {
+    const active = activeTurn({ turnKey: "L", isWake: false, withText: "hi" });
+    const snap = snapshotWith({
+      transcript: [normalTurn("t1", "a", "A")], // rows 0,1
+      activeTurn: active, // rows 2,3
+      queuedSends: [{ turnKey: "Q", text: "later", atoms: [] }], // row 4
+    });
+    const ds = new DevTranscriptDataSource(storeWith(snap));
+    expect(ds.turnDepthFromEnd(0)).toBe(1); // committed
+    expect(ds.turnDepthFromEnd(2)).toBeUndefined(); // in-flight
+    expect(ds.turnDepthFromEnd(4)).toBeUndefined(); // ghost
+  });
+
+  test("empty transcript: undefined depth, null relocation", () => {
+    const ds = new DevTranscriptDataSource(storeWith(snapshotWith({})));
+    expect(ds.turnDepthFromEnd(0)).toBeUndefined();
+    expect(ds.rowIndexForTurnDepthFromEnd(1)).toBeNull();
+  });
+});

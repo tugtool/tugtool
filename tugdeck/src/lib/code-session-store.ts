@@ -292,21 +292,6 @@ export interface CodeSessionStoreOptions {
 }
 
 /**
- * Count the transcript rows (messages) a staged load-previous batch
- * contributes: 2 for a turn with a user row (its `messages[0]` is a
- * `user_message`), else 1 (a wake turn). Matches the row model the
- * transcript numbers + tugcode's window-sizing, so the load sheet's
- * "N of M" reads in the same unit as the request.
- */
-function stagedMessageCount(turns: ReadonlyArray<TurnEntry>): number {
-  let total = 0;
-  for (const turn of turns) {
-    total += turn.messages[0]?.kind === "user_message" ? 2 : 1;
-  }
-  return total;
-}
-
-/**
  * L02 external store for a single Claude Code session's turn state.
  * See module JSDoc for scope and phasing.
  */
@@ -656,13 +641,13 @@ export class CodeSessionStore {
       replayEverCompleted: this.state.replayEverCompleted,
       replayWindow: this.state.replayWindow,
       loadingPrevious: this.state.replayPrependActive,
-      // Determinate load-previous progress: target messages requested vs
-      // messages staged so far. Both 0 when no load is in flight.
+      // Determinate load-previous progress: target turns requested vs
+      // turns staged so far. Both 0 when no load is in flight.
       loadingPreviousTarget: this.state.replayPrependActive
         ? this._loadPreviousTarget
         : 0,
       loadingPreviousLoaded: this.state.replayPrependActive
-        ? stagedMessageCount(this._prependStaging)
+        ? this._prependStaging.length
         : 0,
       replayPreflightActive: this.state.replayPreflightActive,
       replaySoftBudgetElapsed: this.state.replaySoftBudgetElapsed,
@@ -863,9 +848,9 @@ export class CodeSessionStore {
   }
 
   /**
-   * Page older messages in above the current view ("load previous M").
+   * Page older turns in above the current view ("load previous N").
    * Marks the next replay bracket as a prepend, then sends a windowed
-   * `request_replay` for the `amount` messages immediately older than the
+   * `request_replay` for the `amount` turns immediately older than the
    * oldest currently-loaded turn — `"all"` loads everything older. The
    * supervisor forwards the window to tugcode, which translates only that
    * older range; the reducer prepends it (held scroll via [L23]) and
@@ -878,17 +863,21 @@ export class CodeSessionStore {
     if (this._disposed) return;
     const win = this.state.replayWindow;
     if (win === null || !win.hasOlder) return;
-    // Cap a numeric request to what's actually older, so the displayed
+    // Cap a numeric request to the turns actually older, so the displayed
     // target matches what loads (and the progress bar reaches full).
-    const count =
+    const turns =
       amount === "all"
-        ? win.firstLoadedMessageIndex
-        : Math.min(Math.max(0, amount), win.firstLoadedMessageIndex);
-    if (count <= 0) return;
-    this._loadPreviousTarget = count;
+        ? win.firstLoadedTurnIndex
+        : Math.min(Math.max(0, amount), win.firstLoadedTurnIndex);
+    if (turns <= 0) return;
+    this._loadPreviousTarget = turns;
     this.beginLoadPreviousBracket();
+    // The N turns immediately older than the current oldest-loaded turn.
     const frame = encodeRequestReplay(this.tugSessionId, {
-      olderMessages: { beforeTurnIndex: win.firstLoadedTurnIndex, count },
+      turnRange: [
+        Math.max(0, win.firstLoadedTurnIndex - turns),
+        win.firstLoadedTurnIndex,
+      ],
     });
     this.conn.send(frame.feedId, frame.payload);
   }

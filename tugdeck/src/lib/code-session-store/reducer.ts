@@ -3759,14 +3759,10 @@ function handleReplayComplete(
   // window recorded rather than nulling it.
   const replayWindow: ReplayWindowMeta | null =
     typeof event.firstLoadedTurnIndex === "number" &&
-    typeof event.firstLoadedMessageIndex === "number" &&
-    typeof event.totalTurns === "number" &&
-    typeof event.totalMessages === "number"
+    typeof event.totalTurns === "number"
       ? {
           firstLoadedTurnIndex: event.firstLoadedTurnIndex,
-          firstLoadedMessageIndex: event.firstLoadedMessageIndex,
           totalTurns: event.totalTurns,
-          totalMessages: event.totalMessages,
           hasOlder: event.hasOlder === true,
         }
       : state.replayWindow;

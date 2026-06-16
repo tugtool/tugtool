@@ -258,6 +258,9 @@ export interface SeedDeckStateArgs {
  *  - `interrupt` — `store.interrupt()`.
  *  - `transportClose` / `transportReconnect` — drive the transport
  *    overlay without touching the real shared connection.
+ *  - `loadPrevious` — `store.loadPrevious(amount)`; pages older turns above
+ *    the loaded window (the response replay bracket is then injected via
+ *    `ingestFrame`). Exercises backward paging and the prepend path.
  */
 export type DevSessionDriveAction =
   | { op: "send"; text: string; atoms?: AtomSegment[]; suppress?: boolean }
@@ -265,6 +268,7 @@ export type DevSessionDriveAction =
   | { op: "interrupt" }
   | { op: "transportClose" }
   | { op: "transportReconnect" }
+  | { op: "loadPrevious"; amount: number | "all" }
   // Flag the session as `/compact`-born so the transcript renders the
   // compaction divider header (exercises the render without the full
   // real-claude summarize→spawn→seed flow, which the stub harness can't run).
@@ -1518,6 +1522,9 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
           return;
         case "transportReconnect":
           store._simulateTransportForTest("reconnect");
+          return;
+        case "loadPrevious":
+          store.loadPrevious(action.amount);
           return;
         default: {
           const exhaustive: never = action;

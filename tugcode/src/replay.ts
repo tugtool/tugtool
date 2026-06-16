@@ -1635,14 +1635,14 @@ function computeTurns(
 /**
  * Resolve a {@link ReplayWindow} against the located turn boundaries
  * into the concrete JSONL entry range `[startIndex, endIndex)` to emit
- * plus the metadata to report. The window is *sized by messages* (rows)
- * but always cut at turn boundaries — `{ lastMessages: N }` loads the
- * minimal trailing turns whose combined row count reaches N. A window
- * covering the whole session yields `hasOlder: false` (load-all).
+ * plus the metadata to report. The window is sized in turns —
+ * `{ lastTurns: N }` loads the most recent N turns, `{ turnRange }` an
+ * explicit range. A window covering the whole session yields
+ * `hasOlder: false` (load-all).
  *
- * Reports both turn and message offsets: `firstLoadedTurnIndex` for
- * backward paging (the next older request), `firstLoadedMessageIndex`
- * for absolute row numbering in the transcript.
+ * Reports `firstLoadedTurnIndex` (for backward paging — the next older
+ * request) and the turn-based window metadata. Turns are the only unit on
+ * the wire — there is no row counting here.
  */
 function resolveWindow(
   window: ReplayWindow,
@@ -1652,19 +1652,10 @@ function resolveWindow(
   startIndex: number;
   endIndex: number;
   firstLoadedTurnIndex: number;
-  firstLoadedMessageIndex: number;
   totalTurns: number;
-  totalMessages: number;
   hasOlder: boolean;
 } {
   const totalTurns = turns.length;
-  // Cumulative message count before each turn (length totalTurns + 1).
-  const messagesBefore: number[] = new Array(totalTurns + 1);
-  messagesBefore[0] = 0;
-  for (let k = 0; k < totalTurns; k++) {
-    messagesBefore[k + 1] = messagesBefore[k] + turns[k].messages;
-  }
-  const totalMessages = messagesBefore[totalTurns];
 
   let firstTurn: number;
   let endTurn: number; // exclusive
@@ -1674,32 +1665,10 @@ function resolveWindow(
     const n = Math.max(0, Math.floor(window.lastTurns));
     firstTurn = Math.max(0, totalTurns - n);
     endTurn = totalTurns;
-  } else if ("lastMessages" in window) {
-    const n = Math.max(0, Math.floor(window.lastMessages));
-    // Walk turns from the end, accumulating rows until we cover N (or
-    // run out) — the window starts at the minimal trailing turn set.
-    firstTurn = totalTurns;
-    let acc = 0;
-    while (firstTurn > 0 && acc < n) {
-      firstTurn -= 1;
-      acc += turns[firstTurn].messages;
-    }
-    endTurn = totalTurns;
-  } else if ("olderMessages" in window) {
-    // Backward paging: the `count` messages immediately older than
-    // `beforeTurnIndex`, cut at a turn boundary. Walk backward from
-    // that turn accumulating rows until we cover `count` (or reach the
-    // start). The emitted range is [firstTurn, beforeTurnIndex).
-    const { beforeTurnIndex, count } = window.olderMessages;
-    endTurn = Math.max(0, Math.min(Math.floor(beforeTurnIndex), totalTurns));
-    const n = Math.max(0, Math.floor(count));
-    firstTurn = endTurn;
-    let acc = 0;
-    while (firstTurn > 0 && acc < n) {
-      firstTurn -= 1;
-      acc += turns[firstTurn].messages;
-    }
   } else {
+    // Explicit half-open turn range. Backward paging ("load previous N")
+    // sends `[firstLoadedTurnIndex − N, firstLoadedTurnIndex]` — the
+    // emitted range is exactly those turns, which prepend above the view.
     const [rawStart, rawEnd] = window.turnRange;
     firstTurn = Math.max(0, Math.min(Math.floor(rawStart), totalTurns));
     endTurn = Math.max(firstTurn, Math.min(Math.floor(rawEnd), totalTurns));
@@ -1712,9 +1681,7 @@ function resolveWindow(
     startIndex,
     endIndex,
     firstLoadedTurnIndex: firstTurn,
-    firstLoadedMessageIndex: messagesBefore[firstTurn],
     totalTurns,
-    totalMessages,
     hasOlder: firstTurn > 0,
   };
 }
@@ -1845,9 +1812,7 @@ export async function* translateJsonlSession(
   let windowMeta:
     | {
         firstLoadedTurnIndex: number;
-        firstLoadedMessageIndex: number;
         totalTurns: number;
-        totalMessages: number;
         hasOlder: boolean;
       }
     | null = null;
@@ -1861,9 +1826,7 @@ export async function* translateJsonlSession(
     windowEndIndex = resolved.endIndex;
     windowMeta = {
       firstLoadedTurnIndex: resolved.firstLoadedTurnIndex,
-      firstLoadedMessageIndex: resolved.firstLoadedMessageIndex,
       totalTurns: resolved.totalTurns,
-      totalMessages: resolved.totalMessages,
       hasOlder: resolved.hasOlder,
     };
   }
@@ -1985,9 +1948,7 @@ export async function* translateJsonlSession(
     ...(windowMeta !== null
       ? {
           firstLoadedTurnIndex: windowMeta.firstLoadedTurnIndex,
-          firstLoadedMessageIndex: windowMeta.firstLoadedMessageIndex,
           totalTurns: windowMeta.totalTurns,
-          totalMessages: windowMeta.totalMessages,
           hasOlder: windowMeta.hasOlder,
         }
       : {}),

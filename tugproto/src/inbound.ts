@@ -143,30 +143,24 @@ export interface StopTask {
 }
 
 /**
- * A recency window for a replay request. Bounds the replay to a turn
- * range so a long session loads only the most relevant tail rather
- * than the whole transcript:
+ * A recency window for a replay request, expressed entirely in turns
+ * (the canonical unit — see `tuglaws/turn-metric.md`). Bounds the replay
+ * to a turn range so a long session loads only the most relevant tail
+ * rather than the whole transcript:
  *
  *   - `{ lastTurns: N }` — the most recent N committed turns: the default
- *     cold-resume load. Bounds the load by the canonical unit (a turn),
- *     independent of turn density — see `tuglaws/turn-metric.md`.
- *   - `{ lastMessages: N }` — the most recent N transcript messages
- *     (rows), cut at a turn boundary. The row-sized sibling of `lastTurns`,
- *     retained for callers that still bound by rows.
- *   - `{ olderMessages: { beforeTurnIndex, count } }` — backward paging:
- *     the `count` messages immediately *older* than turn
- *     `beforeTurnIndex` (the current oldest-loaded turn), cut at a turn
- *     boundary. Drives "load previous M" — older turns prepend above the
- *     view. A `count` ≥ the whole older span loads everything older.
+ *     cold-resume load. Bounds the load by intent, independent of turn
+ *     density.
  *   - `{ turnRange: [start, end) }` — an explicit half-open turn-index
- *     range (the general form; used by tests).
+ *     range (the general form). Backward paging ("load previous") sends
+ *     `[firstLoadedTurnIndex − N, firstLoadedTurnIndex]` — the N turns
+ *     immediately older than the current oldest-loaded turn, which prepend
+ *     above the view.
  *
  * Absent ⇒ load the whole session (the legacy, unbounded behavior).
  */
 export type ReplayWindow =
   | { lastTurns: number }
-  | { lastMessages: number }
-  | { olderMessages: { beforeTurnIndex: number; count: number } }
   | { turnRange: [number, number] };
 
 /** Ask tugcode to replay the session JSONL ([D12]). */
