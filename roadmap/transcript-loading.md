@@ -37,7 +37,7 @@ The browser folded all **2084 deltas in 2ms**. The reducer is essentially free; 
 - **tugcast needs zero changes.** `splice_tug_session_id` stamps the *outer* object's first field, and the CODE_OUTPUT relay forwards lines transparently — a batch envelope rides through unmodified.
 - **The batch is a transport wrapper, not a reducer event.** It is unwrapped at the browser's FeedStore ingest boundary; each inner frame flows through the existing `frameToEvent` + `dispatch` path exactly as today. The reducer never learns batching exists.
 - **Land the browser unwrap first** (backward-compatible), *then* the tugcode batching — so no version-skew window where a `replay_batch` frame reaches a browser that can't unwrap it.
-- **De-pace the cold path only.** Drop the generator's 8ms macrotask yields when there is no live in-flight turn (`inflight === null`); let the consumer pace at batch granularity so abort/IO still get serviced.
+- **De-pace the cold path only — and only if the measurement demands it.** Batching collapses the per-frame transport multiplicity that dominates the 275ms; the 8ms pacing plausibly adds little. Measure after batching ([P07]); if `waitMs` is already under target, skip de-pacing and its abort/timeout-test reconciliation entirely. If kept, drop the generator's yields for `inflight === null` and let the consumer pace at batch granularity.
 - **Verify against the existing perf instrumentation.** Success is `waitMs` collapsing and tugcode's emitted wire-frame count dropping ~2084 → ~10, with the browser's dispatched-frame count unchanged (no semantic loss).
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -51,7 +51,7 @@ The browser folded all **2084 deltas in 2ms**. The reducer is essentially free; 
 #### Scope {#scope}
 
 1. A `replay_batch` outbound wire type in tugcode and the emit-loop refactor that buffers replay frames and flushes them as batches.
-2. Cold-path de-pacing (`disableYield` for `inflight === null`) with batch-granular cooperative yielding in the consumer.
+2. Cold-path de-pacing (`disableYield` for `inflight === null`) with batch-granular cooperative yielding — **conditional**, implemented only if batching alone misses the target ([P07]).
 3. The browser-side unwrap at the FeedStore ingest boundary (`onFeedStoreChange` + `_ingestFrameForTest`), routing inner frames through the existing dispatch.
 4. Perf-line additions so the win is measurable (tugcode `batches`/`frames`; the browser side already reports `waitMs`).
 
@@ -113,7 +113,8 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions are `[P
 |------|--------|------------|------------|--------------------|
 | Version skew: new binary emits `replay_batch` to a browser without unwrap | high | med | Land browser unwrap first; unwrap is backward-compatible | Any deploy where the binary is newer than the frontend |
 | Bracket/fold timing: gate mounts late if `replay_started` is batched | med | low | Flush brackets as raw standalone frames ([P03]) | Replay paint gate visibly delayed |
-| Abort responsiveness drops with de-pacing | med | low | Keep per-frame `Promise.race`; flush + yield per batch | A mid-load cancel hangs |
+| Abort/timeout responsiveness + calibrated tests under de-pacing | med | med | Per-batch macrotask yield as the load-bearing yield; reconcile the two calibrated tests; gate de-pacing on measurement ([P07]) | A mid-load cancel hangs; timeout/abort test flips |
+| Session-level frame assertions break under batching | high | high | Capture-helper unwrap ([P08]) applied in the same step as batching | Any session-level stdout test fails to find an inner frame |
 | Oversized batch line | low | low | Bound batch by frame count (REPLAY_BATCH_SIZE); `writeTail` already serializes >64KiB | Wire corruption / latency spike on image-heavy replays |
 
 **Risk R01: version skew between binary and frontend** {#r01-version-skew}
@@ -128,11 +129,11 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions are `[P
 - **Mitigation:** [P03] — brackets flush standalone as raw frames; only the bulk content between them batches.
 - **Residual risk:** The gate now mounts when the first wire line arrives, which is already near-instant on a fast load.
 
-**Risk R03: abort granularity** {#r03-abort-granularity}
+**Risk R03: abort/timeout granularity and the calibrated tests** {#r03-abort-granularity}
 
-- **Risk:** Removing the 8ms yields could starve the abort/timeout race.
-- **Mitigation:** The consumer keeps `await Promise.race([iter.next(), timeout, abort])` per frame (microtask-cheap) and adds one macrotask yield per batch flush so writes drain.
-- **Residual risk:** Abort is now observed at batch boundaries (~REPLAY_BATCH_SIZE frames) rather than every 8ms — acceptable because the whole replay completes in tens of ms.
+- **Risk:** With `disableYield`, the generator stops yielding, so the `timeout`/`abort` promises can only win the `Promise.race` at the consumer's per-batch macrotask yield. The two `runReplay` tests (`replayTimeoutMs:1` + `replayTimeSliceMs:0`; `cancel_replay` over a 200-turn fixture) are calibrated to per-message yields and would break: `disableYield` overrides their `replayTimeSliceMs:0`, so the generator never yields, and a sub-`REPLAY_BATCH_SIZE` fixture completes before any macrotask yield fires.
+- **Mitigation:** Make the per-batch macrotask yield explicitly load-bearing ([P05]); update the abort-invariant comment to "≤ one batch"; rewrite both tests to assert batch-boundary interruption over a multi-batch fixture (or scope `disableYield` so an explicit test `replayTimeSliceMs` still yields). Gate the whole step on [P07] so this risk is only taken if batching alone misses the target.
+- **Residual risk:** Abort/timeout is observed at batch boundaries (~`REPLAY_BATCH_SIZE` frames) rather than every 8ms — acceptable because the whole replay completes in tens of ms.
 
 ---
 
@@ -179,11 +180,14 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions are `[P
 
 #### [P05] De-pace cold replay only, consumer-driven (DECIDED) {#p05-depace-cold}
 
-**Decision:** Pass `disableYield: true` to `translateJsonlSession` when `inflight === null`; the consumer flushes a batch and yields to the event loop once per batch. Mid-stream reload (`inflight !== null`) keeps today's pacing.
+**Decision:** When de-pacing runs (gated by [P07]), pass `disableYield: true` to `translateJsonlSession` for `inflight === null`; the consumer's per-batch macrotask yield becomes the sole cold-path yield point. Mid-stream reload (`inflight !== null`) keeps today's pacing.
 
-**Rationale:** The cold path is the measured case and has no live-drain interleaving. The consumer's per-frame `Promise.race` keeps abort responsive; a per-batch macrotask yield drains `writeTail`.
+**Rationale:** The cold path is the measured case and has no live-drain interleaving.
 
-**Implications:** Pacing authority moves from the generator's 8ms timer to the consumer's batch cadence on the cold path.
+**Implications:**
+- Pacing authority moves from the generator's 8ms timer to the consumer's batch cadence.
+- The per-batch `await yieldToEventLoop()` is **load-bearing for abort/timeout**, not just write-drain: with `disableYield` the generator never yields, so the `timeout`/`abort` promises can only win the `Promise.race` at a batch boundary. The `session.ts` abort-race invariant changes from "≤ one translator time-slice" to "≤ one batch".
+- The `runReplay` timeout/abort tests are calibrated to per-message yields (`replayTimeSliceMs: 0`); `disableYield` overrides that (`yieldBetweenBatches = opts.disableYield !== true`), so they must be reconciled to assert batch-boundary interruption (see #step-4).
 
 #### [P06] REPLAY_BATCH_SIZE = 256 frames, count-thresholded (DECIDED) {#p06-batch-size}
 
@@ -192,6 +196,26 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions are `[P
 **Rationale:** 256 collapses this session's ~2084 frames into ~8 batches + brackets while keeping each batch line bounded.
 
 **Implications:** A follow-on may add a byte-size cap if image-heavy batches prove large; not needed for phase close.
+
+#### [P07] De-pacing is gated on a batching-only measurement (DECIDED) {#p07-depace-gated}
+
+**Decision:** Measure `waitMs` after batching alone (#step-3). Implement de-pacing (#step-4) only if `waitMs` is still materially above the <50ms target.
+
+**Rationale:**
+- The measured 275ms is per-frame transport multiplicity — 2084 separate WS messages + tugcast relay hops + browser tasks — which batching collapses directly to ~10 wire frames.
+- The 8ms pacing is a handful of macrotask yields on the emit side and plausibly contributes little; de-pacing carries the abort/timeout test reconciliation ([P05], R03). Don't pay that risk unless the measurement says we must.
+
+**Implications:** #step-4 is conditional; if skipped, the ledger records the #step-3 `waitMs` as the rationale and no abort/timeout test changes are needed.
+
+#### [P08] Capture helper unwraps `replay_batch` (DECIDED) {#p08-capture-unwrap}
+
+**Decision:** The `captureIpc` stdout-capture test helper unwraps a `replay_batch` line into its inner `frames` before pushing to the captured-frame list, mirroring the production browser unwrap ([P01]). The helper — currently duplicated across `replay-spawn.test.ts`, `session.test.ts`, and `rewind-bridge.test.ts` — is extracted to one shared test module and the unwrap applied once.
+
+**Rationale:**
+- Session-level tests assert on individual frames (`add_user_message`, `turn_complete`, …) parsed one-per-stdout-line. Batching makes intermediate content arrive as envelopes; without an unwrap those assertions break.
+- Generator-level tests (iterating `translateJsonlSession`) are unaffected — batching lives in the consumer — so only the stdout-capture path needs this.
+
+**Implications:** One shared helper change keeps the whole session-level suite green; the duplication is retired in the same step.
 
 ---
 
@@ -202,7 +226,8 @@ Anchors are explicit, kebab-case, no phase numbers. Plan-local decisions are `[P
 The replay consumer loop in `SessionManager` (the `while (true)` racing `iter.next()` against timeout/abort/exit) currently calls `writeLine(msg)` per frame. The refactor introduces a frame buffer and a `flushBatch` closure:
 
 - **Buffer + flush.** `flushBatch()` is a no-op on an empty buffer; emits the lone frame raw when length === 1; otherwise emits `{ type: "replay_batch", frames: <buffered>, ipc_version: <IPC_VERSION> }` and clears the buffer ([P03], [P06]).
-- **Content frames.** Replace the per-frame `writeLine(msg)` with `buffer.push(msg)`; call `flushBatch()` when `buffer.length >= REPLAY_BATCH_SIZE`, then `await yieldToEventLoop()` so the write drains and abort can win ([P05], [R03]).
+- **Content frames.** Replace the per-frame `writeLine(msg)` with `buffer.push(msg)`; call `flushBatch()` when `buffer.length >= REPLAY_BATCH_SIZE`, then `await yieldToEventLoop()`. Under de-pacing this per-batch macrotask yield is the **only** point at which the `timeout`/`abort` promises can win the `Promise.race` — load-bearing, not just write-drain ([P05], [R03]).
+- **`ipc_version`.** The `replay_batch` envelope uses the literal `2` (`IPC_VERSION` is not imported in `session.ts`).
 - **`replay_started`.** Buffer is empty at this point (it's the first frame); push it and `flushBatch()` immediately so the gate mounts raw, *then* run the pending-row injection.
 - **Pending-row synthetics.** `injectPendingRowSynthetics` currently writes directly; thread the buffer's emit through it (accept an emit callback, or push into the shared buffer) so synthetics land in order, batched with the content that follows.
 - **`replay_complete`.** Flush the buffer first, then `writeLine` the buffered `replay_complete` raw — it stays the last line and triggers the browser fold flush.
@@ -234,6 +259,15 @@ private routeFrame(feedId, value) {
 
 The outer envelope already passed the session filter (it carries the spliced `tug_session_id`); inner frames are dispatched post-filter and need no tsid. Every inner frame still goes through `frameToEvent` (so `KNOWN_CODE_OUTPUT_TYPES`, the `session_init` divergence check, etc. all apply unchanged) and `dispatch` (so the replay fold and perf counters tick per inner frame exactly as today).
 
+#### Test capture-helper unwrap (tugcode tests) {#capture-helper}
+
+The two test layers are affected differently — this is what bounds the blast radius:
+
+- **Generator-level tests** (`replay-*.test.ts` iterating `translateJsonlSession` via `for await (const msg of …)`) assert on the generator's yielded frames. Batching is in the **consumer** (`session.ts`), not the generator, so these are **untouched**.
+- **Session-level tests** (`runReplay` with stdout capture) parse each stdout line as one `OutboundMessage`. The `captureIpc` helper (`replay-spawn.test.ts`: `JSON.parse(trimmed)` per line into an `emitted` array) feeds frame-level assertions. Once content arrives as `replay_batch` envelopes, those assertions break.
+
+The fix mirrors the production unwrap ([P01]): when a captured line is a `replay_batch`, push its `frames` individually instead of the envelope. `captureIpc` is **duplicated** in `replay-spawn.test.ts`, `session.test.ts`, and `rewind-bridge.test.ts`; extract it to one shared test module and apply the unwrap once. Brackets stay raw ([P03]), so `replay_started` / `replay_complete` (and `replay_complete{aborted}` / `{error}`) remain directly findable; only intermediate content needs unwrapping. Order is preserved (`replay_started` raw → batch[synthetics…content]), so pending-row-injection ordering assertions hold.
+
 ---
 
 ### Specification {#specification}
@@ -251,6 +285,7 @@ The outer envelope already passed the session filter (it carries the spliced `tu
 }
 ```
 
+- `ipc_version` is the literal `2` — matching the existing `ReplayComplete` emits in `session.ts`. `IPC_VERSION` is not imported in `session.ts`; do not introduce it for this.
 - `frames` is a non-empty, ordered array of the exact `OutboundMessage` objects the per-frame path would have emitted. Inner frames carry no `tug_session_id`.
 - Only emitted for ≥2 buffered frames; single frames and brackets are raw ([P03]).
 - Unwrapped entirely at the browser ingest boundary; never reaches the reducer as a unit ([P01]).
@@ -279,6 +314,7 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 | `perf.replay_translate` fields | modify | `tugcode/src/session.ts` | add `batches`, rename emitted count to `frames` |
 | `disableYield` threading | modify | `tugcode/src/session.ts` | pass `disableYield: inflight === null` to `translateJsonlSession` |
 | `routeFrame` | add | `tugdeck/src/lib/code-session-store.ts` (#unwrap-flow) | unwrap `replay_batch`; used by `onFeedStoreChange` + `_ingestFrameForTest` |
+| `captureIpc` | extract + modify | tugcode test module (shared) (#capture-helper) | unwrap `replay_batch`; retire the 3 duplicate copies |
 
 ---
 
@@ -289,9 +325,10 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 | Category | Purpose | When to use |
 |----------|---------|-------------|
 | **Unit (bun:test, tugdeck)** | Real-store unwrap via `_ingestFrameForTest` | Step 1 — a `replay_batch` dispatches each inner frame; transcript identical to per-frame ingest |
-| **Unit (bun:test, tugcode)** | Capture stdout, assert framing | Step 2 — brackets raw, bulk batched, decoded inner sequence equals the unbatched sequence |
-| **Contract / golden** | Replay output equivalence | Steps 2–3 — existing replay/segmentation tests stay green (batching changes framing, not content) |
-| **Integration (real app)** | Perf capture on reload | Step 4 — `waitMs` collapse + tugcode `batches` drop, via dev-panel on a real session |
+| **Unit (bun:test, tugcode)** | Capture stdout, assert framing | Step 2 — brackets raw, bulk batched, decoded inner sequence equals the unbatched sequence; capture helper unwraps `replay_batch` ([P08], #capture-helper) |
+| **Contract / golden** | Replay output equivalence | Step 2 — generator-level tests untouched; session-level tests green via the unwrapped helper |
+| **Integration (real app)** | Perf capture on reload | Steps 3 & 5 — `waitMs` (gate + final) and tugcode `batches`, via dev-panel on a real session |
+| **Reconciled timing tests** | Batch-boundary abort/timeout | Step 4 (if run) — `cancel_replay` and `replayTimeoutMs:1` rewritten for multi-batch interruption ([R03]) |
 
 #### What stays out of tests {#test-non-goals}
 
@@ -310,9 +347,10 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Browser-side `replay_batch` unwrap | pending | — |
-| #step-2 | tugcode emit batching + wire type | pending | — |
-| #step-3 | Cold-path de-pacing | pending | — |
-| #step-4 | Integration checkpoint + measurement | pending | — |
+| #step-2 | tugcode emit batching + wire type + capture-helper unwrap | pending | — |
+| #step-3 | Batching-only measurement gate | pending | — |
+| #step-4 | Cold-path de-pacing (conditional on #step-3) | pending | — |
+| #step-5 | Final integration checkpoint | pending | — |
 
 #### Step 1: Browser-side `replay_batch` unwrap {#step-1}
 
@@ -339,30 +377,33 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 
 ---
 
-#### Step 2: tugcode emit batching + wire type {#step-2}
+#### Step 2: tugcode emit batching + wire type + capture-helper unwrap {#step-2}
 
 **Depends on:** #step-1
 
 **Commit:** `tugcode: batch replay frames over the wire`
 
-**References:** [P01] transport envelope, [P02] tugcast unchanged, [P03] brackets raw, [P06] batch size, Spec S01, (#emit-flow, #symbol-inventory)
+**References:** [P01] transport envelope, [P02] tugcast unchanged, [P03] brackets raw, [P06] batch size, [P08] test-helper unwrap, Spec S01, (#emit-flow, #capture-helper, #symbol-inventory)
 
 **Artifacts:**
 - `ReplayBatch` interface added to `types.ts` and the `OutboundMessage` union.
 - `REPLAY_BATCH_SIZE` constant; buffered emit + `flushBatch` in the replay consumer loop.
 - `injectPendingRowSynthetics` routed through the buffer.
 - `perf.replay_translate` reports `batches` and inner `frames`.
+- A shared `captureIpc` test helper that unwraps `replay_batch` so frame-level assertions hold.
 
 **Tasks:**
-- [ ] Define `ReplayBatch` and add it to `OutboundMessage`.
+- [ ] Define `ReplayBatch` and add it to `OutboundMessage`. The envelope's `ipc_version` uses the literal `2`, matching the existing `ReplayComplete` emits in `session.ts` (`IPC_VERSION` is **not** imported there — do not reach for it).
 - [ ] Refactor the replay consumer loop to buffer content frames and `flushBatch` on threshold / brackets per [#emit-flow]; flush `replay_started` and `replay_complete` raw.
-- [ ] Thread the buffer's emit through `injectPendingRowSynthetics`.
-- [ ] Update `perf.replay_translate` fields (`batches`, `frames`).
+- [ ] Thread the buffer's emit through `injectPendingRowSynthetics`, preserving order (`replay_started` raw → batch containing synthetics then content).
+- [ ] Update `perf.replay_translate` fields (`batches`, `frames`). `messagesEmitted` feeds only this log — no control-flow dependency.
+- [ ] **Capture-helper unwrap ([P08], #capture-helper):** teach the `captureIpc` stdout-capture helper to unwrap a `replay_batch` line into its `frames` so session-level frame assertions keep working. `captureIpc` is currently **duplicated** in `replay-spawn.test.ts`, `session.test.ts`, and `rewind-bridge.test.ts`; extract it to one shared test module and apply the unwrap once. Confirm the other session-level stdout consumers (`replay-spawn-drain.test.ts`, `replay-pending-row-injection.test.ts`, `perf-instrumentation.test.ts`, `replay-hmr-mid-stream.test.ts`) route through the shared helper.
 - [ ] Rebuild the binary: `bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode`.
 
 **Tests:**
 - [ ] bun:test capturing replay stdout: brackets are raw frames; >`REPLAY_BATCH_SIZE` content yields `replay_batch` envelope(s); concatenating all `frames` arrays (and raw frames) reconstructs the exact unbatched frame sequence.
-- [ ] Existing replay/session tests stay green (content unchanged).
+- [ ] Generator-level replay tests (`replay-*.test.ts` that iterate `translateJsonlSession`) stay green untouched — batching is in the consumer, not the generator.
+- [ ] Session-level frame assertions (`replay-spawn`, `replay-pending-row-injection`, etc.) stay green via the unwrapped capture helper; pending-row synthetics keep their post-`replay_started` order.
 
 **Checkpoint:**
 - [ ] `cd tugcode && bunx tsc --noEmit`
@@ -370,26 +411,56 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 
 ---
 
-#### Step 3: Cold-path de-pacing {#step-3}
+#### Step 3: Batching-only measurement gate {#step-3}
 
 **Depends on:** #step-2
 
+**Commit:** `N/A (verification only)`
+
+**References:** [P07] de-pacing gated on measurement, (#success-criteria), `perf.replay_ingest`
+
+**Tasks:**
+- [ ] Build + launch the worktree debug app (`just app-debug`); load `c53db98c` with **batching alone** (no de-pacing yet).
+- [ ] Capture `perf.replay_ingest.waitMs` and tugcode `perf.replay_translate.batches`.
+- [ ] **Gate decision ([P07]):** if `waitMs < 50`, batching alone met the target — mark #step-4 `skipped` in the ledger and proceed to #step-5. If `waitMs` is still materially above target, proceed to #step-4.
+
+**Tests:**
+- [ ] `batches ≈ 10` (wire-frame collapse confirmed regardless of the gate outcome).
+- [ ] Browser `frames ≈ 2084` (no semantic loss).
+
+**Checkpoint:**
+- [ ] `waitMs` and `batches` captured; ledger records the gate decision for #step-4.
+
+---
+
+#### Step 4: Cold-path de-pacing (conditional on #step-3) {#step-4}
+
+**Depends on:** #step-3
+
+> **Conditional.** Implement only if #step-3 found `waitMs` still above target. The
+> 275ms is dominated by per-frame transport multiplicity, which #step-2 collapses
+> directly; the 8ms pacing plausibly contributes little ([P07]). If skipped, mark
+> `skipped` in the ledger with the #step-3 `waitMs` as the rationale.
+
 **Commit:** `tugcode: drop 8ms pacing on cold replay`
 
-**References:** [P05] de-pace cold, [Q02] mechanism, Risk R03, (#emit-flow)
+**References:** [P05] de-pace cold, [P07] gated on measurement, [Q02] mechanism, Risk R03, (#emit-flow)
 
 **Artifacts:**
 - `disableYield: inflight === null` threaded into the `translateJsonlSession` options.
-- Per-batch `await yieldToEventLoop()` in the consumer.
+- Per-batch `await yieldToEventLoop()` in the consumer as the load-bearing abort/timeout yield.
+- Reconciled timeout + abort tests; updated abort-invariant comment.
 
 **Tasks:**
 - [ ] Pass `disableYield: true` to the translator when `inflight === null`; leave mid-stream (`inflight !== null`) on today's pacing.
-- [ ] Ensure the consumer yields once per batch flush so `writeTail` drains and abort/timeout stay responsive.
+- [ ] Make the consumer's per-batch `await yieldToEventLoop()` (a macrotask) the **only** remaining yield on the cold path — it is load-bearing: with `disableYield`, the generator no longer yields, so this is the sole point at which the `timeout`/`abort` promises can win the `Promise.race` ([R03], [#emit-flow]).
+- [ ] Update the abort-race invariant comment in `session.ts` from "≤ one translator time-slice later" to "≤ one batch later".
+- [ ] **Reconcile the calibrated tests:** the `runReplay` timeout test (`replayTimeoutMs:1`, `replayTimeSliceMs:0`) and the `cancel_replay` abort test rely on per-message macrotask yields, which `disableYield` removes (it overrides `replayTimeSliceMs:0` via `yieldBetweenBatches = opts.disableYield !== true`). Rewrite both to assert **batch-boundary** interruption (use a fixture spanning multiple `REPLAY_BATCH_SIZE` batches so the macrotask yield fires mid-replay), or scope `disableYield` so an explicit test `replayTimeSliceMs` still yields. Pick one and state it in the commit body.
 - [ ] Rebuild the binary.
 
 **Tests:**
-- [ ] Abort test: a `cancel_replay` mid-load still closes with `replay_complete{aborted:true}` (existing abort coverage stays green).
-- [ ] Timeout path unaffected (existing coverage green).
+- [ ] Abort test: a `cancel_replay` mid-load closes with `replay_complete{aborted:true}` and `count < total` at a batch boundary (rewritten per above).
+- [ ] Timeout test: `replayTimeoutMs:1` over a multi-batch fixture yields a terminal `replay_complete{error:replay_timeout}` (rewritten per above).
 
 **Checkpoint:**
 - [ ] `cd tugcode && bunx tsc --noEmit`
@@ -397,17 +468,17 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 
 ---
 
-#### Step 4: Integration checkpoint + measurement {#step-4}
+#### Step 5: Final integration checkpoint {#step-5}
 
-**Depends on:** #step-1, #step-2, #step-3
+**Depends on:** #step-1, #step-2, #step-3, #step-4
 
 **Commit:** `N/A (verification only)`
 
 **References:** (#success-criteria), `perf.replay_ingest`, `perf.replay_translate`
 
 **Tasks:**
-- [ ] Build + launch the worktree debug app (`just app-debug`); load a real ≥50-turn session (`c53db98c`).
-- [ ] Capture `perf.replay_ingest` (dev-panel, source `perf`) and the tugcode `perf.replay_translate` line.
+- [ ] With the final build (batching, plus de-pacing if #step-4 ran), load a real ≥50-turn session (`c53db98c`).
+- [ ] Capture `perf.replay_ingest` and the tugcode `perf.replay_translate` line.
 
 **Tests:**
 - [ ] `waitMs < 50` (down from ~275).
@@ -425,15 +496,16 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Browser unwraps `replay_batch` transparently; single-frame path still works (Step 1 tests).
-- [ ] tugcode emits batches with raw brackets; inner sequence equals the unbatched sequence (Step 2 tests).
-- [ ] Cold replay runs without 8ms pacing; abort/timeout intact (Step 3 tests).
-- [ ] `waitMs` and tugcode `batches` meet the success criteria on a real session (Step 4).
+- [ ] Browser unwraps `replay_batch` transparently; single-frame path still works (#step-1 tests).
+- [ ] tugcode emits batches with raw brackets; inner sequence equals the unbatched sequence; session-level tests green via the unwrapped capture helper (#step-2 tests).
+- [ ] Batching-only measurement captured and the #step-4 gate decision recorded (#step-3).
+- [ ] If #step-4 ran: cold replay runs without 8ms pacing; abort/timeout reconciled and green. If skipped: ledger records the rationale.
+- [ ] `waitMs < 50` and tugcode `batches ≈ 10` on a real session (#step-5).
 
 **Acceptance tests:**
 - [ ] `cd tugdeck && bun test src/lib/code-session-store/__tests__/`
 - [ ] `cd tugcode && bun test`
-- [ ] Real-app reload perf capture (Step 4).
+- [ ] Real-app reload perf capture (#step-3 gate, #step-5 final).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -443,7 +515,8 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Browser unwrap | `bun test` over `code-session-store/__tests__/` |
-| Emit batching | tugcode `bun test` framing assertions |
-| De-pacing | abort/timeout tests green |
-| End-to-end win | dev-panel `perf.replay_ingest.waitMs` < 50 on `c53db98c` |
+| Browser unwrap (#step-1) | `bun test` over `code-session-store/__tests__/` |
+| Emit batching + capture unwrap (#step-2) | tugcode `bun test` framing + session-level assertions |
+| Batching-only gate (#step-3) | dev-panel `perf.replay_ingest.waitMs` + `batches`; #step-4 decision recorded |
+| De-pacing (#step-4, if run) | reconciled abort/timeout tests green |
+| End-to-end win (#step-5) | dev-panel `perf.replay_ingest.waitMs` < 50 on `c53db98c` |
