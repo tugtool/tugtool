@@ -837,7 +837,6 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
     void showSheet({
       title: "Choose Session",
       icon: "FolderOpen",
-      presentation: "top",
       displayWidth: "md",
       // Capture the cascade target at sheet-open time per
       // `tugplan-dev-overlay-framework.md` [D02]. `cardId` is the

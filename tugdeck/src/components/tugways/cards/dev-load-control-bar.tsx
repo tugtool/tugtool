@@ -67,14 +67,14 @@ const LOAD_PREVIOUS_STEP = 50;
  *  bar visibly reaches the end. */
 const PROGRESS_DWELL_MS = 1000;
 
-/** A load is in flight: a load-previous, or a cold restore (the restore gate
- *  open, or still replaying). Pure read over the store snapshot. */
+/** A load is in flight: a load-previous, or a cold restore. Pure read over the
+ *  store snapshot. The restore arm is `deriveColdRestoreActive` alone — that
+ *  predicate already gates the `replaying` phase on `sessionMode === "resume"`,
+ *  so a fresh *new* session's brief JSONL-missing replaying round-trip never
+ *  raises this surface. (A bare `phase === "replaying"` clause here would
+ *  un-gate it and flash the bar on every New session.) */
 function readLoadActive(snap: CodeSessionSnapshot): boolean {
-  return (
-    snap.loadingPrevious ||
-    deriveColdRestoreActive(snap) ||
-    snap.phase === "replaying"
-  );
+  return snap.loadingPrevious || deriveColdRestoreActive(snap);
 }
 
 export interface DevLoadControlBarHandle {
@@ -241,10 +241,7 @@ function ControlBarLoading({
     codeSessionStore.subscribe,
     () => {
       const s = codeSessionStore.getSnapshot();
-      return (
-        !s.loadingPrevious &&
-        (deriveColdRestoreActive(s) || s.phase === "replaying")
-      );
+      return !s.loadingPrevious && deriveColdRestoreActive(s);
     },
   );
   // The window this resume requested — the restore progress denominator
@@ -290,14 +287,20 @@ function ControlBarLoading({
   let max: number;
   let formatValue: (value: number, max: number) => string;
   if (loadKind === "restore") {
-    // One stable state: the bar reports progress against the load window
-    // only — the session-wide total lives in the picker (as JSONL size), not
-    // here, so there's no late-arriving total to make the label flip. The
-    // window is the resume request's size: the default N, or deeper for a
+    // The window is the resume request's size: the default N, or deeper for a
     // faithful restore to a saved anchor above it ([recency #step-6]).
     label = `Restoring the most recent ${restoreWindow} messages…`;
-    max = restoreWindow;
-    value = active ? Math.min(messagesLoaded, max) : max;
+    if (active) {
+      // Streaming: fill the determinate bar toward the requested window.
+      max = restoreWindow;
+      value = Math.min(messagesLoaded, max);
+    } else {
+      // Landed: report the count actually committed, not the requested window —
+      // a session shorter than the window loads fewer, so the readout settles
+      // to "18 of 18", never a phantom "50 of 50".
+      max = Math.max(1, Math.min(messagesLoaded, restoreWindow));
+      value = max;
+    }
     formatValue = formatWindowValue;
   } else {
     const effTarget = active ? target : lastTargetRef.current;
