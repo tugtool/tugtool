@@ -302,6 +302,48 @@ The canonical count is `engine(session file)`. The Rust engine is the **only** w
 
 ---
 
+### Deep Dive: Implementation landmarks & orientation (post-compact) {#landmarks}
+
+> Everything below was verified against the real code during the audit/vet that produced this plan. A fresh session should not need to re-derive it. Symbol names (not line numbers) are the stable handles; grep for them.
+
+#### Real-data anchor (the canonical fixture) {#landmark-real-data}
+
+- The reference session is `49e9aec6` — file `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/49e9aec6-7c3a-4c0c-9f74-5a9a0551812e.jsonl` (~37.4 MB, ~8042 lines). **The engine must count 81** for it (the opened-session authority). The old scanner cached **59**; a faithful full application of the old documented rule gives **66**; the 81−66 = 15 gap is synthesized assistant-originated openers (the phantom `#u` rows). This file is the first real unit/integration fixture.
+- The running app's ledger DB for this project is `~/Library/Application Support/Tug/instances/debug-main/sessions.db` (the `debug-main` instance; there are sibling per-instance DBs and a top-level `~/Library/Application Support/Tug/sessions.db`). Tables: `sessions` (`session_id`, `turn_count`, `state`, `last_used_at`, …) and `external_scan_cache` (`session_id`, `file_size`, `file_mtime`, `excluded`, `turn_count`, `rule_epoch`, `parse_offset`, `tail_hash`). Inspect with `sqlite3`.
+
+#### tugcode (the TS bridge) {#landmark-tugcode}
+
+- `tugcode/src/replay.ts` — the replay segmentation: `handleUserEntry` (real user openers), **`handleAssistantEntry`'s synth opener** (the empty `add_user_message` to DELETE — fires when `openTurnMsgId === null`), `computeTurns` (the `totalTurns`/window dry-run; counts an opener per `orphanCounter` bump), `mintOpenerId`, `emitOrphanIfOpen`, `TERMINAL_STOP_REASONS` (`end_turn`/`stop_sequence`/`max_tokens`/`refusal`; a terminal assistant entry sets `openTurnMsgId = null`), `isNonSubmissionUserString` + `COMMAND_SCAFFOLDING_PREFIXES`, `extractTaskNotificationWake`/`TASK_NOTIFICATION_OPEN_RE`, and `resolveWindow` (derives BOTH `totalTurns` and `firstLoadedTurnIndex` — the [Q01] seam). The `ReplayWindow` wire union is already `{lastTurns}|{turnRange}` and `firstLoadedMessageIndex` was already retired by the prior project.
+- `tugcode/src/session.ts` — the LIVE path: `handleTaskNotification`/`buildWakeStartedMessage` (wake bracket), `openTurnFromPending`, and the acknowledged **"known empty `add_user_message`" follow-up** comment (the live analogue of the synth opener to delete).
+
+#### Rust scanner & ledger (tugcast) {#landmark-tugcast}
+
+- `tugrust/crates/tugcast/src/external_sessions.rs` — the disk scanner the engine replaces/absorbs: `user_submission_opens_turn` (the user-record-only rule — the engine supersedes it), `is_user_submission_content`, `is_non_submission_user_string`, `is_task_notification_wake`, `is_interrupt_marker`, the scan loop that **only inspects `rec.kind == "user"` (+ `"ai-title"`)** — this is exactly why it can't see assistant-originated openers. Incremental resume: `try_resume` + `parse_offset` + `tail_hash` + `TAIL_FINGERPRINT_BYTES` (only newline-terminated lines advance the frontier; the in-progress final line is left for the next scan — this is why migrating a live row is safe). `RawRecord` fields: `isCompactSummary`/`isMeta`/`permissionMode`/`message`. The contract test to DELETE: `scanner_turn_counts_match_golden_corpus`. **Non-count outputs to preserve:** `last_user_prompt`, `aiTitle` name, `created_at`, cwd/sessionId exclusions.
+- `tugrust/crates/tugcast/src/session_ledger.rs` — the count writers: `record_spawn` (MAX-seed from scan cache), **`record_turn`** (the live `turn_count + 1` to REMOVE; keep its `last_used_at` touch), **`set_turn_count`** (the SET the resume reconcile calls), `external_scan_cache` schema + `CURRENT_RULE_EPOCH` (bump it), `scan_external_sessions_cached`.
+- `tugrust/crates/tugcast/src/feeds/agent_bridge.rs` — the reconcile + outbound rewrite: the `replay_complete` handler calls **`parse_replay_complete_total_turns` → `set_turn_count`** (the wire-sourced count to replace with the engine), the live `turn_complete` → `record_turn` call, and the **`line_to_emit` / `inject_replay_telemetry` outbound-frame rewrite** — the proven mechanism to stamp `totalTurns` from the engine ([Q01] validate-and-stamp).
+
+#### tugdeck (reducer, data source, picker, addressing) {#landmark-tugdeck}
+
+- `tugdeck/src/lib/code-session-store/reducer.ts` — `handleAddUserMessage` (seeds scratch with a `user_message`), **`handleWakeStarted`** (seeds scratch EMPTY — the existing no-user-content construction to generalize), `handleTurnComplete`, `isWakePulldown` (a behavioral `isWake` consumer to re-express on `origin`+`wakeTrigger`). `tugdeck/src/lib/code-session-store/types.ts` — `PendingTurn.isWake` (remove), `TurnEntry` (no `origin` today; user-ness inferred from `messages[0]`). Wire decode: `frameToEvent`/`events.ts` (must learn the new opener — G5).
+- `tugdeck/src/lib/dev-transcript-data-source.ts` — `turnHasUserMessage` (the `messages[0]` inference to replace with `origin`), `buildRowLayout`, `localTurnIndexForRow`, `userRowIndexForTurn`/`assistantRowIndexForTurn`.
+- `tugdeck/src/lib/dev-picker-data-source.ts` — the visibility gate (hide when `file_size <= 0 && turn_count === 0 && state !== "live"`). `tugdeck/src/components/tugways/cards/dev-picker-format.ts` — `formatSessionRowSubtitle` (the `N turns` subtitle).
+- `tugdeck/src/components/tugways/tug-transcript-entry.tsx` — `formatTurnAddress({speaker, turn})`, `TurnSpeaker` (`#u`/`#a`/reserved `#s`), `formatSequenceNumber` (retained for non-turn stamps). `dev-card-transcript.tsx` — `useTurnNumberBase`, `CodeRowBody`, one address per attribution row (already shipped by the prior project; this plan only changes what feeds origin).
+
+#### Build, test, and run commands {#landmark-commands}
+
+- Rust: `cd tugrust && cargo nextest run` (warnings are errors).
+- tugcode (bun-compiled — NO HMR): test `bun test`; **rebuild after edits** `bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode`.
+- tugdeck (HMR-live): `bunx tsc --noEmit`; `bun test`.
+- Real-app: `just app-test <file>` (ends `VERDICT: PASS|FAIL`; check `tail -n 1`). Build+launch a debug instance: `just app-debug`; `just instances`/`just logs-debug`/`just stop-debug`.
+
+#### Orientation {#landmark-orientation}
+
+- This plan was authored after a read-only root-cause audit and was **triple-vetted** (the load-bearing seams — single count authority, validate-and-stamp, resume no-cache fallback, the no-user-content construction, the live-row migration — are all grounded above). The fuller audit narrative lives in memory `project_canonical_turns.md`.
+- The prior canonical-turns Phase 1+2 is **already merged to main** — the `#u`/`#a` per-row addressing, the wire window metadata, the picker `N turns` subtitle, and the `{lastTurns}|{turnRange}` `ReplayWindow` all exist. This plan reworks the count *production* beneath them; it does not re-author the rendering.
+- Implement via `/tugplug:implement roadmap/canonical-turns-redux.md` on a `tugutil dash` worktree (never directly on main); the open spike is [Q03] (engine incremental performance) and the one accepted runtime transient is R05.
+
+---
+
 ### Definitive Symbol Inventory {#symbol-inventory}
 
 #### New files (if any) {#new-files}
