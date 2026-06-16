@@ -223,17 +223,13 @@ function ControlBarLoading({
 }: {
   codeSessionStore: CodeSessionStore;
 }): React.ReactElement {
-  // Messages committed so far across the live transcript — the cold-restore
-  // progress numerator (the window is sized in messages, not turns).
-  const messagesLoaded = React.useSyncExternalStore(
+  // Turns committed so far in the loaded transcript window — the cold-restore
+  // progress numerator. One transcript entry is one committed turn (the
+  // canonical unit, `tuglaws/turn-metric.md`), so the count is just the
+  // window's entry count — matching the turns-sized denominator.
+  const turnsLoaded = React.useSyncExternalStore(
     codeSessionStore.subscribe,
-    () => {
-      let n = 0;
-      for (const turn of codeSessionStore.getSnapshot().transcript) {
-        n += turn.messages.length;
-      }
-      return n;
-    },
+    () => codeSessionStore.getSnapshot().transcript.length,
   );
   // Whether the cold restore is still streaming (vs. finished — the bar is
   // held through its dwell and must show the completed pose then).
@@ -248,7 +244,7 @@ function ControlBarLoading({
   // (default N, or deeper for a faithful restore to an above-window anchor).
   const restoreWindow = React.useSyncExternalStore(
     codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().restoreWindowMessages,
+    () => codeSessionStore.getSnapshot().restoreWindowTurns,
   );
   const loadingPrevious = React.useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -287,20 +283,10 @@ function ControlBarLoading({
   let max: number;
   let formatValue: (value: number, max: number) => string;
   if (loadKind === "restore") {
-    // The window is the resume request's size: the default N, or deeper for a
-    // faithful restore to a saved anchor above it ([recency #step-6]).
-    label = `Restoring the most recent ${restoreWindow} messages…`;
-    if (active) {
-      // Streaming: fill the determinate bar toward the requested window.
-      max = restoreWindow;
-      value = Math.min(messagesLoaded, max);
-    } else {
-      // Landed: report the count actually committed, not the requested window —
-      // a session shorter than the window loads fewer, so the readout settles
-      // to "18 of 18", never a phantom "50 of 50".
-      max = Math.max(1, Math.min(messagesLoaded, restoreWindow));
-      value = max;
-    }
+    // The window is the resume request's size in turns: the default N, or
+    // deeper for a faithful restore to a saved anchor above it ([P06]).
+    label = `Restoring the most recent ${restoreWindow} turns…`;
+    ({ value, max } = restoreBarValueMax(turnsLoaded, restoreWindow, active));
     formatValue = formatWindowValue;
   } else {
     const effTarget = active ? target : lastTargetRef.current;
@@ -331,9 +317,29 @@ function ControlBarLoading({
   );
 }
 
-/** `formatValue` for the cold-restore window readout — "18 of 50". */
+/**
+ * Restore progress bar value/max in **turns** (the canonical unit). While the
+ * load streams, the bar fills `turnsLoaded` toward the requested window. Once
+ * it lands, the readout settles to the turns actually committed (a session
+ * shorter than the window shows "3 of 3 turns", never a phantom "25 of 25").
+ * Pure over counts so the selection is unit-testable without the component.
+ */
+export function restoreBarValueMax(
+  turnsLoaded: number,
+  restoreWindowTurns: number,
+  active: boolean,
+): { value: number; max: number } {
+  if (active) {
+    const max = restoreWindowTurns;
+    return { value: Math.min(turnsLoaded, max), max };
+  }
+  const max = Math.max(1, Math.min(turnsLoaded, restoreWindowTurns));
+  return { value: max, max };
+}
+
+/** `formatValue` for the cold-restore window readout — "3 of 25 turns". */
 function formatWindowValue(value: number, max: number): string {
-  return `${value.toLocaleString()} of ${max.toLocaleString()}`;
+  return `${value.toLocaleString()} of ${max.toLocaleString()} turns`;
 }
 
 /** `formatValue` for the load-previous determinate readout. */

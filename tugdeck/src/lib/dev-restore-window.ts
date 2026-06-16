@@ -15,10 +15,14 @@
  *   2. **Relocate the anchor** — within whatever window lands, the anchor's
  *      row index is `numberOfItems - depthFromEnd`.
  *
- * Both are pure functions over counts, unit-tested in isolation. The window
- * unit is message-rows (a normal turn = user + assistant = 2 rows, a wake =
- * 1) — the same unit `RequestReplay.lastMessages` and `firstLoadedMessageIndex`
- * count in, so the arithmetic lines up end to end.
+ * The window is now sized in **turns** (the canonical unit,
+ * `tuglaws/turn-metric.md`) and requested as `RequestReplay.lastTurns`, while
+ * the scroll anchor stays row-based ([P06]): a saved `depthFromEnd` is a
+ * row distance, and the anchor's relocation within whatever rows land is row
+ * arithmetic. The two meet at load time — a turn-sized request yields a set
+ * of rows, and the anchor is placed within them. Because every turn is at
+ * least one row, requesting N turns always loads at least N rows, which makes
+ * the row-anchor coverage check below a safe lower bound.
  *
  * @module lib/dev-restore-window
  */
@@ -35,17 +39,26 @@ export function anchorDepthFromEnd(
 }
 
 /**
- * The resume window (in message-rows) needed to include the saved anchor: the
+ * The resume window (in **turns**) needed to include the saved anchor: the
  * default window when the anchor is within it (or no anchor was saved), else
  * deep enough to reach the anchor. Never smaller than the default — recent
  * content is always loaded.
+ *
+ * `depthFromEnd` is a row distance, `defaultWindowTurns` a turn count. They
+ * are comparable as a *guarantee* because every turn yields at least one row:
+ * a window of K turns loads ≥ K rows, so when `depthFromEnd ≤ defaultWindowTurns`
+ * the default window is certain to reach the anchor. When the anchor is
+ * deeper, returning `depthFromEnd` turns still guarantees coverage (≥ that
+ * many rows) — an over-approximation for multi-row turns that loads somewhat
+ * more than a row-window would, which is acceptable and visible in the load
+ * bar ([R02]).
  */
 export function resolveRestoreWindow(
   depthFromEnd: number | undefined,
-  defaultWindow: number,
+  defaultWindowTurns: number,
 ): number {
-  if (depthFromEnd === undefined || depthFromEnd <= defaultWindow) {
-    return defaultWindow;
+  if (depthFromEnd === undefined || depthFromEnd <= defaultWindowTurns) {
+    return defaultWindowTurns;
   }
   return depthFromEnd;
 }

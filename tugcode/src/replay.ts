@@ -1668,7 +1668,13 @@ function resolveWindow(
 
   let firstTurn: number;
   let endTurn: number; // exclusive
-  if ("lastMessages" in window) {
+  if ("lastTurns" in window) {
+    // Most recent N committed turns directly — the canonical unit, no row
+    // accumulation. `firstLoadedTurnIndex` falls out as the clamped start.
+    const n = Math.max(0, Math.floor(window.lastTurns));
+    firstTurn = Math.max(0, totalTurns - n);
+    endTurn = totalTurns;
+  } else if ("lastMessages" in window) {
     const n = Math.max(0, Math.floor(window.lastMessages));
     // Walk turns from the end, accumulating rows until we cover N (or
     // run out) — the window starts at the minimal trailing turn set.

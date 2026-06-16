@@ -677,13 +677,14 @@ export interface CodeSessionSnapshot {
   sessionMode: CardSessionMode;
 
   /**
-   * Message-rows this resume requested ([recency #step-6]): the default
-   * window, or deeper for a faithful restore to a saved anchor parked above
-   * it. The Z0 load bar reads this as the restore progress denominator so it
-   * reflects the real load size, not a fixed 50. Constant for the store's
-   * life (set at construction from the resume request).
+   * Committed turns this resume requested: the default window, or deeper for
+   * a faithful restore to a saved anchor parked above it. The load bar reads
+   * this as the restore progress denominator (turns committed of turns
+   * requested), so it reflects the real load size, not a fixed default.
+   * Constant for the store's life (set at construction from the resume
+   * request). Turns are the canonical unit (`tuglaws/turn-metric.md`).
    */
-  restoreWindowMessages: number;
+  restoreWindowTurns: number;
 
   activeMsgId: string | null;
   canSubmit: boolean;

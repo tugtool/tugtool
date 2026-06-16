@@ -11,7 +11,7 @@ import {
   resolveRestoreWindow,
 } from "../dev-restore-window";
 
-const N = 50; // default window
+const N = 25; // default window, in TURNS
 
 describe("anchorDepthFromEnd", () => {
   test("rows from the anchor to the bottom", () => {
@@ -24,34 +24,37 @@ describe("anchorDepthFromEnd", () => {
   });
 });
 
-describe("resolveRestoreWindow", () => {
-  test("no saved anchor → default window", () => {
+describe("resolveRestoreWindow (turns)", () => {
+  test("no saved anchor → default window turns", () => {
     expect(resolveRestoreWindow(undefined, N)).toBe(N);
   });
   test("anchor within the default window → default (no extra load)", () => {
+    // depthFromEnd is rows; ≤ N turns is guaranteed covered (≥1 row/turn).
     expect(resolveRestoreWindow(20, N)).toBe(N);
     expect(resolveRestoreWindow(N, N)).toBe(N);
   });
-  test("anchor parked above the window → load deep enough to reach it", () => {
+  test("anchor parked above the window → request that many turns (covers it)", () => {
+    // 150 rows deep → request 150 turns, which loads ≥ 150 rows (R02 over-approx).
     expect(resolveRestoreWindow(150, N)).toBe(150);
   });
 });
 
-describe("anchorRowIndexInWindow", () => {
-  test("invariant round-trip: save depth, reload, relocate", () => {
-    // Saved: 250 rows, anchor at row 100 → depth 150.
+describe("anchorRowIndexInWindow (rows — unchanged by the turn window)", () => {
+  test("invariant round-trip: save depth, reload, relocate within loaded rows", () => {
+    // Saved: 250 rows, anchor at row 100 → depth 150 rows.
     const depth = anchorDepthFromEnd(250, 100);
-    // Reload sizes the window to include it (150) and loads exactly that.
-    const window = resolveRestoreWindow(depth, N); // 150
-    // The anchor lands at row 0 of the deep window.
-    expect(anchorRowIndexInWindow(window, depth)).toBe(0);
+    // The turn window is sized to cover it (150 turns); at load time that
+    // yields some number of rows ≥ 150. Say the deep load rendered 150 rows
+    // (the anchor was the oldest loaded) — the anchor lands at row 0.
+    const loadedRows = 150;
+    expect(anchorRowIndexInWindow(loadedRows, depth)).toBe(0);
   });
 
   test("common case: anchor within the default window keeps its position", () => {
-    // Saved: 250 rows, anchor at row 230 → depth 20 (within N=50).
+    // Saved: 250 rows, anchor at row 230 → depth 20.
     const depth = anchorDepthFromEnd(250, 230); // 20
-    const window = resolveRestoreWindow(depth, N); // 50 (default)
-    // Reload loads 50 rows; the anchor sits 30 rows from the top.
+    // The default N-turn window rendered, say, 50 rows; the anchor sits 30
+    // rows from the top.
     expect(anchorRowIndexInWindow(50, depth)).toBe(30);
   });
 

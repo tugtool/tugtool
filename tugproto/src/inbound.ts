@@ -147,10 +147,12 @@ export interface StopTask {
  * range so a long session loads only the most relevant tail rather
  * than the whole transcript:
  *
+ *   - `{ lastTurns: N }` — the most recent N committed turns: the default
+ *     cold-resume load. Bounds the load by the canonical unit (a turn),
+ *     independent of turn density — see `tuglaws/turn-metric.md`.
  *   - `{ lastMessages: N }` — the most recent N transcript messages
- *     (rows), cut at a turn boundary: the default cold-resume load. A
- *     message is a user or assistant row, so this bounds the load by the
- *     unit the transcript actually numbers.
+ *     (rows), cut at a turn boundary. The row-sized sibling of `lastTurns`,
+ *     retained for callers that still bound by rows.
  *   - `{ olderMessages: { beforeTurnIndex, count } }` — backward paging:
  *     the `count` messages immediately *older* than turn
  *     `beforeTurnIndex` (the current oldest-loaded turn), cut at a turn
@@ -162,6 +164,7 @@ export interface StopTask {
  * Absent ⇒ load the whole session (the legacy, unbounded behavior).
  */
 export type ReplayWindow =
+  | { lastTurns: number }
   | { lastMessages: number }
   | { olderMessages: { beforeTurnIndex: number; count: number } }
   | { turnRange: [number, number] };

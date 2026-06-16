@@ -460,10 +460,10 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 | #step-5 | Reconcile ledger to `totalTurns` on replay | done | 36f43abb |
 | #step-6 | Decouple visibility + resume/new gate from count | done | a1745c80 |
 | #step-7 | Phase 1 integration + four-way equality | done | verification |
-| #step-8 | Restore window unit → turns (protocol + wire + replay) | pending | — |
-| #step-9 | Store: restoreWindowTurns + firstLoadedTurnIndex | pending | — |
-| #step-10 | Window sizing in turns (dev-restore-window) | pending | — |
-| #step-11 | Load bar speaks turns | pending | — |
+| #step-8 | Restore window unit → turns (protocol + wire + replay) | done | fb3f2663 |
+| #step-9 | Store: restoreWindowTurns + firstLoadedTurnIndex | done | 42603e43 |
+| #step-10 | Window sizing in turns (dev-restore-window) | done | 42603e43 |
+| #step-11 | Load bar speaks turns | done | 1fc0a582 |
 | #step-12 | `#t…m…` badge formatter + turn-based base | pending | — |
 | #step-13 | Per-message badge rendering | pending | — |
 | #step-14 | Picker subtitle shows turns + bytes | pending | — |

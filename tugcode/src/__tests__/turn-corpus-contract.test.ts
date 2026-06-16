@@ -82,3 +82,49 @@ describe("turn-corpus contract — tugcode totalTurns matches the golden corpus"
     });
   }
 });
+
+describe("lastTurns window — selects the most recent N turns", () => {
+  async function replay(
+    jsonl: string,
+    window: { lastTurns: number },
+  ): Promise<OutboundMessage[]> {
+    const out: OutboundMessage[] = [];
+    for await (const msg of translateJsonlSession(
+      { kind: "ok", jsonl },
+      { disableYield: true, window },
+    )) {
+      out.push(msg);
+    }
+    return out;
+  }
+
+  test("lastTurns: 5 over the 22-turn fixture loads the trailing 5", async () => {
+    const jsonl = readFileSync(join(FIXTURES_DIR, "windowed.jsonl"), "utf8");
+    const out = await replay(jsonl, { lastTurns: 5 });
+    const complete = out.find(
+      (m): m is ReplayComplete => m.type === "replay_complete",
+    );
+    expect(complete).toBeDefined();
+    // totalTurns is the whole-session count (the authority), unchanged by
+    // the window; firstLoadedTurnIndex is the clamped start (22 - 5).
+    expect(complete!.totalTurns).toBe(22);
+    expect(complete!.firstLoadedTurnIndex).toBe(17);
+    expect(complete!.hasOlder).toBe(true);
+    // Exactly the windowed turns emit an opener.
+    const openers = out.filter(
+      (m) => m.type === "add_user_message" || m.type === "wake_started",
+    ).length;
+    expect(openers).toBe(5);
+  });
+
+  test("lastTurns ≥ totalTurns loads the whole session (no older)", async () => {
+    const jsonl = readFileSync(join(FIXTURES_DIR, "windowed.jsonl"), "utf8");
+    const out = await replay(jsonl, { lastTurns: 1000 });
+    const complete = out.find(
+      (m): m is ReplayComplete => m.type === "replay_complete",
+    );
+    expect(complete!.totalTurns).toBe(22);
+    expect(complete!.firstLoadedTurnIndex).toBe(0);
+    expect(complete!.hasOlder).toBe(false);
+  });
+});

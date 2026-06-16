@@ -10,6 +10,29 @@ import {
   deriveControlBarState,
   type ControlBarInputs,
 } from "../dev-load-control-bar-state";
+import { restoreBarValueMax } from "../dev-load-control-bar";
+
+describe("restoreBarValueMax — turns committed of turns requested", () => {
+  test("streaming: fills toward the requested window, clamped", () => {
+    // Mid-load: 7 of 25 turns committed so far.
+    expect(restoreBarValueMax(7, 25, true)).toEqual({ value: 7, max: 25 });
+    // A burst can't overshoot the requested max.
+    expect(restoreBarValueMax(30, 25, true)).toEqual({ value: 25, max: 25 });
+  });
+
+  test("landed: settles to the turns actually committed (short session)", () => {
+    // A 3-turn session requested 25 → settles to "3 of 3", not "25 of 25".
+    expect(restoreBarValueMax(3, 25, false)).toEqual({ value: 3, max: 3 });
+  });
+
+  test("landed: a full window reports the requested count", () => {
+    expect(restoreBarValueMax(25, 25, false)).toEqual({ value: 25, max: 25 });
+  });
+
+  test("landed: never below 1 (an empty load still shows a unit bar)", () => {
+    expect(restoreBarValueMax(0, 25, false)).toEqual({ value: 1, max: 1 });
+  });
+});
 
 const base: ControlBarInputs = {
   loadingDisplay: false,

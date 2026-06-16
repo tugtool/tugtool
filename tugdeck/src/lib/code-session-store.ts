@@ -26,7 +26,7 @@ import {
   encodeRecordSessionStateChange,
   encodeRecordTurnTelemetry,
   encodeRequestReplay,
-  DEFAULT_REPLAY_WINDOW_MESSAGES,
+  DEFAULT_REPLAY_WINDOW_TURNS,
   type ContentBlock,
   type FeedIdValue,
 } from "@/protocol";
@@ -276,12 +276,13 @@ export interface CodeSessionStoreOptions {
    */
   sessionMode: CardSessionMode;
   /**
-   * Message-rows this resume requested ([recency #step-6]): the default
-   * window N, or deeper for a faithful restore to a saved anchor above it.
-   * Exposed on the snapshot so the Z0 load bar reports progress against the
-   * real target. Defaults to {@link DEFAULT_REPLAY_WINDOW_MESSAGES}.
+   * Committed turns this resume requested: the default window N turns, or
+   * deeper for a faithful restore to a saved anchor above it. Turns are the
+   * canonical unit (`tuglaws/turn-metric.md`); exposed on the snapshot so the
+   * load bar reports progress against the real target. Defaults to
+   * {@link DEFAULT_REPLAY_WINDOW_TURNS}.
    */
-  restoreWindowMessages?: number;
+  restoreWindowTurns?: number;
   /**
    * Test seam — defaults to globalThis `setTimeout` / `clearTimeout`.
    * Production callers omit this. Tests inject a captured-table
@@ -317,7 +318,7 @@ export class CodeSessionStore {
   private readonly tugSessionId: string;
   private readonly displayLabel: string;
   private readonly sessionMode: CardSessionMode;
-  private readonly restoreWindowMessages: number;
+  private readonly restoreWindowTurns: number;
   private readonly feedStore: FeedStore;
   private readonly timerSource: TimerSource;
   /**
@@ -397,8 +398,8 @@ export class CodeSessionStore {
     this.lifecycle = options.lifecycle;
     this.tugSessionId = options.tugSessionId;
     this.displayLabel = options.displayLabel ?? options.tugSessionId.slice(0, 8);
-    this.restoreWindowMessages =
-      options.restoreWindowMessages ?? DEFAULT_REPLAY_WINDOW_MESSAGES;
+    this.restoreWindowTurns =
+      options.restoreWindowTurns ?? DEFAULT_REPLAY_WINDOW_TURNS;
     this.sessionMode = options.sessionMode;
     this.timerSource = options.timerSource ?? DEFAULT_TIMER_SOURCE;
 
@@ -563,7 +564,7 @@ export class CodeSessionStore {
       tugSessionId: this.tugSessionId,
       displayLabel: this.displayLabel,
       sessionMode: this.sessionMode,
-      restoreWindowMessages: this.restoreWindowMessages,
+      restoreWindowTurns: this.restoreWindowTurns,
       activeMsgId: this.state.activeMsgId,
       // [D01] submit is gated on the conjunction of phase and
       // transport health. An idle card whose wire is offline must

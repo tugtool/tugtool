@@ -33,7 +33,7 @@ function baseSnap(
     tugSessionId: "tug-1",
     displayLabel: "test",
     sessionMode: "new",
-    restoreWindowMessages: 50,
+    restoreWindowTurns: 25,
     activeMsgId: null,
     canSubmit: true,
     canInterrupt: false,

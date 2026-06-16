@@ -81,6 +81,15 @@ export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
  * with ≤ N messages loads whole and shows no "load previous" affordance.
  */
 export const DEFAULT_REPLAY_WINDOW_MESSAGES = 50;
+/**
+ * Default cold-resume window in **turns** — the canonical unit
+ * (`tuglaws/turn-metric.md`). A turn is one committed response cycle, so
+ * this bounds the load by intent rather than row density: a session with
+ * ≤ N committed turns loads whole and shows no "load previous" affordance.
+ * Tunable in one place; supersedes `DEFAULT_REPLAY_WINDOW_MESSAGES` as the
+ * cold-resume default once `dev-restore-window` sizes in turns.
+ */
+export const DEFAULT_REPLAY_WINDOW_TURNS = 25;
 export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";
 export const CONTROL_ACTION_RECORD_CONTEXT_BREAKDOWN = "record_context_breakdown";
 export const CONTROL_ACTION_RECORD_SESSION_STATE_CHANGE =
@@ -602,7 +611,7 @@ export function encodeTrashProjectDirSessions(projectDir: string): Frame {
  * the JSONL again so I can rehydrate."
  *
  * The optional `window` bounds the replay by recency — the default
- * cold-resume load sends `{ lastMessages: DEFAULT_REPLAY_WINDOW_MESSAGES }`
+ * cold-resume load sends `{ lastTurns: DEFAULT_REPLAY_WINDOW_TURNS }`
  * so a long session loads only its most relevant tail. The supervisor
  * forwards the window verbatim; tugcode reports the resulting slice on
  * `replay_complete`. Absent ⇒ the whole session (legacy).

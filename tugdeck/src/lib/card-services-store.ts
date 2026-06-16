@@ -44,7 +44,7 @@ import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
 import { encodeTrashProjectDirSessions } from "../protocol";
-import { DEFAULT_REPLAY_WINDOW_MESSAGES } from "../protocol";
+import { DEFAULT_REPLAY_WINDOW_TURNS } from "../protocol";
 import { resolveRestoreWindow } from "./dev-restore-window";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
@@ -282,19 +282,21 @@ class CardServicesStore {
       return null;
     }
 
-    // Faithful restore ([recency P05], #step-6): size the cold-resume window
-    // to include the saved scroll anchor. The transcript persists its anchor's
+    // Faithful restore ([P06]): size the cold-resume window in turns to
+    // include the saved scroll anchor. The transcript persists its anchor's
     // distance-from-bottom (`depthFromEnd`, in message-rows) into the card
     // bag; if the user was parked above the default window, load deep enough
-    // to reach it (else the default N). Only for `resume` — a fresh spawn has
-    // nothing to restore (a stale bag from a prior session is ignored).
-    const restoreWindowMessages =
+    // (in turns) to reach it (else the default N turns). The anchor stays
+    // row-based — every turn is ≥ 1 row, so a turn-sized window always covers
+    // at least that many rows. Only for `resume` — a fresh spawn has nothing
+    // to restore (a stale bag from a prior session is ignored).
+    const restoreWindowTurns =
       binding.sessionMode === "resume"
         ? resolveRestoreWindow(
             readSavedAnchorDepth(this._deckManager, cardId),
-            DEFAULT_REPLAY_WINDOW_MESSAGES,
+            DEFAULT_REPLAY_WINDOW_TURNS,
           )
-        : DEFAULT_REPLAY_WINDOW_MESSAGES;
+        : DEFAULT_REPLAY_WINDOW_TURNS;
 
     const codeSessionStore = new CodeSessionStore({
       conn: connection,
@@ -307,10 +309,10 @@ class CardServicesStore {
       // for the store's lifetime — a re-bind builds a fresh services
       // bag with a fresh store, so the mode field never goes stale.
       sessionMode: binding.sessionMode,
-      // The window this resume requests, so the Z0 load bar reports progress
-      // against the real target (the default N, or deeper for a faithful
-      // restore) instead of a hard-coded 50.
-      restoreWindowMessages,
+      // The window this resume requests (in turns), so the load bar reports
+      // progress against the real target (the default N turns, or deeper for
+      // a faithful restore) instead of a hard-coded default.
+      restoreWindowTurns,
     });
     const editorStore = new EditorSettingsStore();
     const responseStore = new ResponseSettingsStore();
@@ -481,13 +483,13 @@ class CardServicesStore {
     if (binding.sessionMode === "resume") {
       codeSessionStore.notifyResumeBindingLanded();
     }
-    // Bound the cold-resume load by recency: replay only the most
-    // recent N messages (rows). A long session loads its relevant tail
-    // fast; older turns page in on demand. tugcode reports the loaded
+    // Bound the cold-resume load by recency: replay only the most recent N
+    // committed turns (the canonical unit). A long session loads its relevant
+    // tail fast; older turns page in on demand. tugcode reports the loaded
     // slice (oldest turn/message index, totals, hasOlder) on
     // `replay_complete`.
     sendRequestReplay(connection, binding.tugSessionId, {
-      lastMessages: restoreWindowMessages,
+      lastTurns: restoreWindowTurns,
     });
 
     return {
