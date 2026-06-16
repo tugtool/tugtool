@@ -14,9 +14,9 @@ exactly once across its three possible homes — all persisted through tugbank.
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | in progress |
 | Target branch | main |
-| Last updated | 2026-06-12 |
+| Last updated | 2026-06-15 |
 
 ---
 
@@ -37,10 +37,13 @@ section); and chrome rearranges (maximize to the LEFT end, gear inboard right,
 chevron at the very end).
 
 This plan carries that design into the production dev card. It follows the PULSE
-plan (`roadmap/pulse.md`), which ships the `pulse-store`, the `tide-pulse-strip`
-component, and the `pulse/enabled` toggle this plan's PULSE row item, PULSE lane,
-and strip-suppression rule all consume — and which explicitly deferred Shelf/Rack
-productionization here (its [Q03] and non-goals).
+plan (`roadmap/archive/pulse.md`, since shipped — its data path subsequently
+rebuilt by `roadmap/archive/pulse-2.md`, "Watch the Wire"), which ships the
+`pulse-store`, the `tide-pulse-strip` component, and the `pulse/enabled` toggle
+this plan's PULSE row item, PULSE lane, and strip-suppression rule all consume —
+and which explicitly deferred Shelf/Rack productionization here (its [Q03] and
+non-goals). PULSE 2 left the store/hook surface this plan reads (`usePulse`,
+`PulseSnapshot`) unchanged.
 
 #### Strategy {#strategy}
 
@@ -101,7 +104,7 @@ productionization here (its [Q03] and non-goals).
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
 - Any change to the PULSE pipeline itself (daemon, facts, ledger, store) — this plan
-  is purely a consumer of what `roadmap/pulse.md` ships.
+  is purely a consumer of what `roadmap/archive/pulse.md` (+ `pulse-2.md`) ships.
 - Per-card scope filtering of the PULSE lane/strip — carried from pulse [Q03],
   deferred again here with rationale ([Q02]).
 - New row datums beyond the spike vocabulary (cost, TTFT, etc.) — the registry makes
@@ -115,9 +118,12 @@ productionization here (its [Q03] and non-goals).
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- **`roadmap/pulse.md` implemented** — `pulse-store.ts` (snapshot: recent lines +
-  `enabled`), `tide-pulse-strip.tsx/.css`, and the `pulse/enabled` tugbank default.
-  The PULSE row cell, PULSE lane, and strip suppression all read these.
+- **PULSE shipped** (`roadmap/archive/pulse.md` + `pulse-2.md`) — `pulse-store.ts`
+  (`PulseSnapshot { enabled, lines }`, read via the `usePulse()`
+  `useSyncExternalStore` hook; `latestLineForScope()` for the newest line; cap
+  `PULSE_LINES_CAP`), `tide-pulse-strip.tsx/.css`, and the `pulse/enabled` tugbank
+  default (`PULSE_ENABLED_DOMAIN`/`KEY`). The PULSE row cell, PULSE lane, and strip
+  suppression all read these.
 - The jobs ledger + monitors work (shipped on main): `useJobsState`, `countJobs`,
   `jobsCellPose`, the JOBS popover.
 - The task list machinery: `useTaskListState`, `countTasks`, the TASKS popover.
@@ -167,7 +173,8 @@ the pulse-store tail) requiring no architecture change.
 #### [Q02] Per-card scope filtering of PULSE surfaces (DEFERRED) {#q02-scope-filtering}
 
 **Question:** Should a card's PULSE lane/strip filter to the card's own session
-scope? (Carried from `roadmap/pulse.md` [Q03], which deferred it to this plan.)
+scope? (Carried from `roadmap/archive/pulse.md` [Q03], which deferred it to this
+plan; PULSE 2 added the scope-union plumbing that makes this a pure display knob.)
 
 **Why it matters:** With multiple live cards, an app-wide feed narrates other cards'
 work into every card's shelf.
