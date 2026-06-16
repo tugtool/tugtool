@@ -237,6 +237,25 @@ export const KEYBINDINGS: KeyBinding[] = [
   // unmodified Tab / Shift-Tab walk), so a modified Tab falls through to this
   // map rather than being consumed as a focus move.
   { key: "Tab", alt: true, action: TUG_ACTIONS.CYCLE_FOCUS_MODE, scope: "key-card", preventDefaultOnMatch: true },
+  // ⌥⌘↑ / ⌥⌘↓ step the active card's transcript one turn back / forward.
+  // `scope: "key-card"` routes to the active card's `card-content`
+  // responder, so the chord walks up from wherever focus sits (prompt
+  // editor included) — this is why it works card-wide where the list
+  // view's own scroll-container PageUp/PageDown pager does not. ⌥↑/⌥↓
+  // are intentionally avoided (editor word-movement); only the dev card
+  // registers a handler. `preventDefaultOnMatch` suppresses the native
+  // default + macOS beep when no card claims it. Stage 1 runs in capture
+  // phase before a focused editor sees the key, so the chord dispatches
+  // even mid-compose.
+  { key: "ArrowUp", alt: true, meta: true, action: TUG_ACTIONS.PREVIOUS_TURN, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "ArrowDown", alt: true, meta: true, action: TUG_ACTIONS.NEXT_TURN, scope: "key-card", preventDefaultOnMatch: true },
+  // ⌥⇧⌘↑ / ⌥⇧⌘↓ jump the active card's transcript to the very top / very
+  // bottom (Home / End). Same key-card routing as the turn-step chords
+  // above, with shift added; the exact-modifier match in
+  // `keyBindingMatchesEvent` keeps these distinct from the unshifted
+  // ⌥⌘↑/↓ turn-step bindings.
+  { key: "ArrowUp", alt: true, shift: true, meta: true, action: TUG_ACTIONS.FIRST_TURN, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "ArrowDown", alt: true, shift: true, meta: true, action: TUG_ACTIONS.LAST_TURN, scope: "key-card", preventDefaultOnMatch: true },
 ];
 
 // ---- matchKeybinding ----

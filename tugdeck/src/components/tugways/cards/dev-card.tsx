@@ -3125,6 +3125,26 @@ export function DevCardBody({
       [TUG_ACTIONS.CYCLE_FOCUS_MODE]: (_event: ActionEvent) => {
         cycle.toggle();
       },
+      // ⌥⌘↑ / ⌥⌘↓ — step the transcript one turn back / forward. The
+      // card-content responder owns this because the transcript is the
+      // card's content; routing the chord here (rather than a listener
+      // on the transcript's scroll container) is what makes it work from
+      // anywhere focus sits in the card, prompt editor included. The
+      // step routes through `DevTranscriptHandle.pageByEntry`, which
+      // keeps the [D07] follow-bottom intent coherent.
+      [TUG_ACTIONS.PREVIOUS_TURN]: (_event: ActionEvent) => {
+        transcriptRef.current?.pageByEntry("up");
+      },
+      [TUG_ACTIONS.NEXT_TURN]: (_event: ActionEvent) => {
+        transcriptRef.current?.pageByEntry("down");
+      },
+      // ⌥⇧⌘↑ / ⌥⇧⌘↓ — jump the transcript to the very top / bottom.
+      [TUG_ACTIONS.FIRST_TURN]: (_event: ActionEvent) => {
+        transcriptRef.current?.scrollToTop();
+      },
+      [TUG_ACTIONS.LAST_TURN]: (_event: ActionEvent) => {
+        transcriptRef.current?.scrollToBottom();
+      },
       // ⇧⇥ cycles the permission mode. Only the dev card registers this
       // handler, so on any other card ⇧⇥ falls through to reverse-tab
       // navigation (Risk R02). `cycle` reads the current mode fresh from

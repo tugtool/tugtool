@@ -28,7 +28,16 @@ body {
   --tugx-transcript-icon-column-gap:    var(--tug-space-xs);
   --tugx-transcript-icon-size:          var(--tug-icon-size-md);
   --tugx-transcript-header-gap:         var(--tug-space-sm);
-  --tugx-transcript-body-margin-top:    var(--tug-space-lg);
+  /* Gap between the attribution header and the body. Tight by default —
+   * a user prompt, a paragraph, a tool block, or thinking sits close
+   * under the speaker line. The wider `-heading` variant is swapped in
+   * (see the `:has()` rule on `__body` below) only when the body opens
+   * with a LARGE markdown heading (h1–h3): the bigger margin tracks the
+   * bigger content, the same rhythm the markdown view uses for its own
+   * section breaks. Bodies that don't open on a big heading keep the
+   * tight gap. */
+  --tugx-transcript-body-margin-top:         0;
+  --tugx-transcript-body-margin-top-heading: var(--tug-space-md);
   --tugx-transcript-body-line-height:   1.5;
   --tugx-transcript-controls-margin-top: var(--tug-space-xs);
   --tugx-transcript-controls-gap:       var(--tug-space-sm);
@@ -235,6 +244,18 @@ body {
      selection on the body. */
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* A body with a large markdown heading (h1–h3) gets the wider gap above
+   it — the bigger margin tracks the bigger content. `.tug-markdown-block`
+   is rendered only for assistant prose, so user prompts (a plain `<span>`)
+   keep the tight default gap. The selector deliberately does NOT assert
+   exact nesting (no `:first-child` / `>` chain): markdown wraps headings a
+   level or two deep and one wrong link silently voids the whole `:has()`,
+   which is what left every assistant turn stuck on the 0 default. A loose
+   descendant test is robust against that. */
+.tug-transcript-entry__body:has(.tug-markdown-block :is(h1, h2, h3)) {
+  margin-top: var(--tugx-transcript-body-margin-top-heading);
 }
 
 /* Optional in-flight indicator slot — only the in-flight-tip row's

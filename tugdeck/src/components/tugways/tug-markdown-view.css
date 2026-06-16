@@ -314,14 +314,21 @@ body {
   margin-top: var(--tugx-md-block-gap);
 }
 
-/* Larger gap BEFORE a heading block — a section break. */
+/* The section-break rhythm (larger gap before, tighter gap after) is
+   reserved for the headings that are visually LARGER than body text —
+   h1 (1.25em), h2 (1.15em), h3 (1.05em). h4–h6 render at body size
+   (1em), so a big section-break gap above them reads as stray space,
+   not hierarchy; they fall through to the default block gap and behave
+   like any other block. The bigger margin tracks bigger content. */
+
+/* Larger gap BEFORE a larger heading — a section break. */
 .tugx-md-block
-  + .tugx-md-block:is(:has(> h1), :has(> h2), :has(> h3), :has(> h4), :has(> h5), :has(> h6)) {
+  + .tugx-md-block:is(:has(> h1), :has(> h2), :has(> h3)) {
   margin-top: var(--tugx-md-heading-gap);
 }
 
-/* Tighter gap AFTER a heading — the heading hugs the content it titles. */
-.tugx-md-block:is(:has(> h1), :has(> h2), :has(> h3), :has(> h4), :has(> h5), :has(> h6))
+/* Tighter gap AFTER a larger heading — the heading hugs the content it titles. */
+.tugx-md-block:is(:has(> h1), :has(> h2), :has(> h3))
   + .tugx-md-block {
   margin-top: var(--tugx-md-after-heading-gap);
 }

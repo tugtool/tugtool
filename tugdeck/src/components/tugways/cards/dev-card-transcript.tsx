@@ -1002,6 +1002,13 @@ export interface DevTranscriptHandle {
   scrollToBottom(options?: { animated?: boolean }): void;
 
   /**
+   * Scroll the transcript to the very top (Home). Thin pass-through to
+   * the inner `TugListView`'s `scrollToTop`, which disengages
+   * follow-bottom before landing at the top.
+   */
+  scrollToTop(): void;
+
+  /**
    * Scroll the transcript so the row at `index` is in view. Thin
    * pass-through to the inner `TugListView`'s `scrollToIndex`. The
    * Z2 telemetry popovers drive this to jump to a turn the user
@@ -1012,6 +1019,15 @@ export interface DevTranscriptHandle {
     index: number,
     options?: { block?: ScrollLogicalPosition; animated?: boolean },
   ): void;
+
+  /**
+   * Step the transcript one turn (one entry) up or down. Thin
+   * pass-through to the inner `TugListView`'s `pageByEntry`. The dev
+   * card binds Opt-Cmd-Up / Opt-Cmd-Down at the card root to this, so
+   * turn navigation works from anywhere focus sits in the card — the
+   * transcript region, the prompt editor, the status bar.
+   */
+  pageByEntry(direction: "up" | "down"): void;
 }
 
 export const DevTranscriptHost = forwardRef<
@@ -1291,11 +1307,17 @@ export const DevTranscriptHost = forwardRef<
       scrollToBottom(options?: { animated?: boolean }): void {
         listViewRef.current?.scrollToBottom(options);
       },
+      scrollToTop(): void {
+        listViewRef.current?.scrollToTop();
+      },
       scrollToIndex(
         index: number,
         options?: { block?: ScrollLogicalPosition; animated?: boolean },
       ): void {
         listViewRef.current?.scrollToIndex(index, options);
+      },
+      pageByEntry(direction: "up" | "down"): void {
+        listViewRef.current?.pageByEntry(direction);
       },
     }),
     [],

@@ -272,6 +272,26 @@ export const TUG_ACTIONS = {
   //                 ([#step-13a]). For `unknown`, a host with no handler leaves
   //                 it unhandled so the prompt entry falls through to claude;
   //                 a hidden command is never sent to claude regardless.
+  // PREVIOUS_TURN / NEXT_TURN: payload — none. Step the dev card's
+  //                 transcript one turn (one entry) backward / forward,
+  //                 pinning the target turn's top flush to the viewport
+  //                 top. Bound to ⌥⌘↑ / ⌥⌘↓, `scope: "key-card"`, so the
+  //                 chord walks from the first responder up to the
+  //                 card-content responder regardless of where focus
+  //                 sits in the card (transcript, prompt editor, status
+  //                 bar) — unlike the list view's own scroll-container
+  //                 PageUp/PageDown pager, which only fires when the
+  //                 transcript holds focus. ⌥↑/⌥↓ are deliberately NOT
+  //                 used (they are editor word-movement). The handler
+  //                 drives `DevTranscriptHandle.pageByEntry`.
+  // FIRST_TURN / LAST_TURN: payload — none. Jump the dev card's
+  //                 transcript to the very top / very bottom (Home /
+  //                 End). Bound to ⌥⇧⌘↑ / ⌥⇧⌘↓, `scope: "key-card"`,
+  //                 same card-wide routing as PREVIOUS_TURN/NEXT_TURN.
+  //                 FIRST_TURN drives `DevTranscriptHandle.scrollToTop`
+  //                 (disengages follow-bottom); LAST_TURN drives
+  //                 `scrollToBottom` (re-engages follow-bottom at the
+  //                 live edge).
   CYCLE_CARD:     "cycle-card",
   PREVIOUS_TAB:   "previous-tab",
   NEXT_TAB:       "next-tab",
@@ -283,6 +303,10 @@ export const TUG_ACTIONS = {
   SET_PERMISSION_MODE: "set-permission-mode",
   INTERRUPT_SESSION: "interrupt-session",
   CYCLE_FOCUS_MODE: "cycle-focus-mode",
+  PREVIOUS_TURN:  "previous-turn",
+  NEXT_TURN:      "next-turn",
+  FIRST_TURN:     "first-turn",
+  LAST_TURN:      "last-turn",
   RUN_SLASH_COMMAND: "run-slash-command",
   SHOW_SLASH_COMMAND_NOTICE: "show-slash-command-notice",
 
