@@ -36,7 +36,7 @@ body {
    * bigger content, the same rhythm the markdown view uses for its own
    * section breaks. Bodies that don't open on a big heading keep the
    * tight gap. */
-  --tugx-transcript-body-margin-top:         0;
+  --tugx-transcript-body-margin-top:         1px;
   --tugx-transcript-body-margin-top-heading: var(--tug-space-md);
   --tugx-transcript-body-line-height:   1.5;
   --tugx-transcript-controls-margin-top: var(--tug-space-xs);
