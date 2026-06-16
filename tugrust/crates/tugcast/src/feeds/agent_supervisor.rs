@@ -396,6 +396,13 @@ pub trait SessionsRecorder: Send + Sync {
     /// note in the plan's risk table.
     fn record_turn(&self, session_id: &str);
 
+    /// Overwrite the row's `turn_count` with the authoritative value — the
+    /// `totalTurns` a successful replay reports. Unlike `record_turn` (which
+    /// increments), this SETs, reconciling any prior estimate / `MAX` seed to
+    /// the segmenter's exact count. Live `record_turn`s then build on this
+    /// base. No-op if the row is missing or not in `live` state.
+    fn set_turn_count(&self, session_id: &str, count: i64);
+
     /// Capture the most-recent user-message text for a session,
     /// truncated to the picker-snippet length. Overwrites the previous
     /// snippet on every call — the picker shows the latest prompt so the
@@ -620,6 +627,21 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             target: "dev::session-lifecycle",
             event = "ledger.record_turn",
             session_id,
+        );
+        self.broadcast_row(session_id);
+    }
+
+    fn set_turn_count(&self, session_id: &str, count: i64) {
+        let now = crate::session_ledger::now_millis();
+        if let Err(err) = self.ledger.set_turn_count(session_id, count, now) {
+            warn!(error = %err, session_id, count, "ledger set_turn_count failed");
+            return;
+        }
+        tracing::debug!(
+            target: "dev::session-lifecycle",
+            event = "ledger.set_turn_count",
+            session_id,
+            count,
         );
         self.broadcast_row(session_id);
     }
@@ -4390,6 +4412,7 @@ pub(crate) struct NoopSessionsRecorder;
 impl SessionsRecorder for NoopSessionsRecorder {
     fn record(&self, _record: SessionRecord<'_>) {}
     fn record_turn(&self, _session_id: &str) {}
+    fn set_turn_count(&self, _session_id: &str, _count: i64) {}
     fn record_user_prompt(&self, _session_id: &str, _prompt: &str) {}
     fn mark_closed(&self, _session_id: &str) {}
     fn mark_failed(&self, _session_id: &str) {}

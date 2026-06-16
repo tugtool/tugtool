@@ -23,6 +23,7 @@
 - [focus-language.md](focus-language.md) — The keyboard-focus model: focus is a ring + behind-tint, selection is a native fill, motion is two planes (Tab linear / arrows spatial) with explicit commit. The engine attributes appearance reads, and the authoring contract (focusGroup / persistentDefaultRing / useSeedKeyView / useSpatialOrder). Read before adding a focusable control or a dialog/sheet/alert.
 - [list-view-usage.md](list-view-usage.md) — House rules for `TugListView` consumers: compose `TugListRow`, never reimplement the row state ramp, the selection-ownership matrix, the consumer inventory, and the sanctioned custom-cell exceptions.
 - [dev-card-unsupported-slash-commands.md](dev-card-unsupported-slash-commands.md) — Why some of Claude Code's slash commands are hidden from the dev card's `/` popup ([D14]). Mirrors `HIDDEN_SLASH_COMMANDS` in `slash-supported.ts`; the discoverable answer to "why isn't `/vim` here?".
+- [turn-metric.md](turn-metric.md) — The one canonical definition of a "turn": tugcode `totalTurns` is the authority, every other counter reconciles to it. The turn rule (S01), the `#t…m…` transcript address (S02), the four-way equality invariant, and the rewind carve-out.
 
 ## Theming, palette, tokens
 

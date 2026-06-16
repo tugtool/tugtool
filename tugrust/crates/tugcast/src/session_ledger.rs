@@ -330,6 +330,15 @@ pub struct PulseLineRow {
     pub scopes: Vec<String>,
 }
 
+/// The canonical turn-rule version stamped on every freshly-written
+/// `external_scan_cache` row. Bump this whenever the scanner's turn rule
+/// changes: existing rows (stamped a lower epoch, or the `DEFAULT 0` of a
+/// pre-column ALTER) then fail the `rule_epoch == CURRENT_RULE_EPOCH` gate
+/// at every cache read and are re-scanned faithfully. `1` is the first
+/// epoch in which the scanner applies the full S01 rule (`isMeta` /
+/// `/compact` / scaffolding / interrupt-marker exclusions, wake counted).
+pub(crate) const CURRENT_RULE_EPOCH: i64 = 1;
+
 /// One row of the `external_scan_cache` table — the persisted result
 /// of scanning one on-disk session JSONL, keyed by session id and
 /// validated by `(file_size, file_mtime)`. `excluded` remembers a
@@ -757,7 +766,8 @@ impl SessionLedger {
                 parse_offset      INTEGER NOT NULL DEFAULT 0,
                 tail_hash         INTEGER NOT NULL DEFAULT 0,
                 cwd_checked       INTEGER NOT NULL DEFAULT 0,
-                created_at_found  INTEGER NOT NULL DEFAULT 0
+                created_at_found  INTEGER NOT NULL DEFAULT 0,
+                rule_epoch        INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS external_scan_cache_project
@@ -834,6 +844,12 @@ impl SessionLedger {
             ("tail_hash", "INTEGER NOT NULL DEFAULT 0"),
             ("cwd_checked", "INTEGER NOT NULL DEFAULT 0"),
             ("created_at_found", "INTEGER NOT NULL DEFAULT 0"),
+            // The turn-rule epoch. DEFAULT 0 (not CURRENT) is load-bearing:
+            // every row that predates the canonical rule is stamped 0 and so
+            // fails the `rule_epoch == CURRENT_RULE_EPOCH` gate at every cache
+            // read, forcing a faithful re-scan. A `DEFAULT CURRENT` here would
+            // make stale rows match the gate and self-defeat.
+            ("rule_epoch", "INTEGER NOT NULL DEFAULT 0"),
         ] {
             if !cols.iter().any(|(n, _)| n == name) {
                 conn.execute(
@@ -993,10 +1009,16 @@ impl SessionLedger {
             .optional()?;
         let seed: Option<(i64, Option<String>, Option<String>, i64)> = tx
             .query_row(
+                // Epoch-gated like the scan hit-check: a stale-rule cache row
+                // must not seed the `MAX(turn_count)` merge below, or a
+                // pre-fix inflated count could survive the rule change and be
+                // re-applied through the merge. A mismatched row yields no
+                // seed; reconcile-on-replay then writes the authoritative
+                // count ([P08]).
                 "SELECT turn_count, last_user_prompt, name, created_at
                  FROM external_scan_cache
-                 WHERE session_id = ?1 AND excluded = 0",
-                params![session_id],
+                 WHERE session_id = ?1 AND excluded = 0 AND rule_epoch = ?2",
+                params![session_id, CURRENT_RULE_EPOCH],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()?;
@@ -1091,6 +1113,30 @@ impl SessionLedger {
             // Row may be absent (forgotten under us) or non-live (closed/failed
             // out from under a late turn). Both are acceptable no-ops.
         }
+        Ok(())
+    }
+
+    /// Overwrite `turn_count` with the authoritative value and bump
+    /// `last_used_at`. Unlike `record_turn` (which increments per live turn),
+    /// this SETs — the reconcile path ([P02]) calls it with a successful
+    /// replay's `totalTurns` so the row converges to the segmenter's exact
+    /// count, correcting any prior scan estimate or `record_spawn` `MAX` seed.
+    /// Live `record_turn`s after replay build on this base. No-op if the row
+    /// is absent or not `live`, exactly like `record_turn`.
+    pub fn set_turn_count(
+        &self,
+        session_id: &str,
+        count: i64,
+        now: i64,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "UPDATE sessions
+             SET turn_count = ?2,
+                 last_used_at = ?3
+             WHERE session_id = ?1 AND state = 'live'",
+            params![session_id, count, now],
+        )?;
         Ok(())
     }
 
@@ -1371,15 +1417,20 @@ impl SessionLedger {
     pub fn get_scan_cache(&self, session_id: &str) -> Result<Option<ScanCacheRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
+            // Epoch-gated: a row written under a prior turn rule (or a
+            // pre-column row defaulted to epoch 0) is treated as absent, so
+            // the scanner's hit-check misses it and re-parses the file under
+            // the current rule — and the stale `turn_count` never seeds a
+            // tail-resume either (a miss carries no resume seed).
             "SELECT session_id, project_dir, file_size, file_mtime, excluded,
                     turn_count, last_user_prompt, name, created_at, last_used_at,
                     parse_offset, tail_hash, cwd_checked, created_at_found
              FROM external_scan_cache
-             WHERE session_id = ?1
+             WHERE session_id = ?1 AND rule_epoch = ?2
              LIMIT 1",
         )?;
         let row = stmt
-            .query_row(params![session_id], scan_cache_row_from_query)
+            .query_row(params![session_id, CURRENT_RULE_EPOCH], scan_cache_row_from_query)
             .optional()?;
         Ok(row)
     }
@@ -1391,8 +1442,8 @@ impl SessionLedger {
             "INSERT OR REPLACE INTO external_scan_cache (
                 session_id, project_dir, file_size, file_mtime, excluded,
                 turn_count, last_user_prompt, name, created_at, last_used_at,
-                parse_offset, tail_hash, cwd_checked, created_at_found
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                parse_offset, tail_hash, cwd_checked, created_at_found, rule_epoch
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 row.session_id,
                 row.project_dir,
@@ -1408,6 +1459,10 @@ impl SessionLedger {
                 row.tail_hash,
                 row.cwd_checked as i64,
                 row.created_at_found as i64,
+                // Stamp the current rule epoch on every write — a fresh scan
+                // always reflects the live rule, so its row is valid until the
+                // rule (and this constant) next changes.
+                CURRENT_RULE_EPOCH,
             ],
         )?;
         Ok(())
@@ -2280,6 +2335,70 @@ mod tests {
     }
 
     #[test]
+    fn stale_rule_epoch_cache_row_is_a_miss_and_never_seeds_spawn() {
+        // [P08] / Risk R05: a cache row written under a prior turn rule must
+        // not survive the rule change. It is invisible to the scan hit-check
+        // (so the file is re-parsed under the current rule) AND it must not
+        // seed `record_spawn`'s MAX merge (so a pre-fix inflated count can't
+        // be re-applied). Reconcile-on-replay then writes the authority.
+        let l = fresh();
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: "ext-stale".into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 99, // inflated by the old, looser rule
+            last_user_prompt: Some("stale prompt".into()),
+            name: Some("Stale title".into()),
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+        })
+        .unwrap();
+
+        // Fresh upsert is at CURRENT_RULE_EPOCH and is visible.
+        assert!(
+            l.get_scan_cache("ext-stale").unwrap().is_some(),
+            "a current-epoch row must be a cache hit"
+        );
+
+        // Simulate the row predating the rule change: stamp it a prior epoch.
+        l.db
+            .lock()
+            .expect("ledger mutex")
+            .execute(
+                "UPDATE external_scan_cache SET rule_epoch = ?1 WHERE session_id = ?2",
+                params![CURRENT_RULE_EPOCH - 1, "ext-stale"],
+            )
+            .unwrap();
+
+        // Hit-check gate: the stale row is now invisible — a scan miss that
+        // forces a faithful re-parse (and carries no resume seed).
+        assert!(
+            l.get_scan_cache("ext-stale").unwrap().is_none(),
+            "a prior-epoch row must read as absent"
+        );
+
+        // Seed gate: record_spawn must not pull the inflated 99 through its
+        // MAX merge — the fresh ledger row stays at 0 until reconcile.
+        l.record_spawn("ext-stale", WS_A, "/proj/alpha", "card-1", millis(10))
+            .unwrap();
+        let row = l.get("ext-stale").unwrap().expect("row exists");
+        assert_eq!(
+            row.turn_count, 0,
+            "stale-epoch seed must not survive the MAX merge"
+        );
+        assert_eq!(
+            row.last_user_prompt, None,
+            "stale-epoch prompt must not seed either"
+        );
+    }
+
+    #[test]
     fn record_spawn_backfills_sparse_existing_row_from_scan_cache() {
         // A row left behind by an earlier resume that predates the
         // hydration (zero turns, no prompt) heals on the next spawn —
@@ -2444,6 +2563,89 @@ mod tests {
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.turn_count, 0);
         assert_eq!(r.state, SessionState::Closed);
+    }
+
+    #[test]
+    fn set_turn_count_overwrites_and_live_turns_build_on_the_base() {
+        // [P02] reconcile: a successful replay SETs the row to the authority
+        // (totalTurns), not an increment — and post-replay live turns build on
+        // that reconciled base.
+        let l = fresh();
+        let t0 = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", t0);
+        for i in 0..3 {
+            l.record_turn("s1", t0 + i).unwrap();
+        }
+        assert_eq!(l.get("s1").unwrap().unwrap().turn_count, 3);
+
+        // Reconcile SETs to 10 (overwrite, not 3 + 10).
+        l.set_turn_count("s1", 10, t0 + 100).unwrap();
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.turn_count, 10);
+        assert_eq!(r.last_used_at, t0 + 100);
+
+        // A live turn after replay builds on the reconciled base.
+        l.record_turn("s1", t0 + 200).unwrap();
+        assert_eq!(l.get("s1").unwrap().unwrap().turn_count, 11);
+    }
+
+    #[test]
+    fn set_turn_count_corrects_an_inflated_max_seed() {
+        // Risk R05 / [P08]: a record_spawn MAX seed can pull an inflated count
+        // into the row; reconcile-after-spawn corrects it DOWN to the
+        // authority. The seed is a current-epoch cache row (so it IS used).
+        let l = fresh();
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: "ext".into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 99, // inflated estimate
+            last_user_prompt: Some("p".into()),
+            name: None,
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+        })
+        .unwrap();
+        l.record_spawn("ext", WS_A, "/proj/alpha", "card-1", millis(10))
+            .unwrap();
+        assert_eq!(
+            l.get("ext").unwrap().unwrap().turn_count,
+            99,
+            "MAX seed pulls the (current-epoch) estimate in first"
+        );
+
+        // Reconcile to the segmenter's exact count (5) wins over the seed.
+        l.set_turn_count("ext", 5, millis(11)).unwrap();
+        assert_eq!(
+            l.get("ext").unwrap().unwrap().turn_count,
+            5,
+            "reconcile corrects the inflated seed to the authority"
+        );
+    }
+
+    #[test]
+    fn set_turn_count_no_op_on_closed_or_missing_row() {
+        let l = fresh();
+        let t0 = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", t0);
+        l.record_turn("s1", t0 + 1).unwrap();
+        l.mark_closed("s1").unwrap();
+
+        // A reconcile arriving after close must not resurrect or rewrite.
+        l.set_turn_count("s1", 99, t0 + 2).unwrap();
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.turn_count, 1);
+        assert_eq!(r.state, SessionState::Closed);
+
+        // A reconcile for a never-recorded session is a silent no-op.
+        l.set_turn_count("ghost", 7, t0 + 3).unwrap();
+        assert!(l.get("ghost").unwrap().is_none());
     }
 
     #[test]

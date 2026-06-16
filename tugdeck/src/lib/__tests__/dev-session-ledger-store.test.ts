@@ -346,6 +346,47 @@ describe("DevSessionLedgerStore", () => {
     store.dispose();
   });
 
+  it("phase-1 reflects a downward reconcile (no stale-high MAX pin)", () => {
+    // [P08]: the count is server-authoritative. A session that legitimately
+    // dropped (10 → 5, e.g. the canonical strict rule corrected an inflated
+    // estimate) must show 5 immediately during a refresh scan — the old
+    // client Math.max would have pinned the stale 10 until phase-2.
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: false,
+      sessions: [
+        makeRow({
+          session_id: "s1",
+          last_used_at: 100,
+          turn_count: 10,
+          last_user_prompt: "prompt",
+          name: "Title",
+        }),
+      ],
+    });
+    store.refresh("ws-1");
+    // Phase 1 of the refresh carries the reconciled (lower) count.
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      scanning: true,
+      sessions: [
+        makeRow({
+          session_id: "s1",
+          last_used_at: 200,
+          turn_count: 5,
+          last_user_prompt: "prompt",
+          name: "Title",
+        }),
+      ],
+    });
+    expect(store.getSnapshot("ws-1").rows[0].turn_count).toBe(5);
+    store.dispose();
+  });
+
   it("scan progress ticks decorate an in-flight scan and clear on settle", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");

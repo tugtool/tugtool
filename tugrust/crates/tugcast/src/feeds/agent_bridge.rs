@@ -1030,6 +1030,27 @@ pub async fn relay_session_io(
                                     ms = t0.elapsed().as_millis() as u64,
                                 );
                             }
+                            // Reconcile the ledger to the authority ([P02]). A
+                            // SUCCESS replay_complete carries window metadata —
+                            // read `totalTurns` (NOT the sibling `count`, which
+                            // is the windowed `turnsCommitted` and undercounts a
+                            // windowed restore) and SET the row's turn_count to
+                            // it. An error frame (missing/unreadable JSONL)
+                            // carries `count:0` and NO `totalTurns`, so the
+                            // branch skips it — SETting from it would zero a real
+                            // count. Parsing the whole line is cheap here: a
+                            // replay_complete fires once per replay window, not
+                            // per stream line. record_spawn's MAX seed ran first;
+                            // this SET makes totalTurns the final written value.
+                            if let Some(total) = parse_replay_complete_total_turns(&line) {
+                                let claude_id = {
+                                    let entry = ledger_entry.lock().await;
+                                    entry.claude_session_id.clone()
+                                };
+                                if let Some(id) = claude_id {
+                                    sessions_recorder.set_turn_count(&id, total);
+                                }
+                            }
                         }
 
                         // `turn_complete` events mark the end of an
@@ -1226,6 +1247,20 @@ fn parse_claude_session_id(line: &[u8]) -> Option<String> {
         .get("session_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+/// The reconcile decision for a `replay_complete` line ([P02]). Returns
+/// `Some(totalTurns)` for a SUCCESS frame — one carrying window metadata —
+/// and `None` for an error or legacy frame that has no `totalTurns`, which
+/// must NOT touch the ledger count (SETting from a `count:0` error frame
+/// would zero a real row). Reads `totalTurns`, never the sibling `count`
+/// (the windowed `turnsCommitted`, which undercounts a windowed restore).
+fn parse_replay_complete_total_turns(line: &str) -> Option<i64> {
+    serde_json::from_str::<serde_json::Value>(line.trim())
+        .ok()
+        .as_ref()
+        .and_then(|v| v.get("totalTurns"))
+        .and_then(|t| t.as_i64())
 }
 
 /// Extract the `stale_session_id` field from a `resume_failed` IPC line.
@@ -1616,6 +1651,31 @@ mod tests {
         let line = br#"{"type":"session_init"}"#;
         assert_eq!(parse_claude_session_id(line), None);
         assert_eq!(parse_claude_session_id(b"not json"), None);
+    }
+
+    // ── reconcile decision (parse_replay_complete_total_turns) ───────────────
+
+    #[test]
+    fn reconcile_reads_total_turns_not_count_on_success() {
+        // A SUCCESS replay_complete carries window metadata. The windowed
+        // `count` (5) undercounts a windowed restore; reconcile must read
+        // `totalTurns` (22) — the authority.
+        let line = r#"{"type":"replay_complete","count":5,"firstLoadedTurnIndex":17,"totalTurns":22,"hasOlder":true,"ipc_version":2}"#;
+        assert_eq!(parse_replay_complete_total_turns(line), Some(22));
+    }
+
+    #[test]
+    fn reconcile_skips_error_frame_with_no_metadata() {
+        // An error frame (missing/unreadable JSONL) carries count:0 and NO
+        // totalTurns — reconcile must skip it, or it would zero a real count.
+        let err = r#"{"type":"replay_complete","count":0,"error":{"kind":"jsonl_missing","message":"gone"},"ipc_version":2}"#;
+        assert_eq!(parse_replay_complete_total_turns(err), None);
+        // A legacy full replay (no window) also has no totalTurns: skip too.
+        let legacy = r#"{"type":"replay_complete","count":3,"ipc_version":2}"#;
+        assert_eq!(parse_replay_complete_total_turns(legacy), None);
+        // A trailing newline (stream framing) does not defeat parsing.
+        let with_nl = "{\"type\":\"replay_complete\",\"count\":2,\"totalTurns\":2}\n";
+        assert_eq!(parse_replay_complete_total_turns(with_nl), Some(2));
     }
 
     #[tokio::test]

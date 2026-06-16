@@ -239,8 +239,24 @@ export class DevSessionLedgerStore {
             const old = prevById.get(row.session_id);
             if (old === undefined) return row;
             prevById.delete(row.session_id);
+            // `turn_count` is server-authoritative — the ledger value the
+            // bridge reconciles to tugcode's `totalTurns` ([P02]/[P08]).
+            // The old client `Math.max(incoming, old)` is dropped: it
+            // pinned a stale-HIGH count over a correct downward reconcile
+            // while a scan was in flight, so a session that legitimately
+            // dropped from 10 → 5 stayed at 10 until phase-2. Now a
+            // non-zero incoming count is taken AS-IS, reflecting the
+            // reconcile immediately. The one exception is a *sparse* phase-1
+            // ledger row that carries `0` (the count for this session lives
+            // in the scan cache and lands at phase-2): a real reconcile
+            // never yields 0 for a content-bearing session (totalTurns ≥ 1),
+            // so a literal 0 is a hole, and we keep the prior settle's count
+            // to avoid a "0 turns" flicker on refresh-on-open. Content holes
+            // (prompt/name) are backfilled the same way.
+            const turn_count =
+              row.turn_count === 0 ? old.turn_count : row.turn_count;
             if (
-              row.turn_count >= old.turn_count &&
+              turn_count === row.turn_count &&
               row.last_user_prompt !== null &&
               row.name !== null
             ) {
@@ -248,7 +264,7 @@ export class DevSessionLedgerStore {
             }
             return {
               ...row,
-              turn_count: Math.max(row.turn_count, old.turn_count),
+              turn_count,
               last_user_prompt: row.last_user_prompt ?? old.last_user_prompt,
               name: row.name ?? old.name,
             };

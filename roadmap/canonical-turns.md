@@ -453,13 +453,13 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Author the canonical turn-rule spec | pending | — |
-| #step-2 | Build the real-JSONL golden corpus | pending | — |
-| #step-3 | Scanner full rule + scan-cache epoch | pending | — |
-| #step-4 | tugcode segmenter contract test | pending | — |
-| #step-5 | Reconcile ledger to `totalTurns` on replay | pending | — |
-| #step-6 | Decouple visibility + resume/new gate from count | pending | — |
-| #step-7 | Phase 1 integration + four-way equality | pending | — |
+| #step-1 | Author the canonical turn-rule spec | done | 2d83c17e |
+| #step-2 | Build the real-JSONL golden corpus | done | b67f72bf |
+| #step-3 | Scanner full rule + scan-cache epoch | done | d624fd89 |
+| #step-4 | tugcode segmenter contract test | done | 1102bb3a |
+| #step-5 | Reconcile ledger to `totalTurns` on replay | done | 36f43abb |
+| #step-6 | Decouple visibility + resume/new gate from count | done | a1745c80 |
+| #step-7 | Phase 1 integration + four-way equality | done | verification |
 | #step-8 | Restore window unit → turns (protocol + wire + replay) | pending | — |
 | #step-9 | Store: restoreWindowTurns + firstLoadedTurnIndex | pending | — |
 | #step-10 | Window sizing in turns (dev-restore-window) | pending | — |

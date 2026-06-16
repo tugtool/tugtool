@@ -192,6 +192,115 @@ fn is_user_submission_content(content: &serde_json::Value) -> bool {
     }
 }
 
+/// True when array content carries an `image` block. The interrupt-marker
+/// sentinel never has one; a real submission with the marker text plus an
+/// image is therefore not a marker (mirrors the `!hasImage` guard in
+/// tugcode's `handleUserEntry`).
+fn content_has_image(content: &serde_json::Value) -> bool {
+    matches!(content, serde_json::Value::Array(blocks)
+        if blocks.iter().any(|b| b
+            .as_object()
+            .and_then(|o| o.get("type"))
+            .and_then(|t| t.as_str())
+            == Some("image")))
+}
+
+/// Slash-command scaffolding prefixes Claude Code wraps a slash invocation
+/// in when it persists the interaction as `user` JSONL. Mirror of tugcode's
+/// `COMMAND_SCAFFOLDING_PREFIXES`.
+const COMMAND_SCAFFOLDING_PREFIXES: [&str; 5] = [
+    "<command-name>",
+    "<command-message>",
+    "<command-args>",
+    "<local-command-stdout>",
+    "<local-command-caveat>",
+];
+
+/// Mirror of tugcode's `isNonSubmissionUserString`: bare-string `user`
+/// content that is NOT a genuine submission — a `/compact` summary
+/// continuation, slash-command scaffolding, or a `<task-notification>` wake
+/// envelope. (The wake envelope is non-submission here, but is counted
+/// separately as a wake opener by the scan loop.)
+fn is_non_submission_user_string(is_compact_summary: bool, text: &str) -> bool {
+    if is_compact_summary {
+        return true;
+    }
+    let trimmed = text.trim_start();
+    if COMMAND_SCAFFOLDING_PREFIXES
+        .iter()
+        .any(|p| trimmed.starts_with(p))
+    {
+        return true;
+    }
+    is_task_notification_wake(text)
+}
+
+/// Mirror of tugcode's `extractTaskNotificationWake` recognizer: a
+/// `<task-notification>` envelope, anchored at the start after optional
+/// leading whitespace. A wake opener counts as a turn.
+fn is_task_notification_wake(text: &str) -> bool {
+    text.trim_start().starts_with("<task-notification>")
+}
+
+/// The SDK's interrupt-marker text prefix. Mirror of tugcode's
+/// `INTERRUPT_MARKER_PREFIX`.
+const INTERRUPT_MARKER_PREFIX: &str = "[Request interrupted by user";
+
+/// Mirror of tugcode's `isInterruptMarkerEntry`: the SDK's
+/// `[Request interrupted by user…]` sentinel, which tugcode drops (it opens
+/// no turn). Both signals must agree — the text pattern AND an absent
+/// `permissionMode` field — and the entry must carry no image, so a user who
+/// literally types the marker text (their submission carries
+/// `permissionMode`) still counts.
+fn is_interrupt_marker(text: &str, has_image: bool, has_permission_mode: bool) -> bool {
+    if has_image || has_permission_mode {
+        return false;
+    }
+    if !text.starts_with(INTERRUPT_MARKER_PREFIX) || !text.ends_with(']') {
+        return false;
+    }
+    if text != "[Request interrupted by user]" {
+        // Suffix form: a space-led suffix between the prefix and the closing
+        // `]` (distinguishes the marker from `[Request interrupted by userX]`).
+        let after = &text[INTERRUPT_MARKER_PREFIX.len()..text.len() - 1];
+        if !after.starts_with(' ') || after.chars().count() <= 1 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Decide whether a parsed `type:"user"` record opens a turn under S01
+/// (`tuglaws/turn-metric.md`). Shared by the live scan loop and the corpus
+/// contract test so the two can never drift. Returns `(counts, is_wake)`:
+/// `counts` is whether it opens a turn; `is_wake` distinguishes a wake
+/// opener (a turn, but not a user prompt) from a genuine submission.
+///
+/// Mirrors tugcode's `handleUserEntry`: `isMeta` records and interrupt
+/// markers never count; a bare string additionally must clear the
+/// non-submission gate (compact / scaffolding); array content with a
+/// non-`tool_result` block is always a genuine submission; wake envelopes
+/// count.
+fn user_submission_opens_turn(
+    is_meta: bool,
+    is_compact_summary: bool,
+    has_permission_mode: bool,
+    content: &serde_json::Value,
+) -> (bool, bool) {
+    if is_meta || !is_user_submission_content(content) {
+        return (false, false);
+    }
+    let is_string = matches!(content, serde_json::Value::String(_));
+    let text = submission_text(content);
+    let is_wake = is_string && is_task_notification_wake(&text);
+    if is_interrupt_marker(&text, content_has_image(content), has_permission_mode) {
+        return (false, false);
+    }
+    let counts =
+        is_wake || !is_string || !is_non_submission_user_string(is_compact_summary, &text);
+    (counts, is_wake)
+}
+
 /// Extract the submission's display text: string content verbatim, or
 /// the concatenated `text` fields of array content.
 fn submission_text(content: &serde_json::Value) -> String {
@@ -246,6 +355,22 @@ struct ScanRecord<'a> {
     timestamp: Option<String>,
     #[serde(rename = "aiTitle", default)]
     ai_title: Option<String>,
+    /// `/compact` continuation flag. Honoured only for bare-string content
+    /// (mirrors tugcode's `handleUserEntry`), where it marks the injected
+    /// "This session is being continued…" summary as non-submission.
+    #[serde(rename = "isCompactSummary", default)]
+    is_compact_summary: Option<bool>,
+    /// SDK bookkeeping flag (image hints, skill-body loaders, `/loop`
+    /// imports). tugcode skips `isMeta` records outright — they never open
+    /// a turn regardless of content shape.
+    #[serde(rename = "isMeta", default)]
+    is_meta: Option<bool>,
+    /// Present on every real user submission (the input layer stamps it),
+    /// absent on the SDK's auto-injected interrupt marker. Captured unparsed
+    /// purely to test *presence* — the structural half of the interrupt
+    /// disambiguator (mirrors `isInterruptMarkerEntry`).
+    #[serde(rename = "permissionMode", default, borrow)]
+    permission_mode: Option<&'a serde_json::value::RawValue>,
     /// Unparsed — only `type: "user"` lines parse this to read `content`.
     #[serde(default, borrow)]
     message: Option<&'a serde_json::value::RawValue>,
@@ -397,11 +522,21 @@ fn parse_session_file(
                     .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.get()).ok())
                     .and_then(|msg| msg.get("content").cloned());
                 if let Some(content) = content {
-                    if is_user_submission_content(&content) {
+                    let (counts, is_wake) = user_submission_opens_turn(
+                        rec.is_meta == Some(true),
+                        rec.is_compact_summary == Some(true),
+                        rec.permission_mode.is_some(),
+                        &content,
+                    );
+                    if counts {
                         turn_count += 1;
-                        let text = submission_text(&content);
-                        if !text.is_empty() {
-                            last_prompt = Some(truncate_prompt(&text));
+                        // `last_user_prompt` tracks the last genuine prompt —
+                        // a wake envelope is a turn but not a prompt.
+                        if !is_wake {
+                            let text = submission_text(&content);
+                            if !text.is_empty() {
+                                last_prompt = Some(truncate_prompt(&text));
+                            }
                         }
                     }
                 }
@@ -786,6 +921,57 @@ mod tests {
 
     const SESSION_A: &str = "11111111-2222-3333-4444-555555555555";
     const PROJECT: &str = "/tmp/scan-test-project";
+
+    /// Corpus contract ([P03], Spec S01, Risk R01): the scanner's turn-count
+    /// decision matches the hand-verified expected count in the golden
+    /// manifest for every real-session fixture. Drives the same
+    /// `user_submission_opens_turn` the live scan loop uses, so the disk
+    /// scanner can never drift from the canonical rule (isMeta / compact /
+    /// scaffolding / interrupt-marker excluded; genuine submissions + wakes
+    /// counted).
+    #[test]
+    fn scanner_turn_counts_match_golden_corpus() {
+        let dir =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/turns");
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
+        for fx in manifest["fixtures"].as_array().unwrap() {
+            let file = fx["file"].as_str().unwrap();
+            let expected = fx["expected_turns"].as_u64().unwrap() as i64;
+            let body = fs::read_to_string(dir.join(file)).unwrap();
+            let mut count: i64 = 0;
+            for line in body.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let Ok(rec) = serde_json::from_str::<ScanRecord>(line) else {
+                    continue;
+                };
+                if rec.kind.as_deref() != Some("user") {
+                    continue;
+                }
+                let content = rec
+                    .message
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.get()).ok())
+                    .and_then(|msg| msg.get("content").cloned());
+                if let Some(content) = content {
+                    let (counts, _) = user_submission_opens_turn(
+                        rec.is_meta == Some(true),
+                        rec.is_compact_summary == Some(true),
+                        rec.permission_mode.is_some(),
+                        &content,
+                    );
+                    if counts {
+                        count += 1;
+                    }
+                }
+            }
+            assert_eq!(
+                count, expected,
+                "scanner turn count for {file}: got {count}, expected {expected} (manifest)"
+            );
+        }
+    }
 
     /// Build a TUI-shaped transcript: bookkeeping records around two
     /// user submissions (one string-content, one array-content), a

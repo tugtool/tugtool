@@ -24,6 +24,7 @@ function makeRow(partial: Partial<SessionRow> & { session_id: string }): Session
     name: partial.name ?? null,
     origin: partial.origin ?? "tug",
     terminal_live: partial.terminal_live ?? null,
+    file_size: partial.file_size ?? null,
   };
 }
 
@@ -61,6 +62,56 @@ describe("DevSessionsDataSource with external rows", () => {
       ]),
     });
     expect(rowsOf(ds)).toEqual(["session-new", "ext-real"]);
+  });
+
+  test("content-bearing (file_size > 0) zero-count row is still visible", () => {
+    // [P09]/[R06]: visibility is decoupled from the strict turn count. A
+    // scanned external row with on-disk bytes but a (correctly) zero count
+    // must NOT vanish from the picker.
+    const ds = new DevSessionsDataSource({
+      query: "/proj",
+      ledger: readySnapshot([
+        makeRow({
+          session_id: "ext-bytes",
+          origin: "external",
+          turn_count: 0,
+          file_size: 2048,
+        }),
+        // No bytes, no turns, not live → genuinely empty, stays hidden.
+        makeRow({ session_id: "ext-void", origin: "external", turn_count: 0 }),
+      ]),
+    });
+    expect(rowsOf(ds)).toEqual(["session-new", "ext-bytes"]);
+  });
+
+  test("a live zero-count row is visible (file_size is null for tug/live rows)", () => {
+    const ds = new DevSessionsDataSource({
+      query: "/proj",
+      ledger: readySnapshot([
+        makeRow({ session_id: "tug-live", state: "live", turn_count: 0 }),
+        // Non-live tug row with no turns and no bytes → hidden.
+        makeRow({ session_id: "tug-empty", state: "closed", turn_count: 0 }),
+      ]),
+    });
+    expect(rowsOf(ds)).toEqual(["session-new", "tug-live"]);
+  });
+
+  test("nonLiveCount tracks content by bytes OR canonical turns", () => {
+    const ds = new DevSessionsDataSource({
+      query: "/proj",
+      ledger: readySnapshot([
+        makeRow({ session_id: "a", state: "closed", turn_count: 3 }),
+        makeRow({
+          session_id: "b",
+          state: "closed",
+          turn_count: 0,
+          file_size: 1024,
+        }),
+        makeRow({ session_id: "c", state: "live", turn_count: 0 }), // live, excluded
+        makeRow({ session_id: "d", state: "closed", turn_count: 0 }), // empty, excluded
+      ]),
+    });
+    expect(ds.nonLiveCount()).toBe(2);
   });
 
   test("terminal-live rows are still listed (blocking is render-side)", () => {

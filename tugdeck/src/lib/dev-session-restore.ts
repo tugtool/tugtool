@@ -538,6 +538,14 @@ export function restoreDevSessions(
       // the live session. The fallback `=== true` keeps the gate
       // conservative when running against a server that doesn't emit
       // the field yet.
+      //
+      // The `turn_count > 0` clause is a content proxy, not a true
+      // basis: `CardBinding` carries no `file_size`, so unlike the picker
+      // visibility gate ([P09]) this can't key on bytes directly. It is
+      // safe because a session with on-disk content always opens with a
+      // genuine user submission — the invariant `turn_count >= 1 ⇐
+      // file_size > 0` — so the canonical (strict) count never drops a
+      // resumable session below 1 and mis-routes it to `mode=new`.
       const isAlive = binding.is_alive === true;
       if (binding.turn_count > 0 || isAlive) {
         fireRestore(
