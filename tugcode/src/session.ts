@@ -1,7 +1,7 @@
 // Session lifecycle management via direct claude CLI spawning
 
 import { PermissionManager } from "./permissions.ts";
-import { writeLine, writeLineAndExit } from "./ipc.ts";
+import { writeLine, writeLineAndExit, drainPendingWrites } from "./ipc.ts";
 import {
   sendControlRequest,
   sendControlResponse,
@@ -3429,9 +3429,19 @@ export class SessionManager {
     }
 
     const elapsedMs = Date.now() - startedAt;
+    // `ms` is generator-iteration wall time (translate + pacing yields,
+    // but writes are fire-and-forget on the `writeTail`). Drain the
+    // tail and measure separately so the perf line splits "time to
+    // produce frames" from "time to flush bytes into the pipe" — the
+    // emit-side counterpart to the browser's `perf.replay_ingest`.
+    const iterMs = Date.now() - translateStartedAt;
+    const drainStart = Date.now();
+    await drainPendingWrites();
+    const drainMs = Date.now() - drainStart;
     logSessionLifecycle("perf.replay_translate", {
       tug_session_id: this.sessionId,
-      ms: Date.now() - translateStartedAt,
+      ms: iterMs,
+      drain_ms: drainMs,
       messages: messagesEmitted,
       turns: count,
     });

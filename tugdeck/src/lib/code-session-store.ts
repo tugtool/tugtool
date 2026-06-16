@@ -153,6 +153,21 @@ export interface ReplayIngestPerf {
   folds: number;
   /** Listener notifications (React commit triggers) inside the window. */
   commits: number;
+  /**
+   * Synchronous CPU spent in the pure `reduce()` call, summed across
+   * every frame in the window (ms). Isolates the reducer's own cost
+   * from arrival pacing.
+   */
+  reduceMs: number;
+  /**
+   * Synchronous CPU spent in the whole dispatch body — reduce +
+   * effects + persist + publish/notify — summed across every frame
+   * (ms). Compare against the window's wall span (`completedAtMs -
+   * startedAtMs`): if `dispatchMs` is much smaller, the browser spent
+   * the window *waiting for frames to arrive*, not processing them —
+   * the cost lives upstream in emit/transport, not in ingest.
+   */
+  dispatchMs: number;
 }
 
 /**
@@ -1462,7 +1477,10 @@ export class CodeSessionStore {
   ): void {
     this._perfBeforeReduce(event);
     const prev = this.state;
+    const dispatchStart = performance.now();
+    const reduceStart = dispatchStart;
     const { state, effects } = reduce(this.state, event);
+    const reduceMs = performance.now() - reduceStart;
     this.state = state;
     this.processEffects(effects);
     this.maybePersistStateChange(prev, state);
@@ -1490,6 +1508,10 @@ export class CodeSessionStore {
       } else {
         this._publishAndNotify();
       }
+    }
+    if (this._perfReplay !== null) {
+      this._perfReplay.reduceMs += reduceMs;
+      this._perfReplay.dispatchMs += performance.now() - dispatchStart;
     }
     this._perfAfterDispatch(event);
   }
@@ -1552,6 +1574,8 @@ export class CodeSessionStore {
         frames: 0,
         folds: 0,
         commits: 0,
+        reduceMs: 0,
+        dispatchMs: 0,
       };
     }
     if (this._perfReplay !== null) {
@@ -1582,12 +1606,20 @@ export class CodeSessionStore {
       perf.completedAtMs = Date.now();
       this._perfLastReplay = perf;
       this._perfReplay = null;
+      const wallMs = perf.completedAtMs - perf.startedAtMs;
       const summary = {
         tug_session_id: this.tugSessionId,
-        ms: perf.completedAtMs - perf.startedAtMs,
+        ms: wallMs,
         frames: perf.frames,
         folds: perf.folds,
         commits: perf.commits,
+        // CPU breakdown: dispatchMs is the synchronous browser work
+        // across the window; reduceMs is the pure-reducer slice of it.
+        // `ms - dispatchMs` is time the browser spent idle waiting for
+        // frames — the share of the load that lives upstream of ingest.
+        reduceMs: Math.round(perf.reduceMs),
+        dispatchMs: Math.round(perf.dispatchMs),
+        waitMs: Math.round(wallMs - perf.dispatchMs),
       };
       logSessionLifecycle("perf.replay_ingest", summary);
       tugDevLogStore.info("perf", "replay_ingest", summary);
