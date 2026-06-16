@@ -96,12 +96,12 @@ With one trustworthy count in hand, the user-facing surfaces still speak inconsi
 
 #### Strategy {#strategy-p2}
 
-- Express the restore window **size** in turns end to end (protocol constant, wire field, tugcode replay honoring "last N turns" via a `lastTurns` window variant beside the existing `lastMessages`).
+- Express the restore window **size** in turns end to end (protocol constant, wire field, tugcode replay honoring "last N turns" via a `lastTurns` window variant). Collapse the `ReplayWindow` union to **turns only** — `{ lastTurns } | { turnRange }` — retiring both the row-counted `lastMessages` and `olderMessages` arms (load-previous re-expressed as a `turnRange`).
 - Carry the absolute **turn** base for numbering (`firstLoadedTurnIndex`, already emitted) instead of a row offset.
 - Rework the load bar to count turns committed against turns requested — superseding the row/fine-grained mismatch.
 - Replace the `#NNNN` badge with `#t{turn}m{message}` (turn absolute, message = index into the turn's `messages`), landing turn-level numbering first, then per-message addressing of the assistant's inline pieces.
 - Show both `N turns` and byte size in the picker subtitle.
-- Keep scroll-anchor relocation row-based (a scroll position is inherently a row/pixel quantity); only window *sizing* and *labels* move to turns.
+- Make the persisted scroll-anchor **depth** a turn count, not a row count: the saved depth, the window it sizes, and the relocation that re-finds it all speak turns. Only the *sub-row pixel offset* (the scroll position within the anchored turn) stays a pixel — a coordinate, never a count.
 
 #### Success Criteria (Measurable) {#success-criteria-p2}
 
@@ -112,7 +112,7 @@ With one trustworthy count in hand, the user-facing surfaces still speak inconsi
 
 #### Scope {#scope-p2}
 
-1. Restore-window unit conversion (protocol + wire + tugcode `lastTurns` variant).
+1. Restore-window unit conversion (protocol + wire + tugcode `lastTurns` variant); full retirement of the row unit on the wire — `lastMessages` and `olderMessages` deleted, leaving a turns-only `ReplayWindow`; the persisted anchor depth moved to turns.
 2. Store fields: `restoreWindowTurns`, `firstLoadedTurnIndex` (replacing the message-row equivalents in `ReplayWindowMeta`/events/reducer).
 3. `dev-restore-window.ts` sizing in turns.
 4. Load bar turn-based progress + label.
@@ -122,7 +122,7 @@ With one trustworthy count in hand, the user-facing surfaces still speak inconsi
 #### Non-goals (Explicitly out of scope) {#non-goals-p2}
 
 - Sub-addressing *within* a single tool call or thinking block (the `m` index stops at `turn.messages` elements).
-- Changing scroll/anchor restoration to a turn basis (stays row/pixel based — [P06]).
+- Sub-row scroll precision: the pixel offset *within* the anchored turn stays a pixel coordinate ([P06]). The anchor's persisted **depth** is in turns; only the intra-turn offset is pixels.
 - Visually distinguishing an estimated vs reconciled picker count ([Q03], deferred).
 
 #### Dependencies / Prerequisites {#dependencies-p2}
@@ -162,7 +162,7 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 
 **Question:** Does sizing the restore window in turns force the scroll-anchor relocation math off its current row basis?
 
-**Resolution:** DECIDED (see [P06]). Window *size* and *labels* move to turns; anchor relocation stays row/pixel based. The two are bridged at load time (a turn-sized request yields a set of rows; the anchor is then placed within those rows as today).
+**Resolution:** DECIDED (see [P06]). Yes — and that is correct. The anchor's persisted *depth* moves to turns alongside the window size and labels: a single turn quantity sizes the window and re-finds the anchor, with no row↔turn inequality bridging them. Only the sub-row pixel offset within the anchored turn stays a pixel. The earlier "anchor stays row-based" answer was a hedge and is reversed (#step-13).
 
 #### [Q03] Surface "estimated" vs "reconciled" counts (DEFERRED) {#q03-estimated-badge}
 
@@ -177,7 +177,7 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Scanner/segmenter rule drift | high | med | Shared golden corpus asserted in both languages + four-way equality test | Any change to the turn rule |
-| Window-unit conversion breaks anchor restore | med | med | Keep anchor row-based; real-session app-test | Scroll position wrong after resume |
+| Window-unit conversion breaks anchor restore | med | med | Anchor depth in turns (one unit end to end); real-session app-test asserts post-resume position | Scroll position wrong after resume |
 | Per-message badge noise/perf | med | low | Subdued styling; land turn-base first; measure on real session | Visible clutter or scroll jank |
 | Stale tugcode binary masks changes | med | med | Checkpoints rebuild tugcode before testing | Test contradicts the edit |
 | Stale scan-cache count resurrected via `MAX` | high | med | Cache epoch bump + reconcile-after-spawn + test | Picker count wrong after rule change |
@@ -192,9 +192,9 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 
 **Risk R02: Anchor restoration regression** {#r02-anchor}
 
-- **Risk:** Moving the window to turns disturbs faithful scroll restoration.
-- **Mitigation:** [P06] keeps the anchor row-based; a real-session app-test asserts post-resume scroll position.
-- **Residual risk:** Sessions with extreme single-turn sizes may load more rows than a row-window would; acceptable and visible in the load bar.
+- **Risk:** Moving the window — and the anchor depth — to turns disturbs faithful scroll restoration.
+- **Mitigation:** [P06] makes the anchor depth a turn count end to end (no row↔turn inequality to drift); relocation re-finds the anchored turn and restores the sub-row pixel offset within it; a real-session app-test asserts post-resume scroll position (#step-13, verified #step-17).
+- **Residual risk:** A turn taller than the viewport restores to that turn's top plus the saved pixel offset; the offset keeps placement faithful within the turn.
 
 **Risk R05: Stale count resurrected by a MAX (server or client)** {#r05-cache-resurrection}
 
@@ -211,7 +211,7 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 **Risk R07: Client `TurnEntry` count drifts from `totalTurns`** {#r07-client-count-drift}
 
 - **Risk:** The four-way equality's weak link is the *client*, not tugcode. `totalTurns` and the live `turn_complete` stream share one segmentation by construction (`computeTurnStartIndices` is a dry-run of the emit path, "in lockstep"). But the reducer **dedupes `turn_complete` by msg_id** (`committedMsgIds`) and **synthesizes orphan turns on interrupt** — so the client's `TurnEntry` count, and thus the highest badge (`firstLoadedTurnIndex + localTurnIndex + 1`), equals `totalTurns` only if that reconciliation lands exactly. The dangerous cases are an interrupt at the window edge and a reconnect/orphan re-emission, which the clean-resume equality test would never exercise.
-- **Mitigation:** Add the intra-tugcode lockstep assertion (#step-4); include an **interrupted-turn** fixture and a **reconnect/orphan-overlap** scenario in the four-way equality stress (#step-7, #step-15) so `highest badge == totalTurns` is checked precisely where dedup/orphan logic runs.
+- **Mitigation:** Add the intra-tugcode lockstep assertion (#step-4); include an **interrupted-turn** fixture and a **reconnect/orphan-overlap** scenario in the four-way equality stress (#step-7, #step-17) so `highest badge == totalTurns` is checked precisely where dedup/orphan logic runs.
 - **Residual risk:** Novel interrupt/reconnect interleavings outside the fixtures; bounded by the standing equality assertion, which fails loudly if the client count ever drifts.
 
 ---
@@ -273,16 +273,18 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 **Implications:**
 - A rendering change: the single assistant row paints one (subdued) badge per inline message, not one badge for the row.
 
-#### [P06] Window sized in turns; anchor stays row-based (DECIDED) {#p06-window-turns-anchor-rows}
+#### [P06] Window and anchor both speak turns; the wire is turns-only (DECIDED) {#p06-window-turns-anchor-rows}
 
-**Decision:** The restore window's size and all user-facing labels are expressed in turns. The internal scroll-anchor `depthFromEnd`/relocation math in `dev-restore-window.ts` remains row/pixel based.
+**Decision:** The restore window's size, all user-facing labels, **and the persisted scroll-anchor depth** are expressed in turns — one unit, end to end. The `ReplayWindow` wire union carries **only** turn-based variants: `{ lastTurns }` (cold resume / recency) and `{ turnRange }` (explicit range, including load-previous paging). The row-counted `lastMessages` and `olderMessages` arms are deleted, as is `DEFAULT_REPLAY_WINDOW_MESSAGES`. The single quantity that remains a pixel is the sub-row scroll *offset within* the anchored turn — a coordinate, not a count.
 
 **Rationale:**
-- A scroll position is inherently a row/pixel quantity; turns are the wrong unit for it.
-- The window request (turns) and the anchor (rows) meet at load time: a turn-sized request yields rows, and the anchor is placed within them as today.
+- A turn-based window over a row-based anchor depth is two units in tension, bridged only by the inequality "every turn yields ≥1 row." That inequality is a hedge: it over-approximates the load and leaves a second unit leaking back into a turns-canonical design. Making the anchor depth a turn count removes the bridge — `resolveRestoreWindow` becomes a clean `max(anchorTurnDepth, defaultWindowTurns)` over two turn quantities.
+- Keeping a row-counted wire variant alive (`lastMessages`, `olderMessages.count`) means the wire still speaks rows. The only production sender is already on `lastTurns`, load-previous is expressible as a `turnRange`, and nothing real needs the row cut — only tests did, and tests do not keep retired code alive.
 
 **Implications:**
-- `RequestReplay.lastMessages` → `lastTurns`; tugcode replay returns the most recent N turns; anchor helpers keep their row signatures.
+- `tugproto` `ReplayWindow` → `{ lastTurns: number } | { turnRange: [number, number] }`; tugcode `resolveWindow` drops the `lastMessages`/`olderMessages` branches (the two row-accumulation loops). `loadPrevious` emits `turnRange: [firstLoadedTurnIndex − N, firstLoadedTurnIndex]` and caps to `firstLoadedTurnIndex` (turns), not `firstLoadedMessageIndex` (rows).
+- The saved anchor bag persists a turn depth; the generic `tug-list-view` stays turn-agnostic by taking an injected depth resolver (the transcript supplies the row→turn one; other lists keep the row default). Both window sizing and anchor relocation read the turn depth; the sub-row pixel offset is preserved for fidelity.
+- This corrects the row-anchor / row-wire state shipped in #step-8–#step-10 before the badge work builds on it (#step-12, #step-13).
 
 #### [P07] The client never recomputes a display count (DECIDED) {#p07-no-client-recompute}
 
@@ -329,7 +331,7 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 
 #### Touch-point inventory {#touch-points}
 
-Every place a turn count is produced or consumed, and where the plan controls it. The invariant ([#plan-shape]) holds iff every row is green.
+Every place a turn **count or turn unit** is produced, consumed, or displayed, and where the plan controls it. The invariant ([#plan-shape]) holds iff every row is green. The upper rows are the *count* spine (Phase 1); the lower block is the *unit* spine (Phase 2) — the restore window, anchor, load bar, load-previous prompt, and badge that must all speak turns, plus the row-unit fields they retire.
 
 | Touch point | Role | Controlled by |
 |---|---|---|
@@ -341,11 +343,19 @@ Every place a turn count is produced or consumed, and where the plan controls it
 | `dev-session-ledger-store` `Math.max(turn_count)` (client) | scan-refresh backfill | [P08] drop the count MAX |
 | ledger reconcile (`set_turn_count` = `totalTurns`) | authoritative SET | [P02] success frame only; not `count` |
 | `SessionRow` / `CardBinding.turn_count` wire | read | unchanged shape |
-| picker subtitle | read | [P07], Step 14 |
+| picker subtitle | read | [P07], Step 16 |
 | picker visibility (`==0` hidden, client) | gate | [P09] → `file_size > 0` |
 | resume/new gate (`>0`, client, `CardBinding`) | gate | [P09] → `turn_count`/`is_alive` + invariant |
-| client `TurnEntry` / badge base | read | Phase 2 (#step-9, #step-12) |
+| client `TurnEntry` count (reducer: `committedMsgIds` dedup + orphan synthesis) | **produced** (client-side reconciliation, R07 weak link) | [R07]; stressed at interrupt/orphan edges (#step-17) |
+| client badge base (`firstLoadedTurnIndex` + local) | read | Phase 2 (#step-9, #step-14) |
 | `rewind` `priorSubmissions` (`isUserSubmissionContent`) | rewind anchors | [#rewind-carveout] — separate |
+| **— unit spine (Phase 2) —** | | |
+| restore window size (`lastTurns` / `DEFAULT_REPLAY_WINDOW_TURNS`) | window unit | turns-only wire ([P06], #step-8, #step-12) |
+| persisted scroll-anchor depth | restore unit | turns; pixel offset only ([P06], #step-13) |
+| load-bar progress (turns committed / requested) | display unit | turns (#step-11) |
+| load-previous prompt + step ("N earlier …", `LOAD_PREVIOUS_STEP`) | display + paging unit | turns, not rows/"messages" ([P06], #step-12) |
+| `#t…m…` transcript address | display | [P04]/[P05] (#step-14, #step-15) |
+| `totalMessages`, `firstLoadedMessageIndex` (wire/events/`ReplayWindowMeta`) | row-unit, **retired** | no turn-canonical consumer (#step-12, #step-14) |
 
 #### Rewind carve-out {#rewind-carveout}
 
@@ -373,8 +383,11 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 
 #### Spec S03: Restore window in turns {#s03-window}
 
-- `DEFAULT_REPLAY_WINDOW_TURNS` replaces `DEFAULT_REPLAY_WINDOW_MESSAGES` as the default window size.
-- Wire: a `lastTurns` `ReplayWindow` variant replaces `lastMessages`; tugcode replay returns the most recent N **turns'** records and reports `firstLoadedTurnIndex` + `totalTurns` + `hasOlder`.
+- `DEFAULT_REPLAY_WINDOW_TURNS` is the sole default window size; `DEFAULT_REPLAY_WINDOW_MESSAGES` is **deleted**.
+- Wire: the `ReplayWindow` union is **turns only** — `{ lastTurns: N }` (recency / cold resume) and `{ turnRange: [start, end) }` (explicit range, including load-previous as `[firstLoadedTurnIndex − N, firstLoadedTurnIndex]`). The row-counted `lastMessages` and `olderMessages` arms are removed from `tugproto`, tugcode `resolveWindow`, and all callers and tests. tugcode replay returns the most recent N **turns'** records and reports `firstLoadedTurnIndex` + `totalTurns` + `hasOlder`.
+- Anchor: the persisted anchor depth is a **turn** count; `resolveRestoreWindow(anchorTurnDepth, DEFAULT_REPLAY_WINDOW_TURNS)` is a clean `max` of two turn quantities. Relocation re-finds the anchored turn and restores the sub-row pixel offset within it; no row *count* is persisted or sizes a load.
+- Row-unit fields retired: `totalMessages` (no consumer) and `firstLoadedMessageIndex` (orphaned once the badge base, the load-previous prompt, and `loadPrevious` all move to `firstLoadedTurnIndex`) are removed from the wire, events, reducer, and `ReplayWindowMeta`.
+- Load-previous affordance: counts and names **turns** — "There {is|are} N earlier turn{s}…", stepping by `LOAD_PREVIOUS_STEP` turns — never "earlier messages".
 - Load bar: denominator = requested turns; numerator = turns committed in the loaded window (count of `TurnEntry`); on completion, report the real turns loaded (a short session shows "3 of 3 turns", never a phantom full window).
 - Label: "Restoring the most recent N turns…".
 
@@ -413,11 +426,13 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 | resume/new gate (`CardBinding`) | logic | `tugdeck/.../dev-session-restore.ts` | Keep `turn_count`/`is_alive`; invariant-protected ([P09]). |
 | client `turn_count` MAX | logic | `tugdeck/.../dev-session-ledger-store.ts` | Drop the count MAX; take authoritative value ([P08]). |
 | corpus contract + four-way equality test | test | `tugcast` + `tugcode` + app-test | Same expected counts; full-chain equality (R01). |
-| `DEFAULT_REPLAY_WINDOW_TURNS` | const | `tugdeck/src/protocol.ts` | Replaces `DEFAULT_REPLAY_WINDOW_MESSAGES` ([P06]). |
-| `lastTurns` `ReplayWindow` variant | type/logic | `tugdeck/src/protocol.ts` + tugcode `resolveWindow` | Beside `lastMessages` ([P06]). |
+| `DEFAULT_REPLAY_WINDOW_TURNS` | const | `tugdeck/src/protocol.ts` | Sole default window size; `DEFAULT_REPLAY_WINDOW_MESSAGES` deleted ([P06], #step-12). |
+| turns-only `ReplayWindow` (`{lastTurns}\|{turnRange}`) | type/logic | `tugproto/src/inbound.ts` + tugcode `resolveWindow` | `lastMessages` + `olderMessages` deleted; load-previous → `turnRange` ([P06], #step-12). |
 | `restoreWindowTurns` | field | `code-session-store` | Replaces `restoreWindowMessages`. |
 | `firstLoadedTurnIndex` | field | `ReplayWindowMeta` / events / reducer | Consume tugcode's existing report. |
-| window sizing in turns | fns | `tugdeck/src/lib/dev-restore-window.ts` | Anchor stays row-based ([P06]). |
+| window sizing + anchor depth in turns | fns | `dev-restore-window.ts`, `tug-list-view.tsx`, `card-services-store.ts` | Clean `max`; relocation re-finds the turn; pixel offset only ([P06], #step-13). |
+| load-previous prompt + step in turns | logic | `dev-load-control-bar.tsx`, `dev-load-control-bar-state.ts` | "N earlier turns"; step in turns; feeds turn-based `loadPrevious` ([P06], #step-12). |
+| retire `totalMessages` / `firstLoadedMessageIndex` | cleanup | tugcode `replay.ts`/`types.ts`, `events.ts`, reducer, `ReplayWindowMeta` | Row-unit wire/store fields with no turn-canonical consumer ([P06], #step-12, #step-14). |
 | turn-based numerator/label | logic | `dev-load-control-bar.tsx` | Supersedes the row/fine-grained patch. |
 | `formatTurnMessageAddress` | fn | `tug-transcript-entry.tsx` | Replaces `formatSequenceNumber` ([P04]). |
 | per-message badge render | logic | `dev-card-transcript.tsx` | One badge per inline message ([P05]). |
@@ -464,10 +479,12 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 | #step-9 | Store: restoreWindowTurns + firstLoadedTurnIndex | done | 42603e43 |
 | #step-10 | Window sizing in turns (dev-restore-window) | done | 42603e43 |
 | #step-11 | Load bar speaks turns | done | 1fc0a582 |
-| #step-12 | `#t…m…` badge formatter + turn-based base | pending | — |
-| #step-13 | Per-message badge rendering | pending | — |
-| #step-14 | Picker subtitle shows turns + bytes | pending | — |
-| #step-15 | Phase 2 integration + windowed equality | pending | — |
+| #step-12 | Retire the row unit on the wire (turns-only `ReplayWindow`) | pending | — |
+| #step-13 | Canonicalize the restore anchor to turns | pending | — |
+| #step-14 | `#t…m…` badge formatter + turn-based base | pending | — |
+| #step-15 | Per-message badge rendering | pending | — |
+| #step-16 | Picker subtitle shows turns + bytes | pending | — |
+| #step-17 | Phase 2 integration + windowed equality | pending | — |
 
 ---
 
@@ -737,33 +754,86 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 
 ---
 
-#### Step 12: `#t…m…` badge formatter + turn-based base {#step-12}
+#### Step 12: Retire the row unit on the wire {#step-12}
 
-**Depends on:** #step-9
+**Depends on:** #step-8
+
+**Commit:** `refactor(replay): turns-only ReplayWindow; drop row-counted windows`
+
+**References:** [P06] turns-only wire, Spec S03, (#touch-points, #symbol-inventory)
+
+**Artifacts:**
+- `tugproto/src/inbound.ts` `ReplayWindow` → `{ lastTurns: number } | { turnRange: [number, number] }`; tugcode `resolveWindow` loses the `lastMessages`/`olderMessages` branches; `code-session-store.ts` `loadPrevious` emits a `turnRange`; `dev-load-control-bar.tsx` + `dev-load-control-bar-state.ts` count and name the load-previous prompt in turns; `tugdeck/src/protocol.ts` loses `DEFAULT_REPLAY_WINDOW_MESSAGES`; tugcode stops emitting `totalMessages`.
+
+**Tasks:**
+- [ ] Delete the `lastMessages` and `olderMessages` arms from the `ReplayWindow` union and the two matching row-accumulation branches in tugcode `resolveWindow`. Keep `lastTurns` and `turnRange`.
+- [ ] Re-express `loadPrevious(amount)` as `turnRange: [max(0, firstLoadedTurnIndex − N), firstLoadedTurnIndex]`, with the cap and the progress target in **turns** (`firstLoadedTurnIndex`), not `firstLoadedMessageIndex` (rows).
+- [ ] **Convert the load-previous control bar in the same commit** (it feeds `loadPrevious` its `amount`): `earlierCount` and the `LOAD_PREVIOUS_STEP` step read `firstLoadedTurnIndex` (turns), and the prompt reads **"There {is|are} N earlier turn{s}…"** — not "earlier messages". Leaving it in rows is a unit-mismatch bug (asks for N messages, loads N turns).
+- [ ] Delete `DEFAULT_REPLAY_WINDOW_MESSAGES`. Stop emitting/plumbing `totalMessages` (tugcode `replay.ts` + `types.ts`, `events.ts`, reducer, `ReplayWindowMeta`) — it has no consumer.
+- [ ] Rewrite every test that referenced the removed arms to the turns-only equivalents — load-all becomes `lastTurns`/`turnRange`, backward paging becomes `turnRange`. A test does not keep a deleted arm breathing.
+- [ ] Rebuild tugcode (`bun build --compile`) so the binary matches the wire.
+
+**Tests:**
+- [ ] `tugcode` `bun test` green with the row-window tests converted; `tugdeck` load-previous test asserts a `turnRange` request; the load-previous prompt formatter test reads "N earlier turns"; the turn-corpus contract still proves `totalTurns` per fixture via a turns-only load-all.
+
+**Checkpoint:**
+- [ ] A repo grep for `lastMessages`, `olderMessages`, `DEFAULT_REPLAY_WINDOW_MESSAGES`, `totalMessages`, and the string "earlier message" across `tugproto`/`tugcode`/`tugdeck` returns nothing; `bun test` + `bunx tsc --noEmit` clean; tugcode rebuilt.
+
+---
+
+#### Step 13: Canonicalize the restore anchor to turns {#step-13}
+
+**Depends on:** #step-10, #step-12
+
+**Commit:** `refactor(restore): anchor depth in turns, not rows`
+
+**References:** [P06] anchor in turns, [Q02], Risk R02, Spec S03, (#state-zone-mapping)
+
+**Artifacts:**
+- `tug-list-view.tsx` persists a turn-based anchor depth (via an injected depth resolver so the generic list-view stays turn-agnostic); `dev-restore-window.ts` `resolveRestoreWindow` becomes a clean turn `max` and relocation re-finds the anchored turn; `card-services-store.ts` reads the turn depth.
+
+**Tasks:**
+- [ ] Replace the row-counted `depthFromEnd` in the saved anchor bag with a **turn** depth, captured at save time where the row→turn map exists (the transcript supplies the resolver; the generic list-view keeps a row default for non-transcript lists).
+- [ ] `resolveRestoreWindow(anchorTurnDepth, defaultWindowTurns)` → a clean `max` of two turn counts; delete the row↔turn inequality reasoning from the module doc.
+- [ ] Relocation: find the row whose turn matches the saved depth, then restore the sub-row pixel `offset` within it. The pixel offset is the only non-turn quantity that survives.
+- [ ] Rewrite `dev-restore-window` unit tests over turn depths.
+
+**Tests:**
+- [ ] `dev-restore-window` pure-logic tests over turn depths (clean `max`, no inequality); the real-session post-resume scroll-position app-test (R02) lands in #step-17.
+
+**Checkpoint:**
+- [ ] `bun test` restore-window green; `bunx tsc --noEmit` clean; HMR resume lands on the saved turn with its in-turn offset.
+
+---
+
+#### Step 14: `#t…m…` badge formatter + turn-based base {#step-14}
+
+**Depends on:** #step-9, #step-13
 
 **Commit:** `feat(transcript): turn/message address badge`
 
 **References:** [P04] badge format, Spec S02, (#state-zone-mapping)
 
 **Artifacts:**
-- `formatTurnMessageAddress(turn, message)` in `tug-transcript-entry.tsx` (replacing `formatSequenceNumber`); `dev-card-transcript.tsx` numbering the user row (`m01`) and assistant row from `firstLoadedTurnIndex`.
+- `formatTurnMessageAddress(turn, message)` in `tug-transcript-entry.tsx` (replacing `formatSequenceNumber`); `dev-card-transcript.tsx` numbering the user row (`m01`) and assistant row from `firstLoadedTurnIndex` (`useMessageNumberBase` switches off `firstLoadedMessageIndex`); retirement of the now-orphaned `firstLoadedMessageIndex`.
 
 **Tasks:**
 - [ ] Add the formatter (`#t{turn:0>4}m{message:0>2}`, padded-not-capped); remove/redirect `formatSequenceNumber`.
-- [ ] Derive `TURN` from `firstLoadedTurnIndex + localTurnIndex + 1`, where `localTurnIndex` spans the loaded **and** live turns — so a live turn committed after replay carries `totalTurns + k` (== the ledger after `k` `record_turn`s), never a window-local reset. User row carries `m01`.
+- [ ] Derive `TURN` from `firstLoadedTurnIndex + localTurnIndex + 1`, where `localTurnIndex` spans the loaded **and** live turns — so a live turn committed after replay carries `totalTurns + k` (== the ledger after `k` `record_turn`s), never a window-local reset. User row carries `m01`. The numbering base (`useMessageNumberBase`) reads `firstLoadedTurnIndex`, not `firstLoadedMessageIndex`.
+- [ ] With the badge base, the load-previous prompt (#step-12), and `loadPrevious` (#step-12) all off `firstLoadedMessageIndex`, **retire it** from tugcode (`replay.ts`, `types.ts`), `events.ts`, the reducer, and `ReplayWindowMeta` — it has no remaining consumer.
 - [ ] Keep this step at row granularity (user `m01`, assistant block `m02`) to isolate the formatter from the rendering change.
 
 **Tests:**
 - [ ] Formatter unit tests incl. overflow (`m100`, `t10000`) and wake turn (no `m01` user).
 
 **Checkpoint:**
-- [ ] `bun test` formatter green; `bun run check` clean; HMR shows `#t…m…` on rows.
+- [ ] `bun test` formatter green; `bun run check` clean; HMR shows `#t…m…` on rows; a repo grep for `firstLoadedMessageIndex` returns nothing.
 
 ---
 
-#### Step 13: Per-message badge rendering {#step-13}
+#### Step 15: Per-message badge rendering {#step-15}
 
-**Depends on:** #step-12
+**Depends on:** #step-14
 
 **Commit:** `feat(transcript): address each inline message in a turn`
 
@@ -784,7 +854,7 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 
 ---
 
-#### Step 14: Picker subtitle shows turns + bytes {#step-14}
+#### Step 16: Picker subtitle shows turns + bytes {#step-16}
 
 **Depends on:** #step-7
 
@@ -807,9 +877,9 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 
 ---
 
-#### Step 15: Phase 2 integration + windowed equality {#step-15}
+#### Step 17: Phase 2 integration + windowed equality {#step-17}
 
-**Depends on:** #step-11, #step-13, #step-14
+**Depends on:** #step-11, #step-12, #step-13, #step-15, #step-16
 
 **Commit:** `N/A (verification only)`
 
@@ -835,9 +905,10 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 - [ ] Scanner total, tugcode `totalTurns`, and reconciled ledger agree on every corpus fixture and on a live session. (#step-7)
 - [ ] A stale inflated scan-cache count cannot survive the rule change or a resume. (#step-3, #step-5)
 - [ ] No content-bearing session is hidden or mis-gated by a low count. (#step-6)
-- [ ] Restore window, load bar, and labels are in turns; a short session shows the real count. (#step-15)
-- [ ] Every transcript entry shows a `#t…m…` address; highest turn index equals `totalTurns` and the picker count. (#step-15)
-- [ ] Picker subtitle shows `N turns · <size>`. (#step-14)
+- [ ] Restore window, load bar, and labels are in turns; a short session shows the real count. (#step-17)
+- [ ] Every transcript entry shows a `#t…m…` address; highest turn index equals `totalTurns` and the picker count. (#step-17)
+- [ ] Picker subtitle shows `N turns · <size>`. (#step-16)
+- [ ] The `ReplayWindow` wire union and the persisted restore anchor are turns-only; no `lastMessages`, `olderMessages`, `DEFAULT_REPLAY_WINDOW_MESSAGES`, or row-counted anchor depth remains anywhere in the stack. (#step-12, #step-13)
 
 **Acceptance tests:**
 - [ ] Rust: `cargo nextest run` green (corpus + reconcile + cache-epoch + visibility).
