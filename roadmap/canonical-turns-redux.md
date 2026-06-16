@@ -397,14 +397,14 @@ The canonical count is `engine(session file)`. The Rust engine is the **only** w
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Spec: origin model, opener vocabulary, counting policy | pending | — |
-| #step-2 | Rust turn-segmentation engine (pure, real-file unit tests) | pending | — |
-| #step-3 | Picker/scan count sourced from the engine; epoch bump; incremental correctness | pending | — |
-| #step-4 | Single count authority: remove wire + live count writers; migrate ledger | pending | — |
-| #step-5 | tugcode: honest assistant-originated opener; delete synth `add_user_message` | pending | — |
-| #step-6 | tugdeck: origin-explicit `TurnEntry`; assistant-only render; `#u`/`#a` | pending | — |
-| #step-7 | Real-corpus contract: engine == rendering; delete sanitized corpus | pending | — |
-| #step-8 | Real-app integration: no shift, no phantom user rows, equality on the spread | pending | — |
+| #step-1 | Spec: origin model, opener vocabulary, counting policy | done | e50587ef |
+| #step-2 | Rust turn-segmentation engine (pure, real-file unit tests) | done | 1d5a0e93 |
+| #step-3 | Picker/scan count sourced from the engine; epoch bump; incremental correctness | done | f22e588b |
+| #step-4 | Single count authority: remove wire + live count writers; migrate ledger | done | 27cea21e |
+| #step-5 | tugcode: honest assistant-originated opener; delete synth `add_user_message` | done | 8c950c36 |
+| #step-6 | tugdeck: origin-explicit `TurnEntry`; assistant-only render; `#u`/`#a` | done | e1185099 |
+| #step-7 | Real-corpus contract: engine == rendering; delete sanitized corpus | done | 0115dddf |
+| #step-8 | Real-app integration: no shift, no phantom user rows, equality on the spread | done | b6fce908 (vetted in-app) |
 
 #### Step 1: Spec — origin model, opener vocabulary, counting policy {#step-1}
 

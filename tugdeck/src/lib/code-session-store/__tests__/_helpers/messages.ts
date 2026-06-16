@@ -14,6 +14,7 @@ import type {
   ToolUseMessage,
   TurnCost,
   TurnEntry,
+  TurnOrigin,
   UserMessage,
 } from "../../types";
 
@@ -109,6 +110,7 @@ export function turnEntry(
     turnKey: string;
     msgId: string;
     messages: ReadonlyArray<Message>;
+    origin?: TurnOrigin;
     endedAt?: number;
     result?: "success" | "interrupted";
     turnEndReason?: TurnEntry["turnEndReason"];
@@ -126,6 +128,12 @@ export function turnEntry(
   return {
     turnKey: args.turnKey,
     msgId: args.msgId,
+    // Fixture convenience: default origin from the head message kind so
+    // existing fixtures get the right attribution without per-call edits.
+    // (Production never infers origin — the opener states it.)
+    origin:
+      args.origin ??
+      (args.messages[0]?.kind === "user_message" ? "user" : "assistant"),
     messages: args.messages,
     result: args.result ?? "success",
     endedAt: args.endedAt ?? Date.now(),

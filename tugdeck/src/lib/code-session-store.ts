@@ -234,6 +234,11 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // events; the bracket closes implicitly on the next `turn_complete`.
   // See `roadmap/tugplan-dev-session-wake.md` [D01].
   "wake_started",
+  // Neutral assistant-originated turn opener (`tuglaws/turn-metric.md`
+  // S02): opens an assistant-only turn for orphan assistant content
+  // (`--continue` leading orphan, `/compact` continuation) with no user
+  // message — the honest replacement for the deleted synth add_user_message.
+  "assistant_opener",
   // Background-job lifecycle frames (the JOBS cell's feed — unrelated
   // to the TaskCreate/TaskUpdate tool calls behind TASKS). tugcode
   // forwards claude's `system/task_started` / `system/task_updated`
@@ -590,7 +595,7 @@ export class CodeSessionStore {
       // [D07] Derive the public `activeTurn` projection from
       // `state.pendingTurn` + `state.scratch[turnKey]`. `null` when no
       // turn is in flight; otherwise carries the turn-stable
-      // `turnKey` + `submitAt` + `isWake` plus the live Message
+      // `turnKey` + `submitAt` + `origin` plus the live Message
       // sequence the data source iterates. The derivation is pure but
       // produces a fresh object on each call — the outer snapshot
       // cache (`_cachedSnapshot`) ensures `Object.is` stability across
@@ -1352,6 +1357,13 @@ export class CodeSessionStore {
         // has no React); the store wrapper mints it on receipt and
         // threads it onto the dispatched event so the reducer stays
         // pure. See `roadmap/tugplan-dev-session-wake.md` [D02].
+        return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "assistant_opener") {
+        // Honest assistant-originated opener (`tuglaws/turn-metric.md`
+        // S02) — opens an assistant-only turn for orphan assistant
+        // content, no user message. Same turnKey mint contract as
+        // `wake_started`; the reducer seeds an empty scratch.
         return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
       }
       if (ev.type === "api_retry") {

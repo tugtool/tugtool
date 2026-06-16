@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use crate::session_ledger::{
     ScanCacheRow, SessionLedger, USER_PROMPT_MAX_CHARS, claude_project_dir,
 };
+use crate::turn_engine::{Frontier, parse_significant, step_record};
 
 /// Metadata extracted from one external session JSONL — the picker-
 /// facing subset, plus the `(file_size, file_mtime)` validity pair the
@@ -110,6 +111,9 @@ pub struct ResumeSeed {
     pub last_user_prompt: Option<String>,
     pub name: Option<String>,
     pub created_at: i64,
+    /// The engine's open-turn state at `offset`. Carried so the resumed
+    /// tail parse continues segmentation rather than re-deriving it.
+    pub frontier: Frontier,
 }
 
 /// Build a resume seed from a non-excluded cache row. `None` when the
@@ -128,6 +132,11 @@ pub fn resume_seed_from_cache(row: &ScanCacheRow) -> Option<ResumeSeed> {
         last_user_prompt: row.last_user_prompt.clone(),
         name: row.name.clone(),
         created_at: row.created_at,
+        frontier: Frontier {
+            open: row.frontier_open,
+            pending_close: row.frontier_pending_close,
+            pending_close_msg_id: row.frontier_pending_close_msg_id.clone(),
+        },
     })
 }
 
@@ -139,6 +148,9 @@ pub struct ResumeMark {
     pub tail_hash: i64,
     pub cwd_checked: bool,
     pub created_at_found: bool,
+    /// The engine's open-turn state at `parse_offset`, persisted for the
+    /// next incremental resume.
+    pub frontier: Frontier,
 }
 
 /// A parsed session: the picker-facing meta plus the resume frontier.
@@ -281,7 +293,7 @@ fn is_interrupt_marker(text: &str, has_image: bool, has_permission_mode: bool) -
 /// non-submission gate (compact / scaffolding); array content with a
 /// non-`tool_result` block is always a genuine submission; wake envelopes
 /// count.
-fn user_submission_opens_turn(
+pub(crate) fn user_submission_opens_turn(
     is_meta: bool,
     is_compact_summary: bool,
     has_permission_mode: bool,
@@ -430,6 +442,12 @@ fn parse_session_file(
     let mut consumed: u64 = 0;
     let mut window: Vec<u8> = Vec::with_capacity(TAIL_FINGERPRINT_BYTES);
     let mut resumed = false;
+    // The segmentation engine's open-turn state. `turn_count` is the
+    // engine's running count of opened turn containers; `frontier` carries
+    // the open-turn state across an incremental resume so the tail parse
+    // continues segmentation rather than re-deriving it (the original
+    // incremental-undercount bug, Risk R02).
+    let mut frontier = Frontier::default();
 
     if let Some(seed) = resume {
         if let Some(verified_window) = try_resume(&mut file, seed, file_size)? {
@@ -441,6 +459,7 @@ fn parse_session_file(
             consumed = seed.offset as u64;
             window = verified_window;
             resumed = true;
+            frontier = seed.frontier.clone();
         } else {
             file.seek(SeekFrom::Start(0))?;
         }
@@ -513,10 +532,23 @@ fn parse_session_file(
             }
         }
 
+        // The canonical count is produced by the segmentation engine (the
+        // single count authority, `tuglaws/turn-metric.md` S03). Drive it
+        // one record per line, carrying the open-turn frontier: a record
+        // that opens a turn container grows the count. This sees
+        // assistant-originated openers (wakes, `/compact` continuations,
+        // leading orphans) the prior user-record-only rule could not.
+        if let Some(sig) = parse_significant(trimmed) {
+            if step_record(&mut frontier, &sig).is_some() {
+                turn_count += 1;
+            }
+        }
+
         match rec.kind.as_deref() {
             Some("user") => {
-                // Only here do we parse the (small) user `message` into a
-                // tree to inspect its `content`.
+                // The engine owns the count; this arm only tracks the last
+                // genuine user prompt (a non-count picker output). Parse the
+                // small user `message` to inspect its `content`.
                 let content = rec
                     .message
                     .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.get()).ok())
@@ -528,15 +560,12 @@ fn parse_session_file(
                         rec.permission_mode.is_some(),
                         &content,
                     );
-                    if counts {
-                        turn_count += 1;
-                        // `last_user_prompt` tracks the last genuine prompt —
-                        // a wake envelope is a turn but not a prompt.
-                        if !is_wake {
-                            let text = submission_text(&content);
-                            if !text.is_empty() {
-                                last_prompt = Some(truncate_prompt(&text));
-                            }
+                    // `last_user_prompt` tracks the last genuine prompt — a
+                    // wake envelope opens a turn but is not a prompt.
+                    if counts && !is_wake {
+                        let text = submission_text(&content);
+                        if !text.is_empty() {
+                            last_prompt = Some(truncate_prompt(&text));
                         }
                     }
                 }
@@ -561,6 +590,10 @@ fn parse_session_file(
             tail_hash: fnv1a64(&window) as i64,
             cwd_checked,
             created_at_found: created_at.is_some(),
+            // The frontier reflects exactly the complete (terminated) lines
+            // in `[0, consumed)`; `resumable` is false if any final line was
+            // unterminated, so this is the open-turn state at the offset.
+            frontier: frontier.clone(),
         }
     } else {
         ResumeMark {
@@ -568,6 +601,9 @@ fn parse_session_file(
             tail_hash: 0,
             cwd_checked,
             created_at_found: created_at.is_some(),
+            // No resumable frontier (offset 0 means a full re-stream next
+            // time); the value is unused but the struct must be complete.
+            frontier: Frontier::default(),
         }
     };
     Ok(Some(ParsedSession {
@@ -706,6 +742,44 @@ pub fn parse_candidate(
     .flatten()
 }
 
+/// `engine(file)` for one session — the single count authority ([P08],
+/// `tuglaws/turn-metric.md` S03). Prefers the fingerprint-validated cached
+/// engine count (the picker scan already wrote it); when there is no cache
+/// entry (a resume that bypassed a picker scan), runs the engine on the
+/// resolved file path. `None` when the file is missing/unreadable or
+/// excluded (cwd/sessionId mismatch) — the caller then skips the reconcile
+/// rather than zeroing a real count.
+///
+/// This is what the resume reconcile reads instead of the wire's
+/// `totalTurns`, so the picker count and the resumed count are equal by
+/// construction (the picker-never-shifts invariant, [P06]).
+pub fn engine_turn_count(
+    ledger: &SessionLedger,
+    project_dir: &str,
+    claude_session_id: &str,
+) -> Option<i64> {
+    let (dir, canonical) = claude_project_dir(ledger.claude_projects_root(), project_dir);
+    let path = dir.join(format!("{claude_session_id}.jsonl"));
+    let (file_size, file_mtime) = stat_size_mtime(&path)?;
+    // Cached engine(file), validated by (file_size, file_mtime); the cache
+    // read is already epoch-gated.
+    if let Ok(Some(row)) = ledger.get_scan_cache(claude_session_id) {
+        if !row.excluded && row.file_size == file_size && row.file_mtime == file_mtime {
+            return Some(row.turn_count);
+        }
+    }
+    // No usable cache entry: run the engine on the file directly. The
+    // canonical project dir is what the cwd-exclusion compares against, so a
+    // genuinely foreign file (encoding collision) returns `None` here too.
+    let candidate = SessionFileCandidate {
+        session_id: claude_session_id.to_owned(),
+        path,
+        file_size,
+        file_mtime,
+    };
+    parse_candidate(&candidate, &canonical, None).map(|p| p.meta.turn_count)
+}
+
 /// Outcome of a cached scan: the metas, plus counters that make cache
 /// behavior assertable (a warm scan of an unchanged directory reports
 /// `parsed == 0`; an append-only growth reports `resumed > 0`).
@@ -742,6 +816,9 @@ fn cache_row_from_parsed(parsed: &ParsedSession, project_dir: &str) -> ScanCache
         tail_hash: parsed.resume.tail_hash,
         cwd_checked: parsed.resume.cwd_checked,
         created_at_found: parsed.resume.created_at_found,
+        frontier_open: parsed.resume.frontier.open,
+        frontier_pending_close: parsed.resume.frontier.pending_close,
+        frontier_pending_close_msg_id: parsed.resume.frontier.pending_close_msg_id.clone(),
     }
 }
 
@@ -870,6 +947,17 @@ pub fn scan_external_sessions_cached_with_progress(
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
                     tracing::warn!(error = %err, "external scan: cache write failed");
                 }
+                // Migration / refresh ([P08], S03): a re-parsed session is a
+                // fresh `engine(file)` — re-`set` any ledger row for it (any
+                // state, live rows included) so a stale pre-epoch count is
+                // corrected without opening the session. A cache HIT is
+                // skipped (its ledger row was corrected on the parse that
+                // wrote the cache), so the steady state writes nothing.
+                if let Err(err) = ledger
+                    .reconcile_turn_count_from_engine(&parsed.meta.session_id, parsed.meta.turn_count)
+                {
+                    tracing::warn!(error = %err, "external scan: ledger count reconcile failed");
+                }
                 outcome.metas.push(parsed.meta);
             }
             None => {
@@ -888,6 +976,9 @@ pub fn scan_external_sessions_cached_with_progress(
                     tail_hash: 0,
                     cwd_checked: false,
                     created_at_found: false,
+                    frontier_open: false,
+                    frontier_pending_close: false,
+                    frontier_pending_close_msg_id: None,
                 };
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
                     tracing::warn!(error = %err, "external scan: cache write failed");
@@ -922,56 +1013,13 @@ mod tests {
     const SESSION_A: &str = "11111111-2222-3333-4444-555555555555";
     const PROJECT: &str = "/tmp/scan-test-project";
 
-    /// Corpus contract ([P03], Spec S01, Risk R01): the scanner's turn-count
-    /// decision matches the hand-verified expected count in the golden
-    /// manifest for every real-session fixture. Drives the same
-    /// `user_submission_opens_turn` the live scan loop uses, so the disk
-    /// scanner can never drift from the canonical rule (isMeta / compact /
-    /// scaffolding / interrupt-marker excluded; genuine submissions + wakes
-    /// counted).
-    #[test]
-    fn scanner_turn_counts_match_golden_corpus() {
-        let dir =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/turns");
-        let manifest: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
-        for fx in manifest["fixtures"].as_array().unwrap() {
-            let file = fx["file"].as_str().unwrap();
-            let expected = fx["expected_turns"].as_u64().unwrap() as i64;
-            let body = fs::read_to_string(dir.join(file)).unwrap();
-            let mut count: i64 = 0;
-            for line in body.lines() {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                let Ok(rec) = serde_json::from_str::<ScanRecord>(line) else {
-                    continue;
-                };
-                if rec.kind.as_deref() != Some("user") {
-                    continue;
-                }
-                let content = rec
-                    .message
-                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.get()).ok())
-                    .and_then(|msg| msg.get("content").cloned());
-                if let Some(content) = content {
-                    let (counts, _) = user_submission_opens_turn(
-                        rec.is_meta == Some(true),
-                        rec.is_compact_summary == Some(true),
-                        rec.permission_mode.is_some(),
-                        &content,
-                    );
-                    if counts {
-                        count += 1;
-                    }
-                }
-            }
-            assert_eq!(
-                count, expected,
-                "scanner turn count for {file}: got {count}, expected {expected} (manifest)"
-            );
-        }
-    }
+    // The sanitized golden-corpus contract (`scanner_turn_counts_match_golden_corpus`,
+    // over `tests/fixtures/turns/`) was deleted with that corpus ([P07]):
+    // its tidy, privacy-redacted shapes masked the real gaps (assistant-
+    // originated turns, `/compact`, incremental tails). The anti-drift gate
+    // is now the real-corpus contract (`turn_engine.rs`,
+    // `engine_matches_tugcode_segmentation_over_real_corpus`), which compares
+    // the engine to tugcode per-turn over the user's actual local sessions.
 
     /// Build a TUI-shaped transcript: bookkeeping records around two
     /// user submissions (one string-content, one array-content), a
@@ -1347,6 +1395,160 @@ mod tests {
         assert_eq!(warm.parsed, 0, "exclusion must be remembered");
         assert_eq!(warm.cache_hits, 1);
         assert!(warm.metas.is_empty());
+    }
+
+    /// The scanner's engine-driven count reproduces the opened-session
+    /// authority for the real reference session (`49e9aec6`, expected 81)
+    /// — the picker's pre-open count now equals what the session shows once
+    /// opened. Local-only ([P07]): reads the user's real JSONL where it
+    /// sits and skips when absent. Drives `parse_candidate` directly with
+    /// `project_dir` set to the file's own `cwd`, so the directory-encoding
+    /// / firmlink machinery is out of the picture — just the scan → engine
+    /// path under test.
+    #[test]
+    fn engine_scanner_counts_reference_session_81() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let path = std::path::PathBuf::from(home).join(
+            ".claude/projects/-Users-kocienda-Mounts-u-src-tugtool/\
+             49e9aec6-7c3a-4c0c-9f74-5a9a0551812e.jsonl",
+        );
+        let Some((file_size, file_mtime)) = stat_size_mtime(&path) else {
+            eprintln!("skipping: reference session not present (local-only fixture)");
+            return;
+        };
+        let candidate = SessionFileCandidate {
+            session_id: "49e9aec6-7c3a-4c0c-9f74-5a9a0551812e".into(),
+            path,
+            file_size,
+            file_mtime,
+        };
+        // The record `cwd` is the project path; pass it verbatim so the
+        // direct cwd compare in `parse_session_file` does not exclude it.
+        let parsed = parse_candidate(&candidate, "/Users/kocienda/Mounts/u/src/tugtool", None)
+            .expect("reference session parses");
+        assert_eq!(
+            parsed.meta.turn_count, 81,
+            "scanner engine count for 49e9aec6 must be 81 (the opened-session authority)"
+        );
+    }
+
+    /// The incremental resume carries the engine's open-turn frontier across
+    /// an append boundary — not merely an offset + count (Risk R02). The
+    /// cold file ends mid-turn with a deferred terminal close
+    /// (`pending_close`); the appended record is a same-`message.id`
+    /// continuation, which a faithful full re-segment keeps as ONE turn.
+    /// Without carrying the frontier the resumed parse would synth-open a
+    /// phantom second turn — exactly the original incremental undercount in
+    /// reverse.
+    #[test]
+    fn incremental_resume_carries_engine_frontier_across_append() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        let cold = format!(
+            "{{\"type\":\"user\",\"sessionId\":\"{SESSION_A}\",\"cwd\":\"{PROJECT}\",\"timestamp\":\"2026-06-01T10:00:00.000Z\",\"message\":{{\"role\":\"user\",\"content\":\"q1\"}}}}\n\
+             {{\"type\":\"assistant\",\"sessionId\":\"{SESSION_A}\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"stop_reason\":\"end_turn\",\"content\":[{{\"type\":\"text\",\"text\":\"a1\"}}]}}}}\n"
+        );
+        seed(&projects, PROJECT, SESSION_A, &cold);
+        let path = projects
+            .join(encode_claude_project_name(PROJECT))
+            .join(format!("{SESSION_A}.jsonl"));
+        bump_mtime(&path, 1_000_000);
+
+        let cold_scan = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(cold_scan.metas[0].turn_count, 1, "one user turn so far");
+        let cached = ledger.get_scan_cache(SESSION_A).unwrap().unwrap();
+        assert!(cached.parse_offset > 0, "resumable frontier recorded");
+        assert!(cached.frontier_open, "turn still open at the frontier");
+        assert!(
+            cached.frontier_pending_close,
+            "terminal close deferred at the frontier"
+        );
+
+        // Append a same-msg_id continuation half.
+        let mut content = fs::read_to_string(&path).unwrap();
+        content.push_str(&format!(
+            "{{\"type\":\"assistant\",\"sessionId\":\"{SESSION_A}\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"stop_reason\":\"end_turn\",\"content\":[{{\"type\":\"text\",\"text\":\"a1-cont\"}}]}}}}\n"
+        ));
+        fs::write(&path, content).unwrap();
+        bump_mtime(&path, 2_000_000);
+
+        let warm = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(warm.resumed, 1, "tail-only resume from the frontier");
+        assert_eq!(
+            warm.metas[0].turn_count, 1,
+            "same-message.id continuation stays one turn across the resume boundary"
+        );
+    }
+
+    /// A two-turn fixture: a genuine user turn, then an orphan
+    /// assistant-originated turn (no user submission before it) — the
+    /// engine counts 2, where the old user-record-only rule saw 1.
+    fn two_turn_jsonl(session_id: &str, cwd: &str) -> String {
+        [
+            format!(
+                r#"{{"type":"user","sessionId":"{session_id}","cwd":"{cwd}","timestamp":"2026-06-01T10:00:00.000Z","message":{{"role":"user","content":"q1"}}}}"#
+            ),
+            format!(
+                r#"{{"type":"assistant","sessionId":"{session_id}","message":{{"id":"m1","role":"assistant","stop_reason":"end_turn","content":[{{"type":"text","text":"a1"}}]}}}}"#
+            ),
+            format!(
+                r#"{{"type":"assistant","sessionId":"{session_id}","message":{{"id":"m2","role":"assistant","stop_reason":"end_turn","content":[{{"type":"text","text":"orphan"}}]}}}}"#
+            ),
+        ]
+        .join("\n")
+    }
+
+    /// `engine_turn_count` runs the engine when there is no cache entry (a
+    /// resume that bypassed a picker scan), then serves the cached value
+    /// after a scan populates it — the [Q01] no-cache fallback.
+    #[test]
+    fn engine_turn_count_runs_engine_then_serves_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(&projects, PROJECT, SESSION_A, &two_turn_jsonl(SESSION_A, PROJECT));
+
+        // No scan yet → no cache entry → the engine runs on the file.
+        assert_eq!(engine_turn_count(&ledger, PROJECT, SESSION_A), Some(2));
+
+        // After a scan caches the engine output, the cached value is served.
+        scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(engine_turn_count(&ledger, PROJECT, SESSION_A), Some(2));
+
+        // A session with no file resolves to None (caller skips reconcile).
+        assert_eq!(
+            engine_turn_count(&ledger, PROJECT, "00000000-0000-0000-0000-000000000000"),
+            None
+        );
+    }
+
+    /// Migration ([P08], S03): a ledger row carrying a stale count is
+    /// corrected to `engine(file)` on re-scan, without opening the session
+    /// — including a row left in `live` state.
+    #[test]
+    fn scan_migrates_stale_ledger_count_to_engine() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(&projects, PROJECT, SESSION_A, &two_turn_jsonl(SESSION_A, PROJECT));
+
+        // A ledger row with an inflated stale count, left live.
+        ledger
+            .record_spawn(SESSION_A, "ws", PROJECT, "card-1", 1_000)
+            .unwrap();
+        ledger.set_turn_count(SESSION_A, 59, 1_000).unwrap();
+        assert_eq!(ledger.get(SESSION_A).unwrap().unwrap().turn_count, 59);
+
+        // The scan produces engine(file)=2 and re-sets the ledger row.
+        let scan = scan_external_sessions_cached(&ledger, PROJECT);
+        let meta = scan.metas.iter().find(|m| m.session_id == SESSION_A).unwrap();
+        assert_eq!(meta.turn_count, 2, "engine counts the orphan assistant turn");
+        let row = ledger.get(SESSION_A).unwrap().unwrap();
+        assert_eq!(
+            row.turn_count, 2,
+            "stale ledger count migrated to engine(file) on re-scan, live row included"
+        );
     }
 
     #[test]

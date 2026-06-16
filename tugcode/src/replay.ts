@@ -51,6 +51,7 @@
 
 import type {
   AddUserMessage,
+  AssistantOpener,
   AssistantText,
   ContentBlock,
   ContentBlockStart,
@@ -404,15 +405,15 @@ function noteContentMsgId(ctx: TranslateContext, msgId: string): void {
 
 /**
  * Mint a synthesized opener id and bump the counter. Returns
- * `${prefix}-${n}` where `prefix` is `u` (user-text opener) or `w`
- * (wake opener). The minted id is translator-internal in the
- * steady-state path — opener frames (`add_user_message`,
- * `wake_started`) carry no `msg_id` on the wire ([D15]). The id
- * reaches the wire only on the orphan-synthesis `turn_complete` AND
- * only when no content event arrived to swap it via
- * {@link noteContentMsgId}.
+ * `${prefix}-${n}` where `prefix` is `u` (user-submission opener), `w`
+ * (wake opener), or `a` (neutral assistant-originated opener). The minted
+ * id is translator-internal in the steady-state path — opener frames
+ * (`add_user_message`, `wake_started`, `assistant_opener`) carry no
+ * `msg_id` on the wire ([D15]). The id reaches the wire only on the
+ * orphan-synthesis `turn_complete` AND only when no content event arrived
+ * to swap it via {@link noteContentMsgId}.
  */
-function mintOpenerId(ctx: TranslateContext, prefix: "u" | "w"): string {
+function mintOpenerId(ctx: TranslateContext, prefix: "u" | "w" | "a"): string {
   const id = `${prefix}-${ctx.orphanCounter}`;
   ctx.orphanCounter += 1;
   return id;
@@ -1131,35 +1132,25 @@ function handleAssistantEntry(
 
   const out: OutboundMessage[] = [];
 
-  // Orphan-assistant synthesis: an `assistant` entry arriving with no
-  // open turn (the JSONL opens with an assistant; the prior turn
-  // closed; or a skipped entry like `isCompactSummary` swallowed the
-  // user side) needs a `pendingTurn` to commit onto. Emit an empty
-  // `add_user_message` to mint one. The empty text is a placeholder
-  // for "the user prompt belongs to a prior session" (the `--continue`
-  // case) or "the user prompt was CLI-internal" (the `/compact`
-  // continuation case); the substrate's `TurnEntry.messages[0]` is
-  // then a `user_message` with `text: ""`.
-  //
-  // This is the one synthesized opener the translator emits beyond
-  // the user-entry path. It preserves the OLD model's behavior for
-  // these edge cases — without it, the assistant's content frames
-  // would arrive at the reducer with no pendingTurn (handleContentBlockStart
-  // looks up scratch by pendingTurn.turnKey) and the turn would never
-  // commit.
+  // Assistant-originated opener: an `assistant` entry arriving with no
+  // open turn (the JSONL opens with an assistant; the prior turn closed;
+  // or a skipped entry like `isCompactSummary` swallowed the user side)
+  // needs a `pendingTurn` to commit onto. Open an HONEST
+  // assistant-originated turn (`tuglaws/turn-metric.md` S02) — no user
+  // message is fabricated. This replaces the old synthesized empty
+  // `add_user_message{content:[]}`, which rendered as a phantom `#u`
+  // user row for content the user never submitted (`--continue` leading
+  // orphans, `/compact` continuations). The turn now renders
+  // assistant-only (`#a`); the reducer opens an empty message scratch
+  // for it just as it does for a wake.
   if (ctx.openTurnMsgId === null) {
-    // Empty-content opener — the substrate's `UserMessage` substrate
-    // walker (`synthesizeUserMessageFromBlocks`) produces `(text: "",
-    // atoms: [])` from a zero-block content array, which is exactly
-    // the "no user prompt to render" semantics we want here.
-    const synthOpener: AddUserMessage = {
-      type: "add_user_message",
-      content: [],
+    const opener: AssistantOpener = {
+      type: "assistant_opener",
       timestamp: parseEntryTimestamp(entry),
       ipc_version: IPC_VERSION,
     };
-    out.push(synthOpener);
-    ctx.openTurnMsgId = mintOpenerId(ctx, "u");
+    out.push(opener);
+    ctx.openTurnMsgId = mintOpenerId(ctx, "a");
   }
 
   // Capture per-block records preserving the JSONL's arrival order.
@@ -1606,6 +1597,14 @@ interface TurnInfo {
   startIndex: number;
   /** Transcript rows this turn produces: 2 (user + assistant) or 1 (wake). */
   messages: number;
+  /**
+   * Intrinsic origin of the turn (`tuglaws/turn-metric.md` S01) — `"user"`
+   * for a genuine user submission (emits `add_user_message`), `"assistant"`
+   * for a wake / continuation / orphan (emits `wake_started` /
+   * `assistant_opener`). The real-corpus contract (#step-7) compares this
+   * to the Rust engine's per-turn origin.
+   */
+  origin: "user" | "assistant";
 }
 
 function computeTurns(
@@ -1621,15 +1620,44 @@ function computeTurns(
     const msgs = translateJsonlEntry(parsed, scanCtx, { suppressTurnComplete });
     if (scanCtx.orphanCounter > before) {
       // This entry opened a new turn. It carries a user row iff it
-      // emitted an `add_user_message` (user / synth opener); a wake
-      // opener emits `wake_started` instead → assistant row only. The
-      // turn's assistant row is the +1 every committed turn earns from
-      // its eventual `turn_complete`.
+      // emitted an `add_user_message` (a genuine user submission); a wake
+      // (`wake_started`) or an orphan assistant (`assistant_opener`) opens
+      // an assistant-originated turn → assistant row only, no `#u`. The
+      // turn's assistant row is the +1 every committed turn earns from its
+      // eventual `turn_complete`.
       const hasUserRow = msgs.some((m) => m.type === "add_user_message");
-      turns.push({ startIndex: i, messages: hasUserRow ? 2 : 1 });
+      turns.push({
+        startIndex: i,
+        messages: hasUserRow ? 2 : 1,
+        origin: hasUserRow ? "user" : "assistant",
+      });
     }
   }
   return turns;
+}
+
+/**
+ * The real-corpus contract's tugcode side (#step-7): segment a whole JSONL
+ * string into the ordered per-turn origin list `["user" | "assistant", …]`
+ * by dry-running the real translator (`computeTurns`). The Rust engine
+ * (`tugcast/src/turn_engine.rs`) produces the same list over the same file;
+ * the contract asserts they are equal per-turn (origin + ordinal).
+ */
+export function segmentJsonlOrigins(
+  jsonl: string,
+): Array<"user" | "assistant"> {
+  const parsedEntries: Array<JsonlEntry | null> = jsonl
+    .split("\n")
+    .map((raw) => {
+      const line = raw.trim();
+      if (line.length === 0) return null;
+      try {
+        return JSON.parse(line) as JsonlEntry;
+      } catch {
+        return null;
+      }
+    });
+  return computeTurns(parsedEntries).map((t) => t.origin);
 }
 
 /**

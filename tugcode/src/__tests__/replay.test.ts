@@ -511,14 +511,13 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
     ]);
   });
 
-  test("turn with no preceding user entry emits add_user_message with empty content", async () => {
+  test("turn with no preceding user entry opens an assistant_opener (no fabricated user)", async () => {
     // Edge case: a JSONL that opens with an assistant entry — this
     // happens after `--continue` flows where the user's prompt was
-    // recorded in a prior session file. The orphan-assistant
-    // synthesizer in `handleAssistantEntry` emits a synth opener
-    // with `content: []` so the reducer's `pendingTurn` is seeded;
-    // tugdeck's `synthesizeUserMessageFromBlocks` produces
-    // `(text: "", atoms: [])` from the empty content array.
+    // recorded in a prior session file. `handleAssistantEntry` opens an
+    // honest assistant-originated turn (`assistant_opener`,
+    // `tuglaws/turn-metric.md` S02) — NO fabricated user message, so the
+    // turn renders assistant-only (`#a`) rather than a phantom `#u` row.
     const jsonl = makeJsonl([
       assistantEntry({
         msgId: "m_t",
@@ -527,8 +526,8 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
       }),
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
-    const um = out.find(isAddUserMessage)!;
-    expect(um.content).toEqual([]);
+    expect(out.find(isAddUserMessage)).toBeUndefined();
+    expect(out.filter((m) => m.type === "assistant_opener")).toHaveLength(1);
   });
 
   test("empty JSONL emits replay_started → replay_complete with count=0", async () => {

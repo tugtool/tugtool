@@ -74,7 +74,13 @@ function activeTurn(args: {
   if (args.withText !== undefined && args.isWake) {
     messages.push(assistantText({ msgId: "live", blockIndex: 0, text: args.withText }));
   }
-  return { turnKey: args.turnKey, submitAt: 0, isWake: args.isWake, suppressed: false, messages };
+  return {
+    turnKey: args.turnKey,
+    submitAt: 0,
+    origin: args.isWake ? "assistant" : "user",
+    suppressed: false,
+    messages,
+  };
 }
 
 function snapshotWith(args: {

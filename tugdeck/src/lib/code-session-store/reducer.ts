@@ -65,6 +65,7 @@ import type {
   TaskUpdatedEvent,
   TurnCompleteEvent,
   WakeStartedEvent,
+  AssistantOpenerEvent,
   WireErrorEvent,
   PromptAnchorEvent,
   RewindPreviewResultEvent,
@@ -95,6 +96,7 @@ import type {
   TransportState,
   TurnEndReason,
   TurnEntry,
+  TurnOrigin,
   UserMessage,
   WakeTrigger,
 } from "./types";
@@ -155,16 +157,16 @@ export interface ScratchEntry {
 
 /**
  * The in-flight turn marker — replaces `pendingUserMessage` under
- * [D07]. The substrate distinguishes "a turn is open" from "the open
- * turn carries a user submission" by the presence (or absence) of a
- * `user_message` Message at the head of `scratch[turnKey].messages` —
- * `isWake` is the explicit, non-derived bit for handlers that need to
- * branch on the source.
+ * [D07]. `origin` is the turn's intrinsic, stated attribution (S01,
+ * [P01]): `"user"` opens with a `user_message` at the head of
+ * `scratch[turnKey].messages`; `"assistant"` (wake / continuation /
+ * orphan) opens with an empty scratch and no user message. Handlers
+ * branch on `origin`, never by inspecting `messages[0]`.
  */
 export interface PendingTurn {
   turnKey: string;
   submitAt: number;
-  isWake: boolean;
+  origin: TurnOrigin;
   /**
    * When true, this turn is suppressed from the transcript: its in-flight
    * rows are skipped and `turn_complete` drops the transcript append (the
@@ -317,9 +319,9 @@ export interface CodeSessionState {
    * `handleWakeStarted` opens a turn; cleared at commit / interrupt /
    * transport_close. Carries the React-key seed (`turnKey`) that
    * `TurnEntry` adopts at commit (so the row's React identity is
-   * stable across the inflight → committed transition) plus the
-   * `isWake` discriminator the substrate uses to branch wake handling
-   * without resurrecting the [D06] empty-text sentinel.
+   * stable across the inflight → committed transition) plus the turn's
+   * `origin` (S01) — the attribution handlers branch on instead of the
+   * retired [D06] empty-text sentinel.
    */
   pendingTurn: PendingTurn | null;
   /**
@@ -849,7 +851,7 @@ function handleSend(
       pendingTurn: {
         turnKey: event.turnKey,
         submitAt,
-        isWake: false,
+        origin: "user",
         suppressed: event.suppress === true,
       },
       // Seed the scratch with the opening user_message so the
@@ -1023,14 +1025,16 @@ function handleInterrupt(
     state.firstAssistantDeltaAt === null &&
     state.firstToolUseAt === null
   ) {
-    // Detect the wake context: an interrupt fired during `waking`
-    // before any content has landed. A wake has no user submission
-    // ([Q03] in `roadmap/tugplan-dev-session-wake.md`), so there is
-    // nothing to route into the restore slot. Preserve any prior
-    // restore so a wake pull-down doesn't clobber a stranded user
-    // draft.
-    const isWakePulldown = state.pendingTurn?.isWake === true;
-    const inflightUser = isWakePulldown ? null : readInflightUserMessage(state);
+    // An assistant-originated in-flight turn (a wake, or an orphan
+    // continuation) has no user submission (S01), so there is nothing to
+    // route into the restore slot — and its wake bracket (if any) clears.
+    // A user turn keeps its stranded draft. This rides the turn's `origin`,
+    // not a wake-specific flag.
+    const inflightIsAssistantOrigin =
+      state.pendingTurn?.origin === "assistant";
+    const inflightUser = inflightIsAssistantOrigin
+      ? null
+      : readInflightUserMessage(state);
     const restore =
       inflightUser !== null
         ? { text: inflightUser.text, atoms: inflightUser.attachments }
@@ -1044,11 +1048,12 @@ function handleInterrupt(
         toolUseStartedAt: new Map(),
         pendingTurn: null,
         pendingDraftRestore: restore,
-        // Wake pull-down clears the wake bracket marker — the wire
-        // echo (`turn_complete(error)`) will arrive later and is
-        // suppressed by `pendingCaseAEchoes` below, same as a normal
-        // CASE A user pull-down.
-        wakeTrigger: isWakePulldown ? null : state.wakeTrigger,
+        // An assistant-origin pull-down clears the wake bracket marker —
+        // the wire echo (`turn_complete(error)`) will arrive later and is
+        // suppressed by `pendingCaseAEchoes` below, same as a normal CASE A
+        // user pull-down. (For a non-wake orphan, `wakeTrigger` is already
+        // null, so this is a no-op there.)
+        wakeTrigger: inflightIsAssistantOrigin ? null : state.wakeTrigger,
         pendingCaseAEchoes: state.pendingCaseAEchoes + 1,
         pendingApproval: null,
         pendingQuestion: null,
@@ -2118,9 +2123,16 @@ function buildTurnEntry(
   // Without this, a replayed interrupted turn (wire `result: "error"`,
   // no live `interruptInFlight`) mis-commits as `error` ([replay-2]).
   const effectiveReason: TurnEndReason = telemetry.turnEndReason ?? reason;
+  // Origin is the opener's stated attribution ([P01], S01) — never inferred
+  // from `messages[0]`. `pendingTurn` is set on every real commit; the
+  // `assistant` default covers only the degenerate no-pending fallback
+  // (`msg-${msgId}` turnKey), where asserting no user row is the safe,
+  // honest choice.
+  const origin: TurnOrigin = state.pendingTurn?.origin ?? "assistant";
   return {
     msgId,
     turnKey,
+    origin,
     // Replay-window stamp: a turn committing while the replay window
     // is open is reconstructed history, not a watched live turn.
     ...(state.phase === "replaying" ? { replayed: true } : {}),
@@ -2449,7 +2461,7 @@ function handleTurnComplete(
         pendingTurn: {
           turnKey: next.turnKey,
           submitAt: flushedSubmitAt,
-          isWake: false,
+          origin: "user",
         },
         queuedSends: rest,
         lastError: null,
@@ -3946,7 +3958,7 @@ function handleAddUserMessage(
       pendingTurn: {
         turnKey: event.turnKey,
         submitAt: now,
-        isWake: false,
+        origin: "user",
         // Replay / mid-turn-snapshot path carries the `/rewind` anchor on the
         // opener; the live path delivers it later via `prompt_anchor`.
         ...(typeof event.promptUuid === "string" && event.promptUuid.length > 0
@@ -3969,6 +3981,53 @@ function handleAddUserMessage(
 }
 
 /**
+ * Honest assistant-originated opener (`tuglaws/turn-metric.md` S02) — the
+ * reducer's response to a wire `assistant_opener`. Opens a turn that holds
+ * orphan assistant content (a `--continue` leading orphan, a `/compact`
+ * continuation, or any assistant output with no open turn) with **no user
+ * message**: the scratch is seeded empty, exactly as for a wake, so the
+ * turn renders assistant-only (`#a`) and never as a phantom user row. This
+ * replaces the old synthesized empty `add_user_message`.
+ *
+ * Unlike {@link handleWakeStarted} this carries no wake annotations — no
+ * `wakeTrigger`, no jobs fold, no `waking` phase. It is replay-only today
+ * (orphan assistant content lives in the JSONL); the live wake path keeps
+ * using `wake_started`. Like `handleAddUserMessage` it admits only the
+ * `replaying` phase.
+ */
+function handleAssistantOpener(
+  state: CodeSessionState,
+  event: AssistantOpenerEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "replaying") {
+    return { state, effects: [] };
+  }
+  const submitAt = event.timestamp ?? Date.now();
+  return {
+    state: {
+      ...state,
+      // No `activeMsgId` pre-bind per [D14]; the first assistant content
+      // event of the turn sets it to claude's real `msg_id`.
+      activeMsgId: null,
+      pendingTurn: {
+        turnKey: event.turnKey,
+        submitAt,
+        origin: "assistant",
+      },
+      // Empty scratch — an assistant-originated turn has no `user_message`.
+      // The first wire content event (assistant_text / thinking_text /
+      // tool_use) mints into this scratch via `handleContentBlockStart`.
+      scratch: withScratchEntry(
+        state.scratch,
+        event.turnKey,
+        newScratchEntry(event.turnKey, []),
+      ),
+    },
+    effects: [],
+  };
+}
+
+/**
  * Wake-bracket opener for a spontaneous resume — fires when claude
  * resumes from idle in response to an async deferred-completion event
  * (Monitor timeout, CronCreate firing, ScheduleWakeup arriving, etc.).
@@ -3980,10 +4039,11 @@ function handleAddUserMessage(
  * differences:
  *   - `phase: "waking"` rather than `"submitting"` so the bracket is
  *     visible to consumers and `handleTurnComplete` can branch on it.
- *   - `pendingTurn.isWake === true` is the substrate's wake
- *     discriminator (replaces the [D06] empty-text sentinel under
- *     [D07]). The scratch opens with NO `user_message` Message —
- *     wake turns have no user submission to surface.
+ *   - `pendingTurn.origin === "assistant"` (S01) — a wake is an
+ *     assistant-originated turn; its wake-ness rides `wakeTrigger` + the
+ *     `waking` phase, not the attribution. The scratch opens with NO
+ *     `user_message` Message — wake turns have no user submission to
+ *     surface.
  *   - `pendingDraftRestore` is preserved — the user's in-progress
  *     draft must not be touched by a wake (a wake mid-compose should
  *     not clobber what the user was typing).
@@ -4094,7 +4154,9 @@ function handleWakeStarted(
       pendingTurn: {
         turnKey: event.turnKey,
         submitAt,
-        isWake: true,
+        // A wake is an assistant-originated turn (S01); its wake-ness rides
+        // `wakeTrigger` + the `waking` phase, not the attribution.
+        origin: "assistant",
       },
       // Per-turn telemetry reset — same single-source-of-truth helper
       // `handleSend` uses on the queue-flush path. Future fields added
@@ -4343,7 +4405,7 @@ export function deriveActiveTurnSnapshot(
   return {
     turnKey: pending.turnKey,
     submitAt: pending.submitAt,
-    isWake: pending.isWake,
+    origin: pending.origin,
     suppressed: pending.suppressed === true,
     messages,
   };
@@ -4439,6 +4501,8 @@ export function reduce(
       return handleAddUserMessage(state, event);
     case "wake_started":
       return handleWakeStarted(state, event);
+    case "assistant_opener":
+      return handleAssistantOpener(state, event);
     case "task_started":
       return handleTaskStarted(state, event);
     case "task_updated":

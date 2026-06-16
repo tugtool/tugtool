@@ -23,6 +23,7 @@ export const ZERO_TURN_COST: TurnCost = {
 
 export const TURN_ENTRY_TELEMETRY_DEFAULTS: Pick<
   TurnEntry,
+  | "origin"
   | "wallClockMs"
   | "awaitingApprovalMs"
   | "transportDowntimeMs"
@@ -34,6 +35,9 @@ export const TURN_ENTRY_TELEMETRY_DEFAULTS: Pick<
   | "turnEndReason"
   | "cost"
 > = {
+  // Default fixtures to a user-originated turn; tests exercising
+  // assistant-origin turns override this directly.
+  origin: "user",
   wallClockMs: 0,
   awaitingApprovalMs: 0,
   transportDowntimeMs: 0,

@@ -187,13 +187,11 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
 
     const out = await collectSession(jsonl);
 
-    const userReplays = addUserMessagesOf(out);
-    expect(userReplays).toHaveLength(1);
-    // The continuation turn replays with an empty user message — the
-    // summary is CLI-internal and is not surfaced as transcript text.
-    // Post-Step-5c the synth opener carries `content: []` (the
-    // reducer's substrate synth derives `text: ""` from it).
-    expect(userReplays[0].content).toEqual([]);
+    // The continuation turn replays as an honest assistant-originated
+    // opener — no fabricated user message. The summary is CLI-internal
+    // and never surfaces as transcript text.
+    expect(addUserMessagesOf(out)).toHaveLength(0);
+    expect(out.filter((m) => m.type === "assistant_opener")).toHaveLength(1);
     expect(out.some((m) => m.type === "add_user_message" &&
       (m as AddUserMessage).content.some((b) =>
         b.type === "text" && b.text.includes("being continued")))).toBe(false);
@@ -217,16 +215,17 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
 
     const out = await collectSession(jsonl);
 
-    // Exactly two turns — the real question and the continuation.
-    // None of the four scaffolding entries became an orphan turn.
+    // Exactly two turns — the real question (user-originated) and the
+    // continuation (assistant-originated). None of the four scaffolding
+    // entries became an orphan turn.
     const userReplays = addUserMessagesOf(out);
-    expect(userReplays).toHaveLength(2);
+    expect(userReplays).toHaveLength(1);
     expect(userReplays[0].content).toEqual([
       { type: "text", text: "first real question" },
     ]);
-    // The continuation's synth opener carries `content: []` (no
-    // user prompt — the summary entry was skipped scaffolding).
-    expect(userReplays[1].content).toEqual([]);
+    // The continuation opens an honest `assistant_opener` (no user prompt
+    // — the summary entry was skipped scaffolding), not a fabricated user.
+    expect(out.filter((m) => m.type === "assistant_opener")).toHaveLength(1);
     // No msg_id on add_user_message per [D15]; msg_ids ("m_a" /
     // "m_b") ride on the matching turn_complete frames below.
 

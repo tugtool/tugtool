@@ -11,7 +11,14 @@ import { ContextBreakdownEmitter } from "./context-breakdown.ts";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { realpathSync } from "node:fs";
+import {
+  realpathSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeSync,
+} from "node:fs";
+import { segmentJsonlOrigins } from "./replay.ts";
 
 // Process-start wall clock for the boot-latency split. Captured at
 // module evaluation — before arg parsing, settings reads, or the
@@ -71,6 +78,44 @@ let resumeSessionId: string | undefined;
 // production tugcode never sees this flag.
 let stubTranscriptPath: string | undefined;
 const args = Bun.argv.slice(2); // Skip bun and script path
+
+// `tugcode segment <file-or-dir>` — the real-corpus contract's tugcode
+// side (`tuglaws/turn-metric.md` S03, #step-7). Emits tugcode's ordered
+// per-turn origin list for each session JSONL as a JSON map
+// `{ "<basename>": ["user" | "assistant", …] }` on stdout, then exits.
+// A batch entrypoint (no live session) so the Rust engine's contract test
+// can diff the two segmentations over the whole local corpus in one spawn.
+if (args[0] === "segment") {
+  const target = args[1];
+  if (target === undefined) {
+    originalError("usage: tugcode segment <file-or-dir>");
+    process.exit(2);
+  }
+  const out: Record<string, Array<"user" | "assistant">> = {};
+  const segmentOne = (path: string): void => {
+    const base = path.split("/").pop() ?? path;
+    try {
+      out[base] = segmentJsonlOrigins(readFileSync(path, "utf8"));
+    } catch (err) {
+      originalError(`tugcode segment: skip ${path}: ${String(err)}`);
+    }
+  };
+  const st = statSync(target);
+  if (st.isDirectory()) {
+    for (const name of readdirSync(target)) {
+      if (name.endsWith(".jsonl")) segmentOne(join(target, name));
+    }
+  } else {
+    segmentOne(target);
+  }
+  // Synchronous write to fd 1: `process.stdout.write` is async/buffered on
+  // a pipe, and the immediately-following `process.exit` can truncate it
+  // (the Rust contract test captures this over a pipe). `writeSync` flushes
+  // before we exit.
+  writeSync(1, JSON.stringify(out));
+  process.exit(0);
+}
+
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--dir" && i + 1 < args.length) {
     projectDir = args[i + 1];

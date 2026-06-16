@@ -902,6 +902,29 @@ export interface WakeStarted {
 }
 
 /**
+ * Neutral assistant-originated turn opener (`tuglaws/turn-metric.md` S02).
+ * Opens an `origin: assistant` turn that holds orphan assistant content —
+ * a `--continue` leading orphan, a `/compact` continuation, or any
+ * assistant output that arrives with no open turn — with **no user
+ * message**. It is the honest replacement for the deleted synthesized
+ * empty `add_user_message{content:[]}`: there is no fabricated user slot,
+ * so the turn renders assistant-only (`#a`) and never as a phantom user
+ * row.
+ *
+ * A wake ({@link WakeStarted}) is the same assistant-originated turn
+ * carrying an optional wake annotation; this opener is the wake-baggage-free
+ * variant. Like the other openers it carries no `msg_id` on the wire — the
+ * turn's correlation key is the store wrapper's minted `turnKey`.
+ */
+export interface AssistantOpener {
+  type: "assistant_opener";
+  /** Original JSONL entry time (replay), so the turn's timestamp is the
+   * archived wall-clock rather than the replay-emission time. */
+  timestamp?: number;
+  ipc_version: number;
+}
+
+/**
  * Background-task lifecycle opener — a verbatim forward of claude's
  * `system/task_started` event minus the `type/subtype` envelope. Fired
  * when a background task starts (`Bash` / `Agent` with
@@ -1121,6 +1144,7 @@ export type OutboundMessage =
   | ReplayStarted
   | ReplayComplete
   | WakeStarted
+  | AssistantOpener
   | TaskStarted
   | TaskUpdated
   | RewindPreviewResult

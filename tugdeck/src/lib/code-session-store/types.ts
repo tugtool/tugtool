@@ -210,6 +210,20 @@ export type Message =
   | ToolUseMessage;
 
 /**
+ * Intrinsic, stated origin of a turn container (`tuglaws/turn-metric.md`
+ * S01). `user` — a genuine user submission (carries a `user_message`,
+ * renders `#u` + `#a`). `assistant` — a wake, a `/compact` continuation, a
+ * `--continue` leading orphan, or any orphan assistant output (no user
+ * message, renders `#a` only). Shell (`#s`) is reserved by the addressing
+ * scheme but not a value here this phase.
+ *
+ * Origin is set by the turn's opener and is NEVER inferred from
+ * `messages[0]` — a code-constructed turn can never masquerade as a user
+ * action ([P01]).
+ */
+export type TurnOrigin = "user" | "assistant";
+
+/**
  * Per-turn token + cost figures, frozen onto the committed `TurnEntry`
  * at `turn_complete`.
  *
@@ -284,6 +298,14 @@ export interface TurnEntry {
   turnKey: string;
   msgId: string;
   /**
+   * Intrinsic origin of this turn ([P01], S01). Set by the turn's opener,
+   * never inferred from `messages[0]`. `"user"` → a genuine user submission
+   * (renders a `#u` user row + `#a` assistant row); `"assistant"` → a wake /
+   * continuation / orphan (renders `#a` only, no user row). Row layout and
+   * per-row addressing key on this field.
+   */
+  origin: TurnOrigin;
+  /**
    * True when this turn committed during a replay window (`phase ===
    * "replaying"` at `turn_complete`) — i.e. it is reconstructed
    * history, not a turn the user watched stream. Renderers use it to
@@ -309,11 +331,11 @@ export interface TurnEntry {
    * stable `messageKey` for per-Message React identity and PropertyStore
    * subscriptions.
    *
-   * A normal user turn opens with a `user_message` Message; a wake
-   * turn naturally doesn't (its `messages` opens with `assistant_text`
-   * or `assistant_thinking`). Consumers that need to gate on the
-   * presence of a user message inline-check
-   * `turn.messages[0]?.kind === "user_message"` — no named helper.
+   * A `user`-origin turn opens with a `user_message` Message; an
+   * `assistant`-origin turn (wake / continuation / orphan) naturally
+   * doesn't (its `messages` opens with `assistant_text` or
+   * `assistant_thinking`). Consumers gate on user-row presence via the
+   * turn's {@link origin}, NOT by inspecting `messages[0]` ([P01]).
    */
   messages: ReadonlyArray<Message>;
   /**
@@ -559,16 +581,16 @@ export interface QueuedSend {
  * `activeTurn.messages` the same way they iterate `turn.messages` for
  * committed rows — one substrate, two lifecycle slots.
  *
- * `isWake` is the substrate's wake discriminator (replaces the [D06]
- * empty-text sentinel). `messages` may open with a `user_message`
- * (normal turn) or with `assistant_text` / `assistant_thinking` (wake
- * turn — no user submission); consumers gating on user-row presence
- * inline-check `messages[0]?.kind === "user_message"`.
+ * `origin` is the turn's intrinsic attribution (S01, [P01]): `"user"`
+ * (opens with a `user_message`) or `"assistant"` (a wake / continuation /
+ * orphan — `messages` opens with `assistant_text` / `assistant_thinking`,
+ * no user submission). Consumers gate on user-row presence via `origin`,
+ * never by inspecting `messages[0]`.
  */
 export interface ActiveTurnSnapshot {
   turnKey: string;
   submitAt: number;
-  isWake: boolean;
+  origin: TurnOrigin;
   /**
    * When true, this in-flight turn is suppressed from the transcript (the
    * `/compact` seed) — the data source emits zero rows for it.

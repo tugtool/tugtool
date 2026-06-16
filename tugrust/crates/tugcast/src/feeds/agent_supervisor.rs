@@ -403,6 +403,14 @@ pub trait SessionsRecorder: Send + Sync {
     /// base. No-op if the row is missing or not in `live` state.
     fn set_turn_count(&self, session_id: &str, count: i64);
 
+    /// `engine(session file)` for `session_id` under `project_dir` — the
+    /// single count authority ([P08]). The resume reconcile reads this (the
+    /// fingerprint-validated cached value, or the engine run on the resolved
+    /// file when no cache entry exists) instead of the wire's `totalTurns`,
+    /// so the picker count never shifts on open. `None` when the file is
+    /// missing/unreadable or foreign (cwd/sessionId mismatch).
+    fn engine_turn_count(&self, session_id: &str, project_dir: &str) -> Option<i64>;
+
     /// Capture the most-recent user-message text for a session,
     /// truncated to the picker-snippet length. Overwrites the previous
     /// snippet on every call — the picker shows the latest prompt so the
@@ -644,6 +652,10 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             count,
         );
         self.broadcast_row(session_id);
+    }
+
+    fn engine_turn_count(&self, session_id: &str, project_dir: &str) -> Option<i64> {
+        crate::external_sessions::engine_turn_count(&self.ledger, project_dir, session_id)
     }
 
     fn record_user_prompt(&self, session_id: &str, prompt: &str) {
@@ -4413,6 +4425,9 @@ impl SessionsRecorder for NoopSessionsRecorder {
     fn record(&self, _record: SessionRecord<'_>) {}
     fn record_turn(&self, _session_id: &str) {}
     fn set_turn_count(&self, _session_id: &str, _count: i64) {}
+    fn engine_turn_count(&self, _session_id: &str, _project_dir: &str) -> Option<i64> {
+        None
+    }
     fn record_user_prompt(&self, _session_id: &str, _prompt: &str) {}
     fn mark_closed(&self, _session_id: &str) {}
     fn mark_failed(&self, _session_id: &str) {}
@@ -7155,7 +7170,9 @@ mod tests {
             project_dir: "/proj/x",
             card_id: "card-1",
         });
-        recorder.record_turn("claude-abc");
+        // Live turns touch recency only; the count is the engine reconcile
+        // ([P08]). Reconcile to 3, then live turns leave the count untouched.
+        recorder.set_turn_count("claude-abc", 3);
         recorder.record_turn("claude-abc");
         recorder.record_turn("claude-abc");
         recorder.mark_closed("claude-abc");
@@ -7413,11 +7430,11 @@ mod tests {
             .unwrap();
         ledger.mark_closed("empty").unwrap();
 
-        // A card with a real conversation.
+        // A card with a real conversation (count from the engine reconcile).
         ledger
             .record_spawn("real", "ws-1", "/proj/beta", "card-B", 2_000)
             .unwrap();
-        ledger.record_turn("real", 3_000).unwrap();
+        ledger.set_turn_count("real", 1, 3_000).unwrap();
         ledger.mark_closed("real").unwrap();
 
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -8179,9 +8196,11 @@ mod tests {
         assert_eq!(first["fields"]["turn_count"].as_i64(), Some(0));
         assert_eq!(first["fields"]["state"], "live");
 
+        // record_turn touches recency and still broadcasts a push, but no
+        // longer writes the count ([P08]) — so the pushed turn_count holds.
         sup.sessions_recorder.record_turn("s1");
         let second = drain_until_action(&mut rx, "session_updated");
-        assert_eq!(second["fields"]["turn_count"].as_i64(), Some(1));
+        assert_eq!(second["fields"]["turn_count"].as_i64(), Some(0));
     }
 
     // ── Step 5.3 — merger intercept narrows to FIFO mark-seen ───────────────

@@ -334,10 +334,14 @@ pub struct PulseLineRow {
 /// `external_scan_cache` row. Bump this whenever the scanner's turn rule
 /// changes: existing rows (stamped a lower epoch, or the `DEFAULT 0` of a
 /// pre-column ALTER) then fail the `rule_epoch == CURRENT_RULE_EPOCH` gate
-/// at every cache read and are re-scanned faithfully. `1` is the first
-/// epoch in which the scanner applies the full S01 rule (`isMeta` /
-/// `/compact` / scaffolding / interrupt-marker exclusions, wake counted).
-pub(crate) const CURRENT_RULE_EPOCH: i64 = 1;
+/// at every cache read and are re-scanned faithfully. Epoch `2` is the
+/// first in which the count is produced by the segmentation engine
+/// (`turn_engine.rs`) — origin-tagged turns including assistant-originated
+/// openers (wakes, `/compact` continuations, `--continue` leading orphans,
+/// orphan assistant output) the prior user-record-only rule could not see.
+/// The bump re-`set_turn_count`s every existing ledger row from
+/// `engine(file)` on the next scan (`tuglaws/turn-metric.md` S03).
+pub(crate) const CURRENT_RULE_EPOCH: i64 = 2;
 
 /// One row of the `external_scan_cache` table — the persisted result
 /// of scanning one on-disk session JSONL, keyed by session id and
@@ -374,6 +378,17 @@ pub struct ScanCacheRow {
     /// Whether `created_at` came from a record timestamp (vs the
     /// file-mtime fallback) — a resumed parse keeps looking when false.
     pub created_at_found: bool,
+    /// Segmentation-engine frontier (`turn_engine::Frontier`) at the
+    /// resumable parse offset: whether a turn is open at the frontier.
+    /// Carried so an incremental tail-resume continues the engine's
+    /// open-turn state rather than re-deriving it (and undercounting).
+    pub frontier_open: bool,
+    /// Whether the open turn at the frontier has a deferred terminal close
+    /// (`Frontier::pending_close`).
+    pub frontier_pending_close: bool,
+    /// The `message.id` that armed the deferred close
+    /// (`Frontier::pending_close_msg_id`), or `None`.
+    pub frontier_pending_close_msg_id: Option<String>,
 }
 
 /// Result of a successful `trash` call.
@@ -767,7 +782,10 @@ impl SessionLedger {
                 tail_hash         INTEGER NOT NULL DEFAULT 0,
                 cwd_checked       INTEGER NOT NULL DEFAULT 0,
                 created_at_found  INTEGER NOT NULL DEFAULT 0,
-                rule_epoch        INTEGER NOT NULL DEFAULT 0
+                rule_epoch        INTEGER NOT NULL DEFAULT 0,
+                frontier_open                  INTEGER NOT NULL DEFAULT 0,
+                frontier_pending_close         INTEGER NOT NULL DEFAULT 0,
+                frontier_pending_close_msg_id  TEXT
             );
 
             CREATE INDEX IF NOT EXISTS external_scan_cache_project
@@ -850,6 +868,12 @@ impl SessionLedger {
             // read, forcing a faithful re-scan. A `DEFAULT CURRENT` here would
             // make stale rows match the gate and self-defeat.
             ("rule_epoch", "INTEGER NOT NULL DEFAULT 0"),
+            // Engine frontier columns (epoch 2). A pre-existing row gets a
+            // zero/empty frontier, but it also fails the epoch gate, so its
+            // file re-streams in full once and records a real frontier.
+            ("frontier_open", "INTEGER NOT NULL DEFAULT 0"),
+            ("frontier_pending_close", "INTEGER NOT NULL DEFAULT 0"),
+            ("frontier_pending_close_msg_id", "TEXT"),
         ] {
             if !cols.iter().any(|(n, _)| n == name) {
                 conn.execute(
@@ -1097,15 +1121,16 @@ impl SessionLedger {
         Ok(())
     }
 
-    /// Increment `turn_count` and bump `last_used_at`. No-op if the row is
-    /// not in `live` state — see the `trash` race-mitigation note in the
-    /// plan's risk table.
+    /// Touch `last_used_at` on a live turn. The turn **count** is no longer
+    /// written here: `engine(file)` is the single count authority
+    /// (`tuglaws/turn-metric.md` S03, [P08]), refreshed by the
+    /// scan-on-`list_sessions` path — a live `turn_complete` only marks the
+    /// row recently used. No-op if the row is absent or not `live`.
     pub fn record_turn(&self, session_id: &str, now: i64) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let affected = conn.execute(
             "UPDATE sessions
-             SET turn_count = turn_count + 1,
-                 last_used_at = ?2
+             SET last_used_at = ?2
              WHERE session_id = ?1 AND state = 'live'",
             params![session_id, now],
         )?;
@@ -1113,6 +1138,27 @@ impl SessionLedger {
             // Row may be absent (forgotten under us) or non-live (closed/failed
             // out from under a late turn). Both are acceptable no-ops.
         }
+        Ok(())
+    }
+
+    /// Refresh a row's `turn_count` to `engine(file)` regardless of state —
+    /// the migration / scan-refresh writer ([P08], S03). Unlike
+    /// [`set_turn_count`], this is **not** gated on `live` (a closed or
+    /// external row with a stale count must also be corrected on re-scan)
+    /// and does **not** touch `last_used_at` (a count refresh is not usage).
+    /// No-op if the row is absent (an external session with no ledger row).
+    pub fn reconcile_turn_count_from_engine(
+        &self,
+        session_id: &str,
+        count: i64,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "UPDATE sessions
+             SET turn_count = ?2
+             WHERE session_id = ?1",
+            params![session_id, count],
+        )?;
         Ok(())
     }
 
@@ -1424,7 +1470,8 @@ impl SessionLedger {
             // tail-resume either (a miss carries no resume seed).
             "SELECT session_id, project_dir, file_size, file_mtime, excluded,
                     turn_count, last_user_prompt, name, created_at, last_used_at,
-                    parse_offset, tail_hash, cwd_checked, created_at_found
+                    parse_offset, tail_hash, cwd_checked, created_at_found,
+                    frontier_open, frontier_pending_close, frontier_pending_close_msg_id
              FROM external_scan_cache
              WHERE session_id = ?1 AND rule_epoch = ?2
              LIMIT 1",
@@ -1442,8 +1489,10 @@ impl SessionLedger {
             "INSERT OR REPLACE INTO external_scan_cache (
                 session_id, project_dir, file_size, file_mtime, excluded,
                 turn_count, last_user_prompt, name, created_at, last_used_at,
-                parse_offset, tail_hash, cwd_checked, created_at_found, rule_epoch
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                parse_offset, tail_hash, cwd_checked, created_at_found, rule_epoch,
+                frontier_open, frontier_pending_close, frontier_pending_close_msg_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                       ?16, ?17, ?18)",
             params![
                 row.session_id,
                 row.project_dir,
@@ -1463,6 +1512,9 @@ impl SessionLedger {
                 // always reflects the live rule, so its row is valid until the
                 // rule (and this constant) next changes.
                 CURRENT_RULE_EPOCH,
+                row.frontier_open as i64,
+                row.frontier_pending_close as i64,
+                row.frontier_pending_close_msg_id,
             ],
         )?;
         Ok(())
@@ -1955,6 +2007,9 @@ fn scan_cache_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScanCa
         tail_hash: row.get(11)?,
         cwd_checked: row.get::<_, i64>(12)? != 0,
         created_at_found: row.get::<_, i64>(13)? != 0,
+        frontier_open: row.get::<_, i64>(14)? != 0,
+        frontier_pending_close: row.get::<_, i64>(15)? != 0,
+        frontier_pending_close_msg_id: row.get(16)?,
     })
 }
 
@@ -2319,6 +2374,9 @@ mod tests {
             tail_hash: 0,
             cwd_checked: false,
             created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
         })
         .unwrap();
 
@@ -2357,6 +2415,9 @@ mod tests {
             tail_hash: 0,
             cwd_checked: false,
             created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
         })
         .unwrap();
 
@@ -2425,6 +2486,9 @@ mod tests {
             tail_hash: 0,
             cwd_checked: false,
             created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
         })
         .unwrap();
 
@@ -2435,12 +2499,11 @@ mod tests {
         assert_eq!(row.last_user_prompt.as_deref(), Some("from disk"));
         assert_eq!(row.created_at, t0, "existing created_at preserved");
 
-        // Richer ledger values win: a recorded prompt and a higher turn
-        // count survive a later spawn whose cache row is staler.
+        // Richer ledger values win: a recorded prompt and a higher count
+        // (the engine reconcile wrote 17) survive a later spawn whose cache
+        // row is staler (7).
         l.record_user_prompt("ext-1", "typed in tug").unwrap();
-        for i in 0..10 {
-            l.record_turn("ext-1", millis(20 + i)).unwrap();
-        }
+        l.reconcile_turn_count_from_engine("ext-1", 17).unwrap();
         l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-3", millis(40))
             .unwrap();
         let row = l.get("ext-1").unwrap().unwrap();
@@ -2466,6 +2529,9 @@ mod tests {
             tail_hash: 0,
             cwd_checked: false,
             created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
         })
         .unwrap();
         let now = millis(10);
@@ -2533,7 +2599,10 @@ mod tests {
     }
 
     #[test]
-    fn record_turn_increments_count_and_updates_last_used() {
+    fn record_turn_touches_last_used_not_count() {
+        // [P08]: the count is `engine(file)`, never a live `+1`. A live
+        // `turn_complete` only marks the row recently used; the picker count
+        // is refreshed by the scan, not by this path.
         let l = fresh();
         let t0 = millis(0);
         seed_live(&l, "s1", WS_A, "card-1", t0);
@@ -2541,14 +2610,36 @@ mod tests {
         let t1 = t0 + 1_000;
         l.record_turn("s1", t1).unwrap();
         let r = l.get("s1").unwrap().unwrap();
-        assert_eq!(r.turn_count, 1);
+        assert_eq!(r.turn_count, 0, "record_turn no longer writes the count");
         assert_eq!(r.last_used_at, t1);
 
         let t2 = t0 + 2_000;
         l.record_turn("s1", t2).unwrap();
         let r = l.get("s1").unwrap().unwrap();
-        assert_eq!(r.turn_count, 2);
-        assert_eq!(r.last_used_at, t2);
+        assert_eq!(r.turn_count, 0);
+        assert_eq!(r.last_used_at, t2, "still touches last_used_at");
+    }
+
+    #[test]
+    fn reconcile_turn_count_from_engine_sets_any_state_without_touching_recency() {
+        // The migration / scan-refresh writer: corrects a stale count on a
+        // row of ANY state (live, closed, external) and leaves last_used_at
+        // alone (a count refresh is not usage).
+        let l = fresh();
+        let t0 = millis(0);
+        seed_live(&l, "s1", WS_A, "card-1", t0);
+        l.record_turn("s1", t0 + 500).unwrap(); // sets last_used_at to t0+500
+        l.mark_closed("s1").unwrap();
+
+        // A closed row's stale count is corrected on re-scan.
+        l.reconcile_turn_count_from_engine("s1", 81).unwrap();
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.turn_count, 81, "corrected regardless of closed state");
+        assert_eq!(r.last_used_at, t0 + 500, "recency untouched by a count refresh");
+
+        // A never-recorded session is a silent no-op.
+        l.reconcile_turn_count_from_engine("ghost", 7).unwrap();
+        assert!(l.get("ghost").unwrap().is_none());
     }
 
     #[test]
@@ -2566,27 +2657,25 @@ mod tests {
     }
 
     #[test]
-    fn set_turn_count_overwrites_and_live_turns_build_on_the_base() {
-        // [P02] reconcile: a successful replay SETs the row to the authority
-        // (totalTurns), not an increment — and post-replay live turns build on
-        // that reconciled base.
+    fn set_turn_count_overwrites_and_live_turns_do_not_change_it() {
+        // Reconcile SETs the row to the engine authority. Under [P08] a live
+        // `turn_complete` after replay no longer increments — the count holds
+        // at `engine(file)` until the next scan refresh.
         let l = fresh();
         let t0 = millis(0);
         seed_live(&l, "s1", WS_A, "card-1", t0);
-        for i in 0..3 {
-            l.record_turn("s1", t0 + i).unwrap();
-        }
-        assert_eq!(l.get("s1").unwrap().unwrap().turn_count, 3);
 
-        // Reconcile SETs to 10 (overwrite, not 3 + 10).
+        // Reconcile SETs to 10 (overwrite).
         l.set_turn_count("s1", 10, t0 + 100).unwrap();
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.turn_count, 10);
         assert_eq!(r.last_used_at, t0 + 100);
 
-        // A live turn after replay builds on the reconciled base.
+        // A live turn after replay touches recency but NOT the count.
         l.record_turn("s1", t0 + 200).unwrap();
-        assert_eq!(l.get("s1").unwrap().unwrap().turn_count, 11);
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.turn_count, 10, "live turn does not write the count");
+        assert_eq!(r.last_used_at, t0 + 200);
     }
 
     #[test]
@@ -2610,6 +2699,9 @@ mod tests {
             tail_hash: 0,
             cwd_checked: false,
             created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
         })
         .unwrap();
         l.record_spawn("ext", WS_A, "/proj/alpha", "card-1", millis(10))
@@ -2634,7 +2726,8 @@ mod tests {
         let l = fresh();
         let t0 = millis(0);
         seed_live(&l, "s1", WS_A, "card-1", t0);
-        l.record_turn("s1", t0 + 1).unwrap();
+        // Establish a base count while live (the engine reconcile path).
+        l.set_turn_count("s1", 1, t0 + 1).unwrap();
         l.mark_closed("s1").unwrap();
 
         // A reconcile arriving after close must not resurrect or rewrite.
@@ -2698,9 +2791,9 @@ mod tests {
     #[test]
     fn list_with_card_id_includes_zero_turn_rows() {
         let l = fresh();
-        // s_used: had a real conversation.
+        // s_used: had a real conversation (count from the engine reconcile).
         seed_live(&l, "s_used", WS_A, "card-1", millis(1));
-        l.record_turn("s_used", millis(2)).unwrap();
+        l.set_turn_count("s_used", 1, millis(2)).unwrap();
         // s_unused: spawn happened but no turns. Still surfaced so
         // the client retains the card→project binding on restore.
         seed_live(&l, "s_unused", WS_A, "card-2", millis(3));

@@ -1018,6 +1018,9 @@ pub async fn relay_session_io(
                                 }
                             }
                         }
+                        // Set when a replay_complete frame is stamped with the
+                        // engine count; consumed by the emit step below.
+                        let mut replay_complete_emit: Option<Vec<u8>> = None;
                         if line.contains("\"type\":\"replay_complete\"") {
                             in_replay = false;
                             replay_telemetry = None;
@@ -1030,35 +1033,58 @@ pub async fn relay_session_io(
                                     ms = t0.elapsed().as_millis() as u64,
                                 );
                             }
-                            // Reconcile the ledger to the authority ([P02]). A
-                            // SUCCESS replay_complete carries window metadata —
-                            // read `totalTurns` (NOT the sibling `count`, which
-                            // is the windowed `turnsCommitted` and undercounts a
-                            // windowed restore) and SET the row's turn_count to
-                            // it. An error frame (missing/unreadable JSONL)
-                            // carries `count:0` and NO `totalTurns`, so the
-                            // branch skips it — SETting from it would zero a real
-                            // count. Parsing the whole line is cheap here: a
-                            // replay_complete fires once per replay window, not
-                            // per stream line. record_spawn's MAX seed ran first;
-                            // this SET makes totalTurns the final written value.
-                            if let Some(total) = parse_replay_complete_total_turns(&line) {
-                                let claude_id = {
-                                    let entry = ledger_entry.lock().await;
-                                    entry.claude_session_id.clone()
-                                };
-                                if let Some(id) = claude_id {
-                                    sessions_recorder.set_turn_count(&id, total);
+                            // Reconcile + validate-and-stamp to the single count
+                            // authority `engine(file)` ([P08], [Q01]). The ledger
+                            // count is `engine(file)` — read it (the
+                            // fingerprint-validated cached value, or the engine on
+                            // the resolved path) and SET the row. Then compare
+                            // tugcode's wire `totalTurns` to the engine: on a
+                            // mismatch, log a contract breach and let the engine
+                            // win; stamp the engine value onto the outgoing frame
+                            // so the window indices can never silently diverge
+                            // from the count. An error frame carries no
+                            // `totalTurns`, so the stamp/compare is skipped and the
+                            // engine lookup (file missing) returns `None` —
+                            // nothing is zeroed.
+                            let claude_id = {
+                                let entry = ledger_entry.lock().await;
+                                entry.claude_session_id.clone()
+                            };
+                            if let Some(id) = claude_id {
+                                if let Some(engine_total) =
+                                    sessions_recorder.engine_turn_count(&id, project_dir)
+                                {
+                                    if let Some(wire_total) =
+                                        parse_replay_complete_total_turns(&line)
+                                    {
+                                        if wire_total != engine_total {
+                                            warn!(
+                                                target: "dev::turn-metric",
+                                                event = "contract_breach.replay_total_turns",
+                                                tug_session_id = %tug_session_id,
+                                                session_id = id.as_str(),
+                                                wire_total,
+                                                engine_total,
+                                                "tugcode replay totalTurns != engine(file); engine wins",
+                                            );
+                                        }
+                                        replay_complete_emit = Some(
+                                            stamp_replay_complete_total_turns(&line, engine_total),
+                                        );
+                                    }
+                                    sessions_recorder.set_turn_count(&id, engine_total);
                                 }
                             }
                         }
 
                         // `turn_complete` events mark the end of an
-                        // assistant turn. Each LIVE one bumps the ledger
-                        // row's `turn_count` and `last_used_at`. Tugcode
-                        // emits this once per turn — substring match is
-                        // sufficient given the surrounding stream-json
-                        // shape; a more careful parser would be
+                        // assistant turn. Each LIVE one touches the ledger
+                        // row's `last_used_at` only — the turn COUNT is
+                        // `engine(file)` ([P08]), refreshed by the
+                        // scan-on-`list_sessions` path, never incremented
+                        // here. Tugcode emits this once per turn — substring
+                        // match is sufficient given the surrounding
+                        // stream-json shape; a more careful parser would be
                         // `serde_json::from_str` over the whole line, but
                         // that pays the deserialize cost on every output
                         // line for negligible benefit.
@@ -1073,7 +1099,11 @@ pub async fn relay_session_io(
                         // reducer's merge function adopts the inline
                         // payload on the replay path. See plan
                         // `#step-20-3-4`.
-                        let line_to_emit: Vec<u8> = if line.contains("\"type\":\"turn_complete\"") {
+                        let line_to_emit: Vec<u8> = if let Some(stamped) = replay_complete_emit {
+                            // The replay_complete frame, its `totalTurns`
+                            // re-stamped from `engine(file)` (the authority).
+                            stamped
+                        } else if line.contains("\"type\":\"turn_complete\"") {
                             if in_replay {
                                 if let Some(ref map) = replay_telemetry {
                                     inject_replay_telemetry(line.as_bytes(), map)
@@ -1249,11 +1279,12 @@ fn parse_claude_session_id(line: &[u8]) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// The reconcile decision for a `replay_complete` line ([P02]). Returns
-/// `Some(totalTurns)` for a SUCCESS frame — one carrying window metadata —
-/// and `None` for an error or legacy frame that has no `totalTurns`, which
-/// must NOT touch the ledger count (SETting from a `count:0` error frame
-/// would zero a real row). Reads `totalTurns`, never the sibling `count`
+/// Read tugcode's wire `totalTurns` off a `replay_complete` line — for the
+/// **validate-and-stamp** comparison only ([Q01]), NOT as a count source.
+/// The count authority is `engine(file)` ([P08]); this value is compared to
+/// it (a mismatch is a logged contract breach, engine wins). Returns `Some`
+/// for a SUCCESS frame carrying window metadata, `None` for an error/legacy
+/// frame with no `totalTurns`. Reads `totalTurns`, never the sibling `count`
 /// (the windowed `turnsCommitted`, which undercounts a windowed restore).
 fn parse_replay_complete_total_turns(line: &str) -> Option<i64> {
     serde_json::from_str::<serde_json::Value>(line.trim())
@@ -1261,6 +1292,30 @@ fn parse_replay_complete_total_turns(line: &str) -> Option<i64> {
         .as_ref()
         .and_then(|v| v.get("totalTurns"))
         .and_then(|t| t.as_i64())
+}
+
+/// Re-stamp a `replay_complete` line's `totalTurns` with the engine count
+/// (the single authority, [P08]/[Q01]). Parses the frame, overwrites the
+/// `totalTurns` field, and re-serializes. In the healthy case the wire value
+/// already equals the engine, so this is a faithful round-trip; on a
+/// mismatch (a logged contract breach) it makes the engine value win on the
+/// wire so the window indices stay coherent with the count. Falls back to the
+/// original bytes if the line does not parse as a JSON object.
+fn stamp_replay_complete_total_turns(line: &str, engine_total: i64) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+        return line.as_bytes().to_vec();
+    };
+    let Some(obj) = value.as_object_mut() else {
+        return line.as_bytes().to_vec();
+    };
+    obj.insert(
+        "totalTurns".to_string(),
+        serde_json::Value::from(engine_total),
+    );
+    match serde_json::to_vec(&value) {
+        Ok(bytes) => bytes,
+        Err(_) => line.as_bytes().to_vec(),
+    }
 }
 
 /// Extract the `stale_session_id` field from a `resume_failed` IPC line.
@@ -1676,6 +1731,35 @@ mod tests {
         // A trailing newline (stream framing) does not defeat parsing.
         let with_nl = "{\"type\":\"replay_complete\",\"count\":2,\"totalTurns\":2}\n";
         assert_eq!(parse_replay_complete_total_turns(with_nl), Some(2));
+    }
+
+    #[test]
+    fn stamp_overrides_wire_total_turns_with_engine_value() {
+        // Validate-and-stamp ([Q01]): when tugcode's wire totalTurns
+        // disagrees with engine(file), the engine value is stamped onto the
+        // outgoing frame so the window indices stay coherent with the count.
+        let line = r#"{"type":"replay_complete","count":5,"firstLoadedTurnIndex":17,"totalTurns":59,"hasOlder":true,"ipc_version":2}"#;
+        let stamped = stamp_replay_complete_total_turns(line, 81);
+        let v: serde_json::Value = serde_json::from_slice(&stamped).unwrap();
+        assert_eq!(v["totalTurns"], 81, "engine value wins on the wire");
+        // Other fields are preserved through the round-trip.
+        assert_eq!(v["firstLoadedTurnIndex"], 17);
+        assert_eq!(v["count"], 5);
+        assert_eq!(v["hasOlder"], true);
+        // Re-reading the stamped frame yields the engine value.
+        assert_eq!(
+            parse_replay_complete_total_turns(std::str::from_utf8(&stamped).unwrap()),
+            Some(81)
+        );
+    }
+
+    #[test]
+    fn stamp_passes_through_unparseable_line() {
+        let garbage = "not json at all";
+        assert_eq!(
+            stamp_replay_complete_total_turns(garbage, 81),
+            garbage.as_bytes().to_vec()
+        );
     }
 
     #[tokio::test]

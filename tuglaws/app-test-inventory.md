@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0180**. Gaps with no test file today: AT0008/0011/0012/0013/0015 are infra/decision/deferred tags (see entries); AT0028/0029 deferred; AT0036/0047/0062–0066/0072–0077/0079/0089 are retired or never-filled; AT0123/0124/0129/0130/0132–0135 are unused.
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0181**. Gaps with no test file today: AT0008/0011/0012/0013/0015 are infra/decision/deferred tags (see entries); AT0028/0029 deferred; AT0036/0047/0062–0066/0072–0077/0079/0089 are retired or never-filled; AT0123/0124/0129/0130/0132–0135 are unused.
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -932,6 +932,14 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Status:** ✅ closed (renumbered from AT0163).
 - **Tests:** `at0180-list-accessory-keyboard.test.ts`.
 - **Summary:** List-row trailing accessories join the keyboard focus language — end-to-end keyboard journey: reveal-on-cursor, Right-descend, Space→popover, confirm→landing, Left/Escape ascend, Enter-still-opens.
+
+### Turn metric (AT0181)
+
+#### [AT0181] Origin-first turn count — no shift, no phantom user row
+- **Status:** ⚠️ partial — the behavior was **vetted live in the workspace-built app** (no count shift, no phantom `#u`) and is gated at the lower layers (the tugcast engine count, the single-count-authority reconcile/migration tests, the real-corpus engine==tugcode per-turn contract, and the tugdeck `reducer.origin` store tests). An automated in-app gate is deferred pending the corpus-isolation enabler below.
+- **Tests:** lower-layer contracts (see Summary); `at0181-turns-redux.test.ts` deferred.
+- **Summary:** Opening a session shows the same turn number before and after (the picker count == the highest rendered `#a`/`#u` address == `engine(file)`), and an assistant-originated turn (wake / `/compact` / `--continue` orphan) renders `#a`-only with no phantom `#u` row. Plan: `roadmap/canonical-turns-redux.md`.
+- **Envelope note:** the picker-driven assertion needs a session under the active project's claude corpus. The app-test instance runs in its own worktree (a different encoded project dir), and the real reference session (`49e9aec6`, 81 turns) lives under the *main* project dir, while `~/.claude/projects` is global — so isolating a seeded real-shape session would require a test-only override of the claude-projects root (production has none today) rather than writing into the user's real corpus. Until that override lands, this case is verified by the lower-layer contracts plus live vetting on the `debug-main` instance where `49e9aec6` resides.
 
 ## Maintenance
 

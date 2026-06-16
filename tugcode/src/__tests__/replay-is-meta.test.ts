@@ -207,11 +207,12 @@ describe("translateJsonlSession — isMeta:true user entries skip silently", () 
     expect(completes[0].result).toBe("success");
   });
 
-  test("isMeta entry at start of JSONL: assistant entry still gets its synth opener (no double meta)", async () => {
+  test("isMeta entry at start of JSONL: assistant entry opens an honest assistant_opener (no fabricated user)", async () => {
     // Defensive — when the SDK persists an isMeta entry BEFORE any
     // real user submission (e.g. session-resume context loader), the
-    // assistant entry's orphan-opener path still mints exactly one
-    // add_user_message{content: []}.
+    // assistant entry's orphan-opener path mints an honest
+    // `assistant_opener` (assistant-only turn) and NO add_user_message —
+    // the user never submitted, so no user slot is fabricated.
     const jsonl = [
       metaEntry("[Image: source: /tmp/x.png]"),
       assistantEndTurn("m1", "resumed answer"),
@@ -219,9 +220,8 @@ describe("translateJsonlSession — isMeta:true user entries skip silently", () 
 
     const out = await collectSession(jsonl);
 
-    const users = addUserMessagesOf(out);
-    expect(users).toHaveLength(1);
-    expect(users[0].content).toEqual([]);
+    expect(addUserMessagesOf(out)).toHaveLength(0);
+    expect(out.filter((m) => m.type === "assistant_opener")).toHaveLength(1);
 
     const completes = turnCompletesOf(out);
     expect(completes).toHaveLength(1);

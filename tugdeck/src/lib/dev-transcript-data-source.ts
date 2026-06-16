@@ -4,10 +4,10 @@
  *
  * Row contract — three cell kinds, variable rows per turn:
  *
- *   - `user`  — emitted iff the turn's `messages[0]?.kind === "user_message"`.
- *               Carries the user submission's text + timestamp. Wake
- *               turns (which have no `user_message` Message at head)
- *               naturally produce no user row.
+ *   - `user`  — emitted iff the turn's `origin === "user"` (S01, [P01]).
+ *               Carries the user submission's text + timestamp.
+ *               Assistant-origin turns (wakes, continuations, orphans)
+ *               produce no user row.
  *   - `assistant` — emitted once per turn (committed or in-flight). The
  *               renderer iterates `turn.messages` (or `activeTurn.messages`
  *               for in-flight) and dispatches each Message kind to
@@ -170,21 +170,23 @@ export interface DevRowDescriptor {
 // ---------------------------------------------------------------------------
 
 /**
- * True iff `turn.messages` (or `activeTurn.messages`) opens with a
- * `user_message` Message. The substrate's wake discriminator under
- * [D07] — wake turns naturally don't open with one; normal user turns
- * always do.
+ * True iff this turn carries a user submission — i.e. its intrinsic
+ * `origin` is `"user"` ([P01], S01). This is the attribution authority for
+ * row layout: a `user` turn renders a `#u` user row + `#a` assistant row;
+ * an `assistant` turn (wake / continuation / orphan) renders `#a` only. It
+ * is NEVER inferred from `messages[0]` — origin is stated by the opener.
  */
 function turnHasUserMessage(turn: TurnEntry): boolean {
-  return turn.messages[0]?.kind === "user_message";
+  return turn.origin === "user";
 }
 
 /**
- * In-flight analogue of {@link turnHasUserMessage}.
+ * In-flight analogue of {@link turnHasUserMessage}, keyed on the active
+ * turn's `origin`.
  */
 function activeTurnHasUserMessage(active: ActiveTurnSnapshot | null): boolean {
   if (active === null) return false;
-  return active.messages[0]?.kind === "user_message";
+  return active.origin === "user";
 }
 
 /**
@@ -280,7 +282,7 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
 /**
  * List-view row index of committed turn `turnIndex`'s **user** row.
  * Callers MUST first gate on whether the turn has a user row
- * (`transcript[turnIndex].messages[0]?.kind === "user_message"`) — a
+ * (`transcript[turnIndex].origin === "user"`) — a
  * wake turn has no user row to point at.
  *
  * Walks the transcript prefix to sum row counts contributed by

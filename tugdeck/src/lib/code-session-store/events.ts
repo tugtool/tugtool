@@ -831,6 +831,35 @@ export interface WakeStartedEvent {
 }
 
 /**
+ * Neutral assistant-originated turn opener — the reducer event the store
+ * wrapper mints from tugcode's wire `assistant_opener` frame
+ * (`tuglaws/turn-metric.md` S02). Opens an `origin: assistant` turn that
+ * holds orphan assistant content (a `--continue` leading orphan, a
+ * `/compact` continuation, or any assistant output with no open turn) with
+ * **no user message** — the honest replacement for the deleted synthesized
+ * empty `add_user_message`. The reducer seeds an empty message scratch, so
+ * the turn renders assistant-only (`#a`), never as a phantom user row.
+ *
+ * Distinct from {@link WakeStartedEvent}: a wake is an assistant-originated
+ * turn carrying wake annotations (trigger, jobs fold, `waking` phase); this
+ * opener is the wake-baggage-free variant.
+ */
+export interface AssistantOpenerEvent {
+  type: "assistant_opener";
+  /** Original JSONL entry time (replay), so the turn's timestamp is the
+   * archived wall-clock rather than the replay-emission time. */
+  timestamp?: number;
+  tug_session_id?: string;
+  /**
+   * Stable per-turn React-key seed, minted by the store wrapper
+   * (`frameToEvent`) on receipt — same contract as
+   * {@link WakeStartedEvent.turnKey}.
+   */
+  turnKey: string;
+  [key: string]: unknown;
+}
+
+/**
  * Background-job lifecycle opener — tugcode's forward of claude's
  * `system/task_started` event, snake_case wire fields narrowed to
  * camelCase by the store wrapper (`narrowTaskStartedFrame` in
@@ -1026,6 +1055,7 @@ export type CodeSessionEvent =
   | ReplayStartedEvent
   | ReplayCompleteEvent
   | WakeStartedEvent
+  | AssistantOpenerEvent
   | TaskStartedEvent
   | TaskUpdatedEvent
   | ClearJobsActionEvent

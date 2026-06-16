@@ -20,6 +20,7 @@ mod server;
 mod session_ledger;
 mod session_metadata_merge;
 mod terminal_registry;
+mod turn_engine;
 
 #[cfg(test)]
 mod integration_tests;

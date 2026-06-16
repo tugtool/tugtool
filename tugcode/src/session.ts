@@ -3947,10 +3947,11 @@ export class SessionManager {
    * opened with empty `userText` + empty `userAttachments`. The
    * tugdeck reducer recognizes this via the `wake_started` bracket
    * (not by inspecting the user text), so the empty marker does not
-   * leak as a phantom user bubble in normal rendering. The corner
-   * case where a mid-wake card reload triggers `runReplay` and
-   * surfaces an empty `add_user_message` is a known Slice 2
-   * follow-up.
+   * leak as a phantom user bubble in normal rendering. A mid-wake card
+   * reload that triggers `runReplay` no longer surfaces an empty
+   * `add_user_message`: replay opens orphan assistant content with an
+   * honest `assistant_opener` (`tuglaws/turn-metric.md` S02), never a
+   * fabricated user message.
    *
    * The wake bracket closes implicitly: when the wake's terminal
    * `result` lands, `handleClaudeLine` clears `activeTurn` AND

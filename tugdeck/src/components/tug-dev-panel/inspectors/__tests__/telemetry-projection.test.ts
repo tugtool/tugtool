@@ -76,7 +76,7 @@ describe("projectTelemetryInspector — populated state", () => {
       pendingTurn: {
         turnKey: "k-live",
         submitAt: 1_000_000,
-        isWake: false,
+        origin: "user",
       },
       awaitingApprovalAccumulatedMs: 250,
       awaitingApprovalSince: null,
