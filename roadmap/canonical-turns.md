@@ -182,6 +182,7 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 | Stale tugcode binary masks changes | med | med | Checkpoints rebuild tugcode before testing | Test contradicts the edit |
 | Stale scan-cache count resurrected via `MAX` | high | med | Cache epoch bump + reconcile-after-spawn + test | Picker count wrong after rule change |
 | Stricter count hides/mis-gates a real session | high | low | Decouple visibility/gate from count; regression test | A resumable session vanishes |
+| Client `TurnEntry` count drifts from `totalTurns` | high | med | Intra-tugcode lockstep assertion; equality stressed at dedup/orphan edges | Badge ≠ picker count after interrupt/reconnect |
 
 **Risk R01: Cross-language rule drift** {#r01-rule-drift}
 
@@ -197,15 +198,21 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 
 **Risk R05: Stale count resurrected by a MAX (server or client)** {#r05-cache-resurrection}
 
-- **Risk:** `external_scan_cache` rows keyed on `(file_size, file_mtime)` survive the rule change and feed `record_spawn`'s server `MAX`; separately, the client `dev-session-ledger-store` backfill `Math.max`'s `turn_count`, suppressing a correct downward reconcile while a refresh scan is in flight.
-- **Mitigation:** [P08] — add a `rule_epoch` column (self-heal rebuild + hit-gating) so the rule change invalidates every cached row; reconcile-after-spawn so `totalTurns` is the final server value; drop the client count MAX so an authoritative push is taken as-is. Tests at all three sites.
-- **Residual risk:** Between `record_spawn` and a successful `replay_complete` (sub-second) the picker may briefly show a `MAX` seed; corrected by reconcile.
+- **Risk:** `external_scan_cache` rows survive the rule change and feed `record_spawn`'s server `MAX` (its seed `SELECT` is un-gated today); separately, the client `dev-session-ledger-store` backfill `Math.max`'s `turn_count`, suppressing a correct downward reconcile while a refresh scan is in flight.
+- **Mitigation:** [P08] — add a `rule_epoch DEFAULT 0` column with `CURRENT_RULE_EPOCH = 1` (an `ALTER ADD COLUMN`, not the `turn_telemetry`-only self-heal rebuild) and gate `rule_epoch == CURRENT` at **both** the scan hit-check and the `record_spawn` seed read; reconcile-after-spawn so `totalTurns` is the final server value; drop the client count MAX so an authoritative push is taken as-is. Tests at all sites, including an error-replay that must not strand a seeded count.
+- **Residual risk:** Between `record_spawn` and a successful `replay_complete` (sub-second) the picker may briefly show a `MAX` seed (now epoch-faithful); corrected by reconcile.
 
 **Risk R06: Stricter count hides/mis-gates a session** {#r06-visibility-regression}
 
 - **Risk:** The picker hides `turn_count == 0` rows and the mode gate is `turn_count > 0 || is_alive`; a correctly stricter rule could push a borderline session to 0 and make it vanish or gate to `mode=new`.
 - **Mitigation:** [P09] — key visibility and the resume/new gate on resumable content (`file_size > 0` / `is_alive`), independent of the count; regression test + the `turn_count >= 1 ⇐ file_size > 0` invariant on the corpus.
 - **Residual risk:** A truly content-free file (no submission, no wake) stays hidden — which is correct.
+
+**Risk R07: Client `TurnEntry` count drifts from `totalTurns`** {#r07-client-count-drift}
+
+- **Risk:** The four-way equality's weak link is the *client*, not tugcode. `totalTurns` and the live `turn_complete` stream share one segmentation by construction (`computeTurnStartIndices` is a dry-run of the emit path, "in lockstep"). But the reducer **dedupes `turn_complete` by msg_id** (`committedMsgIds`) and **synthesizes orphan turns on interrupt** — so the client's `TurnEntry` count, and thus the highest badge (`firstLoadedTurnIndex + localTurnIndex + 1`), equals `totalTurns` only if that reconciliation lands exactly. The dangerous cases are an interrupt at the window edge and a reconnect/orphan re-emission, which the clean-resume equality test would never exercise.
+- **Mitigation:** Add the intra-tugcode lockstep assertion (#step-4); include an **interrupted-turn** fixture and a **reconnect/orphan-overlap** scenario in the four-way equality stress (#step-7, #step-15) so `highest badge == totalTurns` is checked precisely where dedup/orphan logic runs.
+- **Residual risk:** Novel interrupt/reconnect interleavings outside the fixtures; bounded by the standing equality assertion, which fails loudly if the client count ever drifts.
 
 ---
 
@@ -291,16 +298,17 @@ This plan uses explicit `{#anchor}` headings (kebab-case, no phase numbers), pla
 
 **Decision:** Neither of the two `MAX(turn_count)` merges may pin a stale count above the authoritative value.
 - **Server `record_spawn` MAX** is kept (it prevents a bare `0` insert from shadowing rich metadata), made safe by a **cache epoch** + **reconcile-after-spawn** ([P02]).
-- **Cache epoch mechanism (concrete):** the ledger has a *no-migration policy* with a self-healing schema guard that rebuilds a table only on **column-set mismatch** — a pure rule change triggers nothing. So Step 3 **adds a `rule_epoch` column** to `external_scan_cache`: adding the column makes the schema guard rebuild the table once (wiping all pre-fix rows), and cache **hits are gated on `rule_epoch == CURRENT_RULE_EPOCH`** so any future rule change re-invalidates by bumping the constant.
+- **Cache epoch mechanism (concrete):** `external_scan_cache` columns are added by an **explicit `ALTER TABLE … ADD COLUMN … DEFAULT`** migration (`migrate_scan_cache_add_resume_columns`); the self-heal rebuild (`rebuild_table_if_schema_drifted`) is wired **only** for `turn_telemetry` and will **not** touch the scan cache. So Step 3 adds `rule_epoch INTEGER NOT NULL DEFAULT 0` via that migration idiom and sets `CURRENT_RULE_EPOCH = 1` — every pre-fix row (epoch `0 ≠ 1`) is thereby invalid. The gate `rule_epoch == CURRENT_RULE_EPOCH` is applied at **every** site that reads a `turn_count` from the cache: the cached-scan hit-check **and** `record_spawn`'s seed `SELECT` (which today filters only `session_id`/`excluded`, no epoch). A mismatched row is a miss / yields no seed, and is re-scanned faithfully on next touch.
 - **Client `dev-session-ledger-store` MAX** (`turn_count: Math.max(row.turn_count, old.turn_count)` in the scan-in-progress backfill) is **dropped for the count**: the incoming row's `turn_count` is authoritative (server-reconciled) and is taken as-is; only `last_user_prompt`/`name` keep their COALESCE-style backfill. Otherwise a correct downward reconcile is suppressed in the UI while a scan is in flight.
 
 **Rationale:**
 - Changing the server `MAX` to "lower-wins" would reintroduce the zero-shadow bug it was added to fix; a faithful seed + authoritative final SET is safer.
-- The cache epoch is the only thing that stops pre-fix inflated counts leaking forever (cache is keyed on size/mtime, which don't change for a dormant session), and it must hook the *real* cache lifecycle, not a notional "version."
+- Gating *both* cache reads is load-bearing because reconcile skips error frames ([P02]): a resume that errors *after* `record_spawn` would otherwise leave the stale seeded count uncorrected. An un-gated seed read defeats the epoch.
+- A `DEFAULT 0` column with `CURRENT = 1` is what actually invalidates here — a `DEFAULT CURRENT` column would make every stale row match the gate and self-defeat, and no rebuild fires for this table.
 - The client MAX was added only to avoid scan-flicker from a transient *lower* push; with a server-authoritative count, "lower is suspect" is no longer true.
 
 **Implications:**
-- A `rule_epoch` column + `CURRENT_RULE_EPOCH` constant + hit-gating on `external_scan_cache`; the client backfill stops MAX-ing `turn_count`; tests that a stale inflated count is neither served from cache, nor merged via `record_spawn`, nor pinned by the client store, after the rule change / on resume / during a refresh scan.
+- A `rule_epoch INTEGER NOT NULL DEFAULT 0` column + `CURRENT_RULE_EPOCH = 1` constant, gated at the scan hit-check **and** the `record_spawn` seed read (audit `get_scan_cache` too); the client backfill stops MAX-ing `turn_count`; tests that a stale inflated count is neither served from cache, nor seeds `record_spawn`'s MAX (even when a later replay errors), nor pinned by the client store.
 
 #### [P09] Resumability and visibility gate on content, not count (DECIDED) {#p09-decouple-gates}
 
@@ -328,8 +336,8 @@ Every place a turn count is produced or consumed, and where the plan controls it
 | tugcode `totalTurns` / `firstLoadedTurnIndex` on `replay_complete` | **authority** | [P01]; consumed by [P02] (reconcile) and Phase 2 (badge base) |
 | tugcode live `turn_complete` → `record_turn` (+1) | live increment | unchanged; builds on reconciled base ([P02]) |
 | Rust scanner `ExternalSessionMeta.turn_count` | external estimate | [P03] full rule |
-| `external_scan_cache.turn_count` (keyed size/mtime) | persisted external estimate | [P08] `rule_epoch` column + hit-gating |
-| `record_spawn` `MAX(turn_count, seed)` (server) | resume seed merge | [P08] kept + corrected by reconcile |
+| `external_scan_cache.turn_count` (keyed size/mtime) | persisted external estimate | [P08] `rule_epoch DEFAULT 0` + gate at every read |
+| `record_spawn` `MAX(turn_count, seed)` (server) | resume seed merge | [P08] seed `SELECT` epoch-gated; corrected by reconcile |
 | `dev-session-ledger-store` `Math.max(turn_count)` (client) | scan-refresh backfill | [P08] drop the count MAX |
 | ledger reconcile (`set_turn_count` = `totalTurns`) | authoritative SET | [P02] success frame only; not `count` |
 | `SessionRow` / `CardBinding.turn_count` wire | read | unchanged shape |
@@ -397,9 +405,9 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 |--------|------|----------|-------|
 | `is_non_submission_user_string` | fn | `tugcast/src/external_sessions.rs` | Mirror of tugcode's gate ([P03]). |
 | wake detection in scan loop | logic | `tugcast/src/external_sessions.rs` | Count wake openers; exclude scaffolding/compact ([P03]). |
-| `rule_epoch` column + `CURRENT_RULE_EPOCH` | schema/const | `tugcast/src/session_ledger.rs` (`external_scan_cache`) | Self-heal rebuild + hit-gating ([P08]). |
+| `rule_epoch DEFAULT 0` + `CURRENT_RULE_EPOCH=1` | schema/const | `tugcast/src/session_ledger.rs` (`external_scan_cache`) | `ALTER ADD COLUMN` (not self-heal); gate at every cache count read ([P08]). |
 | `set_turn_count` | fn | `tugcast/src/session_ledger.rs` | Authoritative SET to `totalTurns` ([P02]). |
-| `record_spawn` MAX merge (server) | logic | `tugcast/src/session_ledger.rs` | Kept; corrected by reconcile ([P08]). |
+| `record_spawn` MAX merge (server) | logic | `tugcast/src/session_ledger.rs` | Kept; seed `SELECT` epoch-gated; corrected by reconcile ([P08]). |
 | reconcile on success `replay_complete` | logic | `tugcast/src/feeds/agent_bridge.rs` | Branch on window metadata; read `totalTurns`, not `count`; skip error frames ([P02]). |
 | picker visibility / resumable tally | logic | `tugdeck/.../dev-picker-data-source.ts` | Gate on `file_size > 0` ([P09]). |
 | resume/new gate (`CardBinding`) | logic | `tugdeck/.../dev-session-restore.ts` | Keep `turn_count`/`is_alive`; invariant-protected ([P09]). |
@@ -495,7 +503,7 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 **References:** Spec S01, Risk R01, (#strategy-p1)
 
 **Artifacts:**
-- Real session JSONLs (copied/redacted from `~/.claude/projects`) covering: plain user turns only; a `/compact`; a slash command; a scheduled wake; tool_result echoes; and at least one **windowed-size** session (more turns than the default window). Each paired with a hand-verified expected turn count, and — for the windowed-size session — both the expected windowed `count` and the expected `totalTurns` (they must differ, so a wrong-field reconcile fails).
+- Real session JSONLs (copied/redacted from `~/.claude/projects`) covering: plain user turns only; a `/compact`; a slash command; a scheduled wake; tool_result echoes; an **interrupted turn** (for the dedup/orphan seam, [R07]); and at least one **windowed-size** session (more turns than the default window). Each paired with a hand-verified expected turn count, and — for the windowed-size session — both the expected windowed `count` and the expected `totalTurns` (they must differ, so a wrong-field reconcile fails).
 
 **Tasks:**
 - [ ] Select real sessions for each case; record the expected count per file (derived by reading the JSONL against S01).
@@ -519,16 +527,17 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 **References:** [P03] scanner full rule, [P08] cache epoch, Spec S01, Risks R01, R05, (#context-p1)
 
 **Artifacts:**
-- `is_non_submission_user_string` (Rust mirror) + wake detection in the scan loop of `external_sessions.rs`; a `rule_epoch` column on `external_scan_cache` with a `CURRENT_RULE_EPOCH` constant and hit-gating.
+- `is_non_submission_user_string` (Rust mirror) + wake detection in `external_sessions.rs`; a `rule_epoch INTEGER NOT NULL DEFAULT 0` column on `external_scan_cache`, a `CURRENT_RULE_EPOCH = 1` constant, and epoch-gating at every cache `turn_count` read.
 
 **Tasks:**
 - [ ] Add the exclusion predicate: `isCompactSummary`, the scaffolding prefixes, and `<task-notification>` strings do not count as user submissions.
 - [ ] Count wake openers as turns so the rule matches the segmenter.
-- [ ] Add a `rule_epoch` column to `external_scan_cache` (the no-migration schema guard rebuilds the table on the column-set change, wiping stale rows) and gate cache hits on `rule_epoch == CURRENT_RULE_EPOCH` so future rule bumps re-invalidate.
+- [ ] Add `rule_epoch INTEGER NOT NULL DEFAULT 0` to `external_scan_cache` via the existing `migrate_scan_cache_add_*` ALTER idiom (the self-heal rebuild is `turn_telemetry`-only and will not fire here), and set `CURRENT_RULE_EPOCH = 1` so pre-fix rows (epoch 0) are invalid; new scans write the current epoch.
+- [ ] Gate `rule_epoch == CURRENT_RULE_EPOCH` at **every** site that reads a `turn_count` from the cache: the cached-scan hit-check **and** `record_spawn`'s seed `SELECT` (add the filter); audit `get_scan_cache` for the same.
 
 **Tests:**
 - [ ] Corpus contract test: scanner `turn_count` equals expected for every fixture (especially `/compact` + slash + wake).
-- [ ] Cache-epoch test: a cache row written under a prior `rule_epoch` is treated as a miss and re-scanned, not served.
+- [ ] Cache-epoch test: a row at a prior `rule_epoch` (0) is a miss in the scan **and** is not used as a `record_spawn` seed — verified to survive even when a subsequent replay errors (no stale MAX left behind).
 - [ ] Existing `external_sessions` tests updated where they asserted the old looser count.
 
 **Checkpoint:**
@@ -550,9 +559,11 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 **Tasks:**
 - [ ] Feed each fixture through the translator; assert `totalTurns` equals the expected value.
 - [ ] Cross-check the expected values are identical to the ones the Rust test asserts (same corpus, same numbers).
+- [ ] **Intra-tugcode consistency:** on a *full* (unwindowed) replay, assert `totalTurns` (from `computeTurnStartIndices`) equals the count of emitted `turn_complete` frames — proving the boundary locator and the emit path can't drift ([R07]).
 
 **Tests:**
 - [ ] Per-fixture assertion in tugcode's test suite.
+- [ ] `totalTurns == emitted turn_complete count` on a full replay of each fixture.
 
 **Checkpoint:**
 - [ ] tugcode tests green; `totalTurns` equals the Rust scanner's `turn_count` for every fixture.
@@ -621,11 +632,11 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 **Tasks:**
 - [ ] Verify scanner total, tugcode `totalTurns`, and reconciled ledger agree on every corpus fixture (including the windowed-size one where `count` ≠ `totalTurns`).
 - [ ] Live spot-check: spawn, run 2–3 turns incl. a slash command, confirm ledger == transcript `turn_complete` count.
-- [ ] Stress the two count-divergence paths: a **reconnect** (re-replay → success frame re-SETs `totalTurns`, no drift) and a **mid-scan refresh** (client store reflects an authoritative push without MAX-pinning), plus an **error replay** (ledger unchanged).
+- [ ] Stress the count-divergence paths: a **reconnect** (re-replay → success frame re-SETs `totalTurns`, no drift), a **mid-scan refresh** (client store reflects an authoritative push without MAX-pinning), an **error replay** (ledger unchanged), and the **dedup/orphan seam** ([R07]) — an interrupted turn at the window edge and a reconnect/orphan re-emission must leave `highest badge == totalTurns`.
 - [ ] Confirm no corpus session with content is hidden or mis-gated.
 
 **Tests:**
-- [ ] Four-way equality assertion on a real session: `scanner total == tugcode totalTurns == ledger turn_count == picker subtitle N`, holding across a reconnect and a mid-scan refresh.
+- [ ] Four-way equality assertion on a real session: `scanner total == tugcode totalTurns == ledger turn_count == picker subtitle N`, holding across a reconnect, a mid-scan refresh, and an interrupt/orphan re-emission.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run` green; tugcode tests green; equality assertion passes; live spot-check matches.
@@ -739,7 +750,7 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 
 **Tasks:**
 - [ ] Add the formatter (`#t{turn:0>4}m{message:0>2}`, padded-not-capped); remove/redirect `formatSequenceNumber`.
-- [ ] Derive `TURN` from `firstLoadedTurnIndex + localTurnIndex + 1`; user row carries `m01`.
+- [ ] Derive `TURN` from `firstLoadedTurnIndex + localTurnIndex + 1`, where `localTurnIndex` spans the loaded **and** live turns — so a live turn committed after replay carries `totalTurns + k` (== the ledger after `k` `record_turn`s), never a window-local reset. User row carries `m01`.
 - [ ] Keep this step at row granularity (user `m01`, assistant block `m02`) to isolate the formatter from the rendering change.
 
 **Tests:**
@@ -808,7 +819,7 @@ A turn is **not** opened by: `tool_result` echoes, `/compact` summaries, slash-c
 - [ ] On a real **windowed** session: resume it, confirm the load bar reads "N of N turns", the restore label says turns, the highest transcript turn badge equals `totalTurns` and the picker's `N turns`, and paging older history doesn't renumber a turn's `m` addresses.
 
 **Tests:**
-- [ ] Real-app aggregate asserting the four-way equality on a windowed session: `highest turn badge == tugcode totalTurns == ledger turn_count == picker subtitle N`.
+- [ ] Real-app aggregate asserting the four-way equality on a windowed session: `highest turn badge == tugcode totalTurns == ledger turn_count == picker subtitle N`, holding across a reconnect, a mid-scan refresh, an **interrupted turn at the window edge**, and a **reconnect/orphan re-emission** ([R07]).
 
 **Checkpoint:**
 - [ ] `just app-test <turns-end-to-end-test>` ends `VERDICT: PASS`.
