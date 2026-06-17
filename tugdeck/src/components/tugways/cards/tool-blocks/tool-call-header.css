@@ -185,6 +185,27 @@ body {
   top: 1px;
 }
 
+/* Diff-summary badge — a custom neutral GRAY pill (not the `data` role's
+ * faint-green tint): a subtle fill + border mixed from the chrome text color,
+ * the same quiet recipe as the prose inline-code chips, so the badge reads as
+ * neutral chrome and the green/red only lives in the numbers. Two classes
+ * (`.tool-call-header-diff-badge.tug-badge`) outrank the single-class role
+ * background. */
+.tool-call-header-diff-badge.tug-badge {
+  background-color: color-mix(in srgb, var(--tugx-block-text-color) 10%, transparent);
+  border-color: color-mix(in srgb, var(--tugx-block-text-color) 16%, transparent);
+}
+
+/* The `+N` / `−M` halves carry the shared add/remove tones (the same green/red
+ * the Edit body diff uses); the badge supplies the gray, these recolor text. */
+.tool-call-header-diff-add {
+  color: var(--tugx-block-tone-add-color);
+}
+
+.tool-call-header-diff-del {
+  color: var(--tugx-block-tone-remove-color);
+}
+
 /* Trailing actions — the controls cluster at the row's trailing edge, in
  * both states: a vertical rule divides the result (summary / meta) from the
  * controls (body-specific portal · Copy · chevron), with equal gaps on each

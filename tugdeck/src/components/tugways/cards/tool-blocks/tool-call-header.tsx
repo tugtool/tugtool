@@ -61,6 +61,7 @@ import {
 
 import {
   formatToolResultSummary,
+  formatDiffSummaryParts,
   toolResultSummaryRole,
   type ToolResultSummary,
 } from "./tool-result-summary";
@@ -68,6 +69,28 @@ import type { CautionFlag } from "./types";
 
 /** Glyph-box diameter of the lifecycle dot, in CSS px (matches the icon). */
 const DOT_SIZE = 14;
+
+/**
+ * The two tinted halves of a diff-summary badge: `+N` in the add (green)
+ * tone, `−M` in the remove (red) tone. Rendered as the children of a neutral
+ * `data` {@link TugBadge}, so the badge supplies the gray background and these
+ * spans only recolor the text — the same add/remove tones the Edit body diff
+ * uses (`--tugx-block-tone-add-color` / `--tugx-block-tone-remove-color`).
+ */
+function DiffSummaryParts({
+  summary,
+}: {
+  summary: Extract<ToolResultSummary, { kind: "diff" }>;
+}): React.ReactElement {
+  const parts = formatDiffSummaryParts(summary);
+  return (
+    <>
+      <span className="tool-call-header-diff-add">{parts.added}</span>
+      <span className="tool-call-header-diff-sep"> </span>
+      <span className="tool-call-header-diff-del">{parts.removed}</span>
+    </>
+  );
+}
 
 export interface ToolCallHeaderProps {
   /**
@@ -182,13 +205,30 @@ export const ToolCallHeader = React.forwardRef<
           danger, exit 0 success, every other kind neutral data. */}
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
-          <TugBadge
-            emphasis="tinted"
-            role={toolResultSummaryRole(summary)}
-            size="2xs"
-          >
-            {formatToolResultSummary(summary)}
-          </TugBadge>
+          {summary.kind === "diff" ? (
+            // Diff stat — one neutral (gray) badge whose two halves carry the
+            // add/remove tones: `+N` green, `−M` red. The role stays `data`
+            // (neutral chrome) so the background is the quiet gray every
+            // summary uses; only the inner spans are tinted. `copyText` keeps
+            // the joined "+N −M" on copy.
+            <TugBadge
+              emphasis="tinted"
+              role="data"
+              size="sm"
+              className="tool-call-header-diff-badge"
+              copyText={formatToolResultSummary(summary)}
+            >
+              <DiffSummaryParts summary={summary} />
+            </TugBadge>
+          ) : (
+            <TugBadge
+              emphasis="tinted"
+              role={toolResultSummaryRole(summary)}
+              size="sm"
+            >
+              {formatToolResultSummary(summary)}
+            </TugBadge>
+          )}
         </span>
       ) : null}
       {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}

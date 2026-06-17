@@ -84,3 +84,20 @@ export function formatToolResultSummary(summary: ToolResultSummary): string {
       return summary.text;
   }
 }
+
+/**
+ * The `+added` / `−removed` halves of a diff summary, each clamped and
+ * signed, for the header's custom diff badge — which colors the added half
+ * green and the removed half red against one neutral background. Splitting
+ * here keeps the clamping + sign logic in lockstep with
+ * {@link formatToolResultSummary} (whose joined form is the copy text).
+ */
+export function formatDiffSummaryParts(summary: {
+  added: number;
+  removed: number;
+}): { added: string; removed: string } {
+  return {
+    added: `+${clampCount(summary.added)}`,
+    removed: `−${clampCount(summary.removed)}`,
+  };
+}
