@@ -132,10 +132,11 @@ export interface BlockFoldCueProps {
    * Whether the click runs through the body-fold scroll machinery —
    * `usePositionStableClick` (hold the cue under the cursor across the
    * height change) + `useScroller().disengage` (release follow-bottom).
-   * `true` (default) for a fold WITHIN a scrolling body. Pass `false`
-   * for the tool-call header's whole-block Expand/Collapse, where the
-   * surrounding chrome + list windowing own the scroll response and the
-   * body-fold machinery would fight it.
+   * `true` (default) for any fold inside a scrolling host — both a fold
+   * WITHIN a body and the tool-call header's whole-block Expand/Collapse.
+   * Pass `false` only for a fold with no scrolling host above (a
+   * standalone gallery composition), where the machinery resolves to
+   * no-ops anyway and the extra `flushSync` is pure cost.
    */
   stabilizeScroll?: boolean;
   /** Optional className for cascade-scoped customization. */
@@ -203,8 +204,8 @@ export function BlockFoldCue({
     // no-op when no host is above (standalone gallery, non-list
     // composition). The `"block-fold"` source tags the disengage in
     // the deck trace so a follow-bottom regression is traceable.
-    // Skipped for whole-block headers (`stabilizeScroll={false}`),
-    // where the chrome + list windowing own the scroll response.
+    // Skipped only when `stabilizeScroll` is off (a host-less gallery
+    // composition), where the disengage would be a no-op anyway.
     if (stabilizeScroll) scroller.disengage("block-fold");
     onToggleRef.current(!collapsedRef.current);
   }, [scroller, stabilizeScroll]);

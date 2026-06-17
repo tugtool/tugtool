@@ -224,9 +224,12 @@ export const ToolCallHeader = React.forwardRef<
             ariaLabelCollapse={`Collapse ${toolName} tool call`}
             size="xs"
             subtype="icon"
-            // Whole-block collapse: the chrome + list windowing own the
-            // scroll response, so skip the body-fold scroll machinery.
-            stabilizeScroll={false}
+            // Whole-block collapse uses the same scroll machinery as every
+            // body-fold cue (the default `stabilizeScroll`): release the
+            // host's follow-bottom lock before the toggle so the cell-height
+            // ResizeObserver flush finds `shouldAutoPin` false and does not
+            // slam to the bottom, and position-stabilize the clicked header
+            // so it holds its viewport position across the height change.
             data-slot="tool-call-header-disclosure"
           />
         ) : null}
