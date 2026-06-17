@@ -1153,10 +1153,9 @@ export class DeckManager implements IDeckManagerStore {
     this.dirtyCardIds.add(cardId);
 
     // While a batch load holds the save gate, mark dirty but schedule no
-    // flush: the state churning through a restore IS the restored state, so
-    // saving it is redundant. It persists on the next ungated `setCardState`
-    // (a real post-load edit) or the will-phase sync flush — never a `fetch`
-    // mid-load or at the load's tail.
+    // flush — never a `fetch` mid-load. The accumulated state is persisted a
+    // beat after the load when the gate releases (see `suspendCardStateSaves`),
+    // and any sync unload flush bypasses the gate regardless.
     if (this.cardSaveSuspendDepth > 0) return;
 
     if (this.cardStateSaveTimer !== null) {
@@ -1178,16 +1177,19 @@ export class DeckManager implements IDeckManagerStore {
    * Suspend debounced card-state saves while a batch load runs, returning a
    * disposer that resumes them. Counted, so overlapping loads compose. A card
    * holds this across its load + settle so persistence never fetches mid-load.
-   * Releasing does NOT flush: the state that went dirty during the load is the
-   * restored state, redundant to re-save — it persists on the next ungated
-   * `setCardState` or the will-phase sync flush. Sync unload flushes are never
-   * suspended.
+   *
+   * On the final release the settled state is persisted, but one beat PAST the
+   * load — the disposer schedules the debounced flush rather than fetching
+   * synchronously, so the write lands well clear of the load's hot path. The
+   * beat is a macrotask timer (the existing save debounce), never a
+   * `requestAnimationFrame` ([L05]). A new load starting within that window
+   * cancels the pending flush on engage and re-schedules on its own release.
+   * Sync unload flushes are never suspended.
    */
   suspendCardStateSaves = (): (() => void) => {
     this.cardSaveSuspendDepth += 1;
-    // Cancel a flush scheduled just before the gate engaged, so a save from
-    // the pre-load moment can't fire ungated mid-load. It re-schedules on the
-    // next ungated `setCardState` (or the will-phase sync flush).
+    // Cancel a flush scheduled just before the gate engaged (a pre-load save,
+    // or a prior release's deferred flush) so nothing fires ungated mid-load.
     if (this.cardStateSaveTimer !== null) {
       window.clearTimeout(this.cardStateSaveTimer);
       this.cardStateSaveTimer = null;
@@ -1197,6 +1199,19 @@ export class DeckManager implements IDeckManagerStore {
       if (released) return;
       released = true;
       this.cardSaveSuspendDepth = Math.max(0, this.cardSaveSuspendDepth - 1);
+      // Final release with dirty state: persist it a beat past the load via
+      // the debounced flush ([L05] — a macrotask timer, never rAF), off the
+      // hot path. A real `setCardState` in the meantime just resets the same
+      // debounce; the next load's engage cancels it.
+      if (this.cardSaveSuspendDepth === 0 && this.dirtyCardIds.size > 0) {
+        if (this.cardStateSaveTimer !== null) {
+          window.clearTimeout(this.cardStateSaveTimer);
+        }
+        this.cardStateSaveTimer = window.setTimeout(() => {
+          void this.flushDirtyCardStates();
+          this.cardStateSaveTimer = null;
+        }, SAVE_DEBOUNCE_MS);
+      }
     };
   };
 
