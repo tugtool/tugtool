@@ -929,16 +929,30 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 
 **References:** [Q07] verification vehicle, [P06] JSONL-authoritative, (#target-testing)
 
+> **Fidelity constraint (load-bearing — do not weaken).** This vehicle MUST drive a
+> **real cold replay through the live delivery chain** — tugcode `translateJsonlSession`
+> → tugcast fan-out → `SESSION_METADATA` → `SessionMetadataStore` — on an empty-DB
+> instance, then read the Z2 snapshot. It MUST NOT short-circuit by pushing a
+> ready-made frame via `window.__tug.ingestSessionMetadata` (or any equivalent
+> injection) for the **delivery** assertions. The model/CONTEXT-max bug being verified
+> lives *in that chain* (the subscription race + no-clobber, #a3-model-delivery); a test
+> that injects a pre-cooked `SESSION_METADATA` frame would go green while the real bug
+> persists — the fake-pass trap this whole revision exists to avoid. (Frame injection
+> remains fine for the *pure-logic* `SessionMetadataStore` unit tests, which are a
+> separate, explicitly store-level layer.) If a true cold restore through `app-test`
+> proves infeasible, that is a finding to surface here — never a license to fall back to
+> injection for the delivery assertions.
+
 **Artifacts:**
-- A `tests/app-test/` case that cold-replays a fixture JSONL into a fresh, empty-DB store and reads back the Z2 snapshot (model, context-max, context-used, tokens).
+- A `tests/app-test/` case that cold-replays a fixture JSONL into a fresh, empty-DB store **through the real tugcode/tugcast path** and reads back the Z2 snapshot (model, context-max, context-used, tokens).
 - A cost-only smoke fixture (already-correct path) proving the vehicle green.
 
 **Tasks:**
-- [ ] Author the app-test that drives a cold replay into a fresh store on an empty DB.
-- [ ] Add the cost-only smoke fixture; assert TOKENS/CONTEXT-used populate.
+- [ ] Author the app-test that triggers a genuine cold restore/replay of a fixture session on an empty-DB instance (no frame injection for the delivery path).
+- [ ] Add the cost-only smoke fixture; assert TOKENS/CONTEXT-used populate from the replayed cost.
 
 **Tests:**
-- [ ] `just app-test <file>` exercises the cold-replay → Z2 snapshot path.
+- [ ] `just app-test <file>` exercises the real cold-replay → Z2 snapshot path (not an injected frame).
 
 **Checkpoint:**
 - [ ] `just app-test <file>` last line is `VERDICT: PASS`.
@@ -967,7 +981,7 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 - [ ] tugcode replay: model-switch fixture (opus → sonnet) → synth's final model = sonnet.
 - [ ] tugcast (Rust): replay `system_metadata` → `SESSION_METADATA` last-wins; empty/stale durable row does NOT clobber.
 - [ ] tugdeck pure-logic wire-frame: `SessionMetadataStore` ← `SESSION_METADATA`, last-model-wins.
-- [ ] #step-6c app-test: fresh empty-DB store, model-switch fixture → active model + CONTEXT-max resolve.
+- [ ] #step-6c app-test (real cold-replay path, per #step-6c fidelity constraint — NOT frame injection): fresh empty-DB store, model-switch fixture → active model + CONTEXT-max resolve.
 
 **Checkpoint:**
 - [ ] `cd tugcode && bun test src/__tests__/replay.test.ts && bunx tsc --noEmit`
@@ -1065,7 +1079,7 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 
 **Tests:**
 - [ ] tugdeck pure-logic (`deriveContextWindows`): fixture `big-window → zero-usage compact boundary → small-window` → CONTEXT-used reflects the post-compact window throughout.
-- [ ] #step-6c app-test: restored session denominator = 1M.
+- [ ] #step-6c app-test (real cold-replay path, per #step-6c fidelity constraint): restored session denominator = 1M.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
