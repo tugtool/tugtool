@@ -1,36 +1,64 @@
 /**
- * dev-load-control-bar.css — content layouts inside the permanent Z0
- * TugControlBar.
+ * dev-load-control-bar.css — the dev transcript's Z0 surfaces.
  *
- * The bar band itself (surface, scrim, constant height) is owned by
- * tug-control-bar.css; these rules lay out the dev transcript's content
- * variants — the resting metadata row and the loading progress row. The
- * strip is permanent (`data-visible` pinned true); only the `data-mode`
- * swaps.
- *
- * Both content rows are always mounted (the host self-subscribes per [L02]);
- * the host writes `data-mode` on the band ([L06]/[L22]) and the rules below
- * reveal exactly one row per mode. A row is hidden until its mode is active,
- * so the loading→metadata swap is a pure DOM toggle with no React re-render.
+ * Two homes now (see the `.tsx` module docstring):
+ *   - `.dev-transcript-top-row` — the permanent Z0 row, rendered as the
+ *     list's leading content so it scrolls WITH the transcript. A quiet
+ *     chrome strip (borrows the Z2 status surface) at constant height, with
+ *     the metadata laid out flush-left / flush-right.
+ *   - `.dev-load-overlay` — the load progress band + modal scrim, an
+ *     ABSOLUTE overlay over the transcript area. The band itself is owned by
+ *     tug-control-bar.css (surface, scrim, `data-visible` show/hide); this
+ *     file only positions the overlay and lays out the progress row.
  *
  * Two tunable knobs live here:
  *   --tugx-control-bar-track-width  — the progress track length.
- *   --tugx-control-bar-label-size   — the band's label text size.
+ *   --tugx-control-bar-label-size   — the strip's label text size.
  */
-.dev-load-control-bar-metadata,
+
+.dev-transcript-top-row,
 .dev-load-control-bar-loading {
   /* ▼▼ TUNE ▼▼ */
   --tugx-control-bar-track-width: 220px;
   --tugx-control-bar-label-size: var(--tug-font-size-lg);
   --tugx-control-bar-label-nudge: -1px;
   /* ▲▲ TUNE ▲▲ */
-  /* Hidden until the band's `data-mode` selects this row (rules below). */
-  display: none;
 }
 
-/* The metadata row spans the band: session-created flush left, the turns
+/* ---- Permanent Z0 row (the list's leading content) ---- */
+
+/* A quiet chrome strip that reads as the transcript's first row: a distinct
+   Z2-borrowed surface, a constant height (never changes, so the content
+   never hops), and a divider below it from the turns. It scrolls with the
+   content — off-screen when scrolled down, the first thing at the top. */
+.dev-transcript-top-row {
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  /* Full-bleed, positioned to match the load overlay exactly. The scroll
+     container insets its content by `--tug-space-md` (and reserves a
+     scrollbar gutter, which is nothing on macOS overlay scrollbars); cancel
+     that inset with a negative inline margin so the strip's surface spans
+     edge-to-edge like the absolute overlay band, then re-inset the text by
+     the SAME `md` the band uses — so the resting row and the loading band
+     place their text at the identical x, and the heights already match
+     (both 2.5rem). */
+  margin-inline: calc(-1 * var(--tug-space-md));
+  padding-inline: var(--tug-space-md);
+  /* The list's top breathing room is zeroed (dev-card.css) so this strip is
+     flush at the top; restore that breathing BELOW the strip instead, so the
+     first turn isn't cramped against the divider. */
+  margin-block-end: var(--tug-space-md);
+  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  font-size: 0.85em;
+  user-select: none;
+}
+
+/* The metadata row spans the strip: session-created flush left, the turns
    status + load action flush right. */
-.tug-control-bar[data-mode="metadata"] .dev-load-control-bar-metadata {
+.dev-load-control-bar-metadata {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -54,8 +82,31 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* ---- Load overlay (absolute, over the transcript area) ---- */
+
+/* The overlay layers the load band + its region scrim over the transcript
+   without taking layout space, so locking-while-loading never shifts the
+   content. The wrapper is inert to pointers (the band re-enables its own;
+   the region scrim, owned by tug-control-bar.css, handles the lock below). */
+.dev-load-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.dev-load-overlay .tug-control-bar {
+  pointer-events: auto;
+}
+
 /* The loading row spans the band; the progress indicator (below) centers its
-   own content. */
+   own content. Hidden until the band's `data-mode` selects it. */
+.dev-load-control-bar-loading {
+  display: none;
+}
+
 .tug-control-bar[data-mode="loading"] .dev-load-control-bar-loading {
   display: flex;
   align-items: center;
@@ -81,11 +132,13 @@
   width: var(--tugx-control-bar-track-width);
 }
 
-/* Band labels read at the tuned size; the `proposal` emphasis still supplies
+/* Strip labels read at the tuned size; the `proposal` emphasis still supplies
    the small-caps / weight / muted color. Scoped to beat the emphasis class's
    own font-size (two classes vs one). `line-height: 1` centers the small-caps
    optically — at the default 1.4 the caps (no ascenders/descenders) sit low
-   in the line-box and read as bottom-heavy. */
+   in the line-box and read as bottom-heavy. Applies in both Z0 homes. */
+.dev-transcript-top-row .dev-load-control-bar-label,
+.dev-transcript-top-row .dev-load-control-bar-actions-label,
 .tug-control-bar .dev-load-control-bar-label,
 .tug-control-bar .dev-load-control-bar-actions-label,
 .tug-control-bar .tug-progress-indicator-label-active {

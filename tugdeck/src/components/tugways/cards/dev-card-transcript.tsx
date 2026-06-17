@@ -130,7 +130,8 @@ import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selectio
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import {
-  DevLoadControlBar,
+  DevTranscriptTopRow,
+  DevLoadOverlay,
 } from "@/components/tugways/cards/dev-load-control-bar";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
@@ -1309,10 +1310,9 @@ export const DevTranscriptHost = forwardRef<
   // force a full windowed-list commit at every fold flush, and that
   // render work runs on the same thread the ingest needs (measured:
   // 255ms → 7.5s ingest on the 12MB motivating session when the list
-  // rode along). The `Z0` `DevLoadControlBar` above owns the surface
-  // during the hold: it shows determinate restore progress + Cancel and
-  // holds the card modal (region inert + scrim) until the reconstructed
-  // content reveals once.
+  // rode along). The `Z0` `DevLoadOverlay` owns the surface during the
+  // hold: it shows determinate restore progress and holds the card modal
+  // (region inert + scrim) until the reconstructed content reveals once.
   // Once the initial window closes the list mounts ONCE against the
   // fully reconstructed transcript (a single bounded windowed commit)
   // and never unmounts again: `replayEverCompleted` is MONOTONIC in
@@ -1417,7 +1417,7 @@ export const DevTranscriptHost = forwardRef<
   return (
     // [DT10] paint gate: every row renders inline at its real height,
     // so the single-reveal gate applies for the whole replay window
-    // (avoiding accumulation FOUC), with the `Z0` `DevLoadControlBar`
+    // (avoiding accumulation FOUC), with the `Z0` `DevLoadOverlay`
     // carrying restore progress (modal) over the region until reveal.
     <div
       ref={rootRef}
@@ -1426,13 +1426,6 @@ export const DevTranscriptHost = forwardRef<
       data-testid="dev-card-transcript"
       data-replaying={(isReplaying && !loadingPrevious) || undefined}
     >
-      {/* Z0 ([D97]): the single load surface — prompt, progress, and the
-          initial-restore indicator — modal (over the region below) while
-          loading, per [P09]. */}
-      <DevLoadControlBar
-        codeSessionStore={codeSessionStore}
-        regionEl={regionEl}
-      />
       {compactionSeed !== null ? (
         <div
           className="dev-card-transcript-compaction"
@@ -1445,8 +1438,8 @@ export const DevTranscriptHost = forwardRef<
         </div>
       ) : null}
       {listMounted ? (
-        // The transcript region: the bar's inert + scrim target when
-        // modal. The bar is a sibling *above* it, never inerted.
+        // The transcript region: the load overlay's inert + scrim target
+        // when modal. The overlay is an absolute sibling layered *over* it.
         <div className="tug-control-bar-region" ref={setRegionEl}>
           <ToolBlockExpansionContext.Provider value={toolBlockExpansion}>
             <TugListView
@@ -1455,6 +1448,12 @@ export const DevTranscriptHost = forwardRef<
               cellRenderers={cellRenderers}
               scrollKey="dev-card-transcript"
               followBottom
+              // Z0 ([D97]) is the list's permanent leading row — it scrolls
+              // with the content (off-screen when scrolled down, first at the
+              // top) and stays topmost as older turns prepend below it.
+              leadingContent={
+                <DevTranscriptTopRow codeSessionStore={codeSessionStore} />
+              }
               // Freeze the per-commit scroll battery across the restore
               // replay, each load-previous bracket, and the post-reveal
               // height settle ([L04] via `onFirstSettle`) — the heavy
@@ -1478,6 +1477,12 @@ export const DevTranscriptHost = forwardRef<
           />
         </div>
       ) : null}
+      {/* Z0 load overlay ([D97]/[P09]): the determinate restore /
+          load-previous progress + modal scrim. An absolute overlay over the
+          transcript area (last sibling, so it layers on top), shown only
+          while loading — it never shifts the content and works during a cold
+          restore, before the list above is mounted. */}
+      <DevLoadOverlay codeSessionStore={codeSessionStore} regionEl={regionEl} />
     </div>
   );
 });

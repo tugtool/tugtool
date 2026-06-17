@@ -523,6 +523,19 @@ export interface TugListViewProps<
   className?: string;
 
   /**
+   * Optional content rendered INSIDE the scroll container, above the first
+   * row — a permanent leading element that scrolls with the content (it is
+   * off-screen when scrolled down, and the first thing reached at the top).
+   * Unlike a `"header"`-role data-source row, it is NOT indexed: it takes no
+   * row slot, so it never perturbs `numberOfItems`, the row keys, or the
+   * turn-addressing / anchor-depth math. Constant-height by contract — the
+   * scroll-anchor measures rows, and a constant element above row 0 shifts
+   * every row uniformly, so save/restore stays exact as long as it is always
+   * present. Used by the dev transcript for its permanent Z0 strip.
+   */
+  leadingContent?: React.ReactNode;
+
+  /**
    * Initial auto-follow-bottom intent. When `true`, the list view
    * pins to the bottom on mount and on every data-source growth /
    * height-index update while the last item is in the rendered
@@ -1070,6 +1083,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       cellRenderers,
       scrollKey,
       className,
+      leadingContent,
       followBottom,
       batchLoading = false,
       onFirstSettle,
@@ -3411,6 +3425,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           className="tug-list-view-spacer tug-list-view-spacer--top"
           aria-hidden="true"
         />
+        {/* Leading content — a permanent, un-indexed element above row 0 that
+            scrolls with the content (see `leadingContent` prop). Sits below
+            the top spacer so it rides the same scroll origin as the rows. */}
+        {leadingContent !== undefined ? (
+          <div className="tug-list-view-leading" data-slot="tug-list-view-leading">
+            {leadingContent}
+          </div>
+        ) : null}
         <OuterScrollportProvider scrollport={scrollportEl}>
         <ScrollerProvider scroller={scrollerFacadeRef.current}>
         <TugListRowLayoutProvider value={rowLayoutValue}>

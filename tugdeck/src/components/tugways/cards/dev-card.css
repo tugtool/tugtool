@@ -384,14 +384,18 @@
   scrollbar-gutter: stable;
   --tugx-list-view-row-gap: var(--tugx-dev-entry-margin);
   --tugx-list-view-padding-block: var(--tug-space-md);
+  /* Start side ZEROED: the permanent Z0 row is the list's leading content,
+     and it must sit flush at the very top of the scroll content — exactly
+     where the load overlay's absolute `top: 0` band sits — so the resting
+     strip and the loading band align pixel-for-pixel. The top breathing room
+     the `::before` spacer used to give the first entry now lives BELOW the Z0
+     row instead (its `margin-block-end`, in dev-load-control-bar.css). */
+  --tugx-list-view-padding-block-start: 0;
   /* Bottom-only override: the symmetric `md` reads as cramped
      against the Z2 status bar — the last entry's Z1B sits a few
      pixels below the status indicator dot above. Bump just the
      end side to `2xl` (24px) so there's generous breathing room
-     between the bottom-most Z1B and the status surface. The
-     start side stays at `md` (8px) — the first entry sits below
-     the entry-header's natural padding, so no extra top breathing
-     room is needed. */
+     between the bottom-most Z1B and the status surface. */
   --tugx-list-view-padding-block-end: var(--tug-space-2xl);
   --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
 

@@ -1,35 +1,29 @@
 /**
- * dev-load-control-bar — the dev transcript's permanent Z0 strip.
+ * dev-load-control-bar — the dev transcript's Z0 surface, split into two
+ * pieces so the resting strip is part of the scrolling content while the
+ * in-flight progress stays a non-shifting overlay:
  *
- * One `TugControlBar` ([P09]–[P11]) that is a **permanent fixture** at the
- * top of the transcript: it never mounts/unmounts and never toggles its
- * height, so the transcript no longer hops when it would once have appeared
- * (on reaching the top) or disappeared (on scrolling away). With nothing to
- * "reveal", the keyboard scroll-to-top (Opt-Shift-Up) no longer needs a
- * follow-up wheel event to summon it — the strip is simply always there.
+ *   - {@link DevTranscriptTopRow} — the permanent Z0 row, mounted as the
+ *     list's `leadingContent`. It is the transcript's first scrolling row:
+ *     off-screen when scrolled down, the first thing reached at the top, and
+ *     the topmost row as older turns prepend below it. Resting content only —
+ *     "Session created <datetime>" on the left, "Turns displayed X of Y" + a
+ *     "Load N more" / "All loaded" status on the right — so it never changes
+ *     height and the transcript never hops. With nothing to "reveal", the
+ *     keyboard scroll-to-top (Opt-Shift-Up) just lands on it.
+ *   - {@link DevLoadOverlay} — the determinate progress band + modal (inert +
+ *     scrimmed) region, shown only while a cold restore or load-previous is
+ *     in flight (plus the {@link PROGRESS_DWELL_MS} dwell tail). An ABSOLUTE
+ *     overlay over the transcript area, never a layout sibling, so locking
+ *     the region while loading never shifts the content. Works during a cold
+ *     restore, when the top row's list is not yet mounted.
  *
- * It carries one of two contents driven by {@link deriveControlBarState}:
- *
- *   - **Loading** — a cold restore *or* a load-previous → a determinate
- *     progress bar (the region is **modal** — inert + scrimmed — while the
- *     load is in flight). The progress lingers, at full, for
- *     {@link PROGRESS_DWELL_MS} past the final tick so the bar visibly
- *     reaches the end before it swaps back (`loadingDisplay`).
- *   - **Metadata** — the resting content: "Session created <datetime>" on
- *     the left, "Turns displayed X of Y" + a "Load N more" / "All loaded"
- *     status on the right.
- *
- * **Zone discipline ([L24]).** The strip's *mode* (loading / metadata) is
- * pure appearance — its only consumer is the renderer — so it lives in the
- * DOM, never React state ([L06]). The host holds the post-load dwell flag in
- * a ref, observes the store *directly* in a layout effect ([L22]), and
- * writes the resolved mode onto the band's `data-mode` attribute; a dwell
- * tick therefore never re-renders. `data-visible` is pinned `"true"` (the
- * strip is permanent). Both content slots are always mounted and
- * self-subscribe for their data ([L02]); the dev CSS reveals one per
- * `data-mode`. The load-in-flight flag (`modal`) is session *data*, so it
- * alone enters React via `useSyncExternalStore` to drive the region
- * inert + scrim.
+ * **Zone discipline ([L24]).** The overlay's visibility is pure appearance,
+ * so it lives in the DOM (`data-visible`), driven by a layout effect that
+ * observes the store directly and runs the dwell tail — never React state
+ * ([L06]/[L22]). Only the `modal` flag (region inert + scrim) enters React,
+ * since `usePaneInert` is a React seam. The top row self-subscribes for its
+ * data ([L02]).
  *
  * Paging is a single fixed step (25) — no "All", and no Cancel (a page, and
  * the restore, are quick enough that there's nothing slow to abort).
@@ -80,32 +74,71 @@ export interface DevLoadControlBarProps {
   regionEl: HTMLElement | null;
 }
 
-export function DevLoadControlBar({
+/**
+ * The permanent Z0 row — the transcript's first scrolling row. Mounted as
+ * the list's `leadingContent`, so it scrolls with the content (off-screen
+ * when scrolled down, the first thing reached at the top) and stays the
+ * topmost row as older turns prepend below it. Resting content only — the
+ * in-flight progress is the {@link DevLoadOverlay}'s job — so it never
+ * changes height and the transcript never hops.
+ */
+export function DevTranscriptTopRow({
+  codeSessionStore,
+}: {
+  codeSessionStore: CodeSessionStore;
+}): React.ReactElement {
+  const onLoad = React.useCallback(
+    (amount: number) => {
+      codeSessionStore.loadPrevious(amount);
+    },
+    [codeSessionStore],
+  );
+  return (
+    <div className="dev-transcript-top-row" data-slot="dev-transcript-top-row">
+      <ControlBarMetadata codeSessionStore={codeSessionStore} onLoad={onLoad} />
+    </div>
+  );
+}
+
+/**
+ * The load overlay — a determinate progress band + a modal (inert +
+ * scrimmed) region, shown only while a cold restore or a load-previous is in
+ * flight (plus the dwell tail that holds the full bar a beat past the final
+ * tick). It is an ABSOLUTE overlay over the transcript area, not a layout
+ * sibling, so it never shifts the content: the region locks beneath it and
+ * the band paints above the scrim. Works during a cold restore too, when the
+ * list (and the {@link DevTranscriptTopRow}) is not yet mounted — there is
+ * simply no region to scrim, and the band shows over the empty area.
+ *
+ * Zone discipline ([L24]): the band's visibility lives in the DOM
+ * (`data-visible`), driven by a layout effect that observes the store
+ * directly and runs the dwell tail — never React state ([L06]/[L22]). Only
+ * the `modal` flag (region inert + scrim) enters React, since `usePaneInert`
+ * is a React seam.
+ */
+export function DevLoadOverlay({
   codeSessionStore,
   regionEl,
 }: DevLoadControlBarProps): React.ReactElement {
   const barRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Appearance refs ([L06]): the post-load dwell lives here, never React
+  // Appearance ref ([L06]): the post-load dwell lives here, never React
   // state — so a dwell tick mutates the DOM without a re-render.
-  const tailActiveRef = React.useRef(false); // within the post-load dwell
+  const tailActiveRef = React.useRef(false);
   const tailTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevLoadActiveRef = React.useRef(false);
 
-  // `loadActive` is session DATA (the reducer/banner read it), so it alone
-  // enters React via `useSyncExternalStore` ([L02]) — it drives the `modal`
-  // prop (region inert + scrim while a load is in flight). It changes only
-  // when a load starts/ends (rare); the re-render is cheap and never reaches
-  // the transcript (a sibling).
+  // `loadActive` drives the `modal` prop (region inert + scrim while a load
+  // is actually in flight — not during the dwell tail). It enters React via
+  // `useSyncExternalStore` ([L02]); the re-render is rare and cheap.
   const loadActive = React.useSyncExternalStore(
     codeSessionStore.subscribe,
     () => readLoadActive(codeSessionStore.getSnapshot()),
   );
 
-  // Resolve the strip's mode from the live snapshot + the dwell ref and
-  // mirror it onto the band's DOM attributes ([L06]/[L22]). `data-visible`
-  // is pinned `"true"` — the strip is a permanent fixture — and `data-mode`
-  // selects which content slot the dev CSS reveals. Never React state.
+  // Mirror the band's visibility onto the DOM ([L06]/[L22]): visible while a
+  // load is in flight OR within the dwell tail; hidden otherwise. The band's
+  // single content is the progress row (`data-mode="loading"`).
   const updateBar = React.useCallback(() => {
     const bar = barRef.current;
     if (bar === null) return;
@@ -113,15 +146,12 @@ export function DevLoadControlBar({
     const state = deriveControlBarState({
       loadingDisplay: readLoadActive(snap) || tailActiveRef.current,
     });
-    bar.dataset.visible = "true";
-    bar.dataset.mode = state.kind;
+    bar.dataset.visible = String(state.kind === "loading");
+    bar.dataset.mode = "loading";
   }, [codeSessionStore]);
 
-  // Observe the store directly ([L22]) — the strip's mode is a DOM mutation,
-  // not React-rendered state. This handler also runs the dwell tail: hold the
-  // full progress for `PROGRESS_DWELL_MS` after a load lands, then swap back
-  // to the metadata row (one `updateBar` per transition, so the
-  // loading→metadata swap is a single clean frame).
+  // Observe the store directly ([L22]). Runs the dwell tail: hold the full
+  // progress for `PROGRESS_DWELL_MS` after a load lands, then hide the band.
   React.useLayoutEffect(() => {
     const onChange = (): void => {
       const snap = codeSessionStore.getSnapshot();
@@ -134,7 +164,7 @@ export function DevLoadControlBar({
         tailActiveRef.current = false;
       } else if (prevLoadActiveRef.current) {
         // A load just landed → hold the full progress for the dwell, then
-        // swap back to the metadata row.
+        // hide the overlay.
         tailActiveRef.current = true;
         if (tailTimerRef.current !== null) clearTimeout(tailTimerRef.current);
         tailTimerRef.current = setTimeout(() => {
@@ -154,21 +184,12 @@ export function DevLoadControlBar({
     };
   }, [codeSessionStore, updateBar]);
 
-  const onLoad = React.useCallback(
-    (amount: number) => {
-      codeSessionStore.loadPrevious(amount);
-    },
-    [codeSessionStore],
-  );
-
-  // Both content slots are always mounted and self-subscribe for their data
-  // ([L02]); the dev CSS reveals one per `data-mode` ([L06]). Because neither
-  // is gated on React appearance state, the mode swap is a pure DOM change.
   return (
-    <TugControlBar ref={barRef} modal={loadActive} regionEl={regionEl}>
-      <ControlBarLoading codeSessionStore={codeSessionStore} />
-      <ControlBarMetadata codeSessionStore={codeSessionStore} onLoad={onLoad} />
-    </TugControlBar>
+    <div className="dev-load-overlay" data-slot="dev-load-overlay">
+      <TugControlBar ref={barRef} modal={loadActive} regionEl={regionEl}>
+        <ControlBarLoading codeSessionStore={codeSessionStore} />
+      </TugControlBar>
+    </div>
   );
 }
 
