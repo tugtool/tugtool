@@ -350,6 +350,15 @@ tugcast (#p03-tugcast-overlays-timing) may overlay `wallClockMs … maxStreamGap
 | #step-4 | tugcast: overlay timing-only, never overwrite cost | done | 8bbdffab |
 | #step-5 | tugdeck: reducer applies replayed cost (regression test) | done | d0a963a5 |
 | #step-6 | Integration checkpoint: real-session restore + HMR | superseded → #addendum-a (test surfaced under-scoping) | suites ✓; app-vet exposed the gaps |
+| #step-6a | Spike: durable recorder keying + empty-model rows ([Q04]) | pending | — |
+| #step-6b | Spike: HMR store survival (C2) | pending | — |
+| #step-6c | Cold-replay app-test vehicle ([Q07]) | pending | — |
+| #step-7 | Target-stable active-model delivery: ordering + precedence ([P06]/[P09]) | pending | — |
+| #step-8a | EFFORT restore (blank on pure offline replay) | pending | — |
+| #step-8b | Per-turn TIME: durable-or-blank | pending | — |
+| #step-8c | /context breakdown: reconstruct usage slices | pending | — |
+| #step-9 | CONTEXT denominator + compaction-reset ([S03]) | pending | — |
+| #step-10 | Integration matrix: all in-scope metrics × C1–C5 | pending | — |
 
 #### Step 1: tugcode — type JSONL `usage` + pure cost helper {#step-1}
 
@@ -539,15 +548,18 @@ tugcast (#p03-tugcast-overlays-timing) may overlay `wallClockMs … maxStreamGap
 
 ---
 
-# ADDENDUM A — Full-lifecycle, all-metric, multi-target audit {#addendum-a}
+### Addendum A — Full-lifecycle, all-metric, multi-target audit {#addendum-a}
 
 > **Status:** revision in progress (2026-06-17). Steps 1–5 (cost-from-JSONL) are
-> **committed and correct** — they are the foundation this addendum builds on, not a
-> regression. What follows widens the plan from "cost + model on restore/HMR" to
-> **every Z2 metric, across every lifecycle entry point, across every build target**,
-> after integration testing surfaced that the original framing was incomplete.
+> **committed and correct** — the foundation this addendum builds on, not a regression.
+> This addendum widens the plan from "cost + model on restore/HMR" to **every Z2 metric,
+> across every lifecycle entry point, across every build target**, after integration
+> testing surfaced that the original framing was incomplete. Its content slots into the
+> skeleton's section types: new **Design Decisions** ([P05]–[P09]), **Open Questions**
+> ([Q04]–[Q07]), **Specification** ([S03]), **Deep Dives** (the audit), and
+> **Execution Steps** (#step-6a … #step-10, tracked in the shared #step-status-ledger).
 
-## A.0 What the integration test actually proved {#a0-findings}
+#### Deep Dive: what the integration test proved {#a0-findings}
 
 Restoring a real session (`7aa35ce5`, the KaTeX session) in the **worktree debug
 instance** showed: **CONTEXT 372.3K / 200.0K (red), MODEL ?, EFFORT –**. Forensic
@@ -570,7 +582,7 @@ investigation established:
      model but it does not reliably land in `SessionMetadataStore`, and the live
      recorder that would have persisted it is silent-skip-prone — see [Q04].
 
-### Evidence (row counts, 2026-06-17) {#a0-evidence}
+#### Evidence (row counts, 2026-06-17) {#a0-evidence}
 
 Per-instance `sessions.db` under `~/Library/Application Support/Tug/instances/<id>/`:
 
@@ -584,7 +596,9 @@ Per-instance `sessions.db` under `~/Library/Application Support/Tug/instances/<i
 The **JSONL** (`~/.claude/projects/<project>/<id>.jsonl`) is owned by Claude Code and
 **shared by every instance** — it is the only Z2 source stable across targets.
 
-## A.1 Design decisions added by this addendum {#a1-decisions}
+### Design Decisions — Addendum A {#design-decisions-addendum}
+
+> Plan-local decisions continuing the [P01]–[P04] set in #design-decisions.
 
 #### [P05] Durable Z2 state is per-build-target and absent on fresh targets {#p05-per-instance-db}
 
@@ -705,14 +719,20 @@ store; replay must mirror that, not freeze the opener's model.
 - Tests must cover a JSONL whose model changes mid-session (e.g. opus → sonnet) → the
   restored chip shows the **last** model, and CONTEXT-max follows it.
 
-## A.2 Metric inventory & sync contract {#metric-inventory}
+### Deep Dives — Addendum A {#deep-dives-addendum}
+
+> Structured analysis for the widened scope (continues #deep-dives). Subsections: the
+> metric sync contract, the lifecycle cases, the model-delivery mechanism, and the
+> build-target testing strategy.
+
+#### Metric inventory & sync contract {#metric-inventory}
 
 The Z2 surface and the per-turn popovers expose these metrics. For each: its
 authoritative source, whether the JSONL carries it, and the mechanism that must keep it
 in sync through the whole lifecycle. **"Target-stable" = correct on a fresh instance
 with empty durable tables.**
 
-**Table T02 — Z2 metric sync contract** {#t02-metric-contract}
+**Table T02: Z2 metric sync contract** {#t02-metric-contract}
 
 | Metric | Authoritative source | In JSONL? | Live sync (incremental) | Replay/restore sync | Target-stable today? | Gap |
 |---|---|---|---|---|---|---|
@@ -726,11 +746,11 @@ with empty durable tables.**
 | **STATE / TIME(elapsed) / TASKS / JOBS** | live runtime | n/a | live | n/a (runtime, not historical) | ✅ | none |
 | **MODEL `[1m]` variant suffix** (chip "· 1M") | live `system_metadata.model` | ⛔ (JSONL is bare) | live | bare name → max correct via override, but chip omits "· 1M" | ⚠ | [Q06] cosmetics |
 
-## A.3 The five lifecycle cases {#lifecycle-cases}
+#### The five lifecycle cases {#lifecycle-cases}
 
 Each entry point reaches the Z2 readouts differently. The plan must hold for all five.
 
-**Table T03 — lifecycle entry points** {#t03-lifecycle}
+**Table T03: lifecycle entry points** {#t03-lifecycle}
 
 | Case | What happens | Replay re-runs? | Durable tables consulted? | Risk |
 |---|---|---|---|---|
@@ -782,7 +802,7 @@ the synth's active model reach the bound card's `SESSION_METADATA` feed *after*
 `latest_metadata` is set (re-emit post-replay, or order the bind-emit after the replay's
 first model), and ensure it takes precedence over a stale/empty durable row.
 
-## A.4 Build-target testing strategy {#target-testing}
+#### Build-target testing strategy {#target-testing}
 
 [P05] means **a worktree build cannot faithfully reproduce a durable-data restore** —
 its DB is empty. Options to make verification trustworthy (decide in [Q07]):
@@ -797,7 +817,20 @@ its DB is empty. Options to make verification trustworthy (decide in [Q07]):
   into a fresh store and asserts the Z2 snapshot (model, context-max, tokens) — runs on
   any target, no GUI, no durable seed. The real verification vehicle this plan lacked.
 
-## A.5 New / revised open questions {#a5-open-questions}
+#### Notes: the two diagnostic questions answered {#a7-answers}
+
+- **Session-id matchup?** A *real secondary* fault — the live recorder writes
+  empty-model `session_metadata` rows for some sessions ([Q04]), a keying/timing
+  fragility. Not the cause of the worktree test failure.
+- **Build-system / worktree data sync?** **Yes — the dominant cause.** Per-instance DBs
+  ([P05]) mean the worktree target starts with empty durable tables; the user's real
+  metadata lives in `debug-main`. The fix is not to share DBs but to make the in-scope
+  metrics **target-stable** ([P06]) — reconstructed from the shared JSONL where possible,
+  and explicitly handled where not.
+
+### Open Questions — Addendum A {#open-questions-addendum}
+
+> Continues the [Q01]–[Q03] set in #open-questions.
 
 #### [Q04] Why are some `session_metadata` rows written with an empty model? {#q04-empty-model-rows}
 `debug-main` has rows like `8f2b15be → ""`. Is the live recorder keying on an unresolved
@@ -832,110 +865,230 @@ name, but the chip text omits "· 1M". Options: (a) accept bare chip + correct m
 Pick the #target-testing option(s). Recommend (a)+(c): make DB-independence the
 acceptance bar and add an app-test that cold-replays a fixture into a fresh store.
 
-## A.6 Revised execution steps {#a6-steps}
+### Execution Steps — Addendum A {#execution-steps-addendum}
 
-> Steps 1–5 stand. Step 6 is superseded by the staged sequence below. **No code until
-> these are vetted** — this addendum is a plan revision, not an implementation.
+> Continues #execution-steps. Steps 1–5 are done; Step 6 (#step-6) is superseded by the
+> staged sequence below. All steps are tracked in the shared #step-status-ledger.
+> **Commit after all checkpoints pass.** Spikes (#step-6a, #step-6b) and integration
+> checkpoints (#step-10) use `Commit: N/A` per the skeleton's integration-checkpoint
+> pattern.
 
-| Step | Title | Status |
-|---|---|---|
-| #step-6a | Spike: durable recorder keying + empty-model rows ([Q04]) | pending |
-| #step-6b | Spike: HMR store survival (C2) — does the services bag re-mount or persist? | pending |
-| #step-6c | Stand up the cold-replay app-test vehicle ([Q07], #target-testing) | pending |
-| #step-7 | Target-stable ACTIVE-MODEL delivery: ordering + precedence ([P06]/[P09]) | pending |
-| #step-8a | EFFORT restore (handshake re-emit; explicit blank on pure offline replay) | pending |
-| #step-8b | Per-turn TIME: durable-or-blank strategy | pending |
-| #step-8c | /context breakdown: reconstruct usage slices + durable-or-blank | pending |
-| #step-9 | CONTEXT denominator + compaction-reset verification ([P07]/[S03]) | pending |
-| #step-10 | Integration matrix: all in-scope metrics × C1–C5, empty-DB + seeded | pending |
+#### Step 6a: Spike — durable recorder keying + empty-model rows {#step-6a}
 
-**#step-6a — Recorder/keying spike.** Read `merge_and_persist_system_metadata`,
-`record_session_metadata`, and the `claude_session_id` capture; explain the empty-model
-rows; decide harden-vs-moot. Output: a finding + the [Q04] resolution. No product code.
+**Depends on:** #step-5
 
-**#step-6b — HMR survival spike.** Determine whether `card-services-store` (and thus
-`SessionMetadataStore` + `CodeSessionStore`) survives an HMR or re-mounts, and whether a
-re-mount re-binds (triggering on-bind metadata replay). This decides whether C2 needs a
-*preservation* fix (state survives HMR) or a *re-delivery* fix (re-bind replays
-durable/JSONL metadata). Cross-check `tuglaws.md` [L23]/[L26] (state/mount preservation)
-and `project_hmr_vs_reload`. Output: the C2 mechanism + the #step-7 design constraint.
+**Commit:** `N/A (spike — finding only, no product code)`
 
-**#step-6c — Cold-replay app-test vehicle.** Stand up the verification harness #step-7+
-depend on, BEFORE they need it (resolves the ordering wrinkle that #step-7's tests
-referenced a vehicle defined in #step-9). A `tests/app-test/` case (run via
-`just app-test`) that cold-replays a fixture JSONL into a **fresh, empty-DB** store and
-reads back the Z2 snapshot (model, context-max, context-used, tokens). Runs on any
-target with no GUI and no durable seed — the strictest test of [P06] (#target-testing
-option (c)). Commit: the harness + a smoke fixture (cost-only, already-correct) so the
-vehicle itself is green before behavior steps land.
+**References:** [Q04] empty-model rows, [P05] per-instance DB, [P06] JSONL-authoritative, (#a3-model-delivery)
 
-**#step-7 — Target-stable ACTIVE-MODEL delivery (ordering + precedence).** Per the
-verified mechanism in #a3-model-delivery, this is an **ordering + precedence** fix, not a
-new replay path (the on-bind `latest_metadata` replay already exists at
-`agent_supervisor.rs:2337`):
-1. **Active model ([P09]):** change the synth from "first real model" to "track real-model
-   changes through replay; final emission = the active (last) model" (`isRealModelName`
-   still gates each emission). Fixture: model-switch (opus → sonnet) → restored chip shows
-   the **last** model.
-2. **Ordering ([P06], #a3-model-delivery cause 1):** ensure the synth's active model
-   reaches the bound card's `SESSION_METADATA` feed *after* `latest_metadata` is set —
-   re-emit post-replay, or order the bind-emit after the replay's first model — so an
-   empty-DB cold spawn (C3/C4/C5) is not lost to the subscription race.
-3. **Precedence / no-clobber ([P06], #a3-model-delivery cause 3):** the reconstructed/
-   active model must **win** over a stale-or-empty durable `session_metadata` row; a
-   durable row may only fill in when it carries a *real* model the replay lacked.
-4. Keep the `--resume` (live `session_init` + handshake) path distinct from the pure
-   offline replay path in tests (#a3-model-delivery cause 2).
+**Artifacts:**
+- A written finding appended to [Q04]'s Resolution: why `session_metadata` rows persist with an empty model, and the harden-vs-moot decision.
 
-Tests: tugcast frame-routing (replay `system_metadata` → `SESSION_METADATA`, last wins;
-empty/stale durable row does NOT clobber) + a pure-logic wire-frame test
-(`SessionMetadataStore` ← `SESSION_METADATA` feed, last-model-wins) + the #step-6c
-app-test (fresh empty-DB store, model-switch fixture → active model + CONTEXT-max
-resolve).
+**Tasks:**
+- [ ] Read `merge_and_persist_system_metadata`, `record_session_metadata`, and the `claude_session_id` capture (`agent_bridge.rs` / `agent_supervisor.rs`).
+- [ ] Explain the `8f2b15be → ""` rows (unresolved id / pre-metadata persist / bare-over-good merge).
+- [ ] Decide: harden the recorder, or rely solely on [P06]'s precedence rule.
 
-**#step-8a — EFFORT restore.** Per [Q05]. EFFORT rides the `session_capabilities`
-handshake → `SESSION_METADATA`; `latest_capabilities` is replayed on bind
-(`agent_supervisor.rs:2357`) **but is in-memory only** (docstring `:264`). So EFFORT is
-restorable **only when a live (re)connect re-emits the handshake** (C1, and the C3/C4
-`--resume` path). On a **pure offline replay** (C5 picker of a never-live session; C4
-before reconnect) there is **no EFFORT source** — it must render an explicit
-blank/unknown, never a stale value, unless a durable last-known-effort persist is added
-(decide here). State the availability boundary plainly; do not claim EFFORT is restored
-where no source exists.
+**Tests:**
+- [ ] None (spike). The decision feeds #step-7's no-clobber test.
 
-**#step-8b — Per-turn TIME (wall/active/ttft).** Not in the JSONL; only ever from the
-`turn_telemetry` side-table (empty on a fresh target — [P05]). Per [Q05]: render the
-TIME popover from `turn_telemetry` when present, **explicit blank/"—" when absent**
-(never a fabricated value). No JSONL reconstruction is possible; document this as a known
-limitation of historical replay.
+**Checkpoint:**
+- [ ] [Q04] Resolution updated with the root cause + harden-vs-moot decision.
 
-**#step-8c — /context breakdown.** The `usage`-derived slices (input/output/cache) ARE
-reconstructable from the JSONL per-turn `message.usage`; the labeled/reserved slices
-(`autocompact_buffer`, etc.) are not. Per [Q05]: reconstruct the usage-derived portion
-from the replayed cost so the popover is non-empty on a fresh target; show the
-non-reconstructable slices only when `context_breakdown_latest` is present.
+---
 
-**#step-9 — CONTEXT denominator + compaction-reset correctness.** Assert (a) denominator
-= the model's window (1M for opus/sonnet/fable) once MODEL resolves; (b) **[S03]**:
-CONTEXT-used resets across a `/compact` boundary — fixture `big-window → zero-usage
-compact boundary → small-window`, asserting the value reflects the **post-compact** window
-throughout and never the stale pre-compact peak (this likely requires refining
-`deriveContextWindows`' carry-forward to not carry across a detected compaction). Uses the
-#step-6c vehicle.
+#### Step 6b: Spike — HMR store survival (C2) {#step-6b}
 
-**#step-10 — Full matrix.** Verify every in-scope metric across C1–C5 on a **fresh,
-empty-DB target** (the worktree itself is the test bed once [P06] holds), plus a seeded-
-DB pass for the durable-only metrics (EFFORT/TIME present). Asserts the availability
-boundaries from #step-8a/8b (blank where no source exists) are honored, not silently
-wrong.
+**Depends on:** #step-5
 
-## A.7 Answers to the two diagnostic questions {#a7-answers}
+**Commit:** `N/A (spike — finding only)`
 
-- **Session-id matchup?** A *real secondary* fault — the live recorder writes
-  empty-model `session_metadata` rows for some sessions ([Q04]), a keying/timing
-  fragility. Not the cause of the worktree test failure.
-- **Build-system / worktree data sync?** **Yes — the dominant cause.** Per-instance DBs
-  ([P05]) mean the worktree target starts with empty durable tables; the user's real
-  metadata lives in `debug-main`. The fix is not to share DBs but to make the in-scope
-  metrics **target-stable** ([P06]) — reconstructed from the shared JSONL where possible,
-  and explicitly handled where not.
+**References:** [P05] per-instance DB, Table T03 (C2), tuglaws [L23]/[L26], (#lifecycle-cases)
+
+**Artifacts:**
+- A written finding (appended to #lifecycle-cases C2): does `card-services-store` survive HMR or re-mount, and does a re-mount re-bind (triggering on-bind metadata replay)?
+
+**Tasks:**
+- [ ] Trace the HMR path for the services bag (`card-services-store.ts`) + `SessionMetadataStore`/`CodeSessionStore`.
+- [ ] Determine whether C2 needs a *preservation* fix (state survives HMR) or a *re-delivery* fix (re-bind replays metadata).
+- [ ] Cross-check `tuglaws.md` [L23]/[L26] (state/mount preservation) and `project_hmr_vs_reload`; name the laws.
+
+**Tests:**
+- [ ] None (spike).
+
+**Checkpoint:**
+- [ ] The C2 mechanism + the #step-7 design constraint documented.
+
+---
+
+#### Step 6c: Cold-replay app-test vehicle {#step-6c}
+
+**Depends on:** #step-5
+
+**Commit:** `app-test: cold-replay Z2 snapshot harness`
+
+**References:** [Q07] verification vehicle, [P06] JSONL-authoritative, (#target-testing)
+
+**Artifacts:**
+- A `tests/app-test/` case that cold-replays a fixture JSONL into a fresh, empty-DB store and reads back the Z2 snapshot (model, context-max, context-used, tokens).
+- A cost-only smoke fixture (already-correct path) proving the vehicle green.
+
+**Tasks:**
+- [ ] Author the app-test that drives a cold replay into a fresh store on an empty DB.
+- [ ] Add the cost-only smoke fixture; assert TOKENS/CONTEXT-used populate.
+
+**Tests:**
+- [ ] `just app-test <file>` exercises the cold-replay → Z2 snapshot path.
+
+**Checkpoint:**
+- [ ] `just app-test <file>` last line is `VERDICT: PASS`.
+
+---
+
+#### Step 7: Target-stable active-model delivery (ordering + precedence) {#step-7}
+
+**Depends on:** #step-6a, #step-6b, #step-6c
+
+**Commit:** `tugcode/tugcast: deliver active model on cold replay, target-stable`
+
+**References:** [P06] precedence rule, [P09] active model, [Q04] no-clobber, Risk R02, (#a3-model-delivery)
+
+**Artifacts:**
+- Replay synth tracks real-model changes; final emission = active (last) model.
+- Ordering/precedence so the active model reaches `SESSION_METADATA` on an empty-DB cold spawn and wins over a stale/empty durable row.
+
+**Tasks:**
+- [ ] tugcode: synth emits on the first real model AND on every model change (`isRealModelName` gates each); rebuild binary (#build-commands).
+- [ ] tugcast: ensure the synth's active model reaches the bound card's `SESSION_METADATA` feed *after* `latest_metadata` is set (re-emit post-replay, or order the bind-emit after the replay's first model — per #step-6b's mechanism).
+- [ ] tugcast: reconstructed/active model takes precedence over a stale/empty `session_metadata` row (no-clobber, [P06]).
+- [ ] Keep the `--resume` (live `session_init`) path distinct from pure offline replay.
+
+**Tests:**
+- [ ] tugcode replay: model-switch fixture (opus → sonnet) → synth's final model = sonnet.
+- [ ] tugcast (Rust): replay `system_metadata` → `SESSION_METADATA` last-wins; empty/stale durable row does NOT clobber.
+- [ ] tugdeck pure-logic wire-frame: `SessionMetadataStore` ← `SESSION_METADATA`, last-model-wins.
+- [ ] #step-6c app-test: fresh empty-DB store, model-switch fixture → active model + CONTEXT-max resolve.
+
+**Checkpoint:**
+- [ ] `cd tugcode && bun test src/__tests__/replay.test.ts && bunx tsc --noEmit`
+- [ ] `cd tugrust && cargo nextest run -p tugcast`
+- [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
+- [ ] `just app-test <file>` → `VERDICT: PASS`
+
+---
+
+#### Step 8a: EFFORT restore {#step-8a}
+
+**Depends on:** #step-6b, #step-6c
+
+**Commit:** `tugdeck/tugcast: restore EFFORT where a live source exists`
+
+**References:** [Q05] non-JSONL metrics, [P05] per-instance DB, (#metric-inventory)
+
+**Artifacts:**
+- EFFORT restored from the `session_capabilities` handshake on every live (re)connect; explicit blank on pure offline replay.
+
+**Tasks:**
+- [ ] Confirm the `latest_capabilities` on-bind replay path; ensure EFFORT lands on a live (re)connect (C1, C3/C4 `--resume`).
+- [ ] Render an explicit blank/unknown (never stale) on pure offline replay (C5; C4 pre-reconnect). Decide whether to add a durable last-known-effort persist.
+
+**Tests:**
+- [ ] tugdeck pure-logic: capabilities frame → `SessionMetadataStore.effort` resolves; absence → blank.
+- [ ] #step-6c app-test: offline replay → EFFORT blank (not stale).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
+- [ ] `just app-test <file>` → `VERDICT: PASS`
+
+---
+
+#### Step 8b: Per-turn TIME — durable-or-blank {#step-8b}
+
+**Depends on:** #step-6c
+
+**Commit:** `tugdeck: TIME popover durable-or-blank on replay`
+
+**References:** [Q05] non-JSONL metrics, [P03] timing overlay, [P05] per-instance DB
+
+**Artifacts:**
+- TIME popover renders from `turn_telemetry` when present; explicit "—" when absent.
+
+**Tasks:**
+- [ ] Render per-turn TIME from the overlaid `turn_telemetry` timing when present.
+- [ ] Explicit blank "—" when absent (fresh target); never a fabricated value. Document as a historical-replay limitation.
+
+**Tests:**
+- [ ] tugdeck pure-logic: TIME present → values; absent → "—".
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
+
+---
+
+#### Step 8c: /context breakdown — reconstruct usage slices {#step-8c}
+
+**Depends on:** #step-6c
+
+**Commit:** `tugdeck: reconstruct /context usage slices on replay`
+
+**References:** [Q05] non-JSONL metrics, Spec S01, (#metric-inventory)
+
+**Artifacts:**
+- The usage-derived /context slices (input/output/cache) reconstructed from replayed `message.usage`; non-reconstructable slices shown only when `context_breakdown_latest` present.
+
+**Tasks:**
+- [ ] Reconstruct the usage-derived portion from the replayed per-turn cost so the popover is non-empty on a fresh target.
+- [ ] Show `autocompact_buffer`/reserved slices only when the durable breakdown row is present.
+
+**Tests:**
+- [ ] tugdeck pure-logic: usage → reconstructed slices; durable row → full breakdown.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
+
+---
+
+#### Step 9: CONTEXT denominator + compaction-reset correctness {#step-9}
+
+**Depends on:** #step-7
+
+**Commit:** `transcript: CONTEXT denominator + compaction-reset`
+
+**References:** [P07] headroom semantics, Spec S03, (#metric-inventory)
+
+**Artifacts:**
+- CONTEXT-max follows the resolved active model; CONTEXT-used resets across a `/compact` boundary (no stale carry-forward).
+
+**Tasks:**
+- [ ] Confirm CONTEXT-max = the model's window (1M opus/sonnet/fable) once MODEL resolves.
+- [ ] Per Spec S03: refine `deriveContextWindows` carry-forward to NOT carry across a detected compaction boundary (a zero-usage boundary turn must not hold the pre-compact peak).
+
+**Tests:**
+- [ ] tugdeck pure-logic (`deriveContextWindows`): fixture `big-window → zero-usage compact boundary → small-window` → CONTEXT-used reflects the post-compact window throughout.
+- [ ] #step-6c app-test: restored session denominator = 1M.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
+- [ ] `just app-test <file>` → `VERDICT: PASS`
+
+---
+
+#### Step 10: Integration checkpoint — full metric × lifecycle matrix {#step-10}
+
+**Depends on:** #step-7, #step-8a, #step-8b, #step-8c, #step-9
+
+**Commit:** `N/A (verification only)`
+
+**References:** [P06] JSONL-authoritative, Table T02, Table T03, (#success-criteria)
+
+**Tasks:**
+- [ ] Verify every in-scope metric (Table T02) across C1–C5 (Table T03) on a fresh, empty-DB target.
+- [ ] Seeded-DB pass for the durable-only metrics (EFFORT/TIME present).
+- [ ] Confirm availability boundaries (blank where no source) are honored, not silently wrong.
+
+**Tests:**
+- [ ] Full suites green: `cd tugcode && bun test`; `cd tugrust && cargo nextest run -p tugcast`; `cd tugdeck && bun run tsc --noEmit && bun test`.
+- [ ] #step-6c app-test matrix green on empty-DB + seeded targets.
+
+**Checkpoint:**
+- [ ] All suites + app-test `VERDICT: PASS`; the #metric-inventory gaps closed for in-scope metrics.
