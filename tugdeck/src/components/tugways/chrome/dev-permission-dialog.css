@@ -1,6 +1,6 @@
 /* @tug-pairings:
    - --tugx-perm-reason-color    | --tugx-idialog-bg    (muted-italic reason span inside the pending dialog's description)
-   - --tugx-perm-command-color   | --tugx-perm-command-bg  (Bash command block text on its sunken code surface)
+   - --tugx-block-text-color-muted | --tugx-idialog-bg  (Bash command block — shared chrome code tone on the dialog surface, matching the tool-block header)
    `PermissionDialog` is pending-only post-Step-3.5 (`#step-3-5`).
    The visible chrome is delegated entirely to `TugInlineDialog`.
    This stylesheet keeps only the small set of inline-fragment styles
@@ -41,10 +41,6 @@ body {
   /* Reason span appended to the rich description in the pending dialog. */
   --tugx-perm-reason-color: var(--tug7-element-global-text-normal-muted-rest);
 
-  /* Bash command block (long-command layout). A sunken code surface with
-   * readable normal-tone text — the command is the subject, not muted copy. */
-  --tugx-perm-command-bg:    var(--tug7-surface-global-primary-normal-inset-rest);
-  --tugx-perm-command-color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* ---- Pending: small inline fragments inside the primitive ---- */
@@ -83,13 +79,14 @@ body {
 .dev-permission-dialog-command {
   max-width: 100%;
   margin: 0;
-  padding: var(--tug-space-sm) var(--tug-space-md);
-  border-radius: var(--tug-radius-md);
-  background: var(--tugx-perm-command-bg);
-  color: var(--tugx-perm-command-color);
-  font-family: var(--tug-font-family-mono);
+  /* Match the tool-block header's command text: the shared `--tugx-block-*`
+   * chrome code-font + muted tone at `xs`, on a TRANSPARENT surface — no
+   * sunken inset, no padding, no radius. The command reads as quiet inline
+   * code, identical to the `Bash tokei` strip in the transcript. */
+  font-family: var(--tugx-block-code-font);
   font-size: var(--tug-font-size-sm);
   line-height: 1.45;
+  color: var(--tugx-block-text-color);
   text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
