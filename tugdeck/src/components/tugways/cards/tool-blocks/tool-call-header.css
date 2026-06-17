@@ -26,10 +26,15 @@
  */
 
 body {
+  /* One size for ALL header text — name, detail, and the summary badge
+   * all ride `sm`. A single font size is what lets "centered in the same
+   * one-line box" also read as "same baseline"; the name's bold weight,
+   * not a larger size, is what keeps it primary. */
   --tugx-toolheader-name-size: var(--tug-font-size-sm);
   --tugx-toolheader-name-weight: var(--tug-font-weight-semibold);
-  --tugx-toolheader-detail-size: var(--tug-font-size-xs);
-  --tugx-toolheader-summary-size: var(--tug-font-size-xs);
+  --tugx-toolheader-detail-size: var(--tug-font-size-sm);
+  /* The summary is a TugBadge that owns its own font size, so no
+   * `--tugx-toolheader-summary-size` token is needed. */
   /* The one line box every cross-row item rides. */
   --tugx-toolheader-line: calc(var(--tug-font-size-sm) * 1.6);
   --tugx-toolheader-row-gap: var(--tug-space-sm);
@@ -49,6 +54,15 @@ body {
   top: var(--tugx-pin-stack-top, 0);
   z-index: 1;
   display: flex;
+  /* The row pins every item to the top (row 1). The dot, name, summary
+   * badge, and actions each ride a one-line box (`min-height` =
+   * `--tugx-toolheader-line`) and center their content in it, so they all
+   * read centered on the FIRST line; the detail shares that line box for
+   * its first line via the same `line-height`. One font size across the
+   * text (`sm`) means "centered in the same line box" is also "same
+   * baseline" — that is the whole alignment trick. When the detail wraps,
+   * its extra lines flow BELOW that first line while the dot / name /
+   * badge / actions stay put on it. */
   align-items: flex-start;
   gap: var(--tugx-toolheader-row-gap);
   padding: var(--tugx-block-strip-padding);
@@ -66,12 +80,14 @@ body {
   border-bottom: 1px solid var(--tugx-block-strip-border);
 }
 
-/* First-row items each ride a one-line box and center their content, so a
- * single-line row reads vertically centered and a multi-line command keeps
- * these pinned to row 1. `min-height` (not `height`) so a taller affordance
- * (a portaled body-kind control) grows rather than clips. The row itself is
- * `align-items: flex-start`, so every item starts at the top — and because
- * each is exactly one line tall in the common case, that top IS the center. */
+/* First-row items that each ride a one-line box and center their content,
+ * so each reads vertically centered on the first line and a multi-line
+ * command keeps them pinned to row 1. The row is `flex-start`; each of
+ * these is exactly one line tall, so its top IS its center. `min-height`
+ * (not `height`) lets a taller portaled body-kind control grow rather
+ * than clip. The name joins this group so its glyph centers in the same
+ * line box as the dot / badge — at one font size that is also the same
+ * baseline as the detail's first line. */
 .tool-call-header-dot,
 .tool-call-header-name,
 .tool-call-header-summary,
@@ -87,19 +103,37 @@ body {
   color: var(--tugx-block-text-color-muted);
 }
 
+/* Name — the bold tool identity. Single font size (`sm`) shared with the
+ * detail; centered in the one-line box (above) so its baseline coincides
+ * with the detail's first line. Bold weight, not a larger size, keeps it
+ * primary. */
 .tool-call-header-name {
   font-size: var(--tugx-toolheader-name-size);
   font-weight: var(--tugx-toolheader-name-weight);
   color: var(--tugx-block-text-color);
+  white-space: nowrap;
 }
 
-/* Detail — a path atom-chip (file tools) or command text (command tools);
- * also the flexible spacer when empty. Command text wraps to more rows (each
- * line one line-box tall, first line on row 1); a chip sizes itself and
- * centers on the line via `vertical-align`. */
+/* Detail — the inline file ref (file tools) or command text (command
+ * tools); also the flexible spacer when empty. It centers its content in
+ * a one-line box using the SAME `inline-flex; align-items: center`
+ * mechanism as the name, so the mono detail and the sans name land on one
+ * line by construction (matching mechanisms, not two different centerings
+ * that drift a pixel apart). `min-height` keeps a single line centered;
+ * `flex: 1 1 auto` lets it grow — when the command wraps, the box grows
+ * downward, its first line stays on row 1 (aligned with the dot / name /
+ * badge), and the extra lines flow below. */
 .tool-call-header-detail {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: var(--tugx-toolheader-line);
+  display: inline-flex;
+  align-items: center;
+  /* Optical nudge: the mono detail / file ref centers a hair high against
+   * the bold sans name; drop it 1px so the two read on one line. `top`
+   * (relative) doesn't disturb layout — the wrap geometry is unchanged. */
+  position: relative;
+  top: 1px;
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-toolheader-detail-size);
   line-height: var(--tugx-toolheader-line);
@@ -120,12 +154,18 @@ body {
   word-break: inherit;
 }
 
-/* Collapsed result summary — a quiet trailing column before the actions. */
+/* Result summary — a TugBadge in a trailing column before the actions.
+ * The wrapper only positions the badge (centered on the line, via the
+ * shared non-text group above); the badge owns its own font, color, and
+ * padding. That padding is what gives the summary a clear gap from the
+ * detail text — the old plain-text summary ran straight into a long
+ * command with no separation. */
 .tool-call-header-summary {
-  font-family: var(--tugx-block-code-font);
-  font-size: var(--tugx-toolheader-summary-size);
-  color: var(--tugx-block-text-color-muted);
   white-space: nowrap;
+  /* Same 1px optical nudge as the detail so the badge sits on the line
+   * with the name. `top` (relative) leaves the layout box untouched. */
+  position: relative;
+  top: 1px;
 }
 
 /* Trailing actions — the controls cluster at the row's trailing edge, in
@@ -161,9 +201,3 @@ body {
 
 /* The Expand/Collapse control is a `BlockFoldCue` (icon+text, its own
  * ChevronsDown/Up swap) — no header-owned chevron rule needed. */
-
-/* Atom chips are inline SVGs; center them on the detail line-box rather
- * than letting them sit on the text baseline. */
-.tool-call-header .tug-atom-chip {
-  vertical-align: middle;
-}

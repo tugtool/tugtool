@@ -5,9 +5,9 @@
  * `DiffBlock` body kind. Per [Spec S03] / [Table T02] / [D05]:
  *
  *   - **Header:** file-pen icon + tool name + an atom-chip showing
- *     the file's basename (via the shared `<TugAtomChip>` primitive,
- *     per [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
- *     [Step 7](roadmap/dev-atoms.md#step-7)) + an inline `+N −M`
+ *     the file's basename as an inline `<ToolFileRef>` (a muted file
+ *     glyph + basename in the header's code font, no box — the display
+ *     form that replaced the boxed atom chip) + an inline `+N −M`
  *     change-count badge computed from the diff. `MultiEdit` resolves
  *     to this wrapper through the `multiedit → edit` alias ([D16]);
  *     the header shows whatever name the wire carried, so a MultiEdit
@@ -78,7 +78,6 @@
  */
 
 import "./edit-tool-block.css";
-import "@/lib/tug-atom-chip.css";
 
 import React from "react";
 
@@ -89,10 +88,9 @@ import {
   type DiffHunk,
   type DiffLine,
 } from "@/lib/diff/types";
-import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import { ToolFileRef } from "./tool-file-ref";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
@@ -351,18 +349,12 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? editInput.file_path;
-  // Identity: the path chip. Meta: the `+N −M` change summary via the
+  // Identity: the inline file ref. Meta: the `+N −M` change summary via the
   // shared diff-stat primitive ([D06]) — the bespoke two-span markup is
   // gone.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <TugAtomChip
-        type="file"
-        label={formatAtomLabel(filePath, "filename")}
-        value={filePath}
-        data-slot="edit-tool-block-path"
-        className="tug-atom-chip"
-      />
+      <ToolFileRef path={filePath} data-slot="edit-tool-block-path" />
     ) : undefined;
   // Errored edits carry the failure message in `textOutput` (e.g.
   // "old_string not found"). When errored, prefer the chrome's error

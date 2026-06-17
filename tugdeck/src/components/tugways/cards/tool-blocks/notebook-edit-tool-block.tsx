@@ -11,9 +11,9 @@
  * Composition (per [Spec S03] / [Table T02] / [#bk-conformance]):
  *
  *  - **Header** — a `Notebook` icon + tool name + an atom-chip showing
- *    the notebook's basename (via the shared `<TugAtomChip>` primitive,
- *    per [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
- *    [Step 7](roadmap/dev-atoms.md#step-7)) + a `· cell {cellId}`
+ *    the notebook's basename as an inline `<ToolFileRef>` (a muted
+ *    notebook glyph + basename in the header's code font, no box — the
+ *    display form that replaced the boxed atom chip) + a `· cell {cellId}`
  *    segment when a cell id is known + a small `edit_mode` chip
  *    (`replace` / `insert` / `delete`) and a `cell_type` chip (`code`
  *    / `markdown`) when present.
@@ -69,18 +69,16 @@
  */
 
 import "./notebook-edit-tool-block.css";
-import "@/lib/tug-atom-chip.css";
 
 import React from "react";
+import { NotebookPen } from "lucide-react";
 
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
-import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { formatAtomLabel } from "@/lib/tug-atom-img";
-
 import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
 import { ToolBlockChrome } from "./tool-block-chrome";
+import { ToolFileRef } from "./tool-file-ref";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
@@ -212,16 +210,15 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
   const newSource = structured.newSource ?? editInput.new_source;
   const oldSource = structured.oldSource;
 
-  // Identity: the notebook path chip. The trailing result summary (edit
-  // mode) is computed above as `resultSummary`.
+  // Identity: the inline notebook ref (a notebook glyph instead of the
+  // generic file glyph). The trailing result summary (edit mode) is
+  // computed above as `resultSummary`.
   const identity =
     notebookPath !== undefined && notebookPath.length > 0 ? (
-      <TugAtomChip
-        type="file"
-        label={formatAtomLabel(notebookPath, "filename")}
-        value={notebookPath}
+      <ToolFileRef
+        path={notebookPath}
+        icon={<NotebookPen />}
         data-slot="notebook-edit-tool-block-path"
-        className="tug-atom-chip"
       />
     ) : undefined;
   // Trailing info: the edit mode as a quiet one-line summary (plain text,

@@ -4,14 +4,12 @@
  * Composes `ToolBlockChrome` (header / footer / status) around a
  * `FileBlock` body kind. Per [Spec S03] / [Table T02]:
  *
- *   - **Header:** file icon + tool name "Read" + an atom-chip
- *     showing the path's basename, built via the shared
- *     `<TugAtomChip>` primitive (per
- *     [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
- *     [Step 7](roadmap/dev-atoms.md#step-7)). Hovering shows the
- *     full path via the chip's `<title>` tooltip. When
- *     `input.offset` / `input.limit` set, an inline line-range
- *     badge surfaces the window the model asked for.
+ *   - **Header:** tool name "Read" + the path's basename shown as an
+ *     inline `<ToolFileRef>` (a muted file glyph + basename in the
+ *     header's code font, no box — the display form that replaced the
+ *     boxed atom chip). Hovering shows the full path via the ref's
+ *     `title` tooltip. When `input.offset` / `input.limit` set, an
+ *     inline line-range badge surfaces the window the model asked for.
  *   - **Body:** `FileBlock` in `embedded` mode, fed from
  *     `tool_use_structured.file`. The structured result carries
  *     `{ content, filePath, startLine, numLines, totalLines }`
@@ -69,7 +67,6 @@
  */
 
 import "./read-tool-block.css";
-import "@/lib/tug-atom-chip.css";
 
 import React from "react";
 
@@ -77,10 +74,9 @@ import {
   FileBlock,
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
-import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import { ToolFileRef } from "./tool-file-ref";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
@@ -214,17 +210,11 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
     [readInput, structured],
   );
   const filePath = readInput.file_path;
-  // Identity: the path chip. The trailing result summary (line count) is
-  // computed below as `resultSummary`.
+  // Identity: the inline file ref. The trailing result summary (line count)
+  // is computed below as `resultSummary`.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <TugAtomChip
-        type="file"
-        label={formatAtomLabel(filePath, "filename")}
-        value={filePath}
-        data-slot="read-tool-block-path"
-        className="tug-atom-chip"
-      />
+      <ToolFileRef path={filePath} data-slot="read-tool-block-path" />
     ) : undefined;
   // Errored reads carry the failure message in `textOutput` (e.g.
   // "ENOENT: no such file"). When errored, prefer the chrome's error

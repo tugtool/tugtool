@@ -49,6 +49,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
+import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
@@ -60,6 +61,7 @@ import {
 
 import {
   formatToolResultSummary,
+  toolResultSummaryRole,
   type ToolResultSummary,
 } from "./tool-result-summary";
 import type { CautionFlag } from "./types";
@@ -172,11 +174,21 @@ export const ToolCallHeader = React.forwardRef<
           or wrapping command) and otherwise serves as the flexible spacer
           that pushes the trailing result + actions to the right edge. */}
       <span className="tool-call-header-detail">{target}</span>
-      {/* Trailing result — one quiet one-line summary, rendered identically
-          in BOTH states so collapsed and expanded read the same. */}
+      {/* Trailing result — one quiet one-line summary as a TugBadge,
+          rendered identically in BOTH states so collapsed and expanded
+          read the same. The badge's own padding guarantees a clear gap
+          from the detail text (which used to run into the plain summary),
+          and its role carries pass/fail signal: a nonzero exit reads
+          danger, exit 0 success, every other kind neutral data. */}
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
-          {formatToolResultSummary(summary)}
+          <TugBadge
+            emphasis="tinted"
+            role={toolResultSummaryRole(summary)}
+            size="2xs"
+          >
+            {formatToolResultSummary(summary)}
+          </TugBadge>
         </span>
       ) : null}
       {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}

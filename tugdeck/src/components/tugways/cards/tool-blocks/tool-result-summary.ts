@@ -20,6 +20,31 @@ export type ToolResultSummary =
   | { kind: "exit"; code: number }
   | { kind: "text"; text: string };
 
+/**
+ * The badge role a summary reads as in the header — meaning, not just
+ * spacing. An exit code is the only kind that carries pass/fail signal:
+ * `0` is `success`, anything else is `danger`. Every other kind (a
+ * count, a diff stat, a short label) is neutral `data` — informative,
+ * not alarming. Returned as the three `TugBadge` role literals the
+ * header passes straight through, so the mapping lives in one pure,
+ * testable place rather than inline in the header JSX.
+ */
+export type ToolResultSummaryRole = "success" | "danger" | "data";
+
+/** Map a summary to its header badge role (see {@link ToolResultSummaryRole}). */
+export function toolResultSummaryRole(
+  summary: ToolResultSummary,
+): ToolResultSummaryRole {
+  switch (summary.kind) {
+    case "exit":
+      return summary.code === 0 ? "success" : "danger";
+    case "count":
+    case "diff":
+    case "text":
+      return "data";
+  }
+}
+
 /** Clamp a count to a non-negative integer. */
 function clampCount(n: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;

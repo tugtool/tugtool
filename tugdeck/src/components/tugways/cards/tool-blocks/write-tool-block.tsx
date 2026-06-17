@@ -9,10 +9,10 @@
  *
  * Composition (per [Spec S03] / [Table T02] / [#bk-conformance]):
  *
- *  - **Header:** file-plus icon + tool name + an atom-chip showing
- *    the file's basename (via the shared `<TugAtomChip>` primitive,
- *    per [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
- *    [Step 7](roadmap/dev-atoms.md#step-7)) + an inline `{N} lines` /
+ *  - **Header:** tool name + the file's basename shown as an inline
+ *    `<ToolFileRef>` (a muted file glyph + basename in the header's
+ *    code font, no box — the display form that replaced the boxed
+ *    atom chip) + an inline `{N} lines` /
  *    `{B} bytes` size hint computed from the content, and a small
  *    `new` / `overwrite` chip that surfaces when the structured
  *    result carries a `created` boolean (Claude Code's
@@ -68,7 +68,6 @@
  */
 
 import "./write-tool-block.css";
-import "@/lib/tug-atom-chip.css";
 
 import React from "react";
 
@@ -77,10 +76,8 @@ import {
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 
-import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { formatAtomLabel } from "@/lib/tug-atom-img";
-
 import { ToolBlockPre } from "./body-bits";
+import { ToolFileRef } from "./tool-file-ref";
 import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
@@ -193,13 +190,7 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
   // below as `resultSummary`.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <TugAtomChip
-        type="file"
-        label={formatAtomLabel(filePath, "filename")}
-        value={filePath}
-        data-slot="write-tool-block-path"
-        className="tug-atom-chip"
-      />
+      <ToolFileRef path={filePath} data-slot="write-tool-block-path" />
     ) : undefined;
   const errorMessage =
     status === "error" && textOutput !== undefined && textOutput.length > 0 ? (

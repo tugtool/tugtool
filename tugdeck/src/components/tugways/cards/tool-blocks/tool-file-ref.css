@@ -1,0 +1,42 @@
+/* @tug-pairings:
+   - (currentColor) | --tugx-block-strip-bg  (file glyph + basename inherit the header detail's muted code tone)
+   `ToolFileRef` paints no surface of its own — it inherits the header
+   detail slot's font + color and contributes only the leading glyph's
+   size + optical baseline nudge.
+*/
+
+/**
+ * tool-file-ref.css — inline file reference in a tool-call header.
+ *
+ * No box, no fill, no border: the ref inherits the `detail` slot's code
+ * font and muted tone so the basename reads exactly like a Bash command,
+ * and the glyph rides `currentColor` so it tracks the same tone. The
+ * only job here is to size the glyph to the text and seat it optically
+ * on the text baseline.
+ *
+ * Laws: [L06] appearance via CSS + inheritance; [L19] file pair, module
+ *       docstring, `data-slot`.
+ */
+
+.tool-file-ref {
+  /* Inherit the header detail's code font + muted color; the basename
+   * must be indistinguishable in treatment from a command's text. */
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  white-space: nowrap;
+}
+
+/* Leading glyph — sized to the surrounding text (1em) and nudged so its
+ * optical center sits on the lowercase text rather than the baseline. */
+.tool-file-ref-icon {
+  display: inline-flex;
+  margin-inline-end: var(--tug-space-2xs);
+  vertical-align: -0.15em;
+  color: inherit;
+}
+
+.tool-file-ref-icon svg {
+  width: 1em;
+  height: 1em;
+}
