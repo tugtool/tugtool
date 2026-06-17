@@ -1116,17 +1116,23 @@ export const DevTranscriptHost = forwardRef<
   }, [codeSessionStore]);
   const batchLoading = loadActive || settlingAfterLoad;
 
-  // Suspend per-card state persistence for the whole batch load + settle.
-  // The card's debounced [A9] save fires as scroll / region-scroll / content
-  // settle, and `flushDirtyCardStates` would `fetch` per dirty card on the
-  // same thread the load needs — pure waste, since the position is being
-  // restored, not authored. The deck flushes once when the gate releases.
+  // Suspend per-card state persistence for the WHOLE load — the replay
+  // window (`isReplaying`, before the list even mounts) through the
+  // post-reveal settle (`batchLoading`). The card's debounced [A9] save
+  // fires as scroll / region-scroll / content churn, and
+  // `flushDirtyCardStates` would `fetch` per dirty card on the same thread
+  // the load needs — pure waste, since the position is being restored, not
+  // authored. Spanning from `isReplaying` matters: a save SCHEDULED during
+  // the replay window would otherwise fire its flush ungated after the gate
+  // (held only across the settle) released. The dirty state persists on the
+  // next ungated `setCardState` or the will-phase sync flush.
   const deck = useDeckManager();
+  const cardSaveGateActive = isReplaying || batchLoading;
   useLayoutEffect(() => {
-    if (!batchLoading) return;
+    if (!cardSaveGateActive) return;
     const resume = deck.suspendCardStateSaves?.();
     return resume;
-  }, [batchLoading, deck]);
+  }, [cardSaveGateActive, deck]);
 
   // Perf instrumentation — pure observability, no behavior. On the
   // commit where the [DT10] replay gate drops (`isReplaying` flips

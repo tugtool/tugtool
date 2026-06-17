@@ -1185,6 +1185,13 @@ export class DeckManager implements IDeckManagerStore {
    */
   suspendCardStateSaves = (): (() => void) => {
     this.cardSaveSuspendDepth += 1;
+    // Cancel a flush scheduled just before the gate engaged, so a save from
+    // the pre-load moment can't fire ungated mid-load. It re-schedules on the
+    // next ungated `setCardState` (or the will-phase sync flush).
+    if (this.cardStateSaveTimer !== null) {
+      window.clearTimeout(this.cardStateSaveTimer);
+      this.cardStateSaveTimer = null;
+    }
     let released = false;
     return () => {
       if (released) return;
