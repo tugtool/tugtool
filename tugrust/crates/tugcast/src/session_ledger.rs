@@ -1477,7 +1477,10 @@ impl SessionLedger {
              LIMIT 1",
         )?;
         let row = stmt
-            .query_row(params![session_id, CURRENT_RULE_EPOCH], scan_cache_row_from_query)
+            .query_row(
+                params![session_id, CURRENT_RULE_EPOCH],
+                scan_cache_row_from_query,
+            )
             .optional()?;
         Ok(row)
     }
@@ -2428,8 +2431,7 @@ mod tests {
         );
 
         // Simulate the row predating the rule change: stamp it a prior epoch.
-        l.db
-            .lock()
+        l.db.lock()
             .expect("ledger mutex")
             .execute(
                 "UPDATE external_scan_cache SET rule_epoch = ?1 WHERE session_id = ?2",
@@ -2635,7 +2637,11 @@ mod tests {
         l.reconcile_turn_count_from_engine("s1", 81).unwrap();
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.turn_count, 81, "corrected regardless of closed state");
-        assert_eq!(r.last_used_at, t0 + 500, "recency untouched by a count refresh");
+        assert_eq!(
+            r.last_used_at,
+            t0 + 500,
+            "recency untouched by a count refresh"
+        );
 
         // A never-recorded session is a silent no-op.
         l.reconcile_turn_count_from_engine("ghost", 7).unwrap();

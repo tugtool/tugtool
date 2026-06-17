@@ -135,8 +135,7 @@ const SKIPPED_TOP_LEVEL_TYPES: [&str; 8] = [
 
 /// `assistant` `stop_reason` values that close a cycle cleanly. Mirror of
 /// tugcode's `TERMINAL_STOP_REASONS`.
-const TERMINAL_STOP_REASONS: [&str; 4] =
-    ["end_turn", "stop_sequence", "max_tokens", "refusal"];
+const TERMINAL_STOP_REASONS: [&str; 4] = ["end_turn", "stop_sequence", "max_tokens", "refusal"];
 
 /// The fields the engine reads from a JSONL line. `message` is captured
 /// unparsed ([`serde_json::value::RawValue`]) so the bulk assistant
@@ -326,8 +325,7 @@ mod tests {
         if let Ok(p) = std::env::var("TUGCODE_BIN") {
             return PathBuf::from(p);
         }
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/debug/tugcode")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tugcode")
     }
 
     fn origin_str(o: TurnOrigin) -> &'static str {
@@ -392,7 +390,10 @@ mod tests {
             "incremental (prefix+suffix) segmentation must equal a full re-segment, \
              origins and count"
         );
-        assert_eq!(post.frontier, full.frontier, "carry-out frontier must agree");
+        assert_eq!(
+            post.frontier, full.frontier,
+            "carry-out frontier must agree"
+        );
     }
 
     // ---- Pure state-machine units (real JSONL shapes, minimal) ----
@@ -562,8 +563,11 @@ mod tests {
             let Ok(jsonl) = std::fs::read_to_string(dir.join(base)) else {
                 continue;
             };
-            let engine_origins: Vec<&str> =
-                segment_str(&jsonl).turns.into_iter().map(origin_str).collect();
+            let engine_origins: Vec<&str> = segment_str(&jsonl)
+                .turns
+                .into_iter()
+                .map(origin_str)
+                .collect();
             compared += 1;
 
             if engine_origins.len() != tugcode_origins.len() {
@@ -576,9 +580,7 @@ mod tests {
             }
             for (i, (e, t)) in engine_origins.iter().zip(tugcode_origins).enumerate() {
                 if e != t {
-                    divergences.push(format!(
-                        "{base}: turn #{i} engine={e} tugcode={t}"
-                    ));
+                    divergences.push(format!("{base}: turn #{i} engine={e} tugcode={t}"));
                     break;
                 }
             }
@@ -601,7 +603,7 @@ mod tests {
         // Split the stream right between the two halves of a same-msg_id
         // continuation pair: the frontier must carry the pending-close
         // state so the suffix resolves the pair as one turn.
-        let lines = vec![
+        let lines = [
             r#"{"type":"user","message":{"role":"user","content":"go"},"permissionMode":"default"}"#,
             r#"{"type":"assistant","message":{"id":"m1","role":"assistant","stop_reason":"end_turn","content":[{"type":"thinking","thinking":"x"}]}}"#,
             r#"{"type":"assistant","message":{"id":"m1","role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"y"}]}}"#,

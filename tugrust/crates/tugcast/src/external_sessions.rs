@@ -308,8 +308,7 @@ pub(crate) fn user_submission_opens_turn(
     if is_interrupt_marker(&text, content_has_image(content), has_permission_mode) {
         return (false, false);
     }
-    let counts =
-        is_wake || !is_string || !is_non_submission_user_string(is_compact_summary, &text);
+    let counts = is_wake || !is_string || !is_non_submission_user_string(is_compact_summary, &text);
     (counts, is_wake)
 }
 
@@ -953,9 +952,10 @@ pub fn scan_external_sessions_cached_with_progress(
                 // corrected without opening the session. A cache HIT is
                 // skipped (its ledger row was corrected on the parse that
                 // wrote the cache), so the steady state writes nothing.
-                if let Err(err) = ledger
-                    .reconcile_turn_count_from_engine(&parsed.meta.session_id, parsed.meta.turn_count)
-                {
+                if let Err(err) = ledger.reconcile_turn_count_from_engine(
+                    &parsed.meta.session_id,
+                    parsed.meta.turn_count,
+                ) {
                     tracing::warn!(error = %err, "external scan: ledger count reconcile failed");
                 }
                 outcome.metas.push(parsed.meta);
@@ -1507,7 +1507,12 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let ledger = ledger_with_root(root.path());
         let projects = root.path().join("projects");
-        seed(&projects, PROJECT, SESSION_A, &two_turn_jsonl(SESSION_A, PROJECT));
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &two_turn_jsonl(SESSION_A, PROJECT),
+        );
 
         // No scan yet → no cache entry → the engine runs on the file.
         assert_eq!(engine_turn_count(&ledger, PROJECT, SESSION_A), Some(2));
@@ -1531,7 +1536,12 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let ledger = ledger_with_root(root.path());
         let projects = root.path().join("projects");
-        seed(&projects, PROJECT, SESSION_A, &two_turn_jsonl(SESSION_A, PROJECT));
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &two_turn_jsonl(SESSION_A, PROJECT),
+        );
 
         // A ledger row with an inflated stale count, left live.
         ledger
@@ -1542,8 +1552,15 @@ mod tests {
 
         // The scan produces engine(file)=2 and re-sets the ledger row.
         let scan = scan_external_sessions_cached(&ledger, PROJECT);
-        let meta = scan.metas.iter().find(|m| m.session_id == SESSION_A).unwrap();
-        assert_eq!(meta.turn_count, 2, "engine counts the orphan assistant turn");
+        let meta = scan
+            .metas
+            .iter()
+            .find(|m| m.session_id == SESSION_A)
+            .unwrap();
+        assert_eq!(
+            meta.turn_count, 2,
+            "engine counts the orphan assistant turn"
+        );
         let row = ledger.get(SESSION_A).unwrap().unwrap();
         assert_eq!(
             row.turn_count, 2,
