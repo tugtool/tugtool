@@ -20,7 +20,7 @@
 .dev-load-control-bar-loading {
   /* ▼▼ TUNE ▼▼ */
   --tugx-control-bar-track-width: 220px;
-  --tugx-control-bar-label-size: var(--tug-font-size-lg);
+  --tugx-control-bar-label-size: var(--tug-font-size-md);
   --tugx-control-bar-label-nudge: -1px;
   /* ▲▲ TUNE ▲▲ */
 }
@@ -150,4 +150,11 @@
   align-items: center;
   position: relative;
   top: var(--tugx-control-bar-label-nudge);
+}
+
+/* The "Load N" control rides a hair smaller than its `sm` default (12px → the
+   xs-button 11px) so it sits in scale with the now-smaller strip labels around
+   it. Two classes beat the button's own single-class size font-size. */
+.dev-load-control-bar-meta-right .tug-push-button {
+  font-size: var(--tug-button-xs-font-size);
 }
