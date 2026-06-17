@@ -103,6 +103,16 @@ body {
   color: var(--tugx-block-text-color-muted);
 }
 
+/* Optical nudge: the lifecycle dot and the bold sans name center a hair high
+ * against the mono detail / file ref and the summary badge (which carry the
+ * same 1px nudge). Drop them 1px so the whole row reads on one line. `top`
+ * (relative) leaves the layout boxes untouched. */
+.tool-call-header-dot,
+.tool-call-header-name {
+  position: relative;
+  top: 1px;
+}
+
 /* Name — the bold tool identity. Single font size (`sm`) shared with the
  * detail; centered in the one-line box (above) so its baseline coincides
  * with the detail's first line. Bold weight, not a larger size, keeps it
@@ -152,6 +162,13 @@ body {
   white-space: inherit;
   overflow-wrap: inherit;
   word-break: inherit;
+  /* Optical nudge: a bare command (`<code>`, e.g. Bash / grep) centers a hair
+   * high — the file ref already reads correctly because its icon makes the
+   * line box taller and seats the text a touch lower. Drop the command 1px so
+   * it lands on the same line as the name. (File refs are a `.tool-file-ref`
+   * span, never `<code>`, so they're untouched.) */
+  position: relative;
+  top: 0.5px;
 }
 
 /* Result summary — a TugBadge in a trailing column before the actions.
