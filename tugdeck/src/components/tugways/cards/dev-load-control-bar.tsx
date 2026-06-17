@@ -43,6 +43,8 @@ import {
   type CodeSessionStore,
   type CodeSessionSnapshot,
 } from "@/lib/code-session-store";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { useSessionLedger } from "@/lib/dev-session-ledger-store";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import {
   deriveControlBarState,
@@ -84,8 +86,12 @@ export interface DevLoadControlBarProps {
  */
 export function DevTranscriptTopRow({
   codeSessionStore,
+  cardId,
 }: {
   codeSessionStore: CodeSessionStore;
+  /** Owning card id — resolves this card's bound `projectDir` (binding
+   *  store) so the metadata row can read its session's ledger `created_at`. */
+  cardId: string;
 }): React.ReactElement {
   const onLoad = React.useCallback(
     (amount: number) => {
@@ -95,7 +101,11 @@ export function DevTranscriptTopRow({
   );
   return (
     <div className="dev-transcript-top-row" data-slot="dev-transcript-top-row">
-      <ControlBarMetadata codeSessionStore={codeSessionStore} onLoad={onLoad} />
+      <ControlBarMetadata
+        codeSessionStore={codeSessionStore}
+        cardId={cardId}
+        onLoad={onLoad}
+      />
     </div>
   );
 }
@@ -344,23 +354,53 @@ function formatSessionCreated(ms: number): string {
 }
 
 /**
- * Metadata state — the strip's resting content. Left: "Session created
- * <datetime>" (omitted until the anchor is known). Right: "Turns displayed
- * X of Y" + a fixed-step "Load N more" action, or "All loaded" when nothing
- * remains. All self-subscribed ([L02]) so the slot needs no props beyond the
- * load callback and stays mounted across mode swaps.
+ * Metadata state — the strip's resting content. Left: "Session created:
+ * <datetime>" (omitted until the creation time is known). Right: "Turns
+ * displayed: X of Y" + a fixed-step "Load N more" action, "All loaded" when
+ * nothing remains, or "No turns" on a fresh zero-turn session. All
+ * self-subscribed ([L02]) so the slot needs only the card id (to resolve its
+ * ledger row) and the load callback, and stays mounted across mode swaps.
+ *
+ * **Session-created source — the ledger is the authority.** The dev session
+ * ledger carries each session's `created_at`: the spawn time for sessions
+ * Tug created, and the JSONL-derived transcript birth for externally bridged
+ * (terminal) sessions. That value is present at zero turns — before any
+ * replay anchor exists — so it's the primary source, with the replay-derived
+ * `sessionCreatedAtMs` (the first turn's wall-clock) as the fallback for the
+ * brief window before the ledger row loads.
  */
 function ControlBarMetadata({
   codeSessionStore,
+  cardId,
   onLoad,
 }: {
   codeSessionStore: CodeSessionStore;
+  cardId: string;
   onLoad: (amount: number) => void;
 }): React.ReactElement {
-  const createdAtMs = React.useSyncExternalStore(
+  const replayCreatedAtMs = React.useSyncExternalStore(
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().sessionCreatedAtMs,
   );
+  const tugSessionId = React.useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () => codeSessionStore.getSnapshot().tugSessionId,
+  );
+  // This card's bound project dir keys the ledger fetch ([L02]). Empty until
+  // a session is bound — `useSessionLedger` then short-circuits to idle.
+  const projectDir = React.useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    React.useCallback(
+      () => cardSessionBindingStore.getBinding(cardId)?.projectDir ?? "",
+      [cardId],
+    ),
+  );
+  const ledger = useSessionLedger(projectDir);
+  const ledgerCreatedAtMs =
+    ledger.rows.find((r) => r.session_id === tugSessionId)?.created_at ?? null;
+  // Ledger wins (stable, present at zero turns); replay anchor backfills the
+  // pre-load window.
+  const createdAtMs = ledgerCreatedAtMs ?? replayCreatedAtMs;
   const transcriptLength = React.useSyncExternalStore(
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().transcript.length,
@@ -383,49 +423,60 @@ function ControlBarMetadata({
       <div className="dev-load-control-bar-meta-left">
         {createdAtMs !== null ? (
           <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
-            {`Session created ${formatSessionCreated(createdAtMs)}`}
+            {`Session created: ${formatSessionCreated(createdAtMs)}`}
           </TugLabel>
         ) : null}
       </div>
       <div className="dev-load-control-bar-meta-right">
-        <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
-          {`Turns displayed ${status.displayed.toLocaleString()} of ${status.total.toLocaleString()}`}
-        </TugLabel>
-        <span className="dev-load-control-bar-meta-sep" aria-hidden="true">
-          ·
-        </span>
-        {status.hasOlder ? (
-          <>
-            <TugLabel
-              emphasis="proposal"
-              className="dev-load-control-bar-actions-label"
-            >
-              Load
-            </TugLabel>
-            <TugPushButton
-              size="sm"
-              emphasis="outlined"
-              role="action"
-              focusGroup={focusGroup}
-              focusOrder={0}
-              onClick={() => onLoad(status.loadStep)}
-            >
-              {status.loadStep}
-            </TugPushButton>
-            <TugLabel
-              emphasis="proposal"
-              className="dev-load-control-bar-actions-label"
-            >
-              more
-            </TugLabel>
-          </>
-        ) : (
-          <TugLabel
-            emphasis="proposal"
-            className="dev-load-control-bar-actions-label"
-          >
-            All loaded
+        {status.total === 0 ? (
+          // A fresh session with no committed turns yet: the "0 of 0 · All
+          // loaded" math reads as a stuck empty page rather than a new
+          // session, so show a purpose-built waiting state instead.
+          <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
+            No turns
           </TugLabel>
+        ) : (
+          <>
+            <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
+              {`Turns displayed: ${status.displayed.toLocaleString()} of ${status.total.toLocaleString()}`}
+            </TugLabel>
+            <span className="dev-load-control-bar-meta-sep" aria-hidden="true">
+              ·
+            </span>
+            {status.hasOlder ? (
+              <>
+                <TugLabel
+                  emphasis="proposal"
+                  className="dev-load-control-bar-actions-label"
+                >
+                  Load
+                </TugLabel>
+                <TugPushButton
+                  size="sm"
+                  emphasis="outlined"
+                  role="action"
+                  focusGroup={focusGroup}
+                  focusOrder={0}
+                  onClick={() => onLoad(status.loadStep)}
+                >
+                  {status.loadStep}
+                </TugPushButton>
+                <TugLabel
+                  emphasis="proposal"
+                  className="dev-load-control-bar-actions-label"
+                >
+                  more
+                </TugLabel>
+              </>
+            ) : (
+              <TugLabel
+                emphasis="proposal"
+                className="dev-load-control-bar-actions-label"
+              >
+                All loaded
+              </TugLabel>
+            )}
+          </>
         )}
       </div>
     </div>

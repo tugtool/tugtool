@@ -1452,7 +1452,10 @@ export const DevTranscriptHost = forwardRef<
               // with the content (off-screen when scrolled down, first at the
               // top) and stays topmost as older turns prepend below it.
               leadingContent={
-                <DevTranscriptTopRow codeSessionStore={codeSessionStore} />
+                <DevTranscriptTopRow
+                  codeSessionStore={codeSessionStore}
+                  cardId={cardId}
+                />
               }
               // Freeze the per-commit scroll battery across the restore
               // replay, each load-previous bracket, and the post-reveal
