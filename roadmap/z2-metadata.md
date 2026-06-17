@@ -289,7 +289,8 @@ tugcast (#p03-tugcast-overlays-timing) may overlay `wallClockMs … maxStreamGap
 |-------|------|-----------|-----|
 | `TurnEntry.cost` (per-turn) | local-data | reducer commit from `event.telemetry.cost`; store + `useSyncExternalStore` | [L02] |
 | `sessionInitTokens` (snapshot) | local-data | reducer restore from `event.telemetry.sessionInitTokens` | [L02] |
-| `SessionMetadataStore.model` | local-data | replay-synth `system_metadata` → metadata store; `useSyncExternalStore` | [L02] |
+| `SessionMetadataStore.model` (active) | local-data | replay-synth `system_metadata` (active model, [P09]) → metadata store; `useSyncExternalStore` | [L02] |
+| `SessionMetadataStore.effort` | local-data | `session_capabilities` handshake → `_capabilities.effort` (existing field; Addendum A #step-8a); in-memory `latest_capabilities` replayed on bind, blank on pure offline replay | [L02] |
 
 ---
 
@@ -615,6 +616,11 @@ correct on **any** target regardless of durable-table state. Durable side-tables
   `SessionMetadataStore` reliably and drive `resolveModelContextMax`, with **no
   dependence on `session_metadata` being populated**. (The current gap: the synth emits
   it but it doesn't land — see #a3-model-delivery and #step-7.)
+- **Precedence rule (load-bearing):** the JSONL-reconstructed/active model **wins over a
+  stale or empty durable `session_metadata` row.** A durable row may only be used as a
+  fallback when it carries a *real* model and the replay supplied none. This prevents the
+  observed empty-model rows (#q04-empty-model-rows) from clobbering the reconstructed
+  model on bind.
 - Metrics NOT in the JSONL (**EFFORT**, **per-turn TIME**, **/context breakdown**)
   cannot be reconstructed and therefore need an explicit target-stable strategy — see
   [Q05].
@@ -628,12 +634,30 @@ already reflect post-compaction context, this value **naturally resets at each
 `/compact` or `/clear`** — it is headroom-used, never a sum across the whole session.
 
 **Implications:**
-- The current `deriveContextWindows → windows[last].window` computation already honors
-  this; the 372.3K observed is correct. **Do not "fix" CONTEXT into a cumulative sum.**
-- The denominator (`resolveModelContextMax(model)`) is the only broken half, and it is
-  downstream of MODEL.
-- Verification must assert the value resets across a compaction boundary, not just that
-  it is non-zero — see #step-9.
+- The denominator (`resolveModelContextMax(model)`) is the broken half on the steady
+  state, and it is downstream of MODEL. **Do not "fix" CONTEXT into a cumulative sum** —
+  `window(latest)` is the right primitive.
+- **BUT the carry-forward has a compaction-boundary bug (verified in real data, [S03]).**
+  `deriveContextWindows` carries the *prior* window forward across a **zero-usage** turn.
+  The KaTeX JSONL shows the resident window climb to ~807K/676K/628K, then a `/compact`
+  drops it — and the boundary frequently lands on a **zero-usage turn** (window → 0)
+  before the first real post-compact turn (~42K). During that gap, carry-forward holds
+  the **stale pre-compact window** (e.g. 807K) instead of the reset value. So CONTEXT-used
+  can transiently read far too high right after a compaction. This is a genuine
+  correctness gap, not cosmetic — see [S03] and #step-9.
+
+**Spec S03: CONTEXT-used must reset at a compaction boundary, not carry the stale window** {#s03-compaction-reset}
+- `deriveContextWindows`'s "zero-usage turn carries `prevWindow` forward" rule is correct
+  for an *interrupted/orphan* turn (no measurable iteration) but **wrong immediately after
+  a `/compact` or `/clear`**, where the true resident context has dropped.
+- The walk must distinguish a zero-usage turn that is a **compaction/clear boundary**
+  (reset `prevWindow` toward the post-compact baseline, do not carry the pre-compact peak)
+  from a plain interrupted turn (carry forward). The boundary is detectable from the
+  replay (`isCompactSummary` / continue-marker entries already recognized in
+  `tugcode/src/replay.ts`) and/or from a real post-compact usage that is a sharp drop.
+- Verification ([#step-9]) uses a fixture `big-window turn → /compact boundary (zero-usage)
+  → small-window turn` and asserts CONTEXT-used reflects the **post-compact** window
+  throughout, never the stale pre-compact peak.
 
 #### [P08] Distribution makes JSONL-reconstruction mandatory, not just convenient {#p08-distribution}
 
@@ -693,7 +717,7 @@ with empty durable tables.**
 | Metric | Authoritative source | In JSONL? | Live sync (incremental) | Replay/restore sync | Target-stable today? | Gap |
 |---|---|---|---|---|---|---|
 | **TOKENS** (per-turn Δ) | per-turn `usage` | ✅ | `cost_update` → reducer | `telemetry.cost` (Steps 1–2) → `perTurn` | ✅ (JSONL) | none — done |
-| **CONTEXT used** | `window(latest)` of per-turn `usage` | ✅ | derived from `cost` | derived from replayed `cost` | ✅ (JSONL) | none — done ([P07]) |
+| **CONTEXT used** | `window(latest)` of per-turn `usage` | ✅ | derived from `cost` | derived from replayed `cost` | ⚠ (JSONL) | steady-state done; **compaction-boundary carry-forward bug** ([S03], #step-9) |
 | **CONTEXT max** | `resolveModelContextMax(MODEL)` | ⛔ (derived from MODEL) | follows live MODEL | follows replayed MODEL | ❌ | blocked on MODEL ([P06]) |
 | **MODEL** (active) | **latest** real `message.model` ([P09]) | ✅ | live `system_metadata` (incl. mid-session change) → fan-out → `SESSION_METADATA` → store | replay synth tracks model changes; final = active; must reach store; durable fallback EMPTY on fresh target | ❌ | #a3-model-delivery, [P09], #step-7 |
 | **EFFORT** | Claude Code setting | ⛔ | `session_capabilities` handshake / `--effort` → store | not in JSONL; needs durable, target-stable persist | ❌ | [Q05], #step-8 |
@@ -722,20 +746,41 @@ replay itself** ([P06]). C2 (HMR) is the odd one — it must *preserve* the alre
 live state without re-replaying; its correctness depends on store survival, which
 **#step-6b must establish before any C2 fix is designed**.
 
-#### Why the model doesn't land today (hypothesis to confirm in #step-7) {#a3-model-delivery}
+#### Why the model doesn't land today — verified mechanism (the fault is ORDERING, not a missing replay) {#a3-model-delivery}
 
-The replay synth emits `system_metadata{model}` on `CODE_OUTPUT`
-(`agent_bridge.rs:1189`). The supervisor fan-out (`agent_supervisor.rs:3957`) rewraps
-`system_metadata` onto `SESSION_METADATA` and stores `latest_metadata`; on bind it
-replays `latest_metadata` (in-memory) or `persisted_metadata_replay_frame` (sqlite,
-empty on fresh target). Candidate failure points, to be bisected in #step-7:
-- the synth frame races the card's `SESSION_METADATA` subscription and `latest_metadata`
-  isn't replayed on a *late* subscribe;
-- `merge_and_persist_system_metadata` is skipped on the replay path (`claude_session_id`
-  is `None` during pure replay → the `_ =>` passthrough), so no durable row is written
-  *even on cold replay*, leaving nothing for a subsequent bind;
-- the bare-model replay payload is dropped/clobbered by the merge against a (stale or
-  empty) persisted row.
+The on-bind metadata replay **already exists**: `do_spawn_session`
+(`agent_supervisor.rs:2337`) emits, at bind, `entry.latest_metadata` if present, else
+`persisted_metadata_replay_frame` (the sqlite `session_metadata` row). The replay synth
+emits `system_metadata{model}` on `CODE_OUTPUT` (`agent_bridge.rs:1189`); the supervisor
+fan-out (`agent_supervisor.rs:3957`) rewraps it onto `SESSION_METADATA`, stores
+`latest_metadata`, and live-broadcasts via `session_metadata_tx` (`3968`). So the
+machinery is all there — the bug is **sequencing**, confirmed by reading the spawn path:
+
+1. **The bind-emit fires BEFORE the replay populates `latest_metadata`.** On a fresh /
+   empty-DB cold spawn, at the `2337` bind-emit both `latest_metadata` (None — replay
+   hasn't run) and the persisted row (empty) are absent → the bind-emit sends **nothing**.
+   The model then arrives only via the live broadcast at `3968` *during* replay, which
+   **races the card's `SESSION_METADATA` subscription** — if the card subscribes after
+   the broadcast flew, it never sees it (the broadcast is not replayed on a late
+   subscribe; only `latest_metadata`/persisted are, and those re-check happens only at
+   the one bind-emit). **This is the dominant failure.**
+2. **No durable row is written even on cold replay.** `merge_and_persist_system_metadata`
+   runs only when `claude_session_id` is `Some` (captured on a live `session_init`); a
+   *pure* replay (picker/offline) emits no `session_init`, so the synth's
+   `system_metadata` takes the `_ =>` passthrough → no `session_metadata` row → nothing
+   for a *subsequent* bind to fall back to. (A `--resume` differs: it brings a live
+   `session_init` + handshake — keep the two paths distinct in tests.)
+3. **A stale/empty durable row can CLOBBER the good model (#q04-empty-model-rows).**
+   Where a `session_metadata` row exists but has an empty model (observed in `debug-main`,
+   `8f2b15be → ""`), the bind-emit replays an **empty-model** frame, and depending on
+   `merge_session_metadata` ordering it can override the JSONL-reconstructed model. The
+   fix must make the reconstructed/active model **win** over a stale-or-empty durable row
+   (see [P06] precedence rule).
+
+**The #step-7 fix is therefore an ordering/precedence fix, not a new replay path:** make
+the synth's active model reach the bound card's `SESSION_METADATA` feed *after*
+`latest_metadata` is set (re-emit post-replay, or order the bind-emit after the replay's
+first model), and ensure it takes precedence over a stale/empty durable row.
 
 ## A.4 Build-target testing strategy {#target-testing}
 
@@ -761,12 +806,20 @@ payload over a good one? **Resolve via spike in #step-6a** (read
 `merge_and_persist_system_metadata` + `record_session_metadata` keying); decide whether
 to harden the recorder or render it moot via [P06].
 
+> **Already promoted to a design constraint (not deferred):** regardless of *why* the
+> empty rows exist, the [P06] **precedence rule** mandates that such a row must never
+> clobber the reconstructed/active model on bind (#a3-model-delivery cause 3, #step-7
+> part 3). The spike decides whether to *also* harden the recorder; the no-clobber
+> behavior is required either way.
+
 #### [Q05] Target-stable strategy for the non-JSONL metrics (EFFORT, per-turn TIME, /context breakdown) {#q05-non-jsonl-metrics}
 These cannot be reconstructed from the JSONL. Per the user, scope is "everything," so
 each needs a decision: (i) persist durably in a target-stable store and accept blank on
 a brand-new target/session, (ii) reconstruct what *is* derivable (e.g. /context usage
 slices from `message.usage`), (iii) for EFFORT, source from the `session_capabilities`
-handshake on every resume. **Resolve in #step-8.**
+handshake on every live (re)connect — **with an explicit blank where no live source
+exists** (pure offline replay). **Resolved per-metric in #step-8a (EFFORT), #step-8b
+(TIME), #step-8c (/context breakdown).**
 
 #### [Q06] Restore the exact `[1m]` model variant, or accept bare-name + correct max? {#q06-model-variant-cosmetics}
 The JSONL model is bare (`claude-opus-4-7`); the live chip shows "· 1M" only for the
@@ -788,10 +841,13 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 |---|---|---|
 | #step-6a | Spike: durable recorder keying + empty-model rows ([Q04]) | pending |
 | #step-6b | Spike: HMR store survival (C2) — does the services bag re-mount or persist? | pending |
-| #step-7 | tugcode/tugcast: make replayed MODEL reach `SessionMetadataStore` on cold replay (C3/C4/C5), target-stable ([P06]) | pending |
-| #step-8 | EFFORT (+ TIME, /context) target-stable strategy per [Q05] | pending |
-| #step-9 | CONTEXT denominator + headroom-reset verification ([P07]); app-test vehicle ([Q07]) | pending |
-| #step-10 | Integration matrix: all in-scope metrics × C1–C5, on an empty-DB target | pending |
+| #step-6c | Stand up the cold-replay app-test vehicle ([Q07], #target-testing) | pending |
+| #step-7 | Target-stable ACTIVE-MODEL delivery: ordering + precedence ([P06]/[P09]) | pending |
+| #step-8a | EFFORT restore (handshake re-emit; explicit blank on pure offline replay) | pending |
+| #step-8b | Per-turn TIME: durable-or-blank strategy | pending |
+| #step-8c | /context breakdown: reconstruct usage slices + durable-or-blank | pending |
+| #step-9 | CONTEXT denominator + compaction-reset verification ([P07]/[S03]) | pending |
+| #step-10 | Integration matrix: all in-scope metrics × C1–C5, empty-DB + seeded | pending |
 
 **#step-6a — Recorder/keying spike.** Read `merge_and_persist_system_metadata`,
 `record_session_metadata`, and the `claude_session_id` capture; explain the empty-model
@@ -804,32 +860,74 @@ re-mount re-binds (triggering on-bind metadata replay). This decides whether C2 
 durable/JSONL metadata). Cross-check `tuglaws.md` [L23]/[L26] (state/mount preservation)
 and `project_hmr_vs_reload`. Output: the C2 mechanism + the #step-7 design constraint.
 
-**#step-7 — Target-stable ACTIVE-MODEL delivery.** Two parts:
+**#step-6c — Cold-replay app-test vehicle.** Stand up the verification harness #step-7+
+depend on, BEFORE they need it (resolves the ordering wrinkle that #step-7's tests
+referenced a vehicle defined in #step-9). A `tests/app-test/` case (run via
+`just app-test`) that cold-replays a fixture JSONL into a **fresh, empty-DB** store and
+reads back the Z2 snapshot (model, context-max, context-used, tokens). Runs on any
+target with no GUI and no durable seed — the strictest test of [P06] (#target-testing
+option (c)). Commit: the harness + a smoke fixture (cost-only, already-correct) so the
+vehicle itself is green before behavior steps land.
+
+**#step-7 — Target-stable ACTIVE-MODEL delivery (ordering + precedence).** Per the
+verified mechanism in #a3-model-delivery, this is an **ordering + precedence** fix, not a
+new replay path (the on-bind `latest_metadata` replay already exists at
+`agent_supervisor.rs:2337`):
 1. **Active model ([P09]):** change the synth from "first real model" to "track real-model
-   changes through replay; final emission = the active (last) model." Cover a
-   model-switch fixture (opus → sonnet) → restored chip shows the last model.
-2. **Reliable delivery (#a3-model-delivery):** make the replayed `system_metadata` reach
-   the bound card's `SESSION_METADATA` feed on cold replay with an **empty** durable DB,
-   regardless of subscription timing (in-memory `latest_metadata` replayed on every late
-   subscribe; optionally persist during replay for a durable fallback). This is the
-   distribution-correct path ([P08]).
+   changes through replay; final emission = the active (last) model" (`isRealModelName`
+   still gates each emission). Fixture: model-switch (opus → sonnet) → restored chip shows
+   the **last** model.
+2. **Ordering ([P06], #a3-model-delivery cause 1):** ensure the synth's active model
+   reaches the bound card's `SESSION_METADATA` feed *after* `latest_metadata` is set —
+   re-emit post-replay, or order the bind-emit after the replay's first model — so an
+   empty-DB cold spawn (C3/C4/C5) is not lost to the subscription race.
+3. **Precedence / no-clobber ([P06], #a3-model-delivery cause 3):** the reconstructed/
+   active model must **win** over a stale-or-empty durable `session_metadata` row; a
+   durable row may only fill in when it carries a *real* model the replay lacked.
+4. Keep the `--resume` (live `session_init` + handshake) path distinct from the pure
+   offline replay path in tests (#a3-model-delivery cause 2).
 
-Tests: tugcast frame-routing (replay `system_metadata` → `SESSION_METADATA`, last wins) +
-a tugdeck app-test (fresh store, empty DB, model-switch fixture → active model resolves,
-CONTEXT-max follows).
+Tests: tugcast frame-routing (replay `system_metadata` → `SESSION_METADATA`, last wins;
+empty/stale durable row does NOT clobber) + a pure-logic wire-frame test
+(`SessionMetadataStore` ← `SESSION_METADATA` feed, last-model-wins) + the #step-6c
+app-test (fresh empty-DB store, model-switch fixture → active model + CONTEXT-max
+resolve).
 
-**#step-8 — EFFORT / TIME / breakdown.** Per [Q05]. At minimum: EFFORT sourced from the
-`session_capabilities` handshake on every resume (it rides `SESSION_METADATA`,
-target-stable if re-emitted on bind); TIME + /context breakdown documented as durable-
-or-blank with the chosen behavior. 
+**#step-8a — EFFORT restore.** Per [Q05]. EFFORT rides the `session_capabilities`
+handshake → `SESSION_METADATA`; `latest_capabilities` is replayed on bind
+(`agent_supervisor.rs:2357`) **but is in-memory only** (docstring `:264`). So EFFORT is
+restorable **only when a live (re)connect re-emits the handshake** (C1, and the C3/C4
+`--resume` path). On a **pure offline replay** (C5 picker of a never-live session; C4
+before reconnect) there is **no EFFORT source** — it must render an explicit
+blank/unknown, never a stale value, unless a durable last-known-effort persist is added
+(decide here). State the availability boundary plainly; do not claim EFFORT is restored
+where no source exists.
 
-**#step-9 — CONTEXT correctness + verification vehicle.** Assert (a) denominator = 1M
-once MODEL resolves, (b) CONTEXT-used resets across a `/compact` boundary in a fixture
-(not just non-zero). Stand up the app-test from [Q07].
+**#step-8b — Per-turn TIME (wall/active/ttft).** Not in the JSONL; only ever from the
+`turn_telemetry` side-table (empty on a fresh target — [P05]). Per [Q05]: render the
+TIME popover from `turn_telemetry` when present, **explicit blank/"—" when absent**
+(never a fabricated value). No JSONL reconstruction is possible; document this as a known
+limitation of historical replay.
+
+**#step-8c — /context breakdown.** The `usage`-derived slices (input/output/cache) ARE
+reconstructable from the JSONL per-turn `message.usage`; the labeled/reserved slices
+(`autocompact_buffer`, etc.) are not. Per [Q05]: reconstruct the usage-derived portion
+from the replayed cost so the popover is non-empty on a fresh target; show the
+non-reconstructable slices only when `context_breakdown_latest` is present.
+
+**#step-9 — CONTEXT denominator + compaction-reset correctness.** Assert (a) denominator
+= the model's window (1M for opus/sonnet/fable) once MODEL resolves; (b) **[S03]**:
+CONTEXT-used resets across a `/compact` boundary — fixture `big-window → zero-usage
+compact boundary → small-window`, asserting the value reflects the **post-compact** window
+throughout and never the stale pre-compact peak (this likely requires refining
+`deriveContextWindows`' carry-forward to not carry across a detected compaction). Uses the
+#step-6c vehicle.
 
 **#step-10 — Full matrix.** Verify every in-scope metric across C1–C5 on a **fresh,
 empty-DB target** (the worktree itself is the test bed once [P06] holds), plus a seeded-
-DB pass for the durable-only metrics.
+DB pass for the durable-only metrics (EFFORT/TIME present). Asserts the availability
+boundaries from #step-8a/8b (blank where no source exists) are honored, not silently
+wrong.
 
 ## A.7 Answers to the two diagnostic questions {#a7-answers}
 
