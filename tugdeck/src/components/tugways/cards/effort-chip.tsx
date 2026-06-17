@@ -43,11 +43,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
-import {
-  DEFAULT_EFFORT_LEVEL,
-  formatEffortLabel,
-  resolveEffortSupport,
-} from "@/lib/effort";
+import { formatEffortLabel, resolveEffortDisplay } from "@/lib/effort";
 
 export interface EffortChipProps {
   /** Metadata store supplying the live `effort` + the capability `models[]`. */
@@ -87,27 +83,33 @@ export function EffortChip({
     sessionMetadataStore.getSnapshot,
   );
 
-  const support = resolveEffortSupport(snapshot.models, snapshot.model);
-  // When the model supports effort the chip always shows a level: the explicit
-  // override if set, else the session's effective default ([DEFAULT_EFFORT_LEVEL]
-  // — claude runs a fresh session at `high`). Only an unsupported model has no
-  // level, shown as the `-` placeholder (formatEffortLabel(null)).
-  const effectiveEffort = support.supported
-    ? (snapshot.effort ?? DEFAULT_EFFORT_LEVEL)
-    : null;
+  // EFFORT is not in the JSONL — it only exists from the live
+  // `session_capabilities` handshake (or a restored per-card choice). The chip
+  // shows the explicit override if set, the confirmed default when a live
+  // handshake is present, and the `-` placeholder when the model is
+  // unsupported OR when there is no live effort source at all (pure offline
+  // replay) — an honest unknown, never an assumed default.
+  const display = resolveEffortDisplay(
+    snapshot.models,
+    snapshot.model,
+    snapshot.effort,
+  );
+  const effectiveEffort = display.level;
   const content = formatEffortLabel(effectiveEffort);
   // Width-stabilize against the `-` placeholder plus every supported level
   // label so switching among them never reflows the chip ([R01]).
   const sizerLabels = [
     formatEffortLabel(null),
-    ...support.levels.map((level) => formatEffortLabel(level)),
+    ...display.levels.map((level) => formatEffortLabel(level)),
   ];
 
-  const title = !support.supported
+  const title = !display.supported
     ? "Reasoning effort: not supported by this model"
-    : snapshot.effort === null
-      ? `Reasoning effort: ${content} (default)`
-      : `Reasoning effort: ${content}`;
+    : effectiveEffort === null
+      ? "Reasoning effort: unknown until the session reconnects"
+      : snapshot.effort === null
+        ? `Reasoning effort: ${content} (default)`
+        : `Reasoning effort: ${content}`;
 
   const copy = useCopyableButton(`Effort: ${content}`);
 

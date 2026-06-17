@@ -1370,7 +1370,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // Test-mode override: bypass the feed-data gate so cards whose
   // `defaultFeedIds` would otherwise wait on a live tugcast/tugcode
   // backend (notably dev-card, which gates on `[CODE_INPUT,
-  // CODE_OUTPUT, SESSION_METADATA, FILETREE]`) can mount in the
+  // CODE_OUTPUT, SESSION_SIDEBAND, FILETREE]`) can mount in the
   // in-app harness. Tests don't drive the AI side of those cards;
   // they exercise focus, selection, persistence, and other
   // framework concerns that don't depend on real feed data. The

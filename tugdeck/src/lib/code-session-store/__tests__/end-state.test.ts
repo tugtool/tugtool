@@ -172,6 +172,43 @@ describe("deriveContextWindows", () => {
     expect(sessionInit + sum).toBe(65000);
   });
 
+  it("compaction boundary on a zero-usage turn resets, never carries the stale peak ([S03])", () => {
+    // Real shape: window climbs to a pre-compact peak, a `/compact` lands on a
+    // zero-usage boundary turn, then a small post-compact turn. The boundary
+    // turn must NOT carry the 807K peak forward (the old bug — CONTEXT-used
+    // would read far too high right after a compaction); it resets to the
+    // post-compact window. CONTEXT-used = window(latest) is the post-compact
+    // 42K throughout the boundary, never 807K.
+    const sessionInit = 18_575;
+    const steps = deriveContextWindows(
+      [win(807_000), cost({}), win(42_000)],
+      sessionInit,
+    );
+    expect(steps.map((s) => s.window)).toEqual([807_000, 42_000, 42_000]);
+    // The drop is attributed to the boundary turn; the identity still closes.
+    expect(steps.map((s) => s.perTurn)).toEqual([788_425, -765_000, 0]);
+    const sum = steps.reduce((acc, s) => acc + s.perTurn, 0);
+    expect(sessionInit + sum).toBe(42_000);
+  });
+
+  it("a plain interrupt (next window not a drop) still carries forward — not a compaction", () => {
+    // The discriminator is the DROP. A zero-usage turn whose next real window
+    // is >= the prior is an interrupt, not a compaction: carry forward.
+    const steps = deriveContextWindows(
+      [win(50_000), cost({}), win(55_000)],
+      18_575,
+    );
+    expect(steps.map((s) => s.window)).toEqual([50_000, 50_000, 55_000]);
+    expect(steps.map((s) => s.perTurn)).toEqual([31_425, 0, 5_000]);
+  });
+
+  it("a zero-usage boundary as the LAST turn carries forward (post-compact window unknowable)", () => {
+    // No next real turn ⇒ the post-compact window can't be known; carry
+    // forward is the honest fallback for this edge (documented, [S03]).
+    const steps = deriveContextWindows([win(807_000), cost({})], 18_575);
+    expect(steps.map((s) => s.window)).toEqual([807_000, 807_000]);
+  });
+
   it("pins a real /compact window drop from captured session 2fc6b18d ([W5c])", () => {
     // The end_turn resident windows straddling the first compaction
     // boundary of captured session 2fc6b18d (compactMetadata:

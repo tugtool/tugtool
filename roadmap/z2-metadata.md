@@ -350,15 +350,15 @@ tugcast (#p03-tugcast-overlays-timing) may overlay `wallClockMs … maxStreamGap
 | #step-4 | tugcast: overlay timing-only, never overwrite cost | done | 8bbdffab |
 | #step-5 | tugdeck: reducer applies replayed cost (regression test) | done | d0a963a5 |
 | #step-6 | Integration checkpoint: real-session restore + HMR | superseded → #addendum-a (test surfaced under-scoping) | suites ✓; app-vet exposed the gaps |
-| #step-6a | Spike: durable recorder keying + empty-model rows ([Q04]) | pending | — |
-| #step-6b | Spike: HMR store survival (C2) | pending | — |
-| #step-6c | Cold-replay app-test vehicle ([Q07]) | pending | — |
-| #step-7 | Target-stable active-model delivery: ordering + precedence ([P06]/[P09]) | pending | — |
-| #step-8a | EFFORT restore (blank on pure offline replay) | pending | — |
-| #step-8b | Per-turn TIME: durable-or-blank | pending | — |
-| #step-8c | /context breakdown: reconstruct usage slices | pending | — |
-| #step-9 | CONTEXT denominator + compaction-reset ([S03]) | pending | — |
-| #step-10 | Integration matrix: all in-scope metrics × C1–C5 | pending | — |
+| #step-6a | Spike: durable recorder keying + empty-model rows ([Q04]) | done | spike — finding in [Q04] Resolution |
+| #step-6b | Spike: HMR store survival (C2) | done | spike — finding in #lifecycle-cases C2 |
+| #step-6c | Cold-replay app-test vehicle ([Q07]) | done | at0192 green via real spawn_session(resume) chain |
+| #step-7 | Target-stable active-model delivery: ordering + precedence ([P06]/[P09]) | done | at0192 green (1.00M); see #step-7 RESULT |
+| #step-8a | EFFORT restore (blank on pure offline replay) | done | resolveEffortDisplay; at0192 EFFORT - ; see [Q05] |
+| #step-8b | Per-turn TIME: durable-or-blank | done | turnHasTiming → `—`; see [Q05] |
+| #step-8c | /context breakdown: reconstruct usage slices | done | computeRichContextBreakdown usage-only path; see [Q05] |
+| #step-9 | CONTEXT denominator + compaction-reset ([S03]) | done | denom=1M (at0192, via #step-7); deriveContextWindows compaction-reset |
+| #step-10 | Integration matrix: all in-scope metrics × C1–C5 | done | suites 630/750/3740 + at0192 empty-DB green; Table T02 all ✅ |
 
 #### Step 1: tugcode — type JSONL `usage` + pure cost helper {#step-1}
 
@@ -736,13 +736,13 @@ with empty durable tables.**
 
 | Metric | Authoritative source | In JSONL? | Live sync (incremental) | Replay/restore sync | Target-stable today? | Gap |
 |---|---|---|---|---|---|---|
-| **TOKENS** (per-turn Δ) | per-turn `usage` | ✅ | `cost_update` → reducer | `telemetry.cost` (Steps 1–2) → `perTurn` | ✅ (JSONL) | none — done |
-| **CONTEXT used** | `window(latest)` of per-turn `usage` | ✅ | derived from `cost` | derived from replayed `cost` | ⚠ (JSONL) | steady-state done; **compaction-boundary carry-forward bug** ([S03], #step-9) |
-| **CONTEXT max** | `resolveModelContextMax(MODEL)` | ⛔ (derived from MODEL) | follows live MODEL | follows replayed MODEL | ❌ | blocked on MODEL ([P06]) |
-| **MODEL** (active) | **latest** real `message.model` ([P09]) | ✅ | live `system_metadata` (incl. mid-session change) → fan-out → `SESSION_METADATA` → store | replay synth tracks model changes; final = active; must reach store; durable fallback EMPTY on fresh target | ❌ | #a3-model-delivery, [P09], #step-7 |
-| **EFFORT** | Claude Code setting | ⛔ | `session_capabilities` handshake / `--effort` → store | not in JSONL; needs durable, target-stable persist | ❌ | [Q05], #step-8 |
-| **TIME** (wall/active/ttft, per turn) | reducer clocks (live) | ⛔ | `deriveTurnTelemetry` → `turn_telemetry` | overlay from `turn_telemetry` ([P03]) — EMPTY on fresh target | ❌ | [Q05] — best-effort or durable |
-| **/context breakdown** (popover) | `context_breakdown_latest` | ⚠ partial (usage is; the labeled slices aren't) | live frame → table | table EMPTY on fresh target; partly reconstructable from `usage` | ❌ | [Q05] |
+| **TOKENS** (per-turn Δ) | per-turn `usage` | ✅ | `cost_update` → reducer | `telemetry.cost` (Steps 1–2) → `perTurn` | ✅ (JSONL) | **none — done** |
+| **CONTEXT used** | `window(latest)` of per-turn `usage` | ✅ | derived from `cost` | derived from replayed `cost` | ✅ (JSONL) | **none — done** (compaction-reset, #step-9) |
+| **CONTEXT max** | `resolveModelContextMax(MODEL)` | ⛔ (derived from MODEL) | follows live MODEL | follows replayed MODEL | ✅ | **none — done** (resolves from active MODEL, #step-7; at0192 → 1.00M) |
+| **MODEL** (active) | **latest** real `message.model` ([P09]) | ✅ | live `system_metadata` → fan-out → `SESSION_SIDEBAND` → store | synth tracks changes (final = active) + batch-bypass + per-kind cache + no-clobber → reaches store on fresh target | ✅ (JSONL) | **none — done** (#step-7) |
+| **EFFORT** | `session_capabilities` handshake | ⛔ | handshake / `--effort` → store; per-card `dev.effort` persist | live handshake on reconnect; honest `-` blank on pure offline replay | ✅ (live-or-blank) | **none — done** (#step-8a) |
+| **TIME** (wall/active/ttft, per turn) | `turn_telemetry` overlay | ⛔ | `deriveTurnTelemetry` → `turn_telemetry` | overlay when present; honest `—` when absent (no fabricated `0:00`) | ✅ (durable-or-blank) | **none — done** (#step-8b) |
+| **/context breakdown** (popover) | `context_breakdown_latest` | ⚠ partial (usage is; labeled slices aren't) | live frame → table | usage-derived slices reconstructed from replayed cost; durable-only slices when present | ✅ (reconstruct-or-omit) | **none — done** (#step-8c) |
 | **STATE / TIME(elapsed) / TASKS / JOBS** | live runtime | n/a | live | n/a (runtime, not historical) | ✅ | none |
 | **MODEL `[1m]` variant suffix** (chip "· 1M") | live `system_metadata.model` | ⛔ (JSONL is bare) | live | bare name → max correct via override, but chip omits "· 1M" | ⚠ | [Q06] cosmetics |
 
@@ -755,7 +755,7 @@ Each entry point reaches the Z2 readouts differently. The plan must hold for all
 | Case | What happens | Replay re-runs? | Durable tables consulted? | Risk |
 |---|---|---|---|---|
 | **C1 Incremental** (live turns) | Claude Code streams; reducer derives live | no | written (recorder) | recorder silent-skip writes empty-model rows ([Q04]) |
-| **C2 HMR** (Vite hot-swap) | JS modules swap; per [project_hmr_vs_reload] data/transcript must NOT reload | **TBD — spike #step-6b** | depends on store survival | if stores re-mount and durable empty → MODEL "?" |
+| **C2 HMR** (Vite hot-swap) | JS modules swap; per [project_hmr_vs_reload] data/transcript must NOT reload | **no** (component Fast Refresh; lib singletons untouched) — spike #step-6b | not consulted (live stores survive) | none — live state survives; remount re-subscribes (resolved #step-6b) |
 | **C3 Maker ▸ Reload** (hard refresh) | true re-resume from JSONL; stores re-created; cards re-bound | **yes** | on-bind `persisted_metadata_replay` (empty on fresh target) | model must come from replay, not durable |
 | **C4 App relaunch** (restored cards) | app restarts; saved deck cards re-bind; each session cold-replays | **yes** | same as C3 | same as C3 |
 | **C5 Picker replay** | user picks a session; card binds; cold replay | **yes** | likely none for a never-seen session | the purest "no durable data" case |
@@ -765,6 +765,48 @@ C5 on a new session, or any fresh target), so **MODEL/CONTEXT-max must be carrie
 replay itself** ([P06]). C2 (HMR) is the odd one — it must *preserve* the already-correct
 live state without re-replaying; its correctness depends on store survival, which
 **#step-6b must establish before any C2 fix is designed**.
+
+**Resolution (spike #step-6b): C2 needs NO fix — neither preservation nor re-delivery.**
+Traced the HMR path through `hmr-bridge.ts`, `card-services-store.ts`, and the Z2
+consumer (`model-chip.tsx`):
+
+1. **The data stores are lib-module singletons that survive component HMR.**
+   `cardServicesStore` is a module-level singleton (`export const cardServicesStore = new
+   CardServicesStore()`); each binding's `SessionMetadataStore` / `CodeSessionStore` lives
+   in its per-card services bag inside that singleton's `Map`. Vite's React Fast Refresh
+   hot-swaps **component** modules only — the lib module graph is **not** re-evaluated, so
+   the singleton and every bag (and their accumulated model/cost/context state) **persist
+   untouched**. There is no re-bind and **no re-replay** on a component HMR. This is the
+   common HMR case.
+2. **What HMR tears down is the React DOM, not the stores.** `hmr-bridge.ts` exists to make
+   HMR a known transition in the Component State Preservation Protocol ([L23]): on
+   `vite:beforeUpdate` it runs `deck.captureAllForTeardown("hmr")` so **component-owned**
+   state (CM6 text, scroll, selection, focus) survives the Fast Refresh remount. The Z2
+   data stores are not component-owned and are not in scope of that capture — they simply
+   stay alive.
+3. **The remounted Z2 consumer re-subscribes to the surviving store.** `model-chip.tsx`
+   reads `SessionMetadataStore` via `useSyncExternalStore` ([L02]); after a Fast Refresh
+   remount it re-subscribes to the **same** (surviving) store instance and reads its
+   current snapshot — so MODEL/CONTEXT repaint from live state with no reload.
+
+**Therefore the original "HMR zeroes Z2" symptom was a misdiagnosis.** What zeroed Z2 was
+the **cold-replay path** (C3/C4/C5) on an empty-DB target (the worktree), not HMR
+re-creating live stores. The #step-7 fix targets the cold-replay delivery chain; C2
+requires no code.
+
+**Edge case (lib-module edit):** editing a *lib store module itself* (e.g.
+`card-services-store.ts`) has no `import.meta.hot.accept` boundary, so Vite propagates the
+update up the import graph and, finding no accepting importer, escalates to a **full page
+reload** (`vite:beforeFullReload`) — which is the Developer ▸ Reload / hard-refresh path
+(C3), re-resuming from JSONL. That degrades to the cold-replay family #step-7 makes
+correct. So even the lib-edit case needs no dedicated C2 handling.
+
+**#step-7 design constraint from this spike:** #step-7 scopes to the cold-replay delivery
+chain (C3/C4/C5) only. Do **not** add an HMR-specific re-delivery path — it would be
+redundant work that risks re-replaying over good live state and violating
+[project_hmr_vs_reload] (HMR must never reload data/transcript). Laws upheld: [L02]
+(store via `useSyncExternalStore`), [L23] (HMR known transition — already in
+`hmr-bridge.ts`), and the [project_hmr_vs_reload] invariant.
 
 #### Why the model doesn't land today — verified mechanism (the fault is ORDERING, not a missing replay) {#a3-model-delivery}
 
@@ -845,6 +887,41 @@ to harden the recorder or render it moot via [P06].
 > part 3). The spike decides whether to *also* harden the recorder; the no-clobber
 > behavior is required either way.
 
+**Resolution (spike #step-6a):** **Root cause = first-observation persistence of a
+live `system/init` whose event omitted `model`.** The chain:
+
+1. tugcode's live init handler (`session.ts`, the `system/init` case) builds the
+   `system_metadata` IPC with `model: (event.model as string) || ""`. When Claude Code's
+   `system/init` event carries no `model` (observed on some resumed/variant inits), the
+   live frame goes out with `model: ""` — a real, non-replay frame.
+2. tugcast's bridge intercept (`agent_bridge.rs`, the `system_metadata` branch) persists
+   it via `merge_and_persist_system_metadata`, keyed by the `claude_session_id` captured
+   from `session_init` (so the key is resolved — this is *not* a keying bug).
+3. `merge_session_metadata`'s **first-observation branch** (`current.and_then(as_object)`
+   is `None` → `return incoming_obj.clone()`) takes the incoming payload **verbatim**,
+   bypassing the `as_present` empty-string-as-absent rule that the steady-state scalar
+   merge applies. So `model: ""` is written as the durable row's value. Subsequent merges
+   are safe — `prefer_more_specific_model` keeps a good current model over an empty
+   incoming — but the *first* row is already poisoned.
+
+So it is **neither** an unresolved-id keying fault **nor** a bare-over-good clobber; it
+is the first-observation path persisting an empty live model verbatim. The replay synth
+is **not** a contributor: post-#step-3 it only emits when `isRealModelName(candidateModel)`
+passes, so it can never write an empty/`<synthetic>` model.
+
+**Decision: render it moot via [P06]; do NOT harden the recorder in this plan.** Rationale:
+- The forward replay vector is already closed (#step-3 `isRealModelName` gate).
+- Under [P06]'s precedence rule (implemented in #step-7), a durable row is only consulted
+  as a fallback **when it carries a real model and replay supplied none** — an empty-model
+  row is therefore **inert**: it can never clobber the JSONL-reconstructed/active model.
+- Hardening the live recorder (e.g. applying `as_present` to `model` on first observation,
+  or refusing to persist a `model: ""` row) is churn on the live persistence path for a row
+  [P06] already neutralizes. Tracked as a follow-on (#roadmap "recorder reliability"),
+  not required for phase close.
+
+This feeds #step-7's no-clobber test directly: the test seeds an empty-model durable row,
+cold-replays a real model, and asserts the real model wins.
+
 #### [Q05] Target-stable strategy for the non-JSONL metrics (EFFORT, per-turn TIME, /context breakdown) {#q05-non-jsonl-metrics}
 These cannot be reconstructed from the JSONL. Per the user, scope is "everything," so
 each needs a decision: (i) persist durably in a target-stable store and accept blank on
@@ -853,6 +930,49 @@ slices from `message.usage`), (iii) for EFFORT, source from the `session_capabil
 handshake on every live (re)connect — **with an explicit blank where no live source
 exists** (pure offline replay). **Resolved per-metric in #step-8a (EFFORT), #step-8b
 (TIME), #step-8c (/context breakdown).**
+
+**EFFORT resolution (#step-8a — done):** EFFORT stays sourced from the live
+`session_capabilities.effort` handshake (→ `SessionMetadataStore.effort`), which now
+reaches the store reliably thanks to #step-7's batch-bypass + per-kind cache. **No NEW
+durable persist was added** — one already exists and is the right model: the per-card
+`dev.effort/<cardId>` tugbank value (`use-effort.ts`, [D07]) re-applies the user's last
+*per-card* effort choice optimistically. It is target-stable by construction ([P05]):
+absent on a fresh target → no apply → blank; present → the user's own remembered choice
+(a preference, not stale session data); and a live handshake always overrides it.
+The one fix: the chip conflated "confirmed default (live handshake, no override)" with
+"no signal at all (offline replay)", both rendering `High`/`Default`. New pure helper
+`resolveEffortDisplay` distinguishes them — with a live handshake (`models` non-empty) a
+null effort shows the confirmed default; with **no** handshake (offline replay) it shows
+the honest `-` blank, never an assumed default (`resolveEffortSupport` still resolves
+*support* from the static catalog so the picker keeps its levels). Tested: 5 pure-logic
+cases in `effort.test.ts`; at0192 asserts `EFFORT -` on the offline cold replay.
+
+**TIME resolution (#step-8b — done):** per-turn TIME (wall/active/ttft) is NOT in the
+JSONL — it is reconstructed only from the durable `turn_telemetry` overlay ([P03]), empty
+on a fresh target ([P05]). On that path the replay telemetry carries `wallClockMs`/
+`activeMs` as `0` and `ttftMs` as `null`, which the surfaces rendered as a **fabricated
+`0:00`**. New pure predicate `turnHasTiming(t)` (telemetry.ts) — `wallClockMs > 0 ||
+activeMs > 0 || ttftMs !== null` — gates every per-turn TIME surface to render an explicit
+`—` when there is no durable timing, never `0:00`: the status-row TIME cell (committed,
+not in-flight), the Z1b per-turn row, the per-turn duration text, and the TIME popover
+log. A live in-flight clock and a real overlaid row both pass the predicate, so genuine
+timing is unaffected. (TTFT already showed `—` on null — this extends the same honesty to
+wall/active.) **No durable persist change** — the existing `turn_telemetry` overlay is the
+source; we just stop fabricating where it's absent. Tested: 4 `turnHasTiming` cases in
+`telemetry.test.ts`; full tugdeck suite green (3736).
+
+**/context breakdown resolution (#step-8c — done):** the popover's fine category split
+(system prompt / tools / memory / skills) and the reserved `autocompact_buffer` come only
+from tugcode's live tokenizer frame (`context_breakdown_latest`), empty on a fresh target
+([P05]) — so `computeRichContextBreakdown` returned `null` and the popover showed an empty
+state on offline replay. Fix: when there's no durable frame BUT usage exists, it now
+reconstructs the **usage-derived** portion from the replayed cost — a lumped `Session
+context` baseline (`window(0)` = sessionInit) + `Messages` (window − baseline) + remainder
+— so the popover populates on any target. The non-reconstructable slices (per-category
+split, autocompact_buffer) are simply omitted, never faked; `totalUsed` stays
+`window(latest)` (identical to the CONTEXT cell, so the two never disagree). Genuinely-no-
+usage still returns `null` (honest empty state). Tested: 2 new cases in `telemetry.test.ts`
+(reconstruct-when-usage, null-when-empty); full tugdeck suite green (3737).
 
 #### [Q06] Restore the exact `[1m]` model variant, or accept bare-name + correct max? {#q06-model-variant-cosmetics}
 The JSONL model is bare (`claude-opus-4-7`); the live chip shows "· 1M" only for the
@@ -943,6 +1063,66 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 > proves infeasible, that is a finding to surface here — never a license to fall back to
 > injection for the delivery assertions.
 
+**Feasibility finding (investigation, pre-build).** A true cold replay through the real
+chain is **buildable in `app-test` without any Swift change**, but it requires assembling
+live-pipeline capability the harness does not have today. Verified facts:
+
+- **The existing harness verbs cannot exercise the chain.** `bindDevSession` *explicitly
+  bypasses* the live tugcast→tugcode pipeline (it writes synthetic values into
+  `cardSessionBindingStore`; "that pipeline isn't running for most tests"), and
+  `driveDevSession({op:"ingestFrame", feedId: CODE_OUTPUT})` feeds the **client** store
+  directly — it never crosses tugcast's `CODE_OUTPUT → SESSION_METADATA` fan-out, which is
+  exactly where the #a3-model-delivery ordering/no-clobber bug lives. So `at0191`-style
+  frame ingestion is structurally unable to verify #step-7.
+- **The app-test stack does run a live tugcast** (PUTs flush to it), and **spawns are not
+  gated** in app-test (`agent_supervisor.rs` has no app-test spawn suppression), and
+  tugcast resolves the **bundled worktree `tugcode`** (sibling `Contents/MacOS/tugcode`).
+- **The real spawn is page-side**, so a new `test-surface.ts` method
+  (`spawnSessionResume(cardId, {tugSessionId, projectDir})`) calling the production
+  `sendSpawnSession(getConnection(), …, "resume")` fires the genuine `spawn_session`
+  CONTROL frame over the live connection — **no Swift/RPC change**, drivable via `evalJS`.
+- **Three integration prerequisites remain** (the real cost of this vehicle):
+  1. **Fixture JSONL placement** at `~/.claude/projects/<encoded(projectDir)>/<claudeId>.jsonl`
+     (`jsonlPathFor`, `tugcode/src/session.ts`) — the test writes it to a temp project dir.
+  2. **tugbank record seeding** — tugcast resolves `tugSessionId → claude_session_id` from
+     its tugbank record to choose the resume JSONL (`--resume-session <id>`); a brand-new
+     fixture session has no such record, so the test must seed one (tugbank API /
+     `tugbank-helpers.ts`) or the resume can't locate the file.
+  3. **Replay-independent-of-Claude** — on `--resume`, tugcode replays the JSONL
+     (`translateJsonlSession`, emitting the synth `system_metadata` + the fan-out's
+     `SESSION_METADATA`) and *then* attempts a live `--resume` to Claude. App-test has no
+     Claude; the replay (and thus all Z2 delivery) must — and by construction does — land
+     **before** the live connect, so the live-connect failure is irrelevant to the Z2
+     assertions. (To confirm on first run; if false, that is the surfaced infeasibility.)
+
+**Build plan:** add `spawnSessionResume` to `test-surface.ts` + a harness wrapper; place
+the fixture JSONL + seed the tugbank resume record in `beforeAll`; fire the real resume;
+read the Z2 snapshot (model chip, CONTEXT max/used, TOKENS) from the DOM. The cost-only
+smoke fixture validates the vehicle green (cost already works), and #step-7/#step-9 reuse
+the same vehicle for the model/denominator assertions through the real chain.
+
+**RESULT — feasible and GREEN (`at0192-z2-cold-replay.test.ts`, ~1.1s).** The real chain
+works end-to-end through `spawnSessionResume`; `tugbank seeding was NOT required` (the
+un-forked resume falls back to `session_id` for `--resume`, so placing the fixture at
+`<sid>.jsonl` suffices). Two non-obvious gotchas were the real cost of the build, both now
+encoded in the test:
+1. **Realpath encoding.** macOS `mkdtemp` returns `/var/folders/…`, but tugcode AND
+   `claude --resume` resolve `/var → /private/var` before encoding the claude-projects
+   subdir. The fixture must be written under the `realpathSync`-resolved path and the
+   resolved path passed to the spawn, or tugcode reads **0 bytes** (`turns=0`) and claude
+   reports "No conversation found" → `resume_failed` → the card reverts to the picker.
+2. **Claude-valid fixture.** `claude --resume <id>` reads the **same** JSONL; a fixture
+   carrying only the subset `translateJsonlSession` needs (no `uuid`/`parentUuid`/`cwd`/
+   `sessionId`) parses for tugcode but makes claude fail the resume (→ picker revert). The
+   fixture carries claude's own session fields so the resume settles and the replayed body
+   sticks. With both fixed, the card binds, DevCardBody renders the 2 replayed turns, and
+   the status row reads `CONTEXT 13.8K / 200.0K · TOKENS 4.4K` — the 13.8K/4.4K exactly
+   matching `window(2)` and `perTurn(2)` of the fixture usage.
+
+Observed: the **CONTEXT-max denominator fell back to 200K** even though the model chip
+showed a model — the live #a3 model-delivery / denominator defect, which #step-7 (delivery)
+and #step-9 (denominator) fix and re-assert on this same vehicle.
+
 **Artifacts:**
 - A `tests/app-test/` case that cold-replays a fixture JSONL into a fresh, empty-DB store **through the real tugcode/tugcast path** and reads back the Z2 snapshot (model, context-max, context-used, tokens).
 - A cost-only smoke fixture (already-correct path) proving the vehicle green.
@@ -988,6 +1168,50 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
 - [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
 - [ ] `just app-test <file>` → `VERDICT: PASS`
+
+**RESULT — done, at0192 GREEN (`CONTEXT 13.8K / 1.00M · MODEL Opus 4.8`).** The real
+root cause was deeper than #a3's "bind-emit ordering" diagnosis, found by instrumenting
+the live store + connection cache on the at0192 vehicle. The active model was lost in
+**two** stacked transport faults, fixed in layers (all unit-tested + proven end-to-end):
+
+1. **`replay_batch` swallowed the metadata frame (the dominant fault).** tugcode's cold
+   replay coalesces content frames into a `replay_batch` envelope (`session.ts`) to cut
+   per-frame wire cost. The synth's `system_metadata` was swept into that batch — but the
+   batch rides the metadata feed, whose client store consumes **standalone** frames and
+   never unwraps a batch (the `CodeSessionStore` unwraps it for transcript/cost, the
+   metadata store does not). So the model frame never reached `SessionMetadataStore`
+   (`sysCount: 0` in the diagnostic). **Fix:** `system_metadata` / `session_capabilities`
+   now **bypass the batch** — flushed and emitted raw so tugcast's fan-out rewraps each
+   onto the metadata feed as its own line. Regression-tested in `replay-spawn.test.ts`
+   ("rides as a STANDALONE wire line, never inside a replay_batch").
+
+2. **Three payload kinds multiplexed on one feed with a last-wins replay cache.** The feed
+   (renamed **`SESSION_METADATA` → `SESSION_SIDEBAND`** per the user, byte `0x51`
+   unchanged, to end the feed-vs-`system_metadata`-payload name collision) carries
+   `system_metadata` + `session_capabilities` + `rate_limit_event`. The client connection's
+   replay-on-subscribe cache kept ONE frame per feed, so a late-binding card replayed only
+   whichever kind arrived last, losing the others. **Fix:** the connection retains the last
+   frame **per (feed, payload `type`)** for the sideband and replays each on subscribe
+   (`connection.ts`).
+
+Plus the two precedence/tracking pieces the plan called for, kept as defense-in-depth:
+- **[P09] active-model synth** — the replay synth emits on the first real model AND on
+  every change, so the store lands on the **active** (last) model (`replay.ts`;
+  model-switch test in `replay.test.ts`).
+- **[P06] no-clobber** — an empty/absent model in a later `system_metadata` normalizes to
+  `null` and never wipes a resolved real model (`session-metadata-store.ts`; 3 precedence
+  tests). Also makes `resolveModelContextMax` see a real model id → 1M, not the 200K
+  empty-string default.
+
+Tasks 2's original phrasing ("re-emit post-replay / order the bind-emit") was the wrong
+mechanism — the bind-emit was never the failure; the batch envelope + multiplex shadow
+were. The `--resume` vs offline-replay distinction is moot here: the model now rides the
+JSONL-reconstructed synth frame regardless of whether claude reconnects.
+
+A dedicated tugcast Rust "last-wins / no-clobber" test was not added: the no-clobber now
+lives client-side (the store), the multiplex fix is client-side (the connection), and the
+server fan-out already preserves the real model via `prefer_more_specific_model`. The
+at0192 real-chain test + the tugcode/tugdeck unit tests cover the behavior end-to-end.
 
 ---
 
@@ -1085,6 +1309,22 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 - [ ] `cd tugdeck && bun run tsc --noEmit && bun test`
 - [ ] `just app-test <file>` → `VERDICT: PASS`
 
+**RESULT — done.** Two halves:
+1. **CONTEXT-max = the model's window.** Already landed with #step-7 — at0192 reads
+   `1.00M` on the cold replay (was the 200K unknown-model default). No additional work.
+2. **Compaction-reset ([S03]).** `deriveContextWindows` carried a zero-usage turn's prior
+   window forward unconditionally, so a `/compact` boundary landing on a zero-usage turn
+   held the **stale pre-compact peak** (CONTEXT-used read far too high right after a
+   compaction). The self-contained signal is the **drop**: a zero-usage turn whose next
+   real window is *below* the prior is a compaction/clear boundary (the API's `cache_read`
+   reset), vs an interrupt whose next window stays ~the same. The walk now resets to the
+   post-compact window at such a boundary instead of carrying the peak (the drop is
+   attributed to the boundary turn; the telescoping identity still closes exactly). No
+   wire change, no per-turn marker needed. The last-turn-is-boundary edge (no next turn ⇒
+   post-compact window unknowable) carries forward, documented. Tested: 3 new
+   `end-state.test.ts` cases (reset-on-drop, interrupt-still-carries, last-turn-edge) +
+   the pre-existing carry-forward/`/compact` pins; full tugdeck suite green (3740).
+
 ---
 
 #### Step 10: Integration checkpoint — full metric × lifecycle matrix {#step-10}
@@ -1106,3 +1346,36 @@ acceptance bar and add an app-test that cold-replays a fixture into a fresh stor
 
 **Checkpoint:**
 - [ ] All suites + app-test `VERDICT: PASS`; the #metric-inventory gaps closed for in-scope metrics.
+
+**RESULT — done. All in-scope #metric-inventory gaps closed (Table T02 all ✅).**
+
+Full verification on the final committed dash state:
+- **tugcode** `bun test` → 630/630.
+- **tugcast** `cargo nextest run -p tugcast --no-fail-fast` → 750/750 (the lone
+  `git_diff_roundtrip` flake from an earlier run passed cleanly here — environment-
+  sensitive, never related to this work).
+- **tugdeck** `tsc --noEmit` clean + `bun test` → 3740/3740.
+- **at0192 cold-replay vehicle** (empty-DB target — the strictest [P06] test, all durable
+  side-tables empty) → `VERDICT: PASS`, reading
+  `CONTEXT 13.8K / 1.00M · TOKENS 4.4K · MODEL Opus 4.8 · EFFORT -`.
+
+That single empty-DB run exercises the cold-replay family (C3/C4/C5) end-to-end through
+the real chain and confirms every availability boundary is honest, not silently wrong:
+TOKENS + CONTEXT-used reconstruct from JSONL cost; MODEL + CONTEXT-max resolve from the
+replay synth (1.00M, not the 200K default); EFFORT shows the honest `-` blank (no live
+handshake); /context reconstructs its usage slices; per-turn TIME shows `—` (no durable
+row) rather than a fabricated `0:00`.
+
+**Seeded / live (durable-present) coverage.** The "EFFORT/TIME present" half is verified
+at the pure-logic layer (`resolveEffortDisplay` with a live handshake → the level;
+`turnHasTiming` with a real overlay → values; `computeRichContextBreakdown` with a durable
+frame → the full category split) plus the fact that the LIVE/seeded code paths are
+**unchanged** — every fix added only the absent-source branch, leaving the present-source
+behavior exactly as it was (and still covered by the pre-existing suites). A dedicated
+seeded-DB app-test was therefore not built; it would re-assert unchanged behavior. Noted
+here rather than silently skipped.
+
+**Lifecycle (C1–C5).** C1 (incremental/live) and C2 (HMR) preserve live state — C2's
+store-survival is the #step-6b finding; C3/C4/C5 (cold replay) are the at0192-verified
+family. No per-case regression: the full tugdeck suite (which exercises the reducer/store
+across these paths) is green.

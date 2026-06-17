@@ -20,6 +20,7 @@ import {
   computeTimeSummary,
   computeTokensSummary,
   computeRichContextBreakdown,
+  turnHasTiming,
   type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
 import {
@@ -750,12 +751,33 @@ describe("computeRichContextBreakdown", () => {
   };
   const RAW_STATIC_TOTAL = 15_500;
 
-  it("returns null when no context_breakdown frame has landed", () => {
+  it("reconstructs a usage-derived breakdown when no static frame but usage exists", () => {
+    // Fresh target / offline replay: no durable context_breakdown row, but the
+    // replayed cost gives window + sessionInit. The popover must still populate
+    // — a coarse baseline + messages + remainder — not stay empty.
+    const r = computeRichContextBreakdown({
+      staticBreakdown: null,
+      sessionInitTokens: 18_575,
+      windowTokens: 27_927,
+      contextMax: CONTEXT_MAX,
+    })!;
+    expect(r).not.toBeNull();
+    expect(r.totalUsed).toBe(27_927); // = windowTokens
+    expect(r.contextMax).toBe(CONTEXT_MAX);
+    const byId = Object.fromEntries(r.segments.map((s) => [s.id, s.value]));
+    expect(byId.session_context).toBe(18_575); // the lumped baseline
+    expect(byId.messages).toBe(27_927 - 18_575); // window − baseline
+    expect(byId.remainder).toBe(CONTEXT_MAX - 27_927);
+    // The reserved autocompact_buffer is NOT reconstructable without the row.
+    expect(r.segments.some((s) => s.id === "autocompact_buffer")).toBe(false);
+  });
+
+  it("returns null when no static frame AND no usage yet (popover stays empty)", () => {
     expect(
       computeRichContextBreakdown({
         staticBreakdown: null,
-        sessionInitTokens: 18_575,
-        windowTokens: 27_927,
+        sessionInitTokens: null,
+        windowTokens: 0,
         contextMax: CONTEXT_MAX,
       }),
     ).toBeNull();
@@ -885,5 +907,22 @@ describe("computeRichContextBreakdown", () => {
     })!;
     expect(r.contextMax).toBe(0);
     expect(r.segments[r.segments.length - 1].value).toBe(0);
+  });
+});
+
+describe("turnHasTiming", () => {
+  it("is true when any clock is real (a live-recorded turn)", () => {
+    expect(turnHasTiming({ wallClockMs: 4200, activeMs: 3100, ttftMs: 250 })).toBe(true);
+  });
+  it("is true when only ttft is present", () => {
+    expect(turnHasTiming({ wallClockMs: 0, activeMs: 0, ttftMs: 120 })).toBe(true);
+  });
+  it("is true when only the wall clock elapsed", () => {
+    expect(turnHasTiming({ wallClockMs: 900, activeMs: 0, ttftMs: null })).toBe(true);
+  });
+  it("is FALSE for the replay zero-placeholder (no durable turn_telemetry row)", () => {
+    // A turn restored from JSONL alone, no `turn_telemetry` overlay → all-zero
+    // timing + null ttft. TIME must read `—`, not a fabricated `0:00`.
+    expect(turnHasTiming({ wallClockMs: 0, activeMs: 0, ttftMs: null })).toBe(false);
   });
 });

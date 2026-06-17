@@ -321,7 +321,7 @@ class CardServicesStore {
     const editorStore = new EditorSettingsStore();
     const responseStore = new ResponseSettingsStore();
 
-    // Filter by workspace_key for feeds that carry it. SESSION_METADATA
+    // Filter by workspace_key for feeds that carry it. SESSION_SIDEBAND
     // does not carry workspace_key on the wire, so it stays unfiltered.
     // The workspace_key is set on the binding when the supervisor acks
     // and does not change for the lifetime of this services bag —
@@ -334,11 +334,11 @@ class CardServicesStore {
 
     const sessionMetadataFeedStore = new FeedStore(
       connection,
-      [FeedId.SESSION_METADATA],
+      [FeedId.SESSION_SIDEBAND],
     );
     const sessionMetadataStore = new SessionMetadataStore(
       sessionMetadataFeedStore,
-      FeedId.SESSION_METADATA,
+      FeedId.SESSION_SIDEBAND,
     );
 
     const fileTreeFeedStore = new FeedStore(

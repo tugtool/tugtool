@@ -19,7 +19,7 @@
  *   - `/` triggers `getFixtureSessionMetadataStore().getCommandCompletionProvider()`
  *     — same `SessionMetadataStore` class production uses, but
  *     backed by the captured `capabilities/<LATEST>/system-metadata.jsonl`
- *     payload from `just capture-capabilities`. Live SESSION_METADATA
+ *     payload from `just capture-capabilities`. Live SESSION_SIDEBAND
  *     only arrives when a code session is active, and the gallery is a
  *     harness with no session — `gallery-prompt-entry` uses the same
  *     fixture for the same reason.

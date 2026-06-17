@@ -38,7 +38,7 @@ export const FeedId = {
   CODE_INPUT: 0x41,
   // Defaults / Session
   DEFAULTS: 0x50,
-  SESSION_METADATA: 0x51,
+  SESSION_SIDEBAND: 0x51,
   SESSION_STATE: 0x52,
   // Shell (reserved for Phase T2+)
   SHELL_OUTPUT: 0x60,
@@ -379,7 +379,7 @@ export interface RateLimitInfo {
 
 /**
  * Server-to-client `rate_limit_event` frame, mirroring tugcode's
- * `RateLimitEvent`. Rides the SESSION_METADATA feed (the tugcast
+ * `RateLimitEvent`. Rides the SESSION_SIDEBAND feed (the tugcast
  * supervisor rewraps it off CODE_OUTPUT alongside `system_metadata` /
  * `session_capabilities`); the client store discriminates by `type`.
  */

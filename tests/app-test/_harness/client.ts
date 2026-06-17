@@ -738,6 +738,28 @@ export function bindDevSession(
 }
 
 /**
+ * Fire a REAL `spawn_session(mode=resume)` CONTROL frame over the live
+ * connection via `window.__tug.spawnSessionResume` — tugcast spawns a genuine
+ * tugcode `--resume` that replays the on-disk JSONL through the
+ * `CODE_OUTPUT → SESSION_METADATA` fan-out into the card's
+ * `SessionMetadataStore`. The only harness verb that drives the true
+ * cold-replay delivery chain (vs. the synthetic `bindDevSession` or the
+ * injected `ingestSessionMetadata`). The fixture JSONL must already sit at
+ * `~/.claude/projects/<encode(projectDir)>/<tugSessionId>.jsonl`.
+ */
+export function spawnSessionResume(
+  caller: HarnessCaller,
+  cardId: string,
+  opts: { tugSessionId: string; projectDir: string },
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const script = callSurface(
+    `(window.__tug.spawnSessionResume(${lit(cardId)}, ${lit(opts)}), null)`,
+  );
+  return caller.evalJS<null>(script, evalOpts).then(() => undefined);
+}
+
+/**
  * One step in driving a bound dev card's `CodeSessionStore` through
  * the lifecycle matrix — mirrors `DevSessionDriveAction` on the
  * `test-surface.ts` side (the two graphs are kept structurally

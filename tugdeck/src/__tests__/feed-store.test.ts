@@ -75,7 +75,7 @@ describe("FeedStore filter", () => {
     };
     const store = new FeedStore(
       conn,
-      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      [FeedId.SESSION_SIDEBAND] as readonly FeedIdValue[],
       undefined,
       filter,
     );
@@ -90,12 +90,12 @@ describe("FeedStore filter", () => {
 
     // Emit a frame that the filter should reject.
     mock.emit(
-      FeedId.SESSION_METADATA,
+      FeedId.SESSION_SIDEBAND,
       encodeJson({ tug_session_id: "drop", type: "system_metadata" }),
     );
 
     expect(store.getSnapshot().size).toBe(0);
-    expect(store.getSnapshot().has(FeedId.SESSION_METADATA)).toBe(false);
+    expect(store.getSnapshot().has(FeedId.SESSION_SIDEBAND)).toBe(false);
     expect(notifyCount).toBe(0);
   });
 
@@ -107,7 +107,7 @@ describe("FeedStore filter", () => {
     };
     const store = new FeedStore(
       conn,
-      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      [FeedId.SESSION_SIDEBAND] as readonly FeedIdValue[],
       undefined,
       filter,
     );
@@ -118,16 +118,16 @@ describe("FeedStore filter", () => {
     });
 
     const payload = { tug_session_id: "keep", type: "system_metadata", model: "opus" };
-    mock.emit(FeedId.SESSION_METADATA, encodeJson(payload));
+    mock.emit(FeedId.SESSION_SIDEBAND, encodeJson(payload));
 
     expect(store.getSnapshot().size).toBe(1);
-    expect(store.getSnapshot().get(FeedId.SESSION_METADATA)).toEqual(payload);
+    expect(store.getSnapshot().get(FeedId.SESSION_SIDEBAND)).toEqual(payload);
     expect(notifyCount).toBe(1);
   });
 
   test("runs on the replay path — cached payload flows through filter", () => {
     // Scenario: by the time the FeedStore is constructed, the connection
-    // already has a cached `lastPayload` for SESSION_METADATA from a
+    // already has a cached `lastPayload` for SESSION_SIDEBAND from a
     // prior emission. `TugConnection.onFrame` synchronously replays the
     // cached payload into the newly registered callback. Our filter MUST
     // run against that replayed payload; otherwise any multi-session
@@ -137,7 +137,7 @@ describe("FeedStore filter", () => {
 
     // Pre-seed a cached payload for a session the filter will reject.
     mock.seedCache(
-      FeedId.SESSION_METADATA,
+      FeedId.SESSION_SIDEBAND,
       encodeJson({ tug_session_id: "drop", type: "system_metadata" }),
     );
 
@@ -147,7 +147,7 @@ describe("FeedStore filter", () => {
     };
     const store = new FeedStore(
       conn,
-      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      [FeedId.SESSION_SIDEBAND] as readonly FeedIdValue[],
       undefined,
       filter,
     );
@@ -163,7 +163,7 @@ describe("FeedStore filter", () => {
     // payload, the snapshot must reflect it immediately on construction.
     const { conn, mock } = makeMockConn();
     const payload = { tug_session_id: "keep", type: "system_metadata" };
-    mock.seedCache(FeedId.SESSION_METADATA, encodeJson(payload));
+    mock.seedCache(FeedId.SESSION_SIDEBAND, encodeJson(payload));
 
     const filter: FeedStoreFilter = (_feedId, decoded) => {
       const obj = decoded as { tug_session_id?: string };
@@ -171,27 +171,27 @@ describe("FeedStore filter", () => {
     };
     const store = new FeedStore(
       conn,
-      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      [FeedId.SESSION_SIDEBAND] as readonly FeedIdValue[],
       undefined,
       filter,
     );
 
     expect(store.getSnapshot().size).toBe(1);
-    expect(store.getSnapshot().get(FeedId.SESSION_METADATA)).toEqual(payload);
+    expect(store.getSnapshot().get(FeedId.SESSION_SIDEBAND)).toEqual(payload);
   });
 
   test("no filter is passthrough — every decoded frame admitted", () => {
     const { conn, mock } = makeMockConn();
     const store = new FeedStore(
       conn,
-      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      [FeedId.SESSION_SIDEBAND] as readonly FeedIdValue[],
     );
 
     const payload = { tug_session_id: "anything", type: "system_metadata" };
-    mock.emit(FeedId.SESSION_METADATA, encodeJson(payload));
+    mock.emit(FeedId.SESSION_SIDEBAND, encodeJson(payload));
 
     expect(store.getSnapshot().size).toBe(1);
-    expect(store.getSnapshot().get(FeedId.SESSION_METADATA)).toEqual(payload);
+    expect(store.getSnapshot().get(FeedId.SESSION_SIDEBAND)).toEqual(payload);
   });
 
   test("setFilter swaps the predicate for subsequent frames", () => {
@@ -207,14 +207,14 @@ describe("FeedStore filter", () => {
 
     const store = new FeedStore(
       conn,
-      [FeedId.SESSION_METADATA] as readonly FeedIdValue[],
+      [FeedId.SESSION_SIDEBAND] as readonly FeedIdValue[],
       undefined,
       presenceFilter,
     );
 
     // Fallback accepts any frame with `workspace_key`.
     mock.emit(
-      FeedId.SESSION_METADATA,
+      FeedId.SESSION_SIDEBAND,
       encodeJson({ workspace_key: "/any", payload: "a" }),
     );
     expect(store.getSnapshot().size).toBe(1);
@@ -231,20 +231,20 @@ describe("FeedStore filter", () => {
     // on the previous payload (setFilter does not purge cached data, per
     // its JSDoc).
     mock.emit(
-      FeedId.SESSION_METADATA,
+      FeedId.SESSION_SIDEBAND,
       encodeJson({ workspace_key: "/work/beta", payload: "b" }),
     );
     expect(
-      (store.getSnapshot().get(FeedId.SESSION_METADATA) as { payload: string }).payload,
+      (store.getSnapshot().get(FeedId.SESSION_SIDEBAND) as { payload: string }).payload,
     ).toBe("a");
 
     // Matching frame is accepted.
     mock.emit(
-      FeedId.SESSION_METADATA,
+      FeedId.SESSION_SIDEBAND,
       encodeJson({ workspace_key: "/work/alpha", payload: "c" }),
     );
     expect(
-      (store.getSnapshot().get(FeedId.SESSION_METADATA) as { payload: string }).payload,
+      (store.getSnapshot().get(FeedId.SESSION_SIDEBAND) as { payload: string }).payload,
     ).toBe("c");
   });
 });

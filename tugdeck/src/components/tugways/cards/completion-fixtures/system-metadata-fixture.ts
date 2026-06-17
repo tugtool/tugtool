@@ -45,7 +45,7 @@ class FixtureFeedStore {
   private map: Map<number, unknown>;
 
   constructor(payload: unknown) {
-    this.map = new Map([[FeedId.SESSION_METADATA as number, payload]]);
+    this.map = new Map([[FeedId.SESSION_SIDEBAND as number, payload]]);
   }
 
   subscribe(_listener: () => void): () => void {
@@ -78,7 +78,7 @@ export function createFixtureSessionMetadataStore(
   }
   const payload = JSON.parse(firstLine);
   const feed = new FixtureFeedStore(payload) as unknown as FeedStore;
-  return new SessionMetadataStore(feed, FeedId.SESSION_METADATA);
+  return new SessionMetadataStore(feed, FeedId.SESSION_SIDEBAND);
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ export function getFixtureSessionMetadataStore(): SessionMetadataStore {
     // feed that never emits. Matches the old InertFeedStore behavior that
     // previously lived in gallery-prompt-entry.tsx.
     const emptyFeed = new FixtureFeedStore(null) as unknown as FeedStore;
-    _store = new SessionMetadataStore(emptyFeed, FeedId.SESSION_METADATA);
+    _store = new SessionMetadataStore(emptyFeed, FeedId.SESSION_SIDEBAND);
   }
   return _store;
 }

@@ -321,7 +321,50 @@ export function computeRichContextBreakdown(
   const { staticBreakdown, sessionInitTokens, windowTokens, contextMax } =
     input;
   if (staticBreakdown === null) {
-    return null;
+    // No durable `context_breakdown_latest` row (fresh target / pure offline
+    // replay, [P05]): the fine-grained static categories (system prompt,
+    // tools, memory, skills) and the reserved `autocompact_buffer` are NOT
+    // reconstructable — they come only from tugcode's live tokenizer frame.
+    // But the usage-derived occupancy IS reconstructable from the replayed
+    // per-turn cost: the session baseline (`window(0)` = `sessionInit`, the
+    // lumped startup context) and the messages (`window − baseline`). Build
+    // that coarse breakdown so the /context popover is populated on ANY
+    // target rather than empty. `null` only when there is genuinely no usage
+    // yet (the popover then stays empty, honestly).
+    if (windowTokens === null || windowTokens <= 0) {
+      return null;
+    }
+    const safeMax = Math.max(0, contextMax);
+    const baseline = Math.max(0, Math.min(sessionInitTokens ?? 0, windowTokens));
+    const messages = Math.max(0, windowTokens - baseline);
+    const reconstructed: ContextBreakdownSegment[] = [];
+    if (baseline > 0) {
+      // Lumped under the system-prompt tone — the baseline is dominated by the
+      // system prompt + tools; without the static frame it can't be split.
+      reconstructed.push({
+        id: "session_context",
+        tone: "system_prompt",
+        value: baseline,
+        label: "Session context",
+      });
+    }
+    reconstructed.push({
+      id: "messages",
+      tone: "messages",
+      value: messages,
+      label: "Messages",
+    });
+    reconstructed.push({
+      id: "remainder",
+      tone: "remainder",
+      value: Math.max(0, safeMax - windowTokens),
+      label: "Unused",
+    });
+    return {
+      segments: reconstructed,
+      totalUsed: windowTokens,
+      contextMax: safeMax,
+    };
   }
   const safeContextMax = Math.max(0, contextMax);
 
@@ -792,6 +835,26 @@ export interface TurnTelemetry {
    * is absent.
    */
   turnEndReason?: TurnEndReason;
+}
+
+/**
+ * Whether a committed turn carries REAL multi-clock timing, rather than the
+ * zero-placeholder a turn restored without a durable `turn_telemetry` row
+ * gets. Per-turn TIME (wall / active / ttft) is NOT in the session JSONL — it
+ * is reconstructed only from the durable side-table that tugcast overlays
+ * ([P03]), which is empty on a fresh target / pure offline replay ([P05]). On
+ * that path `wallClockMs` / `activeMs` come through as `0` and `ttftMs` as
+ * `null`. A genuine turn always elapses wall-clock > 0, so all-zero-and-null
+ * IS the "no durable timing" signal: the TIME surfaces must then render an
+ * explicit `—`, never a fabricated `0:00`. Structural input so both
+ * `TurnTelemetry` and `TurnEntry` (which inlines these fields) qualify.
+ */
+export function turnHasTiming(t: {
+  wallClockMs: number;
+  activeMs: number;
+  ttftMs: number | null;
+}): boolean {
+  return t.wallClockMs > 0 || t.activeMs > 0 || t.ttftMs !== null;
 }
 
 /**

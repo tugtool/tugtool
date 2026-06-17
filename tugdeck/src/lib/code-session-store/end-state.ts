@@ -154,8 +154,15 @@ export interface ContextWindowStep {
  *     zero-usage turn (`turnWindowTokens === 0` — an interrupted /
  *     errored turn with no measurable iteration) carries the prior
  *     window forward: `window(N) = window(N-1)`.
- *   - `perTurn(N)` = `window(N) - window(N-1)`, signed — `0` for a
- *     zero-usage turn, negative at a `/compact`.
+ *   - **Compaction-boundary reset ([S03]):** a zero-usage turn whose next
+ *     REAL turn has a window *below* the prior window is a `/compact` (or
+ *     `/clear`) boundary — the resident context actually fell (the API's
+ *     `cache_read` reset). It does NOT carry the stale pre-compact peak
+ *     forward; it resets to that post-compact window. A plain interrupt's
+ *     next turn keeps ~the same window (the conversation is still resident),
+ *     so it carries forward as before.
+ *   - `perTurn(N)` = `window(N) - window(N-1)`, signed — `0` for a plain
+ *     zero-usage turn, the negative drop at a `/compact` boundary.
  *
  * Identity: `sessionInit + sum of perTurn = window(latest)` —
  * telescopes exactly, every turn including compactions.
@@ -166,13 +173,34 @@ export function deriveContextWindows(
   usages: ReadonlyArray<LiveMessageUsage>,
   sessionInit: number,
 ): ReadonlyArray<ContextWindowStep> {
+  const raws = usages.map((u) => turnWindowTokens(u));
   const steps: ContextWindowStep[] = [];
   let prevWindow = sessionInit;
-  for (const usage of usages) {
-    const raw = turnWindowTokens(usage);
-    const window = raw === 0 ? prevWindow : raw;
+  for (let i = 0; i < raws.length; i++) {
+    const raw = raws[i]!;
+    let window: number;
+    if (raw !== 0) {
+      window = raw;
+    } else {
+      // Zero-usage turn: carry the prior window forward UNLESS the next real
+      // turn is a drop below it — then this is a compaction/clear boundary and
+      // the window resets to the post-compact value, never the stale peak.
+      const nextReal = nextNonZeroWindow(raws, i + 1);
+      window = nextReal !== null && nextReal < prevWindow ? nextReal : prevWindow;
+    }
     steps.push({ window, perTurn: window - prevWindow });
     prevWindow = window;
   }
   return steps;
+}
+
+/** The next strictly-positive window at or after `from`, else `null`. */
+function nextNonZeroWindow(
+  raws: ReadonlyArray<number>,
+  from: number,
+): number | null {
+  for (let i = from; i < raws.length; i++) {
+    if (raws[i]! !== 0) return raws[i]!;
+  }
+  return null;
 }

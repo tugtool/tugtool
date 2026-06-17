@@ -23,7 +23,7 @@ export function registerDevCard(): void {
     defaultFeedIds: [
       FeedId.CODE_INPUT,
       FeedId.CODE_OUTPUT,
-      FeedId.SESSION_METADATA,
+      FeedId.SESSION_SIDEBAND,
       FeedId.FILETREE,
     ],
     sizePolicy: {

@@ -36,6 +36,32 @@ export interface DisconnectState {
 /** Callback for disconnect state changes */
 export type DisconnectStateCallback = (state: DisconnectState) => void;
 
+/** Shared decoder for the multiplexed-feed `type` peek (UTF-8 JSON). */
+const SIDEBAND_TYPE_DECODER = new TextDecoder();
+
+/**
+ * Read the `type` discriminator from a JSON feed payload without fully
+ * trusting it — used to key the per-kind replay cache for multiplexed feeds
+ * (SESSION_SIDEBAND). Returns the `type` string, or `null` for a non-JSON /
+ * typeless payload (which then falls back to the single-slot cache). Cheap
+ * enough for the low-traffic sideband; never call it on a hot feed.
+ */
+function peekPayloadType(payload: Uint8Array): string | null {
+  try {
+    const value = JSON.parse(SIDEBAND_TYPE_DECODER.decode(payload)) as unknown;
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { type?: unknown }).type === "string"
+    ) {
+      return (value as { type: string }).type;
+    }
+  } catch {
+    // Not JSON / not decodable — fall through to the single-slot cache.
+  }
+  return null;
+}
+
 /** Protocol name for handshake */
 const PROTOCOL_NAME = "tugcast";
 
@@ -125,6 +151,19 @@ export class TugConnection {
   private rxBuffer: Uint8Array = new Uint8Array(0);
   private callbacks: Map<number, FrameCallback[]> = new Map();
   private lastPayload: Map<number, Uint8Array> = new Map();
+  // Replay-on-subscribe cache for feeds that MULTIPLEX several payload kinds
+  // onto one feed id. `lastPayload` keeps a single frame per feed, so a later
+  // frame of one kind evicts the cached frame of another — fine for the
+  // single-kind feeds, but SESSION_SIDEBAND carries three independent kinds
+  // (`system_metadata`, `session_capabilities`, `rate_limit`) that each own a
+  // separate region of client state. With a single slot, a late subscriber
+  // replays only whichever kind arrived last and silently loses the others
+  // (e.g. the synth's active-model `system_metadata` shadowed by a later
+  // `session_capabilities`, leaving the model — and the CONTEXT denominator —
+  // unresolved). This second cache retains the last frame per (feed, payload
+  // `type`) so the replay reconstructs every kind. Keyed feed id → `type`
+  // string → bytes.
+  private lastPayloadByType: Map<number, Map<string, Uint8Array>> = new Map();
   private disconnectStateCallbacks: Array<DisconnectStateCallback> = [];
   private heartbeatTimer: number | null = null;
   private url: string;
@@ -279,6 +318,7 @@ export class TugConnection {
       // frames, since the post-reconnect handshake will replay
       // whatever is current. See [D05].
       this.lastPayload.clear();
+      this.lastPayloadByType.clear();
       // Reset the inbound reassembly buffer — any partial frame held
       // across the close belongs to the prior connection and must
       // not bleed into post-reconnect parsing.
@@ -437,6 +477,19 @@ export class TugConnection {
     // Replay cached payload for late subscribers (e.g. cards mounted after
     // the initial snapshot was sent). This ensures snapshot feeds deliver
     // their current value to newly registered callbacks.
+    //
+    // For a multiplexed feed (SESSION_SIDEBAND), replay the last frame of
+    // EVERY kind so a late subscriber reconstructs the active model
+    // (`system_metadata`), the model list (`session_capabilities`), and the
+    // quota (`rate_limit`) independently — never just whichever arrived last.
+    // Single-kind feeds keep the single-slot replay.
+    const byType = this.lastPayloadByType.get(feedId);
+    if (byType !== undefined) {
+      for (const cached of byType.values()) {
+        callback(cached);
+      }
+      return;
+    }
     const cached = this.lastPayload.get(feedId);
     if (cached) {
       callback(cached);
@@ -564,8 +617,23 @@ export class TugConnection {
    * Dispatch a frame to registered callbacks
    */
   private dispatch(feedId: number, payload: Uint8Array): void {
-    // Cache latest payload so late subscribers get the current value
+    // Cache latest payload so late subscribers get the current value.
     this.lastPayload.set(feedId, payload);
+    // SESSION_SIDEBAND multiplexes three payload kinds onto one feed; retain
+    // the last frame of EACH kind so the replay-on-subscribe path delivers all
+    // of them to a late-binding card (see `lastPayloadByType`). Cheap: the
+    // sideband is low-traffic, so the per-frame JSON peek runs only here.
+    if (feedId === FeedId.SESSION_SIDEBAND) {
+      const type = peekPayloadType(payload);
+      if (type !== null) {
+        let byType = this.lastPayloadByType.get(feedId);
+        if (byType === undefined) {
+          byType = new Map();
+          this.lastPayloadByType.set(feedId, byType);
+        }
+        byType.set(type, payload);
+      }
+    }
     const cbs = this.callbacks.get(feedId);
     if (cbs) {
       for (const cb of cbs) {

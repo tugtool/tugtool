@@ -96,6 +96,7 @@ import {
   formatDurationMs,
   formatTokensCaps,
 } from "./dev-card-telemetry-renderers";
+import { turnHasTiming } from "@/lib/code-session-store/telemetry";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -314,7 +315,9 @@ function EndStateDisplay({
           <TugLabel size="xs" emphasis="calm" aria-hidden>
             •
           </TugLabel>
-          <TugLabel size="xs">{formatDurationMs(turn.activeMs)}</TugLabel>
+          <TugLabel size="xs">
+            {turnHasTiming(turn) ? formatDurationMs(turn.activeMs) : "—"}
+          </TugLabel>
           <TugLabel size="xs" emphasis="calm" aria-hidden>
             •
           </TugLabel>

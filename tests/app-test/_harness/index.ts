@@ -575,6 +575,22 @@ export class App {
   }
 
   /**
+   * Fire a REAL `spawn_session(mode=resume)` over the live connection so
+   * tugcast spawns a genuine tugcode `--resume` that replays the on-disk
+   * JSONL through the `CODE_OUTPUT → SESSION_METADATA` fan-out into the
+   * card's `SessionMetadataStore`. The only verb that drives the true
+   * cold-replay delivery chain (vs. `bindDevSession`'s synthetic binding or
+   * `ingestSessionMetadata`'s injected frame). Place the fixture JSONL at
+   * `~/.claude/projects/<encode(projectDir)>/<tugSessionId>.jsonl` first.
+   */
+  spawnSessionResume(
+    cardId: string,
+    opts: { tugSessionId: string; projectDir: string },
+  ): Promise<void> {
+    return client.spawnSessionResume(this as HarnessCaller, cardId, opts);
+  }
+
+  /**
    * Drive a bound dev card's `CodeSessionStore` one step through the
    * lifecycle matrix — `send` a user message, `ingestFrame` a decoded
    * wire frame, `interrupt`, or drive the transport overlay. The card

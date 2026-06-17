@@ -140,6 +140,52 @@ export function resolveEffortSupport(
   return { supported: levels.length > 0, levels };
 }
 
+/** What the EFFORT chip should display: a level, or `null` for the `-` blank. */
+export interface EffortDisplay {
+  supported: boolean;
+  /** The level to show, or `null` to show the `-` placeholder. */
+  level: string | null;
+  levels: EffortLevel[];
+}
+
+/**
+ * Resolve what the EFFORT chip should DISPLAY, distinguishing a known level
+ * from an honest unknown. EFFORT is NOT in the session JSONL — it exists only
+ * when a live `session_capabilities` handshake delivers it (or the user set it,
+ * which persists per-card and re-applies optimistically). So a pure offline
+ * replay — a resumed session whose model resolves but which never handshook —
+ * has no effort SIGNAL, and must read as unknown rather than an assumed default.
+ *
+ * Rules:
+ * - model doesn't support effort → no level (`-`).
+ * - an explicit `effort` (live override, or a restored per-card choice) → it.
+ * - no `effort` but a live handshake is present (`models` non-empty) → the
+ *   confirmed `DEFAULT_EFFORT_LEVEL` (claude runs a fresh session at that).
+ * - no `effort` AND no live handshake (`models` empty — pure offline replay) →
+ *   unknown (`null` → `-`), never a stale or assumed default. `resolveEffortSupport`
+ *   still resolves *support* from the static model catalog (so the picker offers
+ *   levels), but support ≠ a known current level.
+ */
+export function resolveEffortDisplay(
+  models: CapabilityModel[],
+  activeModel: string | null,
+  effort: string | null,
+): EffortDisplay {
+  const support = resolveEffortSupport(models, activeModel);
+  if (!support.supported) {
+    return { supported: false, level: null, levels: support.levels };
+  }
+  if (effort !== null) {
+    return { supported: true, level: effort, levels: support.levels };
+  }
+  const hasLiveHandshake = models.length > 0;
+  return {
+    supported: true,
+    level: hasLiveHandshake ? DEFAULT_EFFORT_LEVEL : null,
+    levels: support.levels,
+  };
+}
+
 /**
  * Parse the per-card persisted effort out of its tugbank tagged value.
  * Returns the stored string when present and string-kinded, else `null`. Not

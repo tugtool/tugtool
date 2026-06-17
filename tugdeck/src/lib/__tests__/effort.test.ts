@@ -15,10 +15,12 @@
 import { describe, expect, test } from "bun:test";
 import type { CapabilityModel } from "@/lib/session-metadata-store";
 import {
+  DEFAULT_EFFORT_LEVEL,
   EFFORT_LEVELS,
   formatEffortLabel,
   orderEffortLevels,
   parsePersistedEffort,
+  resolveEffortDisplay,
   resolveEffortSupport,
 } from "@/lib/effort";
 
@@ -129,5 +131,45 @@ describe("resolveEffortSupport", () => {
     const support = resolveEffortSupport([], null);
     expect(support.supported).toBe(false);
     expect(support.levels).toEqual([]);
+  });
+});
+
+describe("resolveEffortDisplay", () => {
+  test("an explicit override shows that level (live handshake present)", () => {
+    const d = resolveEffortDisplay(CAPABILITY_MODELS, "claude-opus-4-8", "low");
+    expect(d.supported).toBe(true);
+    expect(d.level).toBe("low");
+  });
+
+  test("no override WITH a live handshake shows the confirmed default", () => {
+    // `models` non-empty ⇒ a session_capabilities handshake landed and
+    // reported no `--effort` override → the model's built-in default.
+    const d = resolveEffortDisplay(CAPABILITY_MODELS, "claude-opus-4-8", null);
+    expect(d.supported).toBe(true);
+    expect(d.level).toBe(DEFAULT_EFFORT_LEVEL);
+  });
+
+  test("no override and NO live handshake (offline replay) is an honest unknown", () => {
+    // `models` empty ⇒ no handshake. The resumed model id still resolves
+    // effort SUPPORT via the static catalog (so the picker offers levels),
+    // but there is no effort SIGNAL — the chip must read `-`, not an assumed
+    // default. This is the explicit-blank-not-stale rule for EFFORT.
+    const d = resolveEffortDisplay([], "claude-opus-4-8", null);
+    expect(d.supported).toBe(true);
+    expect(d.level).toBeNull();
+    expect(d.levels.length).toBeGreaterThan(0); // support resolved for the picker
+  });
+
+  test("a restored per-card effort shows even with no live handshake", () => {
+    // The per-card durable choice re-applies optimistically (snapshot.effort
+    // non-null) — that IS a signal, so it shows even offline.
+    const d = resolveEffortDisplay([], "claude-opus-4-8", "max");
+    expect(d.level).toBe("max");
+  });
+
+  test("an unsupported model has no level regardless of source", () => {
+    const d = resolveEffortDisplay(CAPABILITY_MODELS, "claude-haiku-4-5", null);
+    expect(d.supported).toBe(false);
+    expect(d.level).toBeNull();
   });
 });

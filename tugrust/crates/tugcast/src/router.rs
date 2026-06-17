@@ -1518,9 +1518,9 @@ mod tests {
         // Pins [D14]'s broadcast-not-watch migration at the router layer.
         // A `system_metadata` frame injected into the supervisor's merger
         // must reach a `broadcast::Receiver<Frame>` — the same
-        // shape that `register_stream(FeedId::SESSION_METADATA, ...)` in
+        // shape that `register_stream(FeedId::SESSION_SIDEBAND, ...)` in
         // `main.rs` produces — and must NOT rely on any `watch::Receiver`.
-        // This test constructs a supervisor with its own SESSION_METADATA
+        // This test constructs a supervisor with its own SESSION_SIDEBAND
         // broadcast sender, subscribes a receiver, spawns `merger_task`,
         // registers a per-session stream, pushes a `system_metadata`
         // frame, and asserts the broadcast subscriber receives it.
@@ -1532,7 +1532,7 @@ mod tests {
         use tokio::sync::mpsc;
 
         let (state_tx, _) = broadcast::channel(16);
-        let (session_metadata_tx, mut meta_rx) = broadcast::channel::<Frame>(16);
+        let (session_sideband_tx, mut meta_rx) = broadcast::channel::<Frame>(16);
         let (code_tx, _) = broadcast::channel(16);
         let (control_tx, _) = broadcast::channel(16);
         let factory: SpawnerFactory = Arc::new(|| unreachable!("no spawner"));
@@ -1541,7 +1541,7 @@ mod tests {
         let router_cancel = CancellationToken::new();
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,
-            session_metadata_tx,
+            session_sideband_tx,
             code_tx,
             control_tx,
             recorder,
@@ -1570,13 +1570,13 @@ mod tests {
             .await
             .expect("broadcast subscriber received metadata")
             .expect("recv err");
-        // The merger MUST rewrap the payload as `FeedId::SESSION_METADATA`
+        // The merger MUST rewrap the payload as `FeedId::SESSION_SIDEBAND`
         // before publishing. `Frame::encode` serializes `Frame.feed_id` as
-        // the first wire byte, so a client subscribing to SESSION_METADATA
-        // (via `register_stream(FeedId::SESSION_METADATA, ...)`) would
+        // the first wire byte, so a client subscribing to SESSION_SIDEBAND
+        // (via `register_stream(FeedId::SESSION_SIDEBAND, ...)`) would
         // otherwise receive a frame tagged CODE_OUTPUT and route it to the
         // wrong store. This test is the router-layer pin for that rewrap.
-        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(received.feed_id, FeedId::SESSION_SIDEBAND);
         assert_eq!(received.payload, meta_payload);
 
         cancel.cancel();

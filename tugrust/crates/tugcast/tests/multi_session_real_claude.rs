@@ -37,9 +37,9 @@
 //! - P5 cross-client distinct sessions: two clients each claim
 //!   `CODE_INPUT` with distinct `tug_session_id`s and both succeed
 //!   ([D08]).
-//! - Event-driven SESSION_METADATA replay on reconnect ([D14], [F13]).
+//! - Event-driven SESSION_SIDEBAND replay on reconnect ([D14], [F13]).
 //! - Two sessions, no metadata clobber: both sessions' per-session
-//!   metadata land on the SESSION_METADATA broadcast ([D14]).
+//!   metadata land on the SESSION_SIDEBAND broadcast ([D14]).
 
 #![allow(dead_code)]
 
@@ -613,7 +613,7 @@ async fn test_session_metadata_reaches_late_subscriber() {
 
     // Round 2: W2 opens a fresh WebSocket (new client_id), sends
     // spawn_session for the SAME tug_session_id, and must receive
-    // exactly one SESSION_METADATA frame — the event-driven replay
+    // exactly one SESSION_SIDEBAND frame — the event-driven replay
     // fired inside the supervisor's do_spawn_session Phase 3 per
     // [D14] / [F13]. If tugcast did a post-handshake replay instead,
     // the fresh client_id would have an empty client_sessions set
@@ -626,7 +626,7 @@ async fn test_session_metadata_reaches_late_subscriber() {
         .await;
     assert_eq!(
         meta_count, 1,
-        "event-driven replay must deliver exactly one SESSION_METADATA frame"
+        "event-driven replay must deliver exactly one SESSION_SIDEBAND frame"
     );
 }
 

@@ -56,6 +56,7 @@ import {
   computeRichContextBreakdown,
   deriveSessionTotals,
   deriveTimeCellMs,
+  turnHasTiming,
 } from "@/lib/code-session-store/telemetry";
 import {
   deriveContextWindows,
@@ -562,6 +563,10 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // `activeTurn === null`.
   const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
   const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
+  // Per-turn TIME is durable-only (overlaid from `turn_telemetry`, [P03]); a
+  // turn restored without a row carries the zero-placeholder. Show the honest
+  // `—` then, never a fabricated `0:00`. A live in-flight clock is always real.
+  const lastTurnHasTiming = lastTurn !== null && turnHasTiming(lastTurn);
   // TOKENS / CONTEXT cells — both feed-derived. While a turn is in
   // flight the cells read the latest `streaming_usage` frame
   // (`liveTurnUsage`) so they climb mid-turn the way TIME does; once
@@ -804,7 +809,11 @@ export const DevTelemetryStatusRow = React.forwardRef<
         focusPolicy={focusPolicy}
       >
         <span className="dev-telemetry-status-value">
-          {inertValue(formatTimeMinutesSeconds(perTurnActiveMs))}
+          {inertValue(
+            isInflight || lastTurnHasTiming
+              ? formatTimeMinutesSeconds(perTurnActiveMs)
+              : "—",
+          )}
         </span>
       </TugStatusCell>
       <TugStatusCell
@@ -922,7 +931,7 @@ export const DevTelemetryPerTurnDuration: React.FC<DevTurnTelemetryProps> = ({
     className="dev-telemetry-text"
     data-slot="dev-telemetry-per-turn-duration"
   >
-    {formatDurationMs(turn.activeMs)}
+    {turnHasTiming(turn) ? formatDurationMs(turn.activeMs) : "—"}
   </span>
 );
 

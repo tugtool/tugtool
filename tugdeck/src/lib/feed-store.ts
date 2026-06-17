@@ -25,7 +25,7 @@
  *
  * This is the `[D11]` filter scope: tugdeck-side per-card filters enforce
  * multi-session isolation on the shared CODE_OUTPUT replay buffer and on
- * the SESSION_STATE / SESSION_METADATA broadcasts. Without this the
+ * the SESSION_STATE / SESSION_SIDEBAND broadcasts. Without this the
  * shared replay would leak frames from one session into another card's
  * store.
  *

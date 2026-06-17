@@ -3403,6 +3403,22 @@ export class SessionManager {
             }
             continue;
           }
+          // Sideband metadata frames bypass the batch. The replay synth
+          // yields `system_metadata` (the active model) — and a future pass
+          // may yield `session_capabilities` — interleaved with turn content.
+          // These ride the SESSION_SIDEBAND feed, where the client's
+          // `SessionMetadataStore` consumes STANDALONE frames and does not
+          // unwrap a `replay_batch`. Swept into a batch, the synth's model
+          // frame never reaches that store, so MODEL and the CONTEXT
+          // denominator stay unresolved (the active model is lost). Flush any
+          // buffered content first so wire order is preserved, then emit the
+          // metadata frame raw so tugcast's fan-out rewraps it onto
+          // SESSION_SIDEBAND as its own line.
+          if (msg.type === "system_metadata" || msg.type === "session_capabilities") {
+            flushBatch();
+            writeRaw(msg);
+            continue;
+          }
           // Committed-turn content: buffer and flush in batches. The
           // per-batch yield lets the write tail drain and keeps the
           // abort/timeout race responsive.

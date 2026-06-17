@@ -514,7 +514,7 @@ async fn main() {
     // Create replay buffer for CodeOutput lag recovery (P4). Correctness
     // on replay relies on the client-side session filter per [D06]/[D11]:
     // the buffer is shared across sessions, and clients subscribed to
-    // SESSION_STATE/SESSION_METADATA filter frames by `tug_session_id`.
+    // SESSION_STATE/SESSION_SIDEBAND filter frames by `tug_session_id`.
     use crate::router::{LagPolicy, ReplayBuffer};
     let code_replay = ReplayBuffer::new(1000);
 
@@ -528,12 +528,12 @@ async fn main() {
     }
 
     // Construct the multi-session supervisor. Broadcast channels for the
-    // session-scoped feeds (SESSION_STATE, SESSION_METADATA) are created
+    // session-scoped feeds (SESSION_STATE, SESSION_SIDEBAND) are created
     // here and registered with the router below. The supervisor publishes
     // CONTROL error frames onto the same broadcast that `register_stream`
     // wires for FeedId::CONTROL so clients observe them in-band.
     let (session_state_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-    let (session_metadata_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (session_sideband_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     // Per [D15], tugbank unavailability is still a fatal startup error
     // because other tugcast subsystems (defaults, recents, layout) need it.
@@ -655,7 +655,7 @@ async fn main() {
 
     let (supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
         session_state_tx.clone(),
-        session_metadata_tx.clone(),
+        session_sideband_tx.clone(),
         code_tx.clone(),
         client_action_tx.clone(),
         sessions_recorder,
@@ -716,7 +716,7 @@ async fn main() {
 
     // Spawn the supervisor's dispatcher task (consumes CODE_INPUT, routes
     // to per-session workers) and merger task (fans in per-session stdout
-    // streams and publishes system_metadata to SESSION_METADATA).
+    // streams and publishes system_metadata to SESSION_SIDEBAND).
     let dispatcher_supervisor = Arc::clone(&supervisor);
     tokio::spawn(async move {
         dispatcher_supervisor.dispatcher_task(code_input_rx).await;
@@ -751,15 +751,15 @@ async fn main() {
         LagPolicy::Replay(code_replay),
     );
     feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
-    // SESSION_STATE / SESSION_METADATA are broadcast streams (not snapshot
+    // SESSION_STATE / SESSION_SIDEBAND are broadcast streams (not snapshot
     // watches) per [D14]: a single watch slot would clobber concurrent
     // per-session updates. Per-session replay on reconnect is handled
     // event-driven inside `AgentSupervisor::handle_control("spawn_session")`
     // — there is no snapshot-watch registration for either feed.
     feed_router.register_stream(FeedId::SESSION_STATE, session_state_tx, LagPolicy::Warn);
     feed_router.register_stream(
-        FeedId::SESSION_METADATA,
-        session_metadata_tx,
+        FeedId::SESSION_SIDEBAND,
+        session_sideband_tx,
         LagPolicy::Warn,
     );
     // PULSE commentary lines fan out to every connected deck; the tail
@@ -792,7 +792,7 @@ async fn main() {
     // connect" pass for snapshot_watches is what causes the dev card
     // to see *any* FILETREE frame before a query has been sent. The
     // dev card gates rendering on `feedData.size > 0` across
-    // `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]`; without
+    // `[CODE_INPUT, CODE_OUTPUT, SESSION_SIDEBAND, FILETREE]`; without
     // this initial empty frame, a brand-new card with no session
     // bound hangs at "Loading..." indefinitely. The broadcast does
     // not solve this on its own — broadcast carries no retained
@@ -819,7 +819,7 @@ async fn main() {
     if let Some(rx) = defaults_rx {
         snapshot_watches.push(rx);
     }
-    // SESSION_METADATA and session_init snapshots moved to supervisor (Step 8).
+    // SESSION_SIDEBAND and session_init snapshots moved to supervisor (Step 8).
     feed_router.add_snapshot_watches(snapshot_watches);
     // Multi-workspace FILETREE response stream — registered once. Every
     // connected client subscribes its own broadcast receiver in

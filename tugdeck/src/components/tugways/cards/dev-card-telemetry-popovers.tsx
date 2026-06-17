@@ -100,6 +100,7 @@ import {
   formatTokensCaps,
   useLiveTick,
 } from "./dev-card-telemetry-renderers";
+import { turnHasTiming } from "@/lib/code-session-store/telemetry";
 import { Square } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
@@ -491,7 +492,7 @@ export function TimePopoverContent({
       key={t.turnKey}
       label={<TurnEntryPair turnIndex={i} transcript={transcript} turnNumberBase={turnNumberBase} onScrollToRow={onScrollToRow} />}
       preview={<RequestPreview turn={t} />}
-      value={formatTimeAlwaysHours(t.activeMs)}
+      value={turnHasTiming(t) ? formatTimeAlwaysHours(t.activeMs) : "—"}
       badge={<TurnEndStateBadge turn={t} />}
     />
   ));
@@ -622,8 +623,13 @@ function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
  * bootstrap. `mcp_tools` is intentionally absent — Tug treats MCP as
  * out of scope.
  *
- * `breakdown === null` means no `context_breakdown` frame has landed
- * yet — the popover surfaces an explicit empty state.
+ * `breakdown === null` means there is no usage yet AND no durable
+ * `context_breakdown` frame — nothing to show, so the popover surfaces an
+ * explicit empty state. Once usage exists the breakdown is always non-null:
+ * with a durable frame it shows the fine category split, and on a fresh
+ * target / offline replay it reconstructs a coarse baseline + messages +
+ * remainder from the replayed cost (the reserved `autocompact_buffer` and the
+ * per-category split need the durable frame and are simply omitted).
  */
 export function ContextPopoverContent({
   breakdown,

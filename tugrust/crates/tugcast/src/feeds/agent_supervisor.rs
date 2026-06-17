@@ -1,6 +1,6 @@
 //! Agent supervisor module
 //!
-//! Houses the per-session ledger, SESSION_STATE / SESSION_METADATA broadcast
+//! Houses the per-session ledger, SESSION_STATE / SESSION_SIDEBAND broadcast
 //! senders, the CODE_INPUT dispatcher, and the state machine that owns the
 //! spawn/dispatch/merge lifecycle for Claude Code sessions.
 //!
@@ -979,10 +979,10 @@ pub struct AgentSupervisor {
     pub ledger: Ledger,
     /// Broadcast sender for `SESSION_STATE` frames.
     pub session_state_tx: broadcast::Sender<Frame>,
-    /// Broadcast sender for `SESSION_METADATA` frames. Broadcast — not watch —
+    /// Broadcast sender for `SESSION_SIDEBAND` frames. Broadcast — not watch —
     /// per [D14] so concurrent per-session metadata updates cannot clobber
     /// one another.
-    pub session_metadata_tx: broadcast::Sender<Frame>,
+    pub session_sideband_tx: broadcast::Sender<Frame>,
     /// Per-client session affinity, used by the P5 authorization cross-check.
     pub client_sessions: Arc<Mutex<HashMap<ClientId, HashSet<TugSessionId>>>>,
     /// Shared supervisor-wide CODE_OUTPUT broadcast sender.
@@ -1015,7 +1015,7 @@ pub struct AgentSupervisor {
     /// `spawn_session_worker` call pushes a `(tug_session_id, output_rx)`
     /// pair through here; `merger_task` inserts it into its internal
     /// `StreamMap` and fans the frames into the shared CODE_OUTPUT
-    /// broadcast + SESSION_METADATA broadcast.
+    /// broadcast + SESSION_SIDEBAND broadcast.
     pub merger_register_tx: mpsc::Sender<MergerRegistration>,
     /// Runtime configuration.
     pub config: AgentSupervisorConfig,
@@ -1680,7 +1680,7 @@ impl AgentSupervisor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_state_tx: broadcast::Sender<Frame>,
-        session_metadata_tx: broadcast::Sender<Frame>,
+        session_sideband_tx: broadcast::Sender<Frame>,
         code_output_tx: broadcast::Sender<Frame>,
         control_tx: broadcast::Sender<Frame>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
@@ -1691,7 +1691,7 @@ impl AgentSupervisor {
     ) -> (Self, mpsc::Receiver<MergerRegistration>) {
         Self::new_with_ledger(
             session_state_tx,
-            session_metadata_tx,
+            session_sideband_tx,
             code_output_tx,
             control_tx,
             sessions_recorder,
@@ -1710,7 +1710,7 @@ impl AgentSupervisor {
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_ledger(
         session_state_tx: broadcast::Sender<Frame>,
-        session_metadata_tx: broadcast::Sender<Frame>,
+        session_sideband_tx: broadcast::Sender<Frame>,
         code_output_tx: broadcast::Sender<Frame>,
         control_tx: broadcast::Sender<Frame>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
@@ -1724,7 +1724,7 @@ impl AgentSupervisor {
         let sup = Self {
             ledger: Arc::new(Mutex::new(HashMap::new())),
             session_state_tx,
-            session_metadata_tx,
+            session_sideband_tx,
             client_sessions: Arc::new(Mutex::new(HashMap::new())),
             code_output_tx,
             control_tx,
@@ -1936,7 +1936,7 @@ impl AgentSupervisor {
         }
     }
 
-    /// Build a `SESSION_METADATA` replay frame from the persisted ledger
+    /// Build a `SESSION_SIDEBAND` replay frame from the persisted ledger
     /// row, for a bind whose in-memory `latest_metadata` slot is empty.
     ///
     /// claude is silent in stream-json mode until the first user message,
@@ -1952,8 +1952,8 @@ impl AgentSupervisor {
     /// there is no sqlite ledger handle or no persisted row (a genuinely
     /// brand-new session), so a fresh flow fires no replay — matching the
     /// `latest_metadata: None` behavior it falls back from. Payload is
-    /// rewrapped as `FeedId::SESSION_METADATA` (the wire byte the client's
-    /// `register_stream(FeedId::SESSION_METADATA, …)` subscription keys on,
+    /// rewrapped as `FeedId::SESSION_SIDEBAND` (the wire byte the client's
+    /// `register_stream(FeedId::SESSION_SIDEBAND, …)` subscription keys on,
     /// same as the live merger publish).
     fn persisted_metadata_replay_frame(
         &self,
@@ -1973,7 +1973,7 @@ impl AgentSupervisor {
         for candidate in candidates {
             match ledger.get_session_metadata(candidate) {
                 Ok(Some(row)) => {
-                    return Some(Frame::new(FeedId::SESSION_METADATA, row.payload));
+                    return Some(Frame::new(FeedId::SESSION_SIDEBAND, row.payload));
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -2368,13 +2368,13 @@ impl AgentSupervisor {
                 .send(build_session_state_frame(&tug_session_id, "pending", None));
 
         if let Some(frame) = replay_frame {
-            let _ = self.session_metadata_tx.send(frame);
+            let _ = self.session_sideband_tx.send(frame);
         }
         if let Some(frame) = capabilities_frame {
-            let _ = self.session_metadata_tx.send(frame);
+            let _ = self.session_sideband_tx.send(frame);
         }
         if let Some(frame) = rate_limit_frame {
-            let _ = self.session_metadata_tx.send(frame);
+            let _ = self.session_sideband_tx.send(frame);
         }
 
         // Eager spawn: transition Idle→Spawning and launch the tugcode
@@ -3898,7 +3898,7 @@ impl AgentSupervisor {
 
     /// Per-bridge merger task. Consumes registrations from
     /// `merger_register_rx` and fans in each per-session output mpsc into
-    /// the shared CODE_OUTPUT broadcast, the SESSION_METADATA broadcast
+    /// the shared CODE_OUTPUT broadcast, the SESSION_SIDEBAND broadcast
     /// ([D14]), and `LedgerEntry::latest_metadata` (per-session). Runs until
     /// `cancel` is fired OR the register channel closes AND every
     /// per-session stream has drained.
@@ -3944,19 +3944,19 @@ impl AgentSupervisor {
                     // unchanged.
                     let _ = self.code_output_tx.send(frame.clone());
                     // Per-session system_metadata capture + broadcast per
-                    // [D14]. CRITICAL: rewrap as `FeedId::SESSION_METADATA`
+                    // [D14]. CRITICAL: rewrap as `FeedId::SESSION_SIDEBAND`
                     // before publishing / storing. `Frame::encode()`
                     // serializes `Frame.feed_id` as the first wire byte, so
                     // a subscriber registered via
-                    // `register_stream(FeedId::SESSION_METADATA, ...)`
+                    // `register_stream(FeedId::SESSION_SIDEBAND, ...)`
                     // would otherwise receive a frame tagged CODE_OUTPUT and
                     // route it to the wrong client-side store. Both the
                     // live publish AND the `latest_metadata` slot used by
                     // event-driven replay in `do_spawn_session` must hold
-                    // the SESSION_METADATA-tagged Frame.
+                    // the SESSION_SIDEBAND-tagged Frame.
                     if is_system_metadata(&frame.payload) {
                         let meta_frame =
-                            Frame::new(FeedId::SESSION_METADATA, frame.payload.clone());
+                            Frame::new(FeedId::SESSION_SIDEBAND, frame.payload.clone());
                         let entry_arc = {
                             let ledger = self.ledger.lock().await;
                             ledger.get(&id).cloned()
@@ -3965,10 +3965,10 @@ impl AgentSupervisor {
                             let mut entry = entry_arc.lock().await;
                             entry.latest_metadata = Some(meta_frame.clone());
                         }
-                        let _ = self.session_metadata_tx.send(meta_frame);
+                        let _ = self.session_sideband_tx.send(meta_frame);
                     } else if is_session_capabilities(&frame.payload) {
                         // Turn-free `initialize` capabilities ([#step-2a]).
-                        // Rewrap onto SESSION_METADATA (same rationale as
+                        // Rewrap onto SESSION_SIDEBAND (same rationale as
                         // `system_metadata`: the FeedStore keeps only the
                         // latest payload per feed, and the client routes by
                         // wire feed-id) so the dev card's metadata store
@@ -3978,7 +3978,7 @@ impl AgentSupervisor {
                         // that binds after the one-shot broadcast — reconnect,
                         // HMR remount — gets the model list replayed on bind.
                         let cap_frame =
-                            Frame::new(FeedId::SESSION_METADATA, frame.payload.clone());
+                            Frame::new(FeedId::SESSION_SIDEBAND, frame.payload.clone());
                         let entry_arc = {
                             let ledger = self.ledger.lock().await;
                             ledger.get(&id).cloned()
@@ -3987,10 +3987,10 @@ impl AgentSupervisor {
                             let mut entry = entry_arc.lock().await;
                             entry.latest_capabilities = Some(cap_frame.clone());
                         }
-                        let _ = self.session_metadata_tx.send(cap_frame);
+                        let _ = self.session_sideband_tx.send(cap_frame);
                     } else if is_rate_limit_event(&frame.payload) {
                         // Per-turn subscription-quota broadcast ([#step-3]).
-                        // Rewrap onto SESSION_METADATA (same rationale as
+                        // Rewrap onto SESSION_SIDEBAND (same rationale as
                         // `system_metadata` / `session_capabilities`: the
                         // FeedStore keeps only the latest payload per feed and
                         // the client routes by wire feed-id) so the dev card's
@@ -4002,7 +4002,7 @@ impl AgentSupervisor {
                         // matters most when the session is hard rate-limited
                         // and cannot start a turn to refresh it.
                         let rl_frame =
-                            Frame::new(FeedId::SESSION_METADATA, frame.payload.clone());
+                            Frame::new(FeedId::SESSION_SIDEBAND, frame.payload.clone());
                         let entry_arc = {
                             let ledger = self.ledger.lock().await;
                             ledger.get(&id).cloned()
@@ -4011,7 +4011,7 @@ impl AgentSupervisor {
                             let mut entry = entry_arc.lock().await;
                             entry.latest_rate_limit = Some(rl_frame.clone());
                         }
-                        let _ = self.session_metadata_tx.send(rl_frame);
+                        let _ = self.session_sideband_tx.send(rl_frame);
                     }
                     // Forward-before-mutate: the wire-side broadcast above
                     // is the user-visible signal and must not be delayed
@@ -4768,7 +4768,7 @@ mod tests {
             "tug_session_id": tug_session_id,
             "model": "claude-opus-4-6",
         });
-        Frame::new(FeedId::SESSION_METADATA, serde_json::to_vec(&body).unwrap())
+        Frame::new(FeedId::SESSION_SIDEBAND, serde_json::to_vec(&body).unwrap())
     }
 
     // ---- Existing scaffold tests ----
@@ -5081,7 +5081,7 @@ mod tests {
             .expect_handled();
 
         let received = meta_rx.try_recv().expect("persisted replay frame present");
-        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(received.feed_id, FeedId::SESSION_SIDEBAND);
         assert_eq!(
             received.payload, payload,
             "replay frame carries the persisted row payload verbatim",
@@ -5149,7 +5149,7 @@ mod tests {
             "models": [{ "value": "default", "displayName": "Default (recommended)" }],
             "commands": [],
         });
-        Frame::new(FeedId::SESSION_METADATA, serde_json::to_vec(&body).unwrap())
+        Frame::new(FeedId::SESSION_SIDEBAND, serde_json::to_vec(&body).unwrap())
     }
 
     #[tokio::test]
@@ -5158,7 +5158,7 @@ mod tests {
         // remount that binds afterward must still get them replayed so the
         // /model picker keeps its data. They replay independently of the
         // metadata slot (here: capabilities present, no metadata) and
-        // carry the SESSION_METADATA feed id.
+        // carry the SESSION_SIDEBAND feed id.
         let (sup, mut meta_rx, _ledger) = make_supervisor_with_real_ledger();
 
         let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
@@ -5173,7 +5173,7 @@ mod tests {
             .try_recv()
             .expect("capabilities replay frame present");
         assert_eq!(received, caps, "the capabilities slot replays on bind");
-        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(received.feed_id, FeedId::SESSION_SIDEBAND);
         assert!(meta_rx.try_recv().is_err(), "only the capabilities frame");
     }
 
@@ -5198,7 +5198,7 @@ mod tests {
             .expect_handled();
 
         // Metadata replays first (it is the on-bind chip source), then
-        // capabilities. Both ride SESSION_METADATA; the client routes them
+        // capabilities. Both ride SESSION_SIDEBAND; the client routes them
         // by payload `type`.
         let first = meta_rx.try_recv().expect("metadata replay frame");
         assert_eq!(first, metadata, "metadata replays first");
@@ -5222,7 +5222,7 @@ mod tests {
             },
             "ipc_version": 2,
         });
-        Frame::new(FeedId::SESSION_METADATA, serde_json::to_vec(&body).unwrap())
+        Frame::new(FeedId::SESSION_SIDEBAND, serde_json::to_vec(&body).unwrap())
     }
 
     #[tokio::test]
@@ -5232,7 +5232,7 @@ mod tests {
         // must still get it replayed so the Z4B rate-limit chip keeps its
         // state — which matters most when the session is hard rate-limited
         // and cannot start a turn to refresh it. It replays independently of
-        // the metadata / capabilities slots and carries the SESSION_METADATA
+        // the metadata / capabilities slots and carries the SESSION_SIDEBAND
         // feed id.
         let (sup, mut meta_rx, _ledger) = make_supervisor_with_real_ledger();
 
@@ -5246,7 +5246,7 @@ mod tests {
 
         let received = meta_rx.try_recv().expect("rate-limit replay frame present");
         assert_eq!(received, rate_limit, "the rate-limit slot replays on bind");
-        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(received.feed_id, FeedId::SESSION_SIDEBAND);
         assert!(meta_rx.try_recv().is_err(), "only the rate-limit frame");
     }
 
@@ -6263,7 +6263,7 @@ mod tests {
     #[tokio::test]
     async fn test_merger_routes_metadata_per_session_no_clobber() {
         // Pins [D14]: two sessions emit distinct `system_metadata` frames
-        // in rapid succession. Both frames must land on the SESSION_METADATA
+        // in rapid succession. Both frames must land on the SESSION_SIDEBAND
         // broadcast (a single-slot watch would drop one), AND each ledger
         // entry's `latest_metadata` must hold its own payload with no
         // cross-pollination.
@@ -6310,30 +6310,30 @@ mod tests {
             .expect("second metadata recv err");
 
         // Feed-id correctness pin: the merger rewraps system_metadata
-        // payloads with `FeedId::SESSION_METADATA` before publishing onto
-        // `session_metadata_tx`. `Frame::encode` uses `frame.feed_id` as
+        // payloads with `FeedId::SESSION_SIDEBAND` before publishing onto
+        // `session_sideband_tx`. `Frame::encode` uses `frame.feed_id` as
         // the first wire byte, so any client-side filter keyed on
-        // `FeedId::SESSION_METADATA` depends on this. A regression that
+        // `FeedId::SESSION_SIDEBAND` depends on this. A regression that
         // left the feed_id as CODE_OUTPUT would silently break tugdeck's
-        // SESSION_METADATA store without any payload assertion catching
+        // SESSION_SIDEBAND store without any payload assertion catching
         // it.
-        assert_eq!(first.feed_id, FeedId::SESSION_METADATA);
-        assert_eq!(second.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(first.feed_id, FeedId::SESSION_SIDEBAND);
+        assert_eq!(second.feed_id, FeedId::SESSION_SIDEBAND);
 
         let received: HashSet<Vec<u8>> = [first.payload, second.payload].into_iter().collect();
         assert!(
             received.contains(&meta_a.payload),
-            "session A metadata missing from SESSION_METADATA broadcast"
+            "session A metadata missing from SESSION_SIDEBAND broadcast"
         );
         assert!(
             received.contains(&meta_b.payload),
-            "session B metadata missing from SESSION_METADATA broadcast"
+            "session B metadata missing from SESSION_SIDEBAND broadcast"
         );
 
         // Each ledger entry's latest_metadata must hold its own distinct
         // payload. A single-slot watch would have one session's payload
         // clobber the other. The stored frames are also rewrapped as
-        // SESSION_METADATA so event-driven replay in `do_spawn_session`
+        // SESSION_SIDEBAND so event-driven replay in `do_spawn_session`
         // re-emits with the correct feed_id.
         let entry_a = sup.ledger.lock().await.get(&id_a).unwrap().clone();
         let entry_b = sup.ledger.lock().await.get(&id_b).unwrap().clone();
@@ -6349,8 +6349,8 @@ mod tests {
             .latest_metadata
             .clone()
             .expect("session B stored metadata");
-        assert_eq!(stored_a.feed_id, FeedId::SESSION_METADATA);
-        assert_eq!(stored_b.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(stored_a.feed_id, FeedId::SESSION_SIDEBAND);
+        assert_eq!(stored_b.feed_id, FeedId::SESSION_SIDEBAND);
         assert_eq!(stored_a.payload, meta_a.payload);
         assert_eq!(stored_b.payload, meta_b.payload);
 

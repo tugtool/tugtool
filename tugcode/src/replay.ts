@@ -1960,17 +1960,19 @@ export async function* translateJsonlSession(
   // OK branch: parse + translate line by line.
   const ctx = makeTranslateContext(telemetry);
   const claudeSessionId = input.claudeSessionId ?? "";
-  // Synthesize a `system_metadata` IPC the first time we encounter an
-  // `assistant` entry that carries a `message.model`. The JSONL's
+  // Synthesize a `system_metadata` IPC each time the active model
+  // changes across the replayed `assistant` entries. The JSONL's
   // top-level `system` entries are skipped (they mirror live
   // session_init and aren't surveyed in current Claude Code JSONLs);
   // the model field is duplicated on every assistant message via
-  // `message.model`. A single emission at the top of replay populates
-  // tugdeck's `SessionMetadataStore` so replayed turns render with
-  // the right model identifier and badge from the start, rather than
-  // the "Code" placeholder until claude's live session_init lands
-  // post-replay.
-  let emittedSystemMetadata = false;
+  // `message.model`. Emitting on the first real model AND on every
+  // subsequent change populates tugdeck's `SessionMetadataStore` —
+  // which keeps the latest payload per feed — so the store lands on
+  // the **active** (last) model at end of replay, faithfully tracking
+  // a user who switched models mid-session, rather than freezing the
+  // opener's model. `lastEmittedModel` holds the most-recently emitted
+  // real model so unchanged turns don't re-emit.
+  let lastEmittedModel: string | null = null;
   let sawAnyMalformed = false;
   let sliceStartedAt = now();
 
@@ -2088,18 +2090,22 @@ export async function* translateJsonlSession(
 
     const candidateModel =
       parsed.type === "assistant" ? parsed.message?.model : undefined;
-    if (!emittedSystemMetadata && isRealModelName(candidateModel)) {
+    if (isRealModelName(candidateModel) && candidateModel !== lastEmittedModel) {
       // Replay synthesizes a system_metadata IPC from a `message.model`
       // it finds in the resumed-session JSONL — that's enough to paint
-      // the model badge before claude's live init lands. Every OTHER
-      // field is omitted (or empty) because the JSONL doesn't carry it;
-      // the wire-layer merge in `session_metadata_merge.rs` treats empty
-      // strings as "no signal" and preserves whatever the ledger
-      // already has. `version` in particular is OMITTED (not `""`) so
-      // it doesn't race the live init and trick the frontend into
-      // showing `Claude Code ` (empty) instead of `Claude Code ?` with
-      // its normal fallback chain. The live `system/init` is the only
-      // source that ever populates `version`.
+      // the model badge before claude's live init lands. We emit on the
+      // first real model AND whenever the model changes from the last
+      // one emitted, so a session where the user switched models
+      // mid-stream restores its **active** (last) model: the store keeps
+      // the latest payload per feed. Every OTHER field is omitted (or
+      // empty) because the JSONL doesn't carry it; the wire-layer merge
+      // in `session_metadata_merge.rs` treats empty strings as "no
+      // signal" and preserves whatever the ledger already has. `version`
+      // in particular is OMITTED (not `""`) so it doesn't race the live
+      // init and trick the frontend into showing `Claude Code ` (empty)
+      // instead of `Claude Code ?` with its normal fallback chain. The
+      // live `system/init` is the only source that ever populates
+      // `version`.
       const sysMeta: SystemMetadata = {
         type: "system_metadata",
         session_id: claudeSessionId,
@@ -2118,7 +2124,7 @@ export async function* translateJsonlSession(
         ipc_version: IPC_VERSION,
       };
       yield sysMeta;
-      emittedSystemMetadata = true;
+      lastEmittedModel = candidateModel;
     }
 
     // Peek ahead for the same-msg_id continuation case, bounded to the

@@ -73,8 +73,24 @@ impl FeedId {
     // -- Defaults --
     /// Domain defaults snapshot (tugcast → tugdeck)
     pub const DEFAULTS: Self = Self(0x50);
-    /// Session metadata snapshot (tugcast → tugdeck)
-    pub const SESSION_METADATA: Self = Self(0x51);
+    /// Per-session out-of-band metadata channel (tugcast → tugdeck).
+    ///
+    /// MULTIPLEXES three distinct payload kinds, each owning its own region
+    /// of the client's session-metadata state — they must NOT clobber each
+    /// other:
+    /// - `system_metadata` — the active runtime snapshot (active model,
+    ///   permissionMode, cwd, tools, version); arrives with init / post-turn.
+    /// - `session_capabilities` — the turn-free `initialize` handshake (the
+    ///   `/model` picker list, the command catalog, the current effort);
+    ///   available from the drop, before any turn runs.
+    /// - `rate_limit` — the per-turn quota broadcast (the Z4B rate chip).
+    ///
+    /// Named SIDEBAND (not METADATA) deliberately: the feed is the transport
+    /// sideband, distinct from the `system_metadata` PAYLOAD it carries — the
+    /// near-collision of those two names was a real source of confusion. The
+    /// client retains the last frame PER KIND in its replay-on-subscribe
+    /// cache so a late-binding card reconstructs all three independently.
+    pub const SESSION_SIDEBAND: Self = Self(0x51);
     /// Session lifecycle state feed (tugcast → tugdeck)
     pub const SESSION_STATE: Self = Self(0x52);
 
@@ -122,7 +138,7 @@ impl FeedId {
             Self::CODE_OUTPUT => Some("CodeOutput"),
             Self::CODE_INPUT => Some("CodeInput"),
             Self::DEFAULTS => Some("Defaults"),
-            Self::SESSION_METADATA => Some("SessionMetadata"),
+            Self::SESSION_SIDEBAND => Some("SessionSideband"),
             Self::SESSION_STATE => Some("SessionState"),
             Self::PULSE => Some("Pulse"),
             Self::SHELL_OUTPUT => Some("ShellOutput"),
@@ -403,9 +419,9 @@ mod tests {
         assert_eq!(FeedId::CODE_OUTPUT.as_byte(), 0x40);
         assert_eq!(FeedId::CODE_INPUT.as_byte(), 0x41);
         assert_eq!(FeedId::DEFAULTS.as_byte(), 0x50);
-        assert_eq!(FeedId::SESSION_METADATA.as_byte(), 0x51);
+        assert_eq!(FeedId::SESSION_SIDEBAND.as_byte(), 0x51);
         assert_eq!(FeedId::SESSION_STATE.as_byte(), 0x52);
-        assert_eq!(FeedId::SESSION_METADATA.name(), Some("SessionMetadata"));
+        assert_eq!(FeedId::SESSION_SIDEBAND.name(), Some("SessionSideband"));
         assert_eq!(FeedId::SESSION_STATE.name(), Some("SessionState"));
         assert_eq!(FeedId::SHELL_OUTPUT.as_byte(), 0x60);
         assert_eq!(FeedId::SHELL_INPUT.as_byte(), 0x61);

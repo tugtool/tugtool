@@ -445,6 +445,31 @@ describe("runReplay — happy path", () => {
     expect(complete.error).toBeUndefined();
   });
 
+  test("synth system_metadata rides as a STANDALONE wire line, never inside a replay_batch", async () => {
+    // The synth's `system_metadata` (the active model) rides the
+    // SESSION_SIDEBAND feed, whose client store consumes standalone frames and
+    // does not unwrap a `replay_batch`. If it were swept into a batch the model
+    // — and the CONTEXT denominator — would never resolve on cold replay. The
+    // batcher must emit it raw.
+    const { manager } = await makePrimedManager({});
+    const { raw } = await captureIpc(async () => {
+      await manager.runReplay();
+    });
+
+    // Present as its own wire line…
+    const standalone = raw.filter((m) => m.type === "system_metadata");
+    expect(standalone.length).toBe(1);
+    expect((standalone[0] as { model?: string }).model).toBe("claude-opus-4-6");
+
+    // …and NEVER buried inside a replay_batch envelope.
+    for (const line of raw) {
+      if (line.type === "replay_batch") {
+        const inner = (line as { frames?: Array<{ type?: string }> }).frames ?? [];
+        expect(inner.some((f) => f.type === "system_metadata")).toBe(false);
+      }
+    }
+  });
+
   test("invokes the injected jsonlReader with the resolved path", async () => {
     const seen: string[] = [];
     const sessionId = crypto.randomUUID();

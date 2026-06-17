@@ -44,6 +44,8 @@ import {
   type CardSessionMode,
 } from "./lib/card-session-binding-store";
 import { cardServicesStore } from "./lib/card-services-store";
+import { getConnection } from "./lib/connection-singleton";
+import { sendSpawnSession } from "./lib/session-lifecycle";
 import type { AtomSegment } from "./lib/tug-atom-img";
 import { dispatchAction, getResponderChainManager } from "./action-dispatch";
 import type { RateLimitInfo } from "./protocol";
@@ -127,7 +129,7 @@ import {
  * card's `SessionMetadataStore` with a decoded `session_capabilities` /
  * `system_metadata` payload, so the Z4B effort-chip app-test ([#step-4]) can
  * mount the chip and exercise its model gate without a live claude handshake.
- * The chip reads its own `SESSION_METADATA` FeedStore, which the
+ * The chip reads its own `SESSION_SIDEBAND` FeedStore, which the
  * `driveDevSession`/`ingestFrame` (CodeSessionStore) path does not reach.
  * Additive; major stays `1`.
  *
@@ -143,7 +145,7 @@ import {
  * app-tests assert internal splits without scraping the log stream.
  * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.12.0" as const;
+export const SURFACE_VERSION = "1.13.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -647,6 +649,37 @@ export interface TugTestSurface {
     },
   ): void;
 
+  // ---- Real cold-replay spawn (SURFACE_VERSION 1.13.0) ----
+
+  /**
+   * Fire a REAL `spawn_session(mode=resume)` CONTROL frame over the live
+   * shared connection — the production `sendSpawnSession` path — so tugcast
+   * spawns a genuine tugcode `--resume` subprocess that replays the on-disk
+   * JSONL through `translateJsonlSession` → tugcast `CODE_OUTPUT →
+   * SESSION_SIDEBAND` fan-out → `SessionMetadataStore`.
+   *
+   * This is the ONLY surface verb that drives the genuine cold-replay
+   * delivery chain end-to-end. Unlike `bindDevSession` (which writes a
+   * synthetic binding and never spawns tugcode) and
+   * `driveDevSession`/`ingestSessionMetadata` (which inject frames straight
+   * into the client store, bypassing tugcast's fan-out), this exercises the
+   * real model-delivery ordering/no-clobber path — the one a pre-cooked
+   * `SESSION_SIDEBAND` frame would fake-pass.
+   *
+   * The caller must place the fixture JSONL on disk first, at
+   * `~/.claude/projects/<encode(projectDir)>/<tugSessionId>.jsonl` (the
+   * legacy un-forked resume resolves the claude id to `tugSessionId`). The
+   * spawn is asymmetric: the binding lands on the server's `spawn_session_ok`
+   * ack, and the replayed `SESSION_SIDEBAND` arrives shortly after. The
+   * caller waits on the rendered Z2 readouts, not on this call.
+   *
+   * Throws if the shared connection is unavailable.
+   */
+  spawnSessionResume(
+    cardId: string,
+    opts: { tugSessionId: string; projectDir: string },
+  ): void;
+
   // ---- Dev lifecycle-matrix driving (SURFACE_VERSION 1.6.0) ----
 
   /**
@@ -671,13 +704,13 @@ export interface TugTestSurface {
   ingestRateLimit(info: RateLimitInfo): void;
 
   /**
-   * Drive a dev card's `SessionMetadataStore` with a decoded SESSION_METADATA
+   * Drive a dev card's `SessionMetadataStore` with a decoded SESSION_SIDEBAND
    * payload (`session_capabilities` or `system_metadata`) as if it had landed
    * on the feed ([#step-4]). Resolves the card's services via
    * `cardServicesStore`; throws if the card is not bound (call `bindDevSession`
    * first). Used by the effort-chip app-test to mount the chip and flip its
    * model gate without a live claude handshake — the chip reads its own
-   * SESSION_METADATA FeedStore, unreachable by `driveDevSession`.
+   * SESSION_SIDEBAND FeedStore, unreachable by `driveDevSession`.
    */
   ingestSessionMetadata(cardId: string, payload: unknown): void;
 
@@ -1493,6 +1526,30 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         projectDir: options?.projectDir ?? "/tmp/test-project",
         sessionMode: options?.sessionMode ?? "new",
       });
+    },
+
+    spawnSessionResume(
+      cardId: string,
+      opts: { tugSessionId: string; projectDir: string },
+    ): void {
+      const connection = getConnection();
+      if (connection === null) {
+        throw new Error(
+          "spawnSessionResume: shared connection unavailable — the app must " +
+            "be connected before a real spawn_session can be driven",
+        );
+      }
+      // The genuine production CONTROL frame. tugcast acks with
+      // `spawn_session_ok` (which populates the binding) and spawns a real
+      // tugcode `--resume` that replays the on-disk JSONL through the
+      // fan-out. No synthetic binding, no injected frame.
+      sendSpawnSession(
+        connection,
+        cardId,
+        opts.tugSessionId,
+        opts.projectDir,
+        "resume",
+      );
     },
 
     driveDevSession(cardId: string, action: DevSessionDriveAction): void {

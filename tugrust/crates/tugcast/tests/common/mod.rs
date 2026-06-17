@@ -977,7 +977,7 @@ impl TestWs {
         Ok(())
     }
 
-    /// Count `SESSION_METADATA` frames currently in the buffer (or
+    /// Count `SESSION_SIDEBAND` frames currently in the buffer (or
     /// buffered over a short polling window) whose `tug_session_id`
     /// matches `target`. Used by replay tests to assert "exactly one
     /// metadata frame was replayed" semantics.
@@ -1009,7 +1009,7 @@ impl TestWs {
         self.buffer
             .iter()
             .filter(|f| {
-                f.feed_id == FeedId::SESSION_METADATA && f.payload["tug_session_id"] == target
+                f.feed_id == FeedId::SESSION_SIDEBAND && f.payload["tug_session_id"] == target
             })
             .count()
     }

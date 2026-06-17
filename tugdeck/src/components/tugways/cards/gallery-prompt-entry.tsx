@@ -19,7 +19,7 @@
  *   • Offline `/` slash-command completion sourced from the captured
  *     `capabilities/<LATEST>/system-metadata.jsonl` via the Vite virtual
  *     module. The gallery card's `CodeSessionStore` runs against a mock
- *     connection, so the live `SESSION_METADATA` frame never reaches the
+ *     connection, so the live `SESSION_SIDEBAND` frame never reaches the
  *     card; the fixture keeps the `/` demo populated with real plugin
  *     skills and agents. Wrapped in a position-0 gate so `/` mid-text
  *     produces an empty popup (D5.c P1).

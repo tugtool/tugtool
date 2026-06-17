@@ -7,7 +7,7 @@
 //!
 //! - Spawns one fresh `TestTugcast` per probe in `PROBES`
 //! - Drives each probe's `input_script` through `TestWs`
-//! - Collects `CODE_OUTPUT` and `SESSION_METADATA` events until a
+//! - Collects `CODE_OUTPUT` and `SESSION_SIDEBAND` events until a
 //!   terminal event (`turn_complete` or timeout)
 //! - Normalizes each event via [`normalize_event`] (leaf-only
 //!   placeholder substitution per [D14])

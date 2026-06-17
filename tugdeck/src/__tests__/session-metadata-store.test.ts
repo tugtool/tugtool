@@ -123,6 +123,52 @@ describe("SessionMetadataStore payload parsing", () => {
     store.dispose();
   });
 
+  test("an empty-string model normalizes to null (not the 200K unknown default)", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, makeMetadataPayload({ model: "" }));
+    // Empty-string is "no signal", not a model — must read as null so the
+    // CONTEXT denominator falls back honestly rather than resolving
+    // `resolveModelContextMax("")` to 200K.
+    expect(store.getSnapshot().model).toBeNull();
+
+    store.dispose();
+  });
+
+  test("a later empty-model frame does NOT clobber a resolved model ([P06])", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    // The replay synth delivers the real active model…
+    feedStore.emit(FEED_ID, makeMetadataPayload({ model: "claude-opus-4-8" }));
+    expect(store.getSnapshot().model).toBe("claude-opus-4-8");
+
+    // …then a live re-init (or stale durable replay) arrives with an empty
+    // model. The resolved model must survive — the reconstructed/active model
+    // wins over a blank one.
+    feedStore.emit(FEED_ID, makeMetadataPayload({ model: "" }));
+    expect(store.getSnapshot().model).toBe("claude-opus-4-8");
+
+    store.dispose();
+  });
+
+  test("a real model change replaces (active = last real model, [P09])", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    // Mid-session switch opus → sonnet: each is a real model, so the latest
+    // wins. The no-clobber rule only blocks BLANK incoming, never a real
+    // change.
+    feedStore.emit(FEED_ID, makeMetadataPayload({ model: "claude-opus-4-8" }));
+    expect(store.getSnapshot().model).toBe("claude-opus-4-8");
+
+    feedStore.emit(FEED_ID, makeMetadataPayload({ model: "claude-sonnet-4-6" }));
+    expect(store.getSnapshot().model).toBe("claude-sonnet-4-6");
+
+    store.dispose();
+  });
+
   test("version is null when the payload carries no string version", () => {
     const feedStore = new MockFeedStore();
     const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);

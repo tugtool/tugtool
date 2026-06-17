@@ -6,7 +6,7 @@
 //! clobber concurrent per-session metadata updates — see [D14]. The supervisor now owns the
 //! detection inline in its merger task and stores the frame on
 //! `LedgerEntry::latest_metadata` (per-session) AND publishes it on a
-//! dedicated SESSION_METADATA broadcast sender.
+//! dedicated SESSION_SIDEBAND broadcast sender.
 //!
 //! All that remains of this module is the byte-level needle-scan helper:
 //! scanning the payload for `"type":"system_metadata"` is significantly
@@ -33,7 +33,7 @@ const SESSION_CAPABILITIES_NEEDLE: &[u8] = b"\"type\":\"session_capabilities\"";
 
 /// Check if a payload is a `session_capabilities` event. Like
 /// `system_metadata`, these are routed onto the low-churn
-/// SESSION_METADATA feed (the FeedStore keeps only the latest payload
+/// SESSION_SIDEBAND feed (the FeedStore keeps only the latest payload
 /// per feed, so a CODE_OUTPUT consumer would lose it amid transcript
 /// frames). The client store discriminates the two by their `type`.
 pub fn is_session_capabilities(payload: &[u8]) -> bool {
@@ -48,7 +48,7 @@ pub fn is_session_capabilities(payload: &[u8]) -> bool {
 const RATE_LIMIT_EVENT_NEEDLE: &[u8] = b"\"type\":\"rate_limit_event\"";
 
 /// Check if a payload is a `rate_limit_event` frame. Routed onto the
-/// SESSION_METADATA feed for the same reason as `system_metadata` and
+/// SESSION_SIDEBAND feed for the same reason as `system_metadata` and
 /// `session_capabilities`: the per-turn quota broadcast carries the
 /// chrome state the Z4B rate-limit chip reads, and the FeedStore keeps
 /// only the latest payload per feed, so leaving it on the high-churn

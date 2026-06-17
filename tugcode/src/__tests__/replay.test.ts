@@ -1196,6 +1196,46 @@ describe("translateJsonlSession — synthesized system_metadata", () => {
     const out = await collectSession({ kind: "ok", jsonl });
     expect(out.find((m) => m.type === "system_metadata")).toBeUndefined();
   });
+
+  test("a mid-session model switch re-emits; the final system_metadata is the active (last) model", async () => {
+    // The user switched models mid-session (opus → sonnet). The synth must
+    // track the change so the restored chip + CONTEXT denominator reflect
+    // the ACTIVE (last) model, not the opener's.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u1" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "opus reply" }],
+        model: "claude-opus-4-8",
+      }),
+      userEntry([{ type: "text", text: "u2" }]),
+      assistantEntry({
+        msgId: "m2",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "still opus" }],
+        model: "claude-opus-4-8",
+      }),
+      userEntry([{ type: "text", text: "u3" }]),
+      assistantEntry({
+        msgId: "m3",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "sonnet reply" }],
+        model: "claude-sonnet-4-6",
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const sysMetas = out.filter((m) => m.type === "system_metadata");
+    // Two emissions: the opener model, then the switch. The unchanged
+    // middle turn does NOT re-emit.
+    expect(sysMetas.length).toBe(2);
+    expect((sysMetas[0] as { model: string }).model).toBe("claude-opus-4-8");
+    expect((sysMetas[1] as { model: string }).model).toBe("claude-sonnet-4-6");
+    // The store keeps the latest payload per feed → active model = sonnet.
+    expect((sysMetas[sysMetas.length - 1] as { model: string }).model).toBe(
+      "claude-sonnet-4-6",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

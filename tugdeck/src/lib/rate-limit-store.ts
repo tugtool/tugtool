@@ -5,14 +5,14 @@
  * The subscription quota is **account-global** — one limit shared by every
  * session and dev card — so it belongs in a single app-level store, not the
  * per-card `SessionMetadataStore` (that's why [#step-3.5] supersedes [Q02] for
- * this surface). This store owns a `FeedStore` on the SESSION_METADATA feed
+ * this surface). This store owns a `FeedStore` on the SESSION_SIDEBAND feed
  * (where the tugcast supervisor rewraps `rate_limit_event` off CODE_OUTPUT,
  * [#step-3]) and tracks the **latest** `rate_limit_event` across all sessions;
  * since the quota is account-global, the most-recent event is authoritative
  * regardless of which session emitted it.
  *
  * Constructed once at deck-manager boot and consumed by the single
- * `RateLimitBannerProvider` via `useSyncExternalStore` ([L02]). The SESSION_METADATA
+ * `RateLimitBannerProvider` via `useSyncExternalStore` ([L02]). The SESSION_SIDEBAND
  * feed also carries `system_metadata` / `session_capabilities`; those are
  * ignored here (discriminated by `type`), the same way `SessionMetadataStore`
  * ignores `rate_limit_event`.
@@ -63,17 +63,17 @@ export class RateLimitStore {
   private _lastPayloadRef: unknown = undefined;
 
   constructor(connection: TugConnection) {
-    // SESSION_METADATA carries no workspace_key and is intentionally
+    // SESSION_SIDEBAND carries no workspace_key and is intentionally
     // unfiltered — we want every session's frames here (account-global
     // quota), unlike the per-card stores.
-    this._feedStore = new FeedStore(connection, [FeedId.SESSION_METADATA]);
+    this._feedStore = new FeedStore(connection, [FeedId.SESSION_SIDEBAND]);
     this._unsubscribeFeed = this._feedStore.subscribe(() => this._onFeedUpdate());
     // Pick up any payload already replayed on subscribe.
     this._onFeedUpdate();
   }
 
   private _onFeedUpdate(): void {
-    const payload = this._feedStore.getSnapshot().get(FeedId.SESSION_METADATA);
+    const payload = this._feedStore.getSnapshot().get(FeedId.SESSION_SIDEBAND);
     // Reference comparison: only process a changed payload.
     if (payload === this._lastPayloadRef) return;
     this._lastPayloadRef = payload;

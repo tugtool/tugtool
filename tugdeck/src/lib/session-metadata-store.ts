@@ -351,7 +351,13 @@ function parseSystemRegion(payload: unknown): SystemRegion | null {
 
   return {
     sessionId: typeof p.session_id === "string" ? p.session_id : null,
-    model: typeof p.model === "string" ? p.model : null,
+    // An empty-string model is "no signal", not a model — claude's live
+    // `system/init` emits `model: ""` when its init event omits the field
+    // (`tugcode/src/session.ts`), and a stale durable replay can carry the
+    // same. Normalize it to `null` here so the snapshot's `?? ` chain and
+    // the no-clobber precedence below both treat it as absent rather than
+    // resolving `resolveModelContextMax("")` to the 200K unknown default.
+    model: typeof p.model === "string" && p.model.length > 0 ? p.model : null,
     // Wire emits `permissionMode` (camelCase) per
     // `tugcode/src/session.ts:498,517`. The earlier snake_case parse
     // key silently returned null for every live payload.
@@ -405,12 +411,12 @@ export class SessionMetadataStore {
   }
 
   /**
-   * Apply one decoded SESSION_METADATA payload. Shared by the live feed path
+   * Apply one decoded SESSION_SIDEBAND payload. Shared by the live feed path
    * ({@link _onFeedUpdate}) and the test injection ({@link _ingestForTest});
    * the reference-dedupe lives in `_onFeedUpdate`, so this always processes
    * what it is given.
    *
-   * Two payload types ride the SESSION_METADATA feed — `session_capabilities`
+   * Two payload types ride the SESSION_SIDEBAND feed — `session_capabilities`
    * (turn-free handshake, [#step-2a]) and `system_metadata` (post-turn). Each
    * updates ONLY its own raw region; the public snapshot is then derived by
    * {@link reconcileSnapshot}. Because each source owns a region and the
@@ -444,6 +450,15 @@ export class SessionMetadataStore {
 
     const sys = parseSystemRegion(payload);
     if (!sys) return;
+    // [P06] no-clobber precedence: a later `system_metadata` whose model is
+    // absent (a live re-init that omitted `model`, or a stale/empty durable
+    // replay frame) must NOT wipe a model that already resolved. The
+    // JSONL-reconstructed / active model wins over a blank one. A real model
+    // change (opus → sonnet) still replaces, since that incoming model is
+    // non-null. Carry the last real model forward when the incoming is blank.
+    if (sys.model === null && this._system?.model != null) {
+      sys.model = this._system.model;
+    }
     this._system = sys;
     // The authoritative model + permission mode just landed → drop the
     // optimistic overrides they were standing in for (self-correcting).
@@ -481,7 +496,7 @@ export class SessionMetadataStore {
    * Test-only. Apply a decoded `session_capabilities` / `system_metadata`
    * payload as if it had landed on the feed, bypassing the connection. The
    * effort-chip app-test drives the Z4B chip with this via the `__tug` surface
-   * (`ingestSessionMetadata`) — the chip reads its own `SESSION_METADATA`
+   * (`ingestSessionMetadata`) — the chip reads its own `SESSION_SIDEBAND`
    * FeedStore, which the `driveDevSession`/`ingestFrame` (CodeSessionStore)
    * path does not reach.
    *
