@@ -111,8 +111,20 @@ export function EffortChip({
 
   const copy = useCopyableButton(`Effort: ${content}`);
 
+  // A model that doesn't support reasoning effort disables the chip — there's
+  // nothing to pick. The `title` lives on a thin hoverable host span as well as
+  // the button: a disabled button is `pointer-events: none`, so hovering its
+  // area passes through to the host, keeping the "not supported by this model"
+  // tooltip alive even while the button itself is non-interactive.
+  const chipDisabled = disabled || !display.supported;
+
   return (
     <>
+    <span
+      data-slot="effort-chip-host"
+      title={title}
+      style={{ display: "inline-flex" }}
+    >
     <TugPushButton
       ref={copy.ref as React.Ref<HTMLButtonElement>}
       onContextMenu={copy.onContextMenu}
@@ -124,7 +136,7 @@ export function EffortChip({
       data-slot="effort-chip"
       aria-label="Reasoning effort"
       title={title}
-      disabled={disabled}
+      disabled={chipDisabled}
       focusGroup={focusGroup}
       focusOrder={focusOrder}
       onClick={onOpenPicker}
@@ -135,6 +147,7 @@ export function EffortChip({
         alternates={sizerLabels}
       />
     </TugPushButton>
+    </span>
     {copy.contextMenu}
     </>
   );
