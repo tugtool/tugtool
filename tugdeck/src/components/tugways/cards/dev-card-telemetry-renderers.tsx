@@ -251,14 +251,14 @@ export interface DevTelemetryProps {
 /**
  * Props for {@link DevTelemetryStatusRow} — the session telemetry
  * props plus the optional transcript-scroll handler the Time / Tokens
- * popovers thread onto their per-turn `#NNNN` entry numbers.
+ * popovers thread onto their per-turn `#u{turn}` / `#a{turn}` addresses.
  */
 export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
   /**
    * Scrolls the transcript to a transcript row when the user clicks
-   * its `#NNNN` entry number in the Time / Tokens popover. The dev
-   * card supplies it (it owns the transcript's imperative handle);
-   * omitted in the gallery / fixtures, where the numbers render as
+   * its `#u{turn}` / `#a{turn}` address in the Time / Tokens popover. The
+   * dev card supplies it (it owns the transcript's imperative handle);
+   * omitted in the gallery / fixtures, where the addresses render as
    * inert text.
    */
   onScrollToRow?: ScrollToRowHandler;
@@ -708,9 +708,14 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // changes touch one factory call instead of a coupling layer.
   // `isInflight` (computed above with the cell values) gates both
   // per-area popovers' in-flight footer.
+  // Canonical turn-number base: the loaded window's `firstLoadedTurnIndex`,
+  // so the popovers' per-turn `#u{turn}` / `#a{turn}` addresses match the
+  // transcript's paged numbering (0 for a full / non-windowed load).
+  const turnNumberBase = snap.replayWindow?.firstLoadedTurnIndex ?? 0;
   const timePopover = (
     <TimePopoverContent
       transcript={snap.transcript}
+      turnNumberBase={turnNumberBase}
       inflight={
         isInflight ? { currentTurnActiveMs: perTurnActiveMs } : null
       }
@@ -720,6 +725,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const tokensPopover = (
     <TokensPopoverContent
       transcript={snap.transcript}
+      turnNumberBase={turnNumberBase}
       sessionInitTokens={sessionInit}
       inflight={
         // The in-flight footer carries the live per-turn delta —
@@ -745,6 +751,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
     <JobsPopoverContent
       jobs={jobsLedger}
       transcript={snap.transcript}
+      turnNumberBase={turnNumberBase}
       onScrollToRow={onScrollToRow}
       onStopJob={stopJob}
       onClearJobs={clearJobs}

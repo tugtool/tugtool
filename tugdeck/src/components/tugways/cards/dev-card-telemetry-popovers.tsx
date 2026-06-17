@@ -23,12 +23,13 @@
  * "error" / "lost") and tone for a given turn.
  *
  * **Turn-number affordance.** Each per-turn row's label is the PAIR
- * of `#NNNN` transcript entry numbers the turn spans — the user-half
- * row and the assistant-half row. When the host threads an
- * `onScrollToRow` handler down, each number is an independently
- * clickable button that scrolls the transcript to that entry's row —
- * a control-style action, no popover-local state. The row also
- * carries an end-truncated preview of the turn's request string.
+ * of speaker-prefixed addresses the turn spans — the user-half
+ * (`#u{turn}`) and the assistant-half (`#a{turn}`), the same markers
+ * the transcript stamps on its attribution rows. When the host threads
+ * an `onScrollToRow` handler down, each is an independently clickable
+ * button that scrolls the transcript to that entry's row — a
+ * control-style action, no popover-local state. The row also carries
+ * an end-truncated preview of the turn's request string.
  *
  * Conformance:
  *  - [L02] popover content is a function of inputs only — `transcript`,
@@ -74,7 +75,10 @@ import {
   assistantRowIndexForTurn,
   userRowIndexForTurn,
 } from "@/lib/dev-transcript-data-source";
-import { formatSequenceNumber } from "@/components/tugways/tug-transcript-entry";
+import {
+  formatTurnAddress,
+  type TurnAddress,
+} from "@/components/tugways/tug-transcript-entry";
 import { TugLabel } from "@/components/tugways/tug-label";
 import {
   TugProgressIndicator,
@@ -110,8 +114,8 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Invoked when the user clicks a `#NNNN` entry number in the Time /
- * Tokens popover — scrolls the transcript so that entry's row is in
+ * Invoked when the user clicks a `#u{turn}` / `#a{turn}` address in the
+ * Time / Tokens popover — scrolls the transcript so that entry's row is in
  * view. `rowIndex` is a transcript list-view row index: a turn shows
  * BOTH of its entries (user row + assistant row), each independently
  * clickable, so the handler is keyed by row rather than by turn. See
@@ -206,8 +210,8 @@ function PerAreaPopoverFrame({
  * vertically end-to-end.
  *
  * Four-column contract:
- *   col 1 → label (muted, left-aligned — the turn's `#NNNN` entry
- *           pair for per-turn rows, "turns" / "total" / "avg" for the
+ *   col 1 → label (muted, left-aligned — the turn's `#u{turn}` / `#a{turn}`
+ *           address pair for per-turn rows, "turns" / "total" / "avg" for the
  *           summary rows)
  *   col 2 → preview (the turn's request-string preview; empty on the
  *           summary rows)
@@ -245,27 +249,32 @@ function PopoverRow({
 }
 
 /**
- * One transcript entry number — `#NNNN` in the format the transcript
- * stamps on its entries (via {@link formatSequenceNumber}, where the
- * sequence is `rowIndex + 1`).
+ * One transcript entry address — `#u{turn}` / `#a{turn}` in the same
+ * speaker-prefixed format the transcript stamps on its attribution rows
+ * (via {@link formatTurnAddress}). The `address` drives the visible label;
+ * `rowIndex` is the list-view row the click scrolls to (the two are
+ * distinct: the user and assistant halves of a turn share the turn number
+ * but live at different rows).
  *
- * When `onScrollToRow` is supplied the number renders as a button
- * that scrolls the transcript to that entry's row; otherwise it is
- * inert text (gallery / fixtures, with no transcript to drive). The
- * click is a control-style action — fire-and-forget to the handler
- * the dev card threaded down; no popover-local state.
+ * When `onScrollToRow` is supplied the address renders as a button that
+ * scrolls the transcript to that entry's row; otherwise it is inert text
+ * (gallery / fixtures, with no transcript to drive). The click is a
+ * control-style action — fire-and-forget to the handler the dev card
+ * threaded down; no popover-local state.
  */
 function TurnNumberButton({
+  address,
   rowIndex,
   onScrollToRow,
 }: {
+  address: TurnAddress;
   rowIndex: number;
   onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
-  const sequenceText = formatSequenceNumber(rowIndex + 1);
+  const addressText = formatTurnAddress(address);
   if (onScrollToRow === undefined) {
     return (
-      <span className="dev-popover-row-turn-static">{sequenceText}</span>
+      <span className="dev-popover-row-turn-static">{addressText}</span>
     );
   }
   return (
@@ -273,44 +282,53 @@ function TurnNumberButton({
       type="button"
       className="dev-popover-row-turn"
       data-slot="dev-popover-row-turn"
-      aria-label={`Scroll the transcript to entry ${sequenceText}`}
+      aria-label={`Scroll the transcript to entry ${addressText}`}
       onClick={() => onScrollToRow(rowIndex)}
     >
-      {sequenceText}
+      {addressText}
     </button>
   );
 }
 
 /**
- * Per-turn row label — the PAIR of transcript entry numbers a turn
- * spans: the user-half row (`#N`) and the assistant-half row
- * (`#N+1`). Each number is independently clickable, so the reader
- * can jump to either side of the turn. Mirrors the transcript's
- * own two-entries-per-turn structure.
+ * Per-turn row label — the PAIR of transcript addresses a turn spans:
+ * the user-half (`#u{turn}`) and the assistant-half (`#a{turn}`). Both
+ * carry the SAME canonical turn number — the speaker prefix is what tells
+ * the two halves apart, exactly as the transcript's own attribution rows
+ * read. Each is independently clickable, so the reader can jump to either
+ * side of the turn.
+ *
+ * The turn number is `turnNumberBase + turnIndex + 1` — the loaded
+ * window's `firstLoadedTurnIndex` plus the row's window-relative turn,
+ * matching the transcript's `#u{turn}` / `#a{turn}` stamps for a paged
+ * window.
  *
  * Wake turns ([D06]) have NO user row — `userRowIndexForTurn` returns
- * `-1` for them, and we render only the assistant-half button (no
- * `·` separator). The single-number rendering is the popover's
- * visual cue that the turn doesn't have a user submission to
- * scroll to.
+ * `-1` for them, and we render only the assistant-half `#a{turn}` (no
+ * `·` separator). The single-address rendering is the popover's visual
+ * cue that the turn doesn't have a user submission to scroll to.
  */
 function TurnEntryPair({
   turnIndex,
   transcript,
+  turnNumberBase,
   onScrollToRow,
 }: {
   turnIndex: number;
   transcript: ReadonlyArray<TurnEntry>;
+  turnNumberBase: number;
   onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
   const turn = transcript[turnIndex];
+  const turnNumber = turnNumberBase + turnIndex + 1;
   const hasUserMessage = turn?.messages[0]?.kind === "user_message";
   const assistantRow = assistantRowIndexForTurn(turnIndex, transcript);
   if (!hasUserMessage) {
-    // Wake turn — render only the assistant-half number, no separator.
+    // Wake turn — render only the assistant-half address, no separator.
     return (
       <span className="dev-popover-turn-pair" data-slot="dev-popover-turn-pair">
         <TurnNumberButton
+          address={{ speaker: "assistant", turn: turnNumber }}
           rowIndex={assistantRow}
           onScrollToRow={onScrollToRow}
         />
@@ -321,6 +339,7 @@ function TurnEntryPair({
   return (
     <span className="dev-popover-turn-pair" data-slot="dev-popover-turn-pair">
       <TurnNumberButton
+        address={{ speaker: "user", turn: turnNumber }}
         rowIndex={userRow}
         onScrollToRow={onScrollToRow}
       />
@@ -328,6 +347,7 @@ function TurnEntryPair({
         ·
       </span>
       <TurnNumberButton
+        address={{ speaker: "assistant", turn: turnNumber }}
         rowIndex={assistantRow}
         onScrollToRow={onScrollToRow}
       />
@@ -453,10 +473,15 @@ function EmptyTranscriptBody(): React.ReactElement {
  */
 export function TimePopoverContent({
   transcript,
+  turnNumberBase = 0,
   inflight,
   onScrollToRow,
 }: {
   transcript: ReadonlyArray<TurnEntry>;
+  /** `firstLoadedTurnIndex` of the loaded window, so the per-turn
+   *  addresses match the transcript's paged numbering. Defaults to `0`
+   *  (a full / non-windowed load, and the gallery / fixtures). */
+  turnNumberBase?: number;
   inflight: { currentTurnActiveMs: number } | null;
   onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
@@ -464,7 +489,7 @@ export function TimePopoverContent({
   const rows = transcript.map((t, i) => (
     <PopoverRow
       key={t.turnKey}
-      label={<TurnEntryPair turnIndex={i} transcript={transcript} onScrollToRow={onScrollToRow} />}
+      label={<TurnEntryPair turnIndex={i} transcript={transcript} turnNumberBase={turnNumberBase} onScrollToRow={onScrollToRow} />}
       preview={<RequestPreview turn={t} />}
       value={formatTimeAlwaysHours(t.activeMs)}
       badge={<TurnEndStateBadge turn={t} />}
@@ -518,11 +543,16 @@ export function TimePopoverContent({
  */
 export function TokensPopoverContent({
   transcript,
+  turnNumberBase = 0,
   sessionInitTokens,
   inflight,
   onScrollToRow,
 }: {
   transcript: ReadonlyArray<TurnEntry>;
+  /** `firstLoadedTurnIndex` of the loaded window, so the per-turn
+   *  addresses match the transcript's paged numbering. Defaults to `0`
+   *  (a full / non-windowed load, and the gallery / fixtures). */
+  turnNumberBase?: number;
   sessionInitTokens: number | null;
   inflight: { currentTurnTokens: number } | null;
   onScrollToRow?: ScrollToRowHandler;
@@ -531,7 +561,7 @@ export function TokensPopoverContent({
   const rows = transcript.map((t, i) => (
     <PopoverRow
       key={t.turnKey}
-      label={<TurnEntryPair turnIndex={i} transcript={transcript} onScrollToRow={onScrollToRow} />}
+      label={<TurnEntryPair turnIndex={i} transcript={transcript} turnNumberBase={turnNumberBase} onScrollToRow={onScrollToRow} />}
       preview={<RequestPreview turn={t} />}
       value={formatTokensCaps(summary.perTurn[i] ?? 0)}
       badge={<TurnEndStateBadge turn={t} />}
@@ -929,22 +959,21 @@ function jobDescriptionText(description: string): string {
 }
 
 /**
- * Transcript row index of the assistant row whose turn launched this
- * job — resolved by finding the committed turn carrying the job's
- * launching `tool_use`. `-1` while the launch turn is still in flight
- * (the `#NNNN` affordance appears once the turn commits, matching the
- * Time / Tokens popovers' committed-rows-only numbering).
+ * The committed-turn index that launched `job` — found via the turn
+ * carrying the job's launching `tool_use`. `-1` while the launch turn is
+ * still in flight (the `#a{turn}` affordance appears once the turn commits,
+ * matching the popovers' committed-rows-only numbering). The caller derives
+ * both the `#a{turn}` address and the assistant launch-row from it.
  */
-function jobAssistantRowIndex(
+function jobTurnIndex(
   job: JobItem,
   transcript: ReadonlyArray<TurnEntry>,
 ): number {
-  const turnIndex = transcript.findIndex((t) =>
+  return transcript.findIndex((t) =>
     t.messages.some(
       (m) => m.kind === "tool_use" && m.toolUseId === job.toolUseId,
     ),
   );
-  return turnIndex === -1 ? -1 : assistantRowIndexForTurn(turnIndex, transcript);
 }
 
 /**
@@ -984,7 +1013,7 @@ function JobElapsedValue({ startedAtMs }: { startedAtMs: number }): React.ReactE
 /**
  * One row of the Jobs popover — a status dot beside a two-line text
  * block (description above a muted meta line: the launching turn's
- * clickable `#NNNN` entry number, the job kind, and the elapsed
+ * clickable `#a{turn}` address, the job kind, and the elapsed
  * time), with a stop button on running rows. The stop button wears
  * the Z5 submit/stop treatment — the bold `Square` glyph on a filled
  * danger button — and is a fire-and-forget control-style action: no
@@ -995,16 +1024,22 @@ function JobElapsedValue({ startedAtMs }: { startedAtMs: number }): React.ReactE
 function JobRow({
   job,
   transcript,
+  turnNumberBase,
   onScrollToRow,
   onStopJob,
 }: {
   job: JobItem;
   transcript: ReadonlyArray<TurnEntry>;
+  turnNumberBase: number;
   onScrollToRow?: ScrollToRowHandler;
   onStopJob?: (jobId: string) => void;
 }): React.ReactElement {
   const description = jobDescriptionText(job.description);
-  const rowIndex = jobAssistantRowIndex(job, transcript);
+  // The job launched from an assistant turn's `tool_use`; link its
+  // `#a{turn}` address (the assistant launch-row is the scroll target).
+  const turnIndex = jobTurnIndex(job, transcript);
+  const rowIndex =
+    turnIndex === -1 ? -1 : assistantRowIndexForTurn(turnIndex, transcript);
   const elapsed =
     job.status === "running" ? (
       <JobElapsedValue startedAtMs={job.startedAtMs} />
@@ -1017,9 +1052,16 @@ function JobRow({
     <div className="dev-jobs-popover-text">
       <span className="dev-jobs-popover-description">{description}</span>
       <span className="dev-jobs-popover-meta">
-        {rowIndex >= 0 ? (
+        {turnIndex >= 0 ? (
           <>
-            <TurnNumberButton rowIndex={rowIndex} onScrollToRow={onScrollToRow} />
+            <TurnNumberButton
+              address={{
+                speaker: "assistant",
+                turn: turnNumberBase + turnIndex + 1,
+              }}
+              rowIndex={rowIndex}
+              onScrollToRow={onScrollToRow}
+            />
             <span className="dev-jobs-popover-meta-sep" aria-hidden>
               ·
             </span>
@@ -1082,13 +1124,17 @@ function JobRow({
 export function JobsPopoverContent({
   jobs,
   transcript,
+  turnNumberBase = 0,
   onScrollToRow,
   onStopJob,
   onClearJobs,
 }: {
   jobs: readonly JobItem[];
-  /** Committed turns — resolves each job's `#NNNN` launch-row link. */
+  /** Committed turns — resolves each job's `#a{turn}` launch-row link. */
   transcript: ReadonlyArray<TurnEntry>;
+  /** `firstLoadedTurnIndex` of the loaded window, so each job's address
+   *  matches the transcript's paged numbering. Defaults to `0`. */
+  turnNumberBase?: number;
   onScrollToRow?: ScrollToRowHandler;
   onStopJob?: (jobId: string) => void;
   onClearJobs?: () => void;
@@ -1109,6 +1155,7 @@ export function JobsPopoverContent({
             key={job.jobId}
             job={job}
             transcript={transcript}
+            turnNumberBase={turnNumberBase}
             onScrollToRow={onScrollToRow}
             onStopJob={onStopJob}
           />
