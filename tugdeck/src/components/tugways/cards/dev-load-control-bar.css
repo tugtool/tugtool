@@ -1,20 +1,23 @@
 /**
- * dev-load-control-bar.css — content layouts inside the Z0 TugControlBar.
+ * dev-load-control-bar.css — content layouts inside the permanent Z0
+ * TugControlBar.
  *
- * The bar band itself (surface, visibility, scrim, constant height) is owned
- * by tug-control-bar.css; these rules lay out the dev transcript's content
- * variants — the load prompt and the loading progress row.
+ * The bar band itself (surface, scrim, constant height) is owned by
+ * tug-control-bar.css; these rules lay out the dev transcript's content
+ * variants — the resting metadata row and the loading progress row. The
+ * strip is permanent (`data-visible` pinned true); only the `data-mode`
+ * swaps.
  *
  * Both content rows are always mounted (the host self-subscribes per [L02]);
  * the host writes `data-mode` on the band ([L06]/[L22]) and the rules below
  * reveal exactly one row per mode. A row is hidden until its mode is active,
- * so the loading→prompt swap is a pure DOM toggle with no React re-render.
+ * so the loading→metadata swap is a pure DOM toggle with no React re-render.
  *
  * Two tunable knobs live here:
  *   --tugx-control-bar-track-width  — the progress track length.
  *   --tugx-control-bar-label-size   — the band's label text size.
  */
-.dev-load-control-bar-prompt,
+.dev-load-control-bar-metadata,
 .dev-load-control-bar-loading {
   /* ▼▼ TUNE ▼▼ */
   --tugx-control-bar-track-width: 220px;
@@ -25,13 +28,30 @@
   display: none;
 }
 
-/* The prompt stays centered: [label] Load: [N]. */
-.tug-control-bar[data-mode="prompt"] .dev-load-control-bar-prompt {
+/* The metadata row spans the band: session-created flush left, the turns
+   status + load action flush right. */
+.tug-control-bar[data-mode="metadata"] .dev-load-control-bar-metadata {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--tug-space-sm);
+  justify-content: space-between;
+  gap: var(--tug-space-md);
   width: 100%;
+}
+
+/* The two ends of the metadata row; each keeps its own items tight. The
+   left collapses to nothing when the created anchor is unknown (a brand-new
+   session), leaving the right end flush-right via `space-between`. */
+.dev-load-control-bar-meta-left,
+.dev-load-control-bar-meta-right {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+/* The "·" between the turns readout and the load action. */
+.dev-load-control-bar-meta-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* The loading row spans the band; the progress indicator (below) centers its

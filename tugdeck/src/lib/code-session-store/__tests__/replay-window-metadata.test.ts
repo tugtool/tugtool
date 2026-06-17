@@ -108,4 +108,35 @@ describe("replay_complete — recency-window metadata", () => {
       hasOlder: true,
     });
   });
+
+  it("records sessionCreatedAtMs on a full (non-windowed) replay", () => {
+    // Session-level, unlike the window: a full load with no window fields
+    // still carries the created anchor.
+    const store = replayWith({ count: 12, sessionCreatedAtMs: 1_750_000_000_000 });
+    expect(store.getSnapshot().sessionCreatedAtMs).toBe(1_750_000_000_000);
+    expect(store.getSnapshot().replayWindow).toBeNull();
+  });
+
+  it("retains sessionCreatedAtMs across a later replay that omits it", () => {
+    const { store, conn } = makeStore();
+    emit(conn, { type: "replay_started" });
+    emit(conn, {
+      type: "replay_complete",
+      count: 25,
+      firstLoadedTurnIndex: 175,
+      totalTurns: 200,
+      hasOlder: true,
+      sessionCreatedAtMs: 1_750_000_000_000,
+    });
+    // A backward-paging or error bracket that doesn't restate the anchor
+    // must not clear it — it is invariant for the session's lifetime.
+    emit(conn, { type: "replay_started" });
+    emit(conn, { type: "replay_complete", count: 0 });
+    expect(store.getSnapshot().sessionCreatedAtMs).toBe(1_750_000_000_000);
+  });
+
+  it("leaves sessionCreatedAtMs null until a replay reports it", () => {
+    const store = replayWith({ count: 12 });
+    expect(store.getSnapshot().sessionCreatedAtMs).toBeNull();
+  });
 });

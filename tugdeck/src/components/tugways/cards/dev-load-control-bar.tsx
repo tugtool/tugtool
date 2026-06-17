@@ -1,41 +1,38 @@
 /**
- * dev-load-control-bar — the dev transcript's Z0 load surface.
+ * dev-load-control-bar — the dev transcript's permanent Z0 strip.
  *
- * One `TugControlBar` ([P09]–[P11], #step-5-5) that supersedes the centered
- * restore sheet, the load-previous sheet, and the load-previous bar. It
- * carries, over its life, three contents driven by a small pure state
- * machine ({@link deriveControlBarState}):
+ * One `TugControlBar` ([P09]–[P11]) that is a **permanent fixture** at the
+ * top of the transcript: it never mounts/unmounts and never toggles its
+ * height, so the transcript no longer hops when it would once have appeared
+ * (on reaching the top) or disappeared (on scrolling away). With nothing to
+ * "reveal", the keyboard scroll-to-top (Opt-Shift-Up) no longer needs a
+ * follow-up wheel event to summon it — the strip is simply always there.
+ *
+ * It carries one of two contents driven by {@link deriveControlBarState}:
  *
  *   - **Loading** — a cold restore *or* a load-previous → a determinate
- *     progress bar (the card is **modal** while the load is actually in
- *     flight). The progress lingers, at full, for {@link PROGRESS_DWELL_MS}
- *     past the final tick so the bar visibly reaches the end before it moves
- *     on (`loadingDisplay`).
- *   - **Prompt** — older turns remain → "There are N earlier turns…
- *     Load: [25]"; *summoned* when a load finishes or the user reaches the
- *     top, and it **stays in view** until dismissed by a scroll or a submit.
- *     Non-modal.
- *   - **Hidden** — otherwise.
+ *     progress bar (the region is **modal** — inert + scrimmed — while the
+ *     load is in flight). The progress lingers, at full, for
+ *     {@link PROGRESS_DWELL_MS} past the final tick so the bar visibly
+ *     reaches the end before it swaps back (`loadingDisplay`).
+ *   - **Metadata** — the resting content: "Session created <datetime>" on
+ *     the left, "Turns displayed X of Y" + a "Load N more" / "All loaded"
+ *     status on the right.
  *
- * The progress dwell and the prompt persistence are the same shape for a
- * cold restore, a load-previous, and a scroll-to-top — one consistent
- * lifecycle.
- *
- * **Zone discipline ([L24]).** The bar's *mode* (loading / prompt / hidden)
- * and *visibility* are pure appearance — their only consumer is the renderer
- * — so they live in the DOM, never React state ([L06]). The host holds the
- * dwell + prompt-summon flags in refs, observes the store *directly* in a
- * layout effect ([L22]), and writes the resolved mode onto the band's
- * `data-visible` / `data-mode` attributes; a scroll-edge crossing or a dwell
- * tick therefore never re-renders. The two content slots are always mounted
- * and self-subscribe for their data ([L02]); the dev CSS reveals one per
+ * **Zone discipline ([L24]).** The strip's *mode* (loading / metadata) is
+ * pure appearance — its only consumer is the renderer — so it lives in the
+ * DOM, never React state ([L06]). The host holds the post-load dwell flag in
+ * a ref, observes the store *directly* in a layout effect ([L22]), and
+ * writes the resolved mode onto the band's `data-mode` attribute; a dwell
+ * tick therefore never re-renders. `data-visible` is pinned `"true"` (the
+ * strip is permanent). Both content slots are always mounted and
+ * self-subscribe for their data ([L02]); the dev CSS reveals one per
  * `data-mode`. The load-in-flight flag (`modal`) is session *data*, so it
  * alone enters React via `useSyncExternalStore` to drive the region
  * inert + scrim.
  *
- * This version is deliberately trimmed: paging is a single fixed step (50) —
- * no "All", and no Cancel (a 50-row page, and the restore, are quick enough
- * that there's nothing slow to abort).
+ * Paging is a single fixed step (25) — no "All", and no Cancel (a page, and
+ * the restore, are quick enough that there's nothing slow to abort).
  *
  * @module components/tugways/cards/dev-load-control-bar
  */
@@ -54,8 +51,8 @@ import {
 } from "@/lib/code-session-store";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import {
-  controlBarVisible,
   deriveControlBarState,
+  deriveLoadStatus,
   type ControlBarLoadKind,
 } from "./dev-load-control-bar-state";
 
@@ -77,30 +74,21 @@ function readLoadActive(snap: CodeSessionSnapshot): boolean {
   return snap.loadingPrevious || deriveColdRestoreActive(snap);
 }
 
-export interface DevLoadControlBarHandle {
-  /** The user reached / left the top of the transcript. */
-  setAtTop(atTop: boolean): void;
-  /** Following-bottom changed; `true` ⇒ at the live bottom. */
-  setAtBottom(atBottom: boolean): void;
-}
-
 export interface DevLoadControlBarProps {
   codeSessionStore: CodeSessionStore;
   /** The scrollable transcript region the bar inerts + scrims when modal. */
   regionEl: HTMLElement | null;
 }
 
-export const DevLoadControlBar = React.forwardRef<
-  DevLoadControlBarHandle,
-  DevLoadControlBarProps
->(function DevLoadControlBar({ codeSessionStore, regionEl }, ref) {
+export function DevLoadControlBar({
+  codeSessionStore,
+  regionEl,
+}: DevLoadControlBarProps): React.ReactElement {
   const barRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Appearance refs ([L06]): the post-load dwell and the "load more" summon
-  // live here, never React state — so a dwell tick or a scroll-edge crossing
-  // mutates the DOM without a re-render.
+  // Appearance refs ([L06]): the post-load dwell lives here, never React
+  // state — so a dwell tick mutates the DOM without a re-render.
   const tailActiveRef = React.useRef(false); // within the post-load dwell
-  const promptShownRef = React.useRef(false); // prompt summoned, not dismissed
   const tailTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevLoadActiveRef = React.useRef(false);
 
@@ -114,30 +102,26 @@ export const DevLoadControlBar = React.forwardRef<
     () => readLoadActive(codeSessionStore.getSnapshot()),
   );
 
-  // Resolve the bar's visual state from the live snapshot + the appearance
-  // refs and mirror it onto the band's DOM attributes ([L06]/[L22]): the
-  // generic `data-visible` (TugControlBar's show/hide) and `data-mode` (which
-  // content slot the dev CSS reveals). Never React state.
+  // Resolve the strip's mode from the live snapshot + the dwell ref and
+  // mirror it onto the band's DOM attributes ([L06]/[L22]). `data-visible`
+  // is pinned `"true"` — the strip is a permanent fixture — and `data-mode`
+  // selects which content slot the dev CSS reveals. Never React state.
   const updateBar = React.useCallback(() => {
     const bar = barRef.current;
     if (bar === null) return;
     const snap = codeSessionStore.getSnapshot();
     const state = deriveControlBarState({
       loadingDisplay: readLoadActive(snap) || tailActiveRef.current,
-      hasOlder: snap.replayWindow?.hasOlder ?? false,
-      earlierTurns: snap.replayWindow?.firstLoadedTurnIndex ?? 0,
-      promptShown: promptShownRef.current,
     });
-    bar.dataset.visible = String(controlBarVisible(state));
+    bar.dataset.visible = "true";
     bar.dataset.mode = state.kind;
   }, [codeSessionStore]);
 
-  // Observe the store directly ([L22]) — the bar's mode is a DOM mutation,
-  // not React-rendered state. This handler also runs the dwell tail (hold the
-  // full progress for `PROGRESS_DWELL_MS` after a load lands, then summon the
-  // prompt) and the submit dismiss. Flipping `tailActive` + `promptShown`
-  // together when the tail fires (then one `updateBar`) keeps the
-  // loading→prompt swap from ever passing through a hidden frame.
+  // Observe the store directly ([L22]) — the strip's mode is a DOM mutation,
+  // not React-rendered state. This handler also runs the dwell tail: hold the
+  // full progress for `PROGRESS_DWELL_MS` after a load lands, then swap back
+  // to the metadata row (one `updateBar` per transition, so the
+  // loading→metadata swap is a single clean frame).
   React.useLayoutEffect(() => {
     const onChange = (): void => {
       const snap = codeSessionStore.getSnapshot();
@@ -150,17 +134,15 @@ export const DevLoadControlBar = React.forwardRef<
         tailActiveRef.current = false;
       } else if (prevLoadActiveRef.current) {
         // A load just landed → hold the full progress for the dwell, then
-        // summon the prompt (the derive gates it on `hasOlder`).
+        // swap back to the metadata row.
         tailActiveRef.current = true;
         if (tailTimerRef.current !== null) clearTimeout(tailTimerRef.current);
         tailTimerRef.current = setTimeout(() => {
           tailTimerRef.current = null;
           tailActiveRef.current = false;
-          promptShownRef.current = true;
           updateBar();
         }, PROGRESS_DWELL_MS);
       }
-      if (snap.phase === "submitting") promptShownRef.current = false;
       prevLoadActiveRef.current = active;
       updateBar();
     };
@@ -171,28 +153,6 @@ export const DevLoadControlBar = React.forwardRef<
       if (tailTimerRef.current !== null) clearTimeout(tailTimerRef.current);
     };
   }, [codeSessionStore, updateBar]);
-
-  // Scroll edges (imperative, fed by the transcript): reaching the top
-  // summons the prompt; leaving the top, or scrolling up off the bottom,
-  // dismisses it — all DOM-only ([L06]), no re-render. Dismiss only on
-  // *leaving* the bottom (`following` false) — a programmatic re-pin right
-  // after a restore must not dismiss the prompt the dwell just summoned.
-  React.useImperativeHandle(
-    ref,
-    (): DevLoadControlBarHandle => ({
-      setAtTop(atTop) {
-        promptShownRef.current = atTop;
-        updateBar();
-      },
-      setAtBottom(following) {
-        if (!following) {
-          promptShownRef.current = false;
-          updateBar();
-        }
-      },
-    }),
-    [updateBar],
-  );
 
   const onLoad = React.useCallback(
     (amount: number) => {
@@ -207,10 +167,10 @@ export const DevLoadControlBar = React.forwardRef<
   return (
     <TugControlBar ref={barRef} modal={loadActive} regionEl={regionEl}>
       <ControlBarLoading codeSessionStore={codeSessionStore} />
-      <ControlBarPrompt codeSessionStore={codeSessionStore} onLoad={onLoad} />
+      <ControlBarMetadata codeSessionStore={codeSessionStore} onLoad={onLoad} />
     </TugControlBar>
   );
-});
+}
 
 /** Loading state — determinate progress, no Cancel. Both loads count
  *  **messages**: a cold restore loads the most recent recency window out of
@@ -347,43 +307,106 @@ function formatLoadPreviousValue(value: number, max: number): string {
   return `${value.toLocaleString()} of ${max.toLocaleString()} turns`;
 }
 
-/** Prompt state — "There are N earlier turns…" + a single fixed-step
- *  load action. ("All" was removed — paging is a quick fixed step at a time; a
- *  whole-session load is intentionally not offered in this version.) */
-function ControlBarPrompt({
+/**
+ * Format the session-created wall-clock as "Jun 17, 6:11 AM" — month/day
+ * (unambiguous across days, since a resumed session may be old) + short
+ * clock, locale-formatted. Appearance only ([L06]); not unit-tested
+ * (locale/timezone dependent).
+ */
+function formatSessionCreated(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Metadata state — the strip's resting content. Left: "Session created
+ * <datetime>" (omitted until the anchor is known). Right: "Turns displayed
+ * X of Y" + a fixed-step "Load N more" action, or "All loaded" when nothing
+ * remains. All self-subscribed ([L02]) so the slot needs no props beyond the
+ * load callback and stays mounted across mode swaps.
+ */
+function ControlBarMetadata({
   codeSessionStore,
   onLoad,
 }: {
   codeSessionStore: CodeSessionStore;
   onLoad: (amount: number) => void;
 }): React.ReactElement {
-  // Self-subscribed ([L02]) so the slot needs no count prop and stays mounted.
-  const earlierTurns = React.useSyncExternalStore(
+  const createdAtMs = React.useSyncExternalStore(
     codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().replayWindow?.firstLoadedTurnIndex ?? 0,
+    () => codeSessionStore.getSnapshot().sessionCreatedAtMs,
+  );
+  const transcriptLength = React.useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () => codeSessionStore.getSnapshot().transcript.length,
+  );
+  const replayWindow = React.useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () => codeSessionStore.getSnapshot().replayWindow,
   );
   const focusGroup = React.useId();
-  const step = Math.min(LOAD_PREVIOUS_STEP, earlierTurns);
+
+  const status = deriveLoadStatus({
+    transcriptLength,
+    firstLoadedTurnIndex: replayWindow?.firstLoadedTurnIndex ?? null,
+    totalTurns: replayWindow?.totalTurns ?? null,
+    step: LOAD_PREVIOUS_STEP,
+  });
+
   return (
-    <div className="dev-load-control-bar-prompt">
-      <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
-        {`There ${earlierTurns === 1 ? "is" : "are"} ${earlierTurns} earlier turn${
-          earlierTurns === 1 ? "" : "s"
-        } in this session.`}
-      </TugLabel>
-      <TugLabel emphasis="proposal" className="dev-load-control-bar-actions-label">
-        Load:
-      </TugLabel>
-      <TugPushButton
-        size="sm"
-        emphasis="outlined"
-        role="action"
-        focusGroup={focusGroup}
-        focusOrder={0}
-        onClick={() => onLoad(step)}
-      >
-        {step}
-      </TugPushButton>
+    <div className="dev-load-control-bar-metadata">
+      <div className="dev-load-control-bar-meta-left">
+        {createdAtMs !== null ? (
+          <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
+            {`Session created ${formatSessionCreated(createdAtMs)}`}
+          </TugLabel>
+        ) : null}
+      </div>
+      <div className="dev-load-control-bar-meta-right">
+        <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
+          {`Turns displayed ${status.displayed.toLocaleString()} of ${status.total.toLocaleString()}`}
+        </TugLabel>
+        <span className="dev-load-control-bar-meta-sep" aria-hidden="true">
+          ·
+        </span>
+        {status.hasOlder ? (
+          <>
+            <TugLabel
+              emphasis="proposal"
+              className="dev-load-control-bar-actions-label"
+            >
+              Load
+            </TugLabel>
+            <TugPushButton
+              size="sm"
+              emphasis="outlined"
+              role="action"
+              focusGroup={focusGroup}
+              focusOrder={0}
+              onClick={() => onLoad(status.loadStep)}
+            >
+              {status.loadStep}
+            </TugPushButton>
+            <TugLabel
+              emphasis="proposal"
+              className="dev-load-control-bar-actions-label"
+            >
+              more
+            </TugLabel>
+          </>
+        ) : (
+          <TugLabel
+            emphasis="proposal"
+            className="dev-load-control-bar-actions-label"
+          >
+            All loaded
+          </TugLabel>
+        )}
+      </div>
     </div>
   );
 }

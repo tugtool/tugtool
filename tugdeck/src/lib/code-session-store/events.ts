@@ -951,6 +951,14 @@ export interface ReplayCompleteEvent {
   firstLoadedTurnIndex?: number;
   totalTurns?: number;
   hasOlder?: boolean;
+  /**
+   * Wall-clock (epoch ms) of the session's first real turn — when the
+   * conversation began. Session-level, so it rides every success
+   * `replay_complete` (windowed or full) and a backward-paging bracket
+   * reports the same value. Absent only when no entry carried a parseable
+   * timestamp. Drives the dev transcript's permanent Z0 "Session created".
+   */
+  sessionCreatedAtMs?: number;
   tug_session_id?: string;
   [key: string]: unknown;
 }

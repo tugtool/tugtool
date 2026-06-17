@@ -119,6 +119,7 @@ function snapshotWith(args: {
     lastReplayResult: null,
     replayEverCompleted: false,
     replayWindow: null,
+    sessionCreatedAtMs: null,
     loadingPrevious: false,
     loadingPreviousTarget: 0,
     loadingPreviousLoaded: 0,

@@ -659,6 +659,7 @@ export class CodeSessionStore {
       lastReplayResult: this.state.lastReplayResult,
       replayEverCompleted: this.state.replayEverCompleted,
       replayWindow: this.state.replayWindow,
+      sessionCreatedAtMs: this.state.sessionCreatedAtMs,
       loadingPrevious: this.state.replayPrependActive,
       // Determinate load-previous progress: target turns requested vs
       // turns staged so far. Both 0 when no load is in flight.

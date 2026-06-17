@@ -6,9 +6,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  controlBarVisible,
   deriveControlBarState,
-  type ControlBarInputs,
+  deriveLoadStatus,
 } from "../dev-load-control-bar-state";
 import { restoreBarValueMax } from "../dev-load-control-bar";
 
@@ -34,56 +33,64 @@ describe("restoreBarValueMax — turns committed of turns requested", () => {
   });
 });
 
-const base: ControlBarInputs = {
-  loadingDisplay: false,
-  hasOlder: false,
-  earlierTurns: 0,
-  promptShown: false,
-};
-
 describe("deriveControlBarState", () => {
-  test("loadingDisplay → loading, regardless of prompt/older state", () => {
-    const s = deriveControlBarState({
-      ...base,
-      loadingDisplay: true,
-      hasOlder: true,
-      promptShown: true,
+  test("loadingDisplay → loading", () => {
+    expect(deriveControlBarState({ loadingDisplay: true })).toEqual({
+      kind: "loading",
     });
-    expect(s).toEqual({ kind: "loading" });
-    expect(controlBarVisible(s)).toBe(true);
   });
 
-  test("older turns + summoned prompt → prompt", () => {
-    const s = deriveControlBarState({
-      ...base,
-      hasOlder: true,
-      earlierTurns: 162,
-      promptShown: true,
+  test("not loading → metadata (the resting content)", () => {
+    expect(deriveControlBarState({ loadingDisplay: false })).toEqual({
+      kind: "metadata",
     });
-    expect(s).toEqual({ kind: "prompt", earlierTurns: 162 });
-    expect(controlBarVisible(s)).toBe(true);
   });
+});
 
-  test("older messages but prompt not summoned → hidden", () => {
+describe("deriveLoadStatus — metadata row turns math", () => {
+  test("windowed slice with older turns remaining", () => {
+    // 3 displayed of a 40-turn session; oldest loaded turn is index 37.
     expect(
-      deriveControlBarState({ ...base, hasOlder: true, promptShown: false }),
-    ).toEqual({ kind: "hidden" });
+      deriveLoadStatus({
+        transcriptLength: 3,
+        firstLoadedTurnIndex: 37,
+        totalTurns: 40,
+        step: 25,
+      }),
+    ).toEqual({ displayed: 3, total: 40, hasOlder: true, loadStep: 25 });
   });
 
-  test("prompt summoned but no older messages → hidden", () => {
+  test("load step clamps to the older count when fewer than the page", () => {
     expect(
-      deriveControlBarState({ ...base, hasOlder: false, promptShown: true }),
-    ).toEqual({ kind: "hidden" });
-    expect(controlBarVisible({ kind: "hidden" })).toBe(false);
+      deriveLoadStatus({
+        transcriptLength: 35,
+        firstLoadedTurnIndex: 5,
+        totalTurns: 40,
+        step: 25,
+      }),
+    ).toEqual({ displayed: 35, total: 40, hasOlder: true, loadStep: 5 });
   });
 
-  test("loadingDisplay takes precedence over a summoned prompt", () => {
-    const s = deriveControlBarState({
-      ...base,
-      loadingDisplay: true,
-      hasOlder: true,
-      promptShown: true,
-    });
-    expect(s.kind).toBe("loading");
+  test("full (non-windowed) load: displayed == total, all loaded", () => {
+    // No window: firstLoadedTurnIndex / totalTurns null → derive from length.
+    expect(
+      deriveLoadStatus({
+        transcriptLength: 12,
+        firstLoadedTurnIndex: null,
+        totalTurns: null,
+        step: 25,
+      }),
+    ).toEqual({ displayed: 12, total: 12, hasOlder: false, loadStep: 0 });
+  });
+
+  test("windowed but whole session fits: all loaded", () => {
+    expect(
+      deriveLoadStatus({
+        transcriptLength: 40,
+        firstLoadedTurnIndex: 0,
+        totalTurns: 40,
+        step: 25,
+      }),
+    ).toEqual({ displayed: 40, total: 40, hasOlder: false, loadStep: 0 });
   });
 });

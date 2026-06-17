@@ -926,6 +926,17 @@ export interface CodeSessionSnapshot {
   replayWindow: ReplayWindowMeta | null;
 
   /**
+   * Wall-clock (epoch ms) of the session's first real turn — when the
+   * conversation began. Session-level (unlike {@link replayWindow}, it is
+   * NOT null on a full load): every success `replay_complete` carries it,
+   * windowed or not, and a backward-paging bracket reports the same value,
+   * so once known it is stable. `null` until the first replay completes,
+   * or if no entry carried a parseable timestamp. The dev transcript's
+   * permanent Z0 strip renders it as "Session created".
+   */
+  sessionCreatedAtMs: number | null;
+
+  /**
    * True while a load-previous (older-range) replay bracket is in flight
    * — from the `begin_load_previous` dispatch (the instant the user
    * activates "load previous") until its `replay_complete` (commit or

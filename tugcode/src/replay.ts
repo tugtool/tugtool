@@ -1829,6 +1829,25 @@ export async function* translateJsonlSession(
     }
   });
 
+  // Session-created anchor: the wall-clock of the first real turn-bearing
+  // entry (a `user` or `assistant` message — `summary` / `system` meta
+  // lines are skipped so this reads as "when the conversation began", not
+  // the resume/compaction moment). Session-level, independent of any
+  // recency window, so it rides EVERY `replay_complete` (windowed or full)
+  // — the dev transcript's permanent Z0 strip surfaces it as "Session
+  // created". `undefined` when nothing carries a parseable timestamp; the
+  // frame then omits the field and the reducer leaves the anchor unset.
+  let sessionCreatedAtMs: number | undefined;
+  for (const entry of parsedEntries) {
+    if (entry === null) continue;
+    if (entry.type !== "user" && entry.type !== "assistant") continue;
+    const ts = parseEntryTimestamp(entry);
+    if (ts !== undefined) {
+      sessionCreatedAtMs = ts;
+      break;
+    }
+  }
+
   // Recency window. When requested, locate every turn's start entry
   // (a dry run of the real translator — see {@link computeTurnStartIndices})
   // and resolve the window into the `[windowStartIndex, windowEndIndex)`
@@ -1980,6 +1999,7 @@ export async function* translateJsonlSession(
           hasOlder: windowMeta.hasOlder,
         }
       : {}),
+    ...(sessionCreatedAtMs !== undefined ? { sessionCreatedAtMs } : {}),
     ...(sawAnyMalformed
       ? {
           error: {

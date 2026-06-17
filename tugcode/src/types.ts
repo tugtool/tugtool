@@ -1015,6 +1015,16 @@ export interface ReplayComplete {
   totalTurns?: number;
   hasOlder?: boolean;
   /**
+   * Wall-clock (epoch ms) of the session's first real turn-bearing entry
+   * — when the conversation began. Session-level, so it rides EVERY
+   * success `replay_complete` (windowed or full), independent of the
+   * window fields above; a backward-paging bracket reports the same value
+   * as the initial restore. Absent only when no entry carried a parseable
+   * timestamp. The dev transcript's permanent Z0 strip renders it as
+   * "Session created".
+   */
+  sessionCreatedAtMs?: number;
+  /**
    * Set when the replay was cancelled in flight (a `cancel_replay`
    * arrived before the bracket finished). The client discards the
    * partial older batch this bracket staged and leaves the prior loaded

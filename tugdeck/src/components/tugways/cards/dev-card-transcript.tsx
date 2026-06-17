@@ -131,7 +131,6 @@ import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import {
   DevLoadControlBar,
-  type DevLoadControlBarHandle,
 } from "@/components/tugways/cards/dev-load-control-bar";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
@@ -1398,21 +1397,15 @@ export const DevTranscriptHost = forwardRef<
   // DOM node as the list view's SmartScroll engages / disengages
   // follow-bottom. The follow-bottom intent never enters React state.
   const jumpButtonRef = useRef<HTMLButtonElement | null>(null);
-  // The Z0 load control bar ([P09], #step-5-5). The host feeds it scroll
-  // edges imperatively ([L06]); the bar derives its own visibility +
-  // modality. `regionEl` (the transcript scroll region) is the bar's
-  // inert + scrim target when modal — held as state so the bar gets a
-  // stable element once it mounts.
-  const controlBarRef = useRef<DevLoadControlBarHandle | null>(null);
+  // The permanent Z0 strip ([P09]). It derives its own mode + modality from
+  // the store and is always present, so the host no longer feeds it scroll
+  // edges to summon/dismiss it. `regionEl` (the transcript scroll region) is
+  // the strip's inert + scrim target when modal — held as state so the strip
+  // gets a stable element once it mounts.
   const [regionEl, setRegionEl] = useState<HTMLDivElement | null>(null);
   const handleFollowBottomChange = useCallback((following: boolean): void => {
     const btn = jumpButtonRef.current;
     if (btn !== null) btn.dataset.visible = String(!following);
-    // Following the bottom dismisses the lingering load prompt.
-    controlBarRef.current?.setAtBottom(following);
-  }, []);
-  const handleAtTopChange = useCallback((atTop: boolean): void => {
-    controlBarRef.current?.setAtTop(atTop);
   }, []);
   const handleJumpToBottom = useCallback((): void => {
     // Non-animated clamp — the same definite jump to the true bottom
@@ -1437,7 +1430,6 @@ export const DevTranscriptHost = forwardRef<
           initial-restore indicator — modal (over the region below) while
           loading, per [P09]. */}
       <DevLoadControlBar
-        ref={controlBarRef}
         codeSessionStore={codeSessionStore}
         regionEl={regionEl}
       />
@@ -1471,7 +1463,6 @@ export const DevTranscriptHost = forwardRef<
               batchLoading={batchLoading}
               onFirstSettle={handleFirstSettle}
               onFollowBottomChange={handleFollowBottomChange}
-              onAtTopChange={handleAtTopChange}
               // Inline render: every row is mounted at its real,
               // measured height — no windowing, no spacers, no cheap
               // tier. The scroll height is the true sum of row heights,

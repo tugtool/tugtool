@@ -1754,6 +1754,22 @@ mod tests {
     }
 
     #[test]
+    fn stamp_preserves_session_created_field() {
+        // tugcast only re-stamps `totalTurns`; every other field tugcode put
+        // on the frame must ride through untouched. `sessionCreatedAtMs`
+        // (the dev transcript's "Session created" anchor) is a passthrough —
+        // lock it so a future stamp refactor can't silently drop it.
+        let line = r#"{"type":"replay_complete","count":5,"firstLoadedTurnIndex":17,"totalTurns":59,"hasOlder":true,"sessionCreatedAtMs":1750166400000,"ipc_version":2}"#;
+        let stamped = stamp_replay_complete_total_turns(line, 81);
+        let v: serde_json::Value = serde_json::from_slice(&stamped).unwrap();
+        assert_eq!(v["totalTurns"], 81, "engine value still wins");
+        assert_eq!(
+            v["sessionCreatedAtMs"], 1750166400000_i64,
+            "session-created anchor survives the re-stamp"
+        );
+    }
+
+    #[test]
     fn stamp_passes_through_unparseable_line() {
         let garbage = "not json at all";
         assert_eq!(

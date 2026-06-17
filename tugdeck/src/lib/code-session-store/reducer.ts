@@ -552,6 +552,13 @@ export interface CodeSessionState {
    */
   replayWindow: ReplayWindowMeta | null;
   /**
+   * Wall-clock (epoch ms) of the session's first real turn — session-level
+   * (unlike `replayWindow`, present on a full load too). Set from every
+   * success `replay_complete`'s `sessionCreatedAtMs`, retained when a frame
+   * omits it. Mirrored to `CodeSessionSnapshot.sessionCreatedAtMs`.
+   */
+  sessionCreatedAtMs: number | null;
+  /**
    * True while a load-previous (older-range) replay bracket is in
    * flight: set by `begin_load_previous` (the store dispatches it just
    * before sending the older-range request), read by
@@ -792,6 +799,7 @@ export function createInitialState(
     lastReplayResult: null,
     replayEverCompleted: false,
     replayWindow: null,
+    sessionCreatedAtMs: null,
     replayPrependActive: false,
     replayPreflightActive: false,
     replaySoftBudgetElapsed: false,
@@ -4495,8 +4503,21 @@ export function reduce(
       return handleResumeFailed(state, event);
     case "replay_started":
       return handleReplayStarted(state, event);
-    case "replay_complete":
-      return handleReplayComplete(state, event);
+    case "replay_complete": {
+      const result = handleReplayComplete(state, event);
+      // The session-created anchor is invariant and rides every success
+      // `replay_complete` (windowed or full). Thread it onto whatever
+      // state the handler's many branches returned — retaining the prior
+      // value when this frame omits it (error / legacy) — so the single
+      // assignment lives here rather than in each handler branch.
+      const sessionCreatedAtMs =
+        typeof event.sessionCreatedAtMs === "number"
+          ? event.sessionCreatedAtMs
+          : result.state.sessionCreatedAtMs;
+      return sessionCreatedAtMs === result.state.sessionCreatedAtMs
+        ? result
+        : { ...result, state: { ...result.state, sessionCreatedAtMs } };
+    }
     case "add_user_message":
       return handleAddUserMessage(state, event);
     case "wake_started":

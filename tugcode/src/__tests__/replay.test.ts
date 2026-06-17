@@ -599,6 +599,55 @@ describe("translateJsonlSession — same-msg_id continuation", () => {
     expect(rc.count).toBe(1);
   });
 
+  test("replay_complete carries sessionCreatedAtMs from the first turn entry", async () => {
+    const createdIso = "2026-06-17T13:11:56.000Z";
+    const jsonl = makeJsonl([
+      { ...userEntry([{ type: "text", text: "hello" }]), timestamp: createdIso },
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "hi" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const rc = out.at(-1) as ReplayComplete;
+    expect(rc.type).toBe("replay_complete");
+    expect(rc.sessionCreatedAtMs).toBe(Date.parse(createdIso));
+  });
+
+  test("sessionCreatedAtMs skips leading summary/meta and uses the first real turn", async () => {
+    const summaryIso = "2026-06-17T13:00:00.000Z";
+    const turnIso = "2026-06-17T13:11:56.000Z";
+    const jsonl = makeJsonl([
+      { type: "summary", timestamp: summaryIso } as JsonlEntry,
+      { ...userEntry([{ type: "text", text: "hello" }]), timestamp: turnIso },
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "hi" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const rc = out.at(-1) as ReplayComplete;
+    // The summary's earlier timestamp is ignored; the anchor is the first
+    // real user/assistant turn — "when the conversation began".
+    expect(rc.sessionCreatedAtMs).toBe(Date.parse(turnIso));
+  });
+
+  test("sessionCreatedAtMs omitted when no entry carries a parseable timestamp", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "hello" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "hi" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const rc = out.at(-1) as ReplayComplete;
+    expect(rc.sessionCreatedAtMs).toBeUndefined();
+  });
+
   test("three-way same-msg_id run also collapses (defensive against multi-snapshot writes)", async () => {
     const jsonl = makeJsonl([
       userEntry([{ type: "text", text: "u" }]),
