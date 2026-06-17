@@ -51,7 +51,12 @@
  */
 
 import React from "react";
-import { Check, Copy } from "lucide-react";
+import { Copy as copyIconNode, Check as checkIconNode } from "lucide";
+
+import {
+  TugSpriteIcon,
+  type LucideIconNode,
+} from "@/components/tugways/tug-sprite-icon";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
@@ -220,7 +225,7 @@ export function BlockCopyButton({
       ref={buttonRef}
       className={className}
       data-slot={dataSlot}
-      icon={<Copy />}
+      icon={<TugSpriteIcon name="copy" node={copyIconNode as LucideIconNode} />}
       subtype={subtype}
       emphasis="ghost"
       size={size}
@@ -228,7 +233,7 @@ export function BlockCopyButton({
       aria-label={ariaLabel}
       onClick={() => stableClick(handleCopy)}
       confirmation={{
-        icon: <Check />,
+        icon: <TugSpriteIcon name="check" node={checkIconNode as LucideIconNode} />,
         label: "Copied",
       }}
       isConfirming={copied}

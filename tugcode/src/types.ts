@@ -1115,6 +1115,24 @@ export interface PromptAnchor {
   ipc_version: number;
 }
 
+/**
+ * Transport-only envelope that carries a run of replay frames in a
+ * single IPC line. The cold-replay consumer buffers committed-turn
+ * frames and flushes them as one `replay_batch` instead of one wire
+ * line per frame — collapsing the per-frame syscall / relay / WebSocket
+ * cost that dominates load time. tugcast relays it unchanged (the
+ * `tug_session_id` splice lands on this outer object); the browser
+ * unwraps `frames` at the FeedStore ingest boundary and dispatches each
+ * inner frame through the normal per-frame path. Brackets
+ * (`replay_started` / `replay_complete`) are never batched — they stay
+ * raw so the paint gate and fold flush keep their timing.
+ */
+export interface ReplayBatch {
+  type: "replay_batch";
+  frames: OutboundMessage[];
+  ipc_version: number;
+}
+
 export type OutboundMessage =
   | ProtocolAck
   | SessionInit
@@ -1143,6 +1161,7 @@ export type OutboundMessage =
   | AddUserMessage
   | ReplayStarted
   | ReplayComplete
+  | ReplayBatch
   | WakeStarted
   | AssistantOpener
   | TaskStarted

@@ -12,6 +12,7 @@ import {
   ActiveTurn,
   SessionManager,
 } from "../session.ts";
+import { unwrapReplayBatches } from "./capture-ipc.ts";
 import type {
   AssistantText,
   ContentBlockStart,
@@ -60,7 +61,7 @@ async function captureStdout(
   } finally {
     (Bun as unknown as { write: typeof Bun.write }).write = originalWrite;
   }
-  return { emitted: captured };
+  return { emitted: unwrapReplayBatches(captured) };
 }
 
 function newManagerWithTurn(turn: ActiveTurn): SessionManager {

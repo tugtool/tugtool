@@ -399,12 +399,20 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
         onKeyDown={onKeyDown}
         {...rest}
       >
-        {/* Sliding indicator pill — positioned imperatively via ref [L06] */}
-        <div
-          ref={indicatorRef}
-          className="tug-choice-group-indicator"
-          aria-hidden="true"
-        />
+        {/* Sliding indicator pill — only the *animated* variant needs the
+            imperatively-positioned overlay (it slides between segments). The
+            non-animated variant paints the pill as the active segment's own
+            CSS background instead, so it reads no `offsetLeft`/`offsetWidth`
+            and forces no layout — `measureIndicator` returns early when this
+            element is absent. Eliminates the per-instance reflow that made a
+            transcript of diff-block toggles a top load hot spot [L06]. */}
+        {animated ? (
+          <div
+            ref={indicatorRef}
+            className="tug-choice-group-indicator"
+            aria-hidden="true"
+          />
+        ) : null}
 
         {items.map((item, index) => {
           const isActive = item.value === value;

@@ -32,6 +32,7 @@ import {
   type JsonlReadResult,
   SessionManager,
 } from "../session.ts";
+import { unwrapReplayBatches } from "./capture-ipc.ts";
 import type {
   AssistantText,
   ControlRequestForward,
@@ -89,7 +90,7 @@ async function captureStdout(
   } finally {
     (Bun as unknown as { write: typeof Bun.write }).write = originalWrite;
   }
-  return { emitted: captured };
+  return { emitted: unwrapReplayBatches(captured) };
 }
 
 function makeManager(opts: {

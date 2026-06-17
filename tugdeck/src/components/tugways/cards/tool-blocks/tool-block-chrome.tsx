@@ -216,7 +216,7 @@ export interface ToolBlockChromeProps {
    * and the header's Copy writes it in both states; when omitted the
    * header falls back to the collapse handle's command+result markdown.
    */
-  copyText?: string;
+  copyText?: string | (() => string);
   /** Forwarded class name. */
   className?: string;
 }

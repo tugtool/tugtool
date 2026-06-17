@@ -144,6 +144,14 @@ export class SmartScroll {
   private _phase: ScrollPhase = 'idle';
   private _isFollowingBottom: boolean;
   private _lastScrollTop: number;
+  // The constructor deliberately does NOT read `scrollContainer.scrollTop` to
+  // seed `_lastScrollTop`: that read forces a synchronous layout, and the
+  // constructor runs inside the list view's mount `useLayoutEffect`, so on a
+  // cold transcript load it reflows a freshly-built (huge) container before
+  // paint. `_lastScrollTop` is only consumed by the scroll/pointer handlers,
+  // which can't fire before the first scroll — so the baseline is seeded lazily
+  // on that first event instead. Until then it holds 0.
+  private _scrollTopSeeded = false;
   private _disposed = false;
 
   // One-shot guard: the next scroll event won't fire idle-phase
@@ -205,7 +213,8 @@ export class SmartScroll {
     this._container = scrollContainer;
     this._callbacks = callbacks;
     this._isFollowingBottom = followBottom;
-    this._lastScrollTop = scrollContainer.scrollTop;
+    // Seeded lazily on the first scroll event — see `_scrollTopSeeded`.
+    this._lastScrollTop = 0;
 
     // Feature-detect scrollend support.
     this._supportsScrollEnd = 'onscrollend' in scrollContainer;
@@ -534,6 +543,16 @@ export class SmartScroll {
     if (this._disposed) return;
 
     const scrollTop = this._container.scrollTop;
+
+    // Lazy baseline seed: the first scroll event since construction
+    // establishes `_lastScrollTop` (the constructor skips the layout-forcing
+    // read). With the baseline equal to the current position, no direction is
+    // inferred from a phantom prior value on this first event; line 602 then
+    // carries it forward as usual.
+    if (!this._scrollTopSeeded) {
+      this._lastScrollTop = scrollTop;
+      this._scrollTopSeeded = true;
+    }
 
     // Fire onScroll for every scroll event regardless of phase.
     this._callbacks.onScroll?.(this);

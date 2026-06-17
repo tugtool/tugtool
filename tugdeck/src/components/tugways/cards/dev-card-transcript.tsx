@@ -91,6 +91,7 @@ import {
   type TugListViewCellRenderer,
   type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
+import { useDeckManager } from "@/deck-manager-context";
 import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
 import { DevZ1B } from "@/components/tugways/cards/dev-card-z1b";
 import { useFootHeightReservation } from "@/components/tugways/cards/dev-card-transcript-foot-reservation";
@@ -609,7 +610,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
         <ToolBlockHistoryCollapse
           toolUseId={message.toolUseId}
           defaultCollapsed={collapseByDefault}
-          copyText={toolCallToMarkdown(message, childrenByParent)}
+          copyText={() => toolCallToMarkdown(message, childrenByParent)}
         >
           <Component {...props} />
         </ToolBlockHistoryCollapse>
@@ -694,8 +695,11 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // once per committed turn (the turn is frozen post-commit, so the
   // memo runs a single time). `undefined` for the in-flight row,
   // which keeps COPY suppressed until the turn commits.
+  // Lazy: build the full-turn markdown only when Copy is pressed,
+  // never eagerly at render. `undefined` keeps Copy suppressed for the
+  // in-flight row.
   const copyMarkdown = useMemo(
-    () => (turn !== undefined ? turnEntryToMarkdown(turn) : undefined),
+    () => (turn !== undefined ? () => turnEntryToMarkdown(turn) : undefined),
     [turn],
   );
   const timestamp =
@@ -1066,6 +1070,64 @@ export const DevTranscriptHost = forwardRef<
     () => codeSessionStore.getSnapshot().loadingPrevious,
   );
 
+  // Batch-load freeze for the inner list's per-commit scroll battery
+  // ([L04] settle handshake). `loadActive` mirrors the Z0 load-control
+  // bar's own flag — true across the restore replay window and every
+  // "load previous" bracket. It drops at `replay_complete`, but the list
+  // then mounts the whole batch and settles every cell's measured height
+  // over the next few commits; running the pin / anchor-writer on each of
+  // those forces a full-transcript layout repeatedly. `settlingAfterLoad`
+  // bridges from `loadActive` falling until the list raises `onFirstSettle`
+  // (its ResizeObserver has delivered the batch's heights), so the freeze
+  // spans the load *and* its settle. The union is handed to the list as
+  // `batchLoading`.
+  const loadActive = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(() => {
+      const s = codeSessionStore.getSnapshot();
+      return s.loadingPrevious || deriveColdRestoreActive(s);
+    }, [codeSessionStore]),
+  );
+  const [settlingAfterLoad, setSettlingAfterLoad] = useState(false);
+  const prevLoadActiveRef = useRef(loadActive);
+  useLayoutEffect(() => {
+    if (prevLoadActiveRef.current && !loadActive) setSettlingAfterLoad(true);
+    prevLoadActiveRef.current = loadActive;
+  }, [loadActive]);
+  // Settle-phase timer ([L04] handshake). `replay_render` measures the
+  // backend replay window (`replay_started` → `replay_complete`) and stops
+  // BEFORE the list mounts and settles its heights — exactly the phase that
+  // dominates the felt cost. `settleStartRef` is stamped at the reveal (the
+  // commit where the list first mounts; see `listMounted` below) and read
+  // when the list raises `onFirstSettle`, surfacing the reveal→settled
+  // duration in the dev panel so the post-reveal settle is measurable.
+  const settleStartRef = useRef<number | null>(null);
+  const handleFirstSettle = useCallback(() => {
+    setSettlingAfterLoad(false);
+    const start = settleStartRef.current;
+    if (start !== null) {
+      settleStartRef.current = null;
+      const ms = Date.now() - start;
+      const tugSessionId = codeSessionStore.getSnapshot().tugSessionId;
+      const summary = { tug_session_id: tugSessionId, ms };
+      logSessionLifecycle("perf.transcript_settle", summary);
+      tugDevLogStore.info("perf", "transcript_settle", summary);
+    }
+  }, [codeSessionStore]);
+  const batchLoading = loadActive || settlingAfterLoad;
+
+  // Suspend per-card state persistence for the whole batch load + settle.
+  // The card's debounced [A9] save fires as scroll / region-scroll / content
+  // settle, and `flushDirtyCardStates` would `fetch` per dirty card on the
+  // same thread the load needs — pure waste, since the position is being
+  // restored, not authored. The deck flushes once when the gate releases.
+  const deck = useDeckManager();
+  useLayoutEffect(() => {
+    if (!batchLoading) return;
+    const resume = deck.suspendCardStateSaves?.();
+    return resume;
+  }, [batchLoading, deck]);
+
   // Perf instrumentation — pure observability, no behavior. On the
   // commit where the [DT10] replay gate drops (`isReplaying` flips
   // false), this layout effect runs synchronously post-commit: the
@@ -1262,6 +1324,23 @@ export const DevTranscriptHost = forwardRef<
     }, [codeSessionStore]),
   );
 
+  // Stamp the reveal moment for the settle timer the first time the list
+  // mounts — the next paint shows the transcript, and the heights settle
+  // from here until `onFirstSettle`. Ref-in-render lazy capture (idempotent).
+  if (listMounted && settleStartRef.current === null) {
+    settleStartRef.current = Date.now();
+  }
+
+  // Reveal edge: arm `settlingAfterLoad` so `batchLoading` (the scroll-battery
+  // freeze AND the card-save gate) spans the post-reveal settle even when the
+  // cold-restore `loadActive` signal never engaged (its falling edge is the
+  // other arm, for load-previous). Cleared on `onFirstSettle`.
+  const prevListMountedRef = useRef(listMounted);
+  useLayoutEffect(() => {
+    if (listMounted && !prevListMountedRef.current) setSettlingAfterLoad(true);
+    prevListMountedRef.current = listMounted;
+  }, [listMounted]);
+
   // History-collapse expansion overrides ([P02], Spec S02). ONE
   // instance per card, owned HERE because the host never unmounts
   // under windowed mounting — per-block [A9] keys could not survive a
@@ -1378,6 +1457,13 @@ export const DevTranscriptHost = forwardRef<
               cellRenderers={cellRenderers}
               scrollKey="dev-card-transcript"
               followBottom
+              // Freeze the per-commit scroll battery across the restore
+              // replay, each load-previous bracket, and the post-reveal
+              // height settle ([L04] via `onFirstSettle`) — the heavy
+              // forced-layout reads stand down while loading, then place
+              // the bottom + serialize the anchor once on the settled edge.
+              batchLoading={batchLoading}
+              onFirstSettle={handleFirstSettle}
               onFollowBottomChange={handleFollowBottomChange}
               onAtTopChange={handleAtTopChange}
               // Inline render: every row is mounted at its real,

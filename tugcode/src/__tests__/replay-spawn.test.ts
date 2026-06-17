@@ -25,6 +25,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from "node:fs";
+import { unwrapReplayBatches } from "./capture-ipc.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -94,7 +95,11 @@ function twoTurnJsonl(): string {
 
 async function captureIpc(
   fn: () => Promise<void>,
-): Promise<{ emitted: OutboundMessage[]; exitCode: number | undefined }> {
+): Promise<{
+  emitted: OutboundMessage[];
+  raw: OutboundMessage[];
+  exitCode: number | undefined;
+}> {
   const captured: OutboundMessage[] = [];
   const originalWrite = Bun.write;
   const decoder = new TextDecoder();
@@ -137,7 +142,9 @@ async function captureIpc(
     (process as any).exit = originalExit;
   }
 
-  return { emitted: captured, exitCode };
+  // `raw` keeps the on-the-wire shape (replay_batch envelopes intact);
+  // `emitted` is the unwrapped per-frame view most assertions want.
+  return { emitted: unwrapReplayBatches(captured), raw: captured, exitCode };
 }
 
 interface MockChildHandle {
@@ -1214,5 +1221,69 @@ describe("Phase A-R1 — runReplay sequential and re-entrant calls", () => {
       "replay_started",
       "replay_complete",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runReplay — frame batching
+// ---------------------------------------------------------------------------
+
+describe("runReplay — frame batching", () => {
+  test("ships content as replay_batch envelopes; brackets stay raw", async () => {
+    // Enough turns that the inner-frame count well exceeds one
+    // REPLAY_BATCH_SIZE (256) window, forcing multiple batches.
+    const lines: string[] = [];
+    for (let i = 0; i < 120; i++) {
+      lines.push(
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: `prompt ${i}` }] },
+        }),
+      );
+      lines.push(
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            id: `msg_${i}`,
+            role: "assistant",
+            model: "claude-opus-4-6",
+            stop_reason: "end_turn",
+            content: [{ type: "text", text: `reply ${i}` }],
+          },
+        }),
+      );
+    }
+    const jsonl = lines.join("\n") + "\n";
+
+    const { manager } = await makePrimedManager({
+      jsonlReader: async () => ({ kind: "ok", jsonl }),
+    });
+    const { raw, emitted } = await captureIpc(async () => {
+      await manager.runReplay();
+    });
+
+    // Brackets stay raw: each appears once as its own wire frame.
+    expect(raw.filter((f) => f.type === "replay_started")).toHaveLength(1);
+    expect(raw.filter((f) => f.type === "replay_complete")).toHaveLength(1);
+
+    // Content collapsed into >=1 batch envelope, and the wire-line count
+    // is far below the inner-frame count it carries.
+    const batches = raw.filter((f) => f.type === "replay_batch");
+    expect(batches.length).toBeGreaterThanOrEqual(1);
+    expect(raw.length).toBeLessThan(emitted.length);
+
+    // No bracket (or nested batch) is ever buried inside a batch.
+    for (const b of batches) {
+      for (const inner of (b as { frames: OutboundMessage[] }).frames) {
+        expect(inner.type).not.toBe("replay_started");
+        expect(inner.type).not.toBe("replay_complete");
+        expect(inner.type).not.toBe("replay_batch");
+      }
+    }
+
+    // Unwrapping reconstructs the full per-frame sequence: every turn
+    // committed, no envelope leaks through.
+    expect(emitted.filter((f) => f.type === "replay_batch")).toHaveLength(0);
+    expect(emitted.filter((f) => f.type === "turn_complete")).toHaveLength(120);
   });
 });

@@ -350,7 +350,7 @@ No new React state is introduced. The change is in the store's wire-ingest routi
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Browser-side `replay_batch` unwrap | pending | — |
+| #step-1 | Browser-side `replay_batch` unwrap | done | 30b353a3 |
 | #step-2 | tugcode emit batching + wire type + capture-helper unwrap | pending | — |
 | #step-3 | Batching-only measurement gate | pending | — |
 | #step-4 | Cold-path de-pacing (conditional on #step-3) | pending | — |

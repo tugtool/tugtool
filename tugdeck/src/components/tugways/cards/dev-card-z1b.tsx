@@ -145,7 +145,7 @@ export interface DevZ1BProps {
    * for in-flight rows (nothing to copy yet) and for empty-body
    * committed rows.
    */
-  bodyText?: string;
+  bodyText?: string | (() => string);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,8 +178,13 @@ export const DevZ1B: React.FC<DevZ1BProps> = ({
   const reason: TurnEndReason =
     isUserHalf || turn === undefined ? "complete" : turn.turnEndReason;
   const showCopy =
-    hasEndState && bodyText !== undefined && bodyText.length > 0;
-  const bodyTextForCopy = bodyText ?? "";
+    hasEndState &&
+    bodyText !== undefined &&
+    (typeof bodyText === "function" || bodyText.length > 0);
+  // Defer serialization to the click: a `() => string` thunk is used
+  // as `getText` directly; a plain string is wrapped.
+  const getBodyTextForCopy: () => string =
+    typeof bodyText === "function" ? bodyText : () => bodyText ?? "";
   // Per-participant copy phrasing — the affordance itself is the
   // same `BlockCopyButton`; only the aria-label differs.
   const copyAriaLabel =
@@ -212,7 +217,7 @@ export const DevZ1B: React.FC<DevZ1BProps> = ({
           <span className="dev-z1b-copy">
             <BlockCopyButton
               data-slot="dev-z1b-copy"
-              getText={() => bodyTextForCopy}
+              getText={getBodyTextForCopy}
               aria-label={copyAriaLabel}
               // One step up from the affordance default (`2xs`) so
               // COPY's 11px font + 12px icon read at the same scale

@@ -36,7 +36,7 @@
 
 import "./tug-stable-overlay.css";
 
-import React, { useLayoutEffect, useRef } from "react";
+import React from "react";
 import { cn } from "@/lib/utils";
 
 export interface TugStableOverlayProps {
@@ -64,53 +64,19 @@ export function TugStableOverlay({
   className,
   ...rest
 }: TugStableOverlayProps): React.ReactElement {
-  const rootRef = useRef<HTMLSpanElement | null>(null);
-  // The widest content footprint seen so far, in px. Monotonic — the reserved
-  // `min-width` only grows, so a value larger than the original sizers locks the
-  // box at the larger size and a later narrower value cannot shrink it back.
-  const highWaterRef = useRef(0);
-
-  useLayoutEffect(() => {
-    const el = rootRef.current;
-    if (el === null || typeof ResizeObserver === "undefined") return;
-    const measure = (): void => {
-      // Natural content width = the widest variant child. Children size to their
-      // own content (the `min-width` we pin on the root never inflates them), so
-      // this reads the true required width independent of the current
-      // reservation. Grow the high-water mark + the pinned `min-width`; never
-      // shrink ([L22] DOM observe/mutate, no React state).
-      let widest = 0;
-      for (const child of Array.from(el.children)) {
-        const w = (child as HTMLElement).offsetWidth;
-        if (w > widest) widest = w;
-      }
-      if (widest > highWaterRef.current) {
-        highWaterRef.current = widest;
-        el.style.minWidth = `${widest}px`;
-      }
-    };
-    measure();
-    // Observe the root: it grows whenever the widest child exceeds the current
-    // reservation, which is exactly when the high-water mark must advance.
-    // Coalesce via rAF — `measure()` writes `min-width` on the observed element
-    // itself, so a synchronous write would queue a second notification in the
-    // same delivery pass ("ResizeObserver loop completed with undelivered
-    // notifications"). The high-water mark keeps it self-terminating either way.
-    let rafId = 0;
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(measure);
-    });
-    observer.observe(el);
-    return () => {
-      cancelAnimationFrame(rafId);
-      observer.disconnect();
-    };
-  }, []);
+  // Width/height stabilization is pure CSS: the active variant and the
+  // hidden alternates share one grid cell (`grid-area: stable`), so the
+  // box intrinsically sizes to the widest/tallest variant before paint —
+  // no JS measurement needed. The previous `offsetWidth`-reading
+  // `measure()` + `min-width` pin only added a monotonic never-shrink for
+  // variants whose own content changes width at runtime; every consumer
+  // keeps both fixed-content faces in the cell, so the grid alone is
+  // exact. Reading `offsetWidth` per instance forced a synchronous reflow
+  // and, interleaved across hundreds of overlays in a growing transcript
+  // DOM, dominated load time (O(N²) layout thrash) — hence its removal.
 
   return (
     <span
-      ref={rootRef}
       className={cn("tug-stable-overlay", className)}
       {...rest}
     >

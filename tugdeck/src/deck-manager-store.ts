@@ -197,6 +197,15 @@ export interface IDeckManagerStore {
   setCardState: (cardId: string, bag: CardStateBag) => void;
 
   /**
+   * Suspend debounced card-state saves for the duration of a batch load,
+   * returning a disposer that resumes them. A card mid-load holds this so
+   * the [A9] persistence flush never fetches per dirty card while the load
+   * settles. Optional — only the concrete `DeckManager` implements it; test
+   * doubles may omit it, so callers invoke it optionally.
+   */
+  suspendCardStateSaves?: () => () => void;
+
+  /**
    * The card ID that was focused when the deck was last saved to tugbank.
    * Used only on reload to restore focus via makeFirstResponder in DeckCanvas.
    * Cleared to undefined after DeckCanvas reads it (fires once on mount).

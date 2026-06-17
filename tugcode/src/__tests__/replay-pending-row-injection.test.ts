@@ -11,6 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { unwrapReplayBatches } from "./capture-ipc.ts";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -157,7 +158,7 @@ async function captureStdout(
   } finally {
     (Bun as unknown as { write: typeof Bun.write }).write = originalWrite;
   }
-  return { emitted: captured };
+  return { emitted: unwrapReplayBatches(captured) };
 }
 
 function makeManager(

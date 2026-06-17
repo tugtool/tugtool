@@ -240,6 +240,55 @@
   color: var(--tug7-element-segment-text-normal-active-rest);
 }
 
+/* ---- Non-animated selection pill (CSS, no measurement) ----
+ *
+ * The animated variant slides a measured `.tug-choice-group-indicator`
+ * overlay; the non-animated variant (the default) paints the pill as the
+ * active segment's own background. The segment box already coincides with
+ * the indicator's box — the group's 2px padding insets the segment exactly
+ * as the indicator's `top: 2px; height: calc(100% - 4px)` did — so the fill
+ * lands identically, while reading no layout geometry (no `offsetWidth`,
+ * no per-instance forced reflow). Only present when the indicator element
+ * is not rendered, so the two mechanisms never overlap. */
+.tug-choice-group:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"] {
+  background-color: var(--tugx-segment-on-color);
+}
+
+.tug-choice-group:not(.tug-choice-group-animated)[data-disabled]
+  .tug-choice-group-segment[data-state="active"] {
+  background-color: var(--tugx-segment-disabled-color);
+}
+
+/* Per-size pill radius — mirror the indicator radii. */
+.tug-choice-group-2xs:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"],
+.tug-choice-group-xs:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"] {
+  border-radius: calc(var(--tug-radius-sm) - 2px);
+}
+.tug-choice-group-sm:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"] {
+  border-radius: calc(var(--tug-radius-md) - 3px);
+}
+.tug-choice-group-md:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"] {
+  border-radius: calc(var(--tug-radius-lg) - 3px);
+}
+.tug-choice-group-lg:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"] {
+  border-radius: calc(var(--tug-radius-xl) - 3px);
+}
+
+/* Ghost emphasis: quiet neutral fill (matches the ghost indicator color),
+ * no inset (the ghost root drops its padding). */
+.tug-choice-group[data-emphasis="ghost"]:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"],
+.tug-choice-group[data-emphasis="ghost"][data-disabled]:not(.tug-choice-group-animated)
+  .tug-choice-group-segment[data-state="active"] {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+
 /* ---- Disabled ---- */
 
 .tug-choice-group-segment:disabled,

@@ -47,13 +47,24 @@
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
+  /* Form a stacking context so the modal scrim (`::after`, z-index 1) sits
+     above ALL region content — including sticky descendants (tool-call /
+     entry headers) whose own `z-index` would otherwise hoist their stacking
+     context out to an ancestor and paint over the scrim, leaving the pinned
+     "attribute rows" un-dimmed during a load. */
+  isolation: isolate;
 }
 
 .tug-control-bar-region[data-tug-control-bar-modal]::after {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 1;
+  /* Above the region's sticky content: the transcript entry (attribution)
+     header pins at `z-index: 2` and block-level tool chrome at `z-index: 1`.
+     The region's `isolation: isolate` keeps this scrim's stacking context
+     local, so a value over those covers the pinned rows without reaching the
+     sibling Z0 band (which sits above the whole region at its own z-index). */
+  z-index: 3;
   background-color: var(--tug7-surface-overlay-primary-normal-scrim-rest);
   /* The overlay captures pointer + wheel events — the pointer dead zone
      that pairs with `inert`'s focus/tab dead zone. */

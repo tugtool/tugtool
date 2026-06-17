@@ -223,6 +223,17 @@ export class DeckManager implements IDeckManagerStore {
   /** Set of card IDs with unsaved (dirty) state bags. Used for flush-on-destroy. */
   private dirtyCardIds: Set<string> = new Set();
 
+  /**
+   * Nesting depth of active card-state-save suspensions. While > 0, the
+   * debounced flush ([A9] persistence) defers — a card mid-load holds the
+   * gate so the scroll / region-scroll / content churn of its settle does
+   * not fire a `fetch` per dirty card on the same thread the load needs.
+   * Sync (will-phase / unload) flushes bypass the gate. Released via the
+   * disposer `suspendCardStateSaves` returns, which flushes once if still
+   * dirty.
+   */
+  private cardSaveSuspendDepth = 0;
+
   // ---- Save callbacks for close-time state flush ([D01]) ----
 
   /**
@@ -1141,6 +1152,13 @@ export class DeckManager implements IDeckManagerStore {
     this.cardStateCache.set(cardId, bag);
     this.dirtyCardIds.add(cardId);
 
+    // While a batch load holds the save gate, mark dirty but schedule no
+    // flush: the state churning through a restore IS the restored state, so
+    // saving it is redundant. It persists on the next ungated `setCardState`
+    // (a real post-load edit) or the will-phase sync flush — never a `fetch`
+    // mid-load or at the load's tail.
+    if (this.cardSaveSuspendDepth > 0) return;
+
     if (this.cardStateSaveTimer !== null) {
       window.clearTimeout(this.cardStateSaveTimer);
     }
@@ -1156,7 +1174,32 @@ export class DeckManager implements IDeckManagerStore {
    * Persists under `dev.tugtool.deck.cardstate/{cardId}`. `putCardState` uses
    * the card id, which is numerically identical to the former tab id from the one-table model.
    */
+  /**
+   * Suspend debounced card-state saves while a batch load runs, returning a
+   * disposer that resumes them. Counted, so overlapping loads compose. A card
+   * holds this across its load + settle so persistence never fetches mid-load.
+   * Releasing does NOT flush: the state that went dirty during the load is the
+   * restored state, redundant to re-save — it persists on the next ungated
+   * `setCardState` or the will-phase sync flush. Sync unload flushes are never
+   * suspended.
+   */
+  suspendCardStateSaves = (): (() => void) => {
+    this.cardSaveSuspendDepth += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.cardSaveSuspendDepth = Math.max(0, this.cardSaveSuspendDepth - 1);
+    };
+  };
+
   private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+    // Deferred while a batch load holds the save gate — the dirty set is
+    // retained and saved on a later ungated trigger. A `sync` flush
+    // (will-phase / unload) must always run, so it bypasses.
+    if (this.cardSaveSuspendDepth > 0 && options?.sync !== true) {
+      return Promise.resolve();
+    }
     const promises: Promise<void>[] = [];
     for (const cardId of this.dirtyCardIds) {
       const bag = this.cardStateCache.get(cardId);

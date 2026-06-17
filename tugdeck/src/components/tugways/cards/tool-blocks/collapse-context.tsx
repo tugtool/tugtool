@@ -73,7 +73,7 @@ export interface ToolBlockCollapseHandle {
    * yields the same payload as the expanded block and a selection copy.
    * `undefined` when none was provided.
    */
-  copyText?: string;
+  copyText?: string | (() => string);
 }
 
 /**
@@ -97,7 +97,7 @@ export interface ToolBlockHistoryCollapseProps {
    * Markdown for the whole tool call (command + result), surfaced on the
    * collapse handle for the collapsed header's Copy button ([P09]).
    */
-  copyText?: string;
+  copyText?: string | (() => string);
   children: React.ReactNode;
 }
 

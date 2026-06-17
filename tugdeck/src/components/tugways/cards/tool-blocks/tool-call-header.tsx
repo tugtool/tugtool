@@ -94,8 +94,10 @@ export interface ToolCallHeaderProps {
    * Markdown for the whole call (command + result) — what the built-in
    * Copy writes in the COLLAPSED state, where the body isn't mounted to
    * supply its own. When absent/empty, no built-in Copy renders.
+   * A `() => string` thunk defers the (potentially large) serialization
+   * to the moment Copy is actually pressed.
    */
-  copyText?: string;
+  copyText?: string | (() => string);
   /**
    * History-collapse chevron + state. When set, the chevron renders at the
    * trailing edge (DOWN to expand when collapsed, UP to collapse when
@@ -145,7 +147,9 @@ export const ToolCallHeader = React.forwardRef<
 ) {
   const collapsible = disclosure !== undefined;
   const collapsed = disclosure?.collapsed === true;
-  const hasCopy = copyText !== undefined && copyText.length > 0;
+  const hasCopy =
+    copyText !== undefined &&
+    (typeof copyText === "function" || copyText.length > 0);
 
   return (
     <div
@@ -203,7 +207,9 @@ export const ToolCallHeader = React.forwardRef<
           <BlockCopyButton
             subtype="icon"
             size="xs"
-            getText={() => copyText ?? ""}
+            getText={
+              typeof copyText === "function" ? copyText : () => copyText ?? ""
+            }
             aria-label={`Copy ${toolName} command and result`}
             data-slot="tool-call-header-copy"
           />

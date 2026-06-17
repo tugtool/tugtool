@@ -531,8 +531,7 @@ export class CodeSessionStore {
    */
   _ingestFrameForTest = (feedId: number, decoded: unknown): void => {
     if (this._disposed) return;
-    const event = this.frameToEvent(feedId, decoded);
-    if (event !== null) this.dispatch(event, "wire");
+    this.routeFrame(feedId, decoded);
   };
 
   /**
@@ -1286,12 +1285,37 @@ export class CodeSessionStore {
     for (const [feedId, value] of snap.entries()) {
       if (this._lastFrameByFeed.get(feedId) !== value) {
         this._lastFrameByFeed.set(feedId, value);
-        const event = this.frameToEvent(feedId, value);
-        if (event !== null) {
-          this.dispatch(event, "wire");
-        }
+        this.routeFrame(feedId, value);
       }
     }
+  }
+
+  /**
+   * Route one decoded feed value into the reducer. A CODE_OUTPUT
+   * `replay_batch` is a transport-only envelope: its `frames` are
+   * unwrapped here and each dispatched through the same
+   * `frameToEvent` + `dispatch` path a per-frame replay would take, so
+   * the reducer never sees the batch. Everything else takes the
+   * single-frame path unchanged. The session filter has already run on
+   * the outer value at the FeedStore boundary, so inner frames dispatch
+   * post-filter and need no `tug_session_id` of their own.
+   */
+  private routeFrame(feedId: number, value: unknown): void {
+    if (
+      feedId === FeedId.CODE_OUTPUT &&
+      (value as { type?: string }).type === "replay_batch"
+    ) {
+      const frames = (value as { frames?: unknown }).frames;
+      if (Array.isArray(frames)) {
+        for (const inner of frames) {
+          const event = this.frameToEvent(feedId, inner);
+          if (event !== null) this.dispatch(event, "wire");
+        }
+        return;
+      }
+    }
+    const event = this.frameToEvent(feedId, value);
+    if (event !== null) this.dispatch(event, "wire");
   }
 
   private frameToEvent(

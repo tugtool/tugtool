@@ -3272,9 +3272,44 @@ export class SessionManager {
     // in [Step 5.6](roadmap/tugplan-dev-mid-turn-replay.md#step-5-6),
     // wrapping this path with a pre-pass over `sessions.db`.
     let count = 0;
+    // `messagesEmitted` counts wire lines (one per `writeLine`);
+    // `framesEmitted` counts the inner frames those lines carry. With
+    // batching the two diverge — a `replay_batch` is one wire line
+    // carrying many frames.
     let messagesEmitted = 0;
+    let framesEmitted = 0;
     let lastProgressPosted = 0;
     const progressBatch = 16;
+    // Cold replay ships committed-turn frames in coarse batches: the
+    // per-frame syscall / relay / WebSocket cost is what dominates load
+    // time, not the frames themselves. Buffer content frames and flush
+    // them as one `replay_batch` wire line; bracket frames
+    // (`replay_started` / `replay_complete`) and lone flushes stay raw
+    // so the browser's paint gate and fold flush keep their timing.
+    const REPLAY_BATCH_SIZE = 256;
+    const batch: OutboundMessage[] = [];
+    const yieldToLoop = (): Promise<void> =>
+      new Promise((resolve) => setTimeout(resolve, 0));
+    // Emit a single frame as its own raw wire line: one wire line, one
+    // inner frame.
+    const writeRaw = (m: OutboundMessage): void => {
+      writeLine(m);
+      messagesEmitted += 1;
+      framesEmitted += 1;
+    };
+    // Flush the buffer: empty → no-op; one frame → raw; ≥2 → one
+    // `replay_batch` envelope (one wire line carrying N inner frames).
+    const flushBatch = (): void => {
+      if (batch.length === 0) return;
+      if (batch.length === 1) {
+        writeRaw(batch[0]!);
+      } else {
+        writeLine({ type: "replay_batch", frames: [...batch], ipc_version: 2 });
+        messagesEmitted += 1;
+        framesEmitted += batch.length;
+      }
+      batch.length = 0;
+    };
     let aborted:
       | { kind: "timeout" }
       | { kind: "exit"; code: number | null }
@@ -3347,34 +3382,45 @@ export class SessionManager {
             }
           }
           if (msg.type === "replay_complete") {
-            // Buffer it; the bracket-close emits last after any
-            // post-iteration synthetics (Step 5.6 injects before the
-            // first translator yield, so by `replay_complete` the
-            // synthetics have already landed).
+            // Buffer it; the bracket-close emits last after the
+            // remaining content batch is flushed.
             if (typeof msg.count === "number") count = msg.count;
             bufferedReplayComplete = msg;
             continue;
           }
-          writeLine(msg);
-          messagesEmitted += 1;
-          // Step 5.6 — pending-row replay. The translator's first
-          // emit is `replay_started`; we inject synthetic
-          // `add_user_message` frames for journal rows whose
-          // `user_text` is not in JSONL right after the bracket
-          // opens. The synthetics land in `phase: replaying` (the
-          // reducer's handleAddUserMessage phase guard) so the
-          // user's pending submissions render before the JSONL pass
-          // emits anything else. See `injectPendingRowSynthetics` for
-          // the design notes.
-          if (msg.type === "replay_started" && !pendingRowSyntheticsInjected) {
-            pendingRowSyntheticsInjected = true;
-            this.injectPendingRowSynthetics(input);
+          if (msg.type === "replay_started") {
+            // Bracket frame: emit raw so the browser's paint gate
+            // mounts immediately. Then inject any pending-row synthetic
+            // `add_user_message` frames into the buffer ahead of the
+            // JSONL content — they land in `phase: replaying` (the
+            // reducer's handleAddUserMessage phase guard) so the user's
+            // pending submissions render before the JSONL pass emits
+            // anything else. See `injectPendingRowSynthetics`.
+            writeRaw(msg);
+            if (!pendingRowSyntheticsInjected) {
+              pendingRowSyntheticsInjected = true;
+              this.injectPendingRowSynthetics(input, (m) => batch.push(m));
+            }
+            continue;
+          }
+          // Committed-turn content: buffer and flush in batches. The
+          // per-batch yield lets the write tail drain and keeps the
+          // abort/timeout race responsive.
+          batch.push(msg);
+          if (batch.length >= REPLAY_BATCH_SIZE) {
+            flushBatch();
+            await yieldToLoop();
           }
         } else {
           aborted = winner;
           break;
         }
       }
+
+      // Flush any committed-turn content still in the buffer before the
+      // in-flight snapshot and the bracket-close, so wire order stays
+      // content → snapshot → replay_complete.
+      flushBatch();
 
       // After the JSONL pass and before the bracket-close: emit the
       // in-flight turn's snapshot from `ActiveTurn` state. This is the
@@ -3404,10 +3450,9 @@ export class SessionManager {
       }
 
       // After clean iterator completion (no abort): emit the buffered
-      // replay_complete to close the bracket.
+      // replay_complete raw to close the bracket.
       if (aborted === null && bufferedReplayComplete !== null) {
-        writeLine(bufferedReplayComplete);
-        messagesEmitted += 1;
+        writeRaw(bufferedReplayComplete);
       }
     } finally {
       if (timeoutHandle !== null) clearTimeout(timeoutHandle);
@@ -3442,7 +3487,12 @@ export class SessionManager {
       tug_session_id: this.sessionId,
       ms: iterMs,
       drain_ms: drainMs,
+      // `messages`/`batches` are wire lines emitted (the count that
+      // collapses under batching); `frames` is the inner-frame total
+      // those lines carry (≈ the browser's dispatched-frame count).
       messages: messagesEmitted,
+      batches: messagesEmitted,
+      frames: framesEmitted,
       turns: count,
     });
 
@@ -3631,7 +3681,10 @@ export class SessionManager {
    * responds (in the common single-pending case), and the merger's
    * FIFO deletion keeps the journal coherent.
    */
-  private injectPendingRowSynthetics(input: ReplayInput): void {
+  private injectPendingRowSynthetics(
+    input: ReplayInput,
+    emit: (m: OutboundMessage) => void,
+  ): void {
     const pendingRows = this.readPendingTurnsForSession();
     if (pendingRows.length === 0) return;
 
@@ -3657,7 +3710,7 @@ export class SessionManager {
       // gap-bridge, not the primary restore path — the JSONL replay
       // pass preserves interleaving via `replay.ts`'s pass-through.
       const content = buildContentBlocksFromLegacyJournal(row.user_text, attachments);
-      writeLine({
+      emit({
         type: "add_user_message",
         content,
         ipc_version: 2,

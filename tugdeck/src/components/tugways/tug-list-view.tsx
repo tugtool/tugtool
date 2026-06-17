@@ -539,6 +539,38 @@ export interface TugListViewProps<
   followBottom?: boolean;
 
   /**
+   * Freeze the per-commit scroll-geometry battery while a batch load is
+   * in flight or still settling. While `true`, the growth pin and the
+   * anchor-state writer stand down — neither reads `scrollTop` /
+   * `scrollHeight`, so a batch that commits many turns and then settles
+   * every cell's measured height does not force a synchronous
+   * full-transcript layout on each of those commits. Placement during
+   * the batch is owned by the restore path; on the falling edge the list
+   * does one pin + one anchor write.
+   *
+   * Set across the transcript's restore replay, every "load previous"
+   * bracket, *and* the post-reveal height settle that follows — see
+   * `onFirstSettle`, which marks the end of that settle so the consumer
+   * can release this. Leave `false` for live streaming, where new turns
+   * follow the bottom normally.
+   *
+   * @default false
+   */
+  batchLoading?: boolean;
+
+  /**
+   * Child-driven ready callback ([L04], [D78]). Fired once after the
+   * list has mounted a batch and its `ResizeObserver` has delivered the
+   * cells' measured heights — i.e. the batch's layout has settled. The
+   * consumer that raised `batchLoading` for a restore/load-previous
+   * batch uses this edge to release it (and, e.g., drop the load
+   * affordance), so the freeze spans exactly the load *and* its settle.
+   * Re-armed on each `batchLoading` rising edge, so a later load-previous
+   * batch fires it again.
+   */
+  onFirstSettle?: () => void;
+
+  /**
    * Observe auto-follow-bottom intent. Invoked once on mount with the
    * initial state, then on every SmartScroll follow-bottom transition
    * — user scroll-up disengages; idle / gesture-end / explicit jump
@@ -1039,6 +1071,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       scrollKey,
       className,
       followBottom,
+      batchLoading = false,
+      onFirstSettle,
       inline,
       interactive = true,
       rowLayout,
@@ -1257,6 +1291,49 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // L22-spirit violation that produced the relaunch bounce.
     const pinRequestedRef = React.useRef<boolean>(false);
 
+    // Batch-load freeze ([L04] settle handshake). The per-commit scroll
+    // battery (the two ResizeObserver sync pins, the post-commit pin effect,
+    // and the anchor-state writer) reads geometry that forces a synchronous
+    // full-transcript layout. During a batch load + its height settle it
+    // stands down. Two independent sources drive the freeze:
+    //
+    //  - `batchLoadingRef` — the `batchLoading` prop, set by the consumer
+    //    for a load-previous bracket (the list is already mounted; the store
+    //    flag is the only way it learns a prepend batch is in flight).
+    //  - `initialSettlePendingRef` — list-internal: a cold-restore reveal
+    //    drops the whole transcript into the data source *before* the list
+    //    mounts, so a list that mounts with content is mounting a batch.
+    //    This needs no store signal (the restore lifecycle flags drop before
+    //    the list even mounts), so the freeze is robust regardless of phase /
+    //    session mode. Seeded once below, where `itemCount` is known.
+    //
+    // `isScrollBatteryFrozen()` is the union both the battery and the settle
+    // handshake read. `firstSettleFiredRef` makes `onFirstSettle` one-shot
+    // per batch (re-armed on each `batchLoading` rising edge). `pinFrozenPrev
+    // Ref` lets the pin effect place once on the falling (settled) edge.
+    const batchLoadingRef = React.useRef<boolean>(batchLoading);
+    batchLoadingRef.current = batchLoading;
+    const initialSettlePendingRef = React.useRef<boolean | null>(null);
+    const isScrollBatteryFrozen = React.useCallback(
+      () => batchLoadingRef.current || initialSettlePendingRef.current === true,
+      [],
+    );
+    const onFirstSettleRef = React.useRef<(() => void) | undefined>(
+      onFirstSettle,
+    );
+    onFirstSettleRef.current = onFirstSettle;
+    const prevBatchLoadingRef = React.useRef<boolean>(batchLoading);
+    const firstSettleFiredRef = React.useRef<boolean>(false);
+    const pinFrozenPrevRef = React.useRef<boolean>(batchLoading);
+    React.useLayoutEffect(() => {
+      // Rising edge of a load-previous batch: re-arm the one-shot settle
+      // signal so this batch's settle fires `onFirstSettle` afresh.
+      if (batchLoading && !prevBatchLoadingRef.current) {
+        firstSettleFiredRef.current = false;
+      }
+      prevBatchLoadingRef.current = batchLoading;
+    }, [batchLoading]);
+
     // Pending two-pass `scrollToIndex` correction state, or `null`
     // when no correction is queued. When `scrollToIndex` is called
     // for an unrendered target ([D03]):
@@ -1420,6 +1497,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // and the imperative-handle `scrollToIndex` so every height read
     // sees the same fallback chain.
     const itemCount = dataSource.numberOfItems();
+
+    // Seed the list-internal batch-freeze once: a list that mounts with
+    // content is rendering a batch (cold-restore reveal), so freeze the
+    // scroll battery until its first settle. A list that mounts empty (a
+    // live session that grows turn-by-turn) never freezes here.
+    if (initialSettlePendingRef.current === null) {
+      initialSettlePendingRef.current = itemCount > 0;
+    }
 
     // Front-insert detection ([L23], inline transcript). The first row's
     // stable id changes only when rows are inserted ahead of it (a
@@ -1622,7 +1707,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           // scrolling gate and is idempotent, so a call that passes
           // the gate but finds scrollTop already at the bottom is a
           // cheap no-op.
-          smartScrollRef.current?.maybePinToBottom();
+          //
+          // Frozen during a batch load + settle: the batch settles many
+          // cells at once, so pinning per ResizeObserver delivery would
+          // force a full-transcript layout repeatedly. Placement lands
+          // once on the freeze's falling edge (the pin effect below).
+          if (!isScrollBatteryFrozen()) {
+            smartScrollRef.current?.maybePinToBottom();
+          }
 
           // Still schedule the rAF flush so the list-view re-windows
           // against the updated height index. The post-commit pin
@@ -1644,6 +1736,25 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
               scrollTick();
             });
           }
+        }
+
+        // [L04] settle handshake. This ResizeObserver delivery means the
+        // batch's cells have been measured — the post-load layout has
+        // settled. Clear the list-internal initial freeze and fire the
+        // one-shot ready callback so the consumer that raised `batchLoading`
+        // can release it; the pin + anchor-writer then resume and place the
+        // bottom / serialize the anchor once. One-shot per batch (re-armed on
+        // each rising edge); only while a batch is actually frozen, so live
+        // streaming never fires it.
+        if (isScrollBatteryFrozen() && !firstSettleFiredRef.current) {
+          firstSettleFiredRef.current = true;
+          initialSettlePendingRef.current = false;
+          onFirstSettleRef.current?.();
+          // Force a commit so the pin effect sees the freeze's falling
+          // edge and places the bottom once (the `onFirstSettle` consumer
+          // may be a no-op for the list-internal initial freeze, and a
+          // settle with no height delta schedules no flush of its own).
+          scrollTick();
         }
       });
       observerRef.current = observer;
@@ -1712,12 +1823,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // otherwise miss the mount-time state.
       onFollowBottomChangeRef.current?.(smartScroll.isFollowingBottom);
       // Same for the top edge — seed from the live scrollTop so a list
-      // that mounts already at the top reports it.
-      {
+      // that mounts already at the top reports it. Deferred to the next
+      // frame: reading `scrollTop` here (in the mount layout effect) forces
+      // a synchronous reflow of the just-built container before paint; on a
+      // cold transcript load that single read dominated load time. Post-paint
+      // the layout is already settled, so the read is free. A list rarely
+      // mounts at the very top (it restores to bottom/anchor), so a one-frame
+      // delay before the top-edge affordance settles is imperceptible.
+      let atTopSeedRaf: number | null = requestAnimationFrame(() => {
+        atTopSeedRaf = null;
         const atTop0 = el.scrollTop <= AT_TOP_EPSILON;
         prevAtTopRef.current = atTop0;
         onAtTopChangeRef.current?.(atTop0);
-      }
+      });
 
       // Cold-boot scroll restore is owned by `SmartScroll` (its
       // `setRestoreTarget` / `applyRestoreTarget` API). The list
@@ -1928,6 +2046,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       el.addEventListener("tug-region-scroll-set", onRegionScrollSet);
 
       return () => {
+        if (atTopSeedRaf !== null) {
+          cancelAnimationFrame(atTopSeedRaf);
+          atTopSeedRaf = null;
+        }
         el.removeEventListener("tug-region-scroll-set", onRegionScrollSet);
         smartScroll.dispose();
         smartScrollRef.current = null;
@@ -1963,7 +2085,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // to the updated bottom as each cell settles — together the
         // two paths keep the bottom region glued across the full
         // resize cascade. `maybePinToBottom` owns the gate.
-        smartScrollRef.current?.maybePinToBottom();
+        // Frozen during a batch load + settle (placement is the restore
+        // path's; the falling edge pins once).
+        if (!isScrollBatteryFrozen()) {
+          smartScrollRef.current?.maybePinToBottom();
+        }
         // Still request the async pin + re-window so the rendered
         // window catches any cells that newly fit / no longer fit
         // at the new container width. The post-commit pin write
@@ -2043,6 +2169,25 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // either pins or correctly drops the request when follow-bottom
     // is disengaged.
     React.useLayoutEffect(() => {
+      const frozen = isScrollBatteryFrozen();
+      const wasFrozen = pinFrozenPrevRef.current;
+      pinFrozenPrevRef.current = frozen;
+
+      // Frozen during a batch load + settle: drop any pin request so
+      // `pinToBottom`'s `scrollHeight` read never forces a layout while
+      // the batch commits and settles. Placement is the restore path's.
+      if (frozen) {
+        pinRequestedRef.current = false;
+        return;
+      }
+      // Falling edge (the batch settled): place the bottom once, so a
+      // list that was following the bottom lands at the now-settled
+      // bottom. A list the user scrolled away from is not following the
+      // bottom, so `maybePinToBottom` bails — no yank.
+      if (wasFrozen) {
+        pinRequestedRef.current = true;
+      }
+
       if (!pinRequestedRef.current) return;
       const ss = smartScrollRef.current;
       if (ss === null) return;
@@ -2076,6 +2221,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // [L06] DOM-attribute write, never React state. [L07] reads
     // from the live `scrollContainerRef.current` and `heightIndexRef`.
     React.useLayoutEffect(() => {
+      // Frozen during a batch load + settle: this reads `scrollTop` /
+      // `scrollHeight`, each forcing a full-transcript layout, and would
+      // run on every settle commit. The anchor it could write mid-batch
+      // is meaningless (content is being placed, not read by the user) —
+      // the restore path owns the position. Resumes on the falling edge,
+      // where the next commit writes the live anchor.
+      if (isScrollBatteryFrozen()) return;
       const el = scrollContainerRef.current;
       if (el === null) return;
       const total = dataSource.numberOfItems();
