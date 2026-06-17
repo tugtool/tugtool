@@ -225,6 +225,13 @@ function CardTitleBar({
         event.clientY >= rect.top &&
         event.clientY <= rect.bottom;
       if (!inside) return;
+      // Popover already showing → this click just dismisses it, exactly
+      // like a click on the title bar outside the buttons. Never reopens
+      // (which would re-seed and drop the focus ring) or closes the pane.
+      if (closeOpen) {
+        setCloseOpen(false);
+        return;
+      }
       // Option-click is the power-user escape hatch: close the pane
       // immediately, no confirmation. On a `confirmClose` pane a plain
       // click opens the confirm popover instead — two clicks to
@@ -236,24 +243,30 @@ function CardTitleBar({
         openCloseConfirm(paneCloseIntent());
       }
     },
-    [onClose, confirmClose, openCloseConfirm, paneCloseIntent],
+    [closeOpen, onClose, confirmClose, openCloseConfirm, paneCloseIntent],
   );
 
   const handleCloseClick = useCallback(
     (event?: React.MouseEvent<HTMLButtonElement>) => {
-      // Keyboard activation (Enter / Space) lands here with no
-      // preceding pointerup; mouse clicks also re-enter here after
-      // `handleClosePointerUp` already acted. Opening the popover a
-      // second time is idempotent (`setCloseOpen(true)` is a no-op when
-      // already open), and the Option-bypass close is safe to repeat —
-      // the pane is gone after the first call.
+      // Mouse clicks are owned by `handleClosePointerUp` (which already ran
+      // on the preceding pointerup). The trailing `click` fires AFTER React
+      // re-renders with the new `closeOpen`, so acting on it here would undo
+      // what pointerup just did — opening then instantly closing (a blink).
+      // A mouse-originated click reports `detail > 0`; skip it. Only keyboard
+      // activation (Enter / Space — no pointer event, `detail === 0`) is
+      // handled below, with the same toggle/close logic as pointerup.
+      if (event && event.detail > 0) return;
+      if (closeOpen) {
+        setCloseOpen(false);
+        return;
+      }
       if (event?.altKey || !confirmClose) {
         onClose?.();
         return;
       }
       openCloseConfirm(paneCloseIntent());
     },
-    [onClose, confirmClose, openCloseConfirm, paneCloseIntent],
+    [closeOpen, onClose, confirmClose, openCloseConfirm, paneCloseIntent],
   );
 
   // Confirm / cancel callbacks for the shared `TugConfirmPopover`. Confirm closes
@@ -298,8 +311,14 @@ function CardTitleBar({
   );
 
   const handleCollapseClick = useCallback(() => {
+    // While the close-confirm popover is showing, the chevron just dismisses
+    // it (same as a title-bar click) rather than collapsing the card.
+    if (closeOpen) {
+      setCloseOpen(false);
+      return;
+    }
     onCollapse();
-  }, [onCollapse]);
+  }, [closeOpen, onCollapse]);
 
   const IconComponent =
     icon && icons[icon as keyof typeof icons]
