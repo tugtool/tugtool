@@ -749,6 +749,16 @@
    Matches TugBox legend treatment so the Project path label and
    the section legends below read as one family of headings. */
 .dev-card-picker-label {
+  /* A flex row that ALWAYS reserves the scan-bar's line box, so the rare
+     inline progress bar appearing beside the label never grows this row and
+     shoves the list below — the interface must not shift. The bar's label
+     rides `sm`/line-height-1.4 (taller than this `xs` heading), so that box
+     is the tallest thing the row can hold; reserve exactly it and the bar
+     drops in without moving anything. `align-items: center` keeps the
+     heading vertically centered with or without the bar. */
+  display: flex;
+  align-items: center;
+  min-height: calc(var(--tug-font-size-sm, 0.8125rem) * 1.4);
   font-size: var(--tug-font-size-xs, 0.75rem);
   font-weight: var(--tug-font-weight-semibold);
   text-transform: uppercase;
