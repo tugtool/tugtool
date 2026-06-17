@@ -1343,18 +1343,30 @@ fn parse_resume_failed_reason(line: &[u8]) -> Option<String> {
 /// Inline the per-turn telemetry payload onto a replayed
 /// `turn_complete` stream-json line. Looks up the line's `msg_id`
 /// against the per-replay-window `HashMap<msg_id, TurnTelemetryRow>`
-/// built at `replay_started`; on hit, decodes the line, attaches the
-/// `telemetry` field, re-serializes. On miss (no persisted row for
-/// this turn — pre-persistence-feature historical turns, see plan
-/// `#step-20-3-4` "no retroactive backfill" caveat) or on a parse
-/// error, returns the line bytes unchanged so the client reducer's
-/// zero-derived telemetry block applies.
+/// built at `replay_started`; on hit, **overlays only the multi-clock
+/// timing fields** from the row onto the line's existing `telemetry`
+/// object, re-serializes. On miss (no persisted row for this turn —
+/// pre-persistence-feature historical turns, see plan `#step-20-3-4`
+/// "no retroactive backfill" caveat) or on a parse error, returns the
+/// line bytes unchanged.
 ///
-/// `telemetry`'s shape mirrors tugdeck's `TurnTelemetry`
-/// (camelCase field names: `wallClockMs`, `awaitingApprovalMs`, etc.)
-/// because that's what the reducer's merge function reads. The
-/// schema rows use snake_case columns; the conversion happens here
-/// at the wire boundary.
+/// **The JSONL is authoritative for cost and model.** tugcode's replay
+/// translator reconstructs each turn's `cost` (and `sessionInitTokens`)
+/// from the file's own `message.usage` and attaches it to the
+/// `turn_complete.telemetry` before this point. The `turn_telemetry`
+/// side-table is the authoritative source only for the timing the JSONL
+/// cannot carry (wall/active/ttft). So this overlay writes **only** the
+/// timing keys (`wallClockMs … maxStreamGapMs`) and never touches `cost`
+/// or `sessionInitTokens` — the JSONL cost survives even when a (possibly
+/// stale) side-table row exists. See plan `[P03]` / Risk R02.
+///
+/// If the line carries no `telemetry` object yet (a legacy turn_complete
+/// from a tugcode that predates the cost-on-replay emit), a fresh
+/// timing-only object is attached — no cost is invented.
+///
+/// Field names are camelCase to mirror tugdeck's `TurnTelemetry` (what
+/// the reducer's merge reads); the schema rows are snake_case and the
+/// conversion happens here at the wire boundary.
 fn inject_replay_telemetry(
     line: &[u8],
     telemetry_by_msg_id: &std::collections::HashMap<
@@ -1371,26 +1383,37 @@ fn inject_replay_telemetry(
     let Some(row) = telemetry_by_msg_id.get(msg_id) else {
         return line.to_vec();
     };
-    let telemetry = serde_json::json!({
-        "cost": {
-            "inputTokens": row.input_tokens,
-            "outputTokens": row.output_tokens,
-            "cacheCreationInputTokens": row.cache_creation_input_tokens,
-            "cacheReadInputTokens": row.cache_read_input_tokens,
-            "totalCostUsd": row.total_cost_usd,
-        },
-        "wallClockMs": row.wall_clock_ms,
-        "awaitingApprovalMs": row.awaiting_approval_ms,
-        "transportDowntimeMs": row.transport_downtime_ms,
-        "activeMs": row.active_ms,
-        "ttftMs": row.ttft_ms,
-        "ttftcMs": row.ttftc_ms,
-        "reconnectCount": row.reconnect_count,
-        "maxStreamGapMs": row.max_stream_gap_ms,
-        "sessionInitTokens": row.session_init_tokens,
-    });
-    if let serde_json::Value::Object(ref mut obj) = value {
-        obj.insert("telemetry".to_string(), telemetry);
+
+    // The timing keys this overlay owns — and ONLY these. `cost` /
+    // `sessionInitTokens` / `turnEndReason` on the existing object are
+    // left untouched (JSONL-authoritative — [P03]).
+    let timing = [
+        ("wallClockMs", serde_json::json!(row.wall_clock_ms)),
+        ("awaitingApprovalMs", serde_json::json!(row.awaiting_approval_ms)),
+        ("transportDowntimeMs", serde_json::json!(row.transport_downtime_ms)),
+        ("activeMs", serde_json::json!(row.active_ms)),
+        ("ttftMs", serde_json::json!(row.ttft_ms)),
+        ("ttftcMs", serde_json::json!(row.ttftc_ms)),
+        ("reconnectCount", serde_json::json!(row.reconnect_count)),
+        ("maxStreamGapMs", serde_json::json!(row.max_stream_gap_ms)),
+    ];
+
+    let serde_json::Value::Object(ref mut obj) = value else {
+        return line.to_vec();
+    };
+    // Overlay onto the existing telemetry object (tugcode attached it
+    // with the JSONL-authoritative cost); create a timing-only object
+    // if the line is a legacy telemetry-free turn_complete.
+    let telemetry = obj
+        .entry("telemetry")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    if !telemetry.is_object() {
+        *telemetry = serde_json::Value::Object(serde_json::Map::new());
+    }
+    if let serde_json::Value::Object(tel) = telemetry {
+        for (key, val) in timing {
+            tel.insert(key.to_string(), val);
+        }
     }
     serde_json::to_vec(&value).unwrap_or_else(|_| line.to_vec())
 }
@@ -1931,40 +1954,106 @@ mod tests {
         }
     }
 
+    /// A `turn_complete` carrying tugcode's JSONL-authoritative
+    /// telemetry (cost + sessionInitTokens + turnEndReason + zero
+    /// timing) — the line shape the overlay augments.
+    fn turn_complete_with_jsonl_telemetry() -> Vec<u8> {
+        serde_json::json!({
+            "type": "turn_complete",
+            "msg_id": "msg-A",
+            "seq": 1,
+            "result": "success",
+            "telemetry": {
+                "cost": {
+                    "inputTokens": 7,
+                    "outputTokens": 8,
+                    "cacheCreationInputTokens": 9,
+                    "cacheReadInputTokens": 11,
+                    "totalCostUsd": 0,
+                },
+                "wallClockMs": 0,
+                "awaitingApprovalMs": 0,
+                "transportDowntimeMs": 0,
+                "activeMs": 0,
+                "ttftMs": serde_json::Value::Null,
+                "ttftcMs": serde_json::Value::Null,
+                "reconnectCount": 0,
+                "maxStreamGapMs": 0,
+                "sessionInitTokens": 4_130,
+                "turnEndReason": "complete",
+            },
+            "ipc_version": 2,
+        })
+        .to_string()
+        .into_bytes()
+    }
+
     #[test]
-    fn inject_replay_telemetry_attaches_on_match() {
-        let line = br#"{"type":"turn_complete","msg_id":"msg-A","seq":1,"result":"success","ipc_version":2}"#;
+    fn inject_replay_telemetry_overlays_timing_and_preserves_jsonl_cost() {
+        // Row-present overlay onto a line that ALREADY carries the
+        // JSONL-authoritative cost: the cost must survive byte-for-byte
+        // (Risk R02, refute direction) AND every timing key must equal
+        // the row's value (the add direction — guards a TIME-popover
+        // regression for row-present sessions).
+        let line = turn_complete_with_jsonl_telemetry();
+        let before: serde_json::Value = serde_json::from_slice(&line).unwrap();
         let mut map = std::collections::HashMap::new();
         map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
-        let out = inject_replay_telemetry(line, &map);
+        let out = inject_replay_telemetry(&line, &map);
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        let telemetry = parsed.get("telemetry").expect("telemetry attached");
-        assert_eq!(telemetry["cost"]["inputTokens"], 100);
-        assert_eq!(telemetry["cost"]["totalCostUsd"], 0.0123);
+        let telemetry = parsed.get("telemetry").expect("telemetry present");
+
+        // Cost UNCHANGED — the JSONL value, NOT the row's (100/50/10/20).
+        assert_eq!(telemetry["cost"], before["telemetry"]["cost"]);
+        assert_eq!(telemetry["cost"]["inputTokens"], 7);
+        // sessionInitTokens UNCHANGED — JSONL value, not the row's 18_575.
+        assert_eq!(telemetry["sessionInitTokens"], 4_130);
+        // turnEndReason UNTOUCHED.
+        assert_eq!(telemetry["turnEndReason"], "complete");
+
+        // Timing OVERLAID from the row.
         assert_eq!(telemetry["wallClockMs"], 4_000);
         assert_eq!(telemetry["awaitingApprovalMs"], 200);
+        assert_eq!(telemetry["transportDowntimeMs"], 100);
         assert_eq!(telemetry["activeMs"], 3_700);
         assert_eq!(telemetry["ttftMs"], 150);
         assert_eq!(telemetry["ttftcMs"], 300);
         assert_eq!(telemetry["reconnectCount"], 0);
         assert_eq!(telemetry["maxStreamGapMs"], 90);
-        // `window(0)` round-trips so a resumed session restores it.
-        assert_eq!(telemetry["sessionInitTokens"], 18_575);
-        // Original fields preserved.
+
+        // Original top-level fields preserved.
         assert_eq!(parsed["type"], "turn_complete");
         assert_eq!(parsed["msg_id"], "msg-A");
         assert_eq!(parsed["result"], "success");
     }
 
     #[test]
-    fn inject_replay_telemetry_serializes_null_ttft_fields() {
+    fn inject_replay_telemetry_legacy_no_telemetry_attaches_timing_only() {
+        // A legacy turn_complete with NO telemetry object (a tugcode
+        // predating the cost-on-replay emit): timing is attached, but
+        // no cost is invented — the JSONL is the only cost source.
         let line = br#"{"type":"turn_complete","msg_id":"msg-A","seq":1,"result":"success","ipc_version":2}"#;
+        let mut map = std::collections::HashMap::new();
+        map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
+        let out = inject_replay_telemetry(line, &map);
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let telemetry = parsed.get("telemetry").expect("timing-only telemetry attached");
+        assert_eq!(telemetry["wallClockMs"], 4_000);
+        assert_eq!(telemetry["activeMs"], 3_700);
+        // No cost invented from the row.
+        assert!(telemetry.get("cost").is_none());
+        assert!(telemetry.get("sessionInitTokens").is_none());
+    }
+
+    #[test]
+    fn inject_replay_telemetry_serializes_null_ttft_fields() {
+        let line = turn_complete_with_jsonl_telemetry();
         let mut row = sample_telemetry_row("msg-A");
         row.ttft_ms = None;
         row.ttftc_ms = None;
         let mut map = std::collections::HashMap::new();
         map.insert("msg-A".to_string(), row);
-        let out = inject_replay_telemetry(line, &map);
+        let out = inject_replay_telemetry(&line, &map);
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert!(parsed["telemetry"]["ttftMs"].is_null());
         assert!(parsed["telemetry"]["ttftcMs"].is_null());

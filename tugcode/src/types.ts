@@ -186,7 +186,35 @@ export interface TurnTelemetry {
   ttftcMs: number | null;
   reconnectCount: number;
   maxStreamGapMs: number;
+  /**
+   * `window(0)` — the session's resident context before any turn.
+   * Session-level: every turn carries the same value (the reducer keeps
+   * the first non-null). On the replay path tugcode derives it from the
+   * first assistant entry's input-baseline usage; the reducer restores
+   * `sessionInitTokens` from it (`event.telemetry?.sessionInitTokens`).
+   * `null` when no usage anchors the session.
+   */
+  sessionInitTokens: number | null;
+  /**
+   * The turn's terminal classification. Carried on the persisted block
+   * so a resumed turn recovers its original outcome; tugcode's replay
+   * sets `"complete"` for a clean terminal `stop_reason` and
+   * `"interrupted"` for an orphan/EOF synthesis. Optional — the reducer
+   * falls back to its `event.result`-derived reason when absent.
+   */
+  turnEndReason?: TurnEndReason;
 }
+
+/**
+ * Per-turn terminal classification — mirrors tugdeck's `TurnEndReason`.
+ * tugcode's replay path only ever emits `"complete"` / `"interrupted"`;
+ * `"error"` / `"transport_lost"` arise only on the live reducer path.
+ */
+export type TurnEndReason =
+  | "complete"
+  | "interrupted"
+  | "error"
+  | "transport_lost";
 
 /**
  * Cost subfield of {@link TurnTelemetry}. Field names match

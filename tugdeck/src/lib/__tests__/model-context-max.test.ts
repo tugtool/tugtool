@@ -35,6 +35,12 @@ describe("resolveModelContextMax — defaults", () => {
     );
   });
 
+  it("returns DEFAULT (200k) for Haiku 4.5 (a genuinely 200k model)", () => {
+    expect(resolveModelContextMax("claude-haiku-4-5")).toBe(
+      DEFAULT_CONTEXT_MAX_TOKENS,
+    );
+  });
+
   it("DEFAULT is 200,000 tokens", () => {
     expect(DEFAULT_CONTEXT_MAX_TOKENS).toBe(200_000);
   });
@@ -50,12 +56,21 @@ describe("resolveModelContextMax — [1m] extended context", () => {
     );
   });
 
-  it("returns DEFAULT for the base (non-[1m]) variant of the same model", () => {
+  it("resolves the bare (non-[1m]) name of a native-1M model to EXTENDED", () => {
+    // Opus 4.6/4.7/4.8, Sonnet 4.6, and Fable 5 are 1M-context models
+    // natively — the bare id (as the replayed JSONL records it) must
+    // resolve to 1M, not the 200k default.
+    expect(resolveModelContextMax("claude-opus-4-8")).toBe(
+      EXTENDED_CONTEXT_MAX_TOKENS,
+    );
     expect(resolveModelContextMax("claude-opus-4-7")).toBe(
-      DEFAULT_CONTEXT_MAX_TOKENS,
+      EXTENDED_CONTEXT_MAX_TOKENS,
     );
     expect(resolveModelContextMax("claude-sonnet-4-6")).toBe(
-      DEFAULT_CONTEXT_MAX_TOKENS,
+      EXTENDED_CONTEXT_MAX_TOKENS,
+    );
+    expect(resolveModelContextMax("claude-fable-5")).toBe(
+      EXTENDED_CONTEXT_MAX_TOKENS,
     );
   });
 

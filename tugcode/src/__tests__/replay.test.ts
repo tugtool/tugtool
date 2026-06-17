@@ -18,6 +18,9 @@ import {
   type ReplayInput,
   type ReplayTelemetry,
   type TranslateContext,
+  ZERO_TURN_COST,
+  extractTurnCostFromUsage,
+  isRealModelName,
   makeTranslateContext,
   translateJsonlEntry,
   translateJsonlSession,
@@ -93,15 +96,18 @@ function assistantEntry(opts: {
   msgId: string;
   stopReason: "end_turn" | "tool_use" | null;
   content: NonNullable<JsonlEntry["message"]>["content"];
+  model?: string;
+  usage?: NonNullable<JsonlEntry["message"]>["usage"];
 }): JsonlEntry {
   return {
     type: "assistant",
     message: {
       id: opts.msgId,
       role: "assistant",
-      model: "claude-opus-4-6",
+      model: opts.model ?? "claude-opus-4-6",
       stop_reason: opts.stopReason,
       content: opts.content,
+      ...(opts.usage !== undefined ? { usage: opts.usage } : {}),
     },
   };
 }
@@ -153,6 +159,192 @@ function isReplayStarted(m: OutboundMessage): m is ReplayStarted {
 function isReplayComplete(m: OutboundMessage): m is ReplayComplete {
   return m.type === "replay_complete";
 }
+
+// ---------------------------------------------------------------------------
+// extractTurnCostFromUsage — JSONL usage → TurnCost (Spec S01)
+// ---------------------------------------------------------------------------
+
+describe("extractTurnCostFromUsage", () => {
+  test("maps all four token fields; totalCostUsd is always 0", () => {
+    const cost = extractTurnCostFromUsage({
+      input_tokens: 1200,
+      output_tokens: 340,
+      cache_creation_input_tokens: 50,
+      cache_read_input_tokens: 8000,
+    });
+    expect(cost).toEqual({
+      inputTokens: 1200,
+      outputTokens: 340,
+      cacheCreationInputTokens: 50,
+      cacheReadInputTokens: 8000,
+      totalCostUsd: 0,
+    });
+  });
+
+  test("missing cache fields default to 0", () => {
+    const cost = extractTurnCostFromUsage({
+      input_tokens: 10,
+      output_tokens: 20,
+    });
+    expect(cost.cacheCreationInputTokens).toBe(0);
+    expect(cost.cacheReadInputTokens).toBe(0);
+    expect(cost.inputTokens).toBe(10);
+    expect(cost.outputTokens).toBe(20);
+  });
+
+  test("non-numeric / NaN fields coerce to 0", () => {
+    const cost = extractTurnCostFromUsage({
+      // The JSONL is untrusted; a malformed numeric must not propagate NaN.
+      input_tokens: Number.NaN,
+      output_tokens: undefined,
+    });
+    expect(cost.inputTokens).toBe(0);
+    expect(cost.outputTokens).toBe(0);
+  });
+
+  test("undefined usage yields a fresh ZERO_TURN_COST copy", () => {
+    const cost = extractTurnCostFromUsage(undefined);
+    expect(cost).toEqual(ZERO_TURN_COST);
+    // Must be a copy, not the shared constant, so a downstream mutation
+    // can't corrupt the module-level zero.
+    expect(cost).not.toBe(ZERO_TURN_COST);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// translateJsonlSession — per-turn cost telemetry (replay path, Spec S02)
+// ---------------------------------------------------------------------------
+
+describe("translateJsonlSession — per-turn cost telemetry", () => {
+  test("terminal turn_complete carries telemetry.cost from the closing entry's usage", async () => {
+    const usage = {
+      input_tokens: 100,
+      output_tokens: 200,
+      cache_creation_input_tokens: 30,
+      cache_read_input_tokens: 4000,
+    };
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "hi" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "hello" }],
+        usage,
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const tc = out.filter(isTurnComplete);
+    expect(tc).toHaveLength(1);
+    expect(tc[0].result).toBe("success");
+    expect(tc[0].telemetry?.cost).toEqual({
+      inputTokens: 100,
+      outputTokens: 200,
+      cacheCreationInputTokens: 30,
+      cacheReadInputTokens: 4000,
+      totalCostUsd: 0,
+    });
+    expect(tc[0].telemetry?.turnEndReason).toBe("complete");
+    // sessionInitTokens = input-baseline (excludes output): 100+4000+30.
+    expect(tc[0].telemetry?.sessionInitTokens).toBe(4130);
+  });
+
+  test("sessionInitTokens is the FIRST turn's input-baseline, identical on every turn", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "q1" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a1" }],
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          cache_read_input_tokens: 1000,
+          cache_creation_input_tokens: 90,
+        },
+      }),
+      userEntry([{ type: "text", text: "q2" }]),
+      assistantEntry({
+        msgId: "m2",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a2" }],
+        usage: {
+          input_tokens: 7,
+          output_tokens: 9,
+          cache_read_input_tokens: 2000,
+          cache_creation_input_tokens: 0,
+        },
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const tc = out.filter(isTurnComplete);
+    expect(tc).toHaveLength(2);
+    // Both turns carry the SAME baseline = first turn's 10+1000+90 = 1100.
+    expect(tc[0].telemetry?.sessionInitTokens).toBe(1100);
+    expect(tc[1].telemetry?.sessionInitTokens).toBe(1100);
+    // Each turn's own cost still reflects its own usage.
+    expect(tc[1].telemetry?.cost.cacheReadInputTokens).toBe(2000);
+  });
+
+  test("an interrupted/orphan turn replays ZERO cost, never the next entry's usage", async () => {
+    // Turn 1 opens but never reaches a terminal stop_reason; the next
+    // opener (q2) closes it via orphan synthesis. The orphan's
+    // `closingEntry` is q2 — NOT m1's content — so even though m1 carried
+    // a big usage, the interrupted turn replays ZERO cost (Risk R01).
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "q1" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: null,
+        content: [{ type: "text", text: "partial" }],
+        usage: {
+          input_tokens: 9999,
+          output_tokens: 8888,
+          cache_read_input_tokens: 7777,
+          cache_creation_input_tokens: 6666,
+        },
+      }),
+      userEntry([{ type: "text", text: "q2" }]),
+      assistantEntry({
+        msgId: "m2",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a2" }],
+        usage: {
+          input_tokens: 1,
+          output_tokens: 2,
+          cache_read_input_tokens: 3,
+          cache_creation_input_tokens: 4,
+        },
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const tc = out.filter(isTurnComplete);
+    expect(tc).toHaveLength(2);
+    const interrupted = tc.find((t) => t.result === "interrupted")!;
+    const success = tc.find((t) => t.result === "success")!;
+    expect(interrupted.telemetry?.cost).toEqual(ZERO_TURN_COST);
+    expect(interrupted.telemetry?.turnEndReason).toBe("interrupted");
+    // The success turn carries its own real usage, proving the orphan
+    // didn't steal it and the success path didn't lose it.
+    expect(success.telemetry?.cost.cacheReadInputTokens).toBe(3);
+  });
+
+  test("a turn whose closing entry has no usage replays ZERO cost", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "hi" }]),
+      assistantEntry({
+        msgId: "m1",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "hello" }],
+        // no usage
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const tc = out.filter(isTurnComplete);
+    expect(tc).toHaveLength(1);
+    expect(tc[0].telemetry?.cost).toEqual(ZERO_TURN_COST);
+    expect(tc[0].telemetry?.sessionInitTokens).toBeNull();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // translateJsonlSession — happy paths
@@ -963,6 +1155,65 @@ describe("translateJsonlSession — synthesized system_metadata", () => {
     expect(out.find((m) => m.type === "system_metadata")).toBeUndefined();
     // Turn still commits.
     expect(out.find((m) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("synth skips a leading <synthetic> model and picks the first real one", async () => {
+    // Claude Code interleaves `<synthetic>` assistant entries; the synth
+    // must skip them and emit the first REAL model so MODEL and the
+    // CONTEXT denominator resolve instead of showing "?" / 200K.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u1" }]),
+      assistantEntry({
+        msgId: "m_synth",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "synthetic opener" }],
+        model: "<synthetic>",
+      }),
+      userEntry([{ type: "text", text: "u2" }]),
+      assistantEntry({
+        msgId: "m_real",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "real reply" }],
+        model: "claude-opus-4-8",
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const sysMetas = out.filter((m) => m.type === "system_metadata");
+    expect(sysMetas.length).toBe(1);
+    expect((sysMetas[0] as { model: string }).model).toBe("claude-opus-4-8");
+  });
+
+  test("a session whose only model is <synthetic> emits no system_metadata", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u" }]),
+      assistantEntry({
+        msgId: "m",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a" }],
+        model: "<synthetic>",
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    expect(out.find((m) => m.type === "system_metadata")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRealModelName — model-name placeholder predicate (Step: model synth)
+// ---------------------------------------------------------------------------
+
+describe("isRealModelName", () => {
+  test("real model names pass", () => {
+    expect(isRealModelName("claude-opus-4-8")).toBe(true);
+    expect(isRealModelName("claude-sonnet-4-6")).toBe(true);
+  });
+
+  test("placeholders and empties are rejected", () => {
+    expect(isRealModelName("<synthetic>")).toBe(false);
+    expect(isRealModelName("")).toBe(false);
+    expect(isRealModelName("   ")).toBe(false);
+    expect(isRealModelName(undefined)).toBe(false);
+    expect(isRealModelName(null)).toBe(false);
   });
 });
 

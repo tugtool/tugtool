@@ -43,21 +43,29 @@ export const EXTENDED_CONTEXT_MAX_TOKENS = 1_000_000;
 
 /**
  * Static per-model maxima. Keys are EXACT model strings as
- * `SessionMetadataStore.snapshot.model` reports them — without the
- * `[1m]` suffix (that's handled separately as a per-call override).
+ * `SessionMetadataStore.snapshot.model` reports them — typically the
+ * bare model id without the `[1m]` suffix (the suffix short-circuits
+ * before this lookup).
  *
- * Add a new entry when a new model lands; the `[1m]` suffix is
- * automatically honored for any base model in the table.
+ * The modern Claude families (Opus 4.6/4.7/4.8, Sonnet 4.6, Fable 5)
+ * have a **native 1M context window** — no long-context premium, no
+ * opt-in required — so their bare names resolve to 1M here. This is
+ * load-bearing on the replay path: the JSONL records the bare
+ * `claude-opus-4-8` (no `[1m]`), so without this map a restored session
+ * would fall back to the 200k default and mis-state the CONTEXT
+ * denominator. Haiku 4.5 and older / unknown models keep the 200k
+ * `DEFAULT_CONTEXT_MAX_TOKENS` fallback.
  *
- * The empty table is intentional today: every modern Claude model
- * has a 200k default context, which the `DEFAULT_CONTEXT_MAX_TOKENS`
- * fallback already covers. The table exists so future per-model
- * deviations (a model with a non-standard default, say 100k or
- * 500k) have a registered home.
+ * The `[1m]` suffix is still honored for any model (it short-circuits
+ * above this lookup), so a live `claude-opus-4-8[1m]` resolves to 1M
+ * regardless of this table.
  */
 const MODEL_CONTEXT_MAX_OVERRIDES: ReadonlyMap<string, number> = new Map([
-  // (no per-model overrides today — all known models use the 200k
-  //  default + optional [1m] suffix for 1M extended context).
+  ["claude-opus-4-8", EXTENDED_CONTEXT_MAX_TOKENS],
+  ["claude-opus-4-7", EXTENDED_CONTEXT_MAX_TOKENS],
+  ["claude-opus-4-6", EXTENDED_CONTEXT_MAX_TOKENS],
+  ["claude-sonnet-4-6", EXTENDED_CONTEXT_MAX_TOKENS],
+  ["claude-fable-5", EXTENDED_CONTEXT_MAX_TOKENS],
 ]);
 
 /**

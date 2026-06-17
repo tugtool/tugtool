@@ -98,7 +98,7 @@ Anchors are explicit and kebab-case; plan-local decisions use `[P01]`; steps cit
 
 **Plan to resolve:** Spike in #step-2 against `efa741e2.jsonl`: compute both and compare turn-1 TOKENS to what the live session showed; pick the closer. Default to the input-baseline derivation if ambiguous.
 
-**Resolution:** OPEN — resolved in #step-2; defaults to input-baseline derivation, calibrated against a real session.
+**Resolution:** RESOLVED in #step-2 → **input-baseline derivation** (`input + cache_read + cache_creation` of the first assistant entry carrying `usage`, excluding `output`). Calibrated against `efa741e2.jsonl`: first usage input-baseline = 38,345 → `perTurn(1) = window(1) − sessionInit = 39,094 − 38,345 = 749 = output_tokens` (matches the live "new tokens this turn" reading); `sessionInit = 0` would instead overstate turn-1 TOKENS as the full 39,094 window. CONTEXT-used = `window(last)` = 124,506 (absolute, needs no sessionInit). Implemented as `sessionInitTokensFromUsage`.
 
 #### [Q02] Keep recording cost into `turn_telemetry` (OPEN) {#q02-vestigial-cost-columns}
 
@@ -110,7 +110,7 @@ Anchors are explicit and kebab-case; plan-local decisions use `[P01]`; steps cit
 
 **Plan to resolve:** Decide in #step-4. Default: **keep writing** — zero migration, and the live cost is still a cheap cross-check.
 
-**Resolution:** OPEN — default keep; revisit only if the columns cause confusion.
+**Resolution:** RESOLVED in #step-4 → **keep writing** the cost columns. No schema migration; the overlay simply stops *reading* them (it overlays timing-only and never emits cost from the row). The live `record_turn_telemetry` path is untouched, so the columns remain a cheap live-side cross-check. Revisit only if they cause confusion.
 
 #### [Q03] Model-variant context-max (`[1m]` opus) on replay (OPEN) {#q03-model-variant}
 
@@ -120,7 +120,7 @@ Anchors are explicit and kebab-case; plan-local decisions use `[P01]`; steps cit
 
 **Plan to resolve:** Spike in #step-3 — read `model-context-max.ts` overrides; if the bare name under-resolves, decide whether the synth should preserve a `[1m]` hint from the JSONL (the JSONL may carry the `[1m]` elsewhere) or whether the override map should cover the bare name.
 
-**Resolution:** OPEN — resolved in #step-3.
+**Resolution:** RESOLVED in #step-3 → **override-map fix** (option b). Spike findings: `efa741e2.jsonl`'s `message.model` is the bare `claude-opus-4-8` (1001×) with no `[1m]` anywhere structured (the only `[1m]` occurrences are content text + one unrelated `toolUseResult` error string), so a synth-hint (option a) is impossible — the JSONL carries no variant marker. The authoritative model catalog (claude-api skill) shows Opus 4.6/4.7/4.8, Sonnet 4.6, and Fable 5 all have a **native 1M context window** (only Haiku 4.5 is 200k), so `model-context-max.ts`'s "all modern models default to 200k, `[1m]` opts into 1M" premise was stale. Registered the native-1M model ids in `MODEL_CONTEXT_MAX_OVERRIDES` so the bare names resolve to 1M; the `[1m]` short-circuit still covers live ids. This both fixes efa741e2's CONTEXT-max and prevents the same staleness bug for any restored session on those models. (Touched a tugdeck change beyond the original symbol inventory — pure-logic `lib/` module, no tuglaws surface.)
 
 ---
 
@@ -343,12 +343,12 @@ tugcast (#p03-tugcast-overlays-timing) may overlay `wallClockMs … maxStreamGap
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | tugcode: type JSONL usage + pure cost helper | pending | — |
-| #step-2 | tugcode: emit cost + sessionInitTokens on replay turn_complete | pending | — |
-| #step-3 | tugcode: model synth skips non-real models | pending | — |
-| #step-4 | tugcast: overlay timing-only, never overwrite cost | pending | — |
-| #step-5 | tugdeck: reducer applies replayed cost (regression test) | pending | — |
-| #step-6 | Integration checkpoint: real-session restore + HMR | pending | — |
+| #step-1 | tugcode: type JSONL usage + pure cost helper | done | c94cd342 |
+| #step-2 | tugcode: emit cost + sessionInitTokens on replay turn_complete | done | 73458484 |
+| #step-3 | tugcode: model synth skips non-real models | done | 9522764e |
+| #step-4 | tugcast: overlay timing-only, never overwrite cost | done | 8bbdffab |
+| #step-5 | tugdeck: reducer applies replayed cost (regression test) | done | d0a963a5 |
+| #step-6 | Integration checkpoint: real-session restore + HMR | superseded → #addendum-a (test surfaced under-scoping) | suites ✓; app-vet exposed the gaps |
 
 #### Step 1: tugcode — type JSONL `usage` + pure cost helper {#step-1}
 
@@ -535,3 +535,309 @@ tugcast (#p03-tugcast-overlays-timing) may overlay `wallClockMs … maxStreamGap
 | Model from JSONL | synth emits real model on a `"<synthetic>"`-leading fixture |
 | Cost authoritative | tugcast test: cost survives row-present overlay |
 | End-to-end | `efa741e2` restore shows populated Z2; HMR holds |
+
+---
+
+# ADDENDUM A — Full-lifecycle, all-metric, multi-target audit {#addendum-a}
+
+> **Status:** revision in progress (2026-06-17). Steps 1–5 (cost-from-JSONL) are
+> **committed and correct** — they are the foundation this addendum builds on, not a
+> regression. What follows widens the plan from "cost + model on restore/HMR" to
+> **every Z2 metric, across every lifecycle entry point, across every build target**,
+> after integration testing surfaced that the original framing was incomplete.
+
+## A.0 What the integration test actually proved {#a0-findings}
+
+Restoring a real session (`7aa35ce5`, the KaTeX session) in the **worktree debug
+instance** showed: **CONTEXT 372.3K / 200.0K (red), MODEL ?, EFFORT –**. Forensic
+investigation established:
+
+1. **Cost reconstruction works.** The real `translateJsonlSession` emits
+   `telemetry.cost` on all 106 turns; `window(latest) = 372,301` — exactly the
+   372.3K the app showed. The COST half of the plan is live and correct.
+2. **The CONTEXT *value* is right; the *denominator* is wrong.** 372.3K is the genuine
+   resident context of the last turn (`input+output+cache_read+cache_creation`,
+   `cache_read = 371,915`). It reads as over-budget only because the denominator fell
+   back to 200K. (See [P07] for the headroom semantics — the value already resets at
+   `/compact`; that JSONL has 14 compaction markers.)
+3. **MODEL "?" → 200K is the real defect, and it has two stacked causes**, neither of
+   which the original plan addressed:
+   - **(dominant) Per-instance database isolation** — see [P05]. The worktree
+     instance's `session_metadata` table is **empty**; the model's durable fallback is
+     absent on a fresh target.
+   - **(secondary) Replay-synth delivery + recorder keying** — the synth emits the
+     model but it does not reliably land in `SessionMetadataStore`, and the live
+     recorder that would have persisted it is silent-skip-prone — see [Q04].
+
+### Evidence (row counts, 2026-06-17) {#a0-evidence}
+
+Per-instance `sessions.db` under `~/Library/Application Support/Tug/instances/<id>/`:
+
+| Instance (target) | session_metadata | turn_telemetry | Note |
+|---|---|---|---|
+| `debug-main` (user's normal) | **44** | **42** | KaTeX `7aa35ce5 → claude-opus-4-7` PRESENT; some rows have empty model (`8f2b15be → ""`) |
+| `debug-tugdash-z2-metadata` (this worktree) | **0** | **0** | EMPTY — the MODEL "?" the user saw |
+| `release-main` | 7 | 5 | — |
+| top-level `Tug/sessions.db` | 0 | 0 | not the per-instance path |
+
+The **JSONL** (`~/.claude/projects/<project>/<id>.jsonl`) is owned by Claude Code and
+**shared by every instance** — it is the only Z2 source stable across targets.
+
+## A.1 Design decisions added by this addendum {#a1-decisions}
+
+#### [P05] Durable Z2 state is per-build-target and absent on fresh targets {#p05-per-instance-db}
+
+**Decision (finding):** Every Tug instance/target (`main`, `debug-main`,
+`debug-<worktree>`, `release-*`, `apptest-*`) resolves its own data dir via
+`tugcore::instance_data_dir_for(instance_id)` → `…/instances/<id>/`, with its own
+`sessions.db`. The durable Z2 side-tables — `turn_telemetry`, `session_metadata`,
+`context_breakdown_latest` — live there and are **NOT shared** across targets.
+
+**Implications:**
+- A fresh worktree/debug instance starts with **empty** side-tables. Any metric that
+  reads from them is blank until that instance re-accumulates them live.
+- This is **why the worktree test failed where `debug-main` would not have**: the
+  durable model row exists in `debug-main` but not in the worktree DB.
+- Two distinct failure surfaces collapse into the same symptom (MODEL "?"): the genuine
+  product bug (durable tables unreliable even in `debug-main` — empty-model rows) AND
+  the test artifact (fresh target has no durable data at all).
+
+#### [P06] The JSONL is the only target-stable source; reconstruct from it wherever possible {#p06-jsonl-target-stable}
+
+**Decision:** Any Z2 metric whose authoritative datum is present in the session JSONL
+(**per-turn cost, model name**) MUST be reconstructed from the JSONL on replay, so it is
+correct on **any** target regardless of durable-table state. Durable side-tables are a
+*timing-only enrichment* ([P03]), never the source of truth for JSONL-present metrics.
+
+**Implications:**
+- Cost: already done (Steps 1–2).
+- **Model: must follow the same rule** — the replayed model must reach
+  `SessionMetadataStore` reliably and drive `resolveModelContextMax`, with **no
+  dependence on `session_metadata` being populated**. (The current gap: the synth emits
+  it but it doesn't land — see #a3-model-delivery and #step-7.)
+- Metrics NOT in the JSONL (**EFFORT**, **per-turn TIME**, **/context breakdown**)
+  cannot be reconstructed and therefore need an explicit target-stable strategy — see
+  [Q05].
+
+#### [P07] CONTEXT is live headroom-used (resident context since the last compact/clear), not a cumulative total {#p07-context-headroom}
+
+**Decision (semantics pin, per user):** The CONTEXT cell shows the **current resident
+context window occupancy** = `window(latest)` = the last committed turn's
+`input + output + cache_read + cache_creation`. Because the API's `cache_read`/`input`
+already reflect post-compaction context, this value **naturally resets at each
+`/compact` or `/clear`** — it is headroom-used, never a sum across the whole session.
+
+**Implications:**
+- The current `deriveContextWindows → windows[last].window` computation already honors
+  this; the 372.3K observed is correct. **Do not "fix" CONTEXT into a cumulative sum.**
+- The denominator (`resolveModelContextMax(model)`) is the only broken half, and it is
+  downstream of MODEL.
+- Verification must assert the value resets across a compaction boundary, not just that
+  it is non-zero — see #step-9.
+
+#### [P08] Distribution makes JSONL-reconstruction mandatory, not just convenient {#p08-distribution}
+
+**Decision (finding):** The data dir resolves on `TUG_INSTANCE_ID` (`tugcore::data_dir`):
+- **Dev** (`main`/`debug`/`<worktree>`, spawned by `just`, `TUG_INSTANCE_ID` set) →
+  `…/Tug/instances/<id>/sessions.db` — isolated per target ([P05]).
+- **Distributed `Tug.app`** (end user double-clicks; no `TUG_INSTANCE_ID`) → **legacy
+  `~/Library/Application Support/Tug/sessions.db`** — one stable DB across launches.
+
+So a *distributed* user does accumulate durable rows over time. **But the durable DB is
+still not a reliable Z2 source**, because the sessions Tug can show are exactly the
+sessions whose **JSONL exists** (`~/.claude/projects/<project>/<id>.jsonl`, owned by
+Claude Code, present because Tug bridges to it). Three everyday distributed scenarios
+have a JSONL but **no durable Tug row**:
+- **First launch / backlog** — Claude Code sessions created before Tug was installed.
+- **Cross-machine / re-install** — the JSONL syncs (or is copied) but the local
+  `sessions.db` is fresh.
+- **Pre-Tug or external sessions** — anything Tug never observed *live*.
+
+**Implication:** The empty-DB case is not a dev artifact to work around — it is the
+**normal distributed case** for any historical session. [P06] (reconstruct
+cost+model from the JSONL) is therefore a **distribution requirement**. The dev
+per-instance isolation [P05] merely surfaces it early, on every worktree. Durable
+side-tables are an *optimization for sessions this install saw live*, never the source
+of truth.
+
+#### [P09] MODEL means the ACTIVE model — the latest real `message.model`, tracked through mid-session changes {#p09-active-model}
+
+**Decision:** The Z2 MODEL chip shows the **currently active** model, which the user can
+change mid-session. The model is recorded per assistant entry in the JSONL
+(`message.model`), so the active model is the **last real** `message.model`, NOT the
+first. The current synth ([P04]/#step-3) emits the **first** real model — correct only
+when the model never changed; wrong for any session where the user switched models.
+
+**Mechanism:** During replay, emit a `system_metadata{model}` on the first real model
+**and re-emit on every subsequent model change**. `SessionMetadataStore` keeps the
+latest payload per feed, so the store naturally lands on the **active** model at
+end-of-replay, and per-turn model attribution stays faithful if ever surfaced. Live
+mid-session changes already flow as fresh `system_metadata` from Claude Code → fan-out →
+store; replay must mirror that, not freeze the opener's model.
+
+**Implications:**
+- #step-3's "first real model" synth is superseded by "track real-model changes; final =
+  active." `isRealModelName` ([P04]) still gates each emission.
+- Tests must cover a JSONL whose model changes mid-session (e.g. opus → sonnet) → the
+  restored chip shows the **last** model, and CONTEXT-max follows it.
+
+## A.2 Metric inventory & sync contract {#metric-inventory}
+
+The Z2 surface and the per-turn popovers expose these metrics. For each: its
+authoritative source, whether the JSONL carries it, and the mechanism that must keep it
+in sync through the whole lifecycle. **"Target-stable" = correct on a fresh instance
+with empty durable tables.**
+
+**Table T02 — Z2 metric sync contract** {#t02-metric-contract}
+
+| Metric | Authoritative source | In JSONL? | Live sync (incremental) | Replay/restore sync | Target-stable today? | Gap |
+|---|---|---|---|---|---|---|
+| **TOKENS** (per-turn Δ) | per-turn `usage` | ✅ | `cost_update` → reducer | `telemetry.cost` (Steps 1–2) → `perTurn` | ✅ (JSONL) | none — done |
+| **CONTEXT used** | `window(latest)` of per-turn `usage` | ✅ | derived from `cost` | derived from replayed `cost` | ✅ (JSONL) | none — done ([P07]) |
+| **CONTEXT max** | `resolveModelContextMax(MODEL)` | ⛔ (derived from MODEL) | follows live MODEL | follows replayed MODEL | ❌ | blocked on MODEL ([P06]) |
+| **MODEL** (active) | **latest** real `message.model` ([P09]) | ✅ | live `system_metadata` (incl. mid-session change) → fan-out → `SESSION_METADATA` → store | replay synth tracks model changes; final = active; must reach store; durable fallback EMPTY on fresh target | ❌ | #a3-model-delivery, [P09], #step-7 |
+| **EFFORT** | Claude Code setting | ⛔ | `session_capabilities` handshake / `--effort` → store | not in JSONL; needs durable, target-stable persist | ❌ | [Q05], #step-8 |
+| **TIME** (wall/active/ttft, per turn) | reducer clocks (live) | ⛔ | `deriveTurnTelemetry` → `turn_telemetry` | overlay from `turn_telemetry` ([P03]) — EMPTY on fresh target | ❌ | [Q05] — best-effort or durable |
+| **/context breakdown** (popover) | `context_breakdown_latest` | ⚠ partial (usage is; the labeled slices aren't) | live frame → table | table EMPTY on fresh target; partly reconstructable from `usage` | ❌ | [Q05] |
+| **STATE / TIME(elapsed) / TASKS / JOBS** | live runtime | n/a | live | n/a (runtime, not historical) | ✅ | none |
+| **MODEL `[1m]` variant suffix** (chip "· 1M") | live `system_metadata.model` | ⛔ (JSONL is bare) | live | bare name → max correct via override, but chip omits "· 1M" | ⚠ | [Q06] cosmetics |
+
+## A.3 The five lifecycle cases {#lifecycle-cases}
+
+Each entry point reaches the Z2 readouts differently. The plan must hold for all five.
+
+**Table T03 — lifecycle entry points** {#t03-lifecycle}
+
+| Case | What happens | Replay re-runs? | Durable tables consulted? | Risk |
+|---|---|---|---|---|
+| **C1 Incremental** (live turns) | Claude Code streams; reducer derives live | no | written (recorder) | recorder silent-skip writes empty-model rows ([Q04]) |
+| **C2 HMR** (Vite hot-swap) | JS modules swap; per [project_hmr_vs_reload] data/transcript must NOT reload | **TBD — spike #step-6b** | depends on store survival | if stores re-mount and durable empty → MODEL "?" |
+| **C3 Maker ▸ Reload** (hard refresh) | true re-resume from JSONL; stores re-created; cards re-bound | **yes** | on-bind `persisted_metadata_replay` (empty on fresh target) | model must come from replay, not durable |
+| **C4 App relaunch** (restored cards) | app restarts; saved deck cards re-bind; each session cold-replays | **yes** | same as C3 | same as C3 |
+| **C5 Picker replay** | user picks a session; card binds; cold replay | **yes** | likely none for a never-seen session | the purest "no durable data" case |
+
+C3/C4/C5 are the **cold-replay family**: the durable tables may be empty (always so for
+C5 on a new session, or any fresh target), so **MODEL/CONTEXT-max must be carried by the
+replay itself** ([P06]). C2 (HMR) is the odd one — it must *preserve* the already-correct
+live state without re-replaying; its correctness depends on store survival, which
+**#step-6b must establish before any C2 fix is designed**.
+
+#### Why the model doesn't land today (hypothesis to confirm in #step-7) {#a3-model-delivery}
+
+The replay synth emits `system_metadata{model}` on `CODE_OUTPUT`
+(`agent_bridge.rs:1189`). The supervisor fan-out (`agent_supervisor.rs:3957`) rewraps
+`system_metadata` onto `SESSION_METADATA` and stores `latest_metadata`; on bind it
+replays `latest_metadata` (in-memory) or `persisted_metadata_replay_frame` (sqlite,
+empty on fresh target). Candidate failure points, to be bisected in #step-7:
+- the synth frame races the card's `SESSION_METADATA` subscription and `latest_metadata`
+  isn't replayed on a *late* subscribe;
+- `merge_and_persist_system_metadata` is skipped on the replay path (`claude_session_id`
+  is `None` during pure replay → the `_ =>` passthrough), so no durable row is written
+  *even on cold replay*, leaving nothing for a subsequent bind;
+- the bare-model replay payload is dropped/clobbered by the merge against a (stale or
+  empty) persisted row.
+
+## A.4 Build-target testing strategy {#target-testing}
+
+[P05] means **a worktree build cannot faithfully reproduce a durable-data restore** —
+its DB is empty. Options to make verification trustworthy (decide in [Q07]):
+- **(a) DB-independence as the acceptance bar** — require every in-scope metric to be
+  correct on an EMPTY durable DB (i.e. reconstructed from JSONL, or explicitly blank for
+  EFFORT/TIME pending [Q05]). This turns the isolation into a *feature*: the worktree's
+  empty DB is the strictest test of [P06]. Preferred.
+- **(b) Seed the worktree DB** — copy `debug-main/sessions.db` into the worktree
+  instance dir before testing, so durable-path restores can be exercised. Useful for
+  testing the durable path itself (EFFORT/TIME) but masks [P06] regressions.
+- **(c) app-test harness** — an `tests/app-test/` case that cold-replays a fixture JSONL
+  into a fresh store and asserts the Z2 snapshot (model, context-max, tokens) — runs on
+  any target, no GUI, no durable seed. The real verification vehicle this plan lacked.
+
+## A.5 New / revised open questions {#a5-open-questions}
+
+#### [Q04] Why are some `session_metadata` rows written with an empty model? {#q04-empty-model-rows}
+`debug-main` has rows like `8f2b15be → ""`. Is the live recorder keying on an unresolved
+`claude_session_id`, or persisting before `system_metadata` lands, or merging a bare
+payload over a good one? **Resolve via spike in #step-6a** (read
+`merge_and_persist_system_metadata` + `record_session_metadata` keying); decide whether
+to harden the recorder or render it moot via [P06].
+
+#### [Q05] Target-stable strategy for the non-JSONL metrics (EFFORT, per-turn TIME, /context breakdown) {#q05-non-jsonl-metrics}
+These cannot be reconstructed from the JSONL. Per the user, scope is "everything," so
+each needs a decision: (i) persist durably in a target-stable store and accept blank on
+a brand-new target/session, (ii) reconstruct what *is* derivable (e.g. /context usage
+slices from `message.usage`), (iii) for EFFORT, source from the `session_capabilities`
+handshake on every resume. **Resolve in #step-8.**
+
+#### [Q06] Restore the exact `[1m]` model variant, or accept bare-name + correct max? {#q06-model-variant-cosmetics}
+The JSONL model is bare (`claude-opus-4-7`); the live chip shows "· 1M" only for the
+`[1m]` suffix. With the [Q03] override the **max** is already correct (1M) from the bare
+name, but the chip text omits "· 1M". Options: (a) accept bare chip + correct max
+(no durable dependency); (b) restore the precise variant from durable `session_metadata`
+(target-unstable). Lean (a) unless the chip text is deemed load-bearing.
+
+#### [Q07] Verification vehicle: DB-independence bar vs seeded DB vs app-test {#q07-verification}
+Pick the #target-testing option(s). Recommend (a)+(c): make DB-independence the
+acceptance bar and add an app-test that cold-replays a fixture into a fresh store.
+
+## A.6 Revised execution steps {#a6-steps}
+
+> Steps 1–5 stand. Step 6 is superseded by the staged sequence below. **No code until
+> these are vetted** — this addendum is a plan revision, not an implementation.
+
+| Step | Title | Status |
+|---|---|---|
+| #step-6a | Spike: durable recorder keying + empty-model rows ([Q04]) | pending |
+| #step-6b | Spike: HMR store survival (C2) — does the services bag re-mount or persist? | pending |
+| #step-7 | tugcode/tugcast: make replayed MODEL reach `SessionMetadataStore` on cold replay (C3/C4/C5), target-stable ([P06]) | pending |
+| #step-8 | EFFORT (+ TIME, /context) target-stable strategy per [Q05] | pending |
+| #step-9 | CONTEXT denominator + headroom-reset verification ([P07]); app-test vehicle ([Q07]) | pending |
+| #step-10 | Integration matrix: all in-scope metrics × C1–C5, on an empty-DB target | pending |
+
+**#step-6a — Recorder/keying spike.** Read `merge_and_persist_system_metadata`,
+`record_session_metadata`, and the `claude_session_id` capture; explain the empty-model
+rows; decide harden-vs-moot. Output: a finding + the [Q04] resolution. No product code.
+
+**#step-6b — HMR survival spike.** Determine whether `card-services-store` (and thus
+`SessionMetadataStore` + `CodeSessionStore`) survives an HMR or re-mounts, and whether a
+re-mount re-binds (triggering on-bind metadata replay). This decides whether C2 needs a
+*preservation* fix (state survives HMR) or a *re-delivery* fix (re-bind replays
+durable/JSONL metadata). Cross-check `tuglaws.md` [L23]/[L26] (state/mount preservation)
+and `project_hmr_vs_reload`. Output: the C2 mechanism + the #step-7 design constraint.
+
+**#step-7 — Target-stable ACTIVE-MODEL delivery.** Two parts:
+1. **Active model ([P09]):** change the synth from "first real model" to "track real-model
+   changes through replay; final emission = the active (last) model." Cover a
+   model-switch fixture (opus → sonnet) → restored chip shows the last model.
+2. **Reliable delivery (#a3-model-delivery):** make the replayed `system_metadata` reach
+   the bound card's `SESSION_METADATA` feed on cold replay with an **empty** durable DB,
+   regardless of subscription timing (in-memory `latest_metadata` replayed on every late
+   subscribe; optionally persist during replay for a durable fallback). This is the
+   distribution-correct path ([P08]).
+
+Tests: tugcast frame-routing (replay `system_metadata` → `SESSION_METADATA`, last wins) +
+a tugdeck app-test (fresh store, empty DB, model-switch fixture → active model resolves,
+CONTEXT-max follows).
+
+**#step-8 — EFFORT / TIME / breakdown.** Per [Q05]. At minimum: EFFORT sourced from the
+`session_capabilities` handshake on every resume (it rides `SESSION_METADATA`,
+target-stable if re-emitted on bind); TIME + /context breakdown documented as durable-
+or-blank with the chosen behavior. 
+
+**#step-9 — CONTEXT correctness + verification vehicle.** Assert (a) denominator = 1M
+once MODEL resolves, (b) CONTEXT-used resets across a `/compact` boundary in a fixture
+(not just non-zero). Stand up the app-test from [Q07].
+
+**#step-10 — Full matrix.** Verify every in-scope metric across C1–C5 on a **fresh,
+empty-DB target** (the worktree itself is the test bed once [P06] holds), plus a seeded-
+DB pass for the durable-only metrics.
+
+## A.7 Answers to the two diagnostic questions {#a7-answers}
+
+- **Session-id matchup?** A *real secondary* fault — the live recorder writes
+  empty-model `session_metadata` rows for some sessions ([Q04]), a keying/timing
+  fragility. Not the cause of the worktree test failure.
+- **Build-system / worktree data sync?** **Yes — the dominant cause.** Per-instance DBs
+  ([P05]) mean the worktree target starts with empty durable tables; the user's real
+  metadata lives in `debug-main`. The fix is not to share DBs but to make the in-scope
+  metrics **target-stable** ([P06]) — reconstructed from the shared JSONL where possible,
+  and explicitly handled where not.

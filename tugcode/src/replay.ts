@@ -64,6 +64,9 @@ import type {
   ToolUse,
   ToolUseStructured,
   TurnComplete,
+  TurnCost,
+  TurnEndReason,
+  TurnTelemetry,
   WakeStarted,
 } from "./types.ts";
 import type { ReplayWindow } from "@tugproto/inbound";
@@ -141,6 +144,18 @@ export interface JsonlContentBlock {
  *   - `system`                  — `system_init`-style bookkeeping
  *   - `permission-mode`         — UI-visible at the chrome layer
  */
+/**
+ * Per-message token usage as Claude Code persists it on an assistant
+ * JSONL entry — the API's snake_case shape. Each field is optional: a
+ * turn that used no cache omits the cache fields entirely.
+ */
+export interface JsonlUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
 export interface JsonlEntry {
   type?: string;
   message?: {
@@ -148,6 +163,17 @@ export interface JsonlEntry {
     role?: string;
     model?: string;
     stop_reason?: string | null;
+    /**
+     * Per-message token usage Claude Code persists on every assistant
+     * entry — the same four-token shape the live `cost_update` /
+     * `streaming_usage` frames carry, in the API's snake_case form. The
+     * terminal entry of a turn carries that turn's last-iteration
+     * resident-context usage (the figure the live `cost_update` froze).
+     * Replay reads it via {@link extractTurnCostFromUsage} to
+     * reconstruct per-turn cost from the file itself, independent of the
+     * `turn_telemetry` side-table.
+     */
+    usage?: JsonlUsage;
     /**
      * Message content. Usually an array of {@link JsonlContentBlock}s,
      * but Claude Code persists a plain-text message — a `user`
@@ -215,6 +241,126 @@ export interface JsonlEntry {
    * so the reducer/wrappers see the same shape on replay as on live.
    */
   toolUseResult?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Per-turn cost reconstruction from JSONL `usage`
+// ---------------------------------------------------------------------------
+
+/**
+ * Coerce a possibly-missing / non-numeric token field to a finite
+ * number, defaulting to 0. Mirrors the client-side tolerance in
+ * tugdeck's `extractTurnCost` — the JSONL may omit a cache field
+ * entirely on a turn that used no cache.
+ */
+function usageTokens(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * The zero-cost {@link TurnCost} a turn replays with when its closing
+ * entry carries no `usage` — an interrupted-before-response turn, or an
+ * orphan synthesized from the *next* opener entry (whose usage is not
+ * this turn's). `deriveContextWindows` carries the prior window forward
+ * across such a turn, so it adds no delta rather than dropping CONTEXT.
+ */
+export const ZERO_TURN_COST: TurnCost = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+  totalCostUsd: 0,
+};
+
+/**
+ * Map an assistant entry's `message.usage` to a {@link TurnCost} (Spec
+ * S01). The four token fields come straight from the snake_case JSONL
+ * usage (each defaulting to 0); `totalCostUsd` is always 0 — the JSONL
+ * carries no per-message dollar cost, and dollar cost is not a Z2
+ * readout. A missing `usage` yields {@link ZERO_TURN_COST}.
+ *
+ * Pure and exported for unit testing.
+ */
+export function extractTurnCostFromUsage(
+  usage: JsonlUsage | undefined,
+): TurnCost {
+  if (usage === undefined) {
+    return { ...ZERO_TURN_COST };
+  }
+  return {
+    inputTokens: usageTokens(usage.input_tokens),
+    outputTokens: usageTokens(usage.output_tokens),
+    cacheCreationInputTokens: usageTokens(usage.cache_creation_input_tokens),
+    cacheReadInputTokens: usageTokens(usage.cache_read_input_tokens),
+    totalCostUsd: 0,
+  };
+}
+
+/**
+ * Whether a JSONL `message.model` string names a real model rather than
+ * a placeholder. Claude Code interleaves `"<synthetic>"` assistant
+ * entries (and other angle-bracketed placeholders) whose model field is
+ * not a usable identifier; synthesizing the model from one yields MODEL
+ * "?" and the wrong CONTEXT denominator. Rejects empty/whitespace and
+ * any `<...>`-style placeholder; a normal `claude-…` name passes.
+ */
+export function isRealModelName(model: string | undefined | null): model is string {
+  if (typeof model !== "string") return false;
+  const trimmed = model.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.startsWith("<")) return false;
+  return true;
+}
+
+/**
+ * Derive the session's `sessionInitTokens` (`window(0)` — the resident
+ * context before any turn) from the first turn's `usage` — its
+ * input-baseline `input + cache_read + cache_creation`, excluding
+ * `output`. This mirrors what the live path's first `streaming_usage`
+ * captured (the prompt context the model started with), so
+ * `perTurn(1) = window(1) − sessionInit ≈ output_tokens` — the same
+ * "new tokens this turn" reading the live TOKENS cell showed.
+ * Calibrated against a real session (#q01-session-init-tokens):
+ * `sessionInit = 0` would instead report turn-1 TOKENS as the full
+ * resident window. Returns `null` when no usage anchors the session.
+ */
+export function sessionInitTokensFromUsage(
+  usage: JsonlUsage | undefined,
+): number | null {
+  if (usage === undefined) return null;
+  return (
+    usageTokens(usage.input_tokens) +
+    usageTokens(usage.cache_read_input_tokens) +
+    usageTokens(usage.cache_creation_input_tokens)
+  );
+}
+
+/**
+ * Build a replayed `turn_complete`'s telemetry block (Spec S02): the
+ * JSONL-reconstructed `cost` and session `sessionInitTokens`, the
+ * terminal `turnEndReason`, and zero timing — the multi-clock wall /
+ * active / ttft figures the JSONL does not carry. tugcast may later
+ * overlay those timing keys from the `turn_telemetry` side-table; it
+ * must never touch `cost` / `sessionInitTokens` ([P03]).
+ */
+export function buildReplayTurnTelemetry(
+  cost: TurnCost,
+  sessionInitTokens: number | null,
+  turnEndReason: TurnEndReason,
+): TurnTelemetry {
+  return {
+    cost,
+    wallClockMs: 0,
+    awaitingApprovalMs: 0,
+    transportDowntimeMs: 0,
+    activeMs: 0,
+    ttftMs: null,
+    ttftcMs: null,
+    reconnectCount: 0,
+    maxStreamGapMs: 0,
+    sessionInitTokens,
+    turnEndReason,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +490,15 @@ export interface TranslateContext {
    * clear) since per-msg_id state is meaningless across turns.
    */
   blockCountByMsgId: Map<string, number>;
+  /**
+   * Session-level `sessionInitTokens` (`window(0)`) carried on every
+   * replayed `turn_complete`'s telemetry. Captured once before the
+   * emit loop from the first turn's input-baseline usage
+   * ({@link sessionInitTokensFromUsage}); `null` until set / when no
+   * usage anchors the session. Session-level, so it is identical on
+   * every turn (the reducer keeps the first non-null — Spec S02).
+   */
+  sessionInitTokens: number | null;
   /** Telemetry sink. */
   telemetry: ReplayTelemetry;
 }
@@ -370,6 +525,7 @@ export function makeTranslateContext(
     openTurnMsgId: null,
     orphanCounter: 0,
     blockCountByMsgId: new Map(),
+    sessionInitTokens: null,
     telemetry,
   };
 }
@@ -468,6 +624,17 @@ function emitOrphanIfOpen(
     seq: ctx.globalSeq++,
     result: "interrupted",
     timestamp,
+    // An orphan/interrupted turn replays with zero cost: `closingEntry`
+    // is the *next* opener (callers pass the arriving entry that closes
+    // the prior open turn), NOT this turn's own content, so its `usage`
+    // is not this turn's (Risk R01). `deriveContextWindows` carries the
+    // prior window forward across a zero-usage turn, so CONTEXT is set
+    // by the last real turn rather than dropped.
+    telemetry: buildReplayTurnTelemetry(
+      { ...ZERO_TURN_COST },
+      ctx.sessionInitTokens,
+      "interrupted",
+    ),
     ipc_version: IPC_VERSION,
   };
   ctx.openTurnMsgId = null;
@@ -1358,6 +1525,15 @@ function handleAssistantEntry(
       seq: ctx.globalSeq++,
       result: "success",
       timestamp: parseEntryTimestamp(entry),
+      // Reconstruct the turn's cost from the closing entry's own
+      // `usage` — the last-iteration resident-context figure the live
+      // `cost_update` froze (#emit-point). This is the JSONL-authoritative
+      // cost the reducer commits onto `TurnEntry.cost` ([P02]).
+      telemetry: buildReplayTurnTelemetry(
+        extractTurnCostFromUsage(entry.message?.usage),
+        ctx.sessionInitTokens,
+        "complete",
+      ),
       ipc_version: IPC_VERSION,
     };
     out.push(turnComplete);
@@ -1848,6 +2024,22 @@ export async function* translateJsonlSession(
     }
   }
 
+  // Session `sessionInitTokens` baseline: the input-baseline usage of
+  // the FIRST assistant entry that carries `usage` — the resident
+  // context the session started with, before turn 1 produced output
+  // (#q01-session-init-tokens). Scanned over the whole file (not the
+  // recency window) so it is the true session baseline regardless of
+  // which turns this pass emits; carried identically on every turn's
+  // telemetry (the reducer keeps the first non-null — Spec S02).
+  for (const entry of parsedEntries) {
+    if (entry === null || entry.type !== "assistant") continue;
+    const usage = entry.message?.usage;
+    if (usage !== undefined) {
+      ctx.sessionInitTokens = sessionInitTokensFromUsage(usage);
+      break;
+    }
+  }
+
   // Recency window. When requested, locate every turn's start entry
   // (a dry run of the real translator — see {@link computeTurnStartIndices})
   // and resolve the window into the `[windowStartIndex, windowEndIndex)`
@@ -1894,12 +2086,9 @@ export async function* translateJsonlSession(
       continue;
     }
 
-    if (
-      !emittedSystemMetadata &&
-      parsed.type === "assistant" &&
-      typeof parsed.message?.model === "string" &&
-      parsed.message.model.length > 0
-    ) {
+    const candidateModel =
+      parsed.type === "assistant" ? parsed.message?.model : undefined;
+    if (!emittedSystemMetadata && isRealModelName(candidateModel)) {
       // Replay synthesizes a system_metadata IPC from a `message.model`
       // it finds in the resumed-session JSONL — that's enough to paint
       // the model badge before claude's live init lands. Every OTHER
@@ -1916,7 +2105,7 @@ export async function* translateJsonlSession(
         session_id: claudeSessionId,
         cwd: "",
         tools: [],
-        model: parsed.message.model,
+        model: candidateModel,
         permissionMode: "",
         slash_commands: [],
         plugins: [],
