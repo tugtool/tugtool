@@ -105,11 +105,9 @@ export function EffortChip({
 
   const title = !display.supported
     ? "Reasoning effort: not supported by this model"
-    : effectiveEffort === null
-      ? "Reasoning effort: unknown until the session reconnects"
-      : snapshot.effort === null
-        ? `Reasoning effort: ${content} (default)`
-        : `Reasoning effort: ${content}`;
+    : snapshot.effort === null
+      ? `Reasoning effort: ${content} (default)`
+      : `Reasoning effort: ${content}`;
 
   const copy = useCopyableButton(`Effort: ${content}`);
 

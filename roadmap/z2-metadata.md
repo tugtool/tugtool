@@ -939,13 +939,20 @@ durable persist was added** — one already exists and is the right model: the p
 *per-card* effort choice optimistically. It is target-stable by construction ([P05]):
 absent on a fresh target → no apply → blank; present → the user's own remembered choice
 (a preference, not stale session data); and a live handshake always overrides it.
-The one fix: the chip conflated "confirmed default (live handshake, no override)" with
-"no signal at all (offline replay)", both rendering `High`/`Default`. New pure helper
-`resolveEffortDisplay` distinguishes them — with a live handshake (`models` non-empty) a
-null effort shows the confirmed default; with **no** handshake (offline replay) it shows
-the honest `-` blank, never an assumed default (`resolveEffortSupport` still resolves
-*support* from the static catalog so the picker keeps its levels). Tested: 5 pure-logic
-cases in `effort.test.ts`; at0192 asserts `EFFORT -` on the offline cold replay.
+The chip shows, via the pure helper `resolveEffortDisplay`: the explicit override if set,
+else — for an effort-supporting model — the model's built-in default (`DEFAULT_EFFORT_LEVEL`
+→ "High"); `-` only for an effort-UNsupported model. `resolveEffortSupport` resolves
+support from the static catalog, so a resumed session with a known model id shows its
+default effort **without** waiting on the live handshake — a live override sharpens it on
+the first turn, exactly the way the model chip shows the resolved model before the
+handshake lands. Tested: pure-logic cases in `effort.test.ts`; at0192 asserts `EFFORT High`
+on the offline cold replay.
+
+> **Follow-up correction (post-merge):** an earlier cut of this step blanked EFFORT to `-`
+> whenever the live capabilities handshake was absent (`models` empty) — but claude is
+> silent until the first input on a resume, so a freshly-reopened session (model resolved,
+> effort-supporting) read `-` until the user typed. Real-world testing flagged that as
+> wrong; the rule above (show the model's default, not `-`) is the corrected behavior.
 
 **TIME resolution (#step-8b — done):** per-turn TIME (wall/active/ttft) is NOT in the
 JSONL — it is reconstructed only from the durable `turn_telemetry` overlay ([P03]), empty

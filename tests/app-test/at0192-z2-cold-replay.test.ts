@@ -283,13 +283,13 @@ describe.skipIf(!SHOULD_RUN)(
           expect(ctxMax.includes("1.0") || ctxMax.includes("1M")).toBe(true);
           expect(modelText.includes("?")).toBe(false);
 
-          // EFFORT (#step-8a): this is a PURE OFFLINE replay — claude never
-          // handshook, so there is no `session_capabilities` and no effort
-          // signal. Even though the resumed model resolves effort SUPPORT via
-          // the static catalog, the chip must read the honest `-` blank, never
-          // an assumed "High" default. (A live reconnect would fill it in.)
+          // EFFORT (#step-8a): the resumed `claude-opus-4-8` supports effort
+          // (resolved from the static catalog even without a live handshake),
+          // so the chip shows the model's built-in DEFAULT level — "High" —
+          // not a `-` blank. A live override would sharpen it on the first
+          // turn. (`-` is only for an effort-UNsupported model.)
           const effortText = await app.evalJS<string>(EFFORT_JS);
-          expect(effortText).toBe("-");
+          expect(effortText).toBe("High"); // DEFAULT_EFFORT_LEVEL "high" → "High"
 
           process.stdout.write(
             `[at0192] CONTEXT ${ctxUsed} ${ctxMax} · TOKENS ${tokensText} · MODEL ${modelText} · EFFORT ${effortText}\n`,

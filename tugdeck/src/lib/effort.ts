@@ -149,22 +149,22 @@ export interface EffortDisplay {
 }
 
 /**
- * Resolve what the EFFORT chip should DISPLAY, distinguishing a known level
- * from an honest unknown. EFFORT is NOT in the session JSONL — it exists only
- * when a live `session_capabilities` handshake delivers it (or the user set it,
- * which persists per-card and re-applies optimistically). So a pure offline
- * replay — a resumed session whose model resolves but which never handshook —
- * has no effort SIGNAL, and must read as unknown rather than an assumed default.
+ * Resolve what the EFFORT chip should DISPLAY for the active model.
  *
  * Rules:
- * - model doesn't support effort → no level (`-`).
+ * - model doesn't support effort (e.g. Haiku, or no model yet) → no level (`-`).
  * - an explicit `effort` (live override, or a restored per-card choice) → it.
- * - no `effort` but a live handshake is present (`models` non-empty) → the
- *   confirmed `DEFAULT_EFFORT_LEVEL` (claude runs a fresh session at that).
- * - no `effort` AND no live handshake (`models` empty — pure offline replay) →
- *   unknown (`null` → `-`), never a stale or assumed default. `resolveEffortSupport`
- *   still resolves *support* from the static model catalog (so the picker offers
- *   levels), but support ≠ a known current level.
+ * - a supported model with no override → the model's built-in default
+ *   (`DEFAULT_EFFORT_LEVEL` — claude runs at that absent an override).
+ *
+ * EFFORT is not in the session JSONL and the live `session_capabilities`
+ * handshake is silent until the first input on a resume — but a supported
+ * model's effective effort IS its default in the meantime, so the chip shows
+ * the default rather than a `-` blank. A live override sharpens it on the first
+ * turn, exactly the way the model chip shows the resolved model before the
+ * handshake lands. (`resolveEffortSupport` falls back to the static model
+ * catalog, so a resumed session with a known model id resolves support — and
+ * thus its default level — without a live handshake.)
  */
 export function resolveEffortDisplay(
   models: CapabilityModel[],
@@ -175,13 +175,9 @@ export function resolveEffortDisplay(
   if (!support.supported) {
     return { supported: false, level: null, levels: support.levels };
   }
-  if (effort !== null) {
-    return { supported: true, level: effort, levels: support.levels };
-  }
-  const hasLiveHandshake = models.length > 0;
   return {
     supported: true,
-    level: hasLiveHandshake ? DEFAULT_EFFORT_LEVEL : null,
+    level: effort ?? DEFAULT_EFFORT_LEVEL,
     levels: support.levels,
   };
 }
