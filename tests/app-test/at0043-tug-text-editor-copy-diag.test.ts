@@ -135,12 +135,17 @@ async function clearEditor(app: App): Promise<void> {
   await app.nativeKey("a", ["cmd"]);
   await new Promise((r) => setTimeout(r, 80));
   await app.nativeKey("Delete");
+  // Empty-doc signal: no atom widgets, and CM6 shows its `.cm-placeholder`
+  // (rendered inside `.cm-content` only when the document length is 0). NOT
+  // `textContent.length === 0` — the gallery editor configures a placeholder
+  // (`DEMO_PLACEHOLDER`), so an empty editor's `.cm-content` textContent is
+  // the placeholder string, never empty.
   await app.waitForCondition<boolean>(
     `(function(){
       var ed = document.querySelector('[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR}');
       if (ed === null) return false;
       return ed.querySelectorAll('img[data-atom-label]').length === 0
-        && ed.textContent.length === 0;
+        && ed.querySelector('.cm-placeholder') !== null;
     })()`,
     { timeoutMs: 2000 },
   );
