@@ -16,7 +16,7 @@ exactly once across its three possible homes — all persisted through tugbank.
 | Owner | Ken Kocienda |
 | Status | in progress |
 | Target branch | main |
-| Last updated | 2026-06-15 |
+| Last updated | 2026-06-18 |
 
 ---
 
@@ -119,11 +119,14 @@ non-goals). PULSE 2 left the store/hook surface this plan reads (`usePulse`,
 #### Dependencies / Prerequisites {#dependencies}
 
 - **PULSE shipped** (`roadmap/archive/pulse.md` + `pulse-2.md`) — `pulse-store.ts`
-  (`PulseSnapshot { enabled, lines }`, read via the `usePulse()`
-  `useSyncExternalStore` hook; `latestLineForScope()` for the newest line; cap
+  (`PulseSnapshot { enabled, status, lines, latest, cleared }`, read via the
+  `usePulse()` `useSyncExternalStore` hook; the snapshot's `latest` field is the
+  newest line directly, and `latestLineForScope(lines, scope, clearedKeys?)`
+  resolves the newest line for a scope honoring the per-scope `cleared` map; cap
   `PULSE_LINES_CAP`), `tide-pulse-strip.tsx/.css`, and the `pulse/enabled` tugbank
   default (`PULSE_ENABLED_DOMAIN`/`KEY`). The PULSE row cell, PULSE lane, and strip
-  suppression all read these.
+  suppression all read these; the row cell / lane key their off-state on `enabled`
+  (the `status`/`cleared` fields are additive and need no special handling in v1).
 - The jobs ledger + monitors work (shipped on main): `useJobsState`, `countJobs`,
   `jobsCellPose`, the JOBS popover.
 - The task list machinery: `useTaskListState`, `countTasks`, the TASKS popover.
@@ -261,8 +264,8 @@ repeatable, everything else one-shot, `pulse` and `flex` flexible-width.
 **Implications:**
 - Default config renders byte-identical DOM to today's row — the #step-2 gate.
 - The PULSE cell is new: flexible width (`flex: 1 1 auto`, min-width, ellipsis —
-  the one deviation from fixed-width cell grammar), value = newest pulse line from
-  `pulse-store`, no popover in v1 ([Q01]); when `pulse/enabled` is false it renders
+  the one deviation from fixed-width cell grammar), value = the pulse-store
+  snapshot's `latest` line, no popover in v1 ([Q01]); when `pulse/enabled` is false it renders
   a dimmed "off" placeholder rather than vanishing (config stays WYSIWYG).
 - SPACE renders a fixed-gap cell, FLEX SPACE a flexing one; both render a quiet
   glyph only while customizing (invisible spacers otherwise).
@@ -282,7 +285,7 @@ customize mode ([P08]). `dev-card.tsx` replaces its inline status-bar block
 toggle, the resolved Z2 content node, the stores, and the cycle scope.
 
 **Rationale:**
-- `dev-card.tsx` is already ~3500 lines; the status area is a coherent [L19]
+- `dev-card.tsx` is already ~3600 lines; the status area is a coherent [L19]
   component with its own CSS scope.
 - The shelf must be a flex sibling *below* the bar inside `dev-card-top-column`
   (the transcript host is `flex: 1 1 auto`, so a content-sized shelf steals height
