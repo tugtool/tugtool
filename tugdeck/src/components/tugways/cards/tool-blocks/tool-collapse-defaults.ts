@@ -1,63 +1,53 @@
 /**
  * `tool-collapse-defaults.ts` — the single, plainly-editable source of
- * truth for which tool blocks mount **collapsed** in the transcript
+ * truth for which tool blocks mount **expanded** in the transcript
  * ([P06]/[P07]).
  *
  * The transcript dispatch site (`CodeRowBody` in `dev-card-transcript`)
  * reads `collapseDefaultFor(toolName)` and wraps a block in
  * `ToolBlockHistoryCollapse` (default-collapsed, body materializes on
  * expand) when it returns `true` — applied **live and historical**, the
- * same for an in-flight call and a replayed one. The seed collapses the
- * noisy file/shell I/O the user rarely needs to watch and leaves the
- * content-bearing tools expanded. Flip an entry to change a default.
+ * same for an in-flight call and a replayed one.
+ *
+ * Policy: tool blocks mount **collapsed by default**. The collapsed
+ * header alone (tool + target + one-line result badge) is enough to scan
+ * a transcript; the body is one click away. Only the few content-bearing
+ * tools the user is meant to read or act on *as it arrives* mount
+ * expanded — the {@link EXPANDED_BY_DEFAULT} allowlist. Everything else,
+ * including every tool not yet known here (new wrappers, unknown / MCP
+ * tools routed through `DefaultToolBlock`), collapses; a new tool is
+ * quiet by default and opts into expansion explicitly.
  *
  * This governs **whole-block** collapse only (header vs header+body). It
  * is deliberately separate from a tool block's own *body-internal* fold
  * (`ToolBlockChrome`'s `fold` / a body kind's size-threshold collapse),
  * which is a finer affordance keyed on content size, not tool kind.
  *
- * Keys are lowercased wire tool names (`message.toolName`). Unknown
- * tools default to **expanded** (`false`).
+ * Keys are lowercased wire tool names (`message.toolName`).
  *
  * @module components/tugways/cards/tool-blocks/tool-collapse-defaults
  */
 
 /**
- * Tool kind → collapsed-by-default. Seeded per [P07]: the noisy
- * file/shell tools collapse; the content the user is actively reading
- * stays expanded. The expanded entries equal the unknown-tool default
- * (`false`) but are listed explicitly so the policy reads as a complete
- * table at a glance.
+ * The tools that mount **expanded**. Everything else collapses by
+ * default — file/shell I/O, agent runs, ops tools (monitor / worktree /
+ * cron / task-mgmt / remote-trigger), notebook edits, web fetch /
+ * search, and any unknown tool all arrive collapsed to their
+ * self-describing header.
+ *
+ * Add a lowercased wire name here to keep a tool open on arrival.
  */
-export const TOOL_COLLAPSE_DEFAULTS: Readonly<Record<string, boolean>> = {
-  // Noisy file/shell I/O — collapse ([P07]). The collapsed header alone
-  // (tool + target + one-line result) is enough; the body is one click
-  // away.
-  read: true,
-  grep: true,
-  glob: true,
-  bash: true,
-  edit: true,
-  multiedit: true, // wire alias of Edit — same file-mutation family
-  write: true,
-  // An Agent run is noisy I/O too — a pile of nested file/shell calls.
-  // The collapsed header is self-explanatory (agent type + description +
-  // the nested-call-count badge), so it collapses like the other noisy
-  // tools; the user expands to watch the transcript. Its final answer is
-  // also relayed in the parent assistant's own text.
-  agent: true, // canonical kind for the `Task` wire tool
-  task: true, // historical wire name for the same tool — collapse alike
-  // Content the user is actively reading — leave expanded ([P07]).
-  skill: false,
-  askuserquestion: false,
-  webfetch: false,
-  websearch: false,
-};
+export const EXPANDED_BY_DEFAULT: ReadonlySet<string> = new Set([
+  // The Q&A decision artifact — the user reads it and acts on it, so it
+  // arrives open rather than behind a click.
+  "askuserquestion",
+]);
 
 /**
  * Whether a tool block of `toolName` mounts collapsed by default.
- * Case-insensitive; unknown tools default to expanded.
+ * Case-insensitive. Collapse is the default; only {@link
+ * EXPANDED_BY_DEFAULT} tools mount expanded.
  */
 export function collapseDefaultFor(toolName: string): boolean {
-  return TOOL_COLLAPSE_DEFAULTS[toolName.toLowerCase()] ?? false;
+  return !EXPANDED_BY_DEFAULT.has(toolName.toLowerCase());
 }

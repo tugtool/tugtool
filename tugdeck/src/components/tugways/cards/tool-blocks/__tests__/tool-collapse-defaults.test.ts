@@ -1,52 +1,45 @@
 /**
- * tool-collapse-defaults.test.ts — the per-tool collapse-default table
- * ([P06]/[P07]): noisy file/shell tools collapse; content tools expand;
- * unknown tools default expanded; lookup is case-insensitive.
+ * tool-collapse-defaults.test.ts — the collapse policy ([P06]/[P07]):
+ * tool blocks mount COLLAPSED by default; only the EXPANDED_BY_DEFAULT
+ * allowlist mounts expanded; lookup is case-insensitive; unknown /
+ * future / MCP tools collapse.
  */
 
 import { describe, expect, test } from "bun:test";
 import {
   collapseDefaultFor,
-  TOOL_COLLAPSE_DEFAULTS,
+  EXPANDED_BY_DEFAULT,
 } from "../tool-collapse-defaults";
 
 describe("collapseDefaultFor", () => {
-  test("collapses the noisy file/shell tools + Agent ([P07])", () => {
+  test("collapses by default — file/shell, agent, and ops tools", () => {
     for (const name of [
       "Read", "Grep", "Glob", "Bash", "Edit", "MultiEdit", "Write",
-      // An Agent run is noisy nested I/O; its collapsed header (type +
-      // description + nested-call-count badge) is self-explanatory. The
-      // historical `Task` alias collapses alike.
       "Agent", "Task",
+      "Monitor", "Worktree", "Cron", "TaskMgmt", "NotebookEdit",
+      "RemoteTrigger", "Skill", "WebFetch", "WebSearch",
     ]) {
       expect(collapseDefaultFor(name)).toBe(true);
     }
   });
 
-  test("leaves content-bearing tools expanded ([P07])", () => {
-    for (const name of ["Skill", "AskUserQuestion", "WebFetch", "WebSearch"]) {
-      expect(collapseDefaultFor(name)).toBe(false);
-    }
+  test("leaves only the allowlisted content tool expanded", () => {
+    expect(collapseDefaultFor("AskUserQuestion")).toBe(false);
   });
 
-  test("unknown tools default to expanded", () => {
-    expect(collapseDefaultFor("SomeFutureTool")).toBe(false);
-    expect(collapseDefaultFor("")).toBe(false);
+  test("unknown / future / MCP tools collapse by default", () => {
+    expect(collapseDefaultFor("SomeFutureTool")).toBe(true);
+    expect(collapseDefaultFor("mcp__server__do_thing")).toBe(true);
+    expect(collapseDefaultFor("")).toBe(true);
   });
 
   test("lookup is case-insensitive", () => {
     expect(collapseDefaultFor("BASH")).toBe(true);
-    expect(collapseDefaultFor("bash")).toBe(true);
     expect(collapseDefaultFor("ReAd")).toBe(true);
+    expect(collapseDefaultFor("ASKUSERQUESTION")).toBe(false);
   });
 
-  test("the table seeds exactly the [P07] collapse set as true", () => {
-    const collapsed = Object.entries(TOOL_COLLAPSE_DEFAULTS)
-      .filter(([, v]) => v)
-      .map(([k]) => k)
-      .sort();
-    expect(collapsed).toEqual([
-      "agent", "bash", "edit", "glob", "grep", "multiedit", "read", "task", "write",
-    ]);
+  test("the expanded allowlist is exactly the intended set", () => {
+    expect([...EXPANDED_BY_DEFAULT].sort()).toEqual(["askuserquestion"]);
   });
 });
