@@ -28,6 +28,9 @@
  * @module components/tugways/cards/tool-blocks/tool-collapse-defaults
  */
 
+import type { ToolUseMessage } from "@/lib/code-session-store/types";
+import { parseGitCommit } from "@/components/tugways/body-kinds/commit-block";
+
 /**
  * The tools that mount **expanded**. Everything else collapses by
  * default — file/shell I/O, agent runs, ops tools (monitor / worktree /
@@ -50,4 +53,35 @@ export const EXPANDED_BY_DEFAULT: ReadonlySet<string> = new Set([
  */
 export function collapseDefaultFor(toolName: string): boolean {
   return !EXPANDED_BY_DEFAULT.has(toolName.toLowerCase());
+}
+
+/**
+ * Whole-block collapse default for a tool-call message. Same policy as
+ * {@link collapseDefaultFor}, plus one content-aware case the tool name
+ * alone can't see: a `Bash` call that rendered the commit receipt
+ * (`parseGitCommit` recognizes a successful `git commit`) mounts expanded
+ * — the user reads and acts on it, like the AskUserQuestion artifact.
+ */
+export function collapseDefaultForMessage(message: ToolUseMessage): boolean {
+  if (message.toolName.toLowerCase() === "bash") {
+    const command = (message.input as { command?: unknown } | null)?.command;
+    // Mirror the receipt's own stdout source (`composeTerminalData`):
+    // structured stdout first, else the bare/ wrapped text result.
+    const structuredStdout = (
+      message.structuredResult as { stdout?: unknown } | null
+    )?.stdout;
+    const stdout =
+      typeof structuredStdout === "string"
+        ? structuredStdout
+        : typeof message.result === "string"
+          ? message.result
+          : typeof (message.result as { output?: unknown } | null)?.output ===
+              "string"
+            ? (message.result as { output: string }).output
+            : "";
+    if (typeof command === "string" && parseGitCommit(command, stdout) !== null) {
+      return false;
+    }
+  }
+  return collapseDefaultFor(message.toolName);
 }

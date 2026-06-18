@@ -113,7 +113,7 @@ import {
   ToolBlockHistoryCollapse,
   ToolUseIdContext,
 } from "@/components/tugways/cards/tool-blocks/collapse-context";
-import { collapseDefaultFor } from "@/components/tugways/cards/tool-blocks/tool-collapse-defaults";
+import { collapseDefaultForMessage } from "@/components/tugways/cards/tool-blocks/tool-collapse-defaults";
 import {
   ToolBlockExpansionState,
   type PersistedExpansionState,
@@ -615,7 +615,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     // The `ToolUseIdContext` provider carries the stable React key
     // (preserving mount identity, [L26]) and a fallback id; the collapse
     // handle also carries `toolUseId`, which the chrome prefers.
-    const collapseByDefault = collapseDefaultFor(message.toolName);
+    const collapseByDefault = collapseDefaultForMessage(message);
     elements.push(
       <ToolUseIdContext.Provider
         key={message.messageKey}
