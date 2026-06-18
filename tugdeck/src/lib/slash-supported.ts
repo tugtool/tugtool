@@ -183,6 +183,35 @@ export function resolveRemoteCommand(
 }
 
 /**
+ * Rewrite a bare-typed command line to its **canonical** plugin-qualified
+ * form so the wire (and thus the transcript) use the name claude actually
+ * expands. Given a lone command line `"/<name><rest>"`, when `<name>` uniquely
+ * resolves to a qualified `<plugin>:<name>` via {@link resolveRemoteCommand},
+ * return `"/<plugin>:<name><rest>"`; otherwise return `null` (no rewrite).
+ *
+ * Returns `null` when:
+ *  - the text is not a lone command line;
+ *  - the name is unknown / ambiguous (no unique resolution); or
+ *  - the name is already an **exact** catalog entry — the conflict /
+ *    shadowing rule: a name the user typed verbatim wins over any qualified
+ *    command that merely shares its leaf.
+ *
+ * Pure.
+ */
+export function canonicalizeBareCommandLine(
+  text: string,
+  catalogNames: readonly string[],
+): string | null {
+  const match = /^\/([^\s]+)([\s\S]*)$/.exec(text);
+  if (match === null) return null;
+  const name = match[1]!;
+  const rest = match[2] ?? "";
+  const canonical = resolveRemoteCommand(name, catalogNames);
+  if (canonical === null || canonical === name) return null;
+  return `/${canonical}${rest}`;
+}
+
+/**
  * Whether a typed `/name` is a *genuine unknown* — a command claude does not
  * recognize — given the names claude reports in its command catalog
  * (`slash_commands` ∪ `skills` ∪ `agents`). True only when:

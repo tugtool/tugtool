@@ -84,32 +84,45 @@ describe("enumeratePluginCommands", () => {
 });
 
 describe("mergePluginCommands", () => {
-  const base: SessionCapabilities = {
-    type: "session_capabilities",
-    models: [],
-    commands: [{ name: "compact" }, { name: "tugplug:commit" }],
-    agents: [],
-    available_output_styles: [],
-    output_style: "",
-    account: null,
-    effort: null,
-    ipc_version: 2,
-  };
+  function caps(commands: SessionCapabilities["commands"]): SessionCapabilities {
+    return {
+      type: "session_capabilities",
+      models: [],
+      commands,
+      agents: [],
+      available_output_styles: [],
+      output_style: "",
+      account: null,
+      effort: null,
+      ipc_version: 2,
+    };
+  }
 
-  test("unions new commands, leaving claude's reported entries untouched", () => {
-    const merged = mergePluginCommands(base, [
-      { name: "tugplug:commit", description: "would-be-overwrite" },
-      { name: "tugplug:devise", description: "Plan." },
-    ]);
-    // Existing entry kept as-is (no description), new one appended.
-    expect(merged.commands).toEqual([
-      { name: "compact" },
-      { name: "tugplug:commit" },
-      { name: "tugplug:devise", description: "Plan." },
-    ]);
+  test("replaces claude's bare leaf with the qualified form (no duplicate)", () => {
+    // claude's handshake reports the plugin skill bare; enumeration supplies
+    // the qualified twin. Result: qualified only.
+    const merged = mergePluginCommands(
+      caps([{ name: "compact" }, { name: "commit" }, { name: "code-review" }]),
+      [{ name: "tugplug:commit", description: "Make a commit." }],
+    );
+    const names = merged.commands.map((c) => c.name);
+    expect(names).not.toContain("commit");
+    expect(names).toContain("tugplug:commit");
+    // Genuine bare user skills / built-ins are untouched.
+    expect(names).toContain("compact");
+    expect(names).toContain("code-review");
+  });
+
+  test("does not double-add when the qualified form is already present", () => {
+    const merged = mergePluginCommands(
+      caps([{ name: "tugplug:commit" }]),
+      [{ name: "tugplug:commit", description: "Make a commit." }],
+    );
+    expect(merged.commands.map((c) => c.name)).toEqual(["tugplug:commit"]);
   });
 
   test("returns the same caps when there is nothing to add", () => {
-    expect(mergePluginCommands(base, [])).toBe(base);
+    const c = caps([{ name: "compact" }]);
+    expect(mergePluginCommands(c, [])).toBe(c);
   });
 });

@@ -9,7 +9,47 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { caseInsensitiveSubstring, scoreMatch } from "../text-match";
+import {
+  caseInsensitiveSubstring,
+  scoreMatch,
+  scoreCommandMatch,
+} from "../text-match";
+
+describe("scoreCommandMatch — leaf-aware ranking", () => {
+  test("a query matches a plugin command's leaf as a PREFIX", () => {
+    const full = scoreMatch("com", "tugplug:commit")!;
+    const leafAware = scoreCommandMatch("com", "tugplug:commit")!;
+    expect(leafAware.score!).toBeGreaterThan(full.score!);
+  });
+
+  test("ranks the plugin leaf above a longer bare command", () => {
+    const commit = scoreCommandMatch("com", "tugplug:commit")!.score!;
+    const compact = scoreCommandMatch("com", "compact")!.score!;
+    expect(commit).toBeGreaterThan(compact);
+  });
+
+  test("highlight ranges are remapped into full-name coordinates", () => {
+    expect(scoreCommandMatch("com", "tugplug:commit")!.matches).toEqual([
+      [8, 11],
+    ]);
+  });
+
+  test("bare names score exactly as scoreMatch", () => {
+    expect(scoreCommandMatch("com", "compact")).toEqual(
+      scoreMatch("com", "compact"),
+    );
+  });
+
+  test("falls back to the full-name match when the leaf does not match", () => {
+    expect(scoreCommandMatch("tug", "tugplug:commit")).toEqual(
+      scoreMatch("tug", "tugplug:commit"),
+    );
+  });
+
+  test("returns null when neither full name nor leaf matches", () => {
+    expect(scoreCommandMatch("zzz", "tugplug:commit")).toBeNull();
+  });
+});
 
 describe("caseInsensitiveSubstring — empty inputs", () => {
   test("empty query matches anything with empty match ranges", () => {

@@ -10,6 +10,7 @@ import {
   isHiddenSlashCommand,
   isUnknownRemoteCommand,
   resolveRemoteCommand,
+  canonicalizeBareCommandLine,
 } from "@/lib/slash-supported";
 import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
 
@@ -126,5 +127,43 @@ describe("resolveRemoteCommand", () => {
     expect(resolveRemoteCommand("review", ambiguous)).toBeNull();
     // The fully-qualified form is still exact and unambiguous.
     expect(resolveRemoteCommand("acme:review", ambiguous)).toBe("acme:review");
+  });
+});
+
+describe("canonicalizeBareCommandLine", () => {
+  const catalog = ["compact", "tugplug:commit", "tugplug:devise"];
+
+  test("rewrites a bare leaf to its qualified form", () => {
+    expect(canonicalizeBareCommandLine("/commit", catalog)).toBe(
+      "/tugplug:commit",
+    );
+  });
+
+  test("preserves trailing argument text", () => {
+    expect(canonicalizeBareCommandLine("/devise a plan", catalog)).toBe(
+      "/tugplug:devise a plan",
+    );
+  });
+
+  test("leaves an already-qualified command untouched (no rewrite)", () => {
+    expect(canonicalizeBareCommandLine("/tugplug:commit", catalog)).toBeNull();
+  });
+
+  test("exact catalog match wins over a shared leaf (conflict rule)", () => {
+    // A real bare `commit` shadows `tugplug:commit` — typed exactly, it stays.
+    expect(
+      canonicalizeBareCommandLine("/commit", ["commit", "tugplug:commit"]),
+    ).toBeNull();
+  });
+
+  test("returns null for an unknown / ambiguous name", () => {
+    expect(canonicalizeBareCommandLine("/nope", catalog)).toBeNull();
+    expect(
+      canonicalizeBareCommandLine("/review", ["a:review", "b:review"]),
+    ).toBeNull();
+  });
+
+  test("returns null for non-command text", () => {
+    expect(canonicalizeBareCommandLine("hello world", catalog)).toBeNull();
   });
 });

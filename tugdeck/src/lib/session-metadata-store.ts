@@ -15,7 +15,7 @@
 import type { FeedStore } from "./feed-store";
 import type { FeedIdValue } from "../protocol";
 import type { CompletionProvider, CompletionItem } from "./tug-text-types";
-import { scoreMatch } from "./text-match";
+import { scoreCommandMatch } from "./text-match";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -576,7 +576,7 @@ export class SessionMetadataStore {
       const { slashCommands } = this._snapshot;
       const ranked: Array<{ item: CompletionItem; score: number }> = [];
       for (const cmd of slashCommands) {
-        const match = scoreMatch(query, cmd.name);
+        const match = scoreCommandMatch(query, cmd.name);
         if (match === null) continue;
         ranked.push({
           score: match.score ?? 0,

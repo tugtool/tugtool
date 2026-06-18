@@ -238,17 +238,37 @@ export function enumeratePluginCommands(pluginDir: string): CapabilityCommand[] 
 }
 
 /**
- * Return `caps` with `extra` commands unioned into its `commands` list,
- * deduped by name (an entry claude already reported is kept as-is — its
- * description / hint win). Pure.
+ * Return `caps` with the plugin's `extra` commands folded in, in their
+ * **qualified** (`<plugin>:<leaf>`) form only — never both a bare `leaf` and
+ * its qualified twin.
+ *
+ * claude's turn-free `initialize` handshake reports a plugin skill by its
+ * *bare* leaf name (`commit`), while its loaded catalog (and the wire it
+ * expands) use the *qualified* name (`tugplug:commit`). Listing both in the
+ * Dev card's `/` popup is the duplication this reconciles: for every
+ * enumerated `<plugin>:<leaf>`, drop claude's bare `leaf` entry (it is the
+ * same command, reported unqualified) and add the qualified one. Bare entries
+ * that are NOT an enumerated plugin leaf (genuine user skills / built-ins like
+ * `code-review`, `compact`) are untouched. Pure.
  */
 export function mergePluginCommands(
   caps: SessionCapabilities,
   extra: CapabilityCommand[],
 ): SessionCapabilities {
   if (extra.length === 0) return caps;
-  const seen = new Set(caps.commands.map((c) => c.name));
-  const merged = [...caps.commands];
+  // leaf -> qualified, for each enumerated plugin command.
+  const qualifiedByLeaf = new Map<string, string>();
+  for (const cmd of extra) {
+    const colon = cmd.name.lastIndexOf(":");
+    if (colon >= 0) qualifiedByLeaf.set(cmd.name.slice(colon + 1), cmd.name);
+  }
+  // Drop claude's bare entries that are the unqualified twin of an enumerated
+  // plugin command (a bare name with no `:` whose leaf we namespace).
+  const reconciled = caps.commands.filter(
+    (c) => !(!c.name.includes(":") && qualifiedByLeaf.has(c.name)),
+  );
+  const seen = new Set(reconciled.map((c) => c.name));
+  const merged = [...reconciled];
   for (const cmd of extra) {
     if (!seen.has(cmd.name)) {
       seen.add(cmd.name);

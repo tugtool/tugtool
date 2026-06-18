@@ -20,7 +20,7 @@
 
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
 import { LOCAL_SLASH_COMMANDS, type LocalCommandName } from "@/lib/slash-commands";
-import { scoreMatch } from "@/lib/text-match";
+import { scoreCommandMatch } from "@/lib/text-match";
 
 /** Options for {@link localCommandCompletionProvider}. */
 export interface LocalCommandProviderOptions {
@@ -55,7 +55,7 @@ export function localCommandCompletionProvider(
     const items: CompletionItem[] = [];
     for (const cmd of LOCAL_SLASH_COMMANDS) {
       if (isOffered !== undefined && !isOffered(cmd.name)) continue;
-      const match = scoreMatch(query, cmd.name);
+      const match = scoreCommandMatch(query, cmd.name);
       if (match === null) continue;
       items.push({
         label: cmd.name,
@@ -125,8 +125,8 @@ export function mergeCommandProviders(
       }
     }
     merged.sort((a, b) => {
-      const scoreA = scoreMatch(query, a.label)?.score ?? 0;
-      const scoreB = scoreMatch(query, b.label)?.score ?? 0;
+      const scoreA = scoreCommandMatch(query, a.label)?.score ?? 0;
+      const scoreB = scoreCommandMatch(query, b.label)?.score ?? 0;
       if (scoreA !== scoreB) return scoreB - scoreA;
       return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
     });

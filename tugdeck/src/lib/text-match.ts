@@ -307,6 +307,45 @@ function subsequenceMatch(
  * Coordinate system and case folding match {@link caseInsensitiveSubstring} —
  * see the module docstring.
  */
+/**
+ * Command-aware ranked match: score `query` against a slash-command `name`,
+ * trying both the full name AND its **leaf** (the part after the last `:`) and
+ * keeping the better result, with highlight ranges remapped into full-name
+ * coordinates.
+ *
+ * Plugin commands are namespaced `<plugin>:<leaf>` (`tugplug:commit`). Scoring
+ * only the full name buries them: `:` is not a word separator, so a query like
+ * `com` is a mere SUBSTRING hit on `tugplug:commit` yet a PREFIX hit on the
+ * built-in `compact` — the plugin command the user actually wants ranks below.
+ * Scoring the leaf `commit` makes `com` a PREFIX hit there too; because the
+ * leaf is shorter than `compact`, its match-ratio bonus is higher, so it ranks
+ * at or above the built-in — matching the user's intent that `/com` finds
+ * `commit` first. Bare names (no `:`) score exactly as {@link scoreMatch}.
+ *
+ * On a score tie the leaf result wins (it matched the user-facing command name
+ * without the plugin prefix). Returns `null` only when neither the full name
+ * nor the leaf matches.
+ */
+export function scoreCommandMatch(
+  query: string,
+  name: string,
+): MatchResult | null {
+  const full = scoreMatch(query, name);
+  const colon = name.lastIndexOf(":");
+  if (colon < 0) return full;
+  const leaf = scoreMatch(query, name.slice(colon + 1));
+  if (leaf === null) return full;
+  const offset = colon + 1;
+  const remapped: MatchResult = {
+    score: leaf.score,
+    matches: leaf.matches.map(
+      ([s, e]) => [s + offset, e + offset] as readonly [number, number],
+    ),
+  };
+  if (full === null) return remapped;
+  return (remapped.score ?? 0) >= (full.score ?? 0) ? remapped : full;
+}
+
 export function scoreMatch(query: string, target: string): MatchResult | null {
   if (query.length === 0) return { matches: [] };
   if (target.length === 0) return null;

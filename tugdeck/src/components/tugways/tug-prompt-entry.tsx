@@ -87,6 +87,8 @@ import { matchLocalSlashCommand, slashCommandName } from "@/lib/slash-commands";
 import {
   isHiddenSlashCommand,
   isUnknownRemoteCommand,
+  resolveRemoteCommand,
+  canonicalizeBareCommandLine,
 } from "@/lib/slash-supported";
 import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
 import { selectionGuard } from "./selection-guard";
@@ -1289,7 +1291,28 @@ export const TugPromptEntry = React.forwardRef<
     // A whitespace-only draft (no atoms) trims to nothing — treat it like
     // the empty-input guard and don't send a blank turn.
     if (submitText.length === 0 && sendAtoms.length === 0) return;
-    codeSessionStore.send(submitText, sendAtoms);
+    // Canonicalize a lone plugin command to its qualified `/<plugin>:<leaf>`
+    // form so the wire and transcript use the name claude expands — even when
+    // the user typed (or accepted) the bare leaf. An exact catalog match is
+    // left untouched (conflict / shadowing → exact typed wins). The catalog
+    // here is the same turn-free `slashCommands` the popup reads.
+    const catalogNames = sessionMetadataStore
+      .getSnapshot()
+      .slashCommands.map((c) => c.name);
+    let wireText = submitText;
+    let wireAtoms = sendAtoms;
+    if (sendAtoms.length === 1 && sendAtoms[0].type === "command") {
+      const canonical = resolveRemoteCommand(sendAtoms[0].value, catalogNames);
+      if (canonical !== null && canonical !== sendAtoms[0].value) {
+        wireAtoms = [
+          { ...sendAtoms[0], value: canonical, label: canonical },
+        ];
+      }
+    } else if (sendAtoms.length === 0) {
+      const canonical = canonicalizeBareCommandLine(submitText, catalogNames);
+      if (canonical !== null) wireText = canonical;
+    }
+    codeSessionStore.send(wireText, wireAtoms);
     // Record the submission in per-session history, keyed by the
     // session's id. The route field is what lets
     // `RouteHistoryProvider` filter this entry into the current
