@@ -27,7 +27,6 @@ import {
   CommitHeaderTarget,
   parseGitCommit,
   type CommitData,
-  type CommitFile,
 } from "@/components/tugways/body-kinds/commit-block";
 import { ToolBlockChrome } from "./tool-blocks/tool-block-chrome";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -98,34 +97,27 @@ const COMMIT_TERSE_CMD = `git commit -m "Bump tugcode to 2.1.181"`;
 const COMMIT_TERSE_OUT = `[release 9a0b1c2d] Bump tugcode to 2.1.181
  1 file changed, 1 insertion(+), 1 deletion(-)`;
 
-// --- Fixture 5: enriched with a per-file breakdown -----------------------
+// --- Fixture 5: per-file breakdown, parsed from the `/tugplug:commit`
+//     skill's `git commit … && git show --numstat` output. The numstat
+//     lines drive the counts; the create / delete mode lines upgrade
+//     status to A / D (the rest default to M).
 
-const ENRICHED_FILES: CommitFile[] = [
-  {
-    path: "tugdeck/src/components/tugways/body-kinds/commit-block.tsx",
-    status: "A",
-    added: 312,
-    removed: 0,
-  },
-  {
-    path: "tugdeck/src/components/tugways/body-kinds/commit-block.css",
-    status: "A",
-    added: 196,
-    removed: 0,
-  },
-  {
-    path: "tugdeck/src/components/tugways/cards/dev-assistant-renderer-dispatch.ts",
-    status: "M",
-    added: 4,
-    removed: 1,
-  },
-  {
-    path: "tugdeck/src/lib/old-commit-helper.ts",
-    status: "D",
-    added: 0,
-    removed: 22,
-  },
-];
+const COMMIT_ENRICHED_CMD =
+  `git commit -m "Add commit receipt body kind
+
+- New CommitBlock + parser
+- Gallery fixture across states" && git --no-pager show --numstat --format= HEAD`;
+
+const COMMIT_ENRICHED_OUT = `[main 1f2e3d4c] Add commit receipt body kind
+ 4 files changed, 514 insertions(+), 23 deletions(-)
+ create mode 100644 tugdeck/src/components/tugways/body-kinds/commit-block.tsx
+ create mode 100644 tugdeck/src/components/tugways/body-kinds/commit-block.css
+ delete mode 100644 tugdeck/src/lib/old-commit-helper.ts
+
+312\t0\ttugdeck/src/components/tugways/body-kinds/commit-block.tsx
+196\t0\ttugdeck/src/components/tugways/body-kinds/commit-block.css
+6\t1\ttugdeck/src/components/tugways/cards/dev-assistant-renderer-dispatch.ts
+0\t22\ttugdeck/src/lib/old-commit-helper.ts`;
 
 // --- Build the parsed fixtures (real parse path) --------------------------
 
@@ -141,11 +133,7 @@ const COMMIT_450 = parseOrThrow(COMMIT_450_CMD, COMMIT_450_OUT);
 const COMMIT_824 = parseOrThrow(COMMIT_824_CMD, COMMIT_824_OUT);
 const COMMIT_ADD = parseOrThrow(COMMIT_ADD_CMD, COMMIT_ADD_OUT);
 const COMMIT_TERSE = parseOrThrow(COMMIT_TERSE_CMD, COMMIT_TERSE_OUT);
-const COMMIT_ENRICHED: CommitData = {
-  ...COMMIT_ADD,
-  filesChanged: ENRICHED_FILES.length,
-  files: ENRICHED_FILES,
-};
+const COMMIT_ENRICHED = parseOrThrow(COMMIT_ENRICHED_CMD, COMMIT_ENRICHED_OUT);
 
 export function GalleryCommitBlock(): React.ReactElement {
   return (

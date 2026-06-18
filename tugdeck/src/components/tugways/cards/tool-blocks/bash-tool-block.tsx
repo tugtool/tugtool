@@ -75,6 +75,12 @@ import {
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { parseUnifiedDiffText } from "@/lib/diff/parse-unified-diff";
 import type { DiffHunk } from "@/lib/diff/types";
+import {
+  CommitBlock,
+  CommitHeaderTarget,
+  parseGitCommit,
+  type CommitData,
+} from "@/components/tugways/body-kinds/commit-block";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolResultSummary } from "./tool-result-summary";
@@ -331,11 +337,29 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     return tryParseBashDiff(bodyData.stdout);
   }, [bodyData.stdout, status]);
 
+  // Commit-routing: a successful `git commit` renders the commit receipt
+  // (`CommitBlock`) instead of a terminal dump — the same smart-pick idea as
+  // diff-routing. Gated on a `ready` status (excludes streaming and the
+  // error branch) and on `parseGitCommit` recognizing the `[branch hash]`
+  // stdout line, so a failed / dry-run / non-commit command falls through to
+  // the normal terminal rendering. The message comes from the command's
+  // `-m`, the branch / hash / diffstat from stdout.
+  const commit = React.useMemo<CommitData | null>(() => {
+    if (status !== "ready") return null;
+    const cmd = bashInput.command;
+    if (cmd === undefined || !/\bgit\b[\s\S]*\bcommit\b/.test(cmd)) return null;
+    return parseGitCommit(cmd, bodyData.stdout ?? "");
+  }, [status, bashInput.command, bodyData.stdout]);
+
   const hasStructuredBody =
     (structured.stdout !== undefined && structured.stdout.length > 0) ||
     (structured.stderr !== undefined && structured.stderr.length > 0);
   let body: React.ReactNode;
-  if (status === "streaming") {
+  if (commit !== null) {
+    // Git commit receipt — summary + branch/hash badges in the header
+    // (see the chrome props below), stat badges + message disclosure here.
+    body = <CommitBlock commit={commit} />;
+  } else if (status === "streaming") {
     // No body while streaming — the header's lifecycle dot is the
     // in-flight signal ([D02]).
     body = null;
@@ -372,6 +396,26 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
       : terminalData.exitCode !== undefined && terminalData.exitCode !== 0
         ? { kind: "exit", code: terminalData.exitCode }
         : undefined;
+
+  // Commit receipt reshapes the chrome: the "Git Commit" name + the
+  // summary/branch/hash header line (CommitHeaderTarget) replace the raw
+  // command row, and the body's stat badges carry the result, so the
+  // exit-summary and footer are suppressed.
+  if (commit !== null) {
+    return (
+      <ToolBlockChrome
+        rootSlot="bash-tool-block"
+        toolName="Git Commit"
+        identity={<CommitHeaderTarget commit={commit} />}
+        status={status}
+        phase={phase}
+        caution={caution}
+        copyText={`${commit.hash} ${commit.summary}`}
+      >
+        {body}
+      </ToolBlockChrome>
+    );
+  }
 
   return (
     <ToolBlockChrome

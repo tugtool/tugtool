@@ -195,7 +195,7 @@ body {
  * the dark surface (residual chromostereopsis). Matches the commit receipt's
  * stat row (.tugx-commit-delta-del). */
 .tool-call-header-diff-del {
-  transform: translateY(-0.65px);
+  transform: translateY(-0.75px);
 }
 
 /* Trailing actions — the controls cluster at the row's trailing edge, in

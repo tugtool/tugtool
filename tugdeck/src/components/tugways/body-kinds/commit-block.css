@@ -90,7 +90,7 @@
    chromostereopsis), so nudge the danger badge up a hair in this row to
    land it on the same visual baseline as the success badge. */
 .tugx-commit-delta-del {
-  transform: translateY(-1px);
+  transform: translateY(-0.75px);
 }
 
 /* ---- File list (inside a ToolBlockDisclosure) ------------------------ */

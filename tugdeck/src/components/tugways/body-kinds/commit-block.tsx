@@ -107,11 +107,49 @@ function splitMessage(message: string): { summary: string; body: string[] } {
 }
 
 /**
+ * Parse a per-file breakdown from a commit's stdout, or `undefined` when
+ * none is present. Two complementary sources:
+ *
+ *  - `git show --numstat` lines (`<added>\t<removed>\t<path>`) — exact per-
+ *    file counts. Only present when the commit command appended a
+ *    numstat-producing call (the `/tugplug:commit` skill does); a plain
+ *    `git commit` has none, so the receipt simply shows no file list.
+ *  - the `create mode` / `delete mode` / `rename …` lines `git commit`
+ *    prints — they upgrade a file's status to A / D / R (everything else
+ *    in the numstat is a modification, M).
+ *
+ * Binary files report `-` for both counts; treated as 0 / 0.
+ */
+function parseCommitFiles(stdout: string): CommitFile[] | undefined {
+  const statusByPath = new Map<string, CommitFile["status"]>();
+  for (const m of stdout.matchAll(/^ create mode \d+ (.+)$/gm)) {
+    statusByPath.set(m[1]!.trim(), "A");
+  }
+  for (const m of stdout.matchAll(/^ delete mode \d+ (.+)$/gm)) {
+    statusByPath.set(m[1]!.trim(), "D");
+  }
+
+  const files: CommitFile[] = [];
+  for (const m of stdout.matchAll(/^([0-9]+|-)\t([0-9]+|-)\t(.+)$/gm)) {
+    const path = m[3]!.trim();
+    const added = m[1] === "-" ? 0 : Number(m[1]);
+    const removed = m[2] === "-" ? 0 : Number(m[2]);
+    // A numstat rename path carries `=>` (e.g. `a => b` or `d/{a => b}`).
+    const status: CommitFile["status"] = path.includes("=>")
+      ? "R"
+      : (statusByPath.get(path) ?? "M");
+    files.push({ path, status, added, removed });
+  }
+  return files.length > 0 ? files : undefined;
+}
+
+/**
  * Parse a `git commit` Bash call into `CommitData`. `command` is the
  * shell command (for the full message via `-m`); `stdout` is the commit
- * output (for branch / hash / diffstat). Returns `null` when `stdout`
- * carries no recognizable `[branch hash] …` line — the signal that this
- * was not a successful commit.
+ * output (for branch / hash / diffstat, and an optional per-file
+ * `--numstat` block — see {@link parseCommitFiles}). Returns `null` when
+ * `stdout` carries no recognizable `[branch hash] …` line — the signal
+ * that this was not a successful commit.
  *
  * Recognized stdout shape:
  *   [main 450d6b28] Add separating space when accepting a completion
@@ -151,6 +189,7 @@ export function parseGitCommit(
     filesChanged,
     insertions,
     deletions,
+    files: parseCommitFiles(stdout),
   };
 }
 
@@ -264,6 +303,7 @@ export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
       {hasBody && (
         <ToolBlockDisclosure
           className="tugx-commit-disclosure"
+          defaultOpen
           summary={
             <TugLabel emphasis="proposal" size="2xs">
               message
