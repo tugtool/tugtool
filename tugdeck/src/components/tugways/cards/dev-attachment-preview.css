@@ -1,63 +1,122 @@
 /**
  * dev-attachment-preview.css — pane-sheet attachment preview body styles.
  *
- * The preview's root fills the sheet body (the consumer's
- * `TugSheetContent` allocates the body height, this stretches into
- * it) and centers the image with flexbox. The image itself is sized
- * by intrinsic dimensions (no width/height attributes; no CSS width/
- * height) but constrained to the available area via `max-width` /
- * `max-height` — small images render 1:1, large images downscale to
- * fit.
+ * The panel is aspect-locked to the image (the host sheet runs with
+ * `aspectLockContent`): the image area carries the image's `aspect-ratio`
+ * — set from the image's natural dimensions on load — and the panel height
+ * is content-driven off it. So the image fills the area with NO letterbox,
+ * and the margin around it is just the uniform inset below, regardless of
+ * panel size; drag-resize is width-only and the height follows the aspect,
+ * so the margins can never go lopsided.
  *
- * The empty-body fallback fires when the bytes-store entry is
- * missing (a click landing during the replay-path bake window, or
- * an atom whose bytes were cleared). It paints a translucent slate
- * so the sheet body doesn't look broken; in practice this state
- * almost never appears because the thumbnail strip won't show a
- * tile that has no entry.
+ * Layout is a content-sized flex column (header band, image area, Done row
+ * stacked) — flex, not block, so the header band's negative bleed margins
+ * can't collapse through the ancestors, and no child takes `flex: 1`, so the
+ * column's height comes from the image area's aspect, not from filling a
+ * fixed panel.
+ *
+ * The empty-body fallback fires when the bytes-store entry is missing (a
+ * click landing during the replay-path bake window, or an atom whose bytes
+ * were cleared). It paints a translucent slate so the sheet body doesn't
+ * look broken; in practice this state almost never appears because the
+ * thumbnail strip won't show a tile that has no entry.
  */
 
 .dev-attachment-preview {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
 }
 
 /**
- * Image area takes the available vertical space; the Done-button
- * row sits beneath it at intrinsic height. Centering inside the
- * area is per-axis so a portrait image sits at the top of a tall
- * area without scrolling, and a landscape image sits centered.
+ * Top bar — a proper header band, taking its cues from the tool-call
+ * header: the chrome strip surface (`--tugx-block-strip-bg`) with a
+ * hairline divider underneath (`--tugx-block-strip-border`), distinct from
+ * the card body it sits over. Title at the left is the flexible column that
+ * pushes the right-aligned actions cluster to the trailing edge.
  *
- * `min-height: 0` is the standard flex-child rule so the image
- * area can shrink rather than overflow the sheet body when the
- * source is larger than the available space.
+ * The host sheet hides its own header, so this band bleeds past the sheet's
+ * B padding to the panel's edges (a full-width strip); its own generous
+ * padding keeps the title and actions clear of the panel edges (`space-a`
+ * vertical so they don't smash the rounded top corner). The bottom margin
+ * matches the sheet's B padding so the gap above the image equals the gap
+ * at its sides — one even inset all around. The top corners match the panel
+ * radius.
+ *
+ * @tug-renders-on --tugx-block-strip-bg
+ */
+.dev-attachment-preview__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  margin:
+    calc(-1 * var(--tugx-sheet-space-b))
+    calc(-1 * var(--tugx-sheet-space-b))
+    var(--tugx-sheet-space-b);
+  padding: var(--tugx-sheet-space-a) var(--tugx-sheet-space-b);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+/**
+ * Title text — the sheet's only title surface (header is hidden).
+ * `flex: 1` makes it the spacer that pushes the actions right; it
+ * truncates rather than wrapping so a long label can't shove the
+ * actions off the bar.
+ */
+.dev-attachment-preview__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-md);
+  font-weight: var(--tug-font-weight-semibold);
+  color: var(--tug7-text-primary-normal-plain-rest);
+}
+
+/** Right-aligned actions cluster — Copy today, room for more. */
+.dev-attachment-preview__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+/**
+ * Image area — the sheet's aspect-lock region (`data-tug-aspect-region`).
+ * Its `aspect-ratio` is set from the image's natural size on load (falling
+ * back to square before then); at `width: 100%` that fixes its height, which
+ * drives the whole panel's content height. The image fills it exactly, so
+ * there is no letterbox and the inset is uniform. The gap below the image is
+ * owned by the Done row's top margin (also the sheet's B padding), so the
+ * image's bottom inset equals its top and side insets — one even margin.
  */
 .dev-attachment-preview__image-area {
-  flex: 1 1 auto;
-  min-height: 0;
+  /* Height comes from the aspect ratio × the (stretched, definite) width;
+     no grow/shrink so the column stays content-sized. */
+  flex: 0 0 auto;
+  aspect-ratio: var(--preview-aspect, 1);
+  width: 100%;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 /**
- * The image sizes itself from its intrinsic resource dimensions
- * (no explicit width/height attributes) and constrains both axes
- * to 100% of the centered image area. Result: small images render
- * at 1:1 pixel size and sit centered; large images downscale to
- * fit, preserving aspect ratio via `object-fit: contain`.
+ * The image fills the aspect-locked area (which already carries the image's
+ * own ratio, so `contain` neither crops nor letterboxes).
  *
  * @tug-renders-on .tug-sheet-body (background established by tug-sheet.css)
  */
 .dev-attachment-preview__image {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
-
 
 /**
  * Empty-body placeholder. Lower-contrast indicator that the slot is

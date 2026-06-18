@@ -32,6 +32,11 @@
  *    (e.g., `() => fileTextRef.current` or `() => copyText`
  *    where `copyText` is a `useMemo` value) so the click captures
  *    the freshest content without re-creating the affordance.
+ *  - `copyAction` — an optional async copy path that supersedes the
+ *    `getText` → `writeText` default, for non-text payloads (e.g. an
+ *    image blob written via `ClipboardItem`). It resolves `true` on a
+ *    confirmed write to trigger the same flash; `false`/reject stays
+ *    silent.
  *  - `disabled` — block-specific predicate. FileBlock disables
  *    when collapsed (body not mounted); TerminalBlock disables
  *    when there's no stdout/stderr; DiffBlock disables when
@@ -103,8 +108,21 @@ export interface BlockCopyButtonProps {
    * the click captures the freshest content. An empty-string return
    * is a no-op (the click handler returns early); set `disabled`
    * to also make the empty state visible to the user.
+   *
+   * Optional when {@link copyAction} is supplied — a non-text copy
+   * (e.g. an image blob) drives the clipboard itself and has no text
+   * to write.
    */
-  getText: () => string;
+  getText?: () => string;
+  /**
+   * Custom async copy path that supersedes the default `getText` →
+   * `writeText` write. Use it for non-text clipboard payloads — e.g.
+   * writing an image blob via `ClipboardItem`. Resolve `true` on a
+   * confirmed write (triggers the "Copied" flash), `false` (or a
+   * rejection) on failure (no flash — the honest-feedback contract,
+   * [L23]). When set, `getText` is ignored.
+   */
+  copyAction?: () => Promise<boolean>;
   /**
    * Disable the button. Block-specific reasons vary: collapsed
    * body, no copyable content, async source still loading. The
@@ -155,6 +173,7 @@ export interface BlockCopyButtonProps {
 
 export function BlockCopyButton({
   getText,
+  copyAction,
   disabled,
   "aria-label": ariaLabel,
   "data-slot": dataSlot = "block-copy",
@@ -166,14 +185,16 @@ export function BlockCopyButton({
   const copiedTimerRef = React.useRef<number | null>(null);
   const buttonRef = React.useRef<HTMLButtonElement | null>(null);
 
-  // Latest-ref for `getText` so the stable click handler reads the
-  // current closure at fire time ([L07]). Consumers that pass a
-  // fresh function on every render shouldn't have stale `getText`
-  // captured in a `useCallback([])` handler.
+  // Latest-refs for `getText` / `copyAction` so the stable click
+  // handler reads the current closure at fire time ([L07]). Consumers
+  // that pass a fresh function on every render shouldn't have a stale
+  // closure captured in a `useCallback([])` handler.
   const getTextRef = React.useRef(getText);
+  const copyActionRef = React.useRef(copyAction);
   React.useLayoutEffect(() => {
     getTextRef.current = getText;
-  }, [getText]);
+    copyActionRef.current = copyAction;
+  }, [getText, copyAction]);
 
   // Position-stable click — the action-row contract carries through
   // every affordance, even ones (like Copy) whose mutator doesn't
@@ -187,27 +208,44 @@ export function BlockCopyButton({
     scrollportRef,
   });
 
+  // Fire the "Copied" confirmation flash — only ever called after a
+  // confirmed clipboard write, so the button never lies about success
+  // ([L23]).
+  const flashCopied = React.useCallback((): void => {
+    setCopied(true);
+    if (copiedTimerRef.current !== null) {
+      window.clearTimeout(copiedTimerRef.current);
+    }
+    copiedTimerRef.current = window.setTimeout(() => {
+      copiedTimerRef.current = null;
+      setCopied(false);
+    }, COPIED_FLASH_MS);
+  }, []);
+
   const handleCopy = React.useCallback((): void => {
+    // Custom copy path (e.g. an image blob) supersedes the text write.
+    const action = copyActionRef.current;
+    if (action !== undefined) {
+      action()
+        .then((ok) => {
+          if (ok) flashCopied();
+        })
+        .catch(() => {
+          // Silent failure — no false-positive flash.
+        });
+      return;
+    }
     const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
     if (writeText === undefined) return;
-    const text = getTextRef.current();
+    const text = getTextRef.current?.() ?? "";
     if (text.length === 0) return;
     writeText(text)
-      .then(() => {
-        setCopied(true);
-        if (copiedTimerRef.current !== null) {
-          window.clearTimeout(copiedTimerRef.current);
-        }
-        copiedTimerRef.current = window.setTimeout(() => {
-          copiedTimerRef.current = null;
-          setCopied(false);
-        }, COPIED_FLASH_MS);
-      })
+      .then(() => flashCopied())
       .catch(() => {
         // Silent failure — no false-positive flash. The user can
         // re-click to retry.
       });
-  }, []);
+  }, [flashCopied]);
 
   // Clean up the pending timer on unmount so we never call setState
   // on a detached component.

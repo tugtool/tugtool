@@ -495,6 +495,30 @@ export interface TugSheetContentProps {
    */
   resizable?: boolean;
   /**
+   * Cap the panel to this fraction (0–1) of the host card's box on BOTH
+   * axes — the panel never exceeds `fraction × pane-frame width/height`,
+   * so it stays visibly nested inside the card rather than bleeding to
+   * its edges. Applied as inline `max-width`/`max-height` (re-measured
+   * on resize), overriding the {@link displayWidth} cap and the
+   * viewport-relative height clamp. Omit for the default behavior (full
+   * pane width less the edge gap; height clamped to the canvas bottom).
+   * See {@link ShowSheetOptions.maxHostFraction}.
+   */
+  maxHostFraction?: number;
+  /**
+   * Lock the panel's proportions to an aspect-ratio'd content region so the
+   * margin around that region stays uniform at every size (e.g. an image
+   * preview). The body must mark its aspect region with
+   * `data-tug-aspect-region`; the panel's height then becomes
+   * content-driven (the region's `aspect-ratio` sets it from the width) and
+   * drag-resize is width-only — height follows the aspect, so dragging can't
+   * produce lopsided letterbox margins. The width is still capped to
+   * {@link maxHostFraction} of the card, and additionally clamped so the
+   * content-driven height never exceeds that same fraction. Requires
+   * `resizable`. Defaults to `false`.
+   */
+  aspectLockContent?: boolean;
+  /**
    * Suppress the title-bar header; the content owns the panel. `title`
    * still labels the dialog (via `aria-label`). Defaults to `false`.
    * See {@link ShowSheetOptions.hideHeader}.
@@ -544,6 +568,8 @@ export function TugSheetContent({
   presentation = "scale-fade",
   displayWidth = "sm",
   resizable = false,
+  maxHostFraction,
+  aspectLockContent = false,
   hideHeader = false,
   hideHeaderRule = false,
   onCommitDisposition = "retain",
@@ -704,18 +730,68 @@ export function TugSheetContent({
       const marginTop =
         Number.parseFloat(getComputedStyle(content).marginTop) || 0;
       const available = bottomLimit - SHEET_CANVAS_GAP - clipTop - marginTop;
+      const frac = maxHostFraction ?? 0.8;
+      // Aspect-locked: height is content-driven (the body's aspect region's
+      // `aspect-ratio` sets it from the width), so we clear `max-height` and
+      // instead cap the WIDTH — both to `frac` of the card width AND so the
+      // resulting height (chrome + region) stays within `frac` of the card
+      // height. The aspect and the chrome height are scale-invariant, so this
+      // is idempotent (no resize-observer feedback loop).
+      if (aspectLockContent) {
+        const frame = paneFrameEl.getBoundingClientRect();
+        const region = content.querySelector("[data-tug-aspect-region]");
+        content.style.maxHeight = "";
+        let widthCap = frame.width * frac;
+        if (
+          region instanceof HTMLElement &&
+          region.offsetWidth > 0 &&
+          region.offsetHeight > 0
+        ) {
+          const aspect = region.offsetWidth / region.offsetHeight;
+          const chromeY = content.offsetHeight - region.offsetHeight;
+          const cs = getComputedStyle(content);
+          const padX =
+            (Number.parseFloat(cs.paddingLeft) || 0) +
+            (Number.parseFloat(cs.paddingRight) || 0);
+          const heightCap = Math.min(available, frame.height * frac);
+          widthCap = Math.min(widthCap, (heightCap - chromeY) * aspect + padX);
+        }
+        // Write only on change — `observer.observe(content)` would otherwise
+        // re-fire on our own write. The value is scale-invariant, so a repeat
+        // measure yields the same string and the loop quiesces immediately.
+        const next = `${Math.max(SHEET_RESIZE_MIN_WIDTH, widthCap)}px`;
+        if (content.style.maxWidth !== next) content.style.maxWidth = next;
+        return;
+      }
+      // When asked to nest inside the host card, cap BOTH axes to a fraction
+      // of the pane-frame box so the panel never bleeds to the card edges.
+      // Inline `max-width` overrides the `displayWidth` width; the height cap
+      // is the tighter of the canvas-bottom clamp and the fractional cap.
+      if (maxHostFraction !== undefined) {
+        const frame = paneFrameEl.getBoundingClientRect();
+        content.style.maxWidth = `${frame.width * maxHostFraction}px`;
+        content.style.maxHeight = `${Math.max(
+          SHEET_RESIZE_MIN_HEIGHT,
+          Math.min(available, frame.height * maxHostFraction),
+        )}px`;
+        return;
+      }
       content.style.maxHeight = `${Math.max(SHEET_RESIZE_MIN_HEIGHT, available)}px`;
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(canvas);
     observer.observe(paneFrameEl);
+    // Aspect-lock re-measures when the body's content resizes — chiefly when
+    // the image loads and the aspect region takes its true shape. Safe against
+    // feedback because `measure()` is idempotent under width changes.
+    if (aspectLockContent) observer.observe(content);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [paneFrameEl, mounted]);
+  }, [paneFrameEl, mounted, maxHostFraction, aspectLockContent]);
 
   // ---- Drag-resize ([D15] resizable sheets) ----
   //
@@ -762,13 +838,19 @@ export function TugSheetContent({
     const dx = event.clientX - state.startX;
     const dy = event.clientY - state.startY;
     let width = state.startW;
-    let height = state.startH;
     if (state.edge.includes("e")) width = state.startW + 2 * dx;
     if (state.edge.includes("w")) width = state.startW - 2 * dx;
-    if (state.edge.includes("s")) height = state.startH + dy;
     el.style.width = `${Math.max(SHEET_RESIZE_MIN_WIDTH, width)}px`;
+    // Aspect-locked content drives its own height from the width, so we never
+    // write an explicit height — dragging scales the panel along the aspect.
+    if (aspectLockContent) {
+      el.style.height = "";
+      return;
+    }
+    let height = state.startH;
+    if (state.edge.includes("s")) height = state.startH + dy;
     el.style.height = `${Math.max(SHEET_RESIZE_MIN_HEIGHT, height)}px`;
-  }, []);
+  }, [aspectLockContent]);
 
   const onResizePointerUp = useCallback((event: React.PointerEvent) => {
     if (resizeStateRef.current === null) return;
@@ -1098,6 +1180,7 @@ export function TugSheetContent({
             data-tug-sheet-presentation={presentation}
             data-display-width={displayWidth}
             data-resizable={resizable ? "true" : undefined}
+            data-aspect-lock={aspectLockContent ? "true" : undefined}
             onKeyDown={handleKeyDown}
             onMouseDown={suppressButtonFocusShift}
           >
@@ -1146,18 +1229,27 @@ export function TugSheetContent({
             </ResponderScope>
 
             {/* Drag-resize handles (pane-style edge/corner strips). Absolutely
-                positioned, so they sit outside the flex flow. */}
+                positioned, so they sit outside the flex flow. `data-tug-focus="refuse"`
+                keeps a resize drag from coarsening the key view onto the sheet box
+                — the seeded default button (e.g. Done) keeps its ring + filled
+                promotion across a resize. */}
             {resizable &&
-              SHEET_RESIZE_EDGES.map((edge) => (
-                <div
-                  key={edge}
-                  className={`tug-sheet-resize tug-sheet-resize-${edge}`}
-                  data-edge={edge}
-                  onPointerDown={onResizePointerDown(edge)}
-                  onPointerMove={onResizePointerMove}
-                  onPointerUp={onResizePointerUp}
-                />
-              ))}
+              SHEET_RESIZE_EDGES
+                // Aspect-locked resize is width-driven (height follows the
+                // aspect), so the pure-south handle — which only changes
+                // height — is dropped; the east/west edges and corners remain.
+                .filter((edge) => !(aspectLockContent && edge === "s"))
+                .map((edge) => (
+                  <div
+                    key={edge}
+                    className={`tug-sheet-resize tug-sheet-resize-${edge}`}
+                    data-edge={edge}
+                    data-tug-focus="refuse"
+                    onPointerDown={onResizePointerDown(edge)}
+                    onPointerMove={onResizePointerMove}
+                    onPointerUp={onResizePointerUp}
+                  />
+                ))}
           </div>
         </FocusScopeRadix.FocusScope>
       </div>
@@ -1261,6 +1353,22 @@ export interface ShowSheetOptions {
    * life of the open sheet. Defaults to `false`.
    */
   resizable?: boolean;
+  /**
+   * Cap the panel to this fraction (0–1) of the host card's box on both
+   * axes, so it stays nested inside the card instead of bleeding to its
+   * edges (e.g. `0.8` for the image preview). Re-measured on resize and
+   * overrides the {@link displayWidth} width cap and the viewport height
+   * clamp. See {@link TugSheetContentProps.maxHostFraction}.
+   */
+  maxHostFraction?: number;
+  /**
+   * Lock the panel to an aspect-ratio'd body region (marked
+   * `data-tug-aspect-region`) so its margin stays uniform at every size and
+   * drag-resize is width-only (height follows the aspect). Requires
+   * `resizable`; pairs with {@link maxHostFraction} for the size cap. See
+   * {@link TugSheetContentProps.aspectLockContent}.
+   */
+  aspectLockContent?: boolean;
   /**
    * Suppress the sheet's title-bar header (the `<h2>` + divider). The
    * content then owns the whole panel — used by `TugAlertSheet`, which
@@ -1642,6 +1750,8 @@ export function useTugSheet(): {
           presentation={options.presentation}
           displayWidth={options.displayWidth}
           resizable={options.resizable}
+          maxHostFraction={options.maxHostFraction}
+          aspectLockContent={options.aspectLockContent}
           hideHeader={options.hideHeader}
           hideHeaderRule={options.hideHeaderRule}
           onCommitDisposition={options.onCommitDisposition}

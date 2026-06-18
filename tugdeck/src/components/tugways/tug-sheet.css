@@ -162,7 +162,7 @@ body {
  * pinned as the sheet shrinks. The chosen `data-display-width` supplies the
  * starting width; `max-width`/`max-height` (above + the clip) cap the upper
  * bound; the JS handlers clamp the lower bound. */
-.tug-sheet-content[data-resizable="true"] {
+.tug-sheet-content[data-resizable="true"]:not([data-aspect-lock="true"]) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -170,9 +170,18 @@ body {
 
 /* The sheet body fills the resizable content and owns the scroll, so the
    consumer's own footer row stays visible while the body scrolls. */
-.tug-sheet-content[data-resizable="true"] .tug-sheet-body {
+.tug-sheet-content[data-resizable="true"]:not([data-aspect-lock="true"]) .tug-sheet-body {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* Aspect-locked: the panel height is content-driven (the body's aspect
+   region sets it from the width), so the content is NOT a fixed-height flex
+   column — it lays out in normal flow and grows with its content. `overflow:
+   hidden` is kept so a full-bleed header's square corners clip to the panel
+   radius and the JS width cap (not a height clamp) keeps it within the card. */
+.tug-sheet-content[data-aspect-lock="true"] {
+  overflow: hidden;
 }
 
 /* Edge / corner drag handles — invisible strips just outside the border with

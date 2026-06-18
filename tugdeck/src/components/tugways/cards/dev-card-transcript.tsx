@@ -294,9 +294,23 @@ const UserMessageCell = React.memo(function UserMessageCell({
     (atom: AtomSegment) => {
       void showSheet({
         title: atom.value,
+        // The preview owns its own top bar (title + actions), so the
+        // sheet's header is suppressed; `title` stays for aria-label.
+        // `xl` + drag-resize gives the image real room — the previous
+        // `sm` default squeezed every screenshot into a 460px column.
+        // `aspectLockContent` locks the panel to the image's aspect (the
+        // image area is the aspect region) so the margin around the image
+        // stays uniform and resize follows the aspect; `maxHostFraction`
+        // keeps it within 90% of the card on either axis.
+        hideHeader: true,
+        displayWidth: "xl",
+        resizable: true,
+        aspectLockContent: true,
+        maxHostFraction: 0.9,
         content: (close) => (
           <DevAttachmentPreview
             atom={atom}
+            title={atom.value}
             bytesStore={bytesStore}
             onClose={() => close()}
           />
