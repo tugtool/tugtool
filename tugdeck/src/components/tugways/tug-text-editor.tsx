@@ -98,6 +98,7 @@ import {
   deleteLineBoundaryBackward,
   history,
   historyKeymap,
+  indentWithTab,
   redo,
   redoDepth,
   selectAll,
@@ -987,7 +988,15 @@ function buildExtensions(
     // through (returning false) lets the default bindings handle
     // newline insertion, undo/redo, selectAll, and the rest.
     tugTextEditorKeymap(getKeymapConfig),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    // `indentWithTab` last so Tab is a tab while editing: the higher-prec
+    // inline-ghost keymap and the typeahead popup each claim Tab only while
+    // they are on screen (they yield otherwise), so a plain Tab with neither
+    // showing falls through to here and inserts the indent unit (Shift-Tab
+    // dedents) instead of doing nothing. Pairs with the focus-engine
+    // `data-tug-tab-consume` marker below — without that marker the
+    // document-level focus walk swallows Tab in capture phase before CM6
+    // ever sees it.
+    keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     // Selection + caret painted by custom layers. We deliberately
     // do NOT use `drawSelection`: drawSelection bundles a styled
     // `.cm-cursor` (which sizes itself from `coordsAtPos`'s glyph
@@ -1056,8 +1065,32 @@ function buildExtensions(
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
     undoMenuStatePlugin,
+    tabConsumeMarker,
   ];
 }
+
+/**
+ * Tell the document-level focus walk (`responder-chain-provider`'s capture-phase
+ * `focusWalkListener`) that this editing surface owns Tab while it is the active
+ * editor. The walk reads `data-tug-tab-consume="true"` on the focused element in
+ * capture phase — *before* CM6's own keymaps — and yields Tab to the surface when
+ * the marker is present; without it, the walk advances focus and swallows the key.
+ *
+ * A multi-line editor owns Tab whenever it is focused and editable (Tab indents;
+ * the inline ghost / typeahead popup accept it when they are showing) — so the
+ * marker tracks focus, not completion state. The single-line `tug-input` /
+ * `tug-textarea` deliberately never set it, so Tab tabs out of those as forms
+ * expect. [L06] appearance-zone DOM write — never React state.
+ */
+const tabConsumeMarker = EditorView.updateListener.of((update) => {
+  if (!update.focusChanged) return;
+  const owns = update.view.hasFocus && !update.state.readOnly;
+  if (owns) {
+    update.view.contentDOM.setAttribute(TAB_CONSUME_ATTRIBUTE, "true");
+  } else {
+    update.view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
+  }
+});
 
 export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEditorProps>(
   function TugTextEditor(
@@ -2412,33 +2445,16 @@ function CompletionOverlay({
     // identity on real changes (the field's `update` reducer
     // returns `value` unchanged for non-events), so we only repaint
     // when something actually changed.
-    // Advertise Tab-consumption to the focus engine: while the typeahead popup
-    // is interactive, the editor owns Tab (it accepts the completion) and the
-    // document-level focus walk must yield to it. The marker rides on the
-    // contentDOM (the active element while editing), so the Tab pipeline's
-    // `closest([data-tug-tab-consume])` check sees it. Appearance-zone DOM
-    // write per [L06] — never React state.
-    const applyTabConsumeMarker = (): void => {
-      const snap = getCompletionState(view);
-      const interactive = completionPopupIsInteractive({
-        active: snap.active,
-        itemCount: snap.filtered.length,
-      });
-      // Explicit "true"/absent (not toggleAttribute, which sets an empty
-      // value) so the marker matches the `[data-tug-tab-consume="true"]`
-      // selector the focus-walk pipeline reads.
-      if (interactive) {
-        view.contentDOM.setAttribute(TAB_CONSUME_ATTRIBUTE, "true");
-      } else {
-        view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
-      }
-    };
-    applyTabConsumeMarker();
-
+    //
+    // Tab-consumption is advertised to the focus engine by the
+    // focus-driven `tabConsumeMarker` extension (see `buildExtensions`),
+    // not here: a focused editor owns Tab whether the popup is open, the
+    // inline ghost is showing, or neither (a plain Tab indents). Gating
+    // the marker on popup state — as this effect used to — stole Tab from
+    // the inline ghost and from plain editing.
     const unsubscribe = subscribeCompletionState(view, () => {
       paintCompletionPopup(view, popup, completionDirectionRef.current);
       const snap = getCompletionState(view);
-      applyTabConsumeMarker();
       onTypeaheadChangeRef.current?.(
         snap.active,
         snap.filtered,
@@ -2503,7 +2519,6 @@ function CompletionOverlay({
       unsubscribe();
       resizeObserver?.disconnect();
       gestureObserver?.disconnect();
-      view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
     };
     // `view` is the externally-changing input; the refs are stable
     // for the component's lifetime by construction. Re-running on
