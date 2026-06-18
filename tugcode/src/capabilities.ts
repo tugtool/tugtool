@@ -19,11 +19,16 @@
 // `value: "default"` / `displayName: "Default (recommended)"` convention
 // on `models[0]`.
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join, basename } from "node:path";
+
 import type {
   CapabilityCommand,
   CapabilityModel,
   SessionCapabilities,
 } from "./types.ts";
+import { extractFrontmatter } from "./context-breakdown.ts";
+import { readFrontmatterField } from "./skills-inventory.ts";
 
 /** Narrow an unknown to a plain object (not null, not array). */
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -153,4 +158,102 @@ export function parseInitializeControlResponse(
   const capabilities = buildSessionCapabilities(response.response, effort);
   if (capabilities === null) return null;
   return { requestId, capabilities };
+}
+
+// ---------------------------------------------------------------------------
+// Plugin commands — turn-free catalog augmentation
+// ---------------------------------------------------------------------------
+
+/**
+ * Enumerate a plugin's slash commands from disk as {@link CapabilityCommand}
+ * entries (`<plugin>:<name>`, with the description / argument-hint from each
+ * `SKILL.md` frontmatter, and any `commands/*.md`).
+ *
+ * **Why this exists.** claude's turn-free `initialize` handshake answers
+ * *before* it has loaded `--plugin-dir` plugins, so its `commands` catalog
+ * omits every plugin command — the full list only arrives with the first
+ * turn's `system` init. A fresh Dev card (no messages yet) would therefore
+ * show no plugin commands in the `/` popup *and* reject a typed
+ * `/<plugin>:<cmd>` as "Unknown" at submit. tugcode owns the (universal,
+ * bundled) plugin dir, so it enumerates the plugin's commands here and merges
+ * them into the turn-free catalog ({@link mergePluginCommands}), making them
+ * available from the drop. The plugin name is the plugin dir's basename
+ * (`tugplug`), matching claude's `<plugin>:<name>` namespacing.
+ *
+ * Best-effort and never throws: a missing dir / unreadable file is skipped.
+ */
+export function enumeratePluginCommands(pluginDir: string): CapabilityCommand[] {
+  const pluginName = basename(pluginDir);
+  const out: CapabilityCommand[] = [];
+
+  // Skills → `<plugin>:<skill>`.
+  const skillsRoot = join(pluginDir, "skills");
+  let skillDirs: string[] = [];
+  try {
+    skillDirs = readdirSync(skillsRoot);
+  } catch {
+    skillDirs = [];
+  }
+  for (const dirName of skillDirs) {
+    let text: string;
+    try {
+      text = readFileSync(join(skillsRoot, dirName, "SKILL.md"), "utf-8");
+    } catch {
+      continue; // not a skill directory.
+    }
+    const fm = extractFrontmatter(text);
+    const skillName =
+      (fm !== null ? readFrontmatterField(fm, "name") : null) ?? dirName;
+    const command: CapabilityCommand = { name: `${pluginName}:${skillName}` };
+    const description =
+      fm !== null ? readFrontmatterField(fm, "description") : null;
+    if (description !== null && description !== "") {
+      command.description = description;
+    }
+    const argumentHint =
+      fm !== null
+        ? (readFrontmatterField(fm, "argument-hint") ??
+          readFrontmatterField(fm, "argumentHint"))
+        : null;
+    if (argumentHint !== null && argumentHint !== "") {
+      command.argumentHint = argumentHint;
+    }
+    out.push(command);
+  }
+
+  // `commands/*.md` → `<plugin>:<cmd>` (plugins that ship command files).
+  const commandsRoot = join(pluginDir, "commands");
+  let commandFiles: string[] = [];
+  try {
+    commandFiles = readdirSync(commandsRoot);
+  } catch {
+    commandFiles = [];
+  }
+  for (const file of commandFiles) {
+    if (!file.endsWith(".md")) continue;
+    out.push({ name: `${pluginName}:${file.slice(0, -3)}` });
+  }
+
+  return out;
+}
+
+/**
+ * Return `caps` with `extra` commands unioned into its `commands` list,
+ * deduped by name (an entry claude already reported is kept as-is — its
+ * description / hint win). Pure.
+ */
+export function mergePluginCommands(
+  caps: SessionCapabilities,
+  extra: CapabilityCommand[],
+): SessionCapabilities {
+  if (extra.length === 0) return caps;
+  const seen = new Set(caps.commands.map((c) => c.name));
+  const merged = [...caps.commands];
+  for (const cmd of extra) {
+    if (!seen.has(cmd.name)) {
+      seen.add(cmd.name);
+      merged.push(cmd);
+    }
+  }
+  return { ...caps, commands: merged };
 }

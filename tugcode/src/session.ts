@@ -10,7 +10,11 @@ import {
   formatQuestionAnswer,
   generateRequestId,
 } from "./control.ts";
-import { parseInitializeControlResponse } from "./capabilities.ts";
+import {
+  parseInitializeControlResponse,
+  enumeratePluginCommands,
+  mergePluginCommands,
+} from "./capabilities.ts";
 import type {
   UserMessage,
   ToolApproval,
@@ -3874,7 +3878,15 @@ export class SessionManager {
       const parsed = parseInitializeControlResponse(event, this.currentEffort);
       if (parsed !== null && parsed.requestId === this.initializeRequestId) {
         this.initializeRequestId = null;
-        writeLine(parsed.capabilities);
+        // claude's turn-free handshake omits `--plugin-dir` plugin commands
+        // (they load lazily, surfacing only with the first turn's system
+        // init). Merge the bundled plugin's commands from disk so a fresh
+        // card can list and submit them from the drop.
+        const withPlugins = mergePluginCommands(
+          parsed.capabilities,
+          enumeratePluginCommands(this.getPluginDir()),
+        );
+        writeLine(withPlugins);
         return;
       }
     }
