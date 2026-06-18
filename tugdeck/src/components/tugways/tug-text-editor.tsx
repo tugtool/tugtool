@@ -2478,9 +2478,31 @@ function CompletionOverlay({
       resizeObserver.observe(host);
     }
 
+    // Hide-during-gesture / re-pop-after. A pane MOVE rewrites the frame's
+    // left/top each frame but leaves the host size unchanged, so the
+    // ResizeObserver above never fires and the popup would strand at stale
+    // viewport coords (a resize does change the size, so that path already
+    // re-anchors). Observe the holding pane's `data-gesture` attribute — set
+    // for the duration of a move/resize drag — and repaint on every change:
+    // the painter hides the popup while the attribute is present and
+    // re-anchors it the instant the gesture ends, with the session intact.
+    // DOM-contract coupling only; no import from the pane module.
+    let gestureObserver: MutationObserver | null = null;
+    const pane = view.dom.closest(".tug-pane");
+    if (pane !== null && typeof MutationObserver !== "undefined") {
+      gestureObserver = new MutationObserver(() => {
+        paintCompletionPopup(view, popup, completionDirectionRef.current);
+      });
+      gestureObserver.observe(pane, {
+        attributes: true,
+        attributeFilter: ["data-gesture"],
+      });
+    }
+
     return () => {
       unsubscribe();
       resizeObserver?.disconnect();
+      gestureObserver?.disconnect();
       view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
     };
     // `view` is the externally-changing input; the refs are stable
@@ -2638,6 +2660,18 @@ function paintCompletionPopup(
   direction: "up" | "down",
 ): void {
   if (popup === null) return;
+  // While the holding pane is mid move/resize, keep the popup hidden rather
+  // than stranded at stale viewport coords: the gesture rewrites the pane's
+  // left/top each frame but never re-anchors this portaled (`position: fixed`)
+  // popup. The typeahead session stays active throughout; the gesture-end
+  // observer in `CompletionOverlay` repaints once `data-gesture` clears,
+  // re-anchoring the popup in place. Loose DOM-contract coupling to `tug-pane`
+  // (which sets `data-gesture` on its `.tug-pane` frame for the gesture's
+  // duration) — no cross-module import.
+  if (view.dom.closest(".tug-pane[data-gesture]") !== null) {
+    popup.style.display = "none";
+    return;
+  }
   const state = getCompletionState(view);
   if (!state.active || state.filtered.length === 0) {
     popup.style.display = "none";
