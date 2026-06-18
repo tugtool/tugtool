@@ -78,15 +78,26 @@ export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
   "focus",
   "fast",
   "status", // typed /status is a no-op — the Z4B chrome already shows it.
+  "statusline", // configures the terminal status line; the Z4B chrome owns ours.
+  "scroll-speed", // interactive mouse-wheel ruler, terminal-only.
+  "voice", // voice-dictation TUI state; nothing to toggle over the bridge.
 
   // Conversation-structure / automation deferred to a future plan — no
-  // surface this pass.
+  // surface this pass. Kept here (rather than dropped) as a marker for
+  // possible future feature work; each is a substantial standalone surface.
   "branch",
   "plan",
   "goal",
   "loop",
   "tasks",
+  "bashes", // alias of /tasks.
   "autofix-pr",
+  "workflows", // workflow-orchestration progress view.
+  "fork", // forked-subagent spawn; interactive, no bridge surface yet.
+  "ultraplan", // cloud plan → browser review → remote exec.
+  "ultrareview", // cloud multi-agent review (/code-review ultra); user-triggered + billed.
+  "schedule", // cloud routines / scheduled agents.
+  "routines", // alias of /schedule.
 
   // Plugin / advisor / dev-loop config — host-app or a future plan.
   "advisor",
@@ -99,15 +110,23 @@ export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
   "logout",
   "privacy-settings",
   "config",
+  "settings", // alias of /config.
   "feedback",
+  "share", // alias of /feedback.
   "install-github-app",
   "install-slack-app",
+  "web-setup", // connects a GitHub account to Claude Code on the web.
+  "setup-bedrock", // Bedrock auth/region/model config — host concern.
+  "setup-vertex", // Vertex AI auth/project/model config — host concern.
+  "upgrade", // opens the plan-upgrade page.
   "passes",
   "powerup",
   "radio",
   "stickers",
   "sandbox",
   "usage",
+  "cost", // alias of /usage.
+  "stats", // alias of /usage.
   "usage-credits",
   "extra-usage",
   "team-onboarding",
@@ -115,11 +134,19 @@ export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
   // Device / cross-app / teleport — not the dev card's concern.
   "ide",
   "desktop",
+  "app", // alias of /desktop.
   "mobile",
+  "ios", // alias of /mobile.
+  "android", // alias of /mobile.
   "remote-control",
+  "rc", // alias of /remote-control.
   "remote-env",
   "background",
+  "bg", // alias of /background.
+  "stop", // stops a background session — none exist over the bridge.
   "teleport",
+  "tp", // alias of /teleport.
+  "cd", // moves the session's working dir — a host/terminal concern.
 
   // Diagnostics / info / process control.
   "doctor",

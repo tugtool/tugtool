@@ -46,18 +46,17 @@ cd tugrust && cargo nextest run
 
 Theme tokens live in `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css`. These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens.
 
-## AskUserQuestion — Claude Code Cap
+## AskUserQuestion — shape and affordances
 
-Claude Code's built-in `AskUserQuestion` tool enforces **≤4 options per question** via its own Zod schema. Exceeding the cap fails the tool call with an `InputValidationError` before the Dev card's renderer ever sees it.
+`AskUserQuestion`'s shape is fixed **upstream by Claude Code's own schema**, not by Tug: **1–4 questions per call, 2–4 options per question** (a hard minimum of 2 and maximum of 4 options). A call outside those bounds fails with an `InputValidationError` inside Claude Code *before* the request is ever forwarded to the Dev card — so this is not a constraint Tug can relax by editing anything here.
 
 When generating an `AskUserQuestion` call:
-- Give each question **at most 4 options**.
-- If you have more candidate choices for one question, either:
-  - Split into multiple questions (each ≤4 options), or
-  - Pick the top 3 and use the 4th as `"Other / Not listed"`.
-- The cap is per-question, not per-payload — total question count is unlimited.
+- Give each question **2–4 options**.
+- If you have more candidate choices, split them across multiple questions (up to 4 questions per call) — the per-question cap is real, the per-call question count gives you room.
 
-The Dev card renders a salvage path when the cap is exceeded (the user can still answer outside the tool channel), but every call that hits the cap is a small UX hiccup. Generate within the cap from the start.
+Two rows the terminal renders below the options — **`Type something`** (a free-text answer) and **`Chat about this`** (dismiss the questions and reply in prose) — are harness *affordances*, not options, and don't count against the 2–4 cap. On the answer side they come back as the free-text answer value and the optional top-level `response` field respectively. The Dev card's `QuestionDialog` is where Tug renders these (see `chrome/dev-question-dialog.tsx`).
+
+Tug-side handling: the `QuestionDialog` renders **any** number of options with no cap of its own — the 2–4 limit lives only in Claude Code upstream. If a call somehow exceeds 4 (e.g. a drifted or hand-crafted payload), `AskUserQuestionToolBlock` detects the `InputValidationError` and mounts a salvage path so the user can still answer. Overflow is therefore graceful, but generate within 2–4 so the round-trip isn't wasted.
 
 ## Tugdeck — Tuglaws
 

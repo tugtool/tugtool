@@ -34,31 +34,40 @@ hide rather than grey-out, and to keep the list discoverable here, is [D14] in
 
 ### Terminal-only UI flags / view preferences
 `/vim`, `/theme`, `/color`, `/tui`, `/keybindings`, `/terminal-setup`,
-`/chrome`, `/focus`, `/fast`, `/status` — these render Ink components or set
-terminal-local UI state; nothing happens over a headless bridge. (`/status` is a
-no-op specifically because the Z4B chrome already shows session status.)
+`/chrome`, `/focus`, `/fast`, `/status`, `/statusline`, `/scroll-speed`,
+`/voice` — these render Ink components or set terminal-local UI state; nothing
+happens over a headless bridge. (`/status` is a no-op specifically because the
+Z4B chrome already shows session status; `/statusline` is the same, the Z4B
+chrome owns ours.)
 
 ### Conversation-structure / automation
-`/branch`, `/plan`, `/goal`, `/loop`, `/tasks`, `/autofix-pr` — conversation
-branching, plan mode, agentic goal loops, and background-task / PR orchestration.
-Out of conversational-parity scope; each is a substantial standalone feature for
-a future plan.
+`/branch`, `/plan`, `/goal`, `/loop`, `/tasks` (alias `/bashes`), `/autofix-pr`,
+`/workflows`, `/fork`, `/ultraplan`, `/ultrareview`, `/schedule` (alias
+`/routines`) — conversation branching, plan mode, agentic goal loops,
+background-task / PR / workflow orchestration, forked subagents, cloud
+plan/review, and scheduled cloud routines. Out of conversational-parity scope;
+each is a substantial standalone feature for a future plan, and is kept in the
+hidden registry as a marker for that future work.
 
 ### Plugin / advisor / dev-loop config
 `/advisor`, `/plugin`, `/reload-plugins`, `/reload-skills` — plugin and
 dev-loop configuration; a host-app or future-plan concern.
 
 ### Account / auth / subscription / novelty
-`/login`, `/logout`, `/privacy-settings`, `/config`, `/feedback`,
-`/install-github-app`, `/install-slack-app`, `/passes`, `/powerup`, `/radio`,
-`/stickers`, `/sandbox`, `/usage`, `/usage-credits`, `/extra-usage`,
-`/team-onboarding` — account, auth, settings, and subscription surfaces that
-belong to the Tug.app host, not the dev card.
+`/login`, `/logout`, `/privacy-settings`, `/config` (alias `/settings`),
+`/feedback` (alias `/share`), `/install-github-app`, `/install-slack-app`,
+`/web-setup`, `/setup-bedrock`, `/setup-vertex`, `/upgrade`, `/passes`,
+`/powerup`, `/radio`, `/stickers`, `/sandbox`, `/usage` (aliases `/cost`,
+`/stats`), `/usage-credits`, `/extra-usage`, `/team-onboarding` — account, auth,
+settings, provider/host setup, and subscription surfaces that belong to the
+Tug.app host, not the dev card.
 
 ### Device / cross-app / teleport
-`/ide`, `/desktop`, `/mobile`, `/remote-control`, `/remote-env`, `/background`,
-`/teleport` — cross-app, device, and terminal-freeing commands that aren't the
-dev card's concern.
+`/ide`, `/desktop` (alias `/app`), `/mobile` (aliases `/ios`, `/android`),
+`/remote-control` (alias `/rc`), `/remote-env`, `/background` (alias `/bg`),
+`/stop`, `/teleport` (alias `/tp`), `/cd` — cross-app, device, terminal-freeing,
+background-session, and working-directory commands that aren't the dev card's
+concern.
 
 ### Diagnostics / info / process control
 `/doctor`, `/release-notes`, `/heapdump`, `/version`, `/quit`, `/exit` — install
