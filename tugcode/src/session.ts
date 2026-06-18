@@ -5538,20 +5538,39 @@ export class SessionManager {
     if (this.sessionId === null || this.sessionId === "") return;
 
     await this.killAndCleanup();
-    this.claudeProcess = this.spawnClaude(this.sessionId, "resume");
+    this.claudeProcess = this.spawnClaude(this.sessionId, this.liveRespawnMode());
     this.startStdoutDrain(this.claudeProcess);
     // The drain forwards claude's `system:init` to tugcast asynchronously, as
     // in `handleSessionFork` / `handleSessionContinue`; no synchronous await.
   }
 
   /**
+   * Spawn mode for a live setting change (effort, add-dir) that must respawn
+   * the current session in place: `--resume` once the session has a committed
+   * conversation on disk, `--session-id` (re-create the id) until then.
+   *
+   * Claude does not write a session's JSONL until a turn lands, so `--resume`
+   * on a session that has only been initialized fails with "No conversation
+   * found" and the process exits immediately — the next submit then hits the
+   * stdout-EOF path and surfaces "Claude process stream ended unexpectedly".
+   * `claudeReceivedInput` (set on the first user-message write, never reset)
+   * is the proxy for "this session is resumable": before it, re-create the
+   * not-yet-persisted session under the same id with the new setting applied;
+   * after it, resume the real conversation.
+   */
+  private liveRespawnMode(): "resume" | "session-id" {
+    return this.claudeReceivedInput ? "resume" : "session-id";
+  }
+
+  /**
    * Add a working directory to the session ([#step-13c]). Records the dir
    * (deduped) so every (re)spawn grants it via `--add-dir`, then respawns the
-   * live conversation with `--resume` to apply it now — the same shape as
-   * {@link handleEffortChange}, because claude exposes no live add-directory
-   * control verb over the bridge. A blank or already-present dir is a no-op
-   * (no needless respawn). Before the first spawn (no `sessionId` yet) we just
-   * record it; the initial spawn picks it up via `buildClaudeArgs`.
+   * session in place to apply it now ({@link liveRespawnMode} picks `--resume`
+   * vs `--session-id`) — the same shape as {@link handleEffortChange}, because
+   * claude exposes no live add-directory control verb over the bridge. A blank
+   * or already-present dir is a no-op (no needless respawn). Before the first
+   * spawn (no `sessionId` yet) we just record it; the initial spawn picks it up
+   * via `buildClaudeArgs`.
    */
   async handleAddDirectory(directory: string): Promise<void> {
     const dir = directory.trim();
@@ -5562,7 +5581,7 @@ export class SessionManager {
     if (this.sessionId === null || this.sessionId === "") return;
 
     await this.killAndCleanup();
-    this.claudeProcess = this.spawnClaude(this.sessionId, "resume");
+    this.claudeProcess = this.spawnClaude(this.sessionId, this.liveRespawnMode());
     this.startStdoutDrain(this.claudeProcess);
   }
 
