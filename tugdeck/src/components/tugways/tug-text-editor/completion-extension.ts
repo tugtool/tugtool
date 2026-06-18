@@ -599,16 +599,17 @@ function completionExtender(
   if (verdict.kind === "query") {
     const provider = fieldState.provider!;
     const filtered = provider(verdict.value);
-    const selectedIndex = Math.min(
-      fieldState.selectedIndex,
-      Math.max(0, filtered.length - 1),
-    );
+    // Typing re-filters and resets the selection to the best (top) match.
+    // The list is ordered by match quality, so index 0 is the best option.
+    // The selection responds only to the user's actions — a keystroke resets
+    // it; arrow keys move it — never carrying a stale highlight from before
+    // the query changed.
     return {
       effects: [
         updateEffect.of({
           query: verdict.value,
           filtered,
-          selectedIndex,
+          selectedIndex: 0,
         }),
       ],
     };

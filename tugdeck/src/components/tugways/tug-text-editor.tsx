@@ -2656,9 +2656,20 @@ function paintCompletionPopup(
         label.textContent = item.label;
       }
       div.appendChild(label);
-      div.addEventListener("pointermove", () => {
-        // Move the keyboard selection to the hovered item — single
-        // highlight semantics, mirrors the prompt-input painter.
+      div.addEventListener("pointermove", (e) => {
+        // Move the keyboard selection to the hovered item — but only on a
+        // REAL mouse move. Arrow-key navigation scrolls the list (to keep the
+        // selected row visible), and scrolling content under a stationary
+        // cursor fires `pointermove` with no actual movement; acting on those
+        // would let the mouse position hijack the keyboard selection (the
+        // selection jumping "with a mind of its own", worst under key-repeat).
+        // Compare client coords against the last real move, stored on the
+        // popup so every item shares one cursor history.
+        const px = String(e.clientX);
+        const py = String(e.clientY);
+        if (popup.dataset.lastPx === px && popup.dataset.lastPy === py) return;
+        popup.dataset.lastPx = px;
+        popup.dataset.lastPy = py;
         navigateCompletionByIndex(view, i);
       });
       div.addEventListener("pointerdown", (e) => {
