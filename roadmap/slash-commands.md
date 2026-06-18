@@ -61,10 +61,12 @@ mention as `type: "file"`).
 - Keep the **bare command name** as the single source of truth; add the leading slash
   as a presentation concern (chip label) and a wire concern (serializer) via small
   shared helpers, so the typed-bare path and the atom path can never drift again.
-- Give commands their own theme tokens and plumb atom `type` → token selection through
-  **both** chip renderers (editor data-URI baker and the React `TugAtomChip`), so the
-  editor and transcript chips stay pixel-identical, per the existing chip-consistency
-  boundary.
+- Make command styling a **single type-keyed style descriptor** (color tokens *and*
+  geometry — radius/padding/icon treatment), consumed by **both** chip renderers (editor
+  data-URI baker and the React `TugAtomChip`), so the look is distinctive, edited in one
+  place, and the editor/transcript chips stay pixel-identical. Ensure style edits
+  propagate to the baked editor chips during iteration (re-bake signal), so tuning the
+  design is friction-free.
 - Teach the transcript to recognize claude's `<command-name>` expansion echo and render
   the same command chip — unifying the drafting surface and the committed view.
 - Sequence so each step is independently shippable and HMR-testable against the
@@ -84,9 +86,12 @@ mention as `type: "file"`).
 - A command atom embedded mid-prose, or two command atoms in one message, serialize as
   plain `/name` text and never trigger a Skill-tool call or a blocking error. (Unit
   test + Tug.app spot check.)
-- The command chip uses command-specific color tokens distinct from file/image/link/doc
-  chips, and renders identically in the editor and the transcript. (Visual check in
-  both themes; token-selection unit test over the data-URI baker.)
+- The command chip is distinct from file/image/link/doc chips in **both color and
+  shape**, governed by one `chipStyleForType` descriptor, and renders identically in the
+  editor and the transcript. (Visual check in both themes; descriptor unit test asserting
+  command differs and non-command types are unchanged.)
+- Editing a command token value in `brio.css` updates the editor chip and the transcript
+  chip together — no stale baked editor chip. (Tug.app HMR check.) 
 - A committed command turn renders as a command chip showing `/tugplug:commit` in the
   transcript — leading slash preserved, no raw `<command-name>` XML, no file chip.
   (Replay test from a real JSONL echo fixture + Tug.app check.)
@@ -95,8 +100,9 @@ mention as `type: "file"`).
 
 1. Command-atom wire serialization: clean `/name` (+ args), embedded/multi-command
    handling, shared slash helpers.
-2. Distinct command chip: per-type color tokens (brio + harmony) and `type` → token
-   plumbing through both chip renderers; leading slash in the command chip label.
+2. Distinct command chip: a single `chipStyleForType` descriptor (color tokens in brio +
+   harmony *and* geometry) consumed by both chip renderers; leading slash in the command
+   chip label; editor re-bake on style edits so the design is easy to tune.
 3. Transcript recognition of claude's `<command-name>` expansion echo → unified command
    chip; live optimistic-echo ↔ replay-echo parity.
 4. Synthesizer correctness: commands no longer ride the `@`-mention marker, so nothing
@@ -255,27 +261,48 @@ for serialization and a chip-label rule for display — never stored in `value`.
   them. `local-commands.ts` / `session-metadata-store.ts` are unchanged (still emit bare
   `value`).
 
-#### [P03] Distinct command chip via per-type tokens (DECIDED) {#p03-command-chip}
+#### [P03] Distinct command chip via a single type-keyed style descriptor (DECIDED) {#p03-command-chip}
 
-**Decision:** Commands get their own color tokens
+**Decision:** Command styling is governed by **one** type-keyed style descriptor —
+`chipStyleForType(type)` in `command-atom.ts` — that returns *both* the four color-token
+names *and* the geometry knobs (border radius, horizontal padding, icon gap, and whether
+to render a leading-slash glyph). **Both** chip renderers (the editor data-URI baker
+`buildAtomSVGDataUri` and the React `TugAtomChip`) consume that one descriptor; today's
+hardcoded `rx`, `PADDING`, `GAP`, and the four inline token references in each renderer
+are refactored to read from it. Commands get their own color tokens
 (`--tug7-surface-atom-command-…` / `--tug7-element-atom-command-{border,icon,text}-…`,
-exact names finalized with the theme author) distinct from the shared atom tokens, and
-the chip label shows the leading slash (`/tugplug:commit`). Atom `type` selects the
-token set in **both** the editor data-URI baker and the React `TugAtomChip`.
+exact names finalized in the theme grammar) and a distinct geometry, and the chip label
+shows the leading slash (`/tugplug:commit`). Non-command types resolve to today's exact
+values through the same descriptor, so they are byte-for-byte unchanged.
 
 **Rationale:**
-- Today all atom types share one token set; only the icon differs, so commands read as
-  file attachments — the conflation the user called out. Distinct color is the minimal
-  change that makes a command read as a command. (User chose "distinct command chip"
-  over inline-text styling.)
-- Plumbing `type` → tokens through both renderers preserves the existing
-  editor/transcript pixel-identity boundary.
+- The goal is styling that is **separate, distinctive, and easy to iterate on to the
+  owner's satisfaction** — not merely recolored. Today every atom type shares one token
+  set *and* one hardcoded geometry; the border radius (`rx`) is a literal duplicated in
+  `buildAtomSVGDataUri`'s SVG string and again in `TugAtomChip`, and padding/gap/height
+  are shared constants in `computeAtomChipGeometry` (which forks only `iconPath` by
+  type). Color-only tokens leave shape — the dimension most likely to be tuned — locked
+  and duplicated across two files.
+- A single descriptor is the surface the owner edits to change the look: change colors in
+  the theme files, change shape in the descriptor, and both renderers follow. It also
+  removes the two-places-hardcoded-`rx` duplication and is the natural home for future
+  doc/link variants.
+- The seam is already anticipated: `buildAtomSVGDataUri` carries a reserved `value` param
+  whose docstring notes "future theme variants can fork on it", and the theme grammar
+  already supports atom variants (`brio.css` has an `atom-…-route-…` set beside
+  `atom-primary`). [P03] widens that seam to `type`.
 
 **Implications:**
-- `tug-atom-img.ts` (`buildAtomSVGDataUri`) and `tug-atom-chip.tsx` take the atom `type`
-  into account when resolving the four colors; a shared `tokensForAtomType(type)` keeps
-  them in lockstep.
-- `brio.css` + `harmony.css` gain the command tokens (hand-authored).
+- New `chipStyleForType(type)` (in `command-atom.ts`) returns `{ tokens, geometry }`;
+  the token names are usable both as `var(--tug7-…)` (React path) and
+  `getTokenValue("--tug7-…")` (baked editor path).
+- `computeAtomChipGeometry`, `buildAtomSVGDataUri`, and `TugAtomChip` all source radius /
+  padding / gap / token names from the descriptor instead of literals. Non-command types
+  pass through identical values (regression-guarded by test).
+- `brio.css` + `harmony.css` gain the command tokens (hand-authored, both themes).
+- Editor chips are baked data-URIs that only re-bake on a theme switch, so token/style
+  edits within a theme don't live-update them during iteration — see [P06] for the
+  decision on that workflow.
 
 #### [P04] Transcript reconstructs the command chip from claude's echo (DECIDED) {#p04-transcript-echo}
 
@@ -316,6 +343,28 @@ acceptable (no error, no skill run, no improvised "I think you meant the skill")
   special-casing needed in the builder, but the behavior is asserted by test and noted
   for the transcript detector (only a lone command turn becomes a chip).
 
+#### [P06] Editor chips re-bake on token/style edits during iteration (DECIDED) {#p06-editor-rebake}
+
+**Decision:** A style-change signal (HMR token edit or an explicit dev affordance) must
+dispatch `regenerateAtomsEffect` so the editor's baked chips re-bake, keeping the editor
+and the live-cascading React/transcript chips in sync while the owner tunes the design.
+
+**Rationale:**
+- Editor atom chips bake their colors via `getTokenValue` at widget construction and only
+  re-bake on `regenerateAtomsEffect`, which today fires solely from
+  `subscribeThemeChange` (a theme *switch*). Editing a token value in `brio.css` (same
+  theme) live-updates the React chip via CSS cascade but leaves the editor chip stale —
+  the two surfaces diverge mid-iteration, directly against the "easy to modify to my
+  satisfaction" goal.
+
+**Implications:**
+- Implement the minimal viable signal: in dev/HMR, fire `regenerateAtomsEffect` when the
+  theme stylesheet is hot-replaced (or expose a dev trigger). Scope: developer iteration
+  ergonomics only — no production behavior change, no new persisted state ([L06]/[L22]
+  stay clean; the dispatch is direct DOM observation, not React state).
+- If the HMR hook proves fiddly, the fallback is a documented manual re-render
+  (theme-toggle) — recorded here so the decision is conscious, not accidental.
+
 ---
 
 ### Specification {#specification}
@@ -348,15 +397,21 @@ acceptable (no error, no skill run, no improvised "I think you meant the skill")
   `<command-message>` and `<command-args>(?<args>[^<]*)</command-args>` siblings, in any
   order, tolerant of surrounding whitespace), produce a command substrate:
   `text = U+FFFC (+ " " + args if present)`, `atoms = [{type:"command", value:name}]`.
+- **Slash normalization (parity-critical):** the detector strips the leading `/` from
+  the captured `<command-name>` so the synthesized atom's `value` (`name`, bare) equals
+  the editor atom's `value`. This is what guarantees the live optimistic echo and the
+  replayed echo render the *same* command chip — same `type`, same `value`, same label —
+  so the chip never flickers or relabels when the turn lands ([P05], [P04]).
 - Otherwise: fall through to the existing generic synthesis unchanged.
 
 #### State Zone Mapping (tugdeck/tugways) {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
-| Command chip colors (editor + transcript) | appearance | Per-type CSS tokens; React chip via `var(--tug7-…)`, editor chip via baked `getTokenValue` | [L06] |
+| Command chip colors + geometry (editor + transcript) | appearance | Single `chipStyleForType` descriptor; React chip via `var(--tug7-…)` + descriptor geometry, editor chip via baked `getTokenValue` + descriptor geometry | [L06] |
 | Command wire string (`/name args`) | n/a (derived) | Pure fn `buildWirePayload` / `commandWireText` — no state | — |
 | Transcript command substrate from echo | local-data (derived) | Pure detector → `(text, atoms)` computed at synth time; no new store, no `useState` | [L02] (read-only), [L06] |
+| Editor chip re-bake on style edit | appearance (event) | Dev/HMR dispatch of `regenerateAtomsEffect` — direct DOM observation, no React state | [L06], [L22] |
 
 No new React state, store, or `useSyncExternalStore` surface is introduced.
 
@@ -368,7 +423,7 @@ No new React state, store, or `useSyncExternalStore` surface is introduced.
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/lib/command-atom.ts` | `commandWireText(value, args?)`, `commandChipLabel(value)`, `detectCommandEcho(blocks)` (Spec S02), `tokensForAtomType(type)` |
+| `tugdeck/src/lib/command-atom.ts` | `commandWireText(value, args?)`, `commandChipLabel(value)`, `detectCommandEcho(blocks)` (Spec S02), `chipStyleForType(type)` → `{ tokens, geometry }` ([P03]) |
 | `tugdeck/src/lib/__tests__/command-atom.test.ts` | Unit + golden tests for the helpers and the echo detector |
 
 #### Symbols to add / modify {#symbols}
@@ -376,10 +431,12 @@ No new React state, store, or `useSyncExternalStore` surface is introduced.
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
 | `buildWirePayload` | fn | `tugdeck/src/lib/build-wire-payload.ts` | Add `command`-type branch → `commandWireText` ([P01], Spec S01) |
-| `buildAtomSVGDataUri` | fn | `tugdeck/src/lib/tug-atom-img.ts` | Resolve the 4 colors via `tokensForAtomType(type)` ([P03]) |
-| `TugAtomChip` | component | `tugdeck/src/lib/tug-atom-chip.tsx` | Select per-type token refs via `tokensForAtomType(type)` ([P03]) |
+| `computeAtomChipGeometry` | fn | `tugdeck/src/lib/tug-atom-img.ts` | Source radius/padding/gap from `chipStyleForType(type).geometry` instead of literals; non-command types unchanged ([P03]) |
+| `buildAtomSVGDataUri` | fn | `tugdeck/src/lib/tug-atom-img.ts` | Resolve the 4 colors + `rx` via `chipStyleForType(type)`; drop the literal `rx="3"` and hardcoded token names ([P03]) |
+| `TugAtomChip` | component | `tugdeck/src/lib/tug-atom-chip.tsx` | Source token refs + `rx` from `chipStyleForType(type)`; drop the inline `var(--tug7-…)` literals and `rx={3}` ([P03]) |
 | chip label rule | logic | `tug-atom-img.ts` / `tug-atom-chip.tsx` | `command` chips display `commandChipLabel(value)` (leading slash) ([P02]) |
 | user-substrate synth | fn | `tugdeck/src/lib/synthesize-user-message.ts` | Call `detectCommandEcho` first; else existing walk ([P04], Spec S02) |
+| editor re-bake on style edit | wiring | `tugdeck/src/components/tugways/tug-text-editor.tsx` | Dispatch `regenerateAtomsEffect` on dev/HMR theme-stylesheet replace ([P06]) |
 | command tokens | css | `tugdeck/styles/themes/brio.css`, `harmony.css` | `--tug7-…-atom-command-…` set, both themes ([P03]) |
 
 ---
@@ -388,14 +445,14 @@ No new React state, store, or `useSyncExternalStore` surface is introduced.
 
 | Category | Purpose | When |
 |----------|---------|------|
-| **Unit** | `buildWirePayload` command branch; `commandWireText`; `detectCommandEcho`; `tokensForAtomType` | Core logic / edge cases |
+| **Unit** | `buildWirePayload` command branch; `commandWireText`; `detectCommandEcho`; `chipStyleForType` | Core logic / edge cases |
 | **Golden / Contract** | Real JSONL expansion-echo fixture → command substrate | Echo detection stability |
 | **Integration (in-app)** | Tug.app: submit `/tugplug:probe-noop` and `/tugplug:commit` against the scratch repo | End-to-end, real claude |
 
 #### What stays out of tests {#test-non-goals}
 
 - No jsdom render-tree assertions for chip pixels — chip color is token-driven ([L06]);
-  verify the *token selection* (pure) and do a human visual pass per the memory guidance
+  verify the *descriptor* (`chipStyleForType`, pure) and do a human visual pass per the memory guidance
   (real, not fake).
 - No mock-claude transport test for expansion — expansion is a real-CLI behavior;
   cover it with the probe harness / in-app check, not a synthetic stub.
@@ -412,7 +469,7 @@ No new React state, store, or `useSyncExternalStore` surface is introduced.
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Command-atom wire serialization + helpers | pending | — |
-| #step-2 | Distinct command chip (tokens + both renderers) | pending | — |
+| #step-2 | Distinct command chip — style descriptor, both renderers | pending | — |
 | #step-3 | Transcript echo detection → unified chip | pending | — |
 | #step-4 | Synthesizer correctness + marker guard | pending | — |
 | #step-5 | Submission ergonomics audit | pending | — |
@@ -450,38 +507,55 @@ No new React state, store, or `useSyncExternalStore` surface is introduced.
 - [ ] In Tug.app (HMR) against `/tmp/commit-test-ground`: `/tugplug:probe-noop` submits
       and returns `PROBE_OK_USER_INVOCATION` with **no** Skill-tool block.
 
-#### Step 2: Distinct command chip — tokens + both renderers {#step-2}
+#### Step 2: Distinct command chip — single style descriptor, both renderers {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `feat(tugdeck): distinct command chip styling in editor and transcript`
+**Commit:** `feat(tugdeck): distinct command chip via type-keyed style descriptor`
 
-**References:** [P02] Bare name, [P03] Command chip, (#state-zone-mapping), [L06], [L19]
+**References:** [P02] Bare name, [P03] Command chip, [P06] Editor re-bake, (#state-zone-mapping), [L06], [L22], [L19]
 
 **Artifacts:**
-- `command-atom.ts` — `tokensForAtomType(type)` returning the 4 token names per type.
-- `tug-atom-img.ts` + `tug-atom-chip.tsx` — resolve colors via `tokensForAtomType`;
-  `command` chips display `commandChipLabel(value)`.
+- `command-atom.ts` — `chipStyleForType(type)` → `{ tokens, geometry }` (color-token
+  names + radius/padding/gap/slash-glyph), the single source of truth for chip styling.
+- `tug-atom-img.ts` (`computeAtomChipGeometry`, `buildAtomSVGDataUri`) + `tug-atom-chip.tsx` —
+  both consume the descriptor; the duplicated literal `rx` and inline token references in
+  each are removed. `command` chips display `commandChipLabel(value)`.
 - `brio.css` + `harmony.css` — command token set (hand-authored, both themes).
+- `tug-text-editor.tsx` — dev/HMR dispatch of `regenerateAtomsEffect` so editor chips
+  re-bake on a theme-stylesheet edit ([P06]).
 
 **Tasks:**
-- [ ] Add `--tug7-…-atom-command-…` tokens to both theme files (finalize exact names
-      with the theme grammar already in those files).
-- [ ] `tokensForAtomType`: `command` → command tokens; all others → today's shared atom
-      tokens (no visual change for non-commands).
-- [ ] Plumb `type` into `buildAtomSVGDataUri` color resolution (baked hex) and into
-      `TugAtomChip` (`var(--tug7-…)` refs) via the shared helper.
-- [ ] Render the command chip label with a leading slash in both renderers.
+- [ ] Add `--tug7-…-atom-command-…` tokens to both theme files (mirror the existing
+      `atom-…-route-…` variant grammar already present in `brio.css`).
+- [ ] Implement `chipStyleForType`: `command` → command tokens + distinct geometry; all
+      other types → today's exact tokens + geometry (zero visual change).
+- [ ] Refactor `computeAtomChipGeometry` to read radius/padding/gap from the descriptor;
+      remove the literal `rx="3"` from `buildAtomSVGDataUri`'s SVG string and `rx={3}`
+      from `TugAtomChip`, sourcing both from the descriptor.
+- [ ] Route `buildAtomSVGDataUri` (baked `getTokenValue`) and `TugAtomChip`
+      (`var(--tug7-…)` refs) through the descriptor's token names — no inline token
+      literals remain in either renderer.
+- [ ] Render the command chip label with a leading slash in both renderers
+      (`commandChipLabel`).
+- [ ] Wire the [P06] dev/HMR re-bake signal (fire `regenerateAtomsEffect` on theme
+      stylesheet hot-replace); if the HMR hook is impractical, record the documented
+      manual-re-render fallback per [P06].
 
 **Tests:**
-- [ ] `tokensForAtomType("command")` ≠ `tokensForAtomType("file")`; non-command types
-      unchanged.
+- [ ] `chipStyleForType("command")` differs from `chipStyleForType("file")` in *both*
+      tokens and geometry.
+- [ ] **Regression guard:** for every non-command type (`file`, `image`, `doc`, `link`),
+      `chipStyleForType` returns today's exact token names and geometry values (radius =
+      3, current padding/gap) — non-command chips are byte-for-byte unchanged.
 - [ ] `commandChipLabel("tugplug:commit") === "/tugplug:commit"`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/lib/__tests__/command-atom.test.ts && bunx tsc --noEmit`
-- [ ] In Tug.app: command chip in the editor is visibly distinct from a file chip, in
-      **both** brio and harmony, and shows the leading slash.
+- [ ] In Tug.app: the command chip is visibly distinct from a file chip in shape *and*
+      color, in **both** brio and harmony, and shows the leading slash.
+- [ ] In Tug.app (HMR): editing a command token value in `brio.css` updates the editor
+      chip *and* the transcript chip together — no stale baked editor chip.
 
 #### Step 3: Transcript echo detection → unified chip {#step-3}
 
@@ -610,8 +684,11 @@ distinct command chip shared by the prompt editor and the transcript.
       against `/tmp/commit-test-ground` — no Skill-tool block, no improvised commit.
 - [ ] `buildWirePayload` emits clean `/name` (+ args) for command atoms; covered by unit
       tests; embedded/multi-command cases send plain `/name` text.
-- [ ] Command chip is visually distinct from file/image/link/doc chips in both brio and
-      harmony, shows the leading slash, and is identical in editor and transcript.
+- [ ] Command chip is distinct from file/image/link/doc chips in **color and shape** in
+      both brio and harmony, shows the leading slash, is identical in editor and
+      transcript, and is governed by one `chipStyleForType` descriptor.
+- [ ] A command token edit in `brio.css` live-updates editor and transcript chips
+      together (no stale baked editor chip).
 - [ ] A committed command turn renders as a command chip (no raw `<command-name>` XML,
       no file chip), with optimistic/replay parity.
 - [ ] `probe-noop` fixture removed; `bun test src/lib` green.
@@ -625,6 +702,6 @@ distinct command chip shared by the prompt editor and the transcript.
 | Checkpoint | Verification |
 |------------|--------------|
 | Wire format | `bun test build-wire-payload.test.ts command-atom.test.ts` |
-| Chip styling | Visual pass in brio + harmony; `tokensForAtomType` unit test |
+| Chip styling | Visual pass in brio + harmony; `chipStyleForType` unit test (command differs, non-command unchanged) |
 | Transcript echo | Golden fixture test + Tug.app committed-turn check |
 | End-to-end | `/tugplug:commit` user-invoked run in Tug.app, scratch repo |
