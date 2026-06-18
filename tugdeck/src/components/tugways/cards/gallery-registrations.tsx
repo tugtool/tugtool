@@ -91,6 +91,7 @@ import {
   GalleryBashMountInSavedState,
 } from "./gallery-bash-tool-block";
 import { GalleryCollapsedHistory } from "./gallery-collapsed-history";
+import { GalleryCommitBlock } from "./gallery-commit-block";
 import { GallerySkillToolBlock } from "./gallery-skill-tool-block";
 import { GalleryMonitorToolBlock } from "./gallery-monitor-tool-block";
 import { GalleryTaskToolBlock } from "./gallery-task-tool-block";
@@ -692,6 +693,21 @@ export function registerGalleryCards(): void {
       icon: "Terminal",
       closable: true,
     },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // CommitBlock — the "commit receipt" body kind (design prototype).
+  // Receipt for a `git commit`: accent rail + graph node, titled
+  // summary, branch / hash chips, the diffstat bar, and disclosures for
+  // the message body + per-file breakdown. Tuned here before the
+  // BashToolBlock → `git commit` routing branch lands.
+  registerCard({
+    componentId: "gallery-commit-block",
+    contentFactory: (_cardId) => <GalleryCommitBlock />,
+    defaultMeta: { title: "CommitBlock (receipt)", icon: "GitCommitVertical", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

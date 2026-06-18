@@ -1,0 +1,194 @@
+/**
+ * commit-block.css — the commit receipt body.
+ *
+ * The receipt renders *inside* `ToolBlockChrome`, so the frame (border,
+ * surface, header dot + "Commit" name, collapse chevron) is the chrome's
+ * — this file styles only the inner layout: the titled summary, the
+ * diffstat bar, and the file list. Branch / hash chips are `TugBadge`s
+ * and the disclosures are `ToolBlockDisclosure`s, so their look is
+ * inherited, not redefined here.
+ *
+ * Token layering ([L17]): the diffstat cells reuse the shared
+ * `--tugx-block-tone-add` / `--tugx-block-tone-remove` band colors so
+ * the receipt and the diff body speak the same green / red. Everything
+ * paints one hop from a `--tug7-*` / `--tug-*` base.
+ */
+
+.tugx-commit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  /* The chrome body has no padding by design ("body-kind owns its own");
+     inset the receipt so it doesn't smash the frame edge. Horizontal
+     matches the header strip (`--tug-space-md`) so the body's left edge
+     lines up under the header's dot. */
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  font-family: var(--tug-font-family-base);
+  color: var(--tugx-block-text-color);
+}
+
+/* The message / files disclosures use the shared `ToolBlockDisclosure`,
+   whose label + chevron default to the interactive "active" blue. In the
+   receipt the label is a `TugLabel` proposal caption, so neutralize the
+   blue to the muted caption tone — the chevron (currentColor) follows. */
+.tugx-commit-disclosure.tool-block-disclosure .tool-block-disclosure-summary {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- Header line: summary message + badge chips ---------------------- *
+ * Lives in the tool-call header's detail column (`flex: 1 1 auto`), so
+ * the summary takes the slack and ellipsizes to one line while the
+ * branch / hash chips stay pinned at the right of that column, just left
+ * of the chrome's copy + chevron. */
+
+.tugx-commit-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+.tugx-commit-header-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: var(--tug-font-weight-medium);
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tugx-commit-chips {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* The hash chip is a TugBadge; only its typeface is commit-specific —
+   a short hash reads as an identifier, so it wants mono. */
+.tugx-commit-hash-badge {
+  font-family: var(--tug-font-family-mono);
+}
+
+/* ---- Diffstat row ---------------------------------------------------- */
+
+.tugx-commit-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  font-size: var(--tug-font-size-2xs);
+}
+
+.tugx-commit-statbar {
+  display: inline-flex;
+  gap: 2px;
+  /* One beat of motion on land: the bar wipes in left-to-right. */
+  animation: tugx-commit-bar-in 520ms ease-out both;
+}
+
+@keyframes tugx-commit-bar-in {
+  0% { clip-path: inset(0 100% 0 0); }
+  100% { clip-path: inset(0 0 0 0); }
+}
+
+.tugx-commit-cell {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.tugx-commit-cell--add { background: var(--tugx-block-tone-add-color); }
+.tugx-commit-cell--del { background: var(--tugx-block-tone-remove-color); }
+
+.tugx-commit-stat-num {
+  font-family: var(--tug-font-family-mono);
+  font-weight: var(--tug-font-weight-semibold);
+}
+.tugx-commit-stat-num--add { color: var(--tugx-block-tone-add-color); }
+.tugx-commit-stat-num--del { color: var(--tugx-block-tone-remove-color); }
+
+.tugx-commit-stat-files {
+  color: var(--tugx-block-text-color-muted);
+}
+
+/* ---- File list (inside a ToolBlockDisclosure) ------------------------ */
+
+.tugx-commit-files {
+  list-style: none;
+  margin: var(--tug-space-2xs) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tugx-commit-file {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  font-size: var(--tug-font-size-2xs);
+}
+
+.tugx-commit-file-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-3xs);
+  font-weight: var(--tug-font-weight-semibold);
+  border-radius: var(--tug-radius-xs);
+}
+
+.tugx-commit-file-status--m {
+  color: var(--tugx-block-tone-caution-color);
+  background: var(--tugx-block-tone-caution-bg);
+}
+.tugx-commit-file-status--a {
+  color: var(--tugx-block-tone-add-color);
+  background: var(--tugx-block-tone-add-bg);
+}
+.tugx-commit-file-status--d {
+  color: var(--tugx-block-tone-remove-color);
+  background: var(--tugx-block-tone-remove-bg);
+}
+.tugx-commit-file-status--r {
+  color: var(--tug7-element-tone-text-normal-active-rest);
+  background: var(--tug7-surface-tone-primary-normal-active-rest);
+}
+
+.tugx-commit-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tugx-block-text-color);
+}
+
+.tugx-commit-file-delta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: var(--tug-space-2xs);
+  font-family: var(--tug-font-family-mono);
+}
+
+/* ---- Message body (inside a ToolBlockDisclosure) --------------------- */
+
+.tugx-commit-body {
+  font-size: var(--tug-font-size-sm);
+  line-height: 1.5;
+  color: var(--tugx-block-text-color-muted);
+  white-space: pre-wrap;
+}
+
+.tugx-commit-body-line {
+  min-height: 1em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tugx-commit-statbar {
+    animation: none;
+  }
+}
