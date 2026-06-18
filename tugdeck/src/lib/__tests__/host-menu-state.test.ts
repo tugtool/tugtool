@@ -106,6 +106,16 @@ describe("projectDeckState", () => {
       closable: false,
     });
   });
+
+  test("selectionActive tracks activePaneId (deselect clears it)", () => {
+    const base = deck([card("a")], [pane("p1", ["a"])]);
+    // Deselected — no active pane (a click on the empty canvas).
+    expect(projectDeckState(base).selectionActive).toBe(false);
+    // A card is selected.
+    expect(
+      projectDeckState({ ...base, activePaneId: "p1" }).selectionActive,
+    ).toBe(true);
+  });
 });
 
 describe("HostMenuStatePublisher", () => {

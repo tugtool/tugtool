@@ -800,7 +800,27 @@ export function TugPane({
     });
   }, [onClose]);
 
+  // When the deck is deselected (a canvas-background click cleared the active
+  // card), a previous/next-card command lands on this pane's TugPane if its
+  // card is still the stale chain first responder. There is nothing to
+  // navigate to — so re-activate the pane's card instead, restoring its
+  // active state. Returns true when it acted. A no-op when a card is already
+  // active (the normal navigation runs).
+  const reactivateIfDeselected = useCallback((): boolean => {
+    if (store.getSnapshot().activePaneId !== undefined) return false;
+    const activeId = activeCardIdRef.current;
+    if (!activeId) return false;
+    transferFocusForActivation({
+      outgoingCardId: null,
+      incomingCardId: activeId,
+      store,
+      commitMutation: () => store.activateCard(activeId),
+    });
+    return true;
+  }, [store]);
+
   const handlePreviousTab = useCallback(() => {
+    if (reactivateIfDeselected()) return;
     const currentCards = cardsRef.current;
     const currentActiveId = activeCardIdRef.current;
     if (!currentCards || currentCards.length <= 1 || !currentActiveId) return;
@@ -813,9 +833,10 @@ export function TugPane({
       sender: keyboardTabNavSenderId,
       phase: "discrete",
     });
-  }, [manager, keyboardTabNavSenderId]);
+  }, [manager, keyboardTabNavSenderId, reactivateIfDeselected]);
 
   const handleNextTab = useCallback(() => {
+    if (reactivateIfDeselected()) return;
     const currentCards = cardsRef.current;
     const currentActiveId = activeCardIdRef.current;
     if (!currentCards || currentCards.length <= 1 || !currentActiveId) return;
@@ -828,7 +849,7 @@ export function TugPane({
       sender: keyboardTabNavSenderId,
       phase: "discrete",
     });
-  }, [manager, keyboardTabNavSenderId]);
+  }, [manager, keyboardTabNavSenderId, reactivateIfDeselected]);
 
   const handleJumpToTab = useCallback(
     (oneBasedIndex: number) => {

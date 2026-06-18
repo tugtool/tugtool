@@ -391,6 +391,23 @@ export class DeckManager implements IDeckManagerStore {
   };
 
   /**
+   * Deselect — the canvas-background click. Clears `activePaneId` so no card
+   * is the composite first responder: every title bar drops to its
+   * deactivated appearance and `getFirstResponderCardId()` returns null. The
+   * responder chain has already been promoted to the deck-canvas root by the
+   * pointerdown promotion, so this only clears the deck-level bit; the two
+   * systems then agree that nothing is selected. No-op when nothing is active.
+   */
+  public deselectActiveCard = (): void => {
+    if (this.deckState.activePaneId === undefined) return;
+    this._flipFirstResponder(
+      null,
+      () => this._commitStandardFirstResponderFlip(null),
+      "deselectActiveCard",
+    );
+  };
+
+  /**
    * Read the composite first-responder bit: the active stack's
    * active card id, or `null` when no stack is active. At any
    * moment, exactly zero or one card is the first responder.

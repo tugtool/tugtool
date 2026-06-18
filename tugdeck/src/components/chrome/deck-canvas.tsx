@@ -69,6 +69,10 @@ const CARD_ZINDEX_BASE = 1;
  */
 const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.CYCLE_CARD,
+  // Handled here only while deselected (chain FR is the deck-canvas root), to
+  // re-activate a card. A focused pane's TugPane handles them otherwise.
+  TUG_ACTIONS.PREVIOUS_TAB,
+  TUG_ACTIONS.NEXT_TAB,
   TUG_ACTIONS.SHOW_SETTINGS,
   TUG_ACTIONS.SHOW_COMPONENT_GALLERY,
   TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE,
@@ -178,6 +182,26 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   //             useLayoutEffect (startup overlay fade-out) ->
   //             useLayoutEffect (selection highlight sync)
 
+  // Re-activate a card when the deck is deselected (canvas-background click
+  // cleared `activePaneId`). Targets the topmost pane's active card. Returns
+  // true when it acted, false when a card is already active (so the normal
+  // navigation handlers run). Shared by the three card / pane nav actions,
+  // which all land here while deselected (the chain first responder is the
+  // deck-canvas root).
+  const reactivateWhenDeselected = (): boolean => {
+    if (store.getSnapshot().activePaneId !== undefined) return false;
+    const s = panesRef.current;
+    if (s.length === 0) return false;
+    const incomingCardId = s[s.length - 1].activeCardId; // topmost pane
+    transferFocusForActivation({
+      outgoingCardId: null,
+      incomingCardId,
+      store,
+      commitMutation: () => store.activateCard(incomingCardId),
+    });
+    return true;
+  };
+
   // Register DeckCanvas as the root responder node.
   // Action handlers close over stable values only: refs, React state setters,
   // store instance (stable singleton), and the manager singleton.
@@ -207,6 +231,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     validateAction: (action) => DECK_CANVAS_VALIDATED_ACTIONS.has(action),
     actions: {
       [TUG_ACTIONS.CYCLE_CARD]: (_event: ActionEvent) => {
+        // Deselected deck (canvas-background click cleared the active card) →
+        // re-activate the topmost pane's card instead of cycling. With one
+        // pane this is the whole job; with several it re-focuses the top one.
+        if (reactivateWhenDeselected()) return;
         const s = panesRef.current;
         if (s.length < 2) return;
         // Bottom stack rotates to top — activate its active card.
@@ -228,6 +256,15 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           store,
           commitMutation: () => store.activateCard(nextId),
         });
+      },
+      // Previous / Next card only reach the deck canvas when nothing is
+      // focused — a focused pane's TugPane handles them first. That state is
+      // exactly the deselected deck, so both just re-activate a card.
+      [TUG_ACTIONS.PREVIOUS_TAB]: (_event: ActionEvent) => {
+        reactivateWhenDeselected();
+      },
+      [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => {
+        reactivateWhenDeselected();
       },
       [TUG_ACTIONS.SHOW_SETTINGS]: (_event: ActionEvent) => {
         // ⌘, — open (or raise) the Settings singleton card. This

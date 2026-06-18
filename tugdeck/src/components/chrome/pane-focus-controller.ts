@@ -119,47 +119,33 @@ export function usePaneFocusController(
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const activePaneId = snapshot.activePaneId ?? null;
 
-  // Transient ref — not React state. Tracks whether the user's last
-  // gesture was an empty-canvas click (deselect) that persists until
-  // the next card activation.
-  const deselectedRef = useRef(false);
-
   // `applyFocusRef.current` is rewritten on every render so it
   // closes over the current `activePaneId`. Both the reactive
   // useLayoutEffect and the imperative listener call
   // `applyFocusRef.current()` — they always see the latest snapshot
   // without participating in the effect dep array.
+  //
+  // The active pane's title bar is its only selection signal: a deselect
+  // (canvas-background click) clears `activePaneId` in the store, so every
+  // pane drops to `data-focused="false"` here. No separate "deselected"
+  // flag — selection is exactly "which pane is `activePaneId`".
   const applyFocusRef = useRef<() => void>(() => {});
   applyFocusRef.current = () => {
     const root = deckRootRef.current;
     if (!root) return;
-    const focusedPaneId = deselectedRef.current ? null : activePaneId;
     for (const pane of root.querySelectorAll<HTMLElement>(
       ".tug-pane[data-pane-id]",
     )) {
       pane.dataset.focused =
-        pane.dataset.paneId === focusedPaneId ? "true" : "false";
+        pane.dataset.paneId === activePaneId ? "true" : "false";
     }
   };
 
   // Reactive apply: runs after each React commit when the snapshot
-  // changes. Handles pane add / remove and activation propagation.
+  // changes. Handles pane add / remove, activation, and deselect.
   useLayoutEffect(() => {
     applyFocusRef.current();
   }, [activePaneId, snapshot, deckRootRef]);
-
-  // Auto-clear deselect on any card activation. The observer fires
-  // after `_flipFirstResponder`'s notify (so the useLayoutEffect
-  // above has already run with the stale ref value); we must
-  // re-apply here.
-  useLayoutEffect(() => {
-    return store.observeCardDidActivate(null, () => {
-      if (deselectedRef.current) {
-        deselectedRef.current = false;
-        applyFocusRef.current();
-      }
-    });
-  }, [store]);
 
   // Document-level classification listener.
   useLayoutEffect(() => {
@@ -221,12 +207,13 @@ export function usePaneFocusController(
       const paneEl = startEl.closest("[data-pane-id]");
 
       if (paneEl === null) {
-        // Branch B: canvas background. Set deselect flag and
-        // re-apply. metaKey does NOT skip this branch.
-        if (!deselectedRef.current) {
-          deselectedRef.current = true;
-          applyFocusRef.current();
-        }
+        // Branch B: canvas background → a real deselect. Clear the active
+        // card so no pane is the first responder; the store notify repaints
+        // every title bar to deactivated via the reactive effect. (The
+        // responder chain is independently promoted to the deck-canvas root
+        // by the chain provider's pointerdown promotion.) metaKey does NOT
+        // skip this branch.
+        store.deselectActiveCard();
         return;
       }
 
@@ -269,19 +256,6 @@ export function usePaneFocusController(
         store,
         commitMutation: () => store.activateCard(pane.activeCardId),
       });
-
-      // Same-bit deselect-clear. When a canvas-background click set
-      // `deselectedRef` and the user then clicks the only / already-
-      // active pane, `_flipFirstResponder` short-circuits on
-      // `oldFR === newFR` and `notifyCardDidActivate` never fires —
-      // so the didActivate observer below cannot clear the ref. Do
-      // it here so the activation gesture deterministically restores
-      // `data-focused="true"` regardless of whether the flip was a
-      // real transition or a same-bit refresh.
-      if (deselectedRef.current) {
-        deselectedRef.current = false;
-        applyFocusRef.current();
-      }
     }
 
     // Mousedown capture listener: suppress the browser's default focus-

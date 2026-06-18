@@ -1226,10 +1226,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return focusedPaneCardCount > 1
         case "maker.newCardInPane":
             return !menuState.panes.isEmpty
+        // Card / pane navigation. Normally gated on having somewhere to go
+        // (a multi-card pane, or ≥2 panes). The corner case: when the deck is
+        // deselected (a click on the empty canvas — `selectionActive` false)
+        // but a pane exists, all three stay active and re-activate a card, so
+        // the user can recover focus by keyboard or menu. Once a card is
+        // active again they fall back to the normal gate.
         case "window.previousCard", "window.nextCard":
             return focusedPaneCardCount > 1
+                || (!menuState.selectionActive && !menuState.panes.isEmpty)
         case "window.cyclePanes":
             return menuState.panes.count >= 2
+                || (!menuState.selectionActive && !menuState.panes.isEmpty)
         // Edit / Find tier — first-responder edit capabilities, mirrored
         // from the web responder chain (MenuState.edit). Disabled when no
         // focused surface handles the action; Find stays disabled until a
@@ -1750,6 +1758,11 @@ struct MenuState {
     var activeCard: ActiveCard?
     var dev: Dev?
     var edit: Edit = .disabled
+    /// Whether a card is selected. `false` when the deck is deselected (a
+    /// click on the empty canvas cleared the active card) — the card / pane
+    /// navigation commands stay active in that state so the user can
+    /// re-activate a card.
+    var selectionActive: Bool = false
 
     static let empty = MenuState()
 
@@ -1761,6 +1774,7 @@ struct MenuState {
     init() {}
 
     init(payload: [String: Any]) {
+        selectionActive = payload["selectionActive"] as? Bool ?? false
         if let rawPanes = payload["panes"] as? [[String: Any]] {
             panes = rawPanes.compactMap { entry in
                 guard let id = entry["id"] as? String else { return nil }

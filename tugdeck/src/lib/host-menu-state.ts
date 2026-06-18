@@ -225,6 +225,13 @@ export interface MenuStateDeckProjection {
   panes: MenuStatePaneEntry[];
   activeCard: MenuStateActiveCard | null;
   /**
+   * Whether a card is selected — `activePaneId` is set. A canvas-background
+   * click deselects (clears it); the host enables the card / pane navigation
+   * commands when this is `false` (with panes present) so a deselected deck
+   * can re-activate a card by keyboard or menu.
+   */
+  selectionActive: boolean;
+  /**
    * Id of the focused pane's active card — used by the publisher to
    * select which dev block rides the payload. Module-internal: never
    * serialized onto the wire.
@@ -236,6 +243,8 @@ export interface MenuStateDeckProjection {
 export interface MenuStatePayload {
   panes: MenuStatePaneEntry[];
   activeCard: MenuStateActiveCard | null;
+  /** Whether a card is selected (see {@link MenuStateDeckProjection.selectionActive}). */
+  selectionActive: boolean;
   /** Dev-card session block; null unless the active card is a dev card. */
   dev: MenuStateDevBlock | null;
   /** Edit-menu capabilities of the current first responder. */
@@ -283,6 +292,7 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
   return {
     panes,
     activeCard,
+    selectionActive: state.activePaneId !== undefined,
     focusedActiveCardId: focusedActiveCard?.id ?? null,
   };
 }
@@ -300,6 +310,7 @@ export class HostMenuStatePublisher {
   private deckProjection: MenuStateDeckProjection = {
     panes: [],
     activeCard: null,
+    selectionActive: false,
     focusedActiveCardId: null,
   };
   /**
@@ -351,7 +362,8 @@ export class HostMenuStatePublisher {
   }
 
   private flush(): void {
-    const { panes, activeCard, focusedActiveCardId } = this.deckProjection;
+    const { panes, activeCard, selectionActive, focusedActiveCardId } =
+      this.deckProjection;
     const dev =
       activeCard?.component === "dev" && focusedActiveCardId !== null
         ? (this.devBlocks.get(focusedActiveCardId) ?? null)
@@ -359,6 +371,7 @@ export class HostMenuStatePublisher {
     const payload: MenuStatePayload = {
       panes,
       activeCard,
+      selectionActive,
       dev,
       edit: this.editCapabilities,
     };

@@ -76,6 +76,14 @@ export interface IDeckManagerStore {
   activateCard: (cardId: string) => void;
 
   /**
+   * Deselect — clear the composite first-responder bit so no card is
+   * active. Drops every title bar to its deactivated appearance and makes
+   * `getFirstResponderCardId()` return null. Driven by the canvas-background
+   * click. No-op when nothing is active.
+   */
+  deselectActiveCard: () => void;
+
+  /**
    * Read the composite first-responder bit: the active pane's
    * active card id, or `null` when no pane is active. At any
    * moment, exactly zero or one card is the first responder.

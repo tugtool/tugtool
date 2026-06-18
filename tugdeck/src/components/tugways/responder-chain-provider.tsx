@@ -182,27 +182,17 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     const publishEditCaps = (): void => {
       const caps = computeEditCapabilities(manager);
-      // Editing-state liveness gate. The chain first responder is
-      // deliberately sticky — a canvas-background click (pane deselect)
-      // blurs the editor to body but demotes nothing, so the FR keeps
-      // answering capability queries for a card the user has visibly
-      // deactivated. Cut / Paste / Select All / Undo / Redo are
-      // *editing* actions: an editor is active for editing iff it
-      // actually holds keyboard focus, so they additionally require
-      // `document.activeElement` inside the FR's element. Copy stays
-      // ungated on purpose — it must keep working for read-only
-      // selections (transcript text), where the selection lives without
-      // DOM focus on the responder.
+      // The chain first responder owns the edit menu. A deactivated card now
+      // resigns first responder (a canvas-background click clears the active
+      // card, and the chain promotes the deck-canvas root), so a deactivated
+      // card's caps drop out on their own — no `document.activeElement`
+      // liveness gate is needed. Undo/Redo labels read from the FR element.
       const frId = manager.getFirstResponder();
       const frEl =
         frId !== null
           ? document.querySelector(`[data-responder-id="${CSS.escape(frId)}"]`)
           : null;
       const active = document.activeElement;
-      const frFocused =
-        frEl !== null &&
-        active !== null &&
-        (frEl === active || frEl.contains(active));
 
       // Native text control focused? Then the host validates Undo/Redo
       // from the web view's NSUndoManager instead of the chain caps.
@@ -222,17 +212,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       }
 
       const labels =
-        frFocused && frEl !== null
-          ? editUndoLabelsWithin(frEl)
-          : { undo: "", redo: "" };
+        frEl !== null ? editUndoLabelsWithin(frEl) : { undo: "", redo: "" };
 
       publishEditMenuState({
         ...caps,
-        cut: frFocused && caps.cut,
-        paste: frFocused && caps.paste,
-        selectAll: frFocused && caps.selectAll,
-        undo: frFocused && caps.undo,
-        redo: frFocused && caps.redo,
         undoLabel: labels.undo,
         redoLabel: labels.redo,
         nativeUndoToken: isNativeText ? nativeUndoCounter : 0,
@@ -244,10 +227,9 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // focused responder (e.g. an editor's undo depth changing as the user
     // types) — those flips don't bump the validation version by design.
     registerEditCapsRefresher(publishEditCaps);
-    // DOM focus moves don't always bump the validation version either —
-    // a blur to body (canvas deselect) promotes nothing — so the liveness
-    // gate needs its own triggers. Microtask defer lets the focus
-    // transition settle before reading `document.activeElement`; the
+    // The native-undo token reads `document.activeElement`, which doesn't
+    // always bump the validation version — so focus moves trigger their own
+    // republish. Microtask defer lets the focus transition settle first; the
     // publisher's diff suppresses no-op posts.
     const onFocusChange = (): void => {
       queueMicrotask(publishEditCaps);
