@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Tugtool is a developer tool suite built around Tide — a unified command surface where shell commands and AI interactions coexist in one graphical UI. The suite includes tugcast (WebSocket multiplexer), tugcode (Claude Code bridge), tugutil (project management CLI), tugdeck (browser frontend), tugplug (orchestration skills and agents), and Tug.app (macOS host).
+Tugtool is a developer tool suite. Its centerpiece is the **Dev card** — a graphical surface where shell commands and AI interactions coexist in one UI, replacing the terminal. The suite includes tugcast (WebSocket multiplexer), tugcode (Claude Code bridge), tugutil (project management CLI), tugdeck (browser frontend), tugplug (agentless skills), and Tug.app (macOS host).
 
 ## Git Policy
 
@@ -17,12 +17,15 @@ Tugtool is a developer tool suite built around Tide — a unified command surfac
 
 | Directory | Description |
 |-----------|-------------|
-| `tugrust/` | Rust crates (tugcast, tugutil, tugexec, tugbank, and supporting libraries) |
+| `tugrust/` | Rust crates (tugcast, tugutil, tugexec, tugbank, tugcore, and supporting libraries) |
+| `tugproto/` | Shared protocol / message types (TypeScript) |
+| `tugcode/` | Claude Code bridge (stream-json IPC); bun-compiled binary |
+| `tugdeck/` | Web frontend (the Dev card lives here) |
+| `tugapp/` | Swift macOS app (Tug.app host) |
 | `tugplug/` | Claude Code plugin (agentless skills: devise/implement/dash/vet/audit/commit) |
-| `tugapp/` | Swift macOS app |
-| `tugdeck/` | Web frontend |
-| `tugcode/` | Claude Code bridge (stream-json IPC) |
-| `docs/` | Documentation |
+| `tuglaws/` | Architecture laws + design decisions — the curated durable doc surface |
+| `roadmap/` | Implementation plans (recipes) |
+| `tests/` | App-test harness that drives the real Tug.app |
 
 ## Build Policy
 
@@ -45,7 +48,7 @@ Theme tokens live in `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes
 
 ## AskUserQuestion — Claude Code Cap
 
-Claude Code's built-in `AskUserQuestion` tool enforces **≤4 options per question** via its own Zod schema. Exceeding the cap fails the tool call with an `InputValidationError` before Tide's renderer ever sees it.
+Claude Code's built-in `AskUserQuestion` tool enforces **≤4 options per question** via its own Zod schema. Exceeding the cap fails the tool call with an `InputValidationError` before the Dev card's renderer ever sees it.
 
 When generating an `AskUserQuestion` call:
 - Give each question **at most 4 options**.
@@ -54,7 +57,7 @@ When generating an `AskUserQuestion` call:
   - Pick the top 3 and use the 4th as `"Other / Not listed"`.
 - The cap is per-question, not per-payload — total question count is unlimited.
 
-Tide renders a salvage path when the cap is exceeded (the user can still answer outside the tool channel), but every call that hits the cap is a small UX hiccup. Generate within the cap from the start.
+The Dev card renders a salvage path when the cap is exceeded (the user can still answer outside the tool channel), but every call that hits the cap is a small UX hiccup. Generate within the cap from the start.
 
 ## Tugdeck — Tuglaws
 
