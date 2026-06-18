@@ -140,6 +140,13 @@ import {
   argumentHintTheme,
   type ArgumentHintResolver,
 } from "./tug-text-editor/argument-hint-extension";
+import {
+  inlineCommandGhostKeymap,
+  inlineCommandGhostPlugin,
+  inlineCommandGhostTheme,
+  inlineCommandMatcherFacet,
+} from "./tug-text-editor/inline-command-completion";
+import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
 import {
   clipboardExtension,
@@ -540,6 +547,14 @@ export interface TugTextEditorProps
    */
   argumentHintResolver?: ArgumentHintResolver;
   /**
+   * Resolver mapping a mid-text `/query` to the full command name it should
+   * complete to (the muted inline ghost), or `null` for no completion. The
+   * host builds this from its live command catalog; read live so the catalog
+   * growing after the handshake takes effect on the next edit. Omitted
+   * (gallery / standalone) ⇒ no inline ghost is ever painted.
+   */
+  inlineCommandMatcher?: InlineCommandMatcher;
+  /**
    * Preferred direction for the completion popup relative to the
    * trigger character. `"down"` (default) places the popup below the
    * trigger when there's room; `"up"` places it above. The substrate
@@ -885,6 +900,7 @@ function buildExtensions(
   getDropHandler: () => DropHandler | null,
   getBytesStore: () => AtomBytesStore | null,
   getArgumentHintResolver: () => ArgumentHintResolver,
+  getInlineCommandMatcher: () => InlineCommandMatcher,
   onAttachmentError: (message: string) => void,
   initial: {
     placeholder: string;
@@ -1027,6 +1043,15 @@ function buildExtensions(
     argumentHintResolverFacet.of(getArgumentHintResolver),
     argumentHintPlugin,
     argumentHintTheme,
+    // Mid-text slash-command inline ghost completion — paints the muted
+    // remainder of the best-matching command after the caret when a `/cmd`
+    // run sits anywhere but offset 0 (offset 0 is the descriptive popup's
+    // territory). Tab / → accept it as plain text. No-op when no matcher is
+    // registered (gallery / standalone). [L06] appearance-only widget.
+    inlineCommandMatcherFacet.of(getInlineCommandMatcher),
+    inlineCommandGhostPlugin,
+    inlineCommandGhostKeymap,
+    inlineCommandGhostTheme,
     clipboardExtension(getBytesStore, onAttachmentError),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
@@ -1046,6 +1071,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       historyProvider,
       completionProviders,
       argumentHintResolver,
+      inlineCommandMatcher,
       completionDirection = "down",
       onTypeaheadChange,
       dropHandler,
@@ -1223,6 +1249,15 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       argumentHintResolverRef.current = argumentHintResolver ?? (() => null);
     }, [argumentHintResolver]);
+
+    // Same [L07] live-ref pattern for the inline-ghost matcher, so a catalog
+    // that grows after the handshake takes effect without rebuilding the editor.
+    const inlineCommandMatcherRef = useRef<InlineCommandMatcher>(
+      inlineCommandMatcher ?? (() => null),
+    );
+    useLayoutEffect(() => {
+      inlineCommandMatcherRef.current = inlineCommandMatcher ?? (() => null);
+    }, [inlineCommandMatcher]);
 
     // Live observer ref for the optional `onTypeaheadChange` callback
     // — same [L07] pattern: the field-listener captured below reads
@@ -1966,6 +2001,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           () => dropHandlerRef.current,
           () => attachmentBytesStoreRef.current,
           () => (value: string) => argumentHintResolverRef.current(value),
+          () => (query: string) => inlineCommandMatcherRef.current(query),
           (message) => onAttachmentErrorRef.current(message),
           {
             placeholder: initialPlaceholder,
@@ -2656,6 +2692,15 @@ function paintCompletionPopup(
         label.textContent = item.label;
       }
       div.appendChild(label);
+      // Second column: the command's one-line description, muted and capped
+      // at two lines (see tug-completion-menu.css). Omitted when the item
+      // carries none, so the row stays label-only.
+      if (item.description) {
+        const desc = document.createElement("span");
+        desc.className = "tug-completion-menu-desc";
+        desc.textContent = item.description;
+        div.appendChild(desc);
+      }
       div.addEventListener("pointermove", (e) => {
         // Move the keyboard selection to the hovered item — but only on a
         // REAL mouse move. Arrow-key navigation scrolls the list (to keep the

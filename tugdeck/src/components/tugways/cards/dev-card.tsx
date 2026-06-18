@@ -63,6 +63,7 @@ import { usePermissionRulesSheet } from "./permission-rules-editor";
 import { useDevCardServices } from "./use-dev-card-services";
 import { type LocalCommandName } from "@/lib/slash-commands";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
+import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { isPermissionMode } from "@/lib/permission-mode";
 import { openPathInOS } from "@/lib/os-open";
@@ -415,6 +416,11 @@ export interface DevCardServices {
    * registry. Forwarded to `TugPromptEntry`.
    */
   argumentHintResolver: ArgumentHintResolver;
+  /**
+   * Maps a mid-text `/query` to the full command name it completes to (the
+   * inline ghost suffix), or `null`. Forwarded to `TugPromptEntry`.
+   */
+  inlineCommandMatcher: InlineCommandMatcher;
   editorStore: EditorSettingsStore;
   responseStore: ResponseSettingsStore;
   /** Single-shot `/diff` request/response store ([#step-10b]). */
@@ -2153,7 +2159,7 @@ export function DevCardBody({
   renderTurnTrailing,
   footerContent,
 }: DevCardBodyProps) {
-  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
+  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
   useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
@@ -3548,6 +3554,7 @@ export function DevCardBody({
               historyStore={historyStore}
               completionProviders={completionProviders}
               argumentHintResolver={argumentHintResolver}
+              inlineCommandMatcher={inlineCommandMatcher}
               onAfterSubmit={handleAfterSubmit}
               maximized={maximized}
               indicatorsContent={

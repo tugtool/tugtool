@@ -69,6 +69,7 @@ import {
   type TugTextEditorDelegate,
 } from "./tug-text-editor";
 import type { ArgumentHintResolver } from "./tug-text-editor/argument-hint-extension";
+import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
   getAtomsInState,
   regenerateAtomsEffect,
@@ -489,6 +490,12 @@ export interface TugPromptEntryProps {
    * commands.
    */
   argumentHintResolver?: ArgumentHintResolver;
+  /**
+   * Matcher for the mid-text inline ghost completion, forwarded to
+   * `TugTextEditor` ({@link TugTextEditorProps.inlineCommandMatcher}). Maps a
+   * mid-text `/query` to the full command name it completes to, or `null`.
+   */
+  inlineCommandMatcher?: InlineCommandMatcher;
   /** Drop handler for dragging files from Finder. Forwarded to TugTextEditor. */
   dropHandler?: DropHandler;
   /**
@@ -720,6 +727,7 @@ export const TugPromptEntry = React.forwardRef<
     historyStore,
     completionProviders,
     argumentHintResolver,
+    inlineCommandMatcher,
     dropHandler,
     onBeforeSubmit,
     onAfterSubmit,
@@ -1810,6 +1818,7 @@ export const TugPromptEntry = React.forwardRef<
               placeholder={placeholderByRoute?.[route] ?? ""}
               completionProviders={completionProviders}
               argumentHintResolver={argumentHintResolver}
+              inlineCommandMatcher={inlineCommandMatcher}
               dropHandler={dropHandler}
               attachmentBytesStore={attachmentBytesStore}
               onAttachmentError={publishAttachmentError}

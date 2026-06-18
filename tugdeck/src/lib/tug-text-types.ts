@@ -38,6 +38,12 @@ export interface CompletionItem {
   atom: AtomSegment;
   /** Byte-offset ranges [start, end) of matched characters for highlighting. */
   matches?: [number, number][];
+  /**
+   * One-line human description rendered in a muted second column of the
+   * popup row (e.g. a slash command's purpose). Optional — items without
+   * one render label-only. Wraps to at most two lines before truncating.
+   */
+  description?: string;
 }
 
 /**

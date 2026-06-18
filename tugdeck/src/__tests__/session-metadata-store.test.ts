@@ -446,6 +446,9 @@ describe("SessionMetadataStore getCommandCompletionProvider", () => {
     const results1 = provider("com");
     expect(results1).toHaveLength(1);
     expect(results1[0].label).toBe("commit");
+    // The command's description rides the completion item so the popup can
+    // render it in its second column.
+    expect(results1[0].description).toBe("Commit changes");
 
     // "HELP" (uppercase) matches "help"
     const results2 = provider("HELP");

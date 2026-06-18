@@ -589,6 +589,7 @@ export class SessionMetadataStore {
               value: cmd.name,
             },
             matches: match.matches.map(([s, e]) => [s, e] as [number, number]),
+            description: cmd.description,
           },
         });
       }

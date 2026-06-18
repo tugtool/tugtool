@@ -29,6 +29,7 @@ body {
   --tugx-completion-shadow:          var(--tug7-element-global-shadow-normal-overlay-rest);
   --tugx-completion-item-hover-bg:   var(--tug7-surface-selection-primary-normal-selected-rest);
   --tugx-completion-item-hover-fg:   var(--tug7-element-selection-text-normal-selected-rest);
+  --tugx-completion-desc-fg:         var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ---------------------------------------------------------------------------
@@ -49,9 +50,11 @@ body {
      overlay-tier migration — keep the token reference intact rather
      than reintroducing a hard-coded depth. */
   z-index: var(--tug-z-overlay-popup);
-  min-width: 200px;
-  max-width: 400px;
-  max-height: 240px;
+  min-width: 240px;
+  /* Capped so a long description wraps (to two lines) rather than letting
+     the panel grow unbounded with the catalog's wordiest entry. */
+  max-width: 520px;
+  max-height: 280px;
   overflow-y: auto;
   padding: 4px;
   /* @tug-renders-on: --tugx-completion-bg */
@@ -68,9 +71,12 @@ body {
 
 .tug-completion-menu-item {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  /* Baseline (not center): with a two-line description, the command name
+     should sit on the first description line's baseline, not float to the
+     vertical center of the taller row. */
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 10px;
   border-radius: var(--tug-radius-xs);
   cursor: pointer;
   font-size: 13px;
@@ -99,9 +105,36 @@ body {
    --------------------------------------------------------------------------- */
 
 .tug-completion-menu-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* The name never wraps. A `min-width` makes it a tab-stop so descriptions
+     line up in a column across rows (names shorter than the stop align;
+     longer ones push their own description right). Doesn't shrink. */
+  flex: 0 0 auto;
+  min-width: 150px;
   white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Item description — muted second column, wraps to at most two lines
+   --------------------------------------------------------------------------- */
+
+.tug-completion-menu-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tugx-completion-desc-fg);
+  /* Two-line clamp: a long description wraps once, then truncates with an
+     ellipsis instead of growing the row unbounded. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* On the selected row, the description rides the selection foreground so it
+   stays legible on the accent surface (the muted rest token would wash out). */
+.tug-completion-menu-item-selected .tug-completion-menu-desc {
+  color: var(--tugx-completion-item-hover-fg);
+  opacity: 0.85;
 }
 
 /* ---------------------------------------------------------------------------

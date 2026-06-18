@@ -21,6 +21,7 @@ import { cardServicesStore, type CardServices } from "@/lib/card-services-store"
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import type { CompletionProvider } from "@/lib/tug-text-types";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
+import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { resolveArgumentHint } from "@/lib/slash-argument-hint";
 import { LOCAL_SLASH_COMMANDS, type LocalSlashCommandSpec } from "@/lib/slash-commands";
 import { isHiddenSlashCommand } from "@/lib/slash-supported";
@@ -80,36 +81,52 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
   // trigger stays wired regardless of timing. The `/` provider is
   // wrapped with the position-0 gate so `/` mid-text yields an empty
   // popup.
+  // Base (un-gated) command-completion provider: local graphical commands
+  // merged with claude's reported commands (allowlist-filtered). Local commands
+  // are listed first so a name claude also reports resolves to the local entry.
+  // `/rewind` is always offered (never gated on a rewind target) — opening it
+  // with nothing to rewind to shows an explanatory empty-state sheet. Shared by
+  // the `/` popup (position-0 gated) and the mid-text inline ghost matcher.
+  const commandMatchProvider = useMemo<CompletionProvider | null>(() => {
+    if (services === null) return null;
+    return mergeCommandProviders(
+      localCommandCompletionProvider(),
+      filterCommandProvider(
+        services.sessionMetadataStore.getCommandCompletionProvider(),
+        (name) => !isHiddenSlashCommand(name),
+      ),
+    );
+  }, [services]);
+
   const completionProviders = useMemo<Record<string, CompletionProvider>>(
     () => ({
       "@": services?.fileCompletionProvider ?? EMPTY_FILE_COMPLETION_PROVIDER,
-      // Local (graphical) slash commands are merged in here at the
-      // composition layer — listed first so a name claude also reports
-      // resolves to the local entry. The store stays generic; the gallery
-      // (which calls the store provider directly) never sees them.
-      "/": services
-        ? wrapPositionZero(
-            entryDelegateRef,
-            mergeCommandProviders(
-              // Every local command is always offered. `/rewind` in particular
-              // is NOT gated on having a rewind target: the command must always
-              // be discoverable, and opening it with nothing to rewind to shows
-              // an explanatory empty-state sheet rather than silently no-opping.
-              localCommandCompletionProvider(),
-              // Apply the [D14] allowlist over claude's reported commands:
-              // drop the known-unsupported `hidden` tier from the popup.
-              // Local commands need no filter — every registry entry is
-              // supported by construction.
-              filterCommandProvider(
-                services.sessionMetadataStore.getCommandCompletionProvider(),
-                (name) => !isHiddenSlashCommand(name),
-              ),
-            ),
-          )
+      // Position-0 gated: a leading `/` opens the descriptive popup; mid-text
+      // yields an empty popup (the inline ghost covers that case instead).
+      "/": commandMatchProvider
+        ? wrapPositionZero(entryDelegateRef, commandMatchProvider)
         : EMPTY_FILE_COMPLETION_PROVIDER,
     }),
-    [services],
+    [services, commandMatchProvider],
   );
+
+  // Inline ghost matcher: scan the ranked catalog for the best full-name,
+  // case-insensitive prefix-extension of the typed query, returning the catalog
+  // name (so the painted suffix carries canonical casing). Returns null when
+  // nothing prefix-extends the query — the only case the ghost stays dark (a
+  // leaf-only or fuzzy match never ghosts; the popup, not the ghost, is where
+  // fuzzy discovery happens). Read live through the provider closure [L07].
+  const inlineCommandMatcher = useMemo<InlineCommandMatcher>(() => {
+    if (commandMatchProvider === null) return () => null;
+    return (query: string): string | null => {
+      if (query.length === 0) return null;
+      const q = query.toLowerCase();
+      const hit = commandMatchProvider(query).find((item) =>
+        item.label.toLowerCase().startsWith(q),
+      );
+      return hit ? hit.label : null;
+    };
+  }, [commandMatchProvider]);
 
   // Argument-hint resolver: maps an accepted command atom's value to its
   // placeholder by reading the LIVE command catalog (skill/agent category +
@@ -144,6 +161,7 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       historyStore: getDevPromptHistoryStore(),
       completionProviders,
       argumentHintResolver,
+      inlineCommandMatcher,
       editorStore: services.editorStore,
       responseStore: services.responseStore,
       gitDiffStore: services.gitDiffStore,
@@ -151,5 +169,5 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       hooksInventoryStore: services.hooksInventoryStore,
       entryDelegateRef,
     };
-  }, [services, completionProviders, argumentHintResolver]);
+  }, [services, completionProviders, argumentHintResolver, inlineCommandMatcher]);
 }
