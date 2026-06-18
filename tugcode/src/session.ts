@@ -5538,7 +5538,8 @@ export class SessionManager {
     if (this.sessionId === null || this.sessionId === "") return;
 
     await this.killAndCleanup();
-    this.claudeProcess = this.spawnClaude(this.sessionId, this.liveRespawnMode());
+    const mode = this.liveRespawnMode();
+    this.claudeProcess = this.spawnClaude(this.liveRespawnId(mode), mode);
     this.startStdoutDrain(this.claudeProcess);
     // The drain forwards claude's `system:init` to tugcast asynchronously, as
     // in `handleSessionFork` / `handleSessionContinue`; no synchronous await.
@@ -5546,20 +5547,37 @@ export class SessionManager {
 
   /**
    * Spawn mode for a live setting change (effort, add-dir) that must respawn
-   * the current session in place: `--resume` once the session has a committed
-   * conversation on disk, `--session-id` (re-create the id) until then.
+   * the current session in place: `--resume` when claude has a conversation on
+   * disk to load, `--session-id` (re-create the id) when it does not.
    *
-   * Claude does not write a session's JSONL until a turn lands, so `--resume`
-   * on a session that has only been initialized fails with "No conversation
-   * found" and the process exits immediately — the next submit then hits the
-   * stdout-EOF path and surfaces "Claude process stream ended unexpectedly".
-   * `claudeReceivedInput` (set on the first user-message write, never reset)
-   * is the proxy for "this session is resumable": before it, re-create the
-   * not-yet-persisted session under the same id with the new setting applied;
-   * after it, resume the real conversation.
+   * Claude writes a session's JSONL only once a turn lands, AND rejects
+   * `--session-id` for an id that already exists ("is already in use"). So the
+   * choice must match the on-disk reality on BOTH ends:
+   *  - A session **resumed from disk** (`sessionMode === "resume"`) already has
+   *    history — resume it. Re-creating it with `--session-id` collides.
+   *  - A **fresh** session that has since committed a turn this process
+   *    (`claudeReceivedInput`, set on the first user-message write) likewise has
+   *    history — resume it.
+   *  - A fresh session with **no** committed turn has nothing on disk — resume
+   *    fails with "No conversation found", so re-create it under the same id
+   *    (carrying the new setting) instead.
+   *
+   * Both wrong choices kill the process immediately; the next submit then hits
+   * the stdout-EOF path and surfaces "Claude process stream ended unexpectedly".
    */
   private liveRespawnMode(): "resume" | "session-id" {
-    return this.claudeReceivedInput ? "resume" : "session-id";
+    return this.sessionMode === "resume" || this.claudeReceivedInput
+      ? "resume"
+      : "session-id";
+  }
+
+  /**
+   * The claude id to (re)spawn against for a live-setting respawn: the resume
+   * id (`resolveClaudeId()`, which honors a forked session's rotated claude id)
+   * when resuming, or the tug session id when re-creating a fresh session.
+   */
+  private liveRespawnId(mode: "resume" | "session-id"): string {
+    return mode === "resume" ? this.resolveClaudeId() : this.sessionId;
   }
 
   /**
@@ -5581,7 +5599,8 @@ export class SessionManager {
     if (this.sessionId === null || this.sessionId === "") return;
 
     await this.killAndCleanup();
-    this.claudeProcess = this.spawnClaude(this.sessionId, this.liveRespawnMode());
+    const mode = this.liveRespawnMode();
+    this.claudeProcess = this.spawnClaude(this.liveRespawnId(mode), mode);
     this.startStdoutDrain(this.claudeProcess);
   }
 
