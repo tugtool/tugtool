@@ -95,8 +95,9 @@ export interface AtomBytesEntry {
   mediaType: string;
   /**
    * Inline thumbnail data URL — `data:image/<mime>;base64,<bytes>` —
-   * baked at a 256-px max edge by the downsample pipeline (drop /
-   * paste) or by the synthesizer's thumbnail-bake on the replay path.
+   * baked at `THUMBNAIL_MAX_EDGE_PX` max edge by the downsample
+   * pipeline (drop / paste) or by the synthesizer's thumbnail-bake on
+   * the replay path.
    *
    * Optional because:
    *  - the drop / paste pipeline lands a `DownsampleResult` synchronously

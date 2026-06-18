@@ -204,6 +204,14 @@ function paintTo(
   if (ctx === null) {
     throw new Error("2D canvas context unavailable in worker");
   }
+  // Enable high-quality resampling. Without this, a canvas downscale
+  // can fall back to nearest-neighbor sampling on some engines,
+  // dropping source pixels and producing the aliased / pixelated
+  // thumbnails the strip was showing. `"high"` requests the engine's
+  // best (bi-/tri-linear or better) filter so a downscale reads the
+  // whole neighborhood instead of a single nearest texel.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   source.draw(ctx, width, height);
   return canvas;
 }

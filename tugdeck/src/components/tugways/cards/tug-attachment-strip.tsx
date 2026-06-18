@@ -324,9 +324,10 @@ export const TugAttachmentStrip = React.forwardRef<
               ) : (
                 // Placeholder while the replay-path bake settles (or
                 // when bake failed; per Spec S04 + bakeThumbnail's
-                // null-on-failure contract). The placeholder shares
-                // the tile's fixed aspect so layout doesn't reflow
-                // when the image lands.
+                // null-on-failure contract). Square by default since
+                // the image's aspect is unknown until it lands; the
+                // tile settles to the real aspect on the brief
+                // replay-bake window.
                 <span
                   data-slot="tug-attachment-strip__placeholder"
                   className="tug-attachment-strip__placeholder"

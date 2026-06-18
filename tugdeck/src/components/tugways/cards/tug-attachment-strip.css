@@ -9,14 +9,16 @@
  * scrolling horizontally (no horizontal scroll on body content; the
  * transcript's vertical scroll is the only scroll surface).
  *
- * The tile is a fixed-aspect square thumbnail with a small caption
- * beneath. [Spec S06]'s original 64×64 tile read too small to be a
- * useful preview, so the default tile is enlarged here (the
+ * The tile is a fixed-width thumbnail whose height follows the source
+ * image's aspect ratio, with a small caption beneath. [Spec S06]'s
+ * original 64×64 tile read too small to be a useful preview, so the
+ * default tile width is enlarged here (the
  * `--tugx-attachment-strip-tile-size` slot below); clicking a tile
- * opens the full-resolution zoom preview. The thumbnail fits within
- * the tile via `object-fit: cover` so the inscribed image fills the
- * square; the underlying data URL is at most 256 px max edge (per
- * [Spec S04]), so the browser downscales into the tile.
+ * opens the full-resolution zoom preview. The thumbnail shows the
+ * whole image at its real proportions — never cropped, never
+ * letterboxed — via `width: 100%; height: auto`. The underlying data
+ * URL is baked at `THUMBNAIL_MAX_EDGE_PX` so the display-time scale is
+ * a true downscale, keeping the preview crisp on Retina.
  *
  * Atom-position labels (`#NNNN-image-N`) are intentionally monospaced
  * (matching the inline chip's label font) so a reader pairing a chip
@@ -90,11 +92,13 @@
 /* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
 
 .tug-attachment-strip__thumb {
-  /* Inscribed thumbnail container. Square aspect (1:1) so the tile
-     reads as a uniform grid regardless of source image proportions. */
+  /* Thumbnail container. Fixed width; the height follows the image's
+     own aspect ratio (the `<img>` below is `width:100%; height:auto`),
+     so the whole image is shown — never cropped, never letterboxed.
+     Tiles in a row therefore vary in height; the strip's
+     `align-items: flex-start` keeps their tops aligned. */
   display: block;
   width: var(--tugx-attachment-strip-tile-size, 128px);
-  height: var(--tugx-attachment-strip-tile-size, 128px);
   border-radius: var(--tugx-attachment-strip-tile-radius, 4px);
   /* Background slot for the placeholder + a subtle frame around the
      thumbnail when it lands. The token follows the existing
@@ -106,14 +110,14 @@
 }
 
 .tug-attachment-strip__thumb-img {
-  /* `object-fit: cover` so the source image fills the square tile
-     without distortion. The source is already ≤256 px max edge per
-     `bakeThumbnail`'s contract, so the browser downscale here is
-     cheap. */
+  /* Render the whole image at the tile's fixed width with its natural
+     aspect ratio (`height: auto`), so the container height matches the
+     image exactly — no crop, no distortion. The baked thumbnail is
+     sized so this is a true downscale at display time (see
+     `THUMBNAIL_MAX_EDGE_PX`), which keeps the preview crisp on Retina. */
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
   /* Keep the image inside the tile's border-radius even though the
      parent already clips via overflow:hidden — defends against
      subpixel rendering nits on retina displays. */
@@ -126,10 +130,11 @@
      thumbnail-bake completion. The bake is fire-and-forget on the
      replay path; a brief flash of blank tile is acceptable
      (typically <100ms). No pulse animation — a busy loading-state
-     pulse would distract from transcript reading. */
+     pulse would distract from transcript reading. Square by default
+     since the aspect is unknown until the image lands. */
   display: block;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 1 / 1;
   background: var(--tugx-attachment-strip-placeholder-bg,
     var(--tug7-element-field-fill-rest, #2a2a2a));
 }

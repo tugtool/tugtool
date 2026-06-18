@@ -611,10 +611,11 @@ describe("exported constants", () => {
     expect(MAX_BYTE_SIZE).toBe(5 * 1024 * 1024);
   });
 
-  test("THUMBNAIL_MAX_EDGE_PX is small enough for snapshot residence", () => {
-    // No hard rule — but 256 px is the chosen v1 default. Test
-    // surfaces an intentional change.
-    expect(THUMBNAIL_MAX_EDGE_PX).toBe(256);
+  test("THUMBNAIL_MAX_EDGE_PX gives a crisp, Retina-sized strip tile", () => {
+    // 512 px so the fixed-width strip tile (128 px logical) downscales
+    // rather than upscales even at 3× DPR. Still bounded for snapshot
+    // residence. Test surfaces an intentional change.
+    expect(THUMBNAIL_MAX_EDGE_PX).toBe(512);
   });
 
   test("SVG_RASTER_MAX_EDGE_PX is the picked SVG raster target", () => {

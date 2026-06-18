@@ -100,12 +100,18 @@ export const MAX_LONG_EDGE_PX = 2576;
 export const MAX_BYTE_SIZE = 5 * 1024 * 1024;
 
 /**
- * Long-edge ceiling for thumbnails. Picked so a thumbnail fits the
- * transcript-strip tile (~64 px logical, 128 px on Retina, plus
- * headroom for click-to-enlarge previews) without holding the full
- * payload in React state ([D04] no-bytes-on-snapshot).
+ * Long-edge ceiling for thumbnails. The transcript strip renders each
+ * tile at a fixed 128 px logical width with the height following the
+ * image's aspect ratio (no crop). At up to 3× device-pixel-ratio that
+ * is ~384 physical px on the long edge; 512 gives headroom so the
+ * downscale at display time stays a true downscale (never an upscale)
+ * even for off-square images whose short edge would otherwise land
+ * well below the tile's physical size. The old 256 px ceiling forced
+ * the browser to upscale the thumbnail into the tile — the source of
+ * the pixelated / blurred previews. Still bounded so we don't hold the
+ * full payload in React state ([D04] no-bytes-on-snapshot).
  */
-export const THUMBNAIL_MAX_EDGE_PX = 256;
+export const THUMBNAIL_MAX_EDGE_PX = 512;
 
 /**
  * SVG rasterization target. Vector input has no intrinsic resolution,
