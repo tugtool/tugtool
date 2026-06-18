@@ -152,6 +152,8 @@ import {
 } from "lucide-react";
 
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
+import { TugInput } from "@/components/tugways/tug-input";
+import { TugTextarea } from "@/components/tugways/tug-textarea";
 import {
   TugConfirmPopover,
   type TugConfirmPopoverHandle,
@@ -330,21 +332,44 @@ export function applyQuestionSelection(
 }
 
 /**
+ * Whether question `i` carries an answer — either at least one selected
+ * option label OR a non-blank free-text value ([P01]/[F1]). Free text
+ * and option labels are mutually exclusive per question (engaging one
+ * clears the other), so a single OR predicate captures "answered" for
+ * every gate: the Submit enable, the rail `done`/`recommended` status,
+ * and the headline count. Pure; exported for the test suite.
+ */
+export function questionAnswered(
+  selection: ReadonlyArray<string> | undefined,
+  freeText: string | undefined,
+): boolean {
+  return (selection?.length ?? 0) > 0 || (freeText ?? "").trim() !== "";
+}
+
+/**
  * Build the `answers` record for a `question_answer` frame. Keyed by
- * each question's *text*; the value is the selected option label, or
- * — for a multi-select question — the labels joined by a bare `,`
- * with no spaces. This is the shape tugcode's `formatQuestionAnswer`
- * (`tugcode/src/control.ts`) expects.
+ * each question's *text*. A free-text answer ([P01]) wins when present
+ * (non-blank) and is sent verbatim; otherwise the value is the selected
+ * option label, or — for a multi-select question — the labels joined by
+ * a bare `,` with no spaces. This is the shape tugcode's
+ * `formatQuestionAnswer` (`tugcode/src/control.ts`) expects.
  *
- * A question with no selection contributes an empty-string value
- * (Claude reads it as "no answer"). Pure; exported for the test suite.
+ * A question with neither contributes an empty-string value (Claude
+ * reads it as "no answer"). Pure; exported for the test suite.
  */
 export function buildQuestionAnswers(
   questions: ReadonlyArray<ParsedQuestion>,
   selections: ReadonlyArray<ReadonlyArray<string>>,
+  freeTexts?: ReadonlyArray<string>,
 ): Record<string, string> {
   const answers: Record<string, string> = {};
   questions.forEach((question, index) => {
+    const free = freeTexts?.[index] ?? "";
+    if (free.trim() !== "") {
+      // Free text is the answer verbatim — not joined, not a label.
+      answers[question.question] = free;
+      return;
+    }
     const picked = selections[index] ?? [];
     answers[question.question] = picked.join(",");
   });
@@ -352,17 +377,20 @@ export function buildQuestionAnswers(
 }
 
 /**
- * Count how many questions have at least one selection (whether
- * preseeded or user-picked). Drives the `Submit` gate: the
+ * Count how many questions carry an answer (selection or free text,
+ * whether preseeded or user-supplied). Drives the `Submit` gate: the
  * confirm button lights up once every row carries *some* answer,
  * which is the literal precondition for round-tripping a non-empty
  * `answers` payload. Pure; exported for the test suite.
  */
 export function countAnswered(
   selections: ReadonlyArray<ReadonlyArray<string>>,
+  freeTexts?: ReadonlyArray<string>,
 ): number {
   let count = 0;
-  for (const s of selections) if (s.length > 0) count += 1;
+  for (let i = 0; i < selections.length; i += 1) {
+    if (questionAnswered(selections[i], freeTexts?.[i])) count += 1;
+  }
   return count;
 }
 
@@ -379,10 +407,13 @@ export function countAnswered(
 export function countConfirmedAnswers(
   selections: ReadonlyArray<ReadonlyArray<string>>,
   visited: ReadonlyArray<boolean>,
+  freeTexts?: ReadonlyArray<string>,
 ): number {
   let count = 0;
   for (let i = 0; i < selections.length; i += 1) {
-    if (visited[i] && selections[i].length > 0) count += 1;
+    if (visited[i] && questionAnswered(selections[i], freeTexts?.[i])) {
+      count += 1;
+    }
   }
   return count;
 }
@@ -453,7 +484,12 @@ export function nextAdvanceIndex(from: number, total: number): number {
  */
 export function composeRowAnswerLabel(
   selection: ReadonlyArray<string>,
+  freeText?: string,
 ): string {
+  // Free text, when present, IS the answer ([P01]) — show it verbatim
+  // (it supersedes any label, which is already cleared when free text is
+  // engaged).
+  if ((freeText ?? "").trim() !== "") return (freeText ?? "").trim();
   if (selection.length === 0) return "";
   return selection.join(", ");
 }
@@ -472,6 +508,17 @@ export interface QuestionDialogPreservedState {
   selections: string[][];
   visited: boolean[];
   currentIndex: number;
+  /** Per-question free-text answer ([P01]). Parallel to `selections`;
+   *  an empty string means "no free text" (the option labels answer the
+   *  question instead). Optional in the wire shape so an older saved
+   *  envelope (pre-free-text) still validates and realigns ([F4]). */
+  freeTexts?: string[];
+  /** `Chat about this` decline mode ([P02]) — whether the dialog is
+   *  showing the freeform reply field instead of the wizard. Optional
+   *  for the same forward-compat reason as `freeTexts`. */
+  declineMode?: boolean;
+  /** In-progress decline reply text ([P02]). */
+  declineText?: string;
 }
 
 /** Stable preservation-key prefix for the dialog's per-request slot.
@@ -510,6 +557,23 @@ function isPreservedQuestionState(
   if (typeof v.currentIndex !== "number" || !Number.isFinite(v.currentIndex)) {
     return false;
   }
+  // `freeTexts` is optional ([F4]): absent is fine (older envelope), but
+  // when present it must be a string[] — otherwise reject the whole
+  // envelope rather than partially trust it.
+  if (v.freeTexts !== undefined) {
+    if (!Array.isArray(v.freeTexts)) return false;
+    for (const text of v.freeTexts) {
+      if (typeof text !== "string") return false;
+    }
+  }
+  // Decline mode/text are optional ([P02]); when present they must be the
+  // right primitive type or the whole envelope is rejected.
+  if (v.declineMode !== undefined && typeof v.declineMode !== "boolean") {
+    return false;
+  }
+  if (v.declineText !== undefined && typeof v.declineText !== "string") {
+    return false;
+  }
   return true;
 }
 
@@ -532,6 +596,9 @@ export function seedQuestionDialogState(
     selections: initialQuestionSelections(questions),
     visited: new Array(questions.length).fill(false) as boolean[],
     currentIndex: 0,
+    freeTexts: new Array(questions.length).fill("") as string[],
+    declineMode: false,
+    declineText: "",
   };
   if (!isPreservedQuestionState(saved)) return defaults;
 
@@ -546,11 +613,24 @@ export function seedQuestionDialogState(
     const flag = saved.visited[index];
     return typeof flag === "boolean" ? flag : seed;
   });
+  // `freeTexts` realigns the same way; an absent/short saved array
+  // (older envelope) falls back to the empty-string default per slot.
+  const freeTexts: string[] = (defaults.freeTexts ?? []).map((seed, index) => {
+    const text = saved.freeTexts?.[index];
+    return typeof text === "string" ? text : seed;
+  });
   const clampedIndex = Math.max(
     0,
     Math.min(saved.currentIndex, questions.length),
   );
-  return { selections, visited, currentIndex: clampedIndex };
+  return {
+    selections,
+    visited,
+    currentIndex: clampedIndex,
+    freeTexts,
+    declineMode: saved.declineMode ?? false,
+    declineText: saved.declineText ?? "",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -573,6 +653,7 @@ interface QuestionRailState {
   selections: ReadonlyArray<ReadonlyArray<string>>;
   visited: ReadonlyArray<boolean>;
   currentIndex: number;
+  freeTexts: ReadonlyArray<string>;
 }
 
 /** Pixel size for the lucide row-marker icons. Matches the heading
@@ -609,6 +690,7 @@ const QuestionRailContext = React.createContext<QuestionRailState>({
   selections: [],
   visited: [],
   currentIndex: 0,
+  freeTexts: [],
 });
 
 /**
@@ -663,12 +745,13 @@ const QuestionRailCell: TugListViewCellRenderer<QuestionRailDataSource> =
     const rail = React.useContext(QuestionRailContext);
     const question = rail.questions[index];
     const selection = rail.selections[index] ?? [];
+    const freeText = rail.freeTexts[index] ?? "";
     const status = rowStatus(
       index === rail.currentIndex,
       rail.visited[index] === true,
-      selection.length > 0,
+      questionAnswered(selection, freeText),
     );
-    const answer = composeRowAnswerLabel(selection);
+    const answer = composeRowAnswerLabel(selection, freeText);
     const labelPrefix =
       status === "current"
         ? "Current question"
@@ -830,6 +913,17 @@ const QUESTION_SUBMIT_ORDER = 1;
 const QUESTION_BACK_ORDER = 2;
 const QUESTION_NEXT_ORDER = 3;
 const QUESTION_OPTIONS_ORDER = 4;
+/** The current question's free-text answer field ([P01]) — a focus stop
+ *  after the options, and a spatial-grid node ([K1]). */
+const QUESTION_FREETEXT_ORDER = 5;
+// Decline mode ([P02], `Chat about this`). The reply textarea, its
+// `Send reply` action, the `Back to questions` exit, and the wizard-mode
+// `Chat about this` entry control — each a focus stop / spatial-grid node
+// in the mode it belongs to.
+const QUESTION_SEND_REPLY_ORDER = 6;
+const QUESTION_BACK_TO_QUESTIONS_ORDER = 7;
+const QUESTION_DECLINE_TEXT_ORDER = 8;
+const QUESTION_CHAT_ABOUT_ORDER = 9;
 
 interface QuestionOptionsProps {
   question: ParsedQuestion;
@@ -957,6 +1051,84 @@ function QuestionOptionsSizer({
   );
 }
 
+/** Placeholder for the free-text answer field — shared by the live
+ *  field and its inert sizer so both reserve the same one-line box. */
+const FREE_TEXT_PLACEHOLDER = "Or type your own answer…";
+
+interface QuestionFreeTextProps {
+  /** Current free-text value (controlled — lives in the wizard's `freeTexts`). */
+  value: string;
+  /** Typed input — sets the row's free text and clears its labels ([P01]). */
+  onChange: (value: string) => void;
+  /** Enter (no Shift) = advance the wizard ([K3]). */
+  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  /** Focus group + order — the field is one stop in the dialog's trap. */
+  focusGroup: string;
+  focusOrder: number;
+}
+
+/**
+ * The current question's free-text answer field ([P01]) — a single-line
+ * {@link TugInput} below the options. Always present (constant geometry:
+ * it rides the panel sizers), so it's a stable focus stop and spatial-grid
+ * node ([K1]) the user can Tab/arrow into. Controlled: the value lives in
+ * the wizard's `freeTexts` state (and the [A9] bag preserves it), so no
+ * `componentStatePreservationKey` ([K2], uncontrolled-only). The substrate
+ * editing responder (CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO) is wired
+ * automatically — `TugInput` registers it inside the card's provider.
+ */
+const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
+  value,
+  onChange,
+  onKeyDown,
+  focusGroup,
+  focusOrder,
+}) => {
+  return (
+    <div
+      className="dev-question-dialog-freetext"
+      data-slot="dev-question-dialog-freetext"
+    >
+      <TugInput
+        size="sm"
+        value={value}
+        placeholder={FREE_TEXT_PLACEHOLDER}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        focusGroup={focusGroup}
+        focusOrder={focusOrder}
+        aria-label="Type your own answer"
+        // While the field is empty the user hasn't committed to typing, so a
+        // bare Up/Down should move the ring to the adjacent row rather than
+        // dead-end on the (empty) caret ([P25] release seam). Once there's
+        // text, the caret owns every arrow again.
+        data-tug-arrow-release={value === "" ? "up down" : undefined}
+      />
+    </div>
+  );
+};
+
+/**
+ * The inert face of the free-text field for the panel's hidden sizers —
+ * the SAME single-line box, disabled and unfocusable, so each sizer
+ * reserves the field's height and the panel never resizes when the live
+ * field gains or loses text. No `focusGroup` (no engine registration),
+ * no handlers.
+ */
+function QuestionFreeTextSizer(): React.ReactElement {
+  return (
+    <div className="dev-question-dialog-freetext" aria-hidden="true">
+      <TugInput
+        size="sm"
+        disabled
+        readOnly
+        tabIndex={-1}
+        placeholder={FREE_TEXT_PLACEHOLDER}
+      />
+    </div>
+  );
+}
+
 /**
  * The panel's question heading — `N. Question text`, repeated from
  * the rail so the options always sit directly under the question they
@@ -1059,6 +1231,27 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     () => seed.currentIndex,
   );
 
+  // [L24] / [P01] — per-question free-text answer, parallel to
+  // `selections`. An empty string means "no free text" (the options
+  // answer the question). A non-blank value IS that question's answer
+  // and supersedes any option labels (engaging one clears the other).
+  // User data → preserved via the [A9] bag alongside the other arrays.
+  const [freeTexts, setFreeTexts] = React.useState<string[]>(
+    () => seed.freeTexts ?? new Array(questions.length).fill(""),
+  );
+
+  // [P02] `Chat about this` — whether the dialog is in decline mode (the
+  // freeform reply field replaces the wizard) and the in-progress reply
+  // text. Both are user data → preserved via the [A9] bag. The reply is
+  // controlled (value from React state), so no `componentStatePreservation
+  // Key` on the textarea ([K2]).
+  const [declineMode, setDeclineMode] = React.useState<boolean>(
+    () => seed.declineMode ?? false,
+  );
+  const [declineText, setDeclineText] = React.useState<string>(
+    () => seed.declineText ?? "",
+  );
+
   // A bump-only counter that re-runs the flash-then-advance effect even when the
   // selection set itself didn't change. A multi-select Return commits-and-
   // advances by "checking" the cursor row — but if that row is ALREADY checked
@@ -1072,7 +1265,14 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // `currentIndex` are always available at capture time.
   useComponentStatePreservation<QuestionDialogPreservedState>({
     componentStatePreservationKey: preservationKey,
-    captureState: () => ({ selections, visited, currentIndex }),
+    captureState: () => ({
+      selections,
+      visited,
+      currentIndex,
+      freeTexts,
+      declineMode,
+      declineText,
+    }),
   });
 
   // The rail's list-view plumbing. The data source is row identity
@@ -1092,6 +1292,18 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       if (prev[index] === true) return prev;
       const next = prev.slice();
       next[index] = true;
+      return next;
+    });
+  }, []);
+
+  /** Clear row `index`'s free text ([P01] mutual exclusivity) — called
+   *  when the user picks an option, so a question is answered by EITHER
+   *  options OR free text, never a blend. Idempotent. */
+  const clearFreeText = React.useCallback((index: number) => {
+    setFreeTexts((prev) => {
+      if ((prev[index] ?? "") === "") return prev;
+      const next = prev.slice();
+      next[index] = "";
       return next;
     });
   }, []);
@@ -1135,10 +1347,10 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       return questions.every(
         (_q, i) =>
           (i === assumeVisited || (visited[i] ?? false)) &&
-          (selections[i]?.length ?? 0) > 0,
+          questionAnswered(selections[i], freeTexts[i]),
       );
     },
-    [questions, visited, selections],
+    [questions, visited, selections, freeTexts],
   );
 
   // Callback hooks must precede the early return so the hook order is
@@ -1190,9 +1402,10 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         );
         return next;
       });
+      clearFreeText(questionIndex);
       markVisited(questionIndex);
     },
-    [questions, markVisited],
+    [questions, markVisited, clearFreeText],
   );
 
   // Return on the cursor option (`commitOnEnter: "act"`). A forward gesture for
@@ -1215,10 +1428,55 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         next[questionIndex] = nextSel;
         return next;
       });
+      clearFreeText(questionIndex);
       markVisited(questionIndex);
       armAdvance(questionIndex);
     },
-    [questions, markVisited, armAdvance],
+    [questions, markVisited, armAdvance, clearFreeText],
+  );
+
+  // The free-text answer field ([P01]). Typing into it sets the row's
+  // free text and — when non-blank — clears that row's option labels
+  // (mutual exclusivity, [Q02]); a non-blank value marks the question
+  // visited so it counts toward the headline and Submit gate. Controlled
+  // (value from React state), so the value lives in `freeTexts` and the
+  // [A9] bag preserves it across reload ([K2] — no `componentStatePreservation
+  // Key`, which is uncontrolled-only).
+  const handleFreeTextChange = React.useCallback(
+    (questionIndex: number, value: string) => {
+      setFreeTexts((prev) => {
+        if ((prev[questionIndex] ?? "") === value) return prev;
+        const next = prev.slice();
+        next[questionIndex] = value;
+        return next;
+      });
+      if (value.trim() !== "") {
+        setSelections((prev) => {
+          if ((prev[questionIndex]?.length ?? 0) === 0) return prev;
+          const next = prev.slice();
+          next[questionIndex] = [];
+          return next;
+        });
+        markVisited(questionIndex);
+      }
+    },
+    [markVisited],
+  );
+
+  // [K3] Enter in the free-text field = advance the wizard (same as a
+  // Return on the options), NOT an option-label commit. The value is
+  // already in `freeTexts` from `onChange`; mark visited and reuse the
+  // shared advance machinery so "Return walks the wizard" survives. The
+  // engine's [P25] guard passes Enter through to the focused input, so
+  // we read it off the field's own `onKeyDown`.
+  const handleFreeTextKeyDown = React.useCallback(
+    (questionIndex: number, event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter" || event.shiftKey) return;
+      event.preventDefault();
+      markVisited(questionIndex);
+      armAdvance(questionIndex);
+    },
+    [markVisited, armAdvance],
   );
 
   /** Jump-via-rail-click is exploratory — the user hasn't committed
@@ -1297,8 +1555,54 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   );
 
   const handleSubmit = React.useCallback(() => {
-    respond(buildQuestionAnswers(questions, selections));
-  }, [respond, questions, selections]);
+    respond(buildQuestionAnswers(questions, selections, freeTexts));
+  }, [respond, questions, selections, freeTexts]);
+
+  // [P02] `Chat about this` — the decline-and-reply path. Entering decline
+  // mode swaps the wizard body for the reply field and lands focus in it
+  // ([K1], via `pendingFocusKeyRef` consumed by the focus-restore effect on
+  // the `declineMode` change). `Back to questions` exits, restoring the
+  // wizard + focus.
+  const handleEnterDecline = React.useCallback(() => {
+    pendingFocusKeyRef.current = `${focusGroup}:${QUESTION_DECLINE_TEXT_ORDER}`;
+    setDeclineMode(true);
+  }, [focusGroup]);
+
+  const handleExitDecline = React.useCallback(() => {
+    // Back to the wizard — re-seed focus on the current question's options
+    // (or Submit at the review step), mirroring the open seed.
+    const atReview = currentIndex >= questions.length;
+    pendingFocusKeyRef.current =
+      questions.length > 0 && !atReview
+        ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
+        : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
+    setDeclineMode(false);
+  }, [focusGroup, currentIndex, questions.length]);
+
+  // Submit the decline reply ([P02]): resolves the tool with the freeform
+  // `response` (distinct from Cancel's interrupt). No-op on a blank reply
+  // or a stale (no-longer-pending) request.
+  const respondDecline = React.useCallback(() => {
+    if (declineText.trim() === "") return;
+    const stillPending =
+      session.getSnapshot().pendingQuestion?.request_id === requestId;
+    if (!stillPending) return;
+    session.respondQuestion(requestId, { response: declineText });
+  }, [session, requestId, declineText]);
+
+  // [P06] The reply field's submit semantics: plain Return inserts a newline
+  // (native textarea), Cmd/⇧-Return submits (the prompt-entry convention).
+  // The engine's [P25] guard yields the keystroke to the focused textarea, so
+  // we read it off the field's own `onKeyDown`.
+  const handleDeclineKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Enter" && (event.metaKey || event.shiftKey)) {
+        event.preventDefault();
+        respondDecline();
+      }
+    },
+    [respondDecline],
+  );
 
   // Cancel — the unified Stop / Esc gesture. `session.popInteractive()`
   // is the same path Escape walks through the responder chain
@@ -1349,11 +1653,23 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // name, so no arrow dead-ends.
   const spatialOrder = React.useMemo<SpatialOrder>(() => {
     const key = (order: number): string => `${focusGroup}:${order}`;
+    // Decline mode ([P02]/[K1]) swaps in its own grid — Cancel + Send reply
+    // on top, then Back to questions, then the reply textarea — so arrows
+    // stay within the reply surface and never reach the (hidden) wizard.
+    if (declineMode) {
+      return rowGridOrder([
+        [key(QUESTION_CANCEL_ORDER), key(QUESTION_SEND_REPLY_ORDER)],
+        [key(QUESTION_BACK_TO_QUESTIONS_ORDER)],
+        [key(QUESTION_DECLINE_TEXT_ORDER)],
+      ]);
+    }
     const hasQ = questions.length > 0;
     const multi = questions.length > 1;
     const atReview = currentIndex >= questions.length;
     const everyAnswered =
-      hasQ && countConfirmedAnswers(selections, visited) === questions.length;
+      hasQ &&
+      countConfirmedAnswers(selections, visited, freeTexts) ===
+        questions.length;
 
     const buttonRow: string[] = [];
     if (hasQ) {
@@ -1372,9 +1688,26 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     // the review step). Same treatment regardless of arity.
     const optionsRow: string[] = [];
     if (hasQ && !atReview) optionsRow.push(key(QUESTION_OPTIONS_ORDER));
+    // The free-text field ([K1]) is its own grid row directly under the
+    // options, reachable by a bare Down arrow, whenever a live question
+    // is shown.
+    const freeTextRow: string[] = [];
+    if (hasQ && !atReview) freeTextRow.push(key(QUESTION_FREETEXT_ORDER));
+    // The `Chat about this` entry control ([P02]) — a bottom row in the
+    // wizard, present whenever there are questions to decline.
+    const chatRow: string[] = [];
+    if (hasQ) chatRow.push(key(QUESTION_CHAT_ABOUT_ORDER));
 
-    return rowGridOrder([buttonRow, navRow, optionsRow]);
-  }, [focusGroup, questions, selections, visited, currentIndex]);
+    return rowGridOrder([buttonRow, navRow, optionsRow, freeTextRow, chatRow]);
+  }, [
+    focusGroup,
+    questions,
+    selections,
+    visited,
+    currentIndex,
+    freeTexts,
+    declineMode,
+  ]);
   useSpatialOrder(scopeId, isPending ? spatialOrder : null);
 
   const manager = useFocusManager();
@@ -1384,8 +1717,9 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // the key view on the current question's options on open (answering is the
   // task), or on Submit at the review step.
   const seedAtReview = currentIndex >= questions.length;
-  const seedFocusKey =
-    questions.length > 0 && !seedAtReview
+  const seedFocusKey = declineMode
+    ? `${focusGroup}:${QUESTION_DECLINE_TEXT_ORDER}`
+    : questions.length > 0 && !seedAtReview
       ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
       : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
   const { attachRoot } = useInlineDialogScope({
@@ -1508,7 +1842,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     if (target === null) return;
     pendingFocusKeyRef.current = null;
     manager.armKeyboardRestore(target);
-  }, [isPending, manager, currentIndex]);
+  }, [isPending, manager, currentIndex, declineMode]);
 
   // Panel height floor, ratcheted — the hard guarantee under the sizer grid.
   // The stacked sizers already hold the panel at the tallest question's
@@ -1582,7 +1916,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
 
   const hasQuestions = questions.length > 0;
   const single = questions.length === 1 ? questions[0] : null;
-  const confirmedCount = countConfirmedAnswers(selections, visited);
+  const confirmedCount = countConfirmedAnswers(selections, visited, freeTexts);
   // `Submit` lights up when the user has actively confirmed every
   // question — i.e. landed on each row and committed an answer (the
   // preseed alone isn't enough). Forces the user to scan the full
@@ -1593,11 +1927,13 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // verbatim (unchanged from the legacy layout); the multi-question
   // summary moves into the wizard-nav row alongside Back / Next, so
   // this prop is `undefined` for multi-question payloads.
-  const dialogDescription: React.ReactNode | undefined = !hasQuestions
-    ? "Claude sent a question that could not be displayed."
-    : single !== null
-      ? single.question
-      : undefined;
+  const dialogDescription: React.ReactNode | undefined = declineMode
+    ? "Reply to Claude in your own words instead of answering."
+    : !hasQuestions
+      ? "Claude sent a question that could not be displayed."
+      : single !== null
+        ? single.question
+        : undefined;
   const wizardSummary: string | null =
     hasQuestions && single === null
       ? `${questions.length} questions · ${confirmedCount} answered`
@@ -1616,27 +1952,52 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // live together on their own row inside the body slot — see the
   // JSX below. Single-question payloads omit the wizard-nav row
   // entirely (nothing to navigate, no progress to report).
-  const dialogActions: React.ReactNode = hasQuestions ? (
-    <>
-      <TugConfirmPopover
-        ref={cancelPopoverRef}
-        message="Cancel this question?"
-        confirmLabel="Yes, cancel"
-        cancelLabel="Keep going"
-        confirmRole="danger"
-        side="bottom"
+  // Cancel ≡ Esc ≡ interrupt — shared across wizard and decline mode (a
+  // decline is a *resolution*, Cancel a *rejection*; both keep their
+  // confirm popover).
+  const cancelControl: React.ReactNode = (
+    <TugConfirmPopover
+      ref={cancelPopoverRef}
+      message="Cancel this question?"
+      confirmLabel="Yes, cancel"
+      cancelLabel="Keep going"
+      confirmRole="danger"
+      side="bottom"
+    >
+      <TugPushButton
+        emphasis="outlined"
+        role="danger"
+        size="xs"
+        focusGroup={focusGroup}
+        focusOrder={QUESTION_CANCEL_ORDER}
+        onClick={handleCancelClick}
       >
-        <TugPushButton
-          emphasis="outlined"
-          role="danger"
-          size="xs"
-          focusGroup={focusGroup}
-          focusOrder={QUESTION_CANCEL_ORDER}
-          onClick={handleCancelClick}
-        >
-          Cancel
-        </TugPushButton>
-      </TugConfirmPopover>
+        Cancel
+      </TugPushButton>
+    </TugConfirmPopover>
+  );
+
+  const dialogActions: React.ReactNode = declineMode ? (
+    // Decline mode ([P02]) — the options `Submit` is replaced by a
+    // `Send reply` action that resolves the tool with the freeform reply.
+    <>
+      {cancelControl}
+      <TugPushButton
+        emphasis="primary"
+        role="action"
+        size="xs"
+        focusGroup={focusGroup}
+        focusOrder={QUESTION_SEND_REPLY_ORDER}
+        persistentDefaultRing
+        disabled={declineText.trim() === ""}
+        onClick={respondDecline}
+      >
+        Send reply
+      </TugPushButton>
+    </>
+  ) : hasQuestions ? (
+    <>
+      {cancelControl}
       <TugPushButton
         emphasis="primary"
         role="action"
@@ -1696,6 +2057,48 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       actions={dialogActions}
       className={className}
     >
+      {declineMode ? (
+        // [P02] Decline mode — the freeform reply field replaces the
+        // whole wizard (it abandons every question at once). A controlled
+        // TugTextarea (value in React state, preserved via the [A9] bag —
+        // no `componentStatePreservationKey`, [K2]) authored as a focus
+        // stop, plus a `Back to questions` exit. `Send reply` lives in the
+        // header actions.
+        <div
+          className="dev-question-dialog-decline"
+          data-slot="dev-question-dialog-decline"
+        >
+          <TugTextarea
+            className="dev-question-dialog-decline-field"
+            value={declineText}
+            onChange={(event) => setDeclineText(event.target.value)}
+            onKeyDown={handleDeclineKeyDown}
+            placeholder="Type your reply to Claude…"
+            autoResize
+            rows={3}
+            maxRows={10}
+            focusGroup={focusGroup}
+            focusOrder={QUESTION_DECLINE_TEXT_ORDER}
+            aria-label="Reply to Claude"
+          />
+          <div className="dev-question-dialog-decline-foot">
+            <span className="dev-question-dialog-decline-hint">
+              Return for a new line · ⌘↩ to send
+            </span>
+            <TugPushButton
+              emphasis="outlined"
+              role="action"
+              size="xs"
+              focusGroup={focusGroup}
+              focusOrder={QUESTION_BACK_TO_QUESTIONS_ORDER}
+              onClick={handleExitDecline}
+            >
+              <ArrowLeft size={14} aria-hidden="true" /> Back to questions
+            </TugPushButton>
+          </div>
+        </div>
+      ) : (
+        <>
       {wizardSummary !== null ? (
         <div
           className="dev-question-dialog-nav"
@@ -1748,6 +2151,13 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
             focusGroup={focusGroup}
             focusOrder={QUESTION_OPTIONS_ORDER}
           />
+          <QuestionFreeText
+            value={freeTexts[0] ?? ""}
+            onChange={(value) => handleFreeTextChange(0, value)}
+            onKeyDown={(event) => handleFreeTextKeyDown(0, event)}
+            focusGroup={focusGroup}
+            focusOrder={QUESTION_FREETEXT_ORDER}
+          />
         </div>
       ) : null}
       {hasQuestions && single === null ? (
@@ -1758,7 +2168,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
             * `focusGroup`: the rail is mouse-jump only (keyboard
             * walks Back / Next), so it contributes no Tab stop. */}
           <QuestionRailContext.Provider
-            value={{ questions, selections, visited, currentIndex }}
+            value={{ questions, selections, visited, currentIndex, freeTexts }}
           >
             <TugListView<QuestionRailDataSource>
               dataSource={railDataSource}
@@ -1815,6 +2225,17 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
                       focusOrder={QUESTION_OPTIONS_ORDER}
                     />
                   </div>
+                  <QuestionFreeText
+                    value={freeTexts[currentIndex] ?? ""}
+                    onChange={(value) =>
+                      handleFreeTextChange(currentIndex, value)
+                    }
+                    onKeyDown={(event) =>
+                      handleFreeTextKeyDown(currentIndex, event)
+                    }
+                    focusGroup={focusGroup}
+                    focusOrder={QUESTION_FREETEXT_ORDER}
+                  />
                 </>
               )}
             </div>
@@ -1832,11 +2253,35 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
                 <div className="dev-question-dialog-panel-options">
                   <QuestionOptionsSizer question={question} />
                 </div>
+                <QuestionFreeTextSizer />
               </div>
             ))}
           </div>
         </>
       ) : null}
+          {hasQuestions ? (
+            // [P02] `Chat about this` — abandon the questions and reply in
+            // prose. A quiet (ghost) entry at the foot of the wizard;
+            // activating it switches the dialog into decline mode.
+            <div
+              className="dev-question-dialog-chat-about"
+              data-slot="dev-question-dialog-chat-about"
+            >
+              <TugPushButton
+                emphasis="ghost"
+                role="action"
+                size="xs"
+                focusGroup={focusGroup}
+                focusOrder={QUESTION_CHAT_ABOUT_ORDER}
+                onClick={handleEnterDecline}
+              >
+                <MessageCircleQuestion size={14} aria-hidden="true" /> Chat
+                about this instead
+              </TugPushButton>
+            </div>
+          ) : null}
+        </>
+      )}
     </TugInlineDialog>
       </div>
     </FocusModeScope>

@@ -2775,16 +2775,26 @@ function handleRespondQuestion(
     pendingQuestion: null,
     ...closeAwaitingApprovalInterval(state),
   };
+  // Two mutually-exclusive outcomes share one frame: answer the questions
+  // (`answers`) or decline and reply in prose (`response`, the `Chat about
+  // this` path). A decline supersedes — emit `response` when present.
   return {
     state: next,
     effects: [
       {
         kind: "send-frame",
-        msg: {
-          type: "question_answer",
-          request_id: event.request_id,
-          answers: event.answers,
-        },
+        msg:
+          event.response !== undefined
+            ? {
+                type: "question_answer",
+                request_id: event.request_id,
+                response: event.response,
+              }
+            : {
+                type: "question_answer",
+                request_id: event.request_id,
+                answers: event.answers ?? {},
+              },
       },
     ],
   };

@@ -28,6 +28,7 @@ import {
   composeValidationErrorBanner,
   parseAskUserQuestionInputValidationError,
   readAnswers,
+  readDeclineResponse,
 } from "../ask-user-question-tool-block";
 import {
   _resetToolBlockRegistryForTests,
@@ -128,6 +129,70 @@ describe("composeAnswerSummary", () => {
   test("empty-string answer renders as no answer", () => {
     const out = composeAnswerSummary([q("Q", true, ["X"])], { Q: "" });
     expect(out).toEqual([{ question: "Q", answers: [] }]);
+  });
+
+  test("renders a single-select free-text answer verbatim ([P01])", () => {
+    // The typed value isn't an option label; it round-trips as the
+    // question's answer and must show verbatim.
+    const out = composeAnswerSummary(
+      [q("Which approach?", false, ["Refactor", "Patch"])],
+      { "Which approach?": "something else entirely" },
+    );
+    expect(out).toEqual([
+      { question: "Which approach?", answers: ["something else entirely"] },
+    ]);
+  });
+
+  test("renders a multi-select free-text answer verbatim, not comma-split ([P01])", () => {
+    // Free text on a multi-select question may contain commas; since the
+    // parts aren't known option labels, it must NOT be split into picks.
+    const out = composeAnswerSummary(
+      [q("Pick all", true, ["A", "B", "C"])],
+      { "Pick all": "actually, none of these" },
+    );
+    expect(out).toEqual([
+      { question: "Pick all", answers: ["actually, none of these"] },
+    ]);
+  });
+
+  test("still splits a genuine multi-select label list", () => {
+    const out = composeAnswerSummary(
+      [q("Pick all", true, ["A", "B", "C"])],
+      { "Pick all": "A,C" },
+    );
+    expect(out).toEqual([{ question: "Pick all", answers: ["A", "C"] }]);
+  });
+});
+
+describe("readDeclineResponse", () => {
+  test("reads structuredResult.response when present", () => {
+    expect(
+      readDeclineResponse({ questions: [] }, { response: "let's talk" }),
+    ).toBe("let's talk");
+  });
+
+  test("falls back to input.response", () => {
+    expect(
+      readDeclineResponse({ questions: [], response: "via input" }, undefined),
+    ).toBe("via input");
+  });
+
+  test("structuredResult.response wins over input.response", () => {
+    expect(
+      readDeclineResponse({ response: "stale" }, { response: "fresh" }),
+    ).toBe("fresh");
+  });
+
+  test("returns undefined for a normal (answers) result", () => {
+    expect(
+      readDeclineResponse({ answers: { Q: "A" } }, { answers: { Q: "A" } }),
+    ).toBeUndefined();
+  });
+
+  test("ignores a blank/whitespace or non-string response", () => {
+    expect(readDeclineResponse({ response: "   " }, undefined)).toBeUndefined();
+    expect(readDeclineResponse({ response: 42 }, undefined)).toBeUndefined();
+    expect(readDeclineResponse(null, null)).toBeUndefined();
   });
 
   test("preserves question order from the parsed questions array", () => {

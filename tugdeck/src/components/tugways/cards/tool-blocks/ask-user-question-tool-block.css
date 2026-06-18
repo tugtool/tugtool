@@ -199,6 +199,34 @@ body {
   font-style: italic;
 }
 
+/* Declined state ([P02], `Chat about this`) — the user replied in prose
+ * instead of answering. A muted notice over the freeform reply verbatim.
+ *
+ * @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-declined {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-pair-gap);
+  padding: var(--tugx-askquestion-list-padding);
+}
+
+.ask-user-question-tool-block-declined-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  color: var(--tugx-askquestion-muted-color);
+  font-size: var(--tugx-askquestion-answer-size);
+  font-style: italic;
+}
+
+/* @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-declined-text {
+  color: var(--tugx-askquestion-question-color);
+  font-size: var(--tugx-askquestion-answer-size);
+  line-height: var(--tugx-askquestion-question-leading);
+  white-space: pre-wrap;
+}
+
 /* Empty-state — surfaced when the wire shape had no recognisable
  * questions (drift). Keeps the wrapper readable instead of rendering
  * a zero-row list.

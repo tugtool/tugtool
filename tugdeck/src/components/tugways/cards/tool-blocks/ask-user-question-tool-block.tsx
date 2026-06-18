@@ -83,7 +83,7 @@
 import "./ask-user-question-tool-block.css";
 
 import React from "react";
-import { Check, Circle } from "lucide-react";
+import { Check, Circle, MessageCircle } from "lucide-react";
 
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -135,6 +135,30 @@ function readAnswersFromObject(value: unknown): Record<string, string> | undefin
     if (typeof v === "string") out[k] = v;
   }
   return out;
+}
+
+/**
+ * Read the freeform decline reply ([P02], `Chat about this`) out of the
+ * merged tool wire. tugcode's `formatQuestionAnswer` writes `response`
+ * onto `updatedInput` for a decline (instead of `answers`), so — like
+ * {@link readAnswers} — it can surface on `structuredResult` or `input`.
+ * Returns the reply string when present and non-blank, else `undefined`
+ * (a normal answer). Exported for the unit tests.
+ */
+export function readDeclineResponse(
+  input: unknown,
+  structuredResult: unknown,
+): string | undefined {
+  return (
+    readResponseFromObject(structuredResult) ?? readResponseFromObject(input)
+  );
+}
+
+function readResponseFromObject(value: unknown): string | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const raw = (value as { response?: unknown }).response;
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  return raw;
 }
 
 /**
@@ -191,9 +215,16 @@ export function composeAnswerSummary(
     if (q.multiSelect) {
       // tugcode joins multi-select labels with a bare `,` (PN-5). Split
       // and trim defensively so a downstream layer that adds spaces
-      // wouldn't break the row count.
+      // wouldn't break the row count. But a free-text answer ([P01]) is
+      // a single verbatim string that may itself contain commas — only
+      // split when every part is a known option label; otherwise render
+      // the value verbatim (no label assumptions).
+      const labels = new Set(q.options.map((o) => o.label));
       const parts = raw.split(",").map((p) => p.trim()).filter((p) => p !== "");
-      return { question: q.question, answers: parts };
+      if (parts.length > 0 && parts.every((p) => labels.has(p))) {
+        return { question: q.question, answers: parts };
+      }
+      return { question: q.question, answers: [raw] };
     }
     return { question: q.question, answers: [raw] };
   });
@@ -373,6 +404,13 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
     () => composeAnswerSummary(questions, answers),
     [questions, answers],
   );
+  // [P02] `Chat about this` — when the user declined, the result carries
+  // a freeform `response` instead of `answers`. Present ⇒ render the
+  // "replied in chat" state rather than the Q&A summary.
+  const declineResponse = React.useMemo(
+    () => readDeclineResponse(input, structuredResult),
+    [input, structuredResult],
+  );
 
   // Salvage state — populated when the user finishes the salvage
   // wizard (we keep the locally-collected answers around so the
@@ -423,12 +461,20 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
       : summary.filter((s) => s.answers.length > 0).length;
   const args = composeQuestionCountLabel(questions.length, headlineCount);
   // The question count is the header's trailing result summary — one quiet
-  // line ("3 of 3 answered"), the same plain style every tool uses.
+  // line ("3 of 3 answered"), the same plain style every tool uses. A
+  // declined prompt ([P02]) reads "Replied in chat" instead.
   const resultSummary: ToolResultSummary | undefined =
-    args === "" ? undefined : { kind: "text", text: args };
+    declineResponse !== undefined
+      ? { kind: "text", text: "Replied in chat" }
+      : args === ""
+        ? undefined
+        : { kind: "text", text: args };
 
   let body: React.ReactNode;
-  if (salvagedAnswers !== null) {
+  if (declineResponse !== undefined) {
+    // The user abandoned the questions and replied in prose.
+    body = <QuestionDeclinedSummary response={declineResponse} />;
+  } else if (salvagedAnswers !== null) {
     // After the user finishes salvage, render the Q&A summary built
     // from the locally-collected answers. Same shape as the normal
     // post-answer view so the wrapper reads identically regardless
@@ -664,6 +710,38 @@ function SalvageAnsweredSummary({
  * a CSS counter (see the `.css`) so the marker column and number
  * column hold fixed widths down the list.
  */
+/**
+ * The declined-prompt state ([P02]): the user chose `Chat about this`
+ * and answered in prose instead of picking. Renders a quiet "replied in
+ * chat" notice over the freeform reply verbatim, so the durable record
+ * shows what the user said rather than an empty Q&A summary.
+ */
+function QuestionDeclinedSummary({
+  response,
+}: {
+  response: string;
+}): React.ReactElement {
+  return (
+    <div
+      className="ask-user-question-tool-block-declined"
+      data-slot="ask-user-question-tool-block-declined"
+    >
+      <div className="ask-user-question-tool-block-declined-notice">
+        <span
+          className="ask-user-question-tool-block-marker"
+          aria-hidden="true"
+        >
+          <MessageCircle size={14} aria-hidden="true" />
+        </span>
+        Replied in chat instead of answering
+      </div>
+      <div className="ask-user-question-tool-block-declined-text">
+        {response}
+      </div>
+    </div>
+  );
+}
+
 function QuestionSummaryList({
   entries,
 }: {

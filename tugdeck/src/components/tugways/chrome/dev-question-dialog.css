@@ -356,6 +356,66 @@ body {
   width: 100%;
 }
 
+/* ---- Free-text answer field ([P01]) ----
+ *
+ * A single-line TugInput below the options, present for every question
+ * so a user can answer in prose instead of picking. Always rendered
+ * (and mirrored in the panel sizers) so the panel's height is constant
+ * across questions ([L06] constant geometry) and the field is a stable
+ * focus stop / spatial-grid node. The top margin matches the panel
+ * options' lead-in so the field reads as the row below the options. */
+.dev-question-dialog-freetext {
+  margin-top: var(--tug-space-sm);
+  width: 100%;
+}
+
+.dev-question-dialog-freetext .tug-input {
+  width: 100%;
+}
+
+/* ---- Decline mode ([P02], `Chat about this`) ----
+ *
+ * The freeform reply field replaces the wizard body. A multiline
+ * TugTextarea over a foot row (a keyboard hint on the leading edge,
+ * `Back to questions` on the trailing edge). `Send reply` lives in the
+ * dialog header actions. */
+.dev-question-dialog-decline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  width: 100%;
+}
+
+.dev-question-dialog-decline-field {
+  width: 100%;
+}
+
+.dev-question-dialog-decline-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+}
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.dev-question-dialog-decline-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size:   var(--tugx-idialog-description-size);
+  line-height: var(--tugx-idialog-description-leading);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- `Chat about this` entry ----
+ *
+ * A quiet (ghost) control at the foot of the wizard that switches into
+ * decline mode. Sits below the rail/panel with a small lead-in. */
+.dev-question-dialog-chat-about {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--tug-space-sm);
+}
+
 /* ---- Options ---- */
 
 /* The options are a flush `TugListView` (mirrors the model / effort picker

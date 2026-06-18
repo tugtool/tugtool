@@ -268,6 +268,46 @@ describe("CodeSessionStore — synthetic AskUserQuestion (Step 6)", () => {
     });
   });
 
+  it("emits a freeform response frame on a decline (Chat about this)", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("ask me something", []);
+    drainToStreaming(conn, store, FIXTURE_IDS.MSG_ID);
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "control_request_forward",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      request_id: FIXTURE_IDS.REQUEST_ID,
+      is_question: true,
+      question: "pick one",
+      options: [
+        { key: "a", label: "Option A" },
+        { key: "b", label: "Option B" },
+      ],
+    });
+
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
+    store.respondQuestion(FIXTURE_IDS.REQUEST_ID, {
+      response: "let's talk it through first",
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("streaming");
+    expect(snap.pendingQuestion).toBeNull();
+
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore + 1);
+    const declineFrame = conn.recordedFramesExcludingStateChange[framesBefore];
+    expect(declineFrame.feedId).toBe(FeedId.CODE_INPUT);
+    // A decline carries `response` and NO `answers` map.
+    expect(declineFrame.decoded).toEqual({
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      type: "question_answer",
+      request_id: FIXTURE_IDS.REQUEST_ID,
+      response: "let's talk it through first",
+    });
+  });
+
   it("drops respondQuestion when no pending question is set", () => {
     const conn = new TestFrameChannel();
     const store = constructStore(conn);

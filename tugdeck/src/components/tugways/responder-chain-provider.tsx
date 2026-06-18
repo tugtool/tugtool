@@ -369,6 +369,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // so no editor has its caret stolen by the spatial plane. In cycling mode DOM
       // focus follows the ring onto the zone (not the editor), so this never blocks
       // zone navigation.
+      //
+      // Narrow opt-out: a text field may *release* specific arrow directions back
+      // to the spatial plane via `data-tug-arrow-release` (a space-separated list
+      // of `up`/`down`/`left`/`right`). A single-line field with nothing to
+      // navigate to (e.g. an empty optional answer field) sets this so a bare
+      // Up/Down moves the ring out rather than dead-ending on the caret. The
+      // field controls when it releases (typically only while empty), so a field
+      // with text still owns every arrow.
       const active = document.activeElement;
       if (
         active instanceof HTMLElement &&
@@ -376,7 +384,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           active.tagName === "INPUT" ||
           active.tagName === "TEXTAREA")
       ) {
-        return;
+        const released = active.getAttribute("data-tug-arrow-release");
+        const yields =
+          released !== null && released.split(/\s+/).includes(direction);
+        if (!yields) return;
       }
       const focusKey = {
         key: event.key,

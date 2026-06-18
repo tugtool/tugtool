@@ -101,18 +101,29 @@ export function formatPermissionDeny(
 
 /**
  * Format a question answer response.
- * Merges the answers into the original tool input's questions array.
- * For multiSelect answers, values must be comma-separated labels with NO spaces per PN-5.
+ *
+ * Two mutually-exclusive outcomes, both wrapped in the same `behavior: "allow"`
+ * success envelope:
+ *  - Answer (`answers` given): nest the answers under an "answers" key in
+ *    updatedInput per §5b. The key is the question text, the value is the
+ *    selected option label (free text rides here verbatim too). For
+ *    multiSelect: comma-separated labels with NO spaces per PN-5.
+ *  - Decline (`response` given): the user dismissed the structured questions
+ *    and replied in prose (`Chat about this`). Emit `{ ...originalInput,
+ *    response }` so Claude reads it as a freeform reply and the tool resolves
+ *    (distinct from an interrupt). `response` wins over `answers` when both
+ *    are somehow present — a decline supersedes an answer.
  */
 export function formatQuestionAnswer(
   requestId: string,
   originalInput: Record<string, unknown>,
-  answers: Record<string, string>
+  answers: Record<string, string> | undefined,
+  response?: string
 ): Record<string, unknown> {
-  // Per §5b: answers are nested under an "answers" key in updatedInput.
-  // The key is the question text, the value is the selected option label.
-  // For multiSelect: comma-separated labels with NO spaces per PN-5.
-  const updatedInput = { ...originalInput, answers };
+  const updatedInput =
+    response !== undefined
+      ? { ...originalInput, response }
+      : { ...originalInput, answers: answers ?? {} };
   return {
     subtype: "success",
     request_id: requestId,

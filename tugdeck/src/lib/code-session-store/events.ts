@@ -280,12 +280,15 @@ export interface RespondApprovalActionEvent {
 
 /**
  * Internal action injected by `CodeSessionStore.respondQuestion`. Not
- * a wire event — never decoded from a frame.
+ * a wire event — never decoded from a frame. Two mutually-exclusive
+ * outcomes: answer the questions (`answers`) or decline and reply in prose
+ * (`response`, the `Chat about this` path). Exactly one is set.
  */
 export interface RespondQuestionActionEvent {
   type: "respond_question";
   request_id: string;
-  answers: Record<string, string>;
+  answers?: Record<string, string>;
+  response?: string;
 }
 
 /**

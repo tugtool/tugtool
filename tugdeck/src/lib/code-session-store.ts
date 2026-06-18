@@ -1196,16 +1196,25 @@ export class CodeSessionStore {
    * Respond to a pending `AskUserQuestion` prompt. Emits a
    * `question_answer` frame and restores the phase that was active
    * before the `control_request_forward` arrived.
+   *
+   * Two mutually-exclusive outcomes: answer the questions
+   * (`{ answers }`) or decline and reply in prose (`{ response }`, the
+   * `Chat about this` path — resolves the tool with a freeform reply,
+   * distinct from `interrupt`).
    */
   respondQuestion(
     requestId: string,
-    payload: { answers: Record<string, string> },
+    payload:
+      | { answers: Record<string, string> }
+      | { response: string },
   ): void {
     if (this._disposed) return;
     this.dispatch({
       type: "respond_question",
       request_id: requestId,
-      answers: payload.answers,
+      ...("response" in payload
+        ? { response: payload.response }
+        : { answers: payload.answers }),
     });
   }
 

@@ -5014,7 +5014,12 @@ export class SessionManager {
     const pendingRequest = pending.request as Record<string, unknown> | undefined;
     const originalInput = (pendingRequest?.input as Record<string, unknown>) || {};
 
-    const response = formatQuestionAnswer(msg.request_id, originalInput, msg.answers);
+    const response = formatQuestionAnswer(
+      msg.request_id,
+      originalInput,
+      msg.answers,
+      msg.response,
+    );
     sendControlResponse(stdin, response);
 
     this.pendingControlRequests.delete(msg.request_id);

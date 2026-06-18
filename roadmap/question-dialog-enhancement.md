@@ -244,12 +244,12 @@ Explicit `{#anchor}` headings; plan-local decisions `[P01]`+ (never `[D##]`, whi
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Protocol + tugcode: optional `response` in the answer | pending | — |
-| #step-2 | Store: respondQuestion carries answers or response | pending | — |
-| #step-3 | Dialog: `Type something` free-text answer | pending | — |
-| #step-4 | Dialog: `Chat about this` decline reply | pending | — |
-| #step-5 | Durable artifact: free-text + declined states | pending | — |
-| #step-6 | Gallery fixtures + integration checkpoint | pending | — |
+| #step-1 | Protocol + tugcode: optional `response` in the answer | done | 11665ada |
+| #step-2 | Store: respondQuestion carries answers or response | done | c9f6be1e |
+| #step-3 | Dialog: `Type something` free-text answer | done | f45b33af |
+| #step-4 | Dialog: `Chat about this` decline reply | done | 2881396c |
+| #step-5 | Durable artifact: free-text + declined states | done | 199b1dd3 |
+| #step-6 | Gallery fixtures + integration checkpoint | done | 494daf71 |
 
 #### Step 1: Protocol + tugcode — optional `response` in the answer {#step-1}
 

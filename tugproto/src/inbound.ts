@@ -77,11 +77,20 @@ export interface ToolApproval {
   updatedPermissions?: unknown[];
 }
 
-/** Answer a pending `AskUserQuestion`. Values are the selected option labels. */
+/**
+ * Answer a pending `AskUserQuestion`. Two mutually-exclusive outcomes:
+ *  - Answer the questions: `answers` maps question text → the chosen option
+ *    label (free text rides here too, as a verbatim string).
+ *  - Decline (`Chat about this`): `response` carries a freeform reply and
+ *    `answers` is omitted. tugcode resolves the tool with the reply (distinct
+ *    from an interrupt). See `tugcode/control.ts` `formatQuestionAnswer`.
+ */
 export interface QuestionAnswer {
   type: "question_answer";
   request_id: string;
-  answers: Record<string, string>;
+  answers?: Record<string, string>;
+  /** Decline path: a freeform reply that resolves the tool instead of answering. */
+  response?: string;
 }
 
 /** Interrupt the in-flight turn. */

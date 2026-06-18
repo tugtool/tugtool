@@ -120,6 +120,37 @@ describe("formatQuestionAnswer", () => {
     expect(response.updatedInput.answers["Pick colors"]).toBe("Red,Blue");
     expect(response.updatedInput.answers["Pick colors"]).not.toContain(", ");
   });
+
+  test("decline path emits a freeform response, no answers", () => {
+    const originalInput = {
+      questions: [{ question: "Which approach?", multiSelect: false }],
+    };
+    // `Chat about this`: the user dismissed the questions and replied in prose.
+    const result = formatQuestionAnswer("req-5", originalInput, undefined, "Let's talk it through first");
+    const response = result.response as any;
+    expect(response.behavior).toBe("allow");
+    // The freeform reply rides updatedInput.response; the questions are preserved.
+    expect(response.updatedInput.response).toBe("Let's talk it through first");
+    expect(response.updatedInput.questions).toEqual(originalInput.questions);
+    // A decline carries no answers map.
+    expect(response.updatedInput.answers).toBeUndefined();
+  });
+
+  test("response wins over answers when both are present (decline supersedes)", () => {
+    const originalInput = { questions: [{ question: "Q?", multiSelect: false }] };
+    const result = formatQuestionAnswer("req-6", originalInput, { "Q?": "A" }, "replying instead");
+    const response = result.response as any;
+    expect(response.updatedInput.response).toBe("replying instead");
+    expect(response.updatedInput.answers).toBeUndefined();
+  });
+
+  test("missing answers falls back to an empty answers map", () => {
+    const originalInput = { questions: [] };
+    const result = formatQuestionAnswer("req-7", originalInput, undefined);
+    const response = result.response as any;
+    expect(response.updatedInput.answers).toEqual({});
+    expect(response.updatedInput.response).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -40,6 +40,7 @@ import {
   initialQuestionSelections,
   nextAdvanceIndex,
   parseQuestions,
+  questionAnswered,
   questionDialogPreservationKey,
   rowStatus,
   seedQuestionDialogState,
@@ -265,6 +266,57 @@ describe("buildQuestionAnswers", () => {
       ),
     ).toEqual({ "First?": "Yes", "Second?": "X,Y" });
   });
+
+  it("sends free text verbatim, overriding any labels ([P01])", () => {
+    expect(
+      buildQuestionAnswers(
+        [parsed("Which approach?", false, ["Refactor"])],
+        [["Refactor"]],
+        ["something else entirely"],
+      ),
+    ).toEqual({ "Which approach?": "something else entirely" });
+  });
+
+  it("falls back to labels when free text is blank/whitespace", () => {
+    expect(
+      buildQuestionAnswers(
+        [parsed("Q?", false, ["A"]), parsed("R?", false, ["B"])],
+        [["A"], ["B"]],
+        ["   ", ""],
+      ),
+    ).toEqual({ "Q?": "A", "R?": "B" });
+  });
+
+  it("composes a mixed payload — free text for one, labels for the other", () => {
+    expect(
+      buildQuestionAnswers(
+        [parsed("Q?", false, ["A"]), parsed("R?", true, ["X", "Y"])],
+        [[], ["X", "Y"]],
+        ["typed answer", ""],
+      ),
+    ).toEqual({ "Q?": "typed answer", "R?": "X,Y" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// questionAnswered — the "answered" predicate ([F1])
+// ---------------------------------------------------------------------------
+
+describe("questionAnswered", () => {
+  it("is true when there is at least one selected label", () => {
+    expect(questionAnswered(["A"], "")).toBe(true);
+  });
+
+  it("is true when there is non-blank free text but no labels ([F1])", () => {
+    // The Submit gate must enable on a free-text-only answer.
+    expect(questionAnswered([], "typed")).toBe(true);
+  });
+
+  it("is false for empty selection AND blank/whitespace free text", () => {
+    expect(questionAnswered([], "")).toBe(false);
+    expect(questionAnswered([], "   ")).toBe(false);
+    expect(questionAnswered(undefined, undefined)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -355,6 +407,16 @@ describe("composeRowAnswerLabel", () => {
   it("returns the empty string for no selection (renderer short-circuits)", () => {
     expect(composeRowAnswerLabel([])).toBe("");
   });
+
+  it("surfaces free text verbatim, overriding the labels ([P01])", () => {
+    expect(composeRowAnswerLabel(["A", "B"], "my typed answer")).toBe(
+      "my typed answer",
+    );
+  });
+
+  it("ignores blank free text and falls back to the labels", () => {
+    expect(composeRowAnswerLabel(["A"], "   ")).toBe("A");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -383,6 +445,26 @@ describe("countConfirmedAnswers", () => {
     // Defensive — if the parallel arrays drift in length, the
     // shorter one wins.
     expect(countConfirmedAnswers([["a"], ["b"]], [true])).toBe(1);
+  });
+
+  it("counts a visited free-text-only answer ([F1])", () => {
+    // Row 1 has no selection but a typed answer — it must count once
+    // visited, so the Submit gate enables.
+    expect(
+      countConfirmedAnswers([["a"], []], [true, true], ["", "typed"]),
+    ).toBe(2);
+  });
+
+  it("does not count blank free text on a row with no selection", () => {
+    expect(
+      countConfirmedAnswers([["a"], []], [true, true], ["", "   "]),
+    ).toBe(1);
+  });
+});
+
+describe("countAnswered with free text", () => {
+  it("counts a free-text-only row as answered", () => {
+    expect(countAnswered([[], ["b"]], ["typed", ""])).toBe(2);
   });
 });
 
@@ -458,9 +540,92 @@ describe("seedQuestionDialogState", () => {
       selections: [["B"], ["X", "Z"]],
       visited: [true, false],
       currentIndex: 1,
+      freeTexts: ["", ""],
+      declineMode: false,
+      declineText: "",
     };
     const seeded = seedQuestionDialogState(saved, twoQuestions);
     expect(seeded).toEqual(saved);
+  });
+
+  it("defaults freeTexts to empty strings when the saved envelope omits it ([F4])", () => {
+    // An older (pre-free-text) saved envelope still validates and
+    // realigns; the missing freeTexts falls back to empty per slot,
+    // keeping the rest of the tuple intact.
+    const saved = {
+      selections: [["B"], ["X"]],
+      visited: [true, true],
+      currentIndex: 1,
+    } as QuestionDialogPreservedState;
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    expect(seeded.freeTexts).toEqual(["", ""]);
+    expect(seeded.selections).toEqual([["B"], ["X"]]);
+    expect(seeded.visited).toEqual([true, true]);
+  });
+
+  it("rehydrates and realigns saved free text ([P01])", () => {
+    const saved: QuestionDialogPreservedState = {
+      selections: [[], ["X"]],
+      visited: [true, false],
+      currentIndex: 0,
+      freeTexts: ["my own answer"],
+    };
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    // Index 0 keeps the saved text; index 1 (absent in the short array)
+    // falls back to the empty-string default.
+    expect(seeded.freeTexts).toEqual(["my own answer", ""]);
+  });
+
+  it("rehydrates decline mode + reply text ([P02])", () => {
+    const saved: QuestionDialogPreservedState = {
+      selections: [["A"], ["X"]],
+      visited: [false, false],
+      currentIndex: 0,
+      freeTexts: ["", ""],
+      declineMode: true,
+      declineText: "let's discuss this differently",
+    };
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    expect(seeded.declineMode).toBe(true);
+    expect(seeded.declineText).toBe("let's discuss this differently");
+  });
+
+  it("defaults decline mode off + empty text when the envelope omits them", () => {
+    const saved = {
+      selections: [["A"], ["X"]],
+      visited: [false, false],
+      currentIndex: 0,
+    } as QuestionDialogPreservedState;
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    expect(seeded.declineMode).toBe(false);
+    expect(seeded.declineText).toBe("");
+  });
+
+  it("rejects a saved envelope whose declineMode is the wrong type", () => {
+    const bad = {
+      selections: [["A"], ["X"]],
+      visited: [false, false],
+      currentIndex: 0,
+      declineMode: "yes",
+    };
+    const seeded = seedQuestionDialogState(bad, twoQuestions);
+    expect(seeded.declineMode).toBe(false);
+    expect(seeded.declineText).toBe("");
+    expect(seeded.selections).toEqual([["A"], ["X"]]);
+  });
+
+  it("rejects a saved envelope whose freeTexts contains non-string entries", () => {
+    const bad = {
+      selections: [["A"], ["X"]],
+      visited: [true, false],
+      currentIndex: 1,
+      freeTexts: ["ok", 42],
+    };
+    const seeded = seedQuestionDialogState(bad, twoQuestions);
+    // The whole envelope is rejected → default seed.
+    expect(seeded.selections).toEqual([["A"], ["X"]]);
+    expect(seeded.freeTexts).toEqual(["", ""]);
+    expect(seeded.currentIndex).toBe(0);
   });
 
   it("falls back to defaults for a malformed payload", () => {
@@ -526,6 +691,9 @@ describe("seedQuestionDialogState", () => {
       selections: [["A"], ["X", "Z"]],
       visited: [true, true],
       currentIndex: 2,
+      freeTexts: ["", ""],
+      declineMode: false,
+      declineText: "",
     };
     // JSON.stringify/parse models the bag's serialization boundary —
     // the payload must survive structural-clone-equivalent storage.
