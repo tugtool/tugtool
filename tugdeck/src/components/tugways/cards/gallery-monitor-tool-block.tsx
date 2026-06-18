@@ -13,8 +13,8 @@
  *  3. Path-based header — no `command`, falls back to `path`.
  *  4. Pid-based header — no `command` or `path`, falls back to
  *     `pid <N>`.
- *  5. Streaming — chrome paints the streaming stripe, body is the
- *     shared `StreamingPlaceholder`.
+ *  5. Streaming — the body is empty (the header dot is the in-flight
+ *     signal).
  *  6. Error — chrome paints the error band from `textOutput`;
  *     body still renders whatever output it has.
  *
@@ -149,7 +149,7 @@ export function GalleryMonitorToolBlock(): React.ReactElement {
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Streaming — StreamingPlaceholder body
+          Streaming — empty body (the dot is the in-flight signal)
         </TugLabel>
         <MonitorToolBlock {...STREAMING} />
       </div>

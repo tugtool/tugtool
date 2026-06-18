@@ -29,7 +29,7 @@
  *    entire result text.
  *
  * Streaming / error (Spec S03):
- *  - `status === "streaming"` → body is `<StreamingPlaceholder />`.
+ *  - `status === "streaming"` → body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band; body
  *    still renders the input rows (diagnostic context — "this
  *    create with short_code X failed").

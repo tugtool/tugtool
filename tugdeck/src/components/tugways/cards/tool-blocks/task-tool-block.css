@@ -13,9 +13,10 @@
  *    chrome via `rootSlot`).
  *  - [L20] all visible declarations consume tokens from one of the
  *    composed components — no new `--tugx-*` slot is introduced. The
- *    status text rides the chrome's args-row typography and the
- *    body's `--tugx-agent-status-*` colours (the same status buckets
- *    `AgentTranscriptBlock`'s standalone header paints).
+ *    agent-type `<code>` and the description ride the chrome's args-row
+ *    typography; the description is muted via `--tugx-agent-meta-color`.
+ *    Lifecycle status is the header dot's alone ([D02]) — this row
+ *    paints no status text.
  */
 
 .task-tool-block-args {
@@ -37,29 +38,14 @@
   font-weight: var(--tug-font-weight-semibold);
 }
 
-/* The run status — colour-coded by the `data-agent-status` bucket,
- * reusing the body kind's status colours so the wrapper header and
- * the standalone `AgentTranscriptBlock` header read identically. */
-.task-tool-block-status {
-  flex: 0 0 auto;
-  text-transform: capitalize;
+/* The task description — a muted secondary detail after the agent-type
+ * label, end-ellipsized so a long description never pushes the trailing
+ * badge off the row. */
+.task-tool-block-description {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--tugx-agent-meta-color);
-}
-
-/* @tug-renders-on: --tugx-block-chrome-bg */
-.task-tool-block-status[data-agent-status="completed"],
-.task-tool-block-status[data-agent-status="success"] {
-  color: var(--tugx-agent-status-done-color);
-}
-
-/* @tug-renders-on: --tugx-block-chrome-bg */
-.task-tool-block-status[data-agent-status="in_progress"],
-.task-tool-block-status[data-agent-status="running"] {
-  color: var(--tugx-agent-status-running-color);
-}
-
-/* @tug-renders-on: --tugx-block-chrome-bg */
-.task-tool-block-status[data-agent-status="failed"],
-.task-tool-block-status[data-agent-status="error"] {
-  color: var(--tugx-agent-status-failed-color);
 }

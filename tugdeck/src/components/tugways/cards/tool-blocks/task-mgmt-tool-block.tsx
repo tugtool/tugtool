@@ -49,8 +49,8 @@
  *
  * Streaming / error (Spec S03):
  *  - `status === "streaming"` → header shows the verb (always
- *    known from `toolName`) and the id when arrived; body is the
- *    shared `StreamingPlaceholder`.
+ *    known from `toolName`) and the id when arrived; the body is
+ *    `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band from
  *    `textOutput`; body still renders the input rows (diagnostic
  *    context — "this stop failed against id X").
@@ -479,7 +479,7 @@ function renderStopBody(
   const hasId = input.taskId !== undefined;
   const trimmedResult =
     textOutput !== undefined ? textOutput.trim() : undefined;
-  const hasShortStatus =
+  const hasShortResult =
     trimmedResult !== undefined &&
     trimmedResult.length > 0 &&
     !trimmedResult.includes("\n");
@@ -487,7 +487,7 @@ function renderStopBody(
     trimmedResult !== undefined &&
     trimmedResult.length > 0 &&
     trimmedResult.includes("\n");
-  if (!hasId && !hasShortStatus && !hasMultilineResult) return null;
+  if (!hasId && !hasShortResult && !hasMultilineResult) return null;
   return (
     <ToolBlockBody>
       {hasId ? (
@@ -495,13 +495,13 @@ function renderStopBody(
           <code>{`#${input.taskId}`}</code>
         </ToolBlockFieldRow>
       ) : null}
-      {hasShortStatus ? (
-        <ToolBlockFieldRow label="status">
+      {hasShortResult ? (
+        <ToolBlockFieldRow label="result">
           <code>{trimmedResult}</code>
         </ToolBlockFieldRow>
       ) : null}
       {hasMultilineResult ? (
-        <ToolBlockFieldRow label="status" layout="stacked">
+        <ToolBlockFieldRow label="result" layout="stacked">
           <ToolBlockPre>{textOutput}</ToolBlockPre>
         </ToolBlockFieldRow>
       ) : null}

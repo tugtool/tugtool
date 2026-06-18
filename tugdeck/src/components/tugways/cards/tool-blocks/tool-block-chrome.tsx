@@ -22,9 +22,11 @@
  * header's lifecycle dot is the single status signal (the Quiet Line) —
  * there is no stripe; the chrome frame is uniform across states:
  *
- *   - `streaming` — the tool input is partial; the wrapper passes a
- *     placeholder body (`<ToolBlockChrome.StreamingPlaceholder />`)
- *     into `children`. The header dot pulses in-flight.
+ *   - `streaming` — the tool input is partial; the wrapper passes an
+ *     empty body (`null`) into `children`. The header dot pulses
+ *     in-flight — the single streaming signal ([D02]). (The Agent
+ *     block is the lone exception: it fills the long working window
+ *     with its own `AgentWorkingBody`.)
  *   - `ready`    — steady-state render. The dot reads success.
  *   - `error`    — `tool_result.is_error === true`. The header's
  *     lifecycle dot reads danger; everything else (name, result, body)

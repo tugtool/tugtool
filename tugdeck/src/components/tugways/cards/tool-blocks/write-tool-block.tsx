@@ -30,7 +30,7 @@
  * Streaming / error:
  *
  *  - `status === "streaming"` → header still shows whatever input
- *    fragment has arrived; body is `<StreamingPlaceholder />`.
+ *    fragment has arrived; body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band from the
  *    plain-text `tool_result.output` (typically "EACCES" or "ENOSPC");
  *    body is dropped so the failure reads as the primary content.

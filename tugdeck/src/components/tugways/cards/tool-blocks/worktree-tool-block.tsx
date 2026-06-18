@@ -33,7 +33,7 @@
  * Streaming / error (Spec S03):
  *  - `status === "streaming"` → header shows the verb (always known
  *    from `toolName`) with whatever input fragment has arrived;
- *    body is `<StreamingPlaceholder />`.
+ *    body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band from
  *    `textOutput`; body still renders the path / branch row
  *    (diagnostic context: "this enter failed against branch X").

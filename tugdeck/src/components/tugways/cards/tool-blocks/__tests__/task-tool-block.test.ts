@@ -25,6 +25,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   TaskToolBlock,
+  agentNestedCallCount,
   composeAgentTranscriptData,
   narrowAgentInput,
   narrowAgentStructured,
@@ -274,6 +275,67 @@ describe("composeAgentTranscriptData", () => {
     if (data === undefined) throw new Error("unreachable");
     expect(data.agentType).toBe("Explore");
     expect(data.entries.map((e) => e.kind)).toEqual(["tool_use"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agentNestedCallCount — the trailing badge count
+// ---------------------------------------------------------------------------
+
+describe("agentNestedCallCount", () => {
+  test("counts live child calls while the run streams (no structured result yet)", () => {
+    expect(
+      agentNestedCallCount([childCall("a", "Grep"), childCall("b", "Read")], {}),
+    ).toBe(2);
+  });
+
+  test("uses the structured totalToolUseCount once the run finishes", () => {
+    expect(
+      agentNestedCallCount(undefined, narrowAgentStructured(TEXT_ONLY_FIXTURE)),
+    ).toBe(1);
+  });
+
+  test("takes the larger of live vs reported so the badge never regresses", () => {
+    // Live children outrun a stale low report…
+    expect(
+      agentNestedCallCount(
+        [childCall("a", "Grep"), childCall("b", "Read"), childCall("c", "Bash")],
+        { totalToolUseCount: 1 },
+      ),
+    ).toBe(3);
+    // …and a final report outruns a partial child set.
+    expect(
+      agentNestedCallCount([childCall("a", "Grep")], { totalToolUseCount: 5 }),
+    ).toBe(5);
+  });
+
+  test("is zero when nothing has run yet", () => {
+    expect(agentNestedCallCount(undefined, {})).toBe(0);
+    expect(agentNestedCallCount([], {})).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Working-body trigger — the body shows AgentWorkingBody iff the
+// composed transcript has zero entries (the wrapper keys on entry count,
+// not status, so a streaming run with live children renders them and the
+// placeholder never flashes over real content).
+// ---------------------------------------------------------------------------
+
+describe("working-body decision boundary (transcript entry count)", () => {
+  test("a streaming run with only metadata composes zero entries → working body", () => {
+    const data = composeAgentTranscriptData(
+      { subagentType: "Explore" },
+      narrowAgentStructured({ status: "in_progress" }),
+    );
+    expect(data?.entries.length).toBe(0);
+  });
+
+  test("the first live child call yields an entry → the transcript replaces the placeholder", () => {
+    const data = composeAgentTranscriptData({ subagentType: "Explore" }, {}, [
+      childCall("grep-1", "Grep"),
+    ]);
+    expect((data?.entries.length ?? 0) > 0).toBe(true);
   });
 });
 

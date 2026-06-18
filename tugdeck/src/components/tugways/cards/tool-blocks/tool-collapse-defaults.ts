@@ -40,9 +40,15 @@ export const TOOL_COLLAPSE_DEFAULTS: Readonly<Record<string, boolean>> = {
   edit: true,
   multiedit: true, // wire alias of Edit — same file-mutation family
   write: true,
+  // An Agent run is noisy I/O too — a pile of nested file/shell calls.
+  // The collapsed header is self-explanatory (agent type + description +
+  // the nested-call-count badge), so it collapses like the other noisy
+  // tools; the user expands to watch the transcript. Its final answer is
+  // also relayed in the parent assistant's own text.
+  agent: true, // canonical kind for the `Task` wire tool
+  task: true, // historical wire name for the same tool — collapse alike
   // Content the user is actively reading — leave expanded ([P07]).
   skill: false,
-  agent: false, // canonical kind for the `Task` wire tool
   askuserquestion: false,
   webfetch: false,
   websearch: false,

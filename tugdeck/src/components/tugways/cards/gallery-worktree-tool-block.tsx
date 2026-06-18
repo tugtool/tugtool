@@ -11,8 +11,8 @@
  *  3. Exit with branch — `Worktree · exit <branch>`. Mirror of (1).
  *  4. Path-only — no branch, header falls back to the path; body
  *     suppressed.
- *  5. Streaming — chrome paints the streaming stripe, body is the
- *     shared `StreamingPlaceholder`.
+ *  5. Streaming — the body is empty (the header dot is the in-flight
+ *     signal).
  *  6. Error — chrome paints the error band from `textOutput`;
  *     body still renders the path row as diagnostic context.
  *
@@ -140,7 +140,7 @@ export function GalleryWorktreeToolBlock(): React.ReactElement {
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Streaming — StreamingPlaceholder body
+          Streaming — empty body (the dot is the in-flight signal)
         </TugLabel>
         <WorktreeToolBlock {...STREAMING} />
       </div>

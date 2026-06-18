@@ -11,14 +11,20 @@ import {
 } from "../tool-collapse-defaults";
 
 describe("collapseDefaultFor", () => {
-  test("collapses the noisy file/shell tools ([P07])", () => {
-    for (const name of ["Read", "Grep", "Glob", "Bash", "Edit", "MultiEdit", "Write"]) {
+  test("collapses the noisy file/shell tools + Agent ([P07])", () => {
+    for (const name of [
+      "Read", "Grep", "Glob", "Bash", "Edit", "MultiEdit", "Write",
+      // An Agent run is noisy nested I/O; its collapsed header (type +
+      // description + nested-call-count badge) is self-explanatory. The
+      // historical `Task` alias collapses alike.
+      "Agent", "Task",
+    ]) {
       expect(collapseDefaultFor(name)).toBe(true);
     }
   });
 
   test("leaves content-bearing tools expanded ([P07])", () => {
-    for (const name of ["Skill", "Agent", "Task", "AskUserQuestion", "WebFetch", "WebSearch"]) {
+    for (const name of ["Skill", "AskUserQuestion", "WebFetch", "WebSearch"]) {
       expect(collapseDefaultFor(name)).toBe(false);
     }
   });
@@ -39,6 +45,8 @@ describe("collapseDefaultFor", () => {
       .filter(([, v]) => v)
       .map(([k]) => k)
       .sort();
-    expect(collapsed).toEqual(["bash", "edit", "glob", "grep", "multiedit", "read", "write"]);
+    expect(collapsed).toEqual([
+      "agent", "bash", "edit", "glob", "grep", "multiedit", "read", "task", "write",
+    ]);
   });
 });

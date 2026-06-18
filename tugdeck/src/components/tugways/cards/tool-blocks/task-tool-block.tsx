@@ -6,9 +6,14 @@
  * [Table T02] / [#bk-conformance]:
  *
  *   - **Header:** a bot icon + tool name + the subagent type (e.g.
- *     "Explore") and a status badge. The subagent type comes from the
+ *     "Explore") and the task description in the detail row, plus a
+ *     trailing nested-call-count badge (the `Agent` analog of `Read`'s
+ *     "N lines"). The subagent type comes from the
  *     `structured_result.agentType`, falling back to the input's
- *     `subagent_type` while the result is still streaming.
+ *     `subagent_type` while the result is still streaming; the
+ *     description comes from the input fragment, so the block says what
+ *     it is doing the instant it kicks off. Lifecycle status is the
+ *     header dot's alone ([D02]) — no status text on this row.
  *   - **Body:** `AgentTranscriptBlock` composed `embedded={true}` —
  *     the wrapper chrome owns identity, so the body kind's own header
  *     is suppressed and its actions cluster (fold cue + Copy) portals
@@ -28,12 +33,15 @@
  * one level deeper. `depth` arrives on `ToolBlockProps` and is
  * threaded straight to the body kind.
  *
- * Streaming / error:
- *   - `status === "streaming"` → header shows whatever input fragment
- *     has arrived; body is `<StreamingPlaceholder />`.
- *   - `status === "error"` → chrome paints the error band from the
- *     plain-text `tool_result.output`; the body is dropped.
- *   - `status === "ready"` → steady-state render.
+ * Body selection is keyed on whether the transcript has entries, not on
+ * `status`:
+ *   - entries present (live child calls and/or the final answer) →
+ *     the embedded `AgentTranscriptBlock`, even mid-stream.
+ *   - no entries yet AND streaming → `<AgentWorkingBody />`, so the
+ *     expanded body has calm height in the zero-entries window instead
+ *     of collapsing to a one-pixel marker.
+ *   - `status === "error"` → the body is dropped; the chrome paints the
+ *     error band from the plain-text `tool_result.output`.
  *
  * Registration: `dev-assistant-renderer-dispatch.ts` imports this
  * module and calls `registerToolBlock("agent", TaskToolBlock)` from
@@ -67,10 +75,12 @@ import {
   type AgentTranscriptData,
   type AgentTranscriptEntry,
 } from "@/components/tugways/body-kinds/agent-transcript-block";
+import { AgentWorkingBody } from "@/components/tugways/body-kinds/agent-working-body";
 
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -183,6 +193,23 @@ function narrowContentEntry(value: unknown): AgentTranscriptEntry | undefined {
 }
 
 /**
+ * The subagent's nested-call count for the header's trailing badge —
+ * the `Agent` analog of `Read`'s "N lines". While the run is still
+ * streaming the reducer-linked `childToolCalls` are the live truth; the
+ * structured result's `totalToolUseCount` lands once the run finishes.
+ * Take the larger of the two so the badge is correct in both states and
+ * never regresses as the structured result arrives.
+ */
+export function agentNestedCallCount(
+  childToolCalls: ReadonlyArray<ToolUseMessage> | undefined,
+  structured: AgentStructuredResult,
+): number {
+  const live = childToolCalls?.length ?? 0;
+  const reported = structured.totalToolUseCount ?? 0;
+  return Math.max(live, reported);
+}
+
+/**
  * Compose the `AgentTranscriptData` payload `AgentTranscriptBlock`
  * consumes.
  *
@@ -266,28 +293,40 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
     [agentInput, structured, childToolCalls],
   );
 
-  // Header identity — agent type + status. Read straight from the
-  // narrowed shapes (not `transcriptData`) so a still-streaming call
-  // can surface the `subagent_type` from its input fragment.
+  // Header detail — the agent type plus the task description. Read
+  // straight from the narrowed shapes (not `transcriptData`) so a
+  // still-streaming call surfaces the `subagent_type` and `description`
+  // from its input fragment the moment they arrive — the block says
+  // what it is doing the instant it kicks off. Lifecycle status is the
+  // header dot's job alone ([D02]); no status text rides this row.
   const agentType = structured.agentType ?? agentInput.subagentType;
-  const runStatus = structured.status;
+  const description = agentInput.description;
   const argsSummary =
-    agentType !== undefined || runStatus !== undefined ? (
+    agentType !== undefined ||
+    (description !== undefined && description.length > 0) ? (
       <span className="task-tool-block-args">
         {agentType !== undefined ? (
           <code data-slot="task-tool-block-agent-type">{agentType}</code>
         ) : null}
-        {runStatus !== undefined ? (
+        {description !== undefined && description.length > 0 ? (
           <span
-            data-slot="task-tool-block-status"
-            className="task-tool-block-status"
-            data-agent-status={runStatus}
+            data-slot="task-tool-block-description"
+            className="task-tool-block-description"
           >
-            {runStatus}
+            {description}
           </span>
         ) : null}
       </span>
     ) : undefined;
+
+  // Trailing badge — the subagent's nested-call count, the `Agent`
+  // analog of `Read`'s "N lines". Present in both collapsed and
+  // expanded states because it rides the chrome's one badge slot.
+  const nestedCallCount = agentNestedCallCount(childToolCalls, structured);
+  const resultSummary: ToolResultSummary | undefined =
+    nestedCallCount > 0
+      ? { kind: "count", count: nestedCallCount, noun: "call" }
+      : undefined;
 
   // Errored subagent runs carry the failure message in `textOutput`;
   // surface it through the chrome's error band rather than the body.
@@ -296,15 +335,21 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
       <span data-slot="task-tool-block-error-output">{textOutput}</span>
     ) : undefined;
 
-  // Body: streaming → placeholder; error → none (the chrome's error
-  // band is the primary content); ready → the embedded
-  // AgentTranscriptBlock when the structured result composed one.
+  // Body, keyed on whether the transcript has anything to show — never
+  // on `status` alone, so a still-streaming run with live child calls
+  // renders them and the working placeholder never flashes over real
+  // content. Error → none (the chrome's error band is the primary
+  // content). Entries present → the embedded AgentTranscriptBlock.
+  // Otherwise, while streaming, the working placeholder gives the
+  // expanded body calm height in the zero-entries window (a finished
+  // run always carries at least its final text entry, so the
+  // placeholder can't linger past completion).
+  const hasEntries =
+    transcriptData !== undefined && transcriptData.entries.length > 0;
   let body: React.ReactNode;
-  if (status === "streaming") {
+  if (status === "error") {
     body = null;
-  } else if (status === "error") {
-    body = null;
-  } else if (transcriptData !== undefined) {
+  } else if (hasEntries) {
     body = (
       <AgentTranscriptBlock
         data={transcriptData}
@@ -315,6 +360,8 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
         componentStatePreservationKey={`${toolUseId}-body`}
       />
     );
+  } else if (status === "streaming") {
+    body = <AgentWorkingBody />;
   } else {
     body = null;
   }
@@ -324,6 +371,7 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="task-tool-block"
       toolName={toolName}
       argsSummary={argsSummary}
+      resultSummary={resultSummary}
       status={status}
       phase={phase}
       caution={caution}

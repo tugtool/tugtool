@@ -22,15 +22,16 @@
  *    before / after source (the `two-text` source per [Q01]'s generic
  *    v1: `DiffBlock` lazy-loads `tugdiff-wasm` for the diff compute).
  *    For `insert`, embedded `FileBlock` over the new cell source.
- *    For `delete`, a small confirmation row (no body content — the
- *    cell is gone). For all three, a partial structured event (or no
- *    structured event at all) renders an empty body; the chrome's
- *    header chips still surface the per-cell context.
+ *    For `delete`, no body at all — the header's editMode badge
+ *    ("delete") and success dot report the outcome ([D02]). For all
+ *    three, a partial structured event (or no structured event at all)
+ *    renders an empty body; the chrome's header chips still surface the
+ *    per-cell context.
  *
  * Streaming / error ([Spec S03]):
  *
  *  - `status === "streaming"` → header still shows whatever input
- *    fragment has arrived; body is `<StreamingPlaceholder />`.
+ *    fragment has arrived; body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band from the
  *    plain-text `tool_result.output`; body is dropped so the failure
  *    reads as the primary content.
@@ -76,7 +77,7 @@ import { NotebookPen } from "lucide-react";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
-import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
+import { ToolBlockPre } from "./body-bits";
 import { ToolBlockChrome } from "./tool-block-chrome";
 import { ToolFileRef } from "./tool-file-ref";
 import type { ToolResultSummary } from "./tool-result-summary";
@@ -237,16 +238,11 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
   } else if (status === "error") {
     body = null;
   } else if (editMode === "delete") {
-    // Delete has no source to display — render a small confirmation
-    // row. The header already carries the cell identity, so the body
-    // just needs to confirm the deletion happened.
-    body = (
-      <ToolBlockBody>
-        <ToolBlockFieldRow label="status">
-          <code>deleted</code>
-        </ToolBlockFieldRow>
-      </ToolBlockBody>
-    );
+    // Delete has no source to display. The header's editMode badge
+    // ("delete") names the operation and the success dot confirms it
+    // happened ([D02]), so the body stays empty — no redundant
+    // "status: deleted" confirmation row.
+    body = null;
   } else if (editMode === "replace") {
     // Replace renders a `two-text` diff between the pre-edit and
     // post-edit cell source. `DiffBlock` lazy-loads `tugdiff-wasm`

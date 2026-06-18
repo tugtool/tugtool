@@ -30,9 +30,8 @@
  *
  *   - `status === "streaming"` → header still shows whatever input
  *     fragment has arrived (typically empty until the streaming
- *     `tool_use` continuation lands the full input); body is the
- *     `<StreamingPlaceholder />` so the row reserves vertical space
- *     without flashing partial content.
+ *     `tool_use` continuation lands the full input); the body is
+ *     `null` (the header dot is the in-flight signal).
  *   - `status === "ready"` → steady-state render.
  *   - `status === "error"` → chrome paints the error stripe, the
  *     plain-text `tool_result.output` (typically the read failure

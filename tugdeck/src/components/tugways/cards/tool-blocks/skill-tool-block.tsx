@@ -20,7 +20,8 @@
  *  - **Body** — three branches:
  *      1. `args === undefined || args === ""` → no body content
  *         (the chrome's footer / error band remains the only
- *         interactive surface; for streaming, `StreamingPlaceholder`).
+ *         interactive surface; for streaming, an empty body — the
+ *         header dot is the in-flight signal).
  *      2. `args.length <= INLINE_ARGS_MAX_CHARS` → a single
  *         `<code>` row showing the args verbatim, prefixed by an
  *         `args:` label so a reader scanning the transcript
@@ -39,7 +40,7 @@
  *
  * Streaming / error (Spec S03):
  *  - `status === "streaming"` → header shows whatever fragment has
- *    arrived (`skill` may be empty); body is `<StreamingPlaceholder />`.
+ *    arrived (`skill` may be empty); body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band from
  *    `textOutput`; body still renders the args section (the input is
  *    diagnostic context — "this skill was invoked with X and

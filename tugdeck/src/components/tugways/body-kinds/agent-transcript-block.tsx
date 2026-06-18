@@ -22,11 +22,14 @@
  *    logical UI state ([L06]) persisted through the [A9] axis.
  *
  * Composition (mirrors `JsonTreeBlock` / `FileBlock`):
- *  - Header (standalone only) — agent type + status + duration +
- *    tool-call count, and a trailing actions cluster (the fold cue +
- *    Copy). In `embedded` mode the header is suppressed (the host
- *    `ToolBlockChrome` owns identity) and the actions cluster
- *    portals into the host chrome's actions slot.
+ *  - Header (standalone only) — agent type + duration + tool-call
+ *    count, and a trailing actions cluster (the fold cue + Copy).
+ *    Lifecycle status is the host chrome's header dot ([D02]) — this
+ *    body kind paints no status text. In `embedded` mode the header is
+ *    suppressed (the host `ToolBlockChrome` owns identity); the
+ *    nested-calls fold cue portals into the host chrome's actions slot
+ *    only when the chrome is not itself collapsible (a nested call with
+ *    no chrome chevron), per `BlockFoldSuppressedContext`.
  *  - Body — the `entries[]` column, or, when collapsed, nothing (the
  *    fold cue in the actions cluster is the sole affordance).
  *  - Footer — a thin token-summary strip; renders in both modes.
@@ -47,7 +50,7 @@
  *
  * Laws:
  *  - [L06] collapse is logical state (which rows exist) → React state;
- *    hover / status colours are pure CSS.
+ *    hover colours are pure CSS.
  *  - [L11] owns no responder. Copy is a `BlockCopyButton`; the fold
  *    cue is a `BlockFoldCue` — both self-contained controls.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
@@ -78,6 +81,7 @@ import {
   BlockActionsCluster,
   BlockCopyButton,
   BlockFoldCue,
+  BlockFoldSuppressedContext,
   useBlockFoldState,
 } from "./affordances";
 
@@ -367,6 +371,19 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
     componentStatePreservationKey,
   });
 
+  // Fold ownership — the chrome publishes `BlockFoldSuppressedContext`
+  // truthy when it is itself collapsible (a history-collapse-wrapped
+  // top-level block, whose chevron mounts/unmounts this whole body).
+  // In that case the chrome chevron is the single fold and the
+  // transcript's own nested-calls cue would be a duplicate, so it is
+  // suppressed. When falsey — a *nested* tool call dispatched at
+  // `depth + 1`, which gets no chrome chevron — the inner cue is the
+  // sole fold and the [D17] depth-cap default-collapse is the only
+  // safety bounding deep nesting, so the cue is kept. (`useBlockFoldState`
+  // already forces `collapsed = false` under suppression, so the
+  // entries render open at the top level with no cue.)
+  const foldSuppressed = React.useContext(BlockFoldSuppressedContext);
+
   // ---- Copy source ---------------------------------------------------
   //
   // `dataRef` carries the live data so `BlockCopyButton`'s `getText`
@@ -431,13 +448,12 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   const tokenLabel = composeAgentTokenLabel(data.totalTokens);
   const nestedCallCount = countNestedToolCalls(data);
 
-  // The actions cluster — the fold cue + Copy. Composed once; rendered
-  // inline in `.tugx-agent-header` (standalone) or portaled into the
-  // host chrome's actions slot (embedded).
-  // The nested-calls fold is the transcript's body-specific control —
-  // kept in both compositions. Copy and the whole-block fold are owned by
-  // the chrome header, so Copy renders only in the standalone header.
-  const nestedFoldCue = (
+  // The nested-calls fold cue — the transcript's body-specific fold,
+  // kept ONLY when the chrome doesn't already own the fold (`!foldSuppressed`):
+  // standalone (gallery) and nested-call compositions keep it; a
+  // top-level embedded transcript under a collapsible chrome drops it
+  // (the chrome chevron is the single fold).
+  const nestedFoldCue = foldSuppressed ? null : (
     <BlockFoldCue
       collapsed={collapsed}
       onToggle={setCollapsed}
@@ -459,9 +475,11 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
     </>
   );
 
-  // Embedded: portal only the body-specific nested-calls fold.
+  // Embedded: portal only the body-specific nested-calls fold, and only
+  // when it survives suppression (a nested transcript with no chrome
+  // chevron). When the chrome owns the fold there is nothing to portal.
   const portaledActions =
-    embedded && chromeActionsTarget !== null
+    embedded && chromeActionsTarget !== null && nestedFoldCue !== null
       ? createPortal(
           <BlockActionsCluster data-slot={DATA_SLOT_ACTIONS}>
             {nestedFoldCue}
@@ -491,15 +509,6 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
               data-slot="agent-transcript-type"
             >
               {data.agentType}
-            </span>
-          ) : null}
-          {data.status !== undefined ? (
-            <span
-              className="tugx-agent-status"
-              data-slot="agent-transcript-status"
-              data-agent-status={data.status}
-            >
-              {data.status}
             </span>
           ) : null}
           {durationLabel !== undefined ? (

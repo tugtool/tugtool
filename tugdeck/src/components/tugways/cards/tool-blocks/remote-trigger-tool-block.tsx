@@ -37,7 +37,7 @@
  *    summary line IS the user's answer). Copy collects the result.
  *
  * Streaming / error (Spec S03):
- *  - `status === "streaming"` → body is `<StreamingPlaceholder />`.
+ *  - `status === "streaming"` → body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band; body
  *    still renders the input rows.
  *  - `status === "ready"` → header + body.

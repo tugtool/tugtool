@@ -26,9 +26,8 @@
  *
  *   - `status === "streaming"` → header still shows whatever input
  *     fragment has arrived (typically an empty `command` until
- *     enough of the input has streamed in); body is the
- *     `<StreamingPlaceholder />` so the row reserves vertical space
- *     without flashing empty content.
+ *     enough of the input has streamed in); the body is `null` (the
+ *     header dot is the in-flight signal).
  *   - `status === "ready"` → steady-state render.
  *   - `status === "error"` → chrome paints the error stripe, the
  *     plain-text `tool_result.output` (if any) renders as the inline

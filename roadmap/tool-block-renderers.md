@@ -267,14 +267,14 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Agent header: drop status, surface description, add count badge | pending | — |
-| #step-2 | Suppress the duplicate fold under the chrome + remove status text | pending | — |
-| #step-3 | Add the Agent-only working body | pending | — |
-| #step-4 | Normalize cron + task-mgmt status labels | pending | — |
-| #step-5 | Normalize notebook-edit delete confirmation | pending | — |
-| #step-6 | Retire StreamingPlaceholder docs + conventions note | pending | — |
-| #step-7 | Add gallery-task-tool-block | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Agent header: drop status, surface description, add count badge | done | d485db3d |
+| #step-2 | Suppress the duplicate fold under the chrome + remove status text | done | 4f714de5 |
+| #step-3 | Add the Agent-only working body | done | 9bb95bb4 |
+| #step-4 | Normalize cron + task-mgmt status labels | done | 1761e570 |
+| #step-5 | Normalize notebook-edit delete confirmation | done | 5ae7d071 |
+| #step-6 | Retire StreamingPlaceholder docs + conventions note | done | 7f562780 |
+| #step-7 | Add gallery-task-tool-block | done | c5b011c0 |
+| #step-8 | Integration checkpoint | done | b82e4263 |
 
 #### Step 1: Agent header — drop status, surface description, add count badge {#step-1}
 

@@ -32,8 +32,8 @@
  * and the output of this unknown tool, clearly delineated."
  *
  * Streaming / error (Spec S03):
- *  - `status === "streaming"` → `<StreamingPlaceholder />`; the input
- *    is still arriving.
+ *  - `status === "streaming"` → body is `null` (the header dot is the
+ *    in-flight signal); the input is still arriving.
  *  - `status === "error"` → the input section still renders (it is
  *    useful context — "this unknown tool was called with X and
  *    failed"); the chrome paints the error band from `textOutput`;

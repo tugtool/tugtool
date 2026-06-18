@@ -112,7 +112,7 @@ export function GalleryCronToolBlock(): React.ReactElement {
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Streaming — StreamingPlaceholder body
+          Streaming — empty body (the dot is the in-flight signal)
         </TugLabel>
         <CronToolBlock {...STREAMING} />
       </div>

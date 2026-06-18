@@ -93,6 +93,7 @@ import {
 import { GalleryCollapsedHistory } from "./gallery-collapsed-history";
 import { GallerySkillToolBlock } from "./gallery-skill-tool-block";
 import { GalleryMonitorToolBlock } from "./gallery-monitor-tool-block";
+import { GalleryTaskToolBlock } from "./gallery-task-tool-block";
 import { GalleryWorktreeToolBlock } from "./gallery-worktree-tool-block";
 import { GalleryTaskMgmtToolBlock } from "./gallery-task-mgmt-tool-block";
 import { GalleryCronToolBlock } from "./gallery-cron-tool-block";
@@ -742,6 +743,15 @@ export function registerGalleryCards(): void {
     componentId: "gallery-monitor-tool-block",
     contentFactory: (_cardId) => <GalleryMonitorToolBlock />,
     defaultMeta: { title: "MonitorToolBlock", icon: "Radar", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  registerCard({
+    componentId: "gallery-task-tool-block",
+    contentFactory: (_cardId) => <GalleryTaskToolBlock />,
+    defaultMeta: { title: "TaskToolBlock", icon: "Bot", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

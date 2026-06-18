@@ -1,0 +1,17 @@
+/**
+ * agent-working-body.css — `AgentWorkingBody`.
+ *
+ * A single quiet line in the embedded body region. Consumes the shared
+ * block text tones only ([L20]); no new token family, no motion ([D02]
+ * — the header dot is the in-flight signal, this is calm content).
+ */
+
+.agent-working-body {
+  display: flex;
+  align-items: center;
+  min-height: var(--tugx-toolheader-line);
+  padding: var(--tug-space-sm);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-block-code-font-size);
+  color: var(--tugx-block-text-color-muted);
+}

@@ -52,19 +52,22 @@ body {
   --tugx-agent-text-color:    var(--tug7-element-global-text-normal-default-rest);
   --tugx-agent-type-color:    var(--tug7-element-global-text-normal-default-rest);
   --tugx-agent-meta-color:    var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Status colours — keyed off `data-agent-status`. The wire emits
-   * lowercase values ("completed" / "in_progress" / "failed"); the
-   * three buckets ride the semantic success / link / danger text
-   * tokens, one hop per [L17]. */
-  --tugx-agent-status-done-color:    var(--tug7-element-global-text-normal-success-rest);
-  --tugx-agent-status-running-color: var(--tug7-element-global-text-normal-link-rest);
-  --tugx-agent-status-failed-color:  var(--tug7-element-global-text-normal-danger-rest);
 }
 
 /* ---------- Frame ---------- */
 
 .tugx-agent {
+  /* Pin-stack clearance for nested tool-block headers: this agent's own
+   * chrome-header height added to the inherited ancestor offset. Computed
+   * HERE — a non-cyclic read of the inherited `--tugx-pin-stack-top` plus
+   * the chrome's `--tugx-toolblock-header-height` — and republished by
+   * `.tugx-agent-entries` AS `--tugx-pin-stack-top` for the subtree. Two
+   * elements on purpose: redefining a custom property in terms of itself
+   * on ONE element is a dependency cycle, which makes it guaranteed-invalid
+   * so nested headers fall back to `top: 0` and pin ABOVE their parent. */
+  --tugx-agent-pin-clearance: calc(
+    var(--tugx-pin-stack-top, 0px) + var(--tugx-toolblock-header-height, 0px)
+  );
   display: block;
   margin: var(--tugx-block-margin);
   background: var(--tugx-block-bg);
@@ -129,33 +132,6 @@ body {
   white-space: nowrap;
 }
 
-/* Status — colour-coded by the `data-agent-status` bucket. The
- * default (any unrecognized status) rides the muted meta colour. */
-/* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-agent-status {
-  white-space: nowrap;
-  color: var(--tugx-agent-meta-color);
-  text-transform: capitalize;
-}
-
-/* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-agent-status[data-agent-status="completed"],
-.tugx-agent-status[data-agent-status="success"] {
-  color: var(--tugx-agent-status-done-color);
-}
-
-/* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-agent-status[data-agent-status="in_progress"],
-.tugx-agent-status[data-agent-status="running"] {
-  color: var(--tugx-agent-status-running-color);
-}
-
-/* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-agent-status[data-agent-status="failed"],
-.tugx-agent-status[data-agent-status="error"] {
-  color: var(--tugx-agent-status-failed-color);
-}
-
 /* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-agent-duration,
 .tugx-agent-tool-count {
@@ -171,6 +147,16 @@ body {
 /* ---------- Entries ---------- */
 
 .tugx-agent-entries {
+  /* Telescoping pin: nested tool-block headers stack BELOW this agent's
+   * chrome header instead of colliding with it. Republish the clearance
+   * captured on `.tugx-agent` as the subtree's pin offset — nested tool
+   * blocks use the generic header that pins at plain `--tugx-pin-stack-top`,
+   * so the fold has to land in the inherited variable here. Reading the
+   * already-resolved `--tugx-agent-pin-clearance` (from the parent
+   * element) is non-cyclic; folding into `--tugx-pin-stack-top` directly
+   * would self-reference and break (see `.tugx-agent`). Each deeper agent
+   * level re-captures and accumulates, so depth telescopes. */
+  --tugx-pin-stack-top: var(--tugx-agent-pin-clearance);
   display: flex;
   flex-direction: column;
   gap: var(--tugx-agent-entry-gap);
@@ -194,6 +180,15 @@ body {
 .tugx-agent-tool {
   padding-left: var(--tugx-agent-rail-indent);
   border-left: 1px solid var(--tugx-block-strip-border);
+  /* Own stacking context, one level below the agent's chrome header
+   * (`z-index: 1`). The nested block's own sticky header keeps its full
+   * elevation over its body rows INSIDE this context; the context as a
+   * whole paints under the parent agent header, so during the scroll
+   * transition a child header slides UNDER its parent rather than over
+   * it. This is the correct seam — lowering the nested header itself
+   * would drop it beneath its own output. */
+  position: relative;
+  z-index: 0;
 }
 
 /* ---------- Footer ---------- */

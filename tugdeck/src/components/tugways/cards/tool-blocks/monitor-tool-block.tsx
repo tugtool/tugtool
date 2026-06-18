@@ -36,7 +36,7 @@
  *
  * Streaming / error (Spec S03):
  *  - `status === "streaming"` → header shows whatever fragment has
- *    arrived; body is `<StreamingPlaceholder />`.
+ *    arrived; body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band; body
  *    still renders the args / output it has (diagnostic context).
  *  - `status === "ready"` → header + body.

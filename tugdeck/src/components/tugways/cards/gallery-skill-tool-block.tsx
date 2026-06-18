@@ -11,8 +11,8 @@
  *     the args as a fenced code block.
  *  3. No args — the skill takes no arguments. Body shows only the
  *     result label.
- *  4. Streaming — chrome paints the streaming stripe, body is the
- *     shared `StreamingPlaceholder`.
+ *  4. Streaming — the body is empty (the header dot is the in-flight
+ *     signal).
  *  5. Error — chrome paints the error band from `textOutput`; body
  *     still renders the args section as diagnostic context.
  *
@@ -121,7 +121,7 @@ export function GallerySkillToolBlock(): React.ReactElement {
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Streaming — StreamingPlaceholder body
+          Streaming — empty body (the dot is the in-flight signal)
         </TugLabel>
         <SkillToolBlock {...STREAMING} />
       </div>

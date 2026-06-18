@@ -168,8 +168,9 @@ body {
   font-family: var(--tugx-block-strip-font);
 }
 
-/* ---- Streaming placeholder ---- */
+/* ---- Streaming body ---- */
 
-/* Retired with the in-body ring ([D02]): the header's pulsing-dot is
- * the single in-flight signal now, so `StreamingPlaceholder` renders
- * nothing and the body stays empty while streaming. No rule needed. */
+/* No rule needed: per [D02] the header's pulsing dot is the single
+ * in-flight signal, so a streaming tool keeps an empty body (the
+ * wrapper passes `null`). The lone exception is the Agent block, whose
+ * own `AgentWorkingBody` fills its long working window. */

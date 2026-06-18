@@ -43,7 +43,7 @@
  * Streaming / error:
  *
  *   - `status === "streaming"` → header shows whatever input fragment
- *     has arrived; body is `<StreamingPlaceholder />`.
+ *     has arrived; body is `null` (the header dot is the in-flight signal).
  *   - `status === "error"` → chrome paints the error stripe and the
  *     plain-text `tool_result.output` (the edit-failure message)
  *     renders inline; the body is dropped so the failure reads as the

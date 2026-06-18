@@ -45,7 +45,7 @@
  *    would hide the answer). Copy collects the result text.
  *
  * Streaming / error (Spec S03):
- *  - `status === "streaming"` → body is `<StreamingPlaceholder />`.
+ *  - `status === "streaming"` → body is `null` (the header dot is the in-flight signal).
  *  - `status === "error"` → chrome paints the error band; body
  *    still renders the input rows (diagnostic context).
  *  - `status === "ready"` → header + per-verb body.
@@ -330,7 +330,7 @@ function renderDeleteBody(
   const hasId = input.id !== undefined && input.id.length > 0;
   const trimmedResult =
     textOutput !== undefined ? textOutput.trim() : undefined;
-  const hasShortStatus =
+  const hasShortResult =
     trimmedResult !== undefined &&
     trimmedResult.length > 0 &&
     !trimmedResult.includes("\n");
@@ -338,7 +338,7 @@ function renderDeleteBody(
     trimmedResult !== undefined &&
     trimmedResult.length > 0 &&
     trimmedResult.includes("\n");
-  if (!hasId && !hasShortStatus && !hasMultilineResult) return null;
+  if (!hasId && !hasShortResult && !hasMultilineResult) return null;
   return (
     <ToolBlockBody>
       {hasId ? (
@@ -346,13 +346,13 @@ function renderDeleteBody(
           <code>{`#${input.id}`}</code>
         </ToolBlockFieldRow>
       ) : null}
-      {hasShortStatus ? (
-        <ToolBlockFieldRow label="status">
+      {hasShortResult ? (
+        <ToolBlockFieldRow label="result">
           <code>{trimmedResult}</code>
         </ToolBlockFieldRow>
       ) : null}
       {hasMultilineResult ? (
-        <ToolBlockFieldRow label="status" layout="stacked">
+        <ToolBlockFieldRow label="result" layout="stacked">
           <ToolBlockPre>{textOutput}</ToolBlockPre>
         </ToolBlockFieldRow>
       ) : null}
