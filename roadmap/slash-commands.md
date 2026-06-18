@@ -122,8 +122,9 @@ mention as `type: "file"`).
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- `tugplug/skills/probe-noop` — the temporary `disable-model-invocation: true` fixture
-  (restored in the tree). Removed at phase close (#step-6).
+- `tugplug/skills/probe-noop` — a temporary `disable-model-invocation: true` fixture
+  (a `SKILL.md` that replies with a fixed token). Created at the start of #step-1 for
+  checkpoint testing; removed at phase close (#step-6).
 - `/tmp/commit-test-ground` — scratch git repo for live commit-skill testing.
 - Tug.app running in debug mode (HMR live) for in-app verification.
 
@@ -486,8 +487,12 @@ No new React state, store, or `useSyncExternalStore` surface is introduced.
 - `build-wire-payload.ts` — `command`-type branch emitting `commandWireText`.
 - Updated `build-wire-payload.test.ts` (replace the now-stale `@`-marker expectation,
   add lone + trailing-args + embedded cases).
+- `tugplug/skills/probe-noop/SKILL.md` — the `disable-model-invocation: true` checkpoint
+  fixture (see #dependencies).
 
 **Tasks:**
+- [ ] Create `tugplug/skills/probe-noop/SKILL.md` (`disable-model-invocation: true`,
+      replies with a fixed token) for the checkpoint.
 - [ ] Add `command-atom.ts` with `commandWireText` (prepends `/`, appends ` args` when
       present) and `commandChipLabel` (prepends `/`).
 - [ ] In `buildWirePayload`, branch on `atom.type === "command"` → push
