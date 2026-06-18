@@ -146,16 +146,25 @@ export const inlineCommandGhostPlugin = ViewPlugin.fromClass(
 
 /**
  * Accept the current inline ghost: insert its suffix as plain text at the
- * caret and move the caret to the end of the insertion. A no-op (returns
- * `false`) when no ghost is present, so the bound keys fall through to their
- * normal behavior (Tab → focus move, → → caret right).
+ * caret, follow it with a separating space, and move the caret past the
+ * space. The trailing space mirrors the descriptive popup's accept
+ * (`acceptCompletionAt`) so the user's next keystroke doesn't glue onto the
+ * completed command name; it is skipped when a space already follows the
+ * caret, to avoid a double space mid-text. A no-op (returns `false`) when no
+ * ghost is present, so the bound keys fall through to their normal behavior
+ * (Tab → focus move, → → caret right).
  */
 export const acceptInlineGhost: Command = (view) => {
   const ghost = currentInlineGhost(view);
   if (ghost === null) return false;
+  const hasTrailingSpace =
+    view.state.doc.sliceString(ghost.caret, ghost.caret + 1) === " ";
+  const insert = hasTrailingSpace ? ghost.suffix : ghost.suffix + " ";
   view.dispatch({
-    changes: { from: ghost.caret, insert: ghost.suffix },
-    selection: { anchor: ghost.caret + ghost.suffix.length },
+    changes: { from: ghost.caret, insert },
+    // Past the one separating space — whether we just inserted it or it was
+    // already there — so typing continues after the gap, not against the name.
+    selection: { anchor: ghost.caret + ghost.suffix.length + 1 },
     userEvent: "input.complete.tug-inline-command",
     scrollIntoView: true,
   });

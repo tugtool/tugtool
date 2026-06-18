@@ -51,9 +51,9 @@
  *     submits (see {@link completionConsumesEnter}).
  *
  *   - **Accept**: `acceptCompletionAt(view, index?)` deletes the
- *     trigger + query range, inserts U+FFFC, attaches an
- *     `AtomWidget` decoration via `addAtomsEffect`, sets the caret
- *     after the new atom, and dispatches `cancelEffect` — all in one
+ *     trigger + query range, inserts U+FFFC followed by a separating
+ *     space, attaches an `AtomWidget` decoration via `addAtomsEffect`,
+ *     sets the caret past the space, and dispatches `cancelEffect` — all in one
  *     transaction so the editor never observes a partially-applied
  *     accept. The function is exposed so the popup's clickable items
  *     can call it directly without round-tripping through a
@@ -652,10 +652,11 @@ export function subscribeCompletionState(
 
 /**
  * Insert the chosen completion as a tug atom. Replaces the trigger
- * character + query range with U+FFFC, attaches the matching
- * `AtomWidget` decoration via `addAtomsEffect`, sets the caret
- * immediately after the new atom, and cancels the typeahead session
- * — all in one transaction so the editor never observes a
+ * character + query range with U+FFFC plus a separating space (unless
+ * one already follows), attaches the matching `AtomWidget` decoration
+ * via `addAtomsEffect`, sets the caret past the space so the next
+ * keystroke doesn't glue onto the atom, and cancels the typeahead
+ * session — all in one transaction so the editor never observes a
  * partially-applied accept.
  *
  * `index` defaults to the currently-selected item. No-op if
@@ -669,17 +670,25 @@ export function acceptCompletionAt(view: EditorView, index?: number): void {
   const item = state.filtered[idx]!;
   const start = state.anchorOffset;
   const end = start + 1 + state.query.length;
+  // Follow the atom with a separating space so text the user types next
+  // doesn't glue onto it (e.g. accepting "/tugplug:commit" then typing
+  // "just" must not yield the non-existent command "/tugplug:commitjust").
+  // Skip it when a space already follows — accepting in front of existing
+  // text shouldn't leave a double space. Either way the caret lands past
+  // the separator, ready for the next keystroke.
+  const hasTrailingSpace = view.state.doc.sliceString(end, end + 1) === " ";
+  const insert = hasTrailingSpace ? TUG_ATOM_CHAR : TUG_ATOM_CHAR + " ";
   const positioned: PositionedAtom = {
     position: start,
     segment: item.atom,
   };
   view.dispatch({
-    changes: { from: start, to: end, insert: TUG_ATOM_CHAR },
+    changes: { from: start, to: end, insert },
     effects: [
       addAtomsEffect.of([positioned]),
       cancelEffect.of(null),
     ],
-    selection: { anchor: start + 1 },
+    selection: { anchor: start + 2 },
     scrollIntoView: true,
     userEvent: "input.tug-completion",
   });
