@@ -210,7 +210,7 @@ export function installHmrBridge(deck: DeckManager): void {
       // The token edit has landed in the stylesheet. React-side chips
       // repaint via CSS cascade, but the editor's atom-chip widgets bake
       // their colors into an isolated `<img>` data-URI at construction —
-      // re-bake them so a token tweak (e.g. tuning the command chip)
+      // re-bake them so an atom-token tweak (e.g. tuning chip colors)
       // shows up live in the editor too, not just the transcript.
       notifyThemeStyleEdit();
     }

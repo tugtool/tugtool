@@ -57,7 +57,7 @@ import {
   TRANSCRIPT_CHIP_BASE_FONT_SIZE,
   computeAtomChipGeometry,
 } from "./tug-atom-img";
-import { chipStyleForType, chipDisplayLabel } from "./command-atom";
+import { chipStyle, chipDisplayLabel } from "./command-atom";
 
 /**
  * Lazy-resolved transcript chip font family.
@@ -128,9 +128,8 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
     } = props;
     const fontSize = fontSizeOverride ?? TRANSCRIPT_CHIP_BASE_FONT_SIZE;
     const chipFontFamily = getChipFontFamily();
-    // Command chips show the leading slash; other types show their
-    // stored label. Same helper the editor path uses, so the displayed
-    // text is identical across surfaces.
+    // A slash command shows its leading slash; other types show their stored
+    // label. Same helper the editor path uses, so the text matches.
     const displayLabel = chipDisplayLabel(type, label, value);
     const geom = React.useMemo(
       () =>
@@ -141,9 +140,9 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
         }),
       [type, displayLabel, chipFontFamily, fontSize, maxLabelWidth],
     );
-    // Per-type token names, referenced as `var(--…)` so a theme switch
+    // Shared chip token names, referenced as `var(--…)` so a theme switch
     // or a token edit re-paints via CSS cascade — no SVG re-bake [L06].
-    const tokens = chipStyleForType(type).tokens;
+    const tokens = chipStyle().tokens;
     return (
       <svg
         ref={ref}
@@ -172,8 +171,8 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
             dangerouslySetInnerHTML on this <g> is the simplest way
             to splice them in without duplicating each icon as JSX.
             The strings carry no user input; XSS is not a concern.
-            Command chips set hasIcon=false (their `/` is in the label),
-            so the icon element is skipped entirely. */}
+            A slash command has no icon (its `/` is the marker), so the
+            element is skipped. */}
         {geom.hasIcon && (
           <g
             transform={geom.iconTransform}

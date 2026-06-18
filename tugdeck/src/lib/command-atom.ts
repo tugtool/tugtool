@@ -8,27 +8,20 @@
  * `type: "command"` whose `value` is the *bare* command name — no
  * leading slash (`tugplug:commit`, not `/tugplug:commit`). That bare
  * name is the single source of truth: it's what claude's catalog
- * reports, what the completion match keys off, and what the
- * unsupported-command allowlist compares against. The leading slash is
- * never stored — it is added at exactly two boundaries, by the two
- * helpers here:
+ * reports, what the completion match keys off, what the
+ * unsupported-command allowlist compares against, and what the chip
+ * displays (a command chip reads as `tugplug:commit`, distinguished from
+ * a file chip by its terminal icon, not by a leading slash).
  *
- *  - **the wire** ({@link commandWireText}) — the text block sent to
- *    claude must be a *clean* `/name` (optionally ` args`) string;
- *    claude's CLI expands a slash command into a **user invocation**
- *    (the path that bypasses a skill's `disable-model-invocation`
- *    guard) only when the message text is exactly the command. Any
- *    other shape — the backtick-`@` mention marker, or the bare
- *    slashless name — defeats expansion: the literal reaches the model
- *    instead, which tries the Skill tool (refused on a
- *    `disable-model-invocation` skill) or improvises.
- *  - **the chip** ({@link commandChipLabel}) — a command chip displays
- *    the leading slash so it reads as a command in both the editor and
- *    the transcript.
- *
- * Keeping the slash out of `value` and in these two helpers means the
- * bare-typed path and the accepted-atom path can never disagree on how
- * the slash appears.
+ * The leading slash is added at exactly one boundary — **the wire**
+ * ({@link commandWireText}): the text block sent to claude must be a
+ * *clean* `/name` (optionally ` args`) string. claude's CLI expands a
+ * slash command into a **user invocation** (the path that bypasses a
+ * skill's `disable-model-invocation` guard) only when the message text is
+ * exactly the command. Any other shape — the backtick-`@` mention marker,
+ * or a bare slashless name — defeats expansion: the literal reaches the
+ * model instead, which tries the Skill tool (refused on a
+ * `disable-model-invocation` skill) or improvises.
  *
  * Pure data helpers — no React, no DOM, no store dependency.
  *
@@ -56,31 +49,31 @@ export function commandWireText(value: string, args?: string): string {
 }
 
 /**
- * The display label for a command chip — the bare name with its
- * leading slash restored (`/tugplug:commit`). Used by both chip
- * renderers so the editor and transcript read identically.
- */
-export function commandChipLabel(value: string): string {
-  return "/" + bareName(value);
-}
-
-/**
- * The label a chip of the given `type` should display. Command chips
- * show the leading slash ({@link commandChipLabel}); every other atom
- * type shows its stored `label` verbatim. Both chip renderers (the
- * editor data-URI baker and the React `TugAtomChip`) call this so the
- * displayed text is identical across surfaces.
+ * The label a chip displays. A slash command shows its leading slash
+ * (`/tugplug:commit`) — the slash *is* the command, and is the marker that
+ * sets it apart in the shared atom-chip family (a command leads with `/`, a
+ * file leads with its icon). Every other atom type shows its stored `label`.
  */
 export function chipDisplayLabel(
   type: string,
   label: string,
   value: string,
 ): string {
-  return type === "command" ? commandChipLabel(value) : label;
+  return type === "command" ? "/" + bareName(value) : label;
+}
+
+/**
+ * Whether a chip of this type draws a leading icon glyph. A slash command
+ * does not — its leading `/` (see {@link chipDisplayLabel}) is the marker, so
+ * an icon would be redundant. Every other type draws its
+ * {@link ATOM_ICON_PATHS} glyph.
+ */
+export function chipHasIcon(type: string): boolean {
+  return type !== "command";
 }
 
 // ---------------------------------------------------------------------------
-// Chip style descriptor — the single source of truth for chip appearance
+// Chip style — the single source of truth for chip appearance
 // ---------------------------------------------------------------------------
 
 /**
@@ -100,8 +93,7 @@ export interface ChipTokens {
   text: string;
 }
 
-/** The geometry knobs a chip paints with. Per-type so a command chip
- *  can take a distinct shape without forking the renderers. */
+/** The geometry knobs a chip paints with. */
 export interface ChipGeometryStyle {
   /** Corner radius (`rx`) of the chip rect, in px. */
   radius: number;
@@ -109,10 +101,6 @@ export interface ChipGeometryStyle {
   paddingX: number;
   /** Gap between the icon and the label, in px. */
   gap: number;
-  /** Whether to draw the leading icon glyph. Command chips set this
-   *  `false` — their `/` already lives in the label, so an icon slash
-   *  would render a redundant double slash. */
-  icon: boolean;
 }
 
 /** A chip's complete appearance contract: which tokens it paints with
@@ -123,46 +111,27 @@ export interface ChipStyle {
 }
 
 /**
- * The shared default style — today's exact tokens and geometry, used by
- * every non-command atom type. Keeping these here (not as literals in
- * the renderers) is what lets a command chip differ in one place.
+ * The one chip style every atom type shares — file, image, link, doc, and
+ * command. All chips read as the same inline-reference family; the per-type
+ * **icon** ({@link ATOM_ICON_PATHS}) is the only differentiator (a command
+ * shows a terminal glyph, a file a document glyph, …). Defined once here
+ * rather than as literals in the two renderers so the token names and corner
+ * radius live in a single place.
  */
-const DEFAULT_CHIP_STYLE: ChipStyle = {
+const CHIP_STYLE: ChipStyle = {
   tokens: {
     surface: "--tug7-surface-atom-primary-normal-default-rest",
     border: "--tug7-element-atom-border-normal-default-rest",
     icon: "--tug7-element-atom-icon-normal-default-rest",
     text: "--tug7-element-atom-text-normal-default-rest",
   },
-  geometry: { radius: 3, paddingX: 6, gap: 4, icon: true },
+  geometry: { radius: 3, paddingX: 6, gap: 4 },
 };
 
-/**
- * The command style — a distinct teal token set (the `command` theme
- * variant, defined in `brio.css` / `harmony.css`) and a rounder rect, so
- * a slash command reads as a command rather than a file attachment. This
- * is the one surface to edit to retune the command look-and-feel; both
- * renderers follow.
- */
-const COMMAND_CHIP_STYLE: ChipStyle = {
-  tokens: {
-    surface: "--tug7-surface-atom-primary-normal-command-rest",
-    border: "--tug7-element-atom-border-normal-command-rest",
-    icon: "--tug7-element-atom-icon-normal-command-rest",
-    text: "--tug7-element-atom-text-normal-command-rest",
-  },
-  // No icon: the leading slash in the label is the command marker; an icon
-  // slash glyph on top of it reads as a redundant double slash.
-  geometry: { radius: 6, paddingX: 7, gap: 4, icon: false },
-};
-
-/**
- * The single type-keyed style descriptor consumed by both chip
- * renderers. `command` → the distinct command style; every other type →
- * the shared default (byte-for-byte today's appearance).
- */
-export function chipStyleForType(type: string): ChipStyle {
-  return type === "command" ? COMMAND_CHIP_STYLE : DEFAULT_CHIP_STYLE;
+/** The shared chip style consumed by both chip renderers (the editor
+ *  data-URI baker and the React `TugAtomChip`). */
+export function chipStyle(): ChipStyle {
+  return CHIP_STYLE;
 }
 
 // ---------------------------------------------------------------------------

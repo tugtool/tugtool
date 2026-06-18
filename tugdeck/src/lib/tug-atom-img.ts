@@ -14,7 +14,7 @@
 
 import { getTokenValue } from "@/theme-tokens";
 import { findEmbeddableFace } from "./tug-atom-fonts";
-import { chipStyleForType, chipDisplayLabel } from "./command-atom";
+import { chipStyle, chipDisplayLabel, chipHasIcon } from "./command-atom";
 
 // ---- Types ----
 
@@ -83,7 +83,6 @@ function escapeSVG(s: string): string {
 /** Lucide-style icon paths (24x24 viewBox) for atom types. */
 const ATOM_ICON_PATHS: Record<string, string> = {
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
-  command: '<path d="m5 19 14-14"/>',
   doc: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>',
   image: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
@@ -284,12 +283,11 @@ export interface AtomChipGeometry {
   width: number;
   /** Chip height in px. */
   height: number;
-  /** Corner radius (`rx`) of the chip rect, in px — per atom type via
-   *  {@link chipStyleForType}. */
+  /** Corner radius (`rx`) of the chip rect, in px — from {@link chipStyle}. */
   radius: number;
-  /** Whether the chip draws its leading icon glyph (command chips don't —
-   *  their `/` lives in the label). When false, renderers skip the icon
-   *  element and the geometry reserves no icon space. */
+  /** Whether the chip draws its leading icon glyph. A slash command has no
+   *  icon (its `/` is the marker); renderers skip the icon element and the
+   *  geometry reserves no icon space. */
   hasIcon: boolean;
   /** `transform` attribute for the icon `<g>` (translate + scale). */
   iconTransform: string;
@@ -334,13 +332,12 @@ export function computeAtomChipGeometry(
   const textWidth = measureTextWidth(displayLabel, font);
   const icon_px = iconSizeFor(size);
   const height_px = atomHeightFor(size);
-  // Padding / gap / corner radius / icon presence are per-type via the chip
-  // style descriptor — the single surface that makes a command chip distinct
-  // without forking this geometry. Non-command types resolve to the shared
-  // defaults (paddingX 6 / gap 4 / radius 3 / icon true), so their layout is
-  // unchanged. A command chip omits the icon (its `/` lives in the label), so
-  // it reserves no icon span.
-  const { paddingX, gap, radius, icon: hasIcon } = chipStyleForType(type).geometry;
+  // Padding / gap / corner radius come from the shared chip style — one place
+  // (not duplicated in the two renderers). Every atom type shares this layout;
+  // a slash command differs only in that it has no icon (its `/` is the
+  // marker), so it reserves no icon span.
+  const { paddingX, gap, radius } = chipStyle().geometry;
+  const hasIcon = chipHasIcon(type);
   const iconSpan = hasIcon ? icon_px + gap : 0;
   const width = paddingX + iconSpan + Math.ceil(textWidth) + paddingX;
   const iconTransform = `translate(${paddingX},${(height_px - icon_px) / 2}) scale(${icon_px / 24})`;
@@ -423,15 +420,15 @@ export function buildAtomSVGDataUri(
     fontSize?: number;
   },
 ): AtomSvgResult {
-  // Command chips show the leading slash; every other type shows its
-  // stored label. Both chip renderers route through `chipDisplayLabel`
-  // so the displayed text is identical across editor and transcript.
+  // A slash command displays its leading slash (`/tugplug:commit`); every
+  // other type shows its stored label. Both renderers route through
+  // `chipDisplayLabel` so the text is identical across editor and transcript.
   const displayLabel = chipDisplayLabel(type, label, value);
   const g = computeAtomChipGeometry(type, displayLabel, options);
-  // Colors come from the per-type style descriptor (the single tuning
-  // surface). The editor path bakes resolved hex because the
-  // `<img src="data:…">` document is isolated from the host cascade.
-  const tokens = chipStyleForType(type).tokens;
+  // Colors come from the shared chip style. The editor path bakes resolved
+  // hex because the `<img src="data:…">` document is isolated from the host
+  // cascade.
+  const tokens = chipStyle().tokens;
   const bgColor = getTokenValue(tokens.surface);
   const borderColor = getTokenValue(tokens.border);
   const iconColor = getTokenValue(tokens.icon);
