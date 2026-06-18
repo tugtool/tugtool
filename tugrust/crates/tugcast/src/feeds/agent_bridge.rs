@@ -1389,8 +1389,14 @@ fn inject_replay_telemetry(
     // left untouched (JSONL-authoritative — [P03]).
     let timing = [
         ("wallClockMs", serde_json::json!(row.wall_clock_ms)),
-        ("awaitingApprovalMs", serde_json::json!(row.awaiting_approval_ms)),
-        ("transportDowntimeMs", serde_json::json!(row.transport_downtime_ms)),
+        (
+            "awaitingApprovalMs",
+            serde_json::json!(row.awaiting_approval_ms),
+        ),
+        (
+            "transportDowntimeMs",
+            serde_json::json!(row.transport_downtime_ms),
+        ),
         ("activeMs", serde_json::json!(row.active_ms)),
         ("ttftMs", serde_json::json!(row.ttft_ms)),
         ("ttftcMs", serde_json::json!(row.ttftc_ms)),
@@ -2037,7 +2043,9 @@ mod tests {
         map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
         let out = inject_replay_telemetry(line, &map);
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        let telemetry = parsed.get("telemetry").expect("timing-only telemetry attached");
+        let telemetry = parsed
+            .get("telemetry")
+            .expect("timing-only telemetry attached");
         assert_eq!(telemetry["wallClockMs"], 4_000);
         assert_eq!(telemetry["activeMs"], 3_700);
         // No cost invented from the row.
