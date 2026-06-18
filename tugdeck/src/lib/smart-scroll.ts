@@ -260,6 +260,18 @@ export class SmartScroll {
     return this._container.scrollTop <= 0;
   }
 
+  /** True when the container has scroll room — its content overflows the
+   *  viewport. When false (content fits entirely), there is no bottom to
+   *  follow or scroll away from, so the intent-based disengage paths
+   *  (wheel-up, scroll-up keys) must not flip follow-bottom off: a trackpad
+   *  gesture fires `deltaY < 0` even with no scroll room, which would
+   *  otherwise summon the jump-to-bottom affordance on a card that doesn't
+   *  scroll at all. The position-based disengage (`dragging` scroll handler)
+   *  is already immune via its `!isAtBottom` guard. */
+  get isScrollable(): boolean {
+    return this._container.scrollHeight > this._container.clientHeight;
+  }
+
   /** True while the user is actively interacting (tracking, dragging, settling, or decelerating). */
   get isUserScrolling(): boolean {
     const p = this._phase;
@@ -704,8 +716,11 @@ export class SmartScroll {
       this._restartScrollEndTimer();
     }
 
-    // Disengage follow-bottom on scroll-up.
-    if (e.deltaY < 0 && this._isFollowingBottom) {
+    // Disengage follow-bottom on scroll-up — but only when the container can
+    // actually scroll. A non-scrollable container still emits `deltaY < 0`
+    // wheel events (trackpad), and disengaging there would summon the
+    // jump-to-bottom affordance with nowhere to jump.
+    if (e.deltaY < 0 && this._isFollowingBottom && this.isScrollable) {
       this._setFollowingBottom(false, 'wheel-up');
     }
   }
@@ -740,7 +755,7 @@ export class SmartScroll {
 
     // Disengage follow-bottom for scroll-up keys.
     const isScrollUpKey = SCROLL_UP_KEYS.has(e.code) || (e.code === 'Space' && e.shiftKey);
-    if (isScrollUpKey && this._isFollowingBottom) {
+    if (isScrollUpKey && this._isFollowingBottom && this.isScrollable) {
       this._setFollowingBottom(false, 'key-up');
     }
 
