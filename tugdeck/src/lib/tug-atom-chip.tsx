@@ -57,6 +57,7 @@ import {
   TRANSCRIPT_CHIP_BASE_FONT_SIZE,
   computeAtomChipGeometry,
 } from "./tug-atom-img";
+import { chipStyleForType, chipDisplayLabel } from "./command-atom";
 
 /**
  * Lazy-resolved transcript chip font family.
@@ -127,15 +128,22 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
     } = props;
     const fontSize = fontSizeOverride ?? TRANSCRIPT_CHIP_BASE_FONT_SIZE;
     const chipFontFamily = getChipFontFamily();
+    // Command chips show the leading slash; other types show their
+    // stored label. Same helper the editor path uses, so the displayed
+    // text is identical across surfaces.
+    const displayLabel = chipDisplayLabel(type, label, value);
     const geom = React.useMemo(
       () =>
-        computeAtomChipGeometry(type, label, {
+        computeAtomChipGeometry(type, displayLabel, {
           fontFamily: chipFontFamily,
           fontSize,
           maxLabelWidth,
         }),
-      [type, label, chipFontFamily, fontSize, maxLabelWidth],
+      [type, displayLabel, chipFontFamily, fontSize, maxLabelWidth],
     );
+    // Per-type token names, referenced as `var(--…)` so a theme switch
+    // or a token edit re-paints via CSS cascade — no SVG re-bake [L06].
+    const tokens = chipStyleForType(type).tokens;
     return (
       <svg
         ref={ref}
@@ -146,7 +154,7 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
         className={className}
         data-slot={dataSlot}
         data-testid={dataTestid}
-        aria-label={label}
+        aria-label={displayLabel}
         role="img"
       >
         <rect
@@ -154,25 +162,29 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
           y={0.5}
           width={geom.width - 1}
           height={geom.height - 1}
-          rx={3}
-          fill="var(--tug7-surface-atom-primary-normal-default-rest)"
-          stroke="var(--tug7-element-atom-border-normal-default-rest)"
+          rx={geom.radius}
+          fill={`var(${tokens.surface})`}
+          stroke={`var(${tokens.border})`}
           strokeWidth={1}
         />
         {/* Icon paths are static module-local SVG markup strings
             (see ATOM_ICON_PATHS in tug-atom-img.ts) — using
             dangerouslySetInnerHTML on this <g> is the simplest way
             to splice them in without duplicating each icon as JSX.
-            The strings carry no user input; XSS is not a concern. */}
-        <g
-          transform={geom.iconTransform}
-          fill="none"
-          stroke="var(--tug7-element-atom-icon-normal-default-rest)"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          dangerouslySetInnerHTML={{ __html: geom.iconPath }}
-        />
+            The strings carry no user input; XSS is not a concern.
+            Command chips set hasIcon=false (their `/` is in the label),
+            so the icon element is skipped entirely. */}
+        {geom.hasIcon && (
+          <g
+            transform={geom.iconTransform}
+            fill="none"
+            stroke={`var(${tokens.icon})`}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            dangerouslySetInnerHTML={{ __html: geom.iconPath }}
+          />
+        )}
         {/* Pin the font-family to the same value the Canvas
             measurement used. Letting the SVG `<text>` inherit via
             CSS cascade caused a clipping bug inside tool-block
@@ -186,7 +198,7 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
           y={geom.textY}
           fontSize={geom.fontSize}
           fontFamily={chipFontFamily}
-          fill="var(--tug7-element-atom-text-normal-default-rest)"
+          fill={`var(${tokens.text})`}
         >
           {geom.displayLabel}
         </text>

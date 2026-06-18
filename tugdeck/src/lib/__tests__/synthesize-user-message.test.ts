@@ -507,3 +507,64 @@ describe("synthesizeUserMessageFromBlocks + buildWirePayload round-trip", () => 
     });
   });
 });
+
+describe("synthesizeUserMessageFromBlocks — command-expansion echo", () => {
+  test("a command echo synthesizes a single command atom", () => {
+    const store = createAtomBytesStore();
+    const echo: ContentBlock = {
+      type: "text",
+      text:
+        "<command-message>tugplug:commit</command-message>\n" +
+        "<command-name>/tugplug:commit</command-name>",
+    };
+    const synth = synthesizeUserMessageFromBlocks([echo], store, {
+      mintAtomId: makeCounter(),
+    });
+    expect(synth.text).toBe(C);
+    expect(synth.atoms).toEqual([
+      { kind: "atom", type: "command", label: "tugplug:commit", value: "tugplug:commit" },
+    ]);
+  });
+
+  test("a command echo with args renders the args as trailing text", () => {
+    const store = createAtomBytesStore();
+    const echo: ContentBlock = {
+      type: "text",
+      text:
+        "<command-name>/cmd</command-name>\n" +
+        "<command-args>one two</command-args>",
+    };
+    const synth = synthesizeUserMessageFromBlocks([echo], store, {
+      mintAtomId: makeCounter(),
+    });
+    expect(synth.text).toBe(`${C} one two`);
+    expect(synth.atoms).toEqual([
+      { kind: "atom", type: "command", label: "cmd", value: "cmd" },
+    ]);
+  });
+
+  test("ordinary text that is not an envelope is untouched (no command atom)", () => {
+    const store = createAtomBytesStore();
+    const synth = synthesizeUserMessageFromBlocks(
+      [{ type: "text", text: "just text" }],
+      store,
+      { mintAtomId: makeCounter() },
+    );
+    expect(synth.text).toBe("just text");
+    expect(synth.atoms).toHaveLength(0);
+  });
+
+  // Marker guard: a bare `/name` (an embedded or non-expanded command,
+  // which carries no `@`-mention marker) must stay plain text — never be
+  // re-minted as a file atom by the generic marker walk.
+  test("a bare /name text block synthesizes no atom", () => {
+    const store = createAtomBytesStore();
+    const synth = synthesizeUserMessageFromBlocks(
+      [{ type: "text", text: "/help" }],
+      store,
+      { mintAtomId: makeCounter() },
+    );
+    expect(synth.text).toBe("/help");
+    expect(synth.atoms).toHaveLength(0);
+  });
+});

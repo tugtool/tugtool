@@ -83,6 +83,24 @@ export function notifyThemeChange(): void {
 }
 
 /**
+ * Fire theme-change subscribers immediately, without the sentinel
+ * comparison {@link notifyThemeChange} uses.
+ *
+ * A theme *switch* changes the sentinel token, so `notifyThemeChange`
+ * can wait for it to flip. A token-value *edit* within the active theme
+ * (the dev/HMR iterate-on-look-and-feel loop) does NOT change the
+ * sentinel — the same theme, different values — so the sentinel-gated
+ * path would wait forever. Subscribers that bake token values at
+ * construction (the editor's atom-chip widgets, which resolve colors via
+ * `getTokenValue` into an isolated `<img>` data-URI) must re-bake to
+ * reflect the edit; React-side chips repaint for free via CSS cascade.
+ * The HMR bridge calls this after a `styles/themes/*.css` edit lands.
+ */
+export function notifyThemeStyleEdit(): void {
+  fireSubscribers();
+}
+
+/**
  * Initialize the sentinel cache. Called once at startup so the first
  * notifyThemeChange has a baseline to compare against.
  */

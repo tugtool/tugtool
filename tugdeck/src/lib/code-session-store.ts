@@ -38,6 +38,8 @@ import {
 } from "@/components/tugways/property-store";
 import { FeedStore } from "@/lib/feed-store";
 import type { AtomSegment } from "./tug-atom-img";
+import { TUG_ATOM_CHAR } from "./tug-atom-img";
+import { isLoneLeadingCommandAtom } from "./command-atom";
 import {
   createAtomBytesStore,
   type AtomBytesStore,
@@ -742,11 +744,18 @@ export class CodeSessionStore {
     // The reducer receives the synthesized substrate + the wire
     // content blocks and never touches the bytes-store.
     const wire = buildWirePayload(text, atoms, this.atomBytesStore);
-    const synth = synthesizeUserMessageFromBlocks(
-      wire.content,
-      this.atomBytesStore,
-      { atomIdAt: wire.atomIdAt },
-    );
+    // A lone leading command atom is sent as a clean `/name` for claude to
+    // expand (no `@`-mention marker), so `wire.content` can't round-trip the
+    // command-ness. Re-synthesizing from it would render plain `/name` text
+    // and then flip to a chip when claude's `<command-name>` echo replays.
+    // Preserve the editor's command substrate for the optimistic echo so it
+    // already matches the replayed chip — no flicker. (Replay rebuilds the
+    // same substrate from the envelope via `detectCommandEcho`.)
+    const synth = isLoneLeadingCommandAtom(text, atoms, TUG_ATOM_CHAR)
+      ? { text, atoms, thumbnailBake: Promise.resolve() }
+      : synthesizeUserMessageFromBlocks(wire.content, this.atomBytesStore, {
+          atomIdAt: wire.atomIdAt,
+        });
     this.dispatch({
       type: "send",
       text: synth.text,

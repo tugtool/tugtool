@@ -110,6 +110,7 @@ import {
   readHostCanvasColorFromAppliedCss,
   sendCanvasColor,
 } from "./contexts/theme-provider";
+import { notifyThemeStyleEdit } from "./theme-tokens";
 
 /**
  * One-shot arming window for the `tug:theme-changed` HMR signal.
@@ -206,6 +207,12 @@ export function installHmrBridge(deck: DeckManager): void {
     if (consumeCanvasRebridge()) {
       const hex = readHostCanvasColorFromAppliedCss();
       if (hex) sendCanvasColor(hex);
+      // The token edit has landed in the stylesheet. React-side chips
+      // repaint via CSS cascade, but the editor's atom-chip widgets bake
+      // their colors into an isolated `<img>` data-URI at construction —
+      // re-bake them so a token tweak (e.g. tuning the command chip)
+      // shows up live in the editor too, not just the transcript.
+      notifyThemeStyleEdit();
     }
 
     const handler = (

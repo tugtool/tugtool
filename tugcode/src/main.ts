@@ -4,7 +4,7 @@
 import { readLine, writeLine, writeLineAndExit } from "./ipc.ts";
 import { isProtocolInit, isUserMessage } from "./types.ts";
 import { dispatchInbound } from "./inbound-dispatch.ts";
-import { SessionManager } from "./session.ts";
+import { SessionManager, resolvePluginDir } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
@@ -260,9 +260,10 @@ async function main() {
         sessionId,
         homeDir: homedir(),
         cwd: projectDir,
-        // The project plugin dir — mirrors `SessionManager.getPluginDir()`.
+        // The effective plugin dir — mirrors `SessionManager.getPluginDir()`:
+        // the universal, app-level bundled tugplug (never the project source).
         // Its `agents/` and `skills/` fold into the breakdown.
-        pluginDir: join(projectDir, "tugplug"),
+        pluginDir: resolvePluginDir(),
         settings: claudeCodeSettings,
       });
 

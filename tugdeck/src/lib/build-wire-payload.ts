@@ -47,7 +47,9 @@
  *    `text-file` source. We can revisit if a need arises.)
  *  - `image` (no id; defensive) → substituted text only.
  *  - `link` → substituted text (the URL).
- *  - `command` → substituted text (the command name).
+ *  - `command` → a clean `/<name>` string (not the mention marker), so
+ *    claude expands it as a user-invoked slash command. See
+ *    {@link commandWireText}.
  *
  * ## Returned `atomIdAt` resolver
  *
@@ -100,6 +102,7 @@ import type { ContentBlock } from "@/protocol";
 import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
 import type { AtomBytesStore } from "./atom-bytes-store";
 import { wrapAtomMention } from "./atom-mention-marker";
+import { commandWireText } from "./command-atom";
 
 // ---------------------------------------------------------------------------
 // Public type
@@ -189,6 +192,20 @@ export function buildWirePayload(
         },
       });
       imageBlockAtomIds.push(atom.id);
+      continue;
+    }
+    // A `command` atom must reach claude as a *clean* slash-command
+    // string — claude's CLI expands `/plugin:skill` into a user-invoked
+    // skill (bypassing a skill's `disable-model-invocation` guard) only
+    // when the message text is exactly the command. The mention marker
+    // (`` `@/tugplug:commit` ``) defeats expansion: the literal text
+    // reaches the model, which then tries the Skill tool and is refused
+    // on any `disable-model-invocation` skill. Emit the bare `/name` so
+    // expansion fires. Round-trip-to-chip on replay is moot — claude
+    // rewrites the turn to the expanded `<command-name>` echo, which the
+    // transcript reconstructs into a command chip separately.
+    if (atom.type === "command") {
+      textBuf += commandWireText(atom.value);
       continue;
     }
     // Non-image, bytes-less, or otherwise not promoted to an image

@@ -14,6 +14,7 @@
 
 import { getTokenValue } from "@/theme-tokens";
 import { findEmbeddableFace } from "./tug-atom-fonts";
+import { chipStyleForType, chipDisplayLabel } from "./command-atom";
 
 // ---- Types ----
 
@@ -115,8 +116,6 @@ function iconSizeFor(size: number): number { return size; }
 /** Module-state versions used by the editor path. */
 function atomHeight(): number { return atomHeightFor(_fontSize); }
 function iconSize(): number { return iconSizeFor(_fontSize); }
-const PADDING = 6;
-const GAP = 4;
 
 // ---- Transcript-side chip sizing ----
 
@@ -285,6 +284,13 @@ export interface AtomChipGeometry {
   width: number;
   /** Chip height in px. */
   height: number;
+  /** Corner radius (`rx`) of the chip rect, in px — per atom type via
+   *  {@link chipStyleForType}. */
+  radius: number;
+  /** Whether the chip draws its leading icon glyph (command chips don't —
+   *  their `/` lives in the label). When false, renderers skip the icon
+   *  element and the geometry reserves no icon space. */
+  hasIcon: boolean;
   /** `transform` attribute for the icon `<g>` (translate + scale). */
   iconTransform: string;
   /** `x` for the `<text>` element. */
@@ -328,16 +334,26 @@ export function computeAtomChipGeometry(
   const textWidth = measureTextWidth(displayLabel, font);
   const icon_px = iconSizeFor(size);
   const height_px = atomHeightFor(size);
-  const width = PADDING + icon_px + GAP + Math.ceil(textWidth) + PADDING;
-  const iconTransform = `translate(${PADDING},${(height_px - icon_px) / 2}) scale(${icon_px / 24})`;
+  // Padding / gap / corner radius / icon presence are per-type via the chip
+  // style descriptor — the single surface that makes a command chip distinct
+  // without forking this geometry. Non-command types resolve to the shared
+  // defaults (paddingX 6 / gap 4 / radius 3 / icon true), so their layout is
+  // unchanged. A command chip omits the icon (its `/` lives in the label), so
+  // it reserves no icon span.
+  const { paddingX, gap, radius, icon: hasIcon } = chipStyleForType(type).geometry;
+  const iconSpan = hasIcon ? icon_px + gap : 0;
+  const width = paddingX + iconSpan + Math.ceil(textWidth) + paddingX;
+  const iconTransform = `translate(${paddingX},${(height_px - icon_px) / 2}) scale(${icon_px / 24})`;
   const { fontFamily: svgFontFamily, fontFaceCSS } = resolveSvgFont(family, 400);
   return {
     iconPath: ATOM_ICON_PATHS[type] ?? ATOM_ICON_PATHS.file,
     displayLabel,
     width,
     height: height_px,
+    radius,
+    hasIcon,
     iconTransform,
-    textX: PADDING + icon_px + GAP,
+    textX: paddingX + iconSpan,
     textY: height_px / 2 + size * 0.32,
     fontSize: size,
     svgFontFamily,
@@ -407,22 +423,27 @@ export function buildAtomSVGDataUri(
     fontSize?: number;
   },
 ): AtomSvgResult {
-  // The `value` field is part of the public signature so future
-  // theme variants can fork on it (e.g., a different icon for a path
-  // pointing inside `node_modules`); today only `type` and `label`
-  // drive the rendered output.
-  void value;
-  const g = computeAtomChipGeometry(type, label, options);
-  const bgColor = getTokenValue("--tug7-surface-atom-primary-normal-default-rest");
-  const borderColor = getTokenValue("--tug7-element-atom-border-normal-default-rest");
-  const iconColor = getTokenValue("--tug7-element-atom-icon-normal-default-rest");
-  const textColor = getTokenValue("--tug7-element-atom-text-normal-default-rest");
+  // Command chips show the leading slash; every other type shows its
+  // stored label. Both chip renderers route through `chipDisplayLabel`
+  // so the displayed text is identical across editor and transcript.
+  const displayLabel = chipDisplayLabel(type, label, value);
+  const g = computeAtomChipGeometry(type, displayLabel, options);
+  // Colors come from the per-type style descriptor (the single tuning
+  // surface). The editor path bakes resolved hex because the
+  // `<img src="data:…">` document is isolated from the host cascade.
+  const tokens = chipStyleForType(type).tokens;
+  const bgColor = getTokenValue(tokens.surface);
+  const borderColor = getTokenValue(tokens.border);
+  const iconColor = getTokenValue(tokens.icon);
+  const textColor = getTokenValue(tokens.text);
   const defs = g.fontFaceCSS ? `<defs><style>${g.fontFaceCSS}</style></defs>` : "";
-  const icon = `<g transform="${g.iconTransform}" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${g.iconPath}</g>`;
+  const icon = g.hasIcon
+    ? `<g transform="${g.iconTransform}" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${g.iconPath}</g>`
+    : "";
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}" height="${g.height}" viewBox="0 0 ${g.width} ${g.height}">`,
     defs,
-    `<rect x="0.5" y="0.5" width="${g.width - 1}" height="${g.height - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
+    `<rect x="0.5" y="0.5" width="${g.width - 1}" height="${g.height - 1}" rx="${g.radius}" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
     icon,
     `<text x="${g.textX}" y="${g.textY}" font-size="${g.fontSize}" font-family="${g.svgFontFamily}" fill="${textColor}">${escapeSVG(g.displayLabel)}</text>`,
     `</svg>`,

@@ -119,14 +119,48 @@ describe("buildWirePayload — non-image atom substitution", () => {
     ]);
   });
 
-  test("command atom substitutes its name inside the marker", () => {
+  test("command atom emits a clean /name string, NOT the mention marker", () => {
+    // A command atom must reach claude as a clean slash-command string so
+    // the CLI expands it as a user-invoked skill (bypassing
+    // disable-model-invocation). Wrapping it in the `@`-mention marker
+    // defeats expansion. See build-wire-payload.ts / command-atom.ts.
     const store = createAtomBytesStore();
     const { content } = buildWirePayload(
       `Run ${C}`,
-      [commandAtom("/help")],
+      [commandAtom("help")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "Run `@/help`" }]);
+    expect(content).toEqual([{ type: "text", text: "Run /help" }]);
+  });
+
+  test("a lone command atom is a clean leading-slash message", () => {
+    const store = createAtomBytesStore();
+    const { content } = buildWirePayload(
+      `${C}`,
+      [commandAtom("tugplug:commit")],
+      store,
+    );
+    expect(content).toEqual([{ type: "text", text: "/tugplug:commit" }]);
+  });
+
+  test("a command atom followed by argument text coalesces into /cmd args", () => {
+    const store = createAtomBytesStore();
+    const { content } = buildWirePayload(
+      `${C} one two`,
+      [commandAtom("cmd")],
+      store,
+    );
+    expect(content).toEqual([{ type: "text", text: "/cmd one two" }]);
+  });
+
+  test("a command atom embedded mid-prose substitutes /name (no marker)", () => {
+    const store = createAtomBytesStore();
+    const { content } = buildWirePayload(
+      `before ${C} after`,
+      [commandAtom("status")],
+      store,
+    );
+    expect(content).toEqual([{ type: "text", text: "before /status after" }]);
   });
 
   test("atoms at boundaries (start, end) substitute correctly", () => {

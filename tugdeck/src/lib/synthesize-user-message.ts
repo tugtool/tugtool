@@ -76,6 +76,7 @@ import type { AtomBytesEntry, AtomBytesStore } from "./atom-bytes-store";
 import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
 import { bakeThumbnail } from "./image-downsample";
 import { parseAtomMentionSegments } from "./atom-mention-marker";
+import { detectCommandEcho } from "./command-atom";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -188,6 +189,24 @@ export function synthesizeUserMessageFromBlocks(
   const mintAtomId = options?.mintAtomId ?? defaultMintAtomId;
   const bakeImage = options?.bakeImage ?? defaultBakeImage;
   const atomIdAt = options?.atomIdAt;
+
+  // Command-expansion echo: when claude expands a typed `/command`, it
+  // rewrites the user turn to a `<command-name>` envelope rather than the
+  // literal the editor sent. The atom type doesn't survive on the wire,
+  // so reconstruct the command atom from the envelope here — yielding the
+  // same command chip the editor showed (the bare `value` matches the
+  // editor atom's, so optimistic and replayed echoes render identically).
+  // Commands never ride the `@`-mention marker, so this is the only path
+  // that re-mints a `command` atom. See {@link detectCommandEcho}.
+  const commandEcho = detectCommandEcho(blocks);
+  if (commandEcho !== null) {
+    const { value, args } = commandEcho;
+    return {
+      text: TUG_ATOM_CHAR + (args ? " " + args : ""),
+      atoms: [{ kind: "atom", type: "command", label: value, value }],
+      thumbnailBake: Promise.resolve(),
+    };
+  }
 
   let textBuf = "";
   const atoms: AtomSegment[] = [];

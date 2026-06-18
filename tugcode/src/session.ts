@@ -51,6 +51,39 @@ import {
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
 import { isSessionHeldByOtherProcess } from "./terminal-liveness.ts";
 
+/**
+ * Resolve the tugplug `--plugin-dir`.
+ *
+ * tugplug is an **app-level resource** — universal across every project
+ * directory and bundled into every app variant. It is ALWAYS the bundled copy
+ * that sits beside this binary (`Contents/Resources/tugplug`, one level up
+ * from the `MacOS` dir), so a Dev card on any directory gets the same
+ * skills/agents. It is **never** the open project's source tree — there is no
+ * per-project resolution and no fall-back to `<projectDir>/tugplug`.
+ *
+ * `TUG_PLUGIN_DIR` overrides the path for the dev-only `bun run` harness,
+ * where there is no app bundle to resolve against. That is an explicit
+ * injection, not a per-project fallback.
+ *
+ * Shared by the spawn ({@link SessionManager}) and the context-breakdown
+ * emitter so both read the same plugin dir.
+ */
+export function resolvePluginDir(): string {
+  const override = process.env.TUG_PLUGIN_DIR;
+  if (override && override.length > 0) {
+    console.log(`Plugin dir (env override): ${override}`);
+    return override;
+  }
+  const bundled = resolve(
+    dirname(process.execPath),
+    "..",
+    "Resources",
+    "tugplug",
+  );
+  console.log(`Plugin dir (bundled app resource): ${bundled}`);
+  return bundled;
+}
+
 interface PendingRequest<T> {
   resolve: (value: T) => void;
   reject: (err: Error) => void;
@@ -5729,12 +5762,11 @@ export class SessionManager {
    * by it to show the newest session first for a given project.
    */
   /**
-   * Resolve the tugplug plugin directory for --plugin-dir.
-   * The plugin lives at `tugplug/` under the project directory (passed via --dir).
+   * Resolve the tugplug plugin directory for `--plugin-dir`. Delegates to the
+   * shared app-level {@link resolvePluginDir} so the context-breakdown emitter
+   * (`main.ts`) and the spawn agree on the (universal) plugin dir.
    */
   private getPluginDir(): string {
-    const pluginDir = join(this.projectDir, "tugplug");
-    console.log(`Plugin dir: ${pluginDir}`);
-    return pluginDir;
+    return resolvePluginDir();
   }
 }

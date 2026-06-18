@@ -948,6 +948,13 @@ body {
   --tug7-surface-atom-primary-normal-route-rest: --tug-color(indigo-violet, i: 6, t: 12);
   --tug7-element-atom-border-normal-route-rest: --tug-color(indigo-violet, i: 8, t: 22);
   --tug7-element-atom-text-normal-route-rest: --tug-color(indigo-violet, i: 10, t: 55);
+  /* Command variant — slash-command chips read as a distinct teal so they
+     don't conflate with file/link atoms. Mirrors the default i/t/a tones,
+     swapped to teal; tune freely. */
+  --tug7-surface-atom-primary-normal-command-rest: --tug-color(teal, i: 8, t: 22, a: 30);
+  --tug7-element-atom-border-normal-command-rest: --tug-color(teal, i: 15, t: 40, a: 40);
+  --tug7-element-atom-icon-normal-command-rest: --tug-color(teal, i: 15, t: 55);
+  --tug7-element-atom-text-normal-command-rest: --tug-color(teal, i: 3, t: 82);
 
   /* Skeleton */
   --tug7-surface-skeleton-primary-normal-default-rest: --tug-color(violet, i: 2, t: 18);

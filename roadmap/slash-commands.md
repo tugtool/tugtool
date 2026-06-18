@@ -194,7 +194,16 @@ argument-taking commands.
 **Plan to resolve:** Audit in #step-5; if pursued, gate strictly on "lone atom, no
 argument hint". Otherwise keep explicit submit.
 
-**Resolution:** DEFERRED to the #step-5 audit; default is no behavior change.
+**Resolution:** DECIDED (no auto-submit) — keep explicit accept-then-submit. The gating
+signal doesn't exist: `resolveArgumentHint` (`lib/slash-argument-hint.ts`) classifies
+**every** skill and agent as arg-taking (the generic `type arguments…` hint), so "lone
+atom, no argument hint" can never identify a no-arg skill. Auto-submitting on accept
+would therefore either never fire for the skills the user cares about, or — if fired for
+all skills — regress argument-taking ones like `/tugplug:devise <idea>` by submitting
+before the user types the argument. With the Step 1 expansion fix removing the blocking
+error, the popup → accept → submit flow is already clean; the friction that motivated
+this question is gone. Revisit only if the catalog gains a reliable per-command
+"takes args" signal.
 
 ---
 
@@ -469,12 +478,12 @@ No new React state, store, or `useSyncExternalStore` surface is introduced.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Command-atom wire serialization + helpers | pending | — |
-| #step-2 | Distinct command chip — style descriptor, both renderers | pending | — |
-| #step-3 | Transcript echo detection → unified chip | pending | — |
-| #step-4 | Synthesizer correctness + marker guard | pending | — |
-| #step-5 | Submission ergonomics audit | pending | — |
-| #step-6 | Integration checkpoint + remove probe skill | pending | — |
+| #step-1 | Command-atom wire serialization + helpers | done | 45a3e02b |
+| #step-2 | Distinct command chip — style descriptor, both renderers | done | 3e5305a7 |
+| #step-3 | Transcript echo detection → unified chip | done | 842c48c3 |
+| #step-4 | Synthesizer correctness + marker guard | done | 1aefe5f9 |
+| #step-5 | Submission ergonomics audit | done | verification only |
+| #step-6 | Integration checkpoint + remove probe skill | done | probe-noop removed; global tugplug + double-slash fixes folded in |
 
 #### Step 1: Command-atom wire serialization + helpers {#step-1}
 
@@ -702,7 +711,14 @@ distinct command chip shared by the prompt editor and the transcript.
 
 - [ ] Sweep stale "Tide" references where command/transcript docs touch them (separate
       effort per existing memory).
-- [ ] Revisit [Q02] auto-submit ergonomics if user feedback wants fewer keystrokes.
+- [ ] Revisit [Q02] auto-submit ergonomics if the catalog gains a per-command "takes
+      args" signal.
+- [ ] **Bare-typed namespaced shortcut** (#step-5 audit finding): a bare `/commit` typed
+      *without* accepting the popup resolves via `resolveRemoteCommand` for the
+      unknown-check, but is sent verbatim — claude's catalog only has `tugplug:commit`, so
+      bare `/commit` may not expand. The popup-accept path carries the canonical
+      namespaced name and works; consider rewriting a bare typed `/leaf` to its unique
+      canonical `/ns:leaf` at submit so the shortcut also expands cleanly.
 
 | Checkpoint | Verification |
 |------------|--------------|
