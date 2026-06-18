@@ -179,31 +179,23 @@ body {
  * command with no separation. */
 .tool-call-header-summary {
   white-space: nowrap;
+  /* inline-flex with a tight gap so a two-badge diff summary (`+N` / `−M`)
+   * stays a clean pair; single-badge summaries are unaffected. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
   /* Same 1px optical nudge as the detail so the badge sits on the line
    * with the name. `top` (relative) leaves the layout box untouched. */
   position: relative;
   top: 1px;
 }
 
-/* Diff-summary badge — a custom neutral GRAY pill (not the `data` role's
- * faint-green tint): a subtle fill + border mixed from the chrome text color,
- * the same quiet recipe as the prose inline-code chips, so the badge reads as
- * neutral chrome and the green/red only lives in the numbers. Two classes
- * (`.tool-call-header-diff-badge.tug-badge`) outrank the single-class role
- * background. */
-.tool-call-header-diff-badge.tug-badge {
-  background-color: color-mix(in srgb, var(--tugx-block-text-color) 10%, transparent);
-  border-color: color-mix(in srgb, var(--tugx-block-text-color) 16%, transparent);
-}
-
-/* The `+N` / `−M` halves carry the shared add/remove tones (the same green/red
- * the Edit body diff uses); the badge supplies the gray, these recolor text. */
-.tool-call-header-diff-add {
-  color: var(--tugx-block-tone-add-color);
-}
-
+/* The `−M` danger badge is nudged up a hair to land on the same optical
+ * baseline as the `+N` success badge beside it — red recedes against green on
+ * the dark surface (residual chromostereopsis). Matches the commit receipt's
+ * stat row (.tugx-commit-delta-del). */
 .tool-call-header-diff-del {
-  color: var(--tugx-block-tone-remove-color);
+  transform: translateY(-0.65px);
 }
 
 /* Trailing actions — the controls cluster at the row's trailing edge, in

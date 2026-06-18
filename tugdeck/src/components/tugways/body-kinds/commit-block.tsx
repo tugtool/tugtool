@@ -6,8 +6,9 @@
  * + "Git Commit" name + collapse chevron, matching every other tool block),
  * and this renders the receipt *inside* that frame — the summary set as
  * a title, a branch `TugBadge` + a click-to-copy short-hash
- * `TugCopyBadge`, the signature diffstat bar, and `ToolBlockDisclosure`
- * sections for the message body and an optional per-file breakdown.
+ * `TugCopyBadge`, three stat `TugBadge`s (`+N` success / `−M` danger /
+ * file-count action), and `ToolBlockDisclosure` sections for the message
+ * body and an optional per-file breakdown.
  *
  * Routing intent (not yet wired): `BashToolBlock` swaps this in for a
  * `git commit` command the same way it swaps `DiffBlock` in for
@@ -154,55 +155,6 @@ export function parseGitCommit(
 }
 
 // ---------------------------------------------------------------------------
-// Diffstat bar
-// ---------------------------------------------------------------------------
-
-/** Total cells in the diffstat bar — the GitHub-style proportion strip. */
-const STAT_CELLS = 12;
-
-/** Allocate `STAT_CELLS` between additions and deletions in proportion,
- *  guaranteeing at least one cell to any non-zero side so a tiny delta
- *  still shows. Returns `{ add, del }` cell counts. */
-function allocateStatCells(
-  insertions: number,
-  deletions: number,
-): { add: number; del: number } {
-  const total = insertions + deletions;
-  if (total === 0) return { add: 0, del: 0 };
-  let add = Math.round((insertions / total) * STAT_CELLS);
-  if (insertions > 0 && add === 0) add = 1;
-  if (deletions > 0 && add === STAT_CELLS) add = STAT_CELLS - 1;
-  if (insertions === 0) add = 0;
-  return { add, del: STAT_CELLS - add };
-}
-
-function DiffstatBar({
-  insertions,
-  deletions,
-}: {
-  insertions: number;
-  deletions: number;
-}): React.ReactElement {
-  const { add, del } = allocateStatCells(insertions, deletions);
-  const cells: React.ReactElement[] = [];
-  for (let i = 0; i < add; i++) {
-    cells.push(
-      <span key={`a${i}`} className="tugx-commit-cell tugx-commit-cell--add" />,
-    );
-  }
-  for (let i = 0; i < del; i++) {
-    cells.push(
-      <span key={`d${i}`} className="tugx-commit-cell tugx-commit-cell--del" />,
-    );
-  }
-  return (
-    <span className="tugx-commit-statbar" aria-hidden="true">
-      {cells}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // CommitBlock
 // ---------------------------------------------------------------------------
 
@@ -255,7 +207,7 @@ export interface CommitBlockProps {
  * The commit receipt body — rendered inside a `ToolBlockChrome` whose
  * header carries the lifecycle dot + "Git Commit" name and the
  * {@link CommitHeaderTarget} (summary + branch / hash badges). The body
- * holds the diffstat bar and the message / file disclosures.
+ * holds the three stat `TugBadge`s and the message / file disclosures.
  */
 export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
   const { body, filesChanged, insertions, deletions, files } = commit;
@@ -265,16 +217,13 @@ export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
   return (
     <div className="tugx-commit" data-slot="commit-block">
       <div className="tugx-commit-stat">
-        <DiffstatBar insertions={insertions} deletions={deletions} />
-        <span className="tugx-commit-stat-num tugx-commit-stat-num--add">
-          +{insertions}
-        </span>
-        <span className="tugx-commit-stat-num tugx-commit-stat-num--del">
-          −{deletions}
-        </span>
-        <span className="tugx-commit-stat-files">
-          {filesChanged} {filesChanged === 1 ? "file" : "files"}
-        </span>
+        <TugBadge role="success" size="sm">{`+${insertions}`}</TugBadge>
+        <TugBadge role="danger" size="sm" className="tugx-commit-delta-del">
+          {`−${deletions}`}
+        </TugBadge>
+        <TugBadge role="action" size="sm">
+          {`${filesChanged} ${filesChanged === 1 ? "file" : "files"}`}
+        </TugBadge>
       </div>
 
       {hasFiles && (

@@ -71,13 +71,15 @@ import type { CautionFlag } from "./types";
 const DOT_SIZE = 14;
 
 /**
- * The two tinted halves of a diff-summary badge: `+N` in the add (green)
- * tone, `−M` in the remove (red) tone. Rendered as the children of a neutral
- * `data` {@link TugBadge}, so the badge supplies the gray background and these
- * spans only recolor the text — the same add/remove tones the Edit body diff
- * uses (`--tugx-block-tone-add-color` / `--tugx-block-tone-remove-color`).
+ * A diff stat as two separate `TugBadge`s: `+N` in the `success` (green)
+ * role, `−M` in the `danger` (red) role. Two tinted badges with a gap —
+ * never a shared color edge — so the green and red don't trigger
+ * chromostereopsis the way adjacent solid tones on a dark surface do. The
+ * `−M` badge is nudged up a hair (`.tool-call-header-diff-del`) to counter
+ * red's residual optical recession beside the green. Mirrors the commit
+ * receipt's stat row.
  */
-function DiffSummaryParts({
+function DiffSummaryBadges({
   summary,
 }: {
   summary: Extract<ToolResultSummary, { kind: "diff" }>;
@@ -85,9 +87,18 @@ function DiffSummaryParts({
   const parts = formatDiffSummaryParts(summary);
   return (
     <>
-      <span className="tool-call-header-diff-add">{parts.added}</span>
-      <span className="tool-call-header-diff-sep"> </span>
-      <span className="tool-call-header-diff-del">{parts.removed}</span>
+      <TugBadge emphasis="tinted" role="success" size="sm" copyText={parts.added}>
+        {parts.added}
+      </TugBadge>
+      <TugBadge
+        emphasis="tinted"
+        role="danger"
+        size="sm"
+        className="tool-call-header-diff-del"
+        copyText={parts.removed}
+      >
+        {parts.removed}
+      </TugBadge>
     </>
   );
 }
@@ -206,20 +217,11 @@ export const ToolCallHeader = React.forwardRef<
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (
-            // Diff stat — one neutral (gray) badge whose two halves carry the
-            // add/remove tones: `+N` green, `−M` red. The role stays `data`
-            // (neutral chrome) so the background is the quiet gray every
-            // summary uses; only the inner spans are tinted. `copyText` keeps
-            // the joined "+N −M" on copy.
-            <TugBadge
-              emphasis="tinted"
-              role="data"
-              size="sm"
-              className="tool-call-header-diff-badge"
-              copyText={formatToolResultSummary(summary)}
-            >
-              <DiffSummaryParts summary={summary} />
-            </TugBadge>
+            // Diff stat — two separate tinted badges (`+N` success / `−M`
+            // danger) so the green and red never share an edge. See
+            // {@link DiffSummaryBadges}. Each badge copies its own value on
+            // right-click.
+            <DiffSummaryBadges summary={summary} />
           ) : (
             <TugBadge
               emphasis="tinted"
