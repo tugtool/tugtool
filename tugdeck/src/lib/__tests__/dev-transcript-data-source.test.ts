@@ -62,6 +62,25 @@ function wakeTurn(turnKey: string, assistantTextBody: string): TurnEntry {
   });
 }
 
+/**
+ * A turn that merged a steered mid-turn message: `[user, assistant, user,
+ * assistant]`. The second `user_message` carries its own queue-time
+ * turnKey ("S") so its messageKey is distinct from the host opener's.
+ */
+function mergedTurn(hostKey: string, steerKey: string): TurnEntry {
+  return turnEntry({
+    turnKey: hostKey,
+    msgId: `msg-${hostKey}`,
+    origin: "user",
+    messages: [
+      userMessage({ turnKey: hostKey, text: "first" }),
+      assistantText({ msgId: `msg-${hostKey}`, blockIndex: 0, text: "answer one" }),
+      userMessage({ turnKey: steerKey, text: "steered" }),
+      assistantText({ msgId: `msg-${hostKey}`, blockIndex: 1, text: "answer two" }),
+    ],
+  });
+}
+
 function activeTurn(args: {
   turnKey: string;
   isWake: boolean;
@@ -166,26 +185,60 @@ describe("[D07] row layout: variable rows per turn driven by user_message presen
       }),
     );
     expect(layout.totalRows).toBe(2 + 1 + 2);
-    expect(layout.turnHasUserPerTurn).toEqual([true, false, true]);
+    expect(layout.turnRowCount).toEqual([2, 1, 2]);
     expect(layout.turnStartRow).toEqual([0, 2, 3]);
   });
 
   test("in-flight normal turn adds 2 rows; in-flight wake adds 1", () => {
+    // A wake in-flight turn (no user_message) still gets a trailing
+    // assistant row even before any assistant Message has streamed.
     const wakeLayout = buildRowLayout(
       snapshotWith({
         activeTurn: activeTurn({ turnKey: "live", isWake: true }),
       }),
     );
     expect(wakeLayout.totalRows).toBe(1);
-    expect(wakeLayout.activeHasUser).toBe(false);
+    expect(wakeLayout.slots.map((s) => s.cellKind)).toEqual(["assistant"]);
 
+    // A normal in-flight turn with only its head user_message so far
+    // still shows the forthcoming assistant row (user + assistant).
     const normalLayout = buildRowLayout(
       snapshotWith({
         activeTurn: activeTurn({ turnKey: "live", isWake: false, withText: "x" }),
       }),
     );
     expect(normalLayout.totalRows).toBe(2);
-    expect(normalLayout.activeHasUser).toBe(true);
+    expect(normalLayout.slots.map((s) => s.cellKind)).toEqual([
+      "user",
+      "assistant",
+    ]);
+  });
+
+  test("merged turn (user, assistant, user, assistant) yields 4 rows in order", () => {
+    // A steered/merged mid-turn message lands as a second `user_message`
+    // partway through the turn's `messages` (see {@link mergedTurn}).
+    const merged = mergedTurn("T", "S");
+    const layout = buildRowLayout(snapshotWith({ transcript: [merged] }));
+    expect(layout.totalRows).toBe(4);
+    expect(layout.turnRowCount).toEqual([4]);
+    expect(layout.slots.map((s) => s.cellKind)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+
+    const ds = new DevTranscriptDataSource(
+      storeWith(snapshotWith({ transcript: [merged] })),
+    );
+    // Each user row keys by its own messageKey; the head is `${turnKey}-user`,
+    // the merged row keeps its distinct queue-time key ([P04]).
+    expect(ds.idForIndex(0)).toBe("T-user");
+    expect(ds.idForIndex(2)).toBe("S-user");
+    // The first assistant run keeps `${turnKey}-assistant`; the second
+    // (after the merge) is `${turnKey}-assistant-1`, stable under append.
+    expect(ds.idForIndex(1)).toBe("T-assistant");
+    expect(ds.idForIndex(3)).toBe("T-assistant-1");
   });
 
   test("queued sends add one ghost row each at the tail", () => {
@@ -265,6 +318,38 @@ describe("rowAt produces a descriptor consumers can narrow on", () => {
     expect(ds.rowAt(1).activeTurn).toBe(active);
   });
 
+  test("merged turn: user/assistant descriptors carry their own message + slice; badge anchors to the last run", () => {
+    const ds = new DevTranscriptDataSource(
+      storeWith(snapshotWith({ transcript: [mergedTurn("T", "S")] })),
+    );
+    // Rows in arrival order: user, assistant(run 0), user, assistant(run 1).
+    expect([0, 1, 2, 3].map((i) => ds.kindForIndex(i))).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+
+    // Each user row resolves the specific `user_message` it renders — the
+    // opener, then the merged/steered message — never `messages[0]`.
+    expect(ds.rowAt(0).userMessage?.text).toBe("first");
+    expect(ds.rowAt(0).userMessage?.messageKey).toBe("T-user");
+    expect(ds.rowAt(2).userMessage?.text).toBe("steered");
+    expect(ds.rowAt(2).userMessage?.messageKey).toBe("S-user");
+
+    // Each assistant row carries the half-open slice of its run.
+    const a0 = ds.rowAt(1);
+    expect([a0.messageStart, a0.messageEnd]).toEqual([1, 2]);
+    const a1 = ds.rowAt(3);
+    expect([a1.messageStart, a1.messageEnd]).toEqual([3, 4]);
+
+    // The per-turn end-state anchor (badge + Z1B) rides only the last run.
+    expect(a0.isLastAssistantOfTurn).toBe(false);
+    expect(a1.isLastAssistantOfTurn).toBe(true);
+    expect(a0.perTurnTokens).toBeUndefined();
+    expect(typeof a1.perTurnTokens).toBe("number");
+  });
+
   test("ghost: a queued send produces a `ghost` row with the queued payload", () => {
     const snap = snapshotWith({
       queuedSends: [{ turnKey: "Q", text: "later", atoms: [] }],
@@ -292,6 +377,38 @@ describe("userRowIndexForTurn / assistantRowIndexForTurn", () => {
     expect(assistantRowIndexForTurn(0, transcript)).toBe(1);
     expect(userRowIndexForTurn(1, transcript)).toBe(2);
     expect(assistantRowIndexForTurn(1, transcript)).toBe(3);
+  });
+
+  test("merged turn: user index is the opener (first user row), assistant index is the LAST run", () => {
+    // [u(0), a(1), u(2), a(3)] — the per-turn telemetry anchor ([P02]) is the
+    // bracket's last assistant row (3), and the addressable `#u` is the opener
+    // (0). The merged mid-turn user row (2) is not separately addressed ([P05]).
+    const transcript: TurnEntry[] = [mergedTurn("T", "S")];
+    expect(userRowIndexForTurn(0, transcript)).toBe(0);
+    expect(assistantRowIndexForTurn(0, transcript)).toBe(3);
+  });
+
+  test("merged turn followed by a normal turn: addresses stay turn-numbered (#u1/#a1, #u2/#a2)", () => {
+    // The popover derives `#u{turn}`/`#a{turn}` from these row indices plus
+    // the turn number (`base + turnIndex + 1`); the labels read #u1/#a1 for
+    // the merged turn 1 and #u2/#a2 for turn 2 — the merged turn's extra user
+    // row does not renumber anything (Risk R01 — labels kept).
+    const transcript: TurnEntry[] = [
+      mergedTurn("T", "S"), // turn 1 → rows 0,1,2,3
+      normalTurn("t2", "b", "B"), // turn 2 → rows 4,5
+    ];
+    // turn 1 (#u1 opener row 0, #a1 anchor row 3)
+    expect(userRowIndexForTurn(0, transcript)).toBe(0);
+    expect(assistantRowIndexForTurn(0, transcript)).toBe(3);
+    // turn 2 (#u2 row 4, #a2 row 5)
+    expect(userRowIndexForTurn(1, transcript)).toBe(4);
+    expect(assistantRowIndexForTurn(1, transcript)).toBe(5);
+  });
+
+  test("wake turn: no user row (#a1 only) — userRowIndexForTurn returns -1", () => {
+    const transcript: TurnEntry[] = [wakeTurn("w1", "Wake")];
+    expect(userRowIndexForTurn(0, transcript)).toBe(-1);
+    expect(assistantRowIndexForTurn(0, transcript)).toBe(0);
   });
 
   test("wake-in-middle transcript: assistant indices reflect variable rows-per-turn", () => {

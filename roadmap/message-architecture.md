@@ -380,11 +380,11 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Wire-behavior spike: characterize the steering mechanism | done (uncommitted) — merge@iteration-boundary | — |
-| #step-2 | Behavior-preserving message-derived row projection | pending | — |
-| #step-3 | Re-base addressing on `messageKey` + derived labels | pending | — |
-| #step-4 | Render multiple user rows per turn (merge-visible) | pending | — |
-| #step-5 | Steering forward: hold client-side, pick up at the boundary | pending | — |
-| #step-6 | Place the merged message as a mid-turn user row | pending | — |
+| #step-2 | Behavior-preserving message-derived row projection | done | b51b9b23 |
+| #step-3 | Re-base addressing on `messageKey` + derived labels | done | ea6916c3 |
+| #step-4 | Render multiple user rows per turn (merge-visible) | done | d81241d8 |
+| #step-5 | Steering forward: hold client-side, pick up at the boundary | done | 5c3295c0 |
+| #step-6 | Place the merged message as a mid-turn user row | done | 7d939e16 |
 | #step-7 | Integration checkpoint + docstring/D-T3-07 revision | pending | — |
 
 #### Step 1: Characterize the steering mechanism from real sessions {#step-1}

@@ -1797,6 +1797,42 @@ function handleToolResult(
   };
   const nextMessages = entry.messages.slice();
   nextMessages[arrayIdx] = mutated;
+
+  // Steering pickup at the agent-loop boundary ([Q01]/[P06]/[P07]). A
+  // `tool_result` while a turn is live (`tool_work`, not replay or a
+  // wake) is the iteration boundary at which claude merges a queued
+  // message. When the queue is non-empty we pick up its head atomically:
+  // forward it to claude (`send-frame`), remove it from `queuedSends`,
+  // and append it as a `user_message` to THIS turn's `messages` so the
+  // retractable foot ghost becomes a real mid-turn user row after the
+  // tool block. The message keeps its own queue-time key
+  // (`${turnKey}-user`, [P04]) — distinct from the host opener's. Held
+  // off the wire until now (`handleSend` only parks it), which is what
+  // kept it retractable; removal-on-pickup means the `turn_complete`
+  // collapse only ever sees never-picked-up entries (no double-forward,
+  // Risk R03). Live position is approximate (the boundary we act on,
+  // since claude emits no live echo — [Q02]); reload from JSONL tightens
+  // it to claude's exact merge point.
+  const isLive = !isReplaying && !isWaking;
+  let queuedSends = state.queuedSends;
+  const pickupEffects: Effect[] = [];
+  if (isLive && queuedSends.length > 0) {
+    const [head, ...rest] = queuedSends;
+    const steered: UserMessage = {
+      kind: "user_message",
+      messageKey: userMessageKey(head.turnKey),
+      createdAt: now,
+      text: head.text,
+      attachments: head.atoms,
+      submitAt: now,
+    };
+    nextMessages.push(steered);
+    queuedSends = rest;
+    pickupEffects.push({
+      kind: "send-frame",
+      msg: { type: "user_message", content: head.content },
+    });
+  }
   const nextEntry: ScratchEntry = { ...entry, messages: nextMessages };
 
   let toolUseStartedAt = state.toolUseStartedAt;
@@ -1874,9 +1910,10 @@ function handleToolResult(
       scratch: nextScratch,
       toolUseStartedAt,
       jobs,
+      queuedSends,
       ...streamFold,
     },
-    effects: [],
+    effects: pickupEffects,
   };
 }
 
@@ -3970,6 +4007,36 @@ function handleAddUserMessage(
     attachments: event.atoms,
     submitAt: now,
   };
+
+  // Reload-authoritative placement of a merged/steered message ([P07]).
+  // During replay, a turn already in flight (`pendingTurn !== null`)
+  // means this `add_user_message` is threaded mid-bracket — a steered
+  // message claude merged after a `tool_result`, not a new turn opener.
+  // Append it to the in-flight turn's `messages` (keeping its own
+  // `${turnKey}-user` key, [P04]) rather than opening a new turn — the
+  // reload analogue of the live boundary append in `handleToolResult`.
+  // This relocates the message to claude's EXACT merge point in the
+  // JSONL, tightening the live optimistic placement; `/rewind` stays on
+  // the host turn's opener `promptUuid` ([P05]), so the merged message's
+  // own `promptUuid` is intentionally not latched here.
+  if (state.pendingTurn !== null) {
+    const hostKey = state.pendingTurn.turnKey;
+    const entry = state.scratch.get(hostKey);
+    if (entry !== undefined) {
+      const nextEntry: ScratchEntry = {
+        ...entry,
+        messages: [...entry.messages, userMessage],
+      };
+      return {
+        state: {
+          ...state,
+          scratch: withScratchEntry(state.scratch, hostKey, nextEntry),
+        },
+        effects: [],
+      };
+    }
+  }
+
   return {
     state: {
       ...state,

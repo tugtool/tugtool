@@ -150,7 +150,6 @@ import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
   DevTranscriptDataSource,
-  readUserMessage,
   transcriptCellPropsEqual,
   useDevTranscriptDataSource,
   type DevRowDescriptor,
@@ -239,21 +238,20 @@ const UserMessageCell = React.memo(function UserMessageCell({
     dataSource.localTurnIndexForRow(index) +
     1;
   const address = { speaker: "user" as const, turn: turnNumber };
-  // Read the user submission from the `user_message` Message at the
-  // head of `turn.messages` (committed) or `activeTurn.messages`
-  // (in-flight). The data source only emits a `user` row when one is
-  // present, so this is always defined for cells that actually paint;
-  // the defensive `?? ""` covers an out-of-range read.
-  const committedUser = row.turn !== undefined ? readUserMessage(row.turn.messages) : undefined;
-  const activeUser = row.activeTurn !== undefined ? readUserMessage(row.activeTurn.messages) : undefined;
-  const rawText = committedUser?.text ?? activeUser?.text ?? "";
+  // The data source resolves the specific `user_message` this row
+  // renders (the turn opener, or a merged/steered mid-turn message —
+  // never re-derived from `messages[0]`, Spec S01/[P04]). It is set on
+  // every `user` row that paints; the defensive `?? ""` covers an
+  // out-of-range read.
+  const userMessage = row.userMessage;
+  const rawText = userMessage?.text ?? "";
   const strippedText = stripUserBodyPrefix(rawText);
   // Parallel atoms array — N atoms in `attachments` pair with the
   // N `U+FFFC` characters in `text`. `stripUserBodyPrefix` only
   // strips the `>` route prefix; it never touches a `U+FFFC`, so
   // index alignment between `strippedText` and `attachments` is
   // preserved.
-  const rawAtoms = committedUser?.attachments ?? activeUser?.attachments ?? [];
+  const rawAtoms = userMessage?.attachments ?? [];
 
   // Atoms in the substrate render as chips verbatim — every U+FFFC
   // position pairs with its atom entry whether the assistant has
@@ -321,9 +319,9 @@ const UserMessageCell = React.memo(function UserMessageCell({
   );
   // User-row timestamp is the submit time, not the turn's end time —
   // the user's row "posts" the moment they hit submit, regardless of
-  // whether the assistant has replied yet. Both committed and active
-  // surfaces carry `submitAt` on the user_message Message itself.
-  const submitAt = committedUser?.submitAt ?? activeUser?.submitAt;
+  // whether the assistant has replied yet. `submitAt` rides the
+  // `user_message` Message itself (committed or in-flight).
+  const submitAt = userMessage?.submitAt;
   const timestamp = submitAt !== undefined
     ? formatTranscriptTimestamp(submitAt)
     : undefined;
@@ -699,11 +697,27 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // there's no opportunity for kind and payload to disagree.
   const turn = row.turn;
   const isCommitted = turn !== undefined;
-  // [D07] sequence substrate — the body iterates this Message
-  // sequence and dispatches each kind to its inline renderer.
-  // Committed turns read `turn.messages`; in-flight reads
-  // `row.activeTurn.messages` (the snapshot's `activeTurn` projection).
-  const messages = turn?.messages ?? row.activeTurn?.messages ?? [];
+  // This assistant row renders one maximal non-user run of its turn
+  // (Spec S01) — a single-assistant turn has one run spanning the whole
+  // turn; a merged turn splits into a run per `user_message` boundary.
+  // The data source hands us the stable full-array reference plus the
+  // `[messageStart, messageEnd)` slice indices, so we slice here
+  // (memoized on the array + bounds) rather than carry a fresh array on
+  // the descriptor — keeping the memo gate reference-stable for
+  // committed rows.
+  const allMessages = turn?.messages ?? row.activeTurn?.messages ?? [];
+  const messageStart = row.messageStart ?? 0;
+  const messageEnd = row.messageEnd ?? allMessages.length;
+  const messages = useMemo(
+    () => allMessages.slice(messageStart, messageEnd),
+    [allMessages, messageStart, messageEnd],
+  );
+  // The bracket's last assistant run is the per-turn end-state / badge /
+  // live-indicator anchor ([P02]): committed end-state chrome (Z1B), the
+  // in-flight indicator (Z1C), the pending-dialog slots, and the foot
+  // height reservation all ride this one row, so a merged turn shows
+  // them once (after the continuation), not per run.
+  const isLastAssistant = row.isLastAssistantOfTurn ?? false;
   // Full-turn markdown for the Z1B COPY affordance — every tool
   // call's input/output followed by the assistant prose. Serialized
   // once per committed turn (the turn is frozen post-commit, so the
@@ -761,6 +775,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   let permissionSlot: React.ReactNode = null;
   if (
     !isCommitted &&
+    isLastAssistant &&
     pendingApproval !== null &&
     !pendingApproval.is_question
   ) {
@@ -776,7 +791,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
     );
   }
   let questionSlot: React.ReactNode = null;
-  if (!isCommitted && pendingQuestion !== null) {
+  if (!isCommitted && isLastAssistant && pendingQuestion !== null) {
     const { Component, props } = dispatchRenderInput(
       { kind: "question", request: pendingQuestion },
       { store: streamingStore, session: codeSessionStore },
@@ -797,7 +812,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // mounted. See `dev-card-transcript-foot-reservation`.
   const { floorRef: footFloorRef } = useFootHeightReservation(
     codeSessionStore,
-    !isCommitted,
+    !isCommitted && isLastAssistant,
   );
 
   // Reconstruct markdown for any selection in this row ([P03]). The
@@ -886,7 +901,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
               // `useSyncExternalStore` to phase + interruptInFlight;
               // only this one row holds that subscription so other
               // rows don't wake on each snapshot dispatch.
-              !isCommitted ? (
+              !isCommitted && isLastAssistant ? (
                 <DevZ1C codeSessionStore={codeSessionStore} />
               ) : null
             }
@@ -908,7 +923,11 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                       })
                     : null;
                 const hasTrailing = trailing !== null && trailing !== undefined;
-                if (!isCommitted && !hasTrailing) {
+                // Z1B is the committed-turn end-state aggregate — it
+                // rides only the bracket's last assistant row ([P02]), so
+                // a merged turn shows it once (after the continuation).
+                const showZ1B = isCommitted && isLastAssistant;
+                if (!showZ1B && !hasTrailing) {
                   // Nothing to render in the controls slot — return
                   // `undefined` so the primitive doesn't even render
                   // the wrapper (no margin-top consumed).
@@ -916,7 +935,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                 }
                 return (
                   <>
-                    {isCommitted ? (
+                    {showZ1B ? (
                       <DevZ1B
                         participant="assistant"
                         turn={turn}

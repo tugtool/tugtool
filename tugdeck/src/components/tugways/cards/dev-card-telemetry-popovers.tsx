@@ -320,11 +320,13 @@ function TurnEntryPair({
   turnNumberBase: number;
   onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
-  const turn = transcript[turnIndex];
   const turnNumber = turnNumberBase + turnIndex + 1;
-  const hasUserMessage = turn?.messages[0]?.kind === "user_message";
   const assistantRow = assistantRowIndexForTurn(turnIndex, transcript);
-  if (!hasUserMessage) {
+  const userRow = userRowIndexForTurn(turnIndex, transcript);
+  // Kind-open: a turn with no `user` row (a wake / continuation / orphan)
+  // returns `-1`, and we render only the assistant-half address. No
+  // `origin`/`messages[0]` boolean — the row walk is the authority ([P04]).
+  if (userRow === -1) {
     // Wake turn — render only the assistant-half address, no separator.
     return (
       <span className="dev-popover-turn-pair" data-slot="dev-popover-turn-pair">
@@ -336,7 +338,6 @@ function TurnEntryPair({
       </span>
     );
   }
-  const userRow = userRowIndexForTurn(turnIndex, transcript);
   return (
     <span className="dev-popover-turn-pair" data-slot="dev-popover-turn-pair">
       <TurnNumberButton

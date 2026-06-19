@@ -2,31 +2,42 @@
  * `DevTranscriptDataSource` — adapter that surfaces a `CodeSessionStore`
  * snapshot as a `TugListViewDataSource`.
  *
- * Row contract — three cell kinds, variable rows per turn:
+ * Row contract — three cell kinds, message-derived rows (Spec S01, [P01]):
  *
- *   - `user`  — emitted iff the turn's `origin === "user"` (S01, [P01]).
- *               Carries the user submission's text + timestamp.
- *               Assistant-origin turns (wakes, continuations, orphans)
- *               produce no user row.
- *   - `assistant` — emitted once per turn (committed or in-flight). The
- *               renderer iterates `turn.messages` (or `activeTurn.messages`
- *               for in-flight) and dispatches each Message kind to
- *               its inline surface (`assistant_text` →
+ *   Rows derive from each turn's `messages` stream, not a fixed per-turn
+ *   template. Walking a turn's `messages` ({@link walkTurnGroups}):
+ *
+ *   - `user`  — one row per `user_message` Message, wherever it appears
+ *               in the stream. A normal turn opens with one; a steered
+ *               (merged) message lands as another `user` row mid-turn
+ *               ([P07]). Carries the submission's text + timestamp.
+ *               A wake / continuation / orphan turn has none.
+ *   - `assistant` — one row per maximal contiguous run of non-`user_message`
+ *               Messages. The renderer iterates that run and dispatches each
+ *               Message kind to its inline surface (`assistant_text` →
  *               `TugMarkdownBlock`; `assistant_thinking` →
  *               `DevThinkingBlock`; `tool_use` → tool block;
- *               `system_note` → subdued note row when Step 8 lands).
- *   - `ghost` — one per `queuedSends` entry, painted at the foot for
- *               the QUEUED_NEXT_TURN overlay.
+ *               `system_note` → subdued note / divider). The in-flight turn
+ *               always carries a trailing `assistant` row (the live progress
+ *               row / forthcoming continuation) even before any assistant
+ *               Message has streamed.
+ *   - `ghost` — one per `queuedSends` entry, painted at the foot for the
+ *               retractable queued-send overlay.
  *
- * Index layout (with `n = transcript.length`,
- * `a = activeTurn`, `q = queuedSends.length`):
+ *   For today's single-user turns (one head `user_message`, then assistant
+ *   content) the walk yields the identical `[user, assistant]` pair — the
+ *   projection is behavior-preserving.
  *
- *   indices 0..k-1       committed turns, variable per turn (1 row for
- *                        a wake turn, 2 rows for a normal turn).
- *   indices k..k+m-1     in-flight turn rows (only when a !== null).
- *                        Same variable shape: 1 row for a wake, 2 for
- *                        a normal turn.
- *   indices k+m..k+m+q-1 ghost rows.
+ * Index layout (in flat-row order):
+ *
+ *   committed turn rows  one or more rows per committed turn, in
+ *                        `messages` order (a wake turn is a single
+ *                        `assistant` row; a normal turn is `user` +
+ *                        `assistant`; a merged turn interleaves more).
+ *   in-flight turn rows  the same message-derived shape for `activeTurn`
+ *                        (only when present), with a guaranteed trailing
+ *                        `assistant` row.
+ *   ghost rows           one per `queuedSends` entry, at the tail.
  *
  * **Single `"assistant"` kind, zero remounts per turn.** Earlier revisions
  * split the assistant row into `"code-streaming"` and `"code-committed"`
@@ -138,9 +149,10 @@ export interface DevRowDescriptor {
   /**
    * The committed turn's signed per-turn token count — `window(N) −
    * window(N−1)` from the transcript window-walk (`deriveContextWindows`),
-   * with zero-usage carry-forward. Set on every committed row; the Z1B
-   * asst-half renders it (the user half ignores it). `undefined` for
-   * in-flight rows. Negative at a `/compact` turn.
+   * with zero-usage carry-forward. Set only on the bracket's **last**
+   * assistant row ([P02]) — the single place the Z1B per-turn badge
+   * renders. `undefined` for user rows, earlier assistant runs of a
+   * merged turn, and in-flight rows. Negative at a `/compact` turn.
    */
   perTurnTokens?: number;
   /**
@@ -150,6 +162,32 @@ export interface DevRowDescriptor {
    * a second snapshot read.
    */
   activeTurn?: ActiveTurnSnapshot;
+  /**
+   * The specific `user_message` this row renders (Spec S01). For a
+   * turn opener this is the head message; for a merged/steered mid-turn
+   * row it is that message — never re-derived from `messages[0]`. Set
+   * on every `user` row (committed or in-flight); `undefined` otherwise.
+   */
+  userMessage?: UserMessage;
+  /**
+   * Half-open `[messageStart, messageEnd)` slice of the owning turn's
+   * `messages` that an `assistant` row renders — its maximal non-user
+   * run (Spec S01). The cell slices `turn.messages` / `activeTurn.messages`
+   * by these indices, so the descriptor keeps the stable full-array
+   * reference (the memo gate stays reference-stable for committed rows).
+   * `undefined` for non-assistant rows; an empty slice
+   * (`messageStart === messageEnd`) for the in-flight turn's forthcoming
+   * trailing row.
+   */
+  messageStart?: number;
+  messageEnd?: number;
+  /**
+   * True on the bracket's last `assistant` row — the row that carries
+   * the committed-turn end-state chrome (Z1B) and per-turn badge ([P02]).
+   * A single-assistant turn's only row is its last. `false`/`undefined`
+   * on user rows, earlier assistant runs, and ghost rows.
+   */
+  isLastAssistantOfTurn?: boolean;
   /** Set for a `ghost` row only — the queued send it paints. */
   queued?: QueuedSend;
   /**
@@ -170,86 +208,163 @@ export interface DevRowDescriptor {
 // ---------------------------------------------------------------------------
 
 /**
- * True iff this turn carries a user submission — i.e. its intrinsic
- * `origin` is `"user"` ([P01], S01). This is the attribution authority for
- * row layout: a `user` turn renders a `#u` user row + `#a` assistant row;
- * an `assistant` turn (wake / continuation / orphan) renders `#a` only. It
- * is NEVER inferred from `messages[0]` — origin is stated by the opener.
+ * One logical message group within a turn → one transcript row
+ * (Spec S01). A `user` group wraps a single `user_message`; an
+ * `assistant` group wraps a maximal contiguous run of non-`user_message`
+ * Messages, rendered inline.
  */
-function turnHasUserMessage(turn: TurnEntry): boolean {
-  return turn.origin === "user";
+export interface RowGroup {
+  kind: "user" | "assistant";
+  /** Inclusive start index into the turn's `messages`. */
+  start: number;
+  /**
+   * Exclusive end index. A `user` group is always `[start, start+1)`.
+   * The synthetic trailing `assistant` row on the in-flight turn (the
+   * forthcoming response, before any assistant Message has streamed)
+   * has `start === end === messages.length` — an empty slice.
+   */
+  end: number;
 }
 
 /**
- * In-flight analogue of {@link turnHasUserMessage}, keyed on the active
- * turn's `origin`.
+ * Group a turn's `messages` into rows per Spec S01: each `user_message`
+ * opens a `user` group; each maximal run of non-user Messages forms one
+ * `assistant` group, in arrival order.
+ *
+ * `ensureTrailingAssistant` (the in-flight turn) guarantees a final
+ * `assistant` row even before any assistant Message has streamed — the
+ * row that shows the live progress indicator and, after a mid-turn steer,
+ * the forthcoming continuation. A committed turn renders exactly its
+ * Messages with no synthetic row.
  */
-function activeTurnHasUserMessage(active: ActiveTurnSnapshot | null): boolean {
-  if (active === null) return false;
-  return active.origin === "user";
-}
-
-/**
- * Read the opening `user_message` Message of a turn (committed) or
- * an active turn — `undefined` when none is present (a wake).
- */
-function readUserMessage(
+export function walkTurnGroups(
   messages: ReadonlyArray<TurnEntry["messages"][number]>,
-): UserMessage | undefined {
-  const head = messages[0];
-  if (head !== undefined && head.kind === "user_message") return head;
-  return undefined;
+  ensureTrailingAssistant: boolean,
+): RowGroup[] {
+  const groups: RowGroup[] = [];
+  const n = messages.length;
+  let i = 0;
+  while (i < n) {
+    if (messages[i].kind === "user_message") {
+      groups.push({ kind: "user", start: i, end: i + 1 });
+      i += 1;
+      continue;
+    }
+    const start = i;
+    while (i < n && messages[i].kind !== "user_message") i += 1;
+    groups.push({ kind: "assistant", start, end: i });
+  }
+  if (
+    ensureTrailingAssistant &&
+    (groups.length === 0 || groups[groups.length - 1].kind === "user")
+  ) {
+    groups.push({ kind: "assistant", start: n, end: n });
+  }
+  return groups;
+}
+
+/**
+ * Per-flat-row descriptor — the projection's source of truth. Every
+ * `idForIndex` / `kindForIndex` / `rowAt` read resolves through the
+ * slot array, so the message walk happens once per snapshot (memoized
+ * in {@link DevTranscriptDataSource.layout}).
+ */
+export interface RowSlot {
+  /** Cell kind the renderer narrows on. */
+  cellKind: DevTranscriptCellKind;
+  /** The message group this row renders (`undefined` for a ghost row). */
+  group?: RowGroup;
+  /** Owning committed turn index; `-1` for an in-flight or ghost row. */
+  turnIndex: number;
+  /** True when this row belongs to the in-flight (`activeTurn`) turn. */
+  active: boolean;
+  /** `queuedSends` index for a ghost row; `-1` otherwise. */
+  queuedIndex: number;
+  /**
+   * 0-based ordinal of this `assistant` run within its turn; `-1` for a
+   * non-assistant row. The first run (ordinal 0) keys as
+   * `${turnKey}-assistant` — the no-remount React key that survives
+   * inflight → committed ([L26]); later runs (merged turns only) key as
+   * `${turnKey}-assistant-${ordinal}`, stable under append.
+   */
+  assistantRunOrdinal: number;
+  /**
+   * True on the turn's last `assistant` run — the per-turn-telemetry /
+   * end-state anchor ([P02]). Always false for non-assistant rows.
+   */
+  isLastAssistantOfTurn: boolean;
 }
 
 /**
  * Precomputed row layout for one snapshot. The data source memoizes
  * this per snapshot identity ({@link DevTranscriptDataSource.layout})
  * so per-`rowAt` calls don't re-walk the transcript.
- *
- * Rows per turn:
- *  - Turn with a `user_message` head → 2 rows (user + assistant).
- *  - Turn without (wake) → 1 row (assistant only).
- *  - Each queued send → 1 ghost row.
  */
 export interface RowLayout {
   /** Total number of rows the data source exposes for this snapshot. */
   totalRows: number;
+  /** Per-flat-row slot descriptor, in flat-row order. */
+  slots: ReadonlyArray<RowSlot>;
   /**
-   * For each turnIndex, the flat row index where that turn's first
-   * (and possibly only) row lives. For a normal turn, the user row is
-   * at `turnStartRow[turnIndex]` and the assistant row at
-   * `turnStartRow[turnIndex] + 1`. For a wake turn, the single
-   * assistant row is at `turnStartRow[turnIndex]`.
+   * For each turnIndex, the flat row index where that committed turn's
+   * first row lives. The turn-depth / restore-anchor helpers resolve a
+   * turn to its first row through this.
    */
   turnStartRow: ReadonlyArray<number>;
-  /**
-   * Parallel to {@link turnStartRow}: true if the turn opens with a
-   * `user_message` Message (2 rows), false if not (wake, 1 row).
-   */
-  turnHasUserPerTurn: ReadonlyArray<boolean>;
-  /** Flat row index where the in-flight pair (or wake row) starts; -1 if no in-flight. */
+  /** Parallel to {@link turnStartRow}: the number of rows each committed turn contributes. */
+  turnRowCount: ReadonlyArray<number>;
+  /** Flat row index where the in-flight rows start; -1 if no in-flight. */
   activeStartRow: number;
-  /** True when the in-flight turn opens with a `user_message` Message. */
-  activeHasUser: boolean;
   /** Flat row index where ghost rows start; equals {@link totalRows} when there are no ghosts. */
   ghostStartRow: number;
 }
 
 /**
+ * Append the slots for one turn's message groups, returning the updated
+ * assistant-run ordinal bookkeeping. Shared by the committed and
+ * in-flight walks so both number their assistant runs identically.
+ */
+function pushTurnSlots(
+  slots: RowSlot[],
+  groups: ReadonlyArray<RowGroup>,
+  turnIndex: number,
+  active: boolean,
+): void {
+  let lastAssistantGroupIndex = -1;
+  for (let i = 0; i < groups.length; i++) {
+    if (groups[i].kind === "assistant") lastAssistantGroupIndex = i;
+  }
+  let assistantOrdinal = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const isAssistant = group.kind === "assistant";
+    slots.push({
+      cellKind: group.kind,
+      group,
+      turnIndex,
+      active,
+      queuedIndex: -1,
+      assistantRunOrdinal: isAssistant ? assistantOrdinal : -1,
+      isLastAssistantOfTurn: isAssistant && i === lastAssistantGroupIndex,
+    });
+    if (isAssistant) assistantOrdinal += 1;
+  }
+}
+
+/**
  * Build the {@link RowLayout} for `snap`. Pure function — exported
- * for unit-test reuse. Walks `snap.transcript` once, summing per-turn
- * row counts; then accounts for the in-flight turn and the ghost rows.
+ * for unit-test reuse. Walks each turn's `messages` once into row
+ * groups (Spec S01), then accounts for the in-flight turn and ghosts.
  */
 export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
   const transcript = snap.transcript;
+  const slots: RowSlot[] = [];
   const turnStartRow: number[] = new Array(transcript.length);
-  const turnHasUserPerTurn: boolean[] = new Array(transcript.length);
-  let cursor = 0;
-  for (let i = 0; i < transcript.length; i++) {
-    turnStartRow[i] = cursor;
-    const hasUser = turnHasUserMessage(transcript[i]);
-    turnHasUserPerTurn[i] = hasUser;
-    cursor += hasUser ? 2 : 1;
+  const turnRowCount: number[] = new Array(transcript.length);
+  for (let t = 0; t < transcript.length; t++) {
+    turnStartRow[t] = slots.length;
+    pushTurnSlots(slots, walkTurnGroups(transcript[t].messages, false), t, false);
+    turnRowCount[t] = slots.length - turnStartRow[t];
   }
   // A suppressed in-flight turn (the `/compact` seed) contributes zero
   // rows — it streams to claude but never shows in the transcript.
@@ -257,20 +372,28 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
     snap.activeTurn !== null && snap.activeTurn.suppressed
       ? null
       : snap.activeTurn;
-  const activeHasUser = activeTurnHasUserMessage(active);
   let activeStartRow = -1;
   if (active !== null) {
-    activeStartRow = cursor;
-    cursor += activeHasUser ? 2 : 1;
+    activeStartRow = slots.length;
+    pushTurnSlots(slots, walkTurnGroups(active.messages, true), -1, true);
   }
-  const ghostStartRow = cursor;
-  cursor += snap.queuedSends.length;
+  const ghostStartRow = slots.length;
+  for (let q = 0; q < snap.queuedSends.length; q++) {
+    slots.push({
+      cellKind: "ghost",
+      turnIndex: -1,
+      active: false,
+      queuedIndex: q,
+      assistantRunOrdinal: -1,
+      isLastAssistantOfTurn: false,
+    });
+  }
   return {
-    totalRows: cursor,
+    totalRows: slots.length,
+    slots,
     turnStartRow,
-    turnHasUserPerTurn,
+    turnRowCount,
     activeStartRow,
-    activeHasUser,
     ghostStartRow,
   };
 }
@@ -280,13 +403,28 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
 // ---------------------------------------------------------------------------
 
 /**
- * List-view row index of committed turn `turnIndex`'s **user** row.
- * Callers MUST first gate on whether the turn has a user row
- * (`transcript[turnIndex].origin === "user"`) — a
- * wake turn has no user row to point at.
- *
- * Walks the transcript prefix to sum row counts contributed by
- * preceding turns (variable per turn under [D07]).
+ * Sum the flat-row count contributed by the turns before `turnIndex`
+ * (variable per turn — message-derived under Spec S01). Shared prefix
+ * walk for the two row-index helpers below.
+ */
+function rowsBeforeTurn(
+  turnIndex: number,
+  transcript: ReadonlyArray<TurnEntry>,
+): number {
+  let cursor = 0;
+  for (let i = 0; i < turnIndex; i++) {
+    cursor += walkTurnGroups(transcript[i].messages, false).length;
+  }
+  return cursor;
+}
+
+/**
+ * List-view row index of committed turn `turnIndex`'s **first** user row
+ * — the turn opener (`#u`) — or `-1` when the turn has no user row (a
+ * wake / continuation / orphan). Kind-open: it locates the first `user`
+ * group in the turn's message walk, with no origin/boolean assumption.
+ * A merged turn's later user rows are not separately addressed here
+ * ([P05] — merged messages aren't independent nav targets in v1).
  *
  * The transcript renders each row's `#NNNN` sequence badge as
  * `rowIndex + 1`.
@@ -296,65 +434,34 @@ export function userRowIndexForTurn(
   transcript: ReadonlyArray<TurnEntry>,
 ): number {
   if (turnIndex < 0 || turnIndex >= transcript.length) return -1;
-  let cursor = 0;
-  for (let i = 0; i < turnIndex; i++) {
-    cursor += turnHasUserMessage(transcript[i]) ? 2 : 1;
-  }
-  return cursor;
+  const groups = walkTurnGroups(transcript[turnIndex].messages, false);
+  const offset = groups.findIndex((g) => g.kind === "user");
+  if (offset === -1) return -1;
+  return rowsBeforeTurn(turnIndex, transcript) + offset;
 }
 
 /**
- * List-view row index of committed turn `turnIndex`'s **assistant**
- * (`assistant`) row. For a normal turn this is the user row's immediate
- * successor (`turnStartRow + 1`); for a wake turn (no user row) this
- * IS the turn's only row (`turnStartRow`). Either way the assistant
- * row exists for every committed turn.
+ * List-view row index of committed turn `turnIndex`'s **last** assistant
+ * row — the per-turn-telemetry anchor ([P02]): the per-turn token badge
+ * and the popover's `#a{turn}` scroll target both ride the bracket's
+ * final assistant row. For a single-assistant turn the last run IS the
+ * only run, so this is behavior-preserving; for a merged turn it lands
+ * on the continuation, not the first response. Every committed turn has
+ * at least one assistant row; the `cursor` fallback covers the
+ * degenerate case of a turn with no assistant content.
  */
 export function assistantRowIndexForTurn(
   turnIndex: number,
   transcript: ReadonlyArray<TurnEntry>,
 ): number {
   if (turnIndex < 0 || turnIndex >= transcript.length) return -1;
-  let cursor = 0;
-  for (let i = 0; i < turnIndex; i++) {
-    cursor += turnHasUserMessage(transcript[i]) ? 2 : 1;
+  const cursor = rowsBeforeTurn(turnIndex, transcript);
+  const groups = walkTurnGroups(transcript[turnIndex].messages, false);
+  let lastAssistant = -1;
+  for (let i = 0; i < groups.length; i++) {
+    if (groups[i].kind === "assistant") lastAssistant = i;
   }
-  return turnHasUserMessage(transcript[turnIndex]) ? cursor + 1 : cursor;
-}
-
-/**
- * Locate which committed turn (and which half) a flat row index
- * belongs to, using the precomputed {@link RowLayout}. Caller must
- * have already ruled out ghost rows and in-flight rows.
- */
-function locateCommittedRow(
-  index: number,
-  layout: RowLayout,
-): { turnIndex: number; isAssistantRow: boolean } {
-  // Binary search for the largest `turnIndex` with `turnStartRow[i]
-  // <= index`. The arrays are short (one entry per turn — single-
-  // digit-thousands at most), but binary search is O(log n) instead
-  // of O(n) per `rowAt` call, and `rowAt` runs once per visible row
-  // per render, so a long transcript on a fast scroll benefits from
-  // the lower asymptotic.
-  let lo = 0;
-  let hi = layout.turnStartRow.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >>> 1;
-    if (layout.turnStartRow[mid] <= index) {
-      lo = mid;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  const turnIndex = lo;
-  const hasUser = layout.turnHasUserPerTurn[turnIndex];
-  // Wake turn: the single row IS the assistant row. Normal turn:
-  // assistant row is offset+1.
-  const isAssistantRow = hasUser
-    ? index > layout.turnStartRow[turnIndex]
-    : true;
-  return { turnIndex, isAssistantRow };
+  return lastAssistant === -1 ? cursor : cursor + lastAssistant;
 }
 
 // ---------------------------------------------------------------------------
@@ -475,12 +582,13 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
     const n = snap.transcript.length;
     if (n === 0) return undefined;
     const layout = this.layout(snap);
-    const last = n - 1;
-    const committedRowEnd =
-      layout.turnStartRow[last] + (layout.turnHasUserPerTurn[last] ? 2 : 1);
-    if (rowIndex < 0 || rowIndex >= committedRowEnd) return undefined;
-    const { turnIndex } = locateCommittedRow(rowIndex, layout);
-    return n - turnIndex;
+    const slot = layout.slots[rowIndex];
+    // Only a committed-turn row has a turn depth (an in-flight or ghost
+    // row has `turnIndex === -1`).
+    if (slot === undefined || slot.active || slot.cellKind === "ghost") {
+      return undefined;
+    }
+    return n - slot.turnIndex;
   }
 
   /**
@@ -514,77 +622,70 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
     const n = snap.transcript.length;
     if (n === 0) return 0;
     const layout = this.layout(snap);
-    const last = n - 1;
-    const committedRowEnd =
-      layout.turnStartRow[last] + (layout.turnHasUserPerTurn[last] ? 2 : 1);
-    if (index < committedRowEnd) {
-      return locateCommittedRow(index, layout).turnIndex;
+    const slot = layout.slots[index];
+    if (slot !== undefined && !slot.active && slot.cellKind !== "ghost") {
+      return slot.turnIndex;
     }
+    // In-flight / ghost rows belong to the next (not-yet-committed) turn.
     return n;
   }
 
   /**
-   * Stable React-key seed per the id-stability protocol:
+   * Stable React-key seed per the id-stability protocol, derived from
+   * the row's {@link RowSlot}:
    *
-   *  - Normal committed pair: `${turnKey}-user` at the turn's first
-   *    row, `${turnKey}-assistant` at the next.
-   *  - Wake committed turn: `${turnKey}-assistant` at the turn's single
-   *    row. The `${turnKey}-user` key is **never minted** for a wake
-   *    turn — there is no user row to key. Minting it anyway would
-   *    leave the cell wrapper's React identity tied to a key with no
-   *    rendered counterpart, breaking the [L26] mount-survival
-   *    invariant for any future state where the wake's row position
-   *    shifts (e.g., a new turn committing above it).
-   *  - In-flight (normal): `${turnKey}-user` at `activeStartRow`,
-   *    `${turnKey}-assistant` at `activeStartRow + 1`.
-   *  - In-flight wake: `${turnKey}-assistant` at `activeStartRow` only.
-   *  - Ghost rows: `${turnKey}-ghost`, distinct from `-user`/`-assistant`
-   *    so a queued send flushing into an in-flight pair is a clean
+   *  - `user` row: the `user_message`'s own `messageKey`. For a turn's
+   *    head submission this is `${turnKey}-user` (so the committed and
+   *    in-flight head rows key identically). A merged/steered message
+   *    carries its own queue-time key, so its row is distinct ([P04]) —
+   *    never re-derived under the host turn's key.
+   *  - `assistant` row: `${turnKey}-assistant` for the turn's first
+   *    assistant run (ordinal 0) — the no-remount key that survives
+   *    inflight → committed ([L26]); later runs (merged turns only) key
+   *    as `${turnKey}-assistant-${ordinal}`, stable under append. A wake
+   *    turn's single run is ordinal 0, so it keys `${turnKey}-assistant`;
+   *    the `${turnKey}-user` key is never minted for it.
+   *  - `ghost` row: `${turnKey}-ghost`, distinct from `-user`/`-assistant`
+   *    so a queued send flushing into an in-flight row is a clean
    *    unmount + mount (a real transition, not the seamless
    *    inflight → committed one).
    *
    * `turnKey` is generated once at `handleSend` or `handleWakeStarted`
    * and copied unchanged onto `TurnEntry` at `handleTurnComplete` —
-   * so the in-flight pair's id is byte-identical to the committed
-   * pair's id for the same turn. React sees the same key + the same
-   * component type (the cellRenderers map holds one entry for the
-   * unified `"assistant"` kind), so the cell wrapper survives the
+   * so the in-flight row's id is byte-identical to the committed row's
+   * id for the same turn. React sees the same key + the same component
+   * type (the cellRenderers map holds one entry for the unified
+   * `"assistant"` kind), so the cell wrapper survives the
    * inflight → committed transition with no unmount.
    *
    * `msgId` is the wire-correlation identifier and is intentionally
-   * NOT used here: it isn't assigned until the first streaming frame
-   * lands, which is mid-turn, so any id derived from it would change
-   * during the turn and trigger a remount.
+   * NOT used as the assistant key: it isn't assigned until the first
+   * streaming frame lands, which is mid-turn, so any id derived from it
+   * would change during the turn and trigger a remount.
    */
   idForIndex(index: number): string {
     const snap = this._codeSessionStore.getSnapshot();
     const layout = this.layout(snap);
+    const slot = layout.slots[index];
 
-    // Ghost row — one queued send.
-    if (index >= layout.ghostStartRow) {
-      return `${snap.queuedSends[index - layout.ghostStartRow].turnKey}-ghost`;
+    if (slot.cellKind === "ghost") {
+      return `${snap.queuedSends[slot.queuedIndex].turnKey}-ghost`;
     }
 
-    // In-flight turn rows.
-    if (
-      layout.activeStartRow >= 0 &&
-      index >= layout.activeStartRow &&
-      index < layout.ghostStartRow
-    ) {
-      const active = snap.activeTurn!;
-      if (!layout.activeHasUser) {
-        // Wake in-flight: single `${turnKey}-assistant` row, no `-user` minted.
-        return `${active.turnKey}-assistant`;
-      }
-      return index === layout.activeStartRow
-        ? `${active.turnKey}-user`
-        : `${active.turnKey}-assistant`;
+    const turnKey = slot.active
+      ? snap.activeTurn!.turnKey
+      : snap.transcript[slot.turnIndex].turnKey;
+
+    if (slot.cellKind === "user") {
+      const messages = slot.active
+        ? snap.activeTurn!.messages
+        : snap.transcript[slot.turnIndex].messages;
+      return messages[slot.group!.start].messageKey;
     }
 
-    // Committed turn — find which turn this row belongs to.
-    const { turnIndex, isAssistantRow } = locateCommittedRow(index, layout);
-    const turn = snap.transcript[turnIndex];
-    return isAssistantRow ? `${turn.turnKey}-assistant` : `${turn.turnKey}-user`;
+    return slot.assistantRunOrdinal === 0
+      ? `${turnKey}-assistant`
+      : `${turnKey}-assistant-${slot.assistantRunOrdinal}`;
   }
 
   /**
@@ -598,22 +699,8 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
    *  - `"ghost"` for each queued-send row.
    */
   kindForIndex(index: number): DevTranscriptCellKind {
-    const snap = this._codeSessionStore.getSnapshot();
-    const layout = this.layout(snap);
-
-    if (index >= layout.ghostStartRow) return "ghost";
-
-    if (
-      layout.activeStartRow >= 0 &&
-      index >= layout.activeStartRow &&
-      index < layout.ghostStartRow
-    ) {
-      if (!layout.activeHasUser) return "assistant";
-      return index === layout.activeStartRow ? "user" : "assistant";
-    }
-
-    const { isAssistantRow } = locateCommittedRow(index, layout);
-    return isAssistantRow ? "assistant" : "user";
+    const layout = this.layout(this._codeSessionStore.getSnapshot());
+    return layout.slots[index].cellKind;
   }
 
   /**
@@ -623,45 +710,69 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
    * between `CodeSessionStore` and the list view.
    *
    * Wake turns produce a single `{kind:"assistant", turn, ...}` descriptor —
-   * no separate user-row descriptor exists.
+   * no separate user-row descriptor exists. A merged turn produces a
+   * `user` descriptor per `user_message` and an `assistant` descriptor per
+   * non-user run (Spec S01); each carries the slice / message it renders.
    */
   rowAt(index: number): DevRowDescriptor {
     const snap = this._codeSessionStore.getSnapshot();
     const layout = this.layout(snap);
+    const slot = layout.slots[index];
 
     // Ghost row.
-    if (index >= layout.ghostStartRow) {
-      const queued = snap.queuedSends[index - layout.ghostStartRow];
+    if (slot.cellKind === "ghost") {
+      const queued = snap.queuedSends[slot.queuedIndex];
       return { kind: "ghost", queued, turnKey: queued.turnKey };
     }
 
-    // In-flight turn rows.
-    if (
-      layout.activeStartRow >= 0 &&
-      index >= layout.activeStartRow &&
-      index < layout.ghostStartRow
-    ) {
+    const group = slot.group!;
+
+    // In-flight turn row — the live `activeTurn` projection is the
+    // message source. No per-turn token figure until the bracket commits.
+    if (slot.active) {
       const active = snap.activeTurn!;
-      if (!layout.activeHasUser) {
-        // Wake — single assistant row.
-        return { kind: "assistant", activeTurn: active, turnKey: active.turnKey };
+      if (slot.cellKind === "user") {
+        return {
+          kind: "user",
+          activeTurn: active,
+          userMessage: active.messages[group.start] as UserMessage,
+          turnKey: active.turnKey,
+        };
       }
-      if (index === layout.activeStartRow) {
-        return { kind: "user", activeTurn: active, turnKey: active.turnKey };
-      }
-      return { kind: "assistant", activeTurn: active, turnKey: active.turnKey };
+      return {
+        kind: "assistant",
+        activeTurn: active,
+        messageStart: group.start,
+        messageEnd: group.end,
+        isLastAssistantOfTurn: slot.isLastAssistantOfTurn,
+        turnKey: active.turnKey,
+      };
     }
 
-    // Committed turn.
-    const { turnIndex, isAssistantRow } = locateCommittedRow(index, layout);
-    const turn = snap.transcript[turnIndex];
-    // Signed per-turn token delta from the transcript window-walk —
-    // window(N) − window(N−1), carry-forward over any zero-usage turn.
+    // Committed turn row.
+    const turn = snap.transcript[slot.turnIndex];
+    if (slot.cellKind === "user") {
+      return {
+        kind: "user",
+        turn,
+        userMessage: turn.messages[group.start] as UserMessage,
+        turnKey: turn.turnKey,
+      };
+    }
+    // Assistant row. The signed per-turn token delta is a bracket
+    // quantity (window(N) − window(N−1), carry-forward over any
+    // zero-usage turn), so it rides only the bracket's last assistant
+    // row ([P02]).
     const windows = this.contextWindows(snap);
     return {
-      kind: isAssistantRow ? "assistant" : "user",
+      kind: "assistant",
       turn,
-      perTurnTokens: windows[turnIndex]?.perTurn,
+      messageStart: group.start,
+      messageEnd: group.end,
+      isLastAssistantOfTurn: slot.isLastAssistantOfTurn,
+      perTurnTokens: slot.isLastAssistantOfTurn
+        ? windows[slot.turnIndex]?.perTurn
+        : undefined,
       turnKey: turn.turnKey,
     };
   }
@@ -696,11 +807,12 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
  * Field-wise equality over the row data a transcript cell renders
  * from. Finalized rows are immutable, so their fields are
  * reference-stable across snapshots (`turn` is the committed
- * `TurnEntry` reference, `queued` the queue entry reference) — equal
+ * `TurnEntry` reference, `userMessage` a frozen Message reference, the
+ * slice indices primitives, `queued` the queue entry reference) — equal
  * fields mean the cell would render identical output. The in-flight
- * row's `activeTurn` projection is rebuilt per snapshot, so it
- * compares unequal whenever any state changed — exactly the one row
- * that must stay live.
+ * row's `activeTurn` projection (and its `userMessage`) is rebuilt per
+ * snapshot, so it compares unequal whenever any state changed — exactly
+ * the one row that must stay live.
  */
 export function sameTranscriptRowData(
   a: DevRowDescriptor,
@@ -711,6 +823,10 @@ export function sameTranscriptRowData(
     a.turnKey === b.turnKey &&
     a.turn === b.turn &&
     a.activeTurn === b.activeTurn &&
+    a.userMessage === b.userMessage &&
+    a.messageStart === b.messageStart &&
+    a.messageEnd === b.messageEnd &&
+    a.isLastAssistantOfTurn === b.isLastAssistantOfTurn &&
     a.queued === b.queued &&
     a.perTurnTokens === b.perTurnTokens
   );
@@ -744,12 +860,6 @@ export function transcriptCellPropsEqual<
   if (equal) recordRowMemoHit();
   return equal;
 }
-
-// ---------------------------------------------------------------------------
-// Re-exports for consumers that need to read a Message head
-// ---------------------------------------------------------------------------
-
-export { readUserMessage };
 
 // ---------------------------------------------------------------------------
 // Hook
