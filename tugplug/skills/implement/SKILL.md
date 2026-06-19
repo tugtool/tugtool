@@ -88,7 +88,14 @@ convention:
    path. Nothing is written to the base checkout.**
 5. Establish a green baseline (`bun test`, and for Rust changes
    `cd tugrust && cargo nextest run`) so you know what "still green" means.
-6. Create one task per step in this run's list (`TaskCreate`) so progress is visible.
+6. Make progress visible with one task per step. `TaskCreate`/`TaskUpdate` are
+   deferred tools — their schemas are not in the prompt until you load them, and
+   listing them under `allowed-tools` does **not** load them. First call
+   `ToolSearch` with query `select:TaskCreate,TaskUpdate`, then call `TaskCreate`
+   **once per step** (it creates a single task — it has no `tasks`/`todos` batch
+   parameter), passing top-level string `subject` (the step title) and
+   `description` (what the step does). Use `TaskUpdate` to flip a task to
+   in-progress/complete as you walk.
 
 ### 2. Implement (walk the steps)
 
