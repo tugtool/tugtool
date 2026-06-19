@@ -1217,12 +1217,16 @@ export const TugPromptEntry = React.forwardRef<
       return;
     }
     // A mid-turn submit queues — the reducer's `handleSend` enqueues
-    // a `send` dispatched while a turn runs ([D-T3-07]). The earlier
-    // "submit is interrupt" branch is retired: the primary Stop button
-    // interrupts through the SUBMIT action handler; editor Return and
-    // the `+` button queue. `performSubmit` is now uniformly "submit
-    // the editor draft" — `codeSessionStore.send()` below, which the
-    // reducer routes to a turn start (idle) or the queue (mid-turn).
+    // a `send` dispatched while a turn runs ([D-T3-07], superseded by
+    // [P06]/[P07] mid-turn steering: the queued message is held
+    // client-side and retractable, then picked up at the next agent-loop
+    // boundary and merged into the running turn, rather than only at
+    // `turn_complete`). The earlier "submit is interrupt" branch is
+    // retired: the primary Stop button interrupts through the SUBMIT
+    // action handler; editor Return and the `+` button queue.
+    // `performSubmit` is now uniformly "submit the editor draft" —
+    // `codeSessionStore.send()` below, which the reducer routes to a
+    // turn start (idle) or the queue (mid-turn).
     //
     // Blocked submit ([D-T3-08]): `canSubmit` AND `canInterrupt` both
     // false means the card is `replaying` (drop — a deferred send

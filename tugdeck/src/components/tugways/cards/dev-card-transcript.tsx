@@ -237,7 +237,13 @@ const UserMessageCell = React.memo(function UserMessageCell({
     useTurnNumberBase(codeSessionStore) +
     dataSource.localTurnIndexForRow(index) +
     1;
-  const address = { speaker: "user" as const, turn: turnNumber };
+  // Durable badge address ([P09]): session-true turn + within-turn ordinal.
+  // A merged turn's steered user rows get `.2`, `.3`; the opener stays `#u{turn}`.
+  const address = {
+    speaker: "user" as const,
+    turn: turnNumber,
+    sub: dataSource.withinTurnOrdinalForRow(index),
+  };
   // The data source resolves the specific `user_message` this row
   // renders (the turn opener, or a merged/steered mid-turn message —
   // never re-derived from `messages[0]`, Spec S01/[P04]). It is set on
@@ -678,7 +684,13 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
     useTurnNumberBase(codeSessionStore) +
     dataSource.localTurnIndexForRow(index) +
     1;
-  const address = { speaker: "assistant" as const, turn: turnNumber };
+  // Durable badge address ([P09]): session-true turn + within-turn run ordinal.
+  // A merged turn's later assistant runs get `.2`, `.3`; the first stays `#a{turn}`.
+  const address = {
+    speaker: "assistant" as const,
+    turn: turnNumber,
+    sub: dataSource.withinTurnOrdinalForRow(index),
+  };
   // `turnKey` is set for every assistant row by `rowAt`. The fallback
   // throws in dev (data-source contract violation) and falls back to
   // an index-scoped string in prod so different rows can't

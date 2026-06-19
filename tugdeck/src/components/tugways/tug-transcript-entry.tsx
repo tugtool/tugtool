@@ -167,12 +167,22 @@ const TURN_SPEAKER_PREFIX: Record<TurnSpeaker, string> = {
 };
 
 /**
- * A transcript entry's address: the canonical session turn it belongs to,
- * plus who is speaking. One address rides each attribution row.
+ * A transcript entry's address ([P09]): the session-true turn it belongs
+ * to, who is speaking, and its 0-based ordinal *within* that turn among
+ * same-kind rows. One address rides each attribution row. Durable across
+ * reopen/paging — both components derive from the session's fixed JSONL,
+ * not the loaded window.
  */
 export interface TurnAddress {
   speaker: TurnSpeaker;
   turn: number;
+  /**
+   * 0-based within-turn ordinal among same-kind rows. `0` (or omitted) for
+   * the sole/first user message or assistant run of the turn — the badge
+   * shows no suffix; `1`/`2`/… (steered messages, extra assistant runs)
+   * render as `.2`/`.3`.
+   */
+  sub?: number;
 }
 
 /**
@@ -191,18 +201,20 @@ export function formatSequenceNumber(n: number): string {
 }
 
 /**
- * Format a turn address as `#{speaker}{turn}` — a single speaker-prefixed
- * turn number (`#u0017` user, `#a0017` assistant), zero-padded to four
- * digits and growing naturally past 9999. The turn is the canonical session
- * unit (`tuglaws/turn-metric.md`); a normal turn's user and assistant rows
- * share the same number, so the prefix is what tells them apart. Pure,
+ * Format a transcript address ([P09]) as `#{speaker}{turn}` with a
+ * within-turn suffix when needed: `#u17` / `#a17` for the sole user/
+ * assistant row of turn 17; `#u17.2`, `#a17.3` for steered messages or
+ * extra assistant runs merged into the turn (`sub` 1, 2, … → `.2`, `.3`).
+ * Significant digits only — no zero-padding. A normal turn's user and
+ * assistant rows share the turn number (the prefix tells them apart) and
+ * carry no suffix, so unmerged sessions read exactly as before. Pure,
  * exported for tests.
  */
 export function formatTurnAddress(address: TurnAddress): string {
-  const { speaker, turn } = address;
+  const { speaker, turn, sub } = address;
   if (!Number.isFinite(turn) || turn < 0) return "";
-  const n = Math.floor(turn).toString().padStart(4, "0");
-  return `#${TURN_SPEAKER_PREFIX[speaker]}${n}`;
+  const base = `#${TURN_SPEAKER_PREFIX[speaker]}${Math.floor(turn)}`;
+  return sub !== undefined && sub > 0 ? `${base}.${sub + 1}` : base;
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +336,7 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
             <span
               className="tug-transcript-entry__sequence"
               data-slot="tug-transcript-entry-sequence"
-              aria-label={`Turn ${address.turn}`}
+              aria-label={`${address.speaker === "assistant" ? "Assistant" : "User"} message ${formatTurnAddress(address).slice(1)}`}
             >
               {formatTurnAddress(address)}
             </span>

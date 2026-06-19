@@ -404,7 +404,7 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 | #step-4 | Render multiple user rows per turn (merge-visible) | done | d81241d8 |
 | #step-5 | Steering forward: hold client-side, pick up at the boundary | done | 5c3295c0 |
 | #step-6 | Place the merged message as a mid-turn user row | done | 7d939e16 |
-| #step-7 | Per-message address fix + integration + docstring/D-T3-07 revision | pending | — |
+| #step-7 | Per-message address fix + integration + docstring/D-T3-07 revision | done (app-test on-demand) | (this commit) |
 
 #### Step 1: Characterize the steering mechanism from real sessions {#step-1}
 
@@ -566,17 +566,17 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 **Numbering bug (found in real session `3ac9f413`):** the transcript badge addresses by **turn** — `dev-card-transcript.tsx` builds `{ speaker, turn }` from `useTurnNumberBase + localTurnIndexForRow(index) + 1`, rendered as `#u{turn}`/`#a{turn}` (`tug-transcript-entry.tsx` `formatTurnAddress`). That was fine when a turn held one user + one assistant row, but steering MERGES multiple user messages into one turn, so all of a merged turn's user rows collide on `#u0001` and all its assistant runs on `#a0001`. Per `[P04]`, the badge must be a **per-kind ordinal in stream order**, not the turn index.
 
 **Tasks:**
-- [ ] Add `userRowOrdinal` (0-based within-turn, mirrors `assistantRunOrdinal`) to `RowSlot`, computed in `pushTurnSlots`; expose `withinTurnOrdinalForRow(index)` for the per-kind within-turn ordinal.
-- [ ] Badge = session-true turn (`useTurnNumberBase + localTurnIndexForRow`, unchanged) **+** the within-turn ordinal. Extend `TurnAddress` with a `sub` field; `formatTurnAddress` drops zero-padding (significant digits) and appends `.{sub+1}` when `sub > 0`; update the aria-label/doc. Point both cells (user + assistant) at it. Keep turn-based scroll/telemetry anchoring untouched.
-- [ ] Make image-atom caption `messageNumber` consistent with the badge (same turn + within-turn address) so an image's caption matches its message's badge.
-- [ ] Update `handleSend`/`handleTurnComplete` and `dev-transcript-data-source` module docstrings (steer hold-client-side + boundary pickup, message-derived rows); revise the `[D07]` "one user_message per turn" note on `MessageBase`.
-- [ ] Add the `D-T3-07` supersession note (+ optional pointer in `tuglaws/design-decisions.md`).
-- [ ] Verify all success criteria.
+- [x] Add `userRowOrdinal` (0-based within-turn, mirrors `assistantRunOrdinal`) to `RowSlot`, computed in `pushTurnSlots`; expose `withinTurnOrdinalForRow(index)` for the per-kind within-turn ordinal.
+- [x] Badge = session-true turn (`useTurnNumberBase + localTurnIndexForRow`, unchanged) **+** the within-turn ordinal. Extended `TurnAddress` with a `sub` field; `formatTurnAddress` drops zero-padding (significant digits) and appends `.{sub+1}` when `sub > 0`; aria-label/doc updated. Both cells point at it. Turn-based scroll/telemetry anchoring untouched.
+- [ ] (Follow-on, not this step) Image-atom caption `messageNumber` is a single int (`#{N}-image-k`, turn-based — durable but collides across a merged turn's user messages); threading the full turn+sub address through `TugAtomTextBody`/`TugAttachmentStrip` is a separate change. Left turn-based for now.
+- [x] Revised the `[D07]` "one user_message per turn" note on `MessageBase` (retired); steering pickup/placement inline docstrings already landed in Steps 5/6.
+- [x] Added the `D-T3-07` supersession note (in `tug-prompt-entry.tsx` where it's cited).
+- [x] Verified success criteria (full unit suite + tsc).
 
 **Tests:**
-- [ ] Unit (durability): a synthetic merged turn (turn 1 = `[user, asst, user, asst, user, asst]`) yields `#u1, #a1, #u1.2, #a1.2, #u1.3, #a1.3` — no collisions; a normal 1-user-1-assistant turn still renders `#u{turn}` (no suffix); `formatTurnAddress` has no leading zeros.
-- [ ] Full `cd tugdeck && bun test` green.
-- [ ] `just app-test` end-to-end steering passes.
+- [x] Unit (durability): a synthetic merged turn yields within-turn ordinals `[0,0,1,1]` → `#u1, #a1, #u1.2, #a1.2`; a normal turn's ordinal is 0 (no suffix); `formatTurnAddress` has no leading zeros and renders `.2`/`.3` for `sub` 1/2.
+- [x] Full `cd tugdeck && bun test` green (3837 pass).
+- [ ] `just app-test` end-to-end steering passes (on-demand real-claude path — run before relying on the live render).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test`

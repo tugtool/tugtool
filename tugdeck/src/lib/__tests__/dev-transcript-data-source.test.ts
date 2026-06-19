@@ -241,6 +241,37 @@ describe("[D07] row layout: variable rows per turn driven by user_message presen
     expect(ds.idForIndex(3)).toBe("T-assistant-1");
   });
 
+  test("within-turn ordinals: durable badge sub-address for a merged turn ([P09])", () => {
+    // rows: user(opener), assistant(run0), user(steer), assistant(run1).
+    // The within-turn per-kind ordinal is the second, durable component of
+    // the badge — derived from the turn's own fixed message order, so it is
+    // stable across reopen/paging (it never depends on the loaded window).
+    const layout = buildRowLayout(
+      snapshotWith({ transcript: [mergedTurn("T", "S")] }),
+    );
+    expect(layout.slots.map((s) => s.userRowOrdinal)).toEqual([0, -1, 1, -1]);
+    expect(layout.slots.map((s) => s.assistantRunOrdinal)).toEqual([
+      -1, 0, -1, 1,
+    ]);
+
+    const ds = new DevTranscriptDataSource(
+      storeWith(snapshotWith({ transcript: [mergedTurn("T", "S")] })),
+    );
+    // user→userRowOrdinal, assistant→assistantRunOrdinal. With turn 1 this
+    // renders #u1, #a1, #u1.2, #a1.2 (opener has no suffix; steer gets .2).
+    expect([0, 1, 2, 3].map((i) => ds.withinTurnOrdinalForRow(i))).toEqual([
+      0, 0, 1, 1,
+    ]);
+  });
+
+  test("normal turn: within-turn ordinal is 0 (badge shows no suffix)", () => {
+    const ds = new DevTranscriptDataSource(
+      storeWith(snapshotWith({ transcript: [normalTurn("T", "hi", "yo")] })),
+    );
+    expect(ds.withinTurnOrdinalForRow(0)).toBe(0); // user row
+    expect(ds.withinTurnOrdinalForRow(1)).toBe(0); // assistant row
+  });
+
   test("queued sends add one ghost row each at the tail", () => {
     const layout = buildRowLayout(
       snapshotWith({

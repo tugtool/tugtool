@@ -293,6 +293,16 @@ export interface RowSlot {
    * end-state anchor ([P02]). Always false for non-assistant rows.
    */
   isLastAssistantOfTurn: boolean;
+  /**
+   * 0-based ordinal of this `user` row *within its turn*; `-1` for a
+   * non-user row. Mirrors {@link assistantRunOrdinal}. A normal turn's
+   * opener is `0`; steering merges additional user messages into the turn,
+   * which get `1`, `2`, … in send-order. Combined with the session-true
+   * turn number this forms the durable badge address ([P09]): `#u{turn}`
+   * when `0`, `#u{turn}.{ordinal+1}` otherwise. Durable across reopen — it
+   * keys on the turn's own fixed message order, not the loaded window.
+   */
+  userRowOrdinal: number;
 }
 
 /**
@@ -335,9 +345,11 @@ function pushTurnSlots(
     if (groups[i].kind === "assistant") lastAssistantGroupIndex = i;
   }
   let assistantOrdinal = 0;
+  let userOrdinal = 0;
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     const isAssistant = group.kind === "assistant";
+    const isUser = group.kind === "user";
     slots.push({
       cellKind: group.kind,
       group,
@@ -345,9 +357,11 @@ function pushTurnSlots(
       active,
       queuedIndex: -1,
       assistantRunOrdinal: isAssistant ? assistantOrdinal : -1,
+      userRowOrdinal: isUser ? userOrdinal : -1,
       isLastAssistantOfTurn: isAssistant && i === lastAssistantGroupIndex,
     });
     if (isAssistant) assistantOrdinal += 1;
+    if (isUser) userOrdinal += 1;
   }
 }
 
@@ -385,6 +399,7 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
       active: false,
       queuedIndex: q,
       assistantRunOrdinal: -1,
+      userRowOrdinal: -1,
       isLastAssistantOfTurn: false,
     });
   }
@@ -628,6 +643,25 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
     }
     // In-flight / ghost rows belong to the next (not-yet-committed) turn.
     return n;
+  }
+
+  /**
+   * The 0-based per-kind ordinal of a row *within its turn* ([P09]) — the
+   * second component of the durable badge address. A `user` row reports
+   * its {@link RowSlot.userRowOrdinal}, an `assistant` row its
+   * {@link RowSlot.assistantRunOrdinal}; `0` for the sole/first of its
+   * kind (badge omits the suffix), `1`/`2`/… for steered messages or
+   * extra assistant runs merged into the turn. `0` for a ghost or
+   * out-of-range row. Combined with the session-true turn number it is
+   * durable across reopen/paging (it keys on the turn's own message
+   * order, not the loaded window). Reads the memoized per-snapshot layout.
+   */
+  withinTurnOrdinalForRow(index: number): number {
+    const slot = this.layout(this._codeSessionStore.getSnapshot()).slots[index];
+    if (slot === undefined) return 0;
+    if (slot.cellKind === "user") return Math.max(0, slot.userRowOrdinal);
+    if (slot.cellKind === "assistant") return Math.max(0, slot.assistantRunOrdinal);
+    return 0;
   }
 
   /**

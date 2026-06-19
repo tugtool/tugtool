@@ -115,7 +115,11 @@ export type MessageKind =
  * mutation (streaming append, `tool_result` landing on a `tool_use`,
  * etc.). Derivation per [D07]:
  *
- *  - `user_message`: `${turnKey}-user` (one per turn at most).
+ *  - `user_message`: `${turnKey}-user`, keyed on the message's *own*
+ *    `turnKey`. A turn opens with one (the opener), but steering merges
+ *    additional user messages into a turn ([P06]/[P07]); each keeps its
+ *    own queue-time `turnKey`, so their keys stay distinct within the
+ *    turn (the "one per turn" assumption is retired).
  *  - wire-derived (`assistant_text` / `assistant_thinking` /
  *    `tool_use`): `${msg_id}-b${block_index}` — intrinsically unique
  *    within a session, mirrors the wire's `(msg_id, block_index)`
