@@ -403,7 +403,7 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 | #step-3 | Re-base addressing on `messageKey` + derived labels | done | ea6916c3 |
 | #step-4 | Render multiple user rows per turn (merge-visible) | done | d81241d8 |
 | #step-5 | Steering forward: hold client-side, pick up at the boundary | done | 5c3295c0 |
-| #step-6 | Place the merged message as a mid-turn user row | done | 7d939e16 |
+| #step-6 | Place the merged message as a mid-turn user row | reopened — reload via tugcode replay | live: 7d939e16 |
 | #step-7 | Per-message address fix + integration + docstring/D-T3-07 revision | done (app-test on-demand) | (this commit) |
 
 #### Step 1: Characterize the steering mechanism from real sessions {#step-1}
@@ -535,25 +535,29 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 
 **References:** [P07] placement, [P04] keying, [Q01] mechanism, [Q02] no-live-echo, Spec S02 (placement), Risk R04
 
+**REOPENED — reload half was missed (found in session `3ac9f413` on reopen):** the live half works (the reducer appends the steered row at the `tool_result` boundary), and the reducer's reload fork in `handleAddUserMessage` is correct — but it was never fed. A steered message persists in claude's JSONL **only** as a `queue-operation` + an `attachment: queued_command` (never a `type: user` row), and `tugcode/src/replay.ts` lists **both `"attachment"` and `"queue-operation"` in `SKIPPED_TOP_LEVEL_TYPES`**, so replay drops them. On reopen the steered rows vanish (the durability bar fails). The on-demand `just app-test` reopen check that would have caught this was never run.
+
 **Artifacts:**
 - **Placement at pickup:** the same mid-turn `tool_result` that picks up the entry (Step 5) also appends it as a `user_message` to the in-flight turn's `messages` (own `messageKey`) → the foot ghost is removed and a real mid-turn user row appears after the tool block (flat row model, Step 4). tugdeck does forward + remove + place atomically; no live echo to wait for (`[Q02]`). Live position is where tugdeck places it; reload tightens to claude's exact merge point.
 - **Reload-authoritative:** the `handleAddUserMessage` fork — a *mid-turn* `add_user_message` from JSONL replay **appends to the in-flight turn** rather than opening a new turn. Live pickup and reload converge on one helper: "append a `user_message` to the active turn's `messages`."
 - The `end_turn` minority (<1%, `[Q01]`) falls through to the existing next-turn collapse unchanged.
 
 **Tasks:**
-- [ ] Implement the single append helper (append `user_message` to `activeTurn.messages`, preserve `messageKey`).
-- [ ] Live: at the boundary pickup (Step 5), also append the message → mid-turn user row (ghost removed in the same step).
-- [ ] Reload: fork `handleAddUserMessage` so a mid-turn replay user row appends to the in-flight turn (not opens one); verify a real Dev-card reload places a steered message at its exact JSONL position.
+- [x] Live: at the boundary pickup (Step 5), append the message → mid-turn user row (`handleToolResult`). Done.
+- [x] Reducer reload fork: `handleAddUserMessage` appends a mid-turn replay user row to the in-flight turn (not opens one). Done — but unfed (see below).
+- [ ] **tugcode `replay.ts`: translate `queued_command` attachments into `add_user_message` frames.** Remove the blanket skip for that attachment subtype; emit `add_user_message` carrying the steered text/atoms at its JSONL position (mid-bracket, after the preceding `tool_result`), so the reducer's reload fork reconstructs the mid-turn user row. `queue-operation` records stay skipped.
+- [ ] Rebuild tugcode (compiled binary — HMR won't pick it up).
 - [ ] Verify the `end_turn` minority still becomes the next turn.
 
 **Tests:**
-- [ ] Reducer (live): a mid-turn `tool_result` with a queued entry forwards, removes the entry, **and** appends it → mid-turn user row (own `messageKey`), no duplicate, no extra `send-frame`.
-- [ ] Reducer (reload): a replay `add_user_message` threaded after a mid-turn `tool_result` appends to the in-flight turn (does not open a new turn).
-- [ ] Reducer: the `end_turn` minority → message becomes the next turn (existing collapse), unchanged.
+- [x] Reducer (live): a mid-turn `tool_result` with a queued entry forwards, removes the entry, **and** appends it → mid-turn user row.
+- [x] Reducer (reload): a replay `add_user_message` threaded after a mid-turn `tool_result` appends to the in-flight turn (does not open a new turn).
+- [ ] tugcode replay: a JSONL with a `queued_command` attachment mid-bracket emits an `add_user_message` for it (translator unit / fixture).
+- [ ] **Durability (the bar):** reopen `3ac9f413` → `#u1`, `#u1.2`, `#u1.3` reappear and persist across reopen.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test src/lib/code-session-store`
-- [ ] `just app-test` (real-claude on-demand path: a mid-turn steer is acted on, and a user row appears inline after the tool block; reload tightens its position)
+- [ ] `cd tugrust` / tugcode tests green; rebuild tugcode.
+- [ ] Reopen `3ac9f413` in the Dev card: steered rows reconstructed and stable.
 
 #### Step 7: Per-message address numbering fix + integration + docstring/D-T3-07 revision {#step-7}
 
