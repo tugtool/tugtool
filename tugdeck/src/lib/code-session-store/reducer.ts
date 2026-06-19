@@ -31,6 +31,7 @@
 
 import type { AtomSegment } from "../tug-atom-img";
 import type { ContentBlock } from "../../protocol";
+import { buildCompactionSeed } from "../compaction-request";
 import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
@@ -444,11 +445,18 @@ export interface CodeSessionState {
   unknownEvent: UnknownEventState | null;
   /**
    * Set once on a fresh session born from `/compact` (via
-   * `mark_compaction_seed`): the transcript renders a compaction divider
-   * header, and `preTokens` labels it with the pre-compaction context
-   * size. `null` for ordinary sessions. Session-lived (never cleared).
+   * `mark_compaction_seed`): the transcript renders a carry-forward
+   * summary block (the `summary` body, labelled by `preTokens`). The
+   * single source of truth for the deferred seed — `seedPending` is
+   * `true` until the recap rides the user's first message on the wire,
+   * then `false`. `null` for ordinary sessions. Session-lived (the
+   * summary/label persist; only `seedPending` flips).
    */
-  compactionSeed: { preTokens: number | null } | null;
+  compactionSeed: {
+    summary: string | null;
+    preTokens: number | null;
+    seedPending: boolean;
+  } | null;
   /**
    * Tool calls denied this session, accumulated from each `cost_update`'s
    * `permission_denials`, deduped by `toolUseId`, most-recent last. Surfaced on
@@ -845,6 +853,24 @@ function handleSend(
 
   if (state.phase === "idle" || state.phase === "errored") {
     const submitAt = Date.now();
+    // Deferred compaction seed: on the first real send after a `/compact`
+    // (compactionSeed.seedPending), the captured recap rides this message
+    // on the wire as a leading content block — never its own turn. The
+    // display substrate (text/atoms) stays the user's typed message, so
+    // the transcript bubble shows only what they typed; only the wire
+    // content carries the seed. A suppressed/programmatic send never
+    // flushes it. Flipping seedPending → false keeps the recap off the
+    // *second* message; the summary stays for the carry-forward render.
+    const seed = state.compactionSeed;
+    const seedBlock: ContentBlock | null =
+      event.suppress !== true &&
+      seed !== null &&
+      seed.seedPending &&
+      seed.summary !== null
+        ? { type: "text", text: buildCompactionSeed(seed.summary) }
+        : null;
+    const wireContent: ContentBlock[] =
+      seedBlock !== null ? [seedBlock, ...event.content] : event.content;
     const userMessage: UserMessage = {
       kind: "user_message",
       messageKey: userMessageKey(event.turnKey),
@@ -856,6 +882,13 @@ function handleSend(
     const next: CodeSessionState = {
       ...state,
       phase: "submitting",
+      // The deferred seed has now ridden the wire — clear seedPending so
+      // it never rides a later message; keep summary/preTokens for the
+      // carry-forward render.
+      compactionSeed:
+        seedBlock !== null && seed !== null
+          ? { ...seed, seedPending: false }
+          : state.compactionSeed,
       pendingTurn: {
         turnKey: event.turnKey,
         submitAt,
@@ -929,8 +962,9 @@ function handleSend(
             // dispatch. The substrate's `UserMessage` retains the
             // synthesized `(text, atoms)` pair so the transcript chip
             // renderer can paint chips at the original positions.
-            // Per [Step 5c].
-            content: event.content,
+            // Per [Step 5c]. `wireContent` prepends the deferred
+            // compaction seed block on the first post-compact send.
+            content: wireContent,
           },
         },
       ],
@@ -3147,7 +3181,14 @@ function handleMarkCompactionSeed(
   event: MarkCompactionSeedActionEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
   return {
-    state: { ...state, compactionSeed: { preTokens: event.preTokens } },
+    state: {
+      ...state,
+      compactionSeed: {
+        summary: event.summary,
+        preTokens: event.preTokens,
+        seedPending: event.seedPending,
+      },
+    },
     effects: [],
   };
 }
@@ -4008,6 +4049,23 @@ function handleAddUserMessage(
     submitAt: now,
   };
 
+  // A `/compact` seed block split off this opener (replay path) re-marks
+  // the carry-forward summary — `seedPending: false`, since the recap
+  // already rode the wire — so reload renders the summary exactly as it
+  // did live. Applied before placement so both the mid-bracket-append and
+  // new-turn branches carry it.
+  const base: CodeSessionState =
+    typeof event.compactionSummary === "string"
+      ? {
+          ...state,
+          compactionSeed: {
+            summary: event.compactionSummary,
+            preTokens: null,
+            seedPending: false,
+          },
+        }
+      : state;
+
   // Reload-authoritative placement of a merged/steered message ([P07]).
   // During replay, a turn already in flight (`pendingTurn !== null`)
   // means this `add_user_message` is threaded mid-bracket — a steered
@@ -4029,7 +4087,7 @@ function handleAddUserMessage(
       };
       return {
         state: {
-          ...state,
+          ...base,
           scratch: withScratchEntry(state.scratch, hostKey, nextEntry),
         },
         effects: [],
@@ -4039,7 +4097,7 @@ function handleAddUserMessage(
 
   return {
     state: {
-      ...state,
+      ...base,
       pendingTurn: {
         turnKey: event.turnKey,
         submitAt: now,

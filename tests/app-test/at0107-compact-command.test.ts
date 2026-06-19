@@ -1,19 +1,21 @@
 /**
- * at0107-compact-command.test.ts — `/compact`'s live surface: the
- * compaction divider header renders for a `/compact`-born session, and a
- * suppressed seed turn never appears in the transcript ([AT0107]).
+ * at0107-compact-command.test.ts — `/compact`'s live surface: a
+ * `/compact`-born session shows the carry-forward summary (divider label
+ * + the recap body) and lands idle; suppression still keeps a programmatic
+ * turn out of the transcript ([AT0107]).
  *
  * ## Why this exists
  *
  * `/compact` re-creates compaction over the bridge (no native trigger):
- * summarize the current session → fresh session seeded (suppressed) with
- * the summary → divider header. The full summarize→spawn→seed continuity
- * needs a real claude turn (spike-verified separately; the stub harness
- * can't summarize). This drives the two **tugdeck-side** halves the stub
- * CAN exercise: `markCompactionSeed` → the divider header renders; a
- * `suppress`ed send → the turn runs but never shows in the transcript
- * (an ordinary send does). The pure pieces (`buildSummarizationPrompt`,
- * the reducer suppression + `mark_compaction_seed`) are unit-tested.
+ * summarize the current session → fresh session, marked with the recap →
+ * carry-forward summary + idle (compact-then-wait). The full
+ * summarize→spawn→seed→reload continuity needs a real claude turn
+ * (on-demand; the stub harness can't summarize). This drives the
+ * **tugdeck-side** halves the stub CAN exercise: `markCompactionSeed` →
+ * the carry-forward summary (divider label + body) renders; a `suppress`ed
+ * send → the turn runs but never shows (an ordinary send does). The pure
+ * pieces (the deferred-seed flush, `splitCompactionSeed` reconstruction)
+ * are unit-tested.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -31,6 +33,7 @@ const CARD = '[data-card-id="A"]';
 const TRANSCRIPT = `${CARD} [data-slot="dev-card-transcript"]`;
 const DIVIDER = `${TRANSCRIPT} [data-slot="compaction-divider"]`;
 const DIVIDER_LABEL = `${DIVIDER} .dev-card-transcript-compaction-label`;
+const SUMMARY = `${TRANSCRIPT} [data-slot="compaction-summary"]`;
 
 let projectDir = "";
 
@@ -67,7 +70,7 @@ describe.skipIf(!SHOULD_RUN)(
   "AT0107: /compact divider header + suppressed seed",
   () => {
     test(
-      "markCompactionSeed renders the divider; a suppressed send stays out of the transcript",
+      "markCompactionSeed renders the carry-forward summary; a suppressed send stays out of the transcript",
       async () => {
         const app = await launchTugApp({ testName: "at0107-compact-command" });
         try {
@@ -80,8 +83,14 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindDevSession("A", { projectDir });
           await app.awaitEngineReady("A", { timeoutMs: 30_000 });
 
-          // Flag the session as compaction-born → divider header appears.
-          await app.driveDevSession("A", { op: "markCompactionSeed", preTokens: 48000 });
+          // Flag the session as compaction-born → carry-forward summary
+          // (divider label + recap body) appears, session stays idle.
+          await app.driveDevSession("A", {
+            op: "markCompactionSeed",
+            summary: "ZZCARRYFORWARDZZ — the recap body of the prior session",
+            preTokens: 48000,
+            seedPending: true,
+          });
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(DIVIDER)}) !== null`,
             { timeoutMs: 6000 },
@@ -90,6 +99,12 @@ describe.skipIf(!SHOULD_RUN)(
             `(document.querySelector(${JSON.stringify(DIVIDER_LABEL)})||{}).textContent || ""`,
           );
           expect(label).toBe("Session compacted · ~48k tokens");
+
+          // The recap body renders as the visible carry-forward block.
+          await app.waitForCondition<boolean>(
+            `(document.querySelector(${JSON.stringify(SUMMARY)})||{}).textContent.includes("ZZCARRYFORWARDZZ")`,
+            { timeoutMs: 6000 },
+          );
 
           // A suppressed seed send runs on claude but must NOT appear.
           await app.driveDevSession("A", {

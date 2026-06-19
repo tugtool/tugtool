@@ -75,13 +75,19 @@ export interface SendActionEvent {
 
 /**
  * `mark_compaction_seed` — flags this (fresh, `/compact`-born) session so
- * the transcript renders a compaction divider header. Carries the
- * pre-compaction context size for the divider label. Dispatched by the
- * `dev-session-restore` live-hook alongside the suppressed seed send.
+ * the transcript renders a carry-forward summary block. Carries the
+ * captured `summary` (rendered as the block body), the pre-compaction
+ * context size for the label, and `seedPending` — whether the recap
+ * still has to ride the user's first message on the wire (`true` on a
+ * live bind, `false` when reconstructed from JSONL where it already
+ * rode). Dispatched by the `dev-session-restore` live-hook (live) and
+ * the replay user-message seam (reload).
  */
 export interface MarkCompactionSeedActionEvent {
   type: "mark_compaction_seed";
+  summary: string | null;
   preTokens: number | null;
+  seedPending: boolean;
 }
 
 /** `session_init` frame — carries Claude's `session_id` (for `--resume`). */
@@ -712,6 +718,15 @@ export interface AddUserMessageEvent {
    * frame instead. Optional — older sessions / pre-[#step-7-1] frames omit it.
    */
   promptUuid?: string;
+  /**
+   * Recovered compaction recap, set only on the replay path when this
+   * user message's leading content block was a `/compact` seed block (the
+   * store wrapper split it off with `splitCompactionSeed`). The reducer
+   * re-marks `compactionSeed` (with `seedPending: false` — the recap
+   * already rode the wire) so the carry-forward summary renders on reload
+   * exactly as it did live. Absent for ordinary messages.
+   */
+  compactionSummary?: string;
   [key: string]: unknown;
 }
 

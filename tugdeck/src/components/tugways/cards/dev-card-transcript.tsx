@@ -1473,13 +1473,27 @@ export const DevTranscriptHost = forwardRef<
     >
       {compactionSeed !== null ? (
         <div
-          className="dev-card-transcript-compaction"
-          role="separator"
-          data-slot="compaction-divider"
+          className="dev-card-transcript-compaction-block"
+          data-slot="compaction-carry-forward"
         >
-          <span className="dev-card-transcript-compaction-label">
-            {compactionNoteText(compactionSeed.preTokens ?? undefined)}
-          </span>
+          <div
+            className="dev-card-transcript-compaction"
+            role="separator"
+            data-slot="compaction-divider"
+          >
+            <span className="dev-card-transcript-compaction-label">
+              {compactionNoteText(compactionSeed.preTokens ?? undefined)}
+            </span>
+          </div>
+          {compactionSeed.summary !== null &&
+          compactionSeed.summary.length > 0 ? (
+            <div
+              className="dev-card-transcript-compaction-summary"
+              data-slot="compaction-summary"
+            >
+              <TugMarkdownBlock initialText={compactionSeed.summary} />
+            </div>
+          ) : null}
         </div>
       ) : null}
       {listMounted ? (

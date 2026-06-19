@@ -314,11 +314,11 @@ After [P03]/[P04], the carry-forward summary is visible immediately after compac
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Recognize `/compact` through atoms; expand focus mentions | pending | — |
-| #step-2 | Compact-then-wait: visible summary, idle landing, no seed turn; summarization fail-safe | pending | — |
-| #step-3 | Flush the deferred seed on first send (leading wire block) | pending | — |
-| #step-4 | Render the seed sentinel as the carry-forward summary on reload | pending | — |
-| #step-5 | Integration checkpoint: real-app `/compact` drive | pending | — |
+| #step-1 | Recognize `/compact` through atoms; expand focus mentions | done | 8938029f |
+| #step-2 | Compact-then-wait: visible summary, idle landing, no seed turn; summarization fail-safe | done | e1321698 |
+| #step-3 | Flush the deferred seed on first send (leading wire block) | done | d862be6c |
+| #step-4 | Render the seed sentinel as the carry-forward summary on reload | done | a1ff213b |
+| #step-5 | Integration checkpoint: real-app `/compact` drive | done | a669c669 |
 
 #### Step 1: Recognize `/compact` through atoms; expand focus mentions {#step-1}
 

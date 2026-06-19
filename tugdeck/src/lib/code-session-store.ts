@@ -46,6 +46,7 @@ import {
 } from "./atom-bytes-store";
 import { buildWirePayload } from "./build-wire-payload";
 import { synthesizeUserMessageFromBlocks } from "./synthesize-user-message";
+import { splitCompactionSeed } from "./compaction-request";
 import {
   narrowTaskStartedFrame,
   narrowTaskUpdatedFrame,
@@ -767,15 +768,26 @@ export class CodeSessionStore {
   }
 
   /**
-   * Flag this fresh, `/compact`-born session so the transcript renders a
-   * compaction divider header (`preTokens` labels it). Paired with a
-   * suppressed seed send by the `dev-session-restore` live-hook. Public
-   * because the dispatch source lives outside this class — same precedent
-   * as {@link notifyTransportSettled}.
+   * Flag this fresh, `/compact`-born session so the transcript renders the
+   * carry-forward summary block (`summary` body, `preTokens` label).
+   * `seedPending` says whether the recap still has to ride the user's
+   * first message on the wire (`true` on a live bind; `false` when
+   * reconstructed from JSONL, where it already rode). Public because the
+   * dispatch source lives outside this class — same precedent as
+   * {@link notifyTransportSettled}.
    */
-  markCompactionSeed(preTokens: number | null): void {
+  markCompactionSeed(
+    summary: string | null,
+    preTokens: number | null,
+    seedPending: boolean,
+  ): void {
     if (this._disposed) return;
-    this.dispatch({ type: "mark_compaction_seed", preTokens });
+    this.dispatch({
+      type: "mark_compaction_seed",
+      summary,
+      preTokens,
+      seedPending,
+    });
   }
 
   /**
@@ -1381,9 +1393,23 @@ export class CodeSessionStore {
         // substrate `(text, atoms)` pair. No resolver — replay path
         // mints fresh atom ids; the bytes-store is per-card-mount
         // (fresh on reload) so orphan-from-id-reuse is impossible.
-        const content = Array.isArray(ev.content)
+        const rawContent = Array.isArray(ev.content)
           ? (ev.content as ContentBlock[])
           : [];
+        // A `/compact`-born first message carries the recap as a marked
+        // leading content block (it rode the wire with the user's text).
+        // Split it off the *raw* content before synthesis so the recap
+        // never passes through `synthesizeUserMessageFromBlocks` (which
+        // parses `@`-mention markers): the bubble is the residual user
+        // content, the recap re-marks `compactionSeed` so the
+        // carry-forward summary renders on reload exactly as live.
+        const lead = rawContent[0];
+        const seedSummary =
+          lead !== undefined && lead.type === "text"
+            ? splitCompactionSeed(lead.text)
+            : null;
+        const content =
+          seedSummary !== null ? rawContent.slice(1) : rawContent;
         const synth = synthesizeUserMessageFromBlocks(
           content,
           this.atomBytesStore,
@@ -1406,6 +1432,7 @@ export class CodeSessionStore {
             typeof ev.promptUuid === "string" && ev.promptUuid.length > 0
               ? ev.promptUuid
               : undefined,
+          ...(seedSummary !== null ? { compactionSummary: seedSummary } : {}),
         } as unknown as CodeSessionEvent;
       }
       if (ev.type === "wake_started") {

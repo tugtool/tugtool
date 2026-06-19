@@ -821,10 +821,16 @@ export interface CodeSessionSnapshot {
   unknownEvent: UnknownEventState | null;
   /**
    * Set once on a fresh session born from `/compact`: the transcript
-   * renders a compaction divider header (`preTokens` labels it). `null`
-   * for ordinary sessions.
+   * renders a carry-forward summary block (`summary` body, `preTokens`
+   * label). `seedPending` is `true` until the recap rides the user's
+   * first message on the wire, then `false`. `null` for ordinary
+   * sessions.
    */
-  compactionSeed: { preTokens: number | null } | null;
+  compactionSeed: {
+    summary: string | null;
+    preTokens: number | null;
+    seedPending: boolean;
+  } | null;
   /**
    * Tool calls denied during this session — by a permission rule or the
    * auto-mode classifier — accumulated across turns from each `cost_update`'s

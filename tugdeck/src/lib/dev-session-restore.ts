@@ -78,7 +78,6 @@ import type { CardSessionBinding } from "./card-session-binding-store";
 import { cardServicesStore } from "./card-services-store";
 import { pendingCompactionStore } from "./pending-compaction-store";
 import { compactionProgressStore } from "./compaction-progress-store";
-import { buildCompactionSeed } from "./compaction-request";
 import { pickerNoticeStore } from "./picker-notice-store";
 import { subscribeToListCardBindingsOk } from "./dev-session-ledger-events";
 import { CONTROL_ACTION_LIST_CARD_BINDINGS, FeedId } from "../protocol";
@@ -389,11 +388,13 @@ function resumeRejectionMessage(detail: string | null, projectDir: string): stri
 /**
  * Deliver any pending `/compact` seed for the cards in `bindings`.
  *
- * When a `/compact` fresh session binds, flag it for the divider header
- * ({@link CodeSessionStore.markCompactionSeed}) and send the captured
- * summary as a *suppressed* seed turn (it runs in claude's context but
- * never enters the transcript), then settle the progress sheet
- * ({@link compactionProgressStore.succeed}).
+ * When a `/compact` fresh session binds, record the captured summary into
+ * `compactionSeed` ({@link CodeSessionStore.markCompactionSeed}) with
+ * `seedPending: true` — the transcript shows the carry-forward summary
+ * block and the session lands **idle** (compact-then-wait). The recap is
+ * *not* sent as its own turn; it rides the user's first real message on
+ * the wire (see `send()`'s deferred-seed flush). Then settle the progress
+ * sheet ({@link compactionProgressStore.succeed}).
  *
  * Runs for every bound card, independent of the restore registry, because
  * a `/compact` spawn carries no restore hold. `take` is single-use, so a
@@ -411,11 +412,10 @@ function deliverPendingCompactionSeeds(
     if (services === null) continue;
     const pending = pendingCompactionStore.take(binding.tugSessionId);
     if (pending === null) continue;
-    services.codeSessionStore.markCompactionSeed(pending.preTokens);
-    services.codeSessionStore.send(
-      buildCompactionSeed(pending.summary),
-      [],
-      { suppress: true },
+    services.codeSessionStore.markCompactionSeed(
+      pending.summary,
+      pending.preTokens,
+      true,
     );
     compactionProgressStore.succeed();
   }

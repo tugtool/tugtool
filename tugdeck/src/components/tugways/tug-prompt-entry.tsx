@@ -84,7 +84,11 @@ import { useFocusable } from "./use-focusable";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponderChain } from "./responder-chain-provider";
-import { matchLocalSlashCommand, slashCommandName } from "@/lib/slash-commands";
+import {
+  buildSlashCommandLine,
+  matchLocalSlashCommand,
+  slashCommandName,
+} from "@/lib/slash-commands";
 import {
   isHiddenSlashCommand,
   isUnknownRemoteCommand,
@@ -1102,18 +1106,14 @@ export const TugPromptEntry = React.forwardRef<
     if (!isEffectivelyEmpty(view)) {
       const draftAtoms = getAtomsInState(view.state);
       const draftText = editor.captureState().text;
-      let commandLine: string | null = null;
-      if (draftAtoms.length === 0) {
-        commandLine = draftText;
-      } else if (
-        draftAtoms.length === 1 &&
-        draftAtoms[0].segment.type === "command" &&
-        draftText.split(TUG_ATOM_CHAR).join("").trim() === ""
-      ) {
-        commandLine = `/${draftAtoms[0].segment.value}`;
-      }
-      const localCommand =
-        commandLine !== null ? matchLocalSlashCommand(commandLine) : null;
+      // Reconstruct a plain `/command …` line even when the draft carries
+      // atoms — a leading command atom or `@`/file mentions in the argument
+      // (e.g. `/compact prepare @plan.md`) — by expanding each atom in place
+      // (command → `/name`, file/doc/link → its path/value, image dropped).
+      // A draft that doesn't lead with a slash command won't match the
+      // registry, so non-command drafts are unaffected.
+      const commandLine: string = buildSlashCommandLine(draftText, draftAtoms);
+      const localCommand = matchLocalSlashCommand(commandLine);
       const targetId = localCommandTargetIdRef.current;
       if (
         localCommand !== null &&
@@ -1139,7 +1139,7 @@ export const TugPromptEntry = React.forwardRef<
             sessionId,
             projectPath: "",
             route: routeLifecycle.getRoute() || "",
-            text: commandLine ?? "",
+            text: commandLine,
             atoms: [],
             timestamp: Date.now(),
           });
@@ -1160,17 +1160,16 @@ export const TugPromptEntry = React.forwardRef<
       // responder with the matching `reason`, instead of silently dropping or
       // bouncing off claude. Recorded in history (↑ recalls it), mirroring the
       // local-command path. A local command was already dispatched above.
-      if (commandLine !== null) {
-        const name = slashCommandName(commandLine);
-        const hidden = name !== null && isHiddenSlashCommand(name);
+      const name = slashCommandName(commandLine);
+      if (name !== null) {
+        const hidden = isHiddenSlashCommand(name);
         const unknown =
-          name !== null &&
           !hidden &&
           isUnknownRemoteCommand(
             name,
             sessionMetadataStore.getSnapshot().slashCommands.map((c) => c.name),
           );
-        if (name !== null && (hidden || unknown)) {
+        if (hidden || unknown) {
           const target = localCommandTargetIdRef.current;
           const notified =
             manager !== null &&

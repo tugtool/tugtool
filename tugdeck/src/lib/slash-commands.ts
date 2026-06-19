@@ -32,6 +32,8 @@
  * @module lib/slash-commands
  */
 
+import { TUG_ATOM_CHAR } from "./tug-atom-img";
+
 /** One locally-handled slash command's static descriptor. */
 export interface LocalSlashCommandSpec {
   /** Command name without the leading slash, e.g. `"permissions"`. */
@@ -187,6 +189,53 @@ export function matchLocalSlashCommand(text: string): LocalSlashCommandMatch | n
   if (spec === undefined) return null;
   if (args.length > 0 && spec.takesArgs !== true) return null;
   return { name: name as LocalCommandName, args };
+}
+
+/**
+ * One atom in an editor draft, reduced to what command-line reconstruction
+ * needs: its document position (where its {@link TUG_ATOM_CHAR} placeholder
+ * sits in the draft text) and its segment `type` / `value`. `PositionedAtom`
+ * from the editor structurally satisfies this.
+ */
+export interface CommandLineAtom {
+  readonly position: number;
+  readonly segment: { readonly type: string; readonly value: string };
+}
+
+/**
+ * Reconstruct a plain `/command …` line from an editor draft that may carry
+ * atoms, so a slash command is recognized even when its argument contains
+ * `@`/file mentions. Each atom placeholder ({@link TUG_ATOM_CHAR}) in `text`
+ * is expanded in place by its segment type: a `command` atom → `/<value>`
+ * (the leading command typed via the popup); `image` atoms are dropped (not
+ * meaningful as a command argument); every other atom (file / doc / link /
+ * …) contributes its `value` — the path or reference. Plain text passes
+ * through unchanged, so a draft with no atoms returns verbatim.
+ *
+ * The caller runs {@link matchLocalSlashCommand} / {@link slashCommandName}
+ * on the result: a draft that doesn't lead with a slash command simply
+ * doesn't match, so non-command drafts are unaffected. Pure.
+ */
+export function buildSlashCommandLine(
+  text: string,
+  atoms: readonly CommandLineAtom[],
+): string {
+  if (atoms.length === 0) return text;
+  const segByPos = new Map(atoms.map((a) => [a.position, a.segment]));
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch !== TUG_ATOM_CHAR) {
+      out += ch;
+      continue;
+    }
+    const seg = segByPos.get(i);
+    if (seg === undefined) continue; // defensive: orphan placeholder
+    if (seg.type === "command") out += `/${seg.value}`;
+    else if (seg.type === "image") continue; // drop — not a focus argument
+    else out += seg.value;
+  }
+  return out;
 }
 
 /**

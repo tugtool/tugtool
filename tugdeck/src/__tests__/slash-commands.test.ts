@@ -9,9 +9,12 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  buildSlashCommandLine,
   matchLocalSlashCommand,
   slashCommandName,
+  type CommandLineAtom,
 } from "@/lib/slash-commands";
+import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type {
   CompletionItem,
   CompletionProvider,
@@ -155,3 +158,76 @@ function mkItem(name: string): CompletionItem {
     atom: { kind: "atom", type: "command", label: name, value: name },
   };
 }
+
+// Build the draft text + positioned atoms for a list of pieces, where a
+// string piece is literal text and an atom piece becomes a TUG_ATOM_CHAR
+// placeholder at its document position (mirroring the editor's substrate).
+function mkDraft(
+  pieces: ReadonlyArray<string | { type: string; value: string }>,
+): { text: string; atoms: CommandLineAtom[] } {
+  let text = "";
+  const atoms: CommandLineAtom[] = [];
+  for (const piece of pieces) {
+    if (typeof piece === "string") {
+      text += piece;
+    } else {
+      atoms.push({ position: text.length, segment: piece });
+      text += TUG_ATOM_CHAR;
+    }
+  }
+  return { text, atoms };
+}
+
+describe("buildSlashCommandLine", () => {
+  test("plain text with no atoms passes through verbatim", () => {
+    expect(buildSlashCommandLine("/compact prepare the plan", [])).toBe(
+      "/compact prepare the plan",
+    );
+  });
+
+  test("a lone leading command atom expands to /name", () => {
+    const { text, atoms } = mkDraft([{ type: "command", value: "compact" }]);
+    expect(buildSlashCommandLine(text, atoms)).toBe("/compact");
+  });
+
+  test("command atom + file mention expands to the path, and matches with focus", () => {
+    const { text, atoms } = mkDraft([
+      { type: "command", value: "compact" },
+      " prepare ",
+      { type: "file", value: "roadmap/message-architecture.md" },
+      " plan",
+    ]);
+    const line = buildSlashCommandLine(text, atoms);
+    expect(line).toBe(
+      "/compact prepare roadmap/message-architecture.md plan",
+    );
+    expect(matchLocalSlashCommand(line)).toEqual({
+      name: "compact",
+      args: "prepare roadmap/message-architecture.md plan",
+    });
+  });
+
+  test("typed /compact with a trailing file mention expands the path", () => {
+    const { text, atoms } = mkDraft([
+      "/compact prepare ",
+      { type: "doc", value: "roadmap/x.md" },
+    ]);
+    expect(buildSlashCommandLine(text, atoms)).toBe(
+      "/compact prepare roadmap/x.md",
+    );
+  });
+
+  test("image atoms are dropped from the reconstructed line", () => {
+    const { text, atoms } = mkDraft([
+      "/compact ",
+      { type: "image", value: "blob:ignored" },
+      "focus",
+    ]);
+    const line = buildSlashCommandLine(text, atoms);
+    expect(line).toBe("/compact focus");
+    expect(matchLocalSlashCommand(line)).toEqual({
+      name: "compact",
+      args: "focus",
+    });
+  });
+});

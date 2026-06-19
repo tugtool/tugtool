@@ -2954,6 +2954,7 @@ export function DevCardBody({
       // the sheet's close-on-Escape path.
       let sawActive = false;
       let canceled = false;
+      let failed = false;
       let latestProse = "";
 
       const onCancel = (): void => {
@@ -2976,6 +2977,21 @@ export function DevCardBody({
         const snap = codeSessionStore.getSnapshot();
         const active = snap.activeTurn;
         if (active !== null) {
+          // The summarization turn runs suppressed, so an approval/question
+          // prompt it draws has no surface to answer — that would deadlock
+          // the card. Fail safe instead: interrupt and leave the session
+          // intact. The `failed` flag settles the run once so the ensuing
+          // active → null transition doesn't also take the success path.
+          if (snap.phase === "awaiting_approval") {
+            if (failed || canceled) return;
+            failed = true;
+            unsubscribe();
+            codeSessionStore.interrupt();
+            compactionProgressStore.fail(
+              "Compaction failed — session left intact",
+            );
+            return;
+          }
           sawActive = true;
           const prose = assistantProseFromMessages(active.messages);
           if (prose.length > 0) latestProse = prose;

@@ -538,6 +538,26 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* Carry-forward summary: the visible recap shown after `/compact`
+   (compact-then-wait), stacked under the divider. A contained, muted,
+   scroll-capped block so a long recap reads as a distinct boundary
+   marker rather than an unbounded wall. */
+.dev-card-transcript-compaction-block {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-block: var(--tug-space-xs);
+}
+.dev-card-transcript-compaction-summary {
+  max-height: 16rem;
+  overflow-y: auto;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: var(--tug-radius-sm);
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  font-size: 0.9em;
+  opacity: 0.8;
+}
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
    wraps inside the row column. The default `--tugx-md-block-padding-x`
