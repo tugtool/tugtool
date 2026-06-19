@@ -190,14 +190,6 @@ body {
   top: 1px;
 }
 
-/* The `−M` danger badge is nudged up a hair to land on the same optical
- * baseline as the `+N` success badge beside it — red recedes against green on
- * the dark surface (residual chromostereopsis). Matches the commit receipt's
- * stat row (.tugx-commit-delta-del). */
-.tool-call-header-diff-del {
-  transform: translateY(-0.75px);
-}
-
 /* Trailing actions — the controls cluster at the row's trailing edge, in
  * both states: a vertical rule divides the result (summary / meta) from the
  * controls (body-specific portal · Copy · chevron), with equal gaps on each

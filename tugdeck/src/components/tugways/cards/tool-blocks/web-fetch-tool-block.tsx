@@ -171,7 +171,7 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
         {cached ? (
           <TugBadge
             data-slot="web-fetch-tool-block-cached"
-            emphasis="ghost"
+            emphasis="outlined"
             role="action"
             size="md"
             icon={<Zap size={12} aria-hidden="true" />}

@@ -71,13 +71,13 @@ import type { CautionFlag } from "./types";
 const DOT_SIZE = 14;
 
 /**
- * A diff stat as two separate `TugBadge`s: `+N` in the `success` (green)
- * role, `−M` in the `danger` (red) role. Two tinted badges with a gap —
- * never a shared color edge — so the green and red don't trigger
- * chromostereopsis the way adjacent solid tones on a dark surface do. The
- * `−M` badge is nudged up a hair (`.tool-call-header-diff-del`) to counter
- * red's residual optical recession beside the green. Mirrors the commit
- * receipt's stat row.
+ * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both in the
+ * neutral `inherit` role with the `outlined` emphasis. The `+`/`−` signs
+ * carry the add/remove meaning on their own, so no green/red is needed —
+ * and draining the color avoids the chromostereopsis that made adjacent
+ * green and red badges shimmer apart in depth on the dark surface. Both
+ * badges share one neutral tone, so they sit on the same optical baseline
+ * with no per-badge nudge.
  */
 function DiffSummaryBadges({
   summary,
@@ -87,16 +87,10 @@ function DiffSummaryBadges({
   const parts = formatDiffSummaryParts(summary);
   return (
     <>
-      <TugBadge emphasis="tinted" role="success" size="sm" copyText={parts.added}>
+      <TugBadge emphasis="outlined" role="inherit" size="sm" copyText={parts.added}>
         {parts.added}
       </TugBadge>
-      <TugBadge
-        emphasis="tinted"
-        role="danger"
-        size="sm"
-        className="tool-call-header-diff-del"
-        copyText={parts.removed}
-      >
+      <TugBadge emphasis="outlined" role="inherit" size="sm" copyText={parts.removed}>
         {parts.removed}
       </TugBadge>
     </>
@@ -217,14 +211,14 @@ export const ToolCallHeader = React.forwardRef<
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (
-            // Diff stat — two separate tinted badges (`+N` success / `−M`
-            // danger) so the green and red never share an edge. See
+            // Diff stat — two neutral outlined badges (`+N` / `−M`); the
+            // signs, not color, carry the add/remove signal. See
             // {@link DiffSummaryBadges}. Each badge copies its own value on
             // right-click.
             <DiffSummaryBadges summary={summary} />
           ) : (
             <TugBadge
-              emphasis="tinted"
+              emphasis="outlined"
               role={toolResultSummaryRole(summary)}
               size="sm"
             >

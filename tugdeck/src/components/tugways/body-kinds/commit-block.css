@@ -75,22 +75,14 @@
 
 /* ---- Diffstat row ---------------------------------------------------- */
 
-/* Diff deltas + file count are three `TugBadge`s (success / danger /
-   action) — the badge's tinted fill, near-neutral border, and the gap
-   between them keep the green and red from sharing an edge, so the
-   chromostereopsis that plagued the solid-dot bar can't form. The row is
-   just their flex container. */
+/* Diff deltas + file count are three outlined `TugBadge`s. The `+N` / `−M`
+   deltas are drained to the neutral `inherit` role — the signs, not color,
+   carry add/remove — so no green/red chromostereopsis can form; the file
+   count keeps the `action` tone. The row is just their flex container. */
 .tugx-commit-stat {
   display: flex;
   align-items: center;
   gap: var(--tug-space-xs);
-}
-
-/* Optical alignment: red recedes/sinks against green beside it (residual
-   chromostereopsis), so nudge the danger badge up a hair in this row to
-   land it on the same visual baseline as the success badge. */
-.tugx-commit-delta-del {
-  transform: translateY(-0.75px);
 }
 
 /* ---- File list (inside a ToolBlockDisclosure) ------------------------ */

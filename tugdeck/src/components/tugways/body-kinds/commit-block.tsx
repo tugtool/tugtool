@@ -6,8 +6,8 @@
  * + "Git Commit" name + collapse chevron, matching every other tool block),
  * and this renders the receipt *inside* that frame — the summary set as
  * a title, a branch `TugBadge` + a click-to-copy short-hash
- * `TugCopyBadge`, three stat `TugBadge`s (`+N` success / `−M` danger /
- * file-count action), and `ToolBlockDisclosure` sections for the message
+ * `TugCopyBadge`, three outlined stat `TugBadge`s (neutral `+N` / `−M`
+ * deltas + a file-count `action` badge), and `ToolBlockDisclosure` sections for the message
  * body and an optional per-file breakdown.
  *
  * Routing intent (not yet wired): `BashToolBlock` swaps this in for a
@@ -228,7 +228,7 @@ export function CommitHeaderTarget({
         </TugBadge>
         <TugCopyBadge
           className="tugx-commit-hash-badge"
-          emphasis="tinted"
+          emphasis="outlined"
           role="action"
           size="sm"
           value={hash}
@@ -256,11 +256,11 @@ export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
   return (
     <div className="tugx-commit" data-slot="commit-block">
       <div className="tugx-commit-stat">
-        <TugBadge role="success" size="sm">{`+${insertions}`}</TugBadge>
-        <TugBadge role="danger" size="sm" className="tugx-commit-delta-del">
+        <TugBadge emphasis="outlined" role="inherit" size="sm">{`+${insertions}`}</TugBadge>
+        <TugBadge emphasis="outlined" role="inherit" size="sm">
           {`−${deletions}`}
         </TugBadge>
-        <TugBadge role="action" size="sm">
+        <TugBadge emphasis="outlined" role="action" size="sm">
           {`${filesChanged} ${filesChanged === 1 ? "file" : "files"}`}
         </TugBadge>
       </div>
