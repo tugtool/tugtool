@@ -284,18 +284,24 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 **Implications:** Update the reducer `handleSend`/`handleTurnComplete` docstrings and the `dev-transcript-data-source` module doc; a one-line pointer in `tuglaws/design-decisions.md` may be added if the team wants it durable.
 
-#### [P09] Transcript badge addresses by per-kind message ordinal, not turn (DECIDED) {#p09-per-message-address}
+#### [P09] Transcript badge = session-true turn + within-turn per-kind ordinal (DECIDED) {#p09-per-message-address}
 
-**Decision:** The transcript address badge is a **1-based per-kind ordinal in stream order** — `#u{n}` is the nth user message, `#a{n}` the nth assistant run, counted across the loaded transcript — not the turn index. Found wrong in real session `3ac9f413`: steering merges multiple user messages into one turn, so the old turn-keyed badge (`#u{turn}`/`#a{turn}`) collided (all `#u0001`/`#a0001`).
+**Decision:** The transcript address badge is a **two-component, durable address**: the **session-true turn number** plus a **per-kind ordinal *within* that turn**. Rendered with **significant digits only (no zero-padding)**: `#u17` / `#a17` for the sole user/assistant row of turn 17, and `#u17.2`, `#u17.3` (and `#a17.2`, …) for the 2nd/3rd same-kind row when steering merges several into one turn. Found wrong in real session `3ac9f413`: the old turn-keyed badge (`#u{turn}`) collided to `#u0001` for every user row of a merged turn.
+
+**Durability is the bar:** close a session, reopen days later, page older turns — every message keeps its number. Both components are pure, deterministic functions of the JSONL: the turn number is session-true (`base = firstLoadedTurnIndex + local turn index`, already window-independent — turn 17 is always 17), and the within-turn ordinal counts same-kind rows in *that turn's own fixed message order* (opener, then steers in send-order; assistant runs between). Neither depends on how much is loaded.
+
+**Rejected — global per-message count (`#u1, #u2, …` across the whole session):** not durable under the recency-windowing architecture. It needs counting from message #1, but the client pages turns and has no per-message base (only a per-turn base), so the first loaded message would mis-number and paging would renumber everything. Turn-anchored composes without any global count.
 
 **Rationale:**
-- Fulfills `[P04]`'s intent (labels are per-kind ordinals); the turn-keyed badge predated multi-message turns and breaks under merge.
-- For a normal 1-user-1-assistant turn the ordinal equals the turn number, so non-merged sessions look unchanged.
+- Durable across close/reopen/paging (the stated bar) — turn-anchored, no global state.
+- Backward-compatible: a normal 1-user-1-assistant turn has within-turn ordinal 0 → renders `#u17` exactly as before. Only merged turns grow a `.k` suffix.
+- The data source already tracks `assistantRunOrdinal` (within-turn) for run keying — the user side is the symmetric addition.
 
 **Implications:**
-- Data source exposes a per-row `#u`/`#a` sequence (extends the existing `assistantRunOrdinal` walk); the badge cells read it instead of `localTurnIndexForRow`.
-- Turn-based scroll/telemetry-popover anchoring is unchanged — only the displayed badge moves to the message ordinal.
-- The ordinal is window-relative under recency paging (session-true when fully loaded); a session-true message base is a follow-on.
+- `RowSlot` gains `userRowOrdinal` (0-based within-turn, mirrors `assistantRunOrdinal`); a `withinTurnOrdinalForRow(index)` exposes the per-kind ordinal.
+- The badge cells keep the existing session-true turn number (`useTurnNumberBase + localTurnIndexForRow`) and append the within-turn ordinal. `TurnAddress` gains a `sub` component; `formatTurnAddress` drops zero-padding and appends `.{sub+1}` when `sub > 0`; aria-label updated.
+- Turn-based scroll/telemetry-popover anchoring is unchanged — only the badge format changes.
+- The live-vs-reload position caveat doesn't break durability: every reopen reads the same JSONL, and the within-turn ordinal keys on user send-order, not exact tool-interleaving.
 
 ---
 
@@ -560,15 +566,15 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 **Numbering bug (found in real session `3ac9f413`):** the transcript badge addresses by **turn** — `dev-card-transcript.tsx` builds `{ speaker, turn }` from `useTurnNumberBase + localTurnIndexForRow(index) + 1`, rendered as `#u{turn}`/`#a{turn}` (`tug-transcript-entry.tsx` `formatTurnAddress`). That was fine when a turn held one user + one assistant row, but steering MERGES multiple user messages into one turn, so all of a merged turn's user rows collide on `#u0001` and all its assistant runs on `#a0001`. Per `[P04]`, the badge must be a **per-kind ordinal in stream order**, not the turn index.
 
 **Tasks:**
-- [ ] Add a per-kind ordinal to the data source's row walk (it already computes `assistantRunOrdinal`): expose a 1-based **`#u`/`#a` sequence** counting user messages and assistant runs across the loaded transcript in stream order. For a normal (1-user-1-assistant) turn this equals the turn number, so non-merged sessions look unchanged; merged turns increment correctly (`#u1, #a1, #u2, #a2, #u3, #a3`).
-- [ ] Point the badge at that ordinal (`dev-card-transcript.tsx` user + assistant cells); update `formatTurnAddress`/`TurnAddress` (aria-label, comment) so it reads as a message sequence, not "Turn N". Keep the existing turn-based scroll/telemetry-popover anchoring untouched (only the badge changes).
-- [ ] Windowing caveat: the ordinal is computed over the **loaded** window (session-true when fully loaded; window-relative under recency paging) — document it; a session-true message base is a follow-on if needed.
+- [ ] Add `userRowOrdinal` (0-based within-turn, mirrors `assistantRunOrdinal`) to `RowSlot`, computed in `pushTurnSlots`; expose `withinTurnOrdinalForRow(index)` for the per-kind within-turn ordinal.
+- [ ] Badge = session-true turn (`useTurnNumberBase + localTurnIndexForRow`, unchanged) **+** the within-turn ordinal. Extend `TurnAddress` with a `sub` field; `formatTurnAddress` drops zero-padding (significant digits) and appends `.{sub+1}` when `sub > 0`; update the aria-label/doc. Point both cells (user + assistant) at it. Keep turn-based scroll/telemetry anchoring untouched.
+- [ ] Make image-atom caption `messageNumber` consistent with the badge (same turn + within-turn address) so an image's caption matches its message's badge.
 - [ ] Update `handleSend`/`handleTurnComplete` and `dev-transcript-data-source` module docstrings (steer hold-client-side + boundary pickup, message-derived rows); revise the `[D07]` "one user_message per turn" note on `MessageBase`.
 - [ ] Add the `D-T3-07` supersession note (+ optional pointer in `tuglaws/design-decisions.md`).
 - [ ] Verify all success criteria.
 
 **Tests:**
-- [ ] Unit: a synthetic merged turn (`[user, asst, user, asst, user, asst]`) yields badge ordinals `#u1,#a1,#u2,#a2,#u3,#a3` — no collisions; a normal session's `#uN` still equals turn N.
+- [ ] Unit (durability): a synthetic merged turn (turn 1 = `[user, asst, user, asst, user, asst]`) yields `#u1, #a1, #u1.2, #a1.2, #u1.3, #a1.3` — no collisions; a normal 1-user-1-assistant turn still renders `#u{turn}` (no suffix); `formatTurnAddress` has no leading zeros.
 - [ ] Full `cd tugdeck && bun test` green.
 - [ ] `just app-test` end-to-end steering passes.
 
