@@ -15,6 +15,33 @@
 
 ---
 
+### Implementation handoff (read first) {#handoff}
+
+> Hard-won context from the design conversation, for the implementer. Step 1 is **done & committed** (`85bf8217`). Implement on a `tugutil dash` worktree (per CLAUDE.md — commit per sub-step via `tugutil dash commit`, never on `main`). **Start with Steps 2–4** (the message-derived row refactor) — independent of the steering unknown and the substrate everything else needs.
+
+**Read the evidence first:** `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.181-steering-spike/queued-command-mechanism.md` (the corpus finding), and real sessions `5eefeaec`, `48d25803`, `17ed0b90` if you need to re-see the mechanism.
+
+**Verified code hooks (this session):**
+- `handleToolResult` (reducer.ts) — the mid-turn boundary; the steering forward + placement hangs here (gate to live `tool_work`, not `replaying`).
+- `handleSend` (reducer.ts) — already *holds* `queuedSends` without forwarding; keep that (it's what makes retraction work).
+- `dev-transcript-data-source.ts` — the row projection (Steps 2–4) and the existing dimmed foot-ghost rendering (reuse, unchanged).
+- `handleAddUserMessage` (reducer.ts, replay-oriented) — needs the *mid-turn append* fork for the reload path (append to the in-flight turn, don't open a new one).
+- `userMessageKey` / `messageKey` (`${turnKey}-user`) — an absorbed message keeps its own key (`[P04]`).
+
+**Settled decisions — do NOT relitigate (each was a wrong turn earlier):**
+- **Hold client-side; do not forward until the boundary.** No timer, no early forward. That hold is *why* a queued message stays retractable.
+- **One ghost state** (retractable), reuse the existing foot ghost. No "sent" state, no two-state tuning, no composer-area chrome.
+- **Merge at the iteration boundary; no phantom turn.** Place the user row at the boundary; reload from JSONL is authoritative.
+- **`/rewind` stays turn-opener anchored** (`[P05]`) — do not move `promptUuid` onto messages in v1.
+
+**The one real risk (`[Q01]` caveat / Step 6):** the merge-vs-buffer ratio is verified for the **TUI**, not the **stream-json/tugcode** path. Step 6 must capture a *real Dev-card* mid-turn steer and measure it. Design degrades gracefully — if claude buffers instead of merges, reload relocates the message to its own turn (reload is authoritative). Don't assume the TUI's 93% holds on the wire path.
+
+**Two tightenings to fold during build:** (1) gate the boundary-flush to live `tool_work` so a reload's replayed `tool_result`s don't re-forward; (2) in Step 6, treat reload as *correcting* placement (incl. relocating a buffered message), not merely nudging offset.
+
+**Build/run:** bun (never npm); tugdeck HMR is live (no manual build); `just app-test` for the real app (default run does **not** spawn real claude — real-claude steering is on-demand only).
+
+---
+
 ### Phase Overview {#phase-overview}
 
 #### Context {#context}
