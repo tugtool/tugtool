@@ -23,24 +23,24 @@ Today a user message typed while a turn is streaming is held client-side in `que
 
 The deeper blocker is the **rendering model**, not the queue. `dev-transcript-data-source.ts` projects at most two rows per turn — one user row + one assistant row — gated on `TurnEntry.origin`. A user message that claude *merges* mid-turn (a second `user_message` appearing partway through a turn's `messages`) has nowhere to render. So before steering can ship, the transcript must become a flat message-row stream where a user message is a first-class row independent of any assistant response. That refactor is also the architecture we want regardless: the data layer is *already* a flat `messages: ReadonlyArray<Message>` list (paired `userMessage`/`assistant` fields were retired); only the row-projection layer still assumes pairs.
 
-**A critical unknown gates the steering half.** How tugdeck *optimistically places* a steered message in the right turn before authoritative JSONL truth arrives depends on what claude emits on the live wire when it merges vs buffers — and tugcode's own code says claude gives **no merge/buffer signal** (`session.ts` `pendingTurnInputs` doc: "claude emits no signal for it"; `types.ts` live-path doc: the steady-state live path emits no `add_user_message`, only `prompt_anchor`). The *buffer* case is well-understood (claude runs the message as a follow-on turn with its own `result`); the *merge* case may be invisible live. So this plan **spikes the wire first** (Step 1) and selects the reconciliation design from pre-specified branches, defaulting to a robust best-effort design that does not depend on a merge signal existing. The rendering refactor (Steps 2–4) does not depend on the spike and can land independently.
+**How steering actually works (Step 1, resolved).** A corpus survey of 470 real `queued_command` injections (`[Q01]`, `stream-json-catalog/v2.1.181-steering-spike/queued-command-mechanism.md`) settles it: a message typed mid-turn is **merged into the running turn at the next agent-loop iteration boundary** — injected as a `user_message` **threaded right after the current step's `tool_result`** (93% of cases), after which the turn continues. It is *not* deferred to the turn boundary (the <1% exception). The Dev card feels "end-of-turn" only because it currently holds `queuedSends` and flushes at `turn_complete`; forwarding mid-turn (`[P06]`) lets claude merge at its iteration boundary like the TUI. The flat row model (Steps 2–4) renders the merged `user_message` directly as a mid-turn user row. The rendering refactor (Steps 2–4) is independent and can land first. claude does **not** echo the steered text on the live wire (`[Q02]`), so the user row is placed **optimistically live** (tugdeck owns the text) and made **exact on reload** from JSONL.
 
 #### Strategy {#strategy}
 
-- **Spike the wire behavior first (Step 1).** Capture a merge and a buffer case from the real backend; determine whether a merged mid-turn message produces any live, placeable wire event (and its timing vs `result`). This selects the steering reconciliation branch (`#steering-reconciliation-branches`) *before* any steering code is written.
-- **Refactor the row projection (Steps 2–4), behavior-preserving.** Rows derive from each turn's `messages` (walk + group) instead of the 2-row/origin template; `messageKey` addressing with derived `#uN`/`#aN` labels; multi-user-per-turn rendering. Independent of the spike — ships on its own value.
-- **Wire steering on top (Steps 5–6), using the spike-selected design.** Forwarding mechanics (bytes-only forward after a cancel window, existence-guarded flush, `cancel_timer` on every clear path) are branch-independent (`[P06]`); reconciliation (`[P07]`) is whichever branch the spike chose, defaulting to best-effort-ghost + JSONL-authoritative placement.
+- **Characterize the mechanism first (Step 1, done).** From real session JSONL: steering = merge into the running turn at the agent-loop iteration boundary, signature `user_message`/`queued_command` after a `tool_result` (`[Q01]`). This grounds the placement design (`[P07]`) before steering code.
+- **Refactor the row projection (Steps 2–4), behavior-preserving.** Rows derive from each turn's `messages` (walk + group) instead of the 2-row/origin template; `messageKey` addressing with derived `#uN`/`#aN` labels; multi-user-per-turn rendering. Independent of Step 1 — ships on its own value, and is exactly what renders a merged mid-turn `user_message`.
+- **Wire steering on top (Steps 5–6).** Keep the existing `×`-retractable dimmed foot ghost (one state) and hold it client-side; at the next mid-turn `tool_result` boundary pick it up atomically — forward + remove-from-queue + place as a real mid-turn row via the flat model (`[P06]`/`[P07]`). Retractable until pickup; no live echo needed (`[Q02]`), reload from JSONL authoritative.
 - **Leave `/rewind` anchored on turn openers** — merged mid-turn messages render but are not independently rewind-targetable in v1, keeping the rewind picker and the "first prompt_anchor wins" reducer invariant untouched.
-- **Sequence so each step has a falsifiable checkpoint**, with the steering UX layered only after both the spike and the rendering substrate are in place.
+- **Sequence so each step has a falsifiable checkpoint**, with the steering UX layered only after the rendering substrate is in place.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 > Make these falsifiable. Avoid "works well".
 
-- The Step 1 spike produces a captured fixture (under `stream-json-catalog/`) showing the live wire for a merged and a buffered mid-turn message, and `[P07]` records the selected branch with its rationale. (`#step-1`, `[Q01]`)
-- A message submitted while `phase` is streaming/tool_work is forwarded to the backend within `QUEUE_STEER_WINDOW_MS` (not held to `turn_complete`), verifiable by a reducer/effect test asserting a `send-frame` (via `schedule_timer` → fire → `send-frame`) is emitted before any `turn_complete` event. (`#s02-steer-lifecycle`)
-- A forwarded message is never sent twice across **all** races — timer-vs-collapse, within-window completion, and interrupt: no test scenario produces two `send-frame` effects for one `turnKey`. (`[P06]`, `Risk R03`)
-- No phantom turn is ever minted for a merged message: under the default branch no forwarded entry is optimistically minted at the collapse; under the optimistic branch a merge is absorbed before the collapse. Either way, no transcript row hangs forever in `submitting`. (`[P07]`, `Risk R04`)
+- Step 1 characterizes the steering mechanism from real session JSONL and `[P07]` records the placement design with evidence. (`#step-1`, `[Q01]`)
+- A message queued while `phase` is streaming/tool_work is forwarded at the next mid-turn `tool_result` (not held to `turn_complete`), verifiable by a reducer test asserting a `send-frame` is emitted on a mid-turn `tool_result` before any `turn_complete`. (`#s02-steer-lifecycle`, `[P06]`)
+- A queued message is never forwarded twice (boundary forward vs end-of-turn fallback): no test produces two `send-frame`s for one entry. (`[P06]`, `Risk R03`)
+- A queued message renders as the existing `×`-retractable dimmed foot ghost (one state) and is retractable until pickup; at the boundary it becomes a real mid-turn user row via the flat row model. (`[P07]`)
 - A turn whose `messages` contains a `user_message` at a non-head index renders as `user, assistant, user, assistant` rows in arrival order, each user row keyed by its own `messageKey`, with the per-turn badge on the bracket's last assistant row. (`Spec S01`, `[P04]`)
 - All existing `dev-transcript-data-source`, `code-session-store` queue, and `reducer.rewind` tests pass unchanged after the rendering refactor. (`#step-2`, `[P05]`)
 - `/rewind` still anchors correctly on turn openers; a merged turn's second user message renders but is correctly absent from the rewind picker. (`[P05]`)
@@ -48,12 +48,12 @@ The deeper blocker is the **rendering model**, not the queue. `dev-transcript-da
 
 #### Scope {#scope}
 
-1. Wire-behavior spike: capture merge/buffer live frames; select the reconciliation branch; finalize `[P07]`.
+1. Characterize the steering mechanism from real session JSONL; finalize `[P07]` (merge at the iteration boundary).
 2. Row-projection refactor in `dev-transcript-data-source.ts` (layout, addressing, `rowAt`/`kindForIndex`/`idForIndex`).
 3. `messageKey`-based addressing + derived `#uN`/`#aN` labels; per-turn-telemetry anchoring for multi-assistant-row turns.
 4. Multi-user-per-turn rendering, with the absorbed-message keying invariant and per-turn-token badge placement.
-5. Steering wire: `forwarded` bit, `QUEUE_STEER_WINDOW_MS` timer, existence-guarded flush, `cancel_timer` on every clear path, `×` disable-after-flush.
-6. Echo reconciliation per the spike-selected branch.
+5. Steering forward: hold queued messages client-side (existing retractable foot ghost); pick up at the next mid-turn `tool_result` (forward + remove + place); `turn_complete` fallback.
+6. Place the merged `user_message` as a mid-turn user row (after the `tool_result`).
 7. Revise the `D-T3-07` behavior note and the reducer/data-source docstrings.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -62,18 +62,18 @@ The deeper blocker is the **rendering model**, not the queue. `dev-transcript-da
 - Moving the `/rewind` anchor onto individual messages / making merged mid-turn messages rewind-targetable. Rewind anchors on turn openers in v1 (`[P05]`); per-message rewind is a follow-on.
 - Restructuring the "thinking" indicator into standalone phase chrome. The assistant row already renders `assistant_thinking` inline; `[P07]` (no phantom turn) is the only optimistic-turn change this plan makes.
 - Changing the backend (`tugcode`/`tugcast`) steering mechanics. The backend already forwards mid-turn; only the tugdeck client and the wire signals it *reads* are in scope. (If the spike shows a merge is truly unobservable live and we *want* it observable, that backend change is a separate plan.)
-- Tuning the cancel window beyond shipping a single named constant (`[Q03]`).
+- A wall-clock cancel window / debounce before forwarding (`[Q03]` retired) — the trigger is the agent-loop boundary, and a message is cancelable until then.
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- Existing effect system supports `schedule_timer` / `cancel_timer` (`effects.ts`) and the store-wrapper `TimerSource`.
+- The reducer already processes `tool_result` events mid-turn (the boundary trigger) and already holds `queuedSends` — the steering forward is a new branch in the existing reduce path, not new infrastructure.
 - `tugcode`'s mid-turn merge/buffer behavior is observable on the wire (`tugcode/.../probe-tool-overlap.ts`, the `stream-json-catalog` fixtures) — the Step 1 spike's substrate.
 - Every Message already carries a stable `messageKey` (`MessageBase`).
 
 #### Constraints {#constraints}
 
 - tugdeck laws: external state via `useSyncExternalStore` only (`[L02]`); appearance via CSS/DOM not React state (`[L06]`); mount identity stable across in-flight→committed (`[L26]`) and scroll/content preserved (`[L23]`). The row refactor must not regress the no-remount-at-`turn_complete` guarantee.
-- The reducer stays **pure**: all wall-clock/timer behavior lives in the store wrapper via effects; the cancel window is a `schedule_timer` effect, never `Date.now()` inside the reducer.
+- The reducer stays **pure**: the steering forward is triggered by a wire event (`tool_result`) already in the reduce path — no wall-clock/`Date.now()` and no timer machinery.
 - Builds enforce `-D warnings`; tugdeck HMR is live (no manual builds); app-tests via `just app-test` (default run does **not** spawn real claude — real-claude steering is the on-demand path).
 
 #### Assumptions {#assumptions}
@@ -81,7 +81,7 @@ The deeper blocker is the **rendering model**, not the queue. `dev-transcript-da
 - The **buffer** path is live-observable: claude runs a buffered mid-turn message as a follow-on turn with its own `result`, and tugcode opens an `ActiveTurn` for it (`session.ts` `pendingTurnInputs` doc). The steering design relies on this; the spike confirms the exact wire shape.
 - A turn bracket (one claude `result`) may legitimately contain ≥1 `user_message` after merge; cost/timing/telemetry aggregate over the bracket unchanged.
 - The recency relationship ("assistant responds to the most recent user message") is presentational only; `/rewind` uses the turn-opener `promptUuid`, never recency or a merged message.
-- Whether a **merge** is live-observable is **NOT assumed** — it is the open question the Step 1 spike resolves (`[Q01]`). The default reconciliation branch (`[P07]`) is correct even if it is not.
+- The steering pickup is a **merge at the agent-loop iteration boundary** (Step 1 corpus finding, `[Q01]`). claude does **not** echo the steered text on the live wire (`[Q02]`, confirmed), so the mid-turn user row is placed optimistically live and made exact on reload.
 
 ---
 
@@ -93,35 +93,27 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Live wire behavior for a merged mid-turn message (OPEN → resolved in Step 1) {#q01-merge-wire}
+#### [Q01] How is a steered message picked up? (RESOLVED — merge at the iteration boundary) {#q01-merge-wire}
 
-**Question:** When claude *merges* a forwarded mid-turn message into the running turn, does it emit **any live wire event** tugdeck can place the message by — and if so, what is the correlation key (a mid-turn `prompt_anchor`? a user-content event?) and does it arrive **before** that turn's `result`? Separately, confirm the *buffer* opener's exact live shape.
+**Question:** When a message is typed while a turn runs, how/when does claude pick it up — merge into the running turn, or defer to a turn boundary?
 
-**Why it matters:** This selects the entire reconciliation design (`#steering-reconciliation-branches`). tugcode's code says claude emits no merge/buffer discriminant signal and the live path emits no `add_user_message`, so a merge may be invisible live — in which case any "optimistically mint at collapse" scheme would manufacture a phantom turn for every merge.
+**Resolution:** DECIDED — **it merges into the running turn at the next agent-loop iteration boundary**, i.e. immediately after the current step's `tool_result`. Established from a corpus survey of **470 real `queued_command` injections across 42 sessions** (claude 2.1.133–2.1.177): **93%** thread directly after a `tool_result` (mid-loop), and the large majority are followed by an assistant `stop=tool_use` — the *same turn continues*. Only <1% land at `end_turn` (the rare case where no further tool step was pending — which is what my earlier, retracted "turn boundary" reading generalized from). Wait time (typed → injected) is p50 8s / p90 50s / max ~7min — exactly "time until the current step finishes," which is the "doesn't get handled for a while" experience.
 
-**Options (branches):** see `#steering-reconciliation-branches` — (A) optimistic absorption if a placeable pre-`result` merge signal exists; (B) best-effort-ghost + JSONL-authoritative placement (the default, correct with no merge signal); (C) partial.
+**Mechanism / signature:** `queue-operation:enqueue` (typed while busy) → waits for the current step → `queue-operation:remove` + an injected `user_message` (in the TUI: a `queued_command` attachment) **threaded after a `tool_result`**, surrounding assistant entries `stop=tool_use`. The steered message becomes a `user_message` interleaved **mid-turn**, before the assistant's continuation. Background `<task-notification>`s ride the identical path. Full analysis + evidence: `stream-json-catalog/v2.1.181-steering-spike/queued-command-mechanism.md`.
 
-**Plan to resolve:** Step 1 — run `probe-tool-overlap.ts` / inspect `stream-json-catalog`, capture a merge and a buffer case, record the frames and ordering. Pick the branch; finalize `[P07]`, `Spec S02`'s reconciliation half, and Step 6's tests against the captured shapes.
+**Layer caveat:** these records come from the Claude Code **TUI** (`entrypoint: cli`); the **Dev card** (tugcode + stream-json) currently holds `queuedSends` and flushes at `turn_complete` — which is *why* cued messages feel "only at end of turn" in the Dev card. The underlying claude behaviour (merge at the iteration boundary) is available to the Dev card **if it forwards mid-turn** (`[P06]`). claude does not echo the steered text on the live stream-json wire (`[Q02]`, resolved), so the merged user row is placed optimistically live (tugdeck owns the text) and made exact on reload from JSONL.
 
-**Resolution:** OPEN — resolved in `#step-1`.
+#### [Q02] Does the live wire surface the merged message? (RESOLVED — no) {#q02-reconcile-fallback}
 
-#### [Q02] Reconciliation fallback for the residual cases (OPEN → resolved in Step 1) {#q02-reconcile-fallback}
+**Question:** Does the **live** Dev-card/tugcode stream-json wire surface the merged `user_message` in real time, or only persist it to JSONL?
 
-**Question:** Whatever branch Step 1 picks, what clears a forwarded ghost that never resolves on the live wire (an echoless merge under branch B, or a late merge echo under branch A)?
+**Resolution:** DECIDED — **no live echo.** Confirmed three ways: (1) the raw probe — after a mid-turn injection the only `user` stdout events are claude's own `[tool_result]`s, never the steered text; (2) tugcode emits `add_user_message` only on synthetic/replay/snapshot paths, never steady-state live; (3) a merged message is not in `turn.userContent` (a stale `pendingTurnInput`). claude *consumes* steered stdin into its context but does not re-emit it. This is *fine* under `[P07]`: tugdeck forwards **and** places the message at the same boundary (the mid-turn `tool_result` it acts on), so it controls placement directly — no echo to wait for. Reload from JSONL (`project_hmr_vs_reload`) is the authoritative backstop. Nothing to correlate live; the message is never lost.
 
-**Why it matters:** A stranded ghost or a hung phantom is a visibly wrong transcript until reload.
-
-**Options:** authoritative reconciliation at the next turn boundary against committed data; Developer▸Reload re-resume from JSONL (`project_hmr_vs_reload`) as the always-correct backstop; under branch A, a late-echo collapse of the just-minted phantom.
-
-**Plan to resolve:** Decide in Step 1 alongside the branch choice; implement in Step 6.
-
-**Resolution:** OPEN — resolved in `#step-1`.
-
-#### [Q03] Cancel-window duration (DECIDED) {#q03-window-duration}
+#### [Q03] Cancel-window duration (MOOT — retired) {#q03-window-duration}
 
 **Question:** What is `QUEUE_STEER_WINDOW_MS`?
 
-**Resolution:** DECIDED — `2000` ms initial; a single tunable named constant; revisit after dogfooding (`[P06]`).
+**Resolution:** MOOT. The earlier design used a wall-clock cancel window before forwarding; the TUI evidence (`[Q01]`) shows the trigger is the **agent-loop boundary** (a `tool_result`), a stream event — not a timer. A queued message is cancelable/editable **until that boundary**, matching the TUI. No `QUEUE_STEER_WINDOW_MS` constant (`[P06]`). (An optional minimum-debounce could be added later if instant-boundary forwards feel too eager, but it is not in scope.)
 
 ---
 
@@ -131,8 +123,8 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 |------|--------|------------|------------|--------------------|
 | Addressing churn breaks app-tests / keyboard nav | med | med | Behavior-preserving Step 2; keep `#uN`/`#aN` labels; only `dev-card-telemetry-popovers.tsx` + the data-source test consume the row-index helpers | Any addressing test red |
 | Scroll/mount regression (L26/L23) | high | med | Preserve per-Message `messageKey` keys; unit-test id stability across in-flight→committed | Scroll-jump observed in app-test |
-| Steer-timer fires for an already-resolved entry → spurious/double send | high | med | Existence-guarded flush + `cancel_timer` on cancel/interrupt/collapse | Any test shows >1 `send-frame` per `turnKey` |
-| Merge is invisible live → phantom/orphan if we mint optimistically | high | med→? | Spike-first (Step 1) selects the branch; default branch B mints no forwarded entry optimistically; JSONL-authoritative backstop | Spike shows merge unobservable AND we still want live placement |
+| Double-forward (boundary forward + end-of-turn fallback) | med | low | Remove the entry from `queuedSends` on its boundary forward (existence-guarded); the fallback only sees entries that never hit a boundary | Any test shows >1 `send-frame` per entry |
+| Optimistic mid-turn placement of a steered message goes wrong | high | low (if we match TUI) | JSONL evidence: the reference (TUI) does **not** place mid-turn — it buffers to the turn boundary and submits as the next turn; matching that avoids optimistic placement entirely (`[Q01]`, `[P07]`) | We decide to attempt finer-than-turn injection |
 
 **Risk R01: Addressing churn** {#r01-addressing-churn}
 
@@ -146,17 +138,18 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 - **Mitigation:** Keys remain `${turnKey}-…` seeded plus per-Message `messageKey`; `[L26]`/`[L23]` invariants asserted in the data-source unit tests.
 - **Residual risk:** New row kinds in future must follow the same keying discipline.
 
-**Risk R03: Spurious / double send from a stale steer timer** {#r03-double-send}
+**Risk R03: Double-forward of a steered message** {#r03-double-send}
 
-- **Risk:** A `schedule_timer`-fired flush emits a `send-frame` for an entry that has already left `queuedSends` (or already forwarded) — three races: timer-vs-collapse, within-window completion, interrupt.
-- **Mitigation:** `flush_queued_send` is **existence-guarded** (emit only if the entry is still present and not `forwarded`); the collapse never re-sends a `forwarded` entry; `cancel_timer` on `cancel_queued_send`, both interrupt sites, and the collapse. The existence-guard alone closes all three races.
-- **Residual risk:** None for send-duplication once the guard gates the flush.
+- **Risk:** The two forward paths — the mid-turn boundary forward (`tool_result`) and the end-of-turn fallback (`turn_complete` collapse) — both fire for one entry.
+- **Mitigation:** The boundary pickup **removes the entry from `queuedSends`** as it sends (existence-guarded), so the `turn_complete` collapse only ever sees entries that were never picked up. `cancel`/`interrupt` clear entries before either path. No wall-clock timer, so no timer-vs-event races.
+- **Residual risk:** None for send-duplication once pickup removes the entry.
 
-**Risk R04: Merge invisible on the live wire** {#r04-merge-invisible} 
+**Risk R04: Mis-placing a steered message** {#r04-merge-invisible} 
 
-- **Risk:** If a merged mid-turn message produces no placeable live event, any scheme that optimistically mints a forwarded entry at the collapse manufactures a phantom turn for every merge (hangs in `submitting` until a watchdog), and live placement of a merged message into its turn is impossible until JSONL truth arrives.
-- **Mitigation:** Step 1 spikes this before any steering code. The **default** reconciliation branch B (`[P07]`) mints **no** forwarded entry optimistically — a steered message renders as a persistent "sent" ghost and is placed authoritatively by the next turn boundary / a Developer▸Reload re-resume from JSONL (`project_hmr_vs_reload`). The optimistic branch A is adopted **only** if the spike confirms a usable signal.
-- **Residual risk:** Under branch B, a merged message is not optimistically interleaved into its turn live (it shows as a foot ghost until the next authoritative reconciliation). Acceptable v1; an enhancement if the spike unlocks branch A.
+- **Risk:** Placing a steered message in the wrong spot (phantom turn, orphaned row).
+- **Status:** Largely dissolved by the Step 1 corpus finding (`[Q01]`): the merge is **real and observable** — the steered `user_message` lands threaded after a `tool_result` mid-turn. We place it where it actually appears, not by guessing, so there is no phantom/optimistic-mint hazard.
+- **Mitigation:** Place on the merged-`user_message` signature (after a `tool_result`, turn still in flight); fall back to JSONL-authoritative placement only if the live wire doesn't surface it (`[Q02]`).
+- **Residual risk:** The live row position is *approximate* (placed at the next live `tool_result`, since claude emits no live echo — `[Q02]`); reload from JSONL tightens it to the exact merge point. Never lost, only briefly imprecise.
 
 ---
 
@@ -225,33 +218,36 @@ This plan uses explicit `{#anchor}` headings and rich `References:` lines. Plan-
 - A merged turn's second user message is correctly absent from the picker.
 - Per-message rewind is a documented follow-on (`#roadmap`).
 
-#### [P06] Steering forward mechanics: bytes-only forward after a cancel window; existence-guarded flush; cancel timers on every clear path (DECIDED, branch-independent) {#p06-steer-window}
+#### [P06] Steering queue: held client-side (retractable), forwarded + placed at the agent-loop boundary (DECIDED) {#p06-steer-window}
 
-**Decision:** A mid-turn submit stays a cancelable queued send (`forwarded: false`) for `QUEUE_STEER_WINDOW_MS` (= 2000 ms), then a `schedule_timer`-fired `flush_queued_send` event emits its `send-frame` (bytes to claude) and sets `forwarded: true` — **without minting a local turn**. The flush is **existence-guarded** (emit only if the entry is still present and not `forwarded`). `cancel_timer{"steer:<turnKey>"}` is emitted on `cancel_queued_send`, both interrupt sites, and the collapse. `×` cancels the timer if pending and is disabled once `forwarded`. These mechanics are identical across reconciliation branches.
-
-**Rationale:**
-- Preserves the un-send affordance for a brief window while enabling true mid-turn steering.
-- Reuses the existing timer-effect machinery; reducer stays pure.
-- The existence-guard closes all of `Risk R03`'s races.
-
-**Implications:**
-- `QueuedSend` (public) **and** the internal queue-entry shape gain `forwarded: boolean` (the ghost cell reads it to disable `×`; the flip produces a fresh entry reference so the `sameTranscriptRowData` memo re-renders).
-- New `flush_queued_send` event added to the `CodeSessionEvent` union + `reduce()` switch; fired by the timer's `fire` field.
-- Multiple concurrent queued sends each schedule an independent `steer:<turnKey>` timer; the collapse cancels only the head entry's.
-
-#### [P07] Reconciliation design is spike-selected; default is best-effort-ghost + JSONL-authoritative placement (DECIDED) {#p07-reconciliation}
-
-**Decision:** How a forwarded message is placed into a turn is chosen by the Step 1 spike from the branches in `#steering-reconciliation-branches`. The **default and fallback is branch B**: a forwarded entry is **never optimistically minted into a turn at the collapse**; it renders as a persistent "sent" ghost row and is placed authoritatively when the wire reveals its turn — a *buffered* message by its follow-on turn opening (live-observable), a *merged* message by the next turn-boundary reconciliation against committed data or a Developer▸Reload re-resume from JSONL. Branch A (live optimistic absorption: merge folded into the active turn before its `result`, buffer minted at the collapse) is adopted **only** if the spike confirms a placeable pre-`result` merge signal.
+**Decision:** A mid-turn submit is held in `queuedSends` — surfaced as the **existing `×`-retractable dimmed foot ghost** (`[P07]`) — and is **not put on the wire while parked**. At the **next agent-loop boundary** (a mid-turn `tool_result` while the queue is non-empty, or `turn_complete` if the turn has no further tool step) the head entry is **picked up atomically**: emit its `send-frame`, **remove it from `queuedSends`**, and place it as a real mid-turn user row (`[P07]`). Holding it off the wire until then is what keeps it retractable: `cancel_queued_send` (`×`) removes a parked entry with no frame, any time before pickup; `interrupt` clears the queue.
 
 **Rationale:**
-- tugdeck has one `activeTurn` slot; optimistically minting for a *merge* (which produces no follow-on `result`) would hang forever — and tugcode says claude gives no merge signal, so this is likely, not edge.
-- Branch B never manufactures a phantom and is correct regardless of the merge wire shape; it is the safe floor. Branch A is a strictly-better UX upgrade *iff* the wire supports it.
-- The buffer path is live-observable either way, so a steered-then-buffered message always gets a real user-origin turn (minted from its follow-on opening, keying the ghost's `UserMessage`, preserving its `messageKey`).
+- Faithful to the TUI (`[Q01]`, session 17ed0b90): the message is held client-side and editable until injected at the boundary — there is no "sent" state because forward and pickup are the same instant.
+- The boundary is a **stream event the reducer already sees**, so no wall-clock timer is needed (this *retires* the earlier `QUEUE_STEER_WINDOW_MS` / `schedule_timer` design — `[Q03]`).
+- Reducer stays pure; the trigger is an event in the existing reduce path.
 
 **Implications:**
-- `Spec S02`'s reconciliation half and Step 6's tests are finalized after Step 1 against the captured wire shapes.
-- Branch B's buffer minting is **live wire-driven user-origin turn creation** (new: today live turns open client-side / `add_user_message` is replay-only) — it forks the existing opener path (`handleAddUserMessage`/`handleAssistantOpener`) to mint from a matching forwarded ghost rather than open an empty turn.
-- `[Q02]` defines what clears an unresolved ghost (next-boundary reconciliation / reload backstop).
+- **No `forwarded`/"sent" flag, no timer.** A parked entry is simply retractable until picked up; pickup removes it from `queuedSends`.
+- New flush path: on a mid-turn `tool_result` with a non-empty queue, forward + remove + place the head entry. The `turn_complete` collapse is the fallback for turns with no mid-turn tool step. Removal-on-pickup means the collapse only ever sees never-picked-up entries (no double-forward — `Risk R03`).
+- Multiple queued entries pick up in order at successive boundaries (one per boundary), matching the TUI draining its queue across iterations.
+- `[Q03]` (cancel-window duration) is **moot/retired** — retraction is bounded by the next boundary, not a timer.
+
+#### [P07] Queued messages = the existing retractable dimmed-foot ghost; becomes a real mid-turn row at the boundary (DECIDED) {#p07-reconciliation}
+
+**Decision:** Reuse the Dev card's **existing dimmed ghost row at the foot of the transcript**, unchanged — `×`-retractable, **one state**, the whole time it is parked. There is **no "sent" state** (`[Q01]` / session 17ed0b90): the message is **not on the wire while parked** (`[P06]` holds it client-side), so it stays retractable until pickup. At the agent-loop boundary it is **picked up atomically** — removed from the queue, forwarded to claude, and placed as a **real mid-turn user row** in the in-flight turn (after the tool block) via the flat row model (`Spec S01`). Forward and placement are the same instant; before it, fully retractable; after it, a real message.
+
+**Rationale:**
+- Matches the TUI exactly (`[Q01]`): held client-side and editable until injected at the boundary — that hold is *why* it's retractable, and why there is no "sent" limbo.
+- Reuses the existing ghost with **no visual tuning** — the earlier two-state (retractable/sent) idea is dropped; there is no distinction.
+- The flat message-row architecture (Steps 2–4) renders the placed mid-turn `user_message` directly; no phantom-turn hazard (the turn continues).
+- Holding until the boundary (not forwarding early) is what preserves retraction; no echo/correlation machinery (`[Q02]`) — tugdeck owns the text and does the placement.
+
+**Implications:**
+- **No `forwarded`/"sent" flag**, no second ghost state. `queuedSends` entries are simply parked-and-retractable until picked up.
+- At the boundary: remove the entry from `queuedSends` **and** append a `user_message` to the in-flight turn's `messages` (own `messageKey`, `[P04]`) → the foot ghost becomes a real mid-turn row. Live position is where tugdeck places it (the boundary it acts on); reload from JSONL tightens it to claude's exact merge point.
+- **Reducer requirement (reload path):** `handleAddUserMessage` for a *mid-turn* row must **append to the in-flight turn**, not open a new turn (the fork). Live placement and reload converge on one helper: "append a `user_message` to the active turn's `messages`."
+- **Scope of delivery:** retractable foot ghost while parked → real mid-turn row at the boundary (forwarded + placed together); reload exact.
 
 #### [P08] Revise the legacy `D-T3-07` queue-until-complete behavior (DECIDED) {#p08-revise-dt307}
 
@@ -283,7 +279,7 @@ The Step 1 spike answers one question — *is a merged mid-turn message placeabl
 
 **Branch C — Partial** (e.g. a signal exists but after `result`, or only sometimes): pick the closest of A/B per the spike and document the deviation. Most likely collapses to B.
 
-Selection is recorded in `[P07]` and `Spec S02` at the end of Step 1.
+**Status: superseded by the Step 1 corpus finding** (`[Q01]`, `queued-command-mechanism.md`). The A/B/C framing was built on a false premise (that a merge is invisible / non-existent). The corpus (470 injections) shows steering **is** a real mid-turn merge at the agent-loop iteration boundary (after a `tool_result`), and the flat row model renders it directly. The live design is in `[P07]`; this branch analysis is kept only for history.
 
 ---
 
@@ -305,30 +301,29 @@ Given a turn with `messages = [m0, m1, …]`:
 
 #### Spec S02: Steering lifecycle {#s02-steer-lifecycle}
 
-**Forward mechanics (branch-independent, `[P06]`):**
+**Parked — retractable dimmed foot ghost (`[P06]`/`[P07]`):**
 
-1. **queued** — `phase !== idle` at submit. Entry added with `forwarded: false` (ghost row, `×` enabled). `schedule_timer{name:"steer:<turnKey>", ms:QUEUE_STEER_WINDOW_MS, fire:flush_queued_send(turnKey)}`.
-2. **canceled** — `×` before the timer fires: `cancel_queued_send` removes the entry, `cancel_timer`, restores draft. No frame.
-3. **forwarded** — timer fires: if the entry is still present and not `forwarded`, emit `send-frame` and set `forwarded: true` (**no mint**; ghost stays, `×` disabled). Else guarded no-op.
-4. **fresh collapse** — `turn_complete(success)` with a **non-`forwarded`** head entry: mint **and** send (today's behavior); `cancel_timer`; single-tick (final phase `submitting`, no transient `idle`).
-5. **interrupted** — `interrupt()` clears `queuedSends`, `cancel_timer` for every outstanding steer timer.
+1. **queued** — `phase !== idle` at submit. Entry added to `queuedSends`; rendered as the existing **`×`-retractable dimmed ghost row at the foot**. Not on the wire.
+2. **retracted** — `×` (or edit) any time before pickup: `cancel_queued_send` removes the entry, restores the draft. No frame ever sent.
+3. **interrupted** — `interrupt()` clears `queuedSends`.
 
-**Reconciliation (branch-selected in Step 1 — default branch B):**
+**Picked up at the boundary — forward + place atomically (`[P06]`/`[P07]`/`[Q01]`):**
 
-6. **buffer placement** — when a follow-on turn opens on the live wire and a `forwarded` ghost matches, mint a user-origin turn from the ghost's `UserMessage` (keeping its `messageKey`) and clear the ghost.
-7. **merge placement** — (branch B) not live; the ghost persists until next-boundary reconciliation / reload places the message inside its turn. (branch A, if selected) the pre-`result` merge signal appends the message into the live turn and clears the ghost before the collapse; a still-present `forwarded` entry at collapse is then minted without re-sending.
+4. **picked up** — the reducer observes a mid-turn `tool_result` with a non-empty queue: for the head entry, emit the `send-frame`, **remove it from `queuedSends`**, and append it as a `user_message` to the in-flight turn's `messages` (own `messageKey`) → the foot ghost becomes a real mid-turn user row after the tool block. One entry per boundary; the rest stay parked (still retractable).
+5. **end-of-turn fallback (<1%)** — a turn that reaches `turn_complete` with the queue still non-empty (no mid-turn tool step) flushes the head via the existing single-tick collapse → next turn (final phase `submitting`, no transient `idle`).
+6. **reload tightens** — Developer▸Reload re-resumes from JSONL; the reducer's `handleAddUserMessage` appends the mid-turn row at claude's exact merge point (the fork). Authoritative; never lost.
 
-Invariant (all branches): at most one `send-frame` per `turnKey` — sent at **forward** XOR at the **fresh collapse**; a `forwarded` entry is never re-sent.
+Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the end-of-turn fallback; never both (pickup removes the entry, so the collapse only sees parked entries).
 
 #### State Zone Mapping (tugdeck/tugways) {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
-| `queuedSends[].forwarded` | structure (local-data) | store reducer state + `useSyncExternalStore` | `[L02]` |
-| steer timers (`steer:<turnKey>`) | structure (side-effect) | `schedule_timer`/`cancel_timer` effects in the store wrapper (wall-clock outside the pure reducer) | `[L02]` |
+| `queuedSends` (parked, retractable) | structure (local-data) | store reducer state + `useSyncExternalStore` | `[L02]` |
+| Dimmed foot ghost rows (existing, `×`-retractable) | structure (derived) + appearance | rendered by the data source from `queuedSends`; dim via CSS | `[L02]`, `[L06]` |
+| Boundary pickup (on mid-turn `tool_result`) | structure (side-effect) | `send-frame` + remove-from-queue + append-to-turn, from the reduce path — a stream event, not a timer | `[L02]` |
+| Placed mid-turn user row | structure (derived) | `user_message` in the turn's `messages`; rendered by the flat row model | `[L02]` |
 | Row layout (message-derived) | structure (derived) | pure `buildRowLayout` memoized per snapshot identity | `[L02]` |
-| `×` enabled/disabled (forwarded) | appearance | derived from snapshot in the cell; disabled via CSS/DOM | `[L06]`, `[L02]` |
-| Provisional/ghost row presentation | appearance | CSS class on the ghost cell | `[L06]` |
 
 ---
 
@@ -345,7 +340,7 @@ Invariant (all branches): at most one `send-frame` per `turnKey` — sent at **f
 #### What stays out of tests {#test-non-goals}
 
 - No jsdom render-tree assertions or mock-store tests — banned (`feedback_real_not_fake`); steering is proven by reducer/effect unit tests over the real reducer + a real app-test.
-- No test of claude's internal merge-vs-buffer choice. Reconciliation is proven by injecting the **real captured wire shapes** (from the Step 1 fixture) into the real reducer — not by mocking or by guessing frame shapes before the spike.
+- No test of claude's internal merge-vs-defer choice. Placement is proven by injecting the **real merged-`user_message`-after-`tool_result` shape** (from the Step 1 / Step 6 captures) into the real reducer — not by mocking or guessing frame shapes.
 
 ---
 
@@ -357,36 +352,36 @@ Invariant (all branches): at most one `send-frame` per `turnKey` — sent at **f
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Wire-behavior spike: select reconciliation branch | pending | — |
+| #step-1 | Wire-behavior spike: characterize the steering mechanism | done (uncommitted) — merge@iteration-boundary | — |
 | #step-2 | Behavior-preserving message-derived row projection | pending | — |
 | #step-3 | Re-base addressing on `messageKey` + derived labels | pending | — |
 | #step-4 | Render multiple user rows per turn (merge-visible) | pending | — |
-| #step-5 | Steering forward wire: `forwarded` bit + cancel-window timer | pending | — |
-| #step-6 | Reconciliation per the selected branch | pending | — |
+| #step-5 | Steering forward: hold client-side, pick up at the boundary | pending | — |
+| #step-6 | Place the merged message as a mid-turn user row | pending | — |
 | #step-7 | Integration checkpoint + docstring/D-T3-07 revision | pending | — |
 
-#### Step 1: Wire-behavior spike — select the reconciliation branch {#step-1}
+#### Step 1: Characterize the steering mechanism from real sessions {#step-1}
 
 <!-- Root step: no dependencies. Read-only investigation + plan finalization. -->
 
-**Commit:** `docs(roadmap): record steering wire-behavior spike + select reconciliation branch`
+**Commit:** `docs(roadmap): characterize mid-turn steering (merge at iteration boundary)`
 
-**References:** [Q01] merge wire, [Q02] fallback, [P07] reconciliation, Risk R04, (#steering-reconciliation-branches, #q01-merge-wire)
+**References:** [Q01] mechanism, [Q02] no-live-echo, [P07] placement, Risk R04, (#q01-merge-wire)
 
 **Artifacts:**
-- A captured fixture under `stream-json-catalog/` showing the live wire for (a) a merged and (b) a buffered mid-turn message.
-- `[P07]`, `Spec S02`'s reconciliation half, and `[Q02]` finalized to the selected branch in this plan.
+- Corpus analysis under `stream-json-catalog/v2.1.181-steering-spike/` (`queued-command-mechanism.md`: 470 injections, 93% after `tool_result`, turn continues; plus the worked 5eefeaec example and the labelled raw-probe false start).
+- `[Q01]` resolved (merge at iteration boundary), `[P07]` + `Spec S02` placement rewritten, `[Q02]` resolved (no live echo → optimistic-live + reload-exact).
 
 **Tasks:**
-- [ ] Run `tugcode/.../probe-tool-overlap.ts` (and/or capture a real mid-turn submit) to observe merge and buffer cases; save the frames.
-- [ ] Determine: does a merge emit any placeable live event? Its correlation key? Before or after `result`? Confirm the buffer follow-on opener's live shape.
-- [ ] Choose branch A / B / C; update `[P07]`, `Spec S02`, `[Q02]` with the decision and rationale.
+- [x] Characterize the steering mechanism from real session JSONL. **Corpus survey: 470 `queued_command` injections across 42 sessions (claude 2.1.133–2.1.177)** — 93% thread after a `tool_result` (mid-loop), majority followed by `stop=tool_use` (turn continues). **The queue drains at the agent-loop iteration boundary and merges into the running turn**; turn-boundary landing is the <1% exception. Worked example: session 5eefeaec ("Tide is retired…" steer injected after a `tool_result`, turn continued). Full analysis: `stream-json-catalog/v2.1.181-steering-spike/queued-command-mechanism.md`.
+- [x] Decide placement in `[P07]` (merge mid-turn as a `user_message` after the `tool_result`, rendered via the flat row model) and rewrite `Spec S02` placement + `[Q02]` (resolved: no live echo → optimistic-live insert + reload-exact).
+- [x] Note the layer difference: the Dev card holds `queuedSends` and flushes at `turn_complete` today — *why* cued messages feel "end-of-turn" — and the fix is to forward mid-turn (`[P06]`) so claude merges at its iteration boundary like the TUI.
 
 **Tests:**
-- [ ] N/A (investigation) — the captured fixture is the artifact Step 6's reducer tests replay.
+- [x] N/A (investigation) — corpus-level evidence (n=470) + the 5eefeaec worked example; the raw-probe false start is retained, labelled, in the spike dir.
 
 **Checkpoint:**
-- [ ] The fixture exists and the plan records the selected branch with the wire evidence backing it.
+- [x] Mechanism characterized from real sessions; `[P07]`/`Spec S02`/`[Q01]`/`[Q02]` rewritten around merge-at-iteration-boundary (signature: `queued_command` / `user_message` after a `tool_result`). `[Q02]` resolved (no live echo); Step 6 implements optimistic-live insert + reload-exact placement.
 
 #### Step 2: Behavior-preserving message-derived row projection {#step-2}
 
@@ -457,58 +452,62 @@ Invariant (all branches): at most one `send-frame` per `turnKey` — sent at **f
 - [ ] `cd tugdeck && bun test`
 - [ ] `just app-test` (merged turn renders without scroll jump — Risk R02)
 
-#### Step 5: Steering forward wire — `forwarded` bit + existence-guarded cancel-window timer {#step-5}
+#### Step 5: Steering forward — hold client-side, pick up at the boundary {#step-5}
 
 **Depends on:** #step-1, #step-4
 
-**Commit:** `feat(tugdeck): steer queued messages mid-turn after a cancel window`
+**Commit:** `feat(tugdeck): forward queued messages at the agent-loop boundary`
 
-**References:** [P06] forward mechanics, [P08] revise D-T3-07, Spec S02 (forward mechanics), Risk R03, (#s02-steer-lifecycle, #r03-double-send, #q03-window-duration)
+**References:** [P06] queue/forward, [P08] revise D-T3-07, Spec S02, Risk R03, (#s02-steer-lifecycle, #r03-double-send)
 
 **Artifacts:**
-- `QUEUE_STEER_WINDOW_MS = 2000` constant; `forwarded: boolean` on the public + internal queue shapes.
-- `handleSend` mid-turn branch emits `schedule_timer`; new `flush_queued_send` event (union + `reduce()` switch) emits an existence-guarded `send-frame`, sets `forwarded`, **no mint**.
-- `cancel_timer` on `cancel_queued_send`, both interrupt sites, and the collapse; collapse still mints+sends only **non-`forwarded`** head entries; `×` disabled once forwarded.
+- Boundary pickup: on a mid-turn `tool_result` with a non-empty `queuedSends`, emit the head entry's `send-frame` and **remove it from `queuedSends`** (existence-guarded). No `schedule_timer`/`QUEUE_STEER_WINDOW_MS`, no `forwarded` flag.
+- The `turn_complete` collapse remains the fallback for a turn with no mid-turn tool step (head entry → next turn); it only sees never-picked-up entries (removal-on-pickup).
+- The queued message is **not on the wire while parked** — `cancel_queued_send` (`×`) / `interrupt` clear it with no frame, any time before pickup. The existing dimmed foot ghost renders from `queuedSends`, unchanged (single retractable state).
 
 **Tasks:**
-- [ ] Add the constant, state field (both shapes), event + union/switch wiring, timer scheduling, existence-guard.
-- [ ] Emit `cancel_timer` on cancel, both interrupt sites, and the collapse.
-- [ ] Disable `×` for forwarded entries (CSS/DOM, `[L06]`).
+- [ ] Add the boundary-pickup path (mid-turn `tool_result` + non-empty queue → forward head entry, remove it from `queuedSends`).
+- [ ] Keep the `turn_complete` fallback; ensure cancel/interrupt clear parked entries (no frame).
+- [ ] Confirm the existing foot ghost still renders parked entries with `×` (no visual change needed).
 
 **Tests:**
-- [ ] Reducer: mid-turn submit → timer → `send-frame` before `turn_complete`; no mint at forward.
-- [ ] Reducer: exactly one `send-frame` per `turnKey` across each Risk R03 race (timer-vs-collapse; within-window completion → fresh entry mints+sends + timer cancelled; interrupt → cleared + cancelled; stale fires are guarded no-ops).
-- [ ] Reducer: multiple concurrent queued sends → independent timers; collapse cancels only the head's.
-- [ ] Reducer: `×` before timer → `cancel_timer` + no frame; after forward → disabled/no-op.
-- [ ] Reducer: fresh-entry collapse keeps final phase `submitting` (no transient `idle`).
+- [ ] Reducer: mid-turn `tool_result` with a queued entry → one `send-frame`, entry removed, emitted before `turn_complete`.
+- [ ] Reducer: no double-forward — a picked-up entry is gone, so the `turn_complete` collapse never re-sends it (Risk R03).
+- [ ] Reducer: `×`/`interrupt` on a parked entry → removed, no frame (retractable until pickup).
+- [ ] Reducer: a turn with no mid-turn tool step → queued entry flushes at `turn_complete` as the next turn (single-tick, no transient `idle`).
+- [ ] Reducer: `×`/`interrupt` clear without a frame; multiple entries flush one-per-boundary in order.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/lib/code-session-store`
 - [ ] `cd tugdeck && bunx tsc --noEmit`
 
-#### Step 6: Reconciliation per the selected branch {#step-6}
+#### Step 6: Place the merged message as a mid-turn user row {#step-6}
 
 **Depends on:** #step-1, #step-5
 
-**Commit:** `feat(tugdeck): place steered messages via the selected reconciliation branch`
+**Commit:** `feat(tugdeck): place steered messages mid-turn after the tool_result`
 
-**References:** [P07] reconciliation, [P04] keying, [Q01] resolved, [Q02] fallback, Spec S02 (reconciliation), Risk R04, (#steering-reconciliation-branches)
+**References:** [P07] placement, [P04] keying, [Q01] mechanism, [Q02] no-live-echo, Spec S02 (placement), Risk R04
 
 **Artifacts:**
-- Branch-B (default) buffer placement: fork the opener handler (`handleAddUserMessage`/`handleAssistantOpener`) to mint a user-origin turn from a matching forwarded ghost, preserving its `messageKey`; thread the ghost's bytes-store text/atoms.
-- Merge placement + `[Q02]` backstop per the selected branch (branch B: next-boundary / reload reconciliation; branch A: pre-`result` absorb + late-echo collapse).
+- **Placement at pickup:** the same mid-turn `tool_result` that picks up the entry (Step 5) also appends it as a `user_message` to the in-flight turn's `messages` (own `messageKey`) → the foot ghost is removed and a real mid-turn user row appears after the tool block (flat row model, Step 4). tugdeck does forward + remove + place atomically; no live echo to wait for (`[Q02]`). Live position is where tugdeck places it; reload tightens to claude's exact merge point.
+- **Reload-authoritative:** the `handleAddUserMessage` fork — a *mid-turn* `add_user_message` from JSONL replay **appends to the in-flight turn** rather than opening a new turn. Live pickup and reload converge on one helper: "append a `user_message` to the active turn's `messages`."
+- The `end_turn` minority (<1%, `[Q01]`) falls through to the existing next-turn collapse unchanged.
 
 **Tasks:**
-- [ ] Implement the branch chosen in Step 1, against the captured fixture shapes.
-- [ ] Implement the `[Q02]` backstop for unresolved ghosts.
+- [ ] Implement the single append helper (append `user_message` to `activeTurn.messages`, preserve `messageKey`).
+- [ ] Live: at the boundary pickup (Step 5), also append the message → mid-turn user row (ghost removed in the same step).
+- [ ] Reload: fork `handleAddUserMessage` so a mid-turn replay user row appends to the in-flight turn (not opens one); verify a real Dev-card reload places a steered message at its exact JSONL position.
+- [ ] Verify the `end_turn` minority still becomes the next turn.
 
 **Tests:**
-- [ ] Reducer: replay the Step 1 **buffer** fixture → forwarded ghost becomes a user-origin turn (its `messageKey` preserved), no duplicate, no second `send-frame`.
-- [ ] Reducer: replay the Step 1 **merge** fixture → placement per the selected branch (branch B: ghost persists then reconciles at boundary; branch A: absorbed pre-`result`); no phantom hang.
+- [ ] Reducer (live): a mid-turn `tool_result` with a queued entry forwards, removes the entry, **and** appends it → mid-turn user row (own `messageKey`), no duplicate, no extra `send-frame`.
+- [ ] Reducer (reload): a replay `add_user_message` threaded after a mid-turn `tool_result` appends to the in-flight turn (does not open a new turn).
+- [ ] Reducer: the `end_turn` minority → message becomes the next turn (existing collapse), unchanged.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/lib/code-session-store`
-- [ ] `just app-test` (real-claude on-demand path: a mid-turn message forwards and is placed)
+- [ ] `just app-test` (real-claude on-demand path: a mid-turn steer is acted on, and a user row appears inline after the tool block; reload tightens its position)
 
 #### Step 7: Integration checkpoint + docstring/D-T3-07 revision {#step-7}
 
@@ -519,7 +518,7 @@ Invariant (all branches): at most one `send-frame` per `turnKey` — sent at **f
 **References:** [P08] revise D-T3-07, [P01]–[P07], (#success-criteria, #exit-criteria)
 
 **Tasks:**
-- [ ] Update `handleSend`/`handleTurnComplete` and `dev-transcript-data-source` module docstrings (steer-window, message-derived rows, the selected reconciliation branch); revise the `[D07]` "one user_message per turn" note on `MessageBase`.
+- [ ] Update `handleSend`/`handleTurnComplete` and `dev-transcript-data-source` module docstrings (steer-window, message-derived rows, merge-at-iteration-boundary placement); revise the `[D07]` "one user_message per turn" note on `MessageBase`.
 - [ ] Add the `D-T3-07` supersession note (+ optional pointer in `tuglaws/design-decisions.md`).
 - [ ] Verify all success criteria.
 
@@ -539,8 +538,8 @@ Invariant (all branches): at most one `send-frame` per `turnKey` — sent at **f
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Step 1 fixture captured and `[P07]` records the selected branch. (`#step-1`)
-- [ ] Mid-turn submit forwards within `QUEUE_STEER_WINDOW_MS` and is picked up by claude (on-demand app-test). (`#s02-steer-lifecycle`)
+- [x] Step 1: steering mechanism characterized from real sessions (merge at the iteration boundary) and `[P07]` records the placement design. (`#step-1`)
+- [ ] A message queued mid-turn forwards at the next `tool_result` boundary and is picked up by claude (on-demand app-test). (`#s02-steer-lifecycle`)
 - [ ] No double/spurious send across all three Risk R03 races; exactly one `send-frame` per `turnKey`. (`Risk R03`)
 - [ ] No phantom turn for a merged message; no row hangs in `submitting`. (`[P07]`, `Risk R04`)
 - [ ] Merged mid-turn user message renders as its own row in arrival order, keyed by its own `messageKey`, badge on the bracket's last assistant row. (`Spec S01`, `[P04]`)
@@ -554,12 +553,12 @@ Invariant (all branches): at most one `send-frame` per `turnKey` — sent at **f
 - [ ] Per-message `/rewind` (anchor on each user Message; message-based picker) — the deferred half of `[P05]`.
 - [ ] Shell interactions as a new `Message.kind` interleaved in the same stream (the flexibility this architecture unlocks).
 - [ ] "Thinking" as standalone phase chrome.
-- [ ] Tune `QUEUE_STEER_WINDOW_MS` after dogfooding (`[Q03]`).
+- [ ] Optional minimum-debounce before a boundary forward, if instant forwards feel too eager (`[Q03]` retired the wall-clock window).
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Wire behavior known | Step 1 fixture + recorded branch |
+| Steering mechanism known | Step 1 corpus analysis (merge@iteration-boundary) |
 | Behavior-preserving refactor | Step 2 existing tests green |
 | Rendering correctness | Step 4 merged-turn render test |
-| Steering correctness | Step 5/6 reducer tests (replaying the fixture) + app-test |
+| Steering correctness | Step 5/6 reducer tests (merged-`user_message`-after-`tool_result`) + app-test |
 | Rewind integrity | `reducer.rewind.test.ts` unchanged/green |

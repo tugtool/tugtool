@@ -1,0 +1,61 @@
+=== Raw tool-turn overlap probe ===
+
+
+>>> SEND: Read these four files, one at a time, and give a one-line summary of each: ./CLAUDE.md, ./tugcode/package.json, ./tugdeck/package.json, ./tugrust/Cargo.toml. Read them one by one, not in parallel.
+
+<<< [1.5s] system:init
+<<< [1.5s] system:status: {"type":"system","subtype":"status","status":"requesting","uuid":"2358c003-58d5-427f-9bda-1d862f60d39a","session_id":"93a5b55f-8390-4e56-ab73-e0e7ca212539"}
+<<< [2.7s] rate_limit_event: {"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1781841000,"rateLimitType":"five_hour","overageStatus":"rejected","overageDisabledRe
+<<< [3.7s] stream:message_start
+<<< [3.7s] assistant snapshot [thinking]
+<<< [3.7s] text_delta (14c) "I'll read them"
+<<< [4.1s] text_delta (15c) " one at a time."
+<<< [4.1s] assistant snapshot [text]
+<<< [4.1s] tool_use START #1: Read
+<<< [4.7s] assistant snapshot [tool_use:Read]
+<<< [4.7s] user msg [tool_result]
+<<< [4.7s] stream:message_stop
+<<< [4.8s] system:status: {"type":"system","subtype":"status","status":"requesting","uuid":"49fcf9ae-dad8-4da4-8fac-fd52ed0a09bf","session_id":"93a5b55f-8390-4e56-ab73-e0e7ca212539"}
+<<< [8.3s] stream:message_start
+<<< [8.3s] tool_use START #2: Read
+
+--- 2nd tool call begun; injecting plain message mid-tool-work ---
+
+>>> SEND: ALSO, as a completely separate question: what is 2 plus 2?
+
+<<< [8.8s] assistant snapshot [tool_use:Read]
+<<< [8.8s] user msg [tool_result]
+<<< [9.0s] stream:message_stop
+<<< [9.0s] system:status: {"type":"system","subtype":"status","status":"requesting","uuid":"03199fba-e9de-4bcc-ab70-5b611bc61859","session_id":"93a5b55f-8390-4e56-ab73-e0e7ca212539"}
+<<< [10.8s] stream:message_start
+<<< [10.8s] tool_use START #3: Read
+<<< [10.8s] assistant snapshot [tool_use:Read]
+<<< [10.8s] user msg [tool_result]
+<<< [10.8s] stream:message_stop
+<<< [10.8s] system:status: {"type":"system","subtype":"status","status":"requesting","uuid":"8950dce1-a276-457e-9675-ece844685a9f","session_id":"93a5b55f-8390-4e56-ab73-e0e7ca212539"}
+<<< [13.0s] stream:message_start
+<<< [13.0s] tool_use START #4: Read
+<<< [13.1s] assistant snapshot [tool_use:Read]
+<<< [13.1s] user msg [tool_result]
+<<< [13.2s] stream:message_stop
+<<< [13.2s] system:status: {"type":"system","subtype":"status","status":"requesting","uuid":"087d53f3-74a1-430d-a9d2-2c62a6b1efd7","session_id":"93a5b55f-8390-4e56-ab73-e0e7ca212539"}
+<<< [17.2s] stream:message_start
+<<< [17.2s] text_delta (8c) "Here are"
+<<< [17.2s] text_delta (87c) " the one-line summaries:⏎⏎- **`./CLAUDE.md`** — Cl"
+<<< [17.6s] text_delta (63c) "ool: project overview (the Dev card centerpiece), "
+<<< [18.1s] text_delta (69c) " policy, repo structure, warnings-as-errors build "
+<<< [18.5s] text_delta (54c) "/tuglaws rules.⏎- **`./tugcode/package.json`** — T"
+<<< [19.0s] text_delta (33c) "ugcode bridge (v0.8.0, ESM, bun-t"
+<<< [19.5s] text_delta (74c) "ested): a Claude Code ↔ tugcast stream-json IPC br"
+<<< [19.9s] text_delta (103c) "thropic agent SDK and tokenizer.⏎- **`./tugdeck/pa"
+<<< [20.4s] text_delta (92c) " Vite + React 19): renders tugcast feeds as intera"
+<<< [20.9s] text_delta (41c) "m, marked/shiki/katex/mermaid.⏎- **`./tug"
+<<< [21.4s] text_delta (72c) "rust/Cargo.toml`** — The Rust workspace root (v0.8"
+<<< [21.9s] text_delta (87c) "ines 10 member crates (tugutil, tugcast, tugexec, "
+<<< [22.3s] text_delta (97c) "ependencies and serde dev-build optimizations.⏎⏎As"
+<<< [22.3s] assistant snapshot [text]
+<<< [22.3s] stream:message_stop
+<<< [22.3s] result #1: subtype=success, num_turns=5
+    result text: "Here are the one-line summaries:\n\n- **`./CLAUDE.md`** — Claude Code working guidelines for Tugtool: project overview (the Dev card centerpiece), user-only git policy, repo structure, warnings-as-errors build policy, and tugdeck/tuglaws rules.\n- **`./tugcod
+
+[timeout — 150s]
