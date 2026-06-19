@@ -71,13 +71,15 @@ import type { CautionFlag } from "./types";
 const DOT_SIZE = 14;
 
 /**
- * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both in the
- * neutral `inherit` role with the `outlined` emphasis. The `+`/`−` signs
- * carry the add/remove meaning on their own, so no green/red is needed —
- * and draining the color avoids the chromostereopsis that made adjacent
- * green and red badges shimmer apart in depth on the dark surface. Both
- * badges share one neutral tone, so they sit on the same optical baseline
- * with no per-badge nudge.
+ * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both `outlined`
+ * in the neutral `inherit` role so the BORDER stays neutral (driven by the
+ * row's muted `currentColor`). Only the inner text is tinted — green on the
+ * `+N`, red on the `−M` — via a wrapping span, so the green/red lives on
+ * the glyphs alone, not on any box edge. The bet (experimental): keeping
+ * the colored fields apart behind quiet neutral borders, with no adjacent
+ * colored edges, avoids the worst of the chromostereopsis that the fully
+ * colored badges triggered. Both badges share one neutral border tone, so
+ * they sit on the same optical baseline with no per-badge nudge.
  */
 function DiffSummaryBadges({
   summary,
@@ -88,10 +90,10 @@ function DiffSummaryBadges({
   return (
     <>
       <TugBadge emphasis="outlined" role="inherit" size="sm" copyText={parts.added}>
-        {parts.added}
+        <span className="tool-call-header-diff-add">{parts.added}</span>
       </TugBadge>
       <TugBadge emphasis="outlined" role="inherit" size="sm" copyText={parts.removed}>
-        {parts.removed}
+        <span className="tool-call-header-diff-del">{parts.removed}</span>
       </TugBadge>
     </>
   );
@@ -211,8 +213,8 @@ export const ToolCallHeader = React.forwardRef<
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (
-            // Diff stat — two neutral outlined badges (`+N` / `−M`); the
-            // signs, not color, carry the add/remove signal. See
+            // Diff stat — two outlined badges with neutral borders and
+            // green/red text on the `+N` / `−M` glyphs alone. See
             // {@link DiffSummaryBadges}. Each badge copies its own value on
             // right-click.
             <DiffSummaryBadges summary={summary} />

@@ -190,6 +190,19 @@ body {
   top: 1px;
 }
 
+/* Experimental: tint ONLY the diff glyphs (`+N` green / `−M` red), leaving
+ * the badge borders neutral (the `outlined`/`inherit` root keeps its muted
+ * `currentColor` edge). The color rides the text alone, with no adjacent
+ * colored box edges, to see whether quiet neutral frames hold off the
+ * chromostereopsis the fully colored badges triggered. */
+.tool-call-header-diff-add {
+  color: var(--tug7-element-badge-text-outlined-success-rest);
+}
+
+.tool-call-header-diff-del {
+  color: var(--tug7-element-badge-text-outlined-danger-rest);
+}
+
 /* Trailing actions — the controls cluster at the row's trailing edge, in
  * both states: a vertical rule divides the result (summary / meta) from the
  * controls (body-specific portal · Copy · chevron), with equal gaps on each
