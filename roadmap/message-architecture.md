@@ -403,7 +403,7 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 | #step-3 | Re-base addressing on `messageKey` + derived labels | done | ea6916c3 |
 | #step-4 | Render multiple user rows per turn (merge-visible) | done | d81241d8 |
 | #step-5 | Steering forward: hold client-side, pick up at the boundary | done | 5c3295c0 |
-| #step-6 | Place the merged message as a mid-turn user row | reopened — reload via tugcode replay | live: 7d939e16 |
+| #step-6 | Place the merged message as a mid-turn user row | done (reopen verify on-demand) | live: 7d939e16 |
 | #step-7 | Per-message address fix + integration + docstring/D-T3-07 revision | done (app-test on-demand) | (this commit) |
 
 #### Step 1: Characterize the steering mechanism from real sessions {#step-1}
@@ -545,19 +545,19 @@ Invariant: at most one `send-frame` per entry — at its boundary pickup XOR the
 **Tasks:**
 - [x] Live: at the boundary pickup (Step 5), append the message → mid-turn user row (`handleToolResult`). Done.
 - [x] Reducer reload fork: `handleAddUserMessage` appends a mid-turn replay user row to the in-flight turn (not opens one). Done — but unfed (see below).
-- [ ] **tugcode `replay.ts`: translate `queued_command` attachments into `add_user_message` frames.** Remove the blanket skip for that attachment subtype; emit `add_user_message` carrying the steered text/atoms at its JSONL position (mid-bracket, after the preceding `tool_result`), so the reducer's reload fork reconstructs the mid-turn user row. `queue-operation` records stay skipped.
-- [ ] Rebuild tugcode (compiled binary — HMR won't pick it up).
-- [ ] Verify the `end_turn` minority still becomes the next turn.
+- [x] **tugcode `replay.ts`: translate `queued_command` attachments into `add_user_message` frames** (`handleQueuedCommandEntry`, intercepted before the blanket `attachment` skip; `commandMode: "prompt"` only; emits content at the JSONL position, no orphan-close / no opener mint, so the reducer's reload fork appends it mid-turn). `queue-operation` stays skipped.
+- [x] Rebuilt tugcode (`bun build --compile … target/debug/tugcode`; `~/.local/bin/tugcode` symlink already points at it).
+- [x] Confirmed on real data: replaying `3ac9f413` now emits 3 `add_user_message` (opener + "what's 3+3" + "what's 1+1") in one turn, zero unknown_shape.
 
 **Tests:**
 - [x] Reducer (live): a mid-turn `tool_result` with a queued entry forwards, removes the entry, **and** appends it → mid-turn user row.
 - [x] Reducer (reload): a replay `add_user_message` threaded after a mid-turn `tool_result` appends to the in-flight turn (does not open a new turn).
-- [ ] tugcode replay: a JSONL with a `queued_command` attachment mid-bracket emits an `add_user_message` for it (translator unit / fixture).
-- [ ] **Durability (the bar):** reopen `3ac9f413` → `#u1`, `#u1.2`, `#u1.3` reappear and persist across reopen.
+- [x] tugcode replay (`replay-queued-command.test.ts`): a `queued_command` mid-bracket emits a mid-turn `add_user_message` (one turn); a non-`prompt` commandMode is skipped.
+- [ ] **Durability (the bar) — user verify:** reopen `3ac9f413` in a freshly-spawned session → `#u1`, `#u1.2`, `#u1.3` reappear and persist across reopen.
 
 **Checkpoint:**
-- [ ] `cd tugrust` / tugcode tests green; rebuild tugcode.
-- [ ] Reopen `3ac9f413` in the Dev card: steered rows reconstructed and stable.
+- [x] tugcode `bun test` green (648 pass); tsc clean; binary rebuilt.
+- [ ] Reopen `3ac9f413` in the Dev card: steered rows reconstructed and stable (on-demand).
 
 #### Step 7: Per-message address numbering fix + integration + docstring/D-T3-07 revision {#step-7}
 

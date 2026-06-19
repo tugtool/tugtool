@@ -187,6 +187,20 @@ export interface JsonlEntry {
   parentUuid?: string | null;
   timestamp?: string;
   /**
+   * Present on `type: "attachment"` entries. Most attachment subtypes are
+   * Claude bookkeeping (skipped — see {@link SKIPPED_TOP_LEVEL_TYPES}),
+   * but `queued_command` is how Claude Code persists a **steered mid-turn
+   * message** (the user typed while a turn ran): there is no `type: "user"`
+   * row for it, only this. {@link handleQueuedCommandEntry} translates it
+   * into a mid-turn `add_user_message` so reload reconstructs the steered
+   * user row ([P07]/Step 6). `prompt` is the submitted content blocks.
+   */
+  attachment?: {
+    type?: string;
+    prompt?: string | ReadonlyArray<JsonlContentBlock>;
+    commandMode?: string;
+  };
+  /**
    * Set by Claude Code on the `user` JSONL entry carrying a `/compact`
    * continuation summary ("This session is being continued from a
    * previous conversation…"). The translator skips these — the summary
@@ -885,12 +899,61 @@ export interface TranslateJsonlEntryOptions {
  *   - A `SKIPPED_TOP_LEVEL_TYPES` entry returns `[]` immediately.
  *   - Anything else falls into the `unknown_shape` skip path.
  */
+/**
+ * Translate a `queued_command` attachment — a steered mid-turn message
+ * ([P07]/Step 6) — into a **mid-turn** `add_user_message`. Unlike a turn
+ * opener ({@link handleUserEntry}), this deliberately does NOT close the
+ * open turn (`emitOrphanIfOpen`) or mint a new opener id: the message was
+ * merged INTO the running turn, so the turn stays open and the assistant's
+ * continuation after it belongs to the same turn. The reducer's reload
+ * fork in `handleAddUserMessage` appends it to the in-flight turn because
+ * a turn is still open (`pendingTurn !== null`) at this point in the
+ * bracket. No `promptUuid` is carried — `/rewind` stays anchored on the
+ * turn opener ([P05]). Only `commandMode: "prompt"` (a plain steered
+ * message) is surfaced; other modes (e.g. a queued slash command) skip.
+ */
+function handleQueuedCommandEntry(entry: JsonlEntry): OutboundMessage[] {
+  if (entry.attachment?.commandMode !== "prompt") return [];
+  const submittedContent: ContentBlock[] = [];
+  for (const block of contentBlocks(entry.attachment?.prompt)) {
+    const blockType = typeof block.type === "string" ? block.type : "";
+    if (blockType === "text" && typeof block.text === "string") {
+      submittedContent.push({ type: "text", text: block.text });
+    } else if (blockType === "image") {
+      const source = block.source ?? {};
+      const mediaType =
+        typeof source.media_type === "string" ? source.media_type : "image/png";
+      const data = typeof source.data === "string" ? source.data : "";
+      submittedContent.push({
+        type: "image",
+        source: { type: "base64", media_type: mediaType, data },
+      });
+    }
+  }
+  if (submittedContent.length === 0) return [];
+  return [
+    {
+      type: "add_user_message",
+      content: submittedContent,
+      timestamp: parseEntryTimestamp(entry),
+      ipc_version: IPC_VERSION,
+    },
+  ];
+}
+
 export function translateJsonlEntry(
   entry: JsonlEntry,
   ctx: TranslateContext,
   options?: TranslateJsonlEntryOptions,
 ): OutboundMessage[] {
   const topType = typeof entry.type === "string" ? entry.type : "";
+  // A steered mid-turn message persists ONLY as a `queued_command`
+  // attachment (no `type: "user"` row). Intercept before the blanket
+  // `attachment` skip so reload reconstructs the steered user row
+  // ([P07]/Step 6). Other attachment subtypes still skip below.
+  if (topType === "attachment" && entry.attachment?.type === "queued_command") {
+    return handleQueuedCommandEntry(entry);
+  }
   if (SKIPPED_TOP_LEVEL_TYPES.has(topType)) {
     return [];
   }
