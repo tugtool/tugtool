@@ -2953,6 +2953,7 @@ export function DevCardBody({
       let sawActive = false;
       let canceled = false;
       let failed = false;
+      let interrupted = false;
       let latestProse = "";
 
       const onCancel = (): void => {
@@ -2975,6 +2976,13 @@ export function DevCardBody({
         const snap = codeSessionStore.getSnapshot();
         const active = snap.activeTurn;
         if (active !== null) {
+          // The summarization turn was interrupted by *some* path — the
+          // Cancel button, the menu's Stop, or Escape's interrupt ladder.
+          // Whatever the trigger, treat it as a cancel: never spawn a fresh
+          // session from a half-finished summary. Latched here (the turn is
+          // still in-flight during the interrupt round-trip) and acted on at
+          // the active → null transition below.
+          if (snap.interruptInFlight) interrupted = true;
           // The summarization turn runs suppressed, so an approval/question
           // prompt it draws has no surface to answer — that would deadlock
           // the card. Fail safe instead: interrupt and leave the session
@@ -3002,6 +3010,14 @@ export function DevCardBody({
         if (!sawActive) return; // turn hasn't started yet
         unsubscribe();
         if (canceled) return; // user stopped it — store already settled
+        if (interrupted) {
+          // Interrupted by Escape/Stop (not the Cancel button, which already
+          // settled the store): treat it exactly like Cancel — settle the run
+          // canceled and leave the session intact. NEVER spawn from the
+          // partial summary.
+          compactionProgressStore.cancel();
+          return;
+        }
         if (snap.lastError !== null || snap.phase === "errored") {
           compactionProgressStore.fail(
             "Compaction failed — session left intact",

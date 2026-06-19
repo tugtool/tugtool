@@ -727,6 +727,14 @@ export interface AddUserMessageEvent {
    * exactly as it did live. Absent for ordinary messages.
    */
   compactionSummary?: string;
+  /**
+   * Set on the replay path when this opener is a `/compact` *summarization*
+   * prompt (a canceled compaction's throwaway turn that claude persisted to
+   * the discarded session's JSONL). The reducer marks the turn suppressed so
+   * its `turn_complete` drops the transcript append — the turn must never
+   * commit, live or on reload.
+   */
+  suppressedTurn?: boolean;
   [key: string]: unknown;
 }
 

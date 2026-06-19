@@ -2452,14 +2452,19 @@ function handleTurnComplete(
         ...closedPauseSegments,
       },
       // A load-previous bracket stages its turns for a front-commit at
-      // `replay_complete`; a normal bracket appends newest-at-the-end.
-      effects: [
-        {
-          kind: "append-transcript",
-          entry,
-          ...(state.replayPrependActive ? { prepend: true } : {}),
-        },
-      ],
+      // `replay_complete`; a normal bracket appends newest-at-the-end. A
+      // suppressed turn (a canceled `/compact`'s throwaway summarization
+      // turn, replayed from JSONL) is dropped — it must never commit.
+      effects:
+        state.pendingTurn?.suppressed === true
+          ? []
+          : [
+              {
+                kind: "append-transcript",
+                entry,
+                ...(state.replayPrependActive ? { prepend: true } : {}),
+              },
+            ],
     };
   }
 
@@ -4106,6 +4111,10 @@ function handleAddUserMessage(
         turnKey: event.turnKey,
         submitAt: now,
         origin: "user",
+        // A canceled `/compact`'s throwaway summarization turn, replayed from
+        // the discarded session's JSONL — mark it suppressed so its
+        // `turn_complete` drops the transcript append (it must never commit).
+        ...(event.suppressedTurn === true ? { suppressed: true } : {}),
         // Replay / mid-turn-snapshot path carries the `/rewind` anchor on the
         // opener; the live path delivers it later via `prompt_anchor`.
         ...(typeof event.promptUuid === "string" && event.promptUuid.length > 0

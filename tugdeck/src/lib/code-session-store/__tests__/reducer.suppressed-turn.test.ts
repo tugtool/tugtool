@@ -202,4 +202,52 @@ describe("reducer — reload reconstruction of the carry-forward", () => {
     } as CodeSessionEvent);
     expect(r.state.compactionSeed).toBeNull();
   });
+
+  it("a canceled /compact summarization turn replayed from JSONL is dropped", () => {
+    let s = replaying();
+    s = reduce(s, {
+      type: "add_user_message",
+      text: "Please write a detailed summary…",
+      atoms: [],
+      turnKey: "u1",
+      suppressedTurn: true,
+    } as CodeSessionEvent).state;
+    // The partial recap claude streamed before the cancel.
+    s = reduce(s, {
+      type: "assistant_text",
+      msg_id: "m1",
+      block_index: 0,
+      text: "Conversation Summary…",
+      is_partial: true,
+    } as CodeSessionEvent).state;
+    const r = reduce(s, {
+      type: "turn_complete",
+      msg_id: "m1",
+      result: "interrupted",
+    } as CodeSessionEvent);
+    expect(r.effects.some(isAppendTranscript)).toBe(false);
+  });
+
+  it("an ordinary replayed turn still commits (the contrast)", () => {
+    let s = replaying();
+    s = reduce(s, {
+      type: "add_user_message",
+      text: "hello",
+      atoms: [],
+      turnKey: "u1",
+    } as CodeSessionEvent).state;
+    s = reduce(s, {
+      type: "assistant_text",
+      msg_id: "m1",
+      block_index: 0,
+      text: "hi",
+      is_partial: false,
+    } as CodeSessionEvent).state;
+    const r = reduce(s, {
+      type: "turn_complete",
+      msg_id: "m1",
+      result: "success",
+    } as CodeSessionEvent);
+    expect(r.effects.some(isAppendTranscript)).toBe(true);
+  });
 });

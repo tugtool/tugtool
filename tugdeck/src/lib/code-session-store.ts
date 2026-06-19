@@ -46,7 +46,10 @@ import {
 } from "./atom-bytes-store";
 import { buildWirePayload } from "./build-wire-payload";
 import { synthesizeUserMessageFromBlocks } from "./synthesize-user-message";
-import { splitCompactionSeed } from "./compaction-request";
+import {
+  isCompactionSummarizeText,
+  splitCompactionSeed,
+} from "./compaction-request";
 import {
   narrowTaskStartedFrame,
   narrowTaskUpdatedFrame,
@@ -1404,10 +1407,13 @@ export class CodeSessionStore {
         // content, the recap re-marks `compactionSeed` so the
         // carry-forward summary renders on reload exactly as live.
         const lead = rawContent[0];
-        const seedSummary =
-          lead !== undefined && lead.type === "text"
-            ? splitCompactionSeed(lead.text)
-            : null;
+        const leadText = lead !== undefined && lead.type === "text" ? lead.text : "";
+        const seedSummary = leadText !== "" ? splitCompactionSeed(leadText) : null;
+        // A canceled `/compact` leaves its throwaway summarization turn in the
+        // discarded session's JSONL (claude persisted it; the client's
+        // `suppress` never crossed the wire). Recognize it on reload and mark
+        // the turn suppressed so it is dropped, not committed.
+        const suppressedTurn = leadText !== "" && isCompactionSummarizeText(leadText);
         const content =
           seedSummary !== null ? rawContent.slice(1) : rawContent;
         const synth = synthesizeUserMessageFromBlocks(
@@ -1433,6 +1439,7 @@ export class CodeSessionStore {
               ? ev.promptUuid
               : undefined,
           ...(seedSummary !== null ? { compactionSummary: seedSummary } : {}),
+          ...(suppressedTurn ? { suppressedTurn: true } : {}),
         } as unknown as CodeSessionEvent;
       }
       if (ev.type === "wake_started") {

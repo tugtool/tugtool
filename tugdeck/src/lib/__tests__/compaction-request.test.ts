@@ -9,6 +9,7 @@ import {
   buildSummarizationPrompt,
   buildCompactionSeed,
   splitCompactionSeed,
+  isCompactionSummarizeText,
 } from "@/lib/compaction-request";
 
 describe("buildSummarizationPrompt", () => {
@@ -26,6 +27,12 @@ describe("buildSummarizationPrompt", () => {
 
   it("ignores blank/whitespace focus", () => {
     expect(buildSummarizationPrompt("   ")).toBe(buildSummarizationPrompt());
+  });
+
+  it("is detectable as a summarization prompt (for the cancel/reload drop)", () => {
+    expect(isCompactionSummarizeText(buildSummarizationPrompt())).toBe(true);
+    expect(isCompactionSummarizeText(buildSummarizationPrompt("focus"))).toBe(true);
+    expect(isCompactionSummarizeText("an ordinary message")).toBe(false);
   });
 });
 

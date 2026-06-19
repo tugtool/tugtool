@@ -22,9 +22,16 @@
  * deliberately thorough (intent, technical concepts, files/code, errors
  * & fixes, current state, next step); the Dev card shows it under a
  * collapsible "Compaction Summary" affordance rather than trimming it.
+ *
+ * The prompt leads with {@link COMPACTION_SUMMARIZE_MARKER} (a comment
+ * claude ignores) so that — if the user *cancels* the compaction — the
+ * throwaway summarization turn claude persisted to the discarded session's
+ * JSONL can be recognized on reload ({@link isCompactionSummarizeText})
+ * and dropped, rather than committed as a spurious transcript entry.
  */
 export function buildSummarizationPrompt(focus?: string): string {
   const base =
+    `${COMPACTION_SUMMARIZE_MARKER}\n` +
     "Please write a detailed, self-contained summary of our conversation " +
     "so far, so a fresh assistant with no other context could continue " +
     "seamlessly. Be thorough — capture, where applicable: the user's " +
@@ -37,6 +44,23 @@ export function buildSummarizationPrompt(focus?: string): string {
   const trimmed = focus?.trim() ?? "";
   if (trimmed.length === 0) return base;
   return `${base}\n\nGive particular attention to: ${trimmed}`;
+}
+
+/**
+ * Marker on the first line of the summarization prompt — an HTML comment
+ * claude ignores. Lets the reload path recognize a *canceled* compaction's
+ * throwaway summarization turn (which claude persisted to the discarded
+ * session's JSONL) and drop it instead of committing a spurious entry.
+ */
+const COMPACTION_SUMMARIZE_MARKER = "<!-- tug:compact-summarize -->";
+
+/**
+ * True when a replayed user-message text is the summarization prompt — the
+ * throwaway recap-request turn that must never commit to the transcript.
+ * Pure.
+ */
+export function isCompactionSummarizeText(text: string): boolean {
+  return text.startsWith(COMPACTION_SUMMARIZE_MARKER);
 }
 
 /**
