@@ -270,16 +270,7 @@ export type DevSessionDriveAction =
   | { op: "interrupt" }
   | { op: "transportClose" }
   | { op: "transportReconnect" }
-  | { op: "loadPrevious"; amount: number | "all" }
-  // Flag the session as `/compact`-born so the transcript renders the
-  // compaction divider header (exercises the render without the full
-  // real-claude summarize→spawn→seed flow, which the stub harness can't run).
-  | {
-      op: "markCompactionSeed";
-      summary: string | null;
-      preTokens: number | null;
-      seedPending: boolean;
-    };
+  | { op: "loadPrevious"; amount: number | "all" };
 
 /**
  * Viewport-relative DOMRect shape returned by
@@ -1569,13 +1560,6 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       switch (action.op) {
         case "send":
           store.send(action.text, action.atoms ?? [], { suppress: action.suppress === true });
-          return;
-        case "markCompactionSeed":
-          store.markCompactionSeed(
-            action.summary,
-            action.preTokens,
-            action.seedPending,
-          );
           return;
         case "ingestFrame":
           store._ingestFrameForTest(action.feedId, action.decoded);

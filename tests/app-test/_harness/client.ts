@@ -782,17 +782,7 @@ export type DevSessionDriveAction =
   | { op: "transportReconnect" }
   // Page older turns above the loaded window; inject the response replay
   // bracket via `ingestFrame` afterward.
-  | { op: "loadPrevious"; amount: number | "all" }
-  // Flag the session as `/compact`-born so the transcript renders the
-  // carry-forward summary (divider label + recap body) and stays idle
-  // (exercises the render without the full real-claude
-  // summarize→spawn→seed flow).
-  | {
-      op: "markCompactionSeed";
-      summary: string | null;
-      preTokens: number | null;
-      seedPending: boolean;
-    };
+  | { op: "loadPrevious"; amount: number | "all" };
 
 /**
  * Drive a bound dev card's `CodeSessionStore` one step through the

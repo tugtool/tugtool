@@ -12,9 +12,10 @@ import {
 } from "@/lib/compaction-request";
 
 describe("buildSummarizationPrompt", () => {
-  it("asks for a self-contained recap with no focus", () => {
+  it("asks for a thorough, self-contained recap with no focus", () => {
     const p = buildSummarizationPrompt();
-    expect(p).toContain("self-contained recap");
+    expect(p).toContain("self-contained");
+    expect(p).toContain("continue");
     expect(p).not.toContain("particular attention");
   });
 

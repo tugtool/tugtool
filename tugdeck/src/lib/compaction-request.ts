@@ -14,16 +14,26 @@
 /**
  * Build the summarization prompt sent to the current session before it
  * is compacted. `focus`, when present, is the user's `/compact <focus>`
- * argument — a steer on what to emphasize. The prompt asks for a
- * self-contained recap a fresh assistant can continue from, since that
- * recap becomes the entire seed context of the next session.
+ * argument — a steer on what to emphasize.
+ *
+ * The recap becomes the *entire* seed context of the next session, so it
+ * is a self-contained handoff a fresh assistant can continue from — the
+ * rich form, modeled on the Claude Code TUI's compact summary. It is
+ * deliberately thorough (intent, technical concepts, files/code, errors
+ * & fixes, current state, next step); the Dev card shows it under a
+ * collapsible "Compaction Summary" affordance rather than trimming it.
  */
 export function buildSummarizationPrompt(focus?: string): string {
   const base =
-    "Please write a concise, self-contained recap of our conversation so " +
-    "far — the goals, decisions, key facts, and where we are — so a fresh " +
-    "assistant with no other context could continue seamlessly. Write the " +
-    "recap as the entire message.";
+    "Please write a detailed, self-contained summary of our conversation " +
+    "so far, so a fresh assistant with no other context could continue " +
+    "seamlessly. Be thorough — capture, where applicable: the user's " +
+    "primary requests and intent; key technical concepts, decisions, and " +
+    "constraints; the specific files, identifiers, commands, and code " +
+    "changes that matter; errors encountered and how they were resolved; " +
+    "the current state of the work; and the next step. Preserve exact " +
+    "names and facts over generalities. Write the summary as the entire " +
+    "message.";
   const trimmed = focus?.trim() ?? "";
   if (trimmed.length === 0) return base;
   return `${base}\n\nGive particular attention to: ${trimmed}`;

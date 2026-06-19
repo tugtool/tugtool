@@ -46,6 +46,7 @@ import {
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useSessionLedger } from "@/lib/dev-session-ledger-store";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
+import { DevCompactionCarryForward } from "./dev-compaction-carry-forward";
 import {
   deriveControlBarState,
   deriveLoadStatus,
@@ -100,13 +101,19 @@ export function DevTranscriptTopRow({
     [codeSessionStore],
   );
   return (
-    <div className="dev-transcript-top-row" data-slot="dev-transcript-top-row">
-      <ControlBarMetadata
-        codeSessionStore={codeSessionStore}
-        cardId={cardId}
-        onLoad={onLoad}
-      />
-    </div>
+    <>
+      <div className="dev-transcript-top-row" data-slot="dev-transcript-top-row">
+        <ControlBarMetadata
+          codeSessionStore={codeSessionStore}
+          cardId={cardId}
+          onLoad={onLoad}
+        />
+      </div>
+      {/* Carry-forward is its own full-width row BELOW the metadata strip
+          (the strip is a fixed-height horizontal chrome bar, not a column
+          container) — it renders only for a `/compact`-born session. */}
+      <DevCompactionCarryForward codeSessionStore={codeSessionStore} />
+    </>
   );
 }
 
@@ -409,6 +416,16 @@ function ControlBarMetadata({
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().replayWindow,
   );
+  // A `/compact`-born session relabels the header "Session compacted" — it
+  // is a "fake new" session (an implementation detail of compaction), not a
+  // genuinely new card/session. The date/time is the same source (the fresh
+  // session's created-at); only the verb changes.
+  const isCompacted =
+    React.useSyncExternalStore(
+      codeSessionStore.subscribe,
+      () => codeSessionStore.getSnapshot().compactionSeed,
+    ) !== null;
+  const sessionVerb = isCompacted ? "Session compacted" : "Session created";
   const focusGroup = React.useId();
 
   const status = deriveLoadStatus({
@@ -423,7 +440,11 @@ function ControlBarMetadata({
       <div className="dev-load-control-bar-meta-left">
         {createdAtMs !== null ? (
           <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
-            {`Session created: ${formatSessionCreated(createdAtMs)}`}
+            {`${sessionVerb}: ${formatSessionCreated(createdAtMs)}`}
+          </TugLabel>
+        ) : isCompacted ? (
+          <TugLabel emphasis="proposal" className="dev-load-control-bar-label">
+            {sessionVerb}
           </TugLabel>
         ) : null}
       </div>

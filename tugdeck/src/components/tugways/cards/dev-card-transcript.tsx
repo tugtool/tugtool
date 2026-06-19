@@ -1222,14 +1222,6 @@ export const DevTranscriptHost = forwardRef<
     }
   }, [isReplaying, codeSessionStore, dataSource]);
 
-  // Compaction divider header — present iff this session was born from
-  // `/compact` (the seed flagged it). Subscribed via [L02]; appearance is
-  // CSS-only ([L06]).
-  const compactionSeed = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().compactionSeed,
-  );
-
   // One renderer per kind ([L26] — renderer reference is the third
   // identity input React reconciles against; distinct lambdas count
   // as distinct component types). With the data source unified to a
@@ -1471,31 +1463,6 @@ export const DevTranscriptHost = forwardRef<
       data-testid="dev-card-transcript"
       data-replaying={(isReplaying && !loadingPrevious) || undefined}
     >
-      {compactionSeed !== null ? (
-        <div
-          className="dev-card-transcript-compaction-block"
-          data-slot="compaction-carry-forward"
-        >
-          <div
-            className="dev-card-transcript-compaction"
-            role="separator"
-            data-slot="compaction-divider"
-          >
-            <span className="dev-card-transcript-compaction-label">
-              {compactionNoteText(compactionSeed.preTokens ?? undefined)}
-            </span>
-          </div>
-          {compactionSeed.summary !== null &&
-          compactionSeed.summary.length > 0 ? (
-            <div
-              className="dev-card-transcript-compaction-summary"
-              data-slot="compaction-summary"
-            >
-              <TugMarkdownBlock initialText={compactionSeed.summary} />
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       {listMounted ? (
         // The transcript region: the load overlay's inert + scrim target
         // when modal. The overlay is an absolute sibling layered *over* it.
