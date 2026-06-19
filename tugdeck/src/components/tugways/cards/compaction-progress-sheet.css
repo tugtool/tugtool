@@ -10,18 +10,25 @@
 .compaction-progress-sheet {
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-sheet-space-a);
+  /* Vertical rhythm is the bar's own margin (below) — keep this 0 so the bar
+     centers between the header and the Cancel button. */
+  gap: 0;
 }
 
-/* The bar variant already stretches to its host's full width; this just
-   guarantees the row participates in the column's full measure. The
-   percentage readout (showValue) is the indicator's own trailing element. */
+/* This sheet owns only the bar's VERTICAL placement. The bar's own layout —
+   full-width / left-anchored track, indeterminate barber-pole when there's no
+   positive value, trailing percentage that shrinks the track from the right —
+   is the TugProgressIndicator's standard `variant="bar"` behavior, not the
+   sheet's concern. Center it between the header and Cancel: the header sits
+   `--tugx-sheet-space-b` above the body (its `margin-bottom`), so a matching
+   `margin-bottom` on the bar (with no top margin) balances the gaps. */
 .compaction-progress-sheet-bar {
-  width: 100%;
+  margin-top: 0;
+  margin-bottom: var(--tugx-sheet-space-b);
 }
 
-/* The column gap already separates the bar from the actions row — drop the
-   shared actions top-margin so the Cancel button sits close to the bar. */
+/* Spacing below the bar is the bar's own margin — drop the shared actions
+   top-margin so the space above and below the bar stays symmetric. */
 .compaction-progress-sheet .tug-sheet-actions {
   margin-top: 0;
 }

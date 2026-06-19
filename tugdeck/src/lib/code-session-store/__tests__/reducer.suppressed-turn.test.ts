@@ -90,6 +90,21 @@ describe("reducer — suppressed turn", () => {
     const { effects } = reduce(s, COMPLETE);
     expect(effects.some(isAppendTranscript)).toBe(true);
   });
+
+  it("interrupting a suppressed turn does NOT strand its prompt in the composer", () => {
+    let s = fresh();
+    s = reduce(s, send(true)).state; // suppressed, no assistant content yet (CASE A)
+    const r = reduce(s, { type: "interrupt_action" } as CodeSessionEvent);
+    expect(r.state.phase).toBe("idle");
+    expect(r.state.pendingDraftRestore).toBeNull();
+  });
+
+  it("interrupting an ordinary turn DOES restore its draft (the contrast)", () => {
+    let s = fresh();
+    s = reduce(s, send(false)).state;
+    const r = reduce(s, { type: "interrupt_action" } as CodeSessionEvent);
+    expect(r.state.pendingDraftRestore).toEqual({ text: "seed", atoms: [] });
+  });
 });
 
 describe("reducer — mark_compaction_seed", () => {

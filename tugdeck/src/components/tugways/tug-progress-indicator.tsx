@@ -258,8 +258,11 @@ export interface TugProgressIndicatorProps
 
   /**
    * Determinate progress value, 0 to `max`. Only honored by `ring`, `bar`,
-   * and `pie` — other variants ignore. When undefined, the variant runs
-   * its indeterminate motion (driven by `state`).
+   * and `pie` — other variants ignore. When undefined — OR not yet positive
+   * (`value <= 0`) — the variant runs its indeterminate motion (driven by
+   * `state`) rather than painting a stalled 0%, so a freshly-started bar
+   * never sits at a literal 0. It becomes determinate the moment `value`
+   * goes positive.
    */
   value?: number;
 
@@ -443,10 +446,19 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
           ? phaseLabels[phase]
           : undefined;
 
-    const isDeterminate = value !== undefined;
+    // A determinate variant (ring/bar/pie) with no positive progress yet
+    // renders its INDETERMINATE motion (barber pole / rotation) rather than
+    // a stalled 0% — a freshly-started bar should never sit at a literal 0.
+    // It becomes determinate the moment `value` is positive. Indeterminate
+    // variants (spinner/dot/wave) ignore `value` regardless.
+    const effectiveValue =
+      value !== undefined && value > 0 ? value : undefined;
+    const isDeterminate = effectiveValue !== undefined;
 
     const ariaProps: Record<string, string | number | undefined> = {
-      "aria-valuenow": isDeterminate ? Math.round((value / max) * 100) : undefined,
+      "aria-valuenow": isDeterminate
+        ? Math.round((effectiveValue / max) * 100)
+        : undefined,
       "aria-valuemin": isDeterminate ? 0 : undefined,
       "aria-valuemax": isDeterminate ? 100 : undefined,
     };
@@ -463,7 +475,7 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
       variant,
       state: effectiveState,
       disabled: effectiveDisabled,
-      value,
+      value: effectiveValue,
       max,
       size,
     };
@@ -523,17 +535,31 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
     // flexing bar — never re-layouts as the live value's digit count grows
     // (CSS-only, same grid-stack trick as the centered label) [L06].
     const valueText =
-      showValue && value !== undefined ? formatValue(value, max) : undefined;
-    const valueSlot =
-      valueText !== undefined ? (
-        <span className="tug-progress-indicator-value" aria-hidden="true">
-          <TugLabel
-            size="sm"
-            emphasis="calm"
-            className="tug-progress-indicator-value-ghost"
-          >
-            {formatValue(max, max)}
-          </TugLabel>
+      showValue && effectiveValue !== undefined
+        ? formatValue(effectiveValue, max)
+        : undefined;
+    // Readout slot. The ghost is ALWAYS present when `showValue` is set, so it
+    // reserves a constant line-height — the row height (and thus a bar's
+    // vertical position) never changes when the value appears. While
+    // indeterminate (`data-empty`) the slot collapses to ZERO width (CSS), so
+    // the bar still spans the full width with no trailing gap; once
+    // determinate it takes the ghost's full-scale width, so the bar shrinks
+    // from the right (left edge fixed) and digit growth (9% → 100%) never
+    // re-sizes it.
+    const valueSlot = showValue ? (
+      <span
+        className="tug-progress-indicator-value"
+        aria-hidden="true"
+        data-empty={valueText === undefined ? "true" : undefined}
+      >
+        <TugLabel
+          size="sm"
+          emphasis="calm"
+          className="tug-progress-indicator-value-ghost"
+        >
+          {formatValue(max, max)}
+        </TugLabel>
+        {valueText !== undefined ? (
           <TugLabel
             size="sm"
             emphasis="calm"
@@ -541,8 +567,9 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
           >
             {valueText}
           </TugLabel>
-        </span>
-      ) : null;
+        ) : null}
+      </span>
+    ) : null;
 
     const root = (
       <span

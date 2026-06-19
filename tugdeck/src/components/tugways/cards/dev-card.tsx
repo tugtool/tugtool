@@ -2823,11 +2823,10 @@ export function DevCardBody({
   const paneBulletinRef = useRef<TugPaneBulletinApi>(null);
 
   // Close out a `/compact` run: when the progress store reaches a terminal
-  // outcome, raise the matching pane bulletin, then clear the store — which
-  // dismisses the progress sheet (it watches the same store). The success
-  // bulletin is sticky (sits until the user dismisses it) so the result is
-  // unmistakable after the scrollback resets to the compaction divider.
-  // [L02] store state via `useSyncExternalStore`.
+  // outcome, clear the store — which dismisses the progress sheet (it watches
+  // the same store). Success is self-evident (the fresh session swaps in with
+  // its Compaction Summary), so it raises no bulletin; cancel / failure DO,
+  // since nothing visible changed. [L02] store state via `useSyncExternalStore`.
   const compactionProgress = useSyncExternalStore(
     compactionProgressStore.subscribe,
     compactionProgressStore.getSnapshot,
@@ -2842,7 +2841,6 @@ export function DevCardBody({
     }
     const notify = paneBulletinRef.current;
     if (compactionProgress.outcome === "succeeded") {
-      notify?.success("Session compacted", { sticky: true });
       // The fresh session has already swapped in behind the (still-steady)
       // scrim. Hold the sheet for a couple of frames so the new transcript
       // paints and settles before we dismiss — otherwise the scrim lifts in

@@ -1074,9 +1074,13 @@ function handleInterrupt(
     // not a wake-specific flag.
     const inflightIsAssistantOrigin =
       state.pendingTurn?.origin === "assistant";
-    const inflightUser = inflightIsAssistantOrigin
-      ? null
-      : readInflightUserMessage(state);
+    // A suppressed turn (the `/compact` summarization prompt) is an
+    // internal detail — never strand its text in the composer on cancel.
+    const inflightSuppressed = state.pendingTurn?.suppressed === true;
+    const inflightUser =
+      inflightIsAssistantOrigin || inflightSuppressed
+        ? null
+        : readInflightUserMessage(state);
     const restore =
       inflightUser !== null
         ? { text: inflightUser.text, atoms: inflightUser.attachments }

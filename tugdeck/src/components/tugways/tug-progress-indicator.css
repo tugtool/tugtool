@@ -163,6 +163,10 @@ body {
      bar [L06]. The two TugLabels stack in one grid cell sized to the widest
      (the ghost); the live value right-aligns within it. */
   font-variant-numeric: tabular-nums;
+  /* Single line always — so collapsing the slot to width:0 while
+     indeterminate (below) clips it horizontally instead of wrapping the
+     digits into a tall column (which would inflate the row height). */
+  white-space: nowrap;
   display: grid;
   grid-template-areas: "stack";
   justify-items: end;
@@ -176,4 +180,15 @@ body {
 .tug-progress-indicator-value-ghost {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Indeterminate readout: keep the ghost's reserved HEIGHT (so the row height
+   — and a bar's vertical position — never changes when the live value
+   appears), but collapse its WIDTH to zero so the indeterminate bar spans the
+   full width with no trailing gap. The ghost is clipped horizontally; its
+   line-height still sizes the row. */
+.tug-progress-indicator-value[data-empty="true"] {
+  width: 0;
+  margin-left: 0;
+  overflow: hidden;
 }

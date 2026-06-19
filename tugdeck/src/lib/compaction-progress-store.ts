@@ -38,7 +38,11 @@ export interface CompactionProgress {
   readonly cardId: string;
   /** Which half of the run is active. */
   readonly phase: CompactionRunPhase;
-  /** Determinate fraction 0..1 for the progress bar. */
+  /**
+   * Determinate fraction 0..1 for the progress bar. A leading 0 renders
+   * as the barber pole — `TugProgressIndicator` shows indeterminate motion
+   * for a determinate variant until there is positive progress.
+   */
   readonly value: number;
   /** Terminal outcome, or `null` while the run is still in flight. */
   readonly outcome: CompactionOutcome | null;

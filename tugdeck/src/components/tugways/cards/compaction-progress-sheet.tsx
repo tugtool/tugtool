@@ -27,6 +27,7 @@ import React, { useEffect, useSyncExternalStore } from "react";
 
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { compactionProgressStore } from "@/lib/compaction-progress-store";
 
 import "./compaction-progress-sheet.css";
@@ -57,13 +58,19 @@ export function CompactionProgressSheet({
   }, [progress, close]);
 
   const cancelFocusGroup = React.useId();
+  // Cancel only during summarizing: once the fresh session is spawning
+  // (respawning) there is nothing left to interrupt.
+  const cancelable =
+    progress !== null &&
+    progress.outcome === null &&
+    progress.phase === "summarizing";
+  // Seed Cancel as the sheet's live default (filled + double ring) so Return
+  // triggers it — only while it is actually shown.
+  useSeedKeyView(cancelable ? `${cancelFocusGroup}:0` : null);
 
   if (progress === null) return null;
 
   const settled = progress.outcome !== null;
-  // Cancel only during summarizing: once the fresh session is spawning
-  // (respawning) there is nothing left to interrupt.
-  const cancelable = !settled && progress.phase === "summarizing";
 
   return (
     <div className="compaction-progress-sheet" data-slot="compaction-progress">
@@ -81,11 +88,12 @@ export function CompactionProgressSheet({
       />
       {cancelable ? (
         <div className="tug-sheet-actions">
-          {/* Authored into the sheet's trap so Tab reaches it and it rings when
-              focused; not seeded — a progress sheet has no commit default, and a
-              solid-filled Cancel would read as a primary action. */}
+          {/* The sheet's live default: seeded (see useSeedKeyView above) so it
+              wears the filled + double-ring default treatment and Return
+              triggers it — Cancel is the only action a running compaction
+              offers. */}
           <TugPushButton
-            emphasis="outlined"
+            emphasis="primary"
             role="action"
             onClick={onCancel}
             data-testid="compaction-cancel"
