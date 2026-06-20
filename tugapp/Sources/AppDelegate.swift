@@ -1539,35 +1539,53 @@ extension AppDelegate: NSMenuDelegate {
             ProcessManager.readTugbank(domain: TugConfig.domain, key: "theme")
             ?? baseThemeName
 
-        // Read theme names directly from shipped CSS files on disk.
-        // sourceTreePath is the tugtool repo root; override themes are at
-        // tugdeck/styles/themes/*.css, and base theme is always "brio".
+        // Read theme names directly from shipped CSS files on disk, plus each
+        // theme's mode from its header comment. sourceTreePath is the tugtool
+        // repo root; themes are at tugdeck/styles/themes/*.css, base is "brio".
+        // The header's first line carries "— dark theme" / "— light theme",
+        // so the menu can group them without a separate manifest.
         var themeNames = Set<String>([baseThemeName])
+        var darkThemes = Set<String>()
         if let root = sourceTreePath {
             let themesDir = (root as NSString).appendingPathComponent("tugdeck/styles/themes")
             if let files = try? FileManager.default.contentsOfDirectory(atPath: themesDir) {
-                let discovered = files
-                    .filter { $0.hasSuffix(".css") }
-                    .map { ($0 as NSString).deletingPathExtension }
-                for name in discovered {
+                for file in files where file.hasSuffix(".css") {
+                    let name = (file as NSString).deletingPathExtension
                     themeNames.insert(name)
+                    let path = (themesDir as NSString).appendingPathComponent(file)
+                    // Light themes are the exception; default to dark when the
+                    // header is unreadable or unmarked.
+                    let header = (try? String(contentsOfFile: path, encoding: .utf8))?.prefix(200) ?? ""
+                    if !header.localizedCaseInsensitiveContains("light theme") {
+                        darkThemes.insert(name)
+                    }
                 }
             }
         }
 
-        // Sort: base theme first, then alphabetical
-        let sortedThemeNames = themeNames.sorted { a, b in
-            if a.lowercased() == baseThemeName { return true }
-            if b.lowercased() == baseThemeName { return false }
-            return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+        // Group: dark themes first, then light themes. Within each group the
+        // base theme sorts first, then alphabetical.
+        func sortGroup(_ names: [String]) -> [String] {
+            names.sorted { a, b in
+                if a.lowercased() == baseThemeName { return true }
+                if b.lowercased() == baseThemeName { return false }
+                return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+            }
         }
+        let dark = sortGroup(themeNames.filter { darkThemes.contains($0) })
+        let light = sortGroup(themeNames.filter { !darkThemes.contains($0) })
 
-        for name in sortedThemeNames {
+        func addThemeItem(_ name: String) {
             let item = NSMenuItem(title: name.capitalized, action: #selector(selectTheme(_:)), keyEquivalent: "").identified("view.theme.\(name)")
             item.representedObject = name
             item.state = (name == activeThemeName) ? .on : .off
             menu.addItem(item)
         }
+        for name in dark { addThemeItem(name) }
+        if !dark.isEmpty && !light.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+        for name in light { addThemeItem(name) }
 
         // If no themes found, show a placeholder
         if menu.items.isEmpty {
