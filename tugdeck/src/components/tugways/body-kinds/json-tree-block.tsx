@@ -15,7 +15,7 @@
  *    Unlike `FileBlock`, the header is rendered even without a label
  *    because it is the only host for the expand controls a tree
  *    needs; in `embedded` mode it is suppressed and the cluster
- *    portals into the host `ToolBlockChrome`'s actions slot.
+ *    portals into the host `BlockChrome`'s actions slot.
  *  - Tree — one row per node. Container rows (object / array) carry a
  *    twist chevron and toggle expand/collapse on click; leaf rows are
  *    inert. Every non-root row reveals a hover `TugIconButton` that
@@ -58,7 +58,7 @@
  *  - [L20] component-token sovereignty — owns the `--tugx-json-*`
  *    slot family; consumes `--tugx-block-*` for the shared
  *    block-surface scaffold. Position-coordination tokens
- *    (`--tugx-pin-stack-top`, `--tugx-toolblock-header-height`) are
+ *    (`--tugx-pin-stack-top`, `--tugx-block-header-height`) are
  *    read but never overridden.
  *
  * Decisions:
@@ -76,7 +76,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, Copy, FoldVertical, UnfoldVertical } from "lucide-react";
 
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
   useComponentStatePreservation,
@@ -114,7 +114,7 @@ export interface JsonTreeBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolBlockChrome` in
+   * container and a header (e.g. `BlockChrome` in
    * `DefaultToolBlock`). When `true`:
    *
    *   - The standalone frame (background / border / radius / margin)
@@ -124,7 +124,7 @@ export interface JsonTreeBlockProps {
    *   - The actions cluster (Expand-all / Collapse-all / Copy) portals
    *     into the host's chrome actions slot via
    *     `ChromeActionsTargetContext`. As with the other body kinds,
-   *     `embedded={true}` MUST be used under a `ToolBlockChrome`.
+   *     `embedded={true}` MUST be used under a `BlockChrome`.
    *
    * @default false
    */

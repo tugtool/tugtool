@@ -384,9 +384,11 @@ Never chain aliases (`--tugx-pane-bg: var(--tugx-pane-other-alias)`) — that is
 
 #### Shared utility: `--tugx-block-*` for block-surface components
 
-For body-kinds (FileBlock, DiffBlock, TerminalBlock, TideThinkingBlock, the TugMarkdownView code panels) and chrome wrappers (ToolBlockChrome), the shared "block surface" pattern lives at `tugdeck/styles/tugx-block.css` as `--tugx-block-*`. It captures the canonical scaffold once: inset card frame, optional raised chrome variant, code-typography defaults (mono font + sm size + 1.55 line-height), header / footer strip chrome, body row hover overlay, and tone-tinted feedback bands (add / remove / caution / active).
+For body-kinds (FileBlock, DiffBlock, TerminalBlock, DevThinkingBlock, the TugMarkdownView code panels) and chrome wrappers (BlockChrome), the shared "block surface" pattern lives at `tugdeck/styles/tugx-block.css` as `--tugx-block-*`. It captures the canonical scaffold once: inset card frame, optional raised chrome variant, code-typography defaults (mono font + sm size + 1.55 line-height), header / footer strip chrome, body row hover overlay, and tone-tinted feedback bands (add / remove / caution / active).
 
 When authoring a body-kind or chrome wrapper, **consume `--tugx-block-*` directly in CSS rules** for the parts that match the shared pattern. Keep `--tugx-{component}-*` slots only for parts that are genuinely component-specific (gutter widths, match-highlight overlays, ANSI palettes, heading scales, etc.).
+
+`--tugx-block-*` is also the substrate for the **block-variant contract** (`BlockVariant` = `tool | receipt | note | data`). A block surface stamps `data-variant` on its root; variant-specific appearance is `--tugx-block-*` overrides scoped under `[data-variant="…"]`, never a render fork (per [L06]/[L20]). `BlockChrome` is the React implementation of the `tool` (default) and `receipt` variants; `DevThinkingBlock` (`note`) and the markdown-table frame (`data`, an imperative-DOM substrate) adopt the same `--tugx-block-*` + `[data-variant]` contract from their own roots rather than rendering through it. A genuinely distinct variant keeps its own `--tugx-{variant}-*` sub-family for tones the shared slots don't cover (e.g. `note` keeps `--tugx-thinking-*` for its label / preview / italic body / collapse animation).
 
 ```css
 /* file-block.css — consume the shared block-surface scaffold directly */
@@ -774,7 +776,7 @@ When no transcript entry is present (gallery cards, ad-hoc consumers, the `Rende
 
 Deeper-tier bars compose the same way through additional component-owned variables:
 
-- **`--tugx-toolblock-header-height`** — written by `ToolBlockChrome` on its root from a ResizeObserver on `.tool-block-chrome-header`. Sticky descendants inside the chrome (a diff's hunk header) read it so they pin BELOW the chrome header.
+- **`--tugx-block-header-height`** — written by `BlockChrome` on its root from a ResizeObserver on `.tool-block-chrome-header`. Sticky descendants inside the chrome (a diff's hunk header) read it so they pin BELOW the chrome header.
 - **`--tugx-diff-header-height`** — written by `DiffBlock` on its root from a ResizeObserver on the standalone-mode identity header (unset when embedded mode suppresses the header). Sticky descendants inside the body kind (`DiffBlock`'s hunk headers) read all three pin-stack variables in a single calc:
 
 ```css
@@ -782,7 +784,7 @@ Deeper-tier bars compose the same way through additional component-owned variabl
   position: sticky;
   top: calc(
     var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-block-header-height, 0px)
     + var(--tugx-diff-header-height, 0px)
   );
   z-index: 0;
@@ -797,7 +799,7 @@ The seven-slot system (`surface`, `element`, etc.) covers **appearance tokens**:
 
 1. **Appearance tokens** (`--tug7-*`, `--tugx-{component}-*`, `--tug-color-*`, etc.). Owned by one component or theme tier. Tuned per theme. Subject to [L20]: only the owner declares + consumes. Cross-slot reads forbidden.
 
-2. **Position-coordination tokens** (`--tugx-pin-stack-top`, `--tugx-toolblock-header-height`, `--tugx-diff-header-height`, etc.). The pin-stack is the canonical example. Not appearance — they don't drive color, typography, or contrast pairings. They describe **the geometry of a parent that descendants need to know** so they can compute their own sticky `top` offset. The chrome writes its measured header height; the body kind reads it. Single writer, many readers, no overrides.
+2. **Position-coordination tokens** (`--tugx-pin-stack-top`, `--tugx-block-header-height`, `--tugx-diff-header-height`, etc.). The pin-stack is the canonical example. Not appearance — they don't drive color, typography, or contrast pairings. They describe **the geometry of a parent that descendants need to know** so they can compute their own sticky `top` offset. The chrome writes its measured header height; the body kind reads it. Single writer, many readers, no overrides.
 
 3. **Component-metric tokens** (`--tug-button-{2xs,xs,sm,md,lg}-{height,padding-inline,font-size,icon-size}`, etc.). A component publishes its own per-variant geometry constants so sibling components that need to match — without composing the component themselves — can. The canonical example is `enhanceFencedCode`'s imperative Copy button, which can't mount a React `TugPushButton` but must read as one visually. The metric tokens keep its sizing in lockstep with `TugButton size="2xs"` so a future button-geometry change propagates automatically instead of drifting behind a comment.
 
@@ -807,13 +809,13 @@ The distinguishing tests:
 - *Is the value the live measured geometry of a parent that descendants need to know to place themselves?* If yes, it is a position-coordination token. Single writer (the parent's React effect), many readers, no overrides.
 - *Is the value a static per-variant geometry constant another component might need to match?* If yes, it is a component-metric token. Single writer (the component's own CSS), many readers, no overrides — the same single-writer invariant as position-coordination tokens, but published statically in CSS rather than written dynamically from a `ResizeObserver`.
 
-Categories 2 and 3 are NOT subject to [L20]'s "A's CSS references only A-scoped tokens" rule. They are explicit publish/subscribe contracts that cross component boundaries by design. A body kind never declares `--tugx-toolblock-header-height: 32px` in its own CSS, and a fenced-code renderer never declares `--tug-button-2xs-height: 1rem` — they only consume the values the owners publish. That is the actual [L20] invariant for these categories: **single writer, many readers, no overrides**.
+Categories 2 and 3 are NOT subject to [L20]'s "A's CSS references only A-scoped tokens" rule. They are explicit publish/subscribe contracts that cross component boundaries by design. A body kind never declares `--tugx-block-header-height: 32px` in its own CSS, and a fenced-code renderer never declares `--tug-button-2xs-height: 1rem` — they only consume the values the owners publish. That is the actual [L20] invariant for these categories: **single writer, many readers, no overrides**.
 
 ### Body-kind affordance hosting
 
-Resting affordances (Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `ToolBlockChrome`'s actions slot (`.tool-block-chrome-actions[data-slot="tool-block-actions"]`) in embedded composition.
+Resting affordances (Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `BlockChrome`'s actions slot (`.tool-block-chrome-actions[data-slot="tool-block-actions"]`) in embedded composition.
 
-The portal mechanism is React-side, not DOM-side: `ToolBlockChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
+The portal mechanism is React-side, not DOM-side: `BlockChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
 
 Content blocks render no text-entry UI of their own — no per-block Find row. A card has at most one text-entry surface (see [Focus in content-owning cards](#focus-in-content-owning-cards)); for a tide card that is the engine's `tug-prompt-entry`.
 

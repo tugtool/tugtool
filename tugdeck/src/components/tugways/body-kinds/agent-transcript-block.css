@@ -14,7 +14,7 @@
  * Layout:
  *  - `.tugx-agent` — the framed block surface (standalone). Dropped in
  *    `[data-embedded="true"]` so the body sits flush under a host
- *    `ToolBlockChrome`.
+ *    `BlockChrome`.
  *  - `.tugx-agent-header` — pinned identity strip (standalone only):
  *    agent type + status + duration + tool count + actions cluster.
  *  - `.tugx-agent-entries` — the content column. Each entry is a
@@ -60,13 +60,13 @@ body {
   /* Pin-stack clearance for nested tool-block headers: this agent's own
    * chrome-header height added to the inherited ancestor offset. Computed
    * HERE — a non-cyclic read of the inherited `--tugx-pin-stack-top` plus
-   * the chrome's `--tugx-toolblock-header-height` — and republished by
+   * the chrome's `--tugx-block-header-height` — and republished by
    * `.tugx-agent-entries` AS `--tugx-pin-stack-top` for the subtree. Two
    * elements on purpose: redefining a custom property in terms of itself
    * on ONE element is a dependency cycle, which makes it guaranteed-invalid
    * so nested headers fall back to `top: 0` and pin ABOVE their parent. */
   --tugx-agent-pin-clearance: calc(
-    var(--tugx-pin-stack-top, 0px) + var(--tugx-toolblock-header-height, 0px)
+    var(--tugx-pin-stack-top, 0px) + var(--tugx-block-header-height, 0px)
   );
   display: block;
   margin: var(--tugx-block-margin);

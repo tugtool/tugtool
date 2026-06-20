@@ -102,7 +102,7 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines pe
 
 **Plan to resolve:** Spike at the top of [#step-3]: prototype the `note` and `data` variants' headers against the single-component model; if either needs structure the prop surface can't express cleanly, adopt the thin-wrapper option for *that* variant only. Decide and record as a `[P##]` before completing Step 3.
 
-**Resolution:** OPEN — decided at [#step-3] kickoff.
+**Resolution:** DECIDED (see [P07]) — spiked at [#step-3] kickoff by comparing the three header shapes in source; `note`/`data` diverge structurally, so the hybrid contract was chosen.
 
 #### [Q02] Thinking token family — retire `--tugx-thinking-*` or keep it (OPEN) {#q02-thinking-tokens}
 
@@ -116,7 +116,7 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines pe
 
 **Plan to resolve:** Decide at [#step-4] kickoff after the `note` variant exists; compare the two token graphs side by side in the gallery `note` card. Record as a `[P##]`.
 
-**Resolution:** OPEN — decided at [#step-4] kickoff.
+**Resolution:** DECIDED (see [P08]) — keep `--tugx-thinking-*` as note's sub-family; ~9/12 tokens have no `--tugx-block-*` counterpart.
 
 ---
 
@@ -193,6 +193,25 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines pe
 - Keeping the names avoids touching the 20 wrappers' prop typing for zero behavioral gain, consistent with [P01] keeping the wrapper class names.
 
 **Implications:** Step 1 moves these symbols' file with the dir rename but does **not** rename them. The success-criteria grep targets only `ToolBlockChrome|ToolCallHeader`, so these surviving `ToolBlock*` names are expected, not a miss.
+
+#### [P07] `variant` is a hybrid contract, not one component for all (DECIDED) {#p07-variant-hybrid-contract}
+
+**Decision:** `variant` is a shared *contract* — the `--tugx-block-*` token scope under `[data-variant]`, the collapse/affordance shapes, and the `data-variant` attribute. `BlockChrome`/`BlockHeader` is the React implementation that renders the `tool` (default) and `receipt` variants (same dot/identity/trailing-actions header, restyled by `[data-variant]`). The `note` (Thinking) and `data` (markdown-table) variants adopt the same contract from their own roots rather than rendering through `BlockHeader`. `BlockChrome`'s `variant` prop is therefore typed `"tool" | "receipt"`; the full four-value vocabulary is exported as `BlockVariant`.
+
+**Rationale (from the [#step-3] spike, comparing the three header shapes in source):**
+- `tool` and `receipt` share one shape (dot/icon + identity + trailing actions); `receipt` only restyles + adds an accent rail — expressible as `[data-variant]` token overrides on the one `BlockHeader`.
+- `note` diverges structurally: a single `<button>` header with a **leading** chevron + "Thinking" label + a collapsed **preview** line (no dot, no verb, no detail, no summary, no copy), AND a height-**animated** body (grid 0fr↔1fr) instead of the chrome's subtree mount/unmount. Forcing this through `BlockHeader`'s props would bury note-only branches in the shared component and add a second collapse path.
+- `data` is a separate substrate (imperative DOM, no React `BlockHeader`) per [P04].
+
+**Implications:** Step 3 adds `variant?: "tool" | "receipt"` + the `BlockVariant` export + the `data-variant` stamp. Step 4 keeps Thinking's bespoke header/body but adopts the `--tugx-block-*` `[data-variant="note"]` token scope + the collapse/affordance contract. Step 6's table frame stamps `data-variant="data"` and reads the shared tokens. Variant token overrides are substrate-agnostic (keyed on the attribute), so each adopter scopes its own under `[data-variant="…"]` where its tokens live.
+
+#### [P08] `note` keeps `--tugx-thinking-*` as a sovereign sub-family (DECIDED) {#p08-keep-thinking-tokens}
+
+**Decision:** When Thinking adopts the `note` contract, it reads the shared `--tugx-block-*` SURFACE tokens (bg / text / border / radius / margin) for its frame and stamps `data-variant="note"`, but keeps its note-specific tones in `--tugx-thinking-*` (label, preview, italic content, collapse-animation timing, focus ring). `--tugx-thinking-*` is NOT retired.
+
+**Rationale (from inspecting the family at [#step-4] kickoff):** ~9 of the 12 `--tugx-thinking-*` tokens have no `--tugx-block-*` counterpart — the "Thinking" label, the collapsed preview line, the **italic** prose body, and the height-animation duration/easing are all note-only. Retiring them would force note-only slots (`--tugx-block-label-*`, `--tugx-block-preview-*`, `--tugx-block-content-style`, `--tugx-block-collapse-*`) into the shared family — the opposite of convergence. [L20] sovereignty says a genuinely distinct content type keeps its own sub-family.
+
+**Implications:** Step 4 switches only Thinking's frame surface to the shared `--tugx-block-*` tokens (so a frame change lands on note) and leaves `--tugx-thinking-*` for the rest. The success criterion's `rg "--tugx-thinking-"` check resolves as DEFERRED-by-decision (kept, not zero) per this `[P08]`.
 
 ---
 
@@ -311,15 +330,15 @@ Both substrates render the same visual contract: a sticky header strip (`top: va
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Rename chrome + header + dirs + helper bits to `Block` | pending | — |
-| #step-2 | Fold `--tugx-toolblock-*` into `--tugx-block-*` | pending | — |
-| #step-3 | Add the `variant` axis (resolve [Q01]) | pending | — |
-| #step-4 | Migrate Thinking → `note` variant (resolve [Q02]) | pending | — |
-| #step-5 | Migrate commit receipt → `receipt` variant | pending | — |
-| #step-6 | Unify markdown tables as the `data` variant | pending | — |
-| #step-7 | Integration checkpoint — borrowers coexist | pending | — |
-| #step-8 | Gallery clear & rebuild | pending | — |
-| #step-9 | tuglaws / docs naming sweep | pending | — |
+| #step-1 | Rename chrome + header + dirs + helper bits to `Block` | done | 526d03b9 |
+| #step-2 | Fold `--tugx-toolblock-*` into `--tugx-block-*` | done | 46e25a0f |
+| #step-3 | Add the `variant` axis (resolve [Q01]) | done | 2c1c08cd |
+| #step-4 | Migrate Thinking → `note` variant (resolve [Q02]) | done | 0376aaae |
+| #step-5 | Migrate commit receipt → `receipt` variant | done | 434056be |
+| #step-6 | Unify markdown tables as the `data` variant | done | 88039784 |
+| #step-7 | Integration checkpoint — borrowers coexist | done | N/A (verification) |
+| #step-8 | Gallery clear & rebuild | done | badf9b45 |
+| #step-9 | tuglaws / docs naming sweep | done | 38447790 |
 
 #### Step 1: Rename chrome + header + dirs + helper bits to `Block` {#step-1}
 

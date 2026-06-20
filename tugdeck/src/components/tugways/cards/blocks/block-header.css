@@ -1,0 +1,287 @@
+/* @tug-pairings:
+   - --tugx-block-strip-bg / --tugx-block-strip-padding / --tugx-block-strip-font  (shared chrome strip surface)
+   - --tugx-block-strip-border                                                      (shared header→body divider)
+   - --tugx-block-text-color / --tugx-block-text-color-muted                        (shared chrome text tones)
+   - --tugx-block-code-font                                                         (shared mono family for detail/summary)
+*/
+
+/**
+ * block-header.css — the one tool-call header (the Quiet Line), worn
+ * by every tool block in every state.
+ *
+ * One row: [dot] [icon] Name detail … [result] | [actions] [⌄]. A long
+ * detail wraps to more rows while the dot, icon, result, and actions stay
+ * on the FIRST line — every cross-row item rides a one-line box
+ * (`--tugx-toolheader-line`) and the row top-aligns, so a single-line row
+ * still reads vertically centered. The flexible detail wraps within its
+ * own column rather than shoving the trailing cluster around. When
+ * expanded the header gains a bottom divider above the mounted body; when
+ * collapsed it is the whole block and carries no divider. No left-edge
+ * status stripe — the lifecycle dot carries status.
+ *
+ * Tuglaws: [L06] appearance via attributes / the dot's DOM; [L17]
+ * `--tugx-toolheader-*` resolves to `--tug*` in one hop; [L19] file pair,
+ * docstring, `data-slot`; [L20] owns the `--tugx-toolheader-*` family,
+ * reuses the shared `--tugx-block-*` surface/text tones.
+ */
+
+body {
+  /* One size for ALL header text — name, detail, and the summary badge
+   * all ride `sm`. A single font size is what lets "centered in the same
+   * one-line box" also read as "same baseline"; the name's bold weight,
+   * not a larger size, is what keeps it primary. */
+  --tugx-toolheader-name-size: var(--tug-font-size-sm);
+  --tugx-toolheader-name-weight: var(--tug-font-weight-semibold);
+  --tugx-toolheader-detail-size: var(--tug-font-size-sm);
+  /* The summary is a TugBadge that owns its own font size, so no
+   * `--tugx-toolheader-summary-size` token is needed. */
+  /* The one line box every cross-row item rides. */
+  --tugx-toolheader-line: calc(var(--tug-font-size-sm) * 1.6);
+  --tugx-toolheader-row-gap: var(--tug-space-sm);
+  /* The separator gap, used in THREE places so they read equal:
+     result→rule, rule→actions, and actions→right edge. */
+  --tugx-toolheader-sep-gap: var(--tug-space-md);
+  --tugx-toolheader-actions-gap: var(--tug-space-2xs);
+}
+
+/* ---- Root strip ---- */
+
+/* Sticky so the header stays visible while a mounted body scrolls, and
+ * telescopes under an outer pin context via `--tugx-pin-stack-top`. Harmless
+ * when collapsed (no body scrolls beneath it). */
+.tool-call-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  /* The row pins every item to the top (row 1). The dot, name, summary
+   * badge, and actions each ride a one-line box (`min-height` =
+   * `--tugx-toolheader-line`) and center their content in it, so they all
+   * read centered on the FIRST line; the detail shares that line box for
+   * its first line via the same `line-height`. One font size across the
+   * text (`sm`) means "centered in the same line box" is also "same
+   * baseline" — that is the whole alignment trick. When the detail wraps,
+   * its extra lines flow BELOW that first line while the dot / name /
+   * badge / actions stay put on it. */
+  align-items: flex-start;
+  gap: var(--tugx-toolheader-row-gap);
+  padding: var(--tugx-block-strip-padding);
+  /* Right edge gap = the separator gap, so actions→edge matches
+     result→rule and rule→actions (all three equal). */
+  padding-inline-end: var(--tugx-toolheader-sep-gap);
+  background: var(--tugx-block-strip-bg);
+  font-family: var(--tugx-block-strip-font);
+  color: var(--tugx-block-text-color);
+}
+
+/* Expanded ⇒ a body is mounted below; divide the header from it. Collapsed
+ * is the whole block, so it carries no divider. */
+.tool-call-header:not([data-collapsed="true"]) {
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+}
+
+/* When a notice band follows the header, the notice owns the header→notice
+ * divider (its own `border-top`), so the header drops its bottom border to
+ * avoid a doubled 1px rule. This also gives the collapsed state a divider it
+ * otherwise lacks (a collapsed header draws no bottom border on its own). The
+ * `:has()` next-sibling test is structural only — it keys on the stable
+ * `data-slot` contract, not the notice's internal tokens. */
+.tool-call-header:has(+ [data-slot="tool-block-notice"]) {
+  border-bottom: none;
+}
+
+/* First-row items that each ride a one-line box and center their content,
+ * so each reads vertically centered on the first line and a multi-line
+ * command keeps them pinned to row 1. The row is `flex-start`; each of
+ * these is exactly one line tall, so its top IS its center. `min-height`
+ * (not `height`) lets a taller portaled body-kind control grow rather
+ * than clip. The name joins this group so its glyph centers in the same
+ * line box as the dot / badge — at one font size that is also the same
+ * baseline as the detail's first line. */
+.tool-call-header-dot,
+.tool-call-header-name,
+.tool-call-header-summary,
+.tool-call-header-actions {
+  flex: 0 0 auto;
+  min-height: var(--tugx-toolheader-line);
+  display: inline-flex;
+  align-items: center;
+}
+
+.tool-call-header-dot {
+  justify-content: center;
+  color: var(--tugx-block-text-color-muted);
+}
+
+/* Optical nudge: the lifecycle dot and the bold sans name center a hair high
+ * against the mono detail / file ref and the summary badge (which carry the
+ * same 1px nudge). Drop them 1px so the whole row reads on one line. `top`
+ * (relative) leaves the layout boxes untouched. */
+.tool-call-header-dot,
+.tool-call-header-name {
+  position: relative;
+  top: 1px;
+}
+
+/* Name — the bold tool identity. Single font size (`sm`) shared with the
+ * detail; centered in the one-line box (above) so its baseline coincides
+ * with the detail's first line. Bold weight, not a larger size, keeps it
+ * primary. */
+.tool-call-header-name {
+  font-size: var(--tugx-toolheader-name-size);
+  font-weight: var(--tugx-toolheader-name-weight);
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+}
+
+/* Detail — the inline file ref (file tools) or command text (command
+ * tools); also the flexible spacer when empty. It centers its content in
+ * a one-line box using the SAME `inline-flex; align-items: center`
+ * mechanism as the name, so the mono detail and the sans name land on one
+ * line by construction (matching mechanisms, not two different centerings
+ * that drift a pixel apart). `min-height` keeps a single line centered;
+ * `flex: 1 1 auto` lets it grow — when the command wraps, the box grows
+ * downward, its first line stays on row 1 (aligned with the dot / name /
+ * badge), and the extra lines flow below. */
+.tool-call-header-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tugx-toolheader-line);
+  display: inline-flex;
+  align-items: center;
+  /* Optical nudge: the mono detail / file ref centers a hair high against
+   * the bold sans name; drop it 1px so the two read on one line. `top`
+   * (relative) doesn't disturb layout — the wrap geometry is unchanged. */
+  position: relative;
+  top: 1px;
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-toolheader-detail-size);
+  line-height: var(--tugx-toolheader-line);
+  color: var(--tugx-block-text-color-muted);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Collapsed clamp — when a wrapper passes `collapsedTargetLines`, the
+ * header stamps `data-clamp-lines` on the detail and publishes the line
+ * count in `--tugx-toolheader-detail-clamp-lines`. While the block is
+ * collapsed the detail switches to a `-webkit-box` and caps at that many
+ * lines, clipping the overflow with a trailing ellipsis — so a heredoc-laden
+ * command no longer fills the whole collapsed header. Expanding clears
+ * `data-clamp-lines` (the attribute is collapsed-only in the header), and the
+ * detail returns to its full-height single-line-centered flex box, showing
+ * the whole command above the body. `line-clamp` ships the standard property
+ * alongside the `-webkit-` one for forward-compat. */
+.tool-call-header-detail[data-clamp-lines] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--tugx-toolheader-detail-clamp-lines, 4);
+  line-clamp: var(--tugx-toolheader-detail-clamp-lines, 4);
+  overflow: hidden;
+}
+
+.tool-call-header-detail code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+  /* Optical nudge: a bare command (`<code>`, e.g. Bash / grep) centers a hair
+   * high — the file ref already reads correctly because its icon makes the
+   * line box taller and seats the text a touch lower. Drop the command 1px so
+   * it lands on the same line as the name. (File refs are a `.tool-file-ref`
+   * span, never `<code>`, so they're untouched.) */
+  position: relative;
+  top: 0.5px;
+}
+
+/* Result summary — a ghost TugBadge bracketed by separator pipes. The badge
+ * is borderless now (no box-in-a-box), so BOTH flanking pipes live on THIS
+ * box — `border-inline` for the rules, `padding-inline` for the inner gaps —
+ * which is the only way the left and right gaps stay equal by construction
+ * (a single shared source on both sides). The result reads
+ * detail │ summary │ controls with one `sep-gap` of breathing room on every
+ * side. When a summary precedes the actions cluster, that cluster drops its
+ * own left rule (below) so the two pipes never double up. The pipes exist
+ * only when a summary renders (the slot is conditionally mounted), so they
+ * never dangle. */
+.tool-call-header-summary {
+  white-space: nowrap;
+  /* inline-flex with a tight gap so a two-badge diff summary (`+N` / `−M`)
+   * stays a clean pair; single-badge summaries are unaffected. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  /* Bracketing pipes — both on this box so the inner gaps are symmetric. */
+  padding-inline: var(--tugx-toolheader-sep-gap);
+  border-inline: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  /* Same 1px optical nudge as the detail so the badge sits on the line
+   * with the name. `top` (relative) leaves the layout box untouched. */
+  position: relative;
+  top: 1px;
+}
+
+/* When a summary's right pipe already divides the result from the controls,
+ * the actions cluster drops its own left rule (and the margin/padding that
+ * paired with it) so there's a SINGLE rule there, with the parent row-gap
+ * supplying the spacing on each side — keeping the badge's left and right
+ * gaps equal. With no summary present, the actions rule stands on its own
+ * (detail │ controls) via the rule below. */
+.tool-call-header-summary + .tool-call-header-actions {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+
+/* Tint ONLY the diff glyphs (`+N` green / `−M` red). The badges are ghost
+ * (no border, no fill), so the color rides the text alone with no adjacent
+ * colored box edges — which keeps the chromostereopsis the fully colored
+ * badges triggered at bay. */
+.tool-call-header-diff-add {
+  color: var(--tug7-element-badge-text-outlined-success-rest);
+}
+
+.tool-call-header-diff-del {
+  color: var(--tug7-element-badge-text-outlined-danger-rest);
+}
+
+/* Trailing actions — the controls cluster at the row's trailing edge (the
+ * body-specific portal · Copy · chevron). Its own left rule divides the
+ * controls from whatever precedes them when there is NO summary
+ * (detail │ controls), with equal gaps on each side
+ * (`--tugx-toolheader-sep-gap`). When a summary IS present, the summary box
+ * already carries the right pipe, so this cluster sheds its rule and spacing
+ * (see the `.tool-call-header-summary + &` rule above) to avoid a doubled
+ * line. The cluster always carries Copy + chevron in the app, so the rule
+ * never dangles. */
+.tool-call-header-actions {
+  gap: var(--tugx-toolheader-actions-gap);
+  margin-left: var(--tugx-toolheader-sep-gap);
+  padding-left: var(--tugx-toolheader-sep-gap);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* Actions slot — hosts the affordances a body kind portals in (expanded).
+ * Layout only; children own appearance. */
+.tool-call-header-actions-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tugx-toolheader-actions-gap);
+}
+
+/* When a body kind portals nothing (Read/Write/Bash/…), the slot stays
+ * empty. Drop it from the flex row so it adds no gap — that keeps the
+ * trailing Copy + chevron + divider pixel-identical to the collapsed
+ * state, so toggling the chevron doesn't shift them when the header
+ * content is unchanged. A body kind that DOES portal a control (Diff
+ * view-mode, JSON expand-all) fills the slot, so it shows. */
+.tool-call-header-actions-slot:empty {
+  display: none;
+}
+
+/* The Expand/Collapse control is a `BlockFoldCue` (icon+text, its own
+ * ChevronsDown/Up swap) — no header-owned chevron rule needed. */

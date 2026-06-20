@@ -7,7 +7,7 @@
  * and this renders the receipt *inside* that frame — the summary set as
  * a title, a branch `TugBadge` + a click-to-copy short-hash
  * `TugCopyBadge`, three outlined stat `TugBadge`s (neutral `+N` / `−M`
- * deltas + a file-count `action` badge), and `ToolBlockDisclosure` sections for the message
+ * deltas + a file-count `action` badge), and `BlockDisclosure` sections for the message
  * body and an optional per-file breakdown.
  *
  * Routing intent (not yet wired): `BashToolBlock` swaps this in for a
@@ -21,18 +21,18 @@
  * when absent.
  *
  * This module is currently exercised through `gallery-commit-block.tsx`
- * (which mounts it inside a real `ToolBlockChrome`) while the design is
+ * (which mounts it inside a real `BlockChrome`) while the design is
  * tuned; the routing branch lands once the look is settled.
  *
  * Laws:
- *  - [L06] disclosures are `ToolBlockDisclosure` (native `<details>`) —
+ *  - [L06] disclosures are `BlockDisclosure` (native `<details>`) —
  *    appearance toggles through the DOM, no React state.
  *  - [L17] every painted value resolves to a `--tug7-*` / `--tug-*`
  *    base token in one hop via the `--tugx-block-*` aliases.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="commit-block"`.
  *  - [L20] reuses the shared `--tugx-block-*` tone-band colors and the
- *    `TugBadge` / `ToolBlockDisclosure` primitives; the only local
+ *    `TugBadge` / `BlockDisclosure` primitives; the only local
  *    geometry is the diffstat bar.
  *
  * @module components/tugways/body-kinds/commit-block
@@ -46,8 +46,8 @@ import { GitBranch } from "lucide-react";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugCopyBadge } from "@/components/tugways/tug-copy-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
-import { MiddleEllipsisPath } from "@/components/tugways/cards/tool-blocks/middle-ellipsis-path";
-import { ToolBlockDisclosure } from "@/components/tugways/cards/tool-blocks/body-bits/tool-block-disclosure";
+import { MiddleEllipsisPath } from "@/components/tugways/cards/blocks/middle-ellipsis-path";
+import { BlockDisclosure } from "@/components/tugways/cards/blocks/block-bits/block-disclosure";
 
 // ---------------------------------------------------------------------------
 // Data shape
@@ -205,7 +205,7 @@ export interface CommitHeaderTargetProps {
  * The commit's header-line content — the summary message (ellipsizing to
  * one line) with the branch `TugBadge` and click-to-copy hash
  * `TugCopyBadge` pinned to the right. The wrapper hands this to
- * `ToolBlockChrome` as the header `identity`, so it sits on the tool-call
+ * `BlockChrome` as the header `identity`, so it sits on the tool-call
  * header row beside the "Git Commit" name, exactly where a Bash block's
  * command sits.
  */
@@ -243,7 +243,7 @@ export interface CommitBlockProps {
 }
 
 /**
- * The commit receipt body — rendered inside a `ToolBlockChrome` whose
+ * The commit receipt body — rendered inside a `BlockChrome` whose
  * header carries the lifecycle dot + "Git Commit" name and the
  * {@link CommitHeaderTarget} (summary + branch / hash badges). The body
  * holds the three stat `TugBadge`s and the message / file disclosures.
@@ -266,7 +266,7 @@ export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
       </div>
 
       {hasFiles && (
-        <ToolBlockDisclosure
+        <BlockDisclosure
           className="tugx-commit-disclosure"
           summary={
             <TugLabel emphasis="proposal" size="2xs">
@@ -297,11 +297,11 @@ export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
               </li>
             ))}
           </ul>
-        </ToolBlockDisclosure>
+        </BlockDisclosure>
       )}
 
       {hasBody && (
-        <ToolBlockDisclosure
+        <BlockDisclosure
           className="tugx-commit-disclosure"
           defaultOpen
           summary={
@@ -317,7 +317,7 @@ export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
               </div>
             ))}
           </div>
-        </ToolBlockDisclosure>
+        </BlockDisclosure>
       )}
     </div>
   );

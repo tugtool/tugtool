@@ -1,0 +1,179 @@
+/* @tug-pairings:
+   - --tugx-block-chrome-bg / --tugx-block-text-color           (shared chrome frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color           (shared header / footer strip)
+   - --tugx-block-tone-caution-bg / --tugx-block-tone-caution-color (shared caution chip)
+   - --tugx-block-tone-remove-bg / --tugx-block-tone-remove-color   (shared error band)
+   The chrome paints a subtle bordered card around tool-call content
+   with a header row (icon + name + args summary) and an optional
+   footer for badges. The header's lifecycle dot is the single status
+   signal — there is no stripe and the frame is uniform across states;
+   on a failure the dot is the only red, and the body / error text keep
+   neutral tones. Shared block-surface scaffold lives in
+   `styles/tugx-block.css`.
+*/
+
+/**
+ * block-chrome.css — shared frame for Layer-2 tool blocks.
+ *
+ * The chrome is intentionally small: a header row, a body region
+ * (whose contents are the body-kind component the wrapper composes),
+ * and an optional footer.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame as a chrome variant, header
+ *    strip, footer strip, tone bands) comes from `--tugx-block-*` in
+ *    `styles/tugx-block.css`. Consumed directly in the rules below.
+ *    The chrome uses the *chrome-bg* variant (raised surface) since it
+ *    sits above the body kind it wraps.
+ *  - Toolblock-specific slots (status stripe colors, header text size,
+ *    name weight, caution chip geometry, error band geometry, footer
+ *    gap override, streaming placeholder geometry) live in the body{}
+ *    block below as `--tugx-block-*`.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] all visible state lives on data attributes / class
+ *     swaps; React state never drives appearance.
+ *   - [L17] `--tugx-block-*` and `--tugx-block-*` each resolve to
+ *     `--tug7-*` in one hop.
+ *   - [L19] component-authoring guide — file pair, module
+ *     docstring, `data-slot="tool-block-chrome"`.
+ *   - [L20] component-token sovereignty — every visible declaration
+ *     consumes a `--tugx-*` token; the chrome never reaches into a
+ *     body kind's tokens.
+ */
+
+/* ---- Component-tier aliases — toolblock-specific only [L17] ---- */
+
+body {
+  /* Header text size — larger (sm) than the shared strip-size (2xs)
+   * because the chrome header carries the tool name + args, not just
+   * a tagline. The tool name rides this size; the mono args row drops
+   * one step (see `--tugx-block-args-size`). */
+  --tugx-block-header-size:  var(--tug-font-size-sm);
+  --tugx-block-name-weight:  var(--tug-font-weight-semibold);
+
+  /* Args text size — one step below the header (xs vs sm). The args
+   * are monospace, and a mono glyph reads optically larger than the
+   * sans tool name at the same px; dropping a step puts the two on
+   * even visual footing so the command/path doesn't loom over the
+   * name beside it. The trailing badges set their own size and are
+   * unaffected. */
+  --tugx-block-args-size:    var(--tug-font-size-xs);
+
+  /* Header args row — the gap between a wrapper's pattern / path
+   * `<code>` and its trailing inline badges (count, line-range,
+   * change-count, truncated), and the badge typography. Consumed by
+   * `read-`, `edit-`, `glob-`, and `grep-tool-block.css`. */
+  --tugx-block-header-gap:   var(--tug-space-sm);
+  --tugx-block-args-font:    var(--tug-font-family-mono);
+
+  /* Caution chip — inline in header; bespoke geometry. Used for
+   * surfaces that legitimately convey caution (`truncated` in
+   * GrepToolBlock, drift flags). Informational metadata (counts,
+   * sizes, modes, line ranges) does NOT live here — those use the
+   * shared `TugBadge` primitive at callsite with the appropriate
+   * role / emphasis, not a chip in this slot family. */
+  --tugx-block-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-block-caution-radius:  var(--tug-radius-xs);
+  --tugx-block-caution-size:    var(--tug-font-size-2xs);
+  --tugx-block-caution-weight:  var(--tug-font-weight-semibold);
+  --tugx-block-caution-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-block-caution-color:   var(--tug7-element-global-text-normal-caution-rest);
+
+  /* Footer gap — wider (md) than the shared strip-gap (sm) because the
+   * footer hosts post-mortem badges with more breathing room. */
+  --tugx-block-footer-gap: var(--tug-space-md);
+
+  /* Streaming placeholder — wrapper padding around the `TugProgress`
+   * ring; the ring itself owns its own size + animation. */
+  --tugx-block-streaming-padding: var(--tug-space-sm) var(--tug-space-md);
+
+  /* Actions slot — hosts body-kind affordance buttons portaled into
+   * the chrome header (Find trigger, Copy, view-mode toggle, fold
+   * cue). The slot is structural: layout-only here, with appearance
+   * driven by the affordance components themselves per [L20]. */
+  --tugx-block-actions-gap: var(--tug-space-2xs);
+}
+
+.tool-block-chrome {
+  display: flex;
+  flex-direction: column;
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  /* `overflow: clip` clips to the rounded border-radius without
+   * forming a scrolling container — `overflow: hidden` would form
+   * one and capture sticky positioning from any composed body kind
+   * with a `position: sticky` header. */
+  overflow: clip;
+}
+
+/* ---- Variants ([data-variant]) ----
+ *
+ * `variant` stamps `data-variant` on the root; appearance flows through CSS
+ * scoped on that attribute, never a render fork ([L06], [L20]). `tool` is the
+ * base — no rule, the defaults above ARE the tool look. `receipt` restyles the
+ * same header structure (its accent-rail / emphasis tokens are authored when
+ * the commit receipt migrates onto the variant). The `note` and `data`
+ * variants live on their own roots (Thinking's chrome, the markdown-table
+ * frame) and scope their own `--tugx-block-*` overrides there, so they do not
+ * appear here — they share the contract, not this component.
+ *
+ * The `.tool-block-chrome[data-variant="receipt"]` rule is authored when the
+ * commit receipt migrates onto the variant; until then `receipt` reads the
+ * tool defaults. */
+
+/* No left-edge status stripe: the header's lifecycle dot is the single
+ * status signal (the Quiet Line). Every block keeps the uniform 1px frame
+ * border declared on `.tool-block-chrome` above — collapsed, expanded, and
+ * non-collapsing tools all read the same, with no left-edge treatment. */
+
+/* ---- Header ---- */
+
+/* The header row moved out to `BlockHeader` (`block-header.css`)
+ * — one designed-once header for every tool block ([D01]). The chrome
+ * composes it and keeps owning the frame, body region, error band, and
+ * footer below. The old `.tool-block-chrome-{header,icon,name,args,
+ * actions}` rules (and the atom-chip `translateY(3px)` baseline nudge
+ * — the chip now centers in the header's own line-box, [D04]) are gone
+ * with that move.
+ *
+ * The `--tugx-block-caution-*` tokens declared in the body{} block
+ * above are retained: `read-tool-block`'s line-range badge and
+ * `edit-tool-block`'s change-count badge still ride them until those
+ * blocks migrate to the shared meta primitives (#step-8). */
+
+/* ---- Body region ---- */
+
+.tool-block-chrome-body {
+  display: block;
+  /* Body-kind component owns its own padding / margin. The chrome
+   * just hosts the region. */
+}
+
+/* The failure explanation now rides the collapse-independent notice band
+ * (`block-notice.css`), between the header and the body, so it is
+ * readable while collapsed. No below-body error band remains here. */
+
+/* ---- Footer (badges) ---- */
+
+.tool-block-chrome-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tugx-block-footer-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-top: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-size: var(--tugx-block-strip-size);
+  font-family: var(--tugx-block-strip-font);
+}
+
+/* ---- Streaming body ---- */
+
+/* No rule needed: per [D02] the header's pulsing dot is the single
+ * in-flight signal, so a streaming tool keeps an empty body (the
+ * wrapper passes `null`). The lone exception is the Agent block, whose
+ * own `AgentWorkingBody` fills its long working window. */

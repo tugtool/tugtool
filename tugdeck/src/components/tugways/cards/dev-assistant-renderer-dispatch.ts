@@ -88,26 +88,26 @@ import type {
 } from "@/lib/code-session-store";
 import { deriveToolCallPhase } from "@/lib/code-session-store/tool-call-phase-visual";
 
-import { BashToolBlock } from "./tool-blocks/bash-tool-block";
-import { ReadToolBlock } from "./tool-blocks/read-tool-block";
-import { EditToolBlock } from "./tool-blocks/edit-tool-block";
-import { GlobToolBlock } from "./tool-blocks/glob-tool-block";
-import { GrepToolBlock } from "./tool-blocks/grep-tool-block";
-import { TaskToolBlock } from "./tool-blocks/task-tool-block";
-import { AskUserQuestionToolBlock } from "./tool-blocks/ask-user-question-tool-block";
-import { SkillToolBlock } from "./tool-blocks/skill-tool-block";
-import { MonitorToolBlock } from "./tool-blocks/monitor-tool-block";
-import { WorktreeToolBlock } from "./tool-blocks/worktree-tool-block";
-import { TaskMgmtToolBlock } from "./tool-blocks/task-mgmt-tool-block";
-import { CronToolBlock } from "./tool-blocks/cron-tool-block";
-import { ShareOnboardingGuideToolBlock } from "./tool-blocks/share-onboarding-guide-tool-block";
-import { RemoteTriggerToolBlock } from "./tool-blocks/remote-trigger-tool-block";
-import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
-import { WebFetchToolBlock } from "./tool-blocks/web-fetch-tool-block";
-import { WebSearchToolBlock } from "./tool-blocks/web-search-tool-block";
-import { WriteToolBlock } from "./tool-blocks/write-tool-block";
-import { NotebookEditToolBlock } from "./tool-blocks/notebook-edit-tool-block";
-import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
+import { BashToolBlock } from "./blocks/bash-tool-block";
+import { ReadToolBlock } from "./blocks/read-tool-block";
+import { EditToolBlock } from "./blocks/edit-tool-block";
+import { GlobToolBlock } from "./blocks/glob-tool-block";
+import { GrepToolBlock } from "./blocks/grep-tool-block";
+import { TaskToolBlock } from "./blocks/task-tool-block";
+import { AskUserQuestionToolBlock } from "./blocks/ask-user-question-tool-block";
+import { SkillToolBlock } from "./blocks/skill-tool-block";
+import { MonitorToolBlock } from "./blocks/monitor-tool-block";
+import { WorktreeToolBlock } from "./blocks/worktree-tool-block";
+import { TaskMgmtToolBlock } from "./blocks/task-mgmt-tool-block";
+import { CronToolBlock } from "./blocks/cron-tool-block";
+import { ShareOnboardingGuideToolBlock } from "./blocks/share-onboarding-guide-tool-block";
+import { RemoteTriggerToolBlock } from "./blocks/remote-trigger-tool-block";
+import { TaskInlineToolBlock } from "./blocks/task-inline-tool-block";
+import { WebFetchToolBlock } from "./blocks/web-fetch-tool-block";
+import { WebSearchToolBlock } from "./blocks/web-search-tool-block";
+import { WriteToolBlock } from "./blocks/write-tool-block";
+import { NotebookEditToolBlock } from "./blocks/notebook-edit-tool-block";
+import { DefaultToolBlock } from "./blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/dev-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/dev-question-dialog";
 import { DevSessionInitBanner } from "@/components/tugways/chrome/dev-session-init-banner";
@@ -120,7 +120,7 @@ import type {
   CautionFlag,
   ChildToolCallsMap,
   ToolBlockFactory,
-} from "./tool-blocks/types";
+} from "./blocks/types";
 
 // ---------------------------------------------------------------------------
 // RenderInput — discriminated union the dispatch routes.
@@ -970,7 +970,7 @@ export function dispatchToolCallState(
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
 
   // Compose the props the wrapper expects (see ToolBlockProps in
-  // ./tool-blocks/types.ts). Status maps the store's `pending |
+  // ./blocks/types.ts). Status maps the store's `pending |
   // done | error` to the wrapper's `streaming | ready | error`.
   const status =
     toolCall.status === "pending"

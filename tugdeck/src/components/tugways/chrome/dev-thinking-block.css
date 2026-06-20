@@ -50,9 +50,17 @@
  *     consumes a `--tugx-*` token. No literal colors here.
  */
 
-/* ---- Component-tier aliases — thinking-specific only [L17] ---- */
+/* ---- Component-tier aliases — thinking-specific only [L17] ----
+ *
+ * Scoped under `[data-variant="note"]` — the block-variant contract marker
+ * the root stamps. `DevThinkingBlock` is the `note` variant: it adopts the
+ * shared `--tugx-block-*` SURFACE (frame, strip padding, hover overlay) and
+ * keeps these `--tugx-thinking-*` tones as its sovereign sub-family ([P08],
+ * [L20]) — the label, preview, italic body, and collapse animation have no
+ * `--tugx-block-*` counterpart. Keying the defs on the attribute (not `body`)
+ * makes the variant a real contract citizen: any `note` root gets them. */
 
-body {
+[data-variant="note"] {
   /* Margin — wider (lg) than the shared block-margin (md) because
    * the thinking strip is a major chrome element that benefits from
    * extra vertical breathing room. */

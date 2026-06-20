@@ -125,7 +125,7 @@ body {
   /* Shared markdown block chrome (fenced code, tables): the measured
    * height of the sticky header strip, so a block's own inner sticky
    * header (a table's `<thead>`) can stack directly beneath it — the
-   * imperative-DOM analog of the diff block's `--tugx-toolblock-header-
+   * imperative-DOM analog of the diff block's `--tugx-block-header-
    * height`. Deterministic from tokens: the strip is a single
    * non-wrapping row whose height is the xs control + strip padding +
    * the 1px bottom divider. */
@@ -434,7 +434,7 @@ body {
  * affordances cluster (Copy + fold cue) at the right, in a single sticky
  * row. The imperative-DOM counterpart of a `BlockActionsCluster` riding
  * a block header. Pinned (`position: sticky`) and JOINING THE PIN-STACK
- * via `top: var(--tugx-pin-stack-top, 0)`, exactly like `ToolCallHeader`
+ * via `top: var(--tugx-pin-stack-top, 0)`, exactly like `BlockHeader`
  * / `FileBlock` / `TerminalBlock`, so it telescopes under the entry
  * header instead of forming a nested scroller. `z-index: 2` so a block's
  * own inner sticky header (a table `<thead>`) passes under it. */

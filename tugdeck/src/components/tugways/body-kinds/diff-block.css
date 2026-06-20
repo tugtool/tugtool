@@ -95,7 +95,7 @@ body {
 }
 
 /* Embedded variant — composed inside a host that already paints a
- * container and a header (e.g. `ToolBlockChrome` body region in a
+ * container and a header (e.g. `BlockChrome` body region in a
  * future `EditToolBlock`). Drop the standalone frame so the content
  * sits flush.
  */
@@ -188,7 +188,7 @@ body {
  * Sticky `top` calc consumes the upstream pin chain so the hunk
  * header lands directly below the identity / chrome header:
  *  - `--tugx-pin-stack-top`: entry-header.
- *  - `--tugx-toolblock-header-height`: wrapper-chrome header.
+ *  - `--tugx-block-header-height`: wrapper-chrome header.
  *  - `--tugx-diff-header-height`: diff identity header (0 when
  *    embedded — the chrome owns identity then).
  *
@@ -212,7 +212,7 @@ body {
   --tugx-cue-icon-size: var(--tug-icon-size-sm);
   top: calc(
     var(--tugx-pin-stack-top, 0px)
-    + var(--tugx-toolblock-header-height, 0px)
+    + var(--tugx-block-header-height, 0px)
     + var(--tugx-diff-header-height, 0px)
   );
   /* `z-index: 0` (NOT 1, NOT auto with no value): the hunk header

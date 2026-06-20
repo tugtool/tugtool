@@ -434,7 +434,7 @@ export interface ControlRequestForward {
    * forwards), and `extractForward` keeps it on the stored record. The
    * tool-call header id-joins this against a `ToolUseMessage.toolUseId`
    * to paint that row's lifecycle dot `awaiting` ([Q01] of
-   * roadmap/tool-call-header.md). Typed here (previously reachable only
+   * roadmap/block-header.md). Typed here (previously reachable only
    * via the index signature).
    */
   tool_use_id?: string;

@@ -26,7 +26,7 @@
  *    count, and a trailing actions cluster (the fold cue + Copy).
  *    Lifecycle status is the host chrome's header dot ([D02]) — this
  *    body kind paints no status text. In `embedded` mode the header is
- *    suppressed (the host `ToolBlockChrome` owns identity); the
+ *    suppressed (the host `BlockChrome` owns identity); the
  *    nested-calls fold cue portals into the host chrome's actions slot
  *    only when the chrome is not itself collapsible (a nested call with
  *    no chrome chevron), per `BlockFoldSuppressedContext`.
@@ -74,8 +74,8 @@ import React from "react";
 import { createPortal } from "react-dom";
 
 import { dispatchToolCallState } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
-import type { ChildToolCallsMap } from "@/components/tugways/cards/tool-blocks/types";
+import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import type { ChildToolCallsMap } from "@/components/tugways/cards/blocks/types";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 import {
   BlockActionsCluster,
@@ -152,10 +152,10 @@ export interface AgentTranscriptBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolBlockChrome` in
+   * container and a header (e.g. `BlockChrome` in
    * `TaskToolBlock`). When `true` the standalone frame + header are
    * dropped and the actions cluster portals into the host chrome's
-   * actions slot. MUST be used under a `ToolBlockChrome`.
+   * actions slot. MUST be used under a `BlockChrome`.
    *
    * @default false
    */
@@ -404,7 +404,7 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   const chromeActionsTarget = useChromeActionsTarget();
 
   // Dev-mode misconfiguration check — `embedded={true}` requires a
-  // parent `ToolBlockChrome`. Mirrors the other body kinds'
+  // parent `BlockChrome`. Mirrors the other body kinds'
   // deferred-warn pattern.
   React.useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -413,7 +413,7 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
     const handle = window.setTimeout(() => {
       console.warn(
         "AgentTranscriptBlock: `embedded={true}` requires a parent " +
-          "`ToolBlockChrome`. Without one the actions cluster (fold " +
+          "`BlockChrome`. Without one the actions cluster (fold " +
           "cue, Copy) has nowhere to portal and the user loses access " +
           "to it silently. Either compose under a chrome or set " +
           "`embedded={false}`.",

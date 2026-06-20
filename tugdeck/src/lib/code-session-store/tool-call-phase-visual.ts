@@ -19,7 +19,7 @@
  * toolCallPhaseVisual} maps that phase onto the indicator's
  * `{ role, state }`.
  *
- * Mapping ([D03] of roadmap/tool-call-header.md):
+ * Mapping ([D03] of roadmap/block-header.md):
  *
  *   - `in_flight`   → `{ state: running,   role: action }`  (blue — work in flight)
  *   - `awaiting`    → `{ state: running,   role: caution }` (yellow — held on a dialog, still pulsing)

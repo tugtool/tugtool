@@ -7,7 +7,7 @@
  * `handleCopy`), the actual `selectionToTranscriptMarkdown` fragment
  * serializer, and the actual clipboard write. It mounts the real
  * DOM-producing components — `TugMarkdownBlock` (streaming),
- * `ToolBlockChrome`, `DevThinkingBlock` — in the same body shape
+ * `BlockChrome`, `DevThinkingBlock` — in the same body shape
  * `AssistantTurnCell` renders, over a static streaming store.
  *
  * **Two cells, two responder scopes.** Cell A interleaves markdown
@@ -30,8 +30,8 @@ import React from "react";
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
-import { ToolBlockChrome } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
-import { ToolUseIdContext } from "@/components/tugways/cards/tool-blocks/collapse-context";
+import { BlockChrome } from "@/components/tugways/cards/blocks/block-chrome";
+import { ToolUseIdContext } from "@/components/tugways/cards/blocks/collapse-context";
 import {
   type CopyMarkdownResolver,
   useTranscriptCellMenu,
@@ -155,9 +155,9 @@ export function GalleryTranscriptCopy(): React.ReactElement {
               className="dev-card-transcript-code-body"
             />
             <ToolUseIdContext.Provider value={TOOL_USE_ID}>
-              <ToolBlockChrome toolName="Bash" argsSummary={<code>ls -la</code>} status="ready">
+              <BlockChrome toolName="Bash" argsSummary={<code>ls -la</code>} status="ready">
                 <pre>file1.txt{"\n"}file2.txt</pre>
-              </ToolBlockChrome>
+              </BlockChrome>
             </ToolUseIdContext.Provider>
             <DevThinkingBlock
               streamingStore={streamingStore}

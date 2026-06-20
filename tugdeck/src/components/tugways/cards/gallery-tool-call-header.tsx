@@ -1,5 +1,5 @@
 /**
- * gallery-tool-call-header.tsx — ToolCallHeader showcase.
+ * gallery-tool-call-header.tsx — BlockHeader showcase.
  *
  * The header's lifecycle dot is the point of the regularization, and
  * three of its five phases — `awaiting`, `error`, `interrupted` — are
@@ -25,7 +25,7 @@ import {
   type ToolCallPhase,
 } from "@/lib/code-session-store/tool-call-phase-visual";
 
-import { ToolCallHeader } from "./tool-blocks/tool-call-header";
+import { BlockHeader } from "./blocks/block-header";
 
 const PHASES: ReadonlyArray<ToolCallPhase> = [
   "idle",
@@ -52,14 +52,14 @@ const demoControls = {
   copyText: "demo copy payload",
 };
 
-export const GalleryToolCallHeader: React.FC = () => {
+export const GalleryBlockHeader: React.FC = () => {
   return (
     <div className="gallery-tool-call-header">
       <section className="gallery-tch-section">
         <TugLabel>Lifecycle phases (the leftmost dot)</TugLabel>
         <div className="gallery-tch-stack">
           {PHASES.map((phase) => (
-            <ToolCallHeader {...demoControls}
+            <BlockHeader {...demoControls}
               key={phase}
               phase={phase}
               toolName="Bash"
@@ -77,13 +77,13 @@ export const GalleryToolCallHeader: React.FC = () => {
           {/* A failed / canceled call is conveyed by the lifecycle dot alone;
               the name and trailing result stay neutral (an exit code is data,
               not an alarm), and the body keeps its neutral surface. */}
-          <ToolCallHeader {...demoControls}
+          <BlockHeader {...demoControls}
             phase="error"
             toolName="Bash"
             target={<code>npm run build</code>}
             summary={{ kind: "exit", code: 1 }}
           />
-          <ToolCallHeader {...demoControls}
+          <BlockHeader {...demoControls}
             phase="interrupted"
             toolName="Bash"
             target={<code>cargo test --workspace</code>}
@@ -97,7 +97,7 @@ export const GalleryToolCallHeader: React.FC = () => {
       <section className="gallery-tch-section">
         <TugLabel>Chip identity — no clipping (was Image #1)</TugLabel>
         <div className="gallery-tch-stack">
-          <ToolCallHeader {...demoControls}
+          <BlockHeader {...demoControls}
             phase="success"
             toolName="Read"
             target={
@@ -117,13 +117,13 @@ export const GalleryToolCallHeader: React.FC = () => {
       <section className="gallery-tch-section">
         <TugLabel>Result summary — counts, diff-stats (one quiet idiom)</TugLabel>
         <div className="gallery-tch-stack">
-          <ToolCallHeader {...demoControls}
+          <BlockHeader {...demoControls}
             phase="success"
             toolName="Grep"
             target={<code>useState</code>}
             summary={{ kind: "count", count: 1234, noun: "match", pluralNoun: "matches" }}
           />
-          <ToolCallHeader {...demoControls}
+          <BlockHeader {...demoControls}
             phase="success"
             toolName="Edit"
             target={
@@ -136,7 +136,7 @@ export const GalleryToolCallHeader: React.FC = () => {
             }
             summary={{ kind: "diff", added: 42, removed: 7 }}
           />
-          <ToolCallHeader {...demoControls}
+          <BlockHeader {...demoControls}
             phase="success"
             toolName="Glob"
             target={<code>**/*.ts</code>}
@@ -150,7 +150,7 @@ export const GalleryToolCallHeader: React.FC = () => {
       <section className="gallery-tch-section">
         <TugLabel>Long command — full, multi-line, no ellipsis</TugLabel>
         <div className="gallery-tch-stack">
-          <ToolCallHeader {...demoControls}
+          <BlockHeader {...demoControls}
             phase="awaiting"
             toolName="Bash"
             target={<code>{LONG_COMMAND}</code>}

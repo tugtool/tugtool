@@ -28,19 +28,19 @@ import {
   parseGitCommit,
   type CommitData,
 } from "@/components/tugways/body-kinds/commit-block";
-import { ToolBlockChrome } from "./tool-blocks/tool-block-chrome";
+import { BlockChrome } from "./blocks/block-chrome";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
 /**
  * Mount a receipt the way `BashToolBlock` eventually will: inside a real
- * `ToolBlockChrome` whose header carries the lifecycle dot + "Git Commit"
+ * `BlockChrome` whose header carries the lifecycle dot + "Git Commit"
  * name + collapse chevron, matching every other tool block. The chrome
  * owns the frame; `CommitBlock` is the body.
  */
 function CommitReceipt({ commit }: { commit: CommitData }): React.ReactElement {
   return (
-    <ToolBlockChrome
+    <BlockChrome
       toolName="Git Commit"
       status="ready"
       phase="success"
@@ -49,7 +49,7 @@ function CommitReceipt({ commit }: { commit: CommitData }): React.ReactElement {
       copyText={`${commit.hash} ${commit.summary}`}
     >
       <CommitBlock commit={commit} />
-    </ToolBlockChrome>
+    </BlockChrome>
   );
 }
 

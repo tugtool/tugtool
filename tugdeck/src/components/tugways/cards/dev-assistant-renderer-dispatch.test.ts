@@ -44,10 +44,10 @@ import {
   type DispatchContext,
   type RenderInput,
 } from "./dev-assistant-renderer-dispatch";
-import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
-import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
+import { DefaultToolBlock } from "./blocks/default-tool-block";
+import { TaskInlineToolBlock } from "./blocks/task-inline-tool-block";
 import { defaultIntentToolNames } from "./dev-tool-visibility-policy";
-import type { ToolBlockProps } from "./tool-blocks/types";
+import type { ToolBlockProps } from "./blocks/types";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------

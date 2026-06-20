@@ -1034,7 +1034,7 @@ body {
    * Light-theme counterpart. Same vocabulary as brio.css with
    * directionally-flipped tints and the harmony palette.
    */
-  /* `--tugx-toolblock-*` slots live in tool-block-chrome.css's body{}
+  /* `--tugx-block-*` slots live in block-chrome.css's body{}
    * block per tuglaws/token-naming.md. */
 
   /* `--tugx-file-*` slots live in file-block.css's body{} block per

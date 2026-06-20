@@ -50,14 +50,14 @@ import {
   registerToolBlock,
   resolveToolBlock,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
-import { BashToolBlock } from "@/components/tugways/cards/tool-blocks/bash-tool-block";
-import { ReadToolBlock } from "@/components/tugways/cards/tool-blocks/read-tool-block";
-import { EditToolBlock } from "@/components/tugways/cards/tool-blocks/edit-tool-block";
-import { GlobToolBlock } from "@/components/tugways/cards/tool-blocks/glob-tool-block";
-import { GrepToolBlock } from "@/components/tugways/cards/tool-blocks/grep-tool-block";
-import { TaskToolBlock } from "@/components/tugways/cards/tool-blocks/task-tool-block";
-import { DefaultToolBlock } from "@/components/tugways/cards/tool-blocks/default-tool-block";
-import type { ToolBlockFactory } from "@/components/tugways/cards/tool-blocks/types";
+import { BashToolBlock } from "@/components/tugways/cards/blocks/bash-tool-block";
+import { ReadToolBlock } from "@/components/tugways/cards/blocks/read-tool-block";
+import { EditToolBlock } from "@/components/tugways/cards/blocks/edit-tool-block";
+import { GlobToolBlock } from "@/components/tugways/cards/blocks/glob-tool-block";
+import { GrepToolBlock } from "@/components/tugways/cards/blocks/grep-tool-block";
+import { TaskToolBlock } from "@/components/tugways/cards/blocks/task-tool-block";
+import { DefaultToolBlock } from "@/components/tugways/cards/blocks/default-tool-block";
+import type { ToolBlockFactory } from "@/components/tugways/cards/blocks/types";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------

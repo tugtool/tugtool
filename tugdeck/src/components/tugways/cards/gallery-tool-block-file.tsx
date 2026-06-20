@@ -54,11 +54,11 @@ import "./gallery-tool-block-file.css";
 
 import React from "react";
 
-import { ReadToolBlock } from "./tool-blocks/read-tool-block";
-import { EditToolBlock } from "./tool-blocks/edit-tool-block";
-import { WriteToolBlock } from "./tool-blocks/write-tool-block";
-import { NotebookEditToolBlock } from "./tool-blocks/notebook-edit-tool-block";
-import type { ToolBlockProps } from "./tool-blocks/types";
+import { ReadToolBlock } from "./blocks/read-tool-block";
+import { EditToolBlock } from "./blocks/edit-tool-block";
+import { WriteToolBlock } from "./blocks/write-tool-block";
+import { NotebookEditToolBlock } from "./blocks/notebook-edit-tool-block";
+import type { ToolBlockProps } from "./blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------

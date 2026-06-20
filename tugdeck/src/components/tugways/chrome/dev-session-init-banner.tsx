@@ -57,7 +57,7 @@ import React from "react";
 import { Cpu } from "lucide-react";
 
 import { DevCautionBadge } from "./dev-caution-badge";
-import type { CautionFlag } from "@/components/tugways/cards/tool-blocks/types";
+import type { CautionFlag } from "@/components/tugways/cards/blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowing

@@ -84,7 +84,7 @@ import {
 import { TugCue } from "@/components/tugways/tug-cue";
 import { TugChoiceGroup, type TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { useScroller } from "@/components/tugways/internal/scroller-context";
 import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
@@ -150,7 +150,7 @@ export interface DiffBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolBlockChrome` in
+   * container and a header (e.g. `BlockChrome` in
    * `EditToolBlock`). When `true`:
    *
    *   - The standalone frame is dropped so the body sits flush with
@@ -161,7 +161,7 @@ export interface DiffBlockProps {
    *     the host's chrome actions slot via
    *     `ChromeActionsTargetContext`. This is the load-bearing
    *     contract: `embedded={true}` MUST be used under a
-   *     `ToolBlockChrome` so the affordances have somewhere to
+   *     `BlockChrome` so the affordances have somewhere to
    *     surface. Using `embedded={true}` outside a chrome is
    *     unsupported.
    *
@@ -174,7 +174,7 @@ export interface DiffBlockProps {
    * affordances) when a host already renders the file's identity — e.g. the
    * `/diff` accordion ([#step-10b]), where each file is an accordion item
    * whose trigger shows the path + `+N −M`. Unlike `embedded`, this requires
-   * no `ToolBlockChrome`: the header and its affordances simply don't render
+   * no `BlockChrome`: the header and its affordances simply don't render
    * (drive `viewMode` via the prop if a host-level toggle is wanted). The
    * hunks render exactly as in standalone mode.
    *
@@ -543,7 +543,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   }, [headerHidden, data === undefined]);
 
   // Chrome actions target — non-null when this DiffBlock is composed
-  // inside a `ToolBlockChrome`. The resting affordances (fold cue,
+  // inside a `BlockChrome`. The resting affordances (fold cue,
   // view-toggle) portal into the chrome's actions slot when embedded,
   // or render in `.tugx-diff-header` trailing area when standalone.
   // See `file-block.tsx` for the corresponding pattern; the same
@@ -551,7 +551,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const chromeActionsTarget = useChromeActionsTarget();
 
   // Dev-mode misconfiguration check — `embedded={true}` requires a
-  // parent `ToolBlockChrome` so affordances have a portal target.
+  // parent `BlockChrome` so affordances have a portal target.
   // Without one, the identity header is suppressed AND the portal
   // target is `null`, so fold cue / view-toggle vanish silently. The
   // setTimeout defers past the chrome's first-render
@@ -564,7 +564,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     if (chromeActionsTarget !== null) return;
     const handle = window.setTimeout(() => {
       console.warn(
-        "DiffBlock: `embedded={true}` requires a parent `ToolBlockChrome`. " +
+        "DiffBlock: `embedded={true}` requires a parent `BlockChrome`. " +
           "Without one, the body kind's identity header is suppressed AND its " +
           "affordances (fold cue, view-toggle) have nowhere to portal — the " +
           "user loses access to them silently. Either compose under a chrome " +

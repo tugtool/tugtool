@@ -31,8 +31,8 @@
 
 import React from "react";
 
-import { BashToolBlock } from "./tool-blocks/bash-tool-block";
-import type { ToolBlockProps } from "./tool-blocks/types";
+import { BashToolBlock } from "./blocks/bash-tool-block";
+import type { ToolBlockProps } from "./blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 

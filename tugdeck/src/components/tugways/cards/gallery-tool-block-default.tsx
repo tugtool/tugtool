@@ -2,7 +2,7 @@
  * gallery-tool-block-default.tsx — visual fixture for
  * `DefaultToolBlock`.
  *
- * `DefaultToolBlock` ([tool-blocks/default-tool-block.tsx]) is
+ * `DefaultToolBlock` ([blocks/default-tool-block.tsx]) is
  * the [D04] / [D11] day-one guarantee: any `tool_use` with no bespoke
  * wrapper — a genuinely unknown tool, or an audit-confirmed long-tail
  * tool — renders through it rather than blank or raw JSON. The chrome
@@ -43,8 +43,8 @@ import "./gallery-tool-block-default.css";
 
 import React from "react";
 
-import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
-import type { ToolBlockProps } from "./tool-blocks/types";
+import { DefaultToolBlock } from "./blocks/default-tool-block";
+import type { ToolBlockProps } from "./blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 

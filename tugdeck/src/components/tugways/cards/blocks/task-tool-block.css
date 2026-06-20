@@ -1,0 +1,57 @@
+/**
+ * task-tool-block.css — `TaskToolBlock`.
+ *
+ * Structural overlay only. The wrapper composes `BlockChrome`
+ * for its frame (border / header / footer) and `AgentTranscriptBlock`
+ * for its body (the subagent transcript). This file holds only the
+ * header args row — the subagent-type `<code>` plus the inline status
+ * badge — read-only annotations layered over chrome the parent
+ * components own.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] file pair, `data-slot="task-tool-block"` (delegated to the
+ *    chrome via `rootSlot`).
+ *  - [L20] all visible declarations consume tokens from one of the
+ *    composed components — no new `--tugx-*` slot is introduced. The
+ *    agent-type `<code>` and the description ride the chrome's args-row
+ *    typography; the description is muted via `--tugx-agent-meta-color`.
+ *    Lifecycle status is the header dot's alone ([D02]) — this row
+ *    paints no status text.
+ */
+
+.task-tool-block-args {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tugx-block-header-gap);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* The subagent type — a short label, end-ellipsized like the other
+ * wrapper args `<code>`s (conformance item 8). */
+.task-tool-block-args code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* The task description — a muted secondary detail after the agent-type
+ * label, end-ellipsized so a long description never pushes the trailing
+ * badge off the row. */
+.task-tool-block-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tugx-agent-meta-color);
+  /* Same optical nudge the detail column applies to its `<code>` (the
+   * agent-type label): mono detail text centers a hair high against the
+   * bold sans name, so drop it 0.5px to share the baseline. Without this
+   * the description — a plain `<span>`, not a `<code>` — floats above the
+   * agent type and name. */
+  position: relative;
+  top: 0.5px;
+}

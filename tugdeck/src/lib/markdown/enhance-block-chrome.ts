@@ -13,7 +13,7 @@
  *
  * The header strip is `position: sticky` and joins the transcript
  * pin-stack via `top: var(--tugx-pin-stack-top, 0)`, exactly like
- * `ToolCallHeader` / `FileBlock` / `TerminalBlock` — so a markdown
+ * `BlockHeader` / `FileBlock` / `TerminalBlock` — so a markdown
  * block's header telescopes under the entry header instead of forming
  * its own nested scroller. The fold cue toggles `data-collapsed` on the
  * frame; the CSS hides the `.tugx-md-chrome-body` and drops the header

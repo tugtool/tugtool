@@ -1,11 +1,11 @@
 /**
  * commit-block.css — the commit receipt body.
  *
- * The receipt renders *inside* `ToolBlockChrome`, so the frame (border,
+ * The receipt renders *inside* `BlockChrome`, so the frame (border,
  * surface, header dot + "Commit" name, collapse chevron) is the chrome's
  * — this file styles only the inner layout: the titled summary, the
  * diffstat bar, and the file list. Branch / hash chips are `TugBadge`s
- * and the disclosures are `ToolBlockDisclosure`s, so their look is
+ * and the disclosures are `BlockDisclosure`s, so their look is
  * inherited, not redefined here.
  *
  * The stat row (`+N` / `−M` / file count) and the branch / hash chips are
@@ -28,7 +28,7 @@
   color: var(--tugx-block-text-color);
 }
 
-/* The message / files disclosures use the shared `ToolBlockDisclosure`,
+/* The message / files disclosures use the shared `BlockDisclosure`,
    whose label + chevron default to the interactive "active" blue. In the
    receipt the label is a `TugLabel` proposal caption, so neutralize the
    blue to the muted caption tone — the chevron (currentColor) follows. */
@@ -85,7 +85,7 @@
   gap: var(--tug-space-xs);
 }
 
-/* ---- File list (inside a ToolBlockDisclosure) ------------------------ */
+/* ---- File list (inside a BlockDisclosure) ------------------------ */
 
 .tugx-commit-files {
   list-style: none;
@@ -146,7 +146,7 @@
   font-family: var(--tug-font-family-mono);
 }
 
-/* ---- Message body (inside a ToolBlockDisclosure) --------------------- */
+/* ---- Message body (inside a BlockDisclosure) --------------------- */
 
 .tugx-commit-body {
   font-size: var(--tug-font-size-sm);

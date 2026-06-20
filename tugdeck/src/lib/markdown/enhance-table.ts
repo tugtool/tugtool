@@ -131,6 +131,11 @@ export function wrapInBlockChrome(table: HTMLTableElement): void {
 
   const frame = document.createElement("div");
   frame.className = FRAME_CLASS;
+  // The `data` block variant — the DOM-substrate citizen of the block
+  // contract ([P04], [P07]). It shares the `--tugx-block-*` token surface and
+  // affordance shapes with the React `BlockChrome`; stamping `data-variant`
+  // marks it as a contract member so a variant-scoped token change reaches it.
+  frame.dataset.variant = "data";
 
   // Row-count identity, styled like the fence's language label.
   const title = document.createElement("span");

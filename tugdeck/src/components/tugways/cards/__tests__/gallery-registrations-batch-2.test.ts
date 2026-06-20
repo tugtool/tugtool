@@ -9,9 +9,11 @@
  *
  * Batch 2 covers the components shipped in Steps 25–29:
  *
- *  - Step 25 — `WebFetchToolBlock`, `WebSearchToolBlock`
- *    → `gallery-tool-block-network`, `gallery-tool-block-search`
- *  - Step 26 — `WriteToolBlock`, `NotebookEditToolBlock`
+ *  - `WebFetchToolBlock`, `WebSearchToolBlock` — the standalone
+ *    `gallery-tool-block-network` / `gallery-tool-block-search` demo cards
+ *    were retired in the block-renderer consolidation (their tools still
+ *    render through the dispatch; the gallery no longer keeps a card per tool)
+ *  - `WriteToolBlock`, `NotebookEditToolBlock`
  *    → extension of `gallery-tool-block-file` (Read + Edit + Write +
  *    NotebookEdit) — not a separate registration, verified at the
  *    component-content level
@@ -31,8 +33,6 @@ import { registerGalleryCards } from "../gallery-registrations";
 
 /** Component ids #step-29-5 adds. */
 const BATCH_2_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
-  { componentId: "gallery-tool-block-network", title: "Network Tool Blocks" },
-  { componentId: "gallery-tool-block-search", title: "Search Tool Blocks" },
   { componentId: "gallery-image-block", title: "ImageBlock" },
   {
     componentId: "gallery-dev-chrome",

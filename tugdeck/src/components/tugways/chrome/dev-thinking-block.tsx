@@ -2,6 +2,13 @@
  * `DevThinkingBlock` — inline collapsible chrome for the assistant's
  * "thinking" stream within a Dev code row.
  *
+ * This is the `note` variant of the block contract ([BlockVariant], [P07]):
+ * it stamps `data-variant="note"` and adopts the shared `--tugx-block-*`
+ * SURFACE tokens for its frame, while keeping its own leading-chevron +
+ * preview header, height-animated body, and `--tugx-thinking-*` tones
+ * ([P08]). It does NOT render through `BlockHeader` — note diverges
+ * structurally, so it shares the contract, not the component.
+ *
  * Two modes (mutually exclusive):
  *
  *   1. **Streaming** — `<DevThinkingBlock streamingStore={…}
@@ -219,6 +226,7 @@ export const DevThinkingBlock: React.FC<DevThinkingBlockProps> = ({
     <div
       ref={rootRef}
       data-slot="dev-thinking-block"
+      data-variant="note"
       data-mode={isStreaming ? "streaming" : "static"}
       data-collapsed={collapsed ? "true" : "false"}
       data-empty="true"

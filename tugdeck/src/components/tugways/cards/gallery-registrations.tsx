@@ -91,32 +91,18 @@ import {
   GalleryBashToolBlock,
   GalleryBashMountInSavedState,
 } from "./gallery-bash-tool-block";
-import { GalleryCollapsedHistory } from "./gallery-collapsed-history";
 import { GalleryCommitBlock } from "./gallery-commit-block";
-import { GallerySkillToolBlock } from "./gallery-skill-tool-block";
-import { GalleryMonitorToolBlock } from "./gallery-monitor-tool-block";
-import { GalleryTaskToolBlock } from "./gallery-task-tool-block";
-import { GalleryAskUserQuestionToolBlock } from "./gallery-ask-user-question-tool-block";
-import { GalleryWorktreeToolBlock } from "./gallery-worktree-tool-block";
-import { GalleryTaskMgmtToolBlock } from "./gallery-task-mgmt-tool-block";
-import { GalleryCronToolBlock } from "./gallery-cron-tool-block";
-import { GalleryShareOnboardingGuideToolBlock } from "./gallery-share-onboarding-guide-tool-block";
-import { GalleryRemoteTriggerToolBlock } from "./gallery-remote-trigger-tool-block";
-import { GalleryTaskInlineToolBlock } from "./gallery-task-inline-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GalleryDevThinking } from "./gallery-dev-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
 import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
-import { GalleryToolBlockNetwork } from "./gallery-tool-block-network";
-import { GalleryToolBlockSearch } from "./gallery-tool-block-search";
-import { GalleryToolBlockCollapsed } from "./gallery-tool-block-collapsed";
 import { GalleryImageBlock } from "./gallery-image-block";
 import { GalleryDevChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
-import { GalleryToolCallHeader } from "./gallery-tool-call-header";
+import { GalleryBlockHeader } from "./gallery-tool-call-header";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -719,19 +705,6 @@ export function registerGalleryCards(): void {
   // History-collapsed tool blocks — replayed history mounts
   // header-only; the body materializes on expand. Collapsed +
   // expanded readings across representative tool families.
-  registerCard({
-    componentId: "gallery-collapsed-history",
-    contentFactory: (_cardId) => <GalleryCollapsedHistory />,
-    defaultMeta: {
-      title: "Tool Blocks — Collapsed History",
-      icon: "Terminal",
-      closable: true,
-    },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
 
   // DefaultToolBlock — the [D11] fallback for tool calls with no
   // bespoke wrapper: unknown tools (with a caution badge) and
@@ -748,106 +721,12 @@ export function registerGalleryCards(): void {
 
   // Operational trio ([#step-24-3-2]) — bespoke wrappers for low-volume
   // user-meaningful tools that were previously default-routed.
-  registerCard({
-    componentId: "gallery-skill-tool-block",
-    contentFactory: (_cardId) => <GallerySkillToolBlock />,
-    defaultMeta: { title: "SkillToolBlock", icon: "Sparkles", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-  registerCard({
-    componentId: "gallery-monitor-tool-block",
-    contentFactory: (_cardId) => <GalleryMonitorToolBlock />,
-    defaultMeta: { title: "MonitorToolBlock", icon: "Radar", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-  registerCard({
-    componentId: "gallery-task-tool-block",
-    contentFactory: (_cardId) => <GalleryTaskToolBlock />,
-    defaultMeta: { title: "TaskToolBlock", icon: "Bot", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-  registerCard({
-    componentId: "gallery-ask-user-question-tool-block",
-    contentFactory: (_cardId) => <GalleryAskUserQuestionToolBlock />,
-    defaultMeta: {
-      title: "AskUserQuestionToolBlock",
-      icon: "MessageCircleQuestion",
-      closable: true,
-    },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-  registerCard({
-    componentId: "gallery-worktree-tool-block",
-    contentFactory: (_cardId) => <GalleryWorktreeToolBlock />,
-    defaultMeta: { title: "WorktreeToolBlock", icon: "GitBranch", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
   // TaskMgmtToolBlock ([#step-24-3-3]) — single wrapper covering the
   // background-task family (TaskList / TaskGet / TaskOutput / TaskStop).
-  registerCard({
-    componentId: "gallery-task-mgmt-tool-block",
-    contentFactory: (_cardId) => <GalleryTaskMgmtToolBlock />,
-    defaultMeta: { title: "TaskMgmtToolBlock", icon: "ListTodo", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
   // Management trio ([#step-24-3-4]) — CronToolBlock (3 aliases) +
   // ShareOnboardingGuideToolBlock + RemoteTriggerToolBlock.
-  registerCard({
-    componentId: "gallery-cron-tool-block",
-    contentFactory: (_cardId) => <GalleryCronToolBlock />,
-    defaultMeta: { title: "CronToolBlock", icon: "Clock", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-  registerCard({
-    componentId: "gallery-share-onboarding-guide-tool-block",
-    contentFactory: (_cardId) => <GalleryShareOnboardingGuideToolBlock />,
-    defaultMeta: { title: "ShareOnboardingGuideToolBlock", icon: "BookOpen", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-  registerCard({
-    componentId: "gallery-remote-trigger-tool-block",
-    contentFactory: (_cardId) => <GalleryRemoteTriggerToolBlock />,
-    defaultMeta: { title: "RemoteTriggerToolBlock", icon: "Zap", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
   // TaskInlineToolBlock ([#step-24-3-5]) — the [D100] second surface
   // (inline marker; the TASKS status-bar cell is the first surface).
-  registerCard({
-    componentId: "gallery-task-inline-tool-block",
-    contentFactory: (_cardId) => <GalleryTaskInlineToolBlock />,
-    defaultMeta: { title: "TaskInlineToolBlock", icon: "ListChecks", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
 
   // File tool blocks — Read + Edit + Write + NotebookEdit side by
   // side. Extended in [#step-29-5] with Write + NotebookEdit
@@ -864,40 +743,13 @@ export function registerGalleryCards(): void {
 
   // Network tool block — WebFetch (cache hit / miss / streaming /
   // error). Shipped in [#step-25].
-  registerCard({
-    componentId: "gallery-tool-block-network",
-    contentFactory: (_cardId) => <GalleryToolBlockNetwork />,
-    defaultMeta: { title: "Network Tool Blocks", icon: "Globe", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
 
   // Search tool block — WebSearch (parsed / fallback / domain-filtered
   // / empty). Shipped in [#step-25].
-  registerCard({
-    componentId: "gallery-tool-block-search",
-    contentFactory: (_cardId) => <GalleryToolBlockSearch />,
-    defaultMeta: { title: "Search Tool Blocks", icon: "Search", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
 
   // Collapsed tool-block header design spike — candidate collapsed-header
   // layouts (Quiet Line / Category Tile / Status Rail) across the full
   // supported tool range, for vetting [P09]/[#step-10].
-  registerCard({
-    componentId: "gallery-tool-block-collapsed",
-    contentFactory: (_cardId) => <GalleryToolBlockCollapsed />,
-    defaultMeta: { title: "Collapsed Tool Headers", icon: "PanelTopClose", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
 
   // ImageBlock body kind — lazy-load placeholder, EXIF orientation,
   // click-to-fullscreen. Shipped in [#step-27].
@@ -1266,8 +1118,8 @@ export function registerGalleryCards(): void {
 
   registerCard({
     componentId: "gallery-tool-call-header",
-    contentFactory: (_cardId) => <GalleryToolCallHeader />,
-    defaultMeta: { title: "ToolCallHeader", icon: "Wrench", closable: true },
+    contentFactory: (_cardId) => <GalleryBlockHeader />,
+    defaultMeta: { title: "BlockHeader", icon: "Wrench", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

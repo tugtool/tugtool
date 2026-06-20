@@ -112,12 +112,12 @@ import {
   ToolBlockExpansionContext,
   ToolBlockHistoryCollapse,
   ToolUseIdContext,
-} from "@/components/tugways/cards/tool-blocks/collapse-context";
-import { collapseDefaultForMessage } from "@/components/tugways/cards/tool-blocks/tool-collapse-defaults";
+} from "@/components/tugways/cards/blocks/collapse-context";
+import { collapseDefaultForMessage } from "@/components/tugways/cards/blocks/tool-collapse-defaults";
 import {
   ToolBlockExpansionState,
   type PersistedExpansionState,
-} from "@/components/tugways/cards/tool-blocks/expansion-state";
+} from "@/components/tugways/cards/blocks/expansion-state";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
