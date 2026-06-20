@@ -317,10 +317,10 @@ None.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Edge-bar cursor + retire the fill-tint | pending | — |
-| #step-2 | Neutral-graze hover | pending | — |
-| #step-3 | QuestionDialog blink pulses the glyph | pending | — |
-| #step-4 | Integration checkpoint + comment cleanup | pending | — |
+| #step-1 | Edge-bar cursor + retire the fill-tint | done | 4fccda247 |
+| #step-2 | Neutral-graze hover | done | c93f44772 |
+| #step-3 | QuestionDialog blink pulses the glyph | done | ca04cb4bd |
+| #step-4 | Integration checkpoint + comment cleanup | done | N/A (verification) |
 
 ---
 

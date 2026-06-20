@@ -71,11 +71,10 @@ body {
   --tugx-list-row-gap:               var(--tug-space-sm);
   --tugx-list-row-padding-block:     8px;
   --tugx-list-row-padding-inline:    14px;
-  /* Reserved left gutter on every row. Two jobs: a touch of standing left
-     breathing room, and a fixed slot for a leading focus accessory (the
-     list-view keyboard-cursor chevron) so it never shifts the row text when it
-     appears/disappears. Reserved unconditionally — the chevron only paints on
-     the cursor row, but the space is always held so nothing reflows. */
+  /* Reserved left gutter on every row — a touch of standing left breathing room.
+     (The keyboard cursor is a leading-edge bar drawn by the enclosing list-view
+     cell at the cell edge, not a glyph in this gutter, so nothing here reflows
+     when the cursor moves.) */
   --tugx-list-row-indicator-gutter:  0.2rem;
   /* Radio-dot glyph (`selectedGlyph="radio"`) — borrows TugRadioGroup's own base
      tokens so a list-row radio reads identically: a muted ring that fills the
@@ -108,12 +107,13 @@ body {
   --tugx-list-row-text:              var(--tug7-element-global-text-normal-default-rest);
   --tugx-list-row-subtitle-color:    var(--tug7-element-global-text-normal-muted-rest);
 
-  /* flush variant — transparent rest; tinted hover fill. The hover is the FIRST
-     rung of the single-blue list ramp: a faint wash of the same selection blue
-     the cursor tint and selected fill use, so hover < cursor < selected <
-     selected+pointer all read as one blue at rising strength. */
-  --tugx-list-row-flush-hover-bg:
-    color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 22%, transparent);
+  /* flush variant — transparent rest; NEUTRAL hover graze. Hover is a mouse
+     affordance, so it is a neutral wash (the menu-hover idiom), deliberately NOT
+     a wash of the selection blue: blue means "chosen," the neutral graze means
+     "the mouse is here." Keeping hover off the selection hue is what stops a
+     hovered row from reading as half-selected. The keyboard cursor is a separate
+     channel entirely (a leading-edge bar in `tug-list-view.css`). */
+  --tugx-list-row-flush-hover-bg: var(--tug7-surface-highlight-primary-normal-hover-rest);
 
   /* pill variant — outlined-action lineage, shared with TugDialogButton */
   --tugx-list-row-pill-rest-bg:      var(--tug7-surface-control-primary-outlined-action-rest);
@@ -414,6 +414,11 @@ body {
   border-radius: 0;
 }
 
+/* Neutral mouse-hover graze — a faint alpha wash over whatever surface the host
+   places the row on, so the inherited row text keeps the host's contrast pairing
+   (the graze is a transient surface tint, not a foreground, so it adds no pairing
+   of its own — same as the transparent rest). [L16] */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-list-row[data-variant="flush"]:hover:not([data-disabled="true"]) {
   background-color: var(--tugx-list-row-flush-hover-bg);
 }
@@ -432,24 +437,12 @@ body {
   background-color: var(--tugx-list-row-selected-hover-bg);
 }
 
-/* Selected + KEYBOARD CURSOR — the cell-level cursor tint is hidden under the
-   opaque selection fill, so promote the row to the same stronger fill the
-   hover-over-selected uses. This is what makes "the keyboard is roving on the
-   selected row" read distinctly from a resting selected row — without any per-row
-   outline (the tint does the work). */
-.tug-list-view-cell[data-key-cursor]
-  .tug-list-row[data-variant="flush"][data-selected="true"] {
-  background-color: var(--tugx-list-row-selected-hover-bg);
-}
-
-/* Keyboard cursor on an UNSELECTED row — the cursor's cell-level tint is the cue;
-   suppress the row's own mouse-hover fill so a pointer over the cursor row never
-   stacks a second wash on top (the keyboard cursor is authoritative, matching the
-   radio group). */
-.tug-list-view-cell[data-key-cursor]
-  .tug-list-row[data-variant="flush"]:not([data-selected="true"]):hover:not([data-disabled="true"]) {
-  background-color: transparent;
-}
+/* Keyboard cursor is a leading-edge bar drawn by the enclosing list-view cell
+   (`tug-list-view.css`), NOT a row fill — so there is no cursor-vs-selection or
+   cursor-vs-hover fill collision to mediate here. The cursor mark (keyboard) and
+   the hover wash (mouse) are orthogonal channels and may coexist on one row; a
+   keyboard-selected row is plain selection fill plus the bar, identical in fill
+   to a mouse-selected row. */
 
 /* ---- Variant: pill ----
    A discrete bordered, rounded row. Lineage is TugDialogButton's

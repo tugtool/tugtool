@@ -1740,25 +1740,27 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
 
   // Flash-then-advance on a commit-advance ([menu-flash confirmation]). When
   // `armAdvance` records a pending advance (a Return on either arity), the
-  // selection has already committed; blink **every selected row's** TINT a couple
-  // of times so the eye registers the choice, then advance on the blink's tail.
-  // Single-select → one row; multi-select → all checked rows blink together. Runs
-  // on `selections` AND `flashTick` so a Return on an already-checked row
-  // (selection unchanged) still fires. A no-op for a plain Space toggle (records
-  // no pending advance). TugAnimator scales the blink under reduced motion ([D06]).
+  // selection has already committed; pulse **every selected row's GLYPH** (the
+  // radio dot / checkbox) a couple of times so the eye registers the choice, then
+  // advance on the pulse's tail. Single-select → one glyph; multi-select → all
+  // checked glyphs pulse together. Runs on `selections` AND `flashTick` so a
+  // Return on an already-checked row (selection unchanged) still fires. A no-op
+  // for a plain Space toggle (records no pending advance). TugAnimator scales the
+  // pulse under reduced motion ([D06]).
   //
-  // There are no row outlines — the selection tint does the work. The flash
-  // pulses each selected row's `background-color` between its resting fill and
-  // transparent, so the tint itself blinks. `fill: "none"` reverts each row to its
-  // CSS fill afterward, leaving no residue.
+  // The confirmation rides the MARK, not the fill: under the list state language a
+  // transient row fill is the mouse and the glyph is the committed selection, so
+  // the blink pulses the glyph's `opacity` and leaves the row background alone.
+  // `fill: "none"` reverts each glyph to its CSS opacity afterward, leaving no
+  // residue.
   //
   // The row set is driven off the COMMITTED `selections[currentIndex]` — the
   // authoritative answer Return just changed — NOT the DOM's `aria-checked`. The
   // effect runs as a layout effect AFTER the selection-change render commits, so
-  // the just-checked row is in `selections` and its DOM fill is already the
-  // selected tint: the flash always takes Return's change into account, and only
-  // then advances. ([L06] the flash is appearance via DOM/TugAnimator; the
-  // selection it reads is data; [L03] layout-effect timing; [L13] TugAnimator.)
+  // the just-checked row is in `selections` and its glyph is already shown: the
+  // flash always takes Return's change into account, and only then advances.
+  // ([L06] the flash is appearance via DOM/TugAnimator; the selection it reads is
+  // data; [L03] layout-effect timing; [L13] TugAnimator.)
   React.useLayoutEffect(() => {
     const pending = pendingAdvanceRef.current;
     if (pending === null) return;
@@ -1791,24 +1793,20 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
 
     let cancelled = false;
     const flashes = selectedRows.map((row) => {
-      // The tint to blink is the row's TARGET selection fill. A row whose
-      // selection just changed is mid CSS `background-color` transition (from
-      // transparent), so a naive read would catch the in-flight value — the bug
-      // where a *changed* row didn't flash but a stays-put one did. Snap past the
-      // transition by disabling it for the read, then restore it; the WAAPI flash
-      // below overrides the property for its run regardless.
-      const prevTransition = row.style.transition;
-      row.style.transition = "none";
-      const restingFill = getComputedStyle(row).backgroundColor;
-      row.style.transition = prevTransition;
+      // Pulse the selection glyph (radio dot / checkbox), which every option row
+      // carries; fall back to the row itself only if a glyph is somehow absent.
+      // Opacity isn't mid-transition (the glyph's own transitions are on
+      // background/border, not opacity), so no transition-snap read is needed.
+      const target =
+        row.querySelector<HTMLElement>(".tug-list-row-check") ?? row;
       return animate(
-        row,
+        target,
         [
-          { backgroundColor: restingFill },
-          { backgroundColor: "transparent" },
-          { backgroundColor: restingFill },
-          { backgroundColor: "transparent" },
-          { backgroundColor: restingFill },
+          { opacity: "1" },
+          { opacity: "0.25" },
+          { opacity: "1" },
+          { opacity: "0.25" },
+          { opacity: "1" },
         ],
         {
           duration: "--tug-motion-duration-slow",

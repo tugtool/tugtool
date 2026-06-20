@@ -19,11 +19,10 @@
 
 body {
   /* Keyboard movement-cursor fill for the cursor header — a reduced (lighter)
-     version of the focus selection blue, derived from the same per-theme token as
-     TugListView's cursor tint so the two row-based item-groups read identically.
-     The accordion has no row selection of its own; this is purely the focus-blue
-     hue at a low level. Keep the fraction in sync with
-     `--tugx-list-view-cursor-tint`. */
+     version of the focus selection blue. The accordion has no row selection of
+     its own; this is purely the focus-blue hue at a low level. (TugListView marks
+     its cursor with a leading-edge bar rather than a fill; the accordion keeps a
+     header fill, which suits its larger, sparser header rows.) */
   --tugx-accordion-cursor-tint:
     color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 25%, transparent);
 }

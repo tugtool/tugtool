@@ -1,5 +1,6 @@
 /* @tug-pairings {
   --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest | control
+  --tugx-focus-ring | --tug7-surface-global-primary-normal-default-rest | control
 } */
 
 /**
@@ -9,9 +10,10 @@
  * | Element                        | Surface                                            | Role    | Context                                                                     |
  * |--------------------------------|----------------------------------------------------|---------|-----------------------------------------------------------------------------|
  * | --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view[data-row-layout="flush"] .tug-list-view-cell (border-bottom)  |
+ * | --tugx-focus-ring              | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view-cell[data-key-cursor]::before (keyboard-cursor edge bar)      |
  *
- * The `rowLayout="flush"` row divider — a 1px hairline below each
- * cell — is the list view's only self-painted foreground. Everything
+ * The `rowLayout="flush"` row divider and the keyboard-cursor edge bar
+ * are the list view's only self-painted foregrounds. Everything
  * else inside the list belongs to a cell renderer: cell renderers
  * paint their own contrast pairings, and per-instance customization
  * happens via cascade-scoped overrides on `--tugx-list-view-*`
@@ -48,16 +50,16 @@ body {
   --tugx-list-view-row-gap:            var(--tug-space-sm);
   --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
 
-  /* Keyboard movement-cursor fill — the cursor row's "you are here" tint: a
-     REDUCED (lighter) wash of the row selection fill, so the list reads as one
-     blue at four rising strengths: hover wash (22%) < CURSOR wash (45%) <
-     selection fill (quiet-rest) < selection+pointer (quiet-strong). The cursor
-     wash sits clearly above hover (it marks the keyboard position, which outranks
-     a transient mouse hover) yet below the committed selection. Derived from the
-     same (toned-back, per-theme) quiet selection token, so it tracks the theme.
-     Tune the fraction here. */
-  --tugx-list-view-cursor-tint:
-    color-mix(in srgb, var(--tug7-surface-selection-primary-normal-quiet-rest) 45%, transparent);
+  /* Keyboard movement-cursor mark — a leading-edge bar on the cursor row, the
+     "you are here" keyboard affordance. A MARK, not a fill: marks (this bar, the
+     container ring, selection glyphs) are the keyboard; a fill that comes and
+     goes under the pointer is the mouse. Replaces the former selection-blue
+     cursor wash, which was indistinguishable from hover and collided with the
+     selection fill on a selected row. Width is the only knob here; the bar's
+     COLOR is the role-resolved focus axis (`--tugx-focus-ring`), referenced
+     directly in the rule below exactly as the container-ring does — so all
+     keyboard marks read as one color family. */
+  --tugx-list-view-cursor-bar-width:   3px;
 
   /* Row-layout slots — consumed only when `rowLayout` is set. */
   --tugx-list-view-pill-row-gap:       var(--tug-space-sm);
@@ -194,36 +196,38 @@ body {
   /* Cells consume natural content height. The ResizeObserver reads
      from these wrappers to populate the height index. */
   display: block;
+  /* Anchor for the keyboard-cursor edge bar (`::before`, below). */
+  position: relative;
 }
 
-/* ---- Movement cursor — a reduced-strength fill tint, NO per-row ring ([P02], list variant) ----
-   The list reads as two levels of ONE blue: the selected row is the calm
-   selection fill, and the cursor row is a REDUCED (lighter) version of that same
-   fill. That two-level relationship is legible on its own, so the list needs no
-   per-row ring (the global `[data-key-cursor]` outline is suppressed here; the
-   ring lives only on the list container) and no leading glyph. `data-key-cursor`
-   is projected by the engine onto the cursor row's cell wrapper (appearance-only,
-   [L06]/[L22]). Painted on the wrapper for default / `flush`; `pill` lights the
-   inner row (the wrapper keeps the inter-row gap). When the cursor sits on the
-   selected row the opaque selection fill shows through — the lone selection plus
-   the container ring then read as "the keyboard is on the selected row." */
+/* ---- Movement cursor — a leading-edge bar, NO fill, NO per-row ring ----
+   The keyboard cursor is a MARK, not a fill: a crisp bar on the row's leading
+   inline edge, so the keyboard position reads instantly and never competes with
+   the neutral mouse-hover wash or the selection fill. `data-key-cursor` is
+   projected by the engine onto the cursor row's cell wrapper (appearance-only,
+   [L06]/[L22]); the bar paints whenever it is present. The selector is
+   deliberately NOT scoped to a `data-row-layout`, so it covers `flush` AND
+   default layouts alike (the gallery focus demos omit `rowLayout`); a
+   `pill`-specific anchor is deferred until a pill cursor-list exists. The global
+   `[data-key-cursor]` outline ring stays suppressed for list cells — the bar is
+   the row mark; the container keeps the perimeter ring.
+
+   On a selected cursor row the bar sits at the edge over the selection fill (the
+   absolutely-positioned `::before` paints after the row's in-flow background); on
+   an unselected cursor row (a single-select picker's pre-commit transient, or any
+   independent cursor) the bar is the sole row mark. The bar color is the
+   role-resolved focus axis, referenced directly as the container ring does. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-list-view-cell[data-key-cursor] {
   outline: none;
-  /* Match the selection's bounds exactly. The global `:where([data-key-cursor])`
-     rule gives the cursor cell a 6px radius (meant for the old ring); that pulled
-     the tint in from the host's rounded frame and read as "squared off" next to
-     the selection fill, which has no own radius and follows the host clip. Drop
-     the own radius so the cursor tint and the selection fill share one shape. */
-  border-radius: 0;
-  background-image: linear-gradient(var(--tugx-list-view-cursor-tint), var(--tugx-list-view-cursor-tint));
 }
-.tug-list-view[data-row-layout="pill"] .tug-list-view-cell[data-key-cursor] {
-  background-image: none;
-}
-.tug-list-view[data-row-layout="pill"]
-  .tug-list-view-cell[data-key-cursor]
-  .tug-list-row:not([data-disabled="true"]) {
-  background-image: linear-gradient(var(--tugx-list-view-cursor-tint), var(--tugx-list-view-cursor-tint));
+.tug-list-view-cell[data-key-cursor]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: var(--tugx-list-view-cursor-bar-width);
+  background: var(--tugx-focus-ring);
 }
 
 /* Selected rows read as a clean block — cover the hairline dividers that touch
