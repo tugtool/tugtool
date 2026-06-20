@@ -12,6 +12,32 @@
   white-space: nowrap;
 }
 
+/* Optical-centre lift for chips in flowing prose.
+
+   The shared `.tug-atom-chip` rule pins `vertical-align: middle`,
+   which centres the pill on the parent's x-height. Because the pill
+   is taller than the prose's lowercase band, `middle` leaves it
+   hanging below the cap line — it reads as sitting too low. Lift it
+   so the pill optically centres on the cap-height band instead.
+
+   It MUST be a `transform` (a paint-time shift), never `vertical-align`
+   or a line-height change: those grow the line box, so chip-bearing
+   lines would stand taller than chip-free ones. A transform moves the
+   pill within the existing line box and leaves layout untouched —
+   lines with and without atoms stay exactly the same height.
+
+   The lift is in `em`, anchored to the prose font-size: the per-card
+   transcript `zoom` (the magnification setting) scales the whole
+   subtree — transform included — uniformly, and a font-size change
+   moves the lift with the text. The pill stays proportionally placed
+   at every magnification.
+
+   Scoped to the markdown body so tool-block headers — which centre
+   the same chip in a single-line flex row — keep their own alignment. */
+[data-slot="tug-atom-markdown-body"] .tug-atom-chip {
+  transform: translateY(var(--tugx-atom-markdown-body-chip-lift, -0.12em));
+}
+
 /* Floor the line-box of any markdown line that carries a chip to at
    least atom-height + 4px, so the chip (rendered `vertical-align:
    middle`, taller than the prose line) fits the line-box with a little
