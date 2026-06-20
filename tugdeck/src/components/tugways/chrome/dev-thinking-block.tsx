@@ -3,11 +3,13 @@
  * "thinking" stream within a Dev code row.
  *
  * This is the `note` variant of the block contract ([BlockVariant], [P07]):
- * it stamps `data-variant="note"` and adopts the shared `--tugx-block-*`
- * SURFACE tokens for its frame, while keeping its own leading-chevron +
- * preview header, height-animated body, and `--tugx-thinking-*` tones
- * ([P08]). It does NOT render through `BlockHeader` — note diverges
- * structurally, so it shares the contract, not the component.
+ * it stamps `data-variant="note"`, adopts the shared `--tugx-block-*` chrome
+ * surface, and wears the shared affordance cluster — the same `BlockCopyButton`
+ * + `BlockFoldCue` the tool header uses, on the trailing edge. It keeps its own
+ * identity (the "Thinking" label + collapsed preview + height-animated body)
+ * and `--tugx-thinking-*` tones ([P08]) rather than rendering through
+ * `BlockHeader` (note has no dot/verb/detail and a different body-collapse), so
+ * it shares the contract and the affordances, not the whole component.
  *
  * Two modes (mutually exclusive):
  *
@@ -63,7 +65,9 @@
 import "./dev-thinking-block.css";
 
 import React from "react";
-import { ChevronRight } from "lucide-react";
+
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
+import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
@@ -160,6 +164,23 @@ export const DevThinkingBlock: React.FC<DevThinkingBlockProps> = ({
     setCollapsed((prev) => !prev);
   }, []);
 
+  // The shared fold cue reports the next collapsed value; route it straight
+  // to state. (The label region keeps its own no-arg toggle.)
+  const handleFold = React.useCallback((next: boolean) => {
+    setCollapsed(next);
+  }, []);
+
+  // Copy payload — the thinking text itself, read live from the streaming
+  // store or the static prop, so the header's Copy matches the visible body
+  // in both modes.
+  const getThinkingText = React.useCallback((): string => {
+    if (isStreaming) {
+      if (streamingStore === undefined || streamingPath === undefined) return "";
+      return (streamingStore.get(streamingPath) as string | undefined) ?? "";
+    }
+    return initialText ?? "";
+  }, [isStreaming, streamingStore, streamingPath, initialText]);
+
   // ---------- Streaming mode: subscribe for content + preview state.
   //
   // Two reads from the same path: TugMarkdownBlock subscribes for the
@@ -236,21 +257,44 @@ export const DevThinkingBlock: React.FC<DevThinkingBlockProps> = ({
           : `dev-thinking-block ${className}`
       }
     >
-      <button
-        type="button"
-        className="dev-thinking-block-header"
-        aria-expanded={collapsed ? "false" : "true"}
-        aria-controls="dev-thinking-block-body"
-        onClick={handleToggle}
-      >
-        <ChevronRight
-          aria-hidden="true"
-          size={14}
-          className="dev-thinking-block-chevron"
-        />
-        <span className="dev-thinking-block-label">Thinking</span>
-        <span ref={previewRef} className="dev-thinking-block-preview" />
-      </button>
+      {/* Header adopts the shared block affordance pattern (refines [P07]):
+          the identity (label + collapsed preview) sits on the left and stays
+          click-to-toggle; the trailing cluster carries the same `BlockCopyButton`
+          + `BlockFoldCue` the tool header uses, on the RIGHT, at the `xs` scale.
+          So note now reads and acts like every other block (Copy present, fold
+          on the right) while keeping its label/preview identity. */}
+      <div className="dev-thinking-block-header">
+        <button
+          type="button"
+          className="dev-thinking-block-toggle"
+          aria-expanded={collapsed ? "false" : "true"}
+          aria-controls="dev-thinking-block-body"
+          onClick={handleToggle}
+        >
+          <span className="dev-thinking-block-label">Thinking</span>
+          <span ref={previewRef} className="dev-thinking-block-preview" />
+        </button>
+        <span className="dev-thinking-block-actions">
+          <BlockCopyButton
+            subtype="icon"
+            size="xs"
+            getText={getThinkingText}
+            aria-label="Copy thinking"
+            data-slot="dev-thinking-block-copy"
+          />
+          <BlockFoldCue
+            collapsed={collapsed}
+            onToggle={handleFold}
+            collapsedLabel="Expand"
+            expandedLabel="Collapse"
+            ariaLabelExpand="Expand thinking"
+            ariaLabelCollapse="Collapse thinking"
+            size="xs"
+            subtype="icon"
+            data-slot="dev-thinking-block-fold"
+          />
+        </span>
+      </div>
       <div
         id="dev-thinking-block-body"
         className="dev-thinking-block-body"

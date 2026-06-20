@@ -90,7 +90,10 @@
   display: block;
   margin: var(--tugx-thinking-margin);
   padding: 0;
-  background: var(--tugx-block-bg);
+  /* Match the tool-block chrome surface (the raised `--tugx-block-chrome-bg`),
+   * not the inset `--tugx-block-bg`, so a note reads as the same card as every
+   * other block rather than a darker inset. */
+  background: var(--tugx-block-chrome-bg);
   border: 1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
   overflow: hidden;
@@ -105,17 +108,32 @@
   display: none;
 }
 
-/* ---- Header (the toggle button) ---- */
+/* ---- Header: identity toggle (left) + affordance cluster (right) ----
+ * Refines [P07]: note now wears the shared block affordance pattern. The
+ * identity region (label + collapsed preview) is the flexible left column and
+ * stays click-to-toggle; the trailing cluster carries the shared Copy + fold
+ * cue on the RIGHT, matching every other block. */
 
 .dev-thinking-block-header {
   display: flex;
   align-items: center;
+  /* Trailing-edge gap so the affordance cluster doesn't touch the frame. */
+  padding-inline-end: var(--tug-space-sm);
+}
+
+/* The clickable identity region — carries the strip padding and the label /
+ * preview typography. Full-strength label color to match the tool header's
+ * name (the preview keeps its own muted tone below). */
+.dev-thinking-block-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   gap: var(--tugx-block-strip-gap);
-  width: 100%;
   padding: var(--tugx-block-strip-padding);
   background: transparent;
   border: 0;
-  color: var(--tugx-block-text-color-muted);
+  color: var(--tugx-block-text-color);
   font-family: inherit;
   font-size: var(--tugx-thinking-label-size);
   font-weight: var(--tugx-thinking-label-weight);
@@ -123,25 +141,18 @@
   cursor: pointer;
 }
 
-.dev-thinking-block-header:hover {
-  background: var(--tugx-block-row-hover-bg);
-  color: var(--tugx-block-text-color);
-}
-
-.dev-thinking-block-header:focus-visible {
+.dev-thinking-block-toggle:focus-visible {
   outline: 2px solid var(--tugx-thinking-focus-ring);
   outline-offset: -2px;
 }
 
-.dev-thinking-block-chevron {
+/* Trailing affordance cluster — the shared Copy + fold cue, at the tool
+ * header's xs scale with a matching 2xs gap. */
+.dev-thinking-block-actions {
   flex: 0 0 auto;
-  color: var(--tugx-block-text-color-muted);
-  transition: transform var(--tugx-thinking-collapse-duration)
-    var(--tugx-thinking-collapse-easing);
-}
-
-.dev-thinking-block[data-collapsed="false"] .dev-thinking-block-chevron {
-  transform: rotate(90deg);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
 }
 
 .dev-thinking-block-label {
