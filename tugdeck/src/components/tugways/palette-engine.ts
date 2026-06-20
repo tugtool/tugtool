@@ -858,6 +858,109 @@ export function resolveAchromaticAdjacency(a: string, b: string): number {
   return (2 / 3) * lA + (1 / 3) * lB;
 }
 
+// ---------------------------------------------------------------------------
+// resolveTugColorToOklch — numeric --tug-color() resolution (single source of truth)
+// ---------------------------------------------------------------------------
+
+/** Numeric OKLCH result with alpha as a 0–1 fraction. */
+export interface ResolvedOklch {
+  L: number;
+  C: number;
+  h: number;
+  /** Alpha as a fraction in [0, 1]. */
+  alpha: number;
+}
+
+/**
+ * Resolve a parsed --tug-color() value to numeric OKLCH components.
+ *
+ * This is the single source of truth for --tug-color() expansion math. The
+ * postcss-tug-color build plugin formats this result into an `oklch(...)` string;
+ * the CLI contrast audit feeds it straight into the WCAG/perceptual checks.
+ * Keeping both on this one function guarantees the build output and the audit
+ * never drift.
+ *
+ * Tier order mirrors the authoring spec exactly:
+ *   1. Achromatic adjacency (e.g. paper-linen) — must precede the black/white/
+ *      named-gray early returns so endpoint pairs are not silently broken.
+ *   2. transparent → fully transparent black.
+ *   3. black / white → exact endpoints, alpha honored.
+ *   4. Named grays (pitch…paper) → fixed L, intensity/tone ignored, alpha honored.
+ *   5. gray pseudo-hue → achromatic, tone drives the piecewise L.
+ *   6. Chromatic hues → named hue or hyphenated chromatic adjacency.
+ *
+ * @param name - Primary hue/keyword (bare name, achromatic name, or "gray"/"transparent").
+ * @param adjacentName - Second name for hyphenated adjacency, else undefined.
+ * @param intensity - Intensity axis 0–100.
+ * @param tone - Tone axis 0–100.
+ * @param alpha - Alpha 0–100 (converted to a 0–1 fraction in the result).
+ */
+export function resolveTugColorToOklch(
+  name: string,
+  adjacentName: string | undefined,
+  intensity: number,
+  tone: number,
+  alpha: number,
+): ResolvedOklch {
+  const a = alpha / 100;
+
+  // Tier 1: achromatic adjacency
+  if (adjacentName !== undefined) {
+    const idxA = ACHROMATIC_SEQUENCE.indexOf(name);
+    const idxB = ACHROMATIC_SEQUENCE.indexOf(adjacentName);
+    if (idxA !== -1 && idxB !== -1) {
+      return { L: resolveAchromaticAdjacency(name, adjacentName), C: 0, h: 0, alpha: a };
+    }
+  }
+
+  // Tier 2: transparent
+  if (name === "transparent") return { L: 0, C: 0, h: 0, alpha: 0 };
+
+  // Tier 3: black / white
+  if (name === "black") return { L: 0, C: 0, h: 0, alpha: a };
+  if (name === "white") return { L: 1, C: 0, h: 0, alpha: a };
+
+  // Tier 4: named grays (pitch through paper) — fixed L, i/t ignored
+  if (NAMED_GRAYS[name] !== undefined) {
+    return { L: ACHROMATIC_L_VALUES[name] ?? 0.5, C: 0, h: 0, alpha: a };
+  }
+
+  // Tier 5: gray pseudo-hue — achromatic, canonical L=0.5, tone drives L
+  if (name === "gray") {
+    const GRAY_CANONICAL_L = 0.5;
+    const L =
+      L_DARK +
+      (Math.min(tone, 50) * (GRAY_CANONICAL_L - L_DARK)) / 50 +
+      (Math.max(tone - 50, 0) * (L_LIGHT - GRAY_CANONICAL_L)) / 50;
+    return { L, C: 0, h: 0, alpha: a };
+  }
+
+  // Tier 6: chromatic hues
+  const baseAngle = HUE_FAMILIES[name];
+  if (baseAngle === undefined) return { L: 0.5, C: 0, h: 0, alpha: a };
+
+  let h: number;
+  let canonicalL: number;
+  let peakC: number;
+  if (adjacentName) {
+    h = resolveHyphenatedHue(name, adjacentName);
+    canonicalL = DEFAULT_CANONICAL_L[name] ?? 0.77;
+    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
+  } else {
+    h = baseAngle;
+    canonicalL = DEFAULT_CANONICAL_L[name] ?? 0.77;
+    peakC = (MAX_CHROMA_FOR_HUE[name] ?? 0.022) * PEAK_C_SCALE;
+  }
+
+  const L =
+    L_DARK +
+    (Math.min(tone, 50) * (canonicalL - L_DARK)) / 50 +
+    (Math.max(tone - 50, 0) * (L_LIGHT - canonicalL)) / 50;
+  const C = (intensity / 100) * peakC;
+
+  return { L, C, h, alpha: a };
+}
+
 /**
  * Check if two achromatic names are adjacent in the ACHROMATIC_SEQUENCE.
  *

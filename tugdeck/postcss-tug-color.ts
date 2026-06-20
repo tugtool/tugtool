@@ -55,19 +55,11 @@ import fs from "fs";
 import path from "path";
 import {
   HUE_FAMILIES,
-  DEFAULT_CANONICAL_L,
-  MAX_CHROMA_FOR_HUE,
-  PEAK_C_SCALE,
-  L_DARK,
-  L_LIGHT,
-  findMaxChroma,
   TUG_COLOR_PRESETS,
   ADJACENCY_RING,
-  resolveHyphenatedHue,
   NAMED_GRAYS,
   ACHROMATIC_SEQUENCE,
-  ACHROMATIC_L_VALUES,
-  resolveAchromaticAdjacency,
+  resolveTugColorToOklch,
 } from "./src/components/tugways/palette-engine";
 import { parseTugColor, findTugColorCallsWithWarnings } from "./tug-color-parser";
 import type { TugColorValue } from "./tug-color-parser";
@@ -166,92 +158,28 @@ function expandTugColor(
   tone: number,
   alpha: number,
 ): string {
-  const alphaSuffix = alpha < 100 ? ` / ${fmt(alpha / 100)}` : "";
-
-  // ── Tier 1: Achromatic adjacency ──────────────────────────────────────────
-  // Must come FIRST — before black/white/named-gray early returns — so that
-  // endpoint pairs (black-paper, pitch-white) are not silently broken.
-  if (color.adjacentName !== undefined) {
+  // Preserve the achromatic-adjacency preset warning: presets are ignored for
+  // achromatic pairs because L is fixed by the 2/3+1/3 blend.
+  if (color.adjacentName !== undefined && color.preset !== undefined) {
     const idxA = ACHROMATIC_SEQUENCE.indexOf(color.name);
     const idxB = ACHROMATIC_SEQUENCE.indexOf(color.adjacentName);
     if (idxA !== -1 && idxB !== -1) {
-      if (color.preset !== undefined) {
-        console.warn(
-          `postcss-tug-color: preset '${color.preset}' is ignored for achromatic adjacency pair '${color.name}-${color.adjacentName}' (L is fixed by the 2/3+1/3 blend)`
-        );
-      }
-      const blendedL = resolveAchromaticAdjacency(color.name, color.adjacentName);
-      return `oklch(${fmt(blendedL)} 0 0${alphaSuffix})`;
+      console.warn(
+        `postcss-tug-color: preset '${color.preset}' is ignored for achromatic adjacency pair '${color.name}-${color.adjacentName}' (L is fixed by the 2/3+1/3 blend)`
+      );
     }
   }
 
-  // ── Tier 2: Transparent ───────────────────────────────────────────────────
-  if (color.name === "transparent") {
-    return "oklch(0 0 0 / 0)";
-  }
-
-  // ── Tier 3: Black / white ─────────────────────────────────────────────────
-  if (color.name === "black") {
-    return `oklch(0 0 0${alphaSuffix})`;
-  }
-  if (color.name === "white") {
-    return `oklch(1 0 0${alphaSuffix})`;
-  }
-
-  // ── Tier 4: Named grays (pitch through paper) ─────────────────────────────
-  // Fixed lightness per [D06]: look up inherent tone from NAMED_GRAYS,
-  // use the pre-computed L from ACHROMATIC_L_VALUES. Intensity and tone ignored.
-  const namedGrayTone = NAMED_GRAYS[color.name];
-  if (namedGrayTone !== undefined) {
-    const L = ACHROMATIC_L_VALUES[color.name] ?? 0.5;
-    return `oklch(${fmt(L)} 0 0${alphaSuffix})`;
-  }
-
-  // ── Tier 5: Gray pseudo-hue ───────────────────────────────────────────────
-  // Achromatic (C=0), canonical L=0.5; tone participates in the piecewise formula.
-  if (color.name === "gray") {
-    const GRAY_CANONICAL_L = 0.5;
-    const L =
-      L_DARK +
-      Math.min(tone, 50) * (GRAY_CANONICAL_L - L_DARK) / 50 +
-      Math.max(tone - 50, 0) * (L_LIGHT - GRAY_CANONICAL_L) / 50;
-    return `oklch(${fmt(L)} 0 0${alphaSuffix})`;
-  }
-
-  // ── Tier 6: Chromatic hues ────────────────────────────────────────────────
-  const baseAngle = HUE_FAMILIES[color.name];
-  if (baseAngle === undefined) {
-    // Unknown hue — should not happen if parseTugColor validated correctly
-    return `oklch(0.5 0 0${alphaSuffix})`;
-  }
-
-  let h: number;
-  let canonicalL: number;
-  let peakC: number;
-
-  if (color.adjacentName) {
-    // Chromatic hyphenated adjacency: resolve angle via weighted hue-angle blend
-    h = resolveHyphenatedHue(color.name, color.adjacentName);
-    canonicalL = DEFAULT_CANONICAL_L[color.name] ?? 0.77;
-    // Compute peakC dynamically at the resolved hyphenated angle
-    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
-  } else {
-    // Exact named hue path
-    h = baseAngle;
-    canonicalL = DEFAULT_CANONICAL_L[color.name] ?? 0.77;
-    const maxC = MAX_CHROMA_FOR_HUE[color.name] ?? 0.022;
-    peakC = maxC * PEAK_C_SCALE;
-  }
-
-  // tone → L: piecewise formula (matches tugColor() exactly)
-  const L =
-    L_DARK +
-    Math.min(tone, 50) * (canonicalL - L_DARK) / 50 +
-    Math.max(tone - 50, 0) * (L_LIGHT - canonicalL) / 50;
-
-  // intensity → C: linear
-  const C = (intensity / 100) * peakC;
-
+  // All tier logic lives in resolveTugColorToOklch (single source of truth shared
+  // with the CLI contrast audit). Here we only format the numeric result.
+  const { L, C, h, alpha: a } = resolveTugColorToOklch(
+    color.name,
+    color.adjacentName,
+    intensity,
+    tone,
+    alpha,
+  );
+  const alphaSuffix = a < 1 ? ` / ${fmt(a)}` : "";
   return `oklch(${fmt(L)} ${fmt(C)} ${h}${alphaSuffix})`;
 }
 

@@ -77,9 +77,18 @@ import {
 /**
  * Ordered list of all shipped themes.
  * Must stay in sync with tugdeck/styles/themes/*.css plus the base theme.
- * Base theme always comes first; others follow in alphabetical order.
+ * Base theme always comes first. The remainder are grouped by mode — the dark
+ * themes, then the light themes — so the `next-theme` cycle sweeps through all
+ * darks before all lights instead of ping-ponging between modes.
  */
-export const SHIPPED_THEME_NAMES: readonly string[] = [BASE_THEME_NAME, "harmony"];
+export const SHIPPED_THEME_NAMES: readonly string[] = [
+  BASE_THEME_NAME, // brio (dark)
+  "nocturne", // dark
+  "bravura", // dark
+  "harmony", // light
+  "aria", // light
+  "vivace", // light
+];
 
 /** Handler function for an action */
 export type ActionHandler = (payload: Record<string, unknown>) => void;

@@ -540,8 +540,10 @@ describe("initActionDispatch: next-theme", () => {
     expect(SHIPPED_THEME_NAMES[0]).toBe("brio");
   });
 
-  it("SHIPPED_THEME_NAMES includes harmony", () => {
-    expect(SHIPPED_THEME_NAMES).toContain("harmony");
+  it("SHIPPED_THEME_NAMES includes every shipped theme", () => {
+    for (const name of ["nocturne", "bravura", "harmony", "aria", "vivace"]) {
+      expect(SHIPPED_THEME_NAMES).toContain(name);
+    }
   });
 });
 

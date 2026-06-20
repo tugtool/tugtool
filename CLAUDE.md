@@ -44,7 +44,7 @@ cd tugrust && cargo nextest run
 
 ## Tugdeck — Theme Token Files
 
-Theme tokens live in `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css`. These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens.
+Theme tokens live in `tugdeck/styles/themes/*.css` — `brio`/`nocturne`/`bravura` (dark) and `harmony`/`aria`/`vivace` (light). These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens. Each theme is one tint hue over a shared tone skeleton; see `tuglaws/theme-engine.md` for the authoring doctrine. Validate contrast with `bun run audit:theme-contrast` (no theme may exceed the `brio` accessibility budget). Register new themes in `SHIPPED_THEME_NAMES` (`tugdeck/src/action-dispatch.ts`).
 
 ## AskUserQuestion — shape and affordances
 
