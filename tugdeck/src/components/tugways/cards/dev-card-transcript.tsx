@@ -5,13 +5,15 @@
  * Mounts a `TugListView` against a `DevTranscriptDataSource` and
  * registers two cell renderers, one per row kind:
  *
- *   - `user` — `TugTranscriptEntry participant="user"` whose body is
- *     a `TugAtomTextBody` that walks `userMessage.text` against
- *     `userMessage.attachments`, interleaving the same atom-chip
- *     `<img>` the editor renders at each `U+FFFC` position (shared
- *     SVG builder via `buildAtomSVGDataUri`). Per [D11], earlier
- *     drafts shipped a plain `<span>` body; the walker landed once
- *     the prompt-entry's atom flow reached the transcript.
+ *   - `user` — `TugTranscriptEntry participant="user"` whose body is a
+ *     `TugAtomMarkdownBody`. The submitted prompt renders as markdown
+ *     (static `TugMarkdownBlock`), so the transcript shows bold / lists
+ *     / code / headings exactly as the assistant body and the Claude
+ *     Code TUI do, and the prompt's inline atom chips (`@`-mentions,
+ *     file / command refs, pasted-image chips) are grafted back into
+ *     that rendered markdown at their original `U+FFFC` positions via
+ *     the same `TugAtomChip` every other surface uses. The prompt
+ *     *editor* stays plain text — this is the display surface only.
  *   - `assistant` — `TugTranscriptEntry participant="assistant"` rendered by a
  *     single `AssistantTurnCell` component for the assistant row's entire
  *     life (both in-flight and committed). `TugMarkdownBlock` (and
@@ -95,10 +97,8 @@ import { useDeckManager } from "@/deck-manager-context";
 import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
 import { DevZ1B } from "@/components/tugways/cards/dev-card-z1b";
 import { useFootHeightReservation } from "@/components/tugways/cards/dev-card-transcript-foot-reservation";
-import {
-  TugAtomTextBody,
-  formatAtomTextForCopy,
-} from "@/components/tugways/cards/tug-atom-text-body";
+import { formatAtomTextForCopy } from "@/components/tugways/cards/tug-atom-text-body";
+import { TugAtomMarkdownBody } from "@/components/tugways/cards/tug-atom-markdown-body";
 import { TugAttachmentStrip } from "@/components/tugways/cards/tug-attachment-strip";
 import { DevAttachmentPreview } from "@/components/tugways/cards/dev-attachment-preview";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
@@ -357,9 +357,16 @@ const UserMessageCell = React.memo(function UserMessageCell({
           address={address}
           body={
             <>
-              <TugAtomTextBody
+              {/* The submitted prompt renders as markdown (like the
+                  assistant body and the Claude Code TUI), with the
+                  prompt's inline atom chips grafted back into the rendered
+                  markdown at their original positions — see
+                  `TugAtomMarkdownBody`. The root div carries the
+                  menu-anchor `bodyRef`. The prompt *editor* is unaffected;
+                  this is the display surface only. */}
+              <TugAtomMarkdownBody
                 ref={(el) => { bodyRef.current = el; }}
-                className="dev-card-transcript-user-body"
+                className="dev-card-transcript-user-markdown"
                 data-testid="dev-card-transcript-user-body"
                 text={text}
                 atoms={atoms}

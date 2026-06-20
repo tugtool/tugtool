@@ -491,14 +491,28 @@
   height: 1em;
 }
 
-/* User-row body — plain text per [D11]. Wraps long lines, preserves
-   user-typed whitespace inside the prompt verbatim. `1em` font-size
-   anchors to the transcript root. */
+/* Ghost-row body — the plain-text preview of a queued send awaiting
+   dispatch. Wraps long lines, preserves user-typed whitespace, `1em`
+   font-size anchors to the transcript root. A committed/in-flight user
+   message takes the markdown path below instead. */
 .dev-card-transcript-user-body {
   display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 1em;
+}
+
+/* User-row body — a submitted prompt rendered through `TugMarkdownBlock`
+   with its inline atom chips grafted back in (`TugAtomMarkdownBody`).
+   The inner markdown block carries `.dev-card-transcript-code-body`, so
+   its padding cancel, full width, and `1em` block typography match the
+   assistant body exactly. This wrapper only fills the row column and
+   provides the menu-anchor element; the markdown block owns
+   paragraph/list/heading spacing via the shared `--tugx-md-*` rhythm —
+   the same compact spacing the assistant uses, replacing the old
+   pre-wrap body where a blank source line cost a full line-height. */
+.dev-card-transcript-user-markdown {
+  width: 100%;
 }
 
 /* Ghost row — a queued send awaiting dispatch. Painted as an ordinary

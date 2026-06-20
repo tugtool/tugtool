@@ -1,0 +1,29 @@
+/**
+ * tug-atom-markdown-body.css — styling for the markdown user body's
+ * inline atom-chip hosts.
+ *
+ * The host is an empty inline span injected at each former `U+FFFC`
+ * position; a `TugAtomChip` portals into it. The span keeps the chip
+ * from breaking across a line and contributes no box of its own, so the
+ * chip flows inside the markdown text exactly where the user placed it.
+ */
+
+.tug-atom-chip-host {
+  white-space: nowrap;
+}
+
+/* Floor the line-box of any markdown line that carries a chip to at
+   least atom-height + 4px, so the chip (rendered `vertical-align:
+   middle`, taller than the prose line) fits the line-box with a little
+   breathing room instead of clipping at the top/bottom edge — the same
+   floor `TugAtomTextBody` applies, scoped here via `:has` to ONLY the
+   chip-bearing blocks so chip-free prose keeps the tight markdown
+   rhythm. `max(1lh, …)` defers to the inherited line-height when it
+   already clears the floor (large-font surfaces). */
+[data-slot="tug-atom-markdown-body"]
+  :is(p, li, h1, h2, h3, h4, h5, h6):has(.tug-atom-chip-host) {
+  line-height: max(
+    1lh,
+    calc(var(--tugx-atom-markdown-body-atom-height, 21px) + 4px)
+  );
+}
