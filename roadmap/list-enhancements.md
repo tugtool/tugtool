@@ -59,7 +59,7 @@ The fix is to stop overloading hue and instead give each signal its own visual v
 - Adding selection glyphs to lists that don't already have them (pickers stay fill-only selection) ([P05]).
 - Changing the container perimeter ring / `data-key-view-kbd` / `data-key-within` language — already keyboard-only and correct.
 - The transcript and `path`/`search`/`todo` body-block lists' keyboard story (Posture C; no engine cursor) — untouched beyond inheriting the new hover.
-- A pill-variant cursor bar — no current consumer is a pill independent-cursor list; the bar is flush-only ([P02]).
+- A pill-variant cursor bar — no current consumer is a pill cursor list; the cell-wrapper bar covers flush **and default** layouts, and only the pill-specific path is deferred ([P02]).
 - Any change to selection *behavior*, focus walk, or the chain — this is appearance-only.
 
 #### Dependencies / Prerequisites {#dependencies}
@@ -146,19 +146,19 @@ Anchors are explicit and kebab-case; plan-local decisions are `[P01]`; steps cit
 - In Posture A the bar becomes the modality tell: keyboard-selected = fill + bar, mouse-selected = fill only.
 - See [#consumer-posture-audit] for the full classification.
 
-#### [P02] The keyboard cursor is a leading-edge bar, drawn as a pseudo-element, flush-only (DECIDED) {#p02-edge-bar}
+#### [P02] The keyboard cursor is a leading-edge bar, drawn as a layout-agnostic pseudo-element (pill deferred) (DECIDED) {#p02-edge-bar}
 
-**Decision:** The keyboard cursor is a crisp leading-edge bar on the cursor row — a `::before` pseudo-element on the flush cell wrapper, `~3px` wide, colored with the role-resolved `--tugx-focus-ring`. The bar is **flush-only**: no current consumer is a pill independent-cursor list, so no pill bar path is built.
+**Decision:** The keyboard cursor is a crisp leading-edge bar on the cursor row — a `::before` pseudo-element on the cell wrapper, `~3px` wide, colored with the role-resolved `--tugx-focus-ring` (referenced directly, exactly as the container-ring rule does). The selector is **not** scoped to a layout, so it covers `flush` **and default** layouts alike; only a **pill-specific** bar path is deferred.
 
 **Rationale:**
 - A bar is a *mark* (not a fill), keyboard-only, and never contends with the selection glyph column — so a multi-select option row can show the bar (cursor) **and** a checkbox (selection) simultaneously.
 - A pseudo-element composes with any `box-shadow` (the `selectedAccent` inset border), sidestepping [R01].
 - Reusing `--tugx-focus-ring` keeps every keyboard mark (container ring, edge bar) in one color family.
-- Flush-only: all three independent-cursor consumers (QuestionDialog options, memory, permission-rules editor) are `rowLayout="flush"` (verified). Building a pill bar path would be untestable dead code; if a pill independent-cursor list ever appears, the bar is extended then.
+- Layout-agnostic selector, pill deferred: the cell-wrapper bar works for any layout whose row sits flush to the cell edge — `flush` (all six pickers, memory, permission-rules, the question options) **and default** (the gallery focus demos omit `rowLayout`). Scoping it to `[data-row-layout="flush"]` would wrongly blank the default-layout lists, so the selector stays unscoped. Only `pill` (a gapped, rounded row) needs a different anchor, and no pill cursor-list exists — building that path now would be untestable dead code; extend it when a pill cursor-list ships.
 
 **Implications:**
 - Cell wrapper gains `position: relative` to host the absolute `::before`.
-- New `--tugx-list-view-cursor-bar-width` / `-color` component tokens on the list root, one-hop to base per [L17].
+- One new component token, `--tugx-list-view-cursor-bar-width` (one-hop to `--tug-space-*` per [L17]). The bar **color** references `--tugx-focus-ring` directly — no `-color` alias — so it tracks the focus axis exactly like the container ring and avoids a two-hop `--tugx-` → `--tugx-` chain.
 - The reserved `--tugx-list-row-indicator-gutter` is no longer a "chevron slot"; its comment is corrected (the gutter may stay as standing breathing room, but it is not where the bar lives).
 
 #### [P03] Retire the cursor fill-tint and the fill-strength promotion; the bar carries keyboard modality (DECIDED) {#p03-retire-tint}
@@ -234,7 +234,7 @@ Every current `TugListView` consumer, classified by [P01]:
 | QuestionDialog rail | `inline`, no `focusGroup` | C | none |
 | help/agents/skills, options-sizer | `interactive={false}` | C (read-only) | none |
 
-A bare `[data-key-cursor]` bar rule paints exactly on Postures A and B (the engine-cursor lists) and never on Posture C (no projection). No posture attribute is needed. All three Posture-B consumers are flush, so the bar is flush-only ([P02]).
+A bare `[data-key-cursor]` bar rule paints exactly on Postures A and B (the engine-cursor lists) and never on Posture C (no projection). No posture attribute is needed. Every current engine-cursor list is `flush` **or default** layout (the gallery focus demos omit `rowLayout`), and the cell-wrapper bar handles both — so the selector stays unscoped by layout; only a pill-specific path is deferred ([P02]).
 
 #### The four-rung ramp, before and after {#ramp-before-after}
 
@@ -255,8 +255,8 @@ A bare `[data-key-cursor]` bar rule paints exactly on Postures A and B (the engi
 
 > (Spec S01 was removed — the earlier `data-cursor` posture attribute is no longer needed; the gap is intentional.)
 
-- Selector: `.tug-list-view-cell[data-key-cursor]::before` (flush). No posture attribute gates it.
-- The `::before` is absolutely positioned at the leading inline edge, full row height, `var(--tugx-list-view-cursor-bar-width)` wide, `background: var(--tugx-list-view-cursor-bar-color)`.
+- Selector: `.tug-list-view-cell[data-key-cursor]::before` — deliberately **not** scoped to `[data-row-layout]`, so it covers `flush` and default layouts alike (the gallery focus demos omit `rowLayout`). No posture attribute gates it; only a pill-specific anchor is deferred.
+- The `::before` is absolutely positioned at the leading inline edge, full row height, `var(--tugx-list-view-cursor-bar-width)` wide, `background: var(--tugx-focus-ring)` (the focus axis, referenced directly).
 - The cursor cell no longer paints any `background-image` tint, and the cursor-on-selected fill promotion is removed ([P03]).
 - The global `[data-key-cursor]` outline ring stays suppressed for list cells (already true).
 - On a selected cursor row the bar sits at the leading edge over the selection fill; on an unselected cursor row (Posture-A transient or any Posture-B cursor) the bar is the sole row mark.
@@ -283,9 +283,9 @@ None.
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `--tugx-list-view-cursor-bar-width` / `-color` | CSS token | `tug-list-view.css` (`body` block) | one-hop to `--tug-space-*` / `--tugx-focus-ring` ([L17]) |
+| `--tugx-list-view-cursor-bar-width` | CSS token | `tug-list-view.css` (`body` block) | one-hop to `--tug-space-*` ([L17]); **no** `-color` alias — the bar references `--tugx-focus-ring` directly |
 | `--tugx-list-view-cursor-tint` | CSS token | `tug-list-view.css` | **removed** ([P03]) |
-| cursor `::before` bar rule | CSS | `tug-list-view.css` | flush, keyed on `[data-key-cursor]` ([S02]); `@tug-renders-on` added ([L16]) |
+| cursor `::before` bar rule | CSS | `tug-list-view.css` | keyed on `[data-key-cursor]`, unscoped (covers flush + default) ([S02]); color `var(--tugx-focus-ring)`; `@tug-renders-on` added ([L16]) |
 | cursor-on-selected promotion rules | CSS | `tug-list-row.css` | **removed** ([P03]) |
 | `--tugx-list-row-flush-hover-bg` | CSS token | `tug-list-row.css` | repointed to neutral token; `@tug-renders-on` updated ([P04], [L16]) |
 | flash effect | TS | `dev-question-dialog.tsx` | pulse `.tug-list-row-check`, not background ([P06]) |
@@ -331,12 +331,12 @@ None.
 **References:** [P01] universal bar, [P02] edge bar, [P03] retire tint, Spec S02, Table T01, Risk R01, (#edge-bar-semantics, #ramp-before-after, #consumer-posture-audit)
 
 **Artifacts:**
-- `tug-list-view.css`: new `--tugx-list-view-cursor-bar-width/-color` tokens; the `::before` bar rule keyed on `.tug-list-view-cell[data-key-cursor]` (flush); `position: relative` on the cell wrapper; removal of `--tugx-list-view-cursor-tint` and its `background-image` rules; `@tug-renders-on` annotation on the bar rule and an updated `@tug-pairings` header entry ([L16]).
+- `tug-list-view.css`: new `--tugx-list-view-cursor-bar-width` token (no `-color` alias); the `::before` bar rule keyed on `.tug-list-view-cell[data-key-cursor]`, unscoped by layout, color `var(--tugx-focus-ring)`; `position: relative` on the cell wrapper; removal of `--tugx-list-view-cursor-tint` and its `background-image` rules; `@tug-renders-on` annotation on the bar rule and an updated `@tug-pairings` header entry ([L16]).
 - `tug-list-row.css`: remove the cursor-on-selected fill promotion and the cursor-tint pill/flush rules; keep the mouse-hover-over-selected step.
 
 **Tasks:**
-- [ ] Add the bar tokens (one-hop: width → `--tug-space-*`, color → `--tugx-focus-ring`) per [L17].
-- [ ] Draw the bar as an absolutely-positioned `::before` on the flush cell wrapper so it composes with `selectedAccent`'s box-shadow ([R01]); do **not** build a pill path ([P02]).
+- [ ] Add the `--tugx-list-view-cursor-bar-width` token (one-hop to `--tug-space-*`) per [L17]; color the bar with `var(--tugx-focus-ring)` directly — no `-color` alias ([P02]).
+- [ ] Draw the bar as an absolutely-positioned `::before` on the cell wrapper, selector **unscoped by layout** so it covers flush + default ([S02]); confirm it stacks over the row's selection fill; do **not** scope to `[data-row-layout="flush"]` (would blank the default-layout gallery demos) and do **not** build a pill path ([P02]).
 - [ ] Delete `--tugx-list-view-cursor-tint` and every rule that set a cursor `background-image`.
 - [ ] Delete the `[data-key-cursor] … [data-selected]` → `selected-hover-bg` promotion in `tug-list-row.css`.
 - [ ] Verify the global `[data-key-cursor]` outline stays suppressed for list cells.
@@ -400,6 +400,7 @@ None.
 
 **Checkpoint:**
 - [ ] `just app-test` (the QuestionDialog suite) passes.
+- [ ] tugdeck unit gate (`bun test`) passes — the existing `dev-question-dialog` suite is unaffected by the flash rewrite.
 - [ ] Visual: glyph pulse, no background blink.
 
 ---
@@ -426,7 +427,7 @@ None.
 - [ ] Aggregate `just app-test` across the affected sheets.
 
 **Checkpoint:**
-- [ ] `just app-test` and `bun run audit:theme-contrast` both green.
+- [ ] `just app-test`, `bun test` (tugdeck unit gate), and `bun run audit:theme-contrast` all green.
 - [ ] `git diff --stat` shows changes confined to the shared primitives + question dialog (no `resume-sheet`).
 
 ---
