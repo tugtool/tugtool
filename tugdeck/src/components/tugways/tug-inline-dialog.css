@@ -83,6 +83,21 @@ body {
 
   /* Body slot */
   --tugx-idialog-body-gap: 0.5rem;
+  /* Content inset (the "sheets" margin model): the icon column plus its
+   * row-gap is exactly the distance from the frame's content edge to where
+   * the title text begins. Insetting the body by that amount aligns body
+   * content under the title; mirroring it on the trailing edge gives an
+   * equal margin on each side. */
+  --tugx-idialog-content-inset: calc(
+    var(--tugx-idialog-icon-size) + var(--tugx-idialog-row-gap)
+  );
+  /* Optical nudge. Content aligned to a geometric margin set by a top
+   * element (the icon column) can read as poking *outside* it — font
+   * sidebearings and glyph shapes mean the geometric edge and the
+   * perceived edge differ. A few px of extra inset pushes the content
+   * visually inside the margin. Added symmetrically so the equal margin on
+   * each side is preserved. */
+  --tugx-idialog-content-nudge: 0.1875rem;
 
   /* Options block (radio stack) — centered, fixed max width. */
   --tugx-idialog-options-gap:       0.25rem;
@@ -227,13 +242,23 @@ body {
  * Free-form region between the header row and the options block.
  * Receives the per-tool body (DiffBlock, JsonTreeBlock, dispatch
  * wrapper, question accordion). `min-width: 0` lets wide bodies
- * shrink/scroll inside the frame. */
+ * shrink/scroll inside the frame.
+ *
+ * The body is inset by `--tugx-idialog-content-inset` on both sides so its
+ * content aligns under the title text (left) with an equal margin on the
+ * trailing edge (right) — the icon column sets the margin, the right side
+ * follows it. `box-sizing: border-box` keeps the inset inside the stretched
+ * body width. */
 
 .tug-inline-dialog-body {
   display: flex;
   flex-direction: column;
   gap: var(--tugx-idialog-body-gap);
   min-width: 0;
+  box-sizing: border-box;
+  padding-inline: calc(
+    var(--tugx-idialog-content-inset) + var(--tugx-idialog-content-nudge)
+  );
 }
 
 /* ---- Options block (radio TugDialogButton stack) ----

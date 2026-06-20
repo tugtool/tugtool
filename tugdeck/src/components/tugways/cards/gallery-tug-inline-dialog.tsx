@@ -8,10 +8,11 @@
  * so changes can be evaluated against the two callsites we actually
  * ship.
  *
- *   1. PermissionDialog — caution-shield request for a Bash command,
- *      with the `permission_suggestions` scope-picker radio stack.
- *      Mock store implements `subscribe` / `getSnapshot.pendingApproval`
- *      / `respondApproval`.
+ *   1. PermissionDialog — a spread of Bash commands (one-liner with a
+ *      scope-picker radio stack, two-line wrap, and two long commands that
+ *      trip the `TugClamp` cap) to vet the body margin model and the
+ *      8-line clamp. Each mock store implements `subscribe` /
+ *      `getSnapshot.pendingApproval` / `respondApproval`.
  *   2. QuestionDialog — 4-question wizard (the "calculator" walkthrough),
  *      single-select with auto-advance. Mock store implements
  *      `subscribe` / `getSnapshot.pendingQuestion` / `respondQuestion`
@@ -100,20 +101,102 @@ class MockPermissionStore {
   }
 }
 
-const LIVE_BASH_REQUEST: ControlRequestForward = {
-  request_id: "gallery-tug-inline-dialog:bash",
-  is_question: false,
-  tool_name: "Bash",
-  input: { command: "tokei" },
-  permission_suggestions: [
-    {
-      behavior: "allow",
-      destination: "project",
-      rules: [{ ruleContent: "Bash(tokei)", toolName: "Bash" }],
-      type: "addRule",
-    },
-  ],
-};
+const TOKEI_SUGGESTIONS: ControlRequestForward["permission_suggestions"] = [
+  {
+    behavior: "allow",
+    destination: "project",
+    rules: [{ ruleContent: "Bash(tokei)", toolName: "Bash" }],
+    type: "addRule",
+  },
+];
+
+// A spread of command lengths to vet the body margin model + the TugClamp
+// 8-line cap: one-liner (no clamp), a two-line wrap (no clamp), a compound
+// command that just trips the cap, and a very long one well past it.
+const CMD_ONE_LINER = "tokei";
+const CMD_TWO_LINE =
+  'for i in 1 2 3 4 5; do echo "tick $i"; sleep 1; done; echo "done"';
+const CMD_LONG =
+  'cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck/src/components/tugways/cards && ls tool-blocks/ && echo "---DISPATCH HEAD---" && sed -n \'1,60p\' cards/dev-assistant-renderer-dispatch.ts 2>/dev/null || find . -name "dev-assistant-renderer-dispatch.ts"';
+const CMD_VERY_LONG = `${CMD_LONG} && grep -rn "KIND_RENDERERS" . --include="*.ts" | head -40 && echo "scanning the dispatch table for permission renderers" && for f in tool-blocks/*.tsx; do echo "checking $f for a bespoke renderer"; done && echo "sweep complete — every command path accounted for"`;
+
+// ---------------------------------------------------------------------------
+// PermissionDemo — one real PermissionDialog on its own mock store
+// ---------------------------------------------------------------------------
+
+/**
+ * Mounts the real `PermissionDialog` for a given Bash command on a fresh
+ * `MockPermissionStore`, echoes the decision, and offers a Reset. Used to
+ * stamp out a variety of command lengths in the gallery so the body margin
+ * model and the `TugClamp` cap can be eyeballed side by side.
+ */
+function PermissionDemo({
+  requestId,
+  command,
+  suggestions,
+  note,
+}: {
+  requestId: string;
+  command: string;
+  suggestions?: ControlRequestForward["permission_suggestions"];
+  note: React.ReactNode;
+}): React.ReactElement {
+  const request = React.useMemo<ControlRequestForward>(
+    () => ({
+      request_id: requestId,
+      is_question: false,
+      tool_name: "Bash",
+      input: { command },
+      permission_suggestions: suggestions,
+    }),
+    [requestId, command, suggestions],
+  );
+  const store = React.useMemo(() => new MockPermissionStore(request), [request]);
+  const [result, setResult] = React.useState<string>("(pending)");
+
+  React.useEffect(() => {
+    const original = store.respondApproval;
+    store.respondApproval = (id, payload) => {
+      original(id, payload);
+      setResult(
+        payload.decision === "allow"
+          ? `Allowed${payload.message !== undefined ? ` — scope: ${payload.message}` : ""}`
+          : "Denied",
+      );
+    };
+    return () => {
+      store.respondApproval = original;
+    };
+  }, [store]);
+
+  const handleReset = React.useCallback(() => {
+    store.arm(request);
+    setResult("(pending)");
+  }, [store, request]);
+
+  return (
+    <div style={{ marginBottom: "1.25rem" }}>
+      <div style={labelStyle}>{note}</div>
+      <PermissionDialog
+        input={{ kind: "permission", request }}
+        context={{ session: store as unknown as CodeSessionStore }}
+      />
+      <div style={resultStyle}>
+        Result: <strong>{result}</strong>
+      </div>
+      <div style={{ marginTop: "0.5rem" }}>
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          size="xs"
+          onClick={handleReset}
+        >
+          Reset request
+        </TugPushButton>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Mock CodeSessionStore — minimal surface for QuestionDialog
@@ -256,37 +339,13 @@ const LIVE_CALCULATOR_REQUEST: ControlRequestForward = {
 // ---------------------------------------------------------------------------
 
 export function GalleryTugInlineDialog(): React.ReactElement {
-  const [permissionResult, setPermissionResult] =
-    React.useState<string>("(pending)");
   const [questionResult, setQuestionResult] =
     React.useState<string>("(pending)");
 
-  const permissionStore = React.useMemo(
-    () => new MockPermissionStore(LIVE_BASH_REQUEST),
-    [],
-  );
   const questionStore = React.useMemo(
     () => new MockQuestionStore(LIVE_CALCULATOR_REQUEST),
     [],
   );
-
-  // Wrap respondApproval so this section echoes the outcome. The
-  // wrapper still calls the real method so PermissionDialog's
-  // pending-state machine clears as it does in production.
-  React.useEffect(() => {
-    const original = permissionStore.respondApproval;
-    permissionStore.respondApproval = (requestId, payload) => {
-      original(requestId, payload);
-      const summary =
-        payload.decision === "allow"
-          ? `Allowed${payload.message !== undefined ? ` — scope: ${payload.message}` : ""}`
-          : "Denied";
-      setPermissionResult(summary);
-    };
-    return () => {
-      permissionStore.respondApproval = original;
-    };
-  }, [permissionStore]);
 
   // Wrap respondQuestion + popInteractive on the QuestionDialog store
   // similarly.
@@ -310,10 +369,6 @@ export function GalleryTugInlineDialog(): React.ReactElement {
     };
   }, [questionStore]);
 
-  const handleResetPermission = React.useCallback(() => {
-    permissionStore.arm(LIVE_BASH_REQUEST);
-    setPermissionResult("(pending)");
-  }, [permissionStore]);
   const handleResetQuestion = React.useCallback(() => {
     questionStore.arm(LIVE_CALCULATOR_REQUEST);
     setQuestionResult("(pending)");
@@ -321,34 +376,41 @@ export function GalleryTugInlineDialog(): React.ReactElement {
 
   return (
     <div className="cg-content" data-testid="gallery-tug-inline-dialog">
-      {/* ---- 1. PermissionDialog ---- */}
+      {/* ---- 1. PermissionDialog — command-length spread ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">PermissionDialog</TugLabel>
         <div style={labelStyle}>
-          The real <code>PermissionDialog</code> mounted on a mock{" "}
-          <code>CodeSessionStore</code>. Caution-shield iconRole; scope
-          picker in <code>options</code>; <code>Deny</code> /{" "}
-          <code>Allow</code> in trailing <code>actions</code>.
+          The real <code>PermissionDialog</code> mounted on mock{" "}
+          <code>CodeSessionStore</code>s — a spread of command lengths to vet
+          two things: the body sits in a column inset under the title (the
+          icon-column margin model, equal margin each side), and a long
+          command caps at 8 lines behind the <code>TugClamp</code> reveal.
         </div>
-        <PermissionDialog
-          input={{ kind: "permission", request: LIVE_BASH_REQUEST }}
-          context={{
-            session: permissionStore as unknown as CodeSessionStore,
-          }}
+        <PermissionDemo
+          requestId="gallery-perm:tokei"
+          command={CMD_ONE_LINER}
+          suggestions={TOKEI_SUGGESTIONS}
+          note={
+            <>
+              One-liner with a scope picker (<code>options</code>) — no clamp.
+            </>
+          }
         />
-        <div style={resultStyle}>
-          Result: <strong>{permissionResult}</strong>
-        </div>
-        <div style={{ marginTop: "0.5rem" }}>
-          <TugPushButton
-            emphasis="outlined"
-            role="action"
-            size="xs"
-            onClick={handleResetPermission}
-          >
-            Reset request
-          </TugPushButton>
-        </div>
+        <PermissionDemo
+          requestId="gallery-perm:loop"
+          command={CMD_TWO_LINE}
+          note={<>Two-line wrap — fills the inset column, still no clamp.</>}
+        />
+        <PermissionDemo
+          requestId="gallery-perm:long"
+          command={CMD_LONG}
+          note={<>Compound command that trips the 8-line cap — clamped.</>}
+        />
+        <PermissionDemo
+          requestId="gallery-perm:very-long"
+          command={CMD_VERY_LONG}
+          note={<>Well past the cap — clamped with the fade + "Show more".</>}
+        />
       </div>
 
       <TugSeparator />

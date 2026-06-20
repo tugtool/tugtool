@@ -57,6 +57,7 @@ import { GalleryPopover } from "./gallery-popover";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import { GallerySeparator } from "./gallery-separator";
+import { GalleryTugClamp } from "./gallery-tug-clamp";
 import { GalleryAccordion } from "./gallery-accordion";
 import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
@@ -1401,6 +1402,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-separator",
     contentFactory: (_cardId) => <GallerySeparator />,
     defaultMeta: { title: "TugSeparator", icon: "Minus", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-tug-clamp",
+    contentFactory: (_cardId) => <GalleryTugClamp />,
+    defaultMeta: { title: "TugClamp", icon: "ChevronsDownUp", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

@@ -62,32 +62,40 @@ body {
 
 /* ---- Bash command block ----
  *
- * A centered block of left-aligned monospace text. The command leaves the
- * centered description (where a long, multi-line command wrapped into ragged
- * centered prose) for its own block in the dialog body. The wrapper centers
- * the block as a whole — echoing the centered description above it — while the
- * block's text stays left-aligned and `pre-wrap` so the command reads like a
- * code listing: its own newlines are preserved and long lines wrap.
+ * Monospace command text in the inset body column. Alignment depends on how
+ * many lines it occupies (`data-multiline`, measured by the body): a command
+ * that fits on one line stays CENTERED — reading as the continuation of the
+ * centered description above it, rather than a lone token orphaned at the
+ * left margin. A command that wraps to more than one line LEFT-aligns into
+ * the inset column, reading like a code listing under the title. `text-align`
+ * inherits down through the `TugClamp` wrapper to the command text; the
+ * clamp's own reveal control stays left-aligned regardless (flex, not text).
+ * A long command caps at 8 lines behind the `TugClamp` reveal.
  *
  * @tug-renders-on: --tugx-idialog-bg */
 .dev-permission-dialog-command-wrap {
   margin-top: var(--tug-space-md);
-  display: flex;
-  justify-content: center;
+  text-align: center;
+}
+
+.dev-permission-dialog-command-wrap[data-multiline="true"] {
+  text-align: left;
 }
 
 .dev-permission-dialog-command {
+  display: block;
   max-width: 100%;
   margin: 0;
   /* Match the tool-block header's command text: the shared `--tugx-block-*`
    * chrome code-font + muted tone at `xs`, on a TRANSPARENT surface — no
    * sunken inset, no padding, no radius. The command reads as quiet inline
-   * code, identical to the `Bash tokei` strip in the transcript. */
+   * code, identical to the `Bash tokei` strip in the transcript. The
+   * `text-align` is inherited from the wrap (centered vs left per line
+   * count). */
   font-family: var(--tugx-block-code-font);
   font-size: var(--tug-font-size-sm);
   line-height: 1.45;
   color: var(--tugx-block-text-color);
-  text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

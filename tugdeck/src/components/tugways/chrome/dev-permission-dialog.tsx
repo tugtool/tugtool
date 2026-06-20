@@ -107,6 +107,8 @@ import {
   dispatchToolCallState,
   hasBespokeWrapper,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+import { TugClamp } from "@/components/tugways/tug-clamp";
+import { useIsMultiline } from "@/components/tugways/internal/use-is-multiline";
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -640,6 +642,34 @@ interface PendingBodyProps {
 }
 
 /**
+ * The Bash command body. A command that fits on one visual line stays
+ * centered, so it reads as the natural continuation of the centered
+ * description above it (a lone short command marooned at the left margin
+ * looks orphaned). A command that wraps to more than one line left-aligns
+ * into the inset body column, where it reads like a code listing under the
+ * title — the case the block treatment was designed for. The line count is
+ * measured live (`useIsMultiline`), since whether a command wraps depends
+ * on the column width, not just its text. Either way a long command caps at
+ * 8 visual lines behind the `TugClamp` reveal.
+ */
+const BashCommandBody: React.FC<{ command: string }> = ({ command }) => {
+  const codeRef = React.useRef<HTMLElement>(null);
+  const multiline = useIsMultiline(codeRef);
+  return (
+    <div
+      className="dev-permission-dialog-command-wrap"
+      data-multiline={multiline ? "true" : undefined}
+    >
+      <TugClamp lines={8}>
+        <code ref={codeRef} className="dev-permission-dialog-command">
+          {command}
+        </code>
+      </TugClamp>
+    </div>
+  );
+};
+
+/**
  * Render the body kind that goes inside the inline dialog's `children`
  * slot. Returns `null` when the description already carries the
  * relevant input fragment (Bash command, Read/Write path).
@@ -651,19 +681,9 @@ const PendingBody: React.FC<PendingBodyProps> = ({
 }) => {
   const kind = selectPermissionBodyKind(toolName);
   if (kind === "bash") {
-    // The Bash command as a centered block of left-aligned monospace text.
-    // `white-space: pre-wrap` preserves the command's own line breaks and
-    // wraps long single lines; the block is shrink-to-content and centered
-    // in the dialog (echoing the centered description above), but its text
-    // stays left-aligned so a multi-line command reads like a code listing
-    // rather than ragged centered prose.
     const command = readStringField(input, "command");
     if (command !== undefined) {
-      return (
-        <div className="dev-permission-dialog-command-wrap">
-          <code className="dev-permission-dialog-command">{command}</code>
-        </div>
-      );
+      return <BashCommandBody command={command} />;
     }
     return null;
   }

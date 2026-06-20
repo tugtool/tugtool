@@ -42,9 +42,13 @@
  *   +------------------------------------------------------------+
  *   | [icon] [leadingActions] [title]            [actions]       |  ← fixed-height header
  *   | description                                                |
- *   | {children — full width}                                    |
+ *   |        {children — inset under the title, equal margins}   |
  *   |               [options — 450 px centered]                  |
  *   +------------------------------------------------------------+
+ *
+ * Body content is inset by the icon column + its gap so it aligns under
+ * the title text, with the trailing edge mirrored for an equal margin on
+ * each side (the "sheets" margin model — the icon sets the inset).
  *
  * The header row uses a single fixed-height flex container with the
  * title set to `flex: 1 1 auto`, which absorbs the available space
@@ -164,8 +168,8 @@ export interface TugInlineDialogProps {
    * Bash request: nothing (the command sits in the description).
    * For a question wizard: the question accordion.
    *
-   * Body content is full-width by default; consumers can constrain it
-   * via local styling if needed.
+   * Body content is inset on both sides to align under the title (the
+   * icon-column margin model); it fills that inset column by default.
    */
   children?: React.ReactNode;
   /**

@@ -74,6 +74,8 @@
 
 **D43.** Component Gallery is a proper card with tabs, not a floating panel. [L10]
 
+**D105.** "Collapse long content" splits into two primitives along one axis: *does the hidden content stay mounted?* **Logical fold** (`BlockFoldCue` + `useBlockFoldState`) is for known-list bodies — file lines, terminal output, diff hunks — where collapsing must *unmount* the hidden portion for performance (don't mount a CM6 editor for a folded file) and coordinate with the transcript scroller (don't slam the viewport when a huge body folds mid-scroll). It thresholds by item count and is coupled, deliberately, to the tool-block chrome and scroller contexts. **Visual clamp** (`TugClamp`) is for arbitrary content that is cheap to render in full but visually too tall — a wrapped command, an error message, a markdown blurb — where there is no perf reason to unmount and no scroller to coordinate with. It *measures* the rendered height (the visual line count isn't known ahead of wrapping), caps it behind a `data-expanded` + CSS window with a Show more/less reveal, and keeps everything mounted. The two share only the `ChevronsDown/Up` vocabulary, never the machinery — so neither is forced to straddle both jobs. Reach for `TugClamp` in dialogs and inline surfaces; reach for the fold system inside a tool-block body. Tree-shaped per-node collapses (JSON nodes, diff hunks, search-result files) are a third, separate thing and belong to neither. [L06]
+
 ---
 
 ## Responder Chain & Actions
