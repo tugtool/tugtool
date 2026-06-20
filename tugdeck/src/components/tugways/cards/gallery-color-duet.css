@@ -1,0 +1,301 @@
+/* Workshop board for the Key + Accent color duet.
+ *
+ * On-model by construction: every rung is the TugColor piecewise formula
+ * (color-palette.md) evaluated in CSS against a hue's own palette constants —
+ * --tugc-{hue}-h / -canonical-l / -peak-c — so tone maps through that hue's
+ * canonical lightness and chroma is bounded by its gamut-safe (and P3-wider)
+ * peak. The hue is chosen by INDIRECTING those three constants per role:
+ *
+ *   --duet-key-h / --duet-key-canon-l / --duet-key-peak-c
+ *
+ * The workshop's hue <select> writes `var(--tugc-cobalt-h)` (etc.) into those
+ * three vars via style.setProperty ([L06]); a chroma-scale knob writes
+ * --duet-key-c-scale. Picking a hue re-evaluates every rung through the real
+ * model — correct canonical L, correct peak chroma, no off-model hand-tuned L.
+ * The --tug7-* repoints (Table T01) then route the real components below.
+ *
+ * Each rung carries today's brio intensity/tone recipe. The default hue
+ * indirection (Key->blue, Accent->orange) reproduces today's brio exactly.
+ */
+
+.gallery-color-duet-board {
+  /* ---- Hue indirection (the knobs) ---- default = today's brio blue/orange. */
+  --duet-key-h:       var(--tugc-blue-h);
+  --duet-key-canon-l: var(--tugc-blue-canonical-l);
+  --duet-key-peak-c:  var(--tugc-blue-peak-c);
+  --duet-key-c-scale: 1;
+
+  --duet-accent-h:       var(--tugc-orange-h);
+  --duet-accent-canon-l: var(--tugc-orange-canonical-l);
+  --duet-accent-peak-c:  var(--tugc-orange-peak-c);
+  --duet-accent-c-scale: 1;
+
+  /* ---- Key ramp — TugColor formula per rung (i / t from the brio recipe).
+     L = l_dark + min(t,50)*(canonL - l_dark)/50 + max(t-50,0)*(l_light - canonL)/50
+     C = i/100 * peak-c * c-scale ---- */
+  --duet-key-plain: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h) / 0.40);
+  --duet-key-selected: oklch(
+    calc(var(--tugc-l-dark) + 44 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(84 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-selected-hover: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + 3 * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(90 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-quiet: oklch(
+    calc(var(--tugc-l-dark) + 30 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(38 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-quiet-hover: oklch(
+    calc(var(--tugc-l-dark) + 35 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(38 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-quiet-strong: oklch(
+    calc(var(--tugc-l-dark) + 38 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(54 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-demoted: oklch(
+    calc(var(--tugc-l-dark) + 28 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(22 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-toggle-off: oklch(
+    calc(var(--tugc-l-dark) + 44 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(20 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-tone: oklch(
+    calc(var(--tugc-l-dark) + 47 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-tone-icon: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + 2 * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-tone-text: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + 37 * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-tone-surface: oklch(
+    calc(var(--tugc-l-dark) + 47 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h) / 0.15);
+  --duet-key-link: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + 36 * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-link-hover: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + 42 * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(40 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-action-active: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + 8 * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(96 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h));
+  --duet-key-drop-surface: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    var(--duet-key-h) / 0.18);
+
+  /* ---- Accent ramp ---- */
+  --duet-accent: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h));
+  --duet-accent-subtle: oklch(
+    calc(var(--tugc-l-dark) + 30 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h) / 0.10);
+  --duet-accent-tone: oklch(
+    calc(var(--tugc-l-dark) + 47 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h));
+  --duet-accent-tone-text: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + 37 * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
+    calc(50 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h));
+  --duet-accent-tone-surface: oklch(
+    calc(var(--tugc-l-dark) + 47 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(50 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h) / 0.15);
+  --duet-accent-filled: oklch(
+    calc(var(--tugc-l-dark) + 45 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(65 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h));
+  --duet-accent-filled-hover: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + 2 * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
+    calc(55 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h));
+  --duet-accent-filled-active: oklch(
+    calc(var(--tugc-l-dark) + 50 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + 7 * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
+    calc(90 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h));
+  --duet-accent-demoted: oklch(
+    calc(var(--tugc-l-dark) + 28 * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50)
+    calc(22 / 100 * var(--duet-accent-peak-c) * var(--duet-accent-c-scale))
+    var(--duet-accent-h));
+
+  /* ---- Table T01 base-token repoints (board-scoped) ---- */
+  /* Key-hued fills */
+  --tug7-surface-selection-primary-normal-plain-rest: var(--duet-key-plain);
+  --tug7-surface-selection-primary-normal-selected-rest: var(--duet-key-selected);
+  --tug7-surface-selection-primary-normal-selected-hover: var(--duet-key-selected-hover);
+  --tug7-surface-selection-primary-normal-quiet-rest: var(--duet-key-quiet);
+  --tug7-surface-selection-primary-normal-quiet-hover: var(--duet-key-quiet-hover);
+  --tug7-surface-selection-primary-normal-quiet-strong: var(--duet-key-quiet-strong);
+  --tug7-surface-selection-primary-demoted-action-rest: var(--duet-key-demoted);
+  --tug7-surface-toggle-primary-normal-on-rest: var(--duet-key-selected);
+  --tug7-surface-toggle-primary-normal-on-hover: var(--duet-key-selected-hover);
+  --tug7-surface-toggle-primary-normal-on-disabled: var(--duet-key-toggle-off);
+  --tug7-surface-toggle-track-normal-on-rest: var(--duet-key-selected);
+  --tug7-surface-toggle-track-normal-on-hover: var(--duet-key-selected-hover);
+  --tug7-surface-toggle-track-normal-on-disabled: var(--duet-key-toggle-off);
+  --tug7-element-tone-border-normal-active-rest: var(--duet-key-tone);
+  --tug7-element-tone-fill-normal-active-rest: var(--duet-key-tone);
+  --tug7-element-tone-icon-normal-active-rest: var(--duet-key-tone-icon);
+  --tug7-element-tone-text-normal-active-rest: var(--duet-key-tone-text);
+  --tug7-surface-tone-primary-normal-active-rest: var(--duet-key-tone-surface);
+  --tug7-element-global-text-normal-link-rest: var(--duet-key-link);
+  --tug7-element-global-text-normal-link-hover: var(--duet-key-link-hover);
+  /* Submit / primary CTA (filled action) */
+  --tug7-surface-control-primary-filled-action-rest: var(--duet-key-selected);
+  --tug7-surface-control-primary-filled-action-hover: var(--duet-key-selected-hover);
+  --tug7-surface-control-primary-filled-action-active: var(--duet-key-action-active);
+  --tug7-element-control-border-filled-action-rest: var(--duet-key-selected);
+  --tug7-element-control-border-filled-action-hover: var(--duet-key-selected-hover);
+  --tug7-element-control-border-filled-action-active: var(--duet-key-action-active);
+
+  /* Accent ramp */
+  --tug7-element-global-border-normal-accent-rest: var(--duet-accent);
+  --tug7-element-global-fill-normal-accent-rest: var(--duet-accent);
+  --tug7-element-global-fill-normal-accentCool-rest: var(--duet-accent);
+  --tug7-element-global-outline-normal-accentCool-rest: var(--duet-accent);
+  --tug7-element-global-fill-normal-accentSubtle-rest: var(--duet-accent-subtle);
+  --tug7-element-tone-border-normal-accent-rest: var(--duet-accent-tone);
+  --tug7-element-tone-fill-normal-accent-rest: var(--duet-accent-tone);
+  --tug7-element-tone-icon-normal-accent-rest: var(--duet-accent-tone);
+  --tug7-element-tone-text-normal-accent-rest: var(--duet-accent-tone-text);
+  --tug7-surface-tone-primary-normal-accent-rest: var(--duet-accent-tone-surface);
+  --tug7-surface-control-primary-filled-accent-rest: var(--duet-accent-filled);
+  --tug7-surface-control-primary-filled-accent-hover: var(--duet-accent-filled-hover);
+  --tug7-surface-control-primary-filled-accent-active: var(--duet-accent-filled-active);
+  --tug7-element-control-border-filled-accent-rest: var(--duet-accent-filled);
+  --tug7-element-control-border-filled-accent-hover: var(--duet-accent-filled-hover);
+  --tug7-element-control-border-filled-accent-active: var(--duet-accent-filled-active);
+  --tug7-surface-selection-primary-demoted-accent-rest: var(--duet-accent-demoted);
+  --tug7-element-highlight-stroke-normal-drop-rest: var(--duet-accent);
+  --tug7-surface-highlight-primary-normal-drop-rest: var(--duet-key-drop-surface);
+
+  /* Caret + focus ring -> Accent (previews the caret/focus-ring step). Both
+     read --tugx-focus-ring; overriding it here makes the keyboard caret bar AND
+     the focus ring resolve to Accent, distinct from the Key selection fill. */
+  --tugx-focus-ring: var(--duet-accent);
+  --tugx-list-view-cursor-bar-width: 3px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--tug-radius-lg);
+  background: var(--tug7-surface-global-primary-normal-content-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* Text selection inside the board rides the Key plain fill. */
+.gallery-color-duet-board ::selection {
+  background: var(--duet-key-plain);
+}
+
+/* ---- Controls ---- */
+.gcd-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gcd-control-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 86px;
+  align-items: center;
+  gap: 10px;
+}
+.gcd-control-row input[type="range"] {
+  width: 100%;
+}
+.gcd-control-row select {
+  width: 100%;
+}
+.gcd-control-label {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.gcd-control-value {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-2xs);
+  text-align: right;
+}
+.gcd-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.gcd-readout {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-2xs);
+  white-space: pre;
+  padding: 10px;
+  border-radius: var(--tug-radius-md);
+  background: var(--tug7-surface-global-primary-normal-inset-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* ---- Board composites ---- */
+.gcd-composite {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gcd-composite-title {
+  font-size: var(--tug-font-size-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.gcd-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.gcd-caret-row {
+  padding: 10px 14px;
+  border-radius: var(--tug-radius-md);
+  background: var(--tug7-surface-selection-primary-normal-quiet-rest);
+  color: var(--tug7-element-selection-text-normal-selected-rest);
+  font-size: var(--tug-font-size-sm);
+}
+.gcd-drop-target {
+  padding: 20px;
+  border-radius: var(--tug-radius-md);
+  border: 2px dashed var(--tug7-element-highlight-stroke-normal-drop-rest);
+  background: var(--tug7-surface-highlight-primary-normal-drop-rest);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+.gcd-text-sample {
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-normal);
+  max-width: 44rem;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+.gcd-link {
+  color: var(--tug7-element-global-text-normal-link-rest);
+  text-decoration: underline;
+}
+.gcd-list-host {
+  height: 168px;
+  border-radius: var(--tug-radius-md);
+  overflow: hidden;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}

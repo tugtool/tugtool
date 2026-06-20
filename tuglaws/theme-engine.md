@@ -17,14 +17,20 @@ Theme data lives in checked-in CSS files:
 
 Shipped themes (registered in `SHIPPED_THEME_NAMES`, `tugdeck/src/action-dispatch.ts`):
 
-| Theme | Mode | Tint | Accent |
-|---|---|---|---|
-| `brio` | dark | indigo-violet | orange |
-| `nocturne` | dark | cobalt | cyan |
-| `bravura` | dark | plum | magenta |
-| `harmony` | light | indigo | orange |
-| `aria` | light | rose | amber |
-| `vivace` | light | teal | cyan |
+Each theme carries a **Key + Accent duet** ([`color-refactor`](../roadmap/archive/color-refactor.md)):
+**Key** is the selection / primary-action hue (list & menu selection, toggle/radio/checkbox/choice
+"on", tabs, links, the primary CTA, text selection); **Accent** is the affordance hue (keyboard caret
+bar, focus ring, drag-drop stroke, flash). The chroma column is the per-theme chroma scale applied to
+every rung (`apply-duet.ts`).
+
+| Theme | Mode | Tint | Key (chroma) | Accent (chroma) |
+|---|---|---|---|---|
+| `brio` | dark | indigo-violet | cobalt (×0.90) | orange (×0.85) |
+| `nocturne` | dark | cobalt | sapphire (×0.85) | tangerine (×0.80) |
+| `bravura` | dark | plum | cerise (×0.30, pale rose) | aqua (×0.90) |
+| `harmony` | light | indigo | cobalt (×0.90) | orange (×1.00) |
+| `aria` | light | rose | purple (×0.50) | sky (×0.90) |
+| `vivace` | light | teal | seafoam (×0.44) | fuchsia (×0.90) |
 
 Every theme is a peer — none depends on another at runtime. `brio` is special only as
 `BASE_THEME_NAME` (the bundled base; see `tugdeck/src/theme-constants.ts`). Each theme is a
@@ -46,9 +52,14 @@ largely a hue swap: keep the *tone* ladder, change the *hue*.
    dark-surface-in-a-light-theme surprises. `screen` (tooltips, dev panel) is the lone exception in
    light themes — it stays light because tooltips render *default* text, not inverse.
 3. **Signals are fixed across themes** by hue: `danger`=red, `success`=green, `caution`=yellow/gold,
-   `data`=teal, `agent`=violet, plus the `active`/`link`/`selection` blue axis. Only the **tint** and
-   the **accent/focus** hue change per theme. Choose an accent distinct from every signal hue (the
-   orange→magenta warm arc is safe) and from the blue selection axis.
+   `data`=teal, `agent`=violet. The **selection / primary-action axis is no longer a fixed blue** —
+   each theme picks its own **Key** hue (the `selection`/`active`/`toggle-on`/`link`/filled-action
+   tokens) and a partnered **Accent** hue (the affordance axis: caret, focus ring, drag-drop, flash).
+   Both ride the TugColor model (`--tug-color(hue, i:, t:)`, tones kept per-mode so light themes keep
+   their darker legible links); a per-theme chroma scale folds into each rung's intensity. Re-hue a
+   theme with `tugdeck/scripts/apply-duet.ts` from a clean theme file, then run the contrast audit.
+   Keep Key and Accent ≥~30° from every signal hue and from each other; on-fill contrast text stays a
+   near-white (dark) / near-black (light) neutral — never the Key hue, or it vanishes on its own fill.
 4. **Signal tuning is per-mode.** Dark: bright, mid-tone, saturated. Light: darker and more saturated
    so a mark holds contrast on near-white. Saturated light hues (orange/yellow/teal) can't reach 3:1
    on white without turning muddy — that is an accepted light-theme tension, the mirror of dark

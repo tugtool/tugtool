@@ -1,6 +1,6 @@
 /* @tug-pairings {
   --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest | control
-  --tugx-focus-ring | --tug7-surface-global-primary-normal-default-rest | control
+  --tugx-list-view-cursor-bar-color | --tug7-surface-global-primary-normal-default-rest | control
 } */
 
 /**
@@ -10,7 +10,7 @@
  * | Element                        | Surface                                            | Role    | Context                                                                     |
  * |--------------------------------|----------------------------------------------------|---------|-----------------------------------------------------------------------------|
  * | --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view[data-row-layout="flush"] .tug-list-view-cell (border-bottom)  |
- * | --tugx-focus-ring              | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view-cell[data-key-cursor]::before (keyboard-cursor edge bar)      |
+ * | --tugx-list-view-cursor-bar-color | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view-cell[data-key-cursor]::before (keyboard-cursor edge bar)      |
  *
  * The `rowLayout="flush"` row divider and the keyboard-cursor edge bar
  * are the list view's only self-painted foregrounds. Everything
@@ -56,10 +56,11 @@ body {
      goes under the pointer is the mouse. Replaces the former selection-blue
      cursor wash, which was indistinguishable from hover and collided with the
      selection fill on a selected row. Width is the only knob here; the bar's
-     COLOR is the role-resolved focus axis (`--tugx-focus-ring`), referenced
-     directly in the rule below exactly as the container-ring does — so all
-     keyboard marks read as one color family. */
+     COLOR is the Accent axis (`--tugx-list-view-cursor-bar-color` → the accent
+     fill), so the keyboard caret reads distinctly from the Key selection fill it
+     overlays while sharing the affordance hue with the focus ring. */
   --tugx-list-view-cursor-bar-width:   3px;
+  --tugx-list-view-cursor-bar-color:   var(--tug7-element-global-fill-normal-accent-rest);
 
   /* Row-layout slots — consumed only when `rowLayout` is set. */
   --tugx-list-view-pill-row-gap:       var(--tug-space-sm);
@@ -227,7 +228,7 @@ body {
   inset-block: 0;
   inset-inline-start: 0;
   width: var(--tugx-list-view-cursor-bar-width);
-  background: var(--tugx-focus-ring);
+  background: var(--tugx-list-view-cursor-bar-color);
 }
 
 /* Selected rows read as a clean block — cover the hairline dividers that touch

@@ -34,6 +34,7 @@ import { GalleryTitleBar } from "./gallery-title-bar";
 import { GalleryMutationTx } from "./gallery-mutation-tx";
 import { GalleryObservableProps } from "./gallery-observable-props";
 import { GalleryPalette } from "./gallery-palette";
+import { GalleryColorDuet } from "./gallery-color-duet";
 import { GalleryScaleTiming } from "./gallery-scale-timing";
 import { GalleryAnimator } from "./gallery-animator";
 import { GallerySkeleton } from "./gallery-skeleton";
@@ -548,6 +549,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-palette",
     contentFactory: (_cardId) => <GalleryPalette />,
     defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.animation,
+  });
+
+  registerCard({
+    componentId: "gallery-color-duet",
+    contentFactory: (_cardId) => <GalleryColorDuet />,
+    defaultMeta: { title: "Key + Accent Duet", icon: "Palette", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
