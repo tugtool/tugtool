@@ -122,16 +122,25 @@ body {
   --tugx-md-list-margin:      0.6em;
   --tugx-md-list-item-margin: 0.25em;
 
-  /* Tables — bespoke header weight, cell padding, outer margin,
-   * scroll-region max height, and zebra-stripe tone. Sticky `<thead>`
-   * needs `border-collapse: separate` so the header's bottom border
-   * isn't merged away by the first body row; the stripe tone is the
-   * raised surface so the alternation reads against the inset block
-   * background, not the same inset that base rows show through. */
+  /* Shared markdown block chrome (fenced code, tables): the measured
+   * height of the sticky header strip, so a block's own inner sticky
+   * header (a table's `<thead>`) can stack directly beneath it — the
+   * imperative-DOM analog of the diff block's `--tugx-toolblock-header-
+   * height`. Deterministic from tokens: the strip is a single
+   * non-wrapping row whose height is the xs control + strip padding +
+   * the 1px bottom divider. */
+  --tugx-md-chrome-header-h:
+    calc(var(--tug-button-xs-height) + 2 * var(--tug-space-xs) + 1px);
+
+  /* Tables — bespoke header weight, cell padding, outer margin, and
+   * zebra-stripe tone. Sticky `<thead>` needs `border-collapse:
+   * separate` so the header's bottom border isn't merged away by the
+   * first body row; the stripe tone is the raised surface so the
+   * alternation reads against the inset block background, not the same
+   * inset that base rows show through. */
   --tugx-md-table-header-weight: var(--tug-font-weight-semibold);
   --tugx-md-table-cell-padding:  var(--tug-space-sm) var(--tug-space-md);
   --tugx-md-table-margin:        var(--tug-space-md);
-  --tugx-md-table-scroll-max-h:  60vh;
   --tugx-md-table-stripe-bg:     var(--tug7-surface-global-primary-normal-raised-rest);
 
   /* Images */
@@ -388,8 +397,8 @@ body {
 }
 
 /* Fenced code chrome — `enhanceFencedCode` wraps each `<pre>` in a
-   `.tugx-md-fenced-code` div with a `.tugx-md-fenced-code-header`
-   (language label + Copy + collapse chevron). Framed to MATCH the
+   `.tugx-md-fenced-code` div with the shared `.tugx-md-chrome-header`
+   (language label + Copy + fold cue). Framed to MATCH the
    tool-block chrome (`.tool-block-chrome`): a raised `--tugx-block-
    chrome-bg` card with a `--tugx-block-border` and the same radius, so a
    code fence in prose reads as the same family as a Bash / Write tool
@@ -409,26 +418,31 @@ body {
   overflow: clip;
 }
 
-/* Collapsed (default is EXPANDED for markdown): hide the code body and
+/* Collapsed (default is EXPANDED for markdown blocks): hide the body and
    drop the header's bottom divider, so the header reads as the whole
-   block — same as a collapsed tool block. */
-.tugx-md-block .tugx-md-fenced-code[data-collapsed] > pre {
+   block — same as a collapsed tool block. Frame-agnostic: any block
+   chrome frame (fenced code, table) carries `data-collapsed`, with the
+   header + body as its direct children. */
+.tugx-md-block [data-collapsed] > .tugx-md-chrome-body {
   display: none;
 }
-.tugx-md-block .tugx-md-fenced-code[data-collapsed] .tugx-md-fenced-code-header {
+.tugx-md-block [data-collapsed] > .tugx-md-chrome-header {
   border-bottom: none;
 }
 
-/* Header — language label at the left, trailing affordances cluster
- * (Copy) at the right. Affordances live in this single sticky row;
- * there is no separate `.tugx-md-fenced-code-actions` strip. Pinned
- * (`position: sticky`) so it stays visible while scrolling deep into
- * a long fenced-code block. */
+/* Shared block chrome header — identity at the left, trailing
+ * affordances cluster (Copy + fold cue) at the right, in a single sticky
+ * row. The imperative-DOM counterpart of a `BlockActionsCluster` riding
+ * a block header. Pinned (`position: sticky`) and JOINING THE PIN-STACK
+ * via `top: var(--tugx-pin-stack-top, 0)`, exactly like `ToolCallHeader`
+ * / `FileBlock` / `TerminalBlock`, so it telescopes under the entry
+ * header instead of forming a nested scroller. `z-index: 2` so a block's
+ * own inner sticky header (a table `<thead>`) passes under it. */
 /* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-md-block .tugx-md-fenced-code-header {
+.tugx-md-block .tugx-md-chrome-header {
   position: sticky;
   top: var(--tugx-pin-stack-top, 0);
-  z-index: 1;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: var(--tugx-block-strip-gap);
@@ -437,44 +451,46 @@ body {
   padding: var(--tugx-block-strip-padding);
   background: var(--tugx-block-strip-bg);
   border-bottom: 1px solid var(--tugx-block-strip-border);
-  /* Sans strip font (NOT the mono code font) so the language label reads
-     like a tool name. */
+  /* Sans strip font (NOT the mono code font) so the identity reads like
+     a tool name. */
   font-family: var(--tugx-block-strip-font);
   font-size: var(--tugx-block-strip-size);
   user-select: none;
 }
 
-/* Language label — the fence's "identity", styled like a tool name:
-   sans, semibold, `sm` size, full text color (matching
-   `--tugx-toolheader-name-*`). */
-.tugx-md-block .tugx-md-fenced-code-lang {
+/* Block identity — the fence's language / the table's row count, styled
+   like a tool name: sans, semibold, `sm` size, full text color. */
+.tugx-md-block .tugx-md-fenced-code-lang,
+.tugx-md-block .tugx-md-table-title {
   color: var(--tugx-block-text-color);
   font-size: var(--tug-font-size-sm);
   font-weight: var(--tug-font-weight-semibold);
+}
+.tugx-md-block .tugx-md-fenced-code-lang {
   text-transform: lowercase;
 }
 
-.tugx-md-block .tugx-md-fenced-code-header-spacer {
+.tugx-md-block .tugx-md-chrome-spacer {
   flex: 1 1 auto;
 }
 
-/* Trailing affordances cluster — hosts the Copy `<button>` at the
- * right edge of the identity header. The imperative-DOM counterpart
- * of the React `BlockActionsCluster`: `flex: 0 0 auto`, no sticky
- * (the cluster rides the header that hosts it). */
-.tugx-md-block .tugx-md-fenced-code-actions-cluster {
+/* Trailing affordances cluster — hosts Copy + the fold cue at the right
+ * edge of the identity header. The imperative-DOM counterpart of the
+ * React `BlockActionsCluster`: `flex: 0 0 auto`, no sticky (the cluster
+ * rides the header that hosts it). */
+.tugx-md-block .tugx-md-chrome-actions {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
   gap: var(--tug-space-2xs);
-  /* Vertical rule dividing the language label from the controls, with
-     equal gaps — matching the tool-call header's trailing separator. */
+  /* Vertical rule dividing the identity from the controls, with equal
+     gaps — matching the tool-call header's trailing separator. */
   margin-left: var(--tug-space-sm);
   padding-left: var(--tug-space-sm);
   border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
-/* Copy + collapse — icon-only buttons that replicate the tool-block
+/* Copy + fold cue — icon-only buttons that replicate the tool-block
  * header's `BlockCopyButton` / `BlockFoldCue` at `subtype="icon"
  * size="xs"`. Since markdown is sanitized HTML (not React), these are
  * raw `<button>`s styled to MATCH `.tug-button-ghost-action` exactly:
@@ -482,8 +498,7 @@ body {
  * rest/hover surface + icon tokens — so they read as the same control,
  * same size, same hover, as the tool-block header buttons. */
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-action-rest */
-.tugx-md-block .tugx-md-fenced-code-copy,
-.tugx-md-block .tugx-md-fenced-code-collapse {
+.tugx-md-block .tugx-md-chrome-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -507,24 +522,21 @@ body {
     border-color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
 }
 
-.tugx-md-block .tugx-md-fenced-code-copy svg,
-.tugx-md-block .tugx-md-fenced-code-collapse svg {
+.tugx-md-block .tugx-md-chrome-btn svg {
   width: var(--tug-button-xs-icon-size);
   height: var(--tug-button-xs-icon-size);
   color: var(--tug7-element-control-icon-ghost-action-rest);
 }
 
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-action-hover */
-.tugx-md-block .tugx-md-fenced-code-copy:hover,
-.tugx-md-block .tugx-md-fenced-code-collapse:hover {
+.tugx-md-block .tugx-md-chrome-btn:hover {
   background-color: var(--tug7-surface-control-primary-ghost-action-hover);
   color: var(--tug7-element-control-text-ghost-action-hover);
   border-color: var(--tug7-element-control-border-ghost-action-hover);
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tugx-md-block .tugx-md-fenced-code-copy:hover svg,
-.tugx-md-block .tugx-md-fenced-code-collapse:hover svg {
+.tugx-md-block .tugx-md-chrome-btn:hover svg {
   color: var(--tug7-element-control-icon-ghost-action-hover);
 }
 
@@ -533,8 +545,7 @@ body {
    controls); these DOM buttons aren't engine-tracked, so without this a
    mouse click would paint a stray native ring — the React header buttons
    show none. */
-.tugx-md-block .tugx-md-fenced-code-copy:focus,
-.tugx-md-block .tugx-md-fenced-code-collapse:focus {
+.tugx-md-block .tugx-md-chrome-btn:focus {
   outline: none;
 }
 
@@ -543,31 +554,31 @@ body {
 /* Icon-only Copy: the button toggles `is-copied` for ~1.2s after a
    successful clipboard write; CSS swaps the Copy glyph for a Check —
    matching the tool-block header's `BlockCopyButton subtype="icon"`. */
-.tugx-md-block .tugx-md-fenced-code-copy-icon--copied {
+.tugx-md-block .tugx-md-chrome-copy-icon--copied {
   display: none;
 }
 
-.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--default {
+.tugx-md-block .tugx-md-chrome-copy.is-copied .tugx-md-chrome-copy-icon--default {
   display: none;
 }
 
-.tugx-md-block .tugx-md-fenced-code-copy.is-copied .tugx-md-fenced-code-copy-icon--copied {
+.tugx-md-block .tugx-md-chrome-copy.is-copied .tugx-md-chrome-copy-icon--copied {
   display: inline;
   /* No success-green tint — the confirmed Check uses the same ghost-action
      icon color as the Copy glyph, matching the tool-block header's Copy
      (the icon swap alone signals success). */
 }
 
-/* Collapse chevron icon swap — keyed off the wrapper's `data-collapsed`.
+/* Fold-cue chevron icon swap — keyed off the frame's `data-collapsed`.
    Default (expanded): ChevronsUp ("collapse me"). Collapsed: ChevronsDown
    ("expand me"). Mirrors the tool-header `BlockFoldCue` direction. */
-.tugx-md-block .tugx-md-fenced-code-collapse-icon--collapsed {
+.tugx-md-block .tugx-md-chrome-fold-icon--collapsed {
   display: none;
 }
-.tugx-md-block .tugx-md-fenced-code[data-collapsed] .tugx-md-fenced-code-collapse-icon--expanded {
+.tugx-md-block [data-collapsed] .tugx-md-chrome-fold-icon--expanded {
   display: none;
 }
-.tugx-md-block .tugx-md-fenced-code[data-collapsed] .tugx-md-fenced-code-collapse-icon--collapsed {
+.tugx-md-block [data-collapsed] .tugx-md-chrome-fold-icon--collapsed {
   display: inline;
 }
 
@@ -649,14 +660,15 @@ body {
   margin: var(--tugx-md-hr-margin) 0;
 }
 
-/* Tables — Tier 0 polish ([#step-28]).
+/* Tables — shared block chrome + two-tier sticky headers.
  *
- * Layout: every `<table>` is wrapped at parse time in
- * `<div class="tugx-md-table-scroll">` by `enhanceTable` so the
- * sticky `<thead>` has a scroll origin to stick against. The wrapper
- * caps height at `--tugx-md-table-scroll-max-h` (default 60vh); short
- * tables take their natural height because the rules use `max-height`,
- * not `height`.
+ * Layout: every `<table>` is wrapped at parse time by `enhanceTable` in
+ * the shared `.tugx-md-table-block` frame (sticky header strip +
+ * collapsible `.tugx-md-chrome-body`), the same chrome a fenced code
+ * block wears. There is NO inner scroll region, so the page never shows
+ * a scroller-inside-a-scroller. The block header is the first sticky
+ * tier (joins the pin-stack); the table's own `<thead>` is the second,
+ * stacking directly beneath it via `top: calc(pin-stack + header-h)`.
  *
  * Border discipline: `border-collapse: separate` keeps the `<thead>`
  * bottom border intact under sticky positioning — `collapse` merges
@@ -669,11 +681,17 @@ body {
  * which made the stripes invisible whenever the markdown surface
  * matched the block surface.
  */
-.tugx-md-table-scroll {
-  max-height: var(--tugx-md-table-scroll-max-h);
-  overflow-y: auto;
-  overflow-x: auto;
+/* @tug-renders-on: --tugx-block-chrome-bg */
+.tugx-md-block .tugx-md-table-block {
+  background: var(--tugx-block-chrome-bg);
+  color: var(--tugx-block-text-color);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
   margin: var(--tugx-md-table-margin) 0;
+  /* `overflow: clip` rounds the corners without forming a scroll
+   * container — `overflow: hidden` would, and would capture the sticky
+   * headers instead of letting them ride the transcript scroller. */
+  overflow: clip;
 }
 
 .tugx-md-block table {
@@ -684,7 +702,7 @@ body {
 
 /* Tables not wrapped by `enhanceTable` (e.g. test fixtures that bypass
  * the enhancer) keep the prior margin so they don't lose their outer
- * spacing. The wrapper sets the margin itself when present. */
+ * spacing. The frame sets the margin itself when present. */
 .tugx-md-block > table {
   margin: var(--tugx-md-table-margin) 0;
 }
@@ -712,10 +730,40 @@ body {
   font-weight: var(--tugx-md-table-header-weight);
   background: var(--tugx-block-strip-bg);
   position: sticky;
-  top: 0;
+  /* Fallback (unwrapped table): stick at the bare pin-stack top. */
+  top: var(--tugx-pin-stack-top, 0);
   /* Sit above scrolled body rows so striped cells don't bleed through
-   * the header's translucent edge while sticking. */
+   * the header's translucent edge while sticking, but BELOW the block
+   * header (z-index 2) so the column headers pass under it as the table
+   * scrolls off. */
   z-index: 1;
+}
+
+/* Two-tier sticky: inside the block chrome the `<thead>` stacks directly
+ * under the sticky header strip — pin-stack plus the strip's height. The
+ * frame's `overflow: clip` keeps both tiers riding the transcript
+ * scroller (not a nested one). */
+.tugx-md-block .tugx-md-table-block thead th {
+  top: calc(var(--tugx-pin-stack-top, 0px) + var(--tugx-md-chrome-header-h));
+}
+
+/* Inside the frame the table's grid drops its OUTER perimeter — the
+ * frame border + the header strip's divider already draw the block's
+ * edges, so the table only paints its internal grid lines (no doubled
+ * border against the frame). */
+.tugx-md-block .tugx-md-table-block thead th {
+  border-top: none;
+}
+.tugx-md-block .tugx-md-table-block th:first-child,
+.tugx-md-block .tugx-md-table-block td:first-child {
+  border-left: none;
+}
+.tugx-md-block .tugx-md-table-block tr > th:last-child,
+.tugx-md-block .tugx-md-table-block tr > td:last-child {
+  border-right: none;
+}
+.tugx-md-block .tugx-md-table-block tbody tr:last-child > td {
+  border-bottom: none;
 }
 
 /* @tug-renders-on: --tugx-md-table-stripe-bg */
@@ -746,8 +794,10 @@ body {
  * trick used by `tug-input.css` for the search-clear button. */
 .tugx-md-block th[aria-sort] {
   cursor: pointer;
-  position: sticky;
-  top: 0;
+  /* Stickiness + `top` are owned by the `thead th` rules above (one tier
+   * for unwrapped tables, two inside the block chrome); this higher-
+   * specificity rule must NOT re-declare `top`, or it would clobber the
+   * two-tier offset and pin the column headers over the strip. */
   /* Reserve trailing space for the always-painted indicator. */
   padding-right: calc(var(--tug-space-md) + 1.25em);
 }

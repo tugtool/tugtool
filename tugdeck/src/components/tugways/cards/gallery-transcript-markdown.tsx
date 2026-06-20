@@ -16,9 +16,12 @@
  * and the same CSS.
  *
  * Width: the markdown lives in a `min-width: 0` scroll column so wide
- * blocks (tables, code, mermaid) stay constrained to the card and scroll
- * within themselves — mirroring the transcript's entry-body column,
- * which is `min-width: 0` for the same reason.
+ * blocks (code, mermaid) stay constrained to the card and scroll within
+ * themselves — mirroring the transcript's entry-body column, which is
+ * `min-width: 0` for the same reason. A table does NOT scroll within
+ * itself: it wears the shared block chrome (sticky header strip + fold
+ * cue) with its `<thead>` as a second sticky tier, so the page never
+ * shows a scroller-inside-a-scroller (see the long-table case).
  *
  * @module components/tugways/cards/gallery-transcript-markdown
  */
@@ -73,6 +76,61 @@ The gap above this heading should match every other heading (no over-spacing aft
 | x | b | c |
 | a longer left cell | mid | 42 |
 | b² − 4ac | the discriminant | 1.5 |
+
+## Heading 2 — Long table (block chrome + two-tier sticky headers)
+
+| State | Capital |
+|-------|---------|
+| Alabama | Montgomery |
+| Alaska | Juneau |
+| Arizona | Phoenix |
+| Arkansas | Little Rock |
+| California | Sacramento |
+| Colorado | Denver |
+| Connecticut | Hartford |
+| Delaware | Dover |
+| Florida | Tallahassee |
+| Georgia | Atlanta |
+| Hawaii | Honolulu |
+| Idaho | Boise |
+| Illinois | Springfield |
+| Indiana | Indianapolis |
+| Iowa | Des Moines |
+| Kansas | Topeka |
+| Kentucky | Frankfort |
+| Louisiana | Baton Rouge |
+| Maine | Augusta |
+| Maryland | Annapolis |
+| Massachusetts | Boston |
+| Michigan | Lansing |
+| Minnesota | Saint Paul |
+| Mississippi | Jackson |
+| Missouri | Jefferson City |
+| Montana | Helena |
+| Nebraska | Lincoln |
+| Nevada | Carson City |
+| New Hampshire | Concord |
+| New Jersey | Trenton |
+| New Mexico | Santa Fe |
+| New York | Albany |
+| North Carolina | Raleigh |
+| North Dakota | Bismarck |
+| Ohio | Columbus |
+| Oklahoma | Oklahoma City |
+| Oregon | Salem |
+| Pennsylvania | Harrisburg |
+| Rhode Island | Providence |
+| South Carolina | Columbia |
+| South Dakota | Pierre |
+| Tennessee | Nashville |
+| Texas | Austin |
+| Utah | Salt Lake City |
+| Vermont | Montpelier |
+| Virginia | Richmond |
+| Washington | Olympia |
+| West Virginia | Charleston |
+| Wisconsin | Madison |
+| Wyoming | Cheyenne |
 
 ## Heading 2 — Heading immediately after a table
 

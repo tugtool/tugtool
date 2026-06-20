@@ -3,13 +3,19 @@
  * `innerHTML` is set and applies post-parse affordances to every
  * `<table>` produced by pulldown-cmark / DOMPurify.
  *
- * **Tier 0 — scroll-region wrapper + sticky-header substrate.**
- * Wraps each bare `<table>` in `<div class="tugx-md-table-scroll">`
- * so the CSS layer can pin `<thead>` with `position: sticky` against
- * the wrapper's scroll origin. The wrapper is the layout container
- * the sticky algorithm needs; without it sticky has nothing to stick
- * *inside of*. The CSS (in `tug-markdown-view.css`) also paints zebra
- * striping on `tbody tr:nth-child(even)` once the wrapper is in place.
+ * **Tier 0 — shared block chrome + two-tier sticky headers.**
+ * Wraps each bare `<table>` in the same `enhance-block-chrome` frame a
+ * fenced code block wears: a sticky header strip (row-count identity +
+ * Copy + fold cue) that joins the transcript pin-stack via
+ * `top: var(--tugx-pin-stack-top, 0)`, and the table itself as the
+ * collapsible `.tugx-md-chrome-body`. There is NO inner scroll region,
+ * so the page never shows a scroller-inside-a-scroller. The table's own
+ * `<thead>` is the SECOND sticky tier — it stacks directly under the
+ * block header (`top: calc(pin-stack + header-height)`), the same
+ * chrome-header → section-header telescoping the diff block uses. The
+ * CSS (in `tug-markdown-view.css`) also paints zebra striping on
+ * `tbody tr:nth-child(even)`. The fold cue collapses the whole table to
+ * its header strip, matching the fenced-code block exactly.
  *
  * **Tier 1 — vanilla-JS click-to-sort.** Attaches a single capture-
  * phase click listener to each table's `<thead>`. Clicking a `<th>`
@@ -52,11 +58,17 @@
  * @module lib/markdown/enhance-table
  */
 
+import {
+  buildBlockHeader,
+  buildCopyButton,
+  buildFoldButton,
+} from "./enhance-block-chrome";
+
 const ENHANCED_ATTR = "data-tugx-table-enhanced";
 const SORT_COLUMN_ATTR = "data-tugx-table-sort-column";
 const SORT_DIRECTION_ATTR = "data-tugx-table-sort-direction";
 const NO_SORT_CLASS = "no-sort";
-const SCROLL_WRAPPER_CLASS = "tugx-md-table-scroll";
+const FRAME_CLASS = "tugx-md-table-block";
 
 /**
  * Sort direction kept on a `<table>` element's
@@ -95,26 +107,89 @@ export function enhanceTable(container: HTMLElement): void {
   );
   for (const table of tables) {
     table.setAttribute(ENHANCED_ATTR, "true");
-    wrapInScrollRegion(table);
+    wrapInBlockChrome(table);
     attachSortHandler(table);
   }
 }
 
 /**
- * Wrap a `<table>` in `<div class="tugx-md-table-scroll">` if it
- * isn't already inside one. The wrapper is the sticky-scroll origin
- * for `position: sticky` on `<thead>`.
+ * Wrap a `<table>` in the shared block chrome if it isn't already inside
+ * one: a `.tugx-md-table-block` frame holding a sticky header strip
+ * (row-count identity + Copy + fold cue) above the table, which becomes
+ * the collapsible `.tugx-md-chrome-body`. No `overflow` is set anywhere,
+ * so there is no nested scroller and the table's `<thead>` sticks to the
+ * transcript scroller (stacking under the block header).
  *
  * Exported for tests.
  */
-export function wrapInScrollRegion(table: HTMLTableElement): void {
+export function wrapInBlockChrome(table: HTMLTableElement): void {
   const parent = table.parentElement;
   if (parent === null) return;
-  if (parent.classList.contains(SCROLL_WRAPPER_CLASS)) return;
-  const wrapper = document.createElement("div");
-  wrapper.className = SCROLL_WRAPPER_CLASS;
-  parent.insertBefore(wrapper, table);
-  wrapper.appendChild(table);
+  if (parent.classList.contains("tugx-md-chrome-body")) return;
+
+  const rowCount = table.tBodies[0]?.rows.length ?? 0;
+
+  const frame = document.createElement("div");
+  frame.className = FRAME_CLASS;
+
+  // Row-count identity, styled like the fence's language label.
+  const title = document.createElement("span");
+  title.className = "tugx-md-table-title";
+  title.textContent = `${rowCount} ${rowCount === 1 ? "row" : "rows"}`;
+
+  const header = buildBlockHeader({
+    identity: title,
+    actions: [
+      buildCopyButton(() => tableToMarkdown(table), "Copy table"),
+      buildFoldButton(frame, {
+        ariaExpand: "Expand table",
+        ariaCollapse: "Collapse table",
+      }),
+    ],
+  });
+
+  // The table is the collapsible body the fold cue hides. The body div
+  // (not the table) carries the chrome-body class so the frame's
+  // `> .tugx-md-chrome-body` collapse rule has a direct child to hide,
+  // and the table keeps `<thead>`/`<tbody>` as its only children.
+  const body = document.createElement("div");
+  body.className = "tugx-md-chrome-body";
+
+  parent.insertBefore(frame, table);
+  body.appendChild(table);
+  frame.appendChild(header);
+  frame.appendChild(body);
+}
+
+/**
+ * Serialize a `<table>` back to a GFM markdown table for the Copy
+ * control — markdown is the source format, so a paste round-trips. Cell
+ * text is taken from `textContent` (the rendered cell), pipes are
+ * escaped, and the column count follows the header row.
+ */
+export function tableToMarkdown(table: HTMLTableElement): string {
+  const escape = (s: string): string =>
+    (s ?? "").trim().replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const rowCells = (row: HTMLTableRowElement): string[] =>
+    Array.from(row.cells).map((c) => escape(c.textContent ?? ""));
+
+  const headerRow = table.tHead?.rows[0];
+  const headers = headerRow ? rowCells(headerRow) : [];
+  const columnCount = headers.length;
+  if (columnCount === 0) return "";
+
+  const lines: string[] = [];
+  lines.push(`| ${headers.join(" | ")} |`);
+  lines.push(`| ${headers.map(() => "---").join(" | ")} |`);
+  const tbody = table.tBodies[0];
+  if (tbody) {
+    for (const row of Array.from(tbody.rows)) {
+      const cells = rowCells(row);
+      while (cells.length < columnCount) cells.push("");
+      lines.push(`| ${cells.slice(0, columnCount).join(" | ")} |`);
+    }
+  }
+  return lines.join("\n");
 }
 
 /**
