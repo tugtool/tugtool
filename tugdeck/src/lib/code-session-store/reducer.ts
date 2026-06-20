@@ -1276,18 +1276,36 @@ function handleSessionInit(
  * `now`. Replay events should NOT call this — replay does not
  * correspond to wall-clock event arrival. Returns the patch to fold
  * into the next state.
+ *
+ * A live stream event is also the signal that any retry the banner was
+ * mirroring has *recovered*: claude's SDK only resumes streaming once a
+ * retried request succeeds. The per-turn clear (`handleCostUpdate` /
+ * `resetPerTurnTelemetry`) fires at turn end, which leaves the banner
+ * stuck for the rest of a turn that retried and then picked back up
+ * mid-stream. Clearing `apiRetry` here dismisses it the instant content
+ * flows again. A subsequent failure re-announces a fresh `api_retry`,
+ * so this never races a still-failing turn.
  */
 function foldStreamEvent(
   state: CodeSessionState,
   now: number,
-): { lastStreamEventAt: number; maxStreamGapMs: number } {
+): {
+  lastStreamEventAt: number;
+  maxStreamGapMs: number;
+  apiRetry: ApiRetryState | null;
+} {
   if (state.lastStreamEventAt === null) {
-    return { lastStreamEventAt: now, maxStreamGapMs: state.maxStreamGapMs };
+    return {
+      lastStreamEventAt: now,
+      maxStreamGapMs: state.maxStreamGapMs,
+      apiRetry: null,
+    };
   }
   const gap = Math.max(0, now - state.lastStreamEventAt);
   return {
     lastStreamEventAt: now,
     maxStreamGapMs: gap > state.maxStreamGapMs ? gap : state.maxStreamGapMs,
+    apiRetry: null,
   };
 }
 

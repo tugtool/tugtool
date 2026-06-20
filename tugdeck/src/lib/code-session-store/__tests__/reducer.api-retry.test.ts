@@ -10,7 +10,9 @@
  *   - a frame stores the normalized fields on `apiRetry`,
  *   - a later attempt replaces the prior one,
  *   - `cost_update` clears it (turn resolved / ended),
- *   - `turn_complete` clears it (via `resetPerTurnTelemetry`).
+ *   - `turn_complete` clears it (via `resetPerTurnTelemetry`),
+ *   - a live stream event clears it mid-turn (the retry recovered and
+ *     content resumed before any turn boundary).
  *
  * The wire→event normalization (snake_case + `deadline` stamping) lives
  * in the impure store wrapper, not the reducer, so these events are
@@ -94,6 +96,18 @@ describe("reducer — handleApiRetry", () => {
     const after = applyAll(fresh(), [
       apiRetry(),
       { type: "cost_update", total_cost_usd: 0.01, modelUsage: null } as CodeSessionEvent,
+    ]);
+    expect(after.apiRetry).toBeNull();
+  });
+
+  it("a live stream event clears the retry announcement mid-turn", () => {
+    // The retry recovers and content resumes before the turn ends — no
+    // cost_update / turn_complete yet, so the per-turn clear hasn't run.
+    // The streamed assistant_text must dismiss the stale banner on its own.
+    const after = applyAll(fresh(), [
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" } as CodeSessionEvent,
+      apiRetry(),
+      { type: "assistant_text", msg_id: "m1", block_index: 0, text: "ok", is_partial: false } as CodeSessionEvent,
     ]);
     expect(after.apiRetry).toBeNull();
   });
