@@ -534,16 +534,22 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
       ? layoutArcSegments(segments, max, startAngleDeg, sweepAngleDeg)
       : null;
 
-    // Segmented mode "used" total — the sum of every non-remainder
+    // Segmented mode "used" total — the sum of every resident
     // segment's value. Drives `aria-valuenow` and the detailed-density
     // center readout so a user opening the gauge with screen-reader
     // or keyboard inspection hears the same "how full" reading the
-    // text overlay shows.
+    // text overlay shows. Excludes the `remainder` (unused) and
+    // `autocompact_buffer` (reserved, not yet used) tones so this
+    // matches the consumer-side "used" figure — e.g. the context
+    // popover's "used" row and the status bar's CONTEXT cell.
     const segmentedUsedTotal =
       segmentLayouts === null
         ? 0
         : segmentLayouts.reduce(
-            (sum, s) => (s.tone === "remainder" ? sum : sum + s.value),
+            (sum, s) =>
+              s.tone === "remainder" || s.tone === "autocompact_buffer"
+                ? sum
+                : sum + s.value,
             0,
           );
     const segmentedValueText = isSegmented ? display(segmentedUsedTotal) : "";
