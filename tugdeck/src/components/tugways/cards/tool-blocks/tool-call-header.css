@@ -199,12 +199,16 @@ body {
   top: 0.5px;
 }
 
-/* Result summary — a TugBadge in a trailing column before the actions.
- * The wrapper only positions the badge (centered on the line, via the
- * shared non-text group above); the badge owns its own font, color, and
- * padding. That padding is what gives the summary a clear gap from the
- * detail text — the old plain-text summary ran straight into a long
- * command with no separation. */
+/* Result summary — a ghost TugBadge bracketed by separator pipes. The badge
+ * is borderless now (no box-in-a-box), so BOTH flanking pipes live on THIS
+ * box — `border-inline` for the rules, `padding-inline` for the inner gaps —
+ * which is the only way the left and right gaps stay equal by construction
+ * (a single shared source on both sides). The result reads
+ * detail │ summary │ controls with one `sep-gap` of breathing room on every
+ * side. When a summary precedes the actions cluster, that cluster drops its
+ * own left rule (below) so the two pipes never double up. The pipes exist
+ * only when a summary renders (the slot is conditionally mounted), so they
+ * never dangle. */
 .tool-call-header-summary {
   white-space: nowrap;
   /* inline-flex with a tight gap so a two-badge diff summary (`+N` / `−M`)
@@ -212,17 +216,31 @@ body {
   display: inline-flex;
   align-items: center;
   gap: var(--tug-space-2xs);
+  /* Bracketing pipes — both on this box so the inner gaps are symmetric. */
+  padding-inline: var(--tugx-toolheader-sep-gap);
+  border-inline: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   /* Same 1px optical nudge as the detail so the badge sits on the line
    * with the name. `top` (relative) leaves the layout box untouched. */
   position: relative;
   top: 1px;
 }
 
-/* Experimental: tint ONLY the diff glyphs (`+N` green / `−M` red), leaving
- * the badge borders neutral (the `outlined`/`inherit` root keeps its muted
- * `currentColor` edge). The color rides the text alone, with no adjacent
- * colored box edges, to see whether quiet neutral frames hold off the
- * chromostereopsis the fully colored badges triggered. */
+/* When a summary's right pipe already divides the result from the controls,
+ * the actions cluster drops its own left rule (and the margin/padding that
+ * paired with it) so there's a SINGLE rule there, with the parent row-gap
+ * supplying the spacing on each side — keeping the badge's left and right
+ * gaps equal. With no summary present, the actions rule stands on its own
+ * (detail │ controls) via the rule below. */
+.tool-call-header-summary + .tool-call-header-actions {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+
+/* Tint ONLY the diff glyphs (`+N` green / `−M` red). The badges are ghost
+ * (no border, no fill), so the color rides the text alone with no adjacent
+ * colored box edges — which keeps the chromostereopsis the fully colored
+ * badges triggered at bay. */
 .tool-call-header-diff-add {
   color: var(--tug7-element-badge-text-outlined-success-rest);
 }
@@ -231,12 +249,15 @@ body {
   color: var(--tug7-element-badge-text-outlined-danger-rest);
 }
 
-/* Trailing actions — the controls cluster at the row's trailing edge, in
- * both states: a vertical rule divides the result (summary / meta) from the
- * controls (body-specific portal · Copy · chevron), with equal gaps on each
- * side (result→rule = rule→controls = controls→edge, all
- * `--tugx-toolheader-sep-gap`). The cluster always carries Copy + chevron in
- * the app, so the rule never dangles. */
+/* Trailing actions — the controls cluster at the row's trailing edge (the
+ * body-specific portal · Copy · chevron). Its own left rule divides the
+ * controls from whatever precedes them when there is NO summary
+ * (detail │ controls), with equal gaps on each side
+ * (`--tugx-toolheader-sep-gap`). When a summary IS present, the summary box
+ * already carries the right pipe, so this cluster sheds its rule and spacing
+ * (see the `.tool-call-header-summary + &` rule above) to avoid a doubled
+ * line. The cluster always carries Copy + chevron in the app, so the rule
+ * never dangles. */
 .tool-call-header-actions {
   gap: var(--tugx-toolheader-actions-gap);
   margin-left: var(--tugx-toolheader-sep-gap);

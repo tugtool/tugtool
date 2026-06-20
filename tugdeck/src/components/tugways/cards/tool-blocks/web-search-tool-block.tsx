@@ -270,7 +270,7 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
         {countLabel !== undefined ? (
           <TugBadge
             data-slot="web-search-tool-block-count"
-            emphasis="outlined"
+            emphasis="ghost"
             role="action"
             size="md"
             icon={<List size={12} aria-hidden="true" />}

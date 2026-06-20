@@ -71,15 +71,12 @@ import type { CautionFlag } from "./types";
 const DOT_SIZE = 14;
 
 /**
- * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both `outlined`
- * in the neutral `inherit` role so the BORDER stays neutral (driven by the
- * row's muted `currentColor`). Only the inner text is tinted — green on the
- * `+N`, red on the `−M` — via a wrapping span, so the green/red lives on
- * the glyphs alone, not on any box edge. The bet (experimental): keeping
- * the colored fields apart behind quiet neutral borders, with no adjacent
- * colored edges, avoids the worst of the chromostereopsis that the fully
- * colored badges triggered. Both badges share one neutral border tone, so
- * they sit on the same optical baseline with no per-badge nudge.
+ * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both `ghost`
+ * in the neutral `inherit` role — no border, no fill, so they read as the
+ * header's own text rather than boxes-in-a-box. Only the inner text is
+ * tinted — green on the `+N`, red on the `−M` — via a wrapping span, so the
+ * green/red lives on the glyphs alone. The pair sits inside the summary
+ * slot, which carries the bracketing separator pipes.
  */
 function DiffSummaryBadges({
   summary,
@@ -89,10 +86,10 @@ function DiffSummaryBadges({
   const parts = formatDiffSummaryParts(summary);
   return (
     <>
-      <TugBadge emphasis="outlined" role="inherit" size="sm" copyText={parts.added}>
+      <TugBadge emphasis="ghost" role="inherit" size="sm" copyText={parts.added}>
         <span className="tool-call-header-diff-add">{parts.added}</span>
       </TugBadge>
-      <TugBadge emphasis="outlined" role="inherit" size="sm" copyText={parts.removed}>
+      <TugBadge emphasis="ghost" role="inherit" size="sm" copyText={parts.removed}>
         <span className="tool-call-header-diff-del">{parts.removed}</span>
       </TugBadge>
     </>
@@ -246,12 +243,14 @@ export const ToolCallHeader = React.forwardRef<
       >
         {target}
       </span>
-      {/* Trailing result — one quiet one-line summary as a TugBadge,
+      {/* Trailing result — one quiet one-line summary as a ghost TugBadge,
           rendered identically in BOTH states so collapsed and expanded
-          read the same. The badge's own padding guarantees a clear gap
-          from the detail text (which used to run into the plain summary),
-          and its role carries pass/fail signal: a nonzero exit reads
-          danger, exit 0 success, every other kind neutral data. */}
+          read the same. The badge is borderless (ghost) so it reads as the
+          header's own text, not a box-in-a-box; the summary slot's
+          bracketing separator pipes give it a clear gap from the detail on
+          the left and the actions on the right. Its role still carries
+          pass/fail signal: a nonzero exit reads danger, exit 0 success,
+          every other kind neutral data. */}
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (
@@ -262,7 +261,7 @@ export const ToolCallHeader = React.forwardRef<
             <DiffSummaryBadges summary={summary} />
           ) : (
             <TugBadge
-              emphasis="outlined"
+              emphasis="ghost"
               role={toolResultSummaryRole(summary)}
               size="sm"
             >
