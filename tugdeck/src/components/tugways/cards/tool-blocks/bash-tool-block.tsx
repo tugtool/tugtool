@@ -254,6 +254,14 @@ export function tryParseBashDiff(
 // Component
 // ---------------------------------------------------------------------------
 
+/**
+ * Lines of the shell command the COLLAPSED header shows before clipping with
+ * a trailing ellipsis. Long heredoc / multi-command invocations would
+ * otherwise turn a collapsed block into a wall of text; the full command is
+ * one expand away.
+ */
+const COLLAPSED_COMMAND_LINES = 4;
+
 export const BashToolBlock: React.FC<ToolBlockProps> = ({
   toolUseId,
   toolName,
@@ -280,9 +288,10 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     [terminalData],
   );
 
-  // The command renders in full on the header's wrapping command row
-  // ([D05]) — no truncation, no tooltip. The whole command is always
-  // visible, however long.
+  // The command renders on the header's wrapping command row. While the
+  // block is collapsed it caps at `COLLAPSED_COMMAND_LINES` (a long heredoc
+  // would otherwise fill the whole collapsed header); expanding shows the
+  // full command above the output, so nothing is ever lost.
   const command = bashInput.command !== undefined ? (
     <code data-slot="bash-tool-block-command">{bashInput.command}</code>
   ) : undefined;
@@ -422,6 +431,7 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
       rootSlot="bash-tool-block"
       toolName={toolName}
       command={command}
+      collapsedCommandLines={COLLAPSED_COMMAND_LINES}
       resultSummary={resultSummary}
       status={status}
       phase={phase}

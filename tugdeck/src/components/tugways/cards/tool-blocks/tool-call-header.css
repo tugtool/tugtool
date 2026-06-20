@@ -153,6 +153,24 @@ body {
   word-break: break-word;
 }
 
+/* Collapsed clamp — when a wrapper passes `collapsedTargetLines`, the
+ * header stamps `data-clamp-lines` on the detail and publishes the line
+ * count in `--tugx-toolheader-detail-clamp-lines`. While the block is
+ * collapsed the detail switches to a `-webkit-box` and caps at that many
+ * lines, clipping the overflow with a trailing ellipsis — so a heredoc-laden
+ * command no longer fills the whole collapsed header. Expanding clears
+ * `data-clamp-lines` (the attribute is collapsed-only in the header), and the
+ * detail returns to its full-height single-line-centered flex box, showing
+ * the whole command above the body. `line-clamp` ships the standard property
+ * alongside the `-webkit-` one for forward-compat. */
+.tool-call-header-detail[data-clamp-lines] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--tugx-toolheader-detail-clamp-lines, 4);
+  line-clamp: var(--tugx-toolheader-detail-clamp-lines, 4);
+  overflow: hidden;
+}
+
 .tool-call-header-detail code {
   font-family: inherit;
   font-size: inherit;
