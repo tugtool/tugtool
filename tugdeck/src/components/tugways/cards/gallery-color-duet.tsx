@@ -2,17 +2,16 @@
  * gallery-color-duet.tsx -- Key + Accent color-duet workshop.
  *
  * A live tuning board for the per-theme Key (selection / primary action) +
- * Accent (affordances: caret, focus ring, drag-drop, activity) duet, expressed
- * in the TugColor model (color-palette.md). Each role is tuned by two knobs:
+ * Accent (affordance: caret, focus ring, drag-drop, activity) duet, expressed in
+ * the TugColor model (color-palette.md). Each role has two Tug controls:
  *
- *   - Hue: a TugColor hue <select>. Choosing one writes that hue's palette
- *     constants — var(--tugc-{hue}-h / -canonical-l / -peak-c) — into the
- *     board's indirection vars (--duet-key-h / -canon-l / -peak-c). The ramp
- *     rungs in gallery-color-duet.css are the TugColor piecewise formula over
- *     those constants, so every rung re-evaluates through the real model (right
- *     canonical L, gamut-safe + P3-wider peak chroma).
- *   - Chroma scale: a multiplier on every rung's chroma (--duet-key-c-scale),
- *     for restraint (e.g. pale pink Key on bravura/aria).
+ *   - Hue: a TugPopupButton over the 48 TugColor hues. Choosing one writes that
+ *     hue's palette constants — var(--tugc-{hue}-h / -canonical-l / -peak-c) —
+ *     into the board's indirection vars (--duet-key-h / -canon-l / -peak-c). The
+ *     ramp rungs in gallery-color-duet.css are the TugColor piecewise formula
+ *     over those constants, so every rung re-evaluates through the real model.
+ *   - Chroma scale: a TugSlider multiplying every rung's chroma
+ *     (--duet-key-c-scale), for restraint (e.g. pale Key on bravura/aria).
  *
  * The board-scoped Table-T01 --tug7-* repoints route the real components below
  * through the ramps. All painting is style.setProperty on the board ([L06]);
@@ -22,10 +21,11 @@
  *  - [L06] appearance via style.setProperty + CSS, never React-state-driven.
  *  - [L02] the list data source enters React via TugListView's
  *    useSyncExternalStore contract (a trivial constant store here).
+ *  - [L11] controls emit actions; the card handles them via useResponderForm.
  *  - [L19] gallery-card authoring; registered in gallery-registrations.tsx.
  */
 
-import React, { useId, useRef, useState } from "react";
+import React, { useId, useMemo, useRef, useState } from "react";
 
 import { ADJACENCY_RING, HUE_FAMILIES } from "@/components/tugways/palette-engine";
 import {
@@ -34,12 +34,16 @@ import {
   type TugListViewDataSource,
 } from "@/components/tugways/tug-list-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugPopupButton, type TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
+import { TugSlider } from "@/components/tugways/tug-slider";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { getThemeGetter } from "@/action-dispatch";
+import { TUG_ACTIONS } from "../action-vocabulary";
 import "./gallery.css";
 import "./gallery-color-duet.css";
 
@@ -50,27 +54,48 @@ import "./gallery-color-duet.css";
 interface Seed {
   keyHue: string;
   keyCScale: number;
+  keyLShift: number;
   accHue: string;
   accCScale: number;
+  accLShift: number;
 }
 
+/** Compact preset constructor — lightness shift defaults to 0 (neutral tone). */
+const mk = (
+  keyHue: string,
+  keyCScale: number,
+  accHue: string,
+  accCScale: number,
+): Seed => ({ keyHue, keyCScale, keyLShift: 0, accHue, accCScale, accLShift: 0 });
+
 /** Default = today's brio (blue Key / orange Accent), an exact baseline. */
-const SEED_TODAY: Seed = { keyHue: "blue", keyCScale: 1, accHue: "orange", accCScale: 1 };
+const SEED_TODAY: Seed = mk("blue", 1, "orange", 1);
 
 /**
- * Per-theme starting duets to tune ([Q01]). Restrained chroma; bravura/aria Key
- * lean pale rose-violet (low chroma scale), never saturated red. Starting
- * points — the workshop tunes them and the Copy button captures the result.
+ * The six shipped duets (the values now live in the theme files). Loading a
+ * preset re-applies that theme's locked hues + chroma scales to the board.
  */
 const PRESETS: ReadonlyArray<{ name: string; seed: Seed }> = [
   { name: "today (brio)", seed: SEED_TODAY },
-  { name: "brio", seed: { keyHue: "cobalt", keyCScale: 0.9, accHue: "orange", accCScale: 0.85 } },
-  { name: "harmony", seed: { keyHue: "cobalt", keyCScale: 0.9, accHue: "orange", accCScale: 0.9 } },
-  { name: "nocturne", seed: { keyHue: "sapphire", keyCScale: 0.85, accHue: "aqua", accCScale: 0.8 } },
-  { name: "bravura", seed: { keyHue: "cerise", keyCScale: 0.55, accHue: "aqua", accCScale: 0.8 } },
-  { name: "aria", seed: { keyHue: "cerise", keyCScale: 0.5, accHue: "azure", accCScale: 0.8 } },
-  { name: "vivace", seed: { keyHue: "cerulean", keyCScale: 0.85, accHue: "tangerine", accCScale: 0.85 } },
+  { name: "brio", seed: mk("cobalt", 0.9, "orange", 0.85) },
+  { name: "harmony", seed: mk("cobalt", 0.9, "orange", 1.0) },
+  { name: "nocturne", seed: mk("sapphire", 0.85, "tangerine", 0.8) },
+  { name: "bravura", seed: mk("cerise", 0.3, "aqua", 0.9) },
+  { name: "aria", seed: mk("purple", 0.5, "sky", 0.9) },
+  { name: "vivace", seed: mk("seafoam", 0.44, "fuchsia", 0.9) },
 ];
+
+const angle = (hue: string): string => {
+  const a = HUE_FAMILIES[hue];
+  return a === undefined ? "" : `${a}°`;
+};
+
+/** Hue menu items (TugColor hues in ascending-angle order), shared by both pickers. */
+const HUE_ITEMS: TugPopupButtonItem<string>[] = ADJACENCY_RING.map((hue) => ({
+  action: TUG_ACTIONS.SET_VALUE,
+  value: hue,
+  label: `${hue} (${angle(hue)})`,
+}));
 
 // ---------------------------------------------------------------------------
 // List data source (real TugListView — genuine selection fill + caret)
@@ -120,10 +145,12 @@ const LIST_CELL_RENDERERS = { row: DuetRowCell };
 export function GalleryColorDuet(): React.ReactElement {
   const boardRef = useRef<HTMLDivElement>(null);
 
-  // Local-data only: controlled inputs + copy-out readout. The paint is the
-  // setProperty calls below, never a React-state-driven style ([L06]).
+  // Local-data only: the controlled control values + copy-out readout. The paint
+  // is the setProperty calls below, never a React-state-driven style ([L06]).
   const [seed, setSeed] = useState<Seed>(SEED_TODAY);
   const [copied, setCopied] = useState(false);
+  const [applyMsg, setApplyMsg] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
 
   const setVar = (name: string, value: string): void => {
     boardRef.current?.style.setProperty(name, value);
@@ -140,6 +167,8 @@ export function GalleryColorDuet(): React.ReactElement {
     applyHue("accent", next.accHue);
     setVar("--duet-key-c-scale", String(next.keyCScale));
     setVar("--duet-accent-c-scale", String(next.accCScale));
+    setVar("--duet-key-l-shift", String(next.keyLShift));
+    setVar("--duet-accent-l-shift", String(next.accLShift));
   };
 
   const onHue = (role: "key" | "accent", hue: string): void => {
@@ -148,11 +177,18 @@ export function GalleryColorDuet(): React.ReactElement {
     setCopied(false);
   };
 
-  const onCScale = (role: "key" | "accent", raw: string): void => {
-    const value = Number(raw);
+  const onCScale = (role: "key" | "accent", value: number): void => {
     setVar(`--duet-${role}-c-scale`, String(value));
     setSeed((prev) =>
       role === "key" ? { ...prev, keyCScale: value } : { ...prev, accCScale: value },
+    );
+    setCopied(false);
+  };
+
+  const onLShift = (role: "key" | "accent", value: number): void => {
+    setVar(`--duet-${role}-l-shift`, String(value));
+    setSeed((prev) =>
+      role === "key" ? { ...prev, keyLShift: value } : { ...prev, accLShift: value },
     );
     setCopied(false);
   };
@@ -164,29 +200,77 @@ export function GalleryColorDuet(): React.ReactElement {
   };
 
   // Real selectable list (genuine selection fill + caret when focused).
-  const listSource = React.useMemo(() => new DuetListDataSource(LIST_ROWS), []);
+  const listSource = useMemo(() => new DuetListDataSource(LIST_ROWS), []);
 
-  // Real radio + choice groups, wired through the responder form.
+  // Control sender ids — Tug controls dispatch actions the card handles ([L11]).
+  const keyHueId = useId();
+  const keyCId = useId();
+  const keyLId = useId();
+  const accHueId = useId();
+  const accCId = useId();
+  const accLId = useId();
   const radioId = useId();
   const choiceId = useId();
   const [radioValue, setRadioValue] = useState("on");
   const [choiceValue, setChoiceValue] = useState("grid");
+
   const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [keyHueId]: (v) => onHue("key", v),
+      [accHueId]: (v) => onHue("accent", v),
+    },
+    setValueNumber: {
+      [keyCId]: (v) => onCScale("key", v),
+      [accCId]: (v) => onCScale("accent", v),
+      [keyLId]: (v) => onLShift("key", v),
+      [accLId]: (v) => onLShift("accent", v),
+    },
     selectValue: {
       [radioId]: setRadioValue,
       [choiceId]: setChoiceValue,
     },
   });
 
-  const angle = (hue: string): string => {
-    const a = HUE_FAMILIES[hue];
-    return a === undefined ? "" : `${a}°`;
-  };
-
+  const fmtShift = (n: number): string => (n > 0 ? `+${n}` : `${n}`);
   const readout = [
-    `Key:    ${seed.keyHue} (${angle(seed.keyHue)})  chroma x${seed.keyCScale.toFixed(2)}`,
-    `Accent: ${seed.accHue} (${angle(seed.accHue)})  chroma x${seed.accCScale.toFixed(2)}`,
+    `Key:    ${seed.keyHue} (${angle(seed.keyHue)})  chroma x${seed.keyCScale.toFixed(2)}  lightness ${fmtShift(seed.keyLShift)}`,
+    `Accent: ${seed.accHue} (${angle(seed.accHue)})  chroma x${seed.accCScale.toFixed(2)}  lightness ${fmtShift(seed.accLShift)}`,
   ].join("\n");
+
+  // Apply writes the current duet into the ACTIVE theme's CSS via the dev-server
+  // endpoint (which re-derives from the clean baseline, so re-applying never
+  // compounds). The theme hot-reload then repaints the whole app.
+  const onApply = (): void => {
+    const theme = getThemeGetter()?.();
+    if (!theme) {
+      setApplyMsg("No active theme");
+      return;
+    }
+    setApplying(true);
+    setApplyMsg(null);
+    fetch("/__duet/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        theme,
+        keyHue: seed.keyHue,
+        keyScale: seed.keyCScale,
+        keyToneShift: seed.keyLShift,
+        accentHue: seed.accHue,
+        accentScale: seed.accCScale,
+        accentToneShift: seed.accLShift,
+      }),
+    })
+      .then(async (r) => {
+        const data = (await r.json().catch(() => ({}))) as { error?: string };
+        if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
+        setApplyMsg(`Applied to ${theme}`);
+      })
+      .catch((err: unknown) => {
+        setApplyMsg(`Apply failed: ${err instanceof Error ? err.message : String(err)}`);
+      })
+      .finally(() => setApplying(false));
+  };
 
   const onCopy = (): void => {
     navigator.clipboard
@@ -223,72 +307,80 @@ export function GalleryColorDuet(): React.ReactElement {
               </TugPushButton>
             ))}
           </div>
-          <div className="gcd-controls" style={{ marginTop: "10px" }}>
-            <label className="gcd-control-row">
+
+          <div className="gcd-controls">
+            <div className="gcd-control-row">
               <span className="gcd-control-label">Key hue</span>
-              <select
-                value={seed.keyHue}
-                onChange={(e) => onHue("key", e.target.value)}
-                data-testid="gcd-key-hue"
-                aria-label="Key hue"
-              >
-                {ADJACENCY_RING.map((hue) => (
-                  <option key={hue} value={hue}>
-                    {hue} ({angle(hue)})
-                  </option>
-                ))}
-              </select>
-              <span className="gcd-control-value">{angle(seed.keyHue)}</span>
-            </label>
-            <label className="gcd-control-row">
-              <span className="gcd-control-label">Key chroma ×</span>
-              <input
-                type="range"
-                min={0}
-                max={1.3}
-                step={0.02}
-                value={seed.keyCScale}
-                onChange={(e) => onCScale("key", e.target.value)}
-                data-testid="gcd-key-cscale"
-                aria-label="Key chroma scale"
+              <TugPopupButton
+                label={`${seed.keyHue} (${angle(seed.keyHue)})`}
+                senderId={keyHueId}
+                size="sm"
+                items={HUE_ITEMS}
               />
-              <span className="gcd-control-value">{seed.keyCScale.toFixed(2)}</span>
-            </label>
-            <label className="gcd-control-row">
+            </div>
+            <TugSlider
+              label="Key chroma ×"
+              senderId={keyCId}
+              value={seed.keyCScale}
+              min={0}
+              max={1.3}
+              step={0.02}
+              size="sm"
+            />
+            <TugSlider
+              label="Key lightness ±"
+              senderId={keyLId}
+              value={seed.keyLShift}
+              min={-30}
+              max={30}
+              step={1}
+              size="sm"
+            />
+            <div className="gcd-control-row">
               <span className="gcd-control-label">Accent hue</span>
-              <select
-                value={seed.accHue}
-                onChange={(e) => onHue("accent", e.target.value)}
-                data-testid="gcd-accent-hue"
-                aria-label="Accent hue"
-              >
-                {ADJACENCY_RING.map((hue) => (
-                  <option key={hue} value={hue}>
-                    {hue} ({angle(hue)})
-                  </option>
-                ))}
-              </select>
-              <span className="gcd-control-value">{angle(seed.accHue)}</span>
-            </label>
-            <label className="gcd-control-row">
-              <span className="gcd-control-label">Accent chroma ×</span>
-              <input
-                type="range"
-                min={0}
-                max={1.3}
-                step={0.02}
-                value={seed.accCScale}
-                onChange={(e) => onCScale("accent", e.target.value)}
-                data-testid="gcd-accent-cscale"
-                aria-label="Accent chroma scale"
+              <TugPopupButton
+                label={`${seed.accHue} (${angle(seed.accHue)})`}
+                senderId={accHueId}
+                size="sm"
+                items={HUE_ITEMS}
               />
-              <span className="gcd-control-value">{seed.accCScale.toFixed(2)}</span>
-            </label>
+            </div>
+            <TugSlider
+              label="Accent chroma ×"
+              senderId={accCId}
+              value={seed.accCScale}
+              min={0}
+              max={1.3}
+              step={0.02}
+              size="sm"
+            />
+            <TugSlider
+              label="Accent lightness ±"
+              senderId={accLId}
+              value={seed.accLShift}
+              min={-30}
+              max={30}
+              step={1}
+              size="sm"
+            />
           </div>
+
           <div className="gcd-presets" style={{ marginTop: "10px" }}>
-            <TugPushButton emphasis="primary" role="action" size="xs" onClick={onCopy}>
+            <TugPushButton
+              emphasis="primary"
+              role="action"
+              size="xs"
+              disabled={applying}
+              onClick={onApply}
+            >
+              {applying ? "Applying…" : "Apply to active theme"}
+            </TugPushButton>
+            <TugPushButton emphasis="outlined" role="action" size="xs" onClick={onCopy}>
               {copied ? "Copied" : "Copy seed"}
             </TugPushButton>
+            {applyMsg && (
+              <TugLabel size="2xs" emphasis="calm">{applyMsg}</TugLabel>
+            )}
           </div>
           <div className="gcd-readout" data-testid="gcd-readout" style={{ marginTop: "10px" }}>
             {readout}

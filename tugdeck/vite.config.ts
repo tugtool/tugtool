@@ -6,6 +6,8 @@ import fs from "fs";
 import { execSync } from "child_process";
 // postcss-tug-color expands --tug-color(color, i: intensity, t: tone) to oklch() at build time.
 import postcssTugColor from "./postcss-tug-color";
+// duet-core re-hues a theme's Key/Accent axes; shared with scripts/apply-duet.ts.
+import { applyDuet, isKnownHue } from "./duet-core";
 
 /**
  * Vite plugin: seamless CSS hot-reload when palette-engine.ts changes.
@@ -286,6 +288,113 @@ export async function handleThemesActivate(
   });
 }
 
+// ---------------------------------------------------------------------------
+// handleDuetApply — POST /__duet/apply
+//
+// Re-hues a theme's Key/Accent axes from the clean baseline recipe and writes
+// the theme CSS, then re-copies the active theme so HMR repaints. Drives the
+// gallery-color-duet workshop card's Apply button. Dev-only.
+// ---------------------------------------------------------------------------
+
+export async function handleDuetApply(
+  body: unknown,
+  themesCssDir: string,
+  activeCssPath: string,
+): Promise<{ status: number; body: string }> {
+  if (!body || typeof body !== "object") {
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
+  }
+  const b = body as Record<string, unknown>;
+  const theme = typeof b.theme === "string" ? b.theme.trim() : "";
+  const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
+  const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : "";
+  const keyScale = Number(b.keyScale);
+  const accentScale = Number(b.accentScale);
+  const keyToneShift = b.keyToneShift === undefined ? 0 : Number(b.keyToneShift);
+  const accentToneShift = b.accentToneShift === undefined ? 0 : Number(b.accentToneShift);
+  if (!theme || !isKnownHue(keyHue) || !isKnownHue(accentHue) ||
+      !Number.isFinite(keyScale) || !Number.isFinite(accentScale) ||
+      !Number.isFinite(keyToneShift) || !Number.isFinite(accentToneShift)) {
+    return { status: 400, body: JSON.stringify({ error: "theme + valid keyHue/accentHue + numeric keyScale/accentScale (+optional tone shifts) required" }) };
+  }
+
+  const themeFile = findThemeCssPath(theme, themesCssDir);
+  if (!themeFile) {
+    return { status: 404, body: JSON.stringify({ error: `theme '${theme}' not found` }) };
+  }
+
+  return new Promise<{ status: number; body: string }>((resolve) => {
+    withMutex(async () => {
+      try {
+        const baselinePath = path.join(themesCssDir, "duet-baseline.json");
+        const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf-8")) as Record<
+          string,
+          Record<string, string>
+        >;
+        if (!baseline[theme]) {
+          resolve({ status: 404, body: JSON.stringify({ error: `no baseline for '${theme}'` }) });
+          return;
+        }
+        const current = fs.readFileSync(themeFile, "utf-8");
+        const { css, keyCount, accentCount } = applyDuet(current, baseline[theme], {
+          keyHue, keyScale, keyToneShift, accentHue, accentScale, accentToneShift,
+        });
+        fs.writeFileSync(themeFile, css, "utf-8");
+        // Push the change into the active-theme file so the running card repaints.
+        const activeTheme = readActiveThemeFromTugbank();
+        copyActiveThemeToFile(activeTheme, activeCssPath);
+        resolve({ status: 200, body: JSON.stringify({ theme, keyHue, accentHue, keyCount, accentCount }) });
+      } catch (err) {
+        resolve({ status: 500, body: JSON.stringify({ error: String(err instanceof Error ? err.message : err) }) });
+      }
+    });
+  });
+}
+
+/**
+ * Vite plugin: duet API endpoint for the dev server.
+ * POST /__duet/apply — re-hue a theme's Key/Accent axes from the workshop card.
+ */
+function duetApplyPlugin(): VitePlugin {
+  return {
+    name: "duet-apply",
+    configureServer(server) {
+      server.middlewares.use(
+        "/__duet",
+        (req: import("http").IncomingMessage, res: import("http").ServerResponse, next: () => void) => {
+          const url = req.url ?? "/";
+          if (req.method === "POST" && url === "/apply") {
+            let raw = "";
+            req.on("data", (chunk: Buffer) => { raw += chunk.toString(); });
+            req.on("end", () => {
+              let parsed: unknown;
+              try {
+                parsed = JSON.parse(raw);
+              } catch {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "invalid JSON body" }));
+                return;
+              }
+              handleDuetApply(parsed, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
+                if (result.status === 200) {
+                  server.ws.send({ type: "custom", event: "tug:theme-changed" });
+                }
+                res.writeHead(result.status, { "Content-Type": "application/json" });
+                res.end(result.body);
+              }).catch((err) => {
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: String(err) }));
+              });
+            });
+            return;
+          }
+          next();
+        },
+      );
+    },
+  };
+}
+
 /**
  * Vite plugin: theme API endpoints for the dev server.
  * POST /__themes/activate     — activate a theme by rewriting the override file
@@ -463,6 +572,7 @@ export default (defineConfig as any)(() => {
       paletteHotReload(),
       controlTokenHotReload(),
       themeSaveLoadPlugin(),
+      duetApplyPlugin(),
       capabilitiesVirtualModulePlugin(),
     ],
     css: {
