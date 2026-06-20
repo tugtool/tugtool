@@ -1030,11 +1030,11 @@ body {
   --tugx-term-ansi-bright-cyan:     --tug-color(teal, t: 30);
   --tugx-term-ansi-bright-white:    --tug-color(black);
 
-  /* ---- Tool block chrome (ToolBlockChrome per Table T07) ----
+  /* ---- Tool block chrome (BlockChrome per Table T07) ----
    * Light-theme counterpart. Same vocabulary as brio.css with
    * directionally-flipped tints and the harmony palette.
    */
-  /* `--tugx-toolblock-*` slots live in tool-block-chrome.css's body{}
+  /* `--tugx-block-*` slots live in block-chrome.css's body{}
    * block per tuglaws/token-naming.md. */
 
   /* `--tugx-file-*` slots live in file-block.css's body{} block per

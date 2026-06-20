@@ -1038,7 +1038,7 @@ body {
   --tugx-term-ansi-bright-cyan:     --tug-color(teal, t: 85);
   --tugx-term-ansi-bright-white:    --tug-color(white);
 
-  /* ---- Tool block chrome (ToolBlockChrome per Table T07) ----
+  /* ---- Tool block chrome (BlockChrome per Table T07) ----
    * Frame painted around every Layer-2 tool block. Brio uses a
    * lightly-elevated dark surface with a left-edge stripe whose
    * color encodes lifecycle status (streaming / ready / error).
