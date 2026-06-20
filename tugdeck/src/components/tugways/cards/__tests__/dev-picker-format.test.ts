@@ -21,6 +21,7 @@ function row(over: Partial<SessionRow>): SessionRow {
     state: "closed",
     card_id: null,
     name: null,
+    name_user_set: false,
     origin: "external",
     terminal_live: null,
     ...over,

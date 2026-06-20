@@ -106,8 +106,13 @@ export interface SessionRow {
   last_user_prompt: string | null;
   state: "live" | "closed" | "failed";
   card_id: string | null;
-  /** User-assigned session name (`/rename`, [#step-13d]); `null` when unnamed. */
+  /** Session title — the user's `/rename` choice or an auto `aiTitle`; `null`
+   *  when untitled. See {@link SessionRow.name_user_set} to tell them apart. */
   name: string | null;
+  /** `true` only when `name` was set by the user via `/rename`. The Z4B session
+   *  chip shows the hash unless this is `true`; the chooser ignores it (it shows
+   *  any title). Defaults to `false` for older tugcast that omits the field. */
+  name_user_set: boolean;
   /**
    * Provenance of the row: `"tug"` rows come from the sqlite ledger
    * (sessions Tug spawned or adopted); `"external"` rows were
@@ -145,14 +150,15 @@ export interface TerminalLive {
  * carry them, and an older tugcast won't send them on listings either.
  */
 export function normalizeSessionRow(
-  row: Omit<SessionRow, "origin" | "terminal_live"> &
-    Partial<Pick<SessionRow, "origin" | "terminal_live">>,
+  row: Omit<SessionRow, "origin" | "terminal_live" | "name_user_set"> &
+    Partial<Pick<SessionRow, "origin" | "terminal_live" | "name_user_set">>,
 ): SessionRow {
   return {
     ...row,
     origin: row.origin === "external" ? "external" : "tug",
     terminal_live: row.terminal_live ?? null,
     file_size: row.file_size ?? null,
+    name_user_set: row.name_user_set ?? false,
   };
 }
 
@@ -196,9 +202,12 @@ export interface CardBinding {
    * conservative when running against a stale server.
    */
   is_alive?: boolean;
-  /** User-assigned session name (`/rename`, [#step-13d]); seeds the chip on
-   *  restore so a named session reads its name immediately on relaunch. */
+  /** Session title (user `/rename` or auto `aiTitle`); seeds the chip on restore.
+   *  `name_user_set` gates whether the chip shows it or falls back to the hash. */
   name?: string | null;
+  /** `true` only when `name` was a user `/rename`. Absent on older tugcast →
+   *  treated as `false`, so an auto title never seeds the chip as a rename. */
+  name_user_set?: boolean;
 }
 
 /** Frame flags */

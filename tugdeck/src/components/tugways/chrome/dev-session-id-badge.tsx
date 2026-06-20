@@ -58,9 +58,10 @@ export function DevSessionIdBadge({
   // unnamed → the truncated id, full id in the tooltip.
   const { value, tooltip } = sessionChipDisplay(name, tugSessionId);
 
-  // Copy the full value (un-ellipsized name, or the full session id), not the
-  // truncated chip face.
-  const copyValue = name?.trim() ? name.trim() : tugSessionId;
+  // Copy "Session" + the short id (the chip face), not the full UUID. When the
+  // session was renamed, copy the full un-ellipsized name instead. `value` is
+  // already the short id when unnamed, so it doubles as the copy text there.
+  const copyValue = name?.trim() ? name.trim() : value;
 
   return (
     <TugBadge

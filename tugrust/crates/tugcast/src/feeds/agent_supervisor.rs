@@ -781,6 +781,7 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "state": row.state,
             "card_id": row.card_id,
             "name": row.name,
+            "name_user_set": row.name_user_set,
         },
     });
     Frame::new(
@@ -1164,6 +1165,8 @@ fn build_listed_union(
                     state: crate::session_ledger::SessionState::Closed,
                     card_id: None,
                     name: meta.name,
+                    // A scanned `aiTitle` is never a user rename.
+                    name_user_set: false,
                 },
                 origin: "external",
                 terminal_live,
@@ -2864,6 +2867,7 @@ impl AgentSupervisor {
                     "turn_count": row.turn_count,
                     "is_alive": is_alive,
                     "name": row.name,
+                    "name_user_set": row.name_user_set,
                 }))
             })
             .collect();

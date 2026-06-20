@@ -162,10 +162,15 @@ pub struct SessionRow {
     /// cleared by lifecycle transitions; combined with `state` it answers
     /// "which session was last bound to this card, and is it still live?"
     pub card_id: Option<String>,
-    /// User-assigned session name (`/rename`), or `None` when unnamed. Survives
-    /// re-spawn/resume (never cleared by lifecycle transitions); the chooser
-    /// shows it as the row title and the Z4B session chip shows it as its value.
+    /// Session title, or `None` when untitled. Carries either the user's
+    /// `/rename` choice or the auto-generated `aiTitle` scraped from the JSONL —
+    /// see `name_user_set` to tell them apart. Survives re-spawn/resume (never
+    /// cleared by lifecycle transitions); the chooser shows it as the row title.
     pub name: Option<String>,
+    /// `true` only when `name` was set by the user via `/rename`; `false` when
+    /// it's an auto `aiTitle` (or unset). The Z4B session chip shows the hash
+    /// unless this is `true`, so an auto title never masquerades as a rename.
+    pub name_user_set: bool,
 }
 
 /// One row of the `turns` submission journal. Authored by tugcast at
@@ -533,6 +538,7 @@ impl SessionLedger {
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
         Self::migrate_sessions_add_name(conn)?;
+        Self::migrate_sessions_add_name_user_set(conn)?;
         Self::migrate_scan_cache_add_resume_columns(conn)?;
         conn.execute_batch(
             "
@@ -546,7 +552,8 @@ impl SessionLedger {
                 last_user_prompt  TEXT,
                 state             TEXT NOT NULL,
                 card_id           TEXT,
-                name              TEXT
+                name              TEXT,
+                name_user_set     INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS sessions_workspace_recent
@@ -846,6 +853,25 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Self-healing add of the `sessions.name_user_set` column — the provenance
+    /// bit that distinguishes a user `/rename` from an auto `aiTitle`. Pre-column
+    /// rows default to `0` (not user-set): an auto title that predates the column
+    /// correctly stops driving the chip, and a real rename re-sets the bit. No-op
+    /// on a fresh DB (the CREATE TABLE defines it) or when already migrated.
+    fn migrate_sessions_add_name_user_set(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "sessions")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "name_user_set") {
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN name_user_set INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Self-healing add of the scan cache's incremental-parse columns
     /// (`parse_offset`, `tail_hash`, `cwd_checked`, `created_at_found`).
     /// Pre-existing rows get `parse_offset = 0` — no resumable state, so
@@ -918,7 +944,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -940,7 +966,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -971,7 +997,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
@@ -988,7 +1014,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -1054,11 +1080,15 @@ impl SessionLedger {
             now
         });
         tx.execute(
+            // `name_user_set` is hardcoded `0`: a scan-seeded name is always an
+            // auto `aiTitle`, never a user rename. On conflict it's left out of
+            // the SET clause so an existing user-set bit (and its `name`, kept by
+            // COALESCE) survives a respawn untouched.
             "INSERT INTO sessions (
                 session_id, workspace_key, project_dir,
                 created_at, last_used_at, turn_count,
-                last_user_prompt, name, state, card_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'live', ?9)
+                last_user_prompt, name, name_user_set, state, card_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 'live', ?9)
              ON CONFLICT(session_id) DO UPDATE SET
                 workspace_key = excluded.workspace_key,
                 project_dir   = excluded.project_dir,
@@ -1109,11 +1139,14 @@ impl SessionLedger {
     /// the session id is unknown.
     pub fn rename(&self, session_id: &str, name: Option<&str>) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
+        // Setting a name marks it user-set (the chip then shows it); clearing it
+        // drops the bit so the chip falls back to the hash.
+        let user_set = i64::from(name.is_some());
         let affected = conn.execute(
             "UPDATE sessions
-             SET name = ?2
+             SET name = ?2, name_user_set = ?3
              WHERE session_id = ?1",
-            params![session_id, name],
+            params![session_id, name, user_set],
         )?;
         if affected == 0 {
             return Err(LedgerError::NotFound(session_id.to_owned()));
@@ -2027,6 +2060,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let state_str: String = row.get(7)?;
     let card_id: Option<String> = row.get(8)?;
     let name: Option<String> = row.get(9)?;
+    let name_user_set: bool = row.get::<_, i64>(10)? != 0;
     let state = match state_str.parse::<SessionState>() {
         Ok(s) => s,
         Err(e) => return Ok(Err(e)),
@@ -2042,6 +2076,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         state,
         card_id,
         name,
+        name_user_set,
     }))
 }
 
@@ -2390,6 +2425,9 @@ mod tests {
         assert_eq!(row.turn_count, 42);
         assert_eq!(row.last_user_prompt.as_deref(), Some("the last prompt"));
         assert_eq!(row.name.as_deref(), Some("Scanned title"));
+        // A scanned `aiTitle` hydrates the title but is NOT a user rename, so the
+        // chip stays on the hash until the user actually `/rename`s.
+        assert!(!row.name_user_set);
         assert_eq!(row.created_at, millis(1), "transcript birth, not now");
         assert_eq!(row.last_used_at, now);
         assert_eq!(row.state, SessionState::Live);
@@ -2571,26 +2609,31 @@ mod tests {
         let l = fresh();
         let now = millis(0);
         seed_live(&l, "s1", WS_A, "card-1", now);
-        assert_eq!(l.get("s1").unwrap().unwrap().name, None);
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.name, None);
+        // A fresh spawn is never user-named.
+        assert!(!r.name_user_set);
 
         // Set a name (trimmed by the parser; the ledger stores verbatim).
         l.rename("s1", Some("My session")).unwrap();
-        assert_eq!(
-            l.get("s1").unwrap().unwrap().name.as_deref(),
-            Some("My session")
-        );
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.name.as_deref(), Some("My session"));
+        // A `/rename` flips the provenance bit so the chip shows it.
+        assert!(r.name_user_set);
 
-        // A re-spawn (resume) must NOT clear the name.
+        // A re-spawn (resume) must NOT clear the name OR its user-set bit.
         l.record_spawn("s1", WS_A, "/proj", "card-1", now + 1_000)
             .unwrap();
-        assert_eq!(
-            l.get("s1").unwrap().unwrap().name.as_deref(),
-            Some("My session")
-        );
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.name.as_deref(), Some("My session"));
+        assert!(r.name_user_set);
 
-        // Clearing sets it back to NULL.
+        // Clearing sets the name back to NULL and drops the user-set bit so the
+        // chip falls back to the hash.
         l.rename("s1", None).unwrap();
-        assert_eq!(l.get("s1").unwrap().unwrap().name, None);
+        let r = l.get("s1").unwrap().unwrap();
+        assert_eq!(r.name, None);
+        assert!(!r.name_user_set);
     }
 
     #[test]

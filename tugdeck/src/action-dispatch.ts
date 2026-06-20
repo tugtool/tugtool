@@ -681,9 +681,14 @@ export function initActionDispatch(
       return;
     }
     // Keep the Z4B chip's name cache authoritative ([#step-13d]): a rename
-    // (or any ledger write) pushes the post-write row, so reflect its name.
+    // (or any ledger write) pushes the post-write row. Only a user `/rename`
+    // feeds the chip — an auto `aiTitle` (name_user_set false) clears it so the
+    // chip falls back to the hash.
     if (decoded.fields !== undefined) {
-      sessionNameStore.setName(decoded.session_id, decoded.fields.name ?? null);
+      sessionNameStore.setName(
+        decoded.session_id,
+        decoded.fields.name_user_set ? (decoded.fields.name ?? null) : null,
+      );
     }
     publishSessionUpdated(decoded);
   });
@@ -711,9 +716,10 @@ export function initActionDispatch(
       normalizeSessionRow,
     );
     // Seed the chip's name cache from the listed rows ([#step-13d]) so a bound
-    // session whose name was set in a prior run reads correctly once listed.
+    // session renamed in a prior run reads correctly once listed. Only a user
+    // `/rename` feeds the chip; an auto `aiTitle` leaves it on the hash.
     for (const row of rows) {
-      sessionNameStore.setName(row.session_id, row.name);
+      sessionNameStore.setName(row.session_id, row.name_user_set ? row.name : null);
     }
     publishListSessionsOk({
       project_dir: projectDir,
@@ -781,9 +787,10 @@ export function initActionDispatch(
     }
     const rows = bindings as CardBinding[];
     // Seed the chip's name cache on restore ([#step-13d]) so a session renamed
-    // in a prior run shows its name the moment its card rebinds.
+    // in a prior run shows its name the moment its card rebinds. Only a user
+    // `/rename` feeds the chip; an auto `aiTitle` leaves it on the hash.
     for (const b of rows) {
-      sessionNameStore.setName(b.session_id, b.name ?? null);
+      sessionNameStore.setName(b.session_id, b.name_user_set ? (b.name ?? null) : null);
     }
     publishListCardBindingsOk({ bindings: rows });
   });
