@@ -434,6 +434,22 @@ interface CompletionPluginValue {
   destroy?(): void;
 }
 
+/**
+ * Shallow item-list equality by label, used to skip a redundant
+ * sync-refresh dispatch when the re-derived results match what is already
+ * shown (the common case where detection wasn't stale).
+ */
+function sameCompletionItems(
+  a: readonly CompletionItem[],
+  b: readonly CompletionItem[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].label !== b[i].label) return false;
+  }
+  return true;
+}
+
 const completionPlugin = ViewPlugin.fromClass(
   class implements CompletionPluginValue {
     private listeners = new Set<() => void>();
@@ -460,12 +476,55 @@ const completionPlugin = ViewPlugin.fromClass(
       const newState = update.state.field(completionField);
       if (newState !== this.lastState) {
         const providerChanged = newState.provider !== this.lastState.provider;
+        const becameActive =
+          newState.active && (!this.lastState.active || providerChanged);
         if (providerChanged) {
           this.installProviderSubscription(newState);
         }
         this.lastState = newState;
         for (const listener of this.listeners) listener();
+        // A synchronous provider has no `subscribe` refresh, so the
+        // `filtered` computed during detection (in the transaction
+        // extender, before the document change is reflected) can be stale.
+        // A position-gated provider, for instance, reads the not-yet-current
+        // text and yields nothing. While typing, the next keystroke
+        // re-derives and fixes it — but a one-shot insertion like a paste
+        // has no follow-up keystroke, so the popup stays empty. Re-run the
+        // provider once on a microtask (after the transaction has applied
+        // and the document is current) and patch the results.
+        if (becameActive && newState.provider && !newState.provider.subscribe) {
+          this.scheduleSyncRefresh(newState.provider);
+        }
       }
+    }
+
+    /**
+     * Re-derive results for a freshly-activated synchronous provider on a
+     * microtask, dispatching `updateEffect` only when they actually change.
+     * The microtask runs after the activating transaction has fully applied,
+     * so a provider that reads the live document (e.g. the position-gated
+     * slash provider) now sees the current text. Dispatching here is safe —
+     * we are outside the update cycle, the same way the async `subscribe`
+     * path dispatches from its callback.
+     */
+    private scheduleSyncRefresh(provider: CompletionProvider): void {
+      queueMicrotask(() => {
+        const live = this.view.state.field(completionField);
+        if (!live.active || live.provider !== provider) return;
+        const filtered = provider(live.query);
+        if (sameCompletionItems(filtered, live.filtered)) return;
+        const selectedIndex = Math.min(
+          live.selectedIndex,
+          Math.max(0, filtered.length - 1),
+        );
+        this.view.dispatch({
+          effects: updateEffect.of({
+            query: live.query,
+            filtered,
+            selectedIndex,
+          }),
+        });
+      });
     }
 
     /**

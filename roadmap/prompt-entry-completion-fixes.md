@@ -191,9 +191,9 @@ In `completionPlugin.update`, when the field transitions to `active` and the act
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Paste opens the completion popup (#3) | pending | — |
-| #step-2 | Inline ghost survives a char to the right (#4) | pending | — |
-| #step-3 | Integration checkpoint | pending | — |
+| #step-1 | Paste opens the completion popup (#3) | done | bc01da55 |
+| #step-2 | Inline ghost survives a char to the right (#4) | done | 20ab7717 |
+| #step-3 | Integration checkpoint | done | (verification only) |
 
 ---
 

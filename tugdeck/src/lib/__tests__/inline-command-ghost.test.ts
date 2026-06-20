@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   computeInlineGhost,
+  GHOST_BOUNDARY_CASES,
   type InlineCommandMatcher,
 } from "../inline-command-ghost";
 
@@ -91,4 +92,20 @@ describe("computeInlineGhost — no ghost", () => {
       "tugplug:commit".startsWith(q.toLowerCase()) ? "tugplug:commit" : null;
     expect(computeInlineGhost("hi /com", "hi /com".length, leafOnly)).toBeNull();
   });
+});
+
+describe("computeInlineGhost — right-of-caret boundary (table-driven)", () => {
+  for (const c of GHOST_BOUNDARY_CASES) {
+    test(c.name, () => {
+      const caret = c.caret ?? c.text.length;
+      const g = computeInlineGhost(c.text, caret, matcher);
+      if (c.ghost) {
+        expect(g).not.toBeNull();
+        expect(g!.name).toBe("rewind");
+        expect(g!.suffix).toBe("nd");
+      } else {
+        expect(g).toBeNull();
+      }
+    });
+  }
 });

@@ -53,6 +53,30 @@ function isBoundary(ch: string | undefined): boolean {
 }
 
 /**
+ * Characters that, sitting immediately to the RIGHT of the caret, still
+ * leave the caret at a token end: closing quotes (curly + straight),
+ * closing brackets, and sentence punctuation. Editing often repositions the
+ * caret so one of these lands to its right (a closing quote after a command,
+ * a command before a comma) — and the ghost should survive that, not vanish.
+ */
+const RIGHT_BOUNDARY_CHARS = new Set([
+  "”", "’", '"', "'",
+  ")", "]", "}",
+  ".", ",", ";", ":", "!", "?",
+]);
+
+/**
+ * Whether `ch` ends the token at the caret when it sits to the caret's
+ * RIGHT. Broader than {@link isBoundary} (used for the token-START scan):
+ * in addition to whitespace / atom / end-of-document, a closing
+ * quote/bracket/punctuation counts, so a repositioned caret with such a
+ * char to its right keeps the ghost alive.
+ */
+function isTokenEndBoundary(ch: string | undefined): boolean {
+  return isBoundary(ch) || (ch !== undefined && RIGHT_BOUNDARY_CHARS.has(ch));
+}
+
+/**
  * Decide the inline ghost for `text` with the caret at `caret`, or `null` when
  * none applies. Pure.
  *
@@ -71,8 +95,9 @@ export function computeInlineGhost(
   matcher: InlineCommandMatcher,
 ): InlineGhost | null {
   if (caret <= 0 || caret > text.length) return null;
-  // Caret must be at the token end: the character it precedes is a boundary.
-  if (!isBoundary(text[caret])) return null;
+  // Caret must be at the token end: the character to its right is a boundary
+  // (whitespace / atom / EOD, or a closing quote/bracket/punctuation).
+  if (!isTokenEndBoundary(text[caret])) return null;
 
   // Walk back to the token start, stopping at the first boundary char.
   let slashOffset = caret;
@@ -94,3 +119,38 @@ export function computeInlineGhost(
 
   return { slashOffset, caret, query, name, suffix: name.slice(query.length) };
 }
+
+/** A named right-boundary scenario for the test suite (see the ghost test). */
+export interface GhostBoundaryCase {
+  /** What the case pins. */
+  name: string;
+  /** Document text. */
+  text: string;
+  /** Caret offset. Defaults to `text.length` (caret at end) when omitted. */
+  caret?: number;
+  /** Whether a ghost should show. */
+  ghost: boolean;
+}
+
+/**
+ * Right-of-caret boundary cases. Each pins whether a mid-text `/rewi…` token
+ * ghosts when a given character sits immediately to the caret's right. Data,
+ * not code: a newly-discovered case is one new row here, then a green test.
+ * The test supplies a matcher whose catalog completes `rewi` → `rewind`.
+ */
+export const GHOST_BOUNDARY_CASES: GhostBoundaryCase[] = [
+  { name: "end of document", text: "hello /rewi", ghost: true },
+  { name: "whitespace right of caret", text: "hello /rewi there", caret: 11, ghost: true },
+  { name: "closing double quote", text: 'hello /rewi"', caret: 11, ghost: true },
+  { name: "closing single quote", text: "hello /rewi'", caret: 11, ghost: true },
+  { name: "curly closing double quote", text: "hello /rewi”", caret: 11, ghost: true },
+  { name: "curly closing single quote", text: "hello /rewi’", caret: 11, ghost: true },
+  { name: "closing paren", text: "hello /rewi)", caret: 11, ghost: true },
+  { name: "closing bracket", text: "hello /rewi]", caret: 11, ghost: true },
+  { name: "closing brace", text: "hello /rewi}", caret: 11, ghost: true },
+  { name: "period", text: "hello /rewi.", caret: 11, ghost: true },
+  { name: "comma", text: "hello /rewi,", caret: 11, ghost: true },
+  { name: "semicolon", text: "hello /rewi;", caret: 11, ghost: true },
+  { name: "letter right of caret is mid-token, no ghost", text: "hello /rewind", caret: 11, ghost: false },
+  { name: "opening paren right of caret is not a token end", text: "hello /rewi(more", caret: 11, ghost: false },
+];

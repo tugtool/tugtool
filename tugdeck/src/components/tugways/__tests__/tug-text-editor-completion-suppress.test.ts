@@ -163,3 +163,23 @@ describe("completionPopupIsInteractive — only an on-screen popup owns keys", (
     expect(completionPopupIsInteractive({ active: false, itemCount: 5 })).toBe(false);
   });
 });
+
+describe("popup survives a char to the right of the caret", () => {
+  test("inserting a closing char after the caret does not cancel the popup", () => {
+    // Repositioning the caret so a non-whitespace character sits immediately
+    // to its right must NOT dismiss the popup — the query is read from the
+    // trigger to the caret, never from what follows.
+    const active = replaceDoc(makeState(), "/permissions", false);
+    expect(active.field(completionField).active).toBe(true);
+
+    // Insert a closing quote at the caret and keep the caret put, so the
+    // quote lands to the RIGHT of the caret.
+    const withRightChar = active.update({
+      changes: { from: 12, insert: '"' },
+      selection: EditorSelection.cursor(12),
+    }).state;
+
+    expect(withRightChar.doc.toString()).toBe('/permissions"');
+    expect(withRightChar.field(completionField).active).toBe(true);
+  });
+});
