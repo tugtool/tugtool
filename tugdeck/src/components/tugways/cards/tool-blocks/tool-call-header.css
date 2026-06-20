@@ -40,7 +40,7 @@ body {
   --tugx-toolheader-row-gap: var(--tug-space-sm);
   /* The separator gap, used in THREE places so they read equal:
      result→rule, rule→actions, and actions→right edge. */
-  --tugx-toolheader-sep-gap: var(--tug-space-sm);
+  --tugx-toolheader-sep-gap: var(--tug-space-md);
   --tugx-toolheader-actions-gap: var(--tug-space-2xs);
 }
 
