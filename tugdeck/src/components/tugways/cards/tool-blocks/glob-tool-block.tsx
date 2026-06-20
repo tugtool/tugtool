@@ -187,11 +187,6 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
 
   // Errored globs carry the failure message in `textOutput`; surface
   // it through the chrome's error band rather than the body.
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="glob-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   // Body: streaming → placeholder; error → none (the chrome's error
   // band is the primary content); ready → the embedded PathListBlock
   // when the structured result supplied a path list.
@@ -228,7 +223,11 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

@@ -196,11 +196,6 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
     </TugTooltip>
   ) : undefined;
 
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="worktree-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   // Body — single labeled row showing the path (preferred) or
   // branch / id fallback. Suppressed when the chrome's args slot
   // already shows the same value (avoid duplicating the identifier
@@ -251,7 +246,11 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
       copyText={copyText}
     >
       {body}

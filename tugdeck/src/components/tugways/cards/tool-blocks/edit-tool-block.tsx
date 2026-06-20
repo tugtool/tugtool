@@ -359,11 +359,6 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   // Errored edits carry the failure message in `textOutput` (e.g.
   // "old_string not found"). When errored, prefer the chrome's error
   // band — don't double-render through the body.
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="edit-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   // Body: streaming → none (header dot is the in-flight cue); error →
   // none (the chrome's error band is the primary content); ready → the
   // embedded DiffBlock when there is something to diff.
@@ -400,7 +395,11 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

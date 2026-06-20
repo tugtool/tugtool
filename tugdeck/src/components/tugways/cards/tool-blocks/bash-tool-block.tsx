@@ -83,6 +83,7 @@ import {
 } from "@/components/tugways/body-kinds/commit-block";
 
 import { ToolBlockChrome } from "./tool-block-chrome";
+import type { ToolBlockNotice } from "./tool-block-notice";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { ToolBlockProps } from "./types";
 
@@ -296,15 +297,13 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     <code data-slot="bash-tool-block-command">{bashInput.command}</code>
   ) : undefined;
 
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <pre
-        data-slot="bash-tool-block-error-output"
-        className="bash-tool-block-error-output"
-      >
-        {textOutput}
-      </pre>
-    ) : undefined;
+  // On error, the failure rides the notice band so it's readable while
+  // collapsed; the full output still renders in the body below (one expand
+  // away), so the clamped band never hides detail.
+  const notice: ToolBlockNotice | undefined =
+    status === "error" && textOutput !== undefined && textOutput.length > 0
+      ? { tone: "error", text: textOutput }
+      : undefined;
 
   // Whether the footer would surface anything visible. The exit code and
   // the `interrupted` reading now live in the header's result summary, so
@@ -360,9 +359,6 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     return parseGitCommit(cmd, bodyData.stdout ?? "");
   }, [status, bashInput.command, bodyData.stdout]);
 
-  const hasStructuredBody =
-    (structured.stdout !== undefined && structured.stdout.length > 0) ||
-    (structured.stderr !== undefined && structured.stderr.length > 0);
   let body: React.ReactNode;
   if (commit !== null) {
     // Git commit receipt — summary + branch/hash badges in the header
@@ -371,8 +367,6 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   } else if (status === "streaming") {
     // No body while streaming — the header's lifecycle dot is the
     // in-flight signal ([D02]).
-    body = null;
-  } else if (status === "error" && !hasStructuredBody) {
     body = null;
   } else if (diffHunks !== null) {
     body = (
@@ -394,17 +388,18 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     );
   }
 
-  // Header one-line result: `interrupted`, or a non-zero exit code. `exit 0`
-  // is suppressed — a successful command's success is implicit, and showing
-  // "exit 0" on every clean run reads as noise (the same reasoning the
-  // footer applies). A failure shows its exit code; the lifecycle dot
-  // carries the danger color.
+  // Header one-line result: only `interrupted`. No exit-code badge — the
+  // Anthropic Bash result carries `is_error`, not the real shell exit code,
+  // so any number we'd show is a synthesized placeholder (always "1"). The
+  // real code lives in the error output (e.g. "Exit code 2"), now surfaced in
+  // the collapse-visible notice band, so a fabricated "exit 1" in the header
+  // would directly contradict it. On failure the lifecycle dot carries the
+  // danger color and the notice carries the detail; on success the result is
+  // implicit (no "exit 0" noise).
   const resultSummary: ToolResultSummary | undefined =
     terminalData.interrupted === true
       ? { kind: "text", text: "interrupted" }
-      : terminalData.exitCode !== undefined && terminalData.exitCode !== 0
-        ? { kind: "exit", code: terminalData.exitCode }
-        : undefined;
+      : undefined;
 
   // Commit receipt reshapes the chrome: the "Git Commit" name + the
   // summary/branch/hash header line (CommitHeaderTarget) replace the raw
@@ -436,7 +431,7 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={notice}
       footerBadges={footerBadges}
     >
       {body}

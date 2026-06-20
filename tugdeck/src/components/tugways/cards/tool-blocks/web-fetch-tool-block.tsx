@@ -182,11 +182,6 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
       </span>
     ) : undefined;
 
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <ToolBlockPre>{textOutput}</ToolBlockPre>
-    ) : undefined;
-
   const hasPrompt =
     fetchInput.prompt !== undefined && fetchInput.prompt.length > 0;
   const hasMarkdown = markdownText.length > 0;
@@ -242,7 +237,11 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
       copyText={copyText}
     >
       {body}

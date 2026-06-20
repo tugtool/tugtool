@@ -330,11 +330,6 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
 
   // Errored subagent runs carry the failure message in `textOutput`;
   // surface it through the chrome's error band rather than the body.
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="task-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   // Body, keyed on whether the transcript has anything to show — never
   // on `status` alone, so a still-streaming run with live child calls
   // renders them and the working placeholder never flashes over real
@@ -375,7 +370,11 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

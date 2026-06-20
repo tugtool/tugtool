@@ -30,8 +30,18 @@
  *   - `ready`    — steady-state render. The dot reads success.
  *   - `error`    — `tool_result.is_error === true`. The header's
  *     lifecycle dot reads danger; everything else (name, result, body)
- *     stays neutral — the dot is the only red. Consumers may also pass
- *     an `errorMessage` slot for inline detail.
+ *     stays neutral — the dot is the only red. Consumers pass a `notice`
+ *     (tone `error`) so the failure is readable WITHOUT expanding.
+ *
+ * ## Notice band — collapse-independent explanation
+ *
+ * Between the header and the body the chrome renders an optional
+ * {@link ToolBlockNoticeBand} from the `notice` prop. Unlike the body it
+ * sits OUTSIDE the collapse guard, so a one-to-three-line explanation
+ * (a failed command's first error line, a warning, an info note) stays
+ * visible while collapsed — the common case for transcript history. It is
+ * general, not error-only: the tone selects the icon. The full detail still
+ * lives in the body, one expand away.
  *
  * `caution` is rendered as an inline `DevCautionBadge` in the header
  * per [D04] / [Q03] — three reasons surface: `unknown_tool`,
@@ -92,6 +102,7 @@ import { BlockFoldSuppressedContext } from "@/components/tugways/body-kinds/affo
 
 import { ToolBlockCollapseContext, ToolUseIdContext } from "./collapse-context";
 import { ToolCallHeader } from "./tool-call-header";
+import { ToolBlockNoticeBand, type ToolBlockNotice } from "./tool-block-notice";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { CautionFlag, ToolBlockStatus } from "./types";
 
@@ -199,11 +210,13 @@ export interface ToolBlockChromeProps {
    */
   footerBadges?: React.ReactNode;
   /**
-   * Optional error message — rendered between the body and the
-   * footer when `status === "error"`. Consumers pass
-   * `tool_result.output` or a synthesized message.
+   * Optional notice band — a one-to-three-line explanation rendered between
+   * the header and the body in BOTH collapse states (so it's readable while
+   * collapsed). Tones: `error` (a failure's first line / message), plus
+   * `warning` / `info` / `success` for non-error notes. See
+   * {@link ToolBlockNotice}.
    */
-  errorMessage?: React.ReactNode;
+  notice?: ToolBlockNotice;
   /**
    * Body content — typically a body-kind component
    * (`TerminalBlock`, `DiffBlock`, etc.). The chrome hosts it
@@ -242,7 +255,7 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   phase,
   caution,
   footerBadges,
-  errorMessage,
+  notice,
   children,
   rootSlot = "tool-block-chrome",
   copyText,
@@ -383,6 +396,10 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
         disclosure={disclosure}
         actionsSlotRef={setActionsTarget}
       />
+      {/* The notice band sits OUTSIDE the collapse guard — between the header
+          and the body — so a short explanation stays readable while
+          collapsed. The full detail lives in the body below. */}
+      {notice !== undefined ? <ToolBlockNoticeBand {...notice} /> : null}
       {blockCollapsed ? null : (
         <BlockFoldSuppressedContext.Provider value={blockCollapse !== null}>
           <div className="tool-block-chrome-body" data-slot="tool-block-body">
@@ -390,11 +407,6 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
               {children}
             </ChromeActionsTargetContext.Provider>
           </div>
-          {status === "error" && errorMessage !== undefined ? (
-            <div className="tool-block-chrome-error" data-slot="tool-block-error">
-              {errorMessage}
-            </div>
-          ) : null}
           {footerBadges !== undefined ? (
             <div className="tool-block-chrome-footer" data-slot="tool-block-footer">
               {footerBadges}

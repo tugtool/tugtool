@@ -80,6 +80,16 @@ body {
   border-bottom: 1px solid var(--tugx-block-strip-border);
 }
 
+/* When a notice band follows the header, the notice owns the header→notice
+ * divider (its own `border-top`), so the header drops its bottom border to
+ * avoid a doubled 1px rule. This also gives the collapsed state a divider it
+ * otherwise lacks (a collapsed header draws no bottom border on its own). The
+ * `:has()` next-sibling test is structural only — it keys on the stable
+ * `data-slot` contract, not the notice's internal tokens. */
+.tool-call-header:has(+ [data-slot="tool-block-notice"]) {
+  border-bottom: none;
+}
+
 /* First-row items that each ride a one-line box and center their content,
  * so each reads vertically centered on the first line and a multi-line
  * command keeps them pinned to row 1. The row is `flex-start`; each of

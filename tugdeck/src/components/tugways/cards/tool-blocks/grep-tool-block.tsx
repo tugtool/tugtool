@@ -390,11 +390,6 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
     ) : undefined;
   // Errored greps carry the failure message in `textOutput`; surface
   // it through the chrome's error band rather than the body.
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="grep-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   // Body: streaming → placeholder; error → none (the chrome's error
   // band is the primary content); ready → the embedded body kind the
   // result's mode selects. Content mode → SearchResultBlock;
@@ -444,7 +439,11 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

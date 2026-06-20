@@ -889,11 +889,29 @@ export function dispatch(
  * `tool_result` payload, and for tests that historically constructed
  * the wrapped form. Anything else collapses to `undefined`.
  */
+/**
+ * Claude Code wraps a tool's error payload in
+ * `<tool_use_error>…</tool_use_error>` before returning it as the result
+ * `output`. Those tags are a transport artifact, never meant for display —
+ * strip them (and trim the result) so the failure reads as plain text in the
+ * notice band and the body. Output without the wrapper is returned verbatim,
+ * preserving any meaningful leading/trailing whitespace.
+ */
+function stripToolUseErrorTags(text: string): string {
+  if (!/<\/?tool_use_error>/.test(text)) return text;
+  return text.replace(/<\/?tool_use_error>/g, "").trim();
+}
+
 function extractTextOutput(result: unknown): string | undefined {
-  if (typeof result === "string") return result;
-  if (result === null || typeof result !== "object") return undefined;
-  const r = result as Record<string, unknown>;
-  return typeof r.output === "string" ? r.output : undefined;
+  const raw =
+    typeof result === "string"
+      ? result
+      : result !== null &&
+          typeof result === "object" &&
+          typeof (result as Record<string, unknown>).output === "string"
+        ? ((result as Record<string, unknown>).output as string)
+        : undefined;
+  return raw === undefined ? undefined : stripToolUseErrorTags(raw);
 }
 
 /**

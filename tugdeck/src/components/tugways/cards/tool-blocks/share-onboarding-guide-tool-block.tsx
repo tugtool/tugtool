@@ -186,11 +186,6 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
     </TugTooltip>
   ) : undefined;
 
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <ToolBlockPre>{textOutput}</ToolBlockPre>
-    ) : undefined;
-
   const shareLink = React.useMemo(
     () => extractShareLink(textOutput),
     [textOutput],
@@ -216,7 +211,11 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
       copyText={copyText}
     >
       {body}

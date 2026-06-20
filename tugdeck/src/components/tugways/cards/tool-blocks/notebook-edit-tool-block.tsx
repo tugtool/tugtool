@@ -77,7 +77,6 @@ import { NotebookPen } from "lucide-react";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
-import { ToolBlockPre } from "./body-bits";
 import { ToolBlockChrome } from "./tool-block-chrome";
 import { ToolFileRef } from "./tool-file-ref";
 import type { ToolResultSummary } from "./tool-result-summary";
@@ -227,11 +226,6 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
   const resultSummary: ToolResultSummary | undefined =
     editMode !== undefined ? { kind: "text", text: editMode } : undefined;
 
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <ToolBlockPre>{textOutput}</ToolBlockPre>
-    ) : undefined;
-
   let body: React.ReactNode;
   if (status === "streaming") {
     body = null;
@@ -301,7 +295,11 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

@@ -132,11 +132,6 @@ export const DefaultToolBlock: React.FC<ToolBlockProps> = ({
 
   // Errored tools carry the failure message in `textOutput`; surface
   // it through the chrome's error band rather than the result section.
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="default-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   // Body. Streaming → placeholder. Otherwise the input section always
   // renders (it is the context for an unknown tool); the result
   // section is `ready`-only — on error the chrome's error band is the
@@ -185,7 +180,11 @@ export const DefaultToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

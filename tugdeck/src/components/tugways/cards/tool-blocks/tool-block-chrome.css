@@ -80,10 +80,6 @@ body {
   --tugx-toolblock-caution-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
   --tugx-toolblock-caution-color:   var(--tug7-element-global-text-normal-caution-rest);
 
-  /* Error band — between body and footer; bespoke geometry */
-  --tugx-toolblock-error-padding: var(--tug-space-sm) var(--tug-space-md);
-  --tugx-toolblock-error-size:    var(--tug-font-size-sm);
-
   /* Footer gap — wider (md) than the shared strip-gap (sm) because the
    * footer hosts post-mortem badges with more breathing room. */
   --tugx-toolblock-footer-gap: var(--tug-space-md);
@@ -141,17 +137,9 @@ body {
    * just hosts the region. */
 }
 
-/* ---- Error message (between body and footer) ---- */
-
-/* The failure text reads as plain body content — neutral surface, normal
- * text color. The only red on an errored block is the header's lifecycle
- * dot; an all-red error band overweights the failure and is hard to read. */
-.tool-block-chrome-error {
-  padding: var(--tugx-toolblock-error-padding);
-  color: var(--tugx-block-text-color);
-  font-family: var(--tugx-block-code-font);
-  font-size: var(--tugx-toolblock-error-size);
-}
+/* The failure explanation now rides the collapse-independent notice band
+ * (`tool-block-notice.css`), between the header and the body, so it is
+ * readable while collapsed. No below-body error band remains here. */
 
 /* ---- Footer (badges) ---- */
 

@@ -72,17 +72,3 @@
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
-
-/* Error message <pre> — inherits chrome's error tokens. The wrapper
- * forwards the plain-text `tool_result.output` to the chrome's
- * errorMessage slot, which paints it on the error-band surface.
- * Override `<pre>`'s default whitespace so long error lines wrap
- * rather than overflow horizontally.
- */
-.bash-tool-block-error-output {
-  margin: 0;
-  font-family: var(--tugx-term-font);
-  font-size: inherit;
-  white-space: pre-wrap;
-  word-break: break-word;
-}

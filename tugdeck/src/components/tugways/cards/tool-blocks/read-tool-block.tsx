@@ -218,11 +218,6 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
   // Errored reads carry the failure message in `textOutput` (e.g.
   // "ENOENT: no such file"). When errored, prefer the chrome's error
   // band — don't double-render through the body.
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="read-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   // Body: streaming → none (the header dot is the in-flight cue);
   // error → none (the chrome's error band is enough); ready → the
   // FileBlock when there's something to show.
@@ -259,7 +254,11 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

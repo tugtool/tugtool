@@ -203,11 +203,6 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
     </TugTooltip>
   ) : undefined;
 
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="skill-tool-block-error-output">{textOutput}</span>
-    ) : undefined;
-
   const resultPresentation = React.useMemo(
     () => pickSkillResultPresentation(textOutput, status),
     [textOutput, status],
@@ -273,7 +268,11 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
       copyText={copyText}
     >
       {body}

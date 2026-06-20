@@ -524,11 +524,6 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
     !isSalvageable &&
     textOutput !== undefined &&
     textOutput.length > 0;
-  const errorMessage = showErrorBand ? (
-    <span data-slot="ask-user-question-tool-block-error-output">
-      {textOutput}
-    </span>
-  ) : undefined;
 
   // When the salvage path is live (asking or answered) we don't want
   // the chrome's red error stripe over the top — the wrapper isn't
@@ -544,7 +539,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
       status={chromeStatus}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={showErrorBand ? { tone: "error", text: textOutput } : undefined}
     >
       {body}
     </ToolBlockChrome>

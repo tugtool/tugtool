@@ -76,7 +76,6 @@ import {
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 
-import { ToolBlockPre } from "./body-bits";
 import { ToolFileRef } from "./tool-file-ref";
 import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolResultSummary } from "./tool-result-summary";
@@ -192,11 +191,6 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
     filePath !== undefined && filePath.length > 0 ? (
       <ToolFileRef path={filePath} data-slot="write-tool-block-path" />
     ) : undefined;
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <ToolBlockPre>{textOutput}</ToolBlockPre>
-    ) : undefined;
-
   let body: React.ReactNode;
   if (status === "streaming") {
     body = null;
@@ -228,7 +222,11 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
     >
       {body}
     </ToolBlockChrome>

@@ -81,7 +81,7 @@ import { TugLink } from "@/components/tugways/tug-link";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
-import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
+import { ToolBlockBody, ToolBlockFieldRow } from "./body-bits";
 import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
@@ -281,11 +281,6 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
       </span>
     ) : undefined;
 
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <ToolBlockPre>{textOutput}</ToolBlockPre>
-    ) : undefined;
-
   const allowedDomains = searchInput.allowed_domains;
   const blockedDomains = searchInput.blocked_domains;
   const hasResults = results.length > 0;
@@ -364,7 +359,11 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       phase={phase}
       caution={caution}
-      errorMessage={errorMessage}
+      notice={
+        status === "error" && textOutput !== undefined && textOutput.length > 0
+          ? { tone: "error", text: textOutput }
+          : undefined
+      }
       copyText={copyText}
     >
       {body}
