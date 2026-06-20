@@ -136,8 +136,16 @@ export interface ToolCallHeaderProps {
    * expanded) and `collapsed` selects the built-in Copy (collapsed) vs the
    * body-specific actions slot (expanded). Omit for tools that never
    * collapse — they render no chevron and are always expanded.
+   *
+   * `disabled` renders the chevron visible but non-interactive — set when the
+   * block has no expandable body (expanding would reveal nothing), so the
+   * affordance stays in place without offering a dead toggle.
    */
-  disclosure?: { collapsed: boolean; onToggle: (next: boolean) => void };
+  disclosure?: {
+    collapsed: boolean;
+    onToggle: (next: boolean) => void;
+    disabled?: boolean;
+  };
   /**
    * Cap the target row at N lines while COLLAPSED — extra lines clip with a
    * trailing ellipsis (`-webkit-line-clamp`). Expanding restores the full
@@ -308,6 +316,7 @@ export const ToolCallHeader = React.forwardRef<
             ariaLabelCollapse={`Collapse ${toolName} tool call`}
             size="xs"
             subtype="icon"
+            disabled={disclosure?.disabled === true}
             // Whole-block collapse uses the same scroll machinery as every
             // body-fold cue (the default `stabilizeScroll`): release the
             // host's follow-bottom lock before the toggle so the cell-height

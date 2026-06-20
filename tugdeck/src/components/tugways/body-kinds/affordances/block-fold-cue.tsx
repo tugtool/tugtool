@@ -139,6 +139,14 @@ export interface BlockFoldCueProps {
    * no-ops anyway and the extra `flushSync` is pure cost.
    */
   stabilizeScroll?: boolean;
+  /**
+   * Render the cue visible but non-interactive (`aria-disabled`). Used when
+   * there is nothing to reveal — e.g. a tool block whose body is empty, where
+   * the whole-block chevron would otherwise expand to nothing. The button
+   * keeps its place in the affordance cluster (never hidden) so the header
+   * layout stays stable across blocks; it just doesn't toggle.
+   */
+  disabled?: boolean;
   /** Optional className for cascade-scoped customization. */
   className?: string;
 }
@@ -158,6 +166,7 @@ export function BlockFoldCue({
   size = "2xs",
   subtype = "icon-text",
   stabilizeScroll = true,
+  disabled = false,
   className,
 }: BlockFoldCueProps): React.ReactElement {
   const buttonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -229,6 +238,7 @@ export function BlockFoldCue({
       subtype={subtype}
       emphasis="ghost"
       size={size}
+      disabled={disabled}
       aria-expanded={!collapsed}
       aria-label={collapsed ? ariaLabelExpand : ariaLabelCollapse}
       onClick={() => (stabilizeScroll ? stableClick(handleClick) : handleClick())}

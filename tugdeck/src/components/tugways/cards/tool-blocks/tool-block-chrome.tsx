@@ -362,9 +362,22 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   // The body's own self-fold is suppressed for those blocks so the header
   // chevron is the single fold (no double-dip). No left-edge status stripe
   // anywhere — the lifecycle dot carries status.
+  // A block is expandable only if expanding would reveal something: a body
+  // (`children`) or footer badges. The notice band lives OUTSIDE the collapse
+  // guard (visible in both states), so it does NOT count. When neither is
+  // present — e.g. an errored Edit whose body is `null`, its message carried
+  // by the always-visible notice — the whole-block chevron has nothing to
+  // show, so it renders disabled (visible, non-interactive).
+  const hasExpandableContent =
+    (children !== null && children !== undefined && children !== false) ||
+    footerBadges !== undefined;
   const disclosure =
     blockCollapse !== null
-      ? { collapsed: blockCollapse.collapsed, onToggle: blockCollapse.toggle }
+      ? {
+          collapsed: blockCollapse.collapsed,
+          onToggle: blockCollapse.toggle,
+          disabled: !hasExpandableContent,
+        }
       : undefined;
 
   return (
