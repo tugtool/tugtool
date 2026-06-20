@@ -35,7 +35,7 @@
  * `phaseVisual` returns one), the effective role defaults from the
  * effective state via {@link defaultRoleForState}:
  *
- *   running   → action   (blue — work in flight)
+ *   running   → action   (Key — work in flight; the theme's key color)
  *   paused    → caution  (yellow — held)
  *   stopped   → inherit  (muted — quiescent)
  *   completed → success  (green — finished)
@@ -177,7 +177,7 @@ const ROLE_TO_TOKEN_SUFFIX: Record<Exclude<TugProgressIndicatorRole, "inherit">,
  * tone reads identically across ring/bar/pie/spinner/pulsing-dot/
  * wave. This is the same family used for any control-surface tone
  * elsewhere in the system; switching to it makes the indicator's
- * blue match every other "active" control's blue at a glance.
+ * "action" tone match every other active control — now the theme's Key.
  */
 function buildFillStyle(
   _variant: TugProgressIndicatorVariant,
@@ -197,7 +197,7 @@ function buildFillStyle(
  * the design system's standard mapping; callsites that don't want to
  * override simply pass `state` and the role falls out automatically.
  *
- *   running   → action   (blue — work in flight)
+ *   running   → action   (Key — work in flight; the theme's key color)
  *   paused    → caution  (yellow — held)
  *   stopped   → inherit  (muted — quiescent)
  *   completed → success  (green — finished)

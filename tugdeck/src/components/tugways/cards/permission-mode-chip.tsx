@@ -133,7 +133,7 @@ export function PermissionModeChip({
       label="Mode"
       size="sm"
       emphasis="tinted"
-      role="agent"
+      role="action"
       data-slot="permission-mode-chip"
       aria-label="Permission mode"
       title={

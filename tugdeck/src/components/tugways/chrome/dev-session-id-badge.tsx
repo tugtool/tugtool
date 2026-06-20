@@ -66,7 +66,7 @@ export function DevSessionIdBadge({
   return (
     <TugBadge
       emphasis="tinted"
-      role="agent"
+      role="action"
       size="sm"
       layout="label-top"
       label="Session"

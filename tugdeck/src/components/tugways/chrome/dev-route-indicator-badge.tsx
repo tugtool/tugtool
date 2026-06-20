@@ -291,7 +291,7 @@ export function DevRouteIndicatorBadge({
         <TugBadge
           layout="label-top"
           label={caption}
-          role={hasDrift ? "caution" : "agent"}
+          role={hasDrift ? "caution" : "action"}
           emphasis="tinted"
           size="sm"
           icon={hasDrift ? <TriangleAlert aria-hidden="true" /> : undefined}

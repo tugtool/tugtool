@@ -3291,7 +3291,7 @@ export function DevCardBody({
         onContextMenu={projectCopy.onContextMenu}
         size="sm"
         emphasis="tinted"
-        role="agent"
+        role="action"
         layout="label-top"
         label="Project"
         data-slot="project-chip"

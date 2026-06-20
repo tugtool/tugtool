@@ -1,7 +1,7 @@
 /**
  * `ModelChip` — Z4B model control chip.
  *
- * A two-line `TugPushButton` (`label-top` / `size="sm"` / `role="agent"`)
+ * A two-line `TugPushButton` (`label-top` / `size="sm"` / `role="action"`)
  * carrying a `MODEL` caption over the formatted active model
  * (`claude-opus-4-8[1m]` → `Opus 4.8 · 1M`), sized + tinted to family with
  * the neighbor `sm` `agent` chips. Pressing it opens the shared model picker
@@ -143,7 +143,7 @@ export function ModelChip({
       label="Model"
       size="sm"
       emphasis="tinted"
-      role="agent"
+      role="action"
       data-slot="model-chip"
       data-unknown={unknown ? "" : undefined}
       aria-label="Model"

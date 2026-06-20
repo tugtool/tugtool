@@ -1,7 +1,7 @@
 /**
  * `EffortChip` — the Z4B reasoning-effort control chip ([#step-4]).
  *
- * A two-line `TugPushButton` (`label-top` / `size="sm"` / `role="agent"`)
+ * A two-line `TugPushButton` (`label-top` / `size="sm"` / `role="action"`)
  * carrying an `EFFORT` caption over the session's current effort level
  * (`high` → `High`, unset → `Default`), sized + tinted to family with the
  * neighbor `sm` `agent` chips. Pressing it opens the shared effort picker —
@@ -132,7 +132,7 @@ export function EffortChip({
       label="Effort"
       size="sm"
       emphasis="tinted"
-      role="agent"
+      role="action"
       data-slot="effort-chip"
       aria-label="Reasoning effort"
       title={title}
