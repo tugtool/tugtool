@@ -45,6 +45,25 @@ fn parser_options() -> Options {
     opts
 }
 
+/// Render single newlines as line breaks (`breaks: true` in the
+/// legacy `marked` config). CommonMark collapses a lone `\n` in a
+/// paragraph to a space, so a user who types a message across two
+/// lines without a blank line between them sees those lines joined
+/// in the transcript. Chat UIs (and our prior renderer) treat the
+/// newline the user typed as a break — promote each `SoftBreak` to a
+/// `HardBreak` so the rendered text matches what was composed.
+///
+/// pulldown-cmark 0.12 has no option for this, so we rewrite the
+/// event. The mapping touches inline rendering only; block-boundary
+/// detection and content hashing walk the raw parser and are
+/// unaffected.
+fn softbreak_to_hardbreak(event: Event) -> Event {
+    match event {
+        Event::SoftBreak => Event::HardBreak,
+        other => other,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Canonical top-level block iteration
 //
@@ -229,7 +248,7 @@ pub fn lex_blocks(text: &str) -> Vec<u32> {
 /// [`parse_blocks_to_html`].
 #[wasm_bindgen]
 pub fn parse_to_html(text: &str) -> String {
-    let parser = Parser::new_ext(text, parser_options());
+    let parser = Parser::new_ext(text, parser_options()).map(softbreak_to_hardbreak);
     let mut html = String::with_capacity(text.len() * 2);
     pulldown_cmark::html::push_html(&mut html, parser);
     html
@@ -288,7 +307,10 @@ pub fn parse_blocks_to_html(text: &str) -> Box<[JsValue]> {
         .into_iter()
         .map(|events| {
             let mut html = String::new();
-            pulldown_cmark::html::push_html(&mut html, events.into_iter());
+            pulldown_cmark::html::push_html(
+                &mut html,
+                events.into_iter().map(softbreak_to_hardbreak),
+            );
             JsValue::from_str(&html)
         })
         .collect::<Vec<_>>()
@@ -495,6 +517,24 @@ mod tests {
     fn empty_input_produces_no_blocks() {
         assert_eq!(collect_block_hashes(""), Vec::<u32>::new());
         assert_eq!(collect_block_hashes("\n\n\n"), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn single_newline_renders_as_a_line_break() {
+        // A lone `\n` inside a paragraph is a soft break in CommonMark
+        // (rendered as a space). We promote it to a hard break so a
+        // multi-line message renders the way it was typed.
+        let html = parse_to_html("first line\nsecond line");
+        assert!(html.contains("<br"), "expected a <br>, got: {html}");
+        assert!(!html.contains("first line second line"));
+    }
+
+    #[test]
+    fn blank_line_still_starts_a_new_paragraph() {
+        // The hard-break promotion must not disturb real paragraph
+        // breaks — a blank line still yields two <p> blocks.
+        let html = parse_to_html("para one\n\npara two");
+        assert_eq!(html.matches("<p>").count(), 2, "got: {html}");
     }
 
     #[test]
