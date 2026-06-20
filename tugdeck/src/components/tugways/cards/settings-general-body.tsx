@@ -41,6 +41,8 @@ import { TUG_ACTIONS } from "../action-vocabulary";
 import { useResponderForm } from "../use-responder-form";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { ResponseSettingsStore } from "@/lib/response-settings-store";
+import { DefaultPermissionModeStore } from "@/lib/default-permission-mode-store";
+import { PERMISSION_MODE_LABELS, PERMISSION_MODE_MENU } from "@/lib/permission-mode";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./settings-general-body.css";
 
@@ -86,6 +88,18 @@ const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.7, label: "1.7" },
   { action: TUG_ACTIONS.SET_VALUE, value: 1.8, label: "1.8" },
 ];
+
+/**
+ * Default permission-mode choices, derived from the chip's behavior-sheet
+ * menu so the two surfaces never drift. Each carries the same human-readable
+ * label the chip shows (Default, Accept Edits, Plan, Auto, Bypass).
+ */
+const DEFAULT_PERMISSION_MODE_OPTIONS: TugPopupButtonItem<string>[] =
+  PERMISSION_MODE_MENU.map((mode) => ({
+    action: TUG_ACTIONS.SET_VALUE,
+    value: mode,
+    label: PERMISSION_MODE_LABELS[mode] ?? mode,
+  }));
 
 /**
  * Two-decimal formatter for the magnification slider's value input.
@@ -134,12 +148,14 @@ function submitKeyLegend(
 export function SettingsGeneralBody() {
   const [editorStore] = useState(() => new EditorSettingsStore());
   const [responseStore] = useState(() => new ResponseSettingsStore());
+  const [defaultModeStore] = useState(() => new DefaultPermissionModeStore());
   useEffect(
     () => () => {
       editorStore.dispose();
       responseStore.dispose();
+      defaultModeStore.dispose();
     },
-    [editorStore, responseStore],
+    [editorStore, responseStore, defaultModeStore],
   );
 
   const editorSettings = useSyncExternalStore(
@@ -149,6 +165,10 @@ export function SettingsGeneralBody() {
   const responseSettings = useSyncExternalStore(
     responseStore.subscribe,
     responseStore.getSnapshot,
+  );
+  const defaultMode = useSyncExternalStore(
+    defaultModeStore.subscribe,
+    defaultModeStore.getSnapshot,
   );
 
   // Stable senders for the controls; the chain dispatches land on the
@@ -164,10 +184,12 @@ export function SettingsGeneralBody() {
   const enterKeyId = useId();
   const responseEntryMarginSliderId = useId();
   const responseMagnificationSliderId = useId();
+  const defaultModePopupId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
+      [defaultModePopupId]: (v: string) => defaultModeStore.set(v),
     },
     setValueNumber: {
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
@@ -351,6 +373,27 @@ export function SettingsGeneralBody() {
                 </TugLabel>
               ))}
             </div>
+          </div>
+        </TugBox>
+
+        <TugBox
+          label="Assistant"
+          labelPosition="legend"
+          variant="bordered"
+          className="settings-general-group"
+        >
+          {/* Default mode new cards adopt on first open. A card that already
+              carries its own remembered mode keeps it — changing this only
+              affects freshly-spawned cards. Mirrors the Mode chip's sheet. */}
+          <div className="settings-general-row">
+            <TugPopupButton
+              className="settings-general-popup settings-general-popup-mode"
+              topLabel="Permission Mode"
+              label={PERMISSION_MODE_LABELS[defaultMode] ?? defaultMode}
+              items={DEFAULT_PERMISSION_MODE_OPTIONS}
+              senderId={defaultModePopupId}
+              size="sm"
+            />
           </div>
         </TugBox>
       </div>

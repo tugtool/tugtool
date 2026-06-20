@@ -112,7 +112,9 @@ export function registerSettingsCard(): void {
     hidden: true,
     sizePolicy: {
       min: { width: 420, height: 420 },
-      preferred: { width: 560, height: 680 },
+      // Tall enough that the "Dev Card" tab — Response, Editor, and Assistant
+      // sections — fits without scrolling at the default open size.
+      preferred: { width: 560, height: 820 },
     },
   });
 }

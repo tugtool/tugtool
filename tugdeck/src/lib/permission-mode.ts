@@ -125,6 +125,30 @@ export function parsePersistedPermissionMode(
 export const PERMISSION_MODE_DOMAIN = "dev.permission-mode";
 
 /**
+ * tugbank domain/key for the *global* default permission mode — the mode a
+ * brand-new card (one with nothing persisted under {@link PERMISSION_MODE_DOMAIN})
+ * adopts on mount. Set from the Settings card's "Dev Card" tab; distinct from
+ * the per-card domain so changing the global default never disturbs an open
+ * card that already carries its own remembered mode.
+ */
+export const PERMISSION_MODE_DEFAULT_DOMAIN = "dev.tugtool.permission-mode";
+export const PERMISSION_MODE_DEFAULT_KEY = "default";
+
+/**
+ * The mode a freshly-mounted card should align its session to: its own
+ * per-card persisted mode when present, otherwise the global default. `null`
+ * when neither is set — the caller then leaves the session at whatever mode it
+ * spawned with (no frame sent). The per-card value always wins, so a card that
+ * has been used keeps its remembered mode regardless of the global default.
+ */
+export function resolveSeedPermissionMode(
+  persisted: PermissionMode | null,
+  globalDefault: PermissionMode | null,
+): PermissionMode | null {
+  return persisted ?? globalDefault;
+}
+
+/**
  * The session's effective permission mode for display / publication:
  * live metadata when the `system_metadata` round-trip has landed, the
  * per-card persisted mode as the pre-population fallback, and

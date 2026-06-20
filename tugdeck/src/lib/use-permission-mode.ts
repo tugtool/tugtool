@@ -28,9 +28,12 @@ import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
+  PERMISSION_MODE_DEFAULT_DOMAIN,
+  PERMISSION_MODE_DEFAULT_KEY,
   PERMISSION_MODE_DOMAIN,
   cyclePermissionMode,
   parsePersistedPermissionMode,
+  resolveSeedPermissionMode,
 } from "@/lib/permission-mode";
 import type { PermissionMode } from "@tugproto/inbound";
 
@@ -87,9 +90,32 @@ export function usePermissionMode({
     ),
   );
 
+  // Whether the session is alive — its turn-free `session_capabilities`
+  // handshake has landed (`models` populated). This arrives "from the drop",
+  // BEFORE the first turn, whereas `permissionMode` only rides the post-turn
+  // `system_metadata`. The seed below needs the earlier signal so a fresh card
+  // adopts its default mode before the user's first prompt, not after.
+  const sessionAlive = useSyncExternalStore(
+    sessionMetadataStore.subscribe,
+    useCallback(
+      () => sessionMetadataStore.getSnapshot().models.length > 0,
+      [sessionMetadataStore],
+    ),
+  );
+
   const persistedMode = useTugbankValue<PermissionMode | null>(
     PERMISSION_MODE_DOMAIN,
     cardId,
+    parsePersistedPermissionMode,
+    null,
+  );
+
+  // The deck-wide default a card with nothing persisted of its own adopts on
+  // mount (set from the Settings card). Per-card persistence always wins, so
+  // this only seeds genuinely fresh cards.
+  const globalDefaultMode = useTugbankValue<PermissionMode | null>(
+    PERMISSION_MODE_DEFAULT_DOMAIN,
+    PERMISSION_MODE_DEFAULT_KEY,
     parsePersistedPermissionMode,
     null,
   );
@@ -115,23 +141,30 @@ export function usePermissionMode({
     [cardId, codeSessionStore, sessionMetadataStore],
   );
 
-  // Mount-restore ([D07]). Once the session reports its initial mode, align
-  // it to the per-card persisted mode if they differ — so a relaunched card
-  // comes back in the mode it was left in. Fires at most once per mount
-  // (`sentRef`), and only after BOTH the live mode is known AND a persisted
-  // value has loaded, so it neither races the session's first metadata frame
-  // nor fires for a card that has nothing persisted. A manual change via
-  // `setMode` pre-arms `sentRef`, superseding any pending restore.
+  // Mount-restore + fresh-seed ([D07]). Once the session is alive, align it to
+  // the seed mode — the per-card persisted mode if any, else the deck-wide
+  // default — so a relaunched card comes back in the mode it was left in and a
+  // fresh card opens in the configured default. Fires at most once per mount
+  // (`sentRef`), gated on `sessionAlive` so a fresh card seeds before its first
+  // turn (when `permissionMode` is still null — it only rides the post-turn
+  // `system_metadata`). The comparison baseline is the live mode when known,
+  // else `default` (what tugcode spawns with), so we only send a frame when the
+  // target actually differs. A card with neither a persisted mode nor a global
+  // default has `seedMode === null` and is left at whatever it spawned with. A
+  // manual change via `setMode` pre-arms `sentRef`, superseding any pending
+  // restore.
+  const seedMode = resolveSeedPermissionMode(persistedMode, globalDefaultMode);
   useEffect(() => {
     if (sentRef.current) return;
-    if (liveMode === null) return;
-    if (persistedMode === null) return;
-    if (persistedMode !== liveMode) {
-      setMode(persistedMode);
+    if (!sessionAlive) return;
+    if (seedMode === null) return;
+    const current = liveMode ?? "default";
+    if (seedMode !== current) {
+      setMode(seedMode);
     } else {
       sentRef.current = true;
     }
-  }, [liveMode, persistedMode, setMode]);
+  }, [sessionAlive, liveMode, seedMode, setMode]);
 
   const cycle = useCallback(() => {
     // Read the current mode fresh from the store rather than a render-time

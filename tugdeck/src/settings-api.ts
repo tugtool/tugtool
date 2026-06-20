@@ -421,6 +421,24 @@ export function putResponseSettings(settings: ResponseSettings): void {
   });
 }
 
+// ── Default permission mode ─────────────────────────────────────────────────
+
+/**
+ * PUT the global default permission mode to tugbank (fire-and-forget). The
+ * value is a bare mode string (e.g. `"plan"`) under
+ * `dev.tugtool.permission-mode/default`. New cards adopt it on mount; see
+ * `resolveSeedPermissionMode` and `use-permission-mode.ts`.
+ */
+export function putDefaultPermissionMode(mode: string): void {
+  fetch("/api/defaults/dev.tugtool.permission-mode/default", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: mode }),
+  }).catch((err) => {
+    console.warn("[settings] PUT defaultPermissionMode failed:", err);
+  });
+}
+
 // ── Split pane layouts ──────────────────────────────────────────────────────
 
 /**

@@ -108,6 +108,11 @@
   min-width: 7rem;
 }
 
+/* Longest mode label is `Accept Edits`. */
+.settings-general-popup-mode {
+  min-width: 8.5rem;
+}
+
 /* One switch per row, comfortable vertical margin between them. */
 .settings-general-switches {
   display: flex;

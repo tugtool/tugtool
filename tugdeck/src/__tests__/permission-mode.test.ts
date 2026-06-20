@@ -15,6 +15,7 @@ import {
   cyclePermissionMode,
   formatPermissionMode,
   parsePersistedPermissionMode,
+  resolveSeedPermissionMode,
 } from "@/lib/permission-mode";
 
 describe("cyclePermissionMode", () => {
@@ -73,6 +74,20 @@ describe("PERMISSION_MODE_MENU", () => {
       expect(formatPermissionMode(mode)).not.toBe("…");
       expect(formatPermissionMode(mode)).not.toBe(mode);
     }
+  });
+});
+
+describe("resolveSeedPermissionMode", () => {
+  test("per-card persisted mode wins over the global default", () => {
+    expect(resolveSeedPermissionMode("plan", "acceptEdits")).toBe("plan");
+  });
+
+  test("falls back to the global default when nothing is persisted", () => {
+    expect(resolveSeedPermissionMode(null, "acceptEdits")).toBe("acceptEdits");
+  });
+
+  test("is null when neither is set (leave the session untouched)", () => {
+    expect(resolveSeedPermissionMode(null, null)).toBeNull();
   });
 });
 
