@@ -301,7 +301,7 @@ body {
   /* One shared Key-tinted chrome surface — the single knob for the focused
      title bar and its merged active tab, keeping them unified with the theme's
      Key hue (the action family the Z4B buttons/badges use). Tune this value. */
-  --tugx-chrome-key-surface: --tug-color(blue, i: 15, t: 86);
+  --tugx-chrome-key-surface: --tug-color(blue, i: 9, t: 86);
   --tug7-surface-card-primary-normal-titlebar-active: var(--tugx-chrome-key-surface);
   --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(indigo, i: 2, t: 65);
   --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(indigo, i: 12, t: 88);
