@@ -34,6 +34,7 @@ import {
   completionConsumesEnter,
   completionField,
   completionPopupIsInteractive,
+  completionQueryMatchesSelection,
   suppressCompletionDetection,
   tugCompletionExt,
 } from "../tug-text-editor/completion-extension";
@@ -161,6 +162,61 @@ describe("completionPopupIsInteractive — only an on-screen popup owns keys", (
   test("inactive: never owns keys", () => {
     expect(completionPopupIsInteractive({ active: false, itemCount: 0 })).toBe(false);
     expect(completionPopupIsInteractive({ active: false, itemCount: 5 })).toBe(false);
+  });
+});
+
+describe("completionQueryMatchesSelection — Space accepts only on an exact match", () => {
+  const item = (label: string) => ({ label });
+
+  test("query equal to the highlighted label is an exact match (Space accepts)", () => {
+    expect(
+      completionQueryMatchesSelection({
+        query: "tugplug:commit",
+        filtered: [item("tugplug:commit")],
+        selectedIndex: 0,
+      }),
+    ).toBe(true);
+  });
+
+  test("a strict prefix is NOT a match — Space stays a literal character", () => {
+    // Tab would complete this; Space must not, so the space inserts and the
+    // query keeps going.
+    expect(
+      completionQueryMatchesSelection({
+        query: "tug",
+        filtered: [item("tugplug:commit"), item("tugplug:devise")],
+        selectedIndex: 0,
+      }),
+    ).toBe(false);
+  });
+
+  test("the comparison tracks the highlighted item, not the first one", () => {
+    // Arrowing to a non-exact item makes Space yield, even when another
+    // filtered item would have matched exactly.
+    expect(
+      completionQueryMatchesSelection({
+        query: "git",
+        filtered: [item("git"), item("github")],
+        selectedIndex: 1,
+      }),
+    ).toBe(false);
+    expect(
+      completionQueryMatchesSelection({
+        query: "git",
+        filtered: [item("git"), item("github")],
+        selectedIndex: 0,
+      }),
+    ).toBe(true);
+  });
+
+  test("an out-of-range selection never matches", () => {
+    expect(
+      completionQueryMatchesSelection({
+        query: "git",
+        filtered: [],
+        selectedIndex: 0,
+      }),
+    ).toBe(false);
   });
 });
 

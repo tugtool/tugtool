@@ -814,6 +814,26 @@ export function completionConsumesEnter(mods: {
 }
 
 /**
+ * Whether the typed query is an exact match for the currently-highlighted
+ * completion item's label. This is the gate for Space-to-accept: Tab and
+ * Enter complete the highlighted item from any prefix, but a space is a
+ * normal text character, so it may only "accept" when the user has already
+ * typed the full command name and the popup is merely confirming it. A
+ * non-matching space is yielded and inserts literally, keeping the query
+ * alive.
+ *
+ * Pure; exported for the test suite.
+ */
+export function completionQueryMatchesSelection(state: {
+  query: string;
+  filtered: readonly { label: string }[];
+  selectedIndex: number;
+}): boolean {
+  const item = state.filtered[state.selectedIndex];
+  return item !== undefined && item.label === state.query;
+}
+
+/**
  * Whether the typeahead popup currently owns the navigation / accept
  * keys. True only when a session is active AND has at least one item —
  * i.e. the popup is actually on screen. `paintCompletionPopup` hides an
@@ -858,6 +878,30 @@ const tugCompletionKeymap = Prec.highest(
       // starved of the very keystroke that has to submit.
       if (event.key === "Enter" && !completionConsumesEnter(event)) {
         return false;
+      }
+      // Space accepts only when the typed query is an exact match for the
+      // highlighted command — unlike Tab/Enter, which complete the
+      // highlighted item from any prefix. A space that doesn't exactly match
+      // is yielded untouched so it inserts as a literal character and keeps
+      // the query going (e.g. "/tug " stays text, never auto-accepts).
+      if (event.key === " ") {
+        if (
+          event.shiftKey ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.altKey ||
+          !completionQueryMatchesSelection({
+            query: state.query,
+            filtered: state.filtered,
+            selectedIndex: state.selectedIndex,
+          })
+        ) {
+          return false;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        acceptCompletionAt(view);
+        return true;
       }
       // A key the active typeahead consumes is fully owned by it: stop it
       // bubbling to the document keyboard pipeline so it can't ALSO drive a
