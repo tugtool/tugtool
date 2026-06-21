@@ -229,7 +229,7 @@ export function CommitHeaderTarget({
         <TugCopyBadge
           className="tugx-commit-hash-badge"
           emphasis="outlined"
-          role="action"
+          role="inherit"
           size="sm"
           value={hash}
         />
@@ -260,7 +260,7 @@ export function CommitBlock({ commit }: CommitBlockProps): React.ReactElement {
         <TugBadge emphasis="outlined" role="inherit" size="sm">
           {`−${deletions}`}
         </TugBadge>
-        <TugBadge emphasis="outlined" role="action" size="sm">
+        <TugBadge emphasis="outlined" role="inherit" size="sm">
           {`${filesChanged} ${filesChanged === 1 ? "file" : "files"}`}
         </TugBadge>
       </div>

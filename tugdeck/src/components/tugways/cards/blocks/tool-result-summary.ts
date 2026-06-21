@@ -24,12 +24,14 @@ export type ToolResultSummary =
  * The badge role a summary reads as in the header — meaning, not just
  * spacing. An exit code is the only kind that carries pass/fail signal:
  * `0` is `success`, anything else is `danger`. Every other kind (a
- * count, a diff stat, a short label) is neutral `data` — informative,
- * not alarming. Returned as the three `TugBadge` role literals the
- * header passes straight through, so the mapping lives in one pure,
- * testable place rather than inline in the header JSX.
+ * count, a diff stat, a short label) is neutral `inherit` — it takes the
+ * header's own text color rather than a tint, so line counts, diff
+ * counts, and the like read as plain metadata, not colored boxes.
+ * Returned as the `TugBadge` role literals the header passes straight
+ * through, so the mapping lives in one pure, testable place rather than
+ * inline in the header JSX.
  */
-export type ToolResultSummaryRole = "success" | "danger" | "data";
+export type ToolResultSummaryRole = "success" | "danger" | "inherit";
 
 /** Map a summary to its header badge role (see {@link ToolResultSummaryRole}). */
 export function toolResultSummaryRole(
@@ -41,7 +43,7 @@ export function toolResultSummaryRole(
     case "count":
     case "diff":
     case "text":
-      return "data";
+      return "inherit";
   }
 }
 

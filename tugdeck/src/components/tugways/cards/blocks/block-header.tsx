@@ -73,10 +73,10 @@ const DOT_SIZE = 14;
 /**
  * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both `ghost`
  * in the neutral `inherit` role — no border, no fill, so they read as the
- * header's own text rather than boxes-in-a-box. Only the inner text is
- * tinted — green on the `+N`, red on the `−M` — via a wrapping span, so the
- * green/red lives on the glyphs alone. The pair sits inside the summary
- * slot, which carries the bracketing separator pipes.
+ * header's own text rather than boxes-in-a-box. The glyphs take the
+ * header's own text color too (no green/red tint), so the pair reads as
+ * plain metadata. The pair sits inside the summary slot, which carries
+ * the bracketing separator pipes.
  */
 function DiffSummaryBadges({
   summary,
@@ -87,10 +87,10 @@ function DiffSummaryBadges({
   return (
     <>
       <TugBadge emphasis="ghost" role="inherit" size="sm" copyText={parts.added}>
-        <span className="tool-call-header-diff-add">{parts.added}</span>
+        {parts.added}
       </TugBadge>
       <TugBadge emphasis="ghost" role="inherit" size="sm" copyText={parts.removed}>
-        <span className="tool-call-header-diff-del">{parts.removed}</span>
+        {parts.removed}
       </TugBadge>
     </>
   );
@@ -250,7 +250,7 @@ export const BlockHeader = React.forwardRef<
           bracketing separator pipes give it a clear gap from the detail on
           the left and the actions on the right. Its role still carries
           pass/fail signal: a nonzero exit reads danger, exit 0 success,
-          every other kind neutral data. */}
+          every other kind neutral `inherit` (the header's own text color). */}
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (

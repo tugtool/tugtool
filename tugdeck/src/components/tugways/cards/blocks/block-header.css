@@ -237,18 +237,6 @@ body {
   border-left: none;
 }
 
-/* Tint ONLY the diff glyphs (`+N` green / `−M` red). The badges are ghost
- * (no border, no fill), so the color rides the text alone with no adjacent
- * colored box edges — which keeps the chromostereopsis the fully colored
- * badges triggered at bay. */
-.tool-call-header-diff-add {
-  color: var(--tug7-element-badge-text-outlined-success-rest);
-}
-
-.tool-call-header-diff-del {
-  color: var(--tug7-element-badge-text-outlined-danger-rest);
-}
-
 /* Trailing actions — the controls cluster at the row's trailing edge (the
  * body-specific portal · Copy · chevron). Its own left rule divides the
  * controls from whatever precedes them when there is NO summary

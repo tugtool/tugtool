@@ -65,6 +65,11 @@
   display: flex;
   align-items: center;
   gap: var(--tug-space-xs);
+  /* The chips sit in the header's muted detail column, but they're
+     `inherit`-role badges that take `currentColor`. Pin them to the
+     normal block text color so the branch / hash read at the same
+     weight as the summary badges (`2 lines`, `+N −M`), not drained. */
+  color: var(--tugx-block-text-color);
 }
 
 /* The hash chip is a TugBadge; only its typeface is commit-specific —
