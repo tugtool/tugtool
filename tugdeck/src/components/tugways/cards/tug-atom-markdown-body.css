@@ -26,30 +26,40 @@
    pill within the existing line box and leaves layout untouched —
    lines with and without atoms stay exactly the same height.
 
-   The lift is in `em`, anchored to the prose font-size: the per-card
-   transcript `zoom` (the magnification setting) scales the whole
-   subtree — transform included — uniformly, and a font-size change
-   moves the lift with the text. The pill stays proportionally placed
-   at every magnification.
+   The token holds the lift *magnitude* (a positive `em`), negated here
+   so the floor below can reuse it as a positive room reserve. The `em`
+   is anchored to the prose font-size: the per-card transcript `zoom`
+   (the magnification setting) scales the whole subtree — transform
+   included — uniformly, and a font-size change moves the lift with the
+   text. The pill stays proportionally placed at every magnification.
 
    Scoped to the markdown body so tool-block headers — which centre
    the same chip in a single-line flex row — keep their own alignment. */
 [data-slot="tug-atom-markdown-body"] .tug-atom-chip {
-  transform: translateY(var(--tugx-atom-markdown-body-chip-lift, -0.12em));
+  transform: translateY(
+    calc(-1 * var(--tugx-atom-markdown-body-chip-lift, 0.12em))
+  );
 }
 
-/* Floor the line-box of any markdown line that carries a chip to at
-   least atom-height + 4px, so the chip (rendered `vertical-align:
-   middle`, taller than the prose line) fits the line-box with a little
-   breathing room instead of clipping at the top/bottom edge — the same
-   floor `TugAtomTextBody` applies, scoped here via `:has` to ONLY the
-   chip-bearing blocks so chip-free prose keeps the tight markdown
-   rhythm. `max(1lh, …)` defers to the inherited line-height when it
-   already clears the floor (large-font surfaces). */
+/* Floor EVERY markdown line — chip-bearing or not — to a common height,
+   so a line reads the same whether or not it carries an atom (the hard
+   invariant: atoms must never change line height). The floor is
+   atom-height + 4px (the chip is rendered `vertical-align: middle`,
+   taller than the prose band, and needs ~2px of breathing room each
+   side to clear line-box rounding and any ancestor `overflow` clip) PLUS
+   twice the chip lift above: lifting the centred pill up by `lift` eats
+   that much off its top breathing, so the line box must grow by `2 ×
+   lift` to hand the same room back. Coupling the floor to the lift token
+   keeps the two in sync if either is tuned. `max(1lh, …)` defers to the
+   inherited line-height when it already clears the floor (headings,
+   large-font surfaces). */
 [data-slot="tug-atom-markdown-body"]
-  :is(p, li, h1, h2, h3, h4, h5, h6):has(.tug-atom-chip-host) {
+  :is(p, li, h1, h2, h3, h4, h5, h6) {
   line-height: max(
     1lh,
-    calc(var(--tugx-atom-markdown-body-atom-height, 21px) + 4px)
+    calc(
+      var(--tugx-atom-markdown-body-atom-height, 21px) + 4px + 2 *
+        var(--tugx-atom-markdown-body-chip-lift, 0.12em)
+    )
   );
 }
