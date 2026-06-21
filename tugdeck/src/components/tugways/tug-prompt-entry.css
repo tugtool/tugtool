@@ -40,6 +40,14 @@
 body {
   --tugx-prompt-entry-surface: var(--tug7-surface-global-primary-normal-control-rest);
   --tugx-prompt-entry-errored:  var(--tug7-element-field-border-normal-danger-rest);
+  /* The editor's resting/blurred/deactivated surface is the CARD body surface
+     (--tugx-pane-bg) — the same background the transcript shows — so the editor
+     only diverges from the card when the caret is actually blinking in it. */
+  --tugx-prompt-entry-editor-rest:  var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-overlay-rest));
+  /* The single "lit" state: caret blinking here. Aliased so the focus surface is
+     retunable in one place; today it reuses the existing field focus surface, so
+     no theme-file edit is needed ([D11]). */
+  --tugx-prompt-entry-editor-focus: var(--tug7-surface-field-primary-normal-plain-focus);
 }
 
 /* ----------------------------------------------------------------------------
@@ -89,7 +97,7 @@ body {
    informational coloration the user sees when the prompt is active.
    Rule sets only background-color — self-documenting per [L16]. */
 .tug-prompt-entry:focus-within {
-  background-color: var(--tug7-surface-field-primary-normal-plain-focus);
+  background-color: var(--tugx-prompt-entry-editor-focus);
 }
 
 /* .tug-prompt-entry-input-area — wrapper around the embedded TugTextEditor.
@@ -125,6 +133,30 @@ body {
 .tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area > .tug-text-editor,
 .tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area > .tug-text-editor > .cm-editor {
   flex: 1 1 auto;
+}
+
+/* ----------------------------------------------------------------------------
+   Background consolidation — editor surface tracks the card / transcript
+   ----------------------------------------------------------------------------
+   BACKGROUND ONLY. The embedded CodeMirror substrate paints its OWN surface
+   (`tug-text-editor/theme.ts` → `contentBg` / `contentBgFocus` / `contentBgDisabled`
+   on `.cm-editor`), which sits over the wrapper's CSS background. So we override
+   the inner `.cm-editor` here, scoped to `.tug-prompt-entry` (the shared substrate
+   is untouched for every other editor).
+
+   - Rest, blurred, AND deactivated (pane/window inactive — the editor is blurred,
+     so never `.cm-focused`) all read as the card body surface, identical to the
+     transcript. No more field-rest / disabled (red-tinted) surfaces of its own.
+   - Focused (caret blinking, pane active → `.cm-focused`) is the one state that
+     diverges, onto the focus surface.
+
+   Specificity (4 classes) intentionally beats the substrate's `&` (1), `&.cm-focused`
+   (2), and `&[data-disabled]` (2) generated theme rules. ----------------------- */
+.tug-prompt-entry .tug-text-editor .cm-editor:not(.cm-focused) {
+  background-color: var(--tugx-prompt-entry-editor-rest);
+}
+.tug-prompt-entry .tug-text-editor .cm-editor.cm-focused {
+  background-color: var(--tugx-prompt-entry-editor-focus);
 }
 
 /* No vertical nudge for the route choice-group's lucide icons — flex
