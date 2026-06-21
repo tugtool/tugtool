@@ -18,7 +18,7 @@
  * indirection (Key->blue, Accent->orange) reproduces today's brio exactly.
  */
 
-.gallery-color-duet-board {
+.gallery-theme-editor-board {
   /* ---- Hue indirection (the knobs) ---- default = today's brio blue/orange. */
   --duet-key-h:       var(--tugc-blue-h);
   --duet-key-canon-l: var(--tugc-blue-canonical-l);
@@ -44,6 +44,13 @@
   --duet-tinted-t: 38;
   --duet-tinted-a: 0.40;
 
+  /* ---- Text-selection wash (also drives the editing caret) — its own i / t / a
+     off the Key hue, independent of the rest of the Key ramp. Default reproduces
+     today's plain Key fill (i50 / t50 / a0.40). ---- */
+  --duet-textsel-i: 50;
+  --duet-textsel-t: 50;
+  --duet-textsel-a: 0.40;
+
   --duet-titlebar: oklch(
     calc(var(--tugc-l-dark) + clamp(0, var(--duet-titlebar-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-titlebar-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
     calc(var(--duet-titlebar-i) / 100 * var(--duet-key-peak-c))
@@ -58,13 +65,18 @@
     var(--duet-key-h) / var(--duet-tinted-a));
 
   /* ---- Key ramp — uniform TugColor formula per rung; tone = literal + l-shift. */
+  /* Plain fill = the text-selection wash. Driven by the dedicated text-selection
+     knobs (--duet-textsel-i / -t / -a), NOT the Key l-shift / c-scale — mirroring
+     the apply pipeline (theme-editor-core writes plain-rest from textsel.i/t/a). */
   --duet-key-plain: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(50 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(50 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
-    var(--duet-key-h) / 0.40);
+    calc(var(--tugc-l-dark) + clamp(0, var(--duet-textsel-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-textsel-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(var(--duet-textsel-i) / 100 * var(--duet-key-peak-c))
+    var(--duet-key-h) / var(--duet-textsel-a));
+  /* Selected-row fill — matches the brio baseline selected-rest recipe (cobalt
+     i76 t44), the value the apply pipeline preserves; keep in sync with reality. */
   --duet-key-selected: oklch(
     calc(var(--tugc-l-dark) + clamp(0, calc(44 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(44 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(84 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    calc(76 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
     var(--duet-key-h));
   --duet-key-selected-hover: oklch(
     calc(var(--tugc-l-dark) + clamp(0, calc(53 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(53 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
@@ -106,9 +118,11 @@
     calc(var(--tugc-l-dark) + clamp(0, calc(47 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(47 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
     calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
     var(--duet-key-h) / 0.15);
+  /* Navigational link — matches the brio baseline link-rest recipe (cobalt
+     i45 t86), the value the apply pipeline preserves. */
   --duet-key-link: oklch(
     calc(var(--tugc-l-dark) + clamp(0, calc(86 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(86 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
+    calc(45 / 100 * var(--duet-key-peak-c) * var(--duet-key-c-scale))
     var(--duet-key-h));
   --duet-key-link-hover: oklch(
     calc(var(--tugc-l-dark) + clamp(0, calc(92 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(92 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
@@ -231,12 +245,17 @@
   gap: 16px;
   padding: 16px;
   border-radius: var(--tug-radius-lg);
-  background: var(--tug7-surface-global-primary-normal-content-rest);
+  /* The board paints the real CARD body surface (--tugx-pane-bg → overlay-rest),
+     not the canvas/content surface — so every composite previews against the
+     background the components actually live on inside a card. The title bar
+     composite is the lone exception: its chip carries its own titlebar
+     treatment, so it still reads distinctly against this card surface. */
+  background: var(--tug7-surface-global-primary-normal-overlay-rest);
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
 }
 
 /* Text selection inside the board rides the Key plain fill. */
-.gallery-color-duet-board ::selection {
+.gallery-theme-editor-board ::selection {
   background: var(--duet-key-plain);
 }
 
@@ -244,8 +263,8 @@
 .gcd-controls {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 7px;
+  margin-top: 8px;
 }
 .gcd-control-row {
   display: flex;
@@ -256,6 +275,50 @@
   flex: 0 0 110px;
   font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-global-text-normal-muted-rest);
+}
+/* Group sub-headers ("Treatments", "Text selection / caret") — a plain block
+   label in the control column. NOT `.gcd-control-label` (whose 0 0 110px flex
+   basis becomes a 110px-tall row in this column flex). Tight margin keeps the
+   control stack compact so the example composites stay in view. */
+.gcd-group-label {
+  margin-top: 3px;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+/* Sliders keep their standalone fractional width (the 400px inline cap); a
+   uniform per-slider `valueWidth` aligns every value box on its right edge. */
+
+/* Dark-theme title-bar note — replaces the title-bar i/t sliders for dark themes
+   (which don't carry the Key-hued title-bar treatment). Shows the theme's real,
+   fixed title-bar surface so the editor reflects what the app actually paints. */
+.gcd-titlebar-fixed-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-normal);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.gcd-titlebar-fixed-swatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gcd-titlebar-fixed-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 1.5rem;
+  border-radius: var(--tug-radius-sm);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  font-size: var(--tug-font-size-2xs);
+  font-weight: 600;
+}
+.gcd-titlebar-fixed-value {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 .gcd-actions {
   display: flex;
@@ -291,10 +354,13 @@
   align-items: center;
   flex-wrap: wrap;
 }
+/* Static caret row — paints the REAL selected-row fill (selected-rest), the same
+   token the live list and the app's selected rows use, so the preview matches
+   what the app produces (not the fainter quiet-rest used previously). */
 .gcd-caret-row {
   padding: 10px 14px;
   border-radius: var(--tug-radius-md);
-  background: var(--tug7-surface-selection-primary-normal-quiet-rest);
+  background: var(--tug7-surface-selection-primary-normal-selected-rest);
   color: var(--tug7-element-selection-text-normal-selected-rest);
   font-size: var(--tug-font-size-sm);
 }
@@ -311,6 +377,12 @@
   line-height: var(--tug-line-height-normal);
   max-width: 44rem;
   color: var(--tug7-element-global-text-normal-default-rest);
+  /* This sample MUST be selectable — selecting it is the whole point of the
+     composite (it shows the text-selection wash). Opt back in over any ambient
+     user-select:none inherited from the surrounding card chrome. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 .gcd-link {
   color: var(--tug7-element-global-text-normal-link-rest);
@@ -321,6 +393,14 @@
   border-radius: var(--tug-radius-md);
   overflow: hidden;
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+/* The title bar previews against the CANVAS (the desktop behind cards), unlike
+   every other composite which sits on the card body surface — so this frame
+   paints the host canvas color behind the title-bar chip. */
+.gcd-titlebar-frame {
+  padding: 12px;
+  border-radius: var(--tug-radius-md);
+  background: var(--tugx-host-canvas-color);
 }
 /* Faux pane title bar — previews the title-bar treatment (--duet-titlebar). */
 .gcd-titlebar {

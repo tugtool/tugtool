@@ -6,8 +6,9 @@ import fs from "fs";
 import { execSync } from "child_process";
 // postcss-tug-color expands --tug-color(color, i: intensity, t: tone) to oklch() at build time.
 import postcssTugColor from "./postcss-tug-color";
-// duet-core re-hues a theme's Key/Accent axes; shared with scripts/apply-duet.ts.
-import { applyDuet, isKnownHue } from "./duet-core";
+// theme-editor-core re-hues a theme's Key/Accent axes; shared with
+// scripts/apply-theme-editor.ts.
+import { applyDuet, isKnownHue } from "./theme-editor-core";
 
 /**
  * Vite plugin: seamless CSS hot-reload when palette-engine.ts changes.
@@ -289,14 +290,14 @@ export async function handleThemesActivate(
 }
 
 // ---------------------------------------------------------------------------
-// handleDuetApply — POST /__duet/apply
+// handleThemeEditApply — POST /__theme-editor/apply
 //
 // Re-hues a theme's Key/Accent axes from the clean baseline recipe and writes
 // the theme CSS, then re-copies the active theme so HMR repaints. Drives the
-// gallery-color-duet workshop card's Apply button. Dev-only.
+// Theme Editor card's Apply button. Dev-only.
 // ---------------------------------------------------------------------------
 
-export async function handleDuetApply(
+export async function handleThemeEditApply(
   body: unknown,
   themesCssDir: string,
   activeCssPath: string,
@@ -330,6 +331,7 @@ export async function handleDuetApply(
   const titlebar = parseTreatment(b.titlebar);
   const filled = parseTreatment(b.filled);
   const tinted = parseTreatment(b.tinted);
+  const textsel = parseTreatment(b.textsel);
 
   const themeFile = findThemeCssPath(theme, themesCssDir);
   if (!themeFile) {
@@ -339,7 +341,7 @@ export async function handleDuetApply(
   return new Promise<{ status: number; body: string }>((resolve) => {
     withMutex(async () => {
       try {
-        const baselinePath = path.join(themesCssDir, "duet-baseline.json");
+        const baselinePath = path.join(themesCssDir, "theme-editor-baseline.json");
         const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf-8")) as Record<
           string,
           Record<string, string>
@@ -351,7 +353,7 @@ export async function handleDuetApply(
         const current = fs.readFileSync(themeFile, "utf-8");
         const { css, keyCount, accentCount } = applyDuet(current, baseline[theme], {
           keyHue, keyScale, keyToneShift, accentHue, accentScale, accentToneShift,
-          titlebar, filled, tinted,
+          titlebar, filled, tinted, textsel,
         });
         fs.writeFileSync(themeFile, css, "utf-8");
         // Push the change into the active-theme file so the running card repaints.
@@ -367,14 +369,15 @@ export async function handleDuetApply(
 
 /**
  * Vite plugin: duet API endpoint for the dev server.
- * POST /__duet/apply — re-hue a theme's Key/Accent axes from the workshop card.
+ * POST /__theme-editor/apply — re-hue a theme's Key/Accent axes from the Theme
+ * Editor card.
  */
-function duetApplyPlugin(): VitePlugin {
+function themeEditApplyPlugin(): VitePlugin {
   return {
-    name: "duet-apply",
+    name: "theme-editor-apply",
     configureServer(server) {
       server.middlewares.use(
-        "/__duet",
+        "/__theme-editor",
         (req: import("http").IncomingMessage, res: import("http").ServerResponse, next: () => void) => {
           const url = req.url ?? "/";
           if (req.method === "POST" && url === "/apply") {
@@ -389,7 +392,7 @@ function duetApplyPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              handleDuetApply(parsed, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
+              handleThemeEditApply(parsed, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
                 if (result.status === 200) {
                   server.ws.send({ type: "custom", event: "tug:theme-changed" });
                 }
@@ -586,7 +589,7 @@ export default (defineConfig as any)(() => {
       paletteHotReload(),
       controlTokenHotReload(),
       themeSaveLoadPlugin(),
-      duetApplyPlugin(),
+      themeEditApplyPlugin(),
       capabilitiesVirtualModulePlugin(),
     ],
     css: {

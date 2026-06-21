@@ -179,6 +179,8 @@ body {
   --tug7-element-tone-fill-normal-data-rest: --tug-color(teal, t: 47);
   --tug7-element-tone-fill-normal-success-rest: --tug-color(green, t: 47);
   --tug7-element-tone-icon-normal-accent-rest: --tug-color(tangerine, i: 45, t: 51);
+  /* "You" / user participant icon — hard-coded per theme, NOT linked to Accent. */
+  --tug7-element-tone-icon-normal-you-rest: --tug-color(orange, i: 45, t: 51);
   --tug7-element-tone-icon-normal-active-rest: --tug-color(cerise, i: 15, t: 44);
   --tug7-element-tone-icon-normal-agent-rest: --tug-color(violet, t: 63);
   --tug7-element-tone-icon-normal-caution-rest: --tug-color(yellow, t: 47);

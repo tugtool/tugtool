@@ -1,16 +1,16 @@
 /**
- * duet-core.ts — shared Key/Accent re-hue transform.
+ * theme-editor-core.ts — shared Key/Accent re-hue transform.
  *
  * Single source of truth for classifying a theme's selection/action axis (Key)
  * and affordance axis (Accent) tokens and re-hueing them on the TugColor model.
  * Used by:
- *   - scripts/apply-duet.ts (CLI)
- *   - the dev-server POST /__duet/apply endpoint (vite.config.ts), driven by the
- *     gallery-color-duet workshop card's Apply button
+ *   - scripts/apply-theme-editor.ts (CLI)
+ *   - the dev-server POST /__theme-editor/apply endpoint (vite.config.ts), driven
+ *     by the Theme Editor card's Apply button
  *
  * Re-hue is always computed from a clean BASELINE recipe (the original per-theme
- * intensities/tones, captured in styles/themes/duet-baseline.json) so applying
- * repeatedly with new hues/scales never compounds — each apply is absolute.
+ * intensities/tones, captured in styles/themes/theme-editor-baseline.json) so
+ * applying repeatedly with new hues/scales never compounds — each apply is absolute.
  */
 
 import { HUE_FAMILIES, TUG_COLOR_PRESETS } from "./src/components/tugways/palette-engine";
@@ -39,7 +39,17 @@ export interface DuetSeed {
   filled?: DuetTreatment;
   /** Tinted badges (tinted-action surface + border). */
   tinted?: DuetTreatment;
+  /**
+   * Text-selection wash — the Key-hued fill behind selected text and the
+   * editing caret (writes --tug7-surface-selection-primary-normal-plain-rest).
+   * Its own intensity / tone / alpha off the Key hue, independent of the rest
+   * of the Key ramp.
+   */
+  textsel?: DuetTreatment;
 }
+
+/** The single token the text-selection treatment owns. */
+const TEXTSEL_TOKEN = "--tug7-surface-selection-primary-normal-plain-rest";
 
 /**
  * Which treatment a token belongs to (surface/border only — text/icon stay
@@ -200,6 +210,17 @@ export function applyDuet(
     if (!role) continue;
     const parsed = parseTugColor(inner);
     if (!parsed) continue;
+
+    // Text-selection treatment owns the plain-rest wash directly: a TugColor of
+    // the Key hue at its own i / t / a (alpha in 0–1 oklch convention, scaled to
+    // --tug-color()'s 0–100). Overrides the generic Key re-hue for this one token.
+    if (seed.textsel && name === TEXTSEL_TOKEN) {
+      const a = seed.textsel.a !== undefined ? seed.textsel.a * 100 : parsed.a;
+      if (replaceToken(name, formatTugColor(seed.keyHue, seed.textsel.i, seed.textsel.t, a))) {
+        keyCount++;
+      }
+      continue;
+    }
 
     // Chrome treatments override the Key re-hue for the filled/tinted surface +
     // border tokens: a TugColor of the Key hue at the treatment's own i/t, with

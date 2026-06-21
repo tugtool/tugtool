@@ -21,7 +21,7 @@ Each theme carries a **Key + Accent duet** ([`color-refactor`](../roadmap/archiv
 **Key** is the selection / primary-action hue (list & menu selection, toggle/radio/checkbox/choice
 "on", tabs, links, the primary CTA, text selection); **Accent** is the affordance hue (keyboard caret
 bar, focus ring, drag-drop stroke, flash). The chroma column is the per-theme chroma scale applied to
-every rung (`apply-duet.ts`).
+every rung (`apply-theme-editor.ts`).
 
 | Theme | Mode | Tint | Key (chroma) | Accent (chroma) |
 |---|---|---|---|---|
@@ -57,7 +57,7 @@ largely a hue swap: keep the *tone* ladder, change the *hue*.
    tokens) and a partnered **Accent** hue (the affordance axis: caret, focus ring, drag-drop, flash).
    Both ride the TugColor model (`--tug-color(hue, i:, t:)`, tones kept per-mode so light themes keep
    their darker legible links); a per-theme chroma scale folds into each rung's intensity. Re-hue a
-   theme with `tugdeck/scripts/apply-duet.ts` from a clean theme file, then run the contrast audit.
+   theme with `tugdeck/scripts/apply-theme-editor.ts` from a clean theme file, then run the contrast audit.
    Keep Key and Accent ≥~30° from every signal hue and from each other; on-fill contrast text stays a
    near-white (dark) / near-black (light) neutral — never the Key hue, or it vanishes on its own fill.
 4. **Signal tuning is per-mode.** Dark: bright, mid-tone, saturated. Light: darker and more saturated

@@ -1,5 +1,5 @@
 /**
- * gallery-color-duet.tsx -- Key + Accent color-duet workshop.
+ * gallery-theme-editor.tsx -- the Theme Editor: Key + Accent color workshop.
  *
  * A live tuning board for the per-theme Key (selection / primary action) +
  * Accent (affordance: caret, focus ring, drag-drop, activity) duet, expressed in
@@ -8,7 +8,7 @@
  *   - Hue: a TugPopupButton over the 48 TugColor hues. Choosing one writes that
  *     hue's palette constants — var(--tugc-{hue}-h / -canonical-l / -peak-c) —
  *     into the board's indirection vars (--duet-key-h / -canon-l / -peak-c). The
- *     ramp rungs in gallery-color-duet.css are the TugColor piecewise formula
+ *     ramp rungs in gallery-theme-editor.css are the TugColor piecewise formula
  *     over those constants, so every rung re-evaluates through the real model.
  *   - Chroma scale: a TugSlider multiplying every rung's chroma
  *     (--duet-key-c-scale), for restraint (e.g. pale Key on bravura/aria).
@@ -16,6 +16,14 @@
  * The board-scoped Table-T01 --tug7-* repoints route the real components below
  * through the ramps. All painting is style.setProperty on the board ([L06]);
  * useState holds only the controlled inputs and the copy-out readout ([L24]).
+ *
+ * The control column is authored into a single focus group ([P02]) so Tab walks
+ * the hue pickers and sliders as one loop; the key view seeds onto the Key hue
+ * ([useSeedKeyView]).
+ *
+ * Title-bar treatment is a LIGHT-theme-only axis (`--tugx-chrome-key-surface`
+ * exists only in light themes); for dark themes the editor hides those knobs and
+ * shows the theme's actual, fixed title-bar surface instead.
  *
  * Laws:
  *  - [L06] appearance via style.setProperty + CSS, never React-state-driven.
@@ -43,13 +51,23 @@ import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-grou
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useFocusManager } from "@/components/tugways/use-focusable";
+import { CardIdContext } from "@/lib/card-id-context";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { getThemeGetter } from "@/action-dispatch";
 import { useOptionalThemeContext } from "@/contexts/theme-provider";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import "./gallery.css";
-import "./gallery-color-duet.css";
+import "./gallery-theme-editor.css";
+
+// ---------------------------------------------------------------------------
+// Mode
+// ---------------------------------------------------------------------------
+
+/** Dark themes — they do NOT participate in the Key-hued title-bar treatment
+ *  (the `--tugx-chrome-key-surface` token is a light-theme-only axis). */
+const DARK_THEMES = new Set(["brio", "nocturne", "bravura"]);
 
 // ---------------------------------------------------------------------------
 // Seed model
@@ -70,6 +88,10 @@ interface Seed {
   tintedI: number;
   tintedT: number;
   tintedA: number;
+  // Text selection wash (also drives the editing caret) — its own i / t / α.
+  textselI: number;
+  textselT: number;
+  textselA: number;
 }
 
 /** Compact preset constructor — lightness shift + treatments default to a
@@ -84,6 +106,7 @@ const mk = (
   titlebarI: 30, titlebarT: 88,
   filledI: 84, filledT: 44,
   tintedI: 75, tintedT: 38, tintedA: 0.4,
+  textselI: 50, textselT: 50, textselA: 0.4,
 });
 
 /** Default seed — today's brio (blue Key / orange Accent), an exact baseline.
@@ -132,6 +155,9 @@ const HUE_ITEMS: TugPopupButtonItem<string>[] = ADJACENCY_RING.map((hue) => ({
   label: `${hue} (${angle(hue)})`,
 }));
 
+/** Uniform value-column width so every slider's value box aligns on its right edge. */
+const SLIDER_VALUE_WIDTH = "3.5rem";
+
 // ---------------------------------------------------------------------------
 // List data source (real TugListView — genuine selection fill + caret)
 // ---------------------------------------------------------------------------
@@ -174,26 +200,34 @@ function DuetRowCell({
 const LIST_CELL_RENDERERS = { row: DuetRowCell };
 
 // ---------------------------------------------------------------------------
-// GalleryColorDuet
+// GalleryThemeEditor
 // ---------------------------------------------------------------------------
 
-export function GalleryColorDuet(): React.ReactElement {
+export function GalleryThemeEditor(): React.ReactElement {
   const boardRef = useRef<HTMLDivElement>(null);
+  const titlebarRef = useRef<HTMLDivElement>(null);
+  const focusManager = useFocusManager();
+  const cardId = React.useContext(CardIdContext);
 
   // Per-theme persistence (this card's own tugbank domain). The seed map is
   // keyed by theme name; the active theme selects which seed the card edits.
   const seedMap = useTugbankValue<SeedMap>(SEED_DOMAIN, SEED_KEY, parseSeedMap, {});
   const activeTheme = useOptionalThemeContext()?.theme ?? getThemeGetter()?.() ?? "brio";
+  const isDark = DARK_THEMES.has(activeTheme);
 
-  // Local-data only: the controlled control values + copy-out readout. The paint
-  // is the setProperty calls below, never a React-state-driven style ([L06]).
+  // Local-data only: the controlled control values + readout. The paint is the
+  // setProperty calls below, never a React-state-driven style ([L06]).
   const [seed, setSeed] = useState<Seed>(() => readSeedFor(seedMap, activeTheme));
-  const [copied, setCopied] = useState(false);
   const [applyMsg, setApplyMsg] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  // The active dark theme's real (fixed) title-bar colors, read off the live DOM.
+  const [titlebarFixed, setTitlebarFixed] = useState<{ bg: string; fg: string } | null>(null);
 
   const setVar = (name: string, value: string): void => {
     boardRef.current?.style.setProperty(name, value);
+  };
+  const clearVar = (name: string): void => {
+    boardRef.current?.style.removeProperty(name);
   };
 
   const applyHue = (role: "key" | "accent", hue: string): void => {
@@ -210,6 +244,21 @@ export function GalleryColorDuet(): React.ReactElement {
     setVar("--duet-tinted-i", String(next.tintedI));
     setVar("--duet-tinted-t", String(next.tintedT));
     setVar("--duet-tinted-a", String(next.tintedA));
+    setVar("--duet-textsel-i", String(next.textselI));
+    setVar("--duet-textsel-t", String(next.textselT));
+    setVar("--duet-textsel-a", String(next.textselA));
+  };
+
+  // Dark themes don't carry a Key-hued title-bar: pin the preview's title-bar var
+  // to the theme's real (fixed) titlebar-active surface, so the editor shows what
+  // the app actually paints rather than the unused Key formula. Light themes drop
+  // the override and fall back to the computed `--duet-titlebar`.
+  const applyTitlebarMode = (dark: boolean): void => {
+    if (dark) {
+      setVar("--duet-titlebar", "var(--tug7-surface-card-primary-normal-titlebar-active)");
+    } else {
+      clearVar("--duet-titlebar");
+    }
   };
 
   const applySeed = (next: Seed): void => {
@@ -220,12 +269,12 @@ export function GalleryColorDuet(): React.ReactElement {
     setVar("--duet-key-l-shift", String(next.keyLShift));
     setVar("--duet-accent-l-shift", String(next.accLShift));
     applyTreatments(next);
+    applyTitlebarMode(DARK_THEMES.has(activeTheme));
   };
 
   const onHue = (role: "key" | "accent", hue: string): void => {
     applyHue(role, hue);
     setSeed((prev) => (role === "key" ? { ...prev, keyHue: hue } : { ...prev, accHue: hue }));
-    setCopied(false);
   };
 
   const onCScale = (role: "key" | "accent", value: number): void => {
@@ -233,7 +282,6 @@ export function GalleryColorDuet(): React.ReactElement {
     setSeed((prev) =>
       role === "key" ? { ...prev, keyCScale: value } : { ...prev, accCScale: value },
     );
-    setCopied(false);
   };
 
   const onLShift = (role: "key" | "accent", value: number): void => {
@@ -241,20 +289,19 @@ export function GalleryColorDuet(): React.ReactElement {
     setSeed((prev) =>
       role === "key" ? { ...prev, keyLShift: value } : { ...prev, accLShift: value },
     );
-    setCopied(false);
   };
 
   const onTreatment = (
     field:
       | "titlebarI" | "titlebarT"
       | "filledI" | "filledT"
-      | "tintedI" | "tintedT" | "tintedA",
+      | "tintedI" | "tintedT" | "tintedA"
+      | "textselI" | "textselT" | "textselA",
     cssVar: string,
     value: number,
   ): void => {
     setVar(cssVar, String(value));
     setSeed((prev) => ({ ...prev, [field]: value }));
-    setCopied(false);
   };
 
   // Real selectable list (genuine selection fill + caret when focused).
@@ -279,6 +326,20 @@ export function GalleryColorDuet(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTheme, seedMap]);
 
+  // Read the dark theme's real title-bar colors off the live DOM for the
+  // read-only "fixed" display. Re-run on theme switch (a different fixed value)
+  // and after paint so the override above has landed.
+  useEffect(() => {
+    if (!isDark) {
+      setTitlebarFixed(null);
+      return;
+    }
+    const el = titlebarRef.current;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    setTitlebarFixed({ bg: cs.backgroundColor, fg: cs.color });
+  }, [isDark, activeTheme]);
+
   // Persist edits under the ACTIVE theme (skip when unchanged — covers the
   // initial restore and the theme-switch load, avoiding redundant writes/loops).
   useEffect(() => {
@@ -301,10 +362,39 @@ export function GalleryColorDuet(): React.ReactElement {
   const tiIId = useId();
   const tiTId = useId();
   const tiAId = useId();
+  const tsIId = useId();
+  const tsTId = useId();
+  const tsAId = useId();
   const radioId = useId();
   const choiceId = useId();
   const [radioValue, setRadioValue] = useState("on");
   const [choiceValue, setChoiceValue] = useState("grid");
+
+  // One focus group for the whole control column; the key view seeds onto the
+  // Key hue (order 0) so the editor opens with focus on it and Tab walks the
+  // controls ([P02]). Title-bar slider orders (6,7) are simply absent for dark
+  // themes — gaps in the order are fine.
+  const controlsFocusGroup = useId();
+
+  // Put keyboard focus on the Key hue when the editor opens, and keep it. The
+  // engine only moves DOM focus + lights the ring while THIS card's context is
+  // the active (key-card) one; a non-modal gallery card isn't guaranteed active
+  // at mount, so we arm the keyboard restore the moment it becomes active and
+  // re-check on focus-manager changes until it lands (once).
+  const seededFocusRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusManager) return;
+    const focusKey = `${controlsFocusGroup}:0`;
+    const arm = (): void => {
+      if (seededFocusRef.current) return;
+      const active = cardId === null || focusManager.keyCard() === cardId;
+      if (!active) return;
+      seededFocusRef.current = true;
+      focusManager.contextFor(cardId).armKeyboardRestore(focusKey);
+    };
+    arm();
+    return focusManager.subscribe(arm);
+  }, [focusManager, cardId, controlsFocusGroup]);
 
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
@@ -323,6 +413,9 @@ export function GalleryColorDuet(): React.ReactElement {
       [tiIId]: (v) => onTreatment("tintedI", "--duet-tinted-i", v),
       [tiTId]: (v) => onTreatment("tintedT", "--duet-tinted-t", v),
       [tiAId]: (v) => onTreatment("tintedA", "--duet-tinted-a", v),
+      [tsIId]: (v) => onTreatment("textselI", "--duet-textsel-i", v),
+      [tsTId]: (v) => onTreatment("textselT", "--duet-textsel-t", v),
+      [tsAId]: (v) => onTreatment("textselA", "--duet-textsel-a", v),
     },
     selectValue: {
       [radioId]: setRadioValue,
@@ -331,15 +424,20 @@ export function GalleryColorDuet(): React.ReactElement {
   });
 
   const fmtShift = (n: number): string => (n > 0 ? `+${n}` : `${n}`);
+  const titlebarLine = isDark
+    ? "Title bar: theme-fixed (dark)"
+    : `Title bar: i${seed.titlebarI} t${seed.titlebarT}`;
   const readout = [
     `Key:    ${seed.keyHue} (${angle(seed.keyHue)})  chroma x${seed.keyCScale.toFixed(2)}  lightness ${fmtShift(seed.keyLShift)}`,
     `Accent: ${seed.accHue} (${angle(seed.accHue)})  chroma x${seed.accCScale.toFixed(2)}  lightness ${fmtShift(seed.accLShift)}`,
-    `Title bar: i${seed.titlebarI} t${seed.titlebarT}   Filled: i${seed.filledI} t${seed.filledT}   Tinted: i${seed.tintedI} t${seed.tintedT} a${seed.tintedA.toFixed(2)}`,
+    `${titlebarLine}   Filled: i${seed.filledI} t${seed.filledT}   Tinted: i${seed.tintedI} t${seed.tintedT} a${seed.tintedA.toFixed(2)}`,
+    `Text sel: i${seed.textselI} t${seed.textselT} a${seed.textselA.toFixed(2)}`,
   ].join("\n");
 
   // Apply writes the current duet into the ACTIVE theme's CSS via the dev-server
   // endpoint (which re-derives from the clean baseline, so re-applying never
-  // compounds). The theme hot-reload then repaints the whole app.
+  // compounds). The theme hot-reload then repaints the whole app. The titlebar
+  // treatment is sent only for light themes (dark themes don't carry the token).
   const onApply = (): void => {
     const theme = getThemeGetter()?.();
     if (!theme) {
@@ -348,7 +446,7 @@ export function GalleryColorDuet(): React.ReactElement {
     }
     setApplying(true);
     setApplyMsg(null);
-    fetch("/__duet/apply", {
+    fetch("/__theme-editor/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -359,9 +457,12 @@ export function GalleryColorDuet(): React.ReactElement {
         accentHue: seed.accHue,
         accentScale: seed.accCScale,
         accentToneShift: seed.accLShift,
-        titlebar: { i: seed.titlebarI, t: seed.titlebarT },
+        ...(DARK_THEMES.has(theme)
+          ? {}
+          : { titlebar: { i: seed.titlebarI, t: seed.titlebarT } }),
         filled: { i: seed.filledI, t: seed.filledT },
         tinted: { i: seed.tintedI, t: seed.tintedT, a: seed.tintedA },
+        textsel: { i: seed.textselI, t: seed.textselT, a: seed.textselA },
       }),
     })
       .then(async (r) => {
@@ -375,29 +476,15 @@ export function GalleryColorDuet(): React.ReactElement {
       .finally(() => setApplying(false));
   };
 
-  const onCopy = (): void => {
-    navigator.clipboard
-      ?.writeText(readout)
-      .then(() => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {
-        /* clipboard unavailable — readout is visible to copy by hand */
-      });
-  };
-
   return (
     <ResponderScope>
       <div
         className="cg-content"
-        data-testid="gallery-color-duet"
+        data-testid="gallery-theme-editor"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
         {/* ---- Controls ---- */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">Seed</TugLabel>
-
           <div className="gcd-controls">
             <div className="gcd-control-row">
               <span className="gcd-control-label">Key hue</span>
@@ -406,6 +493,8 @@ export function GalleryColorDuet(): React.ReactElement {
                 senderId={keyHueId}
                 size="sm"
                 items={HUE_ITEMS}
+                focusGroup={controlsFocusGroup}
+                focusOrder={0}
               />
             </div>
             <TugSlider
@@ -416,7 +505,9 @@ export function GalleryColorDuet(): React.ReactElement {
               max={1.3}
               step={0.02}
               size="sm"
-              valueWidth="3.25rem"
+              valueWidth={SLIDER_VALUE_WIDTH}
+              focusGroup={controlsFocusGroup}
+              focusOrder={1}
             />
             <TugSlider
               label="Key lightness ±"
@@ -426,6 +517,9 @@ export function GalleryColorDuet(): React.ReactElement {
               max={30}
               step={1}
               size="sm"
+              valueWidth={SLIDER_VALUE_WIDTH}
+              focusGroup={controlsFocusGroup}
+              focusOrder={2}
             />
             <div className="gcd-control-row">
               <span className="gcd-control-label">Accent hue</span>
@@ -434,6 +528,8 @@ export function GalleryColorDuet(): React.ReactElement {
                 senderId={accHueId}
                 size="sm"
                 items={HUE_ITEMS}
+                focusGroup={controlsFocusGroup}
+                focusOrder={3}
               />
             </div>
             <TugSlider
@@ -444,7 +540,9 @@ export function GalleryColorDuet(): React.ReactElement {
               max={1.3}
               step={0.02}
               size="sm"
-              valueWidth="3.25rem"
+              valueWidth={SLIDER_VALUE_WIDTH}
+              focusGroup={controlsFocusGroup}
+              focusOrder={4}
             />
             <TugSlider
               label="Accent lightness ±"
@@ -454,18 +552,44 @@ export function GalleryColorDuet(): React.ReactElement {
               max={30}
               step={1}
               size="sm"
+              valueWidth={SLIDER_VALUE_WIDTH}
+              focusGroup={controlsFocusGroup}
+              focusOrder={5}
             />
 
-            <div className="gcd-control-label" style={{ marginTop: "6px" }}>
-              Treatments (off the Key hue)
-            </div>
-            <TugSlider label="Title bar i" senderId={tbIId} value={seed.titlebarI} min={0} max={100} step={1} size="sm" />
-            <TugSlider label="Title bar t" senderId={tbTId} value={seed.titlebarT} min={0} max={100} step={1} size="sm" />
-            <TugSlider label="Filled i" senderId={fIId} value={seed.filledI} min={0} max={100} step={1} size="sm" />
-            <TugSlider label="Filled t" senderId={fTId} value={seed.filledT} min={0} max={100} step={1} size="sm" />
-            <TugSlider label="Tinted i" senderId={tiIId} value={seed.tintedI} min={0} max={100} step={1} size="sm" />
-            <TugSlider label="Tinted t" senderId={tiTId} value={seed.tintedT} min={0} max={100} step={1} size="sm" />
-            <TugSlider label="Tinted α" senderId={tiAId} value={seed.tintedA} min={0} max={1} step={0.02} size="sm" valueWidth="3.25rem" />
+            <div className="gcd-group-label">Treatments (off the Key hue)</div>
+            {isDark ? (
+              <div className="gcd-titlebar-fixed-note">
+                Title bar: dark themes use a fixed title-bar treatment (not the Key
+                hue) — shown below, not tunable here.
+                {titlebarFixed && (
+                  <span className="gcd-titlebar-fixed-swatch">
+                    <span
+                      className="gcd-titlebar-fixed-chip"
+                      style={{ background: titlebarFixed.bg, color: titlebarFixed.fg }}
+                    >
+                      Aa
+                    </span>
+                    <span className="gcd-titlebar-fixed-value">{titlebarFixed.bg}</span>
+                  </span>
+                )}
+              </div>
+            ) : (
+              <>
+                <TugSlider label="Title bar i" senderId={tbIId} value={seed.titlebarI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={6} />
+                <TugSlider label="Title bar t" senderId={tbTId} value={seed.titlebarT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={7} />
+              </>
+            )}
+            <TugSlider label="Filled i" senderId={fIId} value={seed.filledI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={8} />
+            <TugSlider label="Filled t" senderId={fTId} value={seed.filledT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={9} />
+            <TugSlider label="Tinted i" senderId={tiIId} value={seed.tintedI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={10} />
+            <TugSlider label="Tinted t" senderId={tiTId} value={seed.tintedT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={11} />
+            <TugSlider label="Tinted α" senderId={tiAId} value={seed.tintedA} min={0} max={1} step={0.02} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={12} />
+
+            <div className="gcd-group-label">Text selection / caret (off the Key hue)</div>
+            <TugSlider label="Text sel i" senderId={tsIId} value={seed.textselI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={13} />
+            <TugSlider label="Text sel t" senderId={tsTId} value={seed.textselT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={14} />
+            <TugSlider label="Text sel α" senderId={tsAId} value={seed.textselA} min={0} max={1} step={0.02} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={15} />
           </div>
 
           <div className="gcd-actions" style={{ marginTop: "10px" }}>
@@ -477,9 +601,6 @@ export function GalleryColorDuet(): React.ReactElement {
               onClick={onApply}
             >
               {applying ? "Applying…" : "Apply to active theme"}
-            </TugPushButton>
-            <TugPushButton emphasis="outlined" role="action" size="xs" onClick={onCopy}>
-              {copied ? "Copied" : "Copy seed"}
             </TugPushButton>
             {applyMsg && (
               <TugLabel size="2xs" emphasis="calm">{applyMsg}</TugLabel>
@@ -495,17 +616,27 @@ export function GalleryColorDuet(): React.ReactElement {
         {/* ---- Board ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Composites</TugLabel>
-          <div className="gallery-color-duet-board" ref={boardRef} data-testid="gcd-board">
-            {/* Title bar / active tab — previews the titlebar treatment. */}
+          <div className="gallery-theme-editor-board" ref={boardRef} data-testid="gcd-board">
+            {/* Title bar / active tab — previews the titlebar treatment (light
+                themes) or the theme's real fixed title bar (dark themes). */}
             <div className="gcd-composite">
-              <div className="gcd-composite-title">Title bar / active tab (titlebar treatment)</div>
-              <div className="gcd-titlebar">Dev — focused title bar</div>
+              <div className="gcd-composite-title">
+                {isDark
+                  ? "Title bar / active tab (theme-fixed for dark themes)"
+                  : "Title bar / active tab (titlebar treatment)"}
+              </div>
+              {/* The title bar sits against the CANVAS (the desktop behind cards),
+                  not the card body — so its frame paints the host canvas color. */}
+              <div className="gcd-titlebar-frame">
+                <div className="gcd-titlebar" ref={titlebarRef}>Dev — focused title bar</div>
+              </div>
             </div>
 
             {/* Selection fill + keyboard caret. The static row carries the real
-                production caret rule (.tug-list-view-cell[data-key-cursor]::before)
-                so the Accent bar is always visible over the Key fill; the live
-                list below shows the genuine selection fill on click / Tab. */}
+                production selected-row fill (selected-rest) plus the caret rule
+                (.tug-list-view-cell[data-key-cursor]::before) so the Accent bar
+                is always visible over the Key fill; the live list below shows the
+                genuine selection fill on click / Tab. */}
             <div className="gcd-composite">
               <div className="gcd-composite-title">Selected row — Key fill + Accent caret bar</div>
               <div
@@ -521,14 +652,17 @@ export function GalleryColorDuet(): React.ReactElement {
                   cellRenderers={LIST_CELL_RENDERERS}
                   inline
                   scrollKey="gcd-list"
-                  focusGroup="gallery-color-duet-list"
-                  focusOrder={0}
+                  // Share the control column's focus group so the list is part of
+                  // the same Tab loop, ordered AFTER the last slider (15) — last.
+                  focusGroup={controlsFocusGroup}
+                  focusOrder={16}
                   selectionRequired
                 />
               </div>
             </div>
 
-            {/* Z4B treatments — filled button + tinted badge — vs danger (red). */}
+            {/* Z4B treatments — filled button + tinted badge — vs danger (real
+                solid-red filled danger, matching the app's destructive buttons). */}
             <div className="gcd-composite">
               <div className="gcd-composite-title">Filled button · tinted button + tinted badge (should match) · danger</div>
               <div className="gcd-row">
@@ -541,7 +675,7 @@ export function GalleryColorDuet(): React.ReactElement {
                 <TugBadge emphasis="tinted" role="action" size="lg" layout="label-top" label="Model">
                   Opus 4.8
                 </TugBadge>
-                <TugPushButton emphasis="primary" role="danger" onClick={() => {}}>
+                <TugPushButton emphasis="filled" role="danger" onClick={() => {}}>
                   Delete
                 </TugPushButton>
                 <TugPushButton emphasis="outlined" role="accent" onClick={() => {}}>
@@ -572,7 +706,7 @@ export function GalleryColorDuet(): React.ReactElement {
               </div>
             </div>
 
-            {/* Text selection rides the Key plain fill. */}
+            {/* Text selection rides the Key plain fill (the text-selection knobs). */}
             <div className="gcd-composite">
               <div className="gcd-composite-title">Text selection + link (Key)</div>
               <p className="gcd-text-sample">

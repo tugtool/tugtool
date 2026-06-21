@@ -95,6 +95,7 @@ import type { TugPopupMenuItem } from "./internal/tug-popup-menu";
 import type { TugAction } from "./action-vocabulary";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useControlDispatch } from "./use-control-dispatch";
+import type { FocusPolicy } from "./focus-manager";
 
 // ---- Types ----
 
@@ -228,6 +229,24 @@ export interface TugPopupButtonProps<V extends TugPopupButtonPayload = never> {
   "aria-label"?: string;
   /** data-testid forwarded to the menu content element. */
   "data-testid"?: string;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this popup's trigger is authored into ([P02]). When set, the
+   * trigger registers as a focusable and becomes a single stop in the engine's
+   * Tab walk; when omitted, the trigger stays a plain native focus stop. Supplied
+   * by the surface that owns the Tab order. Forwarded verbatim to the underlying
+   * {@link TugButton} trigger.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary Tab stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
 }
 
 // ---- TugPopupButton ----
@@ -260,6 +279,9 @@ export function TugPopupButton<V extends TugPopupButtonPayload = never>({
   className,
   "aria-label": ariaLabel,
   "data-testid": dataTestId,
+  focusGroup,
+  focusOrder,
+  focusPolicy,
 }: TugPopupButtonProps<V>) {
   // Chain dispatch [L11]: targeted dispatch to parent responder.
   // Outside a provider the dispatch is a no-op.
@@ -305,6 +327,9 @@ export function TugPopupButton<V extends TugPopupButtonPayload = never>({
       trailingIcon={<ChevronDown size={12} />}
       className={className}
       aria-label={ariaLabel}
+      focusGroup={focusGroup}
+      focusOrder={focusOrder}
+      focusPolicy={focusPolicy}
     >
       {label}
     </TugButton>

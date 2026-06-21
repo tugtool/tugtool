@@ -74,7 +74,7 @@ body {
   --tugx-transcript-header-pin-gap: 4px;
 
   /* Per-participant icon flavors */
-  --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-accent-rest);
+  --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-you-rest);
   --tugx-transcript-icon-color-assistant:    var(--tug7-element-tone-icon-normal-agent-rest);
   --tugx-transcript-icon-color-shell:   var(--tug7-element-tone-icon-normal-data-rest);
 }

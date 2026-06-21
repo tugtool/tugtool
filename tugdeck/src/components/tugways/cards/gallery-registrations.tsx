@@ -34,7 +34,7 @@ import { GalleryTitleBar } from "./gallery-title-bar";
 import { GalleryMutationTx } from "./gallery-mutation-tx";
 import { GalleryObservableProps } from "./gallery-observable-props";
 import { GalleryPalette } from "./gallery-palette";
-import { GalleryColorDuet } from "./gallery-color-duet";
+import { GalleryThemeEditor } from "./gallery-theme-editor";
 import { GalleryScaleTiming } from "./gallery-scale-timing";
 import { GalleryAnimator } from "./gallery-animator";
 import { GallerySkeleton } from "./gallery-skeleton";
@@ -556,9 +556,9 @@ export function registerGalleryCards(): void {
   });
 
   registerCard({
-    componentId: "gallery-color-duet",
-    contentFactory: (_cardId) => <GalleryColorDuet />,
-    defaultMeta: { title: "Key + Accent Duet", icon: "Palette", closable: true },
+    componentId: "gallery-theme-editor",
+    contentFactory: (_cardId) => <GalleryThemeEditor />,
+    defaultMeta: { title: "Theme Editor", icon: "Palette", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
