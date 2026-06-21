@@ -93,9 +93,12 @@ export interface TugAttachmentStripProps {
   /**
    * 1-based transcript message number. Threaded through to each
    * tile's caption so the strip and the inline chip share an
-   * identical `#NNNN-image-N` label.
+   * identical `#NNNN-image-N` label. Omitted (`undefined`) for a
+   * surface with no committed turn number yet — e.g. a queued
+   * (ghost) send — in which case the caption is the atom's bare
+   * `image-N` label, matching the inline chip on that same surface.
    */
-  messageNumber: number;
+  messageNumber?: number;
   /**
    * Image atoms from the user message's synthesized substrate
    * (`UserMessage.attachments` filtered to `type === "image"`).

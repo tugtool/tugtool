@@ -145,6 +145,10 @@ export function captureEditState(view: EditorView): TugTextEditingState {
         type: widget.segment.type,
         label: widget.segment.label,
         value: widget.segment.value,
+        // Preserve the bytes-store key so a capture→restore round-trip
+        // (fast-refresh / remount) keeps an in-progress image atom linked
+        // to its bytes. Undefined for self-contained atoms.
+        ...(widget.segment.id !== undefined ? { id: widget.segment.id } : {}),
       });
     }
     cursor.next();
@@ -205,6 +209,11 @@ export function buildEditStateTransaction(
       type: a.type,
       label: a.label,
       value: a.value,
+      // Carry the optional bytes-store key through the reconstruction so a
+      // restored image atom keeps its link to its bytes (thumbnail in the
+      // editor, payload on re-submit). History-nav atoms carry no `id`, so
+      // they pass `undefined` — no behavior change on that shared path.
+      ...(a.id !== undefined ? { id: a.id } : {}),
     } satisfies AtomSegment,
   }));
   const docLen = view.state.doc.length;

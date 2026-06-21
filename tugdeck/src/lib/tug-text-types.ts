@@ -101,8 +101,22 @@ export interface HistoryProvider {
 export interface TugTextEditingState {
   /** Plain text with TUG_ATOM_CHAR at atom positions. */
   text: string;
-  /** Atom identity and position. Position is the index of TUG_ATOM_CHAR in text. */
-  atoms: { position: number; type: string; label: string; value: string }[];
+  /**
+   * Atom identity and position. Position is the index of TUG_ATOM_CHAR in
+   * text. `id` is the optional bytes-store key: image atoms keep their
+   * payload (bytes/thumbnail) out-of-band in the per-card `AtomBytesStore`
+   * keyed by this id, so a restore that drops it severs the image from its
+   * bytes — the chip renders as a placeholder and a re-submit ships no
+   * image. Self-contained atoms (text/file/command/doc, whose `value` IS
+   * the payload) leave it `undefined`.
+   */
+  atoms: {
+    position: number;
+    type: string;
+    label: string;
+    value: string;
+    id?: string;
+  }[];
   /** Cursor/selection as flat offsets. Null if editor was not focused. */
   selection: { start: number; end: number } | null;
   /**

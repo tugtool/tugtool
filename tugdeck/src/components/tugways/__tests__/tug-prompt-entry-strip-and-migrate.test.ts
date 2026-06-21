@@ -17,11 +17,14 @@
 import { describe, it, expect } from "bun:test";
 
 import {
+  buildEditingStateFromDraftRestore,
   classifyBlockedSubmit,
   coerceRestorePayload,
   computeSubmitText,
 } from "@/components/tugways/tug-prompt-entry";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
+import type { AtomSegment } from "@/lib/tug-atom-img";
+import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 
 const ALIAS_MAP = {
   "❯": "❯",
@@ -171,5 +174,56 @@ describe("classifyBlockedSubmit", () => {
 
   it("defers a submit blocked on an errored card (transport still settling)", () => {
     expect(classifyBlockedSubmit("errored")).toBe("defer");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildEditingStateFromDraftRestore — atom round-trip (cancel → editor)
+//
+// A queued-send cancel routes the un-sent `(text, atoms)` pair back
+// through `pendingDraftRestore`; this helper zips it into the editor's
+// restore shape. Image atoms keep their bytes out-of-band in the
+// per-card bytes-store keyed by `id`, so the `id` MUST survive the
+// conversion — drop it and the restored chip loses its thumbnail and a
+// re-submit ships no image. Self-contained atoms carry no `id`.
+// ---------------------------------------------------------------------------
+
+describe("buildEditingStateFromDraftRestore — atom id round-trip", () => {
+  const A = TUG_ATOM_CHAR;
+
+  it("preserves an image atom's bytes-store id", () => {
+    const atoms: AtomSegment[] = [
+      { kind: "atom", type: "image", label: "image-1", value: "image-1", id: "bytes-abc" },
+    ];
+    const state = buildEditingStateFromDraftRestore(`look ${A}`, atoms);
+    expect(state.atoms).toHaveLength(1);
+    expect(state.atoms[0]).toMatchObject({
+      position: 5,
+      type: "image",
+      label: "image-1",
+      value: "image-1",
+      id: "bytes-abc",
+    });
+  });
+
+  it("leaves id undefined for a self-contained (file) atom", () => {
+    const atoms: AtomSegment[] = [
+      { kind: "atom", type: "file", label: "main.rs", value: "src/main.rs" },
+    ];
+    const state = buildEditingStateFromDraftRestore(`${A}`, atoms);
+    expect(state.atoms[0]!.id).toBeUndefined();
+    expect(state.atoms[0]!.value).toBe("src/main.rs");
+  });
+
+  it("zips ids positionally across a mixed run of atoms", () => {
+    const atoms: AtomSegment[] = [
+      { kind: "atom", type: "file", label: "a.ts", value: "a.ts" },
+      { kind: "atom", type: "image", label: "image-1", value: "image-1", id: "bytes-1" },
+      { kind: "atom", type: "image", label: "image-2", value: "image-2", id: "bytes-2" },
+    ];
+    const state = buildEditingStateFromDraftRestore(`${A} mid ${A}${A}`, atoms);
+    expect(state.atoms.map((a) => a.id)).toEqual([undefined, "bytes-1", "bytes-2"]);
+    // Positions point at each U+FFFC in document order.
+    expect(state.atoms.map((a) => a.position)).toEqual([0, 6, 7]);
   });
 });

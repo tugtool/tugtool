@@ -396,8 +396,8 @@ export function classifyBlockedSubmit(
  * {@link TUG_ATOM_CHAR} (`U+FFFC`) at each atom's spot, and `atoms` is
  * the parallel sequence of segments in document order. The substrate's
  * `restoreState` consumes the positional shape — `{ position, type,
- * label, value }` per atom — so we walk `text` for placeholder indices
- * and zip them with `atoms`.
+ * label, value, id? }` per atom — so we walk `text` for placeholder
+ * indices and zip them with `atoms`.
  *
  * Defensive against shape mismatches: if the placeholder count and
  * `atoms.length` don't agree, we trust the shorter sequence so a
@@ -427,6 +427,11 @@ export function buildEditingStateFromDraftRestore(
       type: segment.type,
       label: segment.label,
       value: segment.value,
+      // Carry the bytes-store key so a restored image atom re-resolves
+      // its bytes (thumbnail in the editor, payload on re-submit). The
+      // bytes survive a queued-send cancel — only this linkage was lost.
+      // Self-contained atoms have no `id`; the field stays undefined.
+      id: segment.id,
     };
   });
   return {

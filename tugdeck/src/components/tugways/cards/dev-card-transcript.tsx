@@ -207,6 +207,13 @@ const ASSISTANT_DEFAULT_IDENTIFIER = "Code";
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
 
+/**
+ * Stable empty-atoms reference for the ghost-row defensive fallback —
+ * a fresh `[]` would defeat the `useMemo` identity gate that derives
+ * `imageAtoms`.
+ */
+const EMPTY_ATOMS: ReadonlyArray<AtomSegment> = [];
+
 interface UserMessageCellProps extends TugListViewCellProps<DevTranscriptDataSource> {
   /**
    * Typed row descriptor, resolved by the host's renderer lambda
@@ -438,11 +445,49 @@ const GhostRowCell = React.memo(function GhostRowCell({
   codeSessionStore,
 }: GhostRowCellProps) {
   const queued = row.queued;
+  // A queued send carries the same synthesized `(text, atoms)` pair a
+  // committed user message does (minted at `handleSend` enqueue time),
+  // so the ghost row paints its prompt — inline atom chips AND the
+  // image-thumbnail strip — exactly as `UserMessageCell` does. The
+  // ghost omits the `#u{turn}` address badge (it has no committed turn
+  // yet), so the atom captions likewise carry no `#NNNN-` prefix:
+  // `messageNumber` is left undefined and the chip/strip share the
+  // atom's bare `image-N` label. Hooks run unconditionally above the
+  // defensive `queued === undefined` guard so the hook order is stable.
+  const rawText = queued?.text ?? "";
+  const text = stripUserBodyPrefix(rawText);
+  const atoms = queued?.atoms ?? EMPTY_ATOMS;
+  const turnKey = queued?.turnKey ?? "";
+  const imageAtoms = React.useMemo(
+    () => atoms.filter((a) => a.type === "image"),
+    [atoms],
+  );
+  const bytesStore = codeSessionStore.getAtomBytesStore();
+  const { showSheet, renderSheet } = useTugSheet();
+  const handleAttachmentClick = React.useCallback(
+    (atom: AtomSegment) => {
+      void showSheet({
+        title: atom.value,
+        hideHeader: true,
+        displayWidth: "xl",
+        resizable: true,
+        aspectLockContent: true,
+        maxHostFraction: 0.9,
+        content: (close) => (
+          <DevAttachmentPreview
+            atom={atom}
+            title={atom.value}
+            bytesStore={bytesStore}
+            onClose={() => close()}
+          />
+        ),
+      });
+    },
+    [showSheet, bytesStore],
+  );
   // The adapter only emits a `ghost` kind alongside a `queued`
   // payload; this guard is defensive against an out-of-range read.
   if (queued === undefined) return null;
-  const text = stripUserBodyPrefix(queued.text);
-  const turnKey = queued.turnKey;
   return (
     <div
       className="dev-card-transcript-ghost-row"
@@ -452,7 +497,19 @@ const GhostRowCell = React.memo(function GhostRowCell({
         participant="user"
         identifier={USER_IDENTIFIER}
         body={
-          <span className="dev-card-transcript-user-body">{text}</span>
+          <>
+            <TugAtomMarkdownBody
+              className="dev-card-transcript-user-markdown"
+              text={text}
+              atoms={atoms}
+            />
+            <TugAttachmentStrip
+              atoms={imageAtoms}
+              bytesStore={bytesStore}
+              onAttachmentClick={handleAttachmentClick}
+            />
+            {renderSheet()}
+          </>
         }
         controls={
           // `TugIconButton` is focus-refusing — un-sending a queued
