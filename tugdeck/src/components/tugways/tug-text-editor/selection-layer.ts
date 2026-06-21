@@ -20,6 +20,18 @@
  * and emits one or more rect markers regardless of what content
  * the range covers.
  *
+ * Gutter clip: `RectangleMarker.forRange` extends every fully-covered
+ * visual row to the content's right edge — the BBEdit/native convention
+ * for "the line break is part of the selection" — which is exactly what
+ * we want. What we don't want is the left-gutter sliver it also emits:
+ * because the themes use a hanging indent, `leftSide` sits left of the
+ * first glyph, so a row whose selection ends at column 0 paints a small
+ * orphan box in that gutter. `clipMarkerToText` slices each emitted rect
+ * into one strip per visual row, clamps each strip's LEFT edge in to that
+ * row's first glyph, and drops strips that collapse to nothing — leaving
+ * the full-width right edge intact. Geometry is still all CM6's; we only
+ * pull the left in and drop empties.
+ *
  * Laws: [L02] selection range data is owned by CM6's `EditorState`,
  *        not React state, [L06] overlay is appearance painted via
  *        DOM layer, [L19] file structure, [L22] direct DOM-update
@@ -30,6 +42,66 @@
 import { EditorView, layer, RectangleMarker } from "@codemirror/view";
 import type { LayerMarker } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
+
+/**
+ * Document-relative origin used to translate between CM6 marker
+ * coordinates (document-relative, as `RectangleMarker.forRange`
+ * produces them) and viewport/client coordinates (what `posAtCoords` /
+ * `coordsAtPos` speak). Mirrors CM6's internal `getBase`. The editor is
+ * LTR, so we don't carry the RTL branch.
+ */
+function baseOffset(view: EditorView): { left: number; top: number } {
+  const rect = view.scrollDOM.getBoundingClientRect();
+  return {
+    left: rect.left - view.scrollDOM.scrollLeft * view.scaleX,
+    top: rect.top - view.scrollDOM.scrollTop * view.scaleY,
+  };
+}
+
+/**
+ * Slice one `forRange` rectangle into per-visual-row strips and pull each
+ * strip's left edge in to that row's first glyph, leaving the right edge as
+ * `forRange` drew it (full width when the row's newline is selected, hugged
+ * on the final row). A strip that collapses to nothing — a row whose
+ * selection is only the trailing newline sitting in the hanging-indent
+ * gutter — is dropped rather than painting an orphan sliver.
+ */
+function clipMarkerToText(
+  view: EditorView,
+  marker: RectangleMarker,
+): RectangleMarker[] {
+  const width = marker.width;
+  if (width === null) return [marker];
+
+  const rowHeight = view.defaultLineHeight;
+  if (!(rowHeight > 0)) return [marker];
+
+  const base = baseOffset(view);
+  const contentLeft = view.contentDOM.getBoundingClientRect().left;
+  const rows = Math.max(1, Math.round(marker.height / rowHeight));
+  const markerRight = marker.left + width;
+
+  const out: RectangleMarker[] = [];
+  for (let i = 0; i < rows; i++) {
+    const top = marker.top + (i * marker.height) / rows;
+    const height = marker.height / rows;
+    const midClientY = top + base.top + height / 2;
+
+    // First glyph on this visual row: probe the far left of the content at
+    // this y, then read the left edge of that position.
+    const startPos = view.posAtCoords({ x: contentLeft, y: midClientY }, false);
+    const startCoords = view.coordsAtPos(startPos, 1);
+    if (!startCoords) continue;
+
+    const left = Math.max(marker.left, startCoords.left - base.left);
+    if (markerRight - left <= 1) continue;
+
+    out.push(
+      new RectangleMarker("cm-selectionBackground", left, top, markerRight - left, height),
+    );
+  }
+  return out;
+}
 
 /**
  * Selection-overlay layer. Paints `.cm-selectionBackground` divs for
@@ -48,7 +120,9 @@ export const tugSelectionLayer: Extension = layer({
     for (const range of view.state.selection.ranges) {
       if (range.empty) continue;
       for (const piece of RectangleMarker.forRange(view, "cm-selectionBackground", range)) {
-        markers.push(piece);
+        for (const clipped of clipMarkerToText(view, piece)) {
+          markers.push(clipped);
+        }
       }
     }
     return markers;
