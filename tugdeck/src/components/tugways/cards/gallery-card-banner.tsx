@@ -33,7 +33,7 @@ const miniViewport: React.CSSProperties = {
   height: "420px",
   border: "1px solid var(--tug7-element-global-border-normal-default-rest)",
   borderRadius: "6px",
-  background: "var(--tug7-surface-global-primary-normal-content-rest)",
+  background: "var(--tug7-surface-global-primary-normal-inset-rest)",
 };
 
 /** Short mini-viewport for the strip-only status variant. */

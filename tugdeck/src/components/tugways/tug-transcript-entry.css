@@ -60,7 +60,7 @@ body {
    * scrolling underneath. Bound to the same surface family the pane
    * chrome uses so the header reads as part of the pane surface, not
    * as a foreign overlay. */
-  --tugx-transcript-header-bg:    var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-transcript-header-bg:    var(--tug7-surface-global-primary-normal-content-rest);
   --tugx-transcript-header-padding-block: var(--tug-space-sm);
 
   /* Pin-stack tier gap — the chrome / actions / find rows pin a few

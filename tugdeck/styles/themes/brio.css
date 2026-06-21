@@ -77,7 +77,7 @@ body {
   /* Surface — Global */
   --tug7-surface-global-primary-normal-app-rest: --tug-color(indigo-violet, i: 2, t: 5);
   --tug7-surface-global-primary-normal-canvas-rest: --tug-color(indigo-violet, i: 2, t: 5);
-  --tug7-surface-global-primary-normal-content-rest: --tug-color(indigo-violet, i: 5, t: 6);
+  --tug7-surface-global-primary-normal-content-rest: --tug-color(indigo-violet, i: 5, t: 14);
   --tug7-surface-global-primary-normal-control-rest: var(--tug7-surface-control-primary-outlined-action-rest);
   --tug7-surface-global-primary-normal-default-rest: --tug-color(indigo-violet, i: 5, t: 12);
   --tug7-surface-global-primary-normal-grid-rest: --tug-color(indigo-violet, i: 2, t: 18);

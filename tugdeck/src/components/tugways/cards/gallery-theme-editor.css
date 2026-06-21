@@ -245,12 +245,12 @@
   gap: 16px;
   padding: 16px;
   border-radius: var(--tug-radius-lg);
-  /* The board paints the real CARD body surface (--tugx-pane-bg → overlay-rest),
-     not the canvas/content surface — so every composite previews against the
+  /* The board paints the real CARD body surface (the `content` rung, what
+     --tugx-pane-bg resolves to) — so every composite previews against the
      background the components actually live on inside a card. The title bar
      composite is the lone exception: its chip carries its own titlebar
      treatment, so it still reads distinctly against this card surface. */
-  background: var(--tug7-surface-global-primary-normal-overlay-rest);
+  background: var(--tug7-surface-global-primary-normal-content-rest);
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
 }
 

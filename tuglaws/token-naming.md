@@ -139,10 +139,10 @@ These rules make seven-slot parsing deterministic:
 
 ## Surface Elevation
 
-> **DRAFT — under review.** This section defines the intended meaning of the
-> `surface-global` purposes. The shipped themes predate it and are **not yet
-> conformant** (see *Reconciliation status* at the end); reconciling the per-mode
-> values is a separate, per-theme follow-up.
+> **Status: adopted; partially reconciled.** These definitions are the contract
+> for the `surface-global` purposes. The card-body split (`content` vs `overlay`)
+> is reconciled in the themes; the remaining divergences are tracked under
+> *Reconciliation status*.
 
 The `--tug7-surface-global-primary-normal-<purpose>-*` family is an **elevation
 ladder**. Each `purpose` names how far *forward* — proud toward the viewer — a
@@ -164,7 +164,7 @@ elevation doctrine in [theme-engine.md](theme-engine.md).)
 | `inset` | a shallow well | input troughs, code gutters, block frames |
 | `default` | the standard component surface — the generic surface most controls rest on, a hair recessed from the card body | the workhorse; the large majority of component backgrounds |
 | `content` | the **body of a card / pane** — the primary surface its content sits on | pane body, transcript, sheet / dialog / alert body |
-| `raised` | chrome lifted **above** the card body | title / header / toolbar strips |
+| `raised` | a subtle accent lifted a step from `default` — a *relative* lift used within content, not a strict forward rung | table stripes, hover rows, chips, inline-dialog & banner backgrounds |
 | `overlay` | a layer floating above the whole UI | popovers, menus, completion, tooltips |
 | `screen` | the always-light tier — stays light even in light themes so tooltip / dev-panel text needs no inverse treatment | dev panel, tooltips |
 
@@ -179,26 +179,27 @@ elevation doctrine in [theme-engine.md](theme-engine.md).)
 
 ### Reconciliation status (why the themes don't match yet)
 
-The vocabulary above is the target. The shipped themes diverge from it in four
-known ways, each a deliberate follow-up rather than a silent bug:
+**Done.**
 
-1. **`content` is incoherent across modes.** It is the *deepest* surface in dark
-   themes (`t6`, equal to `inset`) but the *lightest* in light themes (`t100`,
-   equal to `overlay`). Under this model `content` means "card body" and must be
-   re-derived to one consistent elevation in both modes.
-2. **`raised` sits behind `default` in dark themes** (`t11` < `t12`). Under this
-   model it belongs **in front of** `content`.
-3. **`overlay` is overloaded.** It is borrowed as the card-body surface
-   (`--tugx-pane-bg`, transcript header) on top of its correct use for true
-   floating layers. The card-body consumers move to `content`; `overlay` keeps
-   only the floating-layer role.
-4. **`default`, `overlay`, `grid` were undocumented** — the previous "Surface
-   purposes" list omitted all three despite `default` being the most-used surface
-   in the system. They are named above.
+- **Card-body split.** `content` now means the card / pane body — re-derived to the
+  card-body tone in dark themes (light already matched). The card-body consumers
+  (`--tugx-pane-bg`, the transcript header) moved `overlay` → `content`, and
+  `overlay` now names only genuine floating layers.
+- **Vocabulary documented.** `default`, `overlay`, and `grid` (previously omitted
+  from the purposes list, despite `default` being the most-used surface) are named
+  above.
 
-Reconciling the per-mode token values to these meanings shifts a few surfaces
-visually and is reviewed per theme against the contrast audit; it is **not** a
-blind rename.
+**Pending (a deeper per-theme pass).**
+
+- **`raised` cross-mode tone.** A subtle accent near `default`: its dark tone sits
+  just under `default`, its light tone just over — not strictly monotonic.
+- **`inset` / `sunken` flip.** In dark, `inset` is deeper than `sunken`; in light
+  the order reverses. Names and values still need reconciling.
+- **`app` collapse.** A synonym of `canvas` (one reference, in
+  `theme-accessibility.ts`); fold into `canvas` later.
+
+Reconciling the pending items shifts surfaces visually and is reviewed per theme
+against the contrast audit; it is **not** a blind rename.
 
 ---
 

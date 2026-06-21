@@ -36,7 +36,7 @@
    * card-like container — the way it will at the real call sites. */
   border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   border-radius: 6px;
-  background: var(--tug7-surface-global-primary-normal-content-rest);
+  background: var(--tug7-surface-global-primary-normal-inset-rest);
   overflow: hidden;
 }
 
@@ -71,7 +71,7 @@
   display: block;
   border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   border-radius: 6px;
-  background: var(--tug7-surface-global-primary-normal-content-rest);
+  background: var(--tug7-surface-global-primary-normal-inset-rest);
   overflow: hidden;
 }
 
@@ -93,6 +93,6 @@
   font-family: var(--tug-font-family-mono);
   font-size: 12px;
   color: var(--tug7-element-global-text-normal-muted-rest);
-  background: var(--tug7-surface-global-primary-normal-content-rest);
+  background: var(--tug7-surface-global-primary-normal-inset-rest);
   white-space: pre;
 }

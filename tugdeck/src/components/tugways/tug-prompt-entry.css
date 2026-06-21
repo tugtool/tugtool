@@ -43,7 +43,7 @@ body {
   /* The editor's resting/blurred/deactivated surface is the CARD body surface
      (--tugx-pane-bg) — the same background the transcript shows — so the editor
      only diverges from the card when the caret is actually blinking in it. */
-  --tugx-prompt-entry-editor-rest:  var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-overlay-rest));
+  --tugx-prompt-entry-editor-rest:  var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-content-rest));
   /* The single "lit" state: caret blinking here. Aliased so the focus surface is
      retunable in one place; today it reuses the existing field focus surface, so
      no theme-file edit is needed ([D11]). */
