@@ -32,6 +32,31 @@
   --duet-accent-c-scale: 1;
   --duet-accent-l-shift: 0; /* tone (lightness) offset added to every Accent rung */
 
+  /* ---- Chrome treatments — each a TugColor of the KEY hue with its own
+     intensity / tone (/ alpha). The base Key supplies the hue + canonical L +
+     peak chroma; these knobs shape the rest appearance of the title bar, the
+     filled buttons, and the tinted badges (all "based on the same color"). ---- */
+  --duet-titlebar-i: 30;
+  --duet-titlebar-t: 88;
+  --duet-filled-i: 84;
+  --duet-filled-t: 44;
+  --duet-tinted-i: 75;
+  --duet-tinted-t: 38;
+  --duet-tinted-a: 0.40;
+
+  --duet-titlebar: oklch(
+    calc(var(--tugc-l-dark) + clamp(0, var(--duet-titlebar-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-titlebar-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(var(--duet-titlebar-i) / 100 * var(--duet-key-peak-c))
+    var(--duet-key-h));
+  --duet-filled: oklch(
+    calc(var(--tugc-l-dark) + clamp(0, var(--duet-filled-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-filled-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(var(--duet-filled-i) / 100 * var(--duet-key-peak-c))
+    var(--duet-key-h));
+  --duet-tinted: oklch(
+    calc(var(--tugc-l-dark) + clamp(0, var(--duet-tinted-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-tinted-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
+    calc(var(--duet-tinted-i) / 100 * var(--duet-key-peak-c))
+    var(--duet-key-h) / var(--duet-tinted-a));
+
   /* ---- Key ramp — uniform TugColor formula per rung; tone = literal + l-shift. */
   --duet-key-plain: oklch(
     calc(var(--tugc-l-dark) + clamp(0, calc(50 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(50 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
@@ -159,12 +184,19 @@
   --tug7-element-global-text-normal-link-rest: var(--duet-key-link);
   --tug7-element-global-text-normal-link-hover: var(--duet-key-link-hover);
   /* Submit / primary CTA (filled action) */
-  --tug7-surface-control-primary-filled-action-rest: var(--duet-key-selected);
+  --tug7-surface-control-primary-filled-action-rest: var(--duet-filled);
   --tug7-surface-control-primary-filled-action-hover: var(--duet-key-selected-hover);
   --tug7-surface-control-primary-filled-action-active: var(--duet-key-action-active);
-  --tug7-element-control-border-filled-action-rest: var(--duet-key-selected);
+  --tug7-element-control-border-filled-action-rest: var(--duet-filled);
   --tug7-element-control-border-filled-action-hover: var(--duet-key-selected-hover);
   --tug7-element-control-border-filled-action-active: var(--duet-key-action-active);
+  /* Tinted treatment drives BOTH the control (button) and badge families so the
+     two read identically at rest; the title-bar/tab chrome previews titlebar. */
+  --tug7-surface-control-primary-tinted-action-rest: var(--duet-tinted);
+  --tug7-element-control-border-tinted-action-rest: var(--duet-tinted);
+  --tug7-surface-badge-primary-tinted-action-rest: var(--duet-tinted);
+  --tug7-element-badge-border-tinted-action-rest: var(--duet-tinted);
+  --tugx-chrome-key-surface: var(--duet-titlebar);
 
   /* Accent ramp */
   --tug7-element-global-border-normal-accent-rest: var(--duet-accent);
@@ -289,4 +321,16 @@
   border-radius: var(--tug-radius-md);
   overflow: hidden;
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+/* Faux pane title bar — previews the title-bar treatment (--duet-titlebar). */
+.gcd-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: var(--tug-radius-md);
+  background: var(--duet-titlebar);
+  color: var(--tug7-element-card-text-normal-title-active);
+  font-size: var(--tug-font-size-sm);
+  font-weight: 600;
 }

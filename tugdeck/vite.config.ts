@@ -318,6 +318,19 @@ export async function handleDuetApply(
     return { status: 400, body: JSON.stringify({ error: "theme + valid keyHue/accentHue + numeric keyScale/accentScale (+optional tone shifts) required" }) };
   }
 
+  const parseTreatment = (v: unknown): { i: number; t: number; a?: number } | undefined => {
+    if (!v || typeof v !== "object") return undefined;
+    const o = v as Record<string, unknown>;
+    const i = Number(o.i);
+    const t = Number(o.t);
+    if (!Number.isFinite(i) || !Number.isFinite(t)) return undefined;
+    const a = o.a === undefined ? undefined : Number(o.a);
+    return { i, t, a: a !== undefined && Number.isFinite(a) ? a : undefined };
+  };
+  const titlebar = parseTreatment(b.titlebar);
+  const filled = parseTreatment(b.filled);
+  const tinted = parseTreatment(b.tinted);
+
   const themeFile = findThemeCssPath(theme, themesCssDir);
   if (!themeFile) {
     return { status: 404, body: JSON.stringify({ error: `theme '${theme}' not found` }) };
@@ -338,6 +351,7 @@ export async function handleDuetApply(
         const current = fs.readFileSync(themeFile, "utf-8");
         const { css, keyCount, accentCount } = applyDuet(current, baseline[theme], {
           keyHue, keyScale, keyToneShift, accentHue, accentScale, accentToneShift,
+          titlebar, filled, tinted,
         });
         fs.writeFileSync(themeFile, css, "utf-8");
         // Push the change into the active-theme file so the running card repaints.

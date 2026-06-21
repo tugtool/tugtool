@@ -17,6 +17,13 @@ import { HUE_FAMILIES, TUG_COLOR_PRESETS } from "./src/components/tugways/palett
 
 const CHROMATIC = new Set(Object.keys(HUE_FAMILIES));
 
+/** A chrome treatment — a TugColor of the Key hue with its own intensity / tone (/ alpha). */
+export interface DuetTreatment {
+  i: number;
+  t: number;
+  a?: number;
+}
+
 export interface DuetSeed {
   keyHue: string;
   keyScale: number;
@@ -26,6 +33,27 @@ export interface DuetSeed {
   accentScale: number;
   /** Tone (lightness) offset added to every Accent rung's tone, clamped 0–100. */
   accentToneShift?: number;
+  /** Title bar / active tab tint (writes --tugx-chrome-key-surface where present). */
+  titlebar?: DuetTreatment;
+  /** Filled buttons (filled-action surface + border). */
+  filled?: DuetTreatment;
+  /** Tinted badges (tinted-action surface + border). */
+  tinted?: DuetTreatment;
+}
+
+/**
+ * Which treatment a token belongs to (surface/border only — text/icon stay
+ * neutral). Covers BOTH the control family (TugPushButton) and the badge family
+ * (TugBadge) so buttons and badges driven by one treatment look identical at rest.
+ */
+function treatmentGroup(name: string): "filled" | "tinted" | null {
+  const isSurfaceOrBorder =
+    name.includes("surface-control") || name.includes("element-control-border") ||
+    name.includes("surface-badge") || name.includes("element-badge-border");
+  if (!isSurfaceOrBorder) return null;
+  if (name.includes("filled-action")) return "filled";
+  if (name.includes("tinted-action")) return "tinted";
+  return null;
 }
 
 /** Tokens excluded from any re-hue (signals, neutral tint, on-fill text, incidental). */
@@ -118,8 +146,12 @@ function parseTugColor(inner: string): Parsed | null {
 }
 
 function formatTugColor(hue: string, i: number, t: number, a: number | null): string {
-  const parts = [`i: ${Math.round(i)}`, `t: ${t}`];
-  if (a !== null) parts.push(`a: ${a}`);
+  // Clamp every axis to its valid --tug-color() range — treatment deltas (e.g.
+  // filled rest + active delta) and chroma scaling can otherwise overshoot and
+  // the postcss plugin rejects the value.
+  const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, Math.round(n)));
+  const parts = [`i: ${clamp(i, 100)}`, `t: ${clamp(t, 100)}`];
+  if (a !== null) parts.push(`a: ${clamp(a, 100)}`);
   return `--tug-color(${hue}, ${parts.join(", ")})`;
 }
 
@@ -154,25 +186,67 @@ export function applyDuet(
   let keyCount = 0;
   let accentCount = 0;
 
+  const replaceToken = (name: string, value: string): boolean => {
+    const tokenRe = new RegExp(
+      `(${name.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\s*:\\s*)--tug-color\\([^)]*\\)(\\s*;)`,
+    );
+    if (!tokenRe.test(css)) return false;
+    css = css.replace(tokenRe, `$1${value}$2`);
+    return true;
+  };
+
   for (const [name, inner] of Object.entries(baseline)) {
     const role = classifyRole(name);
     if (!role) continue;
     const parsed = parseTugColor(inner);
     if (!parsed) continue;
+
+    // Chrome treatments override the Key re-hue for the filled/tinted surface +
+    // border tokens: a TugColor of the Key hue at the treatment's own i/t, with
+    // hover/active/disabled keeping their baseline tone/intensity delta from rest
+    // so the interaction ramp survives. Text/icon stay on the normal Key re-hue.
+    const tg = treatmentGroup(name);
+    const tr = tg ? seed[tg] : undefined;
+    if (tg && tr) {
+      const restName = name.replace(/-(hover|active|disabled)$/, "-rest");
+      const baseThis = parsed;
+      const baseRest = parseTugColor(baseline[restName] ?? inner);
+      if (baseRest) {
+        const di = baseThis.i - baseRest.i;
+        const dt = baseThis.t - baseRest.t;
+        const i = tr.i + di;
+        const t = Math.max(0, Math.min(100, tr.t + dt));
+        // Tinted surface rest takes the treatment's alpha; everything else keeps
+        // its own baseline alpha (so border/hover translucency is preserved).
+        // Treatment alpha is 0–1 (oklch convention); --tug-color() wants 0–100,
+        // so scale it up — the source of the "transparent at rest" bug.
+        let alpha = baseThis.a;
+        if (tg === "tinted" && name === restName && name.includes("surface")) {
+          alpha = tr.a !== undefined ? tr.a * 100 : baseThis.a;
+        }
+        if (replaceToken(name, formatTugColor(seed.keyHue, i, t, alpha))) keyCount++;
+        continue;
+      }
+    }
+
     const hue = role === "key" ? seed.keyHue : seed.accentHue;
     const scale = role === "key" ? seed.keyScale : seed.accentScale;
     const toneShift = (role === "key" ? seed.keyToneShift : seed.accentToneShift) ?? 0;
     const tone = Math.max(0, Math.min(100, parsed.t + toneShift));
     const rewritten = formatTugColor(hue, parsed.i * scale, tone, parsed.a);
+    if (replaceToken(name, rewritten)) {
+      if (role === "key") keyCount++;
+      else accentCount++;
+    }
+  }
 
-    // Replace this token's value in place (first definition wins).
-    const tokenRe = new RegExp(
-      `(${name.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\s*:\\s*)--tug-color\\([^)]*\\)(\\s*;)`,
+  // Title-bar treatment — a single token (--tugx-chrome-key-surface), present
+  // only in the light themes. Written directly (no baseline; no states).
+  if (seed.titlebar) {
+    replaceToken(
+      "--tugx-chrome-key-surface",
+      formatTugColor(seed.keyHue, seed.titlebar.i, seed.titlebar.t, seed.titlebar.a ?? null),
     );
-    if (!tokenRe.test(css)) continue;
-    css = css.replace(tokenRe, `$1${rewritten}$2`);
-    if (role === "key") keyCount++;
-    else accentCount++;
   }
 
   return { css, keyCount, accentCount };

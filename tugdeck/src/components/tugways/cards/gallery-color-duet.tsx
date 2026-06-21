@@ -25,15 +25,18 @@
  *  - [L19] gallery-card authoring; registered in gallery-registrations.tsx.
  */
 
-import React, { useId, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ADJACENCY_RING, HUE_FAMILIES } from "@/components/tugways/palette-engine";
+import { useTugbankValue } from "@/lib/use-tugbank-value";
+import type { TaggedValue } from "@/lib/tugbank-client";
 import {
   TugListView,
   type TugListViewCellProps,
   type TugListViewDataSource,
 } from "@/components/tugways/tug-list-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugPopupButton, type TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSlider } from "@/components/tugways/tug-slider";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
@@ -43,6 +46,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { getThemeGetter } from "@/action-dispatch";
+import { useOptionalThemeContext } from "@/contexts/theme-provider";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import "./gallery.css";
 import "./gallery-color-duet.css";
@@ -58,15 +62,29 @@ interface Seed {
   accHue: string;
   accCScale: number;
   accLShift: number;
+  // Chrome treatments — each a TugColor of the Key hue with its own i / t (/ a).
+  titlebarI: number;
+  titlebarT: number;
+  filledI: number;
+  filledT: number;
+  tintedI: number;
+  tintedT: number;
+  tintedA: number;
 }
 
-/** Compact preset constructor — lightness shift defaults to 0 (neutral tone). */
+/** Compact preset constructor — lightness shift + treatments default to a
+ *  brio-like baseline; the treatment knobs are tuned separately. */
 const mk = (
   keyHue: string,
   keyCScale: number,
   accHue: string,
   accCScale: number,
-): Seed => ({ keyHue, keyCScale, keyLShift: 0, accHue, accCScale, accLShift: 0 });
+): Seed => ({
+  keyHue, keyCScale, keyLShift: 0, accHue, accCScale, accLShift: 0,
+  titlebarI: 30, titlebarT: 88,
+  filledI: 84, filledT: 44,
+  tintedI: 75, tintedT: 38, tintedA: 0.4,
+});
 
 /** Default = today's brio (blue Key / orange Accent), an exact baseline. */
 const SEED_TODAY: Seed = mk("blue", 1, "orange", 1);
@@ -84,6 +102,36 @@ const PRESETS: ReadonlyArray<{ name: string; seed: Seed }> = [
   { name: "aria", seed: mk("purple", 0.5, "sky", 0.9) },
   { name: "vivace", seed: mk("seafoam", 0.44, "fuchsia", 0.9) },
 ];
+
+// Persistence — scoped to THIS gallery card only (its own tugbank domain, never
+// the app-settings keys). Stores a PER-THEME map of working seeds, so each theme
+// remembers its own in-progress tuning across revisits and theme switches.
+const SEED_DOMAIN = "dev.tugtool.gallery.colorduet";
+const SEED_KEY = "seeds";
+
+type SeedMap = Record<string, Partial<Seed>>;
+
+function parseSeedMap(entry: TaggedValue | undefined): SeedMap {
+  if (entry && entry.kind === "json" && entry.value && typeof entry.value === "object") {
+    return entry.value as SeedMap;
+  }
+  return {};
+}
+
+/** The seed for one theme, with SEED_TODAY filling any missing fields. */
+function readSeedFor(map: SeedMap, theme: string): Seed {
+  return { ...SEED_TODAY, ...(map[theme] ?? {}) };
+}
+
+function putSeedMap(map: SeedMap): void {
+  fetch(`/api/defaults/${SEED_DOMAIN}/${SEED_KEY}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: map }),
+  }).catch(() => {
+    /* fire-and-forget — tuning is dev-only convenience state */
+  });
+}
 
 const angle = (hue: string): string => {
   const a = HUE_FAMILIES[hue];
@@ -145,9 +193,14 @@ const LIST_CELL_RENDERERS = { row: DuetRowCell };
 export function GalleryColorDuet(): React.ReactElement {
   const boardRef = useRef<HTMLDivElement>(null);
 
+  // Per-theme persistence (this card's own tugbank domain). The seed map is
+  // keyed by theme name; the active theme selects which seed the card edits.
+  const seedMap = useTugbankValue<SeedMap>(SEED_DOMAIN, SEED_KEY, parseSeedMap, {});
+  const activeTheme = useOptionalThemeContext()?.theme ?? getThemeGetter()?.() ?? "brio";
+
   // Local-data only: the controlled control values + copy-out readout. The paint
   // is the setProperty calls below, never a React-state-driven style ([L06]).
-  const [seed, setSeed] = useState<Seed>(SEED_TODAY);
+  const [seed, setSeed] = useState<Seed>(() => readSeedFor(seedMap, activeTheme));
   const [copied, setCopied] = useState(false);
   const [applyMsg, setApplyMsg] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
@@ -162,6 +215,16 @@ export function GalleryColorDuet(): React.ReactElement {
     setVar(`--duet-${role}-peak-c`, `var(--tugc-${hue}-peak-c)`);
   };
 
+  const applyTreatments = (next: Seed): void => {
+    setVar("--duet-titlebar-i", String(next.titlebarI));
+    setVar("--duet-titlebar-t", String(next.titlebarT));
+    setVar("--duet-filled-i", String(next.filledI));
+    setVar("--duet-filled-t", String(next.filledT));
+    setVar("--duet-tinted-i", String(next.tintedI));
+    setVar("--duet-tinted-t", String(next.tintedT));
+    setVar("--duet-tinted-a", String(next.tintedA));
+  };
+
   const applySeed = (next: Seed): void => {
     applyHue("key", next.keyHue);
     applyHue("accent", next.accHue);
@@ -169,6 +232,7 @@ export function GalleryColorDuet(): React.ReactElement {
     setVar("--duet-accent-c-scale", String(next.accCScale));
     setVar("--duet-key-l-shift", String(next.keyLShift));
     setVar("--duet-accent-l-shift", String(next.accLShift));
+    applyTreatments(next);
   };
 
   const onHue = (role: "key" | "accent", hue: string): void => {
@@ -193,6 +257,19 @@ export function GalleryColorDuet(): React.ReactElement {
     setCopied(false);
   };
 
+  const onTreatment = (
+    field:
+      | "titlebarI" | "titlebarT"
+      | "filledI" | "filledT"
+      | "tintedI" | "tintedT" | "tintedA",
+    cssVar: string,
+    value: number,
+  ): void => {
+    setVar(cssVar, String(value));
+    setSeed((prev) => ({ ...prev, [field]: value }));
+    setCopied(false);
+  };
+
   const onPreset = (next: Seed): void => {
     applySeed(next);
     setSeed(next);
@@ -202,6 +279,33 @@ export function GalleryColorDuet(): React.ReactElement {
   // Real selectable list (genuine selection fill + caret when focused).
   const listSource = useMemo(() => new DuetListDataSource(LIST_ROWS), []);
 
+  // Paint the board from the restored seed once at mount; later paints flow
+  // through the handlers ([L06]).
+  useLayoutEffect(() => {
+    applySeed(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On a theme switch, load that theme's saved seed and repaint. Guarded so the
+  // card's own writes (which also update seedMap) don't clobber in-flight edits.
+  const loadedThemeRef = useRef(activeTheme);
+  useEffect(() => {
+    if (loadedThemeRef.current === activeTheme) return;
+    loadedThemeRef.current = activeTheme;
+    const next = readSeedFor(seedMap, activeTheme);
+    setSeed(next);
+    applySeed(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTheme, seedMap]);
+
+  // Persist edits under the ACTIVE theme (skip when unchanged — covers the
+  // initial restore and the theme-switch load, avoiding redundant writes/loops).
+  useEffect(() => {
+    if (JSON.stringify(readSeedFor(seedMap, activeTheme)) === JSON.stringify(seed)) return;
+    putSeedMap({ ...seedMap, [activeTheme]: seed });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed, seedMap, activeTheme]);
+
   // Control sender ids — Tug controls dispatch actions the card handles ([L11]).
   const keyHueId = useId();
   const keyCId = useId();
@@ -209,6 +313,13 @@ export function GalleryColorDuet(): React.ReactElement {
   const accHueId = useId();
   const accCId = useId();
   const accLId = useId();
+  const tbIId = useId();
+  const tbTId = useId();
+  const fIId = useId();
+  const fTId = useId();
+  const tiIId = useId();
+  const tiTId = useId();
+  const tiAId = useId();
   const radioId = useId();
   const choiceId = useId();
   const [radioValue, setRadioValue] = useState("on");
@@ -224,6 +335,13 @@ export function GalleryColorDuet(): React.ReactElement {
       [accCId]: (v) => onCScale("accent", v),
       [keyLId]: (v) => onLShift("key", v),
       [accLId]: (v) => onLShift("accent", v),
+      [tbIId]: (v) => onTreatment("titlebarI", "--duet-titlebar-i", v),
+      [tbTId]: (v) => onTreatment("titlebarT", "--duet-titlebar-t", v),
+      [fIId]: (v) => onTreatment("filledI", "--duet-filled-i", v),
+      [fTId]: (v) => onTreatment("filledT", "--duet-filled-t", v),
+      [tiIId]: (v) => onTreatment("tintedI", "--duet-tinted-i", v),
+      [tiTId]: (v) => onTreatment("tintedT", "--duet-tinted-t", v),
+      [tiAId]: (v) => onTreatment("tintedA", "--duet-tinted-a", v),
     },
     selectValue: {
       [radioId]: setRadioValue,
@@ -235,6 +353,7 @@ export function GalleryColorDuet(): React.ReactElement {
   const readout = [
     `Key:    ${seed.keyHue} (${angle(seed.keyHue)})  chroma x${seed.keyCScale.toFixed(2)}  lightness ${fmtShift(seed.keyLShift)}`,
     `Accent: ${seed.accHue} (${angle(seed.accHue)})  chroma x${seed.accCScale.toFixed(2)}  lightness ${fmtShift(seed.accLShift)}`,
+    `Title bar: i${seed.titlebarI} t${seed.titlebarT}   Filled: i${seed.filledI} t${seed.filledT}   Tinted: i${seed.tintedI} t${seed.tintedT} a${seed.tintedA.toFixed(2)}`,
   ].join("\n");
 
   // Apply writes the current duet into the ACTIVE theme's CSS via the dev-server
@@ -259,6 +378,9 @@ export function GalleryColorDuet(): React.ReactElement {
         accentHue: seed.accHue,
         accentScale: seed.accCScale,
         accentToneShift: seed.accLShift,
+        titlebar: { i: seed.titlebarI, t: seed.titlebarT },
+        filled: { i: seed.filledI, t: seed.filledT },
+        tinted: { i: seed.tintedI, t: seed.tintedT, a: seed.tintedA },
       }),
     })
       .then(async (r) => {
@@ -326,6 +448,7 @@ export function GalleryColorDuet(): React.ReactElement {
               max={1.3}
               step={0.02}
               size="sm"
+              valueWidth="3.25rem"
             />
             <TugSlider
               label="Key lightness ±"
@@ -353,6 +476,7 @@ export function GalleryColorDuet(): React.ReactElement {
               max={1.3}
               step={0.02}
               size="sm"
+              valueWidth="3.25rem"
             />
             <TugSlider
               label="Accent lightness ±"
@@ -363,6 +487,17 @@ export function GalleryColorDuet(): React.ReactElement {
               step={1}
               size="sm"
             />
+
+            <div className="gcd-control-label" style={{ marginTop: "6px" }}>
+              Treatments (off the Key hue)
+            </div>
+            <TugSlider label="Title bar i" senderId={tbIId} value={seed.titlebarI} min={0} max={100} step={1} size="sm" />
+            <TugSlider label="Title bar t" senderId={tbTId} value={seed.titlebarT} min={0} max={100} step={1} size="sm" />
+            <TugSlider label="Filled i" senderId={fIId} value={seed.filledI} min={0} max={100} step={1} size="sm" />
+            <TugSlider label="Filled t" senderId={fTId} value={seed.filledT} min={0} max={100} step={1} size="sm" />
+            <TugSlider label="Tinted i" senderId={tiIId} value={seed.tintedI} min={0} max={100} step={1} size="sm" />
+            <TugSlider label="Tinted t" senderId={tiTId} value={seed.tintedT} min={0} max={100} step={1} size="sm" />
+            <TugSlider label="Tinted α" senderId={tiAId} value={seed.tintedA} min={0} max={1} step={0.02} size="sm" valueWidth="3.25rem" />
           </div>
 
           <div className="gcd-presets" style={{ marginTop: "10px" }}>
@@ -393,6 +528,12 @@ export function GalleryColorDuet(): React.ReactElement {
         <div className="cg-section">
           <TugLabel className="cg-section-title">Composites</TugLabel>
           <div className="gallery-color-duet-board" ref={boardRef} data-testid="gcd-board">
+            {/* Title bar / active tab — previews the titlebar treatment. */}
+            <div className="gcd-composite">
+              <div className="gcd-composite-title">Title bar / active tab (titlebar treatment)</div>
+              <div className="gcd-titlebar">Dev — focused title bar</div>
+            </div>
+
             {/* Selection fill + keyboard caret. The static row carries the real
                 production caret rule (.tug-list-view-cell[data-key-cursor]::before)
                 so the Accent bar is always visible over the Key fill; the live
@@ -419,13 +560,19 @@ export function GalleryColorDuet(): React.ReactElement {
               </div>
             </div>
 
-            {/* Primary CTA vs danger — red-safety comparison ([P05]). */}
+            {/* Z4B treatments — filled button + tinted badge — vs danger (red). */}
             <div className="gcd-composite">
-              <div className="gcd-composite-title">Primary action (Key) vs danger (unchanged red)</div>
+              <div className="gcd-composite-title">Filled button · tinted button + tinted badge (should match) · danger</div>
               <div className="gcd-row">
-                <TugPushButton emphasis="primary" role="action" onClick={() => {}}>
+                <TugPushButton emphasis="filled" role="action" onClick={() => {}}>
                   Submit
                 </TugPushButton>
+                <TugPushButton emphasis="tinted" role="action" onClick={() => {}}>
+                  Mode
+                </TugPushButton>
+                <TugBadge emphasis="tinted" role="action" size="lg" layout="label-top" label="Model">
+                  Opus 4.8
+                </TugBadge>
                 <TugPushButton emphasis="primary" role="danger" onClick={() => {}}>
                   Delete
                 </TugPushButton>
