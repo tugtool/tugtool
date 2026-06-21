@@ -105,7 +105,7 @@ Roles fall into several categories:
 
 **Shadow sizes:** `xs` · `md` · `lg` · `xl` · `overlay`
 
-**Surface purposes:** `app` · `canvas` · `raised` · `sunken` · `inset` · `content` · `screen` · `control` · `dim` · `scrim`
+**Surface purposes:** `canvas` · `app` · `inset` · `sunken` · `default` · `content` · `raised` · `overlay` · `screen` · `grid` · `control` · `dim` · `scrim` (ordered + defined in [Surface Elevation](#surface-elevation))
 
 **Highlight purposes:** `hover` · `drop` · `preview` · `inspector` · `snap` · `flash` · `highlight`
 
@@ -134,6 +134,71 @@ These rules make seven-slot parsing deterministic:
 **Field text types are roles.** `label`, `placeholder`, and `required` are roles (persistent characteristics). `disabled` and `readonly` are states. Example: `--tug7-element-field-text-normal-label-rest`.
 
 **Dual-slot values.** Some values appear in both role and state slots. `hover` is a role when it names a highlight surface's purpose (`--tug7-surface-highlight-primary-normal-hover-rest`) and a state when it names an interaction condition (`--tug7-element-global-text-normal-link-hover`). `mixed` is a role for toggle tracks (`--tug7-surface-toggle-track-normal-mixed-rest`) and a state for checkmarks (`--tug7-element-checkmark-icon-normal-plain-mixed`). The slot determines the meaning.
+
+---
+
+## Surface Elevation
+
+> **DRAFT — under review.** This section defines the intended meaning of the
+> `surface-global` purposes. The shipped themes predate it and are **not yet
+> conformant** (see *Reconciliation status* at the end); reconciling the per-mode
+> values is a separate, per-theme follow-up.
+
+The `--tug7-surface-global-primary-normal-<purpose>-*` family is an **elevation
+ladder**. Each `purpose` names how far *forward* — proud toward the viewer — a
+surface sits, from the desktop at the back to floating layers at the front. A
+component picks a rung by **what the surface is**, never by a raw tone.
+
+**One tone rule, both modes — _forward reads lighter_.** Dark themes keep the
+back deep (low tone) and lighten toward the front; light themes keep the front
+near-white and darken the wells. So a more-forward rung always has a higher tone
+than the rung behind it, in either mode. (This is the per-mode restatement of the
+elevation doctrine in [theme-engine.md](theme-engine.md).)
+
+**The rungs, back → front:**
+
+| purpose | what it is | typical consumers |
+|---|---|---|
+| `canvas` | the desktop behind every card | deck background, host canvas |
+| `sunken` | the deepest well cut into a surface | recessed wells / troughs (tinted) |
+| `inset` | a shallow well | input troughs, code gutters, block frames |
+| `default` | the standard component surface — the generic surface most controls rest on, a hair recessed from the card body | the workhorse; the large majority of component backgrounds |
+| `content` | the **body of a card / pane** — the primary surface its content sits on | pane body, transcript, sheet / dialog / alert body |
+| `raised` | chrome lifted **above** the card body | title / header / toolbar strips |
+| `overlay` | a layer floating above the whole UI | popovers, menus, completion, tooltips |
+| `screen` | the always-light tier — stays light even in light themes so tooltip / dev-panel text needs no inverse treatment | dev panel, tooltips |
+
+**Not elevation rungs** (special-purpose; documented with their components):
+
+- `app` — a synonym for `canvas` in every shipped theme today (candidate to collapse into `canvas`).
+- `grid` — decorative deck grid lines (often semi-transparent); not a content surface.
+- `control` — a passthrough to the outlined-control surface (usually `transparent`); it shows whatever rung sits behind it rather than introducing one.
+
+**States.** Each rung carries the interaction states it actually uses
+(`-rest`, `-hover`, `-active`, `-disabled`); inert surfaces use only `-rest`.
+
+### Reconciliation status (why the themes don't match yet)
+
+The vocabulary above is the target. The shipped themes diverge from it in four
+known ways, each a deliberate follow-up rather than a silent bug:
+
+1. **`content` is incoherent across modes.** It is the *deepest* surface in dark
+   themes (`t6`, equal to `inset`) but the *lightest* in light themes (`t100`,
+   equal to `overlay`). Under this model `content` means "card body" and must be
+   re-derived to one consistent elevation in both modes.
+2. **`raised` sits behind `default` in dark themes** (`t11` < `t12`). Under this
+   model it belongs **in front of** `content`.
+3. **`overlay` is overloaded.** It is borrowed as the card-body surface
+   (`--tugx-pane-bg`, transcript header) on top of its correct use for true
+   floating layers. The card-body consumers move to `content`; `overlay` keeps
+   only the floating-layer role.
+4. **`default`, `overlay`, `grid` were undocumented** — the previous "Surface
+   purposes" list omitted all three despite `default` being the most-used surface
+   in the system. They are named above.
+
+Reconciling the per-mode token values to these meanings shifts a few surfaces
+visually and is reviewed per theme against the contrast audit; it is **not** a
+blind rename.
 
 ---
 
