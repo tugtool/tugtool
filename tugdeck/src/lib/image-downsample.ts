@@ -5,10 +5,18 @@
  * Every image the user drops or pastes runs through this module
  * *before* its bytes reach the per-card bytes-store. The output is
  * always API-compliant: ≤ 2576 px on the long edge (the Opus 4.7
- * Vision cap) and ≤ 5 MB decoded (the Anthropic per-image ceiling).
- * That guarantee means tugcode never sees an oversize image — the
- * Anthropic backend never has cause to reject one of our submissions
- * on size or dimension grounds.
+ * Vision cap) and small enough that its **base64** encoding stays
+ * under the per-image ceiling. The size ceiling is measured on the
+ * base64 string, not the decoded bytes: the Anthropic API limits the
+ * base64 payload (10 MB direct, 5 MB on Bedrock/Vertex), and the
+ * bundled Claude Code bridge enforces the stricter 5 MB base64 cap
+ * before a turn is sent. Base64 inflates the decoded size by ~4/3, so
+ * a budget expressed in decoded bytes (the earlier shape of this
+ * module) let a compliant-looking image ship an oversize payload —
+ * `MAX_BYTE_SIZE` is now derived from the base64 ceiling. That
+ * guarantee means neither tugcode nor the Claude Code bridge sees an
+ * oversize payload — nothing downstream has cause to reject one of
+ * our submissions on size grounds.
  *
  * ## Pipeline shape
  *
@@ -93,11 +101,27 @@
 export const MAX_LONG_EDGE_PX = 2576;
 
 /**
- * Max decoded byte size of a single image. Anthropic Vision's per-
- * image ceiling. Images that exceed this after the JPEG quality
- * ladder return a `too-large-after-fallback` error.
+ * Per-image ceiling on the **base64-encoded** payload. The Anthropic
+ * Vision API measures its size limit on the base64 string (10 MB
+ * direct, 5 MB on Bedrock/Vertex), and the bundled Claude Code bridge
+ * enforces the stricter 5 MB base64 cap before a turn is sent — so we
+ * target that. The decoded budget below is derived from this.
  */
-export const MAX_BYTE_SIZE = 5 * 1024 * 1024;
+export const MAX_BASE64_SIZE = 5 * 1024 * 1024;
+
+/**
+ * Max **decoded** byte size of a single image's encoded output (the
+ * raw JPEG/PNG/WebP bytes, i.e. `Blob.size`). Derived from
+ * {@link MAX_BASE64_SIZE}: base64 expands decoded bytes by ~4/3
+ * (`ceil(n/3) * 4`), so the decoded budget is the base64 ceiling
+ * scaled by 3/4, minus a 64 KiB margin so the encoded payload lands
+ * comfortably under the limit (avoids a boundary rejection when the
+ * downstream check is `>=` rather than `>`). The pipeline compares
+ * `Blob.size` against this value; images that still exceed it after
+ * the JPEG quality ladder return a `too-large-after-fallback` error.
+ */
+export const MAX_BYTE_SIZE =
+  Math.floor((MAX_BASE64_SIZE * 3) / 4) - 64 * 1024;
 
 /**
  * Long-edge ceiling for thumbnails. The transcript strip renders each

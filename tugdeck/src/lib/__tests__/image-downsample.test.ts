@@ -21,6 +21,7 @@ import {
   fitWithinLongEdge,
   isAnimatedGif,
   JPEG_QUALITY_LADDER,
+  MAX_BASE64_SIZE,
   MAX_BYTE_SIZE,
   MAX_LONG_EDGE_PX,
   SVG_RASTER_MAX_EDGE_PX,
@@ -607,8 +608,19 @@ describe("exported constants", () => {
     expect(MAX_LONG_EDGE_PX).toBe(2576);
   });
 
-  test("MAX_BYTE_SIZE matches Anthropic Vision per-image cap (5 MB)", () => {
-    expect(MAX_BYTE_SIZE).toBe(5 * 1024 * 1024);
+  test("MAX_BASE64_SIZE matches the enforced per-image base64 cap (5 MB)", () => {
+    // The Anthropic Vision limit is measured on the base64 string, and
+    // the Claude Code bridge enforces 5 MB base64 before send.
+    expect(MAX_BASE64_SIZE).toBe(5 * 1024 * 1024);
+  });
+
+  test("MAX_BYTE_SIZE keeps the base64 payload under the cap, with margin", () => {
+    // Decoded budget is derived from the base64 ceiling (×3/4) less a
+    // 64 KiB margin, so the encoded output's base64 lands under 5 MB.
+    expect(MAX_BYTE_SIZE).toBe(Math.floor((MAX_BASE64_SIZE * 3) / 4) - 64 * 1024);
+    // The whole point: base64 of a max-size output stays under the cap.
+    const base64OfMax = Math.ceil(MAX_BYTE_SIZE / 3) * 4;
+    expect(base64OfMax).toBeLessThan(MAX_BASE64_SIZE);
   });
 
   test("THUMBNAIL_MAX_EDGE_PX gives a crisp, Retina-sized strip tile", () => {
