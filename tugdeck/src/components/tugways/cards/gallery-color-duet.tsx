@@ -86,22 +86,9 @@ const mk = (
   tintedI: 75, tintedT: 38, tintedA: 0.4,
 });
 
-/** Default = today's brio (blue Key / orange Accent), an exact baseline. */
+/** Default seed — today's brio (blue Key / orange Accent), an exact baseline.
+ *  Used only as the fallback when a theme has no saved seed yet. */
 const SEED_TODAY: Seed = mk("blue", 1, "orange", 1);
-
-/**
- * The six shipped duets (the values now live in the theme files). Loading a
- * preset re-applies that theme's locked hues + chroma scales to the board.
- */
-const PRESETS: ReadonlyArray<{ name: string; seed: Seed }> = [
-  { name: "today (brio)", seed: SEED_TODAY },
-  { name: "brio", seed: mk("cobalt", 0.9, "orange", 0.85) },
-  { name: "harmony", seed: mk("cobalt", 0.9, "orange", 1.0) },
-  { name: "nocturne", seed: mk("sapphire", 0.85, "tangerine", 0.8) },
-  { name: "bravura", seed: mk("cerise", 0.3, "aqua", 0.9) },
-  { name: "aria", seed: mk("purple", 0.5, "sky", 0.9) },
-  { name: "vivace", seed: mk("seafoam", 0.44, "fuchsia", 0.9) },
-];
 
 // Persistence — scoped to THIS gallery card only (its own tugbank domain, never
 // the app-settings keys). Stores a PER-THEME map of working seeds, so each theme
@@ -270,12 +257,6 @@ export function GalleryColorDuet(): React.ReactElement {
     setCopied(false);
   };
 
-  const onPreset = (next: Seed): void => {
-    applySeed(next);
-    setSeed(next);
-    setCopied(false);
-  };
-
   // Real selectable list (genuine selection fill + caret when focused).
   const listSource = useMemo(() => new DuetListDataSource(LIST_ROWS), []);
 
@@ -416,19 +397,6 @@ export function GalleryColorDuet(): React.ReactElement {
         {/* ---- Controls ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Seed</TugLabel>
-          <div className="gcd-presets">
-            {PRESETS.map((preset) => (
-              <TugPushButton
-                key={preset.name}
-                emphasis="outlined"
-                role="action"
-                size="2xs"
-                onClick={() => onPreset(preset.seed)}
-              >
-                {preset.name}
-              </TugPushButton>
-            ))}
-          </div>
 
           <div className="gcd-controls">
             <div className="gcd-control-row">
@@ -500,7 +468,7 @@ export function GalleryColorDuet(): React.ReactElement {
             <TugSlider label="Tinted α" senderId={tiAId} value={seed.tintedA} min={0} max={1} step={0.02} size="sm" valueWidth="3.25rem" />
           </div>
 
-          <div className="gcd-presets" style={{ marginTop: "10px" }}>
+          <div className="gcd-actions" style={{ marginTop: "10px" }}>
             <TugPushButton
               emphasis="primary"
               role="action"

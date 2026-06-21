@@ -257,7 +257,7 @@
   font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
-.gcd-presets {
+.gcd-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
