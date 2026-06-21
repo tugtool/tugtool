@@ -232,6 +232,15 @@ body {
      Below app-level banners (99000+). The Radix portal still mounts at
      the document root; the token only sets the stacking context. */
   z-index: var(--tug-z-overlay-menu);
+  /* A menu taller than the space below its trigger must scroll, not clip.
+     Radix's Popper measures the collision-free room between the trigger and
+     the viewport edge and publishes it as this var; clamping to it and
+     scrolling the overflow keeps every item reachable however long the list.
+     The box-sizing keeps padding inside the cap so the last row isn't cut. */
+  box-sizing: border-box;
+  max-height: var(--radix-dropdown-menu-content-available-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Popup-in-sheet z-tier elevation per [D09]. When TugPopupMenu /
