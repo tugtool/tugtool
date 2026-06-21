@@ -159,6 +159,14 @@ body {
   background-color: var(--tugx-prompt-entry-editor-focus);
 }
 
+/* Drop the field border outright. `borderless` only zeroes its COLOR, leaving a
+   1px transparent ring that revealed the wrapper's own (field-rest) background as
+   a faint hairline around the now card-body editor surface. Zeroing the width
+   removes the ring entirely; states only ever set border-color, so this holds. */
+.tug-prompt-entry .tug-text-editor {
+  border-width: 0;
+}
+
 /* No vertical nudge for the route choice-group's lucide icons — flex
    `align-items: center` from the segment lands them at the right
    optical center. (An earlier draft used text glyphs `❯`/`$`/`:` which
