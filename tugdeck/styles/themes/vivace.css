@@ -210,7 +210,7 @@ body {
   /* Selection */
   --tug7-element-selection-text-normal-plain-rest: --tug-color(grass, i: 2, t: 8);
   --tug7-surface-selection-primary-normal-plain-inactive: --tug-color(grass, i: 5, t: 80, a: 30);
-  --tug7-surface-selection-primary-normal-plain-rest: --tug-color(teal, i: 50, t: 50, a: 40);
+  --tug7-surface-selection-primary-normal-plain-rest: --tug-color(teal, i: 60, t: 50, a: 40);
   /* UI selection — the selection axis (blue): its OWN fixed color marking the
      chosen item, independent of the accent/action roles and of the focus axis
      (orange). The same blue carries the toggle `on` role (group / checkbox /
@@ -303,7 +303,7 @@ body {
   /* One shared Key-tinted chrome surface — the single knob for the focused
      title bar and its merged active tab, keeping them unified with the theme's
      Key hue (the action family the Z4B buttons/badges use). Tune this value. */
-  --tugx-chrome-key-surface: --tug-color(teal, i: 8, t: 98);
+  --tugx-chrome-key-surface: --tug-color(teal, i: 3, t: 98);
   --tug7-surface-card-primary-normal-titlebar-active: var(--tugx-chrome-key-surface);
   --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(grass, i: 2, t: 65);
   --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(grass, i: 7, t: 88);
