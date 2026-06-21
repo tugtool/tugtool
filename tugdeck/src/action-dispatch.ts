@@ -527,6 +527,13 @@ export function initActionDispatch(
     TUG_ACTIONS.NEXT_TAB,
     TUG_ACTIONS.PREVIOUS_TAB,
     TUG_ACTIONS.CYCLE_CARD,
+    // Paste variants (Edit ▸ Paste as Quote / Paste as Plain Text).
+    // Like the editor's own context-menu paste, these handlers defer
+    // the clipboard read + insertion into a returned continuation;
+    // the native menu round-trip already played its blink, so the
+    // continuation is invoked immediately below.
+    TUG_ACTIONS.PASTE_AS_QUOTE,
+    TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
   ]) {
     registerAction(action, () => {
       if (responderChainManagerRef) {

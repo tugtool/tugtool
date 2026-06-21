@@ -122,6 +122,14 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "KeyX", meta: true, action: TUG_ACTIONS.CUT, preventDefaultOnMatch: true },
   { key: "KeyC", meta: true, action: TUG_ACTIONS.COPY, preventDefaultOnMatch: true },
   { key: "KeyV", meta: true, action: TUG_ACTIONS.PASTE, preventDefaultOnMatch: true },
+  // Paste variants. ⌥⌘V wraps the clipboard as a Markdown blockquote;
+  // ⇧⌘V strips Markdown to plain text. The exact-modifier match in
+  // `keyBindingMatchesEvent` keeps these distinct from bare ⌘V. In
+  // Tug.app the Swift Edit menu owns these chords (AppKit swallows them
+  // at the menu bar and round-trips a control frame); these entries
+  // serve browser-only dev where no Swift menu is present.
+  { key: "KeyV", meta: true, alt: true, action: TUG_ACTIONS.PASTE_AS_QUOTE, preventDefaultOnMatch: true },
+  { key: "KeyV", meta: true, shift: true, action: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT, preventDefaultOnMatch: true },
   // Undo / redo do NOT use preventDefaultOnMatch. Native <input> and
   // <textarea> elements rely on the browser's built-in undo stack,
   // which no JavaScript API can trigger programmatically. These

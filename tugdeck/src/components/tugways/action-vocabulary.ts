@@ -97,6 +97,15 @@ export const TUG_ACTIONS = {
   // PASTE:       payload — none. The first responder pastes clipboard
   //              content. Handlers typically return a continuation so the
   //              paste happens after any menu activation animation.
+  // PASTE_AS_QUOTE:      payload — none. Like PASTE, but the clipboard's
+  //              plain text is rewritten as a Markdown blockquote (every
+  //              line prefixed `> `) before insertion. Atom sidecars are
+  //              ignored — the quote variant is plain-text only. Two-phase
+  //              continuation like PASTE. Bound to ⌥⌘V.
+  // PASTE_AS_PLAIN_TEXT: payload — none. Like PASTE, but Markdown
+  //              formatting is stripped from the clipboard text (headings,
+  //              emphasis, code, links → their text content) before
+  //              insertion. Plain-text only; no atom sidecar. Bound to ⇧⌘V.
   // SELECT_ALL:  payload — none. The first responder selects all of its
   //              content. The handler calls document.execCommand("selectAll")
   //              — note the camelCase browser command name, not this
@@ -105,11 +114,13 @@ export const TUG_ACTIONS = {
   //              selection. NOTE: no responder currently registers a
   //              handler for this — dispatching is a silent no-op
   //              until a control wires it up.
-  CUT:         "cut",
-  COPY:        "copy",
-  PASTE:       "paste",
-  SELECT_ALL:  "select-all",
-  SELECT_NONE: "select-none",
+  CUT:                 "cut",
+  COPY:                "copy",
+  PASTE:               "paste",
+  PASTE_AS_QUOTE:      "paste-as-quote",
+  PASTE_AS_PLAIN_TEXT: "paste-as-plain-text",
+  SELECT_ALL:          "select-all",
+  SELECT_NONE:         "select-none",
 
   // ---- Editing ----
   //

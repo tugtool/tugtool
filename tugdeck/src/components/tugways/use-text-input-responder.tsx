@@ -167,6 +167,7 @@ import {
   readClipboardViaNative,
   warnIfWKWebViewRace,
 } from "@/lib/tug-native-clipboard";
+import { quoteMarkdown, stripMarkdown } from "@/lib/paste-transforms";
 import {
   type TextSelectionAdapter,
   findWordBoundaries,
@@ -527,6 +528,49 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     };
   }, [disabled, inputRef]);
 
+  // Paste-as-quote / paste-as-plain-text: read the clipboard's plain
+  // text and run a transform (blockquote wrap / Markdown strip) before
+  // inserting via `applyPastedText`. Plain-text only — no atom sidecar,
+  // no execCommand("paste") interception, because the transform must see
+  // the raw text. The native bridge is preferred (popup-free read in
+  // Tug.app); otherwise the async Clipboard API. Insertion is deferred
+  // into the continuation so it lands after any menu activation blink.
+  const pasteWithTransform = useCallback(
+    (transform: (text: string) => string): ActionHandlerResult => {
+      if (disabled) return;
+      const el = inputRef.current;
+      if (!el) return;
+      const apply = (raw: string) => {
+        if (!mountedRef.current) return;
+        applyPastedText(inputRef, mountedRef, transform(raw));
+      };
+      if (hasNativeClipboardBridge()) {
+        const nativeReadPromise = readClipboardViaNative();
+        return () => {
+          void nativeReadPromise.then(({ text }) => apply(text));
+        };
+      }
+      if (typeof navigator === "undefined" || !navigator.clipboard?.readText) {
+        return;
+      }
+      const readPromise = navigator.clipboard.readText().catch(() => "");
+      return () => {
+        void readPromise.then(apply);
+      };
+    },
+    [disabled, inputRef, mountedRef],
+  );
+
+  const handlePasteAsQuote = useCallback(
+    (): ActionHandlerResult => pasteWithTransform(quoteMarkdown),
+    [pasteWithTransform],
+  );
+
+  const handlePasteAsPlainText = useCallback(
+    (): ActionHandlerResult => pasteWithTransform(stripMarkdown),
+    [pasteWithTransform],
+  );
+
   const handleSelectAll = useCallback((): ActionHandlerResult => {
     if (disabled) return;
     return () => {
@@ -674,6 +718,8 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     [TUG_ACTIONS.CUT]: handleCut,
     [TUG_ACTIONS.COPY]: handleCopy,
     [TUG_ACTIONS.PASTE]: handlePaste,
+    [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
+    [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
     [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
     // ---- Editing motion / deletion ----
     [TUG_ACTIONS.DELETE_TO_LINE_START]: handleDeleteToLineStart,

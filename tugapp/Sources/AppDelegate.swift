@@ -606,6 +606,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(performCut(_:)), keyEquivalent: "x").identified("edit.cut"))
         editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(performCopy(_:)), keyEquivalent: "c").identified("edit.copy"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(performPaste(_:)), keyEquivalent: "v").identified("edit.paste"))
+        // Paste variants — chain-action round-trips (NOT the native
+        // NSText.paste selector). The web responder chain reads the
+        // clipboard via the native bridge, rewrites it (blockquote wrap /
+        // Markdown strip), and inserts; enablement reuses the paste gate
+        // (MenuState.edit.paste) since both need an editable surface.
+        editMenu.addItem(NSMenuItem(title: "Paste as Quote", action: #selector(performPasteAsQuote(_:)), keyEquivalent: "v", modifierMask: [.command, .option]).identified("edit.pasteAsQuote"))
+        editMenu.addItem(NSMenuItem(title: "Paste as Plain Text", action: #selector(performPasteAsPlainText(_:)), keyEquivalent: "v", modifierMask: [.command, .shift]).identified("edit.pasteAsPlainText"))
         editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(performDelete(_:)), keyEquivalent: "").identified("edit.delete"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(performSelectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
         editMenu.addItem(NSMenuItem.separator())
@@ -1027,6 +1034,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: sender)
     }
 
+    // Edit ▸ Paste as Quote / Paste as Plain Text — chain-action
+    // round-trips. Unlike Cut/Copy/Paste, these do NOT re-dispatch a
+    // native NSText selector: the transform (blockquote wrap / Markdown
+    // strip) lives in the web responder chain, which reads the clipboard
+    // via the native bridge before inserting. An unhandled dispatch is a
+    // silent no-op (no editable surface focused).
+    @objc private func performPasteAsQuote(_ sender: Any?) {
+        sendControl("paste-as-quote")
+    }
+
+    @objc private func performPasteAsPlainText(_ sender: Any?) {
+        sendControl("paste-as-plain-text")
+    }
+
     // Edit ▸ Find — chain-action round-trips (the web responder chain's
     // find session owns the semantics; an unhandled dispatch is a no-op).
     @objc private func performFind(_ sender: Any?) {
@@ -1277,6 +1298,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "edit.copy":
             return menuState.edit.copy
         case "edit.paste":
+            return menuState.edit.paste
+        // Paste variants share the paste gate — both need an editable
+        // surface and nothing else.
+        case "edit.pasteAsQuote", "edit.pasteAsPlainText":
             return menuState.edit.paste
         case "edit.delete":
             return menuState.edit.delete

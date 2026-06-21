@@ -1,9 +1,10 @@
 /**
  * text-editing-menu — single source of truth for the standard
- * cut / copy / paste / select-all context menu.
+ * cut / copy / paste / paste-as-quote / paste-as-plain-text /
+ * select-all context menu.
  *
- * The four items appear in the same order with the same labels and
- * the same shortcut hints across every text-bearing surface in the
+ * The items appear in the same order with the same labels and the
+ * same shortcut hints across every text-bearing surface in the
  * suite — the prompt-entry editor, the transcript view, and any
  * future read-only or editable text surface that needs a context
  * menu. The disabled rules are the only thing that varies, and they
@@ -12,6 +13,7 @@
  *   - Cut requires a selection AND an editable surface.
  *   - Copy requires a selection.
  *   - Paste requires an editable surface.
+ *   - Paste as Quote / Paste as Plain Text require an editable surface.
  *   - Select All is always enabled.
  *
  * Consumers pass capability flags (`hasSelection`, `canEdit`) and
@@ -35,7 +37,7 @@
  * would crowd the menu without informational gain. Consumer-specific
  * additions (e.g. a custom action above the separator) can pick
  * their own iconography in a follow-up shape — the builder doesn't
- * police that, it just owns the universal four.
+ * police that, it just owns the universal set.
  */
 
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -105,6 +107,18 @@ export function buildTextEditingMenuItems(
       action: TUG_ACTIONS.PASTE,
       label: "Paste",
       shortcut: "⌘V",
+      disabled: !canEdit,
+    },
+    {
+      action: TUG_ACTIONS.PASTE_AS_QUOTE,
+      label: "Paste as Quote",
+      shortcut: "⌥⌘V",
+      disabled: !canEdit,
+    },
+    {
+      action: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
+      label: "Paste as Plain Text",
+      shortcut: "⇧⌘V",
       disabled: !canEdit,
     },
     { type: "separator" },

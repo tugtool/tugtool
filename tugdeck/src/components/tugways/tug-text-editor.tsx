@@ -106,6 +106,7 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
+import { quoteMarkdown, stripMarkdown } from "@/lib/paste-transforms";
 import { requestEditMenuStateRefresh, setEditUndoLabels } from "@/lib/host-menu-state";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import {
@@ -1882,6 +1883,59 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       document.execCommand("paste");
     }, []);
 
+    // Paste-as-quote / paste-as-plain-text: read the clipboard's plain
+    // text and run a transform before inserting. Unlike `handlePaste`,
+    // these are plain-text-only — atom sidecars are deliberately ignored
+    // because a quoted / de-formatted paste is a text rewrite, not a
+    // round-trip of rich content. The native bridge is preferred (the
+    // popup-free read path in Tug.app); outside Tug.app we fall back to
+    // the async Clipboard API. Both paths defer insertion into the
+    // returned continuation so the edit lands after any menu blink.
+    const pasteWithTransform = useCallback(
+      (transform: (text: string) => string): ActionHandlerResult => {
+        const view = viewRef.current;
+        if (view === null) return;
+        view.focus();
+        const insert = (raw: string) => {
+          const live = viewRef.current;
+          if (live === null) return;
+          const text = transform(raw);
+          if (text === "") return;
+          const { from, to } = live.state.selection.main;
+          live.dispatch({
+            changes: { from, to, insert: text },
+            selection: { anchor: from + text.length },
+            userEvent: "input.paste",
+            scrollIntoView: true,
+          });
+        };
+        if (hasNativeClipboardBridge()) {
+          const readPromise = readClipboardViaNative();
+          return () => {
+            void readPromise.then(({ text }) => insert(text));
+          };
+        }
+        if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+          const readPromise = navigator.clipboard.readText().catch(() => "");
+          return () => {
+            void readPromise.then(insert);
+          };
+        }
+        return;
+      },
+      [],
+    );
+
+    const handlePasteAsQuote = useCallback(
+      (): ActionHandlerResult => pasteWithTransform(quoteMarkdown),
+      [pasteWithTransform],
+    );
+
+    const handlePasteAsPlainText = useCallback(
+      (): ActionHandlerResult => pasteWithTransform(stripMarkdown),
+      [pasteWithTransform],
+    );
+
     // Submit: substrate-level handler so a "Submit" button somewhere
     // up the chain (e.g. in a wrapper compound) reaches the same
     // policy as the keymap's Enter handler. Reads `onSubmit` through
@@ -1943,6 +1997,8 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       [TUG_ACTIONS.COPY]: handleCopy,
       [TUG_ACTIONS.CUT]: handleCut,
       [TUG_ACTIONS.PASTE]: handlePaste,
+      [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
+      [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
       [TUG_ACTIONS.SUBMIT]: handleSubmit,
       // ---- Editing motion / deletion ----
       [TUG_ACTIONS.DELETE_TO_LINE_START]: handleDeleteToLineStart,
