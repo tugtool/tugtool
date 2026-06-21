@@ -231,17 +231,6 @@ body {
   background: var(--tugx-list-view-cursor-bar-color);
 }
 
-/* Selected rows read as a clean block — cover the hairline dividers that touch
-   them (the selected cell's own bottom divider, and the divider above it owned
-   by the preceding cell). Unselected / cursor rows keep their separators, so the
-   selection fill sits "outside" the separators while everything else sits on
-   them. Flush layout only (that's where the dividers live). */
-.tug-list-view[data-row-layout="flush"] .tug-list-view-cell[data-selected="true"],
-.tug-list-view[data-row-layout="flush"]
-  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]) {
-  border-bottom-color: transparent;
-}
-
 /* ---- Read-only mode (`interactive={false}`) ----
    A read-only listing's rows are inert: the wrappers are already out of the
    tab order (the component forces `tabIndex={-1}`), and these rules drop the
@@ -291,6 +280,21 @@ body {
 .tug-list-view[data-row-separator="none"]
   .tug-list-view-cell:not(:last-child) {
   border-bottom: none;
+}
+
+/* Selected rows read as a clean block — drop the hairline divider that touches
+   them (the selected cell's own bottom divider, and the bottom divider of the
+   preceding cell), for either divider source (`rowLayout="flush"` or
+   `rowSeparator="on"`). MUST come after the draw rule above: the `[data-selected]`
+   selectors share its specificity, so source order is what lets them win. Color
+   only — the 1px is kept, so neither the row height nor the cursor bar shifts. */
+.tug-list-view[data-row-layout="flush"] .tug-list-view-cell[data-selected="true"],
+.tug-list-view[data-row-layout="flush"]
+  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]),
+.tug-list-view[data-row-separator="on"] .tug-list-view-cell[data-selected="true"],
+.tug-list-view[data-row-separator="on"]
+  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]) {
+  border-bottom-color: transparent;
 }
 
 /* `pill` — discrete rounded rows: a small inter-row gap separates
