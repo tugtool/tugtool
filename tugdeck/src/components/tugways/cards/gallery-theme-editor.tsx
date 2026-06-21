@@ -326,18 +326,32 @@ export function GalleryThemeEditor(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTheme, seedMap]);
 
-  // Read the dark theme's real title-bar colors off the live DOM for the
-  // read-only "fixed" display. Re-run on theme switch (a different fixed value)
-  // and after paint so the override above has landed.
+  // The dark theme's real (fixed) title-bar color shown as text in the note. The
+  // swatch chip itself paints the token live in CSS (no JS, no lag); this read is
+  // only for the oklch readout. In dev the theme context updates BEFORE HMR swaps
+  // the active-theme stylesheet, so a one-shot read on `activeTheme` would capture
+  // the PREVIOUS theme — re-read whenever the document's stylesheets change so the
+  // value reflects the applied theme.
   useEffect(() => {
     if (!isDark) {
       setTitlebarFixed(null);
       return;
     }
-    const el = titlebarRef.current;
-    if (!el) return;
-    const cs = getComputedStyle(el);
-    setTitlebarFixed({ bg: cs.backgroundColor, fg: cs.color });
+    const probe = (): void => {
+      const cs = getComputedStyle(document.body);
+      const bg = cs.getPropertyValue("--tug7-surface-card-primary-normal-titlebar-active").trim();
+      const fg = cs.getPropertyValue("--tug7-element-card-text-normal-title-active").trim();
+      if (bg) setTitlebarFixed({ bg, fg });
+    };
+    probe();
+    const obs = new MutationObserver(probe);
+    obs.observe(document.head, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["href"],
+    });
+    return () => obs.disconnect();
   }, [isDark, activeTheme]);
 
   // Persist edits under the ACTIVE theme (skip when unchanged — covers the
@@ -562,17 +576,14 @@ export function GalleryThemeEditor(): React.ReactElement {
               <div className="gcd-titlebar-fixed-note">
                 Title bar: dark themes use a fixed title-bar treatment (not the Key
                 hue) — shown below, not tunable here.
-                {titlebarFixed && (
-                  <span className="gcd-titlebar-fixed-swatch">
-                    <span
-                      className="gcd-titlebar-fixed-chip"
-                      style={{ background: titlebarFixed.bg, color: titlebarFixed.fg }}
-                    >
-                      Aa
-                    </span>
+                <span className="gcd-titlebar-fixed-swatch">
+                  {/* Chip paints the title-bar tokens live in CSS, so it tracks
+                      the theme with zero lag. The text value is read separately. */}
+                  <span className="gcd-titlebar-fixed-chip">Aa</span>
+                  {titlebarFixed && (
                     <span className="gcd-titlebar-fixed-value">{titlebarFixed.bg}</span>
-                  </span>
-                )}
+                  )}
+                </span>
               </div>
             ) : (
               <>

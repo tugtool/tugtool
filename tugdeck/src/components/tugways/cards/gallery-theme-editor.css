@@ -314,6 +314,10 @@
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
   font-size: var(--tug-font-size-2xs);
   font-weight: 600;
+  /* Live theme tokens — the chip tracks the active theme with no JS read, so it
+     can never lag behind a theme switch. */
+  background: var(--tug7-surface-card-primary-normal-titlebar-active);
+  color: var(--tug7-element-card-text-normal-title-active);
 }
 .gcd-titlebar-fixed-value {
   font-family: var(--tug-font-family-mono);
