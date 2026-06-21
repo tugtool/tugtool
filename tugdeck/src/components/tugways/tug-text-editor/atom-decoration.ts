@@ -514,39 +514,57 @@ export function removeAtomById(view: EditorView, id: string): void {
  */
 class PendingAtomSyncPlugin implements PluginValue {
   private unsubscribe: (() => void) | null = null;
+  private subscribedStore: AtomBytesStore | null = null;
 
   constructor(private readonly view: EditorView) {
-    this.subscribeIfStoreAvailable();
+    this.syncSubscription();
   }
 
   update(update: ViewUpdate): void {
-    // Subscribe lazily if the facet wasn't ready at construction.
-    // The drop / paste pipeline can populate the facet via a
-    // reconfigure in some host shells; this catches that path.
-    if (this.unsubscribe === null) {
-      this.subscribeIfStoreAvailable();
-    }
+    // Re-evaluate which store the facet hands back on every update.
+    // The facet's thunk reads a ref that the host swaps when a card
+    // re-binds — most notably a `/compact` + resume, which disposes
+    // the old `AtomBytesStore` and creates a fresh one. Without this
+    // re-check we'd stay subscribed to the dead store and newly
+    // dropped images would pulse forever, since their bytes land in
+    // the new store whose notifications we never hear.
+    this.syncSubscription();
     // The widget's own toDOM() handles initial state on mount;
-    // ViewUpdate doesn't need to do anything except subscribe if it
-    // hasn't yet. Bytes-arriving subscriptions handle the rest.
+    // bytes-arriving subscriptions handle the rest.
     void update;
   }
 
   destroy(): void {
+    this.unsubscribeCurrent();
+  }
+
+  /**
+   * Ensure we're subscribed to the store the facet currently returns.
+   * Idempotent: if the facet's store is unchanged this is a no-op; if
+   * it changed (or first became available) we drop the old listener,
+   * subscribe to the new store, and run an immediate sync so bytes
+   * that already landed in the new store clear their skeleton state.
+   */
+  private syncSubscription(): void {
+    const getStore = this.view.state.facet(atomBytesStoreFacet);
+    const store = getStore();
+    if (store === this.subscribedStore) return;
+    this.unsubscribeCurrent();
+    if (store === null) return;
+    const view = this.view;
+    this.subscribedStore = store;
+    this.unsubscribe = store.subscribe(() => {
+      syncPendingAttributes(view, store);
+    });
+    syncPendingAttributes(view, store);
+  }
+
+  private unsubscribeCurrent(): void {
     if (this.unsubscribe !== null) {
       this.unsubscribe();
       this.unsubscribe = null;
     }
-  }
-
-  private subscribeIfStoreAvailable(): void {
-    const getStore = this.view.state.facet(atomBytesStoreFacet);
-    const store = getStore();
-    if (store === null) return;
-    const view = this.view;
-    this.unsubscribe = store.subscribe(() => {
-      syncPendingAttributes(view, store);
-    });
+    this.subscribedStore = null;
   }
 }
 
