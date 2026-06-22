@@ -1263,6 +1263,71 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       return unregister;
     }, [cardId]);
 
+    // Preserve caret / selection across an app deactivate → reactivate
+    // (cmd-tab away and back). When the OS returns key focus to the
+    // window, WebKit re-focuses the still-active `cm-content` and places
+    // its own caret — collapsing the user's selection BEFORE the
+    // framework's reactivation focus claim (`paintMirrorAsActive`) runs.
+    // That claim passes no saved selection on the cmd-tab path (it trusts
+    // the live `view.state.selection`, which is now collapsed), so the
+    // selection is lost.
+    //
+    // This is the one transition the card-level deactivate/activate
+    // cascade does not cover: on cmd-tab the card never hides and never
+    // relinquishes DOM focus, so no `paintMirrorAsInactive` snapshot is
+    // taken. We bridge it at the window level — snapshot the live
+    // selection on `blur` (the editor is still `document.activeElement`
+    // then) and re-assert it on `focus`, after the framework's focus
+    // claim and the browser's focus-caret have both landed. The rAF
+    // backstop covers an async `selectionchange` that re-collapses after
+    // the synchronous pass. [L24] selection lives in CM's
+    // `EditorState.selection`; we read and re-write it there, never in
+    // React state. [L23] no `scrollIntoView`, so the scroll offset
+    // survives the round trip.
+    useLayoutEffect(() => {
+      if (typeof window === "undefined") return;
+      let saved: { from: number; to: number } | null = null;
+      const restore = (target: { from: number; to: number }): void => {
+        const view = viewRef.current;
+        // Only restore into the editor that actually regained focus —
+        // a window-focus that lands elsewhere must not pull the caret
+        // back here or steal focus.
+        if (view === null || !view.hasFocus) return;
+        const len = view.state.doc.length;
+        const from = Math.min(target.from, len);
+        const to = Math.min(target.to, len);
+        const live = view.state.selection.main;
+        if (live.from === from && live.to === to) return;
+        view.dispatch({ selection: EditorSelection.range(from, to) });
+      };
+      const onWindowBlur = (): void => {
+        const view = viewRef.current;
+        // Only the focused editor owns a selection worth preserving.
+        if (view === null || !view.hasFocus) {
+          saved = null;
+          return;
+        }
+        const sel = view.state.selection.main;
+        saved = { from: sel.from, to: sel.to };
+      };
+      const onWindowFocus = (): void => {
+        const target = saved;
+        saved = null;
+        if (target === null) return;
+        // Synchronous pass (the framework's window-`focus` listener is
+        // registered first, so its `view.focus()` has already run by
+        // now) avoids a visible collapse; the rAF pass is the backstop.
+        restore(target);
+        requestAnimationFrame(() => restore(target));
+      };
+      window.addEventListener("blur", onWindowBlur);
+      window.addEventListener("focus", onWindowFocus);
+      return () => {
+        window.removeEventListener("blur", onWindowBlur);
+        window.removeEventListener("focus", onWindowFocus);
+      };
+    }, []);
+
     // Live providers ref. The typeahead extension reads this via a
     // thunk on every transaction, so swapping providers across
     // renders takes effect without rebuilding the editor [L07].
