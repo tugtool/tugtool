@@ -31,18 +31,32 @@
   align-items: center;
 }
 
-/* Derived-color audition — a small grid of read-only TugColor chips. */
+/* Derived-color audition — a one-column list of read-only TugColor chips.
+   The box fills the card and the chips shrink to fit so nothing escapes. */
+.gcd-preview-box {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .gcd-preview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 4px 6px;
+  min-width: 0;
 }
 
 .gcd-preview-cell {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.gcd-preview-cell .tug-color-well {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .gcd-preview-label {

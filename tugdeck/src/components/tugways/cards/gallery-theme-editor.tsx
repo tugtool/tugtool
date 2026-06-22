@@ -31,7 +31,7 @@ import { useFocusManager } from "@/components/tugways/use-focusable";
 import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
 import { CardIdContext } from "@/lib/card-id-context";
-import { setActiveColorTarget, updateActiveColorValue } from "@/components/tugways/active-color-target";
+import { setActiveColorTarget } from "@/components/tugways/active-color-target";
 import type { TugColorSpec } from "@/components/tugways/tug-color-spec";
 import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
 import { deriveTheme } from "../../../../theme-editor-core";
@@ -101,15 +101,19 @@ function tokenSpec(css: string, name: string): TugColorSpec | null {
 export function GalleryThemeEditor(): React.ReactElement {
   const [output, setOutput] = useState<string>("nocturne");
   const fam = FAMILY[output];
-  const [keyHue, setKeyHue] = useState<string>(fam.key);
-  const [accHue, setAccHue] = useState<string>(fam.accent);
+  // The wells hold full color specs so the shared picker edits them normally;
+  // derivation only reads each spec's hue.
+  const [keySpec, setKeySpec] = useState<TugColorSpec>({ hue: fam.key, i: 50, t: 50, a: 100 });
+  const [accSpec, setAccSpec] = useState<TugColorSpec>({ hue: fam.accent, i: 50, t: 50, a: 100 });
   const [generating, setGenerating] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const keyHue = keySpec.hue;
+  const accHue = accSpec.hue;
 
-  // On family switch, reset the hue choices to that member's defaults.
+  // On family switch, reset the hues to that member's defaults.
   useEffect(() => {
-    setKeyHue(FAMILY[output].key);
-    setAccHue(FAMILY[output].accent);
+    setKeySpec({ hue: FAMILY[output].key, i: 50, t: 50, a: 100 });
+    setAccSpec({ hue: FAMILY[output].accent, i: 50, t: 50, a: 100 });
   }, [output]);
 
   const baseCss = BASE_CSS[fam.base] ?? "";
@@ -118,10 +122,6 @@ export function GalleryThemeEditor(): React.ReactElement {
     () => PREVIEW.map(([label, name]) => [label, tokenSpec(derived.css, name)] as const),
     [derived],
   );
-
-  // Live refs for the responder handlers ([L07]).
-  const keyHueRef = useRef(keyHue); keyHueRef.current = keyHue;
-  const accHueRef = useRef(accHue); accHueRef.current = accHue;
 
   const responderId = useId();
   const outputId = useId();
@@ -161,14 +161,13 @@ export function GalleryThemeEditor(): React.ReactElement {
         if (!sender || !payload) return;
         setActiveColorTarget({ targetId: responderId, senderId: sender, label: payload.label, value: payload.value });
       },
-      // The Key/Accent wells pick a hue only — keep i/t/a at the canonical anchor.
+      // The wells hold the edited color; derivation uses only its hue.
       [TUG_ACTIONS.SET_COLOR]: (e: ActionEvent) => {
         const sender = typeof e.sender === "string" ? e.sender : "";
         const next = e.value as TugColorSpec | undefined;
         if (!sender || !next) return;
-        if (sender === keyWellId) setKeyHue(next.hue);
-        else if (sender === accWellId) setAccHue(next.hue);
-        updateActiveColorValue(sender, { hue: next.hue, i: 50, t: 50, a: 100 });
+        if (sender === keyWellId) setKeySpec(next);
+        else if (sender === accWellId) setAccSpec(next);
       },
       [TUG_ACTIONS.SELECT_VALUE]: (e: ActionEvent) => {
         if (e.sender === outputId && typeof e.value === "string") setOutput(e.value);
@@ -192,9 +191,6 @@ export function GalleryThemeEditor(): React.ReactElement {
       .catch((err: unknown) => setMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`))
       .finally(() => setGenerating(false));
   };
-
-  const keySpec: TugColorSpec = { hue: keyHue, i: 50, t: 50, a: 100 };
-  const accSpec: TugColorSpec = { hue: accHue, i: 50, t: 50, a: 100 };
 
   return (
     <ResponderScope>
@@ -246,7 +242,7 @@ export function GalleryThemeEditor(): React.ReactElement {
 
         <div className="cg-section">
           <TugLabel className="cg-section-title">Derived colors (audition)</TugLabel>
-          <TugBox variant="bordered" size="sm">
+          <TugBox variant="bordered" size="sm" className="gcd-preview-box">
             <div className="gcd-preview-grid">
               {previewSpecs.map(([label, spec]) => (
                 <div key={label} className="gcd-preview-cell">

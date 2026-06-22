@@ -125,9 +125,9 @@
 .tug-color-picker-sliders {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
-  padding: 6px 10px 8px;
+  padding: 4px 10px 6px;
   box-sizing: border-box;
 }
 

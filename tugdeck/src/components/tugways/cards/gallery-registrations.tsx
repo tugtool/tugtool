@@ -507,7 +507,7 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
 
 /** The color picker's fixed size — wide enough for the hue grid, tall enough
  * that nothing ever scrolls. */
-const COLOR_PICKER_SIZE = { width: 452, height: 516 } as const;
+const COLOR_PICKER_SIZE = { width: 452, height: 540 } as const;
 
 /**
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.

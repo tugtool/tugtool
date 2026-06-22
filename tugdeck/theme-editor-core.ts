@@ -422,12 +422,36 @@ function nearestHue(angle: number): string {
   return best;
 }
 
-/** How close (degrees) a hue must be to the Key / Accent brand hue to rotate
- *  with it. Key window is wide enough to catch the surface tint (a near-Key
- *  hue); Accent window is tight so a warning amber next to an orange accent is
- *  left as a signal. */
-const KEY_BRAND_WINDOW = 28;
+/** Two used hues are "linked" into the same brand cluster if within this many
+ *  degrees — small enough that an isolated signal hue (red/amber/green, tens of
+ *  degrees from the brand) never joins, large enough to bridge the gaps within a
+ *  spread brand family (e.g. harmony's blue→sapphire→indigo→violet, ≤10° steps). */
+const BRAND_LINK = 20;
+/** Accent window stays tight so a warning amber next to an orange accent is left
+ *  as a signal. */
 const ACCENT_BRAND_WINDOW = 8;
+
+/** Grow the brand cluster outward from a seed hue through the USED hues, linking
+ *  any used hue within BRAND_LINK of one already in the cluster. */
+function brandCluster(seed: string, used: Set<string>): Set<string> {
+  const seedAngle = angleOf(seed);
+  if (seedAngle === undefined) return new Set();
+  const cluster = new Set<string>([seed]);
+  const queue = [seed];
+  while (queue.length) {
+    const h = queue.pop()!;
+    const ha = angleOf(h)!;
+    for (const u of used) {
+      const ua = angleOf(u);
+      if (ua === undefined || cluster.has(u)) continue;
+      if (circularDist(ua, ha) <= BRAND_LINK) {
+        cluster.add(u);
+        queue.push(u);
+      }
+    }
+  }
+  return cluster;
+}
 
 export interface DeriveResult {
   css: string;
@@ -454,22 +478,29 @@ export function deriveTheme(
   targetKeyHue: string,
   targetAccentHue?: string,
 ): DeriveResult {
-  // 1. Detect the base's Key / Accent brand hues from the duet-classified tokens.
+  // 1. Detect the base's Key / Accent brand hues from the duet-classified tokens,
+  //    and collect every chromatic hue the theme uses.
   const keyHues: Record<string, number> = {};
   const accentHues: Record<string, number> = {};
+  const usedHues = new Set<string>();
   const scan = /(--tug7-[\w-]+)\s*:\s*--tug-color\(([^)]*)\)\s*;/g;
   let m: RegExpExecArray | null;
   while ((m = scan.exec(baseCss)) !== null) {
-    const role = classifyRole(m[1]);
-    if (!role || parseTugColor(m[2]) === null) continue;
+    if (parseTugColor(m[2]) === null) continue;
     const hue = hueOf(m[2]);
+    usedHues.add(hue);
+    const role = classifyRole(m[1]);
     if (role === "key") keyHues[hue] = (keyHues[hue] ?? 0) + 1;
-    else accentHues[hue] = (accentHues[hue] ?? 0) + 1;
+    else if (role === "accent") accentHues[hue] = (accentHues[hue] ?? 0) + 1;
   }
   const baseKeyHue = dominantHue(keyHues);
   const baseAccentHue = dominantHue(accentHues);
   const accentTarget = targetAccentHue ?? baseAccentHue ?? targetKeyHue;
 
+  // The Key brand is the whole cluster of related hues around the Key (so a
+  // spread blue→indigo→violet identity rotates together); the Accent stays a
+  // tight single hue (so an adjacent warning signal is not swept in).
+  const keyCluster = baseKeyHue ? brandCluster(baseKeyHue, usedHues) : new Set<string>();
   const keyAngle = baseKeyHue ? angleOf(baseKeyHue) : undefined;
   const accentAngle = baseAccentHue ? angleOf(baseAccentHue) : undefined;
   const keyDelta = keyAngle !== undefined ? (angleOf(targetKeyHue) ?? keyAngle) - keyAngle : 0;
@@ -488,7 +519,7 @@ export function deriveTheme(
       const deg = angleOf(hue);
       if (deg === undefined) return full;
       let target: string | null = null;
-      if (keyAngle !== undefined && circularDist(deg, keyAngle) <= KEY_BRAND_WINDOW) {
+      if (keyCluster.has(hue)) {
         target = nearestHue(deg + keyDelta);
       } else if (accentAngle !== undefined && circularDist(deg, accentAngle) <= ACCENT_BRAND_WINDOW) {
         target = nearestHue(deg + accentDelta);
