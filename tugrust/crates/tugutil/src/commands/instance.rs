@@ -89,6 +89,7 @@ pub enum InstanceCommands {
     ///     though its shared `Tug-apptest.app` bundle still exists —
     ///     the bundle-missing test alone never reclaims these, so they
     ///     accumulate without this rule.
+    ///
     /// Ephemeral orphans are removed data-only (their shared bundle is
     /// left intact); bundle-missing orphans get the full removal.
     Prune {

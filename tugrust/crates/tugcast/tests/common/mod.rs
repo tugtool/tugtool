@@ -245,6 +245,23 @@ impl TestTugcast {
         for var in catalog::AUTH_ENV_VARS {
             command.env_remove(var);
         }
+        // Scrub the host app's per-instance identity/resource env vars.
+        // When the suite runs from inside a Tug Dev card terminal, the
+        // launching app exports these into the environment; without the
+        // scrub the spawned tugcast adopts the *live* instance's identity
+        // — refused by the duplicate-launch guard (exit 73, so it never
+        // binds and the test times out) and, worse, writing into that
+        // instance's data dir, registry, sockets, and tmux. They are
+        // unset under CI, so this is a no-op there and makes a local
+        // run match CI: `instance_id()` resolves to `None`, giving
+        // hermetic legacy paths with resources served from `--source-tree`.
+        for var in [
+            "TUG_INSTANCE_ID",
+            "TUG_BUNDLE_PATH",
+            "TUGCAST_RESOURCE_ROOT",
+        ] {
+            command.env_remove(var);
+        }
         let mut child = command.spawn().expect("failed to spawn tugcast");
         if let Some(stderr) = child.stderr.take() {
             tokio::spawn(async move {
