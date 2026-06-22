@@ -9,8 +9,8 @@
  *     by the Theme Editor card's Apply button
  *
  * Re-hue is computed from an identity-space BASELINE recipe (per-token
- * intensities/tones with hue/scale/shift removed) so applying repeatedly with
- * new hues/scales never compounds — each apply is absolute. The baseline is not
+ * intensities/tones with the hue and i/t/a deltas removed) so applying repeatedly
+ * with new hues/deltas never compounds — each apply is absolute. The baseline is not
  * a frozen file: the dev-server keeps it live by diff-merging hand edits made
  * directly to the theme CSS back into it (diffMergeBaseline / inverseSeed), so
  * the .css files stay the single source of truth and hand tuning survives Apply.
@@ -27,15 +27,24 @@ export interface DuetTreatment {
   a?: number;
 }
 
+/**
+ * An adjustment off a base color — additive deltas in TugColor intensity / tone
+ * / alpha units (NOT a chroma multiplier or oklch offset). Applied to every rung
+ * of an axis: out = clamp(base + delta). Additive so it inverts by subtraction.
+ */
+export interface DuetAdjust {
+  iDelta: number;
+  tDelta: number;
+  aDelta?: number;
+}
+
 export interface DuetSeed {
   keyHue: string;
-  keyScale: number;
-  /** Tone (lightness) offset added to every Key rung's tone, clamped 0–100. */
-  keyToneShift?: number;
+  /** Intensity/tone/alpha deltas applied to every Key rung off its base. */
+  key: DuetAdjust;
   accentHue: string;
-  accentScale: number;
-  /** Tone (lightness) offset added to every Accent rung's tone, clamped 0–100. */
-  accentToneShift?: number;
+  /** Intensity/tone/alpha deltas applied to every Accent rung off its base. */
+  accent: DuetAdjust;
   /** Title bar / active tab tint (writes --tugx-chrome-key-surface where present). */
   titlebar?: DuetTreatment;
   /** Filled buttons (filled-action surface + border). */
@@ -264,10 +273,11 @@ export function applyDuet(
     }
 
     const hue = role === "key" ? seed.keyHue : seed.accentHue;
-    const scale = role === "key" ? seed.keyScale : seed.accentScale;
-    const toneShift = (role === "key" ? seed.keyToneShift : seed.accentToneShift) ?? 0;
-    const tone = Math.max(0, Math.min(100, parsed.t + toneShift));
-    const rewritten = formatTugColor(hue, parsed.i * scale, tone, parsed.a);
+    const adj = role === "key" ? seed.key : seed.accent;
+    const i = parsed.i + adj.iDelta;
+    const t = parsed.t + adj.tDelta;
+    const a = parsed.a === null ? null : parsed.a + (adj.aDelta ?? 0);
+    const rewritten = formatTugColor(hue, i, t, a);
     if (replaceToken(name, rewritten)) {
       if (role === "key") keyCount++;
       else accentCount++;
@@ -289,23 +299,23 @@ export function applyDuet(
 /**
  * Recover the identity-space recipe inner for a single token from its current
  * (post-apply) value — the inverse of applyDuet's generic Key/Accent transform:
- * undo the chroma scale and tone shift, keep the token's own hue/alpha. Exact
- * when the applied seed is identity (scale 1, shift 0); ~1-unit integer rounding
- * drift only when un-applying a non-identity scale.
+ * subtract the intensity / tone / alpha deltas, keep the token's own hue. Because
+ * the transform is purely additive, this is EXACT (no rounding drift), so hand
+ * edits always fold back losslessly regardless of the applied adjustment.
  *
  * Treatment-group tokens (filled/tinted/textsel/titlebar) are written by
  * applyDuet via a ramp-collapsing formula that is not cleanly invertible — they
- * are inverted here with the same generic scale/shift, which is exact in the
- * identity case (the normal hand-tuning state) and approximate otherwise.
+ * are inverted here with the same generic deltas, which is exact when no
+ * adjustment is applied (the normal hand-tuning state) and approximate otherwise.
  */
 export function inverseSeed(inner: string, seed: DuetSeed, role: DuetRole): string {
   const parsed = parseTugColor(inner);
   if (!parsed || !role) return inner;
-  const scale = role === "key" ? seed.keyScale : seed.accentScale;
-  const toneShift = (role === "key" ? seed.keyToneShift : seed.accentToneShift) ?? 0;
-  const i = scale ? parsed.i / scale : parsed.i;
-  const t = parsed.t - toneShift;
-  return formatInner(hueOf(inner), i, t, parsed.a);
+  const adj = role === "key" ? seed.key : seed.accent;
+  const i = parsed.i - adj.iDelta;
+  const t = parsed.t - adj.tDelta;
+  const a = parsed.a === null ? null : parsed.a - (adj.aDelta ?? 0);
+  return formatInner(hueOf(inner), i, t, a);
 }
 
 /**
@@ -333,9 +343,10 @@ export function diffMergeBaseline(
   return merged;
 }
 
-/** An identity seed — no re-hue, no scale, no shift. Used to bootstrap state. */
+/** An identity seed — re-hue to the token's own hue with zero i/t/a deltas. */
 export function identitySeed(): DuetSeed {
-  return { keyHue: "blue", keyScale: 1, keyToneShift: 0, accentHue: "blue", accentScale: 1, accentToneShift: 0 };
+  const zero: DuetAdjust = { iDelta: 0, tDelta: 0, aDelta: 0 };
+  return { keyHue: "blue", key: { ...zero }, accentHue: "blue", accent: { ...zero } };
 }
 
 /** Validate a hue name is a known TugColor hue. */

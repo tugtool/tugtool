@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /**
  * apply-theme-editor.ts — re-hue a theme's Key (selection/action) and Accent
- * (affordance) axes to a chosen TugColor hue, scaling chroma by a factor.
+ * (affordance) axes to a chosen TugColor hue, with additive intensity/tone
+ * deltas off each rung's base (tug-color units, NOT a chroma multiplier).
  *
  * Computes every token absolutely from an identity-space baseline recipe, kept
  * live by diff-merging hand edits to the .css back in (so repeated applies never
@@ -10,9 +11,9 @@
  * theme-editor-core.ts.
  *
  * Usage:
- *   bun run scripts/apply-theme-editor.ts <theme> <keyHue> <keyScale> <accentHue> <accentScale> [keyToneShift] [accentToneShift]
- *   bun run scripts/apply-theme-editor.ts brio cobalt 0.90 orange 0.85
- *   bun run scripts/apply-theme-editor.ts aria purple 0.50 sky 0.90 -6 4
+ *   bun run scripts/apply-theme-editor.ts <theme> <keyHue> <keyIDelta> <accentHue> <accentIDelta> [keyTDelta] [accentTDelta]
+ *   bun run scripts/apply-theme-editor.ts brio cobalt -4 orange -6
+ *   bun run scripts/apply-theme-editor.ts aria purple 0 sky 0 -6 4
  */
 
 import fs from "fs";
@@ -33,10 +34,10 @@ interface ThemeEditorEntry {
 }
 type ThemeEditorState = Record<string, ThemeEditorEntry>;
 
-const [, , theme, keyHue, keyScaleStr, accentHue, accentScaleStr, keyToneStr, accentToneStr] =
+const [, , theme, keyHue, keyIStr, accentHue, accentIStr, keyTStr, accentTStr] =
   process.argv;
-if (!theme || !keyHue || !keyScaleStr || !accentHue || !accentScaleStr) {
-  console.error("usage: apply-theme-editor.ts <theme> <keyHue> <keyScale> <accentHue> <accentScale> [keyToneShift] [accentToneShift]");
+if (!theme || !keyHue || keyIStr === undefined || !accentHue || accentIStr === undefined) {
+  console.error("usage: apply-theme-editor.ts <theme> <keyHue> <keyIDelta> <accentHue> <accentIDelta> [keyTDelta] [accentTDelta]");
   process.exit(1);
 }
 if (!isKnownHue(keyHue) || !isKnownHue(accentHue)) {
@@ -46,11 +47,9 @@ if (!isKnownHue(keyHue) || !isKnownHue(accentHue)) {
 
 const seed: DuetSeed = {
   keyHue,
-  keyScale: parseFloat(keyScaleStr),
-  keyToneShift: keyToneStr ? parseFloat(keyToneStr) : 0,
+  key: { iDelta: parseFloat(keyIStr), tDelta: keyTStr ? parseFloat(keyTStr) : 0, aDelta: 0 },
   accentHue,
-  accentScale: parseFloat(accentScaleStr),
-  accentToneShift: accentToneStr ? parseFloat(accentToneStr) : 0,
+  accent: { iDelta: parseFloat(accentIStr), tDelta: accentTStr ? parseFloat(accentTStr) : 0, aDelta: 0 },
 };
 
 const themesDir = path.resolve(import.meta.dir, "..", "styles", "themes");
@@ -82,5 +81,6 @@ fs.writeFileSync(themeFile, css);
 state[theme] = { identityBaseline: baseline, appliedSeed: seed, lastGenCss: css };
 fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
 console.log(
-  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (x${seed.keyScale}), ${accentCount} Accent -> ${accentHue} (x${seed.accentScale})`,
+  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (i${seed.key.iDelta >= 0 ? "+" : ""}${seed.key.iDelta}, t${seed.key.tDelta >= 0 ? "+" : ""}${seed.key.tDelta}), ` +
+    `${accentCount} Accent -> ${accentHue} (i${seed.accent.iDelta >= 0 ? "+" : ""}${seed.accent.iDelta}, t${seed.accent.tDelta >= 0 ? "+" : ""}${seed.accent.tDelta})`,
 );

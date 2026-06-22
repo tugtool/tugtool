@@ -139,6 +139,14 @@ export interface IDeckManagerStore {
   addCard: (componentId: string) => string | null;
 
   /**
+   * Show a card type as a singleton: activate the existing card with
+   * this `componentId` (raising its pane to z-top) if one exists, else
+   * add a fresh one. Returns the reused or new card id, or null if
+   * `componentId` is unregistered.
+   */
+  showSingletonCard: (componentId: string) => string | null;
+
+  /**
    * Add a new card to an existing pane. Returns the new card id, or
    * null if the pane or registration is not found. The new card
    * becomes the pane's active card.

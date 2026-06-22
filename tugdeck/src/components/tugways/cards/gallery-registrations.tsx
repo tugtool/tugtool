@@ -35,6 +35,7 @@ import { GalleryMutationTx } from "./gallery-mutation-tx";
 import { GalleryObservableProps } from "./gallery-observable-props";
 import { GalleryPalette } from "./gallery-palette";
 import { GalleryThemeEditor } from "./gallery-theme-editor";
+import { GalleryColorWells, GalleryColorPicker } from "./gallery-color-picker";
 import { GalleryScaleTiming } from "./gallery-scale-timing";
 import { GalleryAnimator } from "./gallery-animator";
 import { GallerySkeleton } from "./gallery-skeleton";
@@ -504,6 +505,10 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
   preferred: { width: 640, height: 520 },
 };
 
+/** The color picker's fixed size — wide enough for the hue grid, tall enough
+ * that nothing ever scrolls. */
+const COLOR_PICKER_SIZE = { width: 452, height: 408 } as const;
+
 /**
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -562,6 +567,27 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.animation,
+  });
+
+  registerCard({
+    componentId: "gallery-color-wells",
+    contentFactory: (_cardId) => <GalleryColorWells />,
+    defaultMeta: { title: "Color Wells", icon: "Palette", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.animation,
+  });
+
+  registerCard({
+    componentId: "gallery-color-picker",
+    contentFactory: (_cardId) => <GalleryColorPicker />,
+    defaultMeta: { title: "Color Picker", icon: "Palette", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    // Fixed size — the picker is sized to show everything, so it never scrolls.
+    sizePolicy: { min: COLOR_PICKER_SIZE, max: COLOR_PICKER_SIZE, preferred: COLOR_PICKER_SIZE },
     category: CATEGORIES.animation,
   });
 

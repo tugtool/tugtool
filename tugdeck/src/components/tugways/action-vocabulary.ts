@@ -363,6 +363,19 @@ export const TUG_ACTIONS = {
   //                  React route state. Distinct from `select-value` —
   //                  no sender disambiguation is needed because route
   //                  state has a single owner per entry.
+  // SET_COLOR:       payload — `value: TugColorSpec` ({ hue, adjacent?, i, t, a }).
+  //                  Dispatched by the standalone TugColorPicker via
+  //                  sendToTarget(targetId, …) to the host responder that owns
+  //                  the active color well; sender — the well's stable sender id,
+  //                  so a multi-well host routes the edit to the right color.
+  // ACTIVATE_COLOR_WELL: payload — `value: TugColorSpec` (the well's current
+  //                  color) plus optional `label: string`. Dispatched by a
+  //                  TugColorWell to its parent responder on click; the host
+  //                  records itself as the active color target (active-color-
+  //                  target.ts) so the picker knows what to edit. sender — the
+  //                  well's stable sender id.
+  SET_COLOR:       "set-color",
+  ACTIVATE_COLOR_WELL: "activate-color-well",
   SET_VALUE:       "set-value",
   TOGGLE:          "toggle",
   SELECT_VALUE:    "select-value",

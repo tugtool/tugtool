@@ -40,6 +40,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
 import { useItemGroupKeyboard } from "./use-item-group-keyboard";
 import type { FocusPolicy } from "./focus-manager";
+import type { CommitMode } from "./focus-act";
 
 // ---- Types ----
 
@@ -191,6 +192,15 @@ export interface TugChoiceGroupProps
    * `skip` is reachable only in accessibility mode.
    */
   focusPolicy?: FocusPolicy;
+  /**
+   * Keyboard commit timing ([P24]). `deferred` (default) keeps the law's
+   * standard form-selector behavior — arrows rove a cursor, `Space` commits, so
+   * navigating past options never mutates the value. `live` makes every arrow
+   * move commit the cursor segment immediately (the {@link TugTabBar} model);
+   * opt in only where changing the choice is cheap and side-effect-free (e.g. a
+   * live-preview surface like the color picker).
+   */
+  commit?: CommitMode;
 }
 
 /** Serialized shape of `TugChoiceGroup`'s preserved state. */
@@ -219,6 +229,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       focusGroup,
       focusOrder = 0,
       focusPolicy,
+      commit = "deferred",
       ...rest
     },
     ref,
@@ -345,20 +356,30 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       order: focusOrder,
       policy: focusPolicy,
       register: focusGroup !== undefined,
+      commit,
       collectItems: () => enabledSegments().map((s) => s.el),
       initialIndex: () => {
         const idx = enabledSegments().findIndex((s) => s.value === value);
         return idx >= 0 ? idx : 0;
       },
-      // Explicit commit ([P24]): arrows move the cursor only (default `deferred`
-      // timing — no `onMove`, so the selection never follows the cursor), Space
-      // commits the ringed segment, and Enter is never consumed — it bubbles to
-      // the scope default. A cycle stop relinquishes on that Space commit via the
+      // Commit timing is [P24] by default (`deferred`): arrows move the cursor
+      // only, Space commits the ringed segment, Enter bubbles to the scope
+      // default. With `commit: "live"` (opt-in) every arrow move commits the
+      // cursor segment via onMove — the TugTabBar model, for cheap/side-effect-
+      // free choices. A cycle stop relinquishes on the Space commit via the
       // mode's commit disposition ([P15]), not via a `deferCommit` flag.
       onSelect: (element) => {
         const next = element?.getAttribute("data-choice-value");
         if (next != null && next !== value) dispatchSelectValue(next);
       },
+      ...(commit === "live"
+        ? {
+            onMove: (element: Element | null) => {
+              const next = element?.getAttribute("data-choice-value");
+              if (next != null && next !== value) dispatchSelectValue(next);
+            },
+          }
+        : {}),
     });
 
     // Re-sync the cursor's range when the item set changes.

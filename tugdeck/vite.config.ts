@@ -355,14 +355,18 @@ export async function handleThemeEditApply(
   const theme = typeof b.theme === "string" ? b.theme.trim() : "";
   const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
   const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : "";
-  const keyScale = Number(b.keyScale);
-  const accentScale = Number(b.accentScale);
-  const keyToneShift = b.keyToneShift === undefined ? 0 : Number(b.keyToneShift);
-  const accentToneShift = b.accentToneShift === undefined ? 0 : Number(b.accentToneShift);
+  // Additive intensity/tone/alpha deltas off each rung's base (tug-color units).
+  const num = (v: unknown): number => (v === undefined ? 0 : Number(v));
+  const parseAdjust = (v: unknown): { iDelta: number; tDelta: number; aDelta?: number } => {
+    const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+    return { iDelta: num(o.iDelta), tDelta: num(o.tDelta), aDelta: num(o.aDelta) };
+  };
+  const key = parseAdjust(b.key);
+  const accent = parseAdjust(b.accent);
   if (!theme || !isKnownHue(keyHue) || !isKnownHue(accentHue) ||
-      !Number.isFinite(keyScale) || !Number.isFinite(accentScale) ||
-      !Number.isFinite(keyToneShift) || !Number.isFinite(accentToneShift)) {
-    return { status: 400, body: JSON.stringify({ error: "theme + valid keyHue/accentHue + numeric keyScale/accentScale (+optional tone shifts) required" }) };
+      !Number.isFinite(key.iDelta) || !Number.isFinite(key.tDelta) ||
+      !Number.isFinite(accent.iDelta) || !Number.isFinite(accent.tDelta)) {
+    return { status: 400, body: JSON.stringify({ error: "theme + valid keyHue/accentHue + numeric key/accent {iDelta,tDelta,aDelta} required" }) };
   }
 
   const parseTreatment = (v: unknown): { i: number; t: number; a?: number } | undefined => {
@@ -388,7 +392,7 @@ export async function handleThemeEditApply(
     withMutex(async () => {
       try {
         const newSeed: DuetSeed = {
-          keyHue, keyScale, keyToneShift, accentHue, accentScale, accentToneShift,
+          keyHue, key, accentHue, accent,
           titlebar, filled, tinted, textsel,
         };
         const current = fs.readFileSync(themeFile, "utf-8");
