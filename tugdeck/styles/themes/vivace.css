@@ -75,7 +75,7 @@ body {
   --tug-line-height-xs: 17px;
 
   /* Surface — Global.
-     Mid-century console: the app/canvas FIELD is a rich jewel-slate — a beautiful
+     Mid-century console: the canvas FIELD is a rich jewel-slate — a beautiful
      companion hue chosen to family with the tint, NOT the tint itself (the tint's
      mid-tone reads muddy; a neighbouring hue at real chroma sings). Harmony's
      grass tint pairs with a cerulean teal-blue field. The "lightness" of the
@@ -83,8 +83,8 @@ body {
      with a whisper of the tint. The strong field→card step is the design — cards
      read as lifted, the field is a calm, recessive panel that doesn't pull the
      eye. `grid` is a blueprint line — a faint, LIGHT rule drawn over the deeper
-     ground (light-on-dark, like drafting paper), not a dark stroke. sunken/inset/
-     screen are recessed-within-card and tooltip surfaces, so they stay light and
+     ground (light-on-dark, like drafting paper), not a dark stroke. sunken/screen
+     are recessed-within-card and tooltip surfaces, so they stay light and
      hold dark default text. */
   --tug7-surface-global-primary-normal-canvas-rest: --tug-color(teal, i: 14, t: 22);
   --tug7-surface-global-primary-normal-content-rest: --tug-color(grass, i: 2, t: 100);
