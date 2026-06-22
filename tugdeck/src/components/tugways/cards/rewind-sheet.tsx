@@ -497,7 +497,6 @@ function RewindSheetBody({
                   singleSelect
                   seedSelection
                   initialSelectedIndex={visibleRows.length}
-                  followBottom
                 />
               ) : (
                 // Rare in-sheet empty: the sheet opened with targets but every

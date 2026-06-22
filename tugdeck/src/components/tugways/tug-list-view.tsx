@@ -547,6 +547,14 @@ export interface TugListViewProps<
    * behavior. Streaming/transcript consumers (where the user is
    * meant to read the latest content) opt in by passing `true`.
    *
+   * **Inert on a keyboard-selection list.** When the list is a selection
+   * container — authored into a `focusGroup`, made `keyboardSubordinate` to
+   * a filter, or `singleSelect` — `followBottom` is forced off regardless of
+   * what is passed. The movement cursor owns the scroll position there, so
+   * follow-bottom would yank every ArrowUp back to the live edge (scrolling
+   * the selected row out of view). Passing both logs a dev warning. Only a
+   * scroll-only stream (no cursor) may follow the bottom.
+   *
    * @default false
    */
   followBottom?: boolean;
@@ -1115,6 +1123,32 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // and the list is not subordinate to an external focus owner ([P01]/[P03]).
     // A subordinate list (picker filter input owns focus) never self-registers.
     const focusEngineActive = focusGroup !== undefined && !keyboardSubordinate;
+
+    // Follow-bottom is for a GROWING, scroll-only stream (the transcript): it
+    // re-pins the scroll to the live bottom on every commit while the last row
+    // is in the window. That is fundamentally incompatible with a keyboard
+    // selection list — the movement cursor owns the scroll position, so every
+    // ArrowUp would be yanked straight back to the bottom (the selected row
+    // scrolls out of view and, when windowed, unmounts). A selection list —
+    // authored into a `focusGroup`, `keyboardSubordinate` to a filter, or
+    // `singleSelect` — therefore can NEVER follow-bottom: the prop is forced
+    // off here regardless of what the consumer passed, and a dev warning flags
+    // the contradiction at the call site.
+    const isSelectionList =
+      focusGroup !== undefined || keyboardSubordinate || singleSelect;
+    const followBottomEffective = followBottom === true && !isSelectionList;
+    if (
+      process.env.NODE_ENV !== "production" &&
+      followBottom === true &&
+      isSelectionList
+    ) {
+      console.warn(
+        "[TugListView] `followBottom` is ignored on a keyboard-selection list " +
+          "(focusGroup / keyboardSubordinate / singleSelect): the movement " +
+          "cursor owns the scroll position. Drop the prop.",
+      );
+    }
+
     const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
     const topSpacerRef = React.useRef<HTMLDivElement | null>(null);
     const bottomSpacerRef = React.useRef<HTMLDivElement | null>(null);
@@ -1605,7 +1639,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // `ResizeObserver` is a no-op stub, and useful in production where
     // it tightens the cold-mount paint to a single committed pin).
     React.useLayoutEffect(() => {
-      if (followBottom === true) {
+      if (followBottomEffective) {
         pinRequestedRef.current = true;
       }
       scrollTick();
@@ -1812,7 +1846,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (el === null) return;
       const smartScroll = new SmartScroll({
         scrollContainer: el,
-        followBottom: followBottom ?? false,
+        followBottom: followBottomEffective,
         callbacks: {
           onScroll: () => {
             scrollTick();
