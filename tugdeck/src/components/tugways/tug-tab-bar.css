@@ -44,16 +44,11 @@ body {
   --tugx-tab-fg-active: var(--tug7-element-tab-text-normal-plain-active);
   --tugx-tab-close-bg-hover: var(--tug7-surface-tab-close-normal-plain-hover);
   --tugx-tab-close-fg-hover: var(--tug7-element-tab-close-normal-plain-hover);
-  /* The active-tab indicator is the tab bar's SELECTION signal, so it uses the
-     focus-language selection fill (the role on-color, default action) — the same
-     blue radio / choice / option / slider use for selection — rather than the
-     accent. Keeps the whole control family cohesive ([P01] native fill = action,
-     not the legacy accent). The overflow badge and the drag insert-indicator are
-     not selection, so they stay on accent. */
-  /* The focus-language selection fill itself (`--tugx-focus-fill` resolves to
-     this same token); aliased directly to the base so the component token stays
-     one hop ([L17]) rather than chaining through the axis alias. */
-  --tugx-tab-underline-active: var(--tug7-surface-toggle-primary-normal-on-rest);
+  /* The active-tab underline uses the theme Accent color — the same accent fill
+     the overflow badge and the drag insert-indicator carry — so the selected tab
+     reads in the theme's accent rather than the action blue. One hop to the base
+     accent fill ([L17]). */
+  --tugx-tab-underline-active: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-tab-badge-bg: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-tab-insertIndicator: var(--tug7-element-global-fill-normal-accent-rest);
 }
