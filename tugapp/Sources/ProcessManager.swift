@@ -281,9 +281,15 @@ class ProcessManager {
 
     /// Resolve tugcast binary path from bundle
     private func resolveTugcastPath() -> URL? {
+        resolveBundledTool("tugcast")
+    }
+
+    /// Resolve a CLI tool shipped alongside the app executable in
+    /// `Contents/MacOS/` (tugcast, tugutil, …). Returns nil if absent.
+    private func resolveBundledTool(_ name: String) -> URL? {
         guard let executableURL = Bundle.main.executableURL else { return nil }
-        let tugcastURL = executableURL.deletingLastPathComponent().appendingPathComponent("tugcast")
-        return FileManager.default.fileExists(atPath: tugcastURL.path) ? tugcastURL : nil
+        let url = executableURL.deletingLastPathComponent().appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     /// Spawn the Vite dev server with the given source tree, tugcast port, and Vite port.
@@ -768,13 +774,26 @@ class ProcessManager {
                     // Duplicate-launch collision (per [D07]): tugcast
                     // exits 73 within 1s when another instance with
                     // the same TUG_INSTANCE_ID already holds the
-                    // hash-derived port. Surface an NSAlert with the
-                    // running-instance PID and do not respawn.
+                    // hash-derived port. Two builds collide whenever
+                    // they share `<profile>-<branch>` — e.g. launching a
+                    // release build from a second checkout of `main`
+                    // while the daily-driver release-main runs. The
+                    // identity scheme has no per-checkout discriminator,
+                    // so this is the only point every launch mode
+                    // (the `just` recipes, Xcode Run, Finder/`open`)
+                    // converges; the recipes pre-quit, but ⌘R and Finder
+                    // do not, so the takeover offer must live here.
                     if exitCode == 73 && lifetime < 1.0 {
                         NSLog("ProcessManager: duplicate-identity collision (exit 73)")
-                        self.surfaceDuplicateInstanceAlert()
-                        self.restartDecision = .doNotRestart
                         self.process = nil
+                        if self.promptDuplicateInstanceTakeover() {
+                            // User chose to take over: stop the incumbent,
+                            // then respawn tugcast onto the freed port.
+                            self.takeOverFromIncumbent()
+                        } else {
+                            self.restartDecision = .doNotRestart
+                            NSApp.terminate(nil)
+                        }
                         return
                     }
 
@@ -805,32 +824,72 @@ class ProcessManager {
         }
     }
 
-    /// Surface an NSAlert explaining the duplicate-identity collision.
+    /// Offer the user a takeover when a same-identity instance already
+    /// holds this build's port. Returns `true` if the user chose to
+    /// quit the incumbent and continue, `false` to cancel (the caller
+    /// then terminates this launch).
+    ///
+    /// Two instances collide whenever they share `<profile>-<branch>`;
+    /// the identity scheme has no per-checkout discriminator, so the
+    /// fix is takeover, not coexistence. The default button quits the
+    /// incumbent so a single Return key continues the launch — but it
+    /// is a *choice*, guarding against an accidental double-launch
+    /// silently killing a session the user is mid-work in.
     ///
     /// Reads the registry file (`$TMPDIR/tug-instances.json`) for the
-    /// running PID matching `InstanceConfig.instanceId`. If we can't
-    /// resolve the PID, the alert still fires but with a generic
-    /// message — better to tell the user *something* than silently
-    /// loop.
-    private func surfaceDuplicateInstanceAlert() {
+    /// running PID matching `InstanceConfig.instanceId` to name it; if
+    /// we can't resolve the PID the prompt still fires with a generic
+    /// message — better to offer the choice than silently loop.
+    private func promptDuplicateInstanceTakeover() -> Bool {
         let id = InstanceConfig.instanceId
         let pid = ProcessManager.readRunningPID(for: id)
         let alert = NSAlert()
         alert.messageText = "Another \(id) instance is already running"
-        if let pid = pid {
-            alert.informativeText =
-                "PID \(pid) holds the port this build was assigned. " +
-                "Tug.app cannot run two instances with the same identity. " +
-                "Quit the other instance and relaunch this one."
+        let who = pid.map { "PID \($0)" } ?? "Another process"
+        alert.informativeText =
+            "\(who) holds the port this build was assigned. " +
+            "Tug.app cannot run two instances with the same identity. " +
+            "Quit the other instance and take over, or cancel this launch."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Quit Other & Continue") // .alertFirstButtonReturn (default)
+        alert.addButton(withTitle: "Cancel")                 // .alertSecondButtonReturn
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Stop the same-identity incumbent, then respawn tugcast onto the
+    /// port it releases. Delegates the kill to the bundled `tugutil
+    /// instance stop`, which already does the graceful host-app SIGTERM
+    /// → SIGKILL escalation, the PID-reuse identity guards, and the
+    /// tmux-session reap — and, crucially, polls until the processes
+    /// are *gone* (not merely signalled), so the port is free by the
+    /// time we respawn. If tugutil is missing or the stop fails, the
+    /// respawn simply re-collides and re-prompts; we never silently
+    /// loop or kill the wrong process.
+    private func takeOverFromIncumbent() {
+        let id = InstanceConfig.instanceId
+        if let tugutil = resolveBundledTool("tugutil") {
+            let proc = Process()
+            proc.executableURL = tugutil
+            proc.arguments = ["instance", "stop", id, "--timeout", "5"]
+            var env = ProcessInfo.processInfo.environment
+            env["PATH"] = ProcessManager.shellPATH // tmux / ps lookups
+            proc.environment = env
+            proc.standardOutput = FileHandle.standardError
+            proc.standardError = FileHandle.standardError
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                NSLog("ProcessManager: takeover stop of '%@' exited %d", id, proc.terminationStatus)
+            } catch {
+                NSLog("ProcessManager: takeover stop failed to launch tugutil: %@",
+                      error.localizedDescription)
+            }
         } else {
-            alert.informativeText =
-                "Another process is holding the port this build was assigned. " +
-                "Tug.app cannot run two instances with the same identity. " +
-                "Quit the other instance and relaunch this one."
+            NSLog("ProcessManager: takeover requested but bundled tugutil not found")
         }
-        alert.alertStyle = .critical
-        alert.runModal()
-        NSApp.terminate(nil)
+        // Respawn regardless: if the incumbent is gone we bind cleanly;
+        // if it survived, tugcast re-collides and re-prompts.
+        startProcess()
     }
 
     /// Read the running PID for `instanceId` out of the per-host

@@ -167,6 +167,15 @@ interface ResolvedLaunch {
   expectedSurfaceVersion: string;
   skipAccessibilityPreflight: boolean;
   instanceId: string;
+  /**
+   * True when `instanceId` was auto-minted (`<prefix>-<uuid>`) rather
+   * than supplied by the caller. An auto-minted id is single-use — no
+   * later launch reuses it — so teardown can reclaim its data dir
+   * immediately. A caller-supplied id (cold-boot / continuity tests
+   * that relaunch with the same id) must NOT have its data dir wiped
+   * between launches, so those are left for `tugutil instance prune`.
+   */
+  ephemeralInstanceId: boolean;
 }
 
 /**
@@ -1478,6 +1487,7 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
   // Outside the recipe (bare `bun test`, discouraged) it falls back
   // to the bare `apptest` family.
   const idPrefix = validatedIdPrefix(process.env.TUG_APPTEST_ID_PREFIX);
+  const ephemeralInstanceId = opts.instanceId == null;
   const instanceId = opts.instanceId ?? `${idPrefix}-${randomUUID()}`;
   return {
     appPath,
@@ -1495,6 +1505,7 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
     expectedSurfaceVersion: opts.expectedSurfaceVersion ?? EXPECTED_SURFACE_VERSION,
     skipAccessibilityPreflight: opts.skipAccessibilityPreflight ?? false,
     instanceId,
+    ephemeralInstanceId,
   };
 }
 
@@ -1712,6 +1723,7 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
   // surfaces as flakes in tests that run back-to-back.
   const originalKill = subprocess.kill.bind(subprocess);
   const instanceId = resolved.instanceId;
+  const ephemeralInstanceId = resolved.ephemeralInstanceId;
   const wrappedKill = (signal?: string): void => {
     const sig = signal ?? "SIGTERM";
     const spawnSync = (
@@ -1763,6 +1775,37 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
       });
     } catch {
       // no such session / no tmux server — nothing to reclaim
+    }
+    // Reclaim this launch's per-instance data dir. Each auto-minted
+    // `apptest-<uuid>` is single-use, so once we've stopped the process
+    // its `~/Library/Application Support/Tug/instances/<id>/` dir
+    // (tugbank.db, sessions.db, Logs) is pure garbage. Nothing else
+    // reclaims it: `instance prune` skips it while the shared
+    // `Tug-apptest.app` bundle still exists, so without this step the
+    // dirs accumulate unboundedly across runs. `--data-only` leaves
+    // that shared bundle (and its TCC grant) intact, and the call
+    // re-stops first, so removing a still-live instance's dir is
+    // impossible. SKIPPED for caller-supplied ids: cold-boot /
+    // continuity tests relaunch with the same id and need the data dir
+    // to survive between launches — `instance prune` collects those.
+    if (ephemeralInstanceId) {
+      try {
+        spawnSync?.({
+          cmd: [
+            "tugutil",
+            "instance",
+            "remove",
+            instanceId,
+            "--data-only",
+            "--yes",
+          ],
+          stdout: "ignore",
+          stderr: "ignore",
+          stdin: "ignore",
+        });
+      } catch {
+        // best-effort — `instance prune` is the catch-all
+      }
     }
     // Also signal the `open -W` wrapper so its `.exited` resolves
     // promptly on the harness side.

@@ -61,6 +61,17 @@ pub enum InstanceCommands {
         #[arg(long)]
         with_tcc: bool,
 
+        /// Reclaim only the per-instance data dir (and tmux session),
+        /// leaving the bundle and its LaunchServices registration
+        /// alone. This is the right mode for ephemeral `apptest-<uuid>`
+        /// instances: every app-test launch mints a single-use ID but
+        /// shares one long-lived `Tug-apptest.app` bundle, so removing
+        /// the bundle on teardown would knock out sibling runs. Implies
+        /// `--yes` is still honoured; `--with-tcc` is ignored (the
+        /// bundle, and thus its grant, survives).
+        #[arg(long)]
+        data_only: bool,
+
         /// Skip the interactive confirmation prompt.
         #[arg(long)]
         yes: bool,
@@ -68,10 +79,18 @@ pub enum InstanceCommands {
 
     /// Discover and (optionally) remove orphaned data dirs.
     ///
-    /// Walks `~/Library/Application Support/Tug/instances/*/`; for
-    /// each, checks the bundle-path marker. If the recorded bundle
-    /// no longer exists on disk, the data dir is classified as an
-    /// orphan and offered up for removal.
+    /// Walks `~/Library/Application Support/Tug/instances/*/`. A data
+    /// dir is an orphan when either:
+    ///   - its bundle-path marker points at a bundle that no longer
+    ///     exists on disk (a removed worktree / deleted build), or
+    ///   - it belongs to an ephemeral `apptest-<uuid>` instance that is
+    ///     not currently live in the registry. App-test IDs are
+    ///     single-use, so once the run ends the dir is garbage even
+    ///     though its shared `Tug-apptest.app` bundle still exists —
+    ///     the bundle-missing test alone never reclaims these, so they
+    ///     accumulate without this rule.
+    /// Ephemeral orphans are removed data-only (their shared bundle is
+    /// left intact); bundle-missing orphans get the full removal.
     Prune {
         /// Skip the interactive confirmation prompt.
         #[arg(long)]
@@ -100,8 +119,9 @@ pub fn run_instance(cmd: InstanceCommands) -> Result<i32, String> {
         InstanceCommands::Remove {
             instance_id,
             with_tcc,
+            data_only,
             yes,
-        } => run_remove(&instance_id, with_tcc, yes),
+        } => run_remove(&instance_id, with_tcc, data_only, yes),
         InstanceCommands::Prune {
             yes,
             with_tcc,
@@ -270,7 +290,16 @@ fn run_current() -> Result<i32, String> {
 
 // ── remove ───────────────────────────────────────────────────────────────────
 
-fn run_remove(instance_id: &str, with_tcc: bool, yes: bool) -> Result<i32, String> {
+fn run_remove(
+    instance_id: &str,
+    with_tcc: bool,
+    data_only: bool,
+    yes: bool,
+) -> Result<i32, String> {
+    // `--data-only` reclaims just the data dir + tmux; the bundle and
+    // its TCC grant survive, so a `--with-tcc` request makes no sense
+    // in that mode — drop it rather than silently half-honouring.
+    let with_tcc = with_tcc && !data_only;
     let data_dir = tugcore::instance_data_dir_for(instance_id);
     let marker = data_dir.join(tugcore::instance::BUNDLE_PATH_MARKER);
     let bundle_path = std::fs::read_to_string(&marker)
@@ -279,7 +308,9 @@ fn run_remove(instance_id: &str, with_tcc: bool, yes: bool) -> Result<i32, Strin
 
     println!("removing instance '{instance_id}'");
     println!("  data dir: {}", data_dir.display());
-    if let Some(bp) = &bundle_path {
+    if data_only {
+        println!("  bundle:   (data-only; leaving bundle + LaunchServices intact)");
+    } else if let Some(bp) = &bundle_path {
         println!("  bundle:   {} (from marker)", bp.display());
     } else {
         println!("  bundle:   (no marker; unable to clean LaunchServices entry)");
@@ -306,8 +337,11 @@ fn run_remove(instance_id: &str, with_tcc: bool, yes: bool) -> Result<i32, Strin
     // their own server on graceful shutdown, but this is the catch-all.
     reap_instance_tmux(instance_id);
 
-    // 2-4. Bundle + LaunchServices + data dir cleanup.
-    if let Some(bp) = &bundle_path
+    // 2-4. Bundle + LaunchServices + data dir cleanup. `--data-only`
+    // skips the bundle/LaunchServices teardown — the shared
+    // `Tug-apptest.app` outlives any single `apptest-<uuid>` instance.
+    if !data_only
+        && let Some(bp) = &bundle_path
         && bp.exists()
     {
         println!("unregistering bundle from LaunchServices: {}", bp.display());
@@ -354,7 +388,20 @@ struct OrphanReport<'a> {
     instance_id: &'a str,
     data_dir: &'a Path,
     bundle_path: &'a Path,
+    /// Why this dir is an orphan: `"bundle-missing"` (full removal) or
+    /// `"ephemeral-dead"` (data-only removal — shared bundle survives).
+    reason: &'a str,
     last_modified_unix: Option<i64>,
+}
+
+struct Orphan {
+    id: String,
+    data_dir: PathBuf,
+    bundle_path: PathBuf,
+    /// True for dead `apptest-<uuid>` instances whose bundle still
+    /// exists — remove the data dir only, never the shared bundle.
+    data_only: bool,
+    mtime: Option<i64>,
 }
 
 fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
@@ -368,7 +415,7 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
         return Ok(0);
     }
 
-    let mut orphans: Vec<(String, PathBuf, PathBuf, Option<i64>)> = Vec::new();
+    let mut orphans: Vec<Orphan> = Vec::new();
     for entry in std::fs::read_dir(&base).map_err(|e| format!("read {}: {e}", base.display()))? {
         let entry = match entry {
             Ok(e) => e,
@@ -385,25 +432,53 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
             continue;
         };
         let bundle_path = PathBuf::from(bundle_path_str.trim());
-        if bundle_path.exists() {
-            continue;
-        }
+
+        // Bundle gone → orphan regardless of identity (full removal).
+        // Bundle present → only ephemeral app-test IDs that are no
+        // longer live are reclaimable (data-only). A live instance has
+        // a registry entry (filtered to live PIDs by `find_by_id`), so
+        // an in-flight app-test run is never swept out from under
+        // itself. Dev/release dirs with a present bundle are kept.
+        let data_only = if bundle_path.exists() {
+            let is_dead_apptest = tugcore::ports::is_apptest_id(&id)
+                && registry::find_by_id(&id)
+                    .map(|e| e.is_none())
+                    .unwrap_or(false);
+            if !is_dead_apptest {
+                continue;
+            }
+            true
+        } else {
+            false
+        };
+
         let mtime = std::fs::metadata(&dir)
             .ok()
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64);
-        orphans.push((id, dir, bundle_path, mtime));
+        orphans.push(Orphan {
+            id,
+            data_dir: dir,
+            bundle_path,
+            data_only,
+            mtime,
+        });
     }
 
     if json {
         let report: Vec<OrphanReport> = orphans
             .iter()
-            .map(|(id, dd, bp, m)| OrphanReport {
-                instance_id: id,
-                data_dir: dd,
-                bundle_path: bp,
-                last_modified_unix: *m,
+            .map(|o| OrphanReport {
+                instance_id: &o.id,
+                data_dir: &o.data_dir,
+                bundle_path: &o.bundle_path,
+                reason: if o.data_only {
+                    "ephemeral-dead"
+                } else {
+                    "bundle-missing"
+                },
+                last_modified_unix: o.mtime,
             })
             .collect();
         println!(
@@ -419,20 +494,27 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
     }
 
     println!("orphaned data dirs ({}):", orphans.len());
-    for (id, dd, bp, _) in &orphans {
-        println!("  {id}");
-        println!("    data dir: {}", dd.display());
-        println!("    bundle:   {} (missing)", bp.display());
+    for o in &orphans {
+        println!("  {}", o.id);
+        println!("    data dir: {}", o.data_dir.display());
+        if o.data_only {
+            println!(
+                "    bundle:   {} (shared; kept — data-only)",
+                o.bundle_path.display()
+            );
+        } else {
+            println!("    bundle:   {} (missing)", o.bundle_path.display());
+        }
     }
     if !yes && !confirm("Remove all of the above?")? {
         println!("aborted");
         return Ok(0);
     }
-    for (id, _, _, _) in &orphans {
+    for o in &orphans {
         // `instance remove` already prints its own progress; pass
         // `--yes` so we don't re-prompt for each orphan.
-        if let Err(e) = run_remove(id, with_tcc, true) {
-            eprintln!("warning: removing '{id}' failed: {e}");
+        if let Err(e) = run_remove(&o.id, with_tcc, o.data_only, true) {
+            eprintln!("warning: removing '{}' failed: {e}", o.id);
         }
     }
     Ok(0)
