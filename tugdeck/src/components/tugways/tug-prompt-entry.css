@@ -167,6 +167,24 @@ body {
   border-width: 0;
 }
 
+/* The prompt entry communicates keyboard focus through its OWN treatment — the
+   editor's accentCool border and the input-area `::after` ring above — NEVER the
+   global accent `outline` (focus-ring.css). On this embedded, full-bleed editor
+   that global outline is clipped by the CodeMirror substrate down to a
+   meaningless top/bottom-only accent bar. It is normally held off by the card's
+   `[data-cycling="false"]` suppression while the caret rests here, but it leaks
+   back in the moment that suppression stops covering the stop — e.g. when the
+   title-bar "Close Card?" popover takes the key view and the input-area flips
+   from key-view to key-cursor. Kill the global ring + behind-tint on the
+   input-area stop and the editor host in every key state. This only zeroes
+   `outline` / `background-image`; the intentional focus + cycle stand-down rings
+   are `::after` borders, untouched. */
+.tug-prompt-entry-input-area:is([data-key-view-kbd], [data-key-cursor], [data-key-within]),
+.tug-prompt-entry .tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
+  outline: none;
+  background-image: none;
+}
+
 /* No vertical nudge for the route choice-group's lucide icons — flex
    `align-items: center` from the segment lands them at the right
    optical center. (An earlier draft used text glyphs `❯`/`$`/`:` which
