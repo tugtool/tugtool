@@ -340,7 +340,7 @@ body {
   --tug7-surface-card-primary-normal-findmatch-active: --tug-color(amber, i: 50, t: 50, a: 50);
 
   /* Control — Disabled */
-  --tugx-control-disabled-opacity: 0.5;
+  --tugx-control-disabled-opacity: 0.65;
 
   /* Control — Emphasis×Role */
 

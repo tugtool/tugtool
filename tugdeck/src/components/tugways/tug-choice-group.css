@@ -127,10 +127,11 @@
   border-radius: calc(var(--tug-radius-xl) - 3px);  /* 9px */
 }
 
-/* Disabled: indicator uses disabled color */
-.tug-choice-group[data-disabled] .tug-choice-group-indicator {
-  background-color: var(--tugx-segment-disabled-color);
-}
+/* Group-level disable: see the root `[data-disabled]` rule below. The
+   indicator keeps its rest color and fades with the whole control — no
+   separate disabled-gray swap, which (stacked on the segment opacity and
+   the still-bright frame) is what made the disabled state read as
+   "hammered." */
 
 
 /* ============================================================================
@@ -255,11 +256,6 @@
   background-color: var(--tugx-segment-on-color);
 }
 
-.tug-choice-group:not(.tug-choice-group-animated)[data-disabled]
-  .tug-choice-group-segment[data-state="active"] {
-  background-color: var(--tugx-segment-disabled-color);
-}
-
 /* Per-size pill radius — mirror the indicator radii. */
 .tug-choice-group-2xs:not(.tug-choice-group-animated)
   .tug-choice-group-segment[data-state="active"],
@@ -291,9 +287,26 @@
 
 /* ---- Disabled ---- */
 
+/* Group-level disable fades the WHOLE control — frame, indicator, and
+   labels — as a single unit via one opacity on the root, so the framing
+   pill recedes *with* its contents instead of staying bright around dimmed
+   innards. One mechanism, no stacking: the per-segment fade below is scoped
+   off when the group as a whole is disabled. [L15] */
+.tug-choice-group[data-disabled] {
+  opacity: var(--tugx-control-disabled-opacity);
+}
+
+/* not-allowed cursor on any disabled segment, both forms of disable. */
 .tug-choice-group-segment:disabled,
 .tug-choice-group-segment[aria-disabled="true"] {
   cursor: not-allowed;
+}
+
+/* A single disabled segment inside an otherwise-enabled group fades just
+   that segment. Scoped to `:not([data-disabled])` on the root so it never
+   stacks on top of the root fade above when the whole group is disabled. */
+.tug-choice-group:not([data-disabled]) .tug-choice-group-segment:disabled,
+.tug-choice-group:not([data-disabled]) .tug-choice-group-segment[aria-disabled="true"] {
   color: var(--tug7-element-segment-text-normal-plain-disabled);
   opacity: var(--tugx-control-disabled-opacity, 0.45);
 }
@@ -553,17 +566,6 @@
   pointer-events: none;
   user-select: none;
   z-index: 2;
-}
-
-/* Disabled — keep the indicator visible (the user can still see what was
- * selected) but pull it back toward neutral. The default-emphasis disabled
- * rule above already swaps the indicator color via `--tugx-segment-disabled-color`;
- * for ghost we want the indicator to stay at its rest position color so the
- * disabled state reads as "everything dimmed" rather than "selection changed
- * because the control disabled itself". The `opacity: 0.45` on individual
- * segments (inherited from the base disabled rule) carries the dimming. */
-.tug-choice-group[data-emphasis="ghost"][data-disabled] .tug-choice-group-indicator {
-  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
 }
 
 /* `sidePadding` — optional extra horizontal padding inside each

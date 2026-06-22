@@ -186,9 +186,26 @@
 
 /* ---- Disabled ---- */
 
+/* Group-level disable fades the WHOLE control — frame, on-fills, and labels —
+   as a single unit via one opacity on the root, so the framing pill recedes
+   *with* its contents instead of staying bright around dimmed items. One
+   mechanism, no stacking: the per-item fade below is scoped off when the group
+   as a whole is disabled. Mirrors tug-choice-group. [L15] */
+.tug-option-group[data-disabled] {
+  opacity: var(--tugx-control-disabled-opacity);
+}
+
+/* not-allowed cursor on any disabled item, both forms of disable. */
 .tug-option-group-item:disabled,
 .tug-option-group-item[aria-disabled="true"] {
   cursor: not-allowed;
+}
+
+/* A single disabled item inside an otherwise-enabled group fades just that
+   item. Scoped to `:not([data-disabled])` on the root so it never stacks on
+   top of the root fade above when the whole group is disabled. */
+.tug-option-group:not([data-disabled]) .tug-option-group-item:disabled,
+.tug-option-group:not([data-disabled]) .tug-option-group-item[aria-disabled="true"] {
   color: var(--tug7-element-segment-text-normal-plain-disabled);
   opacity: var(--tugx-control-disabled-opacity, 0.45);
 }
@@ -409,13 +426,6 @@
   pointer-events: none;
   user-select: none;
   z-index: 2;
-}
-
-/* Disabled — segments dim via the inherited `opacity: 0.45`. Keep the
- * on-state items at their rest fill so the disabled state reads as
- * "everything dimmed" rather than "active items cleared." */
-.tug-option-group[data-emphasis="ghost"][data-disabled] .tug-option-group-item[data-state="on"] {
-  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
 }
 
 /* `sidePadding` — optional extra horizontal padding inside each item,
