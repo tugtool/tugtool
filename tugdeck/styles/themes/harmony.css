@@ -1,6 +1,6 @@
 /* Harmony — light theme. */
 body {
-  --tugx-host-canvas-color: #608b9a;
+  --tugx-host-canvas-color: #33464f;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
@@ -86,7 +86,7 @@ body {
      ground (light-on-dark, like drafting paper), not a dark stroke. sunken/screen
      are recessed-within-card and tooltip surfaces, so they stay light and
      hold dark default text. */
-  --tug7-surface-global-primary-normal-canvas-rest: --tug-color(cerulean, i: 18, t: 25);
+  --tug7-surface-global-primary-normal-canvas-rest: --tug-color(cerulean, i: 12, t: 18);
   --tug7-surface-global-primary-normal-content-rest: --tug-color(indigo, i: 2, t: 100);
   --tug7-surface-global-primary-normal-control-rest: var(--tug7-surface-control-primary-outlined-action-rest);
   --tug7-surface-global-primary-normal-default-rest: --tug-color(indigo, i: 3, t: 99);
@@ -312,7 +312,7 @@ body {
   /* Card — Title Bar Element Tokens */
   --tug7-element-card-text-normal-title-active: --tug-color(indigo, i: 4, t: 8);
   --tug7-element-card-text-normal-title-inactive: --tug-color(indigo, i: 4, t: 40);
-  --tug7-element-card-icon-normal-title-active: --tug-color(indigo, i: 30, t: 24);
+  --tug7-element-card-icon-normal-title-active: --tug-color(indigo, i: 80, t: 40);
   --tug7-element-card-icon-normal-title-inactive: --tug-color(indigo, i: 8, t: 40);
   --tug7-element-card-icon-normal-title-hover: --tug-color(indigo, i: 6, t: 29);
 

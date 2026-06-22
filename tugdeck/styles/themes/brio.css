@@ -300,7 +300,7 @@ body {
   /* Card — Title Bar Element Tokens */
   --tug7-element-card-text-normal-title-active: --tug-color(indigo, i: 3, t: 94);
   --tug7-element-card-text-normal-title-inactive: --tug-color(indigo, i: 3, t: 45);
-  --tug7-element-card-icon-normal-title-active: --tug-color(indigo, i: 100, t: 80);
+  --tug7-element-card-icon-normal-title-active: --tug-color(indigo, i: 58, t: 70);
   --tug7-element-card-icon-normal-title-inactive: --tug-color(indigo-violet, i: 7, t: 45);
   --tug7-element-card-icon-normal-title-hover: --tug-color(indigo-violet, i: 5, t: 66);
 
