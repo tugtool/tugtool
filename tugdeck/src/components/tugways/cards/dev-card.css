@@ -1018,6 +1018,21 @@
   color: var(--tug7-element-control-icon-ghost-danger-active);
 }
 
+/* Give the trailing accessories more breathing room: the `terminal`
+   provenance badge sat too close to the trash button at the default xs gap. */
+.dev-card-picker-sessions-list .tug-list-row-trailing {
+  --tugx-list-row-trailing-gap: var(--tug-space-md);
+}
+
+/* The `terminal` provenance badge inherits the row's color instead of carrying
+   its own tinted-data hue — it reads as a quiet provenance marker, not a
+   saturated chip competing with the trash button beside it. */
+.dev-card-picker-sessions-list .tug-badge-tinted-data {
+  background-color: transparent;
+  color: inherit;
+  border-color: inherit;
+}
+
 /* Trash-all button container — centered below the Sessions box.
    The button is always rendered (disabled when there's nothing to
    trash) so the box's height stays stable as ledger ticks bring

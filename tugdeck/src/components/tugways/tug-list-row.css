@@ -511,8 +511,15 @@ body {
 .tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="action"][data-key-view-kbd]) {
   --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-action-rest);
 }
+/* Danger is the exception: don't wash the whole row in a danger hue when a
+   danger accessory (the row's trash button) holds the key view — a red row plus
+   a red button double-signals and reads as jarring. Instead drain the selection
+   to gray: the theme's own selected fill with its chroma zeroed in OKLCH (same
+   lightness + alpha, no hue). The lit-danger button carries the signal alone. */
 .tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="danger"][data-key-view-kbd]) {
-  --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-danger-rest);
+  --tugx-list-row-selected-demoted-bg: oklch(
+    from var(--tugx-list-row-selected-bg) l 0 h
+  );
 }
 .tug-list-row[data-selected="true"]:has(.tug-list-row-trailing [data-tug-role="accent"][data-key-view-kbd]) {
   --tugx-list-row-selected-demoted-bg: var(--tug7-surface-selection-primary-demoted-accent-rest);
