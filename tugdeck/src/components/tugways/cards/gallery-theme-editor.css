@@ -1,388 +1,52 @@
-/* Workshop board for the Key + Accent color duet.
- *
- * On-model by construction: every rung is the TugColor piecewise formula
- * (color-palette.md) evaluated in CSS against a hue's own palette constants —
- * --tugc-{hue}-h / -canonical-l / -peak-c — so tone maps through that hue's
- * canonical lightness and chroma is bounded by its gamut-safe (and P3-wider)
- * peak. The hue is chosen by INDIRECTING those three constants per role:
- *
- *   --duet-key-h / --duet-key-canon-l / --duet-key-peak-c
- *
- * The workshop's hue well writes `var(--tugc-cobalt-h)` (etc.) into those three
- * vars via style.setProperty ([L06]); the axis i/t delta steppers write
- * --duet-key-i-delta (added to every rung's intensity) and --duet-key-l-shift
- * (added to every rung's tone). Picking a hue re-evaluates every rung through the
- * real model — correct canonical L, correct peak chroma, no off-model hand-tuned
- * L. The --tug7-* repoints (Table T01) then route the real components below.
- *
- * Each rung carries today's brio intensity/tone recipe. The default hue
- * indirection (Key->blue, Accent->orange) reproduces today's brio exactly.
- */
+/* Theme Deriver — controls + a derived-color audition grid. */
 
-.gallery-theme-editor-board {
-  /* ---- Hue indirection (the knobs) ---- default = today's brio blue/orange. */
-  --duet-key-h:       var(--tugc-blue-h);
-  --duet-key-canon-l: var(--tugc-blue-canonical-l);
-  --duet-key-peak-c:  var(--tugc-blue-peak-c);
-  --duet-key-i-delta: 0;   /* intensity delta added to every Key rung */
-  --duet-key-l-shift: 0;   /* tone delta added to every Key rung */
-
-  --duet-accent-h:       var(--tugc-orange-h);
-  --duet-accent-canon-l: var(--tugc-orange-canonical-l);
-  --duet-accent-peak-c:  var(--tugc-orange-peak-c);
-  --duet-accent-i-delta: 0; /* intensity delta added to every Accent rung */
-  --duet-accent-l-shift: 0; /* tone delta added to every Accent rung */
-
-  /* ---- Chrome treatments — each a TugColor of the KEY hue with its own
-     intensity / tone (/ alpha). The base Key supplies the hue + canonical L +
-     peak chroma; these knobs shape the rest appearance of the title bar, the
-     filled buttons, and the tinted badges (all "based on the same color"). ---- */
-  --duet-titlebar-i: 30;
-  --duet-titlebar-t: 88;
-  --duet-filled-i: 84;
-  --duet-filled-t: 44;
-  --duet-tinted-i: 75;
-  --duet-tinted-t: 38;
-  --duet-tinted-a: 0.40;
-
-  /* ---- Text-selection wash (also drives the editing caret) — its own i / t / a
-     off the Key hue, independent of the rest of the Key ramp. Default reproduces
-     today's plain Key fill (i50 / t50 / a0.40). ---- */
-  --duet-textsel-i: 50;
-  --duet-textsel-t: 50;
-  --duet-textsel-a: 0.40;
-
-  --duet-titlebar: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, var(--duet-titlebar-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-titlebar-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(var(--duet-titlebar-i) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-filled: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, var(--duet-filled-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-filled-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(var(--duet-filled-i) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-tinted: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, var(--duet-tinted-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-tinted-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(var(--duet-tinted-i) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h) / var(--duet-tinted-a));
-
-  /* ---- Key ramp — uniform TugColor formula per rung; tone = literal + l-shift. */
-  /* Plain fill = the text-selection wash. Driven by the dedicated text-selection
-     knobs (--duet-textsel-i / -t / -a), NOT the Key i-delta / l-shift — mirroring
-     the apply pipeline (theme-editor-core writes plain-rest from textsel.i/t/a). */
-  --duet-key-plain: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, var(--duet-textsel-t), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(var(--duet-textsel-t) - 50), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(var(--duet-textsel-i) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h) / var(--duet-textsel-a));
-  /* Selected-row fill — matches the brio baseline selected-rest recipe (cobalt
-     i76 t44), the value the apply pipeline preserves; keep in sync with reality. */
-  --duet-key-selected: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(44 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(44 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(76 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-selected-hover: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(53 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(53 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(90 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-quiet: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(30 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(30 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(38 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-quiet-hover: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(35 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(35 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(38 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-quiet-strong: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(38 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(38 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(54 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-demoted: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(28 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(28 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(22 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-toggle-off: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(44 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(44 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(20 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-tone: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(47 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(47 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-tone-icon: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(52 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(52 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-tone-text: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(87 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(87 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-tone-surface: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(47 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(47 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h) / 0.15);
-  /* Navigational link — matches the brio baseline link-rest recipe (cobalt
-     i45 t86), the value the apply pipeline preserves. */
-  --duet-key-link: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(86 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(86 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(45 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-link-hover: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(92 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(92 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(40 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-action-active: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(58 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(58 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(96 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h));
-  --duet-key-drop-surface: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(50 + var(--duet-key-l-shift, 0)), 50) * (var(--duet-key-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(50 - 50 + var(--duet-key-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-key-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-key-peak-c) + var(--duet-key-i-delta, 0) / 100 * var(--duet-key-peak-c))
-    var(--duet-key-h) / 0.18);
-
-  /* ---- Accent ramp ---- */
-  --duet-accent: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(50 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(50 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h));
-  --duet-accent-subtle: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(30 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(30 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h) / 0.10);
-  --duet-accent-tone: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(47 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(47 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h));
-  --duet-accent-tone-text: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(87 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(87 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h));
-  --duet-accent-tone-surface: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(47 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(47 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(50 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h) / 0.15);
-  --duet-accent-filled: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(45 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(45 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(65 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h));
-  --duet-accent-filled-hover: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(52 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(52 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(55 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h));
-  --duet-accent-filled-active: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(57 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(57 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(90 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h));
-  --duet-accent-demoted: oklch(
-    calc(var(--tugc-l-dark) + clamp(0, calc(28 + var(--duet-accent-l-shift, 0)), 50) * (var(--duet-accent-canon-l) - var(--tugc-l-dark)) / 50 + clamp(0, calc(28 - 50 + var(--duet-accent-l-shift, 0)), 50) * (var(--tugc-l-light) - var(--duet-accent-canon-l)) / 50)
-    calc(22 / 100 * var(--duet-accent-peak-c) + var(--duet-accent-i-delta, 0) / 100 * var(--duet-accent-peak-c))
-    var(--duet-accent-h));
-
-  /* ---- Table T01 base-token repoints (board-scoped) ---- */
-  /* Key-hued fills */
-  --tug7-surface-selection-primary-normal-plain-rest: var(--duet-key-plain);
-  --tug7-surface-selection-primary-normal-selected-rest: var(--duet-key-selected);
-  --tug7-surface-selection-primary-normal-selected-hover: var(--duet-key-selected-hover);
-  --tug7-surface-selection-primary-normal-quiet-rest: var(--duet-key-quiet);
-  --tug7-surface-selection-primary-normal-quiet-hover: var(--duet-key-quiet-hover);
-  --tug7-surface-selection-primary-normal-quiet-strong: var(--duet-key-quiet-strong);
-  --tug7-surface-selection-primary-demoted-action-rest: var(--duet-key-demoted);
-  --tug7-surface-toggle-primary-normal-on-rest: var(--duet-key-selected);
-  --tug7-surface-toggle-primary-normal-on-hover: var(--duet-key-selected-hover);
-  --tug7-surface-toggle-primary-normal-on-disabled: var(--duet-key-toggle-off);
-  --tug7-surface-toggle-track-normal-on-rest: var(--duet-key-selected);
-  --tug7-surface-toggle-track-normal-on-hover: var(--duet-key-selected-hover);
-  --tug7-surface-toggle-track-normal-on-disabled: var(--duet-key-toggle-off);
-  --tug7-element-tone-border-normal-active-rest: var(--duet-key-tone);
-  --tug7-element-tone-fill-normal-active-rest: var(--duet-key-tone);
-  --tug7-element-tone-icon-normal-active-rest: var(--duet-key-tone-icon);
-  --tug7-element-tone-text-normal-active-rest: var(--duet-key-tone-text);
-  --tug7-surface-tone-primary-normal-active-rest: var(--duet-key-tone-surface);
-  --tug7-element-global-text-normal-link-rest: var(--duet-key-link);
-  --tug7-element-global-text-normal-link-hover: var(--duet-key-link-hover);
-  /* Submit / primary CTA (filled action) */
-  --tug7-surface-control-primary-filled-action-rest: var(--duet-filled);
-  --tug7-surface-control-primary-filled-action-hover: var(--duet-key-selected-hover);
-  --tug7-surface-control-primary-filled-action-active: var(--duet-key-action-active);
-  --tug7-element-control-border-filled-action-rest: var(--duet-filled);
-  --tug7-element-control-border-filled-action-hover: var(--duet-key-selected-hover);
-  --tug7-element-control-border-filled-action-active: var(--duet-key-action-active);
-  /* Tinted treatment drives BOTH the control (button) and badge families so the
-     two read identically at rest; the title-bar/tab chrome previews titlebar. */
-  --tug7-surface-control-primary-tinted-action-rest: var(--duet-tinted);
-  --tug7-element-control-border-tinted-action-rest: var(--duet-tinted);
-  --tug7-surface-badge-primary-tinted-action-rest: var(--duet-tinted);
-  --tug7-element-badge-border-tinted-action-rest: var(--duet-tinted);
-  --tugx-chrome-key-surface: var(--duet-titlebar);
-
-  /* Accent ramp */
-  --tug7-element-global-border-normal-accent-rest: var(--duet-accent);
-  --tug7-element-global-fill-normal-accent-rest: var(--duet-accent);
-  --tug7-element-global-fill-normal-accentCool-rest: var(--duet-accent);
-  --tug7-element-global-outline-normal-accentCool-rest: var(--duet-accent);
-  --tug7-element-global-fill-normal-accentSubtle-rest: var(--duet-accent-subtle);
-  --tug7-element-tone-border-normal-accent-rest: var(--duet-accent-tone);
-  --tug7-element-tone-fill-normal-accent-rest: var(--duet-accent-tone);
-  --tug7-element-tone-icon-normal-accent-rest: var(--duet-accent-tone);
-  --tug7-element-tone-text-normal-accent-rest: var(--duet-accent-tone-text);
-  --tug7-surface-tone-primary-normal-accent-rest: var(--duet-accent-tone-surface);
-  --tug7-surface-control-primary-filled-accent-rest: var(--duet-accent-filled);
-  --tug7-surface-control-primary-filled-accent-hover: var(--duet-accent-filled-hover);
-  --tug7-surface-control-primary-filled-accent-active: var(--duet-accent-filled-active);
-  --tug7-element-control-border-filled-accent-rest: var(--duet-accent-filled);
-  --tug7-element-control-border-filled-accent-hover: var(--duet-accent-filled-hover);
-  --tug7-element-control-border-filled-accent-active: var(--duet-accent-filled-active);
-  --tug7-surface-selection-primary-demoted-accent-rest: var(--duet-accent-demoted);
-  --tug7-element-highlight-stroke-normal-drop-rest: var(--duet-accent);
-  --tug7-surface-highlight-primary-normal-drop-rest: var(--duet-key-drop-surface);
-
-  /* Caret + focus ring ride Accent, distinct from the Key selection fill. The
-     caret reads --tugx-list-view-cursor-bar-color; the focus ring reads
-     --tugx-focus-ring. Pin both to the board's live Accent. */
-  --tugx-focus-ring: var(--duet-accent);
-  --tugx-list-view-cursor-bar-color: var(--duet-accent);
-  --tugx-list-view-cursor-bar-width: 3px;
-
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-  border-radius: var(--tug-radius-lg);
-  /* The board paints the real CARD body surface (the `content` rung, what
-     --tugx-pane-bg resolves to) — so every composite previews against the
-     background the components actually live on inside a card. The title bar
-     composite is the lone exception: its chip carries its own titlebar
-     treatment, so it still reads distinctly against this card surface. */
-  background: var(--tug7-surface-global-primary-normal-content-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-}
-
-/* Text selection inside the board rides the Key plain fill. */
-.gallery-theme-editor-board ::selection {
-  background: var(--duet-key-plain);
-}
-
-/* ---- Controls ---- */
 .gcd-controls {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 10px;
   margin-top: 8px;
 }
+
 .gcd-control-row {
   display: flex;
   align-items: center;
   gap: 12px;
 }
+
 .gcd-control-label {
-  flex: 0 0 110px;
+  flex: 0 0 5.5rem;
   font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
-/* Group sub-headers ("Treatments", "Text selection / caret") — a plain block
-   label in the control column. NOT `.gcd-control-label` (whose 0 0 110px flex
-   basis becomes a 110px-tall row in this column flex). Tight margin keeps the
-   control stack compact so the example composites stay in view. */
-.gcd-group-label {
-  margin-top: 3px;
-  font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-/* Inline "not tunable here" note (e.g. a dark theme's fixed title bar when its
-   color can't be expressed as a TugColor chip). */
+
 .gcd-control-note {
   font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
+
 .gcd-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-}
-.gcd-readout {
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--tug-font-size-2xs);
-  white-space: pre;
-  padding: 10px;
-  border-radius: var(--tug-radius-md);
-  background: var(--tug7-surface-global-primary-normal-sunken-rest);
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* ---- Board composites ---- */
-.gcd-composite {
+/* Derived-color audition — a small grid of read-only TugColor chips. */
+.gcd-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 14px;
+  padding: 4px 6px;
+}
+
+.gcd-preview-cell {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
 }
-.gcd-composite-title {
-  font-size: var(--tug-font-size-2xs);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-.gcd-row {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-/* Static caret row — paints the REAL selected-row fill (selected-rest), the same
-   token the live list and the app's selected rows use, so the preview matches
-   what the app produces (not the fainter quiet-rest used previously). */
-.gcd-caret-row {
-  padding: 10px 14px;
-  border-radius: var(--tug-radius-md);
-  background: var(--tug7-surface-selection-primary-normal-selected-rest);
-  color: var(--tug7-element-selection-text-normal-selected-rest);
-  font-size: var(--tug-font-size-sm);
-}
-.gcd-drop-target {
-  padding: 20px;
-  border-radius: var(--tug-radius-md);
-  border: 2px dashed var(--tug7-element-highlight-stroke-normal-drop-rest);
-  background: var(--tug7-surface-highlight-primary-normal-drop-rest);
+
+.gcd-preview-label {
+  flex: 0 0 4.5rem;
   font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-.gcd-text-sample {
-  font-size: var(--tug-font-size-sm);
-  line-height: var(--tug-line-height-normal);
-  max-width: 44rem;
-  color: var(--tug7-element-global-text-normal-default-rest);
-  /* This sample MUST be selectable — selecting it is the whole point of the
-     composite (it shows the text-selection wash). Opt back in over any ambient
-     user-select:none inherited from the surrounding card chrome. */
-  user-select: text;
-  -webkit-user-select: text;
-  cursor: text;
-}
-.gcd-link {
-  color: var(--tug7-element-global-text-normal-link-rest);
-  text-decoration: underline;
-}
-.gcd-list-host {
-  height: 168px;
-  border-radius: var(--tug-radius-md);
-  overflow: hidden;
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-}
-/* The title bar previews against the CANVAS (the desktop behind cards), unlike
-   every other composite which sits on the card body surface — so this frame
-   paints the host canvas color behind the title-bar chip. */
-.gcd-titlebar-frame {
-  padding: 12px;
-  border-radius: var(--tug-radius-md);
-  background: var(--tugx-host-canvas-color);
-}
-/* Faux pane title bar — previews the title-bar treatment (--duet-titlebar). */
-.gcd-titlebar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border-radius: var(--tug-radius-md);
-  background: var(--duet-titlebar);
-  color: var(--tug7-element-card-text-normal-title-active);
-  font-size: var(--tug-font-size-sm);
-  font-weight: 600;
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }

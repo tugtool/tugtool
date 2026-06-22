@@ -15,6 +15,7 @@
 import React, { useCallback, useContext, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { TugSlider } from "./tug-slider";
+import { TugBox } from "./tug-box";
 import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { useResponderForm } from "./use-responder-form";
 import { useFocusable, useFocusManager } from "./use-focusable";
@@ -31,9 +32,14 @@ import {
   useActiveColorTarget,
 } from "./active-color-target";
 import {
+  chromaOf,
   formatTugColorText,
+  intensityForChroma,
+  lightnessOf,
   normalizeSpec,
+  peakChromaFor,
   swatchOklch,
+  toneForLightness,
   type TugColorSpec,
 } from "./tug-color-spec";
 import type { ActionPhase } from "./responder-chain";
@@ -73,6 +79,9 @@ const ARROW_DIRS: Record<string, ArrowDir> = {
 
 const PRESET_NAMES = ["canonical", "light", "dark", "intense", "muted"] as const;
 const CUSTOM = "custom";
+
+/** Fixed value-box width so every slider's track (and value) lines up. */
+const SLIDER_VALUE_WIDTH = "3.5rem";
 
 /** The picker always shows a color; with no active well it edits this scratch. */
 const SCRATCH_DEFAULT: TugColorSpec = { hue: "blue", i: 50, t: 50, a: 100 };
@@ -114,6 +123,8 @@ export function TugColorPicker(): React.ReactElement {
   const aId = useId();
   const presetId = useId();
   const hueGridId = useId();
+  const cId = useId();
+  const lId = useId();
 
   // Land keyboard focus on a control so the loop is reachable: arm the hue grid
   // (loop start) the first time a color is active and this card is the key card.
@@ -200,7 +211,10 @@ export function TugColorPicker(): React.ReactElement {
   // vertical order so Up/Down move the ring between the three sliders (wrapping)
   // instead of dead-ending into a system beep ([P22]/[P23]).
   const sliderOrder = useMemo<SpatialOrder>(
-    () => rowGridOrder([[`${focusGroup}:1`], [`${focusGroup}:2`], [`${focusGroup}:3`]]),
+    () => rowGridOrder([
+      [`${focusGroup}:1`], [`${focusGroup}:2`], [`${focusGroup}:3`],
+      [`${focusGroup}:4`], [`${focusGroup}:5`],
+    ]),
     [focusGroup],
   );
   useSpatialOrder(sliderOrder);
@@ -210,6 +224,12 @@ export function TugColorPicker(): React.ReactElement {
       [iId]: (v: number, phase: ActionPhase) => editColor({ i: v }, phase),
       [tId]: (v: number, phase: ActionPhase) => editColor({ t: v }, phase),
       [aId]: (v: number, phase: ActionPhase) => editColor({ a: v }, phase),
+      // Perceptual axes: edit absolute chroma / lightness, back-solving i / t for
+      // the current hue (so the same C reads the same on any hue).
+      [cId]: (v: number, phase: ActionPhase) =>
+        editColor({ i: intensityForChroma(valueRef.current, v) }, phase),
+      [lId]: (v: number, phase: ActionPhase) =>
+        editColor({ t: toneForLightness(valueRef.current, v) }, phase),
     },
     selectValue: {
       [presetId]: (name: string) => {
@@ -269,11 +289,23 @@ export function TugColorPicker(): React.ReactElement {
           ))}
         </div>
 
-        <div className="tug-color-picker-sliders">
-          <TugSlider label="Intensity" senderId={iId} value={value.i} min={0} max={100} step={1} size="sm" focusGroup={focusGroup} focusOrder={1} />
-          <TugSlider label="Tone" senderId={tId} value={value.t} min={0} max={100} step={1} size="sm" focusGroup={focusGroup} focusOrder={2} />
-          <TugSlider label="Alpha" senderId={aId} value={value.a} min={0} max={100} step={1} size="sm" focusGroup={focusGroup} focusOrder={3} />
-        </div>
+        {/* TugColor axes — gamut-relative intensity / tone / alpha. */}
+        <TugBox label="TugColor" variant="bordered" size="sm" className="tug-color-picker-box">
+          <div className="tug-color-picker-sliders">
+            <TugSlider label="Intensity" senderId={iId} value={value.i} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
+            <TugSlider label="Tone" senderId={tId} value={value.t} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
+            <TugSlider label="Alpha" senderId={aId} value={value.a} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
+          </div>
+        </TugBox>
+
+        {/* OKLCH axes — absolute chroma / lightness. Editing these back-solves
+            i / t for the hue, so the same C reads as the same saturation anywhere. */}
+        <TugBox label="OKLCH" variant="bordered" size="sm" className="tug-color-picker-box">
+          <div className="tug-color-picker-sliders">
+            <TugSlider label="Chroma" senderId={cId} value={Math.round(chromaOf(value) * 1000) / 1000} min={0} max={Math.round(peakChromaFor(value) * 1000) / 1000} step={0.005} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={4} />
+            <TugSlider label="Lightness" senderId={lId} value={Math.round(lightnessOf(value) * 1000) / 1000} min={0} max={1} step={0.005} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={5} />
+          </div>
+        </TugBox>
 
         <div className="tug-color-picker-presets">
           <TugChoiceGroup
@@ -284,7 +316,7 @@ export function TugColorPicker(): React.ReactElement {
             aria-label="Presets"
             commit="live"
             focusGroup={focusGroup}
-            focusOrder={4}
+            focusOrder={6}
           />
         </div>
       </div>

@@ -9,6 +9,11 @@
 
 import {
   resolveTugColorToOklch,
+  MAX_CHROMA_FOR_HUE,
+  PEAK_C_SCALE,
+  DEFAULT_CANONICAL_L,
+  L_DARK,
+  L_LIGHT,
   type ResolvedOklch,
 } from "./palette-engine";
 
@@ -54,4 +59,46 @@ export function formatTugColorText(s: TugColorSpec): string {
 export function specsEqual(a: TugColorSpec, b: TugColorSpec): boolean {
   return a.hue === b.hue && (a.adjacent ?? "") === (b.adjacent ?? "") &&
     a.i === b.i && a.t === b.t && a.a === b.a;
+}
+
+// ---------------------------------------------------------------------------
+// Perceptual axes — absolute OKLCH chroma (C) and lightness (L).
+//
+// Intensity and tone are GAMUT-relative (i → this hue's chroma ceiling, t →
+// this hue's canonical lightness), so equal i/t across hues is NOT equal
+// perceived saturation/lightness. C and L are the absolute, cross-hue-uniform
+// view: the same C reads as the same saturation on any hue. These convert
+// between the two so the picker can edit either. Base-hue accurate; adjacency
+// uses the base hue's ceiling (the grid edits base hues).
+// ---------------------------------------------------------------------------
+
+/** This hue's absolute chroma ceiling (the C at i = 100). */
+export function peakChromaFor(s: TugColorSpec): number {
+  return (MAX_CHROMA_FOR_HUE[s.hue] ?? 0.022) * PEAK_C_SCALE;
+}
+
+/** The spec's absolute OKLCH chroma. */
+export function chromaOf(s: TugColorSpec): number {
+  return resolveTugColorToOklch(s.hue, s.adjacent, s.i, s.t, s.a).C;
+}
+
+/** The spec's absolute OKLCH lightness. */
+export function lightnessOf(s: TugColorSpec): number {
+  return resolveTugColorToOklch(s.hue, s.adjacent, s.i, s.t, s.a).L;
+}
+
+/** Back-solve the intensity that yields absolute chroma `C` on the spec's hue. */
+export function intensityForChroma(s: TugColorSpec, c: number): number {
+  const peak = peakChromaFor(s);
+  return peak <= 0 ? s.i : clamp100((c / peak) * 100);
+}
+
+/** Back-solve the tone that yields absolute lightness `L` on the spec's hue
+ *  (inverse of the piecewise tone→L mapping through the hue's canonical L). */
+export function toneForLightness(s: TugColorSpec, l: number): number {
+  const canonicalL = DEFAULT_CANONICAL_L[s.hue] ?? 0.77;
+  const t = l <= canonicalL
+    ? ((l - L_DARK) / (canonicalL - L_DARK)) * 50
+    : 50 + ((l - canonicalL) / (L_LIGHT - canonicalL)) * 50;
+  return clamp100(t);
 }

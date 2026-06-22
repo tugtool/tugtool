@@ -10,6 +10,7 @@ import postcssTugColor from "./postcss-tug-color";
 // scripts/apply-theme-editor.ts.
 import {
   applyDuet,
+  deriveTheme,
   diffMergeBaseline,
   extractBaseline,
   identitySeed,
@@ -425,10 +426,58 @@ export async function handleThemeEditApply(
   });
 }
 
+// ---------------------------------------------------------------------------
+// handleThemeDerive — POST /__theme-editor/derive
+//
+// Generate a family-member theme from a canonical base (brio/harmony) by
+// rotating its brand hues, holding perceived chroma + lightness. Writes the
+// derived theme CSS. Drives the Theme Deriver card's Generate button. Dev-only.
+// ---------------------------------------------------------------------------
+
+export async function handleThemeDerive(
+  body: unknown,
+  themesCssDir: string,
+  activeCssPath: string,
+): Promise<{ status: number; body: string }> {
+  if (!body || typeof body !== "object") {
+    return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
+  }
+  const b = body as Record<string, unknown>;
+  const base = typeof b.base === "string" ? b.base.trim() : "";
+  const out = typeof b.out === "string" ? b.out.trim() : "";
+  const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
+  const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : undefined;
+  if (!base || !out || !isKnownHue(keyHue) || (accentHue && !isKnownHue(accentHue))) {
+    return { status: 400, body: JSON.stringify({ error: "base + out + valid keyHue (+optional accentHue) required" }) };
+  }
+
+  const baseFile = findThemeCssPath(base, themesCssDir);
+  const outFile = path.join(themesCssDir, `${out}.css`);
+  if (!baseFile) {
+    return { status: 404, body: JSON.stringify({ error: `base theme '${base}' not found` }) };
+  }
+
+  return new Promise<{ status: number; body: string }>((resolve) => {
+    withMutex(async () => {
+      try {
+        const baseCss = fs.readFileSync(baseFile, "utf-8");
+        const { css, count } = deriveTheme(baseCss, keyHue, accentHue);
+        fs.writeFileSync(outFile, css, "utf-8");
+        // If the derived theme is the active one, repaint the running app.
+        const activeTheme = readActiveThemeFromTugbank();
+        if (activeTheme === out) copyActiveThemeToFile(activeTheme, activeCssPath);
+        resolve({ status: 200, body: JSON.stringify({ base, out, keyHue, accentHue, count }) });
+      } catch (err) {
+        resolve({ status: 500, body: JSON.stringify({ error: String(err instanceof Error ? err.message : err) }) });
+      }
+    });
+  });
+}
+
 /**
  * Vite plugin: duet API endpoint for the dev server.
- * POST /__theme-editor/apply — re-hue a theme's Key/Accent axes from the Theme
- * Editor card.
+ * POST /__theme-editor/apply  — re-hue a theme's Key/Accent axes (legacy).
+ * POST /__theme-editor/derive — generate a family member from a base theme.
  */
 function themeEditApplyPlugin(): VitePlugin {
   return {
@@ -451,6 +500,31 @@ function themeEditApplyPlugin(): VitePlugin {
                 return;
               }
               handleThemeEditApply(parsed, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
+                if (result.status === 200) {
+                  server.ws.send({ type: "custom", event: "tug:theme-changed" });
+                }
+                res.writeHead(result.status, { "Content-Type": "application/json" });
+                res.end(result.body);
+              }).catch((err) => {
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: String(err) }));
+              });
+            });
+            return;
+          }
+          if (req.method === "POST" && url === "/derive") {
+            let raw = "";
+            req.on("data", (chunk: Buffer) => { raw += chunk.toString(); });
+            req.on("end", () => {
+              let parsed: unknown;
+              try {
+                parsed = JSON.parse(raw);
+              } catch {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "invalid JSON body" }));
+                return;
+              }
+              handleThemeDerive(parsed, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
                 if (result.status === 200) {
                   server.ws.send({ type: "custom", event: "tug:theme-changed" });
                 }

@@ -16,7 +16,15 @@
  * the .css files stay the single source of truth and hand tuning survives Apply.
  */
 
-import { HUE_FAMILIES, TUG_COLOR_PRESETS } from "./src/components/tugways/palette-engine";
+import {
+  HUE_FAMILIES,
+  TUG_COLOR_PRESETS,
+  MAX_CHROMA_FOR_HUE,
+  PEAK_C_SCALE,
+  DEFAULT_CANONICAL_L,
+  L_DARK,
+  L_LIGHT,
+} from "./src/components/tugways/palette-engine";
 
 const CHROMATIC = new Set(Object.keys(HUE_FAMILIES));
 
@@ -347,6 +355,155 @@ export function diffMergeBaseline(
 export function identitySeed(): DuetSeed {
   const zero: DuetAdjust = { iDelta: 0, tDelta: 0, aDelta: 0 };
   return { keyHue: "blue", key: { ...zero }, accentHue: "blue", accent: { ...zero } };
+}
+
+// ---------------------------------------------------------------------------
+// Perceptual re-hue — derive a theme family member from a base theme.
+//
+// Intensity/tone are GAMUT-relative (i → this hue's chroma ceiling, t → its
+// canonical lightness), so re-hueing at the same i/t shifts perceived
+// saturation/lightness. Deriving a theme instead preserves absolute OKLCH
+// chroma (C) and lightness (L) per token, so "brio at seafoam" reads the same
+// as brio, just greener — the family-from-one-base model.
+// ---------------------------------------------------------------------------
+
+function peakChromaOf(hue: string): number {
+  return (MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
+}
+function canonicalLOf(hue: string): number {
+  return DEFAULT_CANONICAL_L[hue] ?? 0.77;
+}
+function chromaAt(hue: string, i: number): number {
+  return (i / 100) * peakChromaOf(hue);
+}
+function lightnessAt(hue: string, t: number): number {
+  const cl = canonicalLOf(hue);
+  return L_DARK + (Math.min(t, 50) * (cl - L_DARK)) / 50 + (Math.max(t - 50, 0) * (L_LIGHT - cl)) / 50;
+}
+function intensityForChroma(hue: string, c: number): number {
+  const peak = peakChromaOf(hue);
+  return peak <= 0 ? 0 : Math.max(0, Math.min(100, (c / peak) * 100));
+}
+function toneForLightness(hue: string, l: number): number {
+  const cl = canonicalLOf(hue);
+  const t = l <= cl
+    ? ((l - L_DARK) / (cl - L_DARK)) * 50
+    : 50 + ((l - cl) / (L_LIGHT - cl)) * 50;
+  return Math.max(0, Math.min(100, t));
+}
+
+/** The dominant chromatic hue among an axis's tokens (the theme's brand hue). */
+function dominantHue(counts: Record<string, number>): string | null {
+  let best: string | null = null;
+  let max = 0;
+  for (const [hue, n] of Object.entries(counts)) {
+    if (n > max) { max = n; best = hue; }
+  }
+  return best;
+}
+
+const angleOf = (hue: string): number | undefined => HUE_FAMILIES[hue];
+
+/** Smallest unsigned angle between two hue angles (degrees, wrapping). */
+function circularDist(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360;
+  return Math.min(d, 360 - d);
+}
+
+/** The named base hue nearest a given angle. */
+function nearestHue(angle: number): string {
+  const a = ((angle % 360) + 360) % 360;
+  let best = "blue";
+  let min = Infinity;
+  for (const [hue, deg] of Object.entries(HUE_FAMILIES)) {
+    const d = circularDist(a, deg);
+    if (d < min) { min = d; best = hue; }
+  }
+  return best;
+}
+
+/** How close (degrees) a hue must be to the Key / Accent brand hue to rotate
+ *  with it. Key window is wide enough to catch the surface tint (a near-Key
+ *  hue); Accent window is tight so a warning amber next to an orange accent is
+ *  left as a signal. */
+const KEY_BRAND_WINDOW = 28;
+const ACCENT_BRAND_WINDOW = 8;
+
+export interface DeriveResult {
+  css: string;
+  count: number;
+  /** The base theme's detected Key / Accent brand hues that were rotated. */
+  baseKeyHue: string | null;
+  baseAccentHue: string | null;
+}
+
+/**
+ * Derive a theme from a base theme's CSS by rotating its brand hues to new ones,
+ * preserving each token's perceived chroma + lightness.
+ *
+ * Auto-detects the base's dominant Key and Accent brand hues, then rotates EVERY
+ * chromatic token near those hues — the selection/action ramp, the treatments,
+ * AND the surface/chrome tints (a near-Key hue), so the whole theme picks up the
+ * new hue like the Xcode accent themes — by the SAME angle delta as the Key (so a
+ * surface offset from the Key is preserved), at the i/t that hold the same
+ * absolute C / L. Far-off hues (red/amber/green signals, syntax, data-viz) and
+ * grays are left untouched. `targetAccentHue` defaults to the base accent.
+ */
+export function deriveTheme(
+  baseCss: string,
+  targetKeyHue: string,
+  targetAccentHue?: string,
+): DeriveResult {
+  // 1. Detect the base's Key / Accent brand hues from the duet-classified tokens.
+  const keyHues: Record<string, number> = {};
+  const accentHues: Record<string, number> = {};
+  const scan = /(--tug7-[\w-]+)\s*:\s*--tug-color\(([^)]*)\)\s*;/g;
+  let m: RegExpExecArray | null;
+  while ((m = scan.exec(baseCss)) !== null) {
+    const role = classifyRole(m[1]);
+    if (!role || parseTugColor(m[2]) === null) continue;
+    const hue = hueOf(m[2]);
+    if (role === "key") keyHues[hue] = (keyHues[hue] ?? 0) + 1;
+    else accentHues[hue] = (accentHues[hue] ?? 0) + 1;
+  }
+  const baseKeyHue = dominantHue(keyHues);
+  const baseAccentHue = dominantHue(accentHues);
+  const accentTarget = targetAccentHue ?? baseAccentHue ?? targetKeyHue;
+
+  const keyAngle = baseKeyHue ? angleOf(baseKeyHue) : undefined;
+  const accentAngle = baseAccentHue ? angleOf(baseAccentHue) : undefined;
+  const keyDelta = keyAngle !== undefined ? (angleOf(targetKeyHue) ?? keyAngle) - keyAngle : 0;
+  const accentDelta = accentAngle !== undefined ? (angleOf(accentTarget) ?? accentAngle) - accentAngle : 0;
+
+  // 2. Rotate every brand-family chromatic token by its axis's angle delta,
+  //    holding C / L. The token's own hue is rotated (not snapped to the target),
+  //    so a surface's offset from the Key survives the rotation.
+  let count = 0;
+  const css = baseCss.replace(
+    /(--tug7-[\w-]+)(\s*:\s*)--tug-color\(([^)]*)\)(\s*;)/g,
+    (full, name, sep, inner, semi) => {
+      const parsed = parseTugColor(inner);
+      if (!parsed) return full; // achromatic / unknown hue — keep
+      const hue = hueOf(inner);
+      const deg = angleOf(hue);
+      if (deg === undefined) return full;
+      let target: string | null = null;
+      if (keyAngle !== undefined && circularDist(deg, keyAngle) <= KEY_BRAND_WINDOW) {
+        target = nearestHue(deg + keyDelta);
+      } else if (accentAngle !== undefined && circularDist(deg, accentAngle) <= ACCENT_BRAND_WINDOW) {
+        target = nearestHue(deg + accentDelta);
+      }
+      if (!target) return full; // signal / syntax / far hue — keep
+      const c = chromaAt(hue, parsed.i);
+      const l = lightnessAt(hue, parsed.t);
+      const i = intensityForChroma(target, c);
+      const t = toneForLightness(target, l);
+      count++;
+      return `${name}${sep}${formatTugColor(target, i, t, parsed.a)}${semi}`;
+    },
+  );
+
+  return { css, count, baseKeyHue, baseAccentHue };
 }
 
 /** Validate a hue name is a known TugColor hue. */

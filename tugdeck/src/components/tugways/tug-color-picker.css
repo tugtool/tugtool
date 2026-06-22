@@ -3,7 +3,7 @@
 .tug-color-picker {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   padding: 12px;
   min-width: 240px;
 }
@@ -111,21 +111,34 @@
   justify-content: center;
 }
 
-/* Sliders — centered as a block; fixed-width labels so every track's left and
-   right edges line up regardless of label length. */
+/* TugColor / OKLCH groups — bordered TugBoxes with a slider stack. Centered to a
+   fixed width (matching the hue grid's centered feel); min-width:0 stops the
+   fieldset from shrink-wrapping to its content. */
+.tug-color-picker-box {
+  align-self: center;
+  width: 100%;
+  max-width: 380px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .tug-color-picker-sliders {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  align-self: center;
   width: 100%;
-  max-width: 300px;
+  padding: 6px 10px 8px;
+  box-sizing: border-box;
 }
 
+/* Each slider fills the box so its track expands; a tight label↔track gap (the
+   slider's default --tug-space-lg leaves a big gap before the bar). */
 .tug-color-picker-sliders .tug-slider {
+  width: 100%;
   max-width: none;
+  gap: var(--tug-space-sm);
 }
 
 .tug-color-picker-sliders .tug-slider-label {
-  width: 4.5rem;
+  width: 4.25rem;
 }

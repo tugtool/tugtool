@@ -507,7 +507,7 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
 
 /** The color picker's fixed size — wide enough for the hue grid, tall enough
  * that nothing ever scrolls. */
-const COLOR_PICKER_SIZE = { width: 452, height: 408 } as const;
+const COLOR_PICKER_SIZE = { width: 452, height: 516 } as const;
 
 /**
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
@@ -563,10 +563,10 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-theme-editor",
     contentFactory: (_cardId) => <GalleryThemeEditor />,
-    defaultMeta: { title: "Theme Editor", icon: "Palette", closable: true },
+    defaultMeta: { title: "Theme Deriver", icon: "Palette", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
+    sizePolicy: GALLERY_COMPONENT_SIZE,
     category: CATEGORIES.animation,
   });
 
