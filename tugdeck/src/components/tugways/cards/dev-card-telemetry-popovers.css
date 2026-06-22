@@ -416,11 +416,35 @@
      roughly sixteen rows visible, the rest reachable by wheel. */
   max-height: min(28rem, 60vh);
   overflow-y: auto;
+  /* Never scroll horizontally: a long task label clips to an ellipsis
+     (see the row rules below) rather than widening the popover. With
+     `overflow-y: auto` the spec would otherwise promote the x-axis to
+     `auto` too, re-introducing the sideways scrollbar — pin it shut. */
+  overflow-x: hidden;
 }
 
-/* Per-row padding so the indicator/label don't hug the popover edges. */
-.dev-tasks-popover-row {
+/* Per-row padding so the indicator/label don't hug the popover edges.
+   The row fills the column width (overriding the indicator's intrinsic
+   `inline-flex` sizing) and allows its label to shrink so the ellipsis
+   can engage instead of the text overflowing the frame. */
+.dev-tasks-popover-row.tug-progress-indicator {
+  display: flex;
+  min-width: 0;
   padding: var(--tug-space-xs) var(--tug-space-sm);
+}
+
+/* The label takes the remaining width and truncates. Match the popover
+   frame's row scale (0.6875rem mono, like the Time / Tokens rows)
+   instead of the indicator's larger default so tasks read at the same
+   rhythm as the other status-bar popovers. */
+.dev-tasks-popover-row .tug-progress-indicator-label {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
 }
 
 /* Completed rows: strikethrough the label so the "done" reading is

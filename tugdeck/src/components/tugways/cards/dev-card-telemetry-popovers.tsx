@@ -906,10 +906,12 @@ export function TasksPopoverContent({
         data-slot="dev-tasks-popover-body"
       >
         {state.tasks.map((task) => {
-          const text =
-            task.status === "in_progress" && task.activeForm !== undefined
-              ? task.activeForm
-              : task.subject;
+          // Always the `subject` — it carries the task's stable identity
+          // (e.g. the "Step N:" prefix). The present-continuous
+          // `activeForm` reads nicely inline but drops that identity, so
+          // the popover keeps every row reading the same way regardless
+          // of status.
+          const text = task.subject;
           const row = (
             <TugProgressIndicator
               variant="pulsing-dot"
@@ -943,7 +945,7 @@ export function TasksPopoverContent({
         <span className="dev-tasks-popover-pending">{summary}</span>
         <BlockCopyButton
           aria-label="Copy task list"
-          getText={() => composeTaskCopyText(state.tasks)}
+          getText={() => composeTaskCopyText(state.tasks, false)}
         />
       </div>
     </PerAreaPopoverFrame>

@@ -209,14 +209,25 @@ export function taskProgressFraction(counts: TaskCounts): number {
  * `[x] subject`. The pending / in-progress / completed glyphs mirror
  * GitHub-flavored markdown task list conventions with a `~` for
  * in-progress (no markdown equivalent, but readable).
+ *
+ * `preferActiveForm` (default `true`) renders an in-progress task's
+ * present-continuous `activeForm` when present — the pinned
+ * `TodoListBlock` behaviour. Pass `false` to copy the stable `subject`
+ * for every row, matching the Tasks popover which shows `subject`
+ * uniformly so the copied text never diverges from what's on screen.
  */
-export function composeTaskCopyText(tasks: readonly TaskItem[]): string {
+export function composeTaskCopyText(
+  tasks: readonly TaskItem[],
+  preferActiveForm = true,
+): string {
   return tasks
     .map((t) => {
       const glyph =
         t.status === "completed" ? "[x]" : t.status === "in_progress" ? "[~]" : "[ ]";
       const text =
-        t.status === "in_progress" && t.activeForm !== undefined
+        preferActiveForm &&
+        t.status === "in_progress" &&
+        t.activeForm !== undefined
           ? t.activeForm
           : t.subject;
       return `${glyph} ${text}`;
