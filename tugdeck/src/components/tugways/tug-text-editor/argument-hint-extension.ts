@@ -1,13 +1,27 @@
 /**
- * tug-text-editor/argument-hint-extension.ts — the ghost-text argument
- * placeholder shown after an accepted slash-command atom.
+ * tug-text-editor/argument-hint-extension.ts — the argument placeholder shown
+ * after an accepted slash-command atom.
  *
  * When the document is exactly one command atom and no arguments have been
- * typed yet (`/devise` alone), this paints a muted ghost slot after it —
+ * typed yet (`/devise` alone), this paints a muted hint after the chip —
  * `/devise ┆ type arguments…` — so the next thing to type is obvious. The
- * moment the user types a non-whitespace character the slot disappears (the
- * doc no longer matches), the same way a CodeMirror empty-state placeholder
- * clears on first keystroke.
+ * moment the user types a real argument the hint disappears (the doc no longer
+ * matches), the same way a CodeMirror empty-state placeholder clears.
+ *
+ * Why a line decoration + CSS `::after`, not a widget. An input placeholder is
+ * pure appearance — it marks where the argument goes; it is never content. A
+ * `Decoration.widget` would give it a real document offset, which puts it in
+ * competition with the caret and with typed whitespace: anchored at the caret
+ * it chases arrow-keys, anchored at a fixed offset the caret advances *past* it
+ * on the next space. There is no correct offset because the premise is wrong.
+ * Instead this attaches a class + the hint text (as a `data-` attribute) to the
+ * chip's *line* and renders the text through a `::after` pseudo-element. A
+ * pseudo-element is painted after all of the line's real content and has no
+ * document offset at all, so the native caret — which only ever sits at offsets
+ * `0..docLength` — is structurally incapable of landing on the far side of it.
+ * Arrow keys, spacebar, anything: the caret stays in the real text and the hint
+ * is always painted after the chip. (This is how CM's stock placeholder stays
+ * inert for empty docs.)
  *
  * What to show is decided by {@link resolveArgumentHint} (pure, in
  * `lib/slash-argument-hint.ts`); the *lookup* from an atom's value to a
@@ -15,12 +29,12 @@
  * host's concern, injected through {@link argumentHintResolverFacet} as a
  * resolver thunk (mirroring how `atomBytesStoreFacet` injects the bytes
  * store). An editor with no resolver registered (gallery, standalone) gets
- * the no-op default and never paints a slot.
+ * the no-op default and never paints a hint.
  *
  * Laws:
- *  - [L06] the ghost text is appearance only — a `Decoration.widget` whose
- *    DOM carries `aria-hidden` and no editable content; it never enters the
- *    document, the wire payload, or the editing-state snapshot.
+ *  - [L06] the hint is appearance only — a `Decoration.line` adding a class +
+ *    `data-` attribute whose text surfaces via a CSS pseudo-element; nothing
+ *    enters the document, the wire payload, or the editing-state snapshot.
  *  - [L20] color/spacing ride `--tug*` tokens via the `baseTheme` block.
  *  - [L22] the placeholder is a `StateField`-free `ViewPlugin` reading the
  *    live document + the resolver facet; no React, no store round-trip.
@@ -29,7 +43,7 @@
  */
 
 import { Facet, StateEffect } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, PluginValue, ViewUpdate } from "@codemirror/view";
 
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
@@ -91,33 +105,18 @@ export const argumentHintRefreshFacet = Facet.define<
  */
 const refreshArgumentHintEffect = StateEffect.define<void>();
 
-/** Ghost-text widget — non-editable, screen-reader-hidden placeholder. */
-class ArgumentHintWidget extends WidgetType {
-  constructor(readonly text: string) {
-    super();
-  }
-
-  override eq(other: ArgumentHintWidget): boolean {
-    return other.text === this.text;
-  }
-
-  override toDOM(): HTMLElement {
-    const span = document.createElement("span");
-    span.className = "cm-tug-arg-hint";
-    span.setAttribute("aria-hidden", "true");
-    span.textContent = this.text;
-    return span;
-  }
-
-  /** Ghost text is inert — never intercept selection / pointer events. */
-  override ignoreEvent(): boolean {
-    return true;
-  }
-}
+/** The `data-` attribute the `::after` rule reads the hint text from. */
+const HINT_ATTR = "data-tug-arg-hint";
 
 /**
  * Build the placeholder decoration for the current state, or `Decoration.none`
  * when the doc isn't "a lone command atom awaiting arguments."
+ *
+ * The decoration is a `Decoration.line` on the chip's line — it adds a class
+ * and carries the hint text in a `data-` attribute the `::after` rule renders.
+ * Because the text lives in a pseudo-element (not a widget at a document
+ * offset), the caret can never sit on the far side of it: it is painted after
+ * whatever real content the line holds, wherever the caret happens to be.
  */
 function computeArgumentHint(view: EditorView): DecorationSet {
   const atoms = getAtomsInState(view.state);
@@ -125,29 +124,30 @@ function computeArgumentHint(view: EditorView): DecorationSet {
   const atom = atoms[0]!;
   if (atom.segment.type !== "command") return Decoration.none;
 
-  // Only before any argument is typed: everything in the doc besides the
-  // atom's own U+FFFC placeholder must be whitespace.
+  // Only before any argument is typed. The "empty" state is exactly the chip
+  // plus the single separating space acceptance leaves (or none, if a space
+  // already followed) — so the only allowed non-atom content is "" or " ". The
+  // first character the user types, *including a space*, ends it and clears the
+  // hint, like any input placeholder; a looser whitespace test would instead
+  // let a typed space slide the hint rightward without dismissing it.
   const doc = view.state.doc.toString();
   const withoutAtom = doc.split(TUG_ATOM_CHAR).join("");
-  if (withoutAtom.trim() !== "") return Decoration.none;
+  if (withoutAtom !== "" && withoutAtom !== " ") return Decoration.none;
 
   const resolve = view.state.facet(argumentHintResolverFacet)();
   const hint = resolve(atom.segment.value);
   if (hint === null) return Decoration.none;
 
-  // Anchor at the caret (selection head), biased right so the slot renders
-  // immediately *after* the caret — the user types the argument into the gap
-  // before the ghost text. Anchoring at the caret (rather than the document
-  // end) keeps the slot on the caret's line and to its right regardless of
-  // trailing whitespace: acceptance leaves a trailing space (caret past it),
-  // and a trailing newline at doc end would otherwise both push the slot onto
-  // a second line and strand the caret before it.
-  const caret = view.state.selection.main.head;
+  // Attach to the line holding the chip; the `::after` paints the hint after
+  // the line's content (the chip + its separating space), so it follows the
+  // chip regardless of where the caret is and never wraps onto a second line
+  // for any trailing whitespace the doc carries.
+  const lineStart = view.state.doc.lineAt(atom.position).from;
   return Decoration.set([
-    Decoration.widget({
-      widget: new ArgumentHintWidget(hint),
-      side: 1,
-    }).range(caret),
+    Decoration.line({
+      class: "cm-tug-arg-hint-line",
+      attributes: { [HINT_ATTR]: hint },
+    }).range(lineStart),
   ]);
 }
 
@@ -177,12 +177,7 @@ class ArgumentHintPluginValue implements PluginValue {
     const refreshed = update.transactions.some((tr) =>
       tr.effects.some((e) => e.is(refreshArgumentHintEffect)),
     );
-    if (
-      update.docChanged ||
-      update.selectionSet ||
-      update.focusChanged ||
-      refreshed
-    ) {
+    if (update.docChanged || update.focusChanged || refreshed) {
       this.decorations = computeArgumentHint(update.view);
     }
     // The facet's thunk reads a host ref the card swaps on rebind (e.g. a
@@ -224,9 +219,16 @@ export const argumentHintPlugin = ViewPlugin.fromClass(ArgumentHintPluginValue, 
   decorations: (plugin) => plugin.decorations,
 });
 
-/** [L20] ghost-text appearance — muted field text, a small leading gap. */
+/**
+ * [L20] placeholder appearance — the hint text rides a `::after` pseudo-element
+ * on the chip's line, reading its content from the `data-` attribute the line
+ * decoration sets. A pseudo-element is inert: not selectable, not hit-tested,
+ * not a caret position — exactly the input-placeholder semantics we want. Muted
+ * field text, a small leading gap, `pre` so the hint keeps its literal spaces.
+ */
 export const argumentHintTheme = EditorView.baseTheme({
-  ".cm-tug-arg-hint": {
+  ".cm-tug-arg-hint-line::after": {
+    content: `attr(${HINT_ATTR})`,
     color: "var(--tug7-element-field-text-normal-plain-disabled)",
     marginLeft: "var(--tug-space-2xs, 0.25rem)",
     pointerEvents: "none",

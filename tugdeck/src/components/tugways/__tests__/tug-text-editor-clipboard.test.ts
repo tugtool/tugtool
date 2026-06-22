@@ -12,9 +12,10 @@ import { describe, it, expect } from "bun:test";
 import {
   parseClipboardHtmlEnvelope,
   parseClipboardSidecar,
+  planLeadingCommandPaste,
   serializeClipboard,
 } from "@/components/tugways/tug-text-editor/clipboard-filters";
-import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
+import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
 
 const SAMPLE_FILE = {
   position: 2,
@@ -271,5 +272,65 @@ describe("parseClipboardHtmlEnvelope", () => {
     const parsed = parseClipboardHtmlEnvelope(out.html);
     expect(parsed).not.toBeNull();
     expect(parsed!.atoms[0]!.segment).toEqual(segment);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planLeadingCommandPaste — chip a slash command pasted at offset 0
+// ---------------------------------------------------------------------------
+
+describe("planLeadingCommandPaste", () => {
+  const atomFor = (name: string): AtomSegment => ({
+    kind: "atom",
+    type: "command",
+    label: name,
+    value: name,
+  });
+
+  // Resolver that knows one plugin command, matching its full name or leaf.
+  const resolve = (token: string): AtomSegment | null => {
+    if (token === "tugplug:implement" || token === "implement") {
+      return atomFor("tugplug:implement");
+    }
+    return null;
+  };
+
+  it("chips a full-name command and keeps the rest as argument text", () => {
+    const plan = planLeadingCommandPaste(
+      "/tugplug:implement roadmap/foo.md",
+      0,
+      resolve,
+    );
+    expect(plan).not.toBeNull();
+    expect(plan!.insert).toBe(`${TUG_ATOM_CHAR} roadmap/foo.md`);
+    expect(plan!.segment).toEqual(atomFor("tugplug:implement"));
+  });
+
+  it("resolves an unqualified leaf to the full command atom", () => {
+    const plan = planLeadingCommandPaste("/implement roadmap/foo.md", 0, resolve);
+    expect(plan).not.toBeNull();
+    expect(plan!.segment).toEqual(atomFor("tugplug:implement"));
+    expect(plan!.insert).toBe(`${TUG_ATOM_CHAR} roadmap/foo.md`);
+  });
+
+  it("inserts a separating space when the command stands alone", () => {
+    const plan = planLeadingCommandPaste("/tugplug:implement", 0, resolve);
+    expect(plan!.insert).toBe(`${TUG_ATOM_CHAR} `);
+  });
+
+  it("does not double the separator when the rest already opens with space", () => {
+    const plan = planLeadingCommandPaste("/implement  two-spaces", 0, resolve);
+    // The pasted run's own leading whitespace is preserved verbatim.
+    expect(plan!.insert).toBe(`${TUG_ATOM_CHAR}  two-spaces`);
+  });
+
+  it("returns null when the paste does not land at offset 0", () => {
+    expect(planLeadingCommandPaste("/implement x", 5, resolve)).toBeNull();
+  });
+
+  it("returns null when the leading token is not a known command", () => {
+    expect(planLeadingCommandPaste("/unknown thing", 0, resolve)).toBeNull();
+    expect(planLeadingCommandPaste("not a command", 0, resolve)).toBeNull();
+    expect(planLeadingCommandPaste("/path/to/file.md", 0, resolve)).toBeNull();
   });
 });

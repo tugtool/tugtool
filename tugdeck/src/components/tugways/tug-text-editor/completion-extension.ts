@@ -822,6 +822,11 @@ export function completionConsumesEnter(mods: {
  * non-matching space is yielded and inserts literally, keeping the query
  * alive.
  *
+ * A plugin command's label is namespaced (`tugplug:devise`), but the user can
+ * type just its unqualified leaf (`devise`). An exact match against that leaf
+ * counts the same as an exact full-name match, so `/devise ` accepts the
+ * `tugplug:devise` chip — the leaf is what the user typed in full.
+ *
  * Pure; exported for the test suite.
  */
 export function completionQueryMatchesSelection(state: {
@@ -830,7 +835,10 @@ export function completionQueryMatchesSelection(state: {
   selectedIndex: number;
 }): boolean {
   const item = state.filtered[state.selectedIndex];
-  return item !== undefined && item.label === state.query;
+  if (item === undefined) return false;
+  if (item.label === state.query) return true;
+  const colon = item.label.lastIndexOf(":");
+  return colon >= 0 && item.label.slice(colon + 1) === state.query;
 }
 
 /**

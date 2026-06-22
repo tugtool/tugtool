@@ -380,6 +380,7 @@ function handlePaste(
   event: ClipboardEvent,
   getBytesStore: () => AtomBytesStore | null,
   onAttachmentError: (message: string) => void,
+  getPastedCommandResolver: () => PastedCommandResolver | null,
 ): boolean {
   const dt = event.clipboardData;
   if (dt === null) return false;
@@ -406,31 +407,118 @@ function handlePaste(
 
   // Branch 2: tug atom sidecar (internal copy/paste).
   const sidecarRaw = dt.getData(TUG_ATOMS_MIME);
-  if (sidecarRaw === "") return false; // no sidecar — let CM6 default paste run
+  if (sidecarRaw !== "") {
+    const sidecar = parseClipboardSidecar(sidecarRaw);
+    if (sidecar !== null) {
+      const { from, to } = view.state.selection.main;
+      const placedAtoms: PositionedAtom[] = sidecar.atoms.map((a) => ({
+        position: from + a.position,
+        segment: a.segment,
+      }));
 
-  const sidecar = parseClipboardSidecar(sidecarRaw);
-  if (sidecar === null) return false;
+      view.dispatch({
+        changes: { from, to, insert: sidecar.text },
+        effects: placedAtoms.length > 0 ? addAtomsEffect.of(placedAtoms) : [],
+        selection: { anchor: from + sidecar.text.length },
+        userEvent: "input.paste",
+        // Reveal the caret after the paste — without this the sidecar-paste
+        // path leaves the caret below the fold on a paste that overflows the
+        // visible rows. (The `keepCaretVisible` listener also re-checks
+        // post-layout, but flag the transaction too for the immediate case.)
+        scrollIntoView: true,
+      });
 
+      event.preventDefault();
+      return true;
+    }
+  }
+
+  // Branch 3: external plain text whose first position is an exact slash
+  // command → chip it, keeping the rest of the paste as its argument text.
+  const resolve = getPastedCommandResolver();
+  if (resolve !== null) {
+    const plain = dt.getData("text/plain");
+    if (plain !== "" && tryInsertLeadingCommandPaste(view, plain, resolve)) {
+      event.preventDefault();
+      return true;
+    }
+  }
+
+  // Branch 4: default — CM6's plain-text paste handles the event.
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Leading-command paste
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a pasted command token to the atom segment to chip it as, or `null`
+ * when the token isn't a recognized command. Both the full namespaced name
+ * (`tugplug:implement`) and its unqualified leaf (`implement`) resolve — the
+ * same rule as accepting a typed `/command ` against the popup. The host builds
+ * this from its live command catalog; omitted (gallery / standalone) ⇒ no
+ * recognition.
+ */
+export type PastedCommandResolver = (token: string) => AtomSegment | null;
+
+/**
+ * When pasted plain text begins with `/<command>` and the paste lands at the
+ * document's very first position, replace that `/<command>` with a command chip
+ * and keep the remaining pasted text as its argument — e.g. pasting
+ * `/tugplug:implement roadmap/foo.md` yields `[chip] roadmap/foo.md`. The
+ * insert and the atom decoration go out in one transaction.
+ *
+ * Returns true (and dispatches) on a recognized leading command; returns false
+ * — no dispatch — when the caret isn't at offset 0, the text has no leading
+ * `/token`, or the token isn't a known command, so the caller's default paste
+ * runs untouched.
+ */
+export function tryInsertLeadingCommandPaste(
+  view: EditorView,
+  text: string,
+  resolve: PastedCommandResolver,
+): boolean {
   const { from, to } = view.state.selection.main;
-  const placedAtoms: PositionedAtom[] = sidecar.atoms.map((a) => ({
-    position: from + a.position,
-    segment: a.segment,
-  }));
-
+  const plan = planLeadingCommandPaste(text, from, resolve);
+  if (plan === null) return false;
   view.dispatch({
-    changes: { from, to, insert: sidecar.text },
-    effects: placedAtoms.length > 0 ? addAtomsEffect.of(placedAtoms) : [],
-    selection: { anchor: from + sidecar.text.length },
+    changes: { from, to, insert: plan.insert },
+    effects: addAtomsEffect.of([{ position: from, segment: plan.segment }]),
+    selection: { anchor: from + plan.insert.length },
     userEvent: "input.paste",
-    // Reveal the caret after the paste — without this the sidecar-paste
-    // path leaves the caret below the fold on a paste that overflows the
-    // visible rows. (The `keepCaretVisible` listener also re-checks
-    // post-layout, but flag the transaction too for the immediate case.)
     scrollIntoView: true,
   });
-
-  event.preventDefault();
   return true;
+}
+
+/**
+ * Pure decision behind {@link tryInsertLeadingCommandPaste}: given the pasted
+ * text, the caret offset it lands at, and the resolver, return the text to
+ * insert (the atom's U+FFFC char + a separator + the remaining pasted text) and
+ * the command's atom segment — or `null` when there's nothing to chip: the
+ * caret isn't at offset 0, the text has no leading `/token`, or the token isn't
+ * a known command. A separating space follows the chip (as a typed accept
+ * leaves) unless the remaining pasted text already opens with whitespace, so
+ * the chip never glues onto an argument nor doubles a space. Exported for the
+ * test suite.
+ */
+export function planLeadingCommandPaste(
+  text: string,
+  from: number,
+  resolve: PastedCommandResolver,
+): { insert: string; segment: AtomSegment } | null {
+  // Only when the command would occupy the document's first position.
+  if (from !== 0) return null;
+  const match = /^\/(\S+)/.exec(text);
+  if (match === null) return null;
+  const segment = resolve(match[1]!);
+  if (segment === null) return null;
+  // The token is `\S+`, so `rest` is empty or already starts with whitespace;
+  // add the separator only when it doesn't (i.e. the command stood alone).
+  const rest = text.slice(match[0].length);
+  const sep = /^\s/.test(rest) ? "" : " ";
+  return { insert: TUG_ATOM_CHAR + sep + rest, segment };
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +541,7 @@ function handlePaste(
 export function clipboardExtension(
   getBytesStore: () => AtomBytesStore | null = () => null,
   onAttachmentError: (message: string) => void = () => undefined,
+  getPastedCommandResolver: () => PastedCommandResolver | null = () => null,
 ): Extension {
   return EditorView.domEventHandlers({
     copy(event, view) {
@@ -462,7 +551,13 @@ export function clipboardExtension(
       return handleCopyOrCut(view, event, true);
     },
     paste(event, view) {
-      return handlePaste(view, event, getBytesStore, onAttachmentError);
+      return handlePaste(
+        view,
+        event,
+        getBytesStore,
+        onAttachmentError,
+        getPastedCommandResolver,
+      );
     },
   });
 }

@@ -155,6 +155,8 @@ import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
 import {
   clipboardExtension,
   parseClipboardHtmlEnvelope,
+  tryInsertLeadingCommandPaste,
+  type PastedCommandResolver,
 } from "./tug-text-editor/clipboard-filters";
 import { tugDropExtension } from "./tug-text-editor/drop-extension";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
@@ -560,6 +562,14 @@ export interface TugTextEditorProps
    */
   argumentHintRefresh?: ArgumentHintRefreshSource;
   /**
+   * Resolver that recognizes a slash command at the start of pasted text and
+   * returns the atom segment to chip it as (e.g. pasting `/tugplug:implement
+   * roadmap/foo.md` at offset 0 chips the command and keeps the path as its
+   * argument). Matches a full name or its unqualified leaf, like the typed
+   * `/command ` accept. Omitted (gallery / standalone) ⇒ paste stays plain text.
+   */
+  pastedCommandResolver?: PastedCommandResolver;
+  /**
    * Resolver mapping a mid-text `/query` to the full command name it should
    * complete to (the muted inline ghost), or `null` for no completion. The
    * host builds this from its live command catalog; read live so the catalog
@@ -915,6 +925,7 @@ function buildExtensions(
   getArgumentHintResolver: () => ArgumentHintResolver,
   getArgumentHintRefresh: () => ArgumentHintRefreshSource | null,
   getInlineCommandMatcher: () => InlineCommandMatcher,
+  getPastedCommandResolver: () => PastedCommandResolver | null,
   onAttachmentError: (message: string) => void,
   initial: {
     placeholder: string;
@@ -1075,7 +1086,11 @@ function buildExtensions(
     inlineCommandGhostPlugin,
     inlineCommandGhostKeymap,
     inlineCommandGhostTheme,
-    clipboardExtension(getBytesStore, onAttachmentError),
+    clipboardExtension(
+      getBytesStore,
+      onAttachmentError,
+      getPastedCommandResolver,
+    ),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
     undoMenuStatePlugin,
@@ -1119,6 +1134,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       completionProviders,
       argumentHintResolver,
       argumentHintRefresh,
+      pastedCommandResolver,
       inlineCommandMatcher,
       completionDirection = "down",
       onTypeaheadChange,
@@ -1372,6 +1388,15 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       argumentHintRefreshRef.current = argumentHintRefresh ?? null;
     }, [argumentHintRefresh]);
+
+    // Same [L07] live-ref pattern for the pasted-command resolver, so paste
+    // recognition reads the current catalog without rebuilding the editor.
+    const pastedCommandResolverRef = useRef<PastedCommandResolver | null>(
+      pastedCommandResolver ?? null,
+    );
+    useLayoutEffect(() => {
+      pastedCommandResolverRef.current = pastedCommandResolver ?? null;
+    }, [pastedCommandResolver]);
 
     // Same [L07] live-ref pattern for the inline-ghost matcher, so a catalog
     // that grows after the handshake takes effect without rebuilding the editor.
@@ -1961,6 +1986,17 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
               return;
             }
             if (text === "") return;
+            // A slash command at the start of the pasted text chips into a
+            // command atom (the rest stays as its argument); same path as the
+            // browser-mode paste handler. Falls through to plain text when the
+            // text has no recognized leading command.
+            const resolve = pastedCommandResolverRef.current;
+            if (
+              resolve !== null &&
+              tryInsertLeadingCommandPaste(live, text, resolve)
+            ) {
+              return;
+            }
             live.dispatch({
               changes: { from, to, insert: text },
               selection: { anchor: from + text.length },
@@ -2181,6 +2217,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           () => (value: string) => argumentHintResolverRef.current(value),
           () => argumentHintRefreshRef.current,
           () => (query: string) => inlineCommandMatcherRef.current(query),
+          () => pastedCommandResolverRef.current,
           (message) => onAttachmentErrorRef.current(message),
           {
             placeholder: initialPlaceholder,

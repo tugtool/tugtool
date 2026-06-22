@@ -64,6 +64,7 @@ import { useDevCardServices } from "./use-dev-card-services";
 import { type LocalCommandName } from "@/lib/slash-commands";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
+import type { PastedCommandResolver } from "@/components/tugways/tug-text-editor/clipboard-filters";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { isPermissionMode } from "@/lib/permission-mode";
 import { openPathInOS } from "@/lib/os-open";
@@ -421,6 +422,12 @@ export interface DevCardServices {
    * inline ghost suffix), or `null`. Forwarded to `TugPromptEntry`.
    */
   inlineCommandMatcher: InlineCommandMatcher;
+  /**
+   * Recognizes a slash command at the start of pasted text and returns the atom
+   * to chip it as (full name or unqualified leaf), or `null`. Forwarded to
+   * `TugPromptEntry`.
+   */
+  pastedCommandResolver: PastedCommandResolver;
   editorStore: EditorSettingsStore;
   responseStore: ResponseSettingsStore;
   /** Single-shot `/diff` request/response store ([#step-10b]). */
@@ -2045,7 +2052,7 @@ export function DevCardBody({
   renderTurnTrailing,
   footerContent,
 }: DevCardBodyProps) {
-  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
+  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
   useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
@@ -3477,6 +3484,7 @@ export function DevCardBody({
               completionProviders={completionProviders}
               argumentHintResolver={argumentHintResolver}
               argumentHintRefresh={sessionMetadataStore}
+              pastedCommandResolver={pastedCommandResolver}
               inlineCommandMatcher={inlineCommandMatcher}
               onAfterSubmit={handleAfterSubmit}
               maximized={maximized}

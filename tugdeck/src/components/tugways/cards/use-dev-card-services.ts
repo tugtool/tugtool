@@ -21,6 +21,8 @@ import { cardServicesStore, type CardServices } from "@/lib/card-services-store"
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import type { CompletionProvider } from "@/lib/tug-text-types";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
+import type { PastedCommandResolver } from "@/components/tugways/tug-text-editor/clipboard-filters";
+import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { resolveArgumentHint } from "@/lib/slash-argument-hint";
 import { LOCAL_SLASH_COMMANDS, type LocalSlashCommandSpec } from "@/lib/slash-commands";
@@ -153,6 +155,22 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
     };
   }, [services]);
 
+  // Pasted-command resolver: maps a `/command` at the start of pasted text to
+  // the atom to chip it as. Scans the same ranked catalog the popup uses for an
+  // entry whose full name OR unqualified leaf exactly equals the token — the
+  // paste-time mirror of the typed `/command ` accept rule. Read live [L07].
+  const pastedCommandResolver = useMemo<PastedCommandResolver>(() => {
+    if (commandMatchProvider === null) return () => null;
+    return (token: string): AtomSegment | null => {
+      const hit = commandMatchProvider(token).find((item) => {
+        if (item.label === token) return true;
+        const colon = item.label.lastIndexOf(":");
+        return colon >= 0 && item.label.slice(colon + 1) === token;
+      });
+      return hit?.atom ?? null;
+    };
+  }, [commandMatchProvider]);
+
   return useMemo<DevCardServices | null>(() => {
     if (services === null) return null;
     return {
@@ -162,6 +180,7 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       completionProviders,
       argumentHintResolver,
       inlineCommandMatcher,
+      pastedCommandResolver,
       editorStore: services.editorStore,
       responseStore: services.responseStore,
       gitDiffStore: services.gitDiffStore,
@@ -169,5 +188,11 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       hooksInventoryStore: services.hooksInventoryStore,
       entryDelegateRef,
     };
-  }, [services, completionProviders, argumentHintResolver, inlineCommandMatcher]);
+  }, [
+    services,
+    completionProviders,
+    argumentHintResolver,
+    inlineCommandMatcher,
+    pastedCommandResolver,
+  ]);
 }

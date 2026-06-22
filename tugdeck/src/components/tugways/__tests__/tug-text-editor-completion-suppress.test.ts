@@ -218,6 +218,29 @@ describe("completionQueryMatchesSelection — Space accepts only on an exact mat
       }),
     ).toBe(false);
   });
+
+  test("the unqualified leaf of a plugin command is an exact match", () => {
+    // `/devise ` accepts the `tugplug:devise` chip: the user typed the leaf in
+    // full, so Space should complete it just like the full namespaced name.
+    expect(
+      completionQueryMatchesSelection({
+        query: "devise",
+        filtered: [item("tugplug:devise")],
+        selectedIndex: 0,
+      }),
+    ).toBe(true);
+  });
+
+  test("a strict prefix of the leaf is still NOT a match", () => {
+    // Only the FULL leaf accepts on Space; a partial leaf keeps the query alive.
+    expect(
+      completionQueryMatchesSelection({
+        query: "dev",
+        filtered: [item("tugplug:devise")],
+        selectedIndex: 0,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("popup survives a char to the right of the caret", () => {

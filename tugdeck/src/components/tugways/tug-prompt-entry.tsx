@@ -72,6 +72,7 @@ import type {
   ArgumentHintRefreshSource,
   ArgumentHintResolver,
 } from "./tug-text-editor/argument-hint-extension";
+import type { PastedCommandResolver } from "./tug-text-editor/clipboard-filters";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
   getAtomsInState,
@@ -509,6 +510,11 @@ export interface TugPromptEntryProps {
    */
   argumentHintRefresh?: ArgumentHintRefreshSource;
   /**
+   * Resolver recognizing a slash command at the start of pasted text, forwarded
+   * to `TugTextEditor` ({@link TugTextEditorProps.pastedCommandResolver}).
+   */
+  pastedCommandResolver?: PastedCommandResolver;
+  /**
    * Matcher for the mid-text inline ghost completion, forwarded to
    * `TugTextEditor` ({@link TugTextEditorProps.inlineCommandMatcher}). Maps a
    * mid-text `/query` to the full command name it completes to, or `null`.
@@ -746,6 +752,7 @@ export const TugPromptEntry = React.forwardRef<
     completionProviders,
     argumentHintResolver,
     argumentHintRefresh,
+    pastedCommandResolver,
     inlineCommandMatcher,
     dropHandler,
     onBeforeSubmit,
@@ -1837,6 +1844,7 @@ export const TugPromptEntry = React.forwardRef<
               completionProviders={completionProviders}
               argumentHintResolver={argumentHintResolver}
               argumentHintRefresh={argumentHintRefresh}
+              pastedCommandResolver={pastedCommandResolver}
               inlineCommandMatcher={inlineCommandMatcher}
               dropHandler={dropHandler}
               attachmentBytesStore={attachmentBytesStore}
