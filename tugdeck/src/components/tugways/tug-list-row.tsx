@@ -120,9 +120,10 @@ export interface TugListRowProps
   trailingReveal?: TugListRowTrailingReveal;
 
   /**
-   * Primary row text — sentence-case, single line, truncates with an
-   * ellipsis. Rendered through `TugLabel` so row text matches the rest
-   * of the app. Ignored when `children` is provided.
+   * Primary row text — sentence-case, truncates with an ellipsis after
+   * {@link titleMaxLines} lines (one by default). Rendered through
+   * `TugLabel` so row text matches the rest of the app. Ignored when
+   * `children` is provided.
    */
   title?: string;
 
@@ -132,6 +133,15 @@ export interface TugListRowProps
    * the title `TugLabel`.
    */
   titleSize?: TugLabelSize;
+
+  /**
+   * Maximum lines for the `title` before truncation. `1` (default)
+   * keeps today's single-line ellipsis; a larger value lets the title
+   * wrap before ellipsizing (e.g. a turn-picker row that shows two
+   * lines of the prompt). Forwarded to the title `TugLabel`'s
+   * `maxLines`.
+   */
+  titleMaxLines?: number;
 
   /**
    * Optional secondary text rendered muted below the title. A string
@@ -327,6 +337,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
       trailingReveal = "always",
       title,
       titleSize,
+      titleMaxLines,
       subtitle,
       subtitleMaxLines,
       selected,
@@ -401,7 +412,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
                 <TugLabel
                   className="tug-list-row-title"
                   size={titleSize ?? "md"}
-                  maxLines={1}
+                  maxLines={titleMaxLines ?? 1}
                 >
                   {title}
                 </TugLabel>

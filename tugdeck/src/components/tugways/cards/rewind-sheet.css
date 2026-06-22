@@ -39,6 +39,17 @@
   opacity: 0.6;
 }
 
+/* The `(current)` row's label — an italic marker for the live present, the
+   picker's default selection at the bottom of the list. Quiet (dimmed) at
+   rest so it reads as an anchor rather than a prompt; full-strength when
+   selected, where it inherits the row's selected-text color over the fill. */
+.rewind-current-label {
+  font-style: italic;
+}
+.tug-list-row:not([data-selected="true"]) .rewind-current-label {
+  opacity: 0.6;
+}
+
 .rewind-busy,
 .rewind-error {
   margin: 0;

@@ -22,6 +22,18 @@ import type {
 import type { TurnEntry } from "@/lib/code-session-store/types";
 
 /**
+ * Stable id + kind for the `(current)` row the picker appends below the last
+ * targetable turn. It marks the live present — the state after the most recent
+ * turn — so the list reads "…earlier turns… → (current)". Unlike a turn row it
+ * is NOT a rewind anchor: it is the picker's **default selection**, and while
+ * it is selected Rewind is disabled (picking "the present" is a no-op). The
+ * sheet maps a selection on this row to a `null` rewind target. A selectable
+ * `"cell"`-role row — the arrows reach it; the consumer gates Rewind on it.
+ */
+export const REWIND_CURRENT_ROW_ID = "rewind-current";
+export const REWIND_CURRENT_KIND = "rewind-current";
+
+/**
  * One turn-picker row. `promptUuid` is the rewind anchor passed to
  * `session_rewind` / `rewind_preview`; `turnKey` is the committed turn's
  * React-key seed (a stable, unique row id). `preview` is the user submission
@@ -33,11 +45,6 @@ export interface RewindRow {
   turnKey: string;
   preview: string;
   submitAt: number;
-  /**
-   * True for the most recent turn in the transcript — the picker marks it
-   * `(current)` (rewinding to it drops only that turn). Purely a display hint.
-   */
-  isCurrent: boolean;
 }
 
 /**
@@ -61,11 +68,7 @@ export function projectRewindTurns(
 ): RewindRow[] {
   const rows: RewindRow[] = [];
   let seenTargetable = 0;
-  let lastTargetableIndex = -1;
-  transcript.forEach((turn, i) => {
-    if (isTargetable(turn)) lastTargetableIndex = i;
-  });
-  transcript.forEach((turn, i) => {
+  transcript.forEach((turn) => {
     if (!isTargetable(turn)) return;
     seenTargetable += 1;
     // Skip the first targetable turn — rewinding to it leaves no retained
@@ -77,7 +80,6 @@ export function projectRewindTurns(
       turnKey: turn.turnKey,
       preview: opener.kind === "user_message" ? opener.text : "",
       submitAt: opener.kind === "user_message" ? opener.submitAt : turn.endedAt,
-      isCurrent: i === lastTargetableIndex,
     });
   });
   return rows;
@@ -118,20 +120,27 @@ export class RewindTurnDataSource implements TugListViewDataSource {
     this.rows = rows;
   }
 
+  /** The turns, plus one trailing `(current)` marker row. */
   numberOfItems(): number {
-    return this.rows.length;
+    return this.rows.length + 1;
+  }
+
+  /** True for the trailing `(current)` marker (the last index). */
+  isCurrentRow(index: number): boolean {
+    return index === this.rows.length;
   }
 
   idForIndex(index: number): string {
+    if (this.isCurrentRow(index)) return REWIND_CURRENT_ROW_ID;
     // `promptUuid` is intrinsically unique per turn — a stable row id.
     return this.rows[index].promptUuid;
   }
 
-  kindForIndex(): string {
-    return "rewind-turn";
+  kindForIndex(index: number): string {
+    return this.isCurrentRow(index) ? REWIND_CURRENT_KIND : "rewind-turn";
   }
 
-  /** Cell-renderer accessor — the row at `index`. */
+  /** Cell-renderer accessor — the turn at `index` (never the `(current)` row). */
   rowAt(index: number): RewindRow {
     return this.rows[index];
   }

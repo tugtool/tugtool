@@ -71,6 +71,7 @@ import type {
 } from "@/lib/code-session-store/types";
 import {
   projectRewindTurns,
+  REWIND_CURRENT_KIND,
   RewindTurnDataSource,
   type RewindRow,
 } from "./rewind-turn-source";
@@ -144,10 +145,13 @@ export function useRewindSheet({
 interface RewindCellContextValue {
   previews: ReadonlyMap<string, RewindTurnPreview>;
   selectedPromptUuid: string | null;
+  /** The `(current)` marker is the selection (the default no-rewind state). */
+  currentSelected: boolean;
 }
 const RewindCellContext = React.createContext<RewindCellContextValue>({
   previews: new Map(),
   selectedPromptUuid: null,
+  currentSelected: false,
 });
 
 /** Format a turn's diff-stat for the row subtitle. */
@@ -159,6 +163,42 @@ function diffStatLabel(preview: RewindTurnPreview | undefined): string {
   const del = preview.deletions ?? 0;
   if (ins === 0 && del === 0) return "No code changes";
   return `+${ins} −${del}`;
+}
+
+/**
+ * Format a turn's wall-clock `submitAt` for the row subtitle — a
+ * friendly day + time (`Today, 3:45 PM`, `Yesterday, 11:20 AM`, or
+ * `Jun 19, 3:45 PM`; the year is added once it differs from now).
+ * Returns "" when the timestamp is missing or unparseable, so a turn
+ * with no recorded time simply shows its diff-stat alone.
+ */
+function submittedAtLabel(submitAt: number): string {
+  if (!Number.isFinite(submitAt) || submitAt <= 0) return "";
+  const when = new Date(submitAt);
+  if (Number.isNaN(when.getTime())) return "";
+  const now = new Date();
+  const time = when.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const startOfDay = (d: Date): number =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDelta = Math.round(
+    (startOfDay(now) - startOfDay(when)) / 86_400_000,
+  );
+  let day: string;
+  if (dayDelta === 0) day = "Today";
+  else if (dayDelta === 1) day = "Yesterday";
+  else {
+    day = when.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(when.getFullYear() !== now.getFullYear()
+        ? { year: "numeric" }
+        : {}),
+    });
+  }
+  return `${day}, ${time}`;
 }
 
 const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
@@ -176,11 +216,13 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
     const blocked = preview?.conversationRewindable === false;
     const title = row.preview.trim().length > 0 ? row.preview : "(empty prompt)";
     const stat = diffStatLabel(preview);
-    const subtitle = row.isCurrent
-      ? stat.length > 0
-        ? `Current · ${stat}`
-        : "Current"
-      : stat;
+    const when = submittedAtLabel(row.submitAt);
+    // The meta line reads: [when] [diff-stat] — either segment dropped when
+    // absent, joined by a middot. The present lives in the `(current)` row
+    // below the last turn, so no per-turn "Current" prefix here.
+    const subtitle = [when, stat]
+      .filter((seg) => seg.length > 0)
+      .join(" · ");
     // A reserved non-breaking space keeps stat-less rows the same height
     // as rows that carry a subtitle, so the turn list reads as an even stack.
     const subtitleText = blocked
@@ -191,6 +233,7 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
     return (
       <TugListRow
         title={title}
+        titleMaxLines={2}
         subtitle={subtitleText}
         selected={selected}
         disabled={blocked}
@@ -200,14 +243,34 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
     );
   };
 
+/**
+ * The `(current)` row pinned below the last turn — the picker's default
+ * selection and a quiet anchor for the live present, so the newest turn reads
+ * as *not* the end of the timeline. Selectable like any row (the arrows reach
+ * it), but it is no rewind target: while it holds the selection the sheet
+ * keeps the rewind target `null` and Rewind stays disabled. Rendered through
+ * `TugListRow` so it picks up the selection fill + keyboard cursor; the italic
+ * `(current)` label reads as a marker, not a prompt.
+ */
+const RewindCurrentCell: TugListViewCellRenderer<RewindTurnDataSource> =
+  function RewindCurrentCell(): React.ReactElement {
+    const { currentSelected } = React.useContext(RewindCellContext);
+    return (
+      <TugListRow selected={currentSelected} data-testid="rewind-current-row">
+        <span className="rewind-current-label">(current)</span>
+      </TugListRow>
+    );
+  };
+
 /** Module-constant renderer map ([L26]): one stable reference shared by every
- *  `rewind-turn` row so picker rows reconcile as the same element across
- *  re-renders — never inline lambdas. */
+ *  row so picker rows reconcile as the same element across re-renders — never
+ *  inline lambdas. */
 const REWIND_CELL_RENDERERS: Record<
   string,
   TugListViewCellRenderer<RewindTurnDataSource>
 > = {
   "rewind-turn": RewindTurnCell,
+  [REWIND_CURRENT_KIND]: RewindCurrentCell,
 };
 
 // ---------------------------------------------------------------------------
@@ -233,12 +296,12 @@ function RewindSheetBody({
   const previews = snapshot.rewindPreviews;
   const isIdle = snapshot.phase === "idle";
 
-  // Pre-select the most recent turn (the last, "current" row) on open — it's
-  // always rewindable (it's the tip, so nothing compacts after it), so the
-  // sheet opens ready to Rewind. The user can pick an earlier turn.
-  const [selected, setSelected] = useState<RewindRow | null>(
-    rows.length > 0 ? rows[rows.length - 1] : null,
-  );
+  // Default the selection to the `(current)` row (the live present) on open, so
+  // the sheet opens doing nothing until the user picks an earlier turn to walk
+  // back to — matching Claude Code. `null` IS "the (current) row is selected":
+  // the rewind target is absent, so Rewind disables (`canApply` below) until a
+  // real turn is picked.
+  const [selected, setSelected] = useState<RewindRow | null>(null);
   const [scope, setScope] = useState<RewindScope>("conversation");
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -300,8 +363,14 @@ function RewindSheetBody({
   const delegate = useMemo<TugListViewDelegate>(
     () => ({
       onSelect: (index) => {
+        // The trailing `(current)` row (index === visibleRows.length) is the
+        // no-rewind selection: clear the target so Rewind disables. A turn row
+        // sets it as the target and warms its diff-stat.
         const row = visibleRows[index];
-        if (row === undefined) return;
+        if (row === undefined) {
+          setSelected(null);
+          return;
+        }
         setSelected(row);
         ensurePreview(row.promptUuid);
       },
@@ -379,9 +448,11 @@ function RewindSheetBody({
 
   // Author the controls into the sheet's trapped focus mode: Tab walks the turn
   // list → Cancel → Rewind. Single-select picker: the list is seeded as the key
-  // view, and its first turn auto-selects on open (so the cursor + selection land
-  // immediately, Rewind enables, and its `persistentDefaultRing` lights). Return
-  // falls through the list to Rewind. The no-target case never reaches here —
+  // view, and the `(current)` row at the bottom auto-selects on open (cursor +
+  // selection land there, scrolled into view) — so the sheet opens doing
+  // nothing, Rewind disabled, until ArrowUp walks back in time to an earlier
+  // turn. Rewind keeps its `persistentDefaultRing` as the surface default;
+  // Return falls through the list to it. The no-target case never reaches here —
   // it's the "Can't rewind" alert.
   const focusGroup = useId();
   const LIST_ORDER = 0;
@@ -402,7 +473,11 @@ function RewindSheetBody({
         </div>
 
         <RewindCellContext.Provider
-          value={{ previews, selectedPromptUuid: selected?.promptUuid ?? null }}
+          value={{
+            previews,
+            selectedPromptUuid: selected?.promptUuid ?? null,
+            currentSelected: selected === null,
+          }}
         >
           {/* Reuse the session picker's section + bordered host so the two
               pickers read the same ([L20] cascade-scoped). */}
@@ -421,6 +496,8 @@ function RewindSheetBody({
                   focusOrder={LIST_ORDER}
                   singleSelect
                   seedSelection
+                  initialSelectedIndex={visibleRows.length}
+                  followBottom
                 />
               ) : (
                 // Rare in-sheet empty: the sheet opened with targets but every

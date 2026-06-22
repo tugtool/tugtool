@@ -5,8 +5,10 @@
  * A single-select picker (the rewind turn list) is the focus engine's
  * "one selected row the arrows move" container:
  *   - On open the LIST is the key view (the ring rests on it, not the OK/Rewind
- *     button), and its first selectable row auto-selects (`seedSelection`), so
- *     the default action enables immediately.
+ *     button), and the `(current)` row (the last row — the live present)
+ *     auto-selects (`seedSelection` + `initialSelectedIndex`). That is the
+ *     no-rewind default: Rewind starts DISABLED until ArrowUp walks back in
+ *     time to an earlier turn.
  *   - Arrow keys MOVE the selection directly — selection follows the cursor, no
  *     separate Space-to-commit step.
  *   - The list does NOT consume Return: Enter falls through to the surface's
@@ -94,7 +96,7 @@ describe.skipIf(!SHOULD_RUN)(
   "AT0142: single-select list keyboard model — arrows select, Enter falls to the default",
   () => {
     test(
-      "list is the key view on open, first row auto-selects, arrows move selection, Enter fires the default action",
+      "list is the key view on open, (current) row auto-selects (Rewind disabled), arrows move selection, Enter fires the default action",
       async () => {
         const app = await launchTugApp({ testName: "at0142-single-select-keyboard" });
         try {
@@ -135,20 +137,23 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // The first valid turn (uuid-2) auto-selects on open (`seedSelection`),
-          // which enables Rewind (the default action) so its persistent ring shows.
+          // The `(current)` row (the last row, the live present) auto-selects on
+          // open (`seedSelection` + `initialSelectedIndex`). It is the no-rewind
+          // default: no TURN is selected (no `[data-prompt-uuid][data-selected]`)
+          // and Rewind starts DISABLED.
           await app.waitForCondition<boolean>(
             `(function(){
                var b = document.querySelector(${JSON.stringify(REWIND_APPLY)});
-               return b !== null && !b.disabled;
+               return b !== null && b.disabled;
              })()`,
             { timeoutMs: 4000 },
           );
-          expect(await app.evalJS<string | null>(SELECTED_UUID)).toBe("uuid-2");
+          expect(await app.evalJS<string | null>(SELECTED_UUID)).toBeNull();
 
-          // ArrowDown moves the SELECTION directly — selection follows the cursor,
-          // no Space step. (uuid-2 → uuid-3, the second/last valid target.)
-          await pressKey(app, "ArrowDown");
+          // ArrowUp moves the SELECTION directly — selection follows the cursor,
+          // no Space step — back in time from `(current)` to the most recent
+          // valid target (uuid-3), which enables Rewind so its ring shows.
+          await pressKey(app, "ArrowUp");
           await app.waitForCondition<boolean>(
             `(function(){
                var row = document.querySelector(${JSON.stringify(`${SHEET} [data-prompt-uuid][data-selected="true"]`)});
@@ -157,6 +162,13 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
           expect(await app.evalJS<string | null>(SELECTED_UUID)).toBe("uuid-3");
+          await app.waitForCondition<boolean>(
+            `(function(){
+               var b = document.querySelector(${JSON.stringify(REWIND_APPLY)});
+               return b !== null && !b.disabled;
+             })()`,
+            { timeoutMs: 4000 },
+          );
 
           // Enter on the focused list does NOT act on a row — it falls through to
           // the default action (Rewind). The sheet sends `session_rewind`; inject

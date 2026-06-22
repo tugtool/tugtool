@@ -13,6 +13,8 @@ import { describe, expect, test } from "bun:test";
 import {
   projectRewindTurns,
   canOfferRewind,
+  REWIND_CURRENT_ROW_ID,
+  REWIND_CURRENT_KIND,
   RewindTurnDataSource,
 } from "@/components/tugways/cards/rewind-turn-source";
 import type { Message, TurnEntry } from "@/lib/code-session-store/types";
@@ -69,7 +71,7 @@ describe("projectRewindTurns", () => {
     ]);
     // Only turn 2 is a valid target — rewinding to it keeps turn 1.
     expect(rows).toEqual([
-      { promptUuid: "uuid-2", turnKey: "t2", preview: "second prompt", submitAt: 200, isCurrent: true },
+      { promptUuid: "uuid-2", turnKey: "t2", preview: "second prompt", submitAt: 200 },
     ]);
   });
 
@@ -100,16 +102,6 @@ describe("projectRewindTurns", () => {
       wakeTurn("w1"),
     ]);
     expect(rows.map((r) => r.turnKey)).toEqual(["t2"]);
-  });
-
-  test("marks the last TARGETABLE turn current even when a wake turn trails", () => {
-    const rows = projectRewindTurns([
-      userTurn("t1", "uuid-1", "a", 1),
-      userTurn("t2", "uuid-2", "b", 2),
-      wakeTurn("w1"),
-    ]);
-    expect(rows.find((r) => r.isCurrent)?.turnKey).toBe("t2");
-    expect(rows.filter((r) => r.isCurrent).length).toBe(1);
   });
 
   test("a single targetable turn projects to zero rows", () => {
@@ -151,9 +143,25 @@ describe("RewindTurnDataSource", () => {
       userTurn("t3", "uuid-3", "c", 3),
     ]);
     const ds = new RewindTurnDataSource(rows);
-    expect(ds.numberOfItems()).toBe(2);
+    // Two targetable turns (the first is skipped) plus the trailing
+    // `(current)` marker row.
+    expect(ds.numberOfItems()).toBe(3);
     expect(ds.idForIndex(0)).toBe("uuid-2");
-    expect(ds.kindForIndex()).toBe("rewind-turn");
+    expect(ds.kindForIndex(0)).toBe("rewind-turn");
+    expect(ds.isCurrentRow(0)).toBe(false);
     expect(ds.rowAt(1).preview).toBe("c");
+  });
+
+  test("appends a selectable `(current)` marker below the last turn", () => {
+    const rows = projectRewindTurns([
+      userTurn("t1", "uuid-1", "a", 1),
+      userTurn("t2", "uuid-2", "b", 2),
+      userTurn("t3", "uuid-3", "c", 3),
+    ]);
+    const ds = new RewindTurnDataSource(rows);
+    const current = ds.numberOfItems() - 1;
+    expect(ds.isCurrentRow(current)).toBe(true);
+    expect(ds.idForIndex(current)).toBe(REWIND_CURRENT_ROW_ID);
+    expect(ds.kindForIndex(current)).toBe(REWIND_CURRENT_KIND);
   });
 });
