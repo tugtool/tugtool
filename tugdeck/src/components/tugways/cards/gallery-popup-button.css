@@ -10,8 +10,8 @@
  * | --tug7-element-global-text-normal-subtle-rest    | --tug7-surface-global-primary-normal-default-rest | informational | .gpb-demo-label (color)             |
  * | --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-default-rest | informational | .gpb-status (color)                 |
  * | --tug7-element-global-text-normal-default-rest   | --tug7-surface-global-primary-normal-default-rest | content      | .gpb-status code (color)            |
- * | --tug7-element-global-border-normal-muted-rest   | --tug7-surface-global-primary-normal-inset-rest  | informational | .gpb-context-bar (border)            |
- * | --tug7-element-global-text-normal-subtle-rest    | --tug7-surface-global-primary-normal-inset-rest  | informational | .gpb-context-label (color)           |
+ * | --tug7-element-global-border-normal-muted-rest   | --tug7-surface-global-primary-normal-sunken-rest  | informational | .gpb-context-bar (border)            |
+ * | --tug7-element-global-text-normal-subtle-rest    | --tug7-surface-global-primary-normal-sunken-rest  | informational | .gpb-context-label (color)           |
  */
 
 /* ============================================================================
@@ -61,12 +61,12 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
-  background-color: var(--tug7-surface-global-primary-normal-inset-rest);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
   border-radius: var(--tug-radius-sm);
   border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-inset-rest */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
 .gpb-context-label {
   font-size: 0.75rem;
   color: var(--tug7-element-global-text-normal-subtle-rest);

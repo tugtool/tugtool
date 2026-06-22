@@ -75,13 +75,11 @@ body {
   --tug-line-height-xs: 17px;
 
   /* Surface — Global */
-  --tug7-surface-global-primary-normal-app-rest: --tug-color(indigo-violet, i: 2, t: 5);
   --tug7-surface-global-primary-normal-canvas-rest: --tug-color(indigo-violet, i: 2, t: 5);
   --tug7-surface-global-primary-normal-content-rest: --tug-color(indigo-violet, i: 5, t: 14);
   --tug7-surface-global-primary-normal-control-rest: var(--tug7-surface-control-primary-outlined-action-rest);
   --tug7-surface-global-primary-normal-default-rest: --tug-color(indigo-violet, i: 5, t: 12);
   --tug7-surface-global-primary-normal-grid-rest: --tug-color(indigo-violet, i: 2, t: 18);
-  --tug7-surface-global-primary-normal-inset-rest: --tug-color(indigo-violet, i: 5, t: 6);
   --tug7-surface-global-primary-normal-overlay-rest: --tug-color(indigo-violet, i: 5, t: 14);
   --tug7-surface-global-primary-normal-raised-rest: --tug-color(indigo-violet, i: 5, t: 11);
   --tug7-surface-global-primary-normal-screen-rest: --tug-color(indigo, i: 7, t: 16);

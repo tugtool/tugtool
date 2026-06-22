@@ -46,7 +46,7 @@ body {
   --tugx-devlog-level-error-fg:   var(--tug7-element-global-text-normal-danger-rest);
 
   /* Expanded data block (JSON pre) */
-  --tugx-devlog-data-bg:          var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-devlog-data-bg:          var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-devlog-data-fg:          var(--tug7-element-global-text-normal-default-rest);
 
   /* Geometry */

@@ -255,7 +255,7 @@ const TALL_CELL_STYLE: React.CSSProperties = {
 
 const STREAMING_TEXT_CELL_STYLE: React.CSSProperties = {
   ...SHORT_CELL_STYLE,
-  background: "var(--tug7-surface-global-primary-normal-inset-rest)",
+  background: "var(--tug7-surface-global-primary-normal-sunken-rest)",
   whiteSpace: "pre-wrap",
 };
 

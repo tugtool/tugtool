@@ -174,7 +174,7 @@ body {
 .tug-cue[data-tug-cue-role="muted"] {
   /* Neutral inset surface — same gray scrim the diff hunk header was
    * approximating with rgba(0, 0, 0, 0.03), but now token-backed. */
-  --tugx-cue-bg:      var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-cue-bg:      var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-cue-fg:      var(--tug7-element-global-text-normal-muted-rest);
   --tugx-cue-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
 }

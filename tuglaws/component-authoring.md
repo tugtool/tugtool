@@ -376,7 +376,7 @@ When aliases are used, define them in `body {}` at the top of the CSS file, afte
 body {
   /* Pane frame aliases (TugPane) — resolve to base tier in one hop [L17] */
   --tugx-pane-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-pane-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-pane-bg: var(--tug7-surface-global-primary-normal-content-rest);
 }
 ```
 
@@ -423,11 +423,11 @@ body {
 
 This is a *shared utility* per `tuglaws/token-naming.md` (`--tugx-` covers "Component aliases, shared utilities. Locally defined."). The shared family lives once in `styles/tugx-block.css` and is imported globally at app root, after the palette + base layers and before any component CSS.
 
-The chrome wrapper variant uses `--tugx-block-chrome-bg` (raised) instead of `--tugx-block-bg` (inset) since chrome sits *above* the body it wraps:
+The chrome wrapper variant uses `--tugx-block-chrome-bg` (raised) instead of `--tugx-block-bg` (sunken) since chrome sits *above* the body it wraps:
 
 ```css
 .tool-block-chrome {
-  background:    var(--tugx-block-chrome-bg);  /* raised, not inset */
+  background:    var(--tugx-block-chrome-bg);  /* raised, not sunken */
   border:        1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
   margin:        var(--tugx-block-margin);

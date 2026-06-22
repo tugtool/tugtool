@@ -970,7 +970,7 @@ export const CVD_SEMANTIC_PAIRS: [string, string][] = [
   // Primary action vs destructive action (button colours)
   ["--tug7-element-global-fill-normal-accent-rest", "--tug7-element-tone-fill-normal-danger-rest"],
   // Accent vs atmosphere (theme identity colours)
-  ["--tug7-element-global-fill-normal-accent-rest", "--tug7-surface-global-primary-normal-app-rest"],
+  ["--tug7-element-global-fill-normal-accent-rest", "--tug7-surface-global-primary-normal-canvas-rest"],
 ];
 
 /**

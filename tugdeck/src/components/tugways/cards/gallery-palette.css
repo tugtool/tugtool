@@ -14,8 +14,8 @@
  * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gp-achromatic-swatch:hover (border-color) |
  * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gp-achromatic-label (color)         |
  * | --tug7-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .gp-curve-hue-label--selected (fill) |
- * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | content      | .gp-formula-snippet (color)          |
- * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-inset-rest (surface-global-primary-normal-inset-rest) | informational | .gp-formula-snippet (border)         |
+ * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | content      | .gp-formula-snippet (color)          |
+ * | --tug7-element-global-border-normal-default-rest (element-global-border-normal-default-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | informational | .gp-formula-snippet (border)         |
  */
 
 
@@ -311,7 +311,7 @@
   font-size: 10px;
   font-family: var(--tug-font-family-mono, monospace);
   color: var(--tug7-element-global-text-normal-default-rest, #e6eaee);
-  background-color: var(--tug7-surface-global-primary-normal-inset-rest, #191c22);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest, #191c22);
   border: 1px solid var(--tug7-element-global-border-normal-default-rest, #5e656e);
   border-radius: var(--tug-radius-xs, 2px);
   padding: 8px 10px;

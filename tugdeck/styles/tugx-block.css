@@ -32,7 +32,7 @@
  *
  * ## Two frame variants
  *
- *  - `--tugx-block-bg` — body-kind variant. Inset surface. Used by
+ *  - `--tugx-block-bg` — body-kind variant. Recessed (sunken) surface. Used by
  *    FileBlock, DiffBlock, TerminalBlock, DevThinkingBlock, the markdown
  *    code-fence panel, etc.
  *  - `--tugx-block-chrome-bg` — chrome wrapper variant. Raised surface.
@@ -88,7 +88,7 @@ body {
   /* ------------------------------------------------------------------ *
    * Frame — body-kind variant (sits below chrome; recessed surface)    *
    * ------------------------------------------------------------------ */
-  --tugx-block-bg:     var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-block-bg:     var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-block-border: var(--tug7-element-global-border-normal-muted-rest);
   --tugx-block-radius: var(--tug-radius-md);
   --tugx-block-margin: var(--tug-space-md) 0;

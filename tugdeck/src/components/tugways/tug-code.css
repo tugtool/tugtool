@@ -16,8 +16,8 @@
  * | --tugx-codeBlock-header-fg (element-global-text-normal-subtle-rest)         | --tugx-codeBlock-header-bg (surface-global-primary-normal-sunken-rest)       | informational | Code block header text on sunken header          |
  * | --tugx-chat-attachment-fg (element-global-text-normal-muted-rest)           | --tugx-chat-attachment-bg (surface-global-primary-normal-overlay-rest)       | informational | Chat attachment label on overlay background      |
  * | --tugx-feed-step-fg (element-global-text-normal-muted-rest)                 | --tugx-feed-step-bg (surface-global-primary-normal-sunken-rest)              | informational | Feed step text on sunken background              |
- * | --tugx-terminal-fg (element-global-text-normal-default-rest)                | --tugx-terminal-bg (surface-global-primary-normal-inset-rest)                | content      | Terminal text on inset background                |
- * | --tugx-terminal-fg-muted (element-global-text-normal-muted-rest)            | --tugx-terminal-bg (surface-global-primary-normal-inset-rest)                | informational | Terminal muted text on inset background          |
+ * | --tugx-terminal-fg (element-global-text-normal-default-rest)                | --tugx-terminal-bg (surface-global-primary-normal-sunken-rest)                | content      | Terminal text on inset background                |
+ * | --tugx-terminal-fg-muted (element-global-text-normal-muted-rest)            | --tugx-terminal-bg (surface-global-primary-normal-sunken-rest)                | informational | Terminal muted text on inset background          |
  * | --tugx-tree-row-fg (element-global-text-normal-default-rest)                | parent ambient surface-default                   | content      | File tree row text                               |
  */
 
@@ -43,7 +43,7 @@ body {
   --tug-syntax-attribute: --tug-color(cyan);
 
   /* --- Terminal --- */
-  --tugx-terminal-bg: var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-terminal-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-terminal-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-terminal-fg-muted: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-terminal-cursor: var(--tug7-element-global-fill-normal-accent-rest);

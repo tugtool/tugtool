@@ -60,7 +60,7 @@ body {
 
   /* Placeholder — a faint surface tone so the empty rectangle is
    * visible-but-quiet during the lazy-load window. */
-  --tugx-image-placeholder-bg: var(--tug7-surface-global-primary-normal-inset-rest);
+  --tugx-image-placeholder-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
 
   /* Error caption — caution tone so a broken image reads as broken
    * at a glance, not as ambient prose. */

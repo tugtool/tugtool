@@ -61,11 +61,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
   {
     element: "--tug7-element-global-text-normal-default-rest",
-    surface: "--tug7-surface-global-primary-normal-app-rest",
-    role: "content",
-  },
-  {
-    element: "--tug7-element-global-text-normal-default-rest",
     surface: "--tug7-surface-global-primary-normal-canvas-rest",
     role: "content",
   },
@@ -87,11 +82,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug7-element-global-text-normal-default-rest",
     surface: "--tug7-surface-global-primary-normal-sunken-rest",
-    role: "content",
-  },
-  {
-    element: "--tug7-element-global-text-normal-default-rest",
-    surface: "--tug7-surface-global-primary-normal-inset-rest",
     role: "content",
   },
   {
@@ -124,11 +114,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug7-element-global-text-normal-muted-rest",
     surface: "--tug7-surface-global-primary-normal-sunken-rest",
-    role: "informational",
-  },
-  {
-    element: "--tug7-element-global-text-normal-muted-rest",
-    surface: "--tug7-surface-global-primary-normal-inset-rest",
     role: "informational",
   },
 
@@ -1769,7 +1754,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
   {
     element: "--tug7-element-global-fill-normal-accentCool-rest",
-    surface: "--tug7-surface-global-primary-normal-app-rest",
+    surface: "--tug7-surface-global-primary-normal-canvas-rest",
     role: "control",
   },
   {
@@ -1780,11 +1765,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   {
     element: "--tug7-element-global-fill-normal-accentCool-rest",
     surface: "--tug7-surface-global-primary-normal-raised-rest",
-    role: "control",
-  },
-  {
-    element: "--tug7-element-global-fill-normal-accentCool-rest",
-    surface: "--tug7-surface-global-primary-normal-inset-rest",
     role: "control",
   },
   {
@@ -1882,12 +1862,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "content",
   },
 
-  // --- Surface inset — subtle text (gallery-popup-button.css) ---
-  {
-    element: "--tug7-element-global-text-normal-subtle-rest",
-    surface: "--tug7-surface-global-primary-normal-inset-rest",
-    role: "informational",
-  },
 
   // --- Surface control — text (gallery-card.css, gallery-palette.css,
   //     tug-tab.css, gallery-theme-accessibility.css) ---
@@ -2461,16 +2435,16 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // =========================================================================
   // Additional surface pairings from gallery components (Step 6 additions)
   // =========================================================================
-  // border-muted on surface-inset (gallery-popup-button.css)
+  // border-muted on surface-sunken (gallery-popup-button.css)
   {
     element: "--tug7-element-global-border-normal-muted-rest",
-    surface: "--tug7-surface-global-primary-normal-inset-rest",
+    surface: "--tug7-surface-global-primary-normal-sunken-rest",
     role: "decorative",
   },
-  // border-default on surface-inset (gallery-palette.css)
+  // border-default on surface-sunken (gallery-palette.css)
   {
     element: "--tug7-element-global-border-normal-default-rest",
-    surface: "--tug7-surface-global-primary-normal-inset-rest",
+    surface: "--tug7-surface-global-primary-normal-sunken-rest",
     role: "decorative",
   },
   // border-default on bg-canvas (gallery-theme-accessibility.css)

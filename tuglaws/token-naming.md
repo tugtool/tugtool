@@ -105,7 +105,7 @@ Roles fall into several categories:
 
 **Shadow sizes:** `xs` · `md` · `lg` · `xl` · `overlay`
 
-**Surface purposes:** `canvas` · `app` · `inset` · `sunken` · `default` · `content` · `raised` · `overlay` · `screen` · `grid` · `control` · `dim` · `scrim` (ordered + defined in [Surface Elevation](#surface-elevation))
+**Surface purposes:** `canvas` · `sunken` · `default` · `content` · `raised` · `overlay` · `screen` · `grid` · `control` · `dim` · `scrim` (ordered + defined in [Surface Elevation](#surface-elevation))
 
 **Highlight purposes:** `hover` · `drop` · `preview` · `inspector` · `snap` · `flash` · `highlight`
 
@@ -139,10 +139,8 @@ These rules make seven-slot parsing deterministic:
 
 ## Surface Elevation
 
-> **Status: adopted; partially reconciled.** These definitions are the contract
-> for the `surface-global` purposes. The card-body split (`content` vs `overlay`)
-> is reconciled in the themes; the remaining divergences are tracked under
-> *Reconciliation status*.
+> **Adopted.** These definitions are the contract for the `surface-global`
+> purposes, and the shipped themes conform to them.
 
 The `--tug7-surface-global-primary-normal-<purpose>-*` family is an **elevation
 ladder**. Each `purpose` names how far *forward* — proud toward the viewer — a
@@ -160,46 +158,37 @@ elevation doctrine in [theme-engine.md](theme-engine.md).)
 | purpose | what it is | typical consumers |
 |---|---|---|
 | `canvas` | the desktop behind every card | deck background, host canvas |
-| `sunken` | the deepest well cut into a surface | recessed wells / troughs (tinted) |
-| `inset` | a shallow well | input troughs, code gutters, block frames |
+| `sunken` | a recessed well cut into a surface | terminals, code / table headers, troughs, gutters, image placeholders |
 | `default` | the standard component surface — the generic surface most controls rest on, a hair recessed from the card body | the workhorse; the large majority of component backgrounds |
-| `content` | the **body of a card / pane** — the primary surface its content sits on | pane body, transcript, sheet / dialog / alert body |
-| `raised` | a subtle accent lifted a step from `default` — a *relative* lift used within content, not a strict forward rung | table stripes, hover rows, chips, inline-dialog & banner backgrounds |
-| `overlay` | a layer floating above the whole UI | popovers, menus, completion, tooltips |
-| `screen` | the always-light tier — stays light even in light themes so tooltip / dev-panel text needs no inverse treatment | dev panel, tooltips |
+| `content` | the **body of a card / pane** — the primary surface its content sits on | pane body, transcript, prompt entry |
+| `overlay` | a layer floating above the whole UI (co-located with `content` today; may lift forward later) | sheets, dialogs, popovers, menus, completion, tooltips |
 
-**Not elevation rungs** (special-purpose; documented with their components):
+These five are strictly monotonic in both modes: `canvas` < `sunken` < `default` < `content` ≤ `overlay`.
 
-- `app` — a synonym for `canvas` in every shipped theme today (candidate to collapse into `canvas`).
+**Not elevation rungs** (special-purpose; they sit off the strict ladder):
+
+- `raised` — a subtle accent lifted a step from `default` (table stripes, hover rows, chips, inline-dialog / banner backgrounds). A *relative* lift used within content, not a fixed forward position; its tone is not monotonic across modes, by design.
+- `screen` — the always-light tier: stays light even in light themes so tooltip / dev-panel text needs no inverse treatment.
 - `grid` — decorative deck grid lines (often semi-transparent); not a content surface.
 - `control` — a passthrough to the outlined-control surface (usually `transparent`); it shows whatever rung sits behind it rather than introducing one.
 
 **States.** Each rung carries the interaction states it actually uses
 (`-rest`, `-hover`, `-active`, `-disabled`); inert surfaces use only `-rest`.
 
-### Reconciliation status (why the themes don't match yet)
+### History
 
-**Done.**
+This vocabulary was reconciled from an earlier, drifted state:
 
-- **Card-body split.** `content` now means the card / pane body — re-derived to the
-  card-body tone in dark themes (light already matched). The card-body consumers
-  (`--tugx-pane-bg`, the transcript header) moved `overlay` → `content`, and
-  `overlay` now names only genuine floating layers.
-- **Vocabulary documented.** `default`, `overlay`, and `grid` (previously omitted
-  from the purposes list, despite `default` being the most-used surface) are named
-  above.
-
-**Pending (a deeper per-theme pass).**
-
-- **`raised` cross-mode tone.** A subtle accent near `default`: its dark tone sits
-  just under `default`, its light tone just over — not strictly monotonic.
-- **`inset` / `sunken` flip.** In dark, `inset` is deeper than `sunken`; in light
-  the order reverses. Names and values still need reconciling.
-- **`app` collapse.** A synonym of `canvas` (one reference, in
-  `theme-accessibility.ts`); fold into `canvas` later.
-
-Reconciling the pending items shifts surfaces visually and is reviewed per theme
-against the contrast audit; it is **not** a blind rename.
+- **Card-body split.** `content` was the darkest surface in dark themes yet the
+  lightest in light themes; it now uniformly means the card / pane body. The
+  card-body consumers (`--tugx-pane-bg`, the transcript header) moved off
+  `overlay`, which now names only floating layers.
+- **`inset` collapsed into `sunken`.** The two recessed-well tokens encoded a
+  weak, cross-mode-incoherent distinction — their relative depth flipped between
+  light and dark — so they are now a single well.
+- **`app` collapsed into `canvas`.** It was a byte-identical synonym in every theme.
+- **`default` / `overlay` / `grid` documented.** Previously omitted from the
+  purposes list despite `default` being the most-used surface in the system.
 
 ---
 
@@ -241,7 +230,6 @@ If all three answers are no, camelCase is correct.
 --tug7-element-tone-fill-normal-success-rest         ← success tone fill
 --tug7-element-checkmark-icon-normal-plain-mixed     ← mixed-state checkmark
 
---tug7-surface-global-primary-normal-app-rest        ← app background
 --tug7-surface-global-primary-normal-canvas-rest     ← canvas background
 --tug7-surface-global-primary-normal-raised-rest     ← elevated surface
 --tug7-surface-control-primary-filled-accent-rest    ← filled accent button bg

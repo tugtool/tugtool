@@ -48,7 +48,7 @@ largely a hue swap: keep the *tone* ladder, change the *hue*.
    text/icon/border/divider families). Surfaces differ by **tone only**; intensity stays in a tight
    low band (dark ≈ i:2–6, light ≈ i:3–8). Tone carries elevation, not hue.
 2. **Monotonic elevation ladder.** Dark: deeper base, lighter raised/overlay. Light: lighter base
-   (content/raised/overlay near white), darker recessed wells (sunken/inset). No hue jumps, no
+   (content/raised/overlay near white), darker recessed wells (sunken). No hue jumps, no
    dark-surface-in-a-light-theme surprises. `screen` (tooltips, dev panel) is the lone exception in
    light themes — it stays light because tooltips render *default* text, not inverse.
 3. **Signals are fixed across themes** by hue: `danger`=red, `success`=green, `caution`=yellow/gold,

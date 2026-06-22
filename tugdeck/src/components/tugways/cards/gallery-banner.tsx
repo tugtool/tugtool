@@ -30,7 +30,7 @@ const miniViewport: React.CSSProperties = {
   height: "80px",
   border: "1px solid var(--tug7-element-global-border-normal-default-rest)",
   borderRadius: "6px",
-  background: "var(--tug7-surface-global-primary-normal-inset-rest)",
+  background: "var(--tug7-surface-global-primary-normal-sunken-rest)",
 };
 
 /** Placeholder content inside the mini-viewport so there's something to dim. */
