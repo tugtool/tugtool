@@ -105,7 +105,7 @@ import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import { deriveDevCardBannerSpec } from "./dev-card-banner-spec";
-import { formatRetryCountdown } from "./api-retry";
+import { TransientNoticeController } from "./transient-notice-controller";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -1984,66 +1984,10 @@ interface DevCardBodyProps {
  * losing the `lastVisiblePropsRef` hold that keeps content stable
  * during exit.
  */
-/**
- * The api-retry banner's live countdown. Ticks the remaining-backoff
- * text via direct DOM mutation ([L22]/[L06]) — a `useLayoutEffect`
- * `setInterval` writes the span's `textContent` and never re-enters
- * React's render cycle. A new `api_retry` arrival changes `deadline`,
- * which re-runs the effect (re-ticks immediately + restarts the
- * interval); between arrivals there are zero React commits. The effect
- * is the only place a deadline becomes text, so the span starts empty
- * and is painted synchronously on mount before the browser draws.
- */
-function RetryCountdown({ deadline }: { deadline: number }): React.ReactElement {
-  const spanRef = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => {
-    const tick = (): void => {
-      const el = spanRef.current;
-      if (el !== null) {
-        el.textContent = formatRetryCountdown(deadline, Date.now());
-      }
-    };
-    tick();
-    const id = window.setInterval(tick, 500);
-    return () => window.clearInterval(id);
-  }, [deadline]);
-  return <span ref={spanRef} className="dev-card-retry-countdown" />;
-}
-
 function renderDevCardBanner(
   spec: ReturnType<typeof deriveDevCardBannerSpec>,
   setDismissedAt: (at: number) => void,
-  setUnknownDismissedAt: (at: number) => void,
 ): React.ReactElement {
-  if (spec.kind === "api-retry") {
-    // Claude's SDK is backing off and retrying; we only mirror it.
-    // Transient categories read as caution ("this'll clear"); likely-
-    // fatal categories read as danger ("this is going to die"). The
-    // countdown ticks via DOM, the static text re-renders only on a new
-    // attempt (deadline/attempt change) or on clear.
-    const isFatal = spec.severity === "likely-fatal";
-    // Transient: the category is the detail ("Retrying" leads).
-    // Likely-fatal: the category IS the headline; the message warns it
-    // probably won't recover.
-    const lead = isFatal
-      ? `retrying ${spec.attempt}/${spec.maxRetries}, may not recover · `
-      : `${spec.label} · attempt ${spec.attempt}/${spec.maxRetries} · `;
-    return (
-      <TugPaneBanner
-        visible={true}
-        variant="status"
-        tone={isFatal ? "danger" : "caution"}
-        iconSlot={<TugProgressIndicator variant="spinner" size={14} aria-hidden={true} />}
-        label={isFatal ? spec.label : "Retrying"}
-        message={
-          <>
-            {lead}
-            <RetryCountdown deadline={spec.deadline} />
-          </>
-        }
-      />
-    );
-  }
   if (spec.kind === "error") {
     return (
       <TugPaneBanner
@@ -2071,64 +2015,6 @@ function renderDevCardBanner(
       >
         <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
       </TugPaneBanner>
-    );
-  }
-  if (spec.kind === "transport") {
-    const isOffline = spec.state === "offline";
-    return (
-      <TugPaneBanner
-        visible={true}
-        variant="status"
-        tone="caution"
-        icon="unplug"
-        label={isOffline ? "Reconnecting" : "Restoring session"}
-        message={
-          isOffline
-            ? "Lost the connection to tugcast. Trying to reconnect…"
-            : "The connection is back. Re-acknowledging your session…"
-        }
-      />
-    );
-  }
-  if (spec.kind === "replay-timeout") {
-    // Caution tone + alert icon signals a soft failure. The banner
-    // dismisses on its own when `replayTimeoutDwellActive` flips
-    // false (REPLAY_TIMEOUT_DWELL_MS after the replay_complete that
-    // started the dwell).
-    return (
-      <TugPaneBanner
-        visible={true}
-        variant="status"
-        tone="caution"
-        icon="alert-triangle"
-        label="Session history unavailable"
-        message="Resuming with empty transcript"
-      />
-    );
-  }
-  if (spec.kind === "unknown-event") {
-    // Forward-compat soft warn: a newer claude streamed an event type this
-    // build doesn't understand. Low-key (caution tone), and dismissible —
-    // it's an FYI, not a failure. The session keeps working; we just
-    // couldn't render this one event.
-    return (
-      <TugPaneBanner
-        visible={true}
-        variant="status"
-        tone="caution"
-        minMountedMs={0}
-        icon="alert-triangle"
-        label="Unsupported event"
-        message={`This dev-card build doesn't understand event "${spec.originalType}" yet. The session is unaffected.`}
-        footer={
-          <TugPushButton
-            emphasis="outlined"
-            onClick={() => setUnknownDismissedAt(spec.at)}
-          >
-            Dismiss
-          </TugPushButton>
-        }
-      />
     );
   }
   // kind === "none" — banner runs its exit animation if it was
@@ -2255,11 +2141,7 @@ export function DevCardBody({
   // `useDevCardObserver` is about to clear the binding and route that
   // cause through the picker.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const [unknownDismissedAt, setUnknownDismissedAt] = useState<number | null>(null);
-  const bannerSpec = deriveDevCardBannerSpec(codeSnap, {
-    dismissedAt,
-    unknownDismissedAt,
-  });
+  const bannerSpec = deriveDevCardBannerSpec(codeSnap, { dismissedAt });
 
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
@@ -3412,12 +3294,21 @@ export function DevCardBody({
             data-slot="dev-card-top-column"
           >
             {/*
-              Pane-scoped bulletins (e.g. `/copy`'s confirmation) anchor to the
-              bottom of the transcript column — within the card, above the
-              prompt entry, and outside the scrolling transcript so they stay
-              pinned. `PaneBulletinAnchor` hands the bulletin API back up to the
-              card body's `/copy` handler. ([#step-13b1b])
+              Two pane-bulletin scopes share the top column as sibling Sonner
+              toasters (distinct `useId` ids). The OUTER provider anchors
+              top-right and carries transient interruption notices (retry,
+              transport, replay-timeout, unknown-event) driven by
+              `TransientNoticeController`; the INNER provider anchors bottom for
+              command confirmations (`/copy`). Nesting — not two roots — keeps
+              each consumer reading the right `PaneToasterIdContext`: the
+              controller sees the outer (top-right), `PaneBulletinAnchor` sees
+              the inner (bottom). [P02]
             */}
+            <TugPaneBulletinProvider
+              placement="top-right"
+              className="dev-card-notice-host"
+            >
+            <TransientNoticeController store={codeSessionStore} />
             <TugPaneBulletinProvider
               placement="bottom"
               className="dev-card-bulletin-host"
@@ -3437,6 +3328,7 @@ export function DevCardBody({
               renderTurnTrailing={effectiveRenderTurnTrailing}
             />
             <PaneBulletinAnchor ref={paneBulletinRef} />
+            </TugPaneBulletinProvider>
             </TugPaneBulletinProvider>
             <div
               className="dev-card-status-bar"
@@ -3651,7 +3543,7 @@ export function DevCardBody({
         false`; the component runs its exit animation and then
         unmounts via its internal `mounted` state.
       */}
-      {renderDevCardBanner(bannerSpec, setDismissedAt, setUnknownDismissedAt)}
+      {renderDevCardBanner(bannerSpec, setDismissedAt)}
       </div>
     </CardContentResponderScope>
   );

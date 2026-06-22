@@ -3361,6 +3361,99 @@ describe("api_retry events forwarded through transport", () => {
     expect((retries[0] as any).error_status).toBeNull();
     expect((retries[0] as any).retry_delay_ms).toBe(5000);
   });
+
+  test("model_refusal_fallback system events produce one IPC message", async () => {
+    const manager = new SessionManager("/tmp/tugcode-refusal-" + Date.now(), crypto.randomUUID());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-refusal",
+        cwd: "/proj", tools: [], model: "claude-fable-5",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      // The model declined; the SDK retries on a fallback model. Field names
+      // mirror the real JSONL audit shape (camelCase on the wire here).
+      {
+        type: "system", subtype: "model_refusal_fallback",
+        trigger: "refusal", direction: "retry",
+        originalModel: "claude-fable-5", fallbackModel: "claude-opus-4-8",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Done." } } },
+      { type: "result", subtype: "success", result: "Done." },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "hi" }] })
+    );
+
+    const fallbacks = ipcMessages.filter((m: any) => m.type === "model_refusal_fallback");
+    expect(fallbacks.length).toBe(1);
+    expect((fallbacks[0] as any).original_model).toBe("claude-fable-5");
+    expect((fallbacks[0] as any).fallback_model).toBe("claude-opus-4-8");
+    expect((fallbacks[0] as any).trigger).toBe("refusal");
+    expect((fallbacks[0] as any).direction).toBe("retry");
+  });
+
+  test("an assistant message closing on max_tokens emits one output_truncated", async () => {
+    const manager = new SessionManager("/tmp/tugcode-truncate-" + Date.now(), crypto.randomUUID());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-trunc",
+        cwd: "/proj", tools: [], model: "claude-opus-4-8",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "A long answer cut" } } },
+      // The assistant snapshot closes on max_tokens — truncated, not end_turn.
+      {
+        type: "assistant",
+        message: {
+          id: "msg_trunc", role: "assistant", model: "claude-opus-4-8",
+          content: [{ type: "text", text: "A long answer cut" }],
+          stop_reason: "max_tokens",
+        },
+      },
+      { type: "result", subtype: "success", result: "A long answer cut" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "write a lot" }] })
+    );
+
+    const truncs = ipcMessages.filter((m: any) => m.type === "output_truncated");
+    expect(truncs.length).toBe(1);
+  });
+
+  test("a clean end_turn message emits no output_truncated", async () => {
+    const manager = new SessionManager("/tmp/tugcode-notrunc-" + Date.now(), crypto.randomUUID());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-clean",
+        cwd: "/proj", tools: [], model: "claude-opus-4-8",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Done." } } },
+      {
+        type: "assistant",
+        message: {
+          id: "msg_clean", role: "assistant", model: "claude-opus-4-8",
+          content: [{ type: "text", text: "Done." }],
+          stop_reason: "end_turn",
+        },
+      },
+      { type: "result", subtype: "success", result: "Done." },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "hi" }] })
+    );
+
+    expect(ipcMessages.filter((m: any) => m.type === "output_truncated").length).toBe(0);
+  });
 });
 
 describe("protocol audit: §3e stream_event types", () => {

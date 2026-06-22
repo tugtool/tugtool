@@ -128,6 +128,8 @@ function snapshotWith(args: {
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,
+    refusalFallback: null,
+    outputTruncated: false,
     unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],

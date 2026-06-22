@@ -220,6 +220,12 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // Claude's SDK is backing off and retrying a retryable API failure.
   // Display-only: the reducer folds it into `apiRetry`, no phase change.
   "api_retry",
+  // A model declined and the SDK retried on a fallback model (non-fatal).
+  // Display-only: the reducer folds it into `refusalFallback`, no phase change.
+  "model_refusal_fallback",
+  // An assistant message closed on `max_tokens` — the output was truncated.
+  // Display-only: the reducer folds it into `outputTruncated`, no phase change.
+  "output_truncated",
   // Claude compacted its context (auto-compaction at capacity). The
   // reducer appends a compaction `system_note` to the active turn.
   "compact_boundary",
@@ -634,6 +640,13 @@ export class CodeSessionStore {
       // at turn boundaries, so the reference is `Object.is`-stable across
       // quiescent rebuilds ([L02]).
       apiRetry: this.state.apiRetry,
+      // Most recent model-refusal fallback (or null). Fresh object only on a
+      // `model_refusal_fallback` frame, cleared at turn boundary — reference
+      // stable across quiescent rebuilds ([L02]).
+      refusalFallback: this.state.refusalFallback,
+      // True when the latest turn's output was truncated at the token ceiling
+      // (`max_tokens`). Set per-turn, cleared at the boundary ([L02]).
+      outputTruncated: this.state.outputTruncated,
       // Most recent forward-incompatible `unknown_event` (or null). The
       // reducer assigns a fresh object only on an `unknown_event` frame,
       // so the reference is `Object.is`-stable across quiescent rebuilds
@@ -1476,6 +1489,21 @@ export class CodeSessionStore {
           errorStatus:
             typeof ev.error_status === "number" ? ev.error_status : null,
         } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "model_refusal_fallback") {
+        // Snake_case wire → camelCase reducer event. Display-only one-shot.
+        return {
+          type: "model_refusal_fallback",
+          originalModel:
+            typeof ev.original_model === "string" ? ev.original_model : "",
+          fallbackModel:
+            typeof ev.fallback_model === "string" ? ev.fallback_model : "",
+        } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "output_truncated") {
+        // No payload — the reducer flips a per-turn boolean. Drop the wire's
+        // `ipc_version` so the reducer event is clean.
+        return { type: "output_truncated" } as unknown as CodeSessionEvent;
       }
       if (ev.type === "compact_boundary") {
         // Normalize the wire's snake_case `pre_tokens` to the reducer

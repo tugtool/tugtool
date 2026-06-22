@@ -305,12 +305,12 @@ The normalizer extracts `status` (from `.status` / parsed from the string), `fam
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Pane bulletin: corner placement + stable-id post/dismiss | pending | — |
-| #step-2 | Error-classification normalization seam | pending | — |
-| #step-3 | Transient-notice controller + banner reservation | pending | — |
-| #step-4 | Bridge + surface: model_refusal_fallback | pending | — |
-| #step-5 | Bridge + surface: max_tokens truncation | pending | — |
-| #step-6 | Integration checkpoint (app-test) | pending | — |
+| #step-1 | Pane bulletin: corner placement + stable-id post/dismiss | done | 635c7f81d |
+| #step-2 | Error-classification normalization seam | done | 358ba32bf |
+| #step-3 | Transient-notice controller + banner reservation | done | 627ae513b |
+| #step-4 | Bridge + surface: model_refusal_fallback | done | d3a73556a |
+| #step-5 | Bridge + surface: max_tokens truncation | done | 72c7b8fa6 |
+| #step-6 | Integration checkpoint (app-test) | done | cbbbbc085 |
 
 #### Step 1: Pane bulletin — corner placement + stable-id post/dismiss {#step-1}
 

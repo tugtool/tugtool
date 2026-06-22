@@ -36,6 +36,8 @@ import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
   ApiRetryEvent,
+  ModelRefusalFallbackEvent,
+  OutputTruncatedEvent,
   CompactBoundaryEvent,
   UnknownEventEvent,
   MarkCompactionSeedActionEvent,
@@ -77,6 +79,7 @@ import type {
 import type {
   ActiveTurnSnapshot,
   ApiRetryState,
+  RefusalFallbackState,
   UnknownEventState,
   AssistantText,
   AssistantThinking,
@@ -436,6 +439,18 @@ export interface CodeSessionState {
    * `resetPerTurnTelemetry`, which every `turn_complete` path spreads).
    */
   apiRetry: ApiRetryState | null;
+  /**
+   * Most recent model-refusal fallback, or `null`. Set by
+   * `handleModelRefusalFallback`; cleared at the next turn boundary
+   * (`resetPerTurnTelemetry`), so each occurrence re-notifies.
+   */
+  refusalFallback: RefusalFallbackState | null;
+  /**
+   * True when the latest turn's output truncated at the token ceiling. Set by
+   * `handleOutputTruncated`; cleared at the next turn boundary
+   * (`resetPerTurnTelemetry`), so each truncated turn re-notifies.
+   */
+  outputTruncated: boolean;
   /**
    * The most recent forward-incompatible `unknown_event` tugcode
    * forwarded, or `null`. Set by `handleUnknownEvent`; not cleared at the
@@ -797,6 +812,8 @@ export function createInitialState(
     lastError: null,
     lastCost: null,
     apiRetry: null,
+    refusalFallback: null,
+    outputTruncated: false,
     unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],
@@ -2118,6 +2135,8 @@ function resetPerTurnTelemetry(): Pick<
   | "interruptInFlight"
   | "liveTurnUsage"
   | "apiRetry"
+  | "refusalFallback"
+  | "outputTruncated"
 > {
   return {
     awaitingApprovalSince: null,
@@ -2138,6 +2157,12 @@ function resetPerTurnTelemetry(): Pick<
     // ended, so the announcement is stale. Cleared on every turn_complete
     // path (each spreads this) and at wake start.
     apiRetry: null,
+    // Per-turn one-shot: cleared at the boundary so the next turn's refusal
+    // (even on the same models) re-notifies via a fresh null → set.
+    refusalFallback: null,
+    // Per-turn one-shot: cleared at the boundary so the next truncated turn
+    // re-notifies via a fresh false → true.
+    outputTruncated: false,
   };
 }
 
@@ -3176,6 +3201,36 @@ function handleApiRetry(
     errorStatus: event.errorStatus,
   };
   return { state: { ...state, apiRetry }, effects: [] };
+}
+
+/**
+ * `model_refusal_fallback` reducer handler — display-only, like {@link
+ * handleApiRetry}. Records the fallback on `refusalFallback` with no phase
+ * change; cleared at the next turn boundary (`resetPerTurnTelemetry`) so each
+ * occurrence re-notifies.
+ */
+function handleModelRefusalFallback(
+  state: CodeSessionState,
+  event: ModelRefusalFallbackEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const refusalFallback: RefusalFallbackState = {
+    originalModel: event.originalModel,
+    fallbackModel: event.fallbackModel,
+  };
+  return { state: { ...state, refusalFallback }, effects: [] };
+}
+
+/**
+ * `output_truncated` reducer handler — display-only, like {@link
+ * handleModelRefusalFallback}. Flips `outputTruncated` true; cleared at the
+ * next turn boundary (`resetPerTurnTelemetry`) so each truncated turn
+ * re-notifies.
+ */
+function handleOutputTruncated(
+  state: CodeSessionState,
+  _event: OutputTruncatedEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return { state: { ...state, outputTruncated: true }, effects: [] };
 }
 
 /**
@@ -4640,6 +4695,10 @@ export function reduce(
       return handleCostUpdate(state, event);
     case "api_retry":
       return handleApiRetry(state, event);
+    case "model_refusal_fallback":
+      return handleModelRefusalFallback(state, event);
+    case "output_truncated":
+      return handleOutputTruncated(state, event);
     case "compact_boundary":
       return handleCompactBoundary(state, event);
     case "unknown_event":

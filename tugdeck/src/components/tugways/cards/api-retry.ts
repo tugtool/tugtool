@@ -1,22 +1,20 @@
 /**
- * `api-retry` — pure presentation helpers for the dev-card retry banner.
+ * `api-retry` — pure classification for the dev-card retry notice.
  *
  * Claude Code's SDK retries retryable API failures itself (≤10 attempts,
  * exponential backoff) and announces each attempt on the stream as a
  * `system` event with `subtype: "api_retry"`. The dev card only *mirrors*
  * that announcement — it never decides to retry and never inspects status
- * codes on its own. These two pure functions turn the raw event fields
- * into the banner's presentation:
+ * codes on its own.
  *
- *  - {@link classifyApiRetry} maps the event's `error` category (with the
- *    nullable HTTP `error_status` as a secondary signal) to a human label
- *    plus a severity. The split matters: `rate_limit` / `overloaded` / 5xx
- *    will plausibly recover, but `authentication_failed` / `billing_error`
- *    / `permission_error` will exhaust all attempts and then fail. The
- *    banner varies tone + copy by severity so the user can tell "this'll
- *    clear" from "this is going to die".
- *  - {@link formatRetryCountdown} renders the backoff deadline as the
- *    short countdown string the banner ticks toward.
+ * {@link classifyApiRetry} maps the event's `error` category (with the
+ * nullable HTTP `error_status` as a secondary signal) to a human label plus
+ * a severity. The split matters: `rate_limit` / `overloaded` / 5xx /
+ * connection-level failures will plausibly recover, but
+ * `authentication_failed` / `billing_error` / `permission_error` will
+ * exhaust all attempts and then fail. The transient-notice surface varies
+ * tone + copy by severity so the user can tell "this'll clear" from "this is
+ * going to die".
  *
  * This module is DOM-free and fully unit-tested; it is the single seam
  * where a future claude error category is slotted in.
@@ -37,11 +35,43 @@ export interface ApiRetryClass {
 }
 
 /**
+ * Tokens that mark a transport/connection-level failure. The SDK's
+ * `api_retry.error` for these arrives as an unrecognized string with no HTTP
+ * status (a JSONL audit of real failures showed `ECONNRESET`,
+ * `FailedToOpenSocket`, `Connection error`, and timeout-without-status making
+ * up ~15% of retries — all of which previously fell through to the bare,
+ * alarming "API error"). Matched case-insensitively as substrings so a future
+ * variant ("ETIMEDOUT", "socket hang up", …) is caught without a code change.
+ */
+const NETWORK_ERROR_TOKENS = [
+  "econnreset",
+  "econnrefused",
+  "etimedout",
+  "enotfound",
+  "epipe",
+  "socket",
+  "connection",
+  "network",
+  "disconnect",
+  "reset",
+  "timed out",
+  "fetch failed",
+] as const;
+
+function isNetworkError(error: string): boolean {
+  const lower = error.toLowerCase();
+  return NETWORK_ERROR_TOKENS.some((token) => lower.includes(token));
+}
+
+/**
  * Classify an `api_retry` event's `error` category into a label +
  * severity. Keys on the category string; the nullable `errorStatus`
  * disambiguates an unrecognized category that still carries a 5xx
- * (server error → transient). Unknown categories default to
- * transient/"API error" — optimistic, because claude *is* retrying.
+ * (server error → transient). An unrecognized *network*-level failure
+ * (no status, connection/socket/timeout signature) reads as the calm,
+ * named "Connection lost" rather than the alarming generic. Anything
+ * still unknown defaults to transient/"API error" — optimistic, because
+ * claude *is* retrying.
  */
 export function classifyApiRetry(
   error: string,
@@ -66,18 +96,9 @@ export function classifyApiRetry(
       if (errorStatus !== null && errorStatus >= 500) {
         return { label: "Server error", severity: "transient" };
       }
+      if (errorStatus === null && isNetworkError(error)) {
+        return { label: "Connection lost", severity: "transient" };
+      }
       return { label: "API error", severity: "transient" };
   }
-}
-
-/**
- * Format the backoff `deadline` (epoch ms) relative to `now` (epoch ms)
- * as the short countdown the banner displays. Whole seconds, rounded up
- * so a sub-second remainder still reads as "1s"; "now" once the deadline
- * has passed (claude's next attempt is imminent).
- */
-export function formatRetryCountdown(deadline: number, now: number): string {
-  const remainingMs = deadline - now;
-  if (remainingMs <= 0) return "now";
-  return `${Math.ceil(remainingMs / 1000)}s`;
 }

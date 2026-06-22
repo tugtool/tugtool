@@ -487,6 +487,29 @@ export interface ApiRetryEvent {
 }
 
 /**
+ * `model_refusal_fallback` — a model declined and the SDK retried the turn on
+ * a fallback model (non-fatal recovery). Display-only, like {@link
+ * ApiRetryEvent}: the reducer folds it into `refusalFallback` (no phase
+ * change), cleared at the next turn boundary. Wire fields are snake_case
+ * (`original_model`, `fallback_model`), normalized to camelCase here.
+ */
+export interface ModelRefusalFallbackEvent {
+  type: "model_refusal_fallback";
+  originalModel: string;
+  fallbackModel: string;
+}
+
+/**
+ * `output_truncated` — an assistant message closed on `stop_reason:
+ * "max_tokens"`, hitting the output ceiling. Display-only: the reducer flips
+ * `outputTruncated` true (no phase change), cleared at the next turn boundary.
+ * Payload-free.
+ */
+export interface OutputTruncatedEvent {
+  type: "output_truncated";
+}
+
+/**
  * `compact_boundary` — claude compacted its context (in practice:
  * auto-compaction at capacity; a typed `/compact` is client-dispatched
  * and never reaches the bridge). Display-only: the reducer appends a
@@ -1075,6 +1098,8 @@ export type CodeSessionEvent =
   | StreamingUsageEvent
   | ContextBreakdownEvent
   | ApiRetryEvent
+  | ModelRefusalFallbackEvent
+  | OutputTruncatedEvent
   | CompactBoundaryEvent
   | UnknownEventEvent
   | WireErrorEvent

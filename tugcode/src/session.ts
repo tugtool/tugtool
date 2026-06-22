@@ -1089,6 +1089,24 @@ export function routeTopLevelEvent(
           error: (event.error as string) || "unknown",
           ipc_version: 2,
         });
+      } else if (subtype === "model_refusal_fallback") {
+        // The model declined and the SDK retried on a fallback model — a
+        // non-fatal recovery the dev card surfaces as a one-shot notice.
+        // Tolerate snake/camel field variants defensively.
+        messages.push({
+          type: "model_refusal_fallback",
+          original_model:
+            (event.originalModel as string) ??
+            (event.original_model as string) ??
+            "",
+          fallback_model:
+            (event.fallbackModel as string) ??
+            (event.fallback_model as string) ??
+            "",
+          trigger: (event.trigger as string) || "",
+          direction: (event.direction as string) || "",
+          ipc_version: 2,
+        });
       } else if (subtype === "task_started") {
         // Background-task lifecycle frames can fire mid-turn (the
         // launching tool call runs inside the turn; a fast job can
@@ -1134,6 +1152,15 @@ export function routeTopLevelEvent(
       const model = (message?.model as string) || "";
       const isSynthetic = model === "<synthetic>";
       const content = (message?.content as Array<Record<string, unknown>>) || [];
+
+      // A message that closed on `max_tokens` was cut off at the output
+      // ceiling, not a clean `end_turn`. Surface a one-shot notice so the
+      // truncation is visible rather than reading as a silent stop. (Live
+      // path only — replay has its own translator and shouldn't re-fire a
+      // past turn's truncation.)
+      if (message?.stop_reason === "max_tokens") {
+        messages.push({ type: "output_truncated", ipc_version: 2 });
+      }
 
       for (let blockIndex = 0; blockIndex < content.length; blockIndex++) {
         const block = content[blockIndex];

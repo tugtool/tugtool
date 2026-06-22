@@ -1,24 +1,25 @@
 /**
  * at0108-unknown-event-banner.test.ts — the dev card surfaces tugcode's
- * forward-compat `unknown_event` frame as a soft, dismissible warn banner
- * ([AT0108]).
+ * forward-compat `unknown_event` frame as a soft, dismissible bulletin (NOT a
+ * locking banner) ([AT0108]).
  *
  * ## Why this exists
  *
  * When claude streams a top-level event type this build doesn't translate,
  * tugcode's `routeTopLevelEvent` default branch emits an `unknown_event`
  * IPC frame (`original_type` + a hex payload preview) instead of silently
- * dropping it. The dev card folds that into `snapshot.unknownEvent` and
- * renders the lowest-precedence `TugPaneBanner` — a caution-tone status
- * strip with a Dismiss row, naming the untranslated event.
+ * dropping it. The dev card folds that into `snapshot.unknownEvent`. It is a
+ * forward-compat FYI — the session keeps working — so it is an
+ * acknowledge-sticky top-right bulletin (with an OK button), never a banner
+ * that locks the pane.
  *
- * The pure halves — the tugcode emit (session.test.ts), the reducer fold
- * (reducer.unknown-event.test.ts), and the precedence/dismiss derivation
- * (dev-card-banner-spec.test.ts) — are unit-tested. This drives the **live
- * surface** end to end: it injects the already-translated `unknown_event`
- * frame (as tugcode would emit it) through the store's real
- * `frameToEvent → dispatch` path (`driveDevSession`/`ingestFrame`) and
- * asserts the banner's tone, copy, dismiss, and at-keyed re-raise.
+ * The pure halves — the tugcode emit (session.test.ts), the reducer fold,
+ * and the projection (`transient-notice.test.ts`) — are unit-tested. This
+ * drives the **live surface** end to end: it injects the already-translated
+ * `unknown_event` frame through the store's real `frameToEvent → dispatch`
+ * path (`driveDevSession`/`ingestFrame`) and asserts the bulletin's tone,
+ * copy, that the pane stays interactive, OK-dismiss, and re-raise on a new
+ * type.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -32,12 +33,18 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const BANNER = '[data-slot="tug-pane-banner"]';
-const BANNER_MSG = `${BANNER} .tug-pane-banner-message`;
-const BANNER_LABEL = `${BANNER} .tug-pane-banner-label`;
-const DISMISS = `${BANNER} .tug-pane-banner-status-actions .tug-button`;
+const PANE_BODY = ".tug-pane-body";
+const BULLETIN = ".tug-pane-bulletin";
+const BULLETIN_TITLE = `${BULLETIN} [data-title]`;
+const BULLETIN_DESC = `${BULLETIN} [data-description]`;
+const BULLETIN_OK = `${BULLETIN} [data-button]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
 const TUG_SESSION_ID = "test-session-A"; // bindDevSession default
+
+/** True iff `.tug-pane-body` is NOT inert — i.e. the prompt is interactive. */
+const PANE_BODY_NOT_INERT = `(function(){var b=document.querySelector(${JSON.stringify(
+  PANE_BODY,
+)});return b!==null && !b.hasAttribute("inert");})()`;
 
 let projectDir = "";
 
@@ -85,10 +92,10 @@ function unknownEventFrame(originalType: string) {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0108: unknown_event banner — soft, dismissible, re-raising",
+  "AT0108: unknown_event bulletin — soft, non-blocking, dismissible, re-raising",
   () => {
     test(
-      "injected unknown_event shows a caution banner naming the type; Dismiss clears it; a new type re-raises",
+      "injected unknown_event shows a non-locking ack bulletin naming the type; OK clears it; a new type re-raises",
       async () => {
         const app = await launchTugApp({ testName: "at0108-unknown-event-banner" });
         try {
@@ -106,31 +113,35 @@ describe.skipIf(!SHOULD_RUN)(
           // ── inject a forward-incompatible event ──────────────────────
           await app.driveDevSession("A", unknownEventFrame("future_telemetry"));
 
-          // Banner mounts with caution tone.
+          // A bulletin mounts (caution tone = Sonner data-type="warning").
           await app.waitForCondition<boolean>(
-            `(function(){var b=document.querySelector(${JSON.stringify(BANNER)});return b!==null && b.getAttribute("data-tone")==="caution";})()`,
+            `(function(){var b=document.querySelector(${JSON.stringify(BULLETIN)});return b!==null && b.getAttribute("data-type")==="warning";})()`,
             { timeoutMs: 6000 },
           );
-          const label = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(BANNER_LABEL)})||{}).textContent || ""`,
-          );
-          expect(label).toBe("Unsupported event");
-          const msg = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(BANNER_MSG)})||{}).textContent || ""`,
-          );
-          expect(msg).toContain("future_telemetry");
+          expect(
+            await app.evalJS<string>(
+              `(document.querySelector(${JSON.stringify(BULLETIN_TITLE)})||{}).textContent || ""`,
+            ),
+          ).toBe("Unsupported event");
+          expect(
+            await app.evalJS<string>(
+              `(document.querySelector(${JSON.stringify(BULLETIN_DESC)})||{}).textContent || ""`,
+            ),
+          ).toContain("future_telemetry");
+          // It's an FYI, not breakage — the pane stays interactive.
+          expect(await app.evalJS<boolean>(PANE_BODY_NOT_INERT)).toBe(true);
 
-          // ── Dismiss clears it ────────────────────────────────────────
-          await app.click(DISMISS);
+          // ── the OK button (ack-sticky) clears it ─────────────────────
+          await app.click(BULLETIN_OK);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(BANNER)}) === null`,
+            `document.querySelector(${JSON.stringify(BULLETIN)}) === null`,
             { timeoutMs: 6000 },
           );
 
           // ── a different unknown type re-raises after the dismiss ──────
           await app.driveDevSession("A", unknownEventFrame("another_future_thing"));
           await app.waitForCondition<boolean>(
-            `(function(){var m=document.querySelector(${JSON.stringify(BANNER_MSG)});return m!==null && m.textContent.indexOf("another_future_thing")!==-1;})()`,
+            `(function(){var d=document.querySelector(${JSON.stringify(BULLETIN_DESC)});return d!==null && d.textContent.indexOf("another_future_thing")!==-1;})()`,
             { timeoutMs: 6000 },
           );
 

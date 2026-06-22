@@ -1,18 +1,17 @@
 /**
- * Unit tests for `deriveDevCardBannerSpec` — the pure precedence
- * helper that decides which banner kind the Dev card surfaces.
+ * Unit tests for `deriveDevCardBannerSpec` — the pure helper that decides
+ * whether the Dev card surfaces its (locking) breakage banner.
+ *
+ * The banner is reserved for genuine breakage: the helper returns only
+ * `error` or `none`. Every transient interruption (api-retry, transport,
+ * replay-timeout dwell, unknown-event) now routes to non-blocking top-right
+ * pane bulletins via `TransientNoticeController` — so a snapshot carrying
+ * those conditions, with no `lastError`, must produce `none` here. The last
+ * describe block pins that reservation.
  *
  * The helper is pure and synchronous, so each test crafts a minimal
- * `CodeSessionSnapshot` and asserts the returned spec. No render, no
- * real store. The precedence chain (error > transport > replay-timeout
- * > none) is exercised branch-by-branch, plus the dismissed-error
- * fall-through.
- *
- * The `replay-loading` kind was retired — the
- * cold-restore loading window is the `DevRestoring` placeholder, not
- * a banner, and this helper now runs only once the body is mounted.
- * The last describe block pins that retirement: a preflight-active or
- * `phase === "replaying"` snapshot no longer produces a banner.
+ * `CodeSessionSnapshot` and asserts the returned spec. No render, no real
+ * store.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -49,6 +48,8 @@ function baseSnap(
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,
+    refusalFallback: null,
+    outputTruncated: false,
     unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],
@@ -76,23 +77,19 @@ function baseSnap(
   };
 }
 
-describe("deriveDevCardBannerSpec — precedence chain", () => {
+describe("deriveDevCardBannerSpec — breakage only", () => {
   it("returns kind=none when nothing of interest is true", () => {
-    const spec = deriveDevCardBannerSpec(baseSnap(), { dismissedAt: null, unknownDismissedAt: null });
+    const spec = deriveDevCardBannerSpec(baseSnap(), { dismissedAt: null });
     expect(spec).toEqual({ kind: "none" } satisfies DevCardBannerSpec);
   });
 
-  it("error wins when lastError is set with a banner-routable cause", () => {
+  it("error surfaces when lastError is set with a banner-routable cause", () => {
     const at = 1_700_000_000_000;
     const spec = deriveDevCardBannerSpec(
       baseSnap({
-        lastError: {
-          cause: "session_state_errored",
-          message: "boom",
-          at,
-        },
+        lastError: { cause: "session_state_errored", message: "boom", at },
       }),
-      { dismissedAt: null, unknownDismissedAt: null },
+      { dismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "error",
@@ -102,49 +99,26 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
     });
   });
 
-  it("error wins over transport-state when both are present", () => {
+  it("error wins even when a transport blip is also present", () => {
     const at = 1_700_000_000_000;
     const spec = deriveDevCardBannerSpec(
       baseSnap({
-        lastError: {
-          cause: "transport_closed",
-          message: "transport closed",
-          at,
-        },
+        lastError: { cause: "transport_closed", message: "closed", at },
         transportState: "offline",
       }),
-      { dismissedAt: null, unknownDismissedAt: null },
+      { dismissedAt: null },
     );
     expect(spec.kind).toBe("error");
   });
 
-  it("dismissed error falls through; transport banner takes its place", () => {
+  it("a dismissed error falls through to none (transient blips don't banner)", () => {
     const at = 1_700_000_000_000;
     const spec = deriveDevCardBannerSpec(
       baseSnap({
-        lastError: {
-          cause: "session_state_errored",
-          message: "boom",
-          at,
-        },
+        lastError: { cause: "session_state_errored", message: "boom", at },
         transportState: "offline",
       }),
-      { dismissedAt: at, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "transport", state: "offline" });
-  });
-
-  it("dismissed error falls through to kind=none when no other condition fires", () => {
-    const at = 1_700_000_000_000;
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({
-        lastError: {
-          cause: "wire_error",
-          message: "boom",
-          at,
-        },
-      }),
-      { dismissedAt: at, unknownDismissedAt: null },
+      { dismissedAt: at },
     );
     expect(spec).toEqual({ kind: "none" });
   });
@@ -154,13 +128,9 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
     const newAt = dismissedAt + 1000;
     const spec = deriveDevCardBannerSpec(
       baseSnap({
-        lastError: {
-          cause: "wire_error",
-          message: "different boom",
-          at: newAt,
-        },
+        lastError: { cause: "wire_error", message: "different boom", at: newAt },
       }),
-      { dismissedAt, unknownDismissedAt: null },
+      { dismissedAt },
     );
     expect(spec.kind).toBe("error");
     if (spec.kind === "error") {
@@ -169,13 +139,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
     }
   });
 
-  it("attachment_rejected surfaces as an error banner — does NOT escalate to session-dead overlay (Step 3.5.1)", () => {
-    // Distinct from session_state_errored / wire_error: this cause is
-    // transient input-validation feedback (drop / paste of an
-    // unsupported file). The banner appears, the user reads it, the
-    // next successful turn clears it. The session-dead overlay
-    // (the "card can't reach its session" alert with the unplug icon)
-    // is suppressed by `sessionErrored` in `dev-card.tsx`.
+  it("attachment_rejected surfaces as an error banner", () => {
     const at = 1_700_000_000_500;
     const spec = deriveDevCardBannerSpec(
       baseSnap({
@@ -185,7 +149,7 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
           at,
         },
       }),
-      { dismissedAt: null, unknownDismissedAt: null },
+      { dismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "error",
@@ -204,246 +168,121 @@ describe("deriveDevCardBannerSpec — precedence chain", () => {
           at: 1_700_000_000_000,
         },
       }),
-      { dismissedAt: null, unknownDismissedAt: null },
+      { dismissedAt: null },
     );
     expect(spec.kind).toBe("none");
   });
-
-  it("transport offline surfaces the transport spec when no error is set", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ transportState: "offline" }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "transport", state: "offline" });
-  });
-
-  it("transport restoring surfaces the transport spec when no error is set", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ transportState: "restoring" }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "transport", state: "restoring" });
-  });
-
-  it("replay-timeout surfaces while the dwell window is active", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ replayTimeoutDwellActive: true }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "replay-timeout" });
-  });
-
-  it("error outranks an active replay-timeout dwell", () => {
-    const at = 1_700_000_000_000;
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({
-        replayTimeoutDwellActive: true,
-        lastError: { cause: "wire_error", message: "boom", at },
-      }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec.kind).toBe("error");
-  });
-
-  it("transport outranks an active replay-timeout dwell", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ replayTimeoutDwellActive: true, transportState: "offline" }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "transport", state: "offline" });
-  });
 });
 
-describe("deriveDevCardBannerSpec — api-retry", () => {
-  const retry = {
-    attempt: 3,
-    maxRetries: 10,
-    deadline: 1_700_000_010_000,
-    error: "rate_limit",
-    errorStatus: 429,
-  };
-
-  it("surfaces a classified api-retry spec when apiRetry is set", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ apiRetry: retry }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({
-      kind: "api-retry",
-      severity: "transient",
-      label: "Rate limited",
-      attempt: 3,
-      maxRetries: 10,
-      deadline: 1_700_000_010_000,
-    } satisfies DevCardBannerSpec);
-  });
-
-  it("classifies a likely-fatal category as fatal severity", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({
-        apiRetry: { ...retry, error: "authentication_failed", errorStatus: 401 },
+describe("deriveDevCardBannerSpec — transient conditions no longer banner", () => {
+  it("transport offline alone produces no banner (it's a bulletin now)", () => {
+    expect(
+      deriveDevCardBannerSpec(baseSnap({ transportState: "offline" }), {
+        dismissedAt: null,
       }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec.kind).toBe("api-retry");
-    if (spec.kind === "api-retry") {
-      expect(spec.severity).toBe("likely-fatal");
-      expect(spec.label).toBe("Authentication failed");
-    }
+    ).toEqual({ kind: "none" });
   });
 
-  it("a hard error outranks an api-retry", () => {
+  it("transport restoring alone produces no banner", () => {
+    expect(
+      deriveDevCardBannerSpec(baseSnap({ transportState: "restoring" }), {
+        dismissedAt: null,
+      }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("an active api-retry produces no banner", () => {
+    expect(
+      deriveDevCardBannerSpec(
+        baseSnap({
+          apiRetry: {
+            attempt: 3,
+            maxRetries: 10,
+            deadline: 1_700_000_010_000,
+            error: "rate_limit",
+            errorStatus: 429,
+          },
+        }),
+        { dismissedAt: null },
+      ),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("an active replay-timeout dwell produces no banner", () => {
+    expect(
+      deriveDevCardBannerSpec(baseSnap({ replayTimeoutDwellActive: true }), {
+        dismissedAt: null,
+      }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("an unknown-event produces no banner", () => {
+    expect(
+      deriveDevCardBannerSpec(
+        baseSnap({
+          unknownEvent: {
+            originalType: "future_telemetry",
+            payloadHexPreview: "7b7d",
+            at: 1_700_000_005_000,
+          },
+        }),
+        { dismissedAt: null },
+      ),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("a real error still wins over any concurrent transient condition", () => {
     const at = 1_700_000_000_000;
     const spec = deriveDevCardBannerSpec(
       baseSnap({
-        apiRetry: retry,
-        lastError: { cause: "wire_error", message: "boom", at },
-      }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec.kind).toBe("error");
-  });
-
-  it("api-retry outranks a transport blip and a replay-timeout dwell", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({
-        apiRetry: retry,
         transportState: "offline",
         replayTimeoutDwellActive: true,
-      }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec.kind).toBe("api-retry");
-  });
-
-  it("a dismissed error falls through to the api-retry banner", () => {
-    const at = 1_700_000_000_000;
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({
-        apiRetry: retry,
+        apiRetry: {
+          attempt: 1,
+          maxRetries: 10,
+          deadline: 1_700_000_010_000,
+          error: "overloaded",
+          errorStatus: 529,
+        },
         lastError: { cause: "wire_error", message: "boom", at },
       }),
-      { dismissedAt: at, unknownDismissedAt: null },
+      { dismissedAt: null },
     );
-    expect(spec.kind).toBe("api-retry");
-  });
-});
-
-describe("deriveDevCardBannerSpec — unknown-event", () => {
-  const unknown = {
-    originalType: "future_telemetry",
-    payloadHexPreview: "7b7d",
-    at: 1_700_000_005_000,
-  };
-
-  it("surfaces the unknown-event spec when nothing else is showing", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ unknownEvent: unknown }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({
-      kind: "unknown-event",
-      originalType: "future_telemetry",
-      at: 1_700_000_005_000,
-    } satisfies DevCardBannerSpec);
-  });
-
-  it("is the lowest precedence — a transport blip outranks it", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ unknownEvent: unknown, transportState: "offline" }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "transport", state: "offline" });
-  });
-
-  it("a replay-timeout dwell outranks it", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ unknownEvent: unknown, replayTimeoutDwellActive: true }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "replay-timeout" });
-  });
-
-  it("dismissing by at falls through to kind=none", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ unknownEvent: unknown }),
-      { dismissedAt: null, unknownDismissedAt: unknown.at },
-    );
-    expect(spec).toEqual({ kind: "none" });
-  });
-
-  it("a fresh unknown type (different at) re-raises after a dismiss", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({
-        unknownEvent: { ...unknown, originalType: "newer_thing", at: unknown.at + 1000 },
-      }),
-      { dismissedAt: null, unknownDismissedAt: unknown.at },
-    );
-    expect(spec.kind).toBe("unknown-event");
-    if (spec.kind === "unknown-event") {
-      expect(spec.originalType).toBe("newer_thing");
-    }
-  });
-
-  it("the unknown-event dismiss is independent of the error dismiss", () => {
-    // Dismissing an error (shared-looking ctx) must not suppress a
-    // later unknown-event notice — the two timestamps are tracked apart.
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ unknownEvent: unknown }),
-      { dismissedAt: unknown.at, unknownDismissedAt: null },
-    );
-    expect(spec.kind).toBe("unknown-event");
+    expect(spec.kind).toBe("error");
   });
 });
 
 /**
- * The `replay-loading` banner kind was retired. The
- * cold-restore loading window is now held by the `DevRestoring`
- * placeholder, and `deriveDevCardBannerSpec` runs only once
- * `DevCardBody` is mounted — after the restore has resolved. These
- * tests pin that the replay-window signals (`replayPreflightActive`,
- * `phase === "replaying"`) no longer produce a banner, and — the
- * inverse of the old precedence — no longer suppress an error or
- * transport banner either.
+ * The cold-restore loading window is the `DevRestoring` placeholder, not a
+ * banner; this helper runs only once the body is mounted. These pin that the
+ * replay-window signals never produce a banner and never suppress an error.
  */
-describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
+describe("deriveDevCardBannerSpec — replay-loading retired", () => {
   it("replayPreflightActive alone produces no banner", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ replayPreflightActive: true }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "none" });
+    expect(
+      deriveDevCardBannerSpec(baseSnap({ replayPreflightActive: true }), {
+        dismissedAt: null,
+      }),
+    ).toEqual({ kind: "none" });
   });
 
-  it("phase=replaying in resume mode produces no banner", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ phase: "replaying", sessionMode: "resume" }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "none" });
-  });
-
-  it("phase=replaying in new mode produces no banner", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ phase: "replaying", sessionMode: "new" }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "none" });
+  it("phase=replaying produces no banner", () => {
+    expect(
+      deriveDevCardBannerSpec(
+        baseSnap({ phase: "replaying", sessionMode: "resume" }),
+        { dismissedAt: null },
+      ),
+    ).toEqual({ kind: "none" });
   });
 
   it("preflight no longer masks an error — the error surfaces", () => {
-    // Old behavior: a preflight beat suppressed transient errors so a
-    // stale frame couldn't flash the banner. With the body now held
-    // unmounted across the whole cold-restore window, this helper
-    // never runs during preflight; if it somehow does, the error is
-    // shown rather than swallowed.
     const at = 1_700_000_000_000;
     const spec = deriveDevCardBannerSpec(
       baseSnap({
         replayPreflightActive: true,
         lastError: { cause: "session_state_errored", message: "boom", at },
       }),
-      { dismissedAt: null, unknownDismissedAt: null },
+      { dismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "error",
@@ -451,13 +290,5 @@ describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
       message: "boom",
       at,
     });
-  });
-
-  it("preflight no longer masks a transport blip — the transport banner surfaces", () => {
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({ replayPreflightActive: true, transportState: "offline" }),
-      { dismissedAt: null, unknownDismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "transport", state: "offline" });
   });
 });

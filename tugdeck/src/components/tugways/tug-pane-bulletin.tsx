@@ -35,6 +35,13 @@ import { Toaster, toast } from "sonner";
 
 /** Options for a pane bulletin — mirrors the deck `BulletinOptions`. */
 export interface PaneBulletinOptions {
+  /**
+   * Stable id. A repeat call with the same id updates the existing bulletin
+   * in place (text, tone, options) instead of stacking a second one, and
+   * lets {@link TugPaneBulletinApi.dismiss} target it. Sonner keys toasts by
+   * id; omit for fire-and-forget notices that need no later update.
+   */
+  id?: string;
   description?: string;
   /** Auto-dismiss delay in ms (Sonner default when omitted). */
   duration?: number;
@@ -53,11 +60,17 @@ export interface PaneBulletinOptions {
   okLabel?: string;
 }
 
-function mapOptions(
+/**
+ * Pure mapping from `PaneBulletinOptions` to the Sonner `toast` options bag.
+ * Exported for unit testing the option seam (id threading, sticky lifecycle)
+ * without a mounted Toaster — the toast *behavior* is covered by app-tests.
+ */
+export function mapOptions(
   toasterId: string,
   options?: PaneBulletinOptions,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { toasterId };
+  if (options?.id !== undefined) result.id = options.id;
   if (options?.description !== undefined) result.description = options.description;
   if (options?.sticky === true) {
     // Persist-until-dismissed: never auto-dismiss, and render an OK button
@@ -87,6 +100,8 @@ export interface TugPaneBulletinApi {
   success: (message: string, options?: PaneBulletinOptions) => void;
   danger: (message: string, options?: PaneBulletinOptions) => void;
   caution: (message: string, options?: PaneBulletinOptions) => void;
+  /** Dismiss a bulletin previously raised with `options.id`. */
+  dismiss: (id: string) => void;
 }
 
 /** The per-pane Sonner toaster id, provided by {@link TugPaneBulletinProvider}. */
@@ -96,9 +111,22 @@ const PaneToasterIdContext = createContext<string | null>(null);
  * Provider
  * ---------------------------------------------------------------------------*/
 
+/**
+ * Where the bulletin stack anchors within the pane. `"top"` / `"bottom"` are
+ * the centered defaults; the four corners anchor a stack that should stay out
+ * of the content's way (e.g. top-right for transient interruption notices).
+ */
+export type PaneBulletinPlacement =
+  | "top"
+  | "bottom"
+  | "top-right"
+  | "top-left"
+  | "bottom-right"
+  | "bottom-left";
+
 export interface TugPaneBulletinProviderProps {
   /** Where the stack anchors within the pane. @default "bottom" */
-  placement?: "top" | "bottom";
+  placement?: PaneBulletinPlacement;
   /** Merged onto the relative root (e.g. `flex: 1` sizing from a host card). */
   className?: string;
   /** Merged onto the relative root. */
@@ -132,7 +160,13 @@ export function TugPaneBulletinProvider({
         {children}
         <Toaster
           id={toasterId}
-          position={placement === "top" ? "top-center" : "bottom-center"}
+          position={
+            placement === "top"
+              ? "top-center"
+              : placement === "bottom"
+                ? "bottom-center"
+                : placement
+          }
           toastOptions={{ className: "tug-pane-bulletin", unstyled: true }}
           gap={8}
         />
@@ -169,6 +203,7 @@ export function useTugPaneBulletin(): TugPaneBulletinApi {
       void toast.error(message, mapOptions(toasterId, options));
     fn.caution = (message, options) =>
       void toast.warning(message, mapOptions(toasterId, options));
+    fn.dismiss = (id) => void toast.dismiss(id);
     return fn;
   }, [toasterId]);
 }

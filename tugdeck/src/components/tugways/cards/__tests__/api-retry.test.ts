@@ -1,15 +1,11 @@
 /**
- * Unit tests for the pure `api-retry` presentation helpers —
- * `classifyApiRetry` (category → label + severity taxonomy) and
- * `formatRetryCountdown` (deadline → countdown string).
+ * Unit tests for the pure `api-retry` classifier — `classifyApiRetry`
+ * (category + nullable HTTP status → label + severity taxonomy).
  */
 
 import { describe, it, expect } from "bun:test";
 
-import {
-  classifyApiRetry,
-  formatRetryCountdown,
-} from "@/components/tugways/cards/api-retry";
+import { classifyApiRetry } from "@/components/tugways/cards/api-retry";
 
 describe("classifyApiRetry — category taxonomy", () => {
   it("maps transient categories to caution-grade severity", () => {
@@ -53,7 +49,32 @@ describe("classifyApiRetry — category taxonomy", () => {
     });
   });
 
-  it("falls back to API error/transient for an unrecognized non-5xx", () => {
+  it("names a no-status network failure rather than the bare generic", () => {
+    // Real shapes lifted from the on-disk JSONL audit — all arrive with no
+    // HTTP status and previously rendered the alarming bare "API error".
+    for (const error of [
+      "ECONNRESET",
+      "FailedToOpenSocket",
+      "Connection error.",
+      "Request timed out.",
+      "socket hang up",
+    ]) {
+      expect(classifyApiRetry(error, null)).toEqual({
+        label: "Connection lost",
+        severity: "transient",
+      });
+    }
+  });
+
+  it("does not mistake a status-bearing failure for a network error", () => {
+    // A 5xx wins even if its category string mentions a connection.
+    expect(classifyApiRetry("connection reset upstream", 503)).toEqual({
+      label: "Server error",
+      severity: "transient",
+    });
+  });
+
+  it("falls back to API error/transient for a non-network unknown", () => {
     expect(classifyApiRetry("mystery", null)).toEqual({
       label: "API error",
       severity: "transient",
@@ -63,17 +84,9 @@ describe("classifyApiRetry — category taxonomy", () => {
       severity: "transient",
     });
   });
-});
 
-describe("formatRetryCountdown", () => {
-  it("rounds up remaining time to whole seconds", () => {
-    expect(formatRetryCountdown(10_000, 1_500)).toBe("9s");
-    expect(formatRetryCountdown(10_000, 9_001)).toBe("1s");
-    expect(formatRetryCountdown(10_000, 10_000 - 1)).toBe("1s");
-  });
-
-  it("shows 'now' once the deadline has passed", () => {
-    expect(formatRetryCountdown(10_000, 10_000)).toBe("now");
-    expect(formatRetryCountdown(10_000, 12_000)).toBe("now");
+  it("never throws on an empty or odd error string", () => {
+    expect(() => classifyApiRetry("", null)).not.toThrow();
+    expect(classifyApiRetry("", null).label).toBe("API error");
   });
 });

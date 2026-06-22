@@ -159,6 +159,20 @@
   overflow: hidden;
 }
 
+/* Outer bulletin scope wrapping the bottom host — its `.tug-pane-bulletin-root`
+   (position: relative) is the positioning context for the TOP-RIGHT transient
+   notice toaster (retry/transport/replay/unknown). Carries the same flex-column
+   layout so the inner host (and the transcript) still grow. No `overflow:
+   hidden`: the notice toaster anchors to this root's top-right corner and must
+   not be clipped. */
+.dev-card-notice-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
 /* Z0 — top-of-card content slot. Content-sized; empty by default.
    No padding or background so the empty state takes zero visual
    space. Consumers fill it with whatever (typed) display content

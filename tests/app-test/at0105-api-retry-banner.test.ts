@@ -1,21 +1,26 @@
 /**
- * at0105-api-retry-banner.test.ts — the dev card surfaces claude's
- * `api_retry` backoff as a card banner, classified by error category,
- * with a live countdown, and clears it at the next turn boundary
- * ([AT0105]).
+ * at0105-api-retry-banner.test.ts — claude's `api_retry` backoff surfaces as
+ * a NON-blocking top-right pane bulletin, not a card-locking banner ([AT0105]).
  *
  * ## Why this exists
  *
  * Claude's SDK retries retryable API failures itself and announces each
- * attempt as a `system`/`api_retry` event. Tugcode forwards it; the dev
- * card mirrors it as a `TugPaneBanner` (never decides to retry). The pure
- * halves — `classifyApiRetry`, `formatRetryCountdown`,
- * `deriveDevCardBannerSpec`, and the reducer clear — are unit-tested. This
- * drives the **live surface** end to end without a real (rare) API
- * failure: it injects synthetic `api_retry` frames through the store's
- * real `frameToEvent → dispatch` path (`driveDevSession`/`ingestFrame`)
- * and asserts the banner's tone, copy, ticking countdown, and that a
- * `cost_update` clears it.
+ * attempt as a `system`/`api_retry` event. A retry is a self-healing
+ * *notification*, not breakage — it must never lock the card. The old
+ * behavior mirrored it into a `TugPaneBanner`, which sets `inert` on
+ * `.tug-pane-body` (transcript + prompt), so the user couldn't type during a
+ * benign retry. Now it routes to a `TransientNoticeController`-driven bulletin
+ * in the card's top-right corner; the banner is reserved for genuine `error`
+ * breakage.
+ *
+ * The pure halves (`classifyApiRetry`, `projectNotices`, `reconcileNotices`,
+ * `deriveDevCardBannerSpec`) are unit-tested. This drives the **live surface**
+ * end to end without a real (rare) API failure: it injects synthetic frames
+ * through the store's real `frameToEvent → dispatch` path
+ * (`driveDevSession`/`ingestFrame`) and asserts (1) the pane body is never
+ * `inert`, (2) a bulletin shows with the classified label + live attempt
+ * count, (3) a new attempt updates it in place, (4) a likely-fatal category
+ * escalates tone, and (5) a `cost_update` (turn boundary) dismisses it.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -29,11 +34,11 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const CARD = '[data-card-id="A"]';
+const PANE_BODY = ".tug-pane-body";
 const BANNER = '[data-slot="tug-pane-banner"]';
-const BANNER_MSG = `${BANNER} .tug-pane-banner-message`;
-const BANNER_LABEL = `${BANNER} .tug-pane-banner-label`;
-const COUNTDOWN = `${BANNER} .dev-card-retry-countdown`;
+const BULLETIN = ".tug-pane-bulletin";
+const BULLETIN_TITLE = `${BULLETIN} [data-title]`;
+const BULLETIN_DESC = `${BULLETIN} [data-description]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
 const TUG_SESSION_ID = "test-session-A"; // bindDevSession default
 
@@ -86,11 +91,16 @@ function apiRetryFrame(fields: {
   };
 }
 
+/** True iff `.tug-pane-body` is NOT inert — i.e. the prompt is interactive. */
+const PANE_BODY_NOT_INERT = `(function(){var b=document.querySelector(${JSON.stringify(
+  PANE_BODY,
+)});return b!==null && !b.hasAttribute("inert");})()`;
+
 describe.skipIf(!SHOULD_RUN)(
-  "AT0105: api_retry banner — classified, ticking, self-clearing",
+  "AT0105: api_retry surfaces a non-blocking bulletin, never a locking banner",
   () => {
     test(
-      "transient retry shows caution banner + countdown; fatal shows danger; cost_update clears",
+      "retry shows a live bulletin, leaves the prompt interactive, escalates on fatal, and clears at the turn boundary",
       async () => {
         const app = await launchTugApp({ testName: "at0105-api-retry-banner" });
         try {
@@ -98,16 +108,15 @@ describe.skipIf(!SHOULD_RUN)(
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
-            // Generous: a cold single-file run pays the tugdeck Vite
-            // first-compile cost, which can exceed the 10s default.
             { timeoutMs: 30_000 },
           );
           await app.bindDevSession("A", { projectDir });
-          // Generous: the cold-compile penalty (above) also delays the
-          // first engine-ready signal on a single-file run.
           await app.awaitEngineReady("A", { timeoutMs: 30_000 });
 
-          // ── transient category (rate_limit) ──────────────────────────
+          // Baseline: the pane body is interactive before any retry.
+          expect(await app.evalJS<boolean>(PANE_BODY_NOT_INERT)).toBe(true);
+
+          // ── transient category (rate_limit), attempt 3 ───────────────
           await app.driveDevSession(
             "A",
             apiRetryFrame({
@@ -119,28 +128,59 @@ describe.skipIf(!SHOULD_RUN)(
             }),
           );
 
-          // Banner mounts with caution tone.
+          // A bulletin mounts with caution tone (Sonner data-type="warning").
           await app.waitForCondition<boolean>(
-            `(function(){var b=document.querySelector(${JSON.stringify(BANNER)});return b!==null && b.getAttribute("data-tone")==="caution";})()`,
+            `(function(){var b=document.querySelector(${JSON.stringify(BULLETIN)});return b!==null && b.getAttribute("data-type")==="warning";})()`,
             { timeoutMs: 6000 },
           );
-          // Message carries the classified label + attempt count.
-          const msg = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(BANNER_MSG)})||{}).textContent || ""`,
-          );
-          expect(msg).toContain("Rate limited");
-          expect(msg).toContain("attempt 3/10");
-          // The countdown span ticks a whole-seconds value (or "now").
-          const countdown = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(COUNTDOWN)})||{}).textContent || ""`,
-          );
-          expect(countdown).toMatch(/^(\d+s|now)$/);
+          // The classified label is the title; the live attempt count is the
+          // description — no frozen countdown.
+          expect(
+            await app.evalJS<string>(
+              `(document.querySelector(${JSON.stringify(BULLETIN_TITLE)})||{}).textContent || ""`,
+            ),
+          ).toContain("Rate limited");
+          expect(
+            await app.evalJS<string>(
+              `(document.querySelector(${JSON.stringify(BULLETIN_DESC)})||{}).textContent || ""`,
+            ),
+          ).toContain("attempt 3 of 10");
 
-          // ── likely-fatal category (authentication_failed) ────────────
+          // CRITICAL: the card is NOT locked — no banner, pane body interactive.
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(BANNER)}) === null || document.querySelector(${JSON.stringify(BANNER)}).getAttribute("data-visible") !== "true"`,
+            ),
+          ).toBe(true);
+          expect(await app.evalJS<boolean>(PANE_BODY_NOT_INERT)).toBe(true);
+
+          // ── a fresh attempt updates the SAME bulletin in place ───────
           await app.driveDevSession(
             "A",
             apiRetryFrame({
               attempt: 4,
+              max_retries: 10,
+              retry_delay_ms: 7000,
+              error: "rate_limit",
+              error_status: 429,
+            }),
+          );
+          await app.waitForCondition<boolean>(
+            `((document.querySelector(${JSON.stringify(BULLETIN_DESC)})||{}).textContent||"").indexOf("attempt 4 of 10") !== -1`,
+            { timeoutMs: 6000 },
+          );
+          // Still exactly one bulletin (updated, not stacked).
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(BULLETIN)}).length`,
+            ),
+          ).toBe(1);
+
+          // ── likely-fatal category escalates tone to danger ──────────
+          await app.driveDevSession(
+            "A",
+            apiRetryFrame({
+              attempt: 5,
               max_retries: 10,
               retry_delay_ms: 6000,
               error: "authentication_failed",
@@ -148,19 +188,18 @@ describe.skipIf(!SHOULD_RUN)(
             }),
           );
           await app.waitForCondition<boolean>(
-            `(function(){var b=document.querySelector(${JSON.stringify(BANNER)});return b!==null && b.getAttribute("data-tone")==="danger";})()`,
+            `(function(){var b=document.querySelector(${JSON.stringify(BULLETIN)});return b!==null && b.getAttribute("data-type")==="error";})()`,
             { timeoutMs: 6000 },
           );
-          const fatalLabel = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(BANNER_LABEL)})||{}).textContent || ""`,
-          );
-          expect(fatalLabel).toBe("Authentication failed");
-          const fatalMsg = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(BANNER_MSG)})||{}).textContent || ""`,
-          );
-          expect(fatalMsg).toContain("may not recover");
+          expect(
+            await app.evalJS<string>(
+              `(document.querySelector(${JSON.stringify(BULLETIN_TITLE)})||{}).textContent || ""`,
+            ),
+          ).toContain("Authentication failed");
+          // Even a likely-fatal retry does not lock the card.
+          expect(await app.evalJS<boolean>(PANE_BODY_NOT_INERT)).toBe(true);
 
-          // ── a cost_update lands → banner clears ──────────────────────
+          // ── a cost_update lands (turn boundary) → bulletin dismissed ─
           await app.driveDevSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
@@ -170,10 +209,8 @@ describe.skipIf(!SHOULD_RUN)(
               total_cost_usd: 0.01,
             },
           });
-          // The banner runs its exit animation (min-mount + slide) then
-          // unmounts; wait for it to be gone.
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(BANNER)}) === null`,
+            `document.querySelector(${JSON.stringify(BULLETIN)}) === null`,
             { timeoutMs: 6000 },
           );
 

@@ -723,6 +723,33 @@ export interface ApiRetry {
 }
 
 /**
+ * Model-refusal fallback. Claude Code's SDK retried a turn on a *different*
+ * model after the originally-selected one declined (a non-fatal recovery —
+ * `trigger: "refusal"`, `direction: "retry"`, e.g. `claude-fable-5` →
+ * `claude-opus-4-8`). Display-only: the dev card surfaces it as a one-shot
+ * notice so the silent model swap is visible.
+ */
+export interface ModelRefusalFallback {
+  type: "model_refusal_fallback";
+  original_model: string;
+  fallback_model: string;
+  trigger: string;
+  direction: string;
+  ipc_version: number;
+}
+
+/**
+ * Output truncation. An assistant message closed with `stop_reason:
+ * "max_tokens"` — the response hit the output-token ceiling and was cut off,
+ * not a clean `end_turn`. Display-only: the dev card surfaces it as a one-shot
+ * notice so a truncated turn doesn't read as a silent stop.
+ */
+export interface OutputTruncated {
+  type: "output_truncated";
+  ipc_version: number;
+}
+
+/**
  * Subscription-quota status broadcast emitted by Claude Code 2.1.x at the
  * start of every turn (post-`system/init`, pre-stream). Distinct from
  * {@link ApiRetry}, which fires on backoff-retryable HTTP failures.
@@ -1192,6 +1219,8 @@ export type OutboundMessage =
   | CompactBoundary
   | ContextBreakdown
   | ApiRetry
+  | ModelRefusalFallback
+  | OutputTruncated
   | RateLimitEvent
   | ToolUseStructured
   | ControlRequestCancel

@@ -3,46 +3,30 @@
  * `CodeSessionSnapshot` plus a small UI-local context (the dismissed
  * error timestamp). The body renders **one** banner whose props
  * are computed by mapping the spec's discriminated kind to
- * `TugPaneBanner` props — the precedence chain in this helper is the
- * single source of truth for "which banner surface is showing".
+ * `TugPaneBanner` props.
  *
- * Precedence (highest first):
+ * The banner is reserved for genuine **breakage** — only the `error`
+ * kind. It is the one surface allowed to lock the card (it sets `inert`
+ * on the pane body), which is the right cost for a session that can't be
+ * reached and needs an explicit dismiss.
  *
- *   1. **error** — `lastError` is set, the cause is banner-routable
- *      (i.e. not `resume_failed`), and the error has not been
- *      user-dismissed by `at` timestamp.
- *   2. **transport** — `transportState !== "online"`. Covers
- *      idle-offline (and, defensively, restoring; the gate already
- *      routes restoring to a backdrop, so this branch is a no-op
- *      in production).
- *   3. **replay-timeout** — the most recent replay completed with a
- *      `replay_timeout` outcome and the dwell window (1.5s) is still
- *      active. Surfaces the failure copy briefly before dismissing.
- *   4. **none** — no banner.
- *
- * **Retired.** This helper once carried a
- * `replay-loading` kind — a "Loading session…" strip shown during the
- * cold-boot preflight beat and the `phase === "replaying"` window. It
- * is gone: the restore-reveal coordination of D.2.A routes the whole
- * cold-restore window to the centered `DevRestoring` placeholder and
- * holds `DevCardBody` unmounted until `replay_complete`, so a
- * replay-window banner had no surface to mount on and nothing left to
- * communicate. The placeholder, delay-gated, is the single loading
- * affordance. The `error` / `transport` / `replay-timeout` kinds stay
- * — those are genuine outcomes shown on the mounted body after the
- * restore resolves.
+ * Every *transient*, self-healing interruption — API retries, transport
+ * blips, the replay-timeout dwell, and forward-compat unknown events —
+ * was once a `status`-variant banner here, but a banner locks the prompt
+ * for a notice that doesn't warrant it. Those now route to non-blocking
+ * top-right pane bulletins (`transient-notice.ts` +
+ * `TransientNoticeController`), driven directly off the store. So this
+ * helper is down to two outcomes: `error` or `none`.
  *
  * Why a separate module: the helper is pure, takes a snapshot, and
  * returns a discriminated union. Testing it in isolation
- * (`dev-card-banner-spec.test.ts`) verifies the precedence chain
- * branch-by-branch without spinning up a real card render. The body
- * does the spec → `TugPaneBanner` props mapping inline since that's
- * a presentational concern best read alongside the JSX that consumes
- * it.
+ * (`dev-card-banner-spec.test.ts`) verifies the branch without spinning
+ * up a real card render. The body does the spec → `TugPaneBanner` props
+ * mapping inline since that's a presentational concern best read
+ * alongside the JSX that consumes it.
  */
 
 import type { CodeSessionSnapshot } from "@/lib/code-session-store";
-import { classifyApiRetry, type ApiRetrySeverity } from "./api-retry";
 
 /**
  * Subset of `LastErrorCause` that the card banner-routes. The full
@@ -69,66 +53,29 @@ export type DevCardBannerSpec =
        * error (different `at`) re-raises naturally.
        */
       at: number;
-    }
-  | {
-      /**
-       * Claude's SDK is backing off on a retryable API failure. The
-       * category is already classified (via `classifyApiRetry`) into a
-       * `label` + `severity` so the renderer picks tone + copy without
-       * re-classifying. `deadline` is epoch-ms for the countdown.
-       */
-      kind: "api-retry";
-      severity: ApiRetrySeverity;
-      label: string;
-      attempt: number;
-      maxRetries: number;
-      deadline: number;
-    }
-  | {
-      kind: "transport";
-      state: "offline" | "restoring";
-    }
-  | { kind: "replay-timeout" }
-  | {
-      /**
-       * tugcode forwarded an `unknown_event` — claude streamed a top-level
-       * event type this build doesn't translate. The lowest-precedence,
-       * forward-compat soft warn; dismissible by `at` (a fresh unknown type
-       * re-raises). `originalType` names the untranslated event in the copy.
-       */
-      kind: "unknown-event";
-      originalType: string;
-      at: number;
     };
 
 /**
  * UI-local context the helper needs in addition to the snapshot.
- * `dismissedAt` is the `at` of the last-dismissed error;
- * `unknownDismissedAt` is the same for the unknown-event notice (tracked
- * separately so dismissing one surface never suppresses the other). Future
- * fields stay in this object so the helper signature doesn't churn each
- * time we surface a new transient banner state.
+ * `dismissedAt` is the `at` of the last-dismissed error: a Dismiss click
+ * stamps it, suppressing that exact error until a fresh one (different
+ * `at`) arrives.
  */
 export interface DevCardBannerCtx {
   dismissedAt: number | null;
-  unknownDismissedAt: number | null;
 }
 
 /**
- * Pure derivation. Mutually exclusive by construction:
- * - error wins when present and not dismissed
- * - api-retry wins next — it is mid-turn, the wire is still online, and
- *   it should outrank a transient transport blip / replay dwell
- * - transport wins when no error is showing and the wire is not online
- * - replay-timeout wins when the most-recent replay timed out and the
- *   dwell window is still active
- * - unknown-event is the lowest-precedence surface: a forward-compat FYI
- *   shown only when nothing more urgent is, and only until dismissed
- * - none otherwise
+ * Pure derivation. The banner shows only genuine breakage:
+ * - `error` when `lastError` is set, banner-routable (not `resume_failed`),
+ *   and not user-dismissed
+ * - `none` otherwise
  *
- * The cold-restore loading window is NOT a banner — it is the
- * `DevRestoring` placeholder; this helper runs only once
- * `DevCardBody` is mounted, i.e. after the restore has resolved.
+ * Transient interruptions (retry / transport / replay-timeout dwell /
+ * unknown-event) are NOT banners — they route to top-right pane bulletins
+ * via `TransientNoticeController`. The cold-restore loading window is the
+ * `DevRestoring` placeholder; this helper runs only once `DevCardBody` is
+ * mounted, i.e. after the restore has resolved.
  */
 export function deriveDevCardBannerSpec(
   snap: CodeSessionSnapshot,
@@ -144,33 +91,6 @@ export function deriveDevCardBannerSpec(
       cause: snap.lastError.cause as BannerErrorCause,
       message: snap.lastError.message,
       at: snap.lastError.at,
-    };
-  }
-  if (snap.apiRetry !== null) {
-    const cls = classifyApiRetry(snap.apiRetry.error, snap.apiRetry.errorStatus);
-    return {
-      kind: "api-retry",
-      severity: cls.severity,
-      label: cls.label,
-      attempt: snap.apiRetry.attempt,
-      maxRetries: snap.apiRetry.maxRetries,
-      deadline: snap.apiRetry.deadline,
-    };
-  }
-  if (snap.transportState !== "online") {
-    return { kind: "transport", state: snap.transportState };
-  }
-  if (snap.replayTimeoutDwellActive) {
-    return { kind: "replay-timeout" };
-  }
-  if (
-    snap.unknownEvent !== null &&
-    snap.unknownEvent.at !== ctx.unknownDismissedAt
-  ) {
-    return {
-      kind: "unknown-event",
-      originalType: snap.unknownEvent.originalType,
-      at: snap.unknownEvent.at,
     };
   }
   return { kind: "none" };

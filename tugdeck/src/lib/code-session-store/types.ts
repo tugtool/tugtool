@@ -484,6 +484,16 @@ export interface ApiRetryState {
 }
 
 /**
+ * A model declined a turn and the SDK retried on a fallback model (non-fatal).
+ * Set from a `model_refusal_fallback` frame and cleared at the next turn
+ * boundary; the transient-notice surface shows it as a one-shot bulletin.
+ */
+export interface RefusalFallbackState {
+  originalModel: string;
+  fallbackModel: string;
+}
+
+/**
  * The most recent `unknown_event` tugcode forwarded — claude streamed a
  * top-level event type this build doesn't translate. Drives a soft warn
  * banner so a forward-incompatible stream is visible rather than silently
@@ -813,6 +823,18 @@ export interface CodeSessionSnapshot {
    * The dev-card banner derives its tone + countdown from this.
    */
   apiRetry: ApiRetryState | null;
+  /**
+   * Most recent model-refusal fallback, or `null`. Set from a
+   * `model_refusal_fallback` frame and cleared at the next turn boundary;
+   * the transient-notice surface shows it as a one-shot bulletin.
+   */
+  refusalFallback: RefusalFallbackState | null;
+  /**
+   * True when the latest turn's output was truncated at the token ceiling
+   * (`stop_reason: "max_tokens"`). Set per-turn, cleared at the boundary; the
+   * transient-notice surface shows it as a one-shot bulletin.
+   */
+  outputTruncated: boolean;
   /**
    * The most recent forward-incompatible `unknown_event`, or `null` when
    * none has arrived. Drives the lowest-precedence soft warn banner;
