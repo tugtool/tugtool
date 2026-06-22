@@ -274,6 +274,7 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   caution,
   depth = 0,
   childToolCallsByParent,
+  turnInterrupted = false,
 }) => {
   const agentInput = React.useMemo(() => narrowAgentInput(input), [input]);
   const structured = React.useMemo(
@@ -350,6 +351,7 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
         data={transcriptData}
         depth={depth}
         childToolCallsByParent={childToolCallsByParent}
+        turnInterrupted={turnInterrupted}
         embedded
         className="task-tool-block-transcript"
         componentStatePreservationKey={`${toolUseId}-body`}

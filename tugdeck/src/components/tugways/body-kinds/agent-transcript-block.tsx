@@ -144,6 +144,17 @@ export interface AgentTranscriptBlockProps {
   childToolCallsByParent?: ChildToolCallsMap;
 
   /**
+   * True when the host turn was stopped while still in flight ([D03]).
+   * Threaded onto each `tool_use` entry's nested `dispatchToolCallState`
+   * so a subagent child still `pending` at the stop reads `interrupted`
+   * rather than a stuck `in_flight` dot. `undefined` outside a live
+   * transcript (gallery / standalone).
+   *
+   * @default false
+   */
+  turnInterrupted?: boolean;
+
+  /**
    * Optional identity label shown at the leading edge of the
    * standalone header. Ignored in `embedded` mode — the host owns
    * identity there.
@@ -303,6 +314,8 @@ interface AgentEntryViewProps {
   depth: number;
   /** Subagent-nesting map, threaded on to nested dispatch ([#step-17-5]). */
   childToolCallsByParent: ChildToolCallsMap | undefined;
+  /** Host turn stopped mid-run — flips a still-pending child to `interrupted` ([D03]). */
+  turnInterrupted: boolean;
 }
 
 /**
@@ -316,6 +329,7 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
   entry,
   depth,
   childToolCallsByParent,
+  turnInterrupted,
 }) => {
   if (entry.kind === "text") {
     return (
@@ -332,6 +346,9 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
     entry.toolCall,
     depth + 1,
     childToolCallsByParent,
+    undefined,
+    false,
+    turnInterrupted,
   );
   return (
     <div
@@ -353,6 +370,7 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   depth = 0,
   maxDepth = AGENT_MAX_DEPTH,
   childToolCallsByParent,
+  turnInterrupted = false,
   label,
   embedded = false,
   className,
@@ -547,6 +565,7 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
               entry={entry}
               depth={depth}
               childToolCallsByParent={childToolCallsByParent}
+              turnInterrupted={turnInterrupted}
             />
           ))}
         </div>

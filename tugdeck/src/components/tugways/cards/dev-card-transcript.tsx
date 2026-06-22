@@ -576,6 +576,14 @@ interface CodeRowBodyProps {
    * Live only — a committed turn never has a pending dialog.
    */
   awaitingToolUseId?: string;
+  /**
+   * True when this turn committed with a non-`complete` end reason
+   * (the user pressed Stop, or the turn errored / lost transport
+   * mid-run). Any tool call still `pending` at that point never got a
+   * result, so its lifecycle dot must read `interrupted` rather than
+   * stay stuck `in_flight` ([D03]). Threaded into `dispatchToolCallState`.
+   */
+  turnInterrupted?: boolean;
 }
 
 const CodeRowBody: React.FC<CodeRowBodyProps> = ({
@@ -584,6 +592,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   streamingStore,
   session,
   awaitingToolUseId,
+  turnInterrupted = false,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
   // `parentToolUseId` ([#step-17-5]). Subagent children render
@@ -668,6 +677,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       childrenByParent,
       session,
       awaiting,
+      turnInterrupted,
     );
     // EVERY tool block is collapsible — the header's whole-block chevron
     // is the single fold and the header owns Copy in both states, so a
@@ -963,6 +973,15 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                     pendingApproval?.tool_use_id ??
                     pendingQuestion?.tool_use_id ??
                     undefined
+                  }
+                  turnInterrupted={
+                    // A committed turn that didn't end `complete` (Stop,
+                    // error, transport-lost) left any still-`pending` tool
+                    // call without a result — its dot must read
+                    // `interrupted`, not stay stuck `in_flight` ([D03]).
+                    // The in-flight row (`turn === undefined`) is never
+                    // interrupted: it's genuinely still running.
+                    turn !== undefined && turn.turnEndReason !== "complete"
                   }
                 />
                 {permissionSlot}

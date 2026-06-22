@@ -965,6 +965,7 @@ export function dispatchToolCallState(
   childToolCallsByParent?: ChildToolCallsMap,
   session?: CodeSessionStore,
   awaiting = false,
+  turnInterrupted = false,
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
@@ -985,11 +986,21 @@ export function dispatchToolCallState(
   // caller's to supply — the transcript view id-joins the live
   // snapshot's `pendingApproval` / `pendingQuestion` `tool_use_id`
   // against this call and passes the result here ([Q01], #step-6).
-  // `interrupted` comes from a generic structured-result flag (bash and
-  // any tool that carries it).
+  //
+  // The interruption signal has two sources, per `ToolCallPhaseInput`:
+  // a generic structured-result flag (bash and any tool that surfaces
+  // `interrupted: true` when killed mid-run), OR the turn itself being
+  // stopped while this call was still in flight. The latter is the
+  // caller's to supply (`turnInterrupted`) and applies only to a call
+  // that never finished (`status === "pending"`): a turn that commits
+  // non-`complete` leaves its still-running tools without a result, so
+  // their dot must read `interrupted`, not stay stuck `in_flight`. A
+  // call that already reached `done` / `error` keeps its own terminal.
   const phase = deriveToolCallPhase({
     status: toolCall.status,
-    interrupted: extractInterrupted(toolCall.structuredResult),
+    interrupted:
+      extractInterrupted(toolCall.structuredResult) ||
+      (turnInterrupted && toolCall.status === "pending"),
     awaiting,
   });
 
@@ -1006,6 +1017,11 @@ export function dispatchToolCallState(
     depth,
     childToolCallsByParent,
     session,
+    // Forwarded so a recursing wrapper (`TaskToolBlock` →
+    // `AgentTranscriptBlock`) can carry the turn-stopped signal down to
+    // its subagent children's own `dispatchToolCallState`, so their
+    // pending dots flip to `interrupted` too ([D17]).
+    turnInterrupted,
   };
 
   // Hidden tools ([D101]) short-circuit ahead of drift detection and

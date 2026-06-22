@@ -343,6 +343,47 @@ describe("dispatchToolCallState — phase", () => {
     ).props as { phase: string };
     expect(props.phase).toBe("in_flight");
   });
+
+  it("turnInterrupted flips a still-pending call from in_flight to interrupted", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "pending" }),
+      0,
+      undefined,
+      undefined,
+      false,
+      true,
+    ).props as { phase: string; turnInterrupted?: boolean };
+    expect(props.phase).toBe("interrupted");
+    // Forwarded on the props so a recursing wrapper can carry it down.
+    expect(props.turnInterrupted).toBe(true);
+  });
+
+  it("turnInterrupted leaves an already-done call as success", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "done" }),
+      0,
+      undefined,
+      undefined,
+      false,
+      true,
+    ).props as { phase: string };
+    expect(props.phase).toBe("success");
+  });
+
+  it("turnInterrupted leaves an errored call as error", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "error" }),
+      0,
+      undefined,
+      undefined,
+      false,
+      true,
+    ).props as { phase: string };
+    expect(props.phase).toBe("error");
+  });
 });
 
 // ---------------------------------------------------------------------------

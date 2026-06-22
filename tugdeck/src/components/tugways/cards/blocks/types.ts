@@ -179,6 +179,16 @@ export interface ToolBlockProps<TInput = unknown, TStructured = unknown> {
    */
   childToolCallsByParent?: ChildToolCallsMap;
   /**
+   * True when this call's turn was stopped (committed non-`complete`)
+   * while the call was still in flight ([D03]). The dispatch already
+   * folds it into `phase` for this block; it rides on the props only so
+   * a recursing wrapper (`TaskToolBlock`) can forward it to its subagent
+   * children's own `dispatchToolCallState`, so their pending dots flip
+   * to `interrupted` instead of staying stuck `in_flight`. Non-recursing
+   * wrappers ignore it.
+   */
+  turnInterrupted?: boolean;
+  /**
    * Optional `CodeSessionStore` handle. Threaded by the transcript
    * view through `dispatchToolCallState` for wrappers that need to
    * round-trip something *outside* the normal tool channel — today
