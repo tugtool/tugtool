@@ -28,6 +28,22 @@
   cursor: default;
 }
 
+/* Read-only display chip (a derived / output color) — no hover, no pointer, and a
+   trailing lock glyph + dashed border so it reads as not-editable. */
+.tug-color-well-readonly {
+  cursor: default;
+  border-style: dashed;
+  padding-right: 6px;
+}
+.tug-color-well-readonly:hover {
+  border-color: var(--tug7-element-field-border-normal-plain-rest);
+}
+
+.tug-color-well-lock {
+  flex: 0 0 auto;
+  color: var(--tug7-element-global-icon-normal-muted-rest);
+}
+
 /* Swatch sits over a light/dark checkerboard so alpha < 100 reads as translucent. */
 .tug-color-well-swatch {
   position: relative;

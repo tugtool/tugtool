@@ -57,6 +57,13 @@ export interface TugColorAdjustmentProps {
   baseSenderId?: string;
   baseLabel?: string;
   disabled?: boolean;
+  /**
+   * Author the editable base well + delta steppers into a focus group ([P02]),
+   * starting at {@link focusOrderBase}: base well = base, iΔ = base+1, tΔ = base+2,
+   * aΔ = base+3. Only meaningful with `baseSenderId`.
+   */
+  focusGroup?: string;
+  focusOrderBase?: number;
 }
 
 export function TugColorAdjustment({
@@ -68,39 +75,45 @@ export function TugColorAdjustment({
   baseSenderId,
   baseLabel,
   disabled = false,
+  focusGroup,
+  focusOrderBase = 0,
 }: TugColorAdjustmentProps): React.ReactElement {
   const autoId = useId();
   const ids = colorAdjustSenders(senderId ?? autoId);
   const result = applyColorDelta(base, value);
 
+  // Input chip → delta steppers → output chip. When an editable base is wanted
+  // (baseSenderId), both ends are full TugColorWells (an editable input, a
+  // read-only output); otherwise they are compact swatches.
   return (
     <div data-slot="tug-color-adjustment" className={cn("tug-color-adjustment")}>
       {label && <span className="tug-color-adjustment-label">{label}</span>}
-      <span className="tug-color-adjustment-preview">
-        {baseSenderId ? (
-          <TugColorWell value={base} senderId={baseSenderId} label={baseLabel ?? label} size="sm" showText={false} disabled={disabled} />
-        ) : (
-          <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
-        )}
-        <span className="tug-color-adjustment-arrow" aria-hidden>→</span>
-        <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(result) } as React.CSSProperties} />
-      </span>
+      {baseSenderId ? (
+        <TugColorWell value={base} senderId={baseSenderId} label={baseLabel ?? label} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase} />
+      ) : (
+        <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
+      )}
       <span className="tug-color-adjustment-deltas">
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">iΔ</span>
-          <TugValueInput value={value.iDelta} senderId={ids.i} min={-100} max={100} step={1} size="sm" disabled={disabled} />
+          <TugValueInput value={value.iDelta} senderId={ids.i} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
         </label>
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">tΔ</span>
-          <TugValueInput value={value.tDelta} senderId={ids.t} min={-100} max={100} step={1} size="sm" disabled={disabled} />
+          <TugValueInput value={value.tDelta} senderId={ids.t} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
         </label>
         {showAlpha && (
           <label className="tug-color-adjustment-delta">
             <span className="tug-color-adjustment-delta-tag">aΔ</span>
-            <TugValueInput value={value.aDelta} senderId={ids.a} min={-100} max={100} step={1} size="sm" disabled={disabled} />
+            <TugValueInput value={value.aDelta} senderId={ids.a} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
           </label>
         )}
       </span>
+      {baseSenderId ? (
+        <TugColorWell value={result} size="sm" readOnly />
+      ) : (
+        <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(result) } as React.CSSProperties} />
+      )}
     </div>
   );
 }

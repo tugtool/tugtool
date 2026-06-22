@@ -286,44 +286,11 @@
   font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
-/* Sliders keep their standalone fractional width (the 400px inline cap); a
-   uniform per-slider `valueWidth` aligns every value box on its right edge. */
-
-/* Dark-theme title-bar note — replaces the title-bar i/t sliders for dark themes
-   (which don't carry the Key-hued title-bar treatment). Shows the theme's real,
-   fixed title-bar surface so the editor reflects what the app actually paints. */
-.gcd-titlebar-fixed-note {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* Inline "not tunable here" note (e.g. a dark theme's fixed title bar when its
+   color can't be expressed as a TugColor chip). */
+.gcd-control-note {
   font-size: var(--tug-font-size-xs);
-  line-height: var(--tug-line-height-normal);
   color: var(--tug7-element-global-text-normal-muted-rest);
-}
-.gcd-titlebar-fixed-swatch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.gcd-titlebar-fixed-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 1.5rem;
-  border-radius: var(--tug-radius-sm);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  font-size: var(--tug-font-size-2xs);
-  font-weight: 600;
-  /* Live theme tokens — the chip tracks the active theme with no JS read, so it
-     can never lag behind a theme switch. */
-  background: var(--tug7-surface-card-primary-normal-titlebar-active);
-  color: var(--tug7-element-card-text-normal-title-active);
-}
-.gcd-titlebar-fixed-value {
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--tug-font-size-2xs);
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 .gcd-actions {
   display: flex;

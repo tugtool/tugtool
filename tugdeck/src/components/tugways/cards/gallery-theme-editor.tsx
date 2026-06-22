@@ -35,9 +35,9 @@
  *  - [L19] gallery-card authoring; registered in gallery-registrations.tsx.
  */
 
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, oklchToTugColor } from "@/components/tugways/palette-engine";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import {
@@ -56,6 +56,10 @@ import { setActiveColorTarget, updateActiveColorValue } from "@/components/tugwa
 import type { TugColorSpec } from "@/components/tugways/tug-color-spec";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
+import { useFocusManager } from "@/components/tugways/use-focusable";
+import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
+import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
+import { CardIdContext } from "@/lib/card-id-context";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { getThemeGetter } from "@/action-dispatch";
@@ -167,6 +171,19 @@ const angle = (hue: string): string => {
   const a = HUE_FAMILIES[hue];
   return a === undefined ? "" : `${a}°`;
 };
+
+/** Map a resolved oklch(...) string back to a TugColor spec for display (never
+ *  show raw oklch in the editor). Returns null if it can't be expressed. */
+function specFromOklch(oklch: string | null | undefined): TugColorSpec | null {
+  if (!oklch) return null;
+  try {
+    const { hue, intensity, tone } = oklchToTugColor(oklch);
+    if (!hue) return null;
+    return { hue, i: intensity, t: tone, a: 100 };
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // List data source (real TugListView — genuine selection fill + caret)
@@ -414,6 +431,39 @@ export function GalleryThemeEditor(): React.ReactElement {
   const keyDelta = colorAdjustSenders(keyAdjId);
   const accDelta = colorAdjustSenders(accAdjId);
 
+  // ---- Focus language ([P02]/[P22]/[P23]) ----
+  // The whole card is one focus group: the Key/Accent base wells + delta steppers
+  // (orders 0–5), the treatment wells (6–9), Apply (10), and the board's
+  // interactive controls (11–14). A flat vertical spatial order makes every arrow
+  // move the ring (no dead-arrow beep — inputs/item-groups own their own arrows,
+  // leaf wells/buttons seam between rows). The key view seeds onto the Key well.
+  const FG = useId();
+  const focusManager = useFocusManager();
+  const cardId = useContext(CardIdContext);
+
+  // Title-bar well is order 6 only on light themes (dark shows a read-only chip).
+  const orders = [0, 1, 2, 3, 4, 5, ...(isDark ? [] : [6]), 7, 8, 9, 10, 11, 12, 13, 14];
+  const spatialOrder = useMemo<SpatialOrder>(
+    () => rowGridOrder(orders.map((o) => [`${FG}:${o}`])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [FG, isDark],
+  );
+  useSpatialOrder(spatialOrder);
+
+  const seededFocusRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusManager) return;
+    const focusKey = `${FG}:0`;
+    const arm = (): void => {
+      if (seededFocusRef.current) return;
+      if (cardId !== null && focusManager.keyCard() !== cardId) return;
+      seededFocusRef.current = true;
+      focusManager.contextFor(cardId).armKeyboardRestore(focusKey);
+    };
+    arm();
+    return focusManager.subscribe(arm);
+  }, [focusManager, cardId, FG]);
+
   const { ResponderScope, responderRef } = useResponder({
     id: responderId,
     actions: {
@@ -533,6 +583,8 @@ export function GalleryThemeEditor(): React.ReactElement {
                 baseSenderId={keyWellId}
                 baseLabel="Key hue"
                 showAlpha={false}
+                focusGroup={FG}
+                focusOrderBase={0}
               />
             </div>
             <div className="gcd-control-row">
@@ -544,40 +596,40 @@ export function GalleryThemeEditor(): React.ReactElement {
                 baseSenderId={accWellId}
                 baseLabel="Accent hue"
                 showAlpha={false}
+                focusGroup={FG}
+                focusOrderBase={3}
               />
             </div>
 
             <div className="gcd-group-label">Treatments (off the Key hue)</div>
             {isDark ? (
-              <div className="gcd-titlebar-fixed-note">
-                Title bar: dark themes use a fixed title-bar treatment (not the Key
-                hue) — shown below, not tunable here.
-                <span className="gcd-titlebar-fixed-swatch">
-                  {/* Chip paints the title-bar tokens live in CSS, so it tracks
-                      the theme with zero lag. The text value is read separately. */}
-                  <span className="gcd-titlebar-fixed-chip">Aa</span>
-                  {titlebarFixed && (
-                    <span className="gcd-titlebar-fixed-value">{titlebarFixed.bg}</span>
-                  )}
-                </span>
+              <div className="gcd-control-row">
+                <span className="gcd-control-label">Title bar</span>
+                {/* Dark themes carry a fixed (non-Key) title bar — show it as a
+                    read-only TugColor chip, never raw oklch. */}
+                {specFromOklch(titlebarFixed?.bg) ? (
+                  <TugColorWell readOnly value={specFromOklch(titlebarFixed?.bg)!} label="Title bar (theme-fixed)" />
+                ) : (
+                  <span className="gcd-control-note">theme-fixed (dark)</span>
+                )}
               </div>
             ) : (
               <div className="gcd-control-row">
                 <span className="gcd-control-label">Title bar</span>
-                <TugColorWell senderId={titlebarWellId} label="Title bar" value={{ hue: seed.keyHue, i: seed.titlebar.i, t: seed.titlebar.t, a: 100 }} />
+                <TugColorWell senderId={titlebarWellId} label="Title bar" value={{ hue: seed.keyHue, i: seed.titlebar.i, t: seed.titlebar.t, a: 100 }} focusGroup={FG} focusOrder={6} />
               </div>
             )}
             <div className="gcd-control-row">
               <span className="gcd-control-label">Filled</span>
-              <TugColorWell senderId={filledWellId} label="Filled" value={{ hue: seed.keyHue, i: seed.filled.i, t: seed.filled.t, a: 100 }} />
+              <TugColorWell senderId={filledWellId} label="Filled" value={{ hue: seed.keyHue, i: seed.filled.i, t: seed.filled.t, a: 100 }} focusGroup={FG} focusOrder={7} />
             </div>
             <div className="gcd-control-row">
               <span className="gcd-control-label">Tinted</span>
-              <TugColorWell senderId={tintedWellId} label="Tinted" value={{ hue: seed.keyHue, i: seed.tinted.i, t: seed.tinted.t, a: seed.tinted.a }} />
+              <TugColorWell senderId={tintedWellId} label="Tinted" value={{ hue: seed.keyHue, i: seed.tinted.i, t: seed.tinted.t, a: seed.tinted.a }} focusGroup={FG} focusOrder={8} />
             </div>
             <div className="gcd-control-row">
               <span className="gcd-control-label">Text selection</span>
-              <TugColorWell senderId={textselWellId} label="Text selection" value={{ hue: seed.keyHue, i: seed.textsel.i, t: seed.textsel.t, a: seed.textsel.a }} />
+              <TugColorWell senderId={textselWellId} label="Text selection" value={{ hue: seed.keyHue, i: seed.textsel.i, t: seed.textsel.t, a: seed.textsel.a }} focusGroup={FG} focusOrder={9} />
             </div>
           </div>
 
@@ -588,6 +640,8 @@ export function GalleryThemeEditor(): React.ReactElement {
               size="xs"
               disabled={applying}
               onClick={onApply}
+              focusGroup={FG}
+              focusOrder={10}
             >
               {applying ? "Applying…" : "Apply to active theme"}
             </TugPushButton>
@@ -642,6 +696,8 @@ export function GalleryThemeEditor(): React.ReactElement {
                   inline
                   scrollKey="gcd-list"
                   selectionRequired
+                  focusGroup={FG}
+                  focusOrder={14}
                 />
               </div>
             </div>
@@ -650,20 +706,22 @@ export function GalleryThemeEditor(): React.ReactElement {
                 solid-red filled danger, matching the app's destructive buttons). */}
             <div className="gcd-composite">
               <div className="gcd-composite-title">Filled button · tinted button + tinted badge (should match) · danger</div>
+              {/* Preview-only buttons — registered into the group as `skip` so they
+                  don't strand native Tab, but stay out of the normal Tab loop. */}
               <div className="gcd-row">
-                <TugPushButton emphasis="filled" role="action" onClick={() => {}}>
+                <TugPushButton emphasis="filled" role="action" onClick={() => {}} focusGroup={FG} focusPolicy="skip">
                   Submit
                 </TugPushButton>
-                <TugPushButton emphasis="tinted" role="action" onClick={() => {}}>
+                <TugPushButton emphasis="tinted" role="action" onClick={() => {}} focusGroup={FG} focusPolicy="skip">
                   Mode
                 </TugPushButton>
                 <TugBadge emphasis="tinted" role="action" size="lg" layout="label-top" label="Model">
                   Opus 4.8
                 </TugBadge>
-                <TugPushButton emphasis="filled" role="danger" onClick={() => {}}>
+                <TugPushButton emphasis="filled" role="danger" onClick={() => {}} focusGroup={FG} focusPolicy="skip">
                   Delete
                 </TugPushButton>
-                <TugPushButton emphasis="outlined" role="accent" onClick={() => {}}>
+                <TugPushButton emphasis="outlined" role="accent" onClick={() => {}} focusGroup={FG} focusPolicy="skip">
                   Accent affordance
                 </TugPushButton>
               </div>
@@ -673,15 +731,17 @@ export function GalleryThemeEditor(): React.ReactElement {
             <div className="gcd-composite">
               <div className="gcd-composite-title">Selection controls — "on" follows Key</div>
               <div className="gcd-row">
-                <TugRadioGroup value={radioValue} senderId={radioId} aria-label="Duet radio">
+                <TugRadioGroup value={radioValue} senderId={radioId} aria-label="Duet radio" focusGroup={FG} focusOrder={11}>
                   <TugRadioItem value="on">On</TugRadioItem>
                   <TugRadioItem value="off">Off</TugRadioItem>
                 </TugRadioGroup>
-                <TugCheckbox defaultChecked label="Enabled" />
+                <TugCheckbox defaultChecked label="Enabled" focusGroup={FG} focusOrder={12} />
                 <TugChoiceGroup
                   value={choiceValue}
                   senderId={choiceId}
                   aria-label="Duet choice"
+                  focusGroup={FG}
+                  focusOrder={13}
                   items={[
                     { value: "grid", label: "Grid" },
                     { value: "list", label: "List" },
@@ -696,7 +756,7 @@ export function GalleryThemeEditor(): React.ReactElement {
               <div className="gcd-composite-title">Text selection + link (Key)</div>
               <p className="gcd-text-sample">
                 Select this sentence to see the Key text-selection wash, and note the{" "}
-                <a className="gcd-link" href="#" onClick={(e) => e.preventDefault()}>
+                <a className="gcd-link" href="#" tabIndex={-1} onClick={(e) => e.preventDefault()}>
                   navigational link
                 </a>{" "}
                 which also follows Key.

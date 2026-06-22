@@ -49,6 +49,8 @@ import type { TugFormatter } from "@/lib/tug-format";
 import { clamp, validateNumericInput } from "@/lib/tug-validate";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useControlDispatch } from "./use-control-dispatch";
+import { useFocusable } from "./use-focusable";
+import type { FocusPolicy } from "./focus-manager";
 import { useTextInputResponder } from "./use-text-input-responder";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useComponentStatePreservation } from "./use-component-state-preservation";
@@ -113,6 +115,16 @@ export interface TugValueInputProps
    * captures the same axis on a parent-scope key.
    */
   componentStatePreservationKey?: string;
+
+  // ---- Focus engine ([P02]) ----
+  /** Author this input into a focus group so Tab reaches it ([P02]). When set,
+   *  the input registers as a Tab stop; arrows step the value (the input owns
+   *  them natively, so the spatial plane yields). */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0. */
+  focusOrder?: number;
+  /** Walk policy when registered: `accept` (default) or `skip`. */
+  focusPolicy?: FocusPolicy;
 }
 
 /** Serialized shape of `TugValueInput`'s preserved state. */
@@ -380,12 +392,23 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       style,
       onContextMenu,
       componentStatePreservationKey,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
       ...rest
     },
     ref,
   ) {
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
+    const autoFocusableId = useId();
+    const { focusableRef } = useFocusable({
+      id: autoFocusableId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: !effectiveDisabled && focusGroup !== undefined,
+    });
 
     // ---- Chain dispatch [L11] ----
     //
@@ -443,10 +466,20 @@ export const TugValueInput = React.forwardRef<HTMLInputElement, TugValueInputPro
       onContextMenu,
     });
 
+    // Compose the chain/forwarded ref with the focus-engine ref so the input is
+    // both a responder element and an authored Tab stop.
+    const setInputRef = useCallback(
+      (el: HTMLInputElement | null) => {
+        composedRef(el);
+        focusableRef(el);
+      },
+      [composedRef, focusableRef],
+    );
+
     return (
       <>
         <input
-          ref={composedRef}
+          ref={setInputRef}
           type="text"
           data-slot="tug-value-input"
           className={buildInputClassName(size, className)}
