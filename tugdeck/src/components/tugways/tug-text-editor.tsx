@@ -138,8 +138,10 @@ import {
 } from "./tug-text-editor/atom-decoration";
 import {
   argumentHintPlugin,
+  argumentHintRefreshFacet,
   argumentHintResolverFacet,
   argumentHintTheme,
+  type ArgumentHintRefreshSource,
   type ArgumentHintResolver,
 } from "./tug-text-editor/argument-hint-extension";
 import {
@@ -549,6 +551,15 @@ export interface TugTextEditorProps
    */
   argumentHintResolver?: ArgumentHintResolver;
   /**
+   * Store-like source the argument-hint plugin subscribes to so a slot
+   * recomputes when its backing catalog lands *after* the command was accepted
+   * (the catalog arrives asynchronously; without this the generic slot would
+   * freeze instead of upgrading to the explicit hint). The host passes its
+   * `SessionMetadataStore`. Omitted (gallery / standalone, static catalog) ⇒
+   * the plugin never subscribes and only reacts to edits.
+   */
+  argumentHintRefresh?: ArgumentHintRefreshSource;
+  /**
    * Resolver mapping a mid-text `/query` to the full command name it should
    * complete to (the muted inline ghost), or `null` for no completion. The
    * host builds this from its live command catalog; read live so the catalog
@@ -902,6 +913,7 @@ function buildExtensions(
   getDropHandler: () => DropHandler | null,
   getBytesStore: () => AtomBytesStore | null,
   getArgumentHintResolver: () => ArgumentHintResolver,
+  getArgumentHintRefresh: () => ArgumentHintRefreshSource | null,
   getInlineCommandMatcher: () => InlineCommandMatcher,
   onAttachmentError: (message: string) => void,
   initial: {
@@ -1051,6 +1063,7 @@ function buildExtensions(
     // command atom (`/devise ┆ type arguments…`). No-op when no resolver is
     // registered (gallery / standalone). [L06] appearance-only widget.
     argumentHintResolverFacet.of(getArgumentHintResolver),
+    argumentHintRefreshFacet.of(getArgumentHintRefresh),
     argumentHintPlugin,
     argumentHintTheme,
     // Mid-text slash-command inline ghost completion — paints the muted
@@ -1105,6 +1118,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       historyProvider,
       completionProviders,
       argumentHintResolver,
+      argumentHintRefresh,
       inlineCommandMatcher,
       completionDirection = "down",
       onTypeaheadChange,
@@ -1348,6 +1362,16 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       argumentHintResolverRef.current = argumentHintResolver ?? (() => null);
     }, [argumentHintResolver]);
+
+    // Same [L07] live-ref pattern for the hint-refresh source, so the plugin
+    // re-subscribes to a fresh metadata store (e.g. after `/compact` + resume)
+    // without rebuilding the editor. Default null ⇒ the plugin never subscribes.
+    const argumentHintRefreshRef = useRef<ArgumentHintRefreshSource | null>(
+      argumentHintRefresh ?? null,
+    );
+    useLayoutEffect(() => {
+      argumentHintRefreshRef.current = argumentHintRefresh ?? null;
+    }, [argumentHintRefresh]);
 
     // Same [L07] live-ref pattern for the inline-ghost matcher, so a catalog
     // that grows after the handshake takes effect without rebuilding the editor.
@@ -2155,6 +2179,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           () => dropHandlerRef.current,
           () => attachmentBytesStoreRef.current,
           () => (value: string) => argumentHintResolverRef.current(value),
+          () => argumentHintRefreshRef.current,
           () => (query: string) => inlineCommandMatcherRef.current(query),
           (message) => onAttachmentErrorRef.current(message),
           {

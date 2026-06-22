@@ -3476,6 +3476,7 @@ export function DevCardBody({
               historyStore={historyStore}
               completionProviders={completionProviders}
               argumentHintResolver={argumentHintResolver}
+              argumentHintRefresh={sessionMetadataStore}
               inlineCommandMatcher={inlineCommandMatcher}
               onAfterSubmit={handleAfterSubmit}
               maximized={maximized}

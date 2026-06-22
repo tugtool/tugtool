@@ -716,4 +716,45 @@ describe("SessionMetadataStore reconciliation (optimistic overrides)", () => {
 
     store.dispose();
   });
+
+  test("a post-turn bare-string catalog keeps the handshake's argument hints", () => {
+    // The from-the-drop handshake carries rich per-command metadata (tugcode
+    // reads `argument-hint` from each plugin command's frontmatter); the first
+    // turn's `system_metadata` then ships the same commands as bare strings.
+    // The system list is authoritative for *which* commands exist, but its
+    // sparse entries must not erase the hint — else a slot shown from the drop
+    // regresses to the generic text on the next invocation.
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      models: [],
+      effort: null,
+      commands: [
+        {
+          name: "tugplug:devise",
+          description: "Devise a plan",
+          argumentHint: "[idea] [→ output-path]",
+        },
+      ],
+    });
+    expect(store.getSnapshot().slashCommands[0]?.argumentHint).toBe(
+      "[idea] [→ output-path]",
+    );
+
+    // Post-turn frame: same command, now a bare string with no hint.
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      cwd: "/x",
+      skills: ["tugplug:devise"],
+    });
+    const hit = store
+      .getSnapshot()
+      .slashCommands.find((c) => c.name === "tugplug:devise");
+    expect(hit?.argumentHint).toBe("[idea] [→ output-path]");
+    expect(hit?.description).toBe("Devise a plan");
+
+    store.dispose();
+  });
 });

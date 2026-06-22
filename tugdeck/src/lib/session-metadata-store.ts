@@ -179,7 +179,10 @@ interface OptimisticOverrides {
  * - `slashCommands` (the catalog — the only field both sources carry) ← the
  *   post-turn system catalog when non-empty, else the from-the-drop handshake
  *   catalog. So it is populated from the drop and sharpened post-turn, and an
- *   empty/sparse system frame never wipes a populated handshake catalog.
+ *   empty/sparse system frame never wipes a populated handshake catalog. The
+ *   two are *merged* (not swapped) so the system list's authority over *which*
+ *   commands exist never costs the handshake's richer per-command metadata —
+ *   see {@link mergeCatalogs}.
  */
 function reconcileSnapshot(
   cap: CapabilitiesRegion,
@@ -193,10 +196,43 @@ function reconcileSnapshot(
     cwd: sys?.cwd ?? null,
     version: sys?.version ?? null,
     slashCommands:
-      sys && sys.slashCommands.length > 0 ? sys.slashCommands : cap.commands,
+      sys && sys.slashCommands.length > 0
+        ? mergeCatalogs(sys.slashCommands, cap.commands)
+        : cap.commands,
     models: cap.models,
     effort: opt.effort ?? cap.effort,
   };
+}
+
+/**
+ * Merge the post-turn system catalog (the base) with the from-the-drop
+ * capabilities catalog (the metadata source). The system list is authoritative
+ * for *which* commands exist — by the first turn claude has loaded plugins, so
+ * it lists plugin commands the turn-free handshake may not have — but the
+ * current emitter ships those entries as bare strings: no `argumentHint`, no
+ * `description`. The capabilities catalog carries that richer metadata (tugcode
+ * reads it from each command's frontmatter). So keep every system entry and
+ * backfill its missing `argumentHint` / `description` from the matching
+ * capabilities entry by name. Without this, an explicit argument hint shown
+ * from the drop would silently regress to the generic slot the moment the first
+ * turn's sparse catalog landed — the same command, hint lost on re-invocation.
+ */
+function mergeCatalogs(
+  sys: SlashCommandInfo[],
+  cap: SlashCommandInfo[],
+): SlashCommandInfo[] {
+  if (cap.length === 0) return sys;
+  const capByName = new Map(cap.map((c) => [c.name, c]));
+  return sys.map((s) => {
+    if (s.argumentHint !== undefined && s.description !== undefined) return s;
+    const rich = capByName.get(s.name);
+    if (rich === undefined) return s;
+    return {
+      ...s,
+      argumentHint: s.argumentHint ?? rich.argumentHint,
+      description: s.description ?? rich.description,
+    };
+  });
 }
 
 /**

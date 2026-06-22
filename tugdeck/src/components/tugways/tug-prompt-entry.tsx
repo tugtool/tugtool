@@ -68,7 +68,10 @@ import {
   TugTextEditor,
   type TugTextEditorDelegate,
 } from "./tug-text-editor";
-import type { ArgumentHintResolver } from "./tug-text-editor/argument-hint-extension";
+import type {
+  ArgumentHintRefreshSource,
+  ArgumentHintResolver,
+} from "./tug-text-editor/argument-hint-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
   getAtomsInState,
@@ -500,6 +503,12 @@ export interface TugPromptEntryProps {
    */
   argumentHintResolver?: ArgumentHintResolver;
   /**
+   * Refresh source for the argument placeholder, forwarded to `TugTextEditor`
+   * ({@link TugTextEditorProps.argumentHintRefresh}). Lets a slot upgrade from
+   * the generic hint to the explicit one when the catalog lands late.
+   */
+  argumentHintRefresh?: ArgumentHintRefreshSource;
+  /**
    * Matcher for the mid-text inline ghost completion, forwarded to
    * `TugTextEditor` ({@link TugTextEditorProps.inlineCommandMatcher}). Maps a
    * mid-text `/query` to the full command name it completes to, or `null`.
@@ -736,6 +745,7 @@ export const TugPromptEntry = React.forwardRef<
     historyStore,
     completionProviders,
     argumentHintResolver,
+    argumentHintRefresh,
     inlineCommandMatcher,
     dropHandler,
     onBeforeSubmit,
@@ -1826,6 +1836,7 @@ export const TugPromptEntry = React.forwardRef<
               placeholder={placeholderByRoute?.[route] ?? ""}
               completionProviders={completionProviders}
               argumentHintResolver={argumentHintResolver}
+              argumentHintRefresh={argumentHintRefresh}
               inlineCommandMatcher={inlineCommandMatcher}
               dropHandler={dropHandler}
               attachmentBytesStore={attachmentBytesStore}
