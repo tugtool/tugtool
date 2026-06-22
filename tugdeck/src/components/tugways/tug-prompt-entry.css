@@ -262,6 +262,30 @@ body {
   z-index: 2;
 }
 
+/* Drop-target ring. The editor's own `[data-drop-active]` ring (tug-text-editor.css)
+   is a negative-offset inset outline — and exactly like the focus ring above, the
+   embedded CodeMirror substrate paints over its left and right edges, so only the
+   top / bottom of the ring survive (the missing "side" accents). Re-draw it the
+   same reliable way: suppress the editor's clipped outline inside the prompt entry
+   and pin a full four-side `::after` overlay above the editor, in the drop accent
+   color. Appearance keyed on the engine attribute, no React state ([L06]). */
+.tug-prompt-entry .tug-prompt-entry-input-area > .tug-text-editor[data-drop-active] {
+  outline: none;
+}
+.tug-prompt-entry-input-area:has(> .tug-text-editor[data-drop-active]) {
+  position: relative;
+}
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+.tug-prompt-entry-input-area:has(> .tug-text-editor[data-drop-active])::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
 /* Keyboard-focus-cycling fill suppression ([P12]).
  *
  * Outside cycling the submit is `filled` — its standing identity as the
