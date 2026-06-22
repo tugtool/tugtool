@@ -815,9 +815,9 @@ body {
   --tug7-surface-control-primary-tinted-accent-rest: --tug-color(orange, i: 65, t: 60, a: 15);
   --tug7-surface-control-primary-tinted-accent-hover: --tug-color(orange, i: 65, t: 60, a: 30);
   --tug7-surface-control-primary-tinted-accent-active: --tug-color(orange, i: 65, t: 60, a: 44);
-  --tug7-element-control-text-tinted-accent-rest: --tug-color(orange, i: 45, t: 85);
-  --tug7-element-control-text-tinted-accent-hover: --tug-color(orange, i: 45, t: 85);
-  --tug7-element-control-text-tinted-accent-active: --tug-color(orange, i: 45, t: 85);
+  --tug7-element-control-text-tinted-accent-rest: --tug-color(orange, i: 40, t: 85);
+  --tug7-element-control-text-tinted-accent-hover: --tug-color(orange, i: 40, t: 85);
+  --tug7-element-control-text-tinted-accent-active: --tug-color(orange, i: 40, t: 85);
   --tug7-element-control-border-tinted-accent-rest: --tug-color(orange, i: 50, t: 47, a: 35);
   --tug7-element-control-border-tinted-accent-hover: --tug-color(orange, i: 50, t: 47, a: 52);
   --tug7-element-control-border-tinted-accent-active: --tug-color(orange, i: 50, t: 47, a: 65);
@@ -913,7 +913,7 @@ body {
   --tug7-element-badge-text-outlined-data-rest: --tug-color(teal, t: 47);
   --tug7-element-badge-text-outlined-success-rest: --tug-color(green, t: 47);
   --tug7-element-badge-text-tinted-accent-rest: --tug-color(orange, i: 72, t: 85);
-  --tug7-element-badge-text-tinted-action-rest: --tug-color(cobalt, i: 41, t: 85);
+  --tug7-element-badge-text-tinted-action-rest: --tug-color(cobalt, i: 36, t: 85);
   --tug7-element-badge-text-tinted-agent-rest: --tug-color(violet, i: 72, t: 85);
   --tug7-element-badge-text-tinted-caution-rest: --tug-color(yellow, i: 72, t: 85);
   --tug7-element-badge-text-tinted-danger-rest: --tug-color(red, i: 72, t: 85);
