@@ -533,6 +533,11 @@ export class DeckManager implements IDeckManagerStore {
           : true,
     };
 
+    // Seed the DOM foreground projection from the live reading above, so the
+    // focus language is correctly quiet/lit on the very first paint (setHasFocus
+    // only fires it on a subsequent transition).
+    this.reflectAppActive(this.deckState.hasFocus);
+
     // Install window focus/blur listeners exactly once per JS context.
     // Safe to call unconditionally — the module-scope flag short-circuits
     // subsequent constructions.
@@ -597,8 +602,24 @@ export class DeckManager implements IDeckManagerStore {
   public setHasFocus = (value: boolean): void => {
     if (this.deckState.hasFocus === value) return;
     this.deckState = { ...this.deckState, hasFocus: value };
+    this.reflectAppActive(value);
     this.notify();
   };
+
+  /**
+   * Project the OS-foreground bit onto `<html>` as `data-app-active`, the
+   * DOM signal the keyboard focus language gates on so the ring goes quiet
+   * while the app is backgrounded (focus-ring.css `[data-app-active="false"]`).
+   * Pure DOM, no React state ([L06]); `DeckState.hasFocus` stays the
+   * authoritative bit and this is its appearance projection.
+   */
+  private reflectAppActive(active: boolean): void {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute(
+      "data-app-active",
+      active ? "true" : "false",
+    );
+  }
 
   // ---- Store notification ----
 

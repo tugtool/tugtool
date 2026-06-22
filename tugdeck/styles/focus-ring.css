@@ -122,6 +122,13 @@ body {
     transparent
   );
   --tugx-focus-fill: var(--tug7-surface-toggle-primary-normal-on-rest);
+  /* A focused text field inverts the pairing: the ring (and field border) rides
+     the Accent axis above, while the field's fill wash rides the KEY axis — the
+     selection-fill hue — so the colour in the fill matches the selection family
+     and the affordance hue is reserved for the ring. Validation repoints this in
+     lockstep with `--tugx-focus-ring` (see the field CSS) so an invalid field
+     still washes danger, not key. */
+  --tugx-focus-wash: var(--tug7-surface-toggle-primary-normal-on-rest);
 }
 
 :focus-visible {
@@ -189,6 +196,20 @@ body {
 [data-cycling="false"] [data-key-cursor] {
   outline: none;
   background-image: none;
+}
+
+/* The keyboard focus language goes quiet while the OS window is not foreground,
+   matching native controls — whose ring dims/vanishes when the window resigns
+   key. `data-app-active="false"` is projected onto <html> by the deck store's
+   foreground tracking (`DeckManager.setHasFocus`, driven by window focus/blur).
+   Without this the ring (and within/cursor marks) froze on whatever control held
+   the key view and kept painting while the app sat in the background. Higher
+   specificity than the base mark rules above, so it wins regardless of source
+   order; the per-component behind-tint is quieted at its own site. */
+[data-app-active="false"] [data-key-view-kbd],
+[data-app-active="false"] [data-key-cursor],
+[data-app-active="false"] [data-key-within] {
+  outline: none;
 }
 
 /**
