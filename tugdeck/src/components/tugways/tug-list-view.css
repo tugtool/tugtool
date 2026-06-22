@@ -285,15 +285,28 @@ body {
 /* Selected rows read as a clean block — drop the hairline divider that touches
    them (the selected cell's own bottom divider, and the bottom divider of the
    preceding cell), for either divider source (`rowLayout="flush"` or
-   `rowSeparator="on"`). MUST come after the draw rule above: the `[data-selected]`
-   selectors share its specificity, so source order is what lets them win. Color
-   only — the 1px is kept, so neither the row height nor the cursor bar shifts. */
+   `rowSeparator="on"`). Keyed off TWO selection signals: the wrapper's
+   `data-selected` (the list-owned cursor) AND the rendered row's
+   `.tug-list-row[data-selected]`. The picker drives selection through cell
+   context, not the list cursor, so its default/unfocused selected row paints the
+   caret via the inner `.tug-list-row` while the wrapper carries no attribute —
+   the inner-row clause is what suppresses the divider in that case (e.g. the
+   default "New session" row). MUST come after the draw rule above. Color only —
+   the 1px is kept, so neither the row height nor the cursor bar shifts. */
 .tug-list-view[data-row-layout="flush"] .tug-list-view-cell[data-selected="true"],
 .tug-list-view[data-row-layout="flush"]
+  .tug-list-view-cell:has(.tug-list-row[data-selected="true"]),
+.tug-list-view[data-row-layout="flush"]
   .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]),
+.tug-list-view[data-row-layout="flush"]
+  .tug-list-view-cell:has(+ .tug-list-view-cell .tug-list-row[data-selected="true"]),
 .tug-list-view[data-row-separator="on"] .tug-list-view-cell[data-selected="true"],
 .tug-list-view[data-row-separator="on"]
-  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]) {
+  .tug-list-view-cell:has(.tug-list-row[data-selected="true"]),
+.tug-list-view[data-row-separator="on"]
+  .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]),
+.tug-list-view[data-row-separator="on"]
+  .tug-list-view-cell:has(+ .tug-list-view-cell .tug-list-row[data-selected="true"]) {
   border-bottom-color: transparent;
 }
 
