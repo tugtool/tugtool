@@ -12,6 +12,7 @@
 import React, { useId } from "react";
 import { cn } from "@/lib/utils";
 import { TugValueInput } from "./tug-value-input";
+import { TugColorWell } from "./tug-color-well";
 import { swatchOklch, clamp100, type TugColorSpec } from "./tug-color-spec";
 import "./tug-color-adjustment.css";
 
@@ -48,6 +49,13 @@ export interface TugColorAdjustmentProps {
   label?: string;
   /** Hide the alpha delta stepper (axes with no alpha). */
   showAlpha?: boolean;
+  /**
+   * When set, the base swatch becomes an editable TugColorWell with this sender —
+   * clicking it activates the shared picker to choose the base color (e.g. the
+   * axis hue). When omitted, the base renders as a static swatch.
+   */
+  baseSenderId?: string;
+  baseLabel?: string;
   disabled?: boolean;
 }
 
@@ -57,6 +65,8 @@ export function TugColorAdjustment({
   senderId,
   label,
   showAlpha = true,
+  baseSenderId,
+  baseLabel,
   disabled = false,
 }: TugColorAdjustmentProps): React.ReactElement {
   const autoId = useId();
@@ -67,7 +77,11 @@ export function TugColorAdjustment({
     <div data-slot="tug-color-adjustment" className={cn("tug-color-adjustment")}>
       {label && <span className="tug-color-adjustment-label">{label}</span>}
       <span className="tug-color-adjustment-preview">
-        <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
+        {baseSenderId ? (
+          <TugColorWell value={base} senderId={baseSenderId} label={baseLabel ?? label} size="sm" showText={false} disabled={disabled} />
+        ) : (
+          <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
+        )}
         <span className="tug-color-adjustment-arrow" aria-hidden>→</span>
         <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(result) } as React.CSSProperties} />
       </span>

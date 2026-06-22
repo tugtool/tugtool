@@ -3,39 +3,41 @@
  *
  * A live tuning board for the per-theme Key (selection / primary action) +
  * Accent (affordance: caret, focus ring, drag-drop, activity) duet, expressed in
- * the TugColor model (color-palette.md). Each role has two Tug controls:
+ * the TugColor model (color-palette.md). The control surface is color-native:
  *
- *   - Hue: a TugPopupButton over the 48 TugColor hues. Choosing one writes that
- *     hue's palette constants — var(--tugc-{hue}-h / -canonical-l / -peak-c) —
- *     into the board's indirection vars (--duet-key-h / -canon-l / -peak-c). The
- *     ramp rungs in gallery-theme-editor.css are the TugColor piecewise formula
- *     over those constants, so every rung re-evaluates through the real model.
- *   - Chroma scale: a TugSlider multiplying every rung's chroma
- *     (--duet-key-c-scale), for restraint (e.g. pale Key on bravura/aria).
+ *   - Each AXIS (Key, Accent) is a TugColorAdjustment: its base TugColorWell picks
+ *     the hue (writing var(--tugc-{hue}-h / -canonical-l / -peak-c) into the board
+ *     indirection vars --duet-key-h / -canon-l / -peak-c), and its i/t delta
+ *     steppers add to every rung (--duet-key-i-delta intensity, --duet-key-l-shift
+ *     tone). The ramp rungs in gallery-theme-editor.css are the TugColor piecewise
+ *     formula over those vars, so every rung re-evaluates through the real model.
+ *   - Each TREATMENT (title bar, filled, tinted, text selection) is a
+ *     TugColorWell — a TugColor of the Key hue with its own i/t/a. The shared
+ *     standalone TugColorPicker edits whichever well is active (active-color-
+ *     target.ts); the well's hue is locked to the Key hue.
  *
  * The board-scoped Table-T01 --tug7-* repoints route the real components below
  * through the ramps. All painting is style.setProperty on the board ([L06]);
- * useState holds only the controlled inputs and the copy-out readout ([L24]).
+ * useState holds only the controlled values and the copy-out readout ([L24]).
  *
- * The control column is authored into a single focus group ([P02]) so Tab walks
- * the hue pickers and sliders as one loop; the key view seeds onto the Key hue
- * ([useSeedKeyView]).
+ * Apply posts the additive-delta seed (keyHue + key{iDelta,tDelta,aDelta}, …) to
+ * the dev-server endpoint, which folds in hand edits and re-derives the theme CSS.
  *
  * Title-bar treatment is a LIGHT-theme-only axis (`--tugx-chrome-key-surface`
- * exists only in light themes); for dark themes the editor hides those knobs and
+ * exists only in light themes); for dark themes the editor hides that well and
  * shows the theme's actual, fixed title-bar surface instead.
  *
  * Laws:
  *  - [L06] appearance via style.setProperty + CSS, never React-state-driven.
  *  - [L02] the list data source enters React via TugListView's
  *    useSyncExternalStore contract (a trivial constant store here).
- *  - [L11] controls emit actions; the card handles them via useResponderForm.
+ *  - [L11] controls emit actions; the card handles them via useResponder.
  *  - [L19] gallery-card authoring; registered in gallery-registrations.tsx.
  */
 
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { ADJACENCY_RING, HUE_FAMILIES } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import {
@@ -45,14 +47,15 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
-import { TugPopupButton, type TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
-import { TugSlider } from "@/components/tugways/tug-slider";
 import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
-import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { useFocusManager } from "@/components/tugways/use-focusable";
-import { CardIdContext } from "@/lib/card-id-context";
+import { TugColorWell } from "@/components/tugways/tug-color-well";
+import { TugColorAdjustment, colorAdjustSenders } from "@/components/tugways/tug-color-adjustment";
+import { setActiveColorTarget, updateActiveColorValue } from "@/components/tugways/active-color-target";
+import type { TugColorSpec } from "@/components/tugways/tug-color-spec";
+import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { getThemeGetter } from "@/action-dispatch";
@@ -73,45 +76,49 @@ const DARK_THEMES = new Set(["brio", "nocturne", "bravura"]);
 // Seed model
 // ---------------------------------------------------------------------------
 
-interface Seed {
-  keyHue: string;
-  keyCScale: number;
-  keyLShift: number;
-  accHue: string;
-  accCScale: number;
-  accLShift: number;
-  // Chrome treatments — each a TugColor of the Key hue with its own i / t (/ a).
-  titlebarI: number;
-  titlebarT: number;
-  filledI: number;
-  filledT: number;
-  tintedI: number;
-  tintedT: number;
-  tintedA: number;
-  // Text selection wash (also drives the editing caret) — its own i / t / α.
-  textselI: number;
-  textselT: number;
-  textselA: number;
+/** Additive i/t/a deltas applied to every rung of an axis (tug-color units). */
+interface Adjust {
+  iDelta: number;
+  tDelta: number;
+  aDelta: number;
 }
 
-/** Compact preset constructor — lightness shift + treatments default to a
- *  brio-like baseline; the treatment knobs are tuned separately. */
-const mk = (
-  keyHue: string,
-  keyCScale: number,
-  accHue: string,
-  accCScale: number,
-): Seed => ({
-  keyHue, keyCScale, keyLShift: 0, accHue, accCScale, accLShift: 0,
-  titlebarI: 30, titlebarT: 88,
-  filledI: 84, filledT: 44,
-  tintedI: 75, tintedT: 38, tintedA: 0.4,
-  textselI: 50, textselT: 50, textselA: 0.4,
-});
+/** A treatment / anchor color expressed as TugColor intensity / tone / alpha
+ *  (alpha 0–100; the hue is always the Key hue). */
+interface Treat {
+  i: number;
+  t: number;
+  a: number;
+}
+
+interface Seed {
+  keyHue: string;
+  /** Preview anchor the Key adjustment is shown against (not sent on Apply). */
+  keyBase: Treat;
+  key: Adjust;
+  accHue: string;
+  accBase: Treat;
+  accent: Adjust;
+  // Chrome treatments — each a TugColor of the Key hue with its own i / t / a.
+  titlebar: Treat;
+  filled: Treat;
+  tinted: Treat;
+  textsel: Treat;
+}
+
+const ZERO: Adjust = { iDelta: 0, tDelta: 0, aDelta: 0 };
+const ANCHOR: Treat = { i: 50, t: 50, a: 100 };
 
 /** Default seed — today's brio (blue Key / orange Accent), an exact baseline.
  *  Used only as the fallback when a theme has no saved seed yet. */
-const SEED_TODAY: Seed = mk("blue", 1, "orange", 1);
+const SEED_TODAY: Seed = {
+  keyHue: "blue", keyBase: { ...ANCHOR }, key: { ...ZERO },
+  accHue: "orange", accBase: { ...ANCHOR }, accent: { ...ZERO },
+  titlebar: { i: 30, t: 88, a: 100 },
+  filled: { i: 84, t: 44, a: 100 },
+  tinted: { i: 75, t: 38, a: 40 },
+  textsel: { i: 50, t: 50, a: 40 },
+};
 
 // Persistence — scoped to THIS gallery card only (its own tugbank domain, never
 // the app-settings keys). Stores a PER-THEME map of working seeds, so each theme
@@ -128,9 +135,22 @@ function parseSeedMap(entry: TaggedValue | undefined): SeedMap {
   return {};
 }
 
-/** The seed for one theme, with SEED_TODAY filling any missing fields. */
+/** The seed for one theme, deep-merged onto SEED_TODAY (old flat seeds fall back
+ *  cleanly to the baseline since their fields no longer match). */
 function readSeedFor(map: SeedMap, theme: string): Seed {
-  return { ...SEED_TODAY, ...(map[theme] ?? {}) };
+  const s = map[theme] ?? {};
+  return {
+    keyHue: s.keyHue ?? SEED_TODAY.keyHue,
+    keyBase: { ...SEED_TODAY.keyBase, ...(s.keyBase ?? {}) },
+    key: { ...SEED_TODAY.key, ...(s.key ?? {}) },
+    accHue: s.accHue ?? SEED_TODAY.accHue,
+    accBase: { ...SEED_TODAY.accBase, ...(s.accBase ?? {}) },
+    accent: { ...SEED_TODAY.accent, ...(s.accent ?? {}) },
+    titlebar: { ...SEED_TODAY.titlebar, ...(s.titlebar ?? {}) },
+    filled: { ...SEED_TODAY.filled, ...(s.filled ?? {}) },
+    tinted: { ...SEED_TODAY.tinted, ...(s.tinted ?? {}) },
+    textsel: { ...SEED_TODAY.textsel, ...(s.textsel ?? {}) },
+  };
 }
 
 function putSeedMap(map: SeedMap): void {
@@ -147,16 +167,6 @@ const angle = (hue: string): string => {
   const a = HUE_FAMILIES[hue];
   return a === undefined ? "" : `${a}°`;
 };
-
-/** Hue menu items (TugColor hues in ascending-angle order), shared by both pickers. */
-const HUE_ITEMS: TugPopupButtonItem<string>[] = ADJACENCY_RING.map((hue) => ({
-  action: TUG_ACTIONS.SET_VALUE,
-  value: hue,
-  label: `${hue} (${angle(hue)})`,
-}));
-
-/** Uniform value-column width so every slider's value box aligns on its right edge. */
-const SLIDER_VALUE_WIDTH = "3.5rem";
 
 // ---------------------------------------------------------------------------
 // List data source (real TugListView — genuine selection fill + caret)
@@ -206,8 +216,7 @@ const LIST_CELL_RENDERERS = { row: DuetRowCell };
 export function GalleryThemeEditor(): React.ReactElement {
   const boardRef = useRef<HTMLDivElement>(null);
   const titlebarRef = useRef<HTMLDivElement>(null);
-  const focusManager = useFocusManager();
-  const cardId = React.useContext(CardIdContext);
+  const responderId = useId();
 
   // Per-theme persistence (this card's own tugbank domain). The seed map is
   // keyed by theme name; the active theme selects which seed the card edits.
@@ -236,17 +245,19 @@ export function GalleryThemeEditor(): React.ReactElement {
     setVar(`--duet-${role}-peak-c`, `var(--tugc-${hue}-peak-c)`);
   };
 
+  // Treatment preview vars: i / t are 0–100; the alpha vars want the oklch 0–1
+  // convention, so scale the spec's 0–100 alpha down.
   const applyTreatments = (next: Seed): void => {
-    setVar("--duet-titlebar-i", String(next.titlebarI));
-    setVar("--duet-titlebar-t", String(next.titlebarT));
-    setVar("--duet-filled-i", String(next.filledI));
-    setVar("--duet-filled-t", String(next.filledT));
-    setVar("--duet-tinted-i", String(next.tintedI));
-    setVar("--duet-tinted-t", String(next.tintedT));
-    setVar("--duet-tinted-a", String(next.tintedA));
-    setVar("--duet-textsel-i", String(next.textselI));
-    setVar("--duet-textsel-t", String(next.textselT));
-    setVar("--duet-textsel-a", String(next.textselA));
+    setVar("--duet-titlebar-i", String(next.titlebar.i));
+    setVar("--duet-titlebar-t", String(next.titlebar.t));
+    setVar("--duet-filled-i", String(next.filled.i));
+    setVar("--duet-filled-t", String(next.filled.t));
+    setVar("--duet-tinted-i", String(next.tinted.i));
+    setVar("--duet-tinted-t", String(next.tinted.t));
+    setVar("--duet-tinted-a", String(next.tinted.a / 100));
+    setVar("--duet-textsel-i", String(next.textsel.i));
+    setVar("--duet-textsel-t", String(next.textsel.t));
+    setVar("--duet-textsel-a", String(next.textsel.a / 100));
   };
 
   // Dark themes don't carry a Key-hued title-bar: pin the preview's title-bar var
@@ -261,47 +272,69 @@ export function GalleryThemeEditor(): React.ReactElement {
     }
   };
 
+  // Push an axis's i/t deltas into the ramp formula: --duet-{role}-i-delta adds to
+  // every rung's intensity; --duet-{role}-l-shift adds to every rung's tone. (The
+  // axis alpha delta has no ramp var — the Key/Accent rungs are opaque in preview.)
+  const applyAdjust = (role: "key" | "accent", adj: Adjust): void => {
+    setVar(`--duet-${role}-i-delta`, String(adj.iDelta));
+    setVar(`--duet-${role}-l-shift`, String(adj.tDelta));
+  };
+
   const applySeed = (next: Seed): void => {
     applyHue("key", next.keyHue);
     applyHue("accent", next.accHue);
-    setVar("--duet-key-c-scale", String(next.keyCScale));
-    setVar("--duet-accent-c-scale", String(next.accCScale));
-    setVar("--duet-key-l-shift", String(next.keyLShift));
-    setVar("--duet-accent-l-shift", String(next.accLShift));
+    applyAdjust("key", next.key);
+    applyAdjust("accent", next.accent);
     applyTreatments(next);
     applyTitlebarMode(DARK_THEMES.has(activeTheme));
   };
+
+  // ---- Color-well / adjustment handlers ----
 
   const onHue = (role: "key" | "accent", hue: string): void => {
     applyHue(role, hue);
     setSeed((prev) => (role === "key" ? { ...prev, keyHue: hue } : { ...prev, accHue: hue }));
   };
 
-  const onCScale = (role: "key" | "accent", value: number): void => {
-    setVar(`--duet-${role}-c-scale`, String(value));
+  // The Key/Accent base well picks the hue AND the preview anchor (i/t/a) the
+  // adjustment is shown against; only the hue is sent on Apply.
+  const onAxisBase = (role: "key" | "accent", spec: TugColorSpec): void => {
+    applyHue(role, spec.hue);
+    const base: Treat = { i: spec.i, t: spec.t, a: spec.a };
     setSeed((prev) =>
-      role === "key" ? { ...prev, keyCScale: value } : { ...prev, accCScale: value },
+      role === "key"
+        ? { ...prev, keyHue: spec.hue, keyBase: base }
+        : { ...prev, accHue: spec.hue, accBase: base },
     );
   };
 
-  const onLShift = (role: "key" | "accent", value: number): void => {
-    setVar(`--duet-${role}-l-shift`, String(value));
-    setSeed((prev) =>
-      role === "key" ? { ...prev, keyLShift: value } : { ...prev, accLShift: value },
-    );
+  const onAxisDelta = (role: "key" | "accent", axis: "i" | "t" | "a", v: number): void => {
+    if (axis === "i") setVar(`--duet-${role}-i-delta`, String(v));
+    else if (axis === "t") setVar(`--duet-${role}-l-shift`, String(v));
+    setSeed((prev) => {
+      const cur = role === "key" ? prev.key : prev.accent;
+      const adj: Adjust = {
+        iDelta: axis === "i" ? v : cur.iDelta,
+        tDelta: axis === "t" ? v : cur.tDelta,
+        aDelta: axis === "a" ? v : cur.aDelta,
+      };
+      return role === "key" ? { ...prev, key: adj } : { ...prev, accent: adj };
+    });
   };
 
+  // A treatment well is a TugColor of the KEY hue with its own i/t/a — so a hue
+  // change in the picker is ignored (re-pinned to the Key hue). Filled and title
+  // bar carry no alpha.
   const onTreatment = (
-    field:
-      | "titlebarI" | "titlebarT"
-      | "filledI" | "filledT"
-      | "tintedI" | "tintedT" | "tintedA"
-      | "textselI" | "textselT" | "textselA",
-    cssVar: string,
-    value: number,
+    field: "titlebar" | "filled" | "tinted" | "textsel",
+    spec: TugColorSpec,
+    hasAlpha: boolean,
   ): void => {
-    setVar(cssVar, String(value));
-    setSeed((prev) => ({ ...prev, [field]: value }));
+    const treat: Treat = { i: spec.i, t: spec.t, a: hasAlpha ? spec.a : 100 };
+    setVar(`--duet-${field}-i`, String(treat.i));
+    setVar(`--duet-${field}-t`, String(treat.t));
+    if (hasAlpha) setVar(`--duet-${field}-a`, String(treat.a / 100));
+    setSeed((prev) => ({ ...prev, [field]: treat }));
   };
 
   // Real selectable list (genuine selection fill + caret when focused).
@@ -362,96 +395,88 @@ export function GalleryThemeEditor(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed, seedMap, activeTheme]);
 
-  // Control sender ids — Tug controls dispatch actions the card handles ([L11]).
-  const keyHueId = useId();
-  const keyCId = useId();
-  const keyLId = useId();
-  const accHueId = useId();
-  const accCId = useId();
-  const accLId = useId();
-  const tbIId = useId();
-  const tbTId = useId();
-  const fIId = useId();
-  const fTId = useId();
-  const tiIId = useId();
-  const tiTId = useId();
-  const tiAId = useId();
-  const tsIId = useId();
-  const tsTId = useId();
-  const tsAId = useId();
+  // Control sender ids — the wells / adjustments dispatch actions the card
+  // handles ([L11]). Each axis: one base well (hue + anchor) + one adjustment
+  // (whose three delta steppers derive their senders via colorAdjustSenders).
+  const keyWellId = useId();
+  const keyAdjId = useId();
+  const accWellId = useId();
+  const accAdjId = useId();
+  const titlebarWellId = useId();
+  const filledWellId = useId();
+  const tintedWellId = useId();
+  const textselWellId = useId();
   const radioId = useId();
   const choiceId = useId();
   const [radioValue, setRadioValue] = useState("on");
   const [choiceValue, setChoiceValue] = useState("grid");
 
-  // One focus group for the whole control column; the key view seeds onto the
-  // Key hue (order 0) so the editor opens with focus on it and Tab walks the
-  // controls ([P02]). Title-bar slider orders (6,7) are simply absent for dark
-  // themes — gaps in the order are fine.
-  const controlsFocusGroup = useId();
+  const keyDelta = colorAdjustSenders(keyAdjId);
+  const accDelta = colorAdjustSenders(accAdjId);
 
-  // Put keyboard focus on the Key hue when the editor opens, and keep it. The
-  // engine only moves DOM focus + lights the ring while THIS card's context is
-  // the active (key-card) one; a non-modal gallery card isn't guaranteed active
-  // at mount, so we arm the keyboard restore the moment it becomes active and
-  // re-check on focus-manager changes until it lands (once).
-  const seededFocusRef = useRef(false);
-  useLayoutEffect(() => {
-    if (!focusManager) return;
-    const focusKey = `${controlsFocusGroup}:0`;
-    const arm = (): void => {
-      if (seededFocusRef.current) return;
-      const active = cardId === null || focusManager.keyCard() === cardId;
-      if (!active) return;
-      seededFocusRef.current = true;
-      focusManager.contextFor(cardId).armKeyboardRestore(focusKey);
-    };
-    arm();
-    return focusManager.subscribe(arm);
-  }, [focusManager, cardId, controlsFocusGroup]);
-
-  const { ResponderScope, responderRef } = useResponderForm({
-    setValueString: {
-      [keyHueId]: (v) => onHue("key", v),
-      [accHueId]: (v) => onHue("accent", v),
-    },
-    setValueNumber: {
-      [keyCId]: (v) => onCScale("key", v),
-      [accCId]: (v) => onCScale("accent", v),
-      [keyLId]: (v) => onLShift("key", v),
-      [accLId]: (v) => onLShift("accent", v),
-      [tbIId]: (v) => onTreatment("titlebarI", "--duet-titlebar-i", v),
-      [tbTId]: (v) => onTreatment("titlebarT", "--duet-titlebar-t", v),
-      [fIId]: (v) => onTreatment("filledI", "--duet-filled-i", v),
-      [fTId]: (v) => onTreatment("filledT", "--duet-filled-t", v),
-      [tiIId]: (v) => onTreatment("tintedI", "--duet-tinted-i", v),
-      [tiTId]: (v) => onTreatment("tintedT", "--duet-tinted-t", v),
-      [tiAId]: (v) => onTreatment("tintedA", "--duet-tinted-a", v),
-      [tsIId]: (v) => onTreatment("textselI", "--duet-textsel-i", v),
-      [tsTId]: (v) => onTreatment("textselT", "--duet-textsel-t", v),
-      [tsAId]: (v) => onTreatment("textselA", "--duet-textsel-a", v),
-    },
-    selectValue: {
-      [radioId]: setRadioValue,
-      [choiceId]: setChoiceValue,
+  const { ResponderScope, responderRef } = useResponder({
+    id: responderId,
+    actions: {
+      // A well announces itself as the picker's subject.
+      [TUG_ACTIONS.ACTIVATE_COLOR_WELL]: (e: ActionEvent) => {
+        const sender = typeof e.sender === "string" ? e.sender : "";
+        const payload = e.value as { value: TugColorSpec; label: string } | undefined;
+        if (!sender || !payload) return;
+        setActiveColorTarget({ targetId: responderId, senderId: sender, label: payload.label, value: payload.value });
+      },
+      // The picker pushes an edited color back to the well that owns it.
+      [TUG_ACTIONS.SET_COLOR]: (e: ActionEvent) => {
+        const sender = typeof e.sender === "string" ? e.sender : "";
+        const next = e.value as TugColorSpec | undefined;
+        if (!sender || !next) return;
+        if (sender === keyWellId) onAxisBase("key", next);
+        else if (sender === accWellId) onAxisBase("accent", next);
+        else if (sender === titlebarWellId || sender === filledWellId || sender === tintedWellId || sender === textselWellId) {
+          const field = sender === titlebarWellId ? "titlebar" : sender === filledWellId ? "filled" : sender === tintedWellId ? "tinted" : "textsel";
+          const hasAlpha = field === "tinted" || field === "textsel";
+          onTreatment(field, next, hasAlpha);
+          // Treatments are locked to the Key hue: re-pin the picker's hue so a
+          // hue change there snaps back rather than diverging from the well.
+          updateActiveColorValue(sender, { hue: seed.keyHue, i: next.i, t: next.t, a: hasAlpha ? next.a : 100 });
+        }
+      },
+      // Adjustment delta steppers (one sender per axis).
+      [TUG_ACTIONS.SET_VALUE]: (e: ActionEvent) => {
+        const sender = typeof e.sender === "string" ? e.sender : "";
+        const v = typeof e.value === "number" ? e.value : NaN;
+        if (!sender || Number.isNaN(v)) return;
+        if (sender === keyDelta.i) onAxisDelta("key", "i", v);
+        else if (sender === keyDelta.t) onAxisDelta("key", "t", v);
+        else if (sender === keyDelta.a) onAxisDelta("key", "a", v);
+        else if (sender === accDelta.i) onAxisDelta("accent", "i", v);
+        else if (sender === accDelta.t) onAxisDelta("accent", "t", v);
+        else if (sender === accDelta.a) onAxisDelta("accent", "a", v);
+      },
+      [TUG_ACTIONS.SELECT_VALUE]: (e: ActionEvent) => {
+        const sender = typeof e.sender === "string" ? e.sender : "";
+        const v = typeof e.value === "string" ? e.value : "";
+        if (sender === radioId) setRadioValue(v);
+        else if (sender === choiceId) setChoiceValue(v);
+      },
     },
   });
 
-  const fmtShift = (n: number): string => (n > 0 ? `+${n}` : `${n}`);
+  const fmtD = (n: number): string => (n > 0 ? `+${n}` : `${n}`);
   const titlebarLine = isDark
     ? "Title bar: theme-fixed (dark)"
-    : `Title bar: i${seed.titlebarI} t${seed.titlebarT}`;
+    : `Title bar: i${seed.titlebar.i} t${seed.titlebar.t}`;
   const readout = [
-    `Key:    ${seed.keyHue} (${angle(seed.keyHue)})  chroma x${seed.keyCScale.toFixed(2)}  lightness ${fmtShift(seed.keyLShift)}`,
-    `Accent: ${seed.accHue} (${angle(seed.accHue)})  chroma x${seed.accCScale.toFixed(2)}  lightness ${fmtShift(seed.accLShift)}`,
-    `${titlebarLine}   Filled: i${seed.filledI} t${seed.filledT}   Tinted: i${seed.tintedI} t${seed.tintedT} a${seed.tintedA.toFixed(2)}`,
-    `Text sel: i${seed.textselI} t${seed.textselT} a${seed.textselA.toFixed(2)}`,
+    `Key:    ${seed.keyHue} (${angle(seed.keyHue)})  Δi ${fmtD(seed.key.iDelta)}  Δt ${fmtD(seed.key.tDelta)}`,
+    `Accent: ${seed.accHue} (${angle(seed.accHue)})  Δi ${fmtD(seed.accent.iDelta)}  Δt ${fmtD(seed.accent.tDelta)}`,
+    `${titlebarLine}   Filled: i${seed.filled.i} t${seed.filled.t}   Tinted: i${seed.tinted.i} t${seed.tinted.t} a${seed.tinted.a}`,
+    `Text sel: i${seed.textsel.i} t${seed.textsel.t} a${seed.textsel.a}`,
   ].join("\n");
 
   // Apply writes the current duet into the ACTIVE theme's CSS via the dev-server
   // endpoint (which re-derives from the clean baseline, so re-applying never
   // compounds). The theme hot-reload then repaints the whole app. The titlebar
   // treatment is sent only for light themes (dark themes don't carry the token).
+  // Treatment alpha is sent in the 0–1 oklch convention the endpoint expects.
   const onApply = (): void => {
     const theme = getThemeGetter()?.();
     if (!theme) {
@@ -466,17 +491,15 @@ export function GalleryThemeEditor(): React.ReactElement {
       body: JSON.stringify({
         theme,
         keyHue: seed.keyHue,
-        keyScale: seed.keyCScale,
-        keyToneShift: seed.keyLShift,
+        key: seed.key,
         accentHue: seed.accHue,
-        accentScale: seed.accCScale,
-        accentToneShift: seed.accLShift,
+        accent: seed.accent,
         ...(DARK_THEMES.has(theme)
           ? {}
-          : { titlebar: { i: seed.titlebarI, t: seed.titlebarT } }),
-        filled: { i: seed.filledI, t: seed.filledT },
-        tinted: { i: seed.tintedI, t: seed.tintedT, a: seed.tintedA },
-        textsel: { i: seed.textselI, t: seed.textselT, a: seed.textselA },
+          : { titlebar: { i: seed.titlebar.i, t: seed.titlebar.t } }),
+        filled: { i: seed.filled.i, t: seed.filled.t },
+        tinted: { i: seed.tinted.i, t: seed.tinted.t, a: seed.tinted.a / 100 },
+        textsel: { i: seed.textsel.i, t: seed.textsel.t, a: seed.textsel.a / 100 },
       }),
     })
       .then(async (r) => {
@@ -500,76 +523,29 @@ export function GalleryThemeEditor(): React.ReactElement {
         {/* ---- Controls ---- */}
         <div className="cg-section">
           <div className="gcd-controls">
+            <div className="gcd-group-label">Axes (hue + i/t deltas)</div>
             <div className="gcd-control-row">
-              <span className="gcd-control-label">Key hue</span>
-              <TugPopupButton
-                label={`${seed.keyHue} (${angle(seed.keyHue)})`}
-                senderId={keyHueId}
-                size="sm"
-                items={HUE_ITEMS}
-                focusGroup={controlsFocusGroup}
-                focusOrder={0}
+              <span className="gcd-control-label">Key</span>
+              <TugColorAdjustment
+                base={{ hue: seed.keyHue, i: seed.keyBase.i, t: seed.keyBase.t, a: seed.keyBase.a }}
+                value={seed.key}
+                senderId={keyAdjId}
+                baseSenderId={keyWellId}
+                baseLabel="Key hue"
+                showAlpha={false}
               />
             </div>
-            <TugSlider
-              label="Key chroma ×"
-              senderId={keyCId}
-              value={seed.keyCScale}
-              min={0}
-              max={1.3}
-              step={0.02}
-              size="sm"
-              valueWidth={SLIDER_VALUE_WIDTH}
-              focusGroup={controlsFocusGroup}
-              focusOrder={1}
-            />
-            <TugSlider
-              label="Key lightness ±"
-              senderId={keyLId}
-              value={seed.keyLShift}
-              min={-30}
-              max={30}
-              step={1}
-              size="sm"
-              valueWidth={SLIDER_VALUE_WIDTH}
-              focusGroup={controlsFocusGroup}
-              focusOrder={2}
-            />
             <div className="gcd-control-row">
-              <span className="gcd-control-label">Accent hue</span>
-              <TugPopupButton
-                label={`${seed.accHue} (${angle(seed.accHue)})`}
-                senderId={accHueId}
-                size="sm"
-                items={HUE_ITEMS}
-                focusGroup={controlsFocusGroup}
-                focusOrder={3}
+              <span className="gcd-control-label">Accent</span>
+              <TugColorAdjustment
+                base={{ hue: seed.accHue, i: seed.accBase.i, t: seed.accBase.t, a: seed.accBase.a }}
+                value={seed.accent}
+                senderId={accAdjId}
+                baseSenderId={accWellId}
+                baseLabel="Accent hue"
+                showAlpha={false}
               />
             </div>
-            <TugSlider
-              label="Accent chroma ×"
-              senderId={accCId}
-              value={seed.accCScale}
-              min={0}
-              max={1.3}
-              step={0.02}
-              size="sm"
-              valueWidth={SLIDER_VALUE_WIDTH}
-              focusGroup={controlsFocusGroup}
-              focusOrder={4}
-            />
-            <TugSlider
-              label="Accent lightness ±"
-              senderId={accLId}
-              value={seed.accLShift}
-              min={-30}
-              max={30}
-              step={1}
-              size="sm"
-              valueWidth={SLIDER_VALUE_WIDTH}
-              focusGroup={controlsFocusGroup}
-              focusOrder={5}
-            />
 
             <div className="gcd-group-label">Treatments (off the Key hue)</div>
             {isDark ? (
@@ -586,21 +562,23 @@ export function GalleryThemeEditor(): React.ReactElement {
                 </span>
               </div>
             ) : (
-              <>
-                <TugSlider label="Title bar i" senderId={tbIId} value={seed.titlebarI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={6} />
-                <TugSlider label="Title bar t" senderId={tbTId} value={seed.titlebarT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={7} />
-              </>
+              <div className="gcd-control-row">
+                <span className="gcd-control-label">Title bar</span>
+                <TugColorWell senderId={titlebarWellId} label="Title bar" value={{ hue: seed.keyHue, i: seed.titlebar.i, t: seed.titlebar.t, a: 100 }} />
+              </div>
             )}
-            <TugSlider label="Filled i" senderId={fIId} value={seed.filledI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={8} />
-            <TugSlider label="Filled t" senderId={fTId} value={seed.filledT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={9} />
-            <TugSlider label="Tinted i" senderId={tiIId} value={seed.tintedI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={10} />
-            <TugSlider label="Tinted t" senderId={tiTId} value={seed.tintedT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={11} />
-            <TugSlider label="Tinted α" senderId={tiAId} value={seed.tintedA} min={0} max={1} step={0.02} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={12} />
-
-            <div className="gcd-group-label">Text selection / caret (off the Key hue)</div>
-            <TugSlider label="Text sel i" senderId={tsIId} value={seed.textselI} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={13} />
-            <TugSlider label="Text sel t" senderId={tsTId} value={seed.textselT} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={14} />
-            <TugSlider label="Text sel α" senderId={tsAId} value={seed.textselA} min={0} max={1} step={0.02} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={controlsFocusGroup} focusOrder={15} />
+            <div className="gcd-control-row">
+              <span className="gcd-control-label">Filled</span>
+              <TugColorWell senderId={filledWellId} label="Filled" value={{ hue: seed.keyHue, i: seed.filled.i, t: seed.filled.t, a: 100 }} />
+            </div>
+            <div className="gcd-control-row">
+              <span className="gcd-control-label">Tinted</span>
+              <TugColorWell senderId={tintedWellId} label="Tinted" value={{ hue: seed.keyHue, i: seed.tinted.i, t: seed.tinted.t, a: seed.tinted.a }} />
+            </div>
+            <div className="gcd-control-row">
+              <span className="gcd-control-label">Text selection</span>
+              <TugColorWell senderId={textselWellId} label="Text selection" value={{ hue: seed.keyHue, i: seed.textsel.i, t: seed.textsel.t, a: seed.textsel.a }} />
+            </div>
           </div>
 
           <div className="gcd-actions" style={{ marginTop: "10px" }}>
@@ -663,10 +641,6 @@ export function GalleryThemeEditor(): React.ReactElement {
                   cellRenderers={LIST_CELL_RENDERERS}
                   inline
                   scrollKey="gcd-list"
-                  // Share the control column's focus group so the list is part of
-                  // the same Tab loop, ordered AFTER the last slider (15) — last.
-                  focusGroup={controlsFocusGroup}
-                  focusOrder={16}
                   selectionRequired
                 />
               </div>
