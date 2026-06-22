@@ -3,9 +3,10 @@
  * apply-theme-editor.ts — re-hue a theme's Key (selection/action) and Accent
  * (affordance) axes to a chosen TugColor hue, scaling chroma by a factor.
  *
- * Computes every token absolutely from the clean baseline recipe
- * (styles/themes/theme-editor-baseline.json), so repeated applies never compound.
- * Shares the transform with the dev-server POST /__theme-editor/apply endpoint via
+ * Computes every token absolutely from an identity-space baseline recipe, kept
+ * live by diff-merging hand edits to the .css back in (so repeated applies never
+ * compound and hand tuning survives). Shares the transform and the per-theme
+ * state file with the dev-server POST /__theme-editor/apply endpoint via
  * theme-editor-core.ts.
  *
  * Usage:
@@ -16,7 +17,21 @@
 
 import fs from "fs";
 import path from "path";
-import { applyDuet, isKnownHue, type DuetSeed } from "../theme-editor-core";
+import {
+  applyDuet,
+  diffMergeBaseline,
+  extractBaseline,
+  identitySeed,
+  isKnownHue,
+  type DuetSeed,
+} from "../theme-editor-core";
+
+interface ThemeEditorEntry {
+  identityBaseline: Record<string, string>;
+  appliedSeed: DuetSeed;
+  lastGenCss: string;
+}
+type ThemeEditorState = Record<string, ThemeEditorEntry>;
 
 const [, , theme, keyHue, keyScaleStr, accentHue, accentScaleStr, keyToneStr, accentToneStr] =
   process.argv;
@@ -40,24 +55,32 @@ const seed: DuetSeed = {
 
 const themesDir = path.resolve(import.meta.dir, "..", "styles", "themes");
 const themeFile = path.join(themesDir, `${theme}.css`);
-const baselinePath = path.join(themesDir, "theme-editor-baseline.json");
+const statePath = path.join(themesDir, "theme-editor-state.json");
 
 if (!fs.existsSync(themeFile)) {
   console.error(`no theme file: ${themeFile}`);
   process.exit(1);
 }
-const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf-8")) as Record<
-  string,
-  Record<string, string>
->;
-if (!baseline[theme]) {
-  console.error(`no baseline for theme "${theme}"`);
-  process.exit(1);
-}
+
+const state: ThemeEditorState = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(statePath, "utf-8")) as ThemeEditorState;
+  } catch {
+    return {};
+  }
+})();
 
 const current = fs.readFileSync(themeFile, "utf-8");
-const { css, keyCount, accentCount } = applyDuet(current, baseline[theme], seed);
+const prior = state[theme] ?? {
+  identityBaseline: extractBaseline(current),
+  appliedSeed: identitySeed(),
+  lastGenCss: current,
+};
+const baseline = diffMergeBaseline(current, prior.lastGenCss, prior.identityBaseline, prior.appliedSeed);
+const { css, keyCount, accentCount } = applyDuet(current, baseline, seed);
 fs.writeFileSync(themeFile, css);
+state[theme] = { identityBaseline: baseline, appliedSeed: seed, lastGenCss: css };
+fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
 console.log(
   `${theme}: re-hued ${keyCount} Key -> ${keyHue} (x${seed.keyScale}), ${accentCount} Accent -> ${accentHue} (x${seed.accentScale})`,
 );

@@ -8,7 +8,14 @@ import { execSync } from "child_process";
 import postcssTugColor from "./postcss-tug-color";
 // theme-editor-core re-hues a theme's Key/Accent axes; shared with
 // scripts/apply-theme-editor.ts.
-import { applyDuet, isKnownHue } from "./theme-editor-core";
+import {
+  applyDuet,
+  diffMergeBaseline,
+  extractBaseline,
+  identitySeed,
+  isKnownHue,
+  type DuetSeed,
+} from "./theme-editor-core";
 
 /**
  * Vite plugin: seamless CSS hot-reload when palette-engine.ts changes.
@@ -297,6 +304,45 @@ export async function handleThemesActivate(
 // Theme Editor card's Apply button. Dev-only.
 // ---------------------------------------------------------------------------
 
+// Per-theme editor state — the living identity-space baseline, the seed last
+// applied, and the editor's own last CSS output. Lets the next Apply diff-merge
+// hand edits (made directly to the .css) apart from the editor's own writes.
+// Dev-local cache (gitignored): rebuilt from the committed .css on first use.
+interface ThemeEditorEntry {
+  identityBaseline: Record<string, string>;
+  appliedSeed: DuetSeed;
+  lastGenCss: string;
+}
+type ThemeEditorState = Record<string, ThemeEditorEntry>;
+
+function themeEditorStatePath(themesCssDir: string): string {
+  return path.join(themesCssDir, "theme-editor-state.json");
+}
+
+function loadThemeEditorState(themesCssDir: string): ThemeEditorState {
+  try {
+    return JSON.parse(fs.readFileSync(themeEditorStatePath(themesCssDir), "utf-8")) as ThemeEditorState;
+  } catch {
+    return {};
+  }
+}
+
+function saveThemeEditorState(themesCssDir: string, state: ThemeEditorState): void {
+  fs.writeFileSync(themeEditorStatePath(themesCssDir), JSON.stringify(state, null, 2) + "\n", "utf-8");
+}
+
+// First Apply for a theme with no cached state: adopt the committed .css as the
+// identity origin (appliedSeed = identity, lastGenCss = current). Pre-existing
+// hand edits are preserved verbatim because they ARE the baseline; the editor's
+// scale/shift simply re-origin to the current file from here on.
+function bootstrapThemeState(currentCss: string): ThemeEditorEntry {
+  return {
+    identityBaseline: extractBaseline(currentCss),
+    appliedSeed: identitySeed(),
+    lastGenCss: currentCss,
+  };
+}
+
 export async function handleThemeEditApply(
   body: unknown,
   themesCssDir: string,
@@ -341,21 +387,29 @@ export async function handleThemeEditApply(
   return new Promise<{ status: number; body: string }>((resolve) => {
     withMutex(async () => {
       try {
-        const baselinePath = path.join(themesCssDir, "theme-editor-baseline.json");
-        const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf-8")) as Record<
-          string,
-          Record<string, string>
-        >;
-        if (!baseline[theme]) {
-          resolve({ status: 404, body: JSON.stringify({ error: `no baseline for '${theme}'` }) });
-          return;
-        }
-        const current = fs.readFileSync(themeFile, "utf-8");
-        const { css, keyCount, accentCount } = applyDuet(current, baseline[theme], {
+        const newSeed: DuetSeed = {
           keyHue, keyScale, keyToneShift, accentHue, accentScale, accentToneShift,
           titlebar, filled, tinted, textsel,
-        });
+        };
+        const current = fs.readFileSync(themeFile, "utf-8");
+
+        // Recover the identity-space baseline by folding hand edits made directly
+        // to the .css back in (diff-merge against the editor's own last output),
+        // so hand tuning survives Apply and the .css stays the source of truth.
+        const state = loadThemeEditorState(themesCssDir);
+        const prior = state[theme] ?? bootstrapThemeState(current);
+        const baseline = diffMergeBaseline(
+          current, prior.lastGenCss, prior.identityBaseline, prior.appliedSeed,
+        );
+
+        const { css, keyCount, accentCount } = applyDuet(current, baseline, newSeed);
         fs.writeFileSync(themeFile, css, "utf-8");
+
+        // Persist the merged baseline + this apply so the next diff-merge can tell
+        // future hand edits apart from this output.
+        state[theme] = { identityBaseline: baseline, appliedSeed: newSeed, lastGenCss: css };
+        saveThemeEditorState(themesCssDir, state);
+
         // Push the change into the active-theme file so the running card repaints.
         const activeTheme = readActiveThemeFromTugbank();
         copyActiveThemeToFile(activeTheme, activeCssPath);

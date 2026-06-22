@@ -8,6 +8,9 @@ styles/*.golden
 # Runtime active theme file (written by Vite plugin and activate endpoint — always a complete theme)
 styles/tug-active-theme.css
 
+# Theme Editor live state (per-theme identity baseline + last applied seed; rebuilt from the .css)
+styles/themes/theme-editor-state.json
+
 # Generated token rename maps (build artifacts — regenerate with bun run generate:rename-maps)
 rename-tug7.json
 rename-tugc.json

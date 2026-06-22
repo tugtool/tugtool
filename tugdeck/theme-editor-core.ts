@@ -8,9 +8,12 @@
  *   - the dev-server POST /__theme-editor/apply endpoint (vite.config.ts), driven
  *     by the Theme Editor card's Apply button
  *
- * Re-hue is always computed from a clean BASELINE recipe (the original per-theme
- * intensities/tones, captured in styles/themes/theme-editor-baseline.json) so
- * applying repeatedly with new hues/scales never compounds — each apply is absolute.
+ * Re-hue is computed from an identity-space BASELINE recipe (per-token
+ * intensities/tones with hue/scale/shift removed) so applying repeatedly with
+ * new hues/scales never compounds — each apply is absolute. The baseline is not
+ * a frozen file: the dev-server keeps it live by diff-merging hand edits made
+ * directly to the theme CSS back into it (diffMergeBaseline / inverseSeed), so
+ * the .css files stay the single source of truth and hand tuning survives Apply.
  */
 
 import { HUE_FAMILIES, TUG_COLOR_PRESETS } from "./src/components/tugways/palette-engine";
@@ -155,14 +158,24 @@ function parseTugColor(inner: string): Parsed | null {
   return { i, t, a };
 }
 
-function formatTugColor(hue: string, i: number, t: number, a: number | null): string {
+/** Format the inner of `--tug-color(...)` — `hue, i: X, t: Y[, a: Z]`. */
+function formatInner(hue: string, i: number, t: number, a: number | null): string {
   // Clamp every axis to its valid --tug-color() range — treatment deltas (e.g.
   // filled rest + active delta) and chroma scaling can otherwise overshoot and
   // the postcss plugin rejects the value.
   const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, Math.round(n)));
   const parts = [`i: ${clamp(i, 100)}`, `t: ${clamp(t, 100)}`];
   if (a !== null) parts.push(`a: ${clamp(a, 100)}`);
-  return `--tug-color(${hue}, ${parts.join(", ")})`;
+  return `${hue}, ${parts.join(", ")}`;
+}
+
+function formatTugColor(hue: string, i: number, t: number, a: number | null): string {
+  return `--tug-color(${formatInner(hue, i, t, a)})`;
+}
+
+/** The hue head of a `--tug-color(...)` inner (`blue-light, i: 50` -> `blue`). */
+function hueOf(inner: string): string {
+  return inner.split(",")[0].trim().split("-")[0];
 }
 
 /**
@@ -271,6 +284,58 @@ export function applyDuet(
   }
 
   return { css, keyCount, accentCount };
+}
+
+/**
+ * Recover the identity-space recipe inner for a single token from its current
+ * (post-apply) value — the inverse of applyDuet's generic Key/Accent transform:
+ * undo the chroma scale and tone shift, keep the token's own hue/alpha. Exact
+ * when the applied seed is identity (scale 1, shift 0); ~1-unit integer rounding
+ * drift only when un-applying a non-identity scale.
+ *
+ * Treatment-group tokens (filled/tinted/textsel/titlebar) are written by
+ * applyDuet via a ramp-collapsing formula that is not cleanly invertible — they
+ * are inverted here with the same generic scale/shift, which is exact in the
+ * identity case (the normal hand-tuning state) and approximate otherwise.
+ */
+export function inverseSeed(inner: string, seed: DuetSeed, role: DuetRole): string {
+  const parsed = parseTugColor(inner);
+  if (!parsed || !role) return inner;
+  const scale = role === "key" ? seed.keyScale : seed.accentScale;
+  const toneShift = (role === "key" ? seed.keyToneShift : seed.accentToneShift) ?? 0;
+  const i = scale ? parsed.i / scale : parsed.i;
+  const t = parsed.t - toneShift;
+  return formatInner(hueOf(inner), i, t, parsed.a);
+}
+
+/**
+ * Fold hand edits made directly to a theme's CSS back into the identity-space
+ * baseline recipe, so the Theme Editor's Apply re-hues them instead of clobbering
+ * them. Diff the live CSS against the editor's own last output (lastGenCss):
+ * tokens it has not touched keep the exact stored recipe; tokens that differ are
+ * hand edits, inverse-transformed by the seed that was applied to produce them.
+ */
+export function diffMergeBaseline(
+  currentCss: string,
+  lastGenCss: string,
+  identityBaseline: Record<string, string>,
+  appliedSeed: DuetSeed,
+): Record<string, string> {
+  const live = extractBaseline(currentCss);
+  const lastGen = extractBaseline(lastGenCss);
+  const merged: Record<string, string> = { ...identityBaseline };
+  for (const [name, inner] of Object.entries(live)) {
+    const handEdited = lastGen[name] !== inner;
+    if (handEdited || !(name in merged)) {
+      merged[name] = inverseSeed(inner, appliedSeed, classifyRole(name));
+    }
+  }
+  return merged;
+}
+
+/** An identity seed — no re-hue, no scale, no shift. Used to bootstrap state. */
+export function identitySeed(): DuetSeed {
+  return { keyHue: "blue", keyScale: 1, keyToneShift: 0, accentHue: "blue", accentScale: 1, accentToneShift: 0 };
 }
 
 /** Validate a hue name is a known TugColor hue. */
