@@ -85,6 +85,7 @@ import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryAttachmentStrip } from "./gallery-attachment-strip";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
+import { GalleryCompletionSpike } from "./gallery-completion-spike";
 import { GalleryTextEditor } from "./gallery-text-editor";
 import { GallerySplitPane } from "./gallery-split-pane";
 import { GalleryStatePreservation } from "./gallery-state-preservation";
@@ -1537,6 +1538,21 @@ export function registerGalleryCards(): void {
     sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.textInput,
     engineKind: "em",
+  });
+
+  // Temporary design spike — slash-command / file-completion row treatments.
+  // Renders the shipping baseline against four alternatives (glyph + path,
+  // atom-chip rows, grouped + hint, two-column preview) over the same static
+  // sample data. Remove once a direction lands in `paintCompletionPopup` /
+  // `TugFileChooser`.
+  registerCard({
+    componentId: "gallery-completion-spike",
+    contentFactory: (_cardId) => <GalleryCompletionSpike />,
+    defaultMeta: { title: "Completion Atoms (spike)", icon: "Sparkles", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({

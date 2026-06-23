@@ -1,0 +1,221 @@
+/**
+ * gallery-completion-spike.css — styling for the completion-atom design
+ * spike card. Temporary: paired with `gallery-completion-spike.tsx`.
+ *
+ * All alternatives borrow the real completion-menu surface tokens
+ * (`--tugx-completion-*`, defined on `body` in `tug-completion-menu.css`,
+ * which the component imports) so the spike recolors with the theme and
+ * reads as the genuine popup chrome — only the row anatomy differs per alt.
+ */
+
+/* Controls bar — trigger toggle + query field. */
+.cspike-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.cspike-query {
+  max-width: 260px;
+}
+
+/* Per-alt explainer line. */
+.cspike-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 46rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Static stand-in for the floating popup panel. Mirrors the real
+   `.tug-completion-menu` chrome but sits inline in the card. */
+.cspike-panel {
+  width: fit-content;
+  min-width: 260px;
+  max-width: 540px;
+  padding: 4px;
+  background-color: var(--tugx-completion-bg);
+  color: var(--tugx-completion-fg);
+  border: 1px solid var(--tugx-completion-border);
+  border-radius: var(--tug-radius-sm);
+  box-shadow: var(--tugx-completion-shadow);
+}
+
+.cspike-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 10px;
+  border-radius: var(--tug-radius-xs);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cspike-row[data-selected="true"] {
+  background-color: var(--tugx-completion-item-hover-bg);
+  color: var(--tugx-completion-item-hover-fg);
+}
+
+/* Leading type glyph (lucide icon or atom chip wrapper). Centered against
+   the first text line rather than riding the shared baseline. */
+.cspike-glyph {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--tugx-completion-desc-fg);
+}
+
+.cspike-row[data-selected="true"] .cspike-glyph {
+  color: inherit;
+}
+
+/* Atom-chip leading slot needs vertical centering but no fixed box. */
+.cspike-chip {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-flex;
+}
+
+.cspike-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.cspike-match {
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* Muted directory path, pushed to the right of the basename (alt A / B). */
+.cspike-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--tugx-completion-desc-fg);
+}
+
+.cspike-row[data-selected="true"] .cspike-path,
+.cspike-row[data-selected="true"] .cspike-desc {
+  color: var(--tugx-completion-item-hover-fg);
+  opacity: 0.85;
+}
+
+/* Muted command description, single line. */
+.cspike-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--tugx-completion-desc-fg);
+}
+
+/* Trailing mono hint column (alt C). */
+.cspike-hint {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 16px;
+  font-family: var(--tug-font-family-mono);
+  font-size: 11px;
+  color: var(--tugx-completion-desc-fg);
+  opacity: 0.85;
+}
+
+.cspike-row[data-selected="true"] .cspike-hint {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/* Group header band (alt C). */
+.cspike-group-header {
+  padding: 7px 10px 3px;
+  font-size: 10px;
+  font-weight: var(--tug-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tugx-completion-desc-fg);
+  user-select: none;
+}
+
+.cspike-group-header:not(:first-child) {
+  margin-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--tugx-completion-border) 60%, transparent);
+}
+
+/* Alt D — two-column list + preview. */
+.cspike-split {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  background-color: var(--tugx-completion-bg);
+  color: var(--tugx-completion-fg);
+  border: 1px solid var(--tugx-completion-border);
+  border-radius: var(--tug-radius-sm);
+  box-shadow: var(--tugx-completion-shadow);
+}
+
+.cspike-split-list {
+  flex: 0 0 auto;
+  width: 232px;
+  padding: 4px;
+  border-right: 1px solid var(--tugx-completion-border);
+}
+
+.cspike-split-preview {
+  flex: 1 1 auto;
+  min-width: 248px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.cspike-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+.cspike-preview-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tugx-completion-desc-fg);
+}
+
+.cspike-preview-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.cspike-preview-meta dt {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tugx-completion-desc-fg);
+}
+
+.cspike-preview-meta dd {
+  margin: 0;
+  font-family: var(--tug-font-family-mono);
+  color: var(--tugx-completion-fg);
+}
+
+.cspike-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--tugx-completion-desc-fg);
+}
