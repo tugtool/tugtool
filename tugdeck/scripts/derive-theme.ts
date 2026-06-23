@@ -17,6 +17,7 @@
 import fs from "fs";
 import path from "path";
 import { deriveTheme, isKnownHue } from "../theme-editor-core";
+import { correctThemeContrast } from "./theme-contrast-correct";
 
 const args = process.argv.slice(2);
 const dry = args.includes("--dry");
@@ -54,4 +55,24 @@ if (dry) {
 } else {
   fs.writeFileSync(outFile, css);
   console.log(`wrote ${outFile}`);
+
+  // Hue rotation preserves perceptual lightness but not WCAG luminance, so a
+  // rotated contrast-bearing rung can land below its floor. Repair just those
+  // rungs (tone-only) against the base, in place.
+  const correction = correctThemeContrast(outFile, baseFile, { apply: true });
+  if (correction.corrected.length > 0) {
+    console.log(
+      `gamut-corrected ${correction.corrected.length} rung(s) ` +
+        `(${correction.before} → ${correction.after} WCAG fail, budget ${correction.budget}):`,
+    );
+    for (const c of correction.corrected) {
+      console.log(`  ${c.token}: ${c.hue} tone ${c.fromTone} → ${c.toTone}`);
+    }
+  }
+  for (const u of correction.uncorrectable) {
+    console.warn(
+      `  WARNING uncorrectable overrun: ${u.fg} on ${u.bg} ` +
+        `(${u.role}, WCAG ${u.wcag.toFixed(2)}) — left for manual tuning`,
+    );
+  }
 }

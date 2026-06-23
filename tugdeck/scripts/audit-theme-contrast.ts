@@ -58,7 +58,7 @@ const TUGWAYS_DIR = path.join(TUGDECK, "src/components/tugways");
 // --tug-color() parse context (mirrors postcss-tug-color's KNOWN_HUES/presets)
 // ---------------------------------------------------------------------------
 
-const KNOWN_HUES: ReadonlySet<string> = new Set([
+export const KNOWN_HUES: ReadonlySet<string> = new Set([
   ...Object.keys(HUE_FAMILIES),
   "black",
   "white",
@@ -66,7 +66,7 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
   ...Object.keys(NAMED_GRAYS),
   "transparent",
 ]);
-const KNOWN_PRESETS = new Map(Object.entries(TUG_COLOR_PRESETS));
+export const KNOWN_PRESETS = new Map(Object.entries(TUG_COLOR_PRESETS));
 
 // ---------------------------------------------------------------------------
 // CSS token-definition extraction
@@ -108,7 +108,7 @@ function extractDefs(css: string, into: Map<string, string>): void {
  * (theme-independent --tugx-* and other defs) layered under the theme's own
  * token definitions.
  */
-function buildDefs(themeFile: string): Map<string, string> {
+export function buildDefs(themeFile: string): Map<string, string> {
   const defs = new Map<string, string>();
   // Component + chrome CSS first (provides --tugx-* aliases and shared utilities).
   const componentCss = [
@@ -126,7 +126,7 @@ function buildDefs(themeFile: string): Map<string, string> {
 // ---------------------------------------------------------------------------
 
 /** Resolve a single --tug-color(...) recipe string to a ResolvedColor, or null. */
-function resolveRecipe(value: string): ResolvedColor | null {
+export function resolveRecipe(value: string): ResolvedColor | null {
   const calls = findTugColorCalls(value);
   if (calls.length === 0) return null;
   const parsed = parseTugColor(
@@ -155,7 +155,7 @@ function resolveRecipe(value: string): ResolvedColor | null {
  * runtime policy where such tokens are absent from the resolved map (and thus
  * skipped by validateThemeContrast).
  */
-function resolveToken(
+export function resolveToken(
   name: string,
   defs: Map<string, string>,
   seen: Set<string> = new Set(),
@@ -181,7 +181,7 @@ function resolveToken(
 // Audit one theme
 // ---------------------------------------------------------------------------
 
-interface ThemeReport {
+export interface ThemeReport {
   theme: string;
   evaluated: number;
   /** Normative WCAG failures (gate). */
@@ -191,7 +191,7 @@ interface ThemeReport {
   cvdWarnings: number;
 }
 
-function auditTheme(themeFile: string): ThemeReport {
+export function auditTheme(themeFile: string): ThemeReport {
   const theme = path.basename(themeFile, ".css");
   const defs = buildDefs(themeFile);
 
@@ -240,9 +240,12 @@ function auditTheme(themeFile: string): ThemeReport {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Main — CLI only. Guarded so the audit engine above (auditTheme, buildDefs,
+// resolveToken, …) can be imported by the deriver's correction pass without
+// running the CLI or calling process.exit.
 // ---------------------------------------------------------------------------
 
+if (import.meta.main) {
 const args = process.argv.slice(2);
 const showList = args.includes("--list");
 const themeArg = args.find((a) => !a.startsWith("--"));
@@ -319,3 +322,4 @@ if (regressed) {
   process.exit(1);
 }
 console.log(`\n✓ No theme exceeds the ${BASE_THEME_NAME} accessibility budget.`);
+}

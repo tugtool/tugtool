@@ -510,8 +510,8 @@ body {
   --tug7-element-control-icon-outlined-agent-hover: --tug-color(aqua, i: 2, t: 100);
   --tug7-element-control-icon-outlined-agent-active: --tug-color(aqua, i: 2, t: 100);
   --tug7-element-control-border-outlined-agent-rest: --tug-color(aqua, i: 60, t: 40);
-  --tug7-element-control-border-outlined-agent-hover: --tug-color(aqua, i: 71, t: 40);
-  --tug7-element-control-border-outlined-agent-active: --tug-color(aqua, i: 82, t: 40);
+  --tug7-element-control-border-outlined-agent-hover: --tug-color(aqua, i: 71, t: 35);
+  --tug7-element-control-border-outlined-agent-active: --tug-color(aqua, i: 82, t: 34);
 
   /* Outlined Data */
   --tug7-surface-control-primary-outlined-data-rest: transparent;
