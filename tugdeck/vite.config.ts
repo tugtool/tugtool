@@ -59,6 +59,27 @@ export const SHIPPED_THEMES_CSS_DIR = path.resolve(__dirname, "styles/themes");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { BASE_THEME_NAME } = require("./src/theme-constants") as { BASE_THEME_NAME: string };
 
+/**
+ * The dev server's authoritative record of which theme is currently active.
+ *
+ * Seeded at server boot from a best-effort `tugbank read` (see
+ * `themeLoaderPlugin`), then driven by the client: every successful
+ * POST `/__themes/activate` updates it. This — NOT a fresh `tugbank read` —
+ * is what `controlTokenHotReload` re-bakes when a theme's CSS is edited.
+ *
+ * Why not re-read tugbank on every token edit: the dev server resolves its
+ * tugbank db from its OWN process environment (`TUG_INSTANCE_ID` /
+ * `TUGBANK_PATH`, falling back to legacy `~/.tugbank.db`). The running
+ * Tug.app variant writes its theme over HTTP to its own per-instance db —
+ * a different file. So a `tugbank read` here returns whatever theme the
+ * dev server's (often empty/legacy) db holds, not what the app is actually
+ * showing. Re-reading it on each edit was the cause of the "edit a theme
+ * css → snaps back to brio" bug: the read returned the base fallback and
+ * we baked it over the live theme. The client is the source of truth, and
+ * it tells us via `/__themes/activate`.
+ */
+let activeThemeName: string = BASE_THEME_NAME;
+
 /** Read active theme from tugbank, with base fallback on any error. */
 function readActiveThemeFromTugbank(): string {
   try {
@@ -70,6 +91,25 @@ function readActiveThemeFromTugbank(): string {
   } catch {
     return BASE_THEME_NAME;
   }
+}
+
+/**
+ * Write `content` to `filePath` only if it differs from what's already there.
+ * Returns true when a write happened. Skipping no-op writes keeps Vite's file
+ * watcher quiet — the client's startup theme sync re-bakes the active theme on
+ * every load, and without this guard each load would fire a spurious CSS HMR
+ * even when the baked theme already matches.
+ */
+function writeIfChanged(filePath: string, content: string): boolean {
+  try {
+    if (fs.existsSync(filePath) && fs.readFileSync(filePath, "utf-8") === content) {
+      return false;
+    }
+  } catch {
+    // Fall through to write — an unreadable target should be overwritten.
+  }
+  fs.writeFileSync(filePath, content, "utf-8");
+  return true;
 }
 
 /** Resolve shipped theme CSS path by name. */
@@ -92,29 +132,30 @@ export function parseHostCanvasColor(cssText: string): string | null {
  * - For brio (or missing/default): copies styles/themes/brio.css.
  * - For any other theme: copies styles/themes/<name>.css.
  * - The file is always a complete theme; it is never empty.
+ *
+ * Returns true when the active file actually changed on disk (so callers can
+ * skip broadcasting a theme-changed HMR event for a no-op re-bake).
  */
-function copyActiveThemeToFile(themeName: string, activeCssPath: string): void {
+function copyActiveThemeToFile(themeName: string, activeCssPath: string): boolean {
   if (!themeName || themeName === BASE_THEME_NAME) {
     const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
-    fs.writeFileSync(activeCssPath, css, "utf-8");
-    return;
+    return writeIfChanged(activeCssPath, css);
   }
 
   const sourceCssPath = findThemeCssPath(themeName, SHIPPED_THEMES_CSS_DIR);
   if (!sourceCssPath) {
     console.warn(`[themeLoaderPlugin] theme "${themeName}" not found, falling back to brio`);
     const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
-    fs.writeFileSync(activeCssPath, css, "utf-8");
-    return;
+    return writeIfChanged(activeCssPath, css);
   }
 
   try {
     const css = fs.readFileSync(sourceCssPath, "utf-8");
-    fs.writeFileSync(activeCssPath, css, "utf-8");
+    return writeIfChanged(activeCssPath, css);
   } catch (err) {
     console.error(`[themeLoaderPlugin] failed to copy CSS for theme "${themeName}":`, err);
     const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
-    fs.writeFileSync(activeCssPath, css, "utf-8");
+    return writeIfChanged(activeCssPath, css);
   }
 }
 
@@ -132,8 +173,12 @@ function themeLoaderPlugin(): VitePlugin {
   return {
     name: "theme-loader",
     configResolved() {
-      const activeTheme = readActiveThemeFromTugbank();
-      copyActiveThemeToFile(activeTheme, THEME_ACTIVE_CSS);
+      // Best-effort boot seed. Correct when the dev server shares the
+      // running app's tugbank instance; otherwise the client corrects it on
+      // startup via `/__themes/activate` (see `syncDevActiveTheme`). Either
+      // way, `activeThemeName` — not a fresh read — drives later re-bakes.
+      activeThemeName = readActiveThemeFromTugbank();
+      copyActiveThemeToFile(activeThemeName, THEME_ACTIVE_CSS);
     },
   };
 }
@@ -150,22 +195,29 @@ function themeLoaderPlugin(): VitePlugin {
  * skip protocol.
  */
 function controlTokenHotReload(): VitePlugin {
-  function reloadActiveTheme() {
-    const activeTheme = readActiveThemeFromTugbank();
-    copyActiveThemeToFile(activeTheme, THEME_ACTIVE_CSS);
-  }
-
   return {
     name: "control-token-hot-reload",
     handleHotUpdate({ file, server }) {
       if (file.startsWith(SHIPPED_THEMES_CSS_DIR) && file.endsWith(".css")) {
-        reloadActiveTheme();
-        // Fire BEFORE returning so the client receives the custom
-        // event ahead of the HMR payload Vite emits for the
-        // resulting tug-active-theme.css change. WebSocket messages
-        // are TCP-ordered; chokidar detects the file change after
-        // this send call, so the event lands first.
-        server.ws.send({ type: "custom", event: "tug:theme-changed" });
+        // Only the active theme's own CSS feeds the live stylesheet.
+        // Editing any other theme's file changes nothing on screen, so
+        // leave the active file untouched and emit no update — re-baking
+        // here is exactly what used to flip the live theme back to the
+        // base. Re-bake from `activeThemeName` (the client's truth), never
+        // a fresh `tugbank read` (wrong db — see `activeThemeName`).
+        const editedTheme = path.basename(file, ".css");
+        if (editedTheme !== activeThemeName) {
+          return [];
+        }
+        const changed = copyActiveThemeToFile(activeThemeName, THEME_ACTIVE_CSS);
+        if (changed) {
+          // Fire BEFORE returning so the client receives the custom
+          // event ahead of the HMR payload Vite emits for the
+          // resulting tug-active-theme.css change. WebSocket messages
+          // are TCP-ordered; chokidar detects the file change after
+          // this send call, so the event lands first.
+          server.ws.send({ type: "custom", event: "tug:theme-changed" });
+        }
         return [];
       }
     },
@@ -192,6 +244,8 @@ function controlTokenHotReload(): VitePlugin {
 export interface ActivateResult {
   theme: string;
   hostCanvasColor: string;
+  /** True when the active CSS file actually changed on disk. */
+  changed: boolean;
 }
 
 /**
@@ -218,8 +272,8 @@ export function activateTheme(
     if (!hostCanvasColor) {
       throw new Error(`Missing or invalid --tugx-host-canvas-color in ${BASE_THEME_CSS}`);
     }
-    fs.writeFileSync(activeCssPath, baseCss, "utf-8");
-    return { theme: BASE_THEME_NAME, hostCanvasColor };
+    const changed = writeIfChanged(activeCssPath, baseCss);
+    return { theme: BASE_THEME_NAME, hostCanvasColor, changed };
   }
 
   const cssPath = findThemeCssPath(themeName, themesCssDir);
@@ -232,8 +286,8 @@ export function activateTheme(
   if (!hostCanvasColor) {
     throw new Error(`Missing or invalid --tugx-host-canvas-color in ${cssPath}`);
   }
-  fs.writeFileSync(activeCssPath, css, "utf-8");
-  return { theme: themeName, hostCanvasColor };
+  const changed = writeIfChanged(activeCssPath, css);
+  return { theme: themeName, hostCanvasColor, changed };
 }
 
 // ---------------------------------------------------------------------------
@@ -571,14 +625,30 @@ function themeSaveLoadPlugin(): VitePlugin {
               }
               handleThemesActivate(body, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
                 if (result.status === 200) {
+                  // The client is the source of truth for the active theme.
+                  // Record what it just activated so later theme-css edits
+                  // re-bake THIS theme (see `activeThemeName`) — including
+                  // the startup sync, which corrects a stale boot seed.
+                  let changed = true;
+                  try {
+                    const parsed = JSON.parse(result.body) as { theme?: string; changed?: boolean };
+                    if (typeof parsed.theme === "string") activeThemeName = parsed.theme;
+                    if (typeof parsed.changed === "boolean") changed = parsed.changed;
+                  } catch {
+                    // Keep the prior active theme; default to broadcasting.
+                  }
                   // Tell the client a theme change is coming via the
                   // forthcoming `vite:beforeUpdate`. The `hmr-bridge`
                   // consumes this to skip the per-card state-preservation
                   // flush on the CSS-only update. WS messages are
                   // TCP-ordered; this send precedes Vite's automatic
                   // file-watcher-triggered HMR payload, so the client
-                  // sees it first.
-                  server.ws.send({ type: "custom", event: "tug:theme-changed" });
+                  // sees it first. Skip it when nothing changed on disk —
+                  // a no-op re-bake (e.g. startup sync of an already-correct
+                  // theme) emits no HMR, so there is no update to herald.
+                  if (changed) {
+                    server.ws.send({ type: "custom", event: "tug:theme-changed" });
+                  }
                 }
                 res.writeHead(result.status, { "Content-Type": "application/json" });
                 res.end(result.body);

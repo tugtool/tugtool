@@ -131,6 +131,46 @@ export async function activateProductionTheme(themeName: string): Promise<string
 }
 
 // ---------------------------------------------------------------------------
+// syncDevActiveTheme — dev startup reconciliation
+// ---------------------------------------------------------------------------
+
+/**
+ * Dev-only: bring the dev server's baked `tug-active-theme.css` in line with
+ * the theme this client actually wants, on startup.
+ *
+ * In dev the active stylesheet is a single file the Vite server bakes from a
+ * best-effort `tugbank read` in ITS OWN environment — which resolves a
+ * different per-instance db than this app variant writes to. So the baked
+ * theme can disagree with the theme this client read from its own instance
+ * (e.g. the server boots brio while this variant is nocturne). POST the
+ * client's theme to `/__themes/activate` so the server re-bakes the right one
+ * and records it as active — which is also what makes a later theme-css edit
+ * re-bake THIS theme instead of snapping back to the stale boot seed.
+ *
+ * No-ops in production (no dev server, no endpoint) and never persists — the
+ * value came from tugbank, so there is nothing to write back. The server
+ * skips the write (and the HMR) when the baked theme already matches, so the
+ * common case is a cheap no-op with no flash.
+ */
+export async function syncDevActiveTheme(themeName: string): Promise<void> {
+  if (import.meta.env.PROD) return;
+  try {
+    const res = await fetch("/__themes/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: themeName }),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { hostCanvasColor?: string };
+    if (typeof data.hostCanvasColor === "string") {
+      sendCanvasColor(data.hostCanvasColor);
+    }
+  } catch {
+    // Best-effort; the dev server's boot seed stands if the sync fails.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ThemeContext
 // ---------------------------------------------------------------------------
 

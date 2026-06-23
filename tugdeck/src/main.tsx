@@ -29,6 +29,7 @@ import { getThemeSetter } from "./action-dispatch";
 import {
   sendCanvasColor,
   activateProductionTheme,
+  syncDevActiveTheme,
   readHostCanvasColorFromAppliedCss,
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
@@ -181,10 +182,16 @@ if (!container) {
     normalizeFocusRingModality(readFocusRingModality(tugbankClient)),
   );
 
-  // Production startup: apply saved non-base override before first render so
-  // the app does not flash brio and then restyle.
+  // Startup theme reconciliation, before first render so the app does not
+  // flash the wrong theme and then restyle.
   if (import.meta.env.PROD) {
+    // Apply the saved non-base override <link>.
     await activateProductionTheme(initialTheme);
+  } else {
+    // Reconcile the dev server's baked active theme with this variant's saved
+    // theme — the dev server's boot seed can come from a different tugbank
+    // instance than this app writes to (see syncDevActiveTheme).
+    await syncDevActiveTheme(initialTheme);
   }
 
   // Sync canvas color to Swift bridge from the applied CSS metadata token.
