@@ -936,6 +936,13 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Summary:** Opening a session shows the same turn number before and after (the picker count == the highest rendered `#a`/`#u` address == `engine(file)`), and an assistant-originated turn (wake / `/compact` / `--continue` orphan) renders `#a`-only with no phantom `#u` row. Plan: `roadmap/canonical-turns-redux.md`.
 - **Envelope note:** the picker-driven assertion needs a session under the active project's claude corpus. The app-test instance runs in its own worktree (a different encoded project dir), and the real reference session (`49e9aec6`, 81 turns) lives under the *main* project dir, while `~/.claude/projects` is global — so isolating a seeded real-shape session would require a test-only override of the claude-projects root (production has none today) rather than writing into the user's real corpus. Until that override lands, this case is verified by the lower-layer contracts plus live vetting on the `debug-main` instance where `49e9aec6` resides.
 
+### Window-shade collapse (AT0194)
+
+#### [AT0194] Window-shade collapse — clean stub, height round-trips
+- **Status:** ✅ closed.
+- **Tests:** `at0194-window-shade-collapse.test.ts`.
+- **Summary:** Collapsing a card to the window-shade stub leaves no chrome protruding below the title bar (the chrome paints at the frame's border-box, not 2px taller), and a title-bar interaction (click/drag) on the *collapsed* card preserves the stored expanded height instead of committing the collapsed stub height — so re-expanding restores the card to its original height. Guards [D07] / [D27]. Native CGEvents (click + drag).
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).

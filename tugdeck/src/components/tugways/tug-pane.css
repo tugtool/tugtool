@@ -121,6 +121,13 @@ body {
   isolation: isolate;
   display: flex;
   flex-direction: column;
+  /* `border-box` so `width`/`height: 100%` resolve to the frame's
+   * border-box, INCLUDING the 1px border. Under the default content-box,
+   * `height: 100%` sizes the content area and the 1px border is added on
+   * top, so the chrome paints 2px taller/wider than the frame and its
+   * bottom border + rounded corner protrude below the title bar — the
+   * "turd" visible under a window-shade-collapsed card. [D07] */
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   background-color: var(--tugx-pane-bg);
@@ -180,6 +187,13 @@ body {
 .tug-pane-chrome--collapsed .tug-pane-body {
   height: 0;
   flex: none;
+}
+
+/* No content sits below the title bar when collapsed, so its bottom divider
+ * is a line to nowhere — drop it so the title bar fills the collapsed chrome
+ * exactly (CARD_TITLE_BAR_HEIGHT) instead of overflowing its slot by 1px. */
+.tug-pane-chrome--collapsed .tug-pane-title-bar {
+  border-bottom-color: transparent;
 }
 
 .tug-pane-chrome--collapsed {

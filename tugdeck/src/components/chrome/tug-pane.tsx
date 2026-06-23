@@ -495,12 +495,12 @@ const ZERO_EDGE_OFFSETS: GuideEdgeOffsets = { left: 0, right: 0, top: 0, bottom:
  * Measure how far each visible card edge (the `.tug-pane-chrome` border box) sits
  * from the measured `.tug-pane` frame box that snap geometry uses.
  *
- * The chrome is `content-box` with `width/height: 100%` + a 1px border, so its
- * border box can overflow the frame — making the edge the user sees differ from
- * `getBoundingClientRect(.tug-pane)` by a pixel. Reading the actual delta (rather
- * than assuming a box model) lets snap guides land on the visible border exactly,
- * whatever the border/box-sizing turns out to be. All cards share this geometry,
- * so one measurement per gesture suffices. Returned in layout px (÷ zoom).
+ * The chrome is `border-box` with `width/height: 100%` + a 1px border, so its
+ * border box normally coincides with the frame box and the offsets are zero.
+ * Reading the actual delta (rather than assuming a box model) keeps snap guides
+ * landing on the visible border exactly, whatever the border/box-sizing turns
+ * out to be. All cards share this geometry, so one measurement per gesture
+ * suffices. Returned in layout px (÷ zoom).
  */
 function measureGuideEdgeOffsets(frame: HTMLElement, zoom = 1): GuideEdgeOffsets {
   const chrome = frame.querySelector(".tug-pane-chrome");
@@ -1415,7 +1415,13 @@ export function TugPane({
         frame.style.left = `${finalPos.x}px`;
         frame.style.top = `${finalPos.y}px`;
 
-        onCardMoved(id, finalPos, { width: frame.offsetWidth, height: frame.offsetHeight });
+        // While collapsed, the frame's live height is the window-shade height
+        // (CARD_TITLE_BAR_HEIGHT + border), not the card's real height. Committing
+        // `frame.offsetHeight` here would overwrite the stored expanded height with
+        // the collapsed stub, so the card could never be restored. Preserve the
+        // stored `size.height` for a collapsed drag; only the position changes.
+        const committedHeight = collapsed ? size.height : frame.offsetHeight;
+        onCardMoved(id, finalPos, { width: frame.offsetWidth, height: committedHeight });
 
         // Reset all drag state.
         dragOtherRects.current = [];
@@ -1428,8 +1434,10 @@ export function TugPane({
     },
     // position.x/y captured into dragStartPosition at drag-start; id, onCardMoved,
     // onCardMerged, activeCardId, and store are stable or handled via closure capture.
+    // `collapsed`/`size.height` are read at commit to preserve the stored height
+    // across a collapsed-card drag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, onCardMerged, activeCardId, position.x, position.y, store],
+    [id, onCardMoved, onCardMerged, activeCardId, position.x, position.y, store, collapsed, size.height],
   );
 
   // ---------------------------------------------------------------------------
