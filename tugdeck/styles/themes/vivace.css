@@ -1,6 +1,6 @@
 /* Harmony — light theme. */
 body {
-  --tugx-host-canvas-color: #354a3c;
+  --tugx-host-canvas-color: #2d4750;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
@@ -87,7 +87,7 @@ body {
      are recessed-within-card and tooltip surfaces, so they stay light and
      hold dark default text. */
   --tug7-surface-global-primary-normal-canvas-rest: --tug-color(mint, i: 9, t: 18);
-  --tug7-surface-global-primary-normal-content-rest: --tug-color(cyan, i: 2, t: 100);
+  --tug7-surface-global-primary-normal-content-rest: --tug-color(cyan, i: 1, t: 100);
   --tug7-surface-global-primary-normal-control-rest: var(--tug7-surface-control-primary-outlined-action-rest);
   --tug7-surface-global-primary-normal-default-rest: --tug-color(cyan, i: 3, t: 99);
   --tug7-surface-global-primary-normal-grid-rest: --tug-color(mint, i: 7, t: 84, a: 45);

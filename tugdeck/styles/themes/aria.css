@@ -1,6 +1,6 @@
 /* Harmony — light theme. */
 body {
-  --tugx-host-canvas-color: #3c4357;
+  --tugx-host-canvas-color: #2d4750;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
@@ -87,7 +87,7 @@ body {
      are recessed-within-card and tooltip surfaces, so they stay light and
      hold dark default text. */
   --tug7-surface-global-primary-normal-canvas-rest: --tug-color(violet, i: 12, t: 21);
-  --tug7-surface-global-primary-normal-content-rest: --tug-color(orchid, i: 2, t: 100);
+  --tug7-surface-global-primary-normal-content-rest: --tug-color(orchid, i: 1, t: 100);
   --tug7-surface-global-primary-normal-control-rest: var(--tug7-surface-control-primary-outlined-action-rest);
   --tug7-surface-global-primary-normal-default-rest: --tug-color(orchid, i: 3, t: 99);
   --tug7-surface-global-primary-normal-grid-rest: --tug-color(violet, i: 9, t: 91, a: 45);
@@ -721,7 +721,7 @@ body {
   --tug7-element-field-text-normal-plain-rest: --tug-color(orchid, i: 3, t: 8);
   --tug7-element-field-text-normal-required-rest: --tug-color(red, i: 100, t: 48);
   --tug7-surface-field-primary-normal-plain-disabled: --tug-color(orchid, i: 5, t: 92);
-  --tug7-surface-field-primary-normal-plain-focus: --tug-color(orchid, i: 2, t: 100);
+  --tug7-surface-field-primary-normal-plain-focus: --tug-color(orchid, i: 3, t: 100);
   --tug7-surface-field-primary-normal-plain-hover: --tug-color(orchid, i: 5, t: 96);
   --tug7-surface-field-primary-normal-plain-readonly: --tug-color(orchid, i: 6, t: 93);
   --tug7-surface-field-primary-normal-plain-rest: --tug-color(orchid, i: 5, t: 96);
