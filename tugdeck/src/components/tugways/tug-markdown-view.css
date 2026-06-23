@@ -87,16 +87,20 @@ body {
   --tugx-md-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
   --tugx-md-link-decoration:  underline;
 
-  /* Inline code chrome — DE-STYLED ([P05]). Inline `code` kept the body
-   * text color and only a faint tint, near body size: the old treatment
-   * shifted both color and background to the fenced-code surface and
-   * shrank to 0.9em, which broke reading flow mid-sentence. The tint is
-   * derived from `currentColor` so it tracks the theme and sits a hair
-   * off the prose without announcing a separate "code surface". */
-  --tugx-md-inline-code-padding: 0.1em 0.32em;
-  --tugx-md-inline-code-radius:  var(--tug-radius-xs);
+  /* Inline code ([P05]). Plex Sans and Plex Mono share an identical
+   * x-height (516) and cap-height (698), so Mono needs no size-down to
+   * sit level with the prose — it renders at full 1em. There is no
+   * box: background and padding are stripped so code never chops the
+   * line. Distinction comes from the mono font plus a scaled-back hue,
+   * the theme accent muted toward prose color so it reads as emphasized
+   * prose, not a warning. The accent ref is direction-correct across
+   * themes (bright on dark, deep on light). */
+  --tugx-md-inline-code-padding: 0;
+  --tugx-md-inline-code-radius:  0;
   --tugx-md-inline-code-size:    0.95em;
-  --tugx-md-inline-code-bg:      color-mix(in srgb, currentColor 8%, transparent);
+  --tugx-md-inline-code-color:
+    color-mix(in srgb, var(--tug7-element-tone-text-normal-accent-rest) 60%, currentColor);
+  --tugx-md-inline-code-bg:      transparent;
 
   /* Fenced code body */
   --tugx-md-fenced-code-padding:     var(--tug-space-md) var(--tug-space-lg);
@@ -390,7 +394,7 @@ body {
 .tugx-md-block code {
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-md-inline-code-size);
-  color: inherit;
+  color: var(--tugx-md-inline-code-color);
   background: var(--tugx-md-inline-code-bg);
   padding: var(--tugx-md-inline-code-padding);
   border-radius: var(--tugx-md-inline-code-radius);
