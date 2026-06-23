@@ -73,10 +73,18 @@ body {
    * this value in sync with `TIER_GAP_PX` in the .tsx pair. */
   --tugx-transcript-header-pin-gap: 4px;
 
-  /* Per-participant icon flavors */
-  --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-you-rest);
-  --tugx-transcript-icon-color-assistant:    var(--tug7-element-tone-icon-normal-agent-rest);
+  /* Per-participant icon flavors. You wears the theme accent; the agent
+   * wears the theme key (action) hue; shell stays on the data hue. */
+  --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-accent-rest);
+  --tugx-transcript-icon-color-assistant:    var(--tug7-element-tone-icon-normal-active-rest);
   --tugx-transcript-icon-color-shell:   var(--tug7-element-tone-icon-normal-data-rest);
+
+  /* Icon legibility halo — grounds the colored speaker icon against the
+   * header surface. The light/dark decision lives in the theme: the light
+   * themes resolve this base token to a soft drop-shadow (a saturated
+   * accent/key icon on a pale header would otherwise float); the dark
+   * themes resolve it to `none`. */
+  --tugx-transcript-icon-shadow:        var(--tug7-element-global-shadow-normal-iconHalo-rest);
 }
 
 .tug-transcript-entry {
@@ -124,6 +132,7 @@ body {
  * transcript`. */
 .tug-transcript-entry__icon > svg {
   margin-block-start: 0.125em;
+  filter: var(--tugx-transcript-icon-shadow);
 }
 
 /* Per-participant icon-flavor cascade. The active row's `data-participant`

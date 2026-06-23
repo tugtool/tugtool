@@ -139,6 +139,9 @@ body {
   --tug7-element-global-shadow-normal-overlay-rest: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 30);
   --tug7-element-global-shadow-normal-xl-rest: --tug-color(black, i: 0, t: 0, a: 40);
   --tug7-element-global-shadow-normal-xs-rest: --tug-color(black, i: 0, t: 0, a: 10);
+  /* Transcript speaker-icon legibility halo — a soft drop-shadow keeps a
+   * saturated accent/key icon legible against this pale header surface. */
+  --tug7-element-global-shadow-normal-iconHalo-rest: drop-shadow(0 0.5px 0.5px --tug-color(black, i: 0, t: 0, a: 5));
   --tug7-element-global-shadow-normal-flash-rest: --tug-color(gold, i: 58, t: 45, a: 60);
   --tug7-element-global-shadow-normal-flashInset-rest: --tug-color(gold, i: 58, t: 45, a: 20);
 
