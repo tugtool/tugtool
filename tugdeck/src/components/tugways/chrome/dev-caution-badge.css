@@ -28,6 +28,9 @@ body {
   --tugx-caut-radius:  var(--tug-radius-xs);
   --tugx-caut-size:    var(--tug-font-size-2xs);
   --tugx-caut-weight:  var(--tug-font-weight-semibold);
+  /* Legibility halo — lifts the pale caution chip off light-theme
+     surfaces; resolves to `none` in dark themes. */
+  --tugx-caut-halo:    var(--tug7-element-global-shadow-normal-glyphHalo-rest);
 }
 
 .dev-caution-badge {
@@ -39,6 +42,7 @@ body {
   border-radius: var(--tugx-caut-radius);
   background: var(--tugx-block-tone-caution-bg);
   color: var(--tugx-block-tone-caution-color);
+  filter: var(--tugx-caut-halo);
   font-size: var(--tugx-caut-size);
   font-weight: var(--tugx-caut-weight);
   /* The reason detail rides the native `title` tooltip — the help

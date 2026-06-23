@@ -647,6 +647,9 @@ body {
   background-color: var(--tug7-surface-badge-primary-tinted-caution-rest);
   color: var(--tug7-element-badge-text-tinted-caution-rest);
   border-color: var(--tug7-element-badge-border-tinted-caution-rest);
+  /* Legibility halo — lifts the pale caution-tinted chip off light-theme
+     surfaces; resolves to `none` in dark themes. */
+  filter: var(--tug7-element-global-shadow-normal-glyphHalo-rest);
 }
 
 /* ============================================================================
