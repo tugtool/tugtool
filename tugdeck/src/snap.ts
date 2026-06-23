@@ -19,9 +19,19 @@ export interface Rect {
 
 export type SnapAxis = "x" | "y";
 
+export type CardEdge = "left" | "right" | "top" | "bottom";
+
 export interface GuidePosition {
   axis: SnapAxis;
   position: number;
+  /**
+   * Which edge of the snapped-to card this guide marks. `getBoundingClientRect`
+   * reports left/top as inclusive (the box's first pixel) but right/bottom as
+   * exclusive (one past the last). The renderer pulls a right/bottom guide back
+   * by one line-width so its 1px line covers the card's actual edge pixel
+   * instead of landing one pixel past it in the gap.
+   */
+  cardEdge: CardEdge;
 }
 
 export interface SnapResult {
@@ -94,11 +104,13 @@ export function computeSnap(
   let bestXDist = Infinity;
   let bestXDelta = 0;
   let bestXGuide = 0;
+  let bestXEdge: CardEdge = "left";
   let snapX = false;
 
   let bestYDist = Infinity;
   let bestYDelta = 0;
   let bestYGuide = 0;
+  let bestYEdge: CardEdge = "top";
   let snapY = false;
 
   for (let otherIdx = 0; otherIdx < others.length; otherIdx++) {
@@ -111,34 +123,34 @@ export function computeSnap(
     // X-axis: four explicit named-edge comparisons to preserve offset directionality.
     // Same-edge pairs (left-to-left, right-to-right): no border offset.
     // Adjacent-edge pairs (moving-right to other-left, moving-left to other-right): apply offset.
-    const xCandidates: Array<{ dist: number; delta: number; guide: number }> = [];
+    const xCandidates: Array<{ dist: number; delta: number; guide: number; edge: CardEdge }> = [];
 
     // movingLeft vs otherLeft (same-edge, no offset)
     {
       const dist = Math.abs(movingLeft - otherLeft);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherLeft - movingLeft, guide: otherLeft });
+        xCandidates.push({ dist, delta: otherLeft - movingLeft, guide: otherLeft, edge: "left" });
       }
     }
     // movingLeft vs otherRight (adjacent: moving-left to other-right, offset inward -bw)
     {
       const dist = Math.abs(movingLeft - otherRight);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherRight - movingLeft - bw, guide: otherRight });
+        xCandidates.push({ dist, delta: otherRight - movingLeft - bw, guide: otherRight, edge: "right" });
       }
     }
     // movingRight vs otherLeft (adjacent: moving-right to other-left, offset inward +bw)
     {
       const dist = Math.abs(movingRight - otherLeft);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherLeft - movingRight + bw, guide: otherLeft });
+        xCandidates.push({ dist, delta: otherLeft - movingRight + bw, guide: otherLeft, edge: "left" });
       }
     }
     // movingRight vs otherRight (same-edge, no offset)
     {
       const dist = Math.abs(movingRight - otherRight);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherRight - movingRight, guide: otherRight });
+        xCandidates.push({ dist, delta: otherRight - movingRight, guide: otherRight, edge: "right" });
       }
     }
 
@@ -148,6 +160,7 @@ export function computeSnap(
         bestXDist = candidate.dist;
         bestXDelta = candidate.delta;
         bestXGuide = candidate.guide;
+        bestXEdge = candidate.edge;
         snapX = true;
       }
     }
@@ -155,34 +168,34 @@ export function computeSnap(
     // Y-axis: four explicit named-edge comparisons to preserve offset directionality.
     // Same-edge pairs (top-to-top, bottom-to-bottom): no border offset.
     // Adjacent-edge pairs (moving-bottom to other-top, moving-top to other-bottom): apply offset.
-    const yCandidates: Array<{ dist: number; delta: number; guide: number }> = [];
+    const yCandidates: Array<{ dist: number; delta: number; guide: number; edge: CardEdge }> = [];
 
     // movingTop vs otherTop (same-edge, no offset)
     {
       const dist = Math.abs(movingTop - otherTop);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherTop - movingTop, guide: otherTop });
+        yCandidates.push({ dist, delta: otherTop - movingTop, guide: otherTop, edge: "top" });
       }
     }
     // movingTop vs otherBottom (adjacent: moving-top to other-bottom, offset inward -bw)
     {
       const dist = Math.abs(movingTop - otherBottom);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherBottom - movingTop - bw, guide: otherBottom });
+        yCandidates.push({ dist, delta: otherBottom - movingTop - bw, guide: otherBottom, edge: "bottom" });
       }
     }
     // movingBottom vs otherTop (adjacent: moving-bottom to other-top, offset inward +bw)
     {
       const dist = Math.abs(movingBottom - otherTop);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherTop - movingBottom + bw, guide: otherTop });
+        yCandidates.push({ dist, delta: otherTop - movingBottom + bw, guide: otherTop, edge: "top" });
       }
     }
     // movingBottom vs otherBottom (same-edge, no offset)
     {
       const dist = Math.abs(movingBottom - otherBottom);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherBottom - movingBottom, guide: otherBottom });
+        yCandidates.push({ dist, delta: otherBottom - movingBottom, guide: otherBottom, edge: "bottom" });
       }
     }
 
@@ -192,6 +205,7 @@ export function computeSnap(
         bestYDist = candidate.dist;
         bestYDelta = candidate.delta;
         bestYGuide = candidate.guide;
+        bestYEdge = candidate.edge;
         snapY = true;
       }
     }
@@ -202,10 +216,10 @@ export function computeSnap(
   const y = snapY ? moving.y + bestYDelta : null;
 
   if (snapX) {
-    guides.push({ axis: "x", position: bestXGuide });
+    guides.push({ axis: "x", position: bestXGuide, cardEdge: bestXEdge });
   }
   if (snapY) {
-    guides.push({ axis: "y", position: bestYGuide });
+    guides.push({ axis: "y", position: bestYGuide, cardEdge: bestYEdge });
   }
 
   return { x, y, guides };
@@ -240,18 +254,22 @@ export function computeResizeSnap(
   // Guide positions track the OTHER card's target edge (for rendering the guide line at the snap target).
   let leftSnapped: number | undefined;
   let leftGuide: number | undefined;
+  let leftEdge: CardEdge = "left";
   let leftDist = Infinity;
 
   let rightSnapped: number | undefined;
   let rightGuide: number | undefined;
+  let rightEdge: CardEdge = "right";
   let rightDist = Infinity;
 
   let topSnapped: number | undefined;
   let topGuide: number | undefined;
+  let topEdge: CardEdge = "top";
   let topDist = Infinity;
 
   let bottomSnapped: number | undefined;
   let bottomGuide: number | undefined;
+  let bottomEdge: CardEdge = "bottom";
   let bottomDist = Infinity;
 
   for (let otherIdx = 0; otherIdx < others.length; otherIdx++) {
@@ -270,6 +288,7 @@ export function computeResizeSnap(
           leftDist = dist;
           leftSnapped = otherLeft;
           leftGuide = otherLeft;
+          leftEdge = "left";
         }
       }
       // left vs otherRight (adjacent-edge: resizing left toward other's right, overlap by bw)
@@ -279,6 +298,7 @@ export function computeResizeSnap(
           leftDist = dist;
           leftSnapped = otherRight - bw;
           leftGuide = otherRight;
+          leftEdge = "right";
         }
       }
     }
@@ -292,6 +312,7 @@ export function computeResizeSnap(
           rightDist = dist;
           rightSnapped = otherLeft + bw;
           rightGuide = otherLeft;
+          rightEdge = "left";
         }
       }
       // right vs otherRight (same-edge, no offset)
@@ -301,6 +322,7 @@ export function computeResizeSnap(
           rightDist = dist;
           rightSnapped = otherRight;
           rightGuide = otherRight;
+          rightEdge = "right";
         }
       }
     }
@@ -314,6 +336,7 @@ export function computeResizeSnap(
           topDist = dist;
           topSnapped = otherTop;
           topGuide = otherTop;
+          topEdge = "top";
         }
       }
       // top vs otherBottom (adjacent-edge: resizing top toward other's bottom, overlap by bw)
@@ -323,6 +346,7 @@ export function computeResizeSnap(
           topDist = dist;
           topSnapped = otherBottom - bw;
           topGuide = otherBottom;
+          topEdge = "bottom";
         }
       }
     }
@@ -336,6 +360,7 @@ export function computeResizeSnap(
           bottomDist = dist;
           bottomSnapped = otherTop + bw;
           bottomGuide = otherTop;
+          bottomEdge = "top";
         }
       }
       // bottom vs otherBottom (same-edge, no offset)
@@ -345,6 +370,7 @@ export function computeResizeSnap(
           bottomDist = dist;
           bottomSnapped = otherBottom;
           bottomGuide = otherBottom;
+          bottomEdge = "bottom";
         }
       }
     }
@@ -353,19 +379,19 @@ export function computeResizeSnap(
   const guides: GuidePosition[] = [];
 
   if (leftGuide !== undefined) {
-    guides.push({ axis: "x", position: leftGuide });
+    guides.push({ axis: "x", position: leftGuide, cardEdge: leftEdge });
   }
   if (rightGuide !== undefined) {
     if (!guides.some((g) => g.axis === "x" && g.position === rightGuide)) {
-      guides.push({ axis: "x", position: rightGuide });
+      guides.push({ axis: "x", position: rightGuide, cardEdge: rightEdge });
     }
   }
   if (topGuide !== undefined) {
-    guides.push({ axis: "y", position: topGuide });
+    guides.push({ axis: "y", position: topGuide, cardEdge: topEdge });
   }
   if (bottomGuide !== undefined) {
     if (!guides.some((g) => g.axis === "y" && g.position === bottomGuide)) {
-      guides.push({ axis: "y", position: bottomGuide });
+      guides.push({ axis: "y", position: bottomGuide, cardEdge: bottomEdge });
     }
   }
 

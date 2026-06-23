@@ -37,6 +37,7 @@ import type { CardMeta, CardSizePolicy } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
 import type { Rect, GuidePosition, SnapResult } from "@/snap";
+import { getTugZoom } from "@/components/tugways/scale-timing";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -464,10 +465,52 @@ function noop(): void {}
 /**
  * Snapshot all `.tug-pane[data-pane-id]` elements as canvas-relative Rects.
  * Optionally excludes a pane by ID.
+ *
+ * `getBoundingClientRect` returns visual (post-`body { zoom }`) pixels, but card
+ * frames are positioned with `style.left/top` in layout pixels. Dividing by
+ * `zoom` yields layout-space rects so they line up with the moving frame's
+ * position and size (which come from layout-space `style`/`offsetWidth`). All
+ * snap math then runs in one consistent space.
  */
+/** Per-edge offset (layout px) from a card frame's measured box to its visible
+ *  border. See measureGuideEdgeOffsets. */
+interface GuideEdgeOffsets {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+const ZERO_EDGE_OFFSETS: GuideEdgeOffsets = { left: 0, right: 0, top: 0, bottom: 0 };
+
+/**
+ * Measure how far each visible card edge (the `.tug-pane-chrome` border box) sits
+ * from the measured `.tug-pane` frame box that snap geometry uses.
+ *
+ * The chrome is `content-box` with `width/height: 100%` + a 1px border, so its
+ * border box can overflow the frame — making the edge the user sees differ from
+ * `getBoundingClientRect(.tug-pane)` by a pixel. Reading the actual delta (rather
+ * than assuming a box model) lets snap guides land on the visible border exactly,
+ * whatever the border/box-sizing turns out to be. All cards share this geometry,
+ * so one measurement per gesture suffices. Returned in layout px (÷ zoom).
+ */
+function measureGuideEdgeOffsets(frame: HTMLElement, zoom = 1): GuideEdgeOffsets {
+  const chrome = frame.querySelector(".tug-pane-chrome");
+  if (!chrome) return ZERO_EDGE_OFFSETS;
+  const f = frame.getBoundingClientRect();
+  const c = chrome.getBoundingClientRect();
+  return {
+    left: (c.left - f.left) / zoom,
+    right: (c.right - f.right) / zoom,
+    top: (c.top - f.top) / zoom,
+    bottom: (c.bottom - f.bottom) / zoom,
+  };
+}
+
 function snapshotCardRects(
   canvasBounds: DOMRect | null,
   excludeId?: string,
+  zoom = 1,
 ): { id: string; rect: Rect }[] {
   const results: { id: string; rect: Rect }[] = [];
   const els = document.querySelectorAll<HTMLElement>(".tug-pane[data-pane-id]");
@@ -478,10 +521,10 @@ function snapshotCardRects(
     results.push({
       id: paneId,
       rect: {
-        x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
-        y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
-        width: domRect.width,
-        height: domRect.height,
+        x: (domRect.left - (canvasBounds ? canvasBounds.left : 0)) / zoom,
+        y: (domRect.top - (canvasBounds ? canvasBounds.top : 0)) / zoom,
+        width: domRect.width / zoom,
+        height: domRect.height / zoom,
       },
     });
   });
@@ -519,6 +562,13 @@ const TITLE_BAR_VISIBLE_MIN_Y = CARD_TITLE_BAR_HEIGHT;
 // ---------------------------------------------------------------------------
 
 const SNAP_GAP_PX = 5;
+
+/**
+ * Width of a snap guide line in layout px. Must match the `border` width on
+ * `.snap-guide-line-x` / `.snap-guide-line-y` in chrome.css so a right/bottom-edge
+ * guide can be pulled back by exactly one line width to sit on the card's edge.
+ */
+const SNAP_GUIDE_LINE_PX = 1;
 
 /** Height of the title bar chrome inside `.tug-pane-body` (below the outer frame). */
 const HEADER_HEIGHT_PX = 28;
@@ -1089,8 +1139,16 @@ export function TugPane({
     guideRef: React.MutableRefObject<HTMLElement[]>,
     guides: GuidePosition[],
     container: HTMLElement,
+    edgeOffsets: GuideEdgeOffsets,
   ): void {
-    // Create or update guide elements
+    // Guide positions are in layout space (snapshotCardRects divides the visual
+    // measurements by zoom). They reference the measured `.tug-pane` frame edge;
+    // `edgeOffsets` carries the measured delta to the visible `.tug-pane-chrome`
+    // border so the line lands on the edge the user actually sees. The visible
+    // border occupies a 1px band: at a left/top edge it runs forward from the
+    // border-box origin, so the line (a 1px border that paints forward) sits at
+    // the origin; at a right/bottom edge the band ends at the exclusive border-box
+    // edge, so the line is pulled back one line-width to cover the band.
     for (let i = 0; i < guides.length; i++) {
       const guide = guides[i];
       let el = guideRef.current[i];
@@ -1104,11 +1162,17 @@ export function TugPane({
       el.classList.remove("snap-guide-line-x", "snap-guide-line-y");
       if (guide.axis === "x") {
         el.classList.add("snap-guide-line-x");
-        el.style.left = `${guide.position}px`;
+        const left = guide.cardEdge === "right"
+          ? guide.position + edgeOffsets.right - SNAP_GUIDE_LINE_PX
+          : guide.position + edgeOffsets.left;
+        el.style.left = `${left}px`;
         el.style.top = "";
       } else {
         el.classList.add("snap-guide-line-y");
-        el.style.top = `${guide.position}px`;
+        const top = guide.cardEdge === "bottom"
+          ? guide.position + edgeOffsets.bottom - SNAP_GUIDE_LINE_PX
+          : guide.position + edgeOffsets.top;
+        el.style.top = `${top}px`;
         el.style.left = "";
       }
     }
@@ -1187,8 +1251,12 @@ export function TugPane({
 
       // Snapshot other card rects at drag-start for snap computation. [D04]
       // Convert to canvas-relative coordinates by subtracting canvas bounds offset.
+      // All snap geometry runs in layout space; `body { zoom }` requires dividing
+      // the visual measurements by the zoom factor. Read once per gesture.
+      const dragZoom = getTugZoom() || 1;
+      const dragGuideEdgeOffsets = measureGuideEdgeOffsets(frame, dragZoom);
       const canvasBounds = dragCanvasBounds.current;
-      dragOtherRects.current = snapshotCardRects(canvasBounds, id);
+      dragOtherRects.current = snapshotCardRects(canvasBounds, id, dragZoom);
 
       // Initialize drag state.
       latestAltKey.current = false;
@@ -1209,6 +1277,7 @@ export function TugPane({
           dragStartPosition.current,
           dragCanvasBounds.current,
           { width: frame.offsetWidth, height: frame.offsetHeight },
+          dragZoom,
         );
 
         if (latestAltKey.current) {
@@ -1235,7 +1304,7 @@ export function TugPane({
           // Render snap guides via DOM manipulation. [D03]
           const container = frame.parentElement;
           if (container) {
-            syncGuideElements(dragGuideEls, snapResult.guides, container);
+            syncGuideElements(dragGuideEls, snapResult.guides, container, dragGuideEdgeOffsets);
           }
         } else {
           // Free drag: no snap modifier. Clear guides and snap result.
@@ -1325,6 +1394,7 @@ export function TugPane({
           dragStartPosition.current,
           dragCanvasBounds.current,
           { width: frame.offsetWidth, height: frame.offsetHeight },
+          dragZoom,
         );
 
         // Apply snapped position if snap was active at drop.
@@ -1392,8 +1462,11 @@ export function TugPane({
       const startH = size.height;
 
       // Snapshot canvas bounds and other card rects for resize snapping. [D04]
+      // Snap geometry runs in layout space; divide visual measurements by zoom.
+      const resizeZoom = getTugZoom() || 1;
+      const resizeGuideEdgeOffsets = measureGuideEdgeOffsets(frame, resizeZoom);
       const resizeCanvasBounds = frame.parentElement?.getBoundingClientRect() ?? null;
-      const resizeOtherCardRects = snapshotCardRects(resizeCanvasBounds, id);
+      const resizeOtherCardRects = snapshotCardRects(resizeCanvasBounds, id, resizeZoom);
       const resizeOtherRects = resizeOtherCardRects.map((r) => r.rect);
 
       const latestResizePointer = { x: startX, y: startY };
@@ -1415,6 +1488,7 @@ export function TugPane({
           minSizeRef.current,
           resizeCanvasBounds,
           maxSizeRef.current,
+          resizeZoom,
         );
 
         // Apply snap-to-edge if modifier is held. [D01]
@@ -1452,7 +1526,7 @@ export function TugPane({
           // Render resize snap guides. [D03]
           const container = frame.parentElement;
           if (container) {
-            syncGuideElements(resizeGuideEls, snapResult.guides, container);
+            syncGuideElements(resizeGuideEls, snapResult.guides, container, resizeGuideEdgeOffsets);
           }
 
           return { left, top, width, height };
@@ -1662,17 +1736,23 @@ function clampedPosition(
   startPosition: { x: number; y: number },
   canvasBounds: DOMRect | null,
   frameSize: { width: number; height: number },
+  zoom = 1,
 ): { x: number; y: number } {
-  let x = startPosition.x + (pointer.x - startPointer.x);
-  let y = startPosition.y + (pointer.y - startPointer.y);
+  // startPosition/frameSize are layout pixels; pointer is visual (client) pixels.
+  // Convert the pointer delta to layout space so the card tracks the cursor 1:1
+  // at any zoom, and clamp against layout-space canvas extents.
+  let x = startPosition.x + (pointer.x - startPointer.x) / zoom;
+  let y = startPosition.y + (pointer.y - startPointer.y) / zoom;
 
   if (canvasBounds) {
+    const canvasWidth = canvasBounds.width / zoom;
+    const canvasHeight = canvasBounds.height / zoom;
     // Left/right: card can hang off either side, but TITLE_BAR_VISIBLE_MIN_X must stay visible.
     x = Math.max(-(frameSize.width - TITLE_BAR_VISIBLE_MIN_X),
-                 Math.min(x, canvasBounds.width - TITLE_BAR_VISIBLE_MIN_X));
+                 Math.min(x, canvasWidth - TITLE_BAR_VISIBLE_MIN_X));
     // Top: title bar stays at or below CANVAS_PADDING (matches resize top constraint).
     // Bottom: at least TITLE_BAR_VISIBLE_MIN_Y of title bar stays visible.
-    y = Math.max(CANVAS_PADDING, Math.min(y, canvasBounds.height - TITLE_BAR_VISIBLE_MIN_Y));
+    y = Math.max(CANVAS_PADDING, Math.min(y, canvasHeight - TITLE_BAR_VISIBLE_MIN_Y));
   }
 
   return { x, y };
@@ -1697,9 +1777,12 @@ function resizeDelta(
   minSize: { width: number; height: number },
   canvasBounds?: DOMRect | null,
   maxSize?: { width: number; height: number },
+  zoom = 1,
 ): { left: number; top: number; width: number; height: number } {
-  const dx = pointer.x - startPointer.x;
-  const dy = pointer.y - startPointer.y;
+  // start*/sizes are layout pixels; pointer is visual (client) pixels. Convert
+  // the pointer delta to layout so the edge tracks the cursor 1:1 at any zoom.
+  const dx = (pointer.x - startPointer.x) / zoom;
+  const dy = (pointer.y - startPointer.y) / zoom;
 
   let left = startLeft;
   let top = startTop;
@@ -1729,8 +1812,8 @@ function resizeDelta(
 
   // Hard-clamp to canvas bounds so the card cannot be resized past any canvas edge.
   if (canvasBounds) {
-    const maxRight = canvasBounds.width - CANVAS_PADDING;
-    const maxBottom = canvasBounds.height - CANVAS_PADDING;
+    const maxRight = canvasBounds.width / zoom - CANVAS_PADDING;
+    const maxBottom = canvasBounds.height / zoom - CANVAS_PADDING;
 
     // Clamp right edge: prevent card from extending past canvas right.
     if (left + width > maxRight) {
