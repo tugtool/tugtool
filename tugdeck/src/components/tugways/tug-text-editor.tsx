@@ -122,6 +122,7 @@ import type { HistoryProvider, InputAction } from "@/lib/tug-text-types";
 import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
+  writeClipboardViaNative,
 } from "@/lib/tug-native-clipboard";
 import { tugTheme } from "./tug-text-editor/theme";
 import { hostFocusMirror } from "./tug-text-editor/host-state";
@@ -131,6 +132,7 @@ import {
   atomDecorationField,
   atomInvertedEffects,
   getAtomHeightPx,
+  getAtomsInRange,
   insertAtomAtSelection,
   pendingAtomSyncPlugin,
   pendingAtomTheme,
@@ -154,7 +156,9 @@ import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
 import {
   clipboardExtension,
-  parseClipboardHtmlEnvelope,
+  parseClipboardSidecar,
+  rehydrateSidecarBytes,
+  serializeClipboard,
   tryInsertLeadingCommandPaste,
   type PastedCommandResolver,
 } from "./tug-text-editor/clipboard-filters";
@@ -1894,27 +1898,60 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       };
     }, []);
 
-    // Copy: focus + execCommand("copy") fires a copy event on the
-    // contentDOM. `clipboardExt` (registered in `buildExtensions`)
-    // intercepts it, writes the plain-text + atom-sidecar payload, and
-    // calls preventDefault. Sync-only — nothing to defer past the
-    // menu blink.
+    // Write the current selection to the system clipboard through the
+    // native bridge: the plain-text fallback on `.string` (for external
+    // apps) plus the atom sidecar — including any image bytes — on the
+    // Tug-private `dev.tug.prompt-atoms` pasteboard type. This is the
+    // robust Tug-to-Tug copy path; it never touches the DOM copy event,
+    // so WebKit's pasteboard normalization (which swallows custom MIME
+    // types and sanitizes HTML) can't strip the atom data. Returns true
+    // when the write was handled natively (including an empty-selection
+    // no-op), false when the bridge is unavailable so the caller falls
+    // back to `execCommand("copy")`.
+    const writeSelectionToNativeClipboard = useCallback((): boolean => {
+      const view = viewRef.current;
+      if (view === null) return false;
+      const { from, to } = view.state.selection.main;
+      if (from === to) return true; // nothing selected — handled (no-op)
+      const text = view.state.doc.sliceString(from, to);
+      const atoms = getAtomsInRange(view.state, from, to);
+      const store = attachmentBytesStoreRef.current;
+      const getBytes = store !== null ? (id: string) => store.get(id) : undefined;
+      const payload = serializeClipboard(text, atoms, from, getBytes);
+      return writeClipboardViaNative(
+        payload.sidecar !== null ? payload.fallback : payload.text,
+        payload.sidecar !== null ? JSON.stringify(payload.sidecar) : "",
+      );
+    }, []);
+
+    // Copy: inside Tug.app, write the whole selection natively (above).
+    // Outside it, focus + execCommand("copy") fires a copy event on the
+    // contentDOM that `clipboardExt` (registered in `buildExtensions`)
+    // intercepts, writing the plain-text + atom-sidecar payload and
+    // calling preventDefault. Sync-only — nothing to defer past the menu
+    // blink.
     const handleCopy = useCallback((): ActionHandlerResult => {
       const view = viewRef.current;
       if (view === null) return;
       view.focus();
+      if (hasNativeClipboardBridge() && writeSelectionToNativeClipboard()) {
+        return;
+      }
       document.execCommand("copy");
-    }, []);
+    }, [writeSelectionToNativeClipboard]);
 
-    // Cut: sync `execCommand("copy")` so the selection stays painted
-    // during a context-menu activation blink (matches
-    // `tug-prompt-input`'s split). Continuation deletes the selection
-    // through a CM6 transaction so undo / redo see one atomic edit.
+    // Cut: write the selection (native bridge, or sync `execCommand`
+    // fallback so the selection stays painted during a context-menu
+    // activation blink — matches `tug-prompt-input`'s split). The
+    // continuation deletes the selection through a CM6 transaction so
+    // undo / redo see one atomic edit.
     const handleCut = useCallback((): ActionHandlerResult => {
       const view = viewRef.current;
       if (view === null) return;
       view.focus();
-      document.execCommand("copy");
+      if (!(hasNativeClipboardBridge() && writeSelectionToNativeClipboard())) {
+        document.execCommand("copy");
+      }
       return () => {
         const live = viewRef.current;
         if (live === null) return;
@@ -1926,7 +1963,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           userEvent: "delete.cut",
         });
       };
-    }, []);
+    }, [writeSelectionToNativeClipboard]);
 
     // Paste: prefer the native bridge (Tug.app WKWebView) — Safari's
     // permission popup fires for both `navigator.clipboard.*` and
@@ -1935,18 +1972,14 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // execCommand("paste") which fires a paste event on contentDOM
     // that our `clipboardExt` decodes (atom sidecar or plain text).
     //
-    // Bridge-paste atom round-trip: the bridge exposes
-    // `text/plain` + `text/html` only — never the
-    // `application/x-tug-atoms` custom MIME the substrate writes on
-    // copy (WebKit packs custom MIMEs into the undocumented
-    // `com.apple.WebKit.custom-pasteboard-data` archive blob,
-    // invisible to NSPasteboard.string-typed reads). The atom data
-    // rides along inside a `<span data-tug-atoms="…">` envelope on
-    // `text/html` instead — `parseClipboardHtmlEnvelope` extracts and
-    // base64-decodes it. When no envelope is present, fall through to
-    // inserting `text` verbatim (label-substituted from external apps,
-    // or the substrate's own copy on clipboards where the html got
-    // stripped en route).
+    // Bridge-paste atom round-trip: the bridge returns the Tug-private
+    // atom sidecar JSON directly on its `atoms` field, read from the
+    // `dev.tug.prompt-atoms` pasteboard type our native copy wrote.
+    // `parseClipboardSidecar` validates it; `rehydrateSidecarBytes`
+    // restores any carried image bytes into this card's store so pasted
+    // image chips reconstitute fully. When `atoms` is empty (external
+    // clipboards, or a Tug copy that carried no atoms), fall through to
+    // inserting `text` verbatim (label-substituted plain text).
     const handlePaste = useCallback((): ActionHandlerResult => {
       const view = viewRef.current;
       if (view === null) return;
@@ -1954,12 +1987,13 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       if (hasNativeClipboardBridge()) {
         const readPromise = readClipboardViaNative();
         return () => {
-          void readPromise.then(({ text, html }) => {
+          void readPromise.then(({ text, atoms }) => {
             const live = viewRef.current;
             if (live === null) return;
             const { from, to } = live.state.selection.main;
-            const sidecar = parseClipboardHtmlEnvelope(html);
+            const sidecar = atoms !== "" ? parseClipboardSidecar(atoms) : null;
             if (sidecar !== null) {
+              rehydrateSidecarBytes(sidecar, attachmentBytesStoreRef.current);
               const placedAtoms = sidecar.atoms.map((a) => ({
                 position: from + a.position,
                 segment: a.segment,
@@ -1971,6 +2005,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
                   : [],
                 selection: { anchor: from + sidecar.text.length },
                 userEvent: "input.paste",
+                scrollIntoView: true,
               });
               return;
             }

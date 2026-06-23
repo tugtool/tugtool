@@ -1,6 +1,16 @@
 import Cocoa
 import WebKit
 
+/// Tug-private NSPasteboard type carrying the atom sidecar JSON for
+/// Tug-to-Tug prompt copy/paste. A reverse-DNS UTI we own; other apps
+/// ignore it (Tug→other-app copy still rides on `.string`), and unlike a
+/// JS-set custom MIME it is not swallowed by WebKit's
+/// `com.apple.WebKit.custom-pasteboard-data` archive blob — the web layer
+/// never touches the pasteboard for atom copies, the native bridge writes
+/// and reads this type directly. See `tug-native-clipboard.ts` and
+/// `clipboard-filters.ts`.
+private let tugAtomsPasteboardType = NSPasteboard.PasteboardType("dev.tug.prompt-atoms")
+
 /// Protocol for bridge callbacks from WebKit to AppDelegate
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
@@ -269,6 +279,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
         contentController.add(self, name: "clipboardRead")
+        contentController.add(self, name: "clipboardWrite")
         contentController.add(self, name: "clipboardWriteImage")
         contentController.add(self, name: "menuState")
         contentController.add(self, name: "hmrUpdate")
@@ -638,6 +649,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "setTheme")
         contentController.removeScriptMessageHandler(forName: "devBadge")
         contentController.removeScriptMessageHandler(forName: "clipboardRead")
+        contentController.removeScriptMessageHandler(forName: "clipboardWrite")
         contentController.removeScriptMessageHandler(forName: "clipboardWriteImage")
         contentController.removeScriptMessageHandler(forName: "menuState")
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
@@ -1053,12 +1065,19 @@ extension MainWindow: WKScriptMessageHandler {
             //
             // JS-side contract: post {requestId} and wait for a callback
             // on window.__tugNativeClipboardCallback(data) where data is
-            // {requestId, text, html}. See tug-native-clipboard.ts.
+            // {requestId, text, html, atoms}. See tug-native-clipboard.ts.
+            //
+            // `atoms` carries the Tug-private atom sidecar JSON when the
+            // clipboard was last written by a Tug copy (via clipboardWrite),
+            // empty otherwise. This is the robust Tug-to-Tug channel — it
+            // bypasses WebKit's HTML sanitizer and custom-MIME repacking
+            // entirely.
             guard let body = message.body as? [String: Any],
                   let requestId = body["requestId"] as? String else { return }
             let pasteboard = NSPasteboard.general
             let text = pasteboard.string(forType: .string) ?? ""
             let html = pasteboard.string(forType: .html) ?? ""
+            let atoms = pasteboard.string(forType: tugAtomsPasteboardType) ?? ""
             // Use JSON to pass arbitrary clipboard contents through the
             // evaluateJavaScript string safely — the text may contain
             // quotes, backslashes, control chars, and line separators
@@ -1066,7 +1085,8 @@ extension MainWindow: WKScriptMessageHandler {
             let payload: [String: Any] = [
                 "requestId": requestId,
                 "text": text,
-                "html": html
+                "html": html,
+                "atoms": atoms
             ]
             guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []),
                   let jsonString = String(data: jsonData, encoding: .utf8) else {
@@ -1086,6 +1106,35 @@ extension MainWindow: WKScriptMessageHandler {
                 if let error = error {
                     NSLog("MainWindow: evaluateJavaScript failed for clipboardRead: %@", error.localizedDescription)
                 }
+            }
+        case "clipboardWrite":
+            // Native clipboard-write bridge for Tug prompt copy/cut. The
+            // web layer never writes atom-bearing selections through the
+            // DOM copy event (WebKit's pasteboard normalization swallows
+            // custom MIME types and sanitizes HTML, dropping atom data).
+            // Instead it hands us the plain-text fallback plus the atom
+            // sidecar JSON, and we own the entire NSPasteboard write: the
+            // readable text on `.string` for external apps, the sidecar on
+            // our private `dev.tug.prompt-atoms` type for Tug-to-Tug paste.
+            // Fire-and-forget; NSPasteboard writes synchronously.
+            // JS-side contract: post {text, atoms}. `atoms` is "" when the
+            // selection carried no atoms. See tug-native-clipboard.ts.
+            guard let body = message.body as? [String: Any],
+                  let text = body["text"] as? String else {
+                NSLog("MainWindow: clipboardWrite invalid payload")
+                return
+            }
+            let atoms = body["atoms"] as? String ?? ""
+            let pasteboard = NSPasteboard.general
+            var types: [NSPasteboard.PasteboardType] = [.string]
+            if !atoms.isEmpty { types.append(tugAtomsPasteboardType) }
+            // declareTypes clears the pasteboard and declares ownership of
+            // the listed types in one step, so the subsequent setString
+            // calls are guaranteed to take.
+            pasteboard.declareTypes(types, owner: nil)
+            pasteboard.setString(text, forType: .string)
+            if !atoms.isEmpty {
+                pasteboard.setString(atoms, forType: tugAtomsPasteboardType)
             }
         case "clipboardWriteImage":
             // Native image-clipboard bridge. The WKWebView's JS Clipboard

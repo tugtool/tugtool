@@ -123,7 +123,7 @@ describe.skipIf(!SHOULD_RUN)(
         // Repro: insert atom (1 widget), Cmd+A select all, Cmd+C
         // copy, move caret to end (Right), Cmd+V paste (now 2),
         // Right, Cmd+V again (now 3). Each paste should produce a
-        // fresh atom widget. If the html-channel paste loses
+        // fresh atom widget. If the native-bridge sidecar paste loses
         // decorations on the second invocation, the count plateaus.
         const tugbankPath = mkTempTugbank();
         try {

@@ -4,41 +4,37 @@
  *
  * ## Wire format
  *
- * Two payloads land on the system clipboard for every copy / cut:
+ * This module owns the *browser-mode* clipboard path (a normal Safari /
+ * Chrome tab during development). Inside Tug.app (WKWebView) copy and
+ * paste of atom selections go through the native NSPasteboard bridge
+ * instead (see `tug-native-clipboard.ts` and `tug-text-editor.tsx`),
+ * because WebKit's pasteboard normalization swallows custom MIME types
+ * and sanitizes HTML — both of which silently drop atom data. The
+ * native bridge writes/reads a Tug-private pasteboard type
+ * (`dev.tug.prompt-atoms`) carrying the same sidecar this module emits,
+ * so the wire schema below is shared across both paths.
+ *
+ * In browser mode, two payloads land on the system clipboard for every
+ * copy / cut:
  *
  * 1. `text/plain`: human-readable text where each U+FFFC has been
  *    substituted with the atom's label. External apps that paste
  *    plain text see meaningful characters, not tofu glyphs.
- * 2. `text/html`: a single `<span data-tug-atoms="…">…</span>`
- *    element. The `data-tug-atoms` attribute carries a base64-
- *    encoded JSON sidecar (`{version, text, atoms}`) — the
- *    self-contained payload tug-text-editor reads back on paste. The span's
- *    visible text is the same label-substituted string text/plain
- *    carries, so external apps that prefer rich html still get
- *    something readable.
+ * 2. `application/x-tug-atoms`: the raw JSON sidecar
+ *    (`{version, text, atoms}`). Within one browser, the synchronous
+ *    `copy`/`paste` event preserves this custom type in-process, so the
+ *    paste handler reads it straight back — no HTML envelope needed.
  *
- * Browsers also receive an `application/x-tug-atoms` MIME with the
- * raw JSON sidecar — see the browser-mode paste path below. WebKit
- * does NOT propagate that custom MIME to NSPasteboard with its own
- * type (it packs everything into `com.apple.WebKit.custom-pasteboard-
- * data`, an undocumented archive blob), so the Tug.app native paste
- * bridge can't read it. The `data-tug-atoms` HTML attribute survives
- * WebKit's pasteboard normalization unchanged (verified empirically
- * in `at0045-pasteboard-custom-mime-probe.test.ts`), which is why we
- * route the cross-bridge atom data through that channel.
+ * ## Self-contained sidecar (atoms carry their bytes)
  *
- * ## Why this format and not "real" rich html
- *
- * An earlier iteration emitted text/html as a sequence of `<img
- * data-atom-*>` elements interleaved with text segments, parsed via
- * DOMParser on paste. WebKit normalizes that html for the pasteboard
- * (wrapping content in `<span style="…">`, dropping comments,
- * dropping `<script>`, splitting newlines into paragraphs), and the
- * DOM walker missed atoms in multi-line / multi-atom selections
- * because the structure didn't match the walker's assumptions. The
- * `data-tug-atoms` envelope solves this: we own both ends of the
- * channel, the data is opaque to WebKit's html serializer, and the
- * decoder is a single regex + base64 + JSON.parse.
+ * The sidecar is fully self-contained so a selection round-trips across
+ * cards / windows / sessions, not just within the card that still holds
+ * the bytes. Each atom entry carries its `segment` (including the
+ * optional `id`) and, for image atoms whose bytes live in the per-card
+ * `AtomBytesStore`, the `bytes` themselves. On paste the handler
+ * rehydrates those bytes into the destination card's store keyed by the
+ * atom id, so the chip reconstitutes fully — image preview, submit-time
+ * wire payload, and all.
  *
  * Laws: [L06] DOM clipboard manipulation, no React state, [L07]
  *        event handlers receive the live `view` from CM6's dispatch,
@@ -56,7 +52,7 @@ import {
   type PositionedAtom,
 } from "./atom-decoration";
 import { processAttachmentFiles } from "./drop-extension";
-import type { AtomBytesStore } from "@/lib/atom-bytes-store";
+import type { AtomBytesEntry, AtomBytesStore } from "@/lib/atom-bytes-store";
 
 // ---------------------------------------------------------------------------
 // Wire format
@@ -82,13 +78,28 @@ export interface TugAtomsClipboardPayload {
   /** Document text with U+FFFC at atom positions. */
   text: string;
   /** Atoms aligned with U+FFFC characters in `text`. */
-  atoms: { position: number; segment: AtomSegment }[];
+  atoms: TugAtomsClipboardEntry[];
+}
+
+/**
+ * One atom in the sidecar. `segment` carries the display identity
+ * (including the optional `id`); `bytes` carries the image payload for
+ * atoms whose bytes lived in the source card's `AtomBytesStore`, so the
+ * sidecar is self-contained — a paste destination rehydrates the bytes
+ * into its own store keyed by `segment.id` without any dependency on the
+ * source card. Absent for non-image atoms (file / command / link / doc)
+ * and for image atoms whose bytes had been evicted before the copy.
+ */
+export interface TugAtomsClipboardEntry {
+  position: number;
+  segment: AtomSegment;
+  bytes?: AtomBytesEntry;
 }
 
 /**
  * Output of `serializeClipboard`. The DOM event handler below wires
  * each field to a clipboard MIME type; tests round-trip the fields
- * via `parseClipboardSidecar` / `parseClipboardHtmlEnvelope`.
+ * via `parseClipboardSidecar`.
  */
 export interface ClipboardSerialization {
   /** Plain text including U+FFFC at atom positions. */
@@ -97,46 +108,6 @@ export interface ClipboardSerialization {
   fallback: string;
   /** JSON sidecar payload with atom data; null if no atoms in range. */
   sidecar: TugAtomsClipboardPayload | null;
-  /**
-   * Single-element `<span data-tug-atoms="BASE64_JSON">…</span>` html
-   * envelope carrying the sidecar. Empty string when there are no
-   * atoms in the range — browser-mode paste handlers fall back to
-   * plain text and the bridge-paste path treats absence as "no atoms
-   * in this clipboard".
-   */
-  html: string;
-}
-
-// ---------------------------------------------------------------------------
-// Base64 helpers (UTF-8 safe)
-// ---------------------------------------------------------------------------
-
-/**
- * Encode a UTF-8 string as base64. `btoa` requires Latin-1, so we
- * route through `TextEncoder` and a binary string. Used for the
- * `data-tug-atoms` envelope so atom labels with non-ASCII characters
- * survive the round trip.
- */
-function utf8ToBase64(s: string): string {
-  const bytes = new TextEncoder().encode(s);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
-}
-
-/**
- * Inverse of `utf8ToBase64`. Returns null on malformed base64 or
- * UTF-8 — callers should fall back to plain-text paste.
- */
-function base64ToUtf8(b64: string): string | null {
-  try {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bytes.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,16 +118,31 @@ function base64ToUtf8(b64: string): string | null {
  * Serialize a `[from, to)` slice of an editor state into clipboard
  * payloads. Pure: takes only the data it needs, returns plain values.
  * Tested in isolation; the DOM event handler below is the thin shell.
+ *
+ * `getBytes`, when supplied, resolves an atom id to its stored image
+ * bytes so the sidecar can carry them inline (self-contained paste). It
+ * is the source card's `AtomBytesStore.get`; omit it (or return null)
+ * for editors without a bytes-store, in which case image atoms travel
+ * as metadata only.
  */
 export function serializeClipboard(
   text: string,
   atoms: readonly PositionedAtom[],
   from: number,
+  getBytes?: (id: string) => AtomBytesEntry | null,
 ): ClipboardSerialization {
-  const local: { position: number; segment: AtomSegment }[] = atoms.map((a) => ({
-    position: a.position - from,
-    segment: a.segment,
-  }));
+  const local: TugAtomsClipboardEntry[] = atoms.map((a) => {
+    const entry: TugAtomsClipboardEntry = {
+      position: a.position - from,
+      segment: a.segment,
+    };
+    const id = a.segment.id;
+    if (id !== undefined && getBytes !== undefined) {
+      const bytes = getBytes(id);
+      if (bytes !== null) entry.bytes = bytes;
+    }
+    return entry;
+  });
 
   let fallback = text;
   if (local.length > 0) {
@@ -174,30 +160,11 @@ export function serializeClipboard(
     ? { version: 1, text, atoms: local }
     : null;
 
-  let html = "";
-  if (sidecar !== null) {
-    const encoded = utf8ToBase64(JSON.stringify(sidecar));
-    // Visible content is the label-substituted text — html-escaped so
-    // an external app pasting rich html sees readable text. The
-    // `data-tug-atoms` attribute is opaque to non-tug consumers.
-    html = `<span data-tug-atoms="${encoded}">${escapeHtml(fallback)}</span>`;
-  }
-
   return {
     text,
     fallback,
     sidecar,
-    html,
   };
-}
-
-/**
- * Escape `&`, `<`, `>` for safe placement inside an HTML payload's
- * text positions. The `data-tug-atoms` attribute value is base64 so
- * needs no escaping; only the visible text content does.
- */
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ---------------------------------------------------------------------------
@@ -205,40 +172,17 @@ function escapeHtml(s: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Extract the sidecar from a clipboard `text/html` payload by
- * regex-matching the `data-tug-atoms` attribute. Survives WebKit's
- * pasteboard normalization (which adds `<span style>` wrappers and
- * may inject `<meta>` headers but leaves data-attributes untouched —
- * verified by `at0045-pasteboard-custom-mime-probe.test.ts`).
+ * Validate and parse a JSON sidecar payload. The sidecar travels two
+ * ways into this function:
+ *   - browser-mode paste reads `application/x-tug-atoms` from
+ *     `clipboardData` and hands the raw JSON here;
+ *   - the Tug.app native bridge reads the `dev.tug.prompt-atoms`
+ *     pasteboard type and hands the raw JSON here.
  *
- * Returns null when:
- *   - the input has no `data-tug-atoms` attribute,
- *   - the attribute value isn't valid base64 / utf-8,
- *   - the decoded JSON doesn't match the `TugAtomsClipboardPayload` schema.
- *
- * In any of those cases the caller should fall back to plain-text paste.
- */
-export function parseClipboardHtmlEnvelope(
-  html: string,
-): TugAtomsClipboardPayload | null {
-  if (html === "") return null;
-  // Match `data-tug-atoms="…"` with double or single quotes.
-  const match = /data-tug-atoms=(?:"([^"]*)"|'([^']*)')/.exec(html);
-  if (match === null) return null;
-  const encoded = match[1] ?? match[2] ?? "";
-  if (encoded === "") return null;
-  const json = base64ToUtf8(encoded);
-  if (json === null) return null;
-  return parseClipboardSidecar(json);
-}
-
-/**
- * Validate and parse a JSON sidecar payload. Used by:
- *   - browser-mode paste (reads `application/x-tug-atoms` from
- *     `clipboardData`, hands the raw JSON to this function),
- *   - `parseClipboardHtmlEnvelope` (decodes base64 then validates here).
- *
- * Returns null on malformed JSON or schema mismatch.
+ * Preserves the optional `segment.id` and per-atom `bytes` (the
+ * self-contained image payload) so a paste destination can rehydrate
+ * the bytes into its own store. Returns null on malformed JSON or
+ * schema mismatch, so the caller falls back to plain-text paste.
  */
 export function parseClipboardSidecar(
   raw: string,
@@ -251,7 +195,7 @@ export function parseClipboardSidecar(
     if (typeof obj.text !== "string") return null;
     const atomsRaw = obj.atoms;
     if (!Array.isArray(atomsRaw)) return null;
-    const out: { position: number; segment: AtomSegment }[] = [];
+    const out: TugAtomsClipboardEntry[] = [];
     for (const a of atomsRaw as unknown[]) {
       if (typeof a !== "object" || a === null) return null;
       const entry = a as Record<string, unknown>;
@@ -261,19 +205,65 @@ export function parseClipboardSidecar(
       if (typeof seg.type !== "string") return null;
       if (typeof seg.label !== "string") return null;
       if (typeof seg.value !== "string") return null;
-      out.push({
+      const segment: AtomSegment = {
+        kind: "atom",
+        type: seg.type,
+        label: seg.label,
+        value: seg.value,
+      };
+      if (typeof seg.id === "string") segment.id = seg.id;
+      const out_entry: TugAtomsClipboardEntry = {
         position: entry.position,
-        segment: {
-          kind: "atom",
-          type: seg.type,
-          label: seg.label,
-          value: seg.value,
-        },
-      });
+        segment,
+      };
+      const bytes = parseBytesEntry(entry.bytes);
+      if (bytes !== null) out_entry.bytes = bytes;
+      out.push(out_entry);
     }
     return { version: 1, text: obj.text, atoms: out };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Validate a sidecar atom's `bytes` field against the `AtomBytesEntry`
+ * shape. Returns null for absent or malformed bytes — an atom without
+ * recoverable bytes still pastes as a (pending) chip; we just don't
+ * rehydrate the store for it.
+ */
+function parseBytesEntry(raw: unknown): AtomBytesEntry | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const b = raw as Record<string, unknown>;
+  if (typeof b.content !== "string") return null;
+  if (typeof b.mediaType !== "string") return null;
+  const entry: AtomBytesEntry = { content: b.content, mediaType: b.mediaType };
+  if (typeof b.thumbnailDataUrl === "string") {
+    entry.thumbnailDataUrl = b.thumbnailDataUrl;
+  }
+  return entry;
+}
+
+/**
+ * Rehydrate a sidecar's image bytes into a destination `AtomBytesStore`.
+ * For each pasted atom that carries both an `id` and `bytes`, `put` the
+ * bytes keyed by id so the reconstituted chip resolves non-pending and
+ * the submit-time wire payload finds its image. No-op for atoms without
+ * bytes (file / command / link / doc) and when no store is available.
+ *
+ * Shared by the browser-mode paste handler and the native-bridge paste
+ * path so both reconstitute images identically.
+ */
+export function rehydrateSidecarBytes(
+  payload: TugAtomsClipboardPayload,
+  store: AtomBytesStore | null,
+): void {
+  if (store === null) return;
+  for (const a of payload.atoms) {
+    const id = a.segment.id;
+    if (id !== undefined && a.bytes !== undefined) {
+      store.put(id, a.bytes);
+    }
   }
 }
 
@@ -292,13 +282,16 @@ function handleCopyOrCut(
   view: EditorView,
   event: ClipboardEvent,
   isCut: boolean,
+  getBytesStore: () => AtomBytesStore | null,
 ): boolean {
   const { from, to } = view.state.selection.main;
   if (from === to) return false; // empty selection — let CM6 default fire
 
   const text = view.state.doc.sliceString(from, to);
   const atoms = getAtomsInRange(view.state, from, to);
-  const payload = serializeClipboard(text, atoms, from);
+  const store = getBytesStore();
+  const getBytes = store !== null ? (id: string) => store.get(id) : undefined;
+  const payload = serializeClipboard(text, atoms, from, getBytes);
 
   const dt = event.clipboardData;
   if (dt === null) return false;
@@ -306,7 +299,6 @@ function handleCopyOrCut(
   if (payload.sidecar !== null) {
     dt.setData("text/plain", payload.fallback);
     dt.setData(TUG_ATOMS_MIME, JSON.stringify(payload.sidecar));
-    dt.setData("text/html", payload.html);
   } else {
     dt.setData("text/plain", payload.text);
   }
@@ -410,6 +402,9 @@ function handlePaste(
   if (sidecarRaw !== "") {
     const sidecar = parseClipboardSidecar(sidecarRaw);
     if (sidecar !== null) {
+      // Rehydrate any carried image bytes into this card's store first,
+      // so the reconstituted chips resolve non-pending immediately.
+      rehydrateSidecarBytes(sidecar, bytesStore);
       const { from, to } = view.state.selection.main;
       const placedAtoms: PositionedAtom[] = sidecar.atoms.map((a) => ({
         position: from + a.position,
@@ -545,10 +540,10 @@ export function clipboardExtension(
 ): Extension {
   return EditorView.domEventHandlers({
     copy(event, view) {
-      return handleCopyOrCut(view, event, false);
+      return handleCopyOrCut(view, event, false, getBytesStore);
     },
     cut(event, view) {
-      return handleCopyOrCut(view, event, true);
+      return handleCopyOrCut(view, event, true, getBytesStore);
     },
     paste(event, view) {
       return handlePaste(

@@ -49,10 +49,20 @@ export interface NativeClipboardReadResult {
   text: string;
   /** HTML contents of NSPasteboard (.html type). Empty string if none. */
   html: string;
+  /**
+   * Tug-private atom sidecar JSON read from NSPasteboard's
+   * `dev.tug.prompt-atoms` type. Non-empty only when the clipboard was
+   * last written by a Tug copy/cut via {@link writeClipboardViaNative};
+   * empty for external-app clipboards. This is the robust Tug-to-Tug
+   * channel — it bypasses WebKit's HTML sanitizer and custom-MIME
+   * repacking entirely. Parse with `parseClipboardSidecar`.
+   */
+  atoms: string;
 }
 
 interface ClipboardBridgeMessageHandlers {
   clipboardRead?: { postMessage: (v: unknown) => void };
+  clipboardWrite?: { postMessage: (v: unknown) => void };
   clipboardWriteImage?: { postMessage: (v: unknown) => void };
 }
 
@@ -73,7 +83,7 @@ function installCallback(): void {
   if (callbackInstalled) return;
   callbackInstalled = true;
   (globalThis as Record<string, unknown>).__tugNativeClipboardCallback = (
-    data: { requestId: string; text: string; html: string },
+    data: { requestId: string; text: string; html: string; atoms?: string },
   ) => {
     if (!data || typeof data.requestId !== "string") return;
     const resolver = pendingCallbacks.get(data.requestId);
@@ -82,6 +92,7 @@ function installCallback(): void {
       resolver({
         text: typeof data.text === "string" ? data.text : "",
         html: typeof data.html === "string" ? data.html : "",
+        atoms: typeof data.atoms === "string" ? data.atoms : "",
       });
     }
   };
@@ -197,6 +208,37 @@ export function writeImageToNativeClipboard(base64: string): boolean {
   return true;
 }
 
+/**
+ * Write a Tug prompt selection to the system clipboard via the native
+ * NSPasteboard bridge. `text` is the readable plain-text fallback
+ * (atom labels substituted for U+FFFC) written to `.string` so external
+ * apps paste meaningful text; `atoms` is the atom sidecar JSON written
+ * to the Tug-private `dev.tug.prompt-atoms` type, or `""` when the
+ * selection carried no atoms.
+ *
+ * This is the copy counterpart to {@link readClipboardViaNative}: inside
+ * Tug.app the web layer must NOT write atom-bearing selections through
+ * the DOM `copy` event, because WebKit's pasteboard normalization
+ * swallows custom MIME types (into the undocumented
+ * `com.apple.WebKit.custom-pasteboard-data` blob) and sanitizes HTML —
+ * both of which drop atom data. Owning the whole write natively avoids
+ * that round-trip entirely, and avoids the race where WebKit's own
+ * post-event pasteboard write would clobber a native write.
+ *
+ * Fire-and-forget: NSPasteboard writes synchronously on the Swift side.
+ * Returns `true` when the bridge is present and the message was posted,
+ * `false` when it's absent (normal browser dev) so callers fall back to
+ * the DOM `copy` path. Mirrors {@link hasNativeClipboardBridge}'s
+ * detection.
+ */
+export function writeClipboardViaNative(text: string, atoms: string): boolean {
+  const webkit = (globalThis as unknown as { webkit?: ClipboardWebkit }).webkit;
+  const handler = webkit?.messageHandlers?.clipboardWrite;
+  if (!handler || typeof handler.postMessage !== "function") return false;
+  handler.postMessage({ text, atoms });
+  return true;
+}
+
 /** How long to wait for the Swift callback before giving up. */
 const NATIVE_CLIPBOARD_TIMEOUT_MS = 1000;
 
@@ -217,7 +259,7 @@ export function readClipboardViaNative(): Promise<NativeClipboardReadResult> {
   const webkit = (globalThis as unknown as { webkit?: ClipboardWebkit }).webkit;
   const handler = webkit?.messageHandlers?.clipboardRead;
   if (!handler || typeof handler.postMessage !== "function") {
-    return Promise.resolve({ text: "", html: "" });
+    return Promise.resolve({ text: "", html: "", atoms: "" });
   }
   installCallback();
   const requestId = `tug-clip-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -238,7 +280,7 @@ export function readClipboardViaNative(): Promise<NativeClipboardReadResult> {
         console.warn(
           `tug-native-clipboard: Swift callback timed out after ${NATIVE_CLIPBOARD_TIMEOUT_MS}ms`,
         );
-        settle({ text: "", html: "" });
+        settle({ text: "", html: "", atoms: "" });
       }
     }, NATIVE_CLIPBOARD_TIMEOUT_MS);
     handler.postMessage({ requestId });

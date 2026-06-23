@@ -23,17 +23,19 @@
  *
 ## Findings (recorded for future readers)
  *
- *   | scenario   | bridge text | bridge html       |
- *   |------------|-------------|-------------------|
- *   | text-only  | "abc"       | "" (no atoms)     |
- *   | mixed      | "xmain.ts"  | x + <img …>       |
- *   | atom-only  | "main.ts"   | <img …>           |
+ *   | scenario   | bridge text | bridge atoms        |
+ *   |------------|-------------|---------------------|
+ *   | text-only  | "abc"       | "" (no atoms)       |
+ *   | mixed      | "xmain.ts"  | sidecar JSON        |
+ *   | atom-only  | "main.ts"   | sidecar JSON        |
  *
- *   `text/plain` carries atom labels substituted for U+FFFC (per
+ *   `.string` carries atom labels substituted for U+FFFC (per
  *   `serializeClipboard`'s `fallback` field) so external apps see
- *   readable text. Step 9.5B's fix added `text/html` carrying
- *   `<img data-atom-*>` markup so the substrate's bridge-paste path
- *   can reconstruct atom decorations. The test rounds-trips through
+ *   readable text. The atom data rides on the Tug-private
+ *   `dev.tug.prompt-atoms` pasteboard type (the bridge's `atoms`
+ *   field) as the self-contained sidecar JSON — written natively by
+ *   `handleCopy` → `writeClipboardViaNative`, bypassing WebKit's
+ *   pasteboard normalization entirely. The test rounds-trips through
  *   copy → bridge read → paste-into-fresh-card and asserts the atom
  *   `<img>` reappears in the destination editor's DOM.
  *
@@ -155,15 +157,14 @@ async function clearEditor(app: App): Promise<void> {
 interface ClipboardSnapshot {
   hasBridge: boolean;
   text: string;
-  html: string;
+  atoms: string;
 }
 
 /**
  * Read the system clipboard via Tug.app's native bridge
- * (NSPasteboard read). Returns plain text + html. Custom MIME types
- * (the `application/x-tug-atoms` sidecar) don't cross the bridge, so
- * this gives us the same view a paste destination outside the
- * substrate's browser-mode paste path would see.
+ * (NSPasteboard read). Returns plain text + the Tug-private atom
+ * sidecar (`dev.tug.prompt-atoms` → the bridge's `atoms` field). This
+ * is exactly the view the substrate's bridge-paste path consumes.
  *
  * Talks to `window.webkit.messageHandlers.clipboardRead` directly
  * rather than importing `tug-native-clipboard.ts` (the harness's
@@ -183,7 +184,7 @@ async function readClipboard(app: App): Promise<ClipboardSnapshot> {
       w.__tugClipReadResult = null;
       var bridge = w.webkit && w.webkit.messageHandlers && w.webkit.messageHandlers.clipboardRead;
       if (!bridge || typeof bridge.postMessage !== "function") {
-        w.__tugClipReadResult = { hasBridge: false, text: "", html: "" };
+        w.__tugClipReadResult = { hasBridge: false, text: "", atoms: "" };
         return;
       }
       var id = "diag-" + Math.random().toString(36).slice(2);
@@ -197,7 +198,7 @@ async function readClipboard(app: App): Promise<ClipboardSnapshot> {
         w.__tugClipReadResult = {
           hasBridge: true,
           text: typeof data.text === "string" ? data.text : "",
-          html: typeof data.html === "string" ? data.html : "",
+          atoms: typeof data.atoms === "string" ? data.atoms : "",
         };
       };
       bridge.postMessage({ requestId: id });
@@ -321,33 +322,41 @@ describe.skipIf(!SHOULD_RUN)(
               "atom-only ⌘C: bridge text payload (label only)",
             ).toBe(FILE_ATOM_LABEL);
 
-            // ---- Post-9.5B html payload assertions ----
+            // ---- Atom sidecar payload assertions ----
             //
-            // text-only has no atoms, so `serializeClipboard.html` is
-            // empty by design — nothing to round-trip via the html
-            // channel.
-            expect(textOnlyClip.html, "text-only html payload — no atoms = empty").toBe("");
+            // text-only has no atoms, so the `dev.tug.prompt-atoms`
+            // type is never written — the bridge's `atoms` field is
+            // empty by design.
+            expect(textOnlyClip.atoms, "text-only atoms payload — no atoms = empty").toBe("");
 
-            // Mixed and atom-only carry the `<span data-tug-atoms="…">`
-            // envelope (Step 9.5B redesign — see commit body). We
-            // assert the attribute presence and that the visible
-            // span content carries the label-substituted text. The
-            // base64 attribute value is opaque; the round-trip
-            // assertion below proves the data is recoverable.
-            expect(mixedClip.html, "mixed html: contains data-tug-atoms attribute")
-              .toContain("data-tug-atoms=");
-            expect(mixedClip.html, "mixed html: visible span content shows label-substituted text")
-              .toContain(`x${FILE_ATOM_LABEL}`);
+            // Mixed and atom-only carry the self-contained sidecar JSON
+            // on the Tug-private pasteboard type. Parse it and assert
+            // the atom's label survives; the round-trip paste below
+            // proves the data is recoverable end-to-end.
+            const mixedSidecar = JSON.parse(mixedClip.atoms) as {
+              version: number;
+              atoms: { segment: { label: string } }[];
+            };
+            expect(mixedSidecar.version, "mixed atoms: sidecar version").toBe(1);
+            expect(
+              mixedSidecar.atoms.map((a) => a.segment.label),
+              "mixed atoms: carries the file atom's label",
+            ).toContain(FILE_ATOM_LABEL);
 
-            expect(atomOnlyClip.html, "atom-only html: contains data-tug-atoms attribute")
-              .toContain("data-tug-atoms=");
-            expect(atomOnlyClip.html, "atom-only html: visible span content shows the label")
-              .toContain(`>${FILE_ATOM_LABEL}<`);
+            const atomOnlySidecar = JSON.parse(atomOnlyClip.atoms) as {
+              version: number;
+              atoms: { segment: { label: string } }[];
+            };
+            expect(atomOnlySidecar.version, "atom-only atoms: sidecar version").toBe(1);
+            expect(
+              atomOnlySidecar.atoms.map((a) => a.segment.label),
+              "atom-only atoms: carries the file atom's label",
+            ).toEqual([FILE_ATOM_LABEL]);
 
             // ---- Round-trip assertion ----
             //
             // Confirm the bridge-paste path reconstructs the atom
-            // widget from the html payload. The atom-only clipboard
+            // widget from the sidecar payload. The atom-only clipboard
             // is what was last copied; clear the editor and ⌘V should
             // produce one `<img data-atom-label>` in the destination.
             await clearEditor(app);
