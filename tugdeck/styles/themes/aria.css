@@ -228,15 +228,15 @@ body {
      i:52 — lower chroma calms it while the lightness stays dark enough for the
      white selected text to read on this light theme. Sole consumer is the list
      row. */
-  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(iris, i: 38, t: 48);
-  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(iris, i: 40, t: 43);
+  --tug7-surface-selection-primary-normal-quiet-rest: --tug-color(iris, i: 40, t: 43);
+  --tug7-surface-selection-primary-normal-quiet-hover: --tug-color(iris, i: 38, t: 43);
   /* The "mouse is on the selected row" fill — a selected row gains this on mouse
      hover. A moderate, deliberate step above `quiet-rest` so the bit reads
      clearly, well short of the vibrant `selected` ramp. The list's selection
      fills are now two rungs — quiet-rest (selected) < quiet-strong (selected +
      mouse hover); the keyboard cursor is a leading-edge bar (not a fill) and
      unselected-row hover is a neutral graze, so neither rides this blue. */
-  --tug7-surface-selection-primary-normal-quiet-strong: --tug-color(iris, i: 49, t: 50);
+  --tug7-surface-selection-primary-normal-quiet-strong: --tug-color(iris, i: 51, t: 48);
   /* Demoted selection — a selected list row whose descended trailing
      accessory holds the keyboard key view yields its fill to the live
      control: the row drops to a calmer wash TINGED BY THE ACCESSORY'S ROLE
