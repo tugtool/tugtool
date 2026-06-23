@@ -182,7 +182,12 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
   const pattern = globInput.pattern;
   const command =
     pattern !== undefined ? (
-      <code data-slot="glob-tool-block-pattern">{pattern}</code>
+      <code
+        data-slot="glob-tool-block-pattern"
+        className="tool-call-header-clamp"
+      >
+        {pattern}
+      </code>
     ) : undefined;
 
   // Errored globs carry the failure message in `textOutput`; surface

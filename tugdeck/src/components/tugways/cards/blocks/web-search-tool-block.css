@@ -40,11 +40,20 @@ body {
 
 .web-search-tool-block-args {
   display: flex;
-  align-items: baseline;
+  /* Top-align so the trailing count badge pins to the FIRST line while the
+     query clamps downward beneath it (tool-call-header-clamp, collapsed). */
+  align-items: flex-start;
   gap: var(--tugx-block-header-gap);
   flex: 1 1 auto;
   min-width: 0;
-  white-space: nowrap;
+}
+
+/* The query is the flex spacer; it carries the shared header clamp so it
+   caps at the header line budget while collapsed and wraps to full height
+   when expanded. */
+.web-search-tool-block-args > [data-slot="web-search-tool-block-query"] {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .web-search-tool-block-results {

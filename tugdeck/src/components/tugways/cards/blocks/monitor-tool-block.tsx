@@ -225,7 +225,12 @@ export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
 
   const argsSummary = header !== undefined ? (
     <TugTooltip content={header.label} side="bottom" truncated>
-      <code data-slot="monitor-tool-block-target">{header.label}</code>
+      <code
+        data-slot="monitor-tool-block-target"
+        className="tool-call-header-clamp"
+      >
+        {header.label}
+      </code>
     </TugTooltip>
   ) : undefined;
 

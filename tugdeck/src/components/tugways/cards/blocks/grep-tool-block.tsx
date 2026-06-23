@@ -386,7 +386,12 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
   const pattern = grepInput.pattern;
   const command =
     pattern !== undefined ? (
-      <code data-slot="grep-tool-block-pattern">{pattern}</code>
+      <code
+        data-slot="grep-tool-block-pattern"
+        className="tool-call-header-clamp"
+      >
+        {pattern}
+      </code>
     ) : undefined;
   // Errored greps carry the failure message in `textOutput`; surface
   // it through the chrome's error band rather than the body.

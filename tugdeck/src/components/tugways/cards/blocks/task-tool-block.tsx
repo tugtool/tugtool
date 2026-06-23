@@ -305,7 +305,7 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   const argsSummary =
     agentType !== undefined ||
     (description !== undefined && description.length > 0) ? (
-      <span className="task-tool-block-args">
+      <span className="task-tool-block-args tool-call-header-clamp">
         {agentType !== undefined ? (
           <code data-slot="task-tool-block-agent-type">{agentType}</code>
         ) : null}

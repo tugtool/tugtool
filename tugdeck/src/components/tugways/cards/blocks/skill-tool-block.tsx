@@ -199,7 +199,12 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
   const headerArgs = composeSkillHeaderArgs(skillInput.skill);
   const argsSummary = headerArgs !== undefined ? (
     <TugTooltip content={headerArgs.label} side="bottom" truncated>
-      <code data-slot="skill-tool-block-name">{headerArgs.label}</code>
+      <code
+        data-slot="skill-tool-block-name"
+        className="tool-call-header-clamp"
+      >
+        {headerArgs.label}
+      </code>
     </TugTooltip>
   ) : undefined;
 

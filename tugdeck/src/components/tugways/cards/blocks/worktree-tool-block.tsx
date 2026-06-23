@@ -192,7 +192,12 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
 
   const argsSummary = header !== undefined ? (
     <TugTooltip content={header.label} side="bottom" truncated>
-      <code data-slot="worktree-tool-block-target">{header.label}</code>
+      <code
+        data-slot="worktree-tool-block-target"
+        className="tool-call-header-clamp"
+      >
+        {header.label}
+      </code>
     </TugTooltip>
   ) : undefined;
 

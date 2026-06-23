@@ -180,7 +180,10 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
   // tool-name slot).
   const argsSummary = sharedInput.short_code !== undefined ? (
     <TugTooltip content={sharedInput.short_code} side="bottom" truncated>
-      <code data-slot="share-onboarding-guide-tool-block-short-code">
+      <code
+        data-slot="share-onboarding-guide-tool-block-short-code"
+        className="tool-call-header-clamp"
+      >
         {`#${sharedInput.short_code}`}
       </code>
     </TugTooltip>

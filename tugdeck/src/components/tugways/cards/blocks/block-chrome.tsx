@@ -196,17 +196,12 @@ export interface BlockChromeProps {
   /**
    * Command-shaped args rendered on their own wrapping row. For bash
    * commands, grep patterns, cron expressions. Omit for chip-identity
-   * tools. By default the command wraps to its full height in both states
-   * ([D05]); pass `collapsedCommandLines` to cap it while collapsed.
+   * tools. A long command (or any text target) clamps to
+   * `--tugx-toolheader-clamp-lines` while collapsed when the wrapper tags
+   * its text node with `tool-call-header-clamp`; expanding shows the whole
+   * command above the body ([D05], nothing is lost).
    */
   command?: React.ReactNode;
-  /**
-   * Cap the `command` row at N lines while the block is COLLAPSED — extra
-   * lines clip with a trailing ellipsis, and expanding shows the whole
-   * command above the body (nothing is lost). A general facility for tools
-   * whose command can run long; omit to leave the command uncapped.
-   */
-  collapsedCommandLines?: number;
   /**
    * The call's one-line result as DATA — the single trailing-info element,
    * rendered quietly (plain muted text) in BOTH states. Tools supply it so
@@ -281,7 +276,6 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
   argsSummary,
   identity,
   command,
-  collapsedCommandLines,
   resultSummary,
   status = "ready",
   phase,
@@ -436,12 +430,6 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
         phase={phase ?? statusToPhase(status)}
         toolName={toolName}
         target={command ?? identity ?? argsSummary}
-        // Only the command row clamps — chip identities size themselves and
-        // should never be capped, so the cap rides only when `command` is the
-        // target the header renders.
-        collapsedTargetLines={
-          command !== undefined ? collapsedCommandLines : undefined
-        }
         summary={resultSummary}
         caution={caution}
         // The header owns Copy in both states. Prefer a wrapper's tailored

@@ -37,6 +37,10 @@ body {
    * `--tugx-toolheader-summary-size` token is needed. */
   /* The one line box every cross-row item rides. */
   --tugx-toolheader-line: calc(var(--tug-font-size-sm) * 1.6);
+  /* Collapsed-header line cap — a header's target text clamps to this many
+   * lines while collapsed (see `.tool-call-header-clamp`). One value for
+   * every tool kind. */
+  --tugx-toolheader-clamp-lines: 3;
   --tugx-toolheader-row-gap: var(--tug-space-sm);
   /* The separator gap, used in THREE places so they read equal:
      result→rule, rule→actions, and actions→right edge. */
@@ -163,22 +167,34 @@ body {
   word-break: break-word;
 }
 
-/* Collapsed clamp — when a wrapper passes `collapsedTargetLines`, the
- * header stamps `data-clamp-lines` on the detail and publishes the line
- * count in `--tugx-toolheader-detail-clamp-lines`. While the block is
- * collapsed the detail switches to a `-webkit-box` and caps at that many
- * lines, clipping the overflow with a trailing ellipsis — so a heredoc-laden
- * command no longer fills the whole collapsed header. Expanding clears
- * `data-clamp-lines` (the attribute is collapsed-only in the header), and the
- * detail returns to its full-height single-line-centered flex box, showing
- * the whole command above the body. `line-clamp` ships the standard property
- * alongside the `-webkit-` one for forward-compat. */
-.tool-call-header-detail[data-clamp-lines] {
+/* Collapsed header clamp — one rule for every tool kind. Any header text
+ * element carrying `tool-call-header-clamp` caps at
+ * `--tugx-toolheader-clamp-lines` lines while the block is COLLAPSED; the
+ * overflow clips with a trailing ellipsis (`-webkit-line-clamp`). Expanding
+ * drops the header's `[data-collapsed]` attribute and the element returns to
+ * its full height, so the whole target reflows above the body — nothing is
+ * ever lost. Appearance via a DOM attribute + CSS only ([L06]); never React
+ * state. `white-space: pre-wrap` plus the descendant override force wrapping
+ * even when the element or its inner `<code>` opts into `nowrap` (a Bash
+ * heredoc, a WebSearch query, a Task args row), so the multi-line clamp can
+ * engage. `min-width: 0` lets it shrink inside its flex/grid container so it
+ * wraps at the available width rather than its content width. `line-clamp`
+ * ships the standard property alongside the `-webkit-` one for forward-compat.
+ * File-chip identities (Read / Edit / Write) never carry the class — they
+ * self-size to one chip and must not clamp. */
+.tool-call-header[data-collapsed="true"] .tool-call-header-clamp {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--tugx-toolheader-detail-clamp-lines, 4);
-  line-clamp: var(--tugx-toolheader-detail-clamp-lines, 4);
+  -webkit-line-clamp: var(--tugx-toolheader-clamp-lines);
+  line-clamp: var(--tugx-toolheader-clamp-lines);
   overflow: hidden;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.tool-call-header[data-collapsed="true"] .tool-call-header-clamp * {
+  white-space: inherit;
 }
 
 .tool-call-header-detail code {

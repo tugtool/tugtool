@@ -265,7 +265,12 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
     query !== undefined ? (
       <span className="web-search-tool-block-args">
         <TugTooltip content={query} side="bottom" truncated>
-          <code data-slot="web-search-tool-block-query">{query}</code>
+          <code
+            data-slot="web-search-tool-block-query"
+            className="tool-call-header-clamp"
+          >
+            {query}
+          </code>
         </TugTooltip>
         {countLabel !== undefined ? (
           <TugBadge

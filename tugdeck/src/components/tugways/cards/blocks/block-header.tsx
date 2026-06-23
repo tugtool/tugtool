@@ -144,17 +144,6 @@ export interface BlockHeaderProps {
     disabled?: boolean;
   };
   /**
-   * Cap the target row at N lines while COLLAPSED — extra lines clip with a
-   * trailing ellipsis (`-webkit-line-clamp`). Expanding restores the full
-   * target. A general facility for any tool whose target can run long: a
-   * heredoc-laden Bash command, a giant grep pattern, a multi-line cron
-   * spec. Omit to let the target wrap to its full height in both states
-   * (the default — file-chip identities and short commands want no cap).
-   * Only the COLLAPSED header clamps; expanding always shows the whole
-   * target above the mounted body, so nothing is ever lost.
-   */
-  collapsedTargetLines?: number;
-  /**
    * Content rendered inside the actions slot in the EXPANDED state — the
    * chrome's copy / fold cluster for body-bits wrappers. Embedded body
    * kinds portal into the slot node instead (see `actionsSlotRef`).
@@ -187,7 +176,6 @@ export const BlockHeader = React.forwardRef<
     caution,
     copyText,
     disclosure,
-    collapsedTargetLines,
     actions,
     actionsSlotRef,
     className,
@@ -199,14 +187,6 @@ export const BlockHeader = React.forwardRef<
   const hasCopy =
     copyText !== undefined &&
     (typeof copyText === "function" || copyText.length > 0);
-  // Clamp the target only while collapsed — expanding restores the full
-  // target above the body, so the cap never hides anything permanently
-  // ([L06]: the clamp is a `data-clamp-lines` attribute + a CSS var the
-  // stylesheet reads, never React-driven appearance).
-  const clampTarget =
-    collapsed &&
-    collapsedTargetLines !== undefined &&
-    collapsedTargetLines > 0;
 
   return (
     <div
@@ -228,21 +208,7 @@ export const BlockHeader = React.forwardRef<
       {/* The detail column is always present — it holds the target (chip
           or wrapping command) and otherwise serves as the flexible spacer
           that pushes the trailing result + actions to the right edge. */}
-      <span
-        className="tool-call-header-detail"
-        data-clamp-lines={clampTarget ? "" : undefined}
-        style={
-          clampTarget
-            ? ({
-                "--tugx-toolheader-detail-clamp-lines": String(
-                  collapsedTargetLines,
-                ),
-              } as React.CSSProperties)
-            : undefined
-        }
-      >
-        {target}
-      </span>
+      <span className="tool-call-header-detail">{target}</span>
       {/* Trailing result — one quiet one-line summary as a ghost TugBadge,
           rendered identically in BOTH states so collapsed and expanded
           read the same. The badge is borderless (ghost) so it reads as the

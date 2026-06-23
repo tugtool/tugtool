@@ -298,7 +298,12 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
 
   const argsSummary = argsLabel !== undefined ? (
     <TugTooltip content={argsLabel.label} side="bottom" truncated>
-      <code data-slot="task-mgmt-tool-block-target">{argsLabel.label}</code>
+      <code
+        data-slot="task-mgmt-tool-block-target"
+        className="tool-call-header-clamp"
+      >
+        {argsLabel.label}
+      </code>
     </TugTooltip>
   ) : undefined;
 
