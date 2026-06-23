@@ -23,14 +23,13 @@
  *
  * Layout: a frameless headline (icon + title), an optional description,
  * the body, and a foot action row (Cancel / Submit, or the decline
- * Back / Reply). Paged wizard, master–detail. The working surface is
- * ONE path for both arities: a stationary *panel* hosting the current
- * question's heading and options. A multi-question payload adds a
- * *rail* of uniform summary rows — one per question — above the panel,
- * the index you navigate among; a single-question payload has nothing
- * to index, so it renders the panel alone (no rail, no separator, no
- * nav, and the heading drops its `N.` number prefix). Rail rows carry
- * a status:
+ * Back / Reply). Paged wizard, master–detail. ONE path for every
+ * arity: a *rail* of uniform summary rows — one per question — above a
+ * stationary *panel* that hosts the current question's heading and
+ * options. A single-question payload renders the same rail (one row)
+ * and panel — no special case; only the multi-question nav (Back /
+ * Next) and the `N questions · M answered` count drop away when there
+ * is just one question to answer. Rail rows carry a status:
  *
  *  - **done** — the user has picked at least one option. Row shows
  *    `✓ N. Question text` over `→ chosen answer`. Clickable to jump
@@ -1034,27 +1033,19 @@ function QuestionFreeTextSizer(): React.ReactElement {
  * answer (the rail's current row may be several rows away from the
  * panel). Rendered identically inside the live face and each hidden
  * sizer so both faces wrap — and size — the same.
- *
- * `numbered` is `false` for a single-question payload: with no series
- * to index, a lone `1.` reads oddly, so the heading drops the prefix
- * and shows the question text alone.
  */
 function PanelHeading({
   index,
   question,
-  numbered = true,
 }: {
   index: number;
   question: ParsedQuestion;
-  numbered?: boolean;
 }): React.ReactElement {
   return (
     <div className="dev-question-dialog-panel-heading">
-      {numbered ? (
-        <span className="dev-question-dialog-panel-heading-number">
-          {index + 1}.
-        </span>
-      ) : null}
+      <span className="dev-question-dialog-panel-heading-number">
+        {index + 1}.
+      </span>
       {question.question}
     </div>
   );
@@ -2104,54 +2095,45 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       </div>
       {hasQuestions ? (
         <>
-          {/* The rail + separator are inherently multi-question affordances —
-            * an index you navigate among. A single question has nothing to
-            * index (its text rides the panel heading below), so they render
-            * only for a multi-question payload.
-            *
-            * The rail — the shared `QuestionSummaryList`, one summary row per
-            * question (status marker · N. · question · → answer). The rows are
-            * mouse-jump only (keyboard walks Back / Next), so they carry no
+          {/* The rail — the shared `QuestionSummaryList`, one summary row per
+            * question (status marker · N. · question · → answer). It renders
+            * for every payload with questions, single or multi: a lone
+            * question still gets its own listing row, no special case. The rows
+            * are mouse-jump only (keyboard walks Back / Next), so they carry no
             * `focusGroup` Tab stop; the `current` row is non-interactive. */}
-          {single === null ? (
-            <>
-              <QuestionSummaryList
-                className="dev-question-dialog-rail"
-                ariaLabel="Questions"
-                rows={questions.map((q, i) => {
-                  const selection = selections[i] ?? [];
-                  const freeText = freeTexts[i] ?? "";
-                  const status = rowStatus(
-                    i === currentIndex,
-                    visited[i] === true,
-                    questionAnswered(selection, freeText),
-                  );
-                  return {
-                    index: i,
-                    question: q.question,
-                    answer: composeRowAnswerLabel(selection, freeText),
-                    status,
-                    onActivate: () => handleJump(i),
-                    ariaLabel: `${railRowLabelPrefix(status)} ${i + 1}: ${q.question}`,
-                  } satisfies QuestionSummaryRowData;
-                })}
-              />
+          <QuestionSummaryList
+            className="dev-question-dialog-rail"
+            ariaLabel="Questions"
+            rows={questions.map((q, i) => {
+              const selection = selections[i] ?? [];
+              const freeText = freeTexts[i] ?? "";
+              const status = rowStatus(
+                i === currentIndex,
+                visited[i] === true,
+                questionAnswered(selection, freeText),
+              );
+              return {
+                index: i,
+                question: q.question,
+                answer: composeRowAnswerLabel(selection, freeText),
+                status,
+                onActivate: () => handleJump(i),
+                ariaLabel: `${railRowLabelPrefix(status)} ${i + 1}: ${q.question}`,
+              } satisfies QuestionSummaryRowData;
+            })}
+          />
 
-              {/* A quiet structural cut between the index (rail) and the
-                * working surface (panel) — a full-width hairline, no box. */}
-              <TugSeparator className="dev-question-dialog-separator" />
-            </>
-          ) : null}
+          {/* A quiet structural cut between the index (rail) and the
+            * working surface (panel) — a full-width hairline, no box. */}
+          <TugSeparator className="dev-question-dialog-separator" />
 
-          {/* The working surface — ONE path for both arities ([D13]). Decline
-            * mode swaps the reply field in here (the rail above, if any, stays
-            * put); otherwise the stationary options panel renders. For a
-            * multi-question payload it's a CSS grid stacking one hidden, inert
-            * sizer per question under the live face, so the panel holds the
-            * tallest question's height in every state (no JS measurement, no
-            * reflow on advance; review swaps the face, never the box). A single
-            * question never advances or reviews, so it skips the sizers and the
-            * heading number — the panel just sizes to its one question. */}
+          {/* The working surface — ONE path for every arity ([D13]). Decline
+            * mode swaps the reply field in here (the rail above stays put);
+            * otherwise the stationary options panel renders — a CSS grid
+            * stacking one hidden, inert sizer per question under the live face,
+            * so the panel holds the tallest question's height in every state
+            * (no JS measurement, no reflow on advance; review swaps the face,
+            * never the box). */}
           {declineMode ? (
             declineReplyBody
           ) : (
@@ -2173,7 +2155,6 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
                   <PanelHeading
                     index={currentIndex}
                     question={questions[currentIndex]}
-                    numbered={single === null}
                   />
                   <div className="dev-question-dialog-panel-options">
                     <QuestionOptions
@@ -2207,23 +2188,20 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
             {/* Sizers render AFTER the live face so a first-match DOM
               * query for an option primitive (a radio group, a list
               * row) always lands on the live one, never an inert
-              * sizer clone. Grid stacking is order-independent. A single
-              * question never advances, so it needs no sizers. */}
-            {single === null
-              ? questions.map((question, index) => (
-                  <div
-                    key={`sizer:${index}:${question.question}`}
-                    className="dev-question-dialog-panel-sizer"
-                    aria-hidden="true"
-                  >
-                    <PanelHeading index={index} question={question} />
-                    <div className="dev-question-dialog-panel-options">
-                      <QuestionOptionsSizer question={question} />
-                    </div>
-                    <QuestionFreeTextSizer />
-                  </div>
-                ))
-              : null}
+              * sizer clone. Grid stacking is order-independent. */}
+            {questions.map((question, index) => (
+              <div
+                key={`sizer:${index}:${question.question}`}
+                className="dev-question-dialog-panel-sizer"
+                aria-hidden="true"
+              >
+                <PanelHeading index={index} question={question} />
+                <div className="dev-question-dialog-panel-options">
+                  <QuestionOptionsSizer question={question} />
+                </div>
+                <QuestionFreeTextSizer />
+              </div>
+            ))}
           </div>
           )}
         </>
