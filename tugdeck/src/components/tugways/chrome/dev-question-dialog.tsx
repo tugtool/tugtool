@@ -23,12 +23,14 @@
  *
  * Layout: a frameless headline (icon + title), an optional description,
  * the body, and a foot action row (Cancel / Submit, or the decline
- * Back / Reply). Paged wizard, master–detail. A single-question
- * payload renders inline (the question text goes in the description
- * and the options fill the body). A
- * multi-question payload renders a *rail* of uniform summary rows —
- * one per question — above a single stationary *panel* that hosts the
- * current question's heading and options. Rail rows carry a status:
+ * Back / Reply). Paged wizard, master–detail. The working surface is
+ * ONE path for both arities: a stationary *panel* hosting the current
+ * question's heading and options. A multi-question payload adds a
+ * *rail* of uniform summary rows — one per question — above the panel,
+ * the index you navigate among; a single-question payload has nothing
+ * to index, so it renders the panel alone (no rail, no separator, no
+ * nav, and the heading drops its `N.` number prefix). Rail rows carry
+ * a status:
  *
  *  - **done** — the user has picked at least one option. Row shows
  *    `✓ N. Question text` over `→ chosen answer`. Clickable to jump
@@ -1032,19 +1034,27 @@ function QuestionFreeTextSizer(): React.ReactElement {
  * answer (the rail's current row may be several rows away from the
  * panel). Rendered identically inside the live face and each hidden
  * sizer so both faces wrap — and size — the same.
+ *
+ * `numbered` is `false` for a single-question payload: with no series
+ * to index, a lone `1.` reads oddly, so the heading drops the prefix
+ * and shows the question text alone.
  */
 function PanelHeading({
   index,
   question,
+  numbered = true,
 }: {
   index: number;
   question: ParsedQuestion;
+  numbered?: boolean;
 }): React.ReactElement {
   return (
     <div className="dev-question-dialog-panel-heading">
-      <span className="dev-question-dialog-panel-heading-number">
-        {index + 1}.
-      </span>
+      {numbered ? (
+        <span className="dev-question-dialog-panel-heading-number">
+          {index + 1}.
+        </span>
+      ) : null}
       {question.question}
     </div>
   );
@@ -1860,19 +1870,13 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       ? questionAnswered(selections[0], freeTexts[0])
       : confirmedCount === questions.length);
 
-  // Dialog description — single question repeats its text here
-  // verbatim (unchanged from the legacy layout); the multi-question
-  // summary moves into the wizard-nav row alongside Back / Next, so
-  // this prop is `undefined` for multi-question payloads.
-  // Decline mode keeps the wizard's own description (the single question's
-  // text, or nothing for multi) so entering/leaving decline doesn't shove a
-  // new line in and relayout the rail — the reply field's placeholder carries
-  // the "reply in prose" cue instead.
+  // Dialog description — only the degenerate "no questions" form carries
+  // one now. Every payload with questions (single OR multi) renders its
+  // question text in the panel heading inside the working surface, so the
+  // description line stays empty and the panel is the single rendering path.
   const dialogDescription: React.ReactNode | undefined = !hasQuestions
     ? "Claude sent a question that could not be displayed."
-    : single !== null
-      ? single.question
-      : undefined;
+    : undefined;
   const wizardSummary: string | null =
     hasQuestions && single === null
       ? `${questions.length} questions · ${confirmedCount} answered`
@@ -2006,17 +2010,17 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   );
 
   // [P02]/[P09] Decline mode — the freeform reply field. It swaps in for the
-  // working surface (the single question's options, or the multi-question
-  // panel) while the rail above stays put, so entering decline relayouts only
-  // the area below the rail. A controlled `TugTextarea` (value in React state,
-  // preserved via the [A9] bag — no `componentStatePreservationKey`, [K2])
-  // authored as the mode's focus stop, under a keyboard hint. `Back` / `Reply`
-  // live in the top action bar; there is no whole-question Cancel here.
+  // working surface (the options panel, single OR multi) while the rail above
+  // (if any) stays put, so entering decline relayouts only the area below the
+  // rail. A controlled `TugTextarea` (value in React state, preserved via the
+  // [A9] bag — no `componentStatePreservationKey`, [K2]) authored as the mode's
+  // focus stop, under a keyboard hint. `Back` / `Reply` live in the top action
+  // bar; there is no whole-question Cancel here.
   //
-  // The reply surface fills the SAME height the multi-question panel reserved
-  // (`panelFloorRef`, measured while the wizard was up), so toggling Chat-about
-  // on/off doesn't grow or shrink the block — no vertical hop. (For a single
-  // question there's no panel floor, so it sizes to its content.)
+  // The reply surface fills the SAME height the panel reserved (`panelFloorRef`,
+  // measured while the wizard was up — for both arities now that the single
+  // question renders the panel too), so toggling Chat-about on/off doesn't grow
+  // or shrink the block — no vertical hop.
   const declineReplyBody: React.ReactNode = (
     <div
       className="dev-question-dialog-decline"
@@ -2074,9 +2078,9 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       >
     <div className={cn("dev-question-dialog-frame", className)}>
       {/* No titled-card headline: the host BlockChrome header carries the
-          identity ([P02]). The single-question text rides the description so
-          it sits directly above its options and morphs cleanly into the
-          answered Q→A row. */}
+          identity ([P02]). The description line is empty for every payload
+          with questions — the question text lives in the panel heading below
+          — and carries only the degenerate "couldn't be displayed" form. */}
       {dialogDescription !== undefined ? (
         <div className="dev-question-dialog-headline-description">
           {dialogDescription}
@@ -2098,74 +2102,56 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
           {dialogActions}
         </div>
       </div>
-      {/* Single-question payload — no rail, no panel. The options + free-text
-          fill the slot; decline mode swaps them for the reply field in place. */}
-      {hasQuestions && single !== null ? (
-        <div
-          className="dev-question-dialog-questions"
-          data-slot="dev-question-dialog-questions"
-        >
-          {declineMode ? (
-            declineReplyBody
-          ) : (
-            <>
-              <QuestionOptions
-                question={single}
-                selection={selections[0] ?? []}
-                onSelect={(optionLabel) => handleOptionSelect(0, optionLabel)}
-                onActivate={(optionLabel) => handleOptionActivate(0, optionLabel)}
-                focusGroup={focusGroup}
-                focusOrder={QUESTION_OPTIONS_ORDER}
-              />
-              <QuestionFreeText
-                value={freeTexts[0] ?? ""}
-                onChange={(value) => handleFreeTextChange(0, value)}
-                onKeyDown={(event) => handleFreeTextKeyDown(0, event)}
-                focusGroup={focusGroup}
-                focusOrder={QUESTION_FREETEXT_ORDER}
-              />
-            </>
-          )}
-        </div>
-      ) : null}
-      {hasQuestions && single === null ? (
+      {hasQuestions ? (
         <>
-          {/* The rail — the shared `QuestionSummaryList`, one summary row per
+          {/* The rail + separator are inherently multi-question affordances —
+            * an index you navigate among. A single question has nothing to
+            * index (its text rides the panel heading below), so they render
+            * only for a multi-question payload.
+            *
+            * The rail — the shared `QuestionSummaryList`, one summary row per
             * question (status marker · N. · question · → answer). The rows are
             * mouse-jump only (keyboard walks Back / Next), so they carry no
             * `focusGroup` Tab stop; the `current` row is non-interactive. */}
-          <QuestionSummaryList
-            className="dev-question-dialog-rail"
-            ariaLabel="Questions"
-            rows={questions.map((q, i) => {
-              const selection = selections[i] ?? [];
-              const freeText = freeTexts[i] ?? "";
-              const status = rowStatus(
-                i === currentIndex,
-                visited[i] === true,
-                questionAnswered(selection, freeText),
-              );
-              return {
-                index: i,
-                question: q.question,
-                answer: composeRowAnswerLabel(selection, freeText),
-                status,
-                onActivate: () => handleJump(i),
-                ariaLabel: `${railRowLabelPrefix(status)} ${i + 1}: ${q.question}`,
-              } satisfies QuestionSummaryRowData;
-            })}
-          />
+          {single === null ? (
+            <>
+              <QuestionSummaryList
+                className="dev-question-dialog-rail"
+                ariaLabel="Questions"
+                rows={questions.map((q, i) => {
+                  const selection = selections[i] ?? [];
+                  const freeText = freeTexts[i] ?? "";
+                  const status = rowStatus(
+                    i === currentIndex,
+                    visited[i] === true,
+                    questionAnswered(selection, freeText),
+                  );
+                  return {
+                    index: i,
+                    question: q.question,
+                    answer: composeRowAnswerLabel(selection, freeText),
+                    status,
+                    onActivate: () => handleJump(i),
+                    ariaLabel: `${railRowLabelPrefix(status)} ${i + 1}: ${q.question}`,
+                  } satisfies QuestionSummaryRowData;
+                })}
+              />
 
-          {/* A quiet structural cut between the index (rail) and the
-            * working surface (panel) — a full-width hairline, no box. */}
-          <TugSeparator className="dev-question-dialog-separator" />
+              {/* A quiet structural cut between the index (rail) and the
+                * working surface (panel) — a full-width hairline, no box. */}
+              <TugSeparator className="dev-question-dialog-separator" />
+            </>
+          ) : null}
 
-          {/* Below the separator: the working surface. Decline mode swaps the
-            * reply field in here (the rail above stays put); otherwise the
-            * stationary options panel renders — a CSS grid stacking one hidden,
-            * inert sizer per question under the live face, so the panel holds
-            * the tallest question's height in every state (no JS measurement,
-            * no reflow on advance; review swaps the face, never the box). */}
+          {/* The working surface — ONE path for both arities ([D13]). Decline
+            * mode swaps the reply field in here (the rail above, if any, stays
+            * put); otherwise the stationary options panel renders. For a
+            * multi-question payload it's a CSS grid stacking one hidden, inert
+            * sizer per question under the live face, so the panel holds the
+            * tallest question's height in every state (no JS measurement, no
+            * reflow on advance; review swaps the face, never the box). A single
+            * question never advances or reviews, so it skips the sizers and the
+            * heading number — the panel just sizes to its one question. */}
           {declineMode ? (
             declineReplyBody
           ) : (
@@ -2187,6 +2173,7 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
                   <PanelHeading
                     index={currentIndex}
                     question={questions[currentIndex]}
+                    numbered={single === null}
                   />
                   <div className="dev-question-dialog-panel-options">
                     <QuestionOptions
@@ -2220,20 +2207,23 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
             {/* Sizers render AFTER the live face so a first-match DOM
               * query for an option primitive (a radio group, a list
               * row) always lands on the live one, never an inert
-              * sizer clone. Grid stacking is order-independent. */}
-            {questions.map((question, index) => (
-              <div
-                key={`sizer:${index}:${question.question}`}
-                className="dev-question-dialog-panel-sizer"
-                aria-hidden="true"
-              >
-                <PanelHeading index={index} question={question} />
-                <div className="dev-question-dialog-panel-options">
-                  <QuestionOptionsSizer question={question} />
-                </div>
-                <QuestionFreeTextSizer />
-              </div>
-            ))}
+              * sizer clone. Grid stacking is order-independent. A single
+              * question never advances, so it needs no sizers. */}
+            {single === null
+              ? questions.map((question, index) => (
+                  <div
+                    key={`sizer:${index}:${question.question}`}
+                    className="dev-question-dialog-panel-sizer"
+                    aria-hidden="true"
+                  >
+                    <PanelHeading index={index} question={question} />
+                    <div className="dev-question-dialog-panel-options">
+                      <QuestionOptionsSizer question={question} />
+                    </div>
+                    <QuestionFreeTextSizer />
+                  </div>
+                ))
+              : null}
           </div>
           )}
         </>

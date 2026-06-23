@@ -260,16 +260,6 @@ body {
   text-align:  center;
 }
 
-/* ---- Single-question payload ---- */
-
-/* No rail, no panel — the dialog `description` carries the question
- * text and the options fill the children slot at full width. */
-.dev-question-dialog-questions {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-}
-
 /* ---- Free-text answer field ([P01]) ----
  *
  * A multi-line TugTextarea (three rows) below the options, present for every
