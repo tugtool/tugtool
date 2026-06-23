@@ -129,3 +129,79 @@
   background-color: var(--tug7-surface-indicator-primary-normal-plain-rest);
   opacity: 0.4;
 }
+
+/**
+ * Footer — a three-part flex row mirroring the sheet-actions spacing: an empty
+ * left spacer, the centered paging dots, and the right-aligned Done button. The
+ * outer cells carry equal weight so the dots cell sits on the row's true center
+ * (under the image) while Done stays at the trailing edge; `align-items: center`
+ * lines the dots up vertically with Done. Built here rather than on the shared
+ * `tug-sheet-actions` so the centering is a real flow item, not an overlay.
+ */
+.dev-attachment-preview__footer {
+  display: flex;
+  align-items: center;
+  margin-top: var(--tugx-sheet-space-b);
+}
+
+/* Equal-weight outer cells flank the centered pager. The trailing cell aligns
+   the Done button to the row's right edge. */
+.dev-attachment-preview__footer-side {
+  flex: 1 1 0;
+  display: flex;
+  min-width: 0;
+}
+
+.dev-attachment-preview__footer-end {
+  justify-content: flex-end;
+}
+
+/* Match the sheet-actions button sizing convention (short labels don't shrink
+   to a tiny pill). */
+.dev-attachment-preview__footer .tug-button {
+  min-width: 5rem;
+}
+
+/**
+ * Paging dots — the centered cell. `flex: 0 0 auto` keeps it sized to its dots
+ * so the two side cells split the remaining width evenly, landing the cluster on
+ * the row's center. Empty (zero-width) for a single-image set.
+ */
+.dev-attachment-preview__pager {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+/**
+ * One dot per image. A small neutral disc that brightens on hover and fills to
+ * full strength for the current image (`[data-active]`). The disc reuses the
+ * primary text color so it tracks the theme; the resting/hover opacities give
+ * the inactive→active progression without a second token.
+ */
+.dev-attachment-preview__dot {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* Inherit the sheet's text color so the dots read on dark AND light themes —
+     the same color that makes the "image-1" title legible either way. A native
+     <button> doesn't inherit `color`, so force it before reading currentColor. */
+  color: inherit;
+  background: currentColor;
+  opacity: 0.4;
+  transition: opacity 120ms ease;
+}
+
+.dev-attachment-preview__dot:hover {
+  opacity: 0.7;
+}
+
+.dev-attachment-preview__dot[data-active] {
+  opacity: 1;
+}

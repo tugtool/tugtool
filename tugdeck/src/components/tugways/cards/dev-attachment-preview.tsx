@@ -1,16 +1,28 @@
 /**
  * dev-attachment-preview.tsx — pane-sheet attachment preview body.
  *
- * Renders a single image attachment at its natural pixel dimensions,
- * bounded by the sheet body (which is itself bounded by the host
- * pane). Mounted inside a {@link TugSheetContent} body via the
- * `useTugSheet().showSheet({ content: ... })` imperative path —
- * clicking a thumbnail in {@link TugAttachmentStrip} opens this
- * preview for the corresponding atom. The host sheet runs with
- * `hideHeader`, so the preview owns its own top bar: the title at the
- * left and a right-aligned actions cluster (Copy today, room for more)
- * laid out like a tool-call header. Copy writes the image itself to
- * the clipboard as PNG via the shared {@link BlockCopyButton}.
+ * Renders one of a message's image attachments at its natural pixel
+ * dimensions, bounded by the sheet body (which is itself bounded by the
+ * host pane). Mounted inside a {@link TugSheetContent} body via the
+ * `useTugSheet().showSheet({ content: ... })` imperative path — clicking
+ * a thumbnail in {@link TugAttachmentStrip} opens this preview on that
+ * atom, and ←/→ step through the rest of the message's images (clamped
+ * at the ends). The host sheet runs with `hideHeader`, so the preview
+ * owns its own top bar: the current image's title at the left and a
+ * right-aligned actions cluster (Copy today, room for more) laid out
+ * like a tool-call header. Copy — by click or by Cmd-C — writes the
+ * current image itself to the clipboard as PNG via the shared
+ * {@link BlockCopyButton}. A multi-image set also gets a row of paging
+ * dots in the footer (one per image, the current one filled), centered
+ * under the image and clickable to jump straight to a given image.
+ *
+ * Keyboard: ←/→ are handled by a bubble-phase `onKeyDown` on the root
+ * (bare arrows aren't claimed by the keybinding map, and the sheet's
+ * trapped focus keeps them flowing up from the focused control). Cmd-C
+ * is claimed by the capture-phase keybinding pipeline as the `COPY`
+ * action, so it can't reach `onKeyDown`; the preview registers as a
+ * responder with a `COPY` handler instead, and the sheet's focus resting
+ * inside this root makes it the first responder the dispatch lands on.
  *
  * Image source: the per-card `AtomBytesStore` entry keyed by
  * `atom.id`. Content is base64; we wrap into a `data:` URL with the
@@ -51,6 +63,9 @@ import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { useSeedKeyView } from "@/components/tugways/use-focusable";
+import { useOptionalResponder } from "@/components/tugways/use-responder";
+import { ResponderChainContext } from "@/components/tugways/responder-chain";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 /**
  * Decode `dataUrl` to a PNG `Blob` for the clipboard. The clipboard's
@@ -117,17 +132,19 @@ async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
 
 export interface DevAttachmentPreviewProps {
   /**
-   * The image atom whose bytes should render. The atom's `id` keys
-   * into the bytes-store; an atom without an id (or whose entry has
-   * not yet landed) renders the empty-body placeholder.
+   * The full set of image atoms for the message whose strip was
+   * clicked, in strip order. The preview opens on {@link startIndex}
+   * and the user steps through the rest with ←/→ (see the keydown
+   * handler). Each atom's `id` keys into the bytes-store; an atom
+   * without an id (or whose entry has not yet landed) renders the
+   * empty-body placeholder for that step.
    */
-  atom: AtomSegment;
+  atoms: ReadonlyArray<AtomSegment>;
   /**
-   * Title shown at the left of the preview's own top bar. The host
-   * sheet runs with `hideHeader`, so this is the only title surface —
-   * wrappers pass the atom's label/value.
+   * Index into {@link atoms} of the thumbnail the user clicked — the
+   * step the preview opens on. Clamped into range defensively.
    */
-  title: string;
+  startIndex: number;
   /** Per-card bytes store carrying the image content + mediaType. */
   bytesStore: AtomBytesStore;
   /**
@@ -167,17 +184,30 @@ function buildPreviewSnapshot(
 }
 
 export function DevAttachmentPreview({
-  atom,
-  title,
+  atoms,
+  startIndex,
   bytesStore,
   onClose,
 }: DevAttachmentPreviewProps): React.ReactElement {
+  // The step the preview currently shows. ←/→ walk it across `atoms`
+  // (clamped at the ends); the title, image, and Copy target all follow
+  // the current atom. `startIndex` is clamped defensively so an out-of-
+  // range open lands on a real atom rather than `undefined`.
+  const count = atoms.length;
+  const clamp = React.useCallback(
+    (i: number): number => Math.min(Math.max(i, 0), Math.max(count - 1, 0)),
+    [count],
+  );
+  const [index, setIndex] = React.useState(() => clamp(startIndex));
+  const atom = atoms[index];
+  const title = atom?.value ?? "";
+
   const subscribe = React.useCallback(
     (listener: () => void) => bytesStore.subscribe(listener),
     [bytesStore],
   );
   const getSnapshot = React.useCallback(
-    () => buildPreviewSnapshot(atom, bytesStore),
+    () => (atom !== undefined ? buildPreviewSnapshot(atom, bytesStore) : null),
     [atom, bytesStore],
   );
   const dataUrl = React.useSyncExternalStore(
@@ -185,6 +215,68 @@ export function DevAttachmentPreview({
     getSnapshot,
     getSnapshot,
   );
+
+  // ←/→ step the current image. Bare arrows only — a modified arrow
+  // belongs to the editor / spatial plane, never to the gallery. Stepping
+  // clamps at the ends, so the first/last image is a soft stop rather than
+  // a wrap (no surprise jump from the first image back to the last). The
+  // sheet traps focus and the keydown bubbles from the focused control
+  // (the Done button) up to this root, so the handler sees every arrow
+  // without the preview owning DOM focus itself.
+  const onKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>): void => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setIndex((i) => clamp(i - 1));
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setIndex((i) => clamp(i + 1));
+      }
+    },
+    [clamp],
+  );
+
+  // Cmd-C copies the current image. The chord is matched in the
+  // capture-phase keybinding pipeline and dispatched as the `COPY` action
+  // to the first responder — so a local `onKeyDown` never sees it
+  // (Stage 1 stops propagation once handled). We register this preview as
+  // a responder with a `COPY` handler instead: the sheet's trapped focus
+  // resting inside this root makes the preview the first responder, so the
+  // walk lands here. The handler clicks the Copy button rather than calling
+  // the clipboard directly, so Cmd-C and a pointer-click share ONE path —
+  // including the button's "Copied" confirmation flash ([L23]).
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const responderId = React.useId();
+  const chainManager = React.useContext(ResponderChainContext);
+  const { ResponderScope, responderRef } = useOptionalResponder({
+    id: responderId,
+    actions: {
+      [TUG_ACTIONS.COPY]: () => {
+        const button = rootRef.current?.querySelector<HTMLElement>(
+          '[data-slot="dev-attachment-preview__copy"]',
+        );
+        button?.click();
+      },
+    },
+  });
+  const setRoot = React.useCallback(
+    (el: HTMLDivElement | null): void => {
+      rootRef.current = el;
+      responderRef(el);
+    },
+    [responderRef],
+  );
+  const handleRootFocus = React.useCallback((): void => {
+    if (
+      chainManager !== null &&
+      chainManager.getFirstResponder() !== responderId
+    ) {
+      chainManager.makeFirstResponder(responderId);
+    }
+  }, [chainManager, responderId]);
 
   // Seed the Done button as the sheet's live default (filled+ring) on open.
   const doneFocusGroup = React.useId();
@@ -212,7 +304,9 @@ export function DevAttachmentPreview({
   );
 
   return (
+    <ResponderScope>
     <div
+      ref={setRoot}
       data-slot="dev-attachment-preview"
       className="dev-attachment-preview"
       // The whole preview refuses first-responder promotion: a pointer-down
@@ -221,6 +315,18 @@ export function DevAttachmentPreview({
       // its seeded default ring. Done stays the resting default; Tab still
       // reaches Copy (the focus walk is a separate subsystem).
       data-tug-focus="refuse"
+      // Claim first responder when focus lands anywhere in the preview — the
+      // same fix `TugConfirmPopover` uses. The refuse above (and the buttons'
+      // own `refuse` default) means the provider's `focusin` promotion never
+      // lands the preview as first responder, so a Cmd-C → `COPY` dispatch
+      // (routed to the first responder) would otherwise miss the open preview
+      // and copy the host editor's selection. Claiming it here — from the
+      // preview's own React focus handler, which `refuse` does not gate — makes
+      // the COPY handler above the dispatch target while the sheet is open. The
+      // sheet's focus trap captured the prior first responder at push, so it is
+      // restored on close. Idempotent.
+      onFocus={handleRootFocus}
+      onKeyDown={onKeyDown}
     >
       {/* Top bar — title at the left, a right-aligned actions cluster
           mirroring the tool-call header layout. The sheet runs with
@@ -252,7 +358,7 @@ export function DevAttachmentPreview({
             data-slot="dev-attachment-preview__image"
             className="dev-attachment-preview__image"
             src={dataUrl}
-            alt={atom.label}
+            alt={atom?.label ?? title}
             onLoad={handleImageLoad}
           />
         ) : (
@@ -263,17 +369,54 @@ export function DevAttachmentPreview({
           />
         )}
       </div>
-      <div className="tug-sheet-actions">
-        <TugPushButton
-          emphasis="primary"
-          role="action"
-          onClick={onClose}
-          focusGroup={doneFocusGroup}
-          focusOrder={0}
+      {/* Footer — a three-part flex row: an empty left spacer, the centered
+          paging dots, and the right-aligned Done button. The two outer cells
+          are equal-weight (`flex: 1`), so the dots cell lands on the row's
+          true center — under the image's horizontal center — while Done stays
+          pinned to the trailing edge. `align-items: center` lines the dots up
+          vertically with Done. (Built explicitly rather than reusing
+          `tug-sheet-actions` so the centering is a real flow item, not an
+          absolute overlay.) */}
+      <div className="dev-attachment-preview__footer">
+        <div className="dev-attachment-preview__footer-side" />
+        {/* Paging dots — one per image, the current one filled. Shown only for
+            a multi-image set; a single attachment needs no pager. Each dot is a
+            click target that jumps to its image; the dots live inside the
+            preview's `refuse` root, so a click navigates without stealing
+            Done's seeded default ring. */}
+        <div
+          data-slot="dev-attachment-preview__pager"
+          className="dev-attachment-preview__pager"
+          role="tablist"
+          aria-label="Image"
         >
-          Done
-        </TugPushButton>
+          {count > 1 &&
+            atoms.map((a, i) => (
+              <button
+                key={a.id !== undefined && a.id.length > 0 ? `id-${a.id}` : `pos-${i}`}
+                type="button"
+                className="dev-attachment-preview__dot"
+                data-active={i === index ? "" : undefined}
+                role="tab"
+                aria-selected={i === index ? "true" : "false"}
+                aria-label={a.value}
+                onClick={() => setIndex(clamp(i))}
+              />
+            ))}
+        </div>
+        <div className="dev-attachment-preview__footer-side dev-attachment-preview__footer-end">
+          <TugPushButton
+            emphasis="primary"
+            role="action"
+            onClick={onClose}
+            focusGroup={doneFocusGroup}
+            focusOrder={0}
+          >
+            Done
+          </TugPushButton>
+        </div>
       </div>
     </div>
+    </ResponderScope>
   );
 }

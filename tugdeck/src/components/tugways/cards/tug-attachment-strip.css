@@ -98,6 +98,9 @@
      Tiles in a row therefore vary in height; the strip's
      `align-items: flex-start` keeps their tops aligned. */
   display: block;
+  /* Anchor for the hover-wash overlay below, which is absolutely
+     positioned to `inset: 0` of this box. */
+  position: relative;
   width: var(--tugx-attachment-strip-tile-size, 128px);
   border-radius: var(--tugx-attachment-strip-tile-radius, 4px);
   /* Background slot for the placeholder + a subtle frame around the
@@ -107,6 +110,31 @@
     var(--tug7-element-field-fill-rest,
     var(--tug-color-surface-2, #1d1d1d)));
   overflow: hidden;
+}
+
+/* Hover wash: a light-coloured film over the whole thumbnail (image OR
+   placeholder) the instant the pointer enters its tile, reading as a
+   gentle brighten that says "this is clickable" without shifting layout.
+   Painted as an `::after` film rather than a `filter: brightness()` so it
+   reads the same on a dark or a blown-out-highlight image and can't clip
+   highlights; the opacity transition keeps the entrance soft. The film
+   is `pointer-events: none` so it never intercepts the tile's own click.
+   `border-radius: inherit` keeps it inside the thumbnail's rounded corner
+   (the parent already clips via `overflow: hidden`; this defends the
+   subpixel edge on retina). */
+.tug-attachment-strip__thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tugx-attachment-strip-hover-wash, rgb(255 255 255 / 0.14));
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.tug-attachment-strip__tile:hover .tug-attachment-strip__thumb::after {
+  opacity: 1;
 }
 
 .tug-attachment-strip__thumb-img {

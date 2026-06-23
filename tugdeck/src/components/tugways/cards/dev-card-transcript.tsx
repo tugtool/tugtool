@@ -302,7 +302,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
   // entry at sheet-mount time.
   const { showSheet, renderSheet } = useTugSheet();
   const handleAttachmentClick = React.useCallback(
-    (atom: AtomSegment) => {
+    (atom: AtomSegment, clickedIndex: number) => {
       void showSheet({
         title: atom.value,
         // The preview owns its own top bar (title + actions), so the
@@ -318,17 +318,20 @@ const UserMessageCell = React.memo(function UserMessageCell({
         resizable: true,
         aspectLockContent: true,
         maxHostFraction: 0.9,
+        // The preview opens on the clicked tile and steps across the whole
+        // message's image set with ←/→, so it takes the full `imageAtoms`
+        // array plus the clicked index, not just one atom.
         content: (close) => (
           <DevAttachmentPreview
-            atom={atom}
-            title={atom.value}
+            atoms={imageAtoms}
+            startIndex={clickedIndex}
             bytesStore={bytesStore}
             onClose={() => close()}
           />
         ),
       });
     },
-    [showSheet, bytesStore],
+    [showSheet, bytesStore, imageAtoms],
   );
   // User-row timestamp is the submit time, not the turn's end time —
   // the user's row "posts" the moment they hit submit, regardless of
@@ -465,7 +468,7 @@ const GhostRowCell = React.memo(function GhostRowCell({
   const bytesStore = codeSessionStore.getAtomBytesStore();
   const { showSheet, renderSheet } = useTugSheet();
   const handleAttachmentClick = React.useCallback(
-    (atom: AtomSegment) => {
+    (atom: AtomSegment, clickedIndex: number) => {
       void showSheet({
         title: atom.value,
         hideHeader: true,
@@ -475,15 +478,15 @@ const GhostRowCell = React.memo(function GhostRowCell({
         maxHostFraction: 0.9,
         content: (close) => (
           <DevAttachmentPreview
-            atom={atom}
-            title={atom.value}
+            atoms={imageAtoms}
+            startIndex={clickedIndex}
             bytesStore={bytesStore}
             onClose={() => close()}
           />
         ),
       });
     },
-    [showSheet, bytesStore],
+    [showSheet, bytesStore, imageAtoms],
   );
   // The adapter only emits a `ghost` kind alongside a `queued`
   // payload; this guard is defensive against an out-of-range read.
