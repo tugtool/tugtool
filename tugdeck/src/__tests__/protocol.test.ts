@@ -182,6 +182,18 @@ describe("session CONTROL frame builders", () => {
     expect(payload.session_mode).toBe("resume");
   });
 
+  test("encodeSpawnSession forwards permission_mode when provided", () => {
+    const frame = encodeSpawnSession("card-1", "sess-1", "/work/alpha", "new", "plan");
+    const payload = parsePayload(frame);
+    expect(payload.permission_mode).toBe("plan");
+  });
+
+  test("encodeSpawnSession omits permission_mode when not provided", () => {
+    const frame = encodeSpawnSession("card-1", "sess-1", "/work/alpha");
+    const payload = parsePayload(frame);
+    expect("permission_mode" in payload).toBe(false);
+  });
+
   test("encodeCloseSession produces a CONTROL frame with card_id and tug_session_id", () => {
     const frame = encodeCloseSession("card-1", "sess-1");
     expect(frame.feedId).toBe(FeedId.CONTROL);

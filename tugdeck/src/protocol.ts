@@ -483,19 +483,34 @@ export type SpawnSessionMode = "new" | "resume";
  * client-side — JS path libraries don't match tugcast's firmlink handling,
  * so any client-side derivation would risk producing a string that does
  * not match the one spliced into FILETREE/FILESYSTEM/GIT frames.
+ *
+ * `permissionMode` is the deck-wide / per-card default permission mode the
+ * caller resolved from the tugbank cache at spawn time. When present, it's
+ * forwarded as `permission_mode` so tugcast can pass `--permission-mode` to
+ * the tugcode subprocess and the spawned claude starts in the right mode from
+ * its first instant (rather than tugcode's baseline default, which a
+ * post-spawn `permission_mode` frame would otherwise have to correct at
+ * runtime, racing the first turn). Omitted when the caller has no resolved
+ * mode (a card with neither a per-card mode nor a configured default), and
+ * absent on older clients — tugcast treats a missing field as "no override".
  */
 export function encodeSpawnSession(
   cardId: string,
   tugSessionId: string,
   projectDir: string,
   sessionMode: SpawnSessionMode = "new",
+  permissionMode?: string,
 ): Frame {
-  return controlFrame(CONTROL_ACTION_SPAWN_SESSION, {
+  const payload: Record<string, string> = {
     card_id: cardId,
     tug_session_id: tugSessionId,
     project_dir: projectDir,
     session_mode: sessionMode,
-  });
+  };
+  if (permissionMode !== undefined) {
+    payload.permission_mode = permissionMode;
+  }
+  return controlFrame(CONTROL_ACTION_SPAWN_SESSION, payload);
 }
 
 /**

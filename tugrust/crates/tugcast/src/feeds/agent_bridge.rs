@@ -225,12 +225,19 @@ pub trait ChildSpawner: Send + Sync + 'static {
     /// captured (in which case tugcode still uses `session_id` for
     /// `--resume` — the legacy fallback that works for un-forked
     /// sessions because their tug and claude ids match).
+    ///
+    /// `permission_mode` is the deck-wide / per-card default permission mode
+    /// tugdeck resolved at spawn time. Forwarded to tugcode as
+    /// `--permission-mode <mode>` so the spawned claude process starts in the
+    /// right mode. `None` when tugdeck sent no mode (older client, or a card
+    /// with no configured default).
     fn spawn_child(
         &self,
         project_dir: &Path,
         session_id: &str,
         session_mode: SessionMode,
         resume_claude_session_id: Option<&str>,
+        permission_mode: Option<&str>,
     ) -> SpawnFuture;
 }
 
@@ -268,6 +275,7 @@ pub(crate) fn build_tugcode_command(
     session_id: &str,
     session_mode: SessionMode,
     resume_claude_session_id: Option<&str>,
+    permission_mode: Option<&str>,
 ) -> (String, Vec<String>) {
     let (program, mut args): (String, Vec<String>) =
         if tugcode_path.extension().and_then(|s| s.to_str()) == Some("ts") {
@@ -294,6 +302,17 @@ pub(crate) fn build_tugcode_command(
         args.push("--resume-session".to_string());
         args.push(id.to_string());
     }
+    // The deck-wide / per-card default permission mode tugdeck resolved at
+    // spawn time, forwarded so the spawned claude process starts in the
+    // right mode rather than tugcode's hardcoded fallback (`--permission-mode`
+    // is fixed at spawn; a post-spawn `permission_mode` frame can only change
+    // it at runtime, racing the first turn). `None` when tugdeck sent no
+    // mode (older client, or a card with neither a per-card mode nor a
+    // configured default) — tugcode then keeps its own default.
+    if let Some(mode) = permission_mode {
+        args.push("--permission-mode".to_string());
+        args.push(mode.to_string());
+    }
     (program, args)
 }
 
@@ -304,11 +323,13 @@ impl ChildSpawner for TugcodeSpawner {
         session_id: &str,
         session_mode: SessionMode,
         resume_claude_session_id: Option<&str>,
+        permission_mode: Option<&str>,
     ) -> SpawnFuture {
         let tugcode_path = self.tugcode_path.clone();
         let project_dir = project_dir.to_path_buf();
         let session_id = session_id.to_string();
         let resume_claude_session_id = resume_claude_session_id.map(|s| s.to_string());
+        let permission_mode = permission_mode.map(|s| s.to_string());
         Box::pin(async move {
             let (cmd, args) = build_tugcode_command(
                 &tugcode_path,
@@ -316,6 +337,7 @@ impl ChildSpawner for TugcodeSpawner {
                 &session_id,
                 session_mode,
                 resume_claude_session_id.as_deref(),
+                permission_mode.as_deref(),
             );
             tracing::info!(
                 target: "dev::session-lifecycle",
@@ -448,6 +470,11 @@ pub async fn run_session_bridge(
     spawner: Arc<dyn ChildSpawner>,
     project_dir: PathBuf,
     session_mode: SessionMode,
+    // Deck-wide / per-card default permission mode resolved by tugdeck at
+    // spawn time, forwarded to tugcode as `--permission-mode`. `None` when
+    // tugdeck sent no mode. Stable for the life of the session (read once
+    // off the ledger entry), so crash-loop respawns re-apply the same mode.
+    permission_mode: Option<String>,
     sessions_recorder: Arc<dyn SessionsRecorder>,
     // Optional handle to the sqlite session ledger. When present, the
     // relay loop loads per-turn telemetry on `replay_started` and
@@ -532,6 +559,7 @@ pub async fn run_session_bridge(
                 session_id_str.as_str(),
                 session_mode,
                 resume_claude_session_id.as_deref(),
+                permission_mode.as_deref(),
             ) => result,
             _ = cancel.cancelled() => return,
         };
@@ -1579,6 +1607,7 @@ mod tests {
             "sess-alpha-uuid",
             SessionMode::New,
             None,
+            None,
         );
         assert_eq!(program, "/opt/tugtool/tugcode");
         assert_eq!(
@@ -1601,6 +1630,7 @@ mod tests {
             Path::new("/work/beta"),
             "sess-beta-uuid",
             SessionMode::New,
+            None,
             None,
         );
         assert_eq!(program, "bun");
@@ -1631,12 +1661,14 @@ mod tests {
             "sess-a",
             SessionMode::New,
             None,
+            None,
         );
         let (_p2, args2) = build_tugcode_command(
             &spawner.tugcode_path,
             Path::new("/work/b"),
             "sess-b",
             SessionMode::New,
+            None,
             None,
         );
         assert!(args1.iter().any(|a| a == "/work/a"));
@@ -1654,6 +1686,7 @@ mod tests {
             Path::new("/work/x"),
             "sess-x",
             SessionMode::Resume,
+            None,
             None,
         );
         let i = args
@@ -1677,6 +1710,7 @@ mod tests {
             "sess-y-tug-uuid",
             SessionMode::Resume,
             Some("claude-internal-id-7"),
+            None,
         );
         let i = args
             .iter()
@@ -1703,10 +1737,48 @@ mod tests {
             "sess-z",
             SessionMode::Resume,
             None,
+            None,
         );
         assert!(
             !args.iter().any(|a| a == "--resume-session"),
             "--resume-session must be absent when id is None"
+        );
+    }
+
+    /// When `permission_mode` is `Some`, the helper appends
+    /// `--permission-mode <mode>` so the spawned claude starts in tugdeck's
+    /// resolved default. When `None`, the flag is omitted and tugcode keeps
+    /// its own default.
+    #[test]
+    fn test_build_tugcode_command_emits_permission_mode_when_some() {
+        let (_, args) = build_tugcode_command(
+            Path::new("/opt/tugtool/tugcode"),
+            Path::new("/work/p"),
+            "sess-p",
+            SessionMode::New,
+            None,
+            Some("plan"),
+        );
+        let i = args
+            .iter()
+            .position(|a| a == "--permission-mode")
+            .expect("--permission-mode must be present when mode is Some");
+        assert_eq!(args.get(i + 1).map(String::as_str), Some("plan"));
+    }
+
+    #[test]
+    fn test_build_tugcode_command_omits_permission_mode_when_none() {
+        let (_, args) = build_tugcode_command(
+            Path::new("/opt/tugtool/tugcode"),
+            Path::new("/work/q"),
+            "sess-q",
+            SessionMode::New,
+            None,
+            None,
+        );
+        assert!(
+            !args.iter().any(|a| a == "--permission-mode"),
+            "--permission-mode must be absent when mode is None"
         );
     }
 

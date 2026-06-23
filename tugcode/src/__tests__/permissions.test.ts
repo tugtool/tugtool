@@ -2,9 +2,14 @@ import { describe, test, expect } from "bun:test";
 import { PermissionManager } from "../permissions.ts";
 
 describe("permissions.ts", () => {
-  test("default mode is acceptEdits", () => {
+  test("default mode is default", () => {
     const pm = new PermissionManager();
-    expect(pm.getMode()).toBe("acceptEdits");
+    expect(pm.getMode()).toBe("default");
+  });
+
+  test("constructor accepts an explicit initial mode", () => {
+    const pm = new PermissionManager("plan");
+    expect(pm.getMode()).toBe("plan");
   });
 
   test("setMode changes mode", () => {

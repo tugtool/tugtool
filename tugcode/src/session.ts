@@ -1,6 +1,6 @@
 // Session lifecycle management via direct claude CLI spawning
 
-import { PermissionManager } from "./permissions.ts";
+import { PermissionManager, type PermissionMode } from "./permissions.ts";
 import { writeLine, writeLineAndExit, drainPendingWrites } from "./ipc.ts";
 import {
   sendControlRequest,
@@ -2200,7 +2200,7 @@ export class SessionManager {
    * by {@link startStdoutDrain} when a fresh claude is spawned.
    */
   private claudeStdoutEofObserved: boolean = false;
-  private permissionManager = new PermissionManager();
+  private permissionManager: PermissionManager;
   /**
    * The session's current reasoning-effort level ([#step-4]), or `null` when
    * no `--effort` override is in force. tugcode owns the `--effort` flag, so
@@ -2484,6 +2484,17 @@ export class SessionManager {
        * 20.4.7.C fallback view. Tests omit it for backwards-compat.
        */
       contextBreakdownEmitter?: ContextBreakdownEmitter | null;
+      /**
+       * Permission mode to seed the session with — tugdeck's resolved
+       * per-card / deck-wide default, forwarded by tugcast as
+       * `--permission-mode` ([main.ts]). Applied to the {@link PermissionManager}
+       * before the first spawn, so `buildClaudeArgs` passes the correct
+       * `--permission-mode` from claude's first instant rather than tugcode's
+       * baseline default (which a post-spawn `permission_mode` frame would
+       * otherwise have to correct at runtime, racing the first turn). Omit /
+       * undefined → the manager keeps its `"default"` baseline.
+       */
+      initialPermissionMode?: PermissionMode;
     },
   ) {
     if (!sessionId) {
@@ -2492,6 +2503,10 @@ export class SessionManager {
     this.projectDir = projectDir;
     this.sessionId = sessionId;
     this.sessionMode = sessionMode;
+    // Seed the permission manager with tugdeck's resolved default (forwarded
+    // as `--permission-mode`) so the first spawn carries it; absent → the
+    // manager's own `"default"` baseline.
+    this.permissionManager = new PermissionManager(options?.initialPermissionMode);
     // Coerce `undefined` / empty string to `null` so the fallback
     // logic in `initialize()` has a single test (`!= null`) rather
     // than two (`!== undefined && !== ""`).

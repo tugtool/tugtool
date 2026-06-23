@@ -32,6 +32,40 @@ import {
 import type { ReplayWindow } from "@tugproto/inbound";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { logSessionLifecycle } from "./session-lifecycle-log";
+import { getTugbankClient } from "./tugbank-singleton";
+import {
+  PERMISSION_MODE_DEFAULT_DOMAIN,
+  PERMISSION_MODE_DEFAULT_KEY,
+  PERMISSION_MODE_DOMAIN,
+  parsePersistedPermissionMode,
+  resolveSeedPermissionMode,
+} from "./permission-mode";
+
+/**
+ * Resolve the permission mode a freshly-spawned session should start in,
+ * read synchronously from the tugbank cache at spawn time: the card's own
+ * per-card persisted mode if any, else the deck-wide default. `undefined`
+ * when neither is set (and when the tugbank client isn't ready yet) — the
+ * caller then sends no `permission_mode` and tugcode keeps its own default.
+ *
+ * Forwarded in the `spawn_session` frame so tugcast passes `--permission-mode`
+ * to tugcode and the spawned claude starts in the right mode from its first
+ * instant. This is the creation-time counterpart to the post-spawn
+ * `permission_mode` frame `usePermissionMode` still sends once the session is
+ * alive — the seed frame is then an idempotent confirmation rather than the
+ * sole (and race-prone) carrier of the default.
+ */
+function resolveSpawnPermissionMode(cardId: string): string | undefined {
+  const client = getTugbankClient();
+  if (client === null) return undefined;
+  const persisted = parsePersistedPermissionMode(
+    client.get(PERMISSION_MODE_DOMAIN, cardId),
+  );
+  const globalDefault = parsePersistedPermissionMode(
+    client.get(PERMISSION_MODE_DEFAULT_DOMAIN, PERMISSION_MODE_DEFAULT_KEY),
+  );
+  return resolveSeedPermissionMode(persisted, globalDefault) ?? undefined;
+}
 
 /**
  * Send a `spawn_session` CONTROL frame for `(cardId, tugSessionId,
@@ -50,17 +84,20 @@ export function sendSpawnSession(
   projectDir: string,
   sessionMode: SpawnSessionMode = "new",
 ): void {
+  const permissionMode = resolveSpawnPermissionMode(cardId);
   const frame = encodeSpawnSession(
     cardId,
     tugSessionId,
     projectDir,
     sessionMode,
+    permissionMode,
   );
   logSessionLifecycle("spawn.frame_send", {
     card_id: cardId,
     tug_session_id: tugSessionId,
     project_dir: projectDir,
     session_mode: sessionMode,
+    permission_mode: permissionMode ?? "",
   });
   connection.send(frame.feedId, frame.payload);
 }

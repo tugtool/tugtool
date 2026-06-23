@@ -82,14 +82,6 @@ export function usePermissionMode({
   codeSessionStore,
   sessionMetadataStore,
 }: UsePermissionModeOptions): UsePermissionModeResult {
-  const liveMode = useSyncExternalStore(
-    sessionMetadataStore.subscribe,
-    useCallback(
-      () => sessionMetadataStore.getSnapshot().permissionMode,
-      [sessionMetadataStore],
-    ),
-  );
-
   // Whether the session is alive — its turn-free `session_capabilities`
   // handshake has landed (`models` populated). This arrives "from the drop",
   // BEFORE the first turn, whereas `permissionMode` only rides the post-turn
@@ -147,24 +139,27 @@ export function usePermissionMode({
   // fresh card opens in the configured default. Fires at most once per mount
   // (`sentRef`), gated on `sessionAlive` so a fresh card seeds before its first
   // turn (when `permissionMode` is still null — it only rides the post-turn
-  // `system_metadata`). The comparison baseline is the live mode when known,
-  // else `default` (what tugcode spawns with), so we only send a frame when the
-  // target actually differs. A card with neither a persisted mode nor a global
-  // default has `seedMode === null` and is left at whatever it spawned with. A
-  // manual change via `setMode` pre-arms `sentRef`, superseding any pending
-  // restore.
+  // `system_metadata`).
+  //
+  // Whenever a seed exists we drive the full `setMode` path unconditionally —
+  // optimistic chip update, per-card persist, and the IPC frame — rather than
+  // skipping when the seed happens to equal the session's current mode. The
+  // session already spawned in the seed via tugcode's `--permission-mode`
+  // (tugdeck forwards the resolved seed in `spawn_session`), so the frame is an
+  // idempotent confirmation; sending it unconditionally means the chip and the
+  // per-card record always carry the resolved seed explicitly instead of
+  // relying on a coincidental fallback match (the old `else` branch marked the
+  // seed "sent" without applying or persisting it, which let the chip and the
+  // actual mode silently diverge). A card with neither a persisted mode nor a
+  // global default has `seedMode === null` and is left untouched. A manual
+  // change via `setMode` pre-arms `sentRef`, superseding any pending restore.
   const seedMode = resolveSeedPermissionMode(persistedMode, globalDefaultMode);
   useEffect(() => {
     if (sentRef.current) return;
     if (!sessionAlive) return;
     if (seedMode === null) return;
-    const current = liveMode ?? "default";
-    if (seedMode !== current) {
-      setMode(seedMode);
-    } else {
-      sentRef.current = true;
-    }
-  }, [sessionAlive, liveMode, seedMode, setMode]);
+    setMode(seedMode);
+  }, [sessionAlive, seedMode, setMode]);
 
   const cycle = useCallback(() => {
     // Read the current mode fresh from the store rather than a render-time

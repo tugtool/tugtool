@@ -5,6 +5,7 @@ import { readLine, writeLine, writeLineAndExit } from "./ipc.ts";
 import { isProtocolInit, isUserMessage } from "./types.ts";
 import { dispatchInbound } from "./inbound-dispatch.ts";
 import { SessionManager, resolvePluginDir } from "./session.ts";
+import { isPermissionMode, type PermissionMode } from "./permissions.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
@@ -72,6 +73,13 @@ let sessionMode: "new" | "resume" = "new";
 //     claude `--resume <id>` flag — the legacy path that works for
 //     un-forked sessions.
 let resumeSessionId: string | undefined;
+// `--permission-mode <mode>` is the deck-wide / per-card default permission
+// mode tugdeck resolved at spawn time and tugcast forwarded ([agent_bridge.rs]
+// `build_tugcode_command`). Seeds the SessionManager's PermissionManager
+// before the first spawn so claude starts in the right mode — no post-spawn
+// `permission_mode` frame racing the first turn. Validated against the known
+// modes below; an unknown / absent value leaves the manager at its baseline.
+let permissionMode: PermissionMode | undefined;
 // `--stub-transcript=<path>` (or `--stub-transcript <path>`) routes
 // the IPC loop through the deterministic replay engine in
 // `stub-replay.ts` instead of spawning claude. Test-only;
@@ -130,6 +138,12 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === "--resume-session" && i + 1 < args.length) {
     resumeSessionId = args[i + 1];
     i++;
+  } else if (args[i] === "--permission-mode" && i + 1 < args.length) {
+    const raw = args[i + 1];
+    // Ignore an unknown value (future / corrupt client) rather than seed the
+    // session with a bogus mode; the manager keeps its "default" baseline.
+    if (isPermissionMode(raw)) permissionMode = raw;
+    i++;
   } else if (args[i].startsWith("--stub-transcript=")) {
     stubTranscriptPath = args[i].slice("--stub-transcript=".length);
   } else if (args[i] === "--stub-transcript" && i + 1 < args.length) {
@@ -154,7 +168,7 @@ try {
 }
 
 console.log(
-  `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode}${resumeSessionId ? `, resumeSessionId: ${resumeSessionId}` : ""}${stubTranscriptPath ? `, stubTranscript: ${stubTranscriptPath}` : ""})`,
+  `Starting tugcode (projectDir: ${projectDir}, sessionId: ${sessionId}, sessionMode: ${sessionMode}${resumeSessionId ? `, resumeSessionId: ${resumeSessionId}` : ""}${permissionMode ? `, permissionMode: ${permissionMode}` : ""}${stubTranscriptPath ? `, stubTranscript: ${stubTranscriptPath}` : ""})`,
 );
 
 // Session manager (initialized after protocol handshake). Only
@@ -273,7 +287,7 @@ async function main() {
         sessionId,
         sessionMode,
         resumeSessionId,
-        { contextBreakdownEmitter },
+        { contextBreakdownEmitter, initialPermissionMode: permissionMode },
       );
 
       // Send protocol_ack first (with placeholder session_id)

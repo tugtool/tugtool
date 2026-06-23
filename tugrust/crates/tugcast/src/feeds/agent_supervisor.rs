@@ -245,6 +245,14 @@ pub struct LedgerEntry {
     /// Reconnects reuse this value so the tugcode side of the session
     /// doesn't flip modes mid-life.
     pub session_mode: SessionMode,
+    /// Deck-wide / per-card default permission mode tugdeck resolved at the
+    /// first `spawn_session` for this session, forwarded to the tugcode
+    /// subprocess as `--permission-mode` so the spawned claude starts in the
+    /// right mode. Set once on the fresh insert and preserved across reconnects
+    /// / crash-loop respawns (like `session_mode`) so the tugcode side doesn't
+    /// flip modes mid-life. `None` when tugdeck sent no mode — tugcode keeps
+    /// its own default.
+    pub permission_mode: Option<String>,
     /// Lifecycle state.
     pub spawn_state: SpawnState,
     /// Per-session crash budget (3 crashes / 60s by convention).
@@ -331,6 +339,7 @@ impl LedgerEntry {
             workspace_key,
             project_dir,
             session_mode,
+            permission_mode: None,
             spawn_state: SpawnState::Idle,
             crash_budget,
             queue: BoundedQueue::new(),
@@ -1190,6 +1199,11 @@ struct OwnedControlPayload {
     /// New-vs-resume choice. Absent values default to
     /// `SessionMode::New` so pre-4.5 payloads keep the step-4k behavior.
     session_mode: SessionMode,
+    /// Deck-wide / per-card default permission mode tugdeck resolved at spawn
+    /// time, forwarded to tugcode as `--permission-mode`. `None` when the
+    /// payload omits it (older client, or a card with no configured default) —
+    /// the string is passed through opaquely; tugcode validates it.
+    permission_mode: Option<String>,
 }
 
 fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, ControlError> {
@@ -1214,11 +1228,17 @@ fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, Co
         .map(|s| s.to_string());
     let session_mode =
         SessionMode::from_wire_str(value.get("session_mode").and_then(|v| v.as_str()));
+    let permission_mode = value
+        .get("permission_mode")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     Ok(OwnedControlPayload {
         card_id,
         tug_session_id: TugSessionId::new(tug_session_id),
         project_dir,
         session_mode,
+        permission_mode,
     })
 }
 
@@ -1803,6 +1823,7 @@ impl AgentSupervisor {
                     parsed.tug_session_id,
                     project_dir_str,
                     parsed.session_mode,
+                    parsed.permission_mode,
                     client_id,
                 )
                 .await
@@ -1997,6 +2018,7 @@ impl AgentSupervisor {
         tug_session_id: TugSessionId,
         project_dir_str: String,
         session_mode: SessionMode,
+        permission_mode: Option<String>,
         client_id: ClientId,
     ) -> Result<(), ControlError> {
         let project_dir = PathBuf::from(&project_dir_str);
@@ -2139,6 +2161,15 @@ impl AgentSupervisor {
                 && entry.session_mode != session_mode
             {
                 entry.session_mode = session_mode;
+            }
+            // Stamp the resolved permission mode onto the entry the same way:
+            // on the fresh insert, or while still `Idle` (rebound but not yet
+            // spawned). Never while running — the live tugcode was spawned with
+            // the original `--permission-mode` and a post-spawn `permission_mode`
+            // frame is the path for live changes. The bridge reads this field at
+            // spawn time so the mode is correct from claude's first instant.
+            if inserted || entry.spawn_state == SpawnState::Idle {
+                entry.permission_mode = permission_mode;
             }
             entry.session_mode
         };
@@ -4263,9 +4294,13 @@ impl AgentSupervisor {
         // `--session-mode new|resume`. The sessions recorder lets the
         // bridge transition the ledger row when it sees `session_init`,
         // `result`, `resume_failed`, or terminal teardown on the IPC stream.
-        let (project_dir, session_mode) = {
+        let (project_dir, session_mode, permission_mode) = {
             let entry = entry_arc.lock().await;
-            (entry.project_dir.clone(), entry.session_mode)
+            (
+                entry.project_dir.clone(),
+                entry.session_mode,
+                entry.permission_mode.clone(),
+            )
         };
         let sessions_recorder = self.sessions_recorder.clone();
         let session_ledger_for_bridge = self.session_ledger.clone();
@@ -4279,6 +4314,7 @@ impl AgentSupervisor {
                 spawner,
                 project_dir,
                 session_mode,
+                permission_mode,
                 sessions_recorder,
                 session_ledger_for_bridge,
                 cancel_for_bridge,
@@ -4482,6 +4518,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
             _session_id: &str,
             _session_mode: SessionMode,
             _resume_claude_session_id: Option<&str>,
+            _permission_mode: Option<&str>,
         ) -> super::agent_bridge::SpawnFuture {
             Box::pin(async {
                 std::future::pending::<std::io::Result<super::agent_bridge::SessionChild>>().await
@@ -4572,6 +4609,7 @@ mod tests {
             _session_id: &str,
             _session_mode: SessionMode,
             _resume_claude_session_id: Option<&str>,
+            _permission_mode: Option<&str>,
         ) -> SpawnFuture {
             Box::pin(async { pending::<std::io::Result<SessionChild>>().await })
         }
@@ -6110,6 +6148,7 @@ mod tests {
             "sess-per-call",
             SessionMode::New,
             None,
+            None,
         );
         assert!(
             args.iter().any(|a| a == "/workspace-B-from-per-call"),
@@ -6198,6 +6237,7 @@ mod tests {
             _session_id: &str,
             _session_mode: SessionMode,
             _resume_claude_session_id: Option<&str>,
+            _permission_mode: Option<&str>,
         ) -> SpawnFuture {
             Box::pin(async { Err(std::io::Error::other("injected crash")) })
         }
