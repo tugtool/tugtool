@@ -362,13 +362,13 @@ On submit: `pendingQuestion` clears → `isLive` flips false → same `BlockChro
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Extract frameless `QuestionWizard` | pending | — |
-| #step-2 | Block owns both states (the morph) | pending | — |
-| #step-3 | Single-question: accept the seeded default in one Return | pending | — |
-| #step-4 | Editor font for typing inputs | pending | — |
-| #step-5 | Chat-about (decline) rework | pending | — |
-| #step-6 | Scrim rework for the mid-transcript bright island | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Extract frameless `QuestionWizard` | done | cb48345a3 |
+| #step-2 | Block owns both states (the morph) | done | 38476ee18 |
+| #step-3 | Single-question: accept the seeded default in one Return | done | ad68f4f7b |
+| #step-4 | Editor font for typing inputs | done | 8b1f3ddb2 |
+| #step-5 | Chat-about (decline) rework | done | b80c99333 |
+| #step-6 | Scrim rework for the mid-transcript bright island | done | 58bae683b |
+| #step-7 | Integration checkpoint | done | 31e3ffbb4 |
 
 ---
 

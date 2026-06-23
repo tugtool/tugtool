@@ -262,6 +262,16 @@ export interface BlockChromeProps {
    * header falls back to the collapse handle's command+result markdown.
    */
   copyText?: string | (() => string);
+  /**
+   * Force the block expanded and the whole-block chevron disabled,
+   * overriding the history-collapse handle WITHOUT swapping the wrapper.
+   * The wrapper (`ToolBlockHistoryCollapse`) stays mounted — only its
+   * effective collapsed view is pinned open here — so a block that must
+   * not be foldable while it owns a blocking interaction (the live
+   * `AskUserQuestion` wizard) can't be collapsed away, and mount identity
+   * holds across the lifecycle ([L26]). Default `false`.
+   */
+  forceExpanded?: boolean;
   /** Forwarded class name. */
   className?: string;
 }
@@ -282,6 +292,7 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
   children,
   rootSlot = "tool-block-chrome",
   copyText,
+  forceExpanded = false,
   className,
 }) => {
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -294,7 +305,11 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
   // chrome's own mount identity is untouched across the toggle ([L26]);
   // only the child subtree appears/disappears.
   const blockCollapse = React.useContext(ToolBlockCollapseContext);
-  const blockCollapsed = blockCollapse !== null && blockCollapse.collapsed;
+  // `forceExpanded` pins the view open without touching the wrapper's own
+  // collapsed boolean (so the wrapper stays mounted, [L26]); the chevron
+  // is disabled below so the user can't fold a blocking interaction away.
+  const blockCollapsed =
+    !forceExpanded && blockCollapse !== null && blockCollapse.collapsed;
   // The id for `data-tool-use-id`: the collapse handle when wrapped,
   // else the dispatch-level context the transcript provides around
   // every top-level tool — so the attribute is present on every tool
@@ -397,9 +412,12 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
   const disclosure =
     blockCollapse !== null
       ? {
-          collapsed: blockCollapse.collapsed,
+          // `forceExpanded` pins the chevron to the expanded pose and
+          // disables it — the block can't be folded while it owns a
+          // blocking interaction.
+          collapsed: forceExpanded ? false : blockCollapse.collapsed,
           onToggle: blockCollapse.toggle,
-          disabled: !hasExpandableContent,
+          disabled: forceExpanded || !hasExpandableContent,
         }
       : undefined;
 

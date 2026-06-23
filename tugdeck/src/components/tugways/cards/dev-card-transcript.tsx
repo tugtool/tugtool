@@ -879,16 +879,13 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
       />
     );
   }
-  let questionSlot: React.ReactNode = null;
-  if (!isCommitted && isLastAssistant && pendingQuestion !== null) {
-    const { Component, props } = dispatchRenderInput(
-      { kind: "question", request: pendingQuestion },
-      { store: streamingStore, session: codeSessionStore },
-    );
-    questionSlot = (
-      <Component key={pendingQuestion.request_id || "question"} {...props} />
-    );
-  }
+  // A pending QUESTION no longer renders at the body foot — the
+  // `AskUserQuestionToolBlock` owns its live surface in place at the
+  // tool_use position (it morphs the same `BlockChrome` from the live
+  // wizard to the durable Q&A artifact on answer). `pendingQuestion` is
+  // still read above, but only to id-join the live row's `awaiting`
+  // lifecycle dot (see `awaitingToolUseId` below). Only the permission
+  // forward still mounts a foot-slot dialog.
 
   // Reserve the dismissed dialog's height as a `min-height` floor on
   // the cell-entry wrapper so a PermissionDialog / QuestionDialog
@@ -988,7 +985,6 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                   }
                 />
                 {permissionSlot}
-                {questionSlot}
               </div>
             }
             inflightFooter={

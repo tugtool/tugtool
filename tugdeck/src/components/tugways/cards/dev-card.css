@@ -1114,17 +1114,34 @@
   pointer-events: auto;
 }
 
-/* The dialog lives in the LIVE assistant turn, alongside that turn's prose +
-   tool block (the `.dev-card-transcript-code-body`). Dim + inert that body too so
-   the dialog is the single bright, interactive island — the dialog restates its
-   own subject ([Q09]/R04), so nothing legible is lost. The dialog subtree itself
-   is a sibling of the body and stays at full strength + interactive. */
+/* The dialog lives in the LIVE assistant turn, alongside that turn's prose
+   (the `.dev-card-transcript-code-body`). Dim + inert that prose so the dialog
+   is the single bright, interactive island — the dialog restates its own
+   subject ([Q09]/R04), so nothing legible is lost. The PERMISSION dialog is a
+   sibling of the prose at the turn foot; the QUESTION wizard lives inside its
+   own tool block (`.tool-block-chrome:has(.dev-question-dialog)`) and stays
+   bright while its sibling tool blocks dim (next rule). */
 .dev-card[data-inline-dialog-pending="true"]
   .tug-list-view-cell:has(.dev-permission-dialog)
   .dev-card-transcript-code-body,
 .dev-card[data-inline-dialog-pending="true"]
   .tug-list-view-cell:has(.dev-question-dialog)
   .dev-card-transcript-code-body {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* The QUESTION wizard now renders IN PLACE inside its own tool block, mid-turn,
+   so the live turn's OTHER tool blocks must dim to leave the question block the
+   single bright island. The live cell is excepted from the whole-cell dim
+   above; here we dim every tool block in that cell EXCEPT the one holding the
+   wizard (`:not(:has(.dev-question-dialog))`). No common dimmed ancestor sits
+   over the question block (the cell + body wrapper are never opacity-dimmed),
+   so the group-opacity rule can't trap it dark. */
+.dev-card[data-inline-dialog-pending="true"]
+  .tug-list-view-cell:has(.dev-question-dialog)
+  .tool-block-chrome:not(:has(.dev-question-dialog)) {
   opacity: 0.45;
   pointer-events: none;
   transition: opacity 0.15s ease;

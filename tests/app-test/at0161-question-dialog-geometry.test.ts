@@ -43,6 +43,7 @@ function controlRequestForward(): Record<string, unknown> {
     type: "control_request_forward",
     tug_session_id: SID,
     request_id: "at0161-q-1",
+    tool_use_id: "at0161-tu-1",
     is_question: true,
     input: {
       questions: [
@@ -77,6 +78,37 @@ function controlRequestForward(): Record<string, unknown> {
       ],
     },
   };
+}
+
+// The AskUserQuestion tool_use that hosts the live wizard in place — the block
+// only mounts when its tool call exists. Ingest BEFORE the forward; they share
+// `tool_use_id`.
+function toolUseFor(forward: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: "tool_use",
+    tug_session_id: SID,
+    msg_id: "at0161-msg-1",
+    tool_use_id: forward.tool_use_id,
+    tool_name: "AskUserQuestion",
+    input: forward.input,
+    seq: 1,
+  };
+}
+
+async function ingestQuestion(
+  app: App,
+  forward: Record<string, unknown>,
+): Promise<void> {
+  await app.driveDevSession("A", {
+    op: "ingestFrame",
+    feedId: FEED_CODE_OUTPUT,
+    decoded: toolUseFor(forward),
+  });
+  await app.driveDevSession("A", {
+    op: "ingestFrame",
+    feedId: FEED_CODE_OUTPUT,
+    decoded: forward,
+  });
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -174,11 +206,7 @@ describe.skipIf(!SHOULD_RUN)("AT0161: question wizard geometry is constant", () 
             seq: 0,
           },
         });
-        await app.driveDevSession("A", {
-          op: "ingestFrame",
-          feedId: FEED_CODE_OUTPUT,
-          decoded: controlRequestForward(),
-        });
+        await ingestQuestion(app, controlRequestForward());
 
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,

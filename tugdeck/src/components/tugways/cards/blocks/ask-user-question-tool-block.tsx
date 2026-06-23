@@ -2,30 +2,28 @@
  * `AskUserQuestionToolBlock` — Layer-2 wrapper for Claude Code's
  * `AskUserQuestion` tool.
  *
- * The tool itself has two surfaces in the transcript, and they hand
- * off across the call's lifecycle so the user only ever sees ONE of
- * them at a time:
+ * The tool has two surfaces in the transcript, and this ONE block owns
+ * both — IN PLACE, at the tool_use position. A single `BlockChrome`
+ * stays mounted across the call's lifecycle ([L26]); only its body
+ * morphs, so the option/button chrome simply disappears on answer with
+ * no width, treatment, or position shift ([D13]):
  *
- *   1. **Asking state (`status === "streaming"`).** The inline
- *      `QuestionDialog` ([D13]) — `dev-question-dialog.tsx` —
- *      renders the live prompt with radio / check buttons and
- *      submits the user's choices back to Claude. While the call is
- *      streaming, this wrapper renders `null` and stays out of the
- *      way: showing both a dialog and an "AskUserQuestion …"
- *      streaming row would leak implementation detail (two visible
- *      blocks for one conversational event). The dialog *is* the
- *      asking UI; nothing else is needed.
+ *   1. **Asking state (live question).** When a `control_request_forward`
+ *      for this call's `tool_use_id` is the session's `pendingQuestion`
+ *      (and `status === "streaming"`), the block fills its chrome body
+ *      with the live `QuestionWizard` (`dev-question-dialog.tsx`) — the
+ *      radio / check prompt that submits the user's choices back to
+ *      Claude. The chrome is `forceExpanded` so a blocking question can't
+ *      be folded away ([P07]). Before the forward arrives (and the user
+ *      hasn't answered), the block renders `null`.
  *
- *   2. **Answered / ready state (`status === "ready"`).** The
- *      dialog has cleared its `pendingQuestion` and this wrapper
- *      takes over as the durable transcript artifact: a clean,
- *      numbered Q&A list. Before this step the wrapper rendered
- *      through `DefaultToolBlock`, which painted two stacked
- *      `JsonTreeBlock`s ("input" + "result") of the raw wire shape.
- *      That works for genuine drift but is wrong for a known tool
- *      whose round-trip is plain Q&A — the reader doesn't want the
- *      `questions[]` schema, they want to see what was asked and
- *      what they answered.
+ *   2. **Answered / ready state.** The user answers, `pendingQuestion`
+ *      clears, and the SAME chrome swaps its body to the durable
+ *      artifact: a clean, numbered Q&A list. The just-submitted answers
+ *      are captured locally (`onResolve` → `submitted`) so the summary
+ *      paints immediately, covering the window between `pendingQuestion`
+ *      clearing and the tool_result landing — no empty-answer flash, no
+ *      remount.
  *
  * Composition (Spec S03, [#bk-conformance]):
  *  - `BlockChrome` owns the frame: the tool name + a short args
@@ -91,6 +89,7 @@ import {
   applyQuestionSelection,
   initialQuestionSelections,
   parseQuestions,
+  QuestionWizard,
   type ParsedQuestion,
 } from "@/components/tugways/chrome/dev-question-dialog";
 import type { ControlRequestForward } from "@/lib/code-session-store";
@@ -382,7 +381,13 @@ export function composeSalvagedAnswerMessage(
 // Component
 // ---------------------------------------------------------------------------
 
+/** Stable no-op `subscribe` for `useSyncExternalStore` when no session is
+ *  threaded (the standalone gallery mount). Never notifies; the paired
+ *  snapshot returns `null`. */
+const noopSubscribe = (): (() => void) => () => {};
+
 export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
+  toolUseId,
   toolName,
   input,
   structuredResult,
@@ -395,10 +400,40 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
   // Hooks must run unconditionally on every render — keep them above
   // any early returns so the hook order doesn't shift across status
   // transitions.
+
+  // [L02] Is a question live for THIS tool call? The pending forward and
+  // the tool_use row share `tool_use_id`; the live wizard and the durable
+  // record are now one block, so the asking surface is owned here in place
+  // rather than handed to a foot-slot dialog.
+  const pendingQuestion = React.useSyncExternalStore(
+    session?.subscribe ?? noopSubscribe,
+    React.useCallback(
+      () => session?.getSnapshot().pendingQuestion ?? null,
+      [session],
+    ),
+  );
+  // The user's just-submitted resolution, captured the instant they answer
+  // so the durable summary paints immediately — covering the window between
+  // `pendingQuestion` clearing and the tool_result landing (status still
+  // `streaming`), with no empty-answer flash and no chrome remount.
+  const [submitted, setSubmitted] = React.useState<{
+    answers?: Record<string, string>;
+    response?: string;
+  } | null>(null);
+
   const questions = React.useMemo(() => parseInputQuestions(input), [input]);
-  const answers = React.useMemo(
+  const wireAnswers = React.useMemo(
     () => readAnswers(input, structuredResult),
     [input, structuredResult],
+  );
+  // Prefer the wire answers once they land; until then fall back to the
+  // locally-captured submission so the morph reads correctly mid-flight.
+  const answers = React.useMemo(
+    () =>
+      Object.keys(wireAnswers).length > 0
+        ? wireAnswers
+        : (submitted?.answers ?? {}),
+    [wireAnswers, submitted],
   );
   const summary = React.useMemo(
     () => composeAnswerSummary(questions, answers),
@@ -406,11 +441,13 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
   );
   // [P02] `Chat about this` — when the user declined, the result carries
   // a freeform `response` instead of `answers`. Present ⇒ render the
-  // "replied in chat" state rather than the Q&A summary.
-  const declineResponse = React.useMemo(
+  // "replied in chat" state rather than the Q&A summary. Read the wire
+  // first, else the just-submitted decline.
+  const wireDecline = React.useMemo(
     () => readDeclineResponse(input, structuredResult),
     [input, structuredResult],
   );
+  const declineResponse = wireDecline ?? submitted?.response;
 
   // Salvage state — populated when the user finishes the salvage
   // wizard (we keep the locally-collected answers around so the
@@ -443,15 +480,43 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
     session !== undefined &&
     !salvageCancelled;
 
-  // While the tool is in flight the inline `QuestionDialog` is the
-  // user-facing surface — see the module docstring for the lifecycle
-  // handoff. Rendering nothing here keeps the transcript reading as
-  // a single conversational event (the dialog) rather than two
-  // visible blocks for the same moment in the conversation. Once
-  // the user answers the dialog clears, the tool transitions to
-  // `ready`, and this wrapper mounts with the durable Q&A summary
-  // in roughly the same vertical slot.
-  if (status === "streaming") return null;
+  // [P01]/[P06] Is THIS block's question live right now? `streaming` plus a
+  // pending forward whose `tool_use_id` matches us. The block owns the
+  // asking surface in place: the same `BlockChrome` hosts the live wizard
+  // and then morphs to the durable Q&A artifact once answered ([L26] — one
+  // mounted chrome across the lifecycle).
+  const isLive =
+    status === "streaming" &&
+    session !== undefined &&
+    pendingQuestion !== null &&
+    pendingQuestion.tool_use_id === toolUseId;
+
+  if (isLive && session !== undefined) {
+    // Asking state: the live wizard fills the chrome body. Force-expanded so
+    // a blocking question can't be folded away ([P07]); the lifecycle dot
+    // already reads `awaiting` via the dispatch's `awaitingToolUseId` join.
+    return (
+      <BlockChrome
+        rootSlot="ask-user-question-tool-block"
+        toolName={toolName}
+        status={status}
+        phase={phase}
+        caution={caution}
+        forceExpanded
+      >
+        <QuestionWizard
+          request={pendingQuestion}
+          session={session}
+          onResolve={setSubmitted}
+        />
+      </BlockChrome>
+    );
+  }
+
+  // Pre-question streaming window — the tool_use exists but the forward
+  // hasn't arrived and the user hasn't answered yet. Render nothing until
+  // the question is live; the chrome mounts at `isLive` and persists.
+  if (status === "streaming" && submitted === null) return null;
   // The headline count surfaces user-confirmed answers — either the
   // wire-side `answers` (a successful tool round-trip) or the
   // locally-collected `salvagedAnswers` (the recovery path).

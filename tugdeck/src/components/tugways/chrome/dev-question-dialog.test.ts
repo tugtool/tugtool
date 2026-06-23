@@ -1,11 +1,10 @@
 /**
  * Pure-logic tests for `dev-question-dialog.tsx`.
  *
- * `QuestionDialog`'s behaviour is its exported pure helpers — the
+ * `QuestionWizard`'s behaviour is its exported pure helpers — the
  * `AskUserQuestion` payload parser, the initial-selection seed, the
- * per-question selection apply, and the `answers`-record builder —
- * plus the dispatch wiring (`KIND_RENDERERS.question` resolves to the
- * real component). Per project policy (pure-logic `bun:test` +
+ * per-question selection apply, and the `answers`-record builder. Per
+ * project policy (pure-logic `bun:test` +
  * real-app tests only, no fake-DOM render tests), the suite pins those
  * exhaustively; the answer round-trip, the radio/checkbox paint, and
  * primary-button focus are HMR / live-smoke vetted because the
@@ -23,15 +22,12 @@
  *    toggles on and off.
  *  - `buildQuestionAnswers` — keyed by question text, single label,
  *    multi-select comma-join (no spaces), empty-selection passthrough.
- *  - dispatch routing — a `question` RenderInput resolves to
- *    `QuestionDialog`.
  */
 
 import { describe, it, expect } from "bun:test";
 
 import {
   QUESTION_DIALOG_PRESERVATION_KEY_PREFIX,
-  QuestionDialog,
   applyQuestionSelection,
   buildQuestionAnswers,
   composeRowAnswerLabel,
@@ -47,12 +43,6 @@ import {
   type ParsedQuestion,
   type QuestionDialogPreservedState,
 } from "./dev-question-dialog";
-import {
-  KIND_RENDERERS,
-  dispatch,
-  type DispatchContext,
-  type RenderInput,
-} from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import type { ControlRequestForward } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
@@ -319,33 +309,10 @@ describe("questionAnswered", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// dispatch routing
-// ---------------------------------------------------------------------------
-
-describe("dispatch — question routing", () => {
-  it("routes a question RenderInput to the real QuestionDialog", () => {
-    const input: RenderInput = {
-      kind: "question",
-      request: {
-        request_id: "q-1",
-        is_question: true,
-        tool_name: "AskUserQuestion",
-        input: {
-          questions: [{ question: "Proceed?", options: [{ label: "Yes" }] }],
-        },
-      },
-    };
-    const result = dispatch(input, {} as DispatchContext);
-    // The stable contract is "routes via `KIND_RENDERERS.question`."
-    // The slot is a lazy indirection (added for symmetry with the
-    // permission-dialog cycle fix in [#step-24-3-7]); asserting
-    // `=== QuestionDialog` directly would falsely fail.
-    expect(result.Component).toBe(KIND_RENDERERS.question);
-    expect(result.caution).toBeUndefined();
-    expect((result.props as { input: RenderInput }).input).toBe(input);
-  });
-});
+// The question surface is no longer a foot-slot `RenderInput` kind routed
+// through the dispatch — the `AskUserQuestion` tool block owns its live
+// `QuestionWizard` in place. There is therefore no `kind: "question"`
+// dispatch routing to assert here.
 
 // ---------------------------------------------------------------------------
 // Wizard navigation helpers — countAnswered + nextAdvanceIndex

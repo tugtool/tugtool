@@ -95,6 +95,52 @@ body {
   --tugx-question-number-gap: 0.4ch;
 }
 
+/* ---- Wizard frame (inside the host BlockChrome body) ----
+ *
+ * `QuestionWizard` renders frameless: the host `AskUserQuestionToolBlock`'s
+ * `BlockChrome` is the frame (header + dot + full transcript width). So this
+ * is a PLAIN full-width container — no card background, border, radius, or
+ * width cap — just the vertical stack (an optional description, the body, and
+ * the foot action row). Flattening it is what makes the live wizard and the
+ * answered Q→A record share one width and treatment, so submit only removes
+ * the option/button chrome with no shift, and the options run the block's
+ * full width (no truncation). The `--tugx-idialog-*` reads are read-only
+ * cross-references for action-button metrics ([L20] — the wizard owns
+ * `--tugx-question-*`). */
+.dev-question-dialog-frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.dev-question-dialog-headline-description {
+  font-size: var(--tugx-idialog-description-size, 0.8125rem);
+  line-height: var(--tugx-idialog-description-leading, 1.4);
+  font-weight: var(--tug-font-weight-medium);
+}
+
+.dev-question-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+/* Foot action row — Cancel / Submit (or Dismiss, or decline's Send reply),
+ * a trailing cluster mirroring the dialog family's action sizing. */
+.dev-question-dialog-action-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tugx-idialog-actions-gap, 0.375rem);
+}
+
+.dev-question-dialog-action-row .tug-button {
+  width: var(--tugx-idialog-action-w, 5rem);
+}
+
 /* ---- Wizard nav row (summary · Back · Next) ----
  *
  * Sits between the dialog description and the rail, spanning the full
@@ -371,6 +417,24 @@ body {
 
 .dev-question-dialog-freetext .tug-input {
   width: 100%;
+}
+
+/* ---- Editor font for user-typing fields ([P08]) ----
+ *
+ * The free-text answer field and the chat-about reply field carry the SAME
+ * font the prompt-entry editor uses — the user's configured editor font — so
+ * they read as "the user typing" rather than UI chrome. Both `TugInput` and
+ * `TugTextarea` set `font-family: inherit` on their input element; the
+ * descendant selectors here win on specificity and bind family + size +
+ * line-height + letter-spacing to the editor tokens (each with a literal
+ * fallback). [L20] cascade-scoped instance override — the fields keep their
+ * own component sizing/colour tokens otherwise. */
+.dev-question-dialog-freetext .tug-input,
+.dev-question-dialog-decline .dev-question-dialog-decline-field {
+  font-family:    var(--tug-font-family-editor, inherit);
+  font-size:      var(--tug-font-size-editor, inherit);
+  line-height:    var(--tug-line-height-editor, 1.4);
+  letter-spacing: var(--tug-letter-spacing-editor, normal);
 }
 
 /* ---- Decline mode ([P02], `Chat about this`) ----

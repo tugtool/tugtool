@@ -2,9 +2,11 @@
  * dev-card-transcript-foot-reservation — height reservation for the
  * streaming assistant cell's body foot.
  *
- * A `PermissionDialog` / `QuestionDialog` renders at the foot of the
- * in-flight assistant cell (`AssistantTurnCell`). When the user
- * answers, the gating store field flips to `null`, the dialog unmounts
+ * A `PermissionDialog` renders at the foot of the in-flight assistant
+ * cell (`AssistantTurnCell`). (A pending question no longer foots here —
+ * the AskUserQuestion tool block owns its live surface in place.) When
+ * the user answers, the gating store field flips to `null`, the dialog
+ * unmounts
  * in a single frame, the cell shrinks by the dialog's full height, the
  * scrollport's `scrollHeight` dips, the browser clamps `scrollTop`, and
  * the transcript jumps backward. The replacement — the gated tool's
@@ -26,8 +28,8 @@
  * (the tail case of a result smaller than the dialog, e.g. a deny).
  *
  * **Why this observes the store directly [L22].** The reservation is a
- * DOM mutation *driven by external store state* (`pendingApproval` /
- * `pendingQuestion`). L22 forbids routing such a write through React's
+ * DOM mutation *driven by external store state* (`pendingApproval`).
+ * L22 forbids routing such a write through React's
  * render cycle — `useSyncExternalStore` → prop → `useLayoutEffect` →
  * DOM injects React's scheduling between the data change and the DOM
  * write, which is precisely how an earlier draft mis-measured the entry
@@ -131,8 +133,11 @@ export function useFootHeightReservation(
     const onStoreChange = (): void => {
       const floorEl = floorElRef.current;
       const snap = store.getSnapshot();
-      const isDialogPresent =
-        snap.pendingApproval !== null || snap.pendingQuestion !== null;
+      // Only the permission forward still mounts a foot-slot dialog. A
+      // pending QUESTION now lives in place at its tool block (the
+      // AskUserQuestion block morphs the same chrome on answer, no foot
+      // unmount), so it never collapses the foot and needs no reservation.
+      const isDialogPresent = snap.pendingApproval !== null;
       if (
         floorEl !== null &&
         shouldReserveOnDismiss({

@@ -1,27 +1,31 @@
 /**
- * `QuestionDialog` — inline chrome for an `AskUserQuestion` prompt.
+ * `QuestionWizard` — the interactive surface for an `AskUserQuestion`
+ * prompt. Frameless: the durable transcript surface frames it. While a
+ * question is live, `AskUserQuestionToolBlock` renders this wizard inside
+ * its `BlockChrome` at the tool_use position, and morphs the SAME chrome
+ * to the answered Q&A artifact once the user answers — the option/button
+ * chrome simply disappears, with no width/treatment/position shift ([D13]).
  *
  * Renders a `control_request_forward` event with `is_question: true`
- * (Claude is asking the user to choose) as an *inline* block in the
- * transcript flow per [D13] — the sibling of `PermissionDialog`. Where
- * the permission variant asks allow/deny, this variant presents one or
- * more questions, each with a list of options, and round-trips the
- * chosen labels back to Claude as a `question_answer` frame.
+ * (Claude is asking the user to choose): one or more questions, each with
+ * a list of options, round-tripping the chosen labels back to Claude as a
+ * `question_answer` frame (or a freeform `response` via the decline path).
  *
- * **One state.** Like `PermissionDialog` post-Step-3.5, a question
- * leaves no client-side recorded chrome — the durable record lives in
- * the conversation context via the matching tool_use / tool_result
- * pair (the `AskUserQuestionToolBlock` at the tool_use position IS
- * that recorded state). `handleRespondQuestion` clears
- * `pendingQuestion` and emits the outbound `question_answer` frame.
- * So this component has exactly one rendered state: the live dialog
- * while the request is the session's `pendingQuestion`. Once answered
- * (or skipped) it renders `null`.
+ * **One state.** A question leaves no separate client-side chrome — the
+ * durable record lives in the conversation context via the matching
+ * tool_use / tool_result pair (the `AskUserQuestionToolBlock` at the
+ * tool_use position IS that recorded state). `handleRespondQuestion`
+ * clears `pendingQuestion` and emits the outbound frame. So this
+ * component renders only while the request is the session's
+ * `pendingQuestion`; once answered (or skipped) it renders `null` and the
+ * host block paints the answered summary. The legacy `QuestionDialog`
+ * export is now a thin dispatch adapter retained for symmetry.
  *
- * Layout (composed on `TugInlineDialog`'s header-bar primitive — see
- * [D01] / [D08]). Paged wizard, master–detail. A single-question
- * payload renders inline (the question text goes in the dialog
- * `description` and the options fill the children slot). A
+ * Layout: a frameless headline (icon + title), an optional description,
+ * the body, and a foot action row (Cancel / Submit, or the decline
+ * Back / Reply). Paged wizard, master–detail. A single-question
+ * payload renders inline (the question text goes in the description
+ * and the options fill the body). A
  * multi-question payload renders a *rail* of uniform summary rows —
  * one per question — above a single stationary *panel* that hosts the
  * current question's heading and options. Rail rows carry a status:
@@ -47,9 +51,9 @@
  * measurement); and the review state fills the same panel rather
  * than collapsing it.
  *
- * **Two control rows.** Dialog controls (`Cancel` / `Submit`) flow
- * into the primitive's trailing `actions` slot on the header row.
- * Wizard nav (`Back` / `Next`) shares a single row with the
+ * **Two control rows.** Dialog controls (`Cancel` / `Submit`) live in
+ * the foot action row at the bottom of the wizard body. Wizard nav
+ * (`Back` / `Next`) shares a single row with the
  * progress summary (`{N} questions · {M} answered`) inside the body
  * slot, between the dialog description and the question rail —
  * close enough to the questions for the touch target to feel coupled
@@ -109,11 +113,13 @@
  *    logical selection set ([L24]).
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot` on the question-stack containers, this docstring.
- *  - [L20] component-token sovereignty — the dialog frame is
- *    delegated to `TugInlineDialog` (`--tugx-idialog-*`); the option
- *    list is a `TugListView` of `TugListRow`s (`--tugx-list-view-*` /
- *    `--tugx-list-row-*`). This component owns only the small
- *    `--tugx-question-*` wizard-rail family.
+ *  - [L20] component-token sovereignty — the durable frame is the host
+ *    block's `BlockChrome`; the option list is a `TugListView` of
+ *    `TugListRow`s (`--tugx-list-view-*` / `--tugx-list-row-*`). This
+ *    component owns the `--tugx-question-*` wizard family and reads a few
+ *    `--tugx-idialog-*` slots read-only for its lightweight foot-slot
+ *    frame metrics (the inline-dialog primitive other dialogs still use
+ *    defines them globally).
  *  - [L23] in-progress answer state (selection set, visit set,
  *    wizard focus) is user data and must survive reload / cross-pane
  *    move / cold boot. The dialog opts into the [A9] Component State
@@ -151,7 +157,7 @@ import {
   MessageCircleQuestion,
 } from "lucide-react";
 
-import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
+import { cn } from "@/lib/utils";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugTextarea } from "@/components/tugways/tug-textarea";
 import {
@@ -211,6 +217,34 @@ export interface QuestionDialogContext {
 export interface QuestionDialogProps {
   input: QuestionRenderInput;
   context: QuestionDialogContext;
+  /** Forwarded class name for cascade-scoped customization. */
+  className?: string;
+}
+
+/**
+ * Props for the frameless {@link QuestionWizard} — the interactive
+ * surface itself, sans any outer frame. The hosting frame
+ * (`AskUserQuestionToolBlock`'s `BlockChrome` in the transcript) wraps
+ * it; the wizard owns only the question UI, the focus trap, and its
+ * own foot action row. Takes the `request` + `session` directly (the
+ * dispatch-shaped `{ input, context }` is the {@link QuestionDialog}
+ * adapter's job).
+ */
+export interface QuestionWizardProps {
+  request: ControlRequestForward;
+  session: CodeSessionStore;
+  /**
+   * Fired the instant the user resolves the wizard — answers (the option
+   * round-trip) or a freeform `response` (the decline path) — just before
+   * the outbound frame goes out. The host (`AskUserQuestionToolBlock`)
+   * captures this so its durable summary paints immediately from the
+   * just-submitted data, with no empty-answer flash during the window
+   * between `pendingQuestion` clearing and the tool_result arriving.
+   */
+  onResolve?: (payload: {
+    answers?: Record<string, string>;
+    response?: string;
+  }) => void;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
 }
@@ -916,12 +950,13 @@ const QUESTION_OPTIONS_ORDER = 4;
 /** The current question's free-text answer field ([P01]) — a focus stop
  *  after the options, and a spatial-grid node ([K1]). */
 const QUESTION_FREETEXT_ORDER = 5;
-// Decline mode ([P02], `Chat about this`). The reply textarea, its
-// `Send reply` action, the `Back to questions` exit, and the wizard-mode
-// `Chat about this` entry control — each a focus stop / spatial-grid node
-// in the mode it belongs to.
+// Decline mode ([P02], `Chat about this`). The action row is `Back` (reuses
+// the wizard-nav Back slot — the nav row isn't rendered in decline mode) and
+// `Reply` (the `Send reply` slot); plus the reply textarea and the
+// wizard-mode `Chat about this` entry control — each a focus stop /
+// spatial-grid node in the mode it belongs to. There is NO whole-question
+// Cancel in decline mode: the user must `Back` to the questions first.
 const QUESTION_SEND_REPLY_ORDER = 6;
-const QUESTION_BACK_TO_QUESTIONS_ORDER = 7;
 const QUESTION_DECLINE_TEXT_ORDER = 8;
 const QUESTION_CHAT_ABOUT_ORDER = 9;
 
@@ -1157,14 +1192,15 @@ function PanelHeading({
 // Component
 // ---------------------------------------------------------------------------
 
-export const QuestionDialog: React.FC<QuestionDialogProps> = ({
-  input,
-  context,
+export const QuestionWizard: React.FC<QuestionWizardProps> = ({
+  request,
+  session,
+  onResolve,
   className,
 }) => {
-  const { request } = input;
-  const { session } = context;
   const requestId = request.request_id;
+  const onResolveRef = React.useRef(onResolve);
+  onResolveRef.current = onResolve;
 
   const questions = React.useMemo(() => parseQuestions(request), [request]);
 
@@ -1366,6 +1402,19 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     (questionIndex: number) => {
       if (currentIndex !== questionIndex) return;
       const total = questions.length;
+      // Single-question payload: there is nothing to advance to (no next
+      // question, no review to scan). A commit just flashes the pick and
+      // moves the ring to Submit so a follow-up Return sends — and since
+      // Submit is seeded as the key view on mount, the common "accept the
+      // default" path is a single Return without ever leaving Submit.
+      if (total === 1) {
+        pendingAdvanceRef.current = {
+          to: 0,
+          focusKey: `${focusGroup}:${QUESTION_SUBMIT_ORDER}`,
+        };
+        setFlashTick((tick) => tick + 1);
+        return;
+      }
       const newIndex = nextAdvanceIndex(questionIndex, total);
       if (newIndex === questionIndex) return;
       pendingAdvanceRef.current = {
@@ -1549,6 +1598,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       const stillPending =
         session.getSnapshot().pendingQuestion?.request_id === requestId;
       if (!stillPending) return;
+      onResolveRef.current?.({ answers });
       session.respondQuestion(requestId, { answers });
     },
     [session, requestId],
@@ -1569,15 +1619,18 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   }, [focusGroup]);
 
   const handleExitDecline = React.useCallback(() => {
-    // Back to the wizard — re-seed focus on the current question's options
-    // (or Submit at the review step), mirroring the open seed.
+    // Back to the wizard — re-seed focus mirroring the open seed: a single
+    // single-select question (and the review step / the no-questions form)
+    // lands on Submit; every other live question lands on its options.
     const atReview = currentIndex >= questions.length;
+    const singleSelectOnly =
+      questions.length === 1 && questions[0]?.multiSelect === false;
     pendingFocusKeyRef.current =
-      questions.length > 0 && !atReview
+      questions.length > 0 && !atReview && !singleSelectOnly
         ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
         : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
     setDeclineMode(false);
-  }, [focusGroup, currentIndex, questions.length]);
+  }, [focusGroup, currentIndex, questions]);
 
   // Submit the decline reply ([P02]): resolves the tool with the freeform
   // `response` (distinct from Cancel's interrupt). No-op on a blank reply
@@ -1587,16 +1640,18 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     const stillPending =
       session.getSnapshot().pendingQuestion?.request_id === requestId;
     if (!stillPending) return;
+    onResolveRef.current?.({ response: declineText });
     session.respondQuestion(requestId, { response: declineText });
   }, [session, requestId, declineText]);
 
-  // [P06] The reply field's submit semantics: plain Return inserts a newline
-  // (native textarea), Cmd/⇧-Return submits (the prompt-entry convention).
-  // The engine's [P25] guard yields the keystroke to the focused textarea, so
-  // we read it off the field's own `onKeyDown`.
+  // [P06]/[P09] The reply field's submit semantics: plain Return inserts a
+  // newline (native textarea), Shift-Return sends the reply (the advertised
+  // hint). ⌘-Return is kept as a silent alias for muscle-memory. The engine's
+  // [P25] guard yields the keystroke to the focused textarea, so we read it
+  // off the field's own `onKeyDown`.
   const handleDeclineKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === "Enter" && (event.metaKey || event.shiftKey)) {
+      if (event.key === "Enter" && (event.shiftKey || event.metaKey)) {
         event.preventDefault();
         respondDecline();
       }
@@ -1619,6 +1674,17 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     session.popInteractive();
   }, [session]);
 
+  // Escape routing ([P09]). In decline mode Escape returns to the questions
+  // (you can't tear the whole question down from the reply sub-mode — `Back`
+  // out first); in the wizard it is the unified cancel/interrupt.
+  const handleEscape = React.useCallback(() => {
+    if (declineMode) {
+      handleExitDecline();
+      return;
+    }
+    handleCancel();
+  }, [declineMode, handleExitDecline, handleCancel]);
+
   // The dialog is **card-modal** ([P16]): inline display, trapped focus. The
   // trap owns the keyboard while pending — Tab cycles the wizard's own controls
   // (Cancel / Submit / Back / Next leaf stops + the current question's option
@@ -1635,7 +1701,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // Stage-1's CANCEL_DIALOG fallthrough. ⌘. stays chain-routed via the scope.
   const { FocusModeScope, scopeId } = useFocusTrap({
     active: isPending,
-    onEscapeDismiss: handleCancel,
+    onEscapeDismiss: handleEscape,
   });
 
   // Spatial arrow order ([P22] / [P23]). The dialog's controls stack in up to
@@ -1653,23 +1719,28 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // name, so no arrow dead-ends.
   const spatialOrder = React.useMemo<SpatialOrder>(() => {
     const key = (order: number): string => `${focusGroup}:${order}`;
-    // Decline mode ([P02]/[K1]) swaps in its own grid — Cancel + Send reply
-    // on top, then Back to questions, then the reply textarea — so arrows
-    // stay within the reply surface and never reach the (hidden) wizard.
+    // Decline mode ([P02]/[K1]) swaps in its own grid — `Back` + `Reply` on
+    // top, then the reply textarea — so arrows stay within the reply surface
+    // and never reach the (hidden) wizard. No whole-question Cancel here.
     if (declineMode) {
       return rowGridOrder([
-        [key(QUESTION_CANCEL_ORDER), key(QUESTION_SEND_REPLY_ORDER)],
-        [key(QUESTION_BACK_TO_QUESTIONS_ORDER)],
+        [key(QUESTION_BACK_ORDER), key(QUESTION_SEND_REPLY_ORDER)],
         [key(QUESTION_DECLINE_TEXT_ORDER)],
       ]);
     }
     const hasQ = questions.length > 0;
     const multi = questions.length > 1;
     const atReview = currentIndex >= questions.length;
+    // Single SINGLE-select Submit lights up on the preseed alone (no prior
+    // visit needed) so it joins the grid — and is the seeded key view — on
+    // mount. A single multi-select question and every multi-question wizard
+    // still gate on each row being user-confirmed.
     const everyAnswered =
       hasQ &&
-      countConfirmedAnswers(selections, visited, freeTexts) ===
-        questions.length;
+      (questions.length === 1 && questions[0]?.multiSelect === false
+        ? questionAnswered(selections[0], freeTexts[0])
+        : countConfirmedAnswers(selections, visited, freeTexts) ===
+          questions.length);
 
     const buttonRow: string[] = [];
     if (hasQ) {
@@ -1716,16 +1787,27 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // Cmd-. cancel (the bare `popInteractive`, no popover), and a seed that lands
   // the key view on the current question's options on open (answering is the
   // task), or on Submit at the review step.
+  //
+  // Single single-select question: seed the key view on Submit (which is
+  // enabled on mount — the first option is preseeded). The common "accept the
+  // recommendation" path is then a single Return without ever leaving Submit;
+  // changing the pick is Tab/arrow to the options, Space to choose, then back
+  // to Submit. A single MULTI-select question still seeds the options (the user
+  // is meant to choose which apply), as does every multi-question wizard.
+  const isSingleSelectOnly =
+    questions.length === 1 && questions[0]?.multiSelect === false;
   const seedAtReview = currentIndex >= questions.length;
   const seedFocusKey = declineMode
     ? `${focusGroup}:${QUESTION_DECLINE_TEXT_ORDER}`
-    : questions.length > 0 && !seedAtReview
-      ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
-      : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
+    : isSingleSelectOnly
+      ? `${focusGroup}:${QUESTION_SUBMIT_ORDER}`
+      : questions.length > 0 && !seedAtReview
+        ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
+        : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
   const { attachRoot } = useInlineDialogScope({
     active: isPending,
     defaultFocusKey: seedFocusKey,
-    onCancel: handleCancel,
+    onCancel: handleEscape,
   });
 
   // Compose the dialog's outer ref: the cancel-responder root + the held element
@@ -1767,6 +1849,15 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     pendingAdvanceRef.current = null;
 
     const advance = () => {
+      if (pending.to === currentIndex) {
+        // No index change to drive the focus-restore effect (the
+        // single-question commit keeps the user on the only question) —
+        // arm the key view directly so the ring still lands on Submit.
+        if (manager !== null && pending.focusKey !== null) {
+          manager.armKeyboardRestore(pending.focusKey);
+        }
+        return;
+      }
       pendingFocusKeyRef.current = pending.focusKey;
       setCurrentIndex(pending.to);
     };
@@ -1826,7 +1917,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [selections, flashTick, currentIndex]);
+  }, [selections, flashTick, currentIndex, manager]);
 
   // Apply the nav handlers' focus intent on a step change. `null` (the default
   // for Back/Next in the interior) leaves the key view where it is, so focus
@@ -1915,11 +2006,17 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   const hasQuestions = questions.length > 0;
   const single = questions.length === 1 ? questions[0] : null;
   const confirmedCount = countConfirmedAnswers(selections, visited, freeTexts);
-  // `Submit` lights up when the user has actively confirmed every
-  // question — i.e. landed on each row and committed an answer (the
-  // preseed alone isn't enough). Forces the user to scan the full
-  // set before submitting.
-  const allAnswered = hasQuestions && confirmedCount === questions.length;
+  // `Submit` enablement:
+  //  - Single SINGLE-select question — lights up on the preseed alone (the
+  //    first option is selected on mount), so the recommended default is
+  //    acceptable in one Return on the seeded Submit. Nothing to scan first.
+  //  - A single multi-select question / any multi-question — gates on every
+  //    row being user-confirmed, so the user scans the whole set first.
+  const allAnswered =
+    hasQuestions &&
+    (single !== null && !single.multiSelect
+      ? questionAnswered(selections[0], freeTexts[0])
+      : confirmedCount === questions.length);
 
   // Dialog description — single question repeats its text here
   // verbatim (unchanged from the legacy layout); the multi-question
@@ -1976,10 +2073,22 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   );
 
   const dialogActions: React.ReactNode = declineMode ? (
-    // Decline mode ([P02]) — the options `Submit` is replaced by a
-    // `Send reply` action that resolves the tool with the freeform reply.
+    // Decline mode ([P02]/[P09]) — the action row is `Back` + `Reply`. There
+    // is NO whole-question Cancel here: `Back` returns to the questions
+    // (where Cancel lives), and `Reply` resolves the tool with the freeform
+    // reply. So a decline can't tear the whole question down without a
+    // deliberate step back first.
     <>
-      {cancelControl}
+      <TugPushButton
+        emphasis="outlined"
+        role="action"
+        size="xs"
+        focusGroup={focusGroup}
+        focusOrder={QUESTION_BACK_ORDER}
+        onClick={handleExitDecline}
+      >
+        <ArrowLeft size={14} aria-hidden="true" /> Back
+      </TugPushButton>
       <TugPushButton
         emphasis="primary"
         role="action"
@@ -1990,7 +2099,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         disabled={declineText.trim() === ""}
         onClick={respondDecline}
       >
-        Send reply
+        Reply
       </TugPushButton>
     </>
   ) : hasQuestions ? (
@@ -2023,11 +2132,11 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     </TugPushButton>
   );
 
-  // Composes `TugInlineDialog`'s header-bar primitive. Dialog controls
-  // (Cancel / Submit, or just Dismiss when there are no questions)
-  // flow into `actions` on the header row. The wizard nav (Back / Next)
-  // sits on its own row inside the body slot, between the dialog
-  // description and the question rail — close enough to the
+  // Frameless layout: a headline (icon + title), an optional description,
+  // the body, and a foot action row. Dialog controls (Cancel / Submit, or
+  // just Dismiss when there are no questions) live in that foot action
+  // row. The wizard nav (Back / Next) sits on its own row inside the body,
+  // between the description and the question rail — close enough to the
   // questions for the touch target to feel coupled to the row it
   // mutates, but stable across question advances so the button
   // never moves under the mouse.
@@ -2047,21 +2156,24 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         className="dev-question-dialog"
         data-slot="dev-question-dialog"
       >
-    <TugInlineDialog
-      icon={<MessageCircleQuestion />}
-      iconRole="info"
-      title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
-      description={dialogDescription}
-      actions={dialogActions}
-      className={className}
-    >
+    <div className={cn("dev-question-dialog-frame", className)}>
+      {/* No titled-card headline: the host BlockChrome header carries the
+          identity ([P02]). The single-question text rides the description so
+          it sits directly above its options and morphs cleanly into the
+          answered Q→A row. */}
+      {dialogDescription !== undefined ? (
+        <div className="dev-question-dialog-headline-description">
+          {dialogDescription}
+        </div>
+      ) : null}
+      <div className="dev-question-dialog-body">
       {declineMode ? (
-        // [P02] Decline mode — the freeform reply field replaces the
+        // [P02]/[P09] Decline mode — the freeform reply field replaces the
         // whole wizard (it abandons every question at once). A controlled
         // TugTextarea (value in React state, preserved via the [A9] bag —
         // no `componentStatePreservationKey`, [K2]) authored as a focus
-        // stop, plus a `Back to questions` exit. `Send reply` lives in the
-        // header actions.
+        // stop, under a keyboard hint. The `Back` and `Reply` actions live
+        // in the foot action row; there is no whole-question Cancel here.
         <div
           className="dev-question-dialog-decline"
           data-slot="dev-question-dialog-decline"
@@ -2081,18 +2193,8 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           />
           <div className="dev-question-dialog-decline-foot">
             <span className="dev-question-dialog-decline-hint">
-              Return for a new line · ⌘↩ to send
+              Return for a new line • Shift-Return to send reply
             </span>
-            <TugPushButton
-              emphasis="outlined"
-              role="action"
-              size="xs"
-              focusGroup={focusGroup}
-              focusOrder={QUESTION_BACK_TO_QUESTIONS_ORDER}
-              onClick={handleExitDecline}
-            >
-              <ArrowLeft size={14} aria-hidden="true" /> Back to questions
-            </TugPushButton>
           </div>
         </div>
       ) : (
@@ -2280,8 +2382,31 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           ) : null}
         </>
       )}
-    </TugInlineDialog>
+      </div>
+      <div className="dev-question-dialog-action-row" data-slot="dev-question-dialog-action-row">
+        {dialogActions}
+      </div>
+    </div>
       </div>
     </FocusModeScope>
   );
 };
+
+/**
+ * `QuestionDialog` — dispatch adapter for {@link QuestionWizard}. Maps
+ * the dispatch's `{ input, context }` shape onto the wizard's direct
+ * `{ request, session }` props. Kept as a thin shim while the foot-slot
+ * call site still routes through the `kind: "question"` RenderInput;
+ * the durable surface is moving to `AskUserQuestionToolBlock`.
+ */
+export const QuestionDialog: React.FC<QuestionDialogProps> = ({
+  input,
+  context,
+  className,
+}) => (
+  <QuestionWizard
+    request={input.request}
+    session={context.session}
+    className={className}
+  />
+);

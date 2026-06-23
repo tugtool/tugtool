@@ -31,22 +31,27 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const CARD_ROOT = `${CARD} [data-slot="dev-card"]`;
 const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
-const SUBMIT = `${DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
-// The options are a flush TugListView authored into the trap as one item-group
-// stop: the list (its scroll container) holds the key view; the movement cursor
-// (`data-key-cursor`) lands on a `.tug-list-view-cell`; the committed selection
-// (`data-selected`) lands on the `TugListRow` inside it.
-const OPTIONS = `${DIALOG} [data-slot="tug-list-view"]`;
+const SUBMIT = `${DIALOG} .dev-question-dialog-action-row .tug-button-primary-action`;
+// The current question's options are a flush TugListView authored into the
+// trap as one item-group stop: the list holds the key view; the movement
+// cursor (`data-key-cursor`) lands on a `.tug-list-view-cell`; the committed
+// selection (`data-selected`) lands on the `TugListRow` inside it. Scoped to
+// the options-list class so it never matches the multi-question RAIL (also a
+// TugListView).
+const OPTIONS = `${DIALOG} .dev-question-dialog-options-list`;
 const OPTION_CELLS = `${OPTIONS} .tug-list-view-cell`;
 const OPTION_ROWS = `${OPTIONS} [data-slot="tug-list-row"]`;
 const OLD_DEADZONE = `${CARD} [data-slot="dev-question-dialog-scope"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
-// Single-select spatial fixtures: the options are a TugRadioGroup (a delegated
-// item-group) and the header carries Cancel (outlined-danger) + Submit (primary).
-const CANCEL = `${DIALOG} .tug-inline-dialog-actions .tug-button-outlined-danger`;
-const RADIO = `${DIALOG} [data-slot="tug-radio-group"]`;
-const RADIO_ITEMS = `${RADIO} [data-slot="tug-radio-item"]`;
+// Single- and multi-select options are the SAME flush TugListView now (the
+// component unified both arities onto one item-group). So the "radio" fixtures
+// alias the list-view group + its cells; only the leading glyph (radio dot vs
+// checkbox) differs. The action row carries Cancel (outlined-danger) + Submit
+// (primary).
+const CANCEL = `${DIALOG} .dev-question-dialog-action-row .tug-button-outlined-danger`;
+const RADIO = OPTIONS;
+const RADIO_ITEMS = OPTION_CELLS;
 // Wizard-nav buttons (multi-question): Back then Next, both outlined-action.
 const NAV_BUTTONS = `${DIALOG} .dev-question-dialog-nav-buttons .tug-button-outlined-action`;
 
@@ -55,6 +60,7 @@ function controlRequestForward(): Record<string, unknown> {
     type: "control_request_forward",
     tug_session_id: SID,
     request_id: "at0146-q-1",
+    tool_use_id: "at0146-tu-1",
     is_question: true,
     input: {
       questions: [
@@ -78,6 +84,7 @@ function controlRequestForwardSingle(): Record<string, unknown> {
     type: "control_request_forward",
     tug_session_id: SID,
     request_id: "at0146-q-2",
+    tool_use_id: "at0146-tu-2",
     is_question: true,
     input: {
       questions: [
@@ -98,6 +105,7 @@ function controlRequestForwardMultiQuestion(): Record<string, unknown> {
     type: "control_request_forward",
     tug_session_id: SID,
     request_id: "at0146-q-3",
+    tool_use_id: "at0146-tu-3",
     is_question: true,
     input: {
       questions: [
@@ -122,6 +130,40 @@ function controlRequestForwardMultiQuestion(): Record<string, unknown> {
       ],
     },
   };
+}
+
+// The AskUserQuestion `tool_use` that hosts the live wizard in place. The
+// wizard now renders inside `AskUserQuestionToolBlock` at the tool_use
+// position, so a question only mounts when its tool call exists; the forward
+// and this tool_use share `tool_use_id`. Ingest this BEFORE the forward.
+function toolUseFor(forward: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: "tool_use",
+    tug_session_id: SID,
+    msg_id: "at0146-msg-1",
+    tool_use_id: forward.tool_use_id,
+    tool_name: "AskUserQuestion",
+    input: forward.input,
+    seq: 1,
+  };
+}
+
+// Drive the asking state: feed the AskUserQuestion tool_use, then its
+// is_question forward, so the block mounts and renders the live wizard.
+async function ingestQuestion(
+  app: App,
+  forward: Record<string, unknown>,
+): Promise<void> {
+  await app.driveDevSession("A", {
+    op: "ingestFrame",
+    feedId: FEED_CODE_OUTPUT,
+    decoded: toolUseFor(forward),
+  });
+  await app.driveDevSession("A", {
+    op: "ingestFrame",
+    feedId: FEED_CODE_OUTPUT,
+    decoded: forward,
+  });
 }
 
 // Diagnostic: which named stop currently holds the keyboard key view.
@@ -214,11 +256,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
             seq: 0,
           },
         });
-        await app.driveDevSession("A", {
-          op: "ingestFrame",
-          feedId: FEED_CODE_OUTPUT,
-          decoded: controlRequestForward(),
-        });
+        await ingestQuestion(app, controlRequestForward());
 
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
@@ -305,11 +343,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.awaitEngineReady("A");
 
         await app.driveDevSession("A", { op: "send", text: "ask me something" });
-        await app.driveDevSession("A", {
-          op: "ingestFrame",
-          feedId: FEED_CODE_OUTPUT,
-          decoded: controlRequestForwardSingle(),
-        });
+        await ingestQuestion(app, controlRequestForwardSingle());
 
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
@@ -317,29 +351,15 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         );
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
 
-        // (1) On open the radio options hold the key view (answering is the task).
+        // (1) On open a SINGLE single-select question seeds the key view on
+        //     Submit (enabled by the preseeded first option) — so the
+        //     recommended default is acceptable in one Return.
         await app.waitForCondition<boolean>(
-          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          `(function(){var el=document.querySelector(${JSON.stringify(SUBMIT)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
           { timeoutMs: 4000 },
         );
 
-        // (2) Up from the top of the radio group seams up to the button row
-        //     (Cancel — Submit is gated until answered, so it is out of the grid).
-        await app.nativeKey("ArrowUp");
-        await app.waitForCondition<boolean>(
-          `(function(){var el=document.querySelector(${JSON.stringify(CANCEL)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
-          { timeoutMs: 3000 },
-        );
-        expect(
-          await hasAttr(app, CANCEL, "data-key-view-kbd"),
-          "Up from the radio group seams to the button row (Cancel)",
-        ).toBe(true);
-        expect(
-          await hasAttr(app, EDITOR, "data-key-view-kbd"),
-          "the arrow never escapes the trap to the editor",
-        ).toBe(false);
-
-        // (3) Down from the button row crosses the seam back into the options.
+        // (2) Down from the button row crosses the seam into the radio options.
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(
           `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
@@ -347,8 +367,32 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         );
         expect(
           await hasAttr(app, RADIO, "data-key-view-kbd"),
-          "Down from the button row returns to the radio options",
+          "Down from the button row seams into the radio options",
         ).toBe(true);
+        expect(
+          await hasAttr(app, EDITOR, "data-key-view-kbd"),
+          "the arrow never escapes the trap to the editor",
+        ).toBe(false);
+
+        // (3) Up from the top of the radio group seams back to the button row.
+        await app.nativeKey("ArrowUp");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(CANCEL)});return el!==null && el.hasAttribute("data-key-view-kbd");})()` +
+            ` || (function(){var el=document.querySelector(${JSON.stringify(SUBMIT)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 3000 },
+        );
+        expect(
+          (await hasAttr(app, CANCEL, "data-key-view-kbd")) ||
+            (await hasAttr(app, SUBMIT, "data-key-view-kbd")),
+          "Up from the radio group seams to the button row (Cancel or Submit)",
+        ).toBe(true);
+
+        // Return into the radio options to rove the cursor below.
+        await app.nativeKey("ArrowDown");
+        await app.waitForCondition<boolean>(
+          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          { timeoutMs: 3000 },
+        );
 
         // (4) Inside the group, Down roves the cursor (no commit on move).
         await app.nativeKey("ArrowDown");
@@ -358,14 +402,16 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           "ArrowDown roves the radio cursor to the second option",
         ).toBe(true);
 
-        // (5) Never beeps anywhere: Up from the group again still lands a button,
-        //     and the editor never gains the key view through the sequence.
+        // (5) Never beeps anywhere: Up from the group again still lands a button
+        //     (Cancel or Submit — both are in the row for a single-select
+        //     question), and the editor never gains the key view.
         await app.nativeKey("ArrowUp"); // back to top of group
         await sleep(120);
         await app.nativeKey("ArrowUp"); // top edge → button row
         await sleep(150);
         expect(
-          await hasAttr(app, CANCEL, "data-key-view-kbd"),
+          (await hasAttr(app, CANCEL, "data-key-view-kbd")) ||
+            (await hasAttr(app, SUBMIT, "data-key-view-kbd")),
           "Up again seams to the button row, no dead-end",
         ).toBe(true);
         expect(
@@ -401,11 +447,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.bindDevSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
         await app.driveDevSession("A", { op: "send", text: "ask me something" });
-        await app.driveDevSession("A", {
-          op: "ingestFrame",
-          feedId: FEED_CODE_OUTPUT,
-          decoded: controlRequestForwardMultiQuestion(),
-        });
+        await ingestQuestion(app, controlRequestForwardMultiQuestion());
 
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
@@ -466,11 +508,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.bindDevSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
         await app.driveDevSession("A", { op: "send", text: "ask me something" });
-        await app.driveDevSession("A", {
-          op: "ingestFrame",
-          feedId: FEED_CODE_OUTPUT,
-          decoded: controlRequestForwardMultiQuestion(),
-        });
+        await ingestQuestion(app, controlRequestForwardMultiQuestion());
 
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,

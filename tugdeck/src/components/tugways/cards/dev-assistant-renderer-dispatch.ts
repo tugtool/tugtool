@@ -109,7 +109,6 @@ import { WriteToolBlock } from "./blocks/write-tool-block";
 import { NotebookEditToolBlock } from "./blocks/notebook-edit-tool-block";
 import { DefaultToolBlock } from "./blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/dev-permission-dialog";
-import { QuestionDialog } from "@/components/tugways/chrome/dev-question-dialog";
 import { DevSessionInitBanner } from "@/components/tugways/chrome/dev-session-init-banner";
 import { DevErrorBlock } from "@/components/tugways/chrome/dev-error-block";
 import {
@@ -163,10 +162,6 @@ export type RenderInput =
        * request (the dialog reads the live store instead).
        */
       resolvedDecision?: "allow" | "deny";
-    }
-  | {
-      kind: "question";
-      request: ControlRequestForward;
     }
   | {
       kind: "cost";
@@ -744,7 +739,8 @@ export function logDriftEvent(event: DriftEvent): void {
 //   user_text      → existing user-row primitive (no separate renderer
 //                    needed; routes here for symmetry)
 //   permission     → PermissionDialog (real renderer; #step-18)
-//   question       → QuestionDialog (real renderer; #step-20-5-b)
+//   (question has no KIND_RENDERERS entry — the AskUserQuestion tool
+//    block owns both the live and answered surfaces in place)
 //   cost           → CostChrome at #step-20
 //   system_metadata→ SessionInitBanner at #step-29
 //   error          → ErrorBlock at #step-29
@@ -812,11 +808,6 @@ const PermissionDialogLazy: React.ComponentType<any> = (props) =>
   React.createElement(PermissionDialog, props);
 PermissionDialogLazy.displayName = "PermissionDialog(lazy)";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const QuestionDialogLazy: React.ComponentType<any> = (props) =>
-  React.createElement(QuestionDialog, props);
-QuestionDialogLazy.displayName = "QuestionDialog(lazy)";
-
 export const KIND_RENDERERS: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly [K in Exclude<RenderInputKind, "tool_call">]: React.ComponentType<any>;
@@ -825,7 +816,6 @@ export const KIND_RENDERERS: {
   thinking: makeScaffoldRenderer("thinking"),
   user_text: makeScaffoldRenderer("user_text"),
   permission: PermissionDialogLazy,
-  question: QuestionDialogLazy,
   cost: makeScaffoldRenderer("cost"),
   // SessionInitBanner ([#step-29], [D03]) — reads metadata +
   // previousMetadata from the input and renders only when something
@@ -1100,9 +1090,10 @@ export const assistantRendererDispatch: AssistantRendererDispatch = {
  *  - `agent` is the canonical name; the historical `task` name
  *    resolves here via the `task → agent` alias in `TOOL_ALIASES`
  *    ([D16]).
- *  - `askuserquestion`'s *live* surface is the inline `QuestionDialog`
- *    ([D13]); the registered wrapper renders the durable Q&A artifact
- *    that remains in the turn after the dialog clears.
+ *  - `askuserquestion`'s wrapper owns BOTH surfaces in place: while a
+ *    question is pending it renders the live `QuestionWizard` inside its
+ *    `BlockChrome`, then morphs the same chrome to the durable Q&A
+ *    artifact once the user answers ([D13]). No separate foot-slot dialog.
  *  - `taskcreate` / `taskupdate` register the SAME `TaskInlineToolBlock`
  *    factory under both wire names ([#step-24-3-5]). No alias: the
  *    wrapper branches on the original `toolName` internally to pick

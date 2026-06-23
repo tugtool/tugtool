@@ -125,17 +125,9 @@ describe("dispatch — kind routing", () => {
     expect(dispatch(input, fakeContext).Component).toBe(KIND_RENDERERS.permission);
   });
 
-  it("routes question to KIND_RENDERERS.question (separate from permission)", () => {
-    const input: RenderInput = {
-      kind: "question",
-      request: {
-        request_id: "r2",
-        is_question: true,
-      },
-    };
-    expect(dispatch(input, fakeContext).Component).toBe(KIND_RENDERERS.question);
-    expect(KIND_RENDERERS.question).not.toBe(KIND_RENDERERS.permission);
-  });
+  // A pending question is no longer a foot-slot `RenderInput` kind: the
+  // `AskUserQuestion` tool block owns its live wizard in place, so there is
+  // no `KIND_RENDERERS.question` entry to route to.
 });
 
 // ---------------------------------------------------------------------------
