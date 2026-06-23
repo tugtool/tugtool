@@ -453,6 +453,23 @@ function brandCluster(seed: string, used: Set<string>): Set<string> {
   return cluster;
 }
 
+/** The representative Key token whose color the base editor sets explicitly —
+ *  the filled-action fill (the vivid chip / toggle color seen in the chrome).
+ *  Anchoring scales the whole Key ramp so this token lands on the chosen color. */
+const ANCHOR_KEY_TOKEN = "--tug7-surface-control-primary-filled-action-rest";
+
+/** An explicit target color for the Key ramp's anchor token, in absolute OKLCH.
+ *  When supplied to {@link deriveTheme}, the whole Key cluster scales so the
+ *  anchor token becomes exactly this chroma + lightness (its hue comes from
+ *  `targetKeyHue`); the ramp keeps its shape. This is how the base editor's
+ *  "set the key color" works — the rest of the ramp follows proportionally. */
+export interface KeyAnchor {
+  /** Absolute OKLCH chroma the anchor token should take. */
+  c: number;
+  /** Absolute OKLCH lightness the anchor token should take. */
+  l: number;
+}
+
 export interface DeriveResult {
   css: string;
   count: number;
@@ -477,7 +494,25 @@ export function deriveTheme(
   baseCss: string,
   targetKeyHue: string,
   targetAccentHue?: string,
+  keyAnchor?: KeyAnchor,
 ): DeriveResult {
+  // Set the key color explicitly (base editor): scale the Key ramp so its anchor
+  // token lands on the chosen C / L, keeping the ramp's shape. cScale/lScale are
+  // 1.0 (identity) when no anchor is given — so deriving a sibling holds the base
+  // ramp untouched and only rotates hue.
+  let cScale = 1;
+  let lScale = 1;
+  if (keyAnchor) {
+    const am = new RegExp(`${ANCHOR_KEY_TOKEN}\\s*:\\s*--tug-color\\(([^)]*)\\)`).exec(baseCss);
+    const ap = am ? parseTugColor(am[1]) : null;
+    if (ap) {
+      const aHue = hueOf(am![1]);
+      const aC = chromaAt(aHue, ap.i);
+      const aL = lightnessAt(aHue, ap.t);
+      if (aC > 0) cScale = keyAnchor.c / aC;
+      if (aL > 0) lScale = keyAnchor.l / aL;
+    }
+  }
   // 1. Detect the base's Key / Accent brand hues from the duet-classified tokens,
   //    and collect every chromatic hue the theme uses.
   const keyHues: Record<string, number> = {};
@@ -519,14 +554,16 @@ export function deriveTheme(
       const deg = angleOf(hue);
       if (deg === undefined) return full;
       let target: string | null = null;
+      let isKey = false;
       if (keyCluster.has(hue)) {
         target = nearestHue(deg + keyDelta);
+        isKey = true;
       } else if (accentAngle !== undefined && circularDist(deg, accentAngle) <= ACCENT_BRAND_WINDOW) {
         target = nearestHue(deg + accentDelta);
       }
       if (!target) return full; // signal / syntax / far hue — keep
-      const c = chromaAt(hue, parsed.i);
-      const l = lightnessAt(hue, parsed.t);
+      const c = chromaAt(hue, parsed.i) * (isKey ? cScale : 1);
+      const l = lightnessAt(hue, parsed.t) * (isKey ? lScale : 1);
       const i = intensityForChroma(target, c);
       const t = toneForLightness(target, l);
       count++;

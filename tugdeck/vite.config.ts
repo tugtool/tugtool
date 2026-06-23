@@ -504,6 +504,15 @@ export async function handleThemeDerive(
   if (!base || !out || !isKnownHue(keyHue) || (accentHue && !isKnownHue(accentHue))) {
     return { status: 400, body: JSON.stringify({ error: "base + out + valid keyHue (+optional accentHue) required" }) };
   }
+  // Optional explicit Key color (base editor): absolute OKLCH chroma + lightness
+  // the Key ramp's anchor token should take. Absent for plain sibling derives.
+  const ka = b.keyAnchor;
+  const keyAnchor =
+    ka && typeof ka === "object"
+      && typeof (ka as Record<string, unknown>).c === "number"
+      && typeof (ka as Record<string, unknown>).l === "number"
+      ? { c: (ka as { c: number }).c, l: (ka as { l: number }).l }
+      : undefined;
 
   const baseFile = findThemeCssPath(base, themesCssDir);
   const outFile = path.join(themesCssDir, `${out}.css`);
@@ -515,7 +524,7 @@ export async function handleThemeDerive(
     withMutex(async () => {
       try {
         const baseCss = fs.readFileSync(baseFile, "utf-8");
-        const { css, count } = deriveTheme(baseCss, keyHue, accentHue);
+        const { css, count } = deriveTheme(baseCss, keyHue, accentHue, keyAnchor);
         fs.writeFileSync(outFile, css, "utf-8");
         // If the derived theme is the active one, repaint the running app.
         const activeTheme = readActiveThemeFromTugbank();

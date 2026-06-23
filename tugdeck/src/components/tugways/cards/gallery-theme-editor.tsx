@@ -1,15 +1,22 @@
 /**
  * gallery-theme-editor.tsx — the Theme Deriver.
  *
- * Per-theme color tuning is obsolete: a theme family is one hand-tuned BASE
- * (brio dark / harmony light) plus a hue rotation that holds each token's
- * PERCEIVED chroma + lightness (theme-editor-core's deriveTheme). So this card no
- * longer tunes — it derives. Pick the family member, choose its Key + Accent
- * target hues, audition the derived colors, and Generate (writes the theme via
- * the dev-server /__theme-editor/derive endpoint).
+ * Two distinct jobs, kept in two separate regions so they never blur together:
  *
- * The base CSS is imported raw (?raw, never expanded) so deriveTheme can run
- * in-browser for the live audition — no server round-trip until Generate.
+ *  1. SET A BASE (brio dark / harmony light). A base is hand-authored, not
+ *     derived. Its identity is its Key color — the vivid chip / toggle fill. This
+ *     region lets you set that color EXPLICITLY in the picker (hue + chroma +
+ *     lightness); applying scales the whole Key ramp so its anchor token lands on
+ *     the chosen color, keeping the ramp's shape. This is where you make the key
+ *     less hot / less bright.
+ *  2. DERIVE A FAMILY MEMBER from a base by rotating its Key/Accent brand hues,
+ *     holding each token's PERCEIVED chroma + lightness (theme-editor-core's
+ *     deriveTheme). Pick the member, choose target hues, audition, Generate.
+ *
+ * The two never share a chooser: bases live in their own region, derived themes
+ * in theirs. Both write via the dev-server /__theme-editor/derive endpoint. The
+ * base CSS is imported raw (?raw, never expanded) so deriveTheme runs in-browser
+ * for the live audition — no server round-trip until you commit.
  *
  * Laws:
  *  - [L11] controls emit actions; the card handles them via useResponder.
@@ -32,7 +39,7 @@ import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
 import { CardIdContext } from "@/lib/card-id-context";
 import { setActiveColorTarget } from "@/components/tugways/active-color-target";
-import type { TugColorSpec } from "@/components/tugways/tug-color-spec";
+import { chromaOf, lightnessOf, type TugColorSpec } from "@/components/tugways/tug-color-spec";
 import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
 import { deriveTheme } from "../../../../theme-editor-core";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -42,10 +49,23 @@ import "./gallery.css";
 import "./gallery-theme-editor.css";
 
 // ---------------------------------------------------------------------------
-// Family map — each derivable theme, its base, and default target hues.
+// Bases and the derived family.
 // ---------------------------------------------------------------------------
 
-interface FamilyEntry { base: "brio" | "harmony"; mode: "dark" | "light"; key: string; accent: string; }
+type BaseName = "brio" | "harmony";
+
+const BASE_CSS: Record<BaseName, string> = { brio: brioRaw, harmony: harmonyRaw };
+
+const BASE_ITEMS: Array<{ value: BaseName; label: string }> = [
+  { value: "brio", label: "Brio (dark)" },
+  { value: "harmony", label: "Harmony (light)" },
+];
+
+/** The token whose color IS the base's key color — the vivid filled-action fill
+ *  (matches ANCHOR_KEY_TOKEN in theme-editor-core, which scales the ramp to it). */
+const ANCHOR_KEY_TOKEN = "--tug7-surface-control-primary-filled-action-rest";
+
+interface FamilyEntry { base: BaseName; mode: "dark" | "light"; key: string; accent: string; }
 
 const FAMILY: Record<string, FamilyEntry> = {
   nocturne: { base: "brio", mode: "dark", key: "seafoam", accent: "orange" },
@@ -59,9 +79,7 @@ const OUTPUT_ITEMS = Object.keys(FAMILY).map((name) => ({
   label: name[0].toUpperCase() + name.slice(1),
 }));
 
-const BASE_CSS: Record<string, string> = { brio: brioRaw, harmony: harmonyRaw };
-
-/** Representative derived tokens shown as an audition of the derived theme. */
+/** Representative tokens shown as an audition of a theme. */
 const PREVIEW: ReadonlyArray<readonly [string, string]> = [
   ["Filled", "--tug7-surface-control-primary-filled-action-rest"],
   ["Tinted", "--tug7-surface-control-primary-tinted-action-rest"],
@@ -76,8 +94,8 @@ const angle = (hue: string): string => {
   return a === undefined ? "" : `${a}°`;
 };
 
-/** Parse a derived token's `--tug-color(...)` into a spec (derived tokens are
- *  single-hue, so a light parse suffices). */
+/** Parse a token's `--tug-color(...)` into a spec (single-hue tokens; a light
+ *  parse suffices for both the audition and reading a base's current key color). */
 function tokenSpec(css: string, name: string): TugColorSpec | null {
   const m = new RegExp(`${name}\\s*:\\s*--tug-color\\(([^)]*)\\)`).exec(css);
   if (!m) return null;
@@ -94,21 +112,40 @@ function tokenSpec(css: string, name: string): TugColorSpec | null {
   return { hue, i, t, a };
 }
 
+/** A base's current key color, read from its anchor token. */
+function baseKeyColor(base: BaseName): TugColorSpec {
+  return tokenSpec(BASE_CSS[base], ANCHOR_KEY_TOKEN) ?? { hue: "cobalt", i: 65, t: 45, a: 100 };
+}
+
 // ---------------------------------------------------------------------------
 // GalleryThemeEditor — the Theme Deriver
 // ---------------------------------------------------------------------------
 
 export function GalleryThemeEditor(): React.ReactElement {
+  // ---- Region 1: set a base ----
+  const [baseSel, setBaseSel] = useState<BaseName>("brio");
+  // The well holds the base's key color directly; the picker edits hue + absolute
+  // chroma/lightness, and applying anchors the whole Key ramp to it.
+  const [baseKey, setBaseKey] = useState<TugColorSpec>(() => baseKeyColor("brio"));
+  const [baseBusy, setBaseBusy] = useState(false);
+  const [baseMsg, setBaseMsg] = useState<string | null>(null);
+
+  // ---- Region 2: derive a family member ----
   const [output, setOutput] = useState<string>("nocturne");
   const fam = FAMILY[output];
-  // The wells hold full color specs so the shared picker edits them normally;
-  // derivation only reads each spec's hue.
+  // These wells only contribute their HUE — derivation rotates by hue and holds
+  // each token's own perceived chroma + lightness.
   const [keySpec, setKeySpec] = useState<TugColorSpec>({ hue: fam.key, i: 50, t: 50, a: 100 });
   const [accSpec, setAccSpec] = useState<TugColorSpec>({ hue: fam.accent, i: 50, t: 50, a: 100 });
-  const [generating, setGenerating] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [derivedBusy, setDerivedBusy] = useState(false);
+  const [derivedMsg, setDerivedMsg] = useState<string | null>(null);
   const keyHue = keySpec.hue;
   const accHue = accSpec.hue;
+
+  // On base switch, load that base's current key color into the well.
+  useEffect(() => {
+    setBaseKey(baseKeyColor(baseSel));
+  }, [baseSel]);
 
   // On family switch, reset the hues to that member's defaults.
   useEffect(() => {
@@ -116,26 +153,33 @@ export function GalleryThemeEditor(): React.ReactElement {
     setAccSpec({ hue: FAMILY[output].accent, i: 50, t: 50, a: 100 });
   }, [output]);
 
-  const baseCss = BASE_CSS[fam.base] ?? "";
-  const derived = useMemo(() => deriveTheme(baseCss, keyHue, accHue), [baseCss, keyHue, accHue]);
-  const previewSpecs = useMemo(
-    () => PREVIEW.map(([label, name]) => [label, tokenSpec(derived.css, name)] as const),
-    [derived],
-  );
+  // Base audition — derive the base onto itself with the explicit key color.
+  const baseAnchor = useMemo(() => ({ c: chromaOf(baseKey), l: lightnessOf(baseKey) }), [baseKey]);
+  const basePreview = useMemo(() => {
+    const { css } = deriveTheme(BASE_CSS[baseSel], baseKey.hue, undefined, baseAnchor);
+    return PREVIEW.map(([label, name]) => [label, tokenSpec(css, name)] as const);
+  }, [baseSel, baseKey.hue, baseAnchor]);
+
+  // Derived audition — rotate hues, hold C/L.
+  const derivedPreview = useMemo(() => {
+    const { css } = deriveTheme(BASE_CSS[fam.base], keyHue, accHue);
+    return PREVIEW.map(([label, name]) => [label, tokenSpec(css, name)] as const);
+  }, [fam.base, keyHue, accHue]);
 
   const responderId = useId();
+  const baseSelId = useId();
+  const baseKeyWellId = useId();
   const outputId = useId();
   const keyWellId = useId();
   const accWellId = useId();
 
-  // ---- Focus language ([P02]) — one group for the controls. ----
+  // ---- Focus language ([P02]) — one group, a flat vertical order so arrows
+  // never dead-end into a beep (choice groups own their own Left/Right). ----
   const FG = useId();
   const focusManager = useFocusManager();
   const cardId = useContext(CardIdContext);
-  // A flat vertical order over the leaf stops so arrows never dead-end into a
-  // beep (the choice group owns its own Left/Right; wells + button seam).
   const spatialOrder = useMemo<SpatialOrder>(
-    () => rowGridOrder([[`${FG}:0`], [`${FG}:1`], [`${FG}:2`], [`${FG}:3`]]),
+    () => rowGridOrder([0, 1, 2, 3, 4, 5, 6].map((n) => [`${FG}:${n}`])),
     [FG],
   );
   useSpatialOrder(spatialOrder);
@@ -161,23 +205,42 @@ export function GalleryThemeEditor(): React.ReactElement {
         if (!sender || !payload) return;
         setActiveColorTarget({ targetId: responderId, senderId: sender, label: payload.label, value: payload.value });
       },
-      // The wells hold the edited color; derivation uses only its hue.
       [TUG_ACTIONS.SET_COLOR]: (e: ActionEvent) => {
         const sender = typeof e.sender === "string" ? e.sender : "";
         const next = e.value as TugColorSpec | undefined;
         if (!sender || !next) return;
-        if (sender === keyWellId) setKeySpec(next);
+        if (sender === baseKeyWellId) setBaseKey(next);
+        else if (sender === keyWellId) setKeySpec(next);
         else if (sender === accWellId) setAccSpec(next);
       },
       [TUG_ACTIONS.SELECT_VALUE]: (e: ActionEvent) => {
-        if (e.sender === outputId && typeof e.value === "string") setOutput(e.value);
+        if (typeof e.value !== "string") return;
+        if (e.sender === baseSelId) setBaseSel(e.value as BaseName);
+        else if (e.sender === outputId) setOutput(e.value);
       },
     },
   });
 
+  const onUpdateBase = (): void => {
+    setBaseBusy(true);
+    setBaseMsg(null);
+    fetch("/__theme-editor/derive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base: baseSel, out: baseSel, keyHue: baseKey.hue, keyAnchor: baseAnchor }),
+    })
+      .then(async (r) => {
+        const data = (await r.json().catch(() => ({}))) as { error?: string; count?: number };
+        if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
+        setBaseMsg(`Updated ${baseSel} — key set to ${baseKey.hue}, ${data.count ?? 0} tokens`);
+      })
+      .catch((err: unknown) => setBaseMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => setBaseBusy(false));
+  };
+
   const onGenerate = (): void => {
-    setGenerating(true);
-    setMsg(null);
+    setDerivedBusy(true);
+    setDerivedMsg(null);
     fetch("/__theme-editor/derive", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -186,18 +249,70 @@ export function GalleryThemeEditor(): React.ReactElement {
       .then(async (r) => {
         const data = (await r.json().catch(() => ({}))) as { error?: string; count?: number };
         if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
-        setMsg(`Generated ${output} from ${fam.base} — ${data.count ?? 0} tokens`);
+        setDerivedMsg(`Generated ${output} from ${fam.base} — ${data.count ?? 0} tokens`);
       })
-      .catch((err: unknown) => setMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`))
-      .finally(() => setGenerating(false));
+      .catch((err: unknown) => setDerivedMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => setDerivedBusy(false));
   };
 
   return (
     <ResponderScope>
       <div className="cg-content" data-testid="gallery-theme-editor" ref={responderRef as (el: HTMLDivElement | null) => void}>
+        {/* Region 1 — set a base ----------------------------------------- */}
         <div className="cg-section">
+          <TugLabel className="cg-section-title">Set a base</TugLabel>
           <TugLabel size="2xs" emphasis="calm">
-            Derive a family member from a hand-tuned base. Hues rotate; perceived chroma + lightness are held.
+            A base is hand-authored, not derived. Set its key color explicitly — the
+            whole Key ramp follows, keeping its shape.
+          </TugLabel>
+
+          <div className="gcd-controls">
+            <div className="gcd-control-row">
+              <span className="gcd-control-label">Base</span>
+              <TugChoiceGroup
+                items={BASE_ITEMS}
+                value={baseSel}
+                senderId={baseSelId}
+                size="xs"
+                aria-label="Base theme"
+                commit="live"
+                focusGroup={FG}
+                focusOrder={0}
+              />
+            </div>
+            <div className="gcd-control-row">
+              <span className="gcd-control-label">Key color</span>
+              <TugColorWell senderId={baseKeyWellId} label="Key color" value={baseKey} focusGroup={FG} focusOrder={1} />
+              <span className="gcd-control-note">{baseKey.hue} ({angle(baseKey.hue)})</span>
+            </div>
+          </div>
+
+          <TugBox variant="bordered" size="sm" className="gcd-preview-box">
+            <div className="gcd-preview-grid">
+              {basePreview.map(([label, spec]) => (
+                <div key={label} className="gcd-preview-cell">
+                  <span className="gcd-preview-label">{label}</span>
+                  {spec ? <TugColorWell readOnly value={spec} size="sm" label={label} /> : <span className="gcd-control-note">—</span>}
+                </div>
+              ))}
+            </div>
+          </TugBox>
+
+          <div className="gcd-actions" style={{ marginTop: "10px" }}>
+            <TugPushButton emphasis="primary" role="action" size="xs" disabled={baseBusy} onClick={onUpdateBase} focusGroup={FG} focusOrder={2}>
+              {baseBusy ? "Updating…" : `Update ${baseSel}`}
+            </TugPushButton>
+            {baseMsg && <TugLabel size="2xs" emphasis="calm">{baseMsg}</TugLabel>}
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* Region 2 — derive a family member ----------------------------- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">Derive a theme</TugLabel>
+          <TugLabel size="2xs" emphasis="calm">
+            Derive a family member from a base. Hues rotate; perceived chroma + lightness are held.
           </TugLabel>
 
           <div className="gcd-controls">
@@ -211,7 +326,7 @@ export function GalleryThemeEditor(): React.ReactElement {
                 aria-label="Family member"
                 commit="live"
                 focusGroup={FG}
-                focusOrder={0}
+                focusOrder={3}
               />
             </div>
             <div className="gcd-control-row">
@@ -220,31 +335,19 @@ export function GalleryThemeEditor(): React.ReactElement {
             </div>
             <div className="gcd-control-row">
               <span className="gcd-control-label">Key hue</span>
-              <TugColorWell senderId={keyWellId} label="Key hue" value={keySpec} focusGroup={FG} focusOrder={1} />
+              <TugColorWell senderId={keyWellId} label="Key hue" value={keySpec} focusGroup={FG} focusOrder={4} />
               <span className="gcd-control-note">{keyHue} ({angle(keyHue)})</span>
             </div>
             <div className="gcd-control-row">
               <span className="gcd-control-label">Accent hue</span>
-              <TugColorWell senderId={accWellId} label="Accent hue" value={accSpec} focusGroup={FG} focusOrder={2} />
+              <TugColorWell senderId={accWellId} label="Accent hue" value={accSpec} focusGroup={FG} focusOrder={5} />
               <span className="gcd-control-note">{accHue} ({angle(accHue)})</span>
             </div>
           </div>
 
-          <div className="gcd-actions" style={{ marginTop: "10px" }}>
-            <TugPushButton emphasis="primary" role="action" size="xs" disabled={generating} onClick={onGenerate} focusGroup={FG} focusOrder={3}>
-              {generating ? "Generating…" : `Generate ${output}`}
-            </TugPushButton>
-            {msg && <TugLabel size="2xs" emphasis="calm">{msg}</TugLabel>}
-          </div>
-        </div>
-
-        <TugSeparator />
-
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">Derived colors (audition)</TugLabel>
           <TugBox variant="bordered" size="sm" className="gcd-preview-box">
             <div className="gcd-preview-grid">
-              {previewSpecs.map(([label, spec]) => (
+              {derivedPreview.map(([label, spec]) => (
                 <div key={label} className="gcd-preview-cell">
                   <span className="gcd-preview-label">{label}</span>
                   {spec ? <TugColorWell readOnly value={spec} size="sm" label={label} /> : <span className="gcd-control-note">—</span>}
@@ -252,6 +355,13 @@ export function GalleryThemeEditor(): React.ReactElement {
               ))}
             </div>
           </TugBox>
+
+          <div className="gcd-actions" style={{ marginTop: "10px" }}>
+            <TugPushButton emphasis="primary" role="action" size="xs" disabled={derivedBusy} onClick={onGenerate} focusGroup={FG} focusOrder={6}>
+              {derivedBusy ? "Generating…" : `Generate ${output}`}
+            </TugPushButton>
+            {derivedMsg && <TugLabel size="2xs" emphasis="calm">{derivedMsg}</TugLabel>}
+          </div>
         </div>
       </div>
     </ResponderScope>
