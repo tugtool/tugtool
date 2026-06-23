@@ -1,8 +1,15 @@
 /**
  * tug-text-editor/keymap.ts — high-precedence keyboard handler for the
  * tug-specific input actions: Enter (submit / newline), numpad Enter,
- * Cmd-Enter (forced submit), Cmd-Up / Cmd-Down (history nav), and the
- * gap-fill text-editing bindings Ctrl-U / Ctrl-W / Alt-F / Alt-B.
+ * Cmd-Enter (forced submit), history nav (plain Up / Down from the
+ * document edges, plus Opt-Up / Opt-Down as a position-independent
+ * walk), and the gap-fill text-editing bindings Ctrl-U / Ctrl-W /
+ * Alt-F / Alt-B.
+ *
+ * History-nav modifier choice: Opt (not Cmd) drives the explicit walk,
+ * which deliberately leaves Cmd-Up / Cmd-Down free to fall through to
+ * `defaultKeymap`'s `cursorDocStart` / `cursorDocEnd` — the Home / End
+ * stand-ins a compact keyboard lacks dedicated keys for.
  *
  * Cmd-A (selectAll), Cmd-Z (undo), and Cmd-Shift-Z (redo) are inherited
  * from `@codemirror/commands` `defaultKeymap` + `historyKeymap`, which
@@ -10,7 +17,7 @@
  * them here.
  *
  * Why `EditorView.domEventHandlers` rather than `keymap.of` for the
- * Enter / Cmd-Up / Cmd-Down family: the keymap facet normalizes both
+ * Enter / history-nav family: the keymap facet normalizes both
  * main-row Enter and numpad Enter to the same key string, so a binding
  * written against `key: "Enter"` cannot tell them apart. Tug requires
  * per-source action: numpad Enter submits even when
@@ -92,9 +99,9 @@ export interface TugTextEditorKeymapConfig {
   /** Submit handler. Invoked when the resolved action is `"submit"`. */
   onSubmit: () => void;
   /**
-   * History provider. Cmd-Up / Cmd-Down are no-ops when this is
-   * `null`; in that case the modifier-arrow combination falls through
-   * to whatever the default keymap chooses (typically: do nothing).
+   * History provider. Up / Down and Opt-Up / Opt-Down history nav are
+   * no-ops when this is `null`; in that case the arrow keys fall
+   * through to the default keymap (normal caret motion / `moveLine`).
    */
   historyProvider: HistoryProvider | null;
   /**
@@ -280,33 +287,51 @@ export function resolveEnterAction(
 }
 
 /**
- * History navigation precondition: caret is collapsed AND positioned
- * at either end of the document. Matches the existing
- * `tug-prompt-input` boundary rule so that mid-document arrow-keys
- * pan the caret normally; only edge taps hand off to the history
- * provider. The rule is symmetric across `back` and `forward` so a
- * single Cmd-Up at the end of an unsubmitted draft pushes it onto
- * the provider's draft slot before serving the most-recent entry.
+ * Back-nav precondition for a *plain* ArrowUp: caret collapsed at the
+ * very start of the document (index 0). An empty document satisfies
+ * this too (head 0 === doc length 0). A caret anywhere else pans a line
+ * normally — only an edge tap hands off to the history provider.
  */
-function atHistoryBoundary(view: EditorView): boolean {
+function atBackBoundary(view: EditorView): boolean {
   const sel = view.state.selection.main;
-  if (!sel.empty) return false;
-  return sel.head === 0 || sel.head === view.state.doc.length;
+  return sel.empty && sel.head === 0;
 }
 
-/** Handle a Cmd-Up / Cmd-Down keystroke. */
-function handleHistoryNav(
+/**
+ * Forward-nav precondition for a *plain* ArrowDown: caret collapsed at
+ * the very end of the document (or an empty document).
+ */
+function atForwardBoundary(view: EditorView): boolean {
+  const sel = view.state.selection.main;
+  return sel.empty && sel.head === view.state.doc.length;
+}
+
+/**
+ * Walk the prompt history one step. `back` saves the current editor
+ * state onto the provider's draft slot (on the first call) before
+ * serving the most-recent entry; `forward` returns the next-newer
+ * entry, or the saved draft when it reaches the end. A `null` result
+ * (provider absent, or no entry in that direction) yields the keystroke
+ * so the caret can move normally.
+ *
+ * Caret placement rides the edge being navigated toward, so repeated
+ * presses keep walking without leaving the boundary: `back` lands the
+ * caret at index 0 (another plain ArrowUp navigates again), `forward`
+ * lands it at the end (another plain ArrowDown navigates again). This
+ * overrides whatever selection the provider entry carried.
+ */
+function navHistory(
   view: EditorView,
   config: TugTextEditorKeymapConfig,
   direction: "back" | "forward",
 ): boolean {
   if (config.historyProvider === null) return false;
-  if (!atHistoryBoundary(view)) return false;
   const next = direction === "back"
     ? config.historyProvider.back(captureEditState(view))
     : config.historyProvider.forward();
   if (next === null) return false;
-  applyEditState(view, next);
+  const caret = direction === "back" ? 0 : next.text.length;
+  applyEditState(view, { ...next, selection: { start: caret, end: caret } });
   return true;
 }
 
@@ -376,10 +401,10 @@ function handleEnter(
  *
  * Layers two registrations inside one `Prec.high([...])` wrapper:
  *
- *   1. `EditorView.domEventHandlers` for the Enter family + Cmd-Up /
- *      Cmd-Down history nav. Reads `KeyboardEvent.code` directly to
- *      tell main-row Enter and numpad Enter apart (the keymap facet
- *      normalizes them).
+ *   1. `EditorView.domEventHandlers` for the Enter family + history
+ *      nav (plain Up / Down from the edges, Opt-Up / Opt-Down anywhere).
+ *      Reads `KeyboardEvent.code` directly to tell main-row Enter and
+ *      numpad Enter apart (the keymap facet normalizes them).
  *   2. `keymap.of([...])` for the four gap-fill bindings (Ctrl-U /
  *      Ctrl-W / Alt-F / Alt-B), each dispatching an existing
  *      `@codemirror/commands` command. The `shift:` slot expresses
@@ -405,15 +430,26 @@ export function tugTextEditorKeymap(
         }
         if (
           (event.key === "ArrowUp" || event.key === "ArrowDown")
-          && (event.metaKey || event.ctrlKey)
-          && !event.altKey
           && !event.shiftKey
+          && !event.ctrlKey
+          && !event.metaKey
+          && !event.isComposing
         ) {
-          return handleHistoryNav(
-            view,
-            config,
-            event.key === "ArrowUp" ? "back" : "forward",
-          );
+          const direction = event.key === "ArrowUp" ? "back" : "forward";
+          // Opt-Up / Opt-Down: explicit history walk, independent of
+          // caret position — the reliable path for stepping through
+          // entries while editing mid-document.
+          if (event.altKey) {
+            return navHistory(view, config, direction);
+          }
+          // Plain Up / Down: hand off to history only from the matching
+          // document edge (start for back, end for forward); otherwise
+          // yield so the caret pans a line normally.
+          const atEdge = direction === "back"
+            ? atBackBoundary(view)
+            : atForwardBoundary(view);
+          if (atEdge) return navHistory(view, config, direction);
+          return false;
         }
         return false;
       },

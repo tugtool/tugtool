@@ -529,7 +529,7 @@ export interface TugTextEditorProps
    */
   onSubmit?: () => void;
   /**
-   * History provider for Cmd-Up / Cmd-Down navigation. The substrate
+   * History provider for Up / Down + Opt-Up / Opt-Down navigation. The substrate
    * captures the current editing state on each `back()` call so the
    * provider can stash it as the in-progress draft and restore it
    * when the user reaches the forward end of the stack.
@@ -1002,9 +1002,10 @@ function buildExtensions(
     tugCompletionExt(getCompletionProviders),
     // tug-specific keymap runs before defaultKeymap / historyKeymap
     // (Prec.high inside `tugTextEditorKeymap`) so Enter / numpad Enter /
-    // Cmd-Enter / Cmd-Up / Cmd-Down get tug semantics. Falling
-    // through (returning false) lets the default bindings handle
-    // newline insertion, undo/redo, selectAll, and the rest.
+    // Cmd-Enter and history nav (Up / Down / Opt-Up / Opt-Down) get
+    // tug semantics. Falling through (returning false) lets the default
+    // bindings handle newline insertion, undo/redo, selectAll, Cmd-Up /
+    // Cmd-Down (cursorDocStart / cursorDocEnd), and the rest.
     tugTextEditorKeymap(getKeymapConfig),
     // `indentWithTab` last so Tab is a tab while editing: the higher-prec
     // inline-ghost keymap and the typeahead popup each claim Tab only while

@@ -29,7 +29,7 @@ export interface SerializedAtom {
 
 /**
  * A single prompt history entry. Stores everything needed to restore the prompt
- * state when the user navigates Cmd+Up/Down through history.
+ * state when the user navigates Up/Down (or Opt-Up/Down) through history.
  *
  * Metadata fields (sessionId, projectPath, route) are stored for future
  * cross-session search tiers (T3.4+).
@@ -313,7 +313,7 @@ export class PromptHistoryStore {
    * Truncate a session's history to its first `keepCount` entries, dropping
    * the rest — used by `/rewind` ([#step-7-3]) to rewind the prompt history
    * alongside the transcript: a conversation rewind drops the rewound-away
-   * turns, and their prompts should leave Cmd-Up/Down recall too.
+   * turns, and their prompts should leave history recall too.
    *
    * Idempotent and self-correcting: callers pass the retained user-prompt
    * count derived from the post-rewind transcript, so a session that already

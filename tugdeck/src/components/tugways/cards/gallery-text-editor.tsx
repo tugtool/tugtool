@@ -26,8 +26,8 @@
  *
  * Card-scoped history is kept in a per-instance ref-held entry list:
  * each Return submit captures the current editing state, appends it,
- * and clears the editor. Cmd-Up/Cmd-Down walk the live entries and
- * the saved draft, mirroring `SessionHistoryProvider`'s contract
+ * and clears the editor. Up/Down (from the edges) and Opt-Up/Opt-Down
+ * walk the live entries and the saved draft, mirroring `SessionHistoryProvider`'s contract
  * without requiring a real session.
  *
  * Dropped files round-trip through `galleryDropHandler` — the same
@@ -263,8 +263,8 @@ const EMPTY_PROVIDER: CompletionProvider = ((_q: string) => []) as CompletionPro
  * crucial difference: the entry list is supplied via a getter, not
  * baked at construction. The card's `onSubmit` handler appends to a
  * ref-held array, and the provider reads through the same ref on
- * every `back()` / `forward()` — so a submit landing right before a
- * Cmd-Up brings the new entry into view immediately.
+ * every `back()` / `forward()` — so a submit landing right before an
+ * ArrowUp brings the new entry into view immediately.
  */
 class CardHistoryProvider implements HistoryProvider {
   private cursor = -1;
@@ -300,7 +300,7 @@ class CardHistoryProvider implements HistoryProvider {
   /**
    * Reset the cursor to the draft slot and replace the saved draft
    * with the supplied state. Called from the submit flow so a
-   * subsequent Cmd-Up offers the just-submitted entry as the most
+   * subsequent ArrowUp offers the just-submitted entry as the most
    * recent — not the historic "draft I navigated away from."
    */
   resetToDraft(draft: TugTextEditingState): void {
@@ -535,7 +535,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   // the per-card history, reset the provider's cursor / draft, then
   // clear the editor for the next draft. The capture happens on the
   // current view so atoms in the submitted draft are preserved (so
-  // Cmd-Up after submit restores the exact draft, atoms and all).
+  // ArrowUp after submit restores the exact draft, atoms and all).
   const handleSubmit = (): void => {
     const view = editRef.current?.view();
     if (view === null || view === undefined) return;
