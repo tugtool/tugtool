@@ -948,6 +948,11 @@ function extractInterrupted(structuredResult: unknown): boolean {
  * the transcript view builds it once from the flat tool-call list and
  * threads it through here so `TaskToolBlock` can resolve a subagent's
  * child tool calls. Top-level callers that have no subagents omit it.
+ *
+ * `preview` (default `false`) marks an approve/deny preview of a
+ * pending tool call — the `PermissionDialog` sets it so the resolved
+ * wrapper renders the input/command side without painting a finished
+ * call's result surfaces (see `ToolBlockProps.preview`).
  */
 export function dispatchToolCallState(
   toolCall: ToolUseMessage,
@@ -956,6 +961,7 @@ export function dispatchToolCallState(
   session?: CodeSessionStore,
   awaiting = false,
   turnInterrupted = false,
+  preview = false,
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
@@ -1012,6 +1018,7 @@ export function dispatchToolCallState(
     // its subagent children's own `dispatchToolCallState`, so their
     // pending dots flip to `interrupted` too ([D17]).
     turnInterrupted,
+    preview,
   };
 
   // Hidden tools ([D101]) short-circuit ahead of drift detection and

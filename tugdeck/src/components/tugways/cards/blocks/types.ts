@@ -201,6 +201,19 @@ export interface ToolBlockProps<TInput = unknown, TStructured = unknown> {
    * mount, for instance, supplies no session).
    */
   session?: CodeSessionStore;
+  /**
+   * Preview mode — the call has NOT run yet. Set by the permission
+   * dialog when it renders a wrapper as the approve/deny preview of a
+   * pending tool call: the input has arrived but there is (and can be)
+   * no result. Wrappers MUST suppress every result-side surface that
+   * would otherwise read as a finished call — `BashToolBlock`'s
+   * "(no output)" footer hint and its empty `TerminalBlock` body are
+   * the canonical examples. The header + input side renders normally
+   * (that IS the command/args being approved). Transcript mounts leave
+   * this `undefined`; only `dispatchToolCallState`'s `preview` argument
+   * threads it on. Defaults to "not a preview."
+   */
+  preview?: boolean;
 }
 
 /**

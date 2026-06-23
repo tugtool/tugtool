@@ -269,6 +269,24 @@ body {
   border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
+/* Drop the divider when the cluster has nothing to divide off — no Copy, no
+ * chevron, and an empty (or absent) portal slot. The comment above assumes
+ * "the cluster always carries Copy + chevron in the app," but the permission
+ * dialog mounts a tool block with NO history-collapse host: neither the
+ * header-owned Copy nor the chevron renders, so the rule would dangle a pipe
+ * with empty space to its right. `:has()` keys on the three meaningful
+ * children (a filled portal slot, the Copy button, the disclosure chevron);
+ * none present ⇒ shed the rule + its spacing so the row ends clean. */
+.tool-call-header-actions:not(
+    :has(.tool-call-header-actions-slot:not(:empty))
+  ):not(:has([data-slot="tool-call-header-copy"])):not(
+    :has([data-slot="tool-call-header-disclosure"])
+  ) {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+
 /* Actions slot — hosts the affordances a body kind portals in (expanded).
  * Layout only; children own appearance. */
 .tool-call-header-actions-slot {

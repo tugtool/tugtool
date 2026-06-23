@@ -1,11 +1,11 @@
 /* @tug-pairings:
    - --tugx-perm-reason-color    | --tugx-idialog-bg    (muted-italic reason span inside the pending dialog's description)
-   - --tugx-block-text-color-muted | --tugx-idialog-bg  (Bash command block — shared chrome code tone on the dialog surface, matching the tool-block header)
    `PermissionDialog` is pending-only post-Step-3.5 (`#step-3-5`).
    The visible chrome is delegated entirely to `TugInlineDialog`.
    This stylesheet keeps only the small set of inline-fragment styles
    the pending dialog drops into the primitive's `description` slot
-   (an inline Shell glyph nudge, a muted-italic reason-line span).
+   (a muted-italic reason-line span) plus the height-capped wrapper
+   around the preview tool block.
 */
 
 /**
@@ -15,16 +15,17 @@
  * Step 3.5 removed the recorded chrome (JSONL has no durable record
  * to reconstruct one from; see `roadmap/archive/dev-interactive-dialogs.md`
  * `#step-3-5`). The pending dialog composes `TugInlineDialog`
- * (owns `--tugx-idialog-*` and the dialog frame). The only things
- * this file owns are two small inline fragments dropped into the
- * dialog's `description` slot:
+ * (owns `--tugx-idialog-*` and the dialog frame). The things this file
+ * owns are:
  *
- *   - `.dev-permission-dialog-inline-icon` — the vertical-align
- *     nudge for the inline Shell glyph embedded in the rich Bash
- *     description.
  *   - `.dev-permission-dialog-reason` — muted-italic span used to
  *     append the wire `decision_reason` after the synthesized
  *     description prose.
+ *   - `.dev-permission-dialog-preview` — the height-capped, scrollable
+ *     wrapper around the real transcript tool block the dialog mounts
+ *     as the approve/deny preview, so an unbounded input (e.g. a huge
+ *     `ExitPlanMode` plan) scrolls inside the dialog instead of
+ *     stretching it off-screen.
  *
  * Tuglaw cross-check:
  *  - [L17] every `--tugx-perm-*` slot resolves to a `--tug7-*` base
@@ -45,14 +46,6 @@ body {
 
 /* ---- Pending: small inline fragments inside the primitive ---- */
 
-/* Inline Shell glyph in the rich Bash description — vertical-align
- * nudge so the icon's center sits on the text baseline.
- *
- * @tug-renders-on: --tugx-idialog-bg */
-.dev-permission-dialog-inline-icon {
-  vertical-align: middle;
-}
-
 /* Reason-line span (appended after the synthesized description prose).
  *
  * @tug-renders-on: --tugx-idialog-bg */
@@ -60,44 +53,38 @@ body {
   color: var(--tugx-perm-reason-color);
 }
 
-/* ---- Bash command block ----
+/* ---- Preview tool block ----
  *
- * Monospace command text in the inset body column. Alignment depends on how
- * many lines it occupies (`data-multiline`, measured by the body): a command
- * that fits on one line stays CENTERED — reading as the continuation of the
- * centered description above it, rather than a lone token orphaned at the
- * left margin. A command that wraps to more than one line LEFT-aligns into
- * the inset column, reading like a code listing under the title. `text-align`
- * inherits down through the `TugClamp` wrapper to the command text; the
- * clamp's own reveal control stays left-aligned regardless (flex, not text).
- * A long command caps at 8 lines behind the `TugClamp` reveal.
+ * The dialog mounts the real transcript tool block (`BashToolBlock`,
+ * `DefaultToolBlock`, …) as the approve/deny preview. This wrapper gives it
+ * top breathing room below the description and a generous outer scroll cap so
+ * a large JSON input (the `ExitPlanMode` blow-up) can't stretch the dialog
+ * off-screen. The block carries its own chrome tokens; this wrapper owns only
+ * spacing + the safety cap.
  *
  * @tug-renders-on: --tugx-idialog-bg */
-.dev-permission-dialog-command-wrap {
+.dev-permission-dialog-preview {
   margin-top: var(--tug-space-md);
-  text-align: center;
-}
-
-.dev-permission-dialog-command-wrap[data-multiline="true"] {
+  max-height: 24rem;
+  overflow: auto;
   text-align: left;
 }
 
-.dev-permission-dialog-command {
+/* The dialog preview has no collapse chevron, so a long, multi-line command
+ * would grow the header unbounded. Cap the command TEXT element at ~8 rows
+ * and scroll inside it. The cap rides the command node itself (the
+ * `tool-call-header-clamp` text), NOT the `.tool-call-header-detail` flex box
+ * — touching the detail's `align-items`/overflow breaks the header's
+ * name↔command baseline trick (every first-row item rides an equal one-line
+ * box, centered). Leaving the detail untouched keeps that intact: when the
+ * command grows to 8 rows the detail still centers it, so the first line
+ * stays on row 1 with the dot + name, and the overflow scrolls below.
+ *
+ * @tug-renders-on: --tugx-idialog-bg */
+.dev-permission-dialog-preview .tool-call-header-clamp {
   display: block;
-  max-width: 100%;
-  margin: 0;
-  /* Match the tool-block header's command text: the shared `--tugx-block-*`
-   * chrome code-font + muted tone at `xs`, on a TRANSPARENT surface — no
-   * sunken inset, no padding, no radius. The command reads as quiet inline
-   * code, identical to the `Bash tokei` strip in the transcript. The
-   * `text-align` is inherited from the wrap (centered vs left per line
-   * count). */
-  font-family: var(--tugx-block-code-font);
-  font-size: var(--tug-font-size-sm);
-  line-height: 1.45;
-  color: var(--tugx-block-text-color);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  max-height: calc(8 * var(--tugx-toolheader-line));
+  overflow-y: auto;
 }
 
 /* ---- Card-modal dialog ([P16]/[P17]/[P18]) ---- */

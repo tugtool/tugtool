@@ -67,9 +67,12 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("selectPermissionBodyKind", () => {
-  it("routes Bash to the bash body kind", () => {
-    expect(selectPermissionBodyKind("Bash")).toBe("bash");
-    expect(selectPermissionBodyKind("bash")).toBe("bash");
+  it("routes Bash through the dispatch body kind", () => {
+    // Bash no longer has a bespoke dialog preview — its command renders
+    // through the same `BashToolBlock` the transcript uses, mounted in
+    // preview mode. So the picker routes it to `"dispatch"`.
+    expect(selectPermissionBodyKind("Bash")).toBe("dispatch");
+    expect(selectPermissionBodyKind("bash")).toBe("dispatch");
   });
 
   it("routes Edit and MultiEdit to the edit body kind", () => {
@@ -84,13 +87,10 @@ describe("selectPermissionBodyKind", () => {
   });
 
   it("routes a bespoke transcript wrapper through the dispatch body kind", () => {
-    // After [#step-24-3-7], any tool with a bespoke transcript
-    // wrapper — including the ones shipped at 24.3.2–24.3.5 —
-    // routes through the new `"dispatch"` body kind so the dialog
-    // preview matches the transcript rendering. The bash / edit /
-    // path bespoke-dialog branches keep their dedicated previews
-    // (they read better in dialog context); only the previously-
-    // "json" cases promote.
+    // Any tool with a bespoke transcript wrapper routes through the
+    // `"dispatch"` body kind so the dialog preview matches the
+    // transcript rendering. Only `edit` / `read` / `write` keep their
+    // dedicated dialog branches.
     expect(selectPermissionBodyKind("Monitor")).toBe("dispatch");
     expect(selectPermissionBodyKind("Skill")).toBe("dispatch");
     expect(selectPermissionBodyKind("Glob")).toBe("dispatch");
@@ -99,8 +99,7 @@ describe("selectPermissionBodyKind", () => {
 
   it("resolves dispatch routing through tool-name aliases", () => {
     // `enterworktree` / `exitworktree` → `worktree` alias.
-    // `multiedit` stays on the `"edit"` bespoke-dialog branch (the
-    // bespoke-dialog short-circuit precedes the dispatch check).
+    // `multiedit` stays on the `"edit"` dialog branch.
     expect(selectPermissionBodyKind("EnterWorktree")).toBe("dispatch");
     expect(selectPermissionBodyKind("ExitWorktree")).toBe("dispatch");
     // Cron + TaskMgmt + Task* aliases all resolve to bespoke wrappers.
@@ -113,9 +112,9 @@ describe("selectPermissionBodyKind", () => {
     // Body composition for the `"dispatch"` branch: the picked
     // Component MUST equal the wrapper the transcript uses (per
     // `BESPOKE_FACTORY_BY_NAME`). This guarantees the dialog
-    // preview and the transcript row render the same wrapper —
-    // the whole point of [#step-24-3-7].
+    // preview and the transcript row render the same wrapper.
     for (const wireName of [
+      "Bash",
       "Monitor",
       "Skill",
       "EnterWorktree",
@@ -134,16 +133,14 @@ describe("selectPermissionBodyKind", () => {
     }
   });
 
-  it("falls back to json for tools without a bespoke wrapper", () => {
-    // Genuinely unknown tools (e.g., a future Claude Code addition
-    // before the policy table is updated) fall through to
-    // JsonTreeBlock — there's no shape we could show otherwise. As
-    // of [#step-26], every wire tool has a bespoke wrapper or an
-    // explicit per-case branch (`bash` / `edit` / `read` / `write`),
-    // so the unknown-name case is the primary canary for this
-    // branch.
-    expect(selectPermissionBodyKind("ZzzUnknownTool")).toBe("json");
-    expect(selectPermissionBodyKind("")).toBe("json");
+  it("routes an unknown tool through dispatch (DefaultToolBlock fallback)", () => {
+    // A genuinely unknown tool (a future Claude Code addition before
+    // the policy table is updated) and the empty-name edge both route
+    // through `"dispatch"`. The dispatch resolves them to
+    // `DefaultToolBlock` (input JSON tree, collapsed) — no separate
+    // "json" branch in the dialog anymore.
+    expect(selectPermissionBodyKind("ZzzUnknownTool")).toBe("dispatch");
+    expect(selectPermissionBodyKind("")).toBe("dispatch");
   });
 });
 

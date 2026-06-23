@@ -40,7 +40,7 @@ body {
   /* Frame — capped width and centered so the dialog reads as a
    * distinct CTA box inside its container rather than spanning
    * the full card width. */
-  --tugx-idialog-max-width:    520px;
+  --tugx-idialog-max-width:    600px;
   --tugx-idialog-padding:      0.625rem 0.75rem 1.5rem;
   --tugx-idialog-bg:           var(--tug7-surface-global-primary-normal-raised-rest);
   --tugx-idialog-border:       var(--tug7-element-global-border-normal-default-rest);

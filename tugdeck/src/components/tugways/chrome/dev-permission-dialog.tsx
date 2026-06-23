@@ -16,9 +16,10 @@
  * header-bar primitive with `iconRole="caution"` and a per-tool rich
  * description. `Deny` and `Allow` (`TugPushButton size="xs"`) flow
  * into the primitive's trailing `actions` slot; this dialog owns the
- * focus-on-mount on `Allow`. The body picker (`DiffBlock` for Edit,
- * the transcript wrapper for any tool with a bespoke registration,
- * `JsonTreeBlock` for the genuine-unknown fallback) renders in the
+ * focus-on-mount on `Allow`. The body picker (`DiffBlock` for Edit;
+ * the real transcript tool block — `BashToolBlock` for Bash,
+ * `DefaultToolBlock` for an unknown tool, `NullToolBlock` for a hidden
+ * one — mounted in `preview` mode for everything else) renders in the
  * primitive's `children` slot. When the request carries actionable
  * `permission_suggestions`, those (plus an implicit "Allow once"
  * first option) are passed to the primitive's `options` prop as a
@@ -35,8 +36,8 @@
  *
  * Per-tool description (`PermissionDescription`):
  *
- *   - `Bash` →  `"This command requires approval · {Shell-icon} Bash"` (the
- *     command renders below as its own block — see the body picker)
+ *   - `Bash` →  `"This command requires approval."` (the command renders
+ *     below through `BashToolBlock`'s header — see the body picker)
  *   - `Edit` / `MultiEdit` →  `"This will edit `{file_path}`."`
  *   - `Read` →  `"This will read `{file_path}` ({line range})."`  (range when set)
  *   - `Write` →  `"This will write `{file_path}`."`
@@ -47,23 +48,19 @@
  * belongs in the description; do not fragment the same idea into
  * separate slots.
  *
- * Body picker (`PendingBody`) — five branches:
+ * Body picker (`PendingBody`) — three branches:
  *
  *   - `edit` → `DiffBlock` (`two-text` source from `(old_string,
  *     new_string)`).
- *   - `dispatch` ([#step-24-3-7]) → the bespoke transcript wrapper
- *     for this tool, mounted in preview mode (`status: "ready"`,
- *     no result data). The wrapper degrades gracefully per
- *     [#bk-conformance] item 10: input rows render, result-side
- *     surfaces stay empty. The dialog preview and the transcript
- *     row share one rendering by construction.
- *   - `json` (genuinely unknown tool — no bespoke wrapper, not in
- *     the bespoke-dialog set) → `JsonTreeBlock` over the raw input.
- *   - `bash` → a centered block of left-aligned monospace command
- *     text. The command moves out of the description (where a long,
- *     multi-line command wrapped badly when centered) into its own
- *     `children`-slot block; the description keeps the lead-in + tool
- *     identity.
+ *   - `dispatch` → the real transcript tool block for this tool, via
+ *     `dispatchToolCallState(..., preview: true)`. This is the general
+ *     mechanism — `Bash`, every bespoke tool, an unknown tool (→
+ *     `DefaultToolBlock`), and a hidden tool (→ `NullToolBlock`) all
+ *     route here. The wrapper renders only its input/command side in
+ *     preview mode; the dialog preview and the transcript row share one
+ *     rendering by construction. A `dev-permission-dialog-preview`
+ *     wrapper caps the height so an unbounded input scrolls instead of
+ *     stretching the dialog.
  *   - `path` → `null`. The file path is already in the description.
  *
  * Laws:
@@ -72,9 +69,10 @@
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    this docstring.
  *  - [L20] component-token sovereignty — the visual is delegated to
- *    `TugInlineDialog` (`--tugx-idialog-*`). This dialog itself
- *    contributes only the small inline-icon + reason fragments used
- *    inside the pending description.
+ *    `TugInlineDialog` (`--tugx-idialog-*`) and the tool block the
+ *    preview mounts. This dialog itself contributes only the small
+ *    reason fragment used inside the pending description and the
+ *    height-capped preview wrapper.
  *  - [L23] the user's chosen scope is user data and must survive
  *    reload / cross-pane move / cold boot. The dialog opts into the
  *    [A9] Component State Preservation Protocol via
@@ -99,16 +97,10 @@
 import "./dev-permission-dialog.css";
 
 import React from "react";
-import { Shell, ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
-import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
-import {
-  dispatchToolCallState,
-  hasBespokeWrapper,
-} from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
-import { TugClamp } from "@/components/tugways/tug-clamp";
-import { useIsMultiline } from "@/components/tugways/internal/use-is-multiline";
+import { dispatchToolCallState } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -164,39 +156,33 @@ export interface PermissionDialogProps {
 // ---------------------------------------------------------------------------
 
 /** Which read-only body kind best fits a tool's permission `input`. */
-export type PermissionBodyKind = "bash" | "edit" | "path" | "dispatch" | "json";
+export type PermissionBodyKind = "edit" | "path" | "dispatch";
 
 /**
  * Pick the body kind for a permission request's `tool_use.input`:
  *
- *   - `Bash`              → `"bash"`  (command surfaced inline in description)
  *   - `Edit` / `MultiEdit`→ `"edit"`  (`(old,new)` via `DiffBlock` in children)
  *   - `Read` / `Write`    → `"path"`  (path surfaced inline in description)
- *   - any other tool WITH a bespoke transcript wrapper
- *                         → `"dispatch"` (the wrapper renders in preview
- *                            mode — `status: "ready"` with no result data —
- *                            so the dialog shows the same compact shape the
- *                            transcript does; see [#step-24-3-7])
- *   - anything else       → `"json"`  (`JsonTreeBlock` over input in children)
+ *   - everything else      → `"dispatch"` (the real transcript wrapper,
+ *                            mounted in `preview` mode — input/command side
+ *                            only, no result surfaces)
  *
- * Case-insensitive; mirrors the dispatch's alias resolution
- * (`multiedit → edit`, `enterworktree → worktree`, etc.) via
- * `hasBespokeWrapper`.
+ * The `"dispatch"` branch is the general mechanism: rather than a
+ * bespoke per-tool dialog UI, the dialog reuses the same tool block
+ * renderer the transcript uses (`dispatchToolCallState`). `Bash` routes
+ * here too — its command renders through `BashToolBlock`'s header, the
+ * same chrome the transcript shows — as do every bespoke tool, an
+ * unknown tool (→ `DefaultToolBlock`, input JSON tree collapsed), and a
+ * hidden tool (→ `NullToolBlock`, no body). The dialog preview and the
+ * transcript row share one rendering by construction.
  *
- * Note that `Bash` / `Edit` / `MultiEdit` / `Read` / `Write` short-
- * circuit ahead of the bespoke check by design. Their bespoke
- * dialog previews are *more dialog-appropriate* than the transcript
- * wrapper's output — `"path"` shows just the path, no chrome;
- * `"bash"` shows the command as a dedicated left-aligned block, no
- * transcript chrome. Routing those through the transcript wrapper would regress the
- * preview shape. The `"dispatch"` branch is only for tools that
- * previously fell through to `"json"` and now have a wrapper that
- * does a better job than `JsonTreeBlock` over raw input.
+ * `Edit` and `Read` / `Write` stay on dedicated dialog branches: the
+ * raw `DiffBlock` reads better than `EditToolBlock`'s chrome in dialog
+ * context, and the file path already lives in the description (no body
+ * needed for `"path"`). Case-insensitive.
  */
 export function selectPermissionBodyKind(toolName: string): PermissionBodyKind {
   switch (toolName.toLowerCase()) {
-    case "bash":
-      return "bash";
     case "edit":
     case "multiedit":
       return "edit";
@@ -204,7 +190,7 @@ export function selectPermissionBodyKind(toolName: string): PermissionBodyKind {
     case "write":
       return "path";
     default:
-      return hasBespokeWrapper(toolName) ? "dispatch" : "json";
+      return "dispatch";
   }
 }
 
@@ -550,66 +536,43 @@ const PermissionDescription: React.FC<DescriptionProps> = ({
   input,
   decisionReason,
 }) => {
-  const kind = selectPermissionBodyKind(toolName);
+  const lower = toolName.toLowerCase();
   let primary: React.ReactNode;
-  switch (kind) {
-    case "bash": {
-      const command = readStringField(input, "command");
-      // The command itself is NOT inlined here — a long, multi-line shell
-      // command read badly wrapped inside the centered description. It moves
-      // to its own left-aligned block in the `children` slot (`PendingBody`);
-      // the description keeps only the cohesive lead-in + tool identity.
-      primary =
-        command !== undefined ? (
-          <>
-            This command requires approval ·{" "}
-            <Shell
-              size={12}
-              aria-hidden="true"
-              className="dev-permission-dialog-inline-icon"
-            />{" "}
-            Bash
-          </>
-        ) : (
-          <>This Bash command requires approval.</>
-        );
-      break;
-    }
-    case "edit": {
-      const filePath = readStringField(input, "file_path");
-      primary =
-        filePath !== undefined ? (
-          <>
-            This will edit <code>{filePath}</code>.
-          </>
-        ) : (
-          <>This will edit a file.</>
-        );
-      break;
-    }
-    case "path": {
-      const filePath = readStringField(input, "file_path");
-      const verb = toolName.toLowerCase() === "write" ? "write" : "read";
-      const lineRange = composePermissionLineRange(input);
-      primary =
-        filePath !== undefined ? (
-          <>
-            This will {verb} <code>{filePath}</code>
-            {lineRange !== undefined ? ` (${lineRange})` : ""}.
-          </>
-        ) : (
-          <>This will {verb} a file.</>
-        );
-      break;
-    }
-    case "json":
-    default:
-      primary = (
+  if (lower === "bash") {
+    // The command itself renders below through `BashToolBlock`'s header
+    // (the same terminal-icon + "Bash" + command chrome the transcript
+    // shows). The description keeps only the cohesive lead-in — no tool
+    // identity chip, since the block carries it.
+    primary = <>This command requires approval.</>;
+  } else if (lower === "edit" || lower === "multiedit") {
+    const filePath = readStringField(input, "file_path");
+    primary =
+      filePath !== undefined ? (
         <>
-          This will run <code>{toolName}</code>.
+          This will edit <code>{filePath}</code>.
         </>
+      ) : (
+        <>This will edit a file.</>
       );
-      break;
+  } else if (lower === "read" || lower === "write") {
+    const filePath = readStringField(input, "file_path");
+    const verb = lower === "write" ? "write" : "read";
+    const lineRange = composePermissionLineRange(input);
+    primary =
+      filePath !== undefined ? (
+        <>
+          This will {verb} <code>{filePath}</code>
+          {lineRange !== undefined ? ` (${lineRange})` : ""}.
+        </>
+      ) : (
+        <>This will {verb} a file.</>
+      );
+  } else {
+    primary = (
+      <>
+        This will run <code>{toolName}</code>.
+      </>
+    );
   }
   if (decisionReason !== undefined && decisionReason !== "") {
     return (
@@ -642,37 +605,9 @@ interface PendingBodyProps {
 }
 
 /**
- * The Bash command body. A command that fits on one visual line stays
- * centered, so it reads as the natural continuation of the centered
- * description above it (a lone short command marooned at the left margin
- * looks orphaned). A command that wraps to more than one line left-aligns
- * into the inset body column, where it reads like a code listing under the
- * title — the case the block treatment was designed for. The line count is
- * measured live (`useIsMultiline`), since whether a command wraps depends
- * on the column width, not just its text. Either way a long command caps at
- * 8 visual lines behind the `TugClamp` reveal.
- */
-const BashCommandBody: React.FC<{ command: string }> = ({ command }) => {
-  const codeRef = React.useRef<HTMLElement>(null);
-  const multiline = useIsMultiline(codeRef);
-  return (
-    <div
-      className="dev-permission-dialog-command-wrap"
-      data-multiline={multiline ? "true" : undefined}
-    >
-      <TugClamp lines={8}>
-        <code ref={codeRef} className="dev-permission-dialog-command">
-          {command}
-        </code>
-      </TugClamp>
-    </div>
-  );
-};
-
-/**
  * Render the body kind that goes inside the inline dialog's `children`
  * slot. Returns `null` when the description already carries the
- * relevant input fragment (Bash command, Read/Write path).
+ * relevant input fragment (Read/Write path).
  */
 const PendingBody: React.FC<PendingBodyProps> = ({
   toolName,
@@ -680,13 +615,6 @@ const PendingBody: React.FC<PendingBodyProps> = ({
   requestId,
 }) => {
   const kind = selectPermissionBodyKind(toolName);
-  if (kind === "bash") {
-    const command = readStringField(input, "command");
-    if (command !== undefined) {
-      return <BashCommandBody command={command} />;
-    }
-    return null;
-  }
   if (kind === "edit") {
     const before = readStringField(input, "old_string");
     const after = readStringField(input, "new_string");
@@ -714,15 +642,6 @@ const PendingBody: React.FC<PendingBodyProps> = ({
       />
     );
   }
-  if (kind === "json") {
-    return (
-      <JsonTreeBlock
-        data={input}
-        label="input"
-        className="dev-permission-dialog-json"
-      />
-    );
-  }
   // path — the description already carries the file path; no body needed.
   return null;
 };
@@ -734,23 +653,21 @@ interface PendingDispatchBodyProps {
 }
 
 /**
- * Render the bespoke transcript wrapper as the permission-dialog
- * preview. Builds a synthetic `ToolCallState`-shape input for
- * `dispatchToolCallState` with `status: "ready"` + no result data;
- * mounts the returned Component with its returned props.
+ * Render the real transcript wrapper as the permission-dialog preview.
+ * Builds a synthetic `ToolUseMessage`-shape input for
+ * `dispatchToolCallState` with `status: "done"` + no result data and
+ * `preview: true`; mounts the returned Component with its returned
+ * props inside a height-capped, scrollable container.
  *
- * The preview-mode invariant ([#step-24-3-7]): every bespoke wrapper
- * authored under [#bk-conformance] item 10 degrades gracefully in
- * `status: "ready"` with `textOutput: undefined` and
- * `structuredResult: undefined` — result-section helpers return
- * `{ kind: "none" }` for no output, the chrome's `errorMessage`
- * stays undefined, the footer collapses when no badges. The
- * wrapper's header + input rows render normally; the result-side
- * surface is empty (correct — there IS no result yet).
- *
- * The exception is `BashToolBlock` (its `(no output)` hint would
- * read misleadingly here), but Bash is in the bespoke-dialog set
- * (`case "bash"`) and never reaches this branch.
+ * The preview-mode invariant: a wrapper mounted with `preview: true`
+ * renders only its input/command side — `BashToolBlock` holds its
+ * `(no output)` hint + empty body, `DefaultToolBlock` shows the input
+ * JSON tree collapsed (`defaultDepth: 1`), and a hidden tool resolves
+ * to `NullToolBlock` (no body at all — the path that keeps a giant
+ * `ExitPlanMode` plan from blowing up the dialog). The
+ * `dev-permission-dialog-preview` wrapper caps the height regardless,
+ * so even an unbounded input scrolls inside the dialog rather than
+ * stretching it.
  */
 const PendingDispatchBody: React.FC<PendingDispatchBodyProps> = ({
   toolName,
@@ -762,23 +679,39 @@ const PendingDispatchBody: React.FC<PendingDispatchBodyProps> = ({
   // `toolName` / `input` / `textOutput` / `structuredResult` / `status`
   // (plus `caution` which is only set on drift — preview is never
   // drift); `messageKey` + `createdAt` are required by the type but
-  // not read by the renderer.
-  const result = dispatchToolCallState({
-    kind: "tool_use",
-    messageKey: `permission-dialog/${requestId}`,
-    createdAt: 0,
-    toolUseId: `permission-dialog/${requestId}`,
-    toolName,
-    input,
-    status: "done",
-    result: null,
-    structuredResult: null,
-    toolWallMs: null,
-  });
+  // not read by the renderer. `awaiting: true` gives the header
+  // lifecycle dot the "awaiting" pose (the call is held on the user's
+  // approval, not finished — a "success" dot would mislead). The
+  // trailing `preview` flag tells the resolved wrapper not to paint
+  // result-side surfaces.
+  const result = dispatchToolCallState(
+    {
+      kind: "tool_use",
+      messageKey: `permission-dialog/${requestId}`,
+      createdAt: 0,
+      toolUseId: `permission-dialog/${requestId}`,
+      toolName,
+      input,
+      status: "done",
+      result: null,
+      structuredResult: null,
+      toolWallMs: null,
+    },
+    0,
+    undefined,
+    undefined,
+    true,
+    false,
+    true,
+  );
   const Component = result.Component as React.ComponentType<
     Record<string, unknown>
   >;
-  return <Component {...result.props} />;
+  return (
+    <div className="dev-permission-dialog-preview">
+      <Component {...result.props} />
+    </div>
+  );
 };
 
 // ---------------------------------------------------------------------------
@@ -1046,9 +979,9 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // filled-danger when it holds the key view). The scope choices are a standard
   // `TugRadioGroup` ([P02]) — one item-group Tab stop, arrows move the cursor,
   // Space/Enter check the cursor row; selection rides the responder chain. The
-  // body picker (`DiffBlock` / dispatch wrapper / `JsonTreeBlock`) and the radio
-  // group both render in the `children` slot; for `bash` / `path` the picker
-  // returns `null` and only the radio group shows.
+  // body picker (`DiffBlock` for Edit / the dispatch tool block for everything
+  // else) and the radio group both render in the `children` slot; for `path` the
+  // picker returns `null` and only the radio group shows.
   //
   // The outer wrapper carries the `dev-permission-dialog` class (the scrim's
   // bright-island marker, [P19]) and the cancel-action responder root

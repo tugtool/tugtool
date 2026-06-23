@@ -34,6 +34,14 @@
  *     error message, and the body still renders the structured /
  *     text output below in case it's diagnostic.
  *
+ * Preview mode (`preview === true`):
+ *
+ *   - The permission dialog mounts this wrapper as the approve/deny
+ *     preview of a *pending* `Bash` call. The command has not run, so
+ *     the body is `null` and the "(no output)" footer hint is held —
+ *     only the header + command (the thing being approved) renders.
+ *     See `ToolBlockProps.preview`.
+ *
  * Registration:
  *
  *   `dev-assistant-renderer-dispatch.ts` imports this module
@@ -266,6 +274,7 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   status,
   phase,
   caution,
+  preview = false,
 }) => {
   const bashInput = React.useMemo(() => narrowInput(input), [input]);
   const structured = React.useMemo(
@@ -311,7 +320,11 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     (terminalData.stdout?.length ?? 0) === 0 &&
     (terminalData.stderr?.length ?? 0) === 0 &&
     status !== "streaming";
+  // In preview mode the command has not run — there is no result yet, so
+  // the "(no output)" hint would read as a finished, output-less call. Hold
+  // it (and the empty body below) so the preview shows only the command.
   const showNoOutputHint =
+    !preview &&
     noBody &&
     terminalData.exitCode === 0 &&
     terminalData.interrupted !== true;
@@ -358,7 +371,12 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   }, [status, bashInput.command, bodyData.stdout]);
 
   let body: React.ReactNode;
-  if (commit !== null) {
+  if (preview) {
+    // Preview (permission dialog): the command has not run. Render the
+    // header + command only — no body. The result-side surfaces are
+    // suppressed because there is no result to show yet.
+    body = null;
+  } else if (commit !== null) {
     // Git commit receipt — summary + branch/hash badges in the header
     // (see the chrome props below), stat badges + message disclosure here.
     body = <CommitBlock commit={commit} />;
