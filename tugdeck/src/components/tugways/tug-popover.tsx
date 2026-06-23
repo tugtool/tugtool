@@ -632,6 +632,31 @@ export interface TugPopoverContentProps {
    */
   sideOffset?: number;
   /**
+   * Collision-shift behavior, forwarded verbatim to Radix's
+   * `Popover.Content`.
+   *
+   *  - `"partial"` (default): Radix's `shift` keeps the popover *attached*
+   *    to its anchor (via `limitShift`) and stops sliding once the anchor
+   *    edge is reached — so an anchor that scrolls or sits off-screen drags
+   *    the popover off-screen with it.
+   *  - `"always"`: drops the limiter, so `shift` slides the popover fully
+   *    into the viewport even when the anchor is off the canvas edge. Use
+   *    for popovers whose anchor can be pushed past the deck boundary (e.g.
+   *    a card's close-confirm popover anchored to an X button on a card
+   *    whose right side is off-deck) so the popover always lands in view.
+   *
+   * @default "partial"
+   */
+  sticky?: "partial" | "always";
+  /**
+   * Distance in px the popover keeps from the collision boundary (the
+   * viewport) when shifting to avoid overflow. Forwarded to Radix's
+   * `Popover.Content`. Pair with `sticky="always"` so a slid-into-view
+   * popover keeps a margin from the edge rather than sitting flush.
+   * @default 0
+   */
+  collisionPadding?: number;
+  /**
    * Show the arrow pointer.
    * @default false
    */
@@ -677,6 +702,8 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
       side = "bottom",
       align = "center",
       sideOffset = 6,
+      sticky = "partial",
+      collisionPadding = 0,
       arrow = false,
       onOpenAutoFocus,
       className,
@@ -723,6 +750,8 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           side={side}
           align={align}
           sideOffset={sideOffset}
+          sticky={sticky}
+          collisionPadding={collisionPadding}
           onOpenAutoFocus={onOpenAutoFocus}
           // The engine focus trap is the single close-focus writer: at FocusScope
           // teardown (the only moment focus won't be yanked back into the closing

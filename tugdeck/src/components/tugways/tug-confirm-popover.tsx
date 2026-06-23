@@ -161,6 +161,22 @@ export interface TugConfirmPopoverProps {
    */
   sideOffset?: number;
   /**
+   * Collision-shift behavior (forwarded to `TugPopoverContent`). Set to
+   * `"always"` for confirmations whose anchor can be pushed off the canvas
+   * edge — e.g. a card's close-confirm popover anchored to an X button on a
+   * card whose right side is off-deck — so the popover slides fully into
+   * view instead of trailing the off-screen anchor.
+   * @default "partial"
+   */
+  sticky?: "partial" | "always";
+  /**
+   * Distance in px the popover keeps from the viewport edge when shifting
+   * into view (forwarded to `TugPopoverContent`). Pair with
+   * `sticky="always"` so a slid-into-view popover keeps a margin.
+   * @default 0
+   */
+  collisionPadding?: number;
+  /**
    * Stable opaque sender id for chain dispatches. Auto-derived via
    * `useId()` if omitted. Parent responders disambiguate multi-popover
    * pages by matching this id when observing dispatches. The sender
@@ -238,6 +254,8 @@ export const TugConfirmPopover = React.forwardRef<
     cancelLabel = "Cancel",
     side = "bottom",
     sideOffset = 6,
+    sticky = "partial",
+    collisionPadding = 0,
     senderId: senderIdProp,
     open: openProp,
     anchorEl,
@@ -561,6 +579,8 @@ export const TugConfirmPopover = React.forwardRef<
       <TugPopoverContent
         side={side}
         sideOffset={sideOffset}
+        sticky={sticky}
+        collisionPadding={collisionPadding}
         onOpenAutoFocus={handleOpenAutoFocus}
       >
         <div

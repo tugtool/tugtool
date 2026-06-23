@@ -398,6 +398,14 @@ function CardTitleBar({
               onCancel={handleCloseCancel}
               side="bottom"
               sideOffset={6}
+              // A card may be dragged so its right side (and this X button)
+              // sits off the deck edge. `sticky="always"` drops Radix's
+              // attach-to-anchor shift limiter so the popover slides fully
+              // into view rather than trailing the off-screen X; the padding
+              // keeps it off the viewport edge. Without this, Cmd-W on an
+              // off-deck card opens the confirm popover where it can't be seen.
+              sticky="always"
+              collisionPadding={8}
               message={
                 closeIntent?.message ??
                 (isMultiTab ? `Close ${cardCount} Tabs?` : "Close Card?")
