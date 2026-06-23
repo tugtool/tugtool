@@ -351,6 +351,7 @@ export function DevAttachmentPreview({
           <BlockCopyButton
             subtype="icon-text"
             size="xs"
+            emphasis="outlined"
             aria-label="Copy image"
             data-slot="dev-attachment-preview__copy"
             disabled={dataUrl === null}

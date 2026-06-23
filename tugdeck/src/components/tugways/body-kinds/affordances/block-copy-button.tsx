@@ -22,8 +22,8 @@
  *    sibling-jostling on click.
  *  - Lucide `Copy` / `Check` icon swap via `TugPushButton`'s
  *    `confirmation` prop. Subtype `"icon-text"`, emphasis
- *    `"ghost"`, size `"2xs"` — the established action-row
- *    affordance scale.
+ *    `"ghost"` (overridable to `"outlined"`), size `"2xs"` — the
+ *    established action-row affordance scale.
  *
  * The variable parts the consumer provides are minimal:
  *
@@ -64,6 +64,7 @@ import {
 } from "@/components/tugways/tug-sprite-icon";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import type { TugButtonEmphasis } from "@/components/tugways/tug-push-button";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 
@@ -165,6 +166,15 @@ export interface BlockCopyButtonProps {
    * there is no label to jostle.
    */
   subtype?: "icon-text" | "icon";
+  /**
+   * Visual weight — forwarded to the underlying `TugPushButton`.
+   * Defaults to `"ghost"`, the action-row affordance default that sits
+   * borderless alongside a path label. Pass `"outlined"` for callsites
+   * where the Copy chip stands alone in a header bar and needs a bordered
+   * edge that aligns with the surrounding margins (e.g. the image preview's
+   * Copy button).
+   */
+  emphasis?: Extract<TugButtonEmphasis, "ghost" | "outlined">;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +190,7 @@ export function BlockCopyButton({
   className,
   size = "2xs",
   subtype = "icon-text",
+  emphasis = "ghost",
 }: BlockCopyButtonProps): React.ReactElement {
   const [copied, setCopied] = React.useState<boolean>(false);
   const copiedTimerRef = React.useRef<number | null>(null);
@@ -265,7 +276,7 @@ export function BlockCopyButton({
       data-slot={dataSlot}
       icon={<TugSpriteIcon name="copy" node={copyIconNode as LucideIconNode} />}
       subtype={subtype}
-      emphasis="ghost"
+      emphasis={emphasis}
       size={size}
       disabled={disabled}
       aria-label={ariaLabel}

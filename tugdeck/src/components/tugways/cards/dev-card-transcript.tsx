@@ -525,6 +525,7 @@ const GhostRowCell = React.memo(function GhostRowCell({
             aria-label="Cancel queued message"
             tone="danger"
             size="sm"
+            emphasis="outlined"
             onClick={() => codeSessionStore.cancelQueuedSend(turnKey)}
           />
         }

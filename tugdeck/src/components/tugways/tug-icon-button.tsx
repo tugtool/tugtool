@@ -93,6 +93,7 @@ import "./tug-icon-button.css";
 import React from "react";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
+import type { TugButtonEmphasis } from "./internal/tug-button";
 import type { FocusPolicy } from "./focus-manager";
 import type { ActionEvent } from "./responder-chain";
 import { useControlDispatch } from "./use-control-dispatch";
@@ -143,6 +144,19 @@ export interface TugIconButtonProps {
    */
   tone?: "default" | "danger";
   /**
+   * Visual weight — forwarded to the underlying `TugButton`.
+   *
+   *  - `"ghost"` (default) — borderless, the canonical in-list trailing
+   *    affordance.
+   *  - `"outlined"` — a bordered box so the control's edge aligns with the
+   *    surrounding margins (e.g. a queued-row cancel that would otherwise
+   *    float without a visible frame).
+   *
+   * Constrained to these two so the icon button can't be promoted to a
+   * filled CTA; that would be a different primitive.
+   */
+  emphasis?: Extract<TugButtonEmphasis, "ghost" | "outlined">;
+  /**
    * Stable sender id used when `dispatch` is provided without a
    * `sender`. Auto-derived via `useId()` if omitted. Override in tests
    * for deterministic chain logging.
@@ -186,6 +200,7 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
       disabled = false,
       size = "sm",
       tone = "default",
+      emphasis = "ghost",
       senderId: senderIdProp,
       focusGroup,
       focusOrder,
@@ -234,16 +249,16 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
       onClick?.(e);
     }
 
-    // Map `tone` to TugButton's role. Ghost emphasis is fixed — TugIconButton
-    // is intentionally narrow; a future "filled" variant would be a separate
-    // primitive (or a prop addition) earned by a real consumer.
+    // Map `tone` to TugButton's role. Emphasis defaults to `ghost` —
+    // TugIconButton is intentionally narrow; `outlined` is the one earned
+    // addition for callsites that need a bordered, margin-aligned edge.
     const role = tone === "danger" ? "danger" : "action";
 
     return (
       <TugButton
         ref={ref}
         subtype="icon"
-        emphasis="ghost"
+        emphasis={emphasis}
         role={role}
         size={size}
         icon={icon}
