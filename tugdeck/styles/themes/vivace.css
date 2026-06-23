@@ -1,6 +1,6 @@
 /* Harmony — light theme. */
 body {
-  --tugx-host-canvas-color: #39493d;
+  --tugx-host-canvas-color: #33464f;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
@@ -43,7 +43,7 @@ body {
 
   /* Font */
   --tug-font-family-editor: "IBM Plex Mono", "Hack", "SFMono-Regular", "Menlo", monospace;
-  --tug-font-family-mono: "IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+  --tug-font-family-mono: "IBM Plex Mono", "Hack", "SFMono-Regular", "Menlo", monospace;
   --tug-font-family-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --tug-font-size-8xs: 5px;
   --tug-font-size-7xs: 6px;
@@ -371,7 +371,7 @@ body {
   --tug7-element-control-border-filled-accent-active: --tug-color(gold, i: 76, t: 47);
 
   /* Filled Action */
-  --tug7-surface-control-primary-filled-action-rest: --tug-color(seafoam, i: 47, t: 39);
+  --tug7-surface-control-primary-filled-action-rest: --tug-color(seafoam, i: 47, t: 38);
   --tug7-surface-control-primary-filled-action-hover: --tug-color(seafoam, i: 53, t: 34);
   --tug7-surface-control-primary-filled-action-active: --tug-color(seafoam, i: 63, t: 48);
   --tug7-element-control-text-filled-action-rest: --tug-color(seafoam, i: 3, t: 100);
@@ -774,7 +774,7 @@ body {
   --tug7-surface-toggle-primary-normal-data-rest: --tug-color(teal, i: 70, t: 40);
   --tug7-surface-toggle-primary-normal-on-disabled: --tug-color(seafoam, i: 22, t: 57);
   --tug7-surface-toggle-primary-normal-on-hover: --tug-color(seafoam, i: 60, t: 38);
-  --tug7-surface-toggle-primary-normal-on-rest: --tug-color(seafoam, i: 55, t: 43);
+  --tug7-surface-toggle-primary-normal-on-rest: --tug-color(seafoam, i: 47, t: 38);
   --tug7-surface-toggle-primary-normal-option-disabled: --tug-color(cyan, i: 4, t: 49);
   --tug7-surface-toggle-primary-normal-option-hover: --tug-color(cyan, i: 13, t: 34);
   --tug7-surface-toggle-primary-normal-option-rest: --tug-color(cyan, i: 8, t: 26);

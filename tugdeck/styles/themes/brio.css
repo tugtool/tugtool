@@ -760,8 +760,8 @@ body {
   --tug7-surface-toggle-primary-normal-data-hover: --tug-color(teal, i: 55, t: 42);
   --tug7-surface-toggle-primary-normal-data-rest: --tug-color(teal, i: 50, t: 47);
   --tug7-surface-toggle-primary-normal-on-disabled: --tug-color(cobalt, i: 18, t: 44);
-  --tug7-surface-toggle-primary-normal-on-hover: --tug-color(cobalt, i: 81, t: 53);
-  --tug7-surface-toggle-primary-normal-on-rest: --tug-color(cobalt, i: 76, t: 44);
+  --tug7-surface-toggle-primary-normal-on-hover: --tug-color(cobalt, i: 78, t: 53);
+  --tug7-surface-toggle-primary-normal-on-rest: --tug-color(cobalt, i: 68, t: 38);
   --tug7-surface-toggle-primary-normal-option-disabled: --tug-color(indigo-violet, i: 4, t: 45);
   --tug7-surface-toggle-primary-normal-option-hover: --tug-color(indigo-violet, i: 8, t: 50);
   --tug7-surface-toggle-primary-normal-option-rest: --tug-color(indigo-violet, i: 6, t: 45);
@@ -827,7 +827,7 @@ body {
   --tug7-surface-control-primary-tinted-action-rest: --tug-color(cobalt, i: 34, t: 38, a: 20);
   --tug7-surface-control-primary-tinted-action-hover: --tug-color(cobalt, i: 34, t: 38, a: 30);
   --tug7-surface-control-primary-tinted-action-active: --tug-color(cobalt, i: 34, t: 38, a: 44);
-  --tug7-element-control-text-tinted-action-rest: --tug-color(cobalt, i: 65, t: 85);
+  --tug7-element-control-text-tinted-action-rest: --tug-color(cobalt, i: 50, t: 85);
   --tug7-element-control-text-tinted-action-hover: --tug-color(cobalt, i: 65, t: 85);
   --tug7-element-control-text-tinted-action-active: --tug-color(cobalt, i: 65, t: 85);
   --tug7-element-control-border-tinted-action-rest: --tug-color(cobalt, i: 34, t: 38, a: 35);
@@ -915,7 +915,7 @@ body {
   --tug7-element-badge-text-outlined-data-rest: --tug-color(teal, t: 47);
   --tug7-element-badge-text-outlined-success-rest: --tug-color(green, t: 47);
   --tug7-element-badge-text-tinted-accent-rest: --tug-color(orange, i: 72, t: 85);
-  --tug7-element-badge-text-tinted-action-rest: --tug-color(cobalt, i: 36, t: 85);
+  --tug7-element-badge-text-tinted-action-rest: --tug-color(cobalt, i: 50, t: 85);
   --tug7-element-badge-text-tinted-agent-rest: --tug-color(violet, i: 72, t: 85);
   --tug7-element-badge-text-tinted-caution-rest: --tug-color(yellow, i: 72, t: 85);
   --tug7-element-badge-text-tinted-danger-rest: --tug-color(red, i: 72, t: 85);
