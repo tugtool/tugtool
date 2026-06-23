@@ -81,7 +81,7 @@
 import "./ask-user-question-tool-block.css";
 
 import React from "react";
-import { Check, Circle, MessageCircle } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -92,6 +92,10 @@ import {
   QuestionWizard,
   type ParsedQuestion,
 } from "@/components/tugways/chrome/dev-question-dialog";
+import {
+  QuestionSummaryList,
+  type QuestionSummaryRowData,
+} from "@/components/tugways/question-summary-list";
 import type { ControlRequestForward } from "@/lib/code-session-store";
 
 import { BlockChrome } from "./block-chrome";
@@ -575,7 +579,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
       </div>
     );
   } else {
-    body = <QuestionSummaryList entries={summary} />;
+    body = <AnsweredQuestionSummary entries={summary} />;
   }
 
   // Errored calls carry the failure message in `textOutput` — route to
@@ -757,19 +761,9 @@ function SalvageAnsweredSummary({
     question: question.question,
     answers: [...(answersByQuestion.get(question.question) ?? [])],
   }));
-  return <QuestionSummaryList entries={entries} />;
+  return <AnsweredQuestionSummary entries={entries} />;
 }
 
-/**
- * The recorded Q&A list — one row per question, in the QuestionDialog
- * rail's visual vocabulary so the live wizard and the durable record
- * read as the same artifact: a leading status marker (success-toned
- * `Check` for an answered row, the muted `Circle` ring for an
- * unanswered one), the reserved `N.` number prefix on the question
- * line, and the muted `→ answer` line(s) beneath. The numbering rides
- * a CSS counter (see the `.css`) so the marker column and number
- * column hold fixed widths down the list.
- */
 /**
  * The declined-prompt state ([P02]): the user chose `Chat about this`
  * and answered in prose instead of picking. Renders a quiet "replied in
@@ -802,78 +796,40 @@ function QuestionDeclinedSummary({
   );
 }
 
-function QuestionSummaryList({
+/**
+ * The durable Q&A record — the SAME `QuestionSummaryList` the live wizard's
+ * rail renders, so the two read as one artifact and hold position across the
+ * morph. The rows are static (no `onActivate`); an answered question is `done`
+ * (success check), an empty one `pending` (muted ring). A progress summary
+ * above the rows occupies the same vertical box as the live action bar (a
+ * button-height row with the dialog's action margins, [reserved space]) so the
+ * rows don't shift when the wizard becomes this record.
+ */
+function AnsweredQuestionSummary({
   entries,
 }: {
   entries: ReadonlyArray<AnswerSummaryEntry>;
 }): React.ReactElement {
   const total = entries.length;
   const answered = entries.filter((e) => e.answers.length > 0).length;
+  const rows: QuestionSummaryRowData[] = entries.map((entry, index) => ({
+    index,
+    question: entry.question,
+    answer: entry.answers.join(", "),
+    status: entry.answers.length > 0 ? "done" : "pending",
+  }));
   return (
-    // Flex column with the live wizard body's own gap, so the summary→rows
-    // spacing matches the live action-bar→rail spacing (block-context margin
-    // collapsing would otherwise diverge from the live flex layout).
     <div
       className="ask-user-question-tool-block-answered"
       data-slot="ask-user-question-tool-block-answered"
     >
-      {/* Progress summary above the rows — same text + position the live
-          wizard's action bar carries, occupying the same vertical box (a
-          button-height row with the dialog's action margins), so the question
-          rows don't shift when the wizard morphs into this record. */}
       <div
         className="ask-user-question-tool-block-summary"
         data-slot="ask-user-question-tool-block-summary"
       >
         {total} {total === 1 ? "question" : "questions"} · {answered} answered
       </div>
-      <ol
-        className="ask-user-question-tool-block-list"
-        data-slot="ask-user-question-tool-block-list"
-      >
-      {entries.map((entry, index) => (
-        <li
-          key={`${index}:${entry.question}`}
-          className="ask-user-question-tool-block-item"
-          data-slot="ask-user-question-tool-block-item"
-          data-answered={entry.answers.length > 0 ? "true" : "false"}
-        >
-          <span
-            className="ask-user-question-tool-block-marker"
-            aria-hidden="true"
-          >
-            {entry.answers.length > 0 ? (
-              <Check size={14} aria-hidden="true" />
-            ) : (
-              <Circle size={14} aria-hidden="true" />
-            )}
-          </span>
-          <div className="ask-user-question-tool-block-body">
-            <div className="ask-user-question-tool-block-question">
-              {entry.question}
-            </div>
-            <div
-              className="ask-user-question-tool-block-answer"
-              data-slot="ask-user-question-tool-block-answer"
-            >
-              {entry.answers.length === 0 ? (
-                <span className="ask-user-question-tool-block-no-answer">
-                  (no answer)
-                </span>
-              ) : entry.answers.length === 1 ? (
-                <span>{entry.answers[0]}</span>
-              ) : (
-                <ul className="ask-user-question-tool-block-answer-multi">
-                  {entry.answers.map((a, j) => (
-                    <li key={j}>{a}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </li>
-      ))}
-      </ol>
+      <QuestionSummaryList rows={rows} className="ask-user-question-tool-block-list" />
     </div>
   );
 }

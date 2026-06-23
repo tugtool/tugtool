@@ -1,16 +1,11 @@
 /* @tug-pairings:
-   - --tugx-idialog-*           (TugInlineDialog owns the dialog frame)
    - --tugx-list-view-* / --tugx-list-row-*  (TugListView / TugListRow own the
-     rail rows and each option row)
-   - --tugx-question-current-bg | --tugx-idialog-bg      (highlight tone behind the panel)
-   - --tugx-question-marker-done-color | --tugx-idialog-bg     (done-row checkmark)
-   - --tugx-question-marker-current-color | --tugx-idialog-bg  (current-row arrow)
-   - --tugx-question-marker-pending-color | --tugx-idialog-bg  (pending-row ring)
-   - --tugx-question-answer-color | --tugx-idialog-bg          (row → answer summary)
-   `QuestionDialog` delegates the dialog frame to `TugInlineDialog`, the rail rows
-   and the option list to `TugListView` / `TugListRow`. The wizard rail's text
-   stack, the status markers, and the stationary options panel own only
-   `--tugx-question-*` here.
+     option list rows)
+   - --tugx-question-current-bg | --tugx-block-bg   (highlight tone behind the panel)
+   `QuestionWizard` renders inside the host block's `BlockChrome`. The rail is
+   the shared `QuestionSummaryList` (`--tugx-qrow-*`); the option list is a
+   `TugListView` of `TugListRow`s. The remaining `--tugx-question-*` slots here
+   cover only the stationary options panel (its tint + heading).
 */
 
 /**
@@ -51,46 +46,25 @@
 /* ---- Component-tier aliases — question-dialog layout only [L17] ---- */
 
 body {
-  /* Wizard rail */
-  --tugx-question-stack-gap: var(--tug-space-xs);
-
-  /* Heading typography. The PANEL heading keeps the full dialog-title
-   * treatment (0.875 rem, semibold) — it marks the working surface.
-   * The RAIL recedes a notch on every axis (smaller, normal weight,
-   * default-toned rather than bright) so the index above reads as
-   * supporting reference, not as a competing set of questions. */
+  /* The rail itself is the shared `QuestionSummaryList` (its own
+   * `--tugx-qrow-*` family); the tokens here cover only the PANEL — the
+   * working surface below the rail.
+   *
+   * Panel heading typography — the full dialog-title treatment (0.875 rem,
+   * semibold) marks the working surface (a notch above the rail rows). */
   --tugx-question-heading-size:    0.875rem;
   --tugx-question-heading-weight:  var(--tug-font-weight-semibold);
   --tugx-question-heading-leading: 1.4;
-  --tugx-question-rail-heading-size:   0.8125rem;
-  --tugx-question-rail-heading-weight: var(--tug-font-weight-medium);
-  --tugx-question-rail-heading-color:  var(--tug7-element-global-text-normal-default-rest);
 
-  /* Answer summary — sits below the rail heading a tone quieter
-   * still, so the rail layers heading over derived value. */
-  --tugx-question-answer-size:   0.8125rem;
-  --tugx-question-answer-color:  var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-question-answer-leading: 1.4;
-
-  /* Markers — one slot per state so themes can tune independently.
-   * Markers render as inline lucide icons that paint via `currentColor`,
-   * so the row's `data-status` rule sets `color` on the marker span. */
-  --tugx-question-marker-size:             0.875rem;
-  --tugx-question-marker-done-color:       var(--tug7-element-global-text-normal-success-rest);
-  --tugx-question-marker-recommended-color: var(--tug7-element-global-text-normal-link-rest);
-  --tugx-question-marker-current-color:    var(--tug7-element-global-text-normal-link-rest);
-  --tugx-question-marker-pending-color:    var(--tug7-element-global-text-normal-muted-rest);
-
-  /* The stationary options panel — the highlight tone marks it as the
-   * active surface (the rail's current row carries the matching
-   * `selected` fill from TugListRow). */
+  /* The stationary options panel — the highlight tone marks it as the active
+   * surface (the rail's current row carries the same tint, [--tugx-qrow-*]). */
   --tugx-question-current-bg:    var(--tug7-surface-highlight-primary-normal-active-rest);
   --tugx-question-panel-padding: var(--tug-space-md);
   --tugx-question-panel-radius:  var(--tug-radius-md);
 
-  /* Number prefix in the row / panel heading. Reserved width is enough
-   * for a two-digit number ("##.") with tabular numerals; the trailing
-   * gap separates the prefix from the question text. */
+  /* Number prefix in the panel heading. Reserved width is enough for a
+   * two-digit number ("##.") with tabular numerals; the trailing gap
+   * separates the prefix from the question text. */
   --tugx-question-number-w:   1.5ch;
   --tugx-question-number-gap: 0.4ch;
 }
@@ -182,134 +156,12 @@ body {
 
 /* ---- Wizard rail ----
  *
- * A `TugListView` sized to its rows (every question shows, no inner
- * scroll — the whole dialog scrolls in the transcript), run flush to
- * the dialog's content edges. The list's block-axis breathing and the
- * transcript's inter-turn row gap (`dev-card.css` writes large
- * `--tugx-list-view-*` values onto every descendant list) are
- * re-asserted to the rail's own compact gap at transcript specificity,
- * mirroring the option list's rule at the bottom of this file. */
-.dev-question-dialog-rail.tug-list-view,
-.dev-card-transcript .dev-question-dialog-rail.tug-list-view {
-  height: auto;
+ * The rail IS the shared `QuestionSummaryList` (its rows + box model live in
+ * `question-summary-list.css`); this class is only a hook for any
+ * rail-specific tuning. The shared list isn't a `.tug-list-view`, so the
+ * transcript's `--tugx-list-view-*` overrides never reach it. */
+.dev-question-dialog-rail {
   width: 100%;
-  padding-inline: 0;
-  /* The `-start` / `-end` variants must be zeroed EXPLICITLY: the
-   * breathing pseudo-elements read them with the base token only as a
-   * fallback, and the transcript sets `-end` directly (`dev-card.css`,
-   * a 2xl tail) — zeroing the base alone leaves a large phantom band
-   * under the last rail row. */
-  --tugx-list-view-padding-block: 0;
-  --tugx-list-view-padding-block-start: 0;
-  --tugx-list-view-padding-block-end: 0;
-  --tugx-list-view-row-gap: var(--tugx-question-stack-gap);
-}
-
-/* ---- Rail rows ---- */
-
-/* Pin the marker to the heading's first line (the leading slot
- * centers by default, which floats the marker between the two-line
- * heading + answer stack), and hold a fixed column so heading prose
- * flushes down the rail regardless of which marker icon the status
- * paints. */
-.dev-question-dialog-rail .tug-list-row-leading {
-  align-self: flex-start;
-  height: calc(var(--tugx-question-rail-heading-size) * var(--tugx-question-heading-leading));
-}
-
-.dev-question-dialog-row-marker {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--tugx-question-marker-size);
-  height: 100%;
-}
-
-/* Lucide icons render as `<svg>` and pick up `currentColor`. Sizing
- * is via the `size` prop on the React component, so this rule sets
- * only the inherited color slot — the tone for each row state comes
- * from the per-status `data-status` rule below. */
-.dev-question-dialog-row-marker > svg {
-  color: inherit;
-}
-
-.dev-question-dialog-row-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-2xs);
-  min-width: 0;
-}
-
-/* @tug-renders-on: --tugx-idialog-bg */
-.dev-question-dialog-row-heading {
-  font-size: var(--tugx-question-rail-heading-size);
-  font-weight: var(--tugx-question-rail-heading-weight);
-  line-height: var(--tugx-question-heading-leading);
-  color: var(--tugx-question-rail-heading-color);
-}
-
-/* Number prefix ("1.", "2.", …). Tabular numerals + a fixed
- * inline-block width so every question's text column starts at the
- * same x position, regardless of single- vs. double-digit count. */
-.dev-question-dialog-row-heading-number {
-  display: inline-block;
-  width: var(--tugx-question-number-w);
-  margin-right: var(--tugx-question-number-gap);
-  font-variant-numeric: tabular-nums;
-  text-align: left;
-}
-
-/* The reserved one-line answer slot. Present in every row status so
- * the rail's height never depends on which rows carry answers: an
- * empty slot hides its content but keeps its line box (`visibility`,
- * not `display`), and a long multi-select answer clamps to one
- * ellipsized line instead of rewrapping the row. */
-/* @tug-renders-on: --tugx-idialog-bg */
-.dev-question-dialog-row-answer {
-  font-size: var(--tugx-question-answer-size);
-  line-height: var(--tugx-question-answer-leading);
-  color: var(--tugx-question-answer-color);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dev-question-dialog-row-answer[data-empty="true"] {
-  visibility: hidden;
-}
-
-/* The current row is a passive landmark — its question is already
- * open in the panel, so it offers no click and paints no hover. Its
- * soft tint is the SAME tone the panel paints, so the rail pointer
- * and the working surface below read as one linked pair (deliberately
- * not TugListRow's loud `selected` fill, which competed with the
- * panel for "this is active"). */
-/* @tug-renders-on: --tugx-idialog-bg */
-.dev-question-dialog-row[data-status="current"] {
-  pointer-events: none;
-  background: var(--tugx-question-current-bg);
-}
-
-/* ---- Row markers: per-status tone ---- */
-
-/* @tug-renders-on: --tugx-idialog-bg */
-.dev-question-dialog-row[data-status="done"] .dev-question-dialog-row-marker {
-  color: var(--tugx-question-marker-done-color);
-}
-
-/* @tug-renders-on: --tugx-idialog-bg */
-.dev-question-dialog-row[data-status="recommended"] .dev-question-dialog-row-marker {
-  color: var(--tugx-question-marker-recommended-color);
-}
-
-/* @tug-renders-on: --tugx-idialog-bg */
-.dev-question-dialog-row[data-status="current"] .dev-question-dialog-row-marker {
-  color: var(--tugx-question-marker-current-color);
-}
-
-/* @tug-renders-on: --tugx-idialog-bg */
-.dev-question-dialog-row[data-status="pending"] .dev-question-dialog-row-marker {
-  color: var(--tugx-question-marker-pending-color);
 }
 
 /* ---- Rail / panel separator ----
@@ -375,6 +227,17 @@ body {
   font-size: var(--tugx-question-heading-size);
   font-weight: var(--tugx-question-heading-weight);
   line-height: var(--tugx-question-heading-leading);
+}
+
+/* Number prefix ("1.", "2.", …) in the panel heading — tabular numerals at a
+ * fixed inline-block width so the question text starts at the same x as the
+ * rail rows' text above. */
+.dev-question-dialog-panel-heading-number {
+  display: inline-block;
+  width: var(--tugx-question-number-w);
+  margin-right: var(--tugx-question-number-gap);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
 }
 
 .dev-question-dialog-panel-options {

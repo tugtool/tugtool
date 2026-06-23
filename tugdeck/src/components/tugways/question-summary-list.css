@@ -1,0 +1,179 @@
+/* @tug-pairings:
+   - --tugx-qrow-heading-color  | --tugx-block-bg   (question heading prose)
+   - --tugx-qrow-answer-color   | --tugx-block-bg   (→ answer prose)
+   - --tugx-qrow-marker-done-color | --tugx-block-bg        (done marker)
+   - --tugx-qrow-marker-recommended-color | --tugx-block-bg (recommended marker)
+   - --tugx-qrow-marker-current-color | --tugx-qrow-current-bg (current marker)
+   - --tugx-qrow-marker-pending-color | --tugx-block-bg     (pending marker)
+   `QuestionSummaryList` owns the `--tugx-qrow-*` family; the live rail and the
+   answered record both render it, so the row box is defined once here.
+*/
+
+/**
+ * question-summary-list.css — the ONE box model for an AskUserQuestion
+ * summary row, shared by the live wizard rail and the durable answered
+ * record. Mirrors the list-row density (`--tugx-list-row-*`, referenced
+ * read-only) so a row sits at the same per-row padding the rest of the app's
+ * lists use: 8px block, 14px inline + a 0.2rem leading gutter.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] `data-status` gates marker tone + current tint; `data-empty` gates
+ *    the answer slot's visibility; CSS owns appearance.
+ *  - [L16] every colour-only rule names its surface via `@tug-renders-on`.
+ *  - [L17] every `--tugx-qrow-*` slot resolves to a `--tug7-*` / `--tug-*` base
+ *    in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`, `data-slot` per container.
+ *  - [L20] owns `--tugx-qrow-*`; the `--tugx-list-row-*` reads are read-only
+ *    cross-references (the row tracks the same density knob as TugListRow).
+ */
+
+body {
+  /* Inter-row gap. */
+  --tugx-qrow-stack-gap: var(--tug-space-xs);
+
+  /* Heading typography. */
+  --tugx-qrow-heading-size:    0.8125rem;
+  --tugx-qrow-heading-weight:  var(--tug-font-weight-medium);
+  --tugx-qrow-heading-leading: 1.4;
+  --tugx-qrow-heading-color:   var(--tug7-element-global-text-normal-default-rest);
+
+  /* Answer typography — a tone quieter than the heading. */
+  --tugx-qrow-answer-size:    0.8125rem;
+  --tugx-qrow-answer-leading: 1.4;
+  --tugx-qrow-answer-color:   var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Markers — one slot per status so themes can tune independently. Lucide
+   * icons paint via `currentColor`, so the per-status rule sets `color` on the
+   * marker span. */
+  --tugx-qrow-marker-size:              0.875rem;
+  --tugx-qrow-marker-done-color:        var(--tug7-element-global-text-normal-success-rest);
+  --tugx-qrow-marker-recommended-color: var(--tug7-element-global-text-normal-link-rest);
+  --tugx-qrow-marker-current-color:     var(--tug7-element-global-text-normal-link-rest);
+  --tugx-qrow-marker-pending-color:     var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Current-row tint — the soft highlight the live rail paints behind the open
+   * question (the same tone the options panel uses). */
+  --tugx-qrow-current-bg: var(--tug7-surface-highlight-primary-normal-active-rest);
+
+  /* Number prefix ("##.") — tabular numerals at a fixed inline-block width so
+   * every question's text column starts at the same x. */
+  --tugx-qrow-number-w:   1.5ch;
+  --tugx-qrow-number-gap: 0.4ch;
+
+  /* Per-row box — tracks the list-row density knob ([L20] read-only refs). */
+  --tugx-qrow-pad-block:  var(--tugx-list-row-padding-block, 8px);
+  --tugx-qrow-pad-inline: var(--tugx-list-row-padding-inline, 14px);
+  --tugx-qrow-gutter:     var(--tugx-list-row-indicator-gutter, 0.2rem);
+  --tugx-qrow-marker-gap: var(--tug-space-sm);
+  --tugx-qrow-body-gap:   var(--tug-space-2xs);
+}
+
+/* ---- List ---- */
+
+.question-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-qrow-stack-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+/* ---- Row ---- */
+
+.question-summary-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--tugx-qrow-marker-gap);
+  padding-block: var(--tugx-qrow-pad-block);
+  /* Extra leading padding holds the row's focus-accessory gutter, matching
+   * TugListRow so the marker sits at the same x as every other list. */
+  padding-inline-start: calc(var(--tugx-qrow-pad-inline) + var(--tugx-qrow-gutter));
+  padding-inline-end: var(--tugx-qrow-pad-inline);
+}
+
+.question-summary-row[data-interactive="true"] {
+  cursor: pointer;
+}
+
+/* The current row is a passive landmark — its question is open in the panel,
+ * so it offers no click and paints the soft tint linking pointer + stage.
+ * @tug-renders-on: --tugx-block-bg */
+.question-summary-row[data-status="current"] {
+  background: var(--tugx-qrow-current-bg);
+  pointer-events: none;
+}
+
+/* ---- Marker ---- */
+
+.question-summary-row-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Pin to the heading's first line (not the two-line row's centre). */
+  align-self: start;
+  min-width: var(--tugx-qrow-marker-size);
+  height: calc(var(--tugx-qrow-heading-size) * var(--tugx-qrow-heading-leading));
+}
+
+.question-summary-row-marker > svg {
+  color: inherit;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.question-summary-row[data-status="done"] .question-summary-row-marker {
+  color: var(--tugx-qrow-marker-done-color);
+}
+/* @tug-renders-on: --tugx-block-bg */
+.question-summary-row[data-status="recommended"] .question-summary-row-marker {
+  color: var(--tugx-qrow-marker-recommended-color);
+}
+/* @tug-renders-on: --tugx-qrow-current-bg */
+.question-summary-row[data-status="current"] .question-summary-row-marker {
+  color: var(--tugx-qrow-marker-current-color);
+}
+/* @tug-renders-on: --tugx-block-bg */
+.question-summary-row[data-status="pending"] .question-summary-row-marker {
+  color: var(--tugx-qrow-marker-pending-color);
+}
+
+/* ---- Body (heading over answer) ---- */
+
+.question-summary-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-qrow-body-gap);
+  min-width: 0;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.question-summary-row-heading {
+  font-size:   var(--tugx-qrow-heading-size);
+  font-weight: var(--tugx-qrow-heading-weight);
+  line-height: var(--tugx-qrow-heading-leading);
+  color:       var(--tugx-qrow-heading-color);
+}
+
+.question-summary-row-number {
+  display: inline-block;
+  width: var(--tugx-qrow-number-w);
+  margin-right: var(--tugx-qrow-number-gap);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+/* The reserved one-line answer slot — present in every status (hidden via
+ * `data-empty`, clamped to one ellipsized line) so a status change never
+ * changes the row's height.
+ * @tug-renders-on: --tugx-block-bg */
+.question-summary-row-answer {
+  font-size:   var(--tugx-qrow-answer-size);
+  line-height: var(--tugx-qrow-answer-leading);
+  color:       var(--tugx-qrow-answer-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.question-summary-row-answer[data-empty="true"] {
+  visibility: hidden;
+}

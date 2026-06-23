@@ -31,7 +31,7 @@ const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
 // outlined-action buttons, so this selects exactly [Back, Next].
 const NAV = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
 const SUBMIT = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-primary-action`;
-const CURRENT_HEADING = `${DIALOG} .dev-question-dialog-row[data-status="current"] .dev-question-dialog-row-heading`;
+const CURRENT_HEADING = `${DIALOG} .question-summary-row[data-status="current"] .question-summary-row-heading`;
 
 function controlRequestForward(): Record<string, unknown> {
   const q = (question: string) => ({

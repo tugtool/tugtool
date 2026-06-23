@@ -1,14 +1,12 @@
 /* @tug-pairings:
    - --tugx-block-bg              (chrome owns the frame; from block-chrome.css)
-   - --tugx-askquestion-question-color | --tugx-block-bg     (per-row question prose)
-   - --tugx-askquestion-answer-color   | --tugx-block-bg     (per-row → answer prose)
-   - --tugx-askquestion-marker-done-color | --tugx-block-bg  (answered-row checkmark)
-   - --tugx-askquestion-marker-pending-color | --tugx-block-bg ((no answer) ring)
-   - --tugx-askquestion-muted-color    | --tugx-block-bg     ("(no answer)" + empty state)
-   `AskUserQuestionToolBlock` paints a numbered list of Q→A pairs
-   inside `BlockChrome`. The chrome owns the frame and all
-   `--tugx-block-*` slots; this stylesheet owns the small layout
-   for the per-question row and its answer cell.
+   - --tugx-askquestion-question-color | --tugx-block-bg     (declined reply text)
+   - --tugx-askquestion-muted-color    | --tugx-block-bg     (declined notice + empty state)
+   `AskUserQuestionToolBlock` paints the durable Q→A record inside
+   `BlockChrome`. The rows are the shared `QuestionSummaryList`
+   (`--tugx-qrow-*`); the chrome owns the `--tugx-block-*` frame; this
+   stylesheet owns only the wrapper's own surfaces — the progress summary, the
+   declined notice, and the empty / salvage states.
 */
 
 /**
@@ -52,38 +50,26 @@
 
 /* ---- Component-tier aliases — wrapper-specific only [L17] ----
  *
- * Values mirror the question-dialog rail (`--tugx-question-rail-*` /
- * `--tugx-question-answer-*` resolve to the same bases) so the two
- * surfaces stay in step; the slots stay in this component's own
- * family. */
+ * The answered Q&A ROWS render via the shared `QuestionSummaryList`
+ * (`--tugx-qrow-*` in `question-summary-list.css`). These slots cover only
+ * this wrapper's own surfaces: the progress summary, the declined-notice
+ * marker, and the declined / empty states. */
 
 body {
-  --tugx-askquestion-list-padding:    var(--tug-space-md);
-  --tugx-askquestion-row-gap:         var(--tug-space-xs);
-  --tugx-askquestion-pair-gap:        var(--tug-space-2xs);
-  --tugx-askquestion-marker-gap:      var(--tug-space-sm);
-  --tugx-askquestion-question-size:   0.8125rem;
-  --tugx-askquestion-question-weight: var(--tug-font-weight-medium);
+  --tugx-askquestion-list-padding:     var(--tug-space-md);
+  --tugx-askquestion-pair-gap:         var(--tug-space-2xs);
+  --tugx-askquestion-marker-size:      0.875rem;
+  --tugx-askquestion-question-size:    0.8125rem;
   --tugx-askquestion-question-leading: 1.4;
-  --tugx-askquestion-answer-size:     0.8125rem;
-  --tugx-askquestion-answer-weight:   var(--tug-font-weight-regular);
-  --tugx-askquestion-number-w:        1.5ch;
-  --tugx-askquestion-number-gap:      0.4ch;
-  --tugx-askquestion-marker-size:     0.875rem;
-
-  /* Per-row box — referenced from the SAME list-row tokens the live rail's
-   * TugListRow uses, so a live rail row and an answered row are pixel-identical
-   * and stay in sync if the density knob is ever tuned ([L20] read-only
-   * cross-reference). */
-  --tugx-askquestion-row-padding-block:  var(--tugx-list-row-padding-block, 8px);
-  --tugx-askquestion-row-padding-inline: var(--tugx-list-row-padding-inline, 14px);
-  --tugx-askquestion-row-gutter:         var(--tugx-list-row-indicator-gutter, 0.2rem);
+  --tugx-askquestion-answer-size:      0.8125rem;
 
   --tugx-askquestion-question-color:  var(--tug7-element-global-text-normal-default-rest);
-  --tugx-askquestion-answer-color:    var(--tug7-element-global-text-normal-muted-rest);
   --tugx-askquestion-muted-color:     var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-askquestion-marker-done-color:    var(--tug7-element-global-text-normal-success-rest);
-  --tugx-askquestion-marker-pending-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* The progress summary aligns to the shared row's marker column — same
+   * inline padding + leading gutter the rows use ([L20] read-only refs). */
+  --tugx-askquestion-row-padding-inline: var(--tugx-list-row-padding-inline, 14px);
+  --tugx-askquestion-row-gutter:         var(--tugx-list-row-indicator-gutter, 0.2rem);
 }
 
 /* Answered record wrapper — a flex column with the live wizard body's own gap,
@@ -119,45 +105,18 @@ body {
 
 /* ---- List ---------------------------------------------------------- */
 
-/* `<ol>` carries the numbering via a CSS counter rendered into each
- * question line's `::before` — `list-style: none` drops the default
- * marker so the leading column can hold the status icon instead. */
+/* The answered rows are the shared `QuestionSummaryList` (this class is on its
+ * root). The summary header above supplies the lead-in, so the list takes no
+ * top padding; a md tail keeps the last row off the chrome edge. */
 .ask-user-question-tool-block-list {
-  list-style: none;
-  margin: 0;
-  /* The ROWS carry the inline padding (matching the rail), so the list zeroes
-   * its own inline padding. No TOP block padding — the summary header above
-   * supplies the lead-in (matching the live action bar) so the rows stay put
-   * across the morph; a md tail keeps the last row off the chrome edge. */
   padding-block: 0 var(--tugx-askquestion-list-padding);
-  padding-inline: 0;
-  counter-reset: ask-user-question-marker;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tugx-askquestion-row-gap);
 }
 
-.ask-user-question-tool-block-item {
-  counter-increment: ask-user-question-marker;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: var(--tugx-askquestion-marker-gap);
-  /* Match the rail row's box exactly: per-row block padding + the leading
-   * inline padding (with the focus gutter) + trailing inline padding, so the
-   * live rail and the answered record are pixel-identical. */
-  padding-block: var(--tugx-askquestion-row-padding-block);
-  padding-inline-start: calc(
-    var(--tugx-askquestion-row-padding-inline) + var(--tugx-askquestion-row-gutter)
-  );
-  padding-inline-end: var(--tugx-askquestion-row-padding-inline);
-}
+/* ---- Status marker (the declined-notice's leading glyph) ----------- */
 
-/* ---- Status marker ------------------------------------------------- */
-
-/* Pinned to the question line's optical height (the rail's marker
- * treatment) so the icon sits level with the first text line, not
- * centered against the multi-line row. Icons paint via currentColor;
- * `data-answered` on the row picks the tone. */
+/* The lone remaining marker — the `MessageCircle` on the declined notice.
+ * Pinned to the notice line's optical height; colour comes from the notice
+ * (muted), inherited via currentColor. */
 .ask-user-question-tool-block-marker {
   display: inline-flex;
   align-items: center;
@@ -169,86 +128,6 @@ body {
 
 .ask-user-question-tool-block-marker > svg {
   color: inherit;
-}
-
-/* @tug-renders-on: --tugx-block-bg */
-.ask-user-question-tool-block-item[data-answered="true"]
-  .ask-user-question-tool-block-marker {
-  color: var(--tugx-askquestion-marker-done-color);
-}
-
-/* @tug-renders-on: --tugx-block-bg */
-.ask-user-question-tool-block-item[data-answered="false"]
-  .ask-user-question-tool-block-marker {
-  color: var(--tugx-askquestion-marker-pending-color);
-}
-
-/* ---- Question + answer rows -------------------------------------- */
-
-.ask-user-question-tool-block-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tugx-askquestion-pair-gap);
-  min-width: 0;
-}
-
-/* @tug-renders-on: --tugx-block-bg */
-.ask-user-question-tool-block-question {
-  font-size: var(--tugx-askquestion-question-size);
-  font-weight: var(--tugx-askquestion-question-weight);
-  color: var(--tugx-askquestion-question-color);
-  line-height: var(--tugx-askquestion-question-leading);
-}
-
-/* Reserved number prefix ("1.", "2.", …) — tabular numerals at a
- * fixed inline-block width so every question's text starts at the
- * same x position, matching the rail. */
-.ask-user-question-tool-block-question::before {
-  content: counter(ask-user-question-marker) ".";
-  display: inline-block;
-  width: var(--tugx-askquestion-number-w);
-  margin-right: var(--tugx-askquestion-number-gap);
-  font-variant-numeric: tabular-nums;
-  text-align: left;
-}
-
-.ask-user-question-tool-block-answer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tugx-askquestion-pair-gap);
-  font-size: var(--tugx-askquestion-answer-size);
-  font-weight: var(--tugx-askquestion-answer-weight);
-  line-height: var(--tugx-askquestion-question-leading);
-}
-
-/* Each answer line is prefixed by a Q → A arrow so the reader can
- * scan the response visually without re-reading the question label.
- * Arrow and answer share the muted tone, as in the rail.
- *
- * @tug-renders-on: --tugx-block-bg */
-.ask-user-question-tool-block-answer > span,
-.ask-user-question-tool-block-answer-multi > li {
-  color: var(--tugx-askquestion-answer-color);
-}
-
-.ask-user-question-tool-block-answer > span::before,
-.ask-user-question-tool-block-answer-multi > li::before {
-  content: "→ ";
-}
-
-.ask-user-question-tool-block-answer-multi {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tugx-askquestion-pair-gap);
-}
-
-/* @tug-renders-on: --tugx-block-bg */
-.ask-user-question-tool-block-no-answer {
-  color: var(--tugx-askquestion-muted-color);
-  font-style: italic;
 }
 
 /* Declined state ([P02], `Chat about this`) — the user replied in prose

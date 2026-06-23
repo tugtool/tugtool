@@ -150,10 +150,6 @@ import React from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
-  ChevronRight,
-  Circle,
-  CircleDot,
   MessageCircleQuestion,
 } from "lucide-react";
 
@@ -173,6 +169,11 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import {
+  QuestionSummaryList,
+  type QuestionRowStatus,
+  type QuestionSummaryRowData,
+} from "@/components/tugways/question-summary-list";
 import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
 import { useFocusManager } from "@/components/tugways/use-focusable";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
@@ -469,11 +470,7 @@ export function countConfirmedAnswers(
  *
  * Pure; exported for the test suite.
  */
-export type QuestionRowStatus =
-  | "current"
-  | "done"
-  | "recommended"
-  | "pending";
+export type { QuestionRowStatus };
 
 export function rowStatus(
   isCurrent: boolean,
@@ -670,166 +667,23 @@ export function seedQuestionDialogState(
 // Per-question option group
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Row components — one per wizard state
-// ---------------------------------------------------------------------------
+// The wizard rail and the durable answered record render the SAME
+// `QuestionSummaryList` (`question-summary-list.tsx`); the rail just maps the
+// live wizard state (status / answer / jump) onto its `QuestionSummaryRowData`
+// rows below. The status → marker mapping and the row box model live in that
+// shared component, so the two surfaces match by construction.
 
-/**
- * The wizard state the rail cells read — published via
- * {@link QuestionRailContext} (the {@link QuestionOptionsSelectionContext}
- * pattern) so the rail's cell renderer can derive each row's status,
- * marker, and answer summary without the data source carrying
- * per-render state.
- */
-interface QuestionRailState {
-  questions: ReadonlyArray<ParsedQuestion>;
-  selections: ReadonlyArray<ReadonlyArray<string>>;
-  visited: ReadonlyArray<boolean>;
-  currentIndex: number;
-  freeTexts: ReadonlyArray<string>;
+/** The screen-reader action prefix for a rail row, by status (the rail rows
+ *  are clickable jump targets, except the open `current` row). */
+function railRowLabelPrefix(status: QuestionRowStatus): string {
+  return status === "current"
+    ? "Current question"
+    : status === "done"
+      ? "Edit answer to question"
+      : status === "recommended"
+        ? "Open recommendation for question"
+        : "Skip to question";
 }
-
-/** Pixel size for the lucide row-marker icons. Matches the heading
- *  `--tug-font-size-lg` glyph height so the icon and prose sit on the
- *  same optical baseline. */
-const ROW_MARKER_ICON_SIZE = 14;
-
-/**
- * Render the lucide marker for a row status. Centralized so the
- * status → icon mapping has one source of truth (the row CSS keys
- * tone colours off the same `data-status` attribute the parent row
- * stamps).
- *
- *  - `done`         → Check     (success-toned in CSS)
- *  - `recommended`  → CircleDot (info-toned; reads as "soft default")
- *  - `current`      → ChevronRight (link-toned; this row is "next")
- *  - `pending`      → Circle    (muted ring)
- */
-function RowMarker({ status }: { status: QuestionRowStatus }): React.ReactElement {
-  if (status === "done") {
-    return <Check size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
-  }
-  if (status === "recommended") {
-    return <CircleDot size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
-  }
-  if (status === "current") {
-    return <ChevronRight size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
-  }
-  return <Circle size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
-}
-
-const QuestionRailContext = React.createContext<QuestionRailState>({
-  questions: [],
-  selections: [],
-  visited: [],
-  currentIndex: 0,
-  freeTexts: [],
-});
-
-/**
- * Static, single-section data source over the wizard's questions —
- * the rail's row *identity*. The question set is fixed for a
- * request's lifetime, so `subscribe` is a no-op and `getVersion`
- * returns the array identity. Row *state* (status / answer) is
- * per-render and flows to the cells via {@link QuestionRailContext}.
- */
-class QuestionRailDataSource implements TugListViewDataSource {
-  constructor(private readonly questions: readonly ParsedQuestion[]) {}
-  numberOfItems(): number {
-    return this.questions.length;
-  }
-  idForIndex(index: number): string {
-    return `${index}:${this.questions[index]?.question ?? ""}`;
-  }
-  kindForIndex(): string {
-    return "question";
-  }
-  subscribe(): () => void {
-    return () => {};
-  }
-  getVersion(): unknown {
-    return this.questions;
-  }
-}
-
-/**
- * One rail row — the uniform per-question summary, a {@link TugListRow}
- * whose `leading` slot carries the status marker and whose content
- * column stacks the heading over a reserved one-line `→ answer` slot.
- * Geometry is identical across all four statuses so a status change
- * never changes the rail's height: the answer slot always renders,
- * hidden via `data-empty` while there is no selection, and clamps to
- * one ellipsized line so a long multi-select answer can't rewrap it.
- * The heading wraps freely — its text is constant per row, so its
- * height is too.
- *
- * The current row carries a soft `--tugx-question-current-bg` tint —
- * the SAME tone the panel below paints, so pointer and stage read as
- * one linked pair (deliberately not TugListRow's loud `selected`
- * fill, which competed with the panel for "this is active") — and its
- * answer summary tracks the in-flight selection live; activation is
- * the enclosing list view cell wrapper's job (→ delegate `onSelect` →
- * the wizard's jump).
- */
-const QuestionRailCell: TugListViewCellRenderer<QuestionRailDataSource> =
-  function QuestionRailCell({
-    index,
-  }: TugListViewCellProps<QuestionRailDataSource>): React.ReactElement {
-    const rail = React.useContext(QuestionRailContext);
-    const question = rail.questions[index];
-    const selection = rail.selections[index] ?? [];
-    const freeText = rail.freeTexts[index] ?? "";
-    const status = rowStatus(
-      index === rail.currentIndex,
-      rail.visited[index] === true,
-      questionAnswered(selection, freeText),
-    );
-    const answer = composeRowAnswerLabel(selection, freeText);
-    const labelPrefix =
-      status === "current"
-        ? "Current question"
-        : status === "done"
-          ? "Edit answer to question"
-          : status === "recommended"
-            ? "Open recommendation for question"
-            : "Skip to question";
-    return (
-      <TugListRow
-        className="dev-question-dialog-row"
-        data-status={status}
-        aria-current={status === "current" ? "step" : undefined}
-        aria-label={`${labelPrefix} ${index + 1}: ${question?.question ?? ""}`}
-        leading={
-          <span className="dev-question-dialog-row-marker" aria-hidden="true">
-            <RowMarker status={status} />
-          </span>
-        }
-      >
-        <span className="dev-question-dialog-row-body">
-          <span className="dev-question-dialog-row-heading">
-            <span className="dev-question-dialog-row-heading-number">
-              {index + 1}.
-            </span>
-            {question?.question ?? ""}
-          </span>
-          <span
-            className="dev-question-dialog-row-answer"
-            data-slot="dev-question-dialog-row-answer"
-            data-empty={answer === "" ? "true" : undefined}
-          >
-            → {answer}
-          </span>
-        </span>
-      </TugListRow>
-    );
-  };
-
-const QUESTION_RAIL_CELL_RENDERERS: Record<
-  string,
-  TugListViewCellRenderer<QuestionRailDataSource>
-> = {
-  question: QuestionRailCell,
-};
 
 /**
  * The current question's options — ONE component for both arities ([P02]/[P17]).
@@ -1188,7 +1042,7 @@ function PanelHeading({
 }): React.ReactElement {
   return (
     <div className="dev-question-dialog-panel-heading">
-      <span className="dev-question-dialog-row-heading-number">
+      <span className="dev-question-dialog-panel-heading-number">
         {index + 1}.
       </span>
       {question.question}
@@ -1318,16 +1172,6 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       declineText,
     }),
   });
-
-  // The rail's list-view plumbing. The data source is row identity
-  // only (stable per request); per-render row state reaches the cells
-  // through `QuestionRailContext` below. The delegate routes a row
-  // activation to the wizard's jump — `handleJump` no-ops on the
-  // current row, so clicking it can't strand a pending focus intent.
-  const railDataSource = React.useMemo(
-    () => new QuestionRailDataSource(questions),
-    [questions],
-  );
 
   /** Mark `index` as user-engaged. Idempotent: the cheap reference
    *  equality check below means a no-op set doesn't trigger a render. */
@@ -1551,17 +1395,6 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       setCurrentIndex(target);
     },
     [questions.length, focusGroup, currentIndex],
-  );
-
-  // The rail delegate routes through a ref so its identity stays
-  // stable while `handleJump` re-binds to the moving `currentIndex`.
-  const handleJumpRef = React.useRef(handleJump);
-  handleJumpRef.current = handleJump;
-  const railDelegate = React.useMemo<TugListViewDelegate>(
-    () => ({
-      onSelect: (index) => handleJumpRef.current(index),
-    }),
-    [],
   );
 
   /** `Back` from the current row: don't mark the row we're leaving
@@ -2297,23 +2130,31 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       ) : null}
       {hasQuestions && single === null ? (
         <>
-          {/* The rail — one TugListRow summary per question, uniform
-            * geometry in every status. Row identity lives in the data
-            * source; row state reaches the cells via context. No
-            * `focusGroup`: the rail is mouse-jump only (keyboard
-            * walks Back / Next), so it contributes no Tab stop. */}
-          <QuestionRailContext.Provider
-            value={{ questions, selections, visited, currentIndex, freeTexts }}
-          >
-            <TugListView<QuestionRailDataSource>
-              dataSource={railDataSource}
-              delegate={railDelegate}
-              cellRenderers={QUESTION_RAIL_CELL_RENDERERS}
-              inline
-              className="dev-question-dialog-rail"
-              aria-label="Questions"
-            />
-          </QuestionRailContext.Provider>
+          {/* The rail — the shared `QuestionSummaryList`, one summary row per
+            * question (status marker · N. · question · → answer). The rows are
+            * mouse-jump only (keyboard walks Back / Next), so they carry no
+            * `focusGroup` Tab stop; the `current` row is non-interactive. */}
+          <QuestionSummaryList
+            className="dev-question-dialog-rail"
+            ariaLabel="Questions"
+            rows={questions.map((q, i) => {
+              const selection = selections[i] ?? [];
+              const freeText = freeTexts[i] ?? "";
+              const status = rowStatus(
+                i === currentIndex,
+                visited[i] === true,
+                questionAnswered(selection, freeText),
+              );
+              return {
+                index: i,
+                question: q.question,
+                answer: composeRowAnswerLabel(selection, freeText),
+                status,
+                onActivate: () => handleJump(i),
+                ariaLabel: `${railRowLabelPrefix(status)} ${i + 1}: ${q.question}`,
+              } satisfies QuestionSummaryRowData;
+            })}
+          />
 
           {/* A quiet structural cut between the index (rail) and the
             * working surface (panel) — a full-width hairline, no box. */}

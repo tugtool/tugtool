@@ -38,7 +38,7 @@ const PANEL = `${DIALOG} [data-slot="dev-question-dialog-panel"]`;
 // Back/Next live in the top action bar; they are the only outlined-action
 // buttons, so this selects exactly [Back, Next] for clickNav([0]=Back, [1]=Next).
 const NAV_BUTTONS = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
-const CURRENT_ROW = `${DIALOG} .dev-question-dialog-row[data-status="current"]`;
+const CURRENT_ROW = `${DIALOG} .question-summary-row[data-status="current"]`;
 
 function controlRequestForward(): Record<string, unknown> {
   return {
