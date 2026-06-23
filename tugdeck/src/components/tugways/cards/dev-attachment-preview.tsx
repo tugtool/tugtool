@@ -66,6 +66,7 @@ import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { ResponderChainContext } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { writeImageToNativeClipboard } from "@/lib/tug-native-clipboard";
 
 /**
  * Decode `dataUrl` to a PNG `Blob` for the clipboard. The clipboard's
@@ -113,6 +114,16 @@ async function buildPngBlob(dataUrl: string): Promise<Blob> {
  * rejects — the honest-feedback contract ([L23]).
  */
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
+  // Prefer the native NSPasteboard bridge inside Tug.app. The WKWebView's JS
+  // Clipboard image write (`navigator.clipboard.write` + `ClipboardItem`) does
+  // not work here — the same reason clipboard READ is bridged natively — so the
+  // web path below is only the browser-dev fallback. The base64 payload is the
+  // part of the data URL after the comma (the raw image bytes).
+  const comma = dataUrl.indexOf(",");
+  const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : "";
+  if (writeImageToNativeClipboard(base64)) {
+    return true;
+  }
   const clip = navigator.clipboard;
   if (
     clip === undefined ||

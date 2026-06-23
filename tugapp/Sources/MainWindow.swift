@@ -269,6 +269,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "setTheme")
         contentController.add(self, name: "devBadge")
         contentController.add(self, name: "clipboardRead")
+        contentController.add(self, name: "clipboardWriteImage")
         contentController.add(self, name: "menuState")
         contentController.add(self, name: "hmrUpdate")
         contentController.add(self, name: "openPath")
@@ -637,6 +638,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "setTheme")
         contentController.removeScriptMessageHandler(forName: "devBadge")
         contentController.removeScriptMessageHandler(forName: "clipboardRead")
+        contentController.removeScriptMessageHandler(forName: "clipboardWriteImage")
         contentController.removeScriptMessageHandler(forName: "menuState")
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
         contentController.removeScriptMessageHandler(forName: "openPath")
@@ -1085,6 +1087,25 @@ extension MainWindow: WKScriptMessageHandler {
                     NSLog("MainWindow: evaluateJavaScript failed for clipboardRead: %@", error.localizedDescription)
                 }
             }
+        case "clipboardWriteImage":
+            // Native image-clipboard bridge. The WKWebView's JS Clipboard
+            // image write (navigator.clipboard.write + ClipboardItem) is
+            // unreliable in this app — the same reason clipboardRead is
+            // bridged. Writing image bytes to NSPasteboard natively is the
+            // dependable path. Fire-and-forget: the web layer posts the
+            // base64-encoded image bytes; the host decodes and writes an
+            // NSImage to the general pasteboard so any app can paste it.
+            // JS-side contract: post {base64}. See tug-native-clipboard.ts.
+            guard let body = message.body as? [String: Any],
+                  let base64 = body["base64"] as? String,
+                  let data = Data(base64Encoded: base64),
+                  let image = NSImage(data: data) else {
+                NSLog("MainWindow: clipboardWriteImage invalid payload")
+                return
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
         case "menuState":
             // Menu-relevant state pushed from the frontend's host-menu-state
             // aggregator. Cache it on AppDelegate for menu validation and

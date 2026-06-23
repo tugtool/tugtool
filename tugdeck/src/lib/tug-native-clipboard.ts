@@ -53,6 +53,7 @@ export interface NativeClipboardReadResult {
 
 interface ClipboardBridgeMessageHandlers {
   clipboardRead?: { postMessage: (v: unknown) => void };
+  clipboardWriteImage?: { postMessage: (v: unknown) => void };
 }
 
 interface ClipboardWebkit {
@@ -173,6 +174,27 @@ export function warnIfWKWebViewRace(): void {
  */
 export function __resetWKWebViewRaceWarningForTest(): void {
   wkWebViewRaceWarningFired = false;
+}
+
+/**
+ * Write image bytes to the system clipboard via the native NSPasteboard
+ * bridge. `base64` is the raw image bytes (PNG/JPEG/…), base64-encoded —
+ * the host decodes it into an `NSImage` and writes that to the general
+ * pasteboard so any app can paste it.
+ *
+ * Fire-and-forget: NSPasteboard writes synchronously on the Swift side, so
+ * there's no callback to await. Returns `true` when the bridge is present
+ * and the message was posted (the dependable path inside Tug.app), `false`
+ * when it's absent (normal browser dev) so callers can fall back to the JS
+ * Clipboard API. Mirrors {@link hasNativeClipboardBridge}'s detection.
+ */
+export function writeImageToNativeClipboard(base64: string): boolean {
+  const webkit = (globalThis as unknown as { webkit?: ClipboardWebkit }).webkit;
+  const handler = webkit?.messageHandlers?.clipboardWriteImage;
+  if (!handler || typeof handler.postMessage !== "function") return false;
+  if (base64.length === 0) return false;
+  handler.postMessage({ base64 });
+  return true;
 }
 
 /** How long to wait for the Swift callback before giving up. */
