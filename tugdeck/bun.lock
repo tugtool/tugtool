@@ -32,6 +32,8 @@
         "diff-match-patch": "^1.0.5",
         "dompurify": "^3.2.2",
         "katex": "^0.17.0",
+        "linkify-element": "^4.3.3",
+        "linkifyjs": "^4.3.3",
         "lucide": "^0.564.0",
         "lucide-react": "^1.17.0",
         "marked": "^15.0.6",
@@ -669,6 +671,10 @@
     "khroma": ["khroma@2.1.0", "", {}, "sha512-Ls993zuzfayK269Svk9hzpeGUKob/sIgZzyHYdjQoAdQetRKpOLj+k/QQQ/6Qi0Yz65mlROrfd+Ev+1+7dz9Kw=="],
 
     "layout-base": ["layout-base@1.0.2", "", {}, "sha512-8h2oVEZNktL4BH2JCOI90iD1yXwL6iNW7KcCKT2QZgQJR2vbqDsldCTPRU9NifTCqHZci57XvQQ15YTu+sTYPg=="],
+
+    "linkify-element": ["linkify-element@4.3.3", "", { "peerDependencies": { "linkifyjs": "==4.3.3" } }, "sha512-8428581a8QpGZle4o8n5aRYXCIrLYCnEEmTOKoZB5GZ68hhW4vsCWxTIyqGHVFWrDy7/Iiw+3j4Axa0ihDoFuA=="],
+
+    "linkifyjs": ["linkifyjs@4.3.3", "", {}, "sha512-P8aEP5U/D1/IlTY2OeYsErdwh9bGuLE30NcXtKEjgdHcahveQoQwM2yZNsioQHsWFz0P7KKudisbrzCgR0sDHg=="],
 
     "lodash-es": ["lodash-es@4.18.1", "", {}, "sha512-J8xewKD/Gk22OZbhpOVSwcs60zhd95ESDwezOFuA3/099925PdHJ7OFHNTGtajL3AlZkykD32HykiMo+BIBI8A=="],
 

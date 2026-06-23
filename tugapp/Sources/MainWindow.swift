@@ -808,10 +808,52 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
             }
             return
         }
+
+        // A clicked link to anything other than the app's own origin opens
+        // in the system browser, never inside our webview — a transcript URL
+        // (markdown link or a bare URL linkified by `enhance-links.ts`) must
+        // not navigate the app away from the Dev card. Same-origin http(s)
+        // navigation (e.g. an in-page `#fragment`) is left to load normally.
+        if navigationAction.navigationType == .linkActivated,
+           let url = navigationAction.request.url,
+           let scheme = url.scheme?.lowercased() {
+            let sameOriginHttp =
+                (scheme == "http" || scheme == "https") && url.host == webView.url?.host
+            if !sameOriginHttp {
+                decisionHandler(.cancel)
+                if MainWindow.externalLinkSchemes.contains(scheme) {
+                    NSWorkspace.shared.open(url)
+                }
+                return
+            }
+        }
         decisionHandler(.allow)
     }
 
+    /// Schemes a transcript link is allowed to hand to the system handler.
+    /// DOMPurify already strips dangerous URI schemes (`javascript:`,
+    /// `data:`) from rendered markdown, and `enhance-links.ts` only emits
+    /// http(s); this allowlist is the host-side backstop so a clicked link
+    /// can only reach the browser, mail, or phone handler — never an
+    /// arbitrary registered URL scheme.
+    private static let externalLinkSchemes: Set<String> = ["http", "https", "mailto", "tel"]
+
     // MARK: - WKUIDelegate
+
+    /// Safety net for links that would open a new window (`target="_blank"`
+    /// or `window.open`): WKWebView has no place to put a second window, so
+    /// without this it silently drops them. We instead route an allowed
+    /// scheme to the system browser and create no webview. Ordinary
+    /// transcript links carry no `target` and go through `decidePolicyFor`;
+    /// this only catches the new-window path.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url,
+           let scheme = url.scheme?.lowercased(),
+           MainWindow.externalLinkSchemes.contains(scheme) {
+            NSWorkspace.shared.open(url)
+        }
+        return nil
+    }
 
     /// Handle <input type="file"> — without this, file inputs are silently ignored in WKWebView.
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
