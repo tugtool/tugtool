@@ -65,6 +65,10 @@ body {
    * (font-size × line-height), so `align-items: center` puts the
    * icon's vertical center on the title's first-line center. */
   --tugx-idialog-icon-size:          20px;
+  /* Legibility halo — lifts the icon off pale light-theme surfaces;
+     resolves to `none` in dark themes, so it applies uniformly across
+     every icon role with no per-role branching. */
+  --tugx-idialog-icon-halo:          var(--tug7-element-global-shadow-normal-glyphHalo-rest);
   --tugx-idialog-icon-default-color: var(--tug7-element-global-icon-normal-muted-rest);
   --tugx-idialog-icon-caution-color: var(--tug7-surface-toggle-primary-normal-caution-rest);
   --tugx-idialog-icon-danger-color:  var(--tug7-element-global-text-normal-danger-rest);
@@ -149,6 +153,7 @@ body {
   justify-content: center;
   width:  var(--tugx-idialog-icon-size);
   height: var(--tugx-idialog-icon-size);
+  filter: var(--tugx-idialog-icon-halo);
   /* color: set by [data-icon-role] selectors below. The icon
    * inherits via SVG `currentColor`. */
 }

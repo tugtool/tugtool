@@ -136,6 +136,7 @@ body {
   --tug7-element-global-shadow-normal-xs-rest: --tug-color(black, i: 0, t: 0, a: 20);
   /* Transcript speaker-icon legibility halo — dark theme needs none. */
   --tug7-element-global-shadow-normal-iconHalo-rest: none;
+  --tug7-element-global-shadow-normal-glyphHalo-rest: none;
   --tug7-element-global-shadow-normal-flash-rest: --tug-color(orange, i: 50, t: 50, a: 60);
   --tug7-element-global-shadow-normal-flashInset-rest: --tug-color(orange, i: 50, t: 50, a: 20);
 

@@ -46,6 +46,11 @@ body {
 
   /* Visible-label text color — paired against the host surface. */
   --tugx-progress-indicator-label-color: var(--tug7-element-global-text-normal-default-rest);
+
+  /* Legibility halo lifts the glyph off pale light-theme surfaces; the
+     token resolves to `none` in dark themes, so this is uniform across
+     every variant and role with no per-state branching. */
+  --tugx-progress-indicator-glyph-halo: var(--tug7-element-global-shadow-normal-glyphHalo-rest);
 }
 
 /* ============================================================================
@@ -89,6 +94,7 @@ body {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  filter: var(--tugx-progress-indicator-glyph-halo);
 }
 
 /* ============================================================================

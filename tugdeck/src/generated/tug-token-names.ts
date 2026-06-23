@@ -438,6 +438,7 @@ export const TUG_TOKEN_NAMES: readonly string[] = [
   "--tug7-element-global-outline-normal-accentCool-rest",
   "--tug7-element-global-shadow-normal-flash-rest",
   "--tug7-element-global-shadow-normal-flashInset-rest",
+  "--tug7-element-global-shadow-normal-glyphHalo-rest",
   "--tug7-element-global-shadow-normal-iconHalo-rest",
   "--tug7-element-global-shadow-normal-lg-rest",
   "--tug7-element-global-shadow-normal-md-rest",
