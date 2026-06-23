@@ -14,6 +14,8 @@ import "./tug-bulletin.css";
 import React, { createContext, useContext } from "react";
 import { Toaster, toast } from "sonner";
 
+import { BULLETIN_ICONS } from "./bulletin-icons";
+
 /* ---------------------------------------------------------------------------
  * Helpers
  * ---------------------------------------------------------------------------*/
@@ -101,6 +103,7 @@ export function TugBulletinProvider({ position = "top-right", children }: TugBul
         className: "tug-bulletin",
         unstyled: true,
       },
+      icons: BULLETIN_ICONS,
       gap: 8,
     }),
   );

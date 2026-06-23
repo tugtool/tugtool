@@ -29,6 +29,8 @@ import "./tug-pane-bulletin.css";
 import React, { createContext, useContext, useId, useMemo } from "react";
 import { Toaster, toast } from "sonner";
 
+import { BULLETIN_ICONS } from "./bulletin-icons";
+
 /* ---------------------------------------------------------------------------
  * Options + imperative API
  * ---------------------------------------------------------------------------*/
@@ -61,6 +63,22 @@ export interface PaneBulletinOptions {
 }
 
 /**
+ * Namespace a caller's logical bulletin id under its pane's `toasterId`.
+ *
+ * Sonner keys toasts by `id` in a single *global* store — `toasterId` only
+ * routes which `<Toaster>` renders a toast, it does not scope identity. So two
+ * panes raising the same logical id (e.g. every Dev card's `"notice-api-retry"`)
+ * collide: the second post updates — and steals — the first pane's toast. The
+ * dismiss path (`toast.dismiss(id)`) is global for the same reason. Prefixing
+ * the id with the per-pane `toasterId` (stable `useId`) gives each pane its own
+ * id space while callers keep passing stable logical ids; the matching prefix
+ * in `dismiss` keeps show/dismiss aligned.
+ */
+export function scopedToastId(toasterId: string, id: string): string {
+  return `${toasterId}::${id}`;
+}
+
+/**
  * Pure mapping from `PaneBulletinOptions` to the Sonner `toast` options bag.
  * Exported for unit testing the option seam (id threading, sticky lifecycle)
  * without a mounted Toaster — the toast *behavior* is covered by app-tests.
@@ -70,7 +88,8 @@ export function mapOptions(
   options?: PaneBulletinOptions,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { toasterId };
-  if (options?.id !== undefined) result.id = options.id;
+  if (options?.id !== undefined)
+    result.id = scopedToastId(toasterId, options.id);
   if (options?.description !== undefined) result.description = options.description;
   if (options?.sticky === true) {
     // Persist-until-dismissed: never auto-dismiss, and render an OK button
@@ -168,6 +187,7 @@ export function TugPaneBulletinProvider({
                 : placement
           }
           toastOptions={{ className: "tug-pane-bulletin", unstyled: true }}
+          icons={BULLETIN_ICONS}
           gap={8}
         />
       </div>
@@ -203,7 +223,7 @@ export function useTugPaneBulletin(): TugPaneBulletinApi {
       void toast.error(message, mapOptions(toasterId, options));
     fn.caution = (message, options) =>
       void toast.warning(message, mapOptions(toasterId, options));
-    fn.dismiss = (id) => void toast.dismiss(id);
+    fn.dismiss = (id) => void toast.dismiss(scopedToastId(toasterId, id));
     return fn;
   }, [toasterId]);
 }

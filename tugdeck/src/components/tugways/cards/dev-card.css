@@ -133,15 +133,25 @@
 /* Outer bulletin scope wrapping the bottom host — its `.tug-pane-bulletin-root`
    (position: relative) is the positioning context for the TOP-RIGHT transient
    notice toaster (retry/transport/replay/unknown). Carries the same flex-column
-   layout so the inner host (and the transcript) still grow. No `overflow:
-   hidden`: the notice toaster anchors to this root's top-right corner and must
-   not be clipped. */
+   layout so the inner host (and the transcript) still grow.
+
+   `overflow: clip` contains the absolutely-positioned toaster to the card.
+   Sonner enters a right-anchored toast with `translateX(100%)` — momentarily
+   off the card's right edge — and expands the stack on pointer interaction;
+   without containment that transient spill grew the card's scroll size, so
+   clicking the bulletin flashed a horizontal scrollbar and hopped the whole
+   card. The resting toast is unaffected: at the 800px card-width floor it sits
+   ~380px from the right edge (356px Sonner width + 24px offset), never near the
+   clip box, so only the off-card enter transform is clipped (the toast now
+   slides in from the card edge rather than from beyond the window). `clip`
+   over `hidden` so this wrapper never becomes a scroll container. */
 .dev-card-notice-host {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   min-width: 0;
+  overflow: clip;
 }
 
 /* Z0 — top-of-card content slot. Content-sized; empty by default.

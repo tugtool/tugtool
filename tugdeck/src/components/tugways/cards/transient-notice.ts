@@ -42,6 +42,13 @@ export interface NoticeDesc {
   description?: string;
   tone: NoticeTone;
   persistence: NoticePersistence;
+  /**
+   * Epoch-ms the notice is counting down toward (an API retry's next-attempt
+   * `deadline`). Present only while that deadline is still in the future; the
+   * controller reads it to know it must keep re-projecting at 1 Hz so the
+   * embedded "next try in Ns" stays live. Absent once the deadline passes.
+   */
+  countdownTo?: number;
 }
 
 /** Imperative action a controller applies to the pane bulletin API. */
@@ -60,24 +67,50 @@ export const NOTICE_IDS = {
 } as const;
 
 /**
- * The notices that should be showing for this snapshot. Order is stable but
- * irrelevant — the bulletin stack owns visual ordering. Mutually independent:
- * a snapshot can drive several at once (e.g. offline *and* mid-retry).
+ * Build the api-retry description. The attempt count is the store-driven spine
+ * ("attempt N of M"); while the next attempt's `deadline` is still ahead of
+ * `now` a live "next try in Ns" tail rides alongside it. Both are honest live
+ * signals — the count climbs as the SDK backs off, the countdown ticks toward
+ * the moment it tries again — so the bulletin reads as *working*, not stuck.
+ * Once the deadline passes (the attempt is in flight) the tail drops and only
+ * the count remains until the next `api_retry` frame resets the deadline.
  */
-export function projectNotices(snap: CodeSessionSnapshot): NoticeDesc[] {
+function retryDescription(
+  attempt: number,
+  maxRetries: number,
+  deadline: number,
+  now: number,
+): string {
+  const base = `Retrying — attempt ${attempt} of ${maxRetries}`;
+  const secs = Math.ceil((deadline - now) / 1000);
+  return secs >= 1 ? `${base} · next try in ${secs}s` : base;
+}
+
+/**
+ * The notices that should be showing for this snapshot at time `now` (epoch
+ * ms). `now` only feeds the api-retry countdown; every other notice is
+ * time-independent. Order is stable but irrelevant — the bulletin stack owns
+ * visual ordering. Mutually independent: a snapshot can drive several at once
+ * (e.g. offline *and* mid-retry).
+ */
+export function projectNotices(
+  snap: CodeSessionSnapshot,
+  now: number,
+): NoticeDesc[] {
   const out: NoticeDesc[] = [];
 
   if (snap.apiRetry !== null) {
     const cls = classifyApiRetry(snap.apiRetry.error, snap.apiRetry.errorStatus);
+    const { attempt, maxRetries, deadline } = snap.apiRetry;
     out.push({
       id: NOTICE_IDS.apiRetry,
       message: cls.label,
-      // Live attempt count — the bulletin updates in place as attempts climb.
-      // No countdown: a frozen timer is exactly the stuck-error look we're
-      // replacing; the attempt count is the honest live signal.
-      description: `Retrying — attempt ${snap.apiRetry.attempt} of ${snap.apiRetry.maxRetries}`,
+      description: retryDescription(attempt, maxRetries, deadline, now),
       tone: cls.severity === "likely-fatal" ? "danger" : "caution",
       persistence: "condition",
+      // Only while the deadline is ahead: signals the controller to keep
+      // re-projecting at 1 Hz so the "next try in Ns" tail stays live.
+      ...(deadline > now ? { countdownTo: deadline } : {}),
     });
   }
 

@@ -69,40 +69,52 @@ function baseSnap(
   };
 }
 
+const DEADLINE = 1_700_000_010_000;
+// 8s before the deadline — exercises the live "next try in 8s" tail.
+const NOW = DEADLINE - 8_000;
+
 const retry = (attempt: number, error = "overloaded", errorStatus: number | null = 529) => ({
   attempt,
   maxRetries: 10,
-  deadline: 1_700_000_010_000,
+  deadline: DEADLINE,
   error,
   errorStatus,
 });
 
 describe("projectNotices", () => {
   it("projects nothing for a clean snapshot", () => {
-    expect(projectNotices(baseSnap())).toEqual([]);
+    expect(projectNotices(baseSnap(), NOW)).toEqual([]);
   });
 
-  it("projects an api-retry notice with a live attempt count and no countdown", () => {
-    const [notice, ...rest] = projectNotices(baseSnap({ apiRetry: retry(2) }));
+  it("projects an api-retry notice with a live attempt count and countdown", () => {
+    const [notice, ...rest] = projectNotices(baseSnap({ apiRetry: retry(2) }), NOW);
     expect(rest).toHaveLength(0);
     expect(notice.id).toBe(NOTICE_IDS.apiRetry);
     expect(notice.message).toBe("Servers overloaded");
-    expect(notice.description).toBe("Retrying — attempt 2 of 10");
+    expect(notice.description).toBe("Retrying — attempt 2 of 10 · next try in 8s");
+    expect(notice.countdownTo).toBe(DEADLINE);
     expect(notice.tone).toBe("caution");
     expect(notice.persistence).toBe("condition");
+  });
+
+  it("drops the countdown tail once the deadline passes (attempt in flight)", () => {
+    const [notice] = projectNotices(baseSnap({ apiRetry: retry(2) }), DEADLINE + 500);
+    expect(notice.description).toBe("Retrying — attempt 2 of 10");
+    expect(notice.countdownTo).toBeUndefined();
   });
 
   it("escalates a likely-fatal retry to danger tone", () => {
     const [notice] = projectNotices(
       baseSnap({ apiRetry: retry(1, "authentication_failed", 401) }),
+      NOW,
     );
     expect(notice.tone).toBe("danger");
     expect(notice.message).toBe("Authentication failed");
   });
 
   it("projects transport offline but not restoring (placeholder owns restoring)", () => {
-    expect(projectNotices(baseSnap({ transportState: "offline" }))).toHaveLength(1);
-    expect(projectNotices(baseSnap({ transportState: "restoring" }))).toEqual([]);
+    expect(projectNotices(baseSnap({ transportState: "offline" }), NOW)).toHaveLength(1);
+    expect(projectNotices(baseSnap({ transportState: "restoring" }), NOW)).toEqual([]);
   });
 
   it("projects the unknown-event notice as an ack (sticky) FYI", () => {
@@ -114,6 +126,7 @@ describe("projectNotices", () => {
           at: 1,
         },
       }),
+      NOW,
     );
     expect(notice.id).toBe(NOTICE_IDS.unknownEvent);
     expect(notice.persistence).toBe("ack");
@@ -128,6 +141,7 @@ describe("projectNotices", () => {
           fallbackModel: "claude-opus-4-8",
         },
       }),
+      NOW,
     );
     expect(rest).toHaveLength(0);
     expect(notice.id).toBe(NOTICE_IDS.refusalFallback);
@@ -138,6 +152,7 @@ describe("projectNotices", () => {
   it("projects a one-shot ephemeral notice when the output truncated", () => {
     const [notice, ...rest] = projectNotices(
       baseSnap({ outputTruncated: true }),
+      NOW,
     );
     expect(rest).toHaveLength(0);
     expect(notice.id).toBe(NOTICE_IDS.outputTruncated);
@@ -147,6 +162,7 @@ describe("projectNotices", () => {
   it("projects several notices at once (offline AND mid-retry)", () => {
     const ids = projectNotices(
       baseSnap({ transportState: "offline", apiRetry: retry(1) }),
+      NOW,
     ).map((n) => n.id);
     expect(ids).toContain(NOTICE_IDS.apiRetry);
     expect(ids).toContain(NOTICE_IDS.transport);

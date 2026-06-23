@@ -1,16 +1,22 @@
 import { describe, expect, test } from "bun:test";
 
-import { mapOptions } from "./tug-pane-bulletin";
+import { mapOptions, scopedToastId } from "./tug-pane-bulletin";
 
 describe("mapOptions", () => {
   test("always carries the toasterId scope", () => {
     expect(mapOptions("pane-1")).toEqual({ toasterId: "pane-1" });
   });
 
-  test("threads a stable id so repeat posts replace in place", () => {
+  test("threads a stable id, namespaced under the pane, so repeat posts replace in place", () => {
     const result = mapOptions("pane-1", { id: "api-retry" });
-    expect(result.id).toBe("api-retry");
+    expect(result.id).toBe(scopedToastId("pane-1", "api-retry"));
     expect(result.toasterId).toBe("pane-1");
+  });
+
+  test("the same logical id under different panes never collides", () => {
+    const a = mapOptions("pane-1", { id: "notice-api-retry" });
+    const b = mapOptions("pane-2", { id: "notice-api-retry" });
+    expect(a.id).not.toBe(b.id);
   });
 
   test("passes description and duration through", () => {
