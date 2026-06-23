@@ -437,13 +437,6 @@ export const TUG_ACTIONS = {
   //                         current selection. Dispatched by ⌘G.
   // FIND_PREVIOUS:          payload — none. Symmetric with FIND_NEXT.
   //                         Dispatched by ⇧⌘G.
-  // TOGGLE_MAXIMIZE:        payload — none. Flip the first responder's
-  //                         maximize state. Emitted by an entry's leading
-  //                         status-row toggle (Maximize2 ↔ Minimize2).
-  //                         Used by composite controls whose pane is
-  //                         maximized in-place (e.g. TugPromptEntry),
-  //                         distinct from the bare MAXIMIZE action which
-  //                         targets a card's window.
   CLOSE:                  "close",
   CLOSE_ALL:              "close-all",
   MINIMIZE:               "minimize",
@@ -455,7 +448,6 @@ export const TUG_ACTIONS = {
   FIND:                   "find",
   FIND_NEXT:              "find-next",
   FIND_PREVIOUS:          "find-previous",
-  TOGGLE_MAXIMIZE:        "toggle-maximize",
 
   // ---- Dev session management ----
   //

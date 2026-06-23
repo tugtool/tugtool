@@ -198,35 +198,10 @@ body {
  * - `min-height` from `--tug-text-editor-min-height` — the optional *default*
  *   height: the editor opens at least this tall even when its content is
  *   shorter (the Dev card sets 200px). Defaults to 0 — no floor — so other
- *   hosts keep the pure auto-grow-from-one-row behavior.
- *
- * Skipped when `[data-maximized]` is set — that variant fills the flex
- * parent and ignores `maxRows` per the prop contract. */
-.tug-text-editor:not([data-maximized]) > .cm-editor > .cm-scroller {
+ *   hosts keep the pure auto-grow-from-one-row behavior. */
+.tug-text-editor > .cm-editor > .cm-scroller {
   max-height: calc(var(--tug-text-editor-max-rows, 8) * 1lh + 16px);
   min-height: var(--tug-text-editor-min-height, 0);
-}
-
-/* ---- Maximized: fill available container space ---- */
-
-/* When the host is placed in a flex column with a constrained
- * height, `[data-maximized]` makes the editor fill that height
- * instead of sizing to its content. `flex: 1 1 auto` on
- * `.tug-text-editor` itself plus `min-height: 0` (already set above)
- * lets the host accept whatever height the parent allots; the
- * inner `.cm-scroller` then expands to that height and scrolls
- * its content within it. `maxRows` is ignored — the parent's
- * height is the only cap. */
-.tug-text-editor[data-maximized] {
-  flex: 1 1 auto;
-}
-
-.tug-text-editor[data-maximized] > .cm-editor > .cm-scroller {
-  /* No max-height — the rule above is already gated on
-   * `:not([data-maximized])`, but we make the flex behavior
-   * explicit here so the scroller expands to fill its parent. */
-  flex: 1 1 auto;
-  min-height: 0;
 }
 
 /* ---- growDirection: anchor the editor to the bottom of its parent ---- */

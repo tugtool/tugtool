@@ -672,7 +672,6 @@ export interface TugTextEditorProps
    * Maximum visible rows before vertical scrolling kicks in. Caps the
    * height of `.cm-scroller` via CSS:
    * `max-height: calc(var(--tug-text-editor-max-rows) * 1lh + padding)`.
-   * Ignored when `maximized` is true.
    * @default 8
    * @selector .tug-text-editor (CSS variable `--tug-text-editor-max-rows`)
    */
@@ -688,15 +687,6 @@ export interface TugTextEditorProps
    * @selector .tug-text-editor[data-grow-direction]
    */
   growDirection?: "up" | "down";
-  /**
-   * Expand the editor to fill available container space. The container
-   * must be a flex column with a constrained height. When true,
-   * `maxRows` is ignored and `.cm-scroller` switches from
-   * `max-height` (capped) to `flex: 1 1 auto` (fills parent).
-   * @default false
-   * @selector .tug-text-editor[data-maximized]
-   */
-  maximized?: boolean;
   /**
    * Whether the editor is disabled. Sets `EditorState.readOnly` so
    * CM6 rejects content edits at the transaction level, drops
@@ -1145,7 +1135,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       placeholder = "",
       maxRows = DEFAULT_MAX_ROWS,
       growDirection = "down",
-      maximized = false,
       disabled = false,
       lineWrap = false,
       lineNumbers: lineNumbersProp = false,
@@ -2425,7 +2414,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           data-focus-style={focusStyle}
           data-borderless={borderless ? "" : undefined}
           data-disabled={disabled ? "" : undefined}
-          data-maximized={maximized ? "" : undefined}
           data-grow-direction={growDirection}
           aria-disabled={disabled || undefined}
           className={cn("tug-text-editor", className)}

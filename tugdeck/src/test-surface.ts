@@ -1440,13 +1440,13 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       //     `useCardStatePreservation` returns this directly.
       //
       //   - TugPromptEntry wrapper (current):
-      //     `{ route, draft: TugTextEditingState | null, maximized }`.
+      //     `{ route, draft: TugTextEditingState | null }`.
       //     This is what `TugPromptEntry` (and every card hosting it
       //     — `gallery-prompt-entry`, dev-card) returns. Reach into
       //     `draft` to get the engine state.
       //
       //   - TugPromptEntry legacy wrapper:
-      //     `{ currentRoute, perRoute: { [route]: TugTextEditingState }, maximized }`.
+      //     `{ currentRoute, perRoute: { [route]: TugTextEditingState } }`.
       //     The pre-Step-15 shape, still readable for back-compat so
       //     a snapshot saved on an older build round-trips through a
       //     newer test-surface read. The production path migrates
@@ -1460,7 +1460,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         typeof content.route === "string" &&
         "draft" in content
       ) {
-        // New simplified wrapper — `{ route, draft, maximized }`.
+        // New simplified wrapper — `{ route, draft }`.
         if (typeof content.draft === "object" && content.draft !== null) {
           engineState = content.draft as Record<string, unknown>;
         } else {

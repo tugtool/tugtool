@@ -8,8 +8,8 @@
  *  - **The row** — a configurable instrument row (macOS-toolbar
  *    style): a registry of status items rendered in user order, with
  *    spacer / flexible-space items. Chrome models the proposed Z2
- *    layout: maximize at the LEFT end; at the right end the configure
- *    gear sits inboard and the shelf disclosure takes the very end.
+ *    layout: at the right end the configure gear sits inboard and the
+ *    shelf disclosure takes the very end.
  *
  *  - **The shelf** — pinned lanes below the transcript (TASKS, JOBS,
  *    PULSE; three max, arranged in the configure sheet), opened by
@@ -48,7 +48,6 @@ import {
   ChevronsLeftRight,
   ChevronsRightLeft,
   GripVertical,
-  Maximize2,
   Pause,
   Play,
   RotateCcw,
@@ -801,8 +800,8 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
       <FakeTranscript />
 
       {/* The instrument row — renders the configured items; doubles as
-          the drop target while customizing. Chrome: maximize LEFT;
-          gear inboard; shelf disclosure at the very end. */}
+          the drop target while customizing. Chrome: gear inboard; shelf
+          disclosure at the very end. */}
       <div
         className="z2ws-rack-row"
         data-customizing={customizing ? "true" : "false"}
@@ -830,14 +829,6 @@ function UnifiedZ2Demo({ session }: { session: MockSession }): React.ReactElemen
           clearRowDragVisuals();
         }}
       >
-        <TugPushButton
-          subtype="icon"
-          icon={<Maximize2 size={12} />}
-          aria-label="Maximize the prompt entry (inert in this spike)"
-          title="Maximize (moves to the left end)"
-          emphasis="ghost"
-          size="xs"
-        />
         {row.length === 0 ? (
           <div className="z2ws-rack-empty">Drag items here…</div>
         ) : (

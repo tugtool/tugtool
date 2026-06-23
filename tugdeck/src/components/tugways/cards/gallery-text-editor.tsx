@@ -41,7 +41,7 @@
  * (toggle); `maxRows` rides on `TugValueInput` (setValueNumber);
  * typography props ride on `TugPopupButton` (setValueString /
  * setValueNumber). A `TugPushButton` toolbar above the editor carries
- * the imperative actions (`Clear`, `Maximize`).
+ * the imperative actions (`Clear`).
  *
  * Laws: [L01] one root.render() at mount, [L02] history list and
  *        feed-store stack live in refs; React state carries only
@@ -326,7 +326,6 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   // any) seeds the corresponding `useState` initializer so the gallery
   // card mounts in the user's last-saved configuration on cold boot —
   // no post-mount apply pass.
-  const savedMaximized = useSavedComponentState<boolean>("maximized");
   const savedFontFamily = useSavedComponentState<string | null>("fontFamily");
   const savedFontSize = useSavedComponentState<number | null>("fontSize");
   const savedLineHeight = useSavedComponentState<number | null>("lineHeight");
@@ -336,9 +335,6 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
 
   const [maxRows, setMaxRows] = useState<number>(15);
   const [growDirection, setGrowDirection] = useState<"up" | "down">("down");
-  const [maximized, setMaximized] = useState<boolean>(() =>
-    typeof savedMaximized === "boolean" ? savedMaximized : false,
-  );
   const [disabled, setDisabled] = useState<boolean>(false);
 
   // ---- Focus / border (existing) ----
@@ -404,8 +400,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   //     prop. The framework captures `.checked` / `.value` into
   //     `bag.components` and replays it on cold-boot — the parent
   //     state owner reconciles via the existing dispatch chain.
-  //   - State driven by TugPopupButton (typography popups) and the
-  //     `maximized` toggle (a plain TugPushButton click) doesn't
+  //   - State driven by TugPopupButton (typography popups) doesn't
   //     have built-in preservation support, so we register
   //     `useComponentStatePreservation` calls here that capture /
   //     restore the local React state directly. Same `bag.components`
@@ -416,10 +411,6 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   // `useCardStatePreservation` registration (inside `TugTextEditor` itself,
   // gated on `preserveState`) handles the editor's document + atoms +
   // selection on a separate axis (`bag.content`).
-  useComponentStatePreservation<boolean>({
-    componentStatePreservationKey: "maximized",
-    captureState: () => maximized,
-  });
   useComponentStatePreservation<string | null>({
     componentStatePreservationKey: "fontFamily",
     captureState: () => fontFamily ?? null,
@@ -626,16 +617,11 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
 
         {/* ---- Editor ----
             Toolbar above carries the imperative + typography
-            controls; the editor itself sits below. When
-            `maximized` is on, both wrap inside a fixed-height
-            flex column so the editor can fill that height.
+            controls; the editor itself sits below.
          */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugTextEditor</TugLabel>
-          <div
-            className="gallery-text-editor-stack"
-            data-maximized={maximized ? "" : undefined}
-          >
+          <div className="gallery-text-editor-stack">
             <div className="gallery-text-editor-toolbar">
               <TugPushButton
                 size="sm"
@@ -643,13 +629,6 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
                 onClick={() => editRef.current?.clear()}
               >
                 Clear
-              </TugPushButton>
-              <TugPushButton
-                size="sm"
-                emphasis="ghost"
-                onClick={() => setMaximized((m) => !m)}
-              >
-                {maximized ? "Minimize" : "Maximize"}
               </TugPushButton>
               <TugPopupButton
                 label={fontFamilyLabel}
@@ -682,7 +661,6 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
                 placeholder={DEMO_PLACEHOLDER}
                 maxRows={maxRows}
                 growDirection={growDirection}
-                maximized={maximized}
                 disabled={disabled}
                 focusStyle={focusStyle}
                 borderless={borderless}

@@ -9,12 +9,9 @@
  * `--dev-entry-max-height` (a fraction of the card height), then scrolls — so
  * the Z4/Z5 toolbar is never pushed off the card. A stray submit collapses
  * the entry back toward the opening height because the cleared editor
- * shrinks. The **maximized** toggle (Z2 button) pegs the transcript to its
- * minimum and gives the rest to the entry, via a `data-maximized` attribute
- * on the card root read by CSS; it is session-only and never persisted. There
- * is no split pane, no sash, and no content-sizing JS — this replaced an
- * earlier `TugSplitPane` + `useContentDrivenPanelSize` machine. The card
- * wires:
+ * shrinks. There is no split pane, no sash, and no content-sizing JS — this
+ * replaced an earlier `TugSplitPane` + `useContentDrivenPanelSize` machine.
+ * The card wires:
  *
  *   • A live `CodeSessionStore` bound to the supervisor-issued
  *     `tugSessionId` via the card-session binding store.
@@ -73,7 +70,7 @@ import { group } from "../tug-animator";
 import { TugBox } from "../tug-box";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPushButton } from "../tug-push-button";
-import { AlertTriangle, Maximize2, Minimize2, Trash2 } from "lucide-react";
+import { AlertTriangle, Trash2 } from "lucide-react";
 
 import { TidePulseStrip } from "./tide-pulse-strip";
 import { TugLabel } from "../tug-label";
@@ -2240,16 +2237,6 @@ export function DevCardBody({
     return () => editorStore.unbind();
   }, [editorStore]);
 
-  // --- Maximize toggle (session-only — never persisted). ---
-  // Pure appearance state ([L06]): drives `data-maximized` on the card
-  // root, which CSS reads to peg the transcript to its minimum
-  // (`--dev-transcript-min`) and give the rest of the height to the entry
-  // (the editor switches to its fill mode). No JS sizing, no split-pane
-  // sash — the browser sizes the column. Submitting collapses the entry
-  // back toward its opening height automatically, because the cleared
-  // editor auto-shrinks.
-  const [maximized, setMaximized] = useState(false);
-
   // Focus the prompt editor at meaningful moments:
   //
   //   - Construction: fires once when the card body first mounts.
@@ -2525,12 +2512,10 @@ export function DevCardBody({
   // it) is in view. Once follow-bottom is re-engaged the new turn row
   // pins automatically via the list's post-commit pin.
   //
-  // Submitting always collapses the entry: un-maximize (so a maximized
-  // entry returns the transcript to full height) and let the cleared
-  // editor drive the content sizer back to the 180px floor. Keeps the
-  // transcript readable after every send.
+  // Submitting always collapses the entry: the cleared editor drives the
+  // content sizer back to the opening floor. Keeps the transcript readable
+  // after every send.
   const handleAfterSubmit = useCallback(() => {
-    setMaximized(false);
     transcriptRef.current?.scrollToBottom();
     entryDelegateRef.current?.focus();
   }, [entryDelegateRef]);
@@ -3271,11 +3256,6 @@ export function DevCardBody({
         // felt. Engine-derived from the store ([L02]); appearance via the
         // attribute, never React state ([L06]).
         data-inline-dialog-pending={inlineDialogPending ? "true" : undefined}
-        // Maximize signal (session-only appearance, [L06]). Set on the card
-        // root so BOTH the transcript column and the entry region (siblings)
-        // can react: maximized pegs the transcript to its minimum height and
-        // gives the rest to the entry. Removed when not maximized.
-        data-maximized={maximized ? "" : undefined}
       >
         {/*
           Card body is a plain flex column ([L06]/[L13] — no JS sizing).
@@ -3284,9 +3264,8 @@ export function DevCardBody({
           height (floored at `--dev-transcript-min`); the prompt-entry region
           below is content-sized and grows with the editor (auto-height,
           capped at `--dev-entry-max-height` so the Z4/Z5 toolbar stays
-          pinned). Maximize pegs the transcript to its minimum and fills the
-          entry via `data-maximized` (CSS only). This replaces the old
-          `TugSplitPane` + `useContentDrivenPanelSize` machine wholesale.
+          pinned). This replaces the old `TugSplitPane` +
+          `useContentDrivenPanelSize` machine wholesale.
 
           `DevTranscriptHost` mounts a `TugListView` over a
           `DevTranscriptDataSource` mapping `codeSessionStore.transcript`
@@ -3342,74 +3321,38 @@ export function DevCardBody({
               data-slot="dev-card-status-bar"
             >
               {/*
-                Z2 status content with an empty lead spacer and the
-                maximize toggle on the trailing end. The spacer balances
-                the trailing toggle's width so the status cells stay
-                centered; it carries no resize affordance (the sash below
-                is non-draggable — sizing is content-driven or pegged).
-                Rendered only when Z2 has content: an empty slot leaves
-                the wrapper `:empty`, which collapses the whole strip
-                (CSS).
+                Z2 status content. Rendered only when Z2 has content: an
+                empty slot leaves the wrapper `:empty`, which collapses the
+                whole strip (CSS).
 
                 Per [D100] the row's TASKS cell carries the assembled
                 task-list state plus a popover with the full list, so
                 no separate pinned strip is needed.
               */}
               {effectiveStatusBarContent != null && (
-                <>
-                  <div
-                    className="dev-card-status-bar-lead-spacer"
-                    aria-hidden="true"
-                  />
-                  <div
-                    className="dev-card-status-bar-main"
-                    // Z2 status content is chrome: clicking a status cell, its
-                    // popover trigger, or an empty gap must not pull focus off
-                    // the editor. Ancestor-matched `data-tug-focus="refuse"`
-                    // covers the cells + gaps; the leading sash grip and
-                    // trailing maximize button (siblings) own their own focus
-                    // behavior. Keeping first-responder on the editor also
-                    // lets a status popover restore editor focus on Escape /
-                    // Cmd-. via the service-popup binding.
-                    data-tug-focus="refuse"
-                  >
-                    {/*
-                      Second cycle scope, sharing this card's mode id, so
-                      each Z2 status cell's `useFocusable` registers into
-                      the same cycle as the prompt-entry stops ([P10]
-                      revised — the cells are leaf stops at orders 5…9).
-                      The row is rendered in the transcript pane — outside
-                      the prompt entry's own `CycleScope` — so it needs its
-                      own here. Only the telemetry cells join the cycle; the
-                      sibling sash grip + maximize toggle are not stops.
-                    */}
-                    <cycle.CycleScope>
-                      {effectiveStatusBarContent}
-                    </cycle.CycleScope>
-                  </div>
+                <div
+                  className="dev-card-status-bar-main"
+                  // Z2 status content is chrome: clicking a status cell, its
+                  // popover trigger, or an empty gap must not pull focus off
+                  // the editor. Ancestor-matched `data-tug-focus="refuse"`
+                  // covers the cells + gaps. Keeping first-responder on the
+                  // editor also lets a status popover restore editor focus on
+                  // Escape / Cmd-. via the service-popup binding.
+                  data-tug-focus="refuse"
+                >
                   {/*
-                    Maximize toggle — Z2's trailing control. Flips the
-                    entry between its content-autosized state and the
-                    maximized state (transcript pegged to its minimum, entry
-                    fills the rest); the leading spacer balances its width so
-                    the status cells stay centered.
+                    Second cycle scope, sharing this card's mode id, so
+                    each Z2 status cell's `useFocusable` registers into
+                    the same cycle as the prompt-entry stops ([P10]
+                    revised — the cells are leaf stops at orders 5…9).
+                    The row is rendered in the transcript pane — outside
+                    the prompt entry's own `CycleScope` — so it needs its
+                    own here.
                   */}
-                  <TugPushButton
-                    className="dev-card-maximize-toggle"
-                    subtype="icon"
-                    size="xs"
-                    emphasis={maximized ? "filled" : "ghost"}
-                    role={maximized ? "accent" : "action"}
-                    aria-label={maximized ? "Restore size" : "Maximize"}
-                    aria-pressed={maximized}
-                    icon={
-                      maximized
-                        ? <Minimize2 strokeWidth={2} aria-hidden="true" />
-                        : <Maximize2 strokeWidth={2} aria-hidden="true" />
-                    }
-                    onClick={() => setMaximized(!maximized)}
-                  />
-                </>
+                  <cycle.CycleScope>
+                    {effectiveStatusBarContent}
+                  </cycle.CycleScope>
+                </div>
               )}
             </div>
             {/*
@@ -3427,10 +3370,7 @@ export function DevCardBody({
         {/*
           Prompt-entry region — content-sized and pinned to the card bottom.
           The text area grows with the editor up to `--dev-entry-max-height`
-          then scrolls; the transcript above yields. Maximize (driven by
-          `data-maximized` on the card root) pegs the transcript to its
-          minimum and fills the entry — CSS only, session-only, never
-          persisted.
+          then scrolls; the transcript above yields.
         */}
         <div
           className="dev-card-entry-region"
@@ -3487,7 +3427,6 @@ export function DevCardBody({
               pastedCommandResolver={pastedCommandResolver}
               inlineCommandMatcher={inlineCommandMatcher}
               onAfterSubmit={handleAfterSubmit}
-              maximized={maximized}
               indicatorsContent={
                 <>
                   <DevRouteIndicatorBadge

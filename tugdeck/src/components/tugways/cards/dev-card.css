@@ -10,8 +10,7 @@
    at `--tug-text-editor-min-height` and grows with content up to
    `--dev-entry-max-height` (a fraction of the card height), then scrolls —
    so the Z4 / Z5 toolbar stays pinned to the card bottom, always fully
-   visible. The maximize toggle pegs the transcript to its minimum and gives
-   the rest to the entry.
+   visible.
    ========================================================================= */
 
 .dev-card {
@@ -26,7 +25,7 @@
   container-type: size;
   /* ── Tune this ──────────────────────────────────────────────────────
      The transcript region (history + Z2 status row) never shrinks below
-     this — a hard floor, and the height it pegs to when maximized. ─────── */
+     this — a hard floor. ───────────────────────────────────────────────── */
   --dev-transcript-min: 52px;
   /* ── Tune this ──────────────────────────────────────────────────────
      How tall the text area may auto-expand before it scrolls — a fraction
@@ -45,22 +44,14 @@
    TugBox's default width:fit-content would collapse the box to content
    width; `width: 100%` makes it span the entry region. Height is
    content-sized (no `height: 100%`) so the auto-height editor drives the
-   region's height; the maximized variant below switches it to fill. The
-   fieldset element is otherwise already reset by tug-box.css (no border,
-   no margin, no padding when plain + inset={false}). */
+   region's height. The fieldset element is otherwise already reset by
+   tug-box.css (no border, no margin, no padding when plain + inset={false}). */
 .dev-card-entry-pane {
   display: flex;
   flex-direction: column;
   width: 100%;
   min-height: 0;
   min-width: 0;
-}
-
-/* When maximized, the entry pane fills the expanded region (the prompt
-   entry inside switches to its own fill mode via `[data-maximized]`). */
-.dev-card[data-maximized] .dev-card-entry-pane {
-  flex: 1 1 auto;
-  height: 100%;
 }
 
 /* Top-pane flex column — three rows:
@@ -81,9 +72,9 @@
   /* Direct flex child of `.dev-card` now (the split pane is gone). Flexes
      into all height the content-sized entry region below leaves, but never
      drops below `--dev-transcript-min` — the transcript (and its Z2 status
-     row) always keeps a usable minimum, even when the entry grows or is
-     maximized. The inner list view keeps its own `min-height: 0` for
-     scrolling; this floor is on the outer column only. */
+     row) always keeps a usable minimum, even when the entry grows. The inner
+     list view keeps its own `min-height: 0` for scrolling; this floor is on
+     the outer column only. */
   flex: 1 1 0;
   width: 100%;
   min-height: var(--dev-transcript-min, 140px);
@@ -98,12 +89,7 @@
    min-height of its own, so the region is exactly text-area + the fixed
    Z4 / Z5 rows, no dead space below the toolbar. `flex-shrink: 1` lets the
    region yield to the transcript's `--dev-transcript-min` floor on a small
-   card rather than overflowing.
-
-   Maximized → the region fills everything above the transcript minimum (see
-   the `.dev-card[data-maximized]` rules below). There is no 90% peg: the one
-   governing rule is "the transcript keeps `--dev-transcript-min`"; maximize
-   just hands the entry all the height above that floor. */
+   card rather than overflowing. */
 .dev-card-entry-region {
   display: flex;
   flex-direction: column;
@@ -122,25 +108,10 @@
 
 /* Cap the text area's auto-expand at `--dev-entry-max-height` (a fraction
    of the card's height); past it the editor SCROLLS, so the Z4 / Z5 toolbar
-   is never pushed off the card bottom. The editor's `[data-maximized]` fill
-   mode bypasses this. [L20] — the card tunes the substrate's scroll height
-   through its own scoped rule. */
-.dev-card-entry-region
-  .tug-text-editor:not([data-maximized])
-  > .cm-editor
-  > .cm-scroller {
+   is never pushed off the card bottom. [L20] — the card tunes the substrate's
+   scroll height through its own scoped rule. */
+.dev-card-entry-region .tug-text-editor > .cm-editor > .cm-scroller {
   max-height: var(--dev-entry-max-height, 50cqh);
-}
-
-/* Maximize: peg the transcript to its minimum and give the rest to the
-   entry. One rule — the transcript minimum — governs both maximize and the
-   normal grow cap; this is just maximize using the full height above it. */
-.dev-card[data-maximized] .dev-card-top-column {
-  flex: 0 0 var(--dev-transcript-min, 140px);
-}
-
-.dev-card[data-maximized] .dev-card-entry-region {
-  flex: 1 1 auto;
 }
 
 /* The `TugPaneBulletinProvider` nested inside the top column carries the same
@@ -198,15 +169,11 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  /* Three-part row: an empty lead spacer on the leading end and the
-     maximize toggle on the trailing end (both the same fixed width),
-     with the status content between them in `.dev-card-status-bar-main`.
-     That wrapper is `flex: 1 1 auto`, so it absorbs the row width the
-     end controls leave and the status-row renderer inside centers its
-     own cells. The equal-width ends keep the cells optically centered.
-     `justify-content: center` is inert while `main` flexes, but is kept
-     so a future content-sized Z2 occupant (one not `width: 100%`) still
-     centers in the row. */
+  /* The status content lives in `.dev-card-status-bar-main` (`flex: 1 1
+     auto`), so it spans the row and the status-row renderer inside centers
+     its own cells. `justify-content: center` is inert while `main` flexes,
+     but is kept so a future content-sized Z2 occupant (one not `width:
+     100%`) still centers in the row. */
   justify-content: center;
   gap: var(--tug-space-md);
   padding: var(--tug-space-md);
@@ -267,41 +234,14 @@
   display: none;
 }
 
-/* Z2 status content, flanked by the lead spacer and the maximize
-   toggle. `flex: 1 1 auto` lets it absorb the row width the ends leave;
-   `min-width: 0` lets it shrink below content so the ends stay pinned to
-   the card's edges. The status-row renderer inside is `width: 100%` and
-   centers its own cells — this wrapper just reserves the middle band. */
+/* Z2 status content — `flex: 1 1 auto` lets it span the row; `min-width: 0`
+   lets it shrink below content. The status-row renderer inside is `width:
+   100%` and centers its own cells. */
 .dev-card-status-bar-main {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   justify-content: center;
-}
-
-/* Empty lead spacer — balances the trailing maximize toggle so the
-   status cells stay centered. Sized to match an xs icon button (the
-   toggle); no content, no hit affordance. The grabber that used to live
-   here is gone: the sash is non-draggable and the pane sizes to content
-   or pegs to the maximize toggle. */
-.dev-card-status-bar-lead-spacer {
-  flex: 0 0 auto;
-  width: var(--tug-button-xs-height);
-}
-
-/* Maximize toggle — Z2's trailing control. `flex: 0 0 auto` keeps it
-   at its content size so it never shrinks against the status row. */
-.dev-card-maximize-toggle {
-  flex: 0 0 auto;
-}
-
-/* Optical nudge: the maximize toggle reads a pixel high against the
-   status-row text — drop it down 1px. Purely visual; `position:
-   relative` shifts the paint without moving the layout box, so the
-   row's flex metrics are unchanged. */
-.dev-card-status-bar > .dev-card-maximize-toggle {
-  position: relative;
-  top: 1px;
 }
 
 /* The separator between the transcript and the prompt entry is the Z2

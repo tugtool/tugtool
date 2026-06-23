@@ -53,17 +53,11 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry — root container
    ----------------------------------------------------------------------------
-   Two layout modes, keyed on `[data-maximized]` (the host's maximize
-   state):
-
-   - **Content-sized (default).** `flex: 0 0 auto` — the entry sizes to its
-     content. The embedded editor auto-grows with its text up to `maxRows`
-     rows and then scrolls (see `tug-text-editor.css`), so the entry is as
-     tall as the prompt and the host gives the rest of its column to the
-     transcript. No JS measurement, no split-pane sash — the browser sizes
-     it natively.
-   - **Maximized.** `flex: 1 1 auto; height: 100%` — the entry fills its
-     host container and the editor fills the entry.
+   Content-sized: `flex: 0 0 auto` — the entry sizes to its content. The
+   embedded editor auto-grows with its text up to `maxRows` rows and then
+   scrolls (see `tug-text-editor.css`), so the entry is as tall as the prompt
+   and the host gives the rest of its column to the transcript. No JS
+   measurement, no split-pane sash — the browser sizes it natively.
 
    Host chrome — pane edges, card frame, sheet background — belongs to the
    parent; the entry itself has no border, no radius, no padding. The
@@ -86,11 +80,6 @@ body {
   transition: background-color var(--tug-motion-duration-fast, 120ms) ease;
 }
 
-.tug-prompt-entry[data-maximized] {
-  flex: 1 1 auto;
-  height: 100%;
-}
-
 /* When the composed input is focused (editor carries focus), the whole
    entry adopts the input's focus surface so the status row, tools panel,
    input, and toolbar all read as one coherent control. This is the
@@ -105,8 +94,7 @@ body {
    target the input region without reaching into the substrate's own
    token slot [L20]. The substrate takes the remaining horizontal space
    and stretches vertically to fill the area. */
-/* Content-sized by default so the auto-height editor drives the entry's
-   height; fills only when the entry is maximized. */
+/* Content-sized so the auto-height editor drives the entry's height. */
 .tug-prompt-entry-input-area {
   display: flex;
   flex: 0 0 auto;
@@ -114,25 +102,17 @@ body {
   align-items: stretch;
   min-height: 0;
 }
-.tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area {
-  flex: 1 1 auto;
-}
 
 /* The substrate sits flush against the entry's edges — drop the
    substrate's default rounded corners (and the inner `.cm-editor`
    clip radius that pairs with them) so the entry reads as a single
    continuous panel. `min-width: 0` prevents the editor's intrinsic width
-   from forcing the row wider than its column. Flex is NOT set here: in
-   the default (content-sized) mode the editor governs its own height via
-   `maxRows` auto-grow; only the maximized mode stretches it to fill. */
+   from forcing the row wider than its column. Flex is NOT set here: the
+   editor governs its own height via `maxRows` auto-grow. */
 .tug-prompt-entry-input-area > .tug-text-editor,
 .tug-prompt-entry-input-area > .tug-text-editor > .cm-editor {
   min-width: 0;
   border-radius: 0;
-}
-.tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area > .tug-text-editor,
-.tug-prompt-entry[data-maximized] .tug-prompt-entry-input-area > .tug-text-editor > .cm-editor {
-  flex: 1 1 auto;
 }
 
 /* ----------------------------------------------------------------------------
@@ -417,9 +397,7 @@ body {
    A leading group — caller-supplied status content plus an optional caution
    slot, both content-sized and in normal inline flow. When the host card
    leaves both slots empty, `hasStatusRow` is false and the row is not
-   rendered at all: its former occupants — the badges and the maximize
-   toggle — moved to the Z4B indicator strip and the Z2 status bar.
-   Compact vertical padding when the row does render.
+   rendered at all. Compact vertical padding when the row does render.
    ----------------------------------------------------------------------------- */
 
 .tug-prompt-entry-status {
