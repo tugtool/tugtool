@@ -71,7 +71,7 @@ const FAMILY: Record<string, FamilyEntry> = {
   nocturne: { base: "brio", mode: "dark", key: "seafoam", accent: "orange" },
   bravura: { base: "brio", mode: "dark", key: "purple", accent: "orange" },
   aria: { base: "harmony", mode: "light", key: "iris", accent: "amber" },
-  vivace: { base: "harmony", mode: "light", key: "rose", accent: "gold" },
+  vivace: { base: "harmony", mode: "light", key: "seafoam", accent: "gold" },
 };
 
 const OUTPUT_ITEMS = Object.keys(FAMILY).map((name) => ({
