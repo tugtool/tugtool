@@ -1465,6 +1465,56 @@ export const DevTranscriptHost = forwardRef<
     prevListMountedRef.current = listMounted;
   }, [listMounted]);
 
+  // Z0 gutter fill. The inner list permanently reserves a scrollbar gutter
+  // (`overflow-y: scroll` + `scrollbar-gutter: stable`, dev-card.css), so the
+  // Z0 strip's full-bleed background stops one gutter-width short of the card
+  // edge — invisible while a scrollbar occupies that gutter, a visible gap when
+  // the transcript fits and no scrollbar shows. The strip lives inside the
+  // scroll container's clip (it's the list's leading content) and so cannot
+  // paint into the gutter, which sits outside the padding box. Measure the
+  // overflow + gutter width here and drive a CSS cap on the transcript root —
+  // OUTSIDE that clip — that paints the Z0 surface into the empty gutter, but
+  // only when there is no scrollbar (see `dev-load-control-bar.css`). The
+  // scroll element already rewrites `data-tug-scroll-state` on every
+  // content/scroll commit (tug-list-view.tsx); observe that plus its own
+  // resize and recompute. [L03] registration; [L06] appearance via a DOM
+  // attribute + CSS var, never React state.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (root === null || !listMounted) return;
+    const scroll = root.querySelector<HTMLElement>(".tug-list-view");
+    if (scroll === null) return;
+    let frame: number | null = null;
+    const recompute = (): void => {
+      frame = null;
+      const overflowing = scroll.scrollHeight - scroll.clientHeight > 1;
+      const gutter = scroll.offsetWidth - scroll.clientWidth;
+      if (overflowing || gutter <= 0) {
+        delete root.dataset.z0Fill;
+      } else {
+        root.style.setProperty("--tugx-z0-gutter", `${gutter}px`);
+        root.dataset.z0Fill = "";
+      }
+    };
+    const schedule = (): void => {
+      if (frame === null) frame = requestAnimationFrame(recompute);
+    };
+    recompute();
+    const ro = new ResizeObserver(schedule);
+    ro.observe(scroll);
+    const mo = new MutationObserver(schedule);
+    mo.observe(scroll, {
+      attributes: true,
+      attributeFilter: ["data-tug-scroll-state"],
+    });
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      ro.disconnect();
+      mo.disconnect();
+      delete root.dataset.z0Fill;
+    };
+  }, [listMounted]);
+
   // History-collapse expansion overrides ([P02], Spec S02). ONE
   // instance per card, owned HERE because the host never unmounts
   // under windowed mounting — per-block [A9] keys could not survive a

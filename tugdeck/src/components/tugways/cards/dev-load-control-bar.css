@@ -56,6 +56,34 @@
   user-select: none;
 }
 
+/* Gutter cap — fills the reserved scrollbar gutter with the Z0 surface when
+   the transcript has no scrollbar, so the resting strip reads edge-to-edge.
+   The strip itself lives inside the scroll container's clip and can't paint
+   into the gutter (the gutter sits outside the padding box); this cap is on
+   the transcript root, OUTSIDE that clip. It shows only when the host marks
+   `data-z0-fill` — set exactly when no scrollbar is present, with the measured
+   gutter width in `--tugx-z0-gutter` (see dev-card-transcript.tsx). With a
+   scrollbar present the attribute is absent and the scrollbar fills the gutter
+   as before. Same surface + bottom border as the strip; height matches its
+   resting `min-height`. A hair of overlap onto the strip is invisible (same
+   color). [L06] appearance via CSS keyed off a DOM attribute. */
+.dev-card-transcript[data-z0-fill]::after {
+  content: "";
+  position: absolute;
+  /* Match the strip exactly: it is `box-sizing: border-box; min-height:
+     2.5rem` with the divider inside that box, so its bottom border sits at
+     y=2.5rem. Border-box here lands this cap's bottom border at the same y —
+     content-box would push it 1px lower and leave a step at the seam. */
+  box-sizing: border-box;
+  top: 0;
+  right: 0;
+  width: var(--tugx-z0-gutter, 0);
+  height: 2.5rem;
+  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  pointer-events: none;
+}
+
 /* The metadata row spans the strip: session-created flush left, the turns
    status + load action flush right. */
 .dev-load-control-bar-metadata {
