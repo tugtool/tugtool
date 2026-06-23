@@ -22,7 +22,8 @@
 #
 #   (release, main)        → …/DerivedData/Tug
 #   (debug, main)          → …/DerivedData/Tug-debug
-#   (debug|release, other) → …/DerivedData/Tug-worktree
+#   (debug, <other>)       → …/DerivedData/Tug-debug-<slug>
+#   (release, <other>)     → …/DerivedData/Tug-release-<slug>
 #   TUG_FORCE_BUNDLE_ID=…   → …/DerivedData/Tug-<suffix>-<wtslug>
 #                             (e.g. Tug-apptest-main, Tug-apptest-tugdash-foo)
 #

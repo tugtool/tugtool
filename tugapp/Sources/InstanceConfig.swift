@@ -17,11 +17,36 @@ import Foundation
 /// test rigs can construct synthetic identities pointing at temp
 /// data dirs without rebuilding the bundle.
 ///
+/// The override is **gated on the app-test harness marker**
+/// (`TUGAPP_TEST_SOCKET`), and deliberately so. Every running Tug
+/// instance exports its own `TUG_INSTANCE_ID` into the environment of
+/// its tugcast child, which propagates it to every Dev-card shell (see
+/// `ProcessManager.startProcess`). `open` then propagates the caller's
+/// environment to whatever app it launches — so a `just app-debug`
+/// run from inside a release-main Dev card would otherwise launch a
+/// brand-new worktree/debug bundle that silently adopts `release-main`,
+/// colliding with the very instance that spawned it (exit-73, the
+/// "Another release-main instance is already running" dialog). A built
+/// bundle's identity is its OWN baked-in `BuildInfo.instanceId`; an
+/// inherited `TUG_INSTANCE_ID` is honored only when the app-test
+/// harness is genuinely driving the launch — which it signals with
+/// `TUGAPP_TEST_SOCKET` (set on every harness launch, passed via
+/// `open --env`). The tugcast integration-test harness scrubs the same
+/// vars on its side (`tugcast/tests/common/mod.rs`).
+///
 /// References: roadmap/tug-multi-instance.md [D04] [D05] [D12].
 enum InstanceConfig {
     /// Environment variable name carrying the runtime instance ID.
     /// Kept in sync with `tugcore::instance::ENV_INSTANCE_ID`.
     static let envInstanceID = "TUG_INSTANCE_ID"
+
+    /// App-test harness marker. Present iff the app-test driver
+    /// launched this process (`tests/app-test/_harness` sets it on
+    /// every launch and passes it via `open --env`). Gates the
+    /// `TUG_INSTANCE_ID` override so only a genuine harness launch may
+    /// override the bundle's baked-in identity. Kept in sync with the
+    /// harness and `TestHarnessBridge`.
+    static let envTestSocket = "TUGAPP_TEST_SOCKET"
 
     /// Environment variable name carrying the absolute path of the
     /// running app bundle. Swift sets this when spawning tugcast so
@@ -33,12 +58,18 @@ enum InstanceConfig {
     /// sync with `tugcore::instance::BUNDLE_PATH_MARKER`.
     static let bundlePathMarkerName = "bundle-path"
 
-    /// Canonical per-instance identifier for this process. Reads
-    /// `TUG_INSTANCE_ID` from the environment first (harness
-    /// override) and falls back to `BuildInfo.instanceId`. Frozen
-    /// on first access.
+    /// Canonical per-instance identifier for this process. Frozen on
+    /// first access.
+    ///
+    /// The bundle's baked-in `BuildInfo.instanceId` is authoritative.
+    /// An inherited `TUG_INSTANCE_ID` is honored only under the
+    /// app-test harness (`TUGAPP_TEST_SOCKET` present) — see the type
+    /// doc for why an ungated override would make Dev-card-launched
+    /// builds adopt the launching instance's identity.
     static let instanceId: String = {
-        if let override = ProcessInfo.processInfo.environment[envInstanceID],
+        let env = ProcessInfo.processInfo.environment
+        if env[envTestSocket] != nil,
+           let override = env[envInstanceID],
            !override.isEmpty {
             return override
         }

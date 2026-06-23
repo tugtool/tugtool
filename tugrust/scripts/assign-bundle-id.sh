@@ -138,7 +138,7 @@ esac
 plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$PLIST"
 
 # Stamp BOTH name keys to match PRODUCT_NAME (Tug / Tug-debug /
-# Tug-worktree) so each variant is its own legible row in System
+# Tug-<profile>-<slug>) so each variant is its own legible row in System
 # Settings → Accessibility, instead of identical "Tug" rows. The list
 # reads CFBundleName (the literal "Tug" by default); CFBundleDisplayName
 # alone does not de-collide it.

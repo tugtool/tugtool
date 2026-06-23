@@ -6,10 +6,18 @@
 # requirement); this one names the bundle *file* so each build variant
 # is a distinct `.app` that never clobbers or re-signs another:
 #
-#   (release, main)       → Tug            (Tug.app)
-#   (debug, main)         → Tug-debug      (Tug-debug.app)
-#   (debug|release, other)→ Tug-worktree   (Tug-worktree.app)
-#   TUG_FORCE_BUNDLE_ID=…  → Tug-<suffix>   (e.g. …apptest → Tug-apptest.app)
+#   (release, main)       → Tug                  (Tug.app)
+#   (debug, main)         → Tug-debug            (Tug-debug.app)
+#   (debug, <other>)      → Tug-debug-<slug>     (Tug-debug-<slug>.app)
+#   (release, <other>)    → Tug-release-<slug>   (Tug-release-<slug>.app)
+#   TUG_FORCE_BUNDLE_ID=…  → Tug-<suffix>         (e.g. …apptest → Tug-apptest.app)
+#
+# Each worktree gets its own profile+slug-keyed `.app` (and, via
+# derived-data-path.sh, its own DerivedData) so two dash worktrees never
+# build into — and clobber, or re-sign under a live mmap — the one
+# bundle the other's app is running. This matches the per-(profile,slug)
+# CFBundleIdentifier that assign-bundle-id.sh / bundle-id-from-cwd.sh
+# already assign, so each worktree variant is a fully independent app.
 #
 # Usage:
 #   product-name-from-cwd.sh <profile>    # debug | release
@@ -39,7 +47,8 @@ fi
 if BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && [ "$BRANCH" != "HEAD" ]; then
     :
 else
-    BRANCH="detached"
+    SHA="$(git rev-parse HEAD 2>/dev/null | cut -c1-8)"
+    BRANCH="detached-${SHA:-unknown}"
 fi
 
 case "${PROFILE}-${BRANCH}" in
@@ -50,6 +59,8 @@ case "${PROFILE}-${BRANCH}" in
         echo "Tug-debug"
         ;;
     *)
-        echo "Tug-worktree"
+        REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+        SLUG="$(bash "$REPO_ROOT/tugrust/scripts/branch-slug.sh" "$BRANCH")"
+        echo "Tug-${PROFILE}-${SLUG}"
         ;;
 esac

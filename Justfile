@@ -267,7 +267,10 @@ app-debug: build wasm
     # the user's chosen tree wins over any stale build-time value.
     tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
-    open "$APP_DIR"
+    # Scrub the launching instance's identity/resource env: `open`
+    # propagates the caller's environment, so a launch from inside a Dev
+    # card would otherwise hand the new bundle the host's TUG_INSTANCE_ID.
+    env -u TUG_INSTANCE_ID -u TUG_BUNDLE_PATH -u TUGCAST_RESOURCE_ROOT open "$APP_DIR"
 
 # Build a Release bundle and (re)launch the cwd-derived release
 # instance. Quit-prior runs first for the same reason as app-debug.
@@ -303,7 +306,10 @@ app-release: build wasm
     # developer checkout.
     tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
-    open "$APP_DIR"
+    # Scrub the launching instance's identity/resource env: `open`
+    # propagates the caller's environment, so a launch from inside a Dev
+    # card would otherwise hand the new bundle the host's TUG_INSTANCE_ID.
+    env -u TUG_INSTANCE_ID -u TUG_BUNDLE_PATH -u TUGCAST_RESOURCE_ROOT open "$APP_DIR"
 
 # Relaunch the cwd-derived debug instance without rebuilding.
 launch-debug:
@@ -321,7 +327,10 @@ launch-debug:
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
-    open "$APP_DIR"
+    # Scrub the launching instance's identity/resource env: `open`
+    # propagates the caller's environment, so a launch from inside a Dev
+    # card would otherwise hand the new bundle the host's TUG_INSTANCE_ID.
+    env -u TUG_INSTANCE_ID -u TUG_BUNDLE_PATH -u TUGCAST_RESOURCE_ROOT open "$APP_DIR"
 
 # Relaunch the cwd-derived release instance without rebuilding.
 launch-release:
@@ -339,7 +348,10 @@ launch-release:
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
     BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
-    open "$APP_DIR"
+    # Scrub the launching instance's identity/resource env: `open`
+    # propagates the caller's environment, so a launch from inside a Dev
+    # card would otherwise hand the new bundle the host's TUG_INSTANCE_ID.
+    env -u TUG_INSTANCE_ID -u TUG_BUNDLE_PATH -u TUGCAST_RESOURCE_ROOT open "$APP_DIR"
 
 # Stop the cwd-derived debug instance (idempotent). Quits the GUI app
 # AND the tugcast registry entry — `just app-debug` then re-launches
