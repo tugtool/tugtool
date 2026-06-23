@@ -302,6 +302,19 @@ export interface CodeSessionState {
    */
   lastRewindResult: RewindResultAck | null;
   /**
+   * The rewound-to turn's command, stashed from a `session_rewind_request`
+   * until its matching successful `rewind_result` ack lands ([#step-7-3]).
+   * On that ack the reducer routes it into `pendingDraftRestore` (so the
+   * composer offers the command back for re-edit) and clears this. Cleared
+   * without seeding on a refused / non-matching ack. Internal — not part of
+   * the public snapshot. `null` when no rewind is in flight.
+   */
+  pendingRewindDraft: {
+    promptUuid: string;
+    text: string;
+    atoms: ReadonlyArray<AtomSegment>;
+  } | null;
+  /**
    * Per-turn scratch ([D07]) — one entry per turn, keyed by `turnKey`,
    * spanning every msgId iteration of the turn's tool-use loop. The
    * shift from `Map<msgId, …>` was a correctness fix: today's
@@ -801,6 +814,7 @@ export function createInitialState(
     activeMsgId: null,
     rewindPreviews: new Map(),
     lastRewindResult: null,
+    pendingRewindDraft: null,
     scratch: new Map(),
     pendingApproval: null,
     pendingQuestion: null,
@@ -3038,6 +3052,14 @@ function handleRewindPreviewResult(
  * conversation/both rewind, emit the local transcript truncation. The
  * truncation is coupled to the ack (not optimistic) so a refused rewind never
  * mangles the transcript.
+ *
+ * The same successful ack also routes the stashed rewound-to command (from the
+ * `session_rewind_request`) into `pendingDraftRestore`, so the composer offers
+ * that command back for re-edit — the prompt-entry seeds it iff its editor is
+ * empty, exactly as for a CASE A interrupt / queued-send cancel. Seeding the
+ * slot from a wire-event reducer transition (never a React effect) keeps the
+ * editor out of any store→React→store cycle ([L02]); the stash is cleared on
+ * any ack so a refused / non-matching result never seeds.
  */
 function handleRewindResult(
   state: CodeSessionState,
@@ -3053,13 +3075,30 @@ function handleRewindResult(
       : {}),
   };
   const effects: Effect[] = [];
-  if (
+  const conversationRewound =
     event.canRewind &&
-    (event.scope === "conversation" || event.scope === "both")
-  ) {
+    (event.scope === "conversation" || event.scope === "both");
+  if (conversationRewound) {
     effects.push({ kind: "truncate-transcript", promptUuid: event.promptUuid });
   }
-  return { state: { ...state, lastRewindResult: ack }, effects };
+  // Route the stashed command back into the composer on a successful
+  // conversation/both rewind whose anchor matches; clear the stash on any ack.
+  const stash = state.pendingRewindDraft;
+  const seedDraft =
+    conversationRewound && stash !== null && stash.promptUuid === event.promptUuid;
+  return {
+    state: {
+      ...state,
+      lastRewindResult: ack,
+      pendingRewindDraft: null,
+      ...(seedDraft
+        ? {
+            pendingDraftRestore: { text: stash.text, atoms: stash.atoms },
+          }
+        : {}),
+    },
+    effects,
+  };
 }
 
 /**
@@ -3084,13 +3123,28 @@ function handleRequestRewindPreview(
   };
 }
 
-/** Store-method action: emit the `session_rewind` apply frame ([#step-7-2]). */
+/**
+ * Store-method action: emit the `session_rewind` apply frame ([#step-7-2]) and
+ * stash the rewound-to command so a successful ack can offer it back in the
+ * composer ({@link handleRewindResult}). Stashing here (not seeding the editor
+ * now) keeps the seeding coupled to the wire ack, like the truncation.
+ */
 function handleSessionRewindRequest(
   state: CodeSessionState,
   event: SessionRewindActionEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
   return {
-    state,
+    state: {
+      ...state,
+      pendingRewindDraft:
+        event.draft !== undefined
+          ? {
+              promptUuid: event.promptUuid,
+              text: event.draft.text,
+              atoms: event.draft.atoms,
+            }
+          : null,
+    },
     effects: [
       {
         kind: "send-frame",

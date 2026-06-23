@@ -824,12 +824,23 @@ export interface RequestRewindPreviewActionEvent {
  * `session_rewind` CODE_INPUT frame ([#step-7-1]/[#step-7-2]); the transcript
  * truncation (for conversation/both) happens later, when the matching
  * `rewind_result` ack lands. No optimistic transcript mutation.
+ *
+ * `draft` is the rewound-to turn's command (text + attachments). The reducer
+ * stashes it and, when the matching successful `rewind_result` ack lands,
+ * routes it into `pendingDraftRestore` alongside the transcript truncation —
+ * so rewinding places that command back into the composer for re-edit. The
+ * seeding is coupled to the wire ack (not a React effect), matching the
+ * truncation's discipline so a refused rewind never seeds the editor.
  */
 export interface SessionRewindActionEvent {
   type: "session_rewind_request";
   promptUuid: string;
   scope: "conversation" | "code" | "both";
   fork?: boolean;
+  draft?: {
+    text: string;
+    atoms: ReadonlyArray<AtomSegment>;
+  };
 }
 
 /**

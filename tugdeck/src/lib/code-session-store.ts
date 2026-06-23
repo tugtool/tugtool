@@ -1099,14 +1099,27 @@ export class CodeSessionStore {
    * and a successful conversation/both rewind truncates the transcript locally
    * (L26-safe — survivors keep their mounts). `fork` (conversation/both only)
    * selects a forked copy (default) over the destructive in-place variant.
+   *
+   * `draft` is the rewound-to turn's command (text + attachments); when a
+   * conversation/both rewind succeeds the reducer routes it into
+   * `pendingDraftRestore` so the composer offers the command back for re-edit
+   * (seeded iff the editor is empty). Pass it for conversation/both rewinds;
+   * omit it (or for a code-only rewind) to leave the composer untouched.
    */
   sessionRewind(
     promptUuid: string,
     scope: "conversation" | "code" | "both",
     fork?: boolean,
+    draft?: { text: string; atoms: ReadonlyArray<AtomSegment> },
   ): void {
     if (this._disposed) return;
-    this.dispatch({ type: "session_rewind_request", promptUuid, scope, fork });
+    this.dispatch({
+      type: "session_rewind_request",
+      promptUuid,
+      scope,
+      fork,
+      draft,
+    });
   }
 
   /**

@@ -71,7 +71,13 @@ describe("projectRewindTurns", () => {
     ]);
     // Only turn 2 is a valid target — rewinding to it keeps turn 1.
     expect(rows).toEqual([
-      { promptUuid: "uuid-2", turnKey: "t2", preview: "second prompt", submitAt: 200 },
+      {
+        promptUuid: "uuid-2",
+        turnKey: "t2",
+        preview: "second prompt",
+        atoms: [],
+        submitAt: 200,
+      },
     ]);
   });
 
@@ -82,6 +88,26 @@ describe("projectRewindTurns", () => {
       userTurn("t3", "uuid-3", "c", 3),
     ]);
     expect(rows.map((r) => r.turnKey)).toEqual(["t2", "t3"]);
+  });
+
+  test("carries the opener's attachments as the row's atoms", () => {
+    const atom = {
+      kind: "atom" as const,
+      type: "image",
+      label: "shot.png",
+      value: "shot.png",
+      id: "atom-1",
+    };
+    const turn = userTurn("t2", "uuid-2", "with attachment", 2);
+    (turn.messages[0] as unknown as { attachments: unknown[] }).attachments = [
+      atom,
+    ];
+    const rows = projectRewindTurns([
+      userTurn("t1", "uuid-1", "first", 1),
+      turn,
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].atoms).toEqual([atom]);
   });
 
   test("skips turns with no anchor (older / pre-[#step-7-1] sessions)", () => {

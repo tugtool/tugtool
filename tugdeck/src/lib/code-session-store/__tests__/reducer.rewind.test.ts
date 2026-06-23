@@ -260,3 +260,115 @@ describe("applied-rewind ack + truncation effect", () => {
     ).toBe(false);
   });
 });
+
+describe("rewind draft-restore (command back into the composer)", () => {
+  const ATOM = {
+    kind: "atom" as const,
+    type: "image",
+    label: "shot.png",
+    value: "shot.png",
+    id: "atom-1",
+  };
+
+  test("a successful conversation rewind seeds pendingDraftRestore from the stashed draft", () => {
+    const r = applyAll(fresh(), [
+      {
+        type: "session_rewind_request",
+        promptUuid: "uuid-r",
+        scope: "conversation",
+        fork: true,
+        draft: { text: "the command", atoms: [ATOM] },
+      } as CodeSessionEvent,
+      {
+        type: "rewind_result",
+        promptUuid: "uuid-r",
+        scope: "conversation",
+        canRewind: true,
+        newSessionId: "fork-sid",
+      } as CodeSessionEvent,
+    ]);
+    expect(r.state.pendingDraftRestore).toEqual({
+      text: "the command",
+      atoms: [ATOM],
+    });
+    // The transient stash is cleared once consumed.
+    expect(r.state.pendingRewindDraft).toBeNull();
+  });
+
+  test("a refused rewind clears the stash and never seeds the composer", () => {
+    const r = applyAll(fresh(), [
+      {
+        type: "session_rewind_request",
+        promptUuid: "uuid-r",
+        scope: "conversation",
+        fork: true,
+        draft: { text: "the command", atoms: [] },
+      } as CodeSessionEvent,
+      {
+        type: "rewind_result",
+        promptUuid: "uuid-r",
+        scope: "conversation",
+        canRewind: false,
+        error: "Claude is busy.",
+      } as CodeSessionEvent,
+    ]);
+    expect(r.state.pendingDraftRestore).toBeNull();
+    expect(r.state.pendingRewindDraft).toBeNull();
+  });
+
+  test("a code-only rewind does not seed the composer", () => {
+    const r = applyAll(fresh(), [
+      {
+        type: "session_rewind_request",
+        promptUuid: "uuid-r",
+        scope: "code",
+        draft: { text: "the command", atoms: [] },
+      } as CodeSessionEvent,
+      {
+        type: "rewind_result",
+        promptUuid: "uuid-r",
+        scope: "code",
+        canRewind: true,
+      } as CodeSessionEvent,
+    ]);
+    expect(r.state.pendingDraftRestore).toBeNull();
+  });
+
+  test("an ack whose anchor does not match the stash never seeds", () => {
+    const r = applyAll(fresh(), [
+      {
+        type: "session_rewind_request",
+        promptUuid: "uuid-r",
+        scope: "conversation",
+        draft: { text: "the command", atoms: [] },
+      } as CodeSessionEvent,
+      {
+        type: "rewind_result",
+        promptUuid: "uuid-other",
+        scope: "conversation",
+        canRewind: true,
+      } as CodeSessionEvent,
+    ]);
+    expect(r.state.pendingDraftRestore).toBeNull();
+    expect(r.state.pendingRewindDraft).toBeNull();
+  });
+
+  test("session_rewind frame omits the draft (it never crosses the wire)", () => {
+    const r = reduce(fresh(), {
+      type: "session_rewind_request",
+      promptUuid: "uuid-r",
+      scope: "conversation",
+      fork: true,
+      draft: { text: "the command", atoms: [] },
+    } as CodeSessionEvent);
+    const frame = r.effects.find(
+      (e): e is SendFrameEffect => e.kind === "send-frame",
+    );
+    expect(frame?.msg).toEqual({
+      type: "session_rewind",
+      promptUuid: "uuid-r",
+      scope: "conversation",
+      fork: true,
+    });
+  });
+});

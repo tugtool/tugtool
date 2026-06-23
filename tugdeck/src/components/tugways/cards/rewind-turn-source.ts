@@ -20,6 +20,7 @@ import type {
   TugListViewDataSource,
 } from "@/components/tugways/tug-list-view";
 import type { TurnEntry } from "@/lib/code-session-store/types";
+import type { AtomSegment } from "@/lib/tug-atom-img";
 
 /**
  * Stable id + kind for the `(current)` row the picker appends below the last
@@ -38,12 +39,15 @@ export const REWIND_CURRENT_KIND = "rewind-current";
  * `session_rewind` / `rewind_preview`; `turnKey` is the committed turn's
  * React-key seed (a stable, unique row id). `preview` is the user submission
  * text (the cell truncates for display); `submitAt` is the wall-clock the
- * cell renders as the row timestamp.
+ * cell renders as the row timestamp. `atoms` is the submission's parallel
+ * atom sequence (attachments) — carried so a rewind can seed the composer
+ * with the full original prompt, not just its text.
  */
 export interface RewindRow {
   promptUuid: string;
   turnKey: string;
   preview: string;
+  atoms: ReadonlyArray<AtomSegment>;
   submitAt: number;
 }
 
@@ -79,6 +83,7 @@ export function projectRewindTurns(
       promptUuid: turn.promptUuid as string,
       turnKey: turn.turnKey,
       preview: opener.kind === "user_message" ? opener.text : "",
+      atoms: opener.kind === "user_message" ? opener.attachments : [],
       submitAt: opener.kind === "user_message" ? opener.submitAt : turn.endedAt,
     });
   });

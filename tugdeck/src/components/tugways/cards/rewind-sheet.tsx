@@ -442,8 +442,14 @@ function RewindSheetBody({
     if (selected === null || !isIdle) return;
     setErrorMsg(null);
     setApplying(true);
-    // Fork is the default for conversation/both ([#step-7-2]).
-    codeSessionStore.sessionRewind(selected.promptUuid, effectiveScope, true);
+    // Fork is the default for conversation/both ([#step-7-2]). The selected
+    // turn's command rides along as the draft: on a successful ack the store
+    // offers it back in the composer for re-edit (both sheet scopes truncate
+    // the conversation, so the draft applies to either).
+    codeSessionStore.sessionRewind(selected.promptUuid, effectiveScope, true, {
+      text: selected.preview,
+      atoms: selected.atoms,
+    });
   }, [selected, isIdle, effectiveScope, codeSessionStore]);
 
   // Author the controls into the sheet's trapped focus mode: Tab walks the turn
