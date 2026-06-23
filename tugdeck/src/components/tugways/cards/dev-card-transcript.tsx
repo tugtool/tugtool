@@ -103,6 +103,7 @@ import { TugAttachmentStrip } from "@/components/tugways/cards/tug-attachment-st
 import { DevAttachmentPreview } from "@/components/tugways/cards/dev-attachment-preview";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import type { AtomSegment } from "@/lib/tug-atom-img";
+import { formatModelLabel } from "@/lib/model-label";
 import { DevZ1C } from "@/components/tugways/cards/dev-card-z1c";
 import {
   dispatch as dispatchRenderInput,
@@ -921,7 +922,9 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
         <div ref={footFloorRef}>
           <TugTranscriptEntry
             participant="assistant"
-            identifier={modelName ?? ASSISTANT_DEFAULT_IDENTIFIER}
+            identifier={
+              modelName ? formatModelLabel(modelName) : ASSISTANT_DEFAULT_IDENTIFIER
+            }
             timestamp={
               timestamp === "" || timestamp === undefined ? undefined : timestamp
             }
