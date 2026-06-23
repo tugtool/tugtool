@@ -71,11 +71,50 @@ body {
   --tugx-askquestion-number-gap:      0.4ch;
   --tugx-askquestion-marker-size:     0.875rem;
 
+  /* Per-row box — referenced from the SAME list-row tokens the live rail's
+   * TugListRow uses, so a live rail row and an answered row are pixel-identical
+   * and stay in sync if the density knob is ever tuned ([L20] read-only
+   * cross-reference). */
+  --tugx-askquestion-row-padding-block:  var(--tugx-list-row-padding-block, 8px);
+  --tugx-askquestion-row-padding-inline: var(--tugx-list-row-padding-inline, 14px);
+  --tugx-askquestion-row-gutter:         var(--tugx-list-row-indicator-gutter, 0.2rem);
+
   --tugx-askquestion-question-color:  var(--tug7-element-global-text-normal-default-rest);
   --tugx-askquestion-answer-color:    var(--tug7-element-global-text-normal-muted-rest);
   --tugx-askquestion-muted-color:     var(--tug7-element-global-text-normal-muted-rest);
   --tugx-askquestion-marker-done-color:    var(--tug7-element-global-text-normal-success-rest);
   --tugx-askquestion-marker-pending-color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Answered record wrapper — a flex column with the live wizard body's own gap,
+ * so the summary→rows rhythm equals the live action-bar→rail rhythm. */
+.ask-user-question-tool-block-answered {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+}
+
+/* ---- Progress summary header ----
+ *
+ * Mirrors the live wizard's top action bar so the question rows hold their
+ * vertical position when the wizard morphs into this record: the SAME summary
+ * text + leading indent (aligned to the marker column), occupying the SAME box
+ * (a button-height content row with the dialog's action-row block margins). The
+ * buttons are gone post-submit, but the space they held is reserved here so the
+ * rows below don't jump up.
+ *
+ * @tug-renders-on: --tugx-block-bg */
+.ask-user-question-tool-block-summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tug-button-xs-height, 1.5rem);
+  margin-block: var(--tug-space-md) var(--tug-space-md);
+  padding-inline-start: calc(
+    var(--tugx-askquestion-row-padding-inline) + var(--tugx-askquestion-row-gutter)
+  );
+  font-size:   var(--tugx-idialog-description-size);
+  line-height: var(--tugx-idialog-description-leading);
+  opacity:     var(--tugx-idialog-description-opacity);
 }
 
 /* ---- List ---------------------------------------------------------- */
@@ -86,7 +125,12 @@ body {
 .ask-user-question-tool-block-list {
   list-style: none;
   margin: 0;
-  padding: var(--tugx-askquestion-list-padding);
+  /* The ROWS carry the inline padding (matching the rail), so the list zeroes
+   * its own inline padding. No TOP block padding — the summary header above
+   * supplies the lead-in (matching the live action bar) so the rows stay put
+   * across the morph; a md tail keeps the last row off the chrome edge. */
+  padding-block: 0 var(--tugx-askquestion-list-padding);
+  padding-inline: 0;
   counter-reset: ask-user-question-marker;
   display: flex;
   flex-direction: column;
@@ -98,6 +142,14 @@ body {
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: var(--tugx-askquestion-marker-gap);
+  /* Match the rail row's box exactly: per-row block padding + the leading
+   * inline padding (with the focus gutter) + trailing inline padding, so the
+   * live rail and the answered record are pixel-identical. */
+  padding-block: var(--tugx-askquestion-row-padding-block);
+  padding-inline-start: calc(
+    var(--tugx-askquestion-row-padding-inline) + var(--tugx-askquestion-row-gutter)
+  );
+  padding-inline-end: var(--tugx-askquestion-row-padding-inline);
 }
 
 /* ---- Status marker ------------------------------------------------- */

@@ -158,7 +158,6 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { TugInput } from "@/components/tugways/tug-input";
 import { TugTextarea } from "@/components/tugways/tug-textarea";
 import {
   TugConfirmPopover,
@@ -1087,30 +1086,36 @@ function QuestionOptionsSizer({
 }
 
 /** Placeholder for the free-text answer field — shared by the live
- *  field and its inert sizer so both reserve the same one-line box. */
-const FREE_TEXT_PLACEHOLDER = "Or type your own answer…";
+ *  field and its inert sizer so both reserve the same box. Lowercase and
+ *  rendered a notch smaller than the typing font (see the `.css`). */
+const FREE_TEXT_PLACEHOLDER = "or type your own answer…";
+
+/** Default visible rows for the free-text answer field. */
+const FREE_TEXT_ROWS = 3;
 
 interface QuestionFreeTextProps {
   /** Current free-text value (controlled — lives in the wizard's `freeTexts`). */
   value: string;
   /** Typed input — sets the row's free text and clears its labels ([P01]). */
   onChange: (value: string) => void;
-  /** Enter (no Shift) = advance the wizard ([K3]). */
-  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  /** Shift/⌘-Return = advance the wizard ([K3]); plain Return = newline. */
+  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   /** Focus group + order — the field is one stop in the dialog's trap. */
   focusGroup: string;
   focusOrder: number;
 }
 
 /**
- * The current question's free-text answer field ([P01]) — a single-line
- * {@link TugInput} below the options. Always present (constant geometry:
- * it rides the panel sizers), so it's a stable focus stop and spatial-grid
- * node ([K1]) the user can Tab/arrow into. Controlled: the value lives in
- * the wizard's `freeTexts` state (and the [A9] bag preserves it), so no
+ * The current question's free-text answer field ([P01]) — a multi-line
+ * {@link TugTextarea} (three rows by default) below the options. Always
+ * present (constant geometry: it rides the panel sizers, and the panel's
+ * min-height floor ratchets so typing past three rows never shrinks the
+ * panel back), so it's a stable focus stop and spatial-grid node ([K1]) the
+ * user can Tab/arrow into. Controlled: the value lives in the wizard's
+ * `freeTexts` state (and the [A9] bag preserves it), so no
  * `componentStatePreservationKey` ([K2], uncontrolled-only). The substrate
  * editing responder (CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO) is wired
- * automatically — `TugInput` registers it inside the card's provider.
+ * automatically — `TugTextarea` registers it inside the card's provider.
  */
 const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
   value,
@@ -1124,12 +1129,15 @@ const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
       className="dev-question-dialog-freetext"
       data-slot="dev-question-dialog-freetext"
     >
-      <TugInput
-        size="sm"
+      <TugTextarea
+        className="dev-question-dialog-freetext-field"
         value={value}
         placeholder={FREE_TEXT_PLACEHOLDER}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
+        autoResize
+        rows={FREE_TEXT_ROWS}
+        maxRows={8}
         focusGroup={focusGroup}
         focusOrder={focusOrder}
         aria-label="Type your own answer"
@@ -1145,16 +1153,16 @@ const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
 
 /**
  * The inert face of the free-text field for the panel's hidden sizers —
- * the SAME single-line box, disabled and unfocusable, so each sizer
- * reserves the field's height and the panel never resizes when the live
- * field gains or loses text. No `focusGroup` (no engine registration),
- * no handlers.
+ * the SAME three-row box, disabled and unfocusable, so each sizer reserves
+ * the field's height and the panel never resizes when the live field gains
+ * or loses text. No `focusGroup` (no engine registration), no handlers.
  */
 function QuestionFreeTextSizer(): React.ReactElement {
   return (
     <div className="dev-question-dialog-freetext" aria-hidden="true">
-      <TugInput
-        size="sm"
+      <TugTextarea
+        className="dev-question-dialog-freetext-field"
+        rows={FREE_TEXT_ROWS}
         disabled
         readOnly
         tabIndex={-1}
@@ -1512,15 +1520,14 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     [markVisited],
   );
 
-  // [K3] Enter in the free-text field = advance the wizard (same as a
-  // Return on the options), NOT an option-label commit. The value is
-  // already in `freeTexts` from `onChange`; mark visited and reuse the
-  // shared advance machinery so "Return walks the wizard" survives. The
-  // engine's [P25] guard passes Enter through to the focused input, so
-  // we read it off the field's own `onKeyDown`.
+  // [K3] The free-text field is a multi-line textarea, so plain Return inserts
+  // a newline (native). Shift/⌘-Return advances the wizard (mark visited +
+  // reuse the shared advance machinery), mirroring the decline reply's send
+  // chord. The engine's [P25] guard passes the keystroke through to the
+  // focused textarea, so we read it off the field's own `onKeyDown`.
   const handleFreeTextKeyDown = React.useCallback(
-    (questionIndex: number, event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== "Enter" || event.shiftKey) return;
+    (questionIndex: number, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key !== "Enter" || !(event.shiftKey || event.metaKey)) return;
       event.preventDefault();
       markVisited(questionIndex);
       armAdvance(questionIndex);
@@ -1742,18 +1749,20 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
         : countConfirmedAnswers(selections, visited, freeTexts) ===
           questions.length);
 
+    // All controls share ONE top row, left→right: Cancel · Back · Next ·
+    // Submit (Back / Next multi-question only; Submit once answered). No
+    // separate nav row anymore.
     const buttonRow: string[] = [];
     if (hasQ) {
       buttonRow.push(key(QUESTION_CANCEL_ORDER));
+      if (multi) {
+        if (currentIndex > 0) buttonRow.push(key(QUESTION_BACK_ORDER));
+        if (!atReview) buttonRow.push(key(QUESTION_NEXT_ORDER));
+      }
       if (everyAnswered) buttonRow.push(key(QUESTION_SUBMIT_ORDER));
     } else {
       // No questions → a lone "Dismiss" (the Submit stop), always enabled.
       buttonRow.push(key(QUESTION_SUBMIT_ORDER));
-    }
-    const navRow: string[] = [];
-    if (multi) {
-      if (currentIndex > 0) navRow.push(key(QUESTION_BACK_ORDER));
-      if (!atReview) navRow.push(key(QUESTION_NEXT_ORDER));
     }
     // The options group joins the grid whenever a live question is shown (not at
     // the review step). Same treatment regardless of arity.
@@ -1769,7 +1778,7 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     const chatRow: string[] = [];
     if (hasQ) chatRow.push(key(QUESTION_CHAT_ABOUT_ORDER));
 
-    return rowGridOrder([buttonRow, navRow, optionsRow, freeTextRow, chatRow]);
+    return rowGridOrder([buttonRow, optionsRow, freeTextRow, chatRow]);
   }, [
     focusGroup,
     questions,
@@ -2022,13 +2031,15 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   // verbatim (unchanged from the legacy layout); the multi-question
   // summary moves into the wizard-nav row alongside Back / Next, so
   // this prop is `undefined` for multi-question payloads.
-  const dialogDescription: React.ReactNode | undefined = declineMode
-    ? "Reply to Claude in your own words instead of answering."
-    : !hasQuestions
-      ? "Claude sent a question that could not be displayed."
-      : single !== null
-        ? single.question
-        : undefined;
+  // Decline mode keeps the wizard's own description (the single question's
+  // text, or nothing for multi) so entering/leaving decline doesn't shove a
+  // new line in and relayout the rail — the reply field's placeholder carries
+  // the "reply in prose" cue instead.
+  const dialogDescription: React.ReactNode | undefined = !hasQuestions
+    ? "Claude sent a question that could not be displayed."
+    : single !== null
+      ? single.question
+      : undefined;
   const wizardSummary: string | null =
     hasQuestions && single === null
       ? `${questions.length} questions · ${confirmedCount} answered`
@@ -2103,8 +2114,37 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       </TugPushButton>
     </>
   ) : hasQuestions ? (
+    // Wizard controls share one row, left→right: Cancel, Back, Next, Submit.
+    // Back / Next only appear for a multi-question payload (single questions
+    // have nothing to navigate).
     <>
       {cancelControl}
+      {single === null ? (
+        <>
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="xs"
+            focusGroup={focusGroup}
+            focusOrder={QUESTION_BACK_ORDER}
+            disabled={isFirstQuestion}
+            onClick={handleBack}
+          >
+            <ArrowLeft size={14} aria-hidden="true" /> Back
+          </TugPushButton>
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="xs"
+            focusGroup={focusGroup}
+            focusOrder={QUESTION_NEXT_ORDER}
+            disabled={isAtReview}
+            onClick={handleAdvance}
+          >
+            Next <ArrowRight size={14} aria-hidden="true" />
+          </TugPushButton>
+        </>
+      ) : null}
       <TugPushButton
         emphasis="primary"
         role="action"
@@ -2130,6 +2170,49 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     >
       Dismiss
     </TugPushButton>
+  );
+
+  // [P02]/[P09] Decline mode — the freeform reply field. It swaps in for the
+  // working surface (the single question's options, or the multi-question
+  // panel) while the rail above stays put, so entering decline relayouts only
+  // the area below the rail. A controlled `TugTextarea` (value in React state,
+  // preserved via the [A9] bag — no `componentStatePreservationKey`, [K2])
+  // authored as the mode's focus stop, under a keyboard hint. `Back` / `Reply`
+  // live in the top action bar; there is no whole-question Cancel here.
+  //
+  // The reply surface fills the SAME height the multi-question panel reserved
+  // (`panelFloorRef`, measured while the wizard was up), so toggling Chat-about
+  // on/off doesn't grow or shrink the block — no vertical hop. (For a single
+  // question there's no panel floor, so it sizes to its content.)
+  const declineReplyBody: React.ReactNode = (
+    <div
+      className="dev-question-dialog-decline"
+      data-slot="dev-question-dialog-decline"
+      style={
+        panelFloorRef.current > 0
+          ? { minHeight: `${panelFloorRef.current}px` }
+          : undefined
+      }
+    >
+      <TugTextarea
+        className="dev-question-dialog-decline-field"
+        value={declineText}
+        onChange={(event) => setDeclineText(event.target.value)}
+        onKeyDown={handleDeclineKeyDown}
+        placeholder="Type your reply to Claude…"
+        autoResize
+        rows={3}
+        maxRows={10}
+        focusGroup={focusGroup}
+        focusOrder={QUESTION_DECLINE_TEXT_ORDER}
+        aria-label="Reply to Claude"
+      />
+      <div className="dev-question-dialog-decline-foot">
+        <span className="dev-question-dialog-decline-hint">
+          Return for a new line • Shift-Return to send reply
+        </span>
+      </div>
+    </div>
   );
 
   // Frameless layout: a headline (icon + title), an optional description,
@@ -2167,97 +2250,49 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
         </div>
       ) : null}
       <div className="dev-question-dialog-body">
-      {declineMode ? (
-        // [P02]/[P09] Decline mode — the freeform reply field replaces the
-        // whole wizard (it abandons every question at once). A controlled
-        // TugTextarea (value in React state, preserved via the [A9] bag —
-        // no `componentStatePreservationKey`, [K2]) authored as a focus
-        // stop, under a keyboard hint. The `Back` and `Reply` actions live
-        // in the foot action row; there is no whole-question Cancel here.
-        <div
-          className="dev-question-dialog-decline"
-          data-slot="dev-question-dialog-decline"
-        >
-          <TugTextarea
-            className="dev-question-dialog-decline-field"
-            value={declineText}
-            onChange={(event) => setDeclineText(event.target.value)}
-            onKeyDown={handleDeclineKeyDown}
-            placeholder="Type your reply to Claude…"
-            autoResize
-            rows={3}
-            maxRows={10}
-            focusGroup={focusGroup}
-            focusOrder={QUESTION_DECLINE_TEXT_ORDER}
-            aria-label="Reply to Claude"
-          />
-          <div className="dev-question-dialog-decline-foot">
-            <span className="dev-question-dialog-decline-hint">
-              Return for a new line • Shift-Return to send reply
-            </span>
-          </div>
+      {/* One top action bar holds the controls (left→right Cancel · Back ·
+          Next · Submit, or Back · Reply in decline mode) on the trailing edge,
+          and — for a multi-question payload — the progress summary on the
+          leading edge. There is no separate foot action row. */}
+      <div
+        className="dev-question-dialog-actionbar"
+        data-slot="dev-question-dialog-actionbar"
+      >
+        {wizardSummary !== null ? (
+          <span className="dev-question-dialog-nav-summary">{wizardSummary}</span>
+        ) : null}
+        <div className="dev-question-dialog-actionbar-buttons">
+          {dialogActions}
         </div>
-      ) : (
-        <>
-      {wizardSummary !== null ? (
-        <div
-          className="dev-question-dialog-nav"
-          data-slot="dev-question-dialog-nav"
-        >
-          <span className="dev-question-dialog-nav-summary">
-            {wizardSummary}
-          </span>
-          <div className="dev-question-dialog-nav-buttons">
-            <TugPushButton
-              emphasis="outlined"
-              role="action"
-              size="xs"
-              focusGroup={focusGroup}
-              focusOrder={QUESTION_BACK_ORDER}
-              disabled={isFirstQuestion}
-              onClick={handleBack}
-            >
-              <ArrowLeft size={14} aria-hidden="true" /> Back
-            </TugPushButton>
-            <TugPushButton
-              emphasis="outlined"
-              role="action"
-              size="xs"
-              focusGroup={focusGroup}
-              focusOrder={QUESTION_NEXT_ORDER}
-              disabled={isAtReview}
-              onClick={handleAdvance}
-            >
-              Next <ArrowRight size={14} aria-hidden="true" />
-            </TugPushButton>
-          </div>
-        </div>
-      ) : null}
+      </div>
+      {/* Single-question payload — no rail, no panel. The options + free-text
+          fill the slot; decline mode swaps them for the reply field in place. */}
       {hasQuestions && single !== null ? (
-        // Single-question payload — no rail, no panel, no wizard
-        // chrome. The question text is the dialog `description`
-        // (above) and the options fill the children slot at full
-        // width. No sizers: a single question's options always
-        // reflect themselves; there is no second state to absorb.
         <div
           className="dev-question-dialog-questions"
           data-slot="dev-question-dialog-questions"
         >
-          <QuestionOptions
-            question={single}
-            selection={selections[0] ?? []}
-            onSelect={(optionLabel) => handleOptionSelect(0, optionLabel)}
-            onActivate={(optionLabel) => handleOptionActivate(0, optionLabel)}
-            focusGroup={focusGroup}
-            focusOrder={QUESTION_OPTIONS_ORDER}
-          />
-          <QuestionFreeText
-            value={freeTexts[0] ?? ""}
-            onChange={(value) => handleFreeTextChange(0, value)}
-            onKeyDown={(event) => handleFreeTextKeyDown(0, event)}
-            focusGroup={focusGroup}
-            focusOrder={QUESTION_FREETEXT_ORDER}
-          />
+          {declineMode ? (
+            declineReplyBody
+          ) : (
+            <>
+              <QuestionOptions
+                question={single}
+                selection={selections[0] ?? []}
+                onSelect={(optionLabel) => handleOptionSelect(0, optionLabel)}
+                onActivate={(optionLabel) => handleOptionActivate(0, optionLabel)}
+                focusGroup={focusGroup}
+                focusOrder={QUESTION_OPTIONS_ORDER}
+              />
+              <QuestionFreeText
+                value={freeTexts[0] ?? ""}
+                onChange={(value) => handleFreeTextChange(0, value)}
+                onKeyDown={(event) => handleFreeTextKeyDown(0, event)}
+                focusGroup={focusGroup}
+                focusOrder={QUESTION_FREETEXT_ORDER}
+              />
+            </>
+          )}
         </div>
       ) : null}
       {hasQuestions && single === null ? (
@@ -2284,13 +2319,15 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
             * working surface (panel) — a full-width hairline, no box. */}
           <TugSeparator className="dev-question-dialog-separator" />
 
-          {/* The stationary panel — the one place options ever
-            * render. A CSS grid stacks one hidden, inert sizer per
-            * question (heading + options at the panel's own width)
-            * under the live face, so the panel holds the tallest
-            * question's natural height in every wizard state — no
-            * JS measurement, no reflow on advance. The review state
-            * swaps the face's content, never the panel's box. */}
+          {/* Below the separator: the working surface. Decline mode swaps the
+            * reply field in here (the rail above stays put); otherwise the
+            * stationary options panel renders — a CSS grid stacking one hidden,
+            * inert sizer per question under the live face, so the panel holds
+            * the tallest question's height in every state (no JS measurement,
+            * no reflow on advance; review swaps the face, never the box). */}
+          {declineMode ? (
+            declineReplyBody
+          ) : (
           <div
             ref={panelRef}
             className="dev-question-dialog-panel"
@@ -2357,34 +2394,34 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
               </div>
             ))}
           </div>
+          )}
         </>
       ) : null}
           {hasQuestions ? (
             // [P02] `Chat about this` — abandon the questions and reply in
             // prose. A quiet (ghost) entry at the foot of the wizard;
-            // activating it switches the dialog into decline mode.
+            // activating it switches the dialog into decline mode. It STAYS at
+            // the foot in decline mode, lit (`tinted`) + disabled, so it reads
+            // as the active mode toggle rather than vanishing.
             <div
               className="dev-question-dialog-chat-about"
               data-slot="dev-question-dialog-chat-about"
+              data-active={declineMode ? "true" : undefined}
             >
               <TugPushButton
-                emphasis="ghost"
+                emphasis={declineMode ? "tinted" : "ghost"}
                 role="action"
                 size="xs"
                 focusGroup={focusGroup}
                 focusOrder={QUESTION_CHAT_ABOUT_ORDER}
-                onClick={handleEnterDecline}
+                disabled={declineMode}
+                onClick={declineMode ? undefined : handleEnterDecline}
               >
                 <MessageCircleQuestion size={14} aria-hidden="true" /> Chat
                 about this instead
               </TugPushButton>
             </div>
           ) : null}
-        </>
-      )}
-      </div>
-      <div className="dev-question-dialog-action-row" data-slot="dev-question-dialog-action-row">
-        {dialogActions}
       </div>
     </div>
       </div>

@@ -31,7 +31,7 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const CARD_ROOT = `${CARD} [data-slot="dev-card"]`;
 const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
-const SUBMIT = `${DIALOG} .dev-question-dialog-action-row .tug-button-primary-action`;
+const SUBMIT = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-primary-action`;
 // The current question's options are a flush TugListView authored into the
 // trap as one item-group stop: the list holds the key view; the movement
 // cursor (`data-key-cursor`) lands on a `.tug-list-view-cell`; the committed
@@ -48,12 +48,13 @@ const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 // component unified both arities onto one item-group). So the "radio" fixtures
 // alias the list-view group + its cells; only the leading glyph (radio dot vs
 // checkbox) differs. The action row carries Cancel (outlined-danger) + Submit
-// (primary).
-const CANCEL = `${DIALOG} .dev-question-dialog-action-row .tug-button-outlined-danger`;
+// (primary). All controls now share one top action bar.
+const CANCEL = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-danger`;
 const RADIO = OPTIONS;
 const RADIO_ITEMS = OPTION_CELLS;
-// Wizard-nav buttons (multi-question): Back then Next, both outlined-action.
-const NAV_BUTTONS = `${DIALOG} .dev-question-dialog-nav-buttons .tug-button-outlined-action`;
+// Wizard-nav buttons (multi-question): Back then Next, both outlined-action,
+// sharing the top action bar with Cancel + Submit.
+const NAV_BUTTONS = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
 
 function controlRequestForward(): Record<string, unknown> {
   return {

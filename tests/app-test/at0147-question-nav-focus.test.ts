@@ -27,8 +27,10 @@ const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
 const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
-const NAV = `${DIALOG} .dev-question-dialog-nav-buttons`;
-const SUBMIT = `${DIALOG} .dev-question-dialog-action-row .tug-button-primary-action`;
+// Back/Next share the top action bar with Cancel + Submit; both are the only
+// outlined-action buttons, so this selects exactly [Back, Next].
+const NAV = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
+const SUBMIT = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-primary-action`;
 const CURRENT_HEADING = `${DIALOG} .dev-question-dialog-row[data-status="current"] .dev-question-dialog-row-heading`;
 
 function controlRequestForward(): Record<string, unknown> {
@@ -80,10 +82,11 @@ async function ingestQuestion(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// data-key-view-kbd on nav button [0]=Back, [1]=Next.
+// data-key-view-kbd on nav button [0]=Back, [1]=Next (NAV selects exactly the
+// two outlined-action buttons in the top action bar).
 function navKeyView(app: App, index: number): Promise<boolean> {
   return app.evalJS<boolean>(
-    `(function(){var els=document.querySelectorAll(${JSON.stringify(`${NAV} [data-slot="tug-push-button"]`)});var el=els[${index}];return el!=null && el.hasAttribute("data-key-view-kbd");})()`,
+    `(function(){var els=document.querySelectorAll(${JSON.stringify(NAV)});var el=els[${index}];return el!=null && el.hasAttribute("data-key-view-kbd");})()`,
   );
 }
 

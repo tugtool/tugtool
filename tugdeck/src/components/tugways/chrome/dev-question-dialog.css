@@ -129,54 +129,55 @@ body {
   min-width: 0;
 }
 
-/* Foot action row — Cancel / Submit (or Dismiss, or decline's Send reply),
- * a trailing cluster mirroring the dialog family's action sizing. */
-.dev-question-dialog-action-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--tugx-idialog-actions-gap, 0.375rem);
-}
-
-.dev-question-dialog-action-row .tug-button {
-  width: var(--tugx-idialog-action-w, 5rem);
-}
-
-/* ---- Wizard nav row (summary · Back · Next) ----
+/* ---- Top action bar (summary · controls) ----
  *
- * Sits between the dialog description and the rail, spanning the full
- * dialog content width so its trailing edge aligns with the header's
- * Cancel / Submit cluster directly above it. Progress summary
- * (`{N} questions · {M} answered`) anchors the leading edge;
- * Back / Next pair anchors the trailing edge. Back / Next inherit
- * the dialog's `--tugx-idialog-action-w` so all four wizard
- * buttons (Back, Next, Cancel, Submit) share a uniform width.
- * Stable across question advances — the click targets never move
- * out from under the mouse. */
-.dev-question-dialog-nav {
+ * One row at the head of the body: the multi-question progress summary
+ * (`{N} questions · {M} answered`) on the leading edge, the control cluster
+ * on the trailing edge — left→right Cancel · Back · Next · Submit (Back /
+ * Next multi-question only), or Back · Reply in decline mode. There is no
+ * separate foot action row. A small bottom margin sets it off from the rail
+ * below; the buttons share a uniform width and an even gap. */
+.dev-question-dialog-actionbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--tug-space-md);
   width: 100%;
+  /* Breathing room below the block header above and the rail below. */
+  margin-block-start: var(--tug-space-md);
+  margin-block-end: var(--tug-space-md);
 }
 
+/* Progress summary — indented so its left edge aligns with the rail's status
+ * markers below it (the rail rows place their marker at the list-row inline
+ * padding plus the leading gutter from the row's edge). */
 .dev-question-dialog-nav-summary {
   flex: 1 1 auto;
   min-width: 0;
+  padding-inline-start: calc(
+    var(--tugx-list-row-padding-inline, 14px) +
+    var(--tugx-list-row-indicator-gutter, 0.2rem)
+  );
   font-size:   var(--tugx-idialog-description-size);
   line-height: var(--tugx-idialog-description-leading);
   opacity:     var(--tugx-idialog-description-opacity);
   text-align: left;
 }
 
-.dev-question-dialog-nav-buttons {
+/* The control cluster — pushed to the trailing edge; each button a uniform
+ * width with a comfortable gap so the four read as a balanced set. The
+ * trailing margin aligns the cluster's right edge with the question rows'
+ * right edge (their inline padding) and gives Submit air off the block edge. */
+.dev-question-dialog-actionbar-buttons {
   flex: 0 0 auto;
   display: flex;
-  gap: var(--tugx-idialog-actions-gap);
+  gap: var(--tug-space-sm);
+  margin-inline-start: auto;
+  margin-inline-end: var(--tugx-list-row-padding-inline, 14px);
 }
 
-.dev-question-dialog-nav-buttons .tug-button {
-  width: var(--tugx-idialog-action-w);
+.dev-question-dialog-actionbar-buttons .tug-button {
+  width: var(--tugx-idialog-action-w, 5rem);
 }
 
 /* ---- Wizard rail ----
@@ -345,7 +346,11 @@ body {
    * min-height would re-add the padding on every measurement. */
   align-content: start;
   box-sizing: border-box;
-  width: 100%;
+  /* The working surface (the current question + its options) sits at 90% of
+   * the dialog width, centered, so the options read as inset rather than
+   * running the full block edge-to-edge. */
+  width: 90%;
+  margin-inline: auto;
   padding: var(--tugx-question-panel-padding);
   border-radius: var(--tugx-question-panel-radius);
   background: var(--tugx-question-current-bg);
@@ -404,8 +409,8 @@ body {
 
 /* ---- Free-text answer field ([P01]) ----
  *
- * A single-line TugInput below the options, present for every question
- * so a user can answer in prose instead of picking. Always rendered
+ * A multi-line TugTextarea (three rows) below the options, present for every
+ * question so a user can answer in prose instead of picking. Always rendered
  * (and mirrored in the panel sizers) so the panel's height is constant
  * across questions ([L06] constant geometry) and the field is a stable
  * focus stop / spatial-grid node. The top margin matches the panel
@@ -415,7 +420,7 @@ body {
   width: 100%;
 }
 
-.dev-question-dialog-freetext .tug-input {
+.dev-question-dialog-freetext .dev-question-dialog-freetext-field {
   width: 100%;
 }
 
@@ -423,31 +428,42 @@ body {
  *
  * The free-text answer field and the chat-about reply field carry the SAME
  * font the prompt-entry editor uses — the user's configured editor font — so
- * they read as "the user typing" rather than UI chrome. Both `TugInput` and
- * `TugTextarea` set `font-family: inherit` on their input element; the
- * descendant selectors here win on specificity and bind family + size +
- * line-height + letter-spacing to the editor tokens (each with a literal
- * fallback). [L20] cascade-scoped instance override — the fields keep their
- * own component sizing/colour tokens otherwise. */
-.dev-question-dialog-freetext .tug-input,
+ * they read as "the user typing" rather than UI chrome. `TugTextarea` sets
+ * `font-family: inherit` on its textarea; the descendant selectors here win
+ * on specificity and bind family + size + line-height + letter-spacing to the
+ * editor tokens (each with a literal fallback). [L20] cascade-scoped instance
+ * override — the fields keep their own component sizing/colour tokens
+ * otherwise. */
+.dev-question-dialog-freetext .dev-question-dialog-freetext-field,
 .dev-question-dialog-decline .dev-question-dialog-decline-field {
   font-family:    var(--tug-font-family-editor, inherit);
-  font-size:      var(--tug-font-size-editor, inherit);
   line-height:    var(--tug-line-height-editor, 1.4);
   letter-spacing: var(--tug-letter-spacing-editor, normal);
 }
 
+/* Both user-typing fields read a notch smaller than the editor default —
+ * typed text and placeholder alike — so they sit as quiet input surfaces
+ * rather than shouting. */
+.dev-question-dialog-freetext .dev-question-dialog-freetext-field,
+.dev-question-dialog-decline .dev-question-dialog-decline-field {
+  font-size: calc(var(--tug-font-size-editor, 14px) - 2px);
+}
+
 /* ---- Decline mode ([P02], `Chat about this`) ----
  *
- * The freeform reply field replaces the wizard body. A multiline
- * TugTextarea over a foot row (a keyboard hint on the leading edge,
- * `Back to questions` on the trailing edge). `Send reply` lives in the
- * dialog header actions. */
+ * The freeform reply field swaps in for the working surface below the rail
+ * (the multi-question options panel, or the single question's options), so it
+ * sits at the SAME 90%-centered position the panel holds — entering decline
+ * relayouts only this area, not the rail above. A multiline TugTextarea over a
+ * keyboard-hint foot row; `Back` / `Reply` live in the top action bar. */
 .dev-question-dialog-decline {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-sm);
-  width: 100%;
+  width: 90%;
+  margin-inline: auto;
+  /* No top margin — the body's own row gap supplies the lead-in, exactly as
+   * for the panel this replaces, so the reply sits where the panel was. */
 }
 
 .dev-question-dialog-decline-field {
@@ -477,7 +493,15 @@ body {
 .dev-question-dialog-chat-about {
   display: flex;
   justify-content: center;
-  margin-top: var(--tug-space-sm);
+  margin-block: var(--tug-space-md) var(--tug-space-xl);
+}
+
+/* In decline mode the entry stays put as the active mode toggle: lit
+ * (`tinted`) + disabled. Override the disabled dimming so it reads as
+ * "selected / on" rather than greyed-out, while staying non-clickable. */
+.dev-question-dialog-chat-about[data-active="true"] .tug-button:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 /* ---- Options ---- */

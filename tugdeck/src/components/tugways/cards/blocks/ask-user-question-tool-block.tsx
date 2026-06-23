@@ -807,11 +807,30 @@ function QuestionSummaryList({
 }: {
   entries: ReadonlyArray<AnswerSummaryEntry>;
 }): React.ReactElement {
+  const total = entries.length;
+  const answered = entries.filter((e) => e.answers.length > 0).length;
   return (
-    <ol
-      className="ask-user-question-tool-block-list"
-      data-slot="ask-user-question-tool-block-list"
+    // Flex column with the live wizard body's own gap, so the summary→rows
+    // spacing matches the live action-bar→rail spacing (block-context margin
+    // collapsing would otherwise diverge from the live flex layout).
+    <div
+      className="ask-user-question-tool-block-answered"
+      data-slot="ask-user-question-tool-block-answered"
     >
+      {/* Progress summary above the rows — same text + position the live
+          wizard's action bar carries, occupying the same vertical box (a
+          button-height row with the dialog's action margins), so the question
+          rows don't shift when the wizard morphs into this record. */}
+      <div
+        className="ask-user-question-tool-block-summary"
+        data-slot="ask-user-question-tool-block-summary"
+      >
+        {total} {total === 1 ? "question" : "questions"} · {answered} answered
+      </div>
+      <ol
+        className="ask-user-question-tool-block-list"
+        data-slot="ask-user-question-tool-block-list"
+      >
       {entries.map((entry, index) => (
         <li
           key={`${index}:${entry.question}`}
@@ -854,6 +873,7 @@ function QuestionSummaryList({
           </div>
         </li>
       ))}
-    </ol>
+      </ol>
+    </div>
   );
 }

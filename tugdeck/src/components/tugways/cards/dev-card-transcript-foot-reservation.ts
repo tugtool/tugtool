@@ -2,16 +2,15 @@
  * dev-card-transcript-foot-reservation — height reservation for the
  * streaming assistant cell's body foot.
  *
- * A `PermissionDialog` renders at the foot of the in-flight assistant
- * cell (`AssistantTurnCell`). (A pending question no longer foots here —
- * the AskUserQuestion tool block owns its live surface in place.) When
- * the user answers, the gating store field flips to `null`, the dialog
- * unmounts
- * in a single frame, the cell shrinks by the dialog's full height, the
- * scrollport's `scrollHeight` dips, the browser clamps `scrollTop`, and
- * the transcript jumps backward. The replacement — the gated tool's
- * result — streams into the tool block a beat later, so the net effect
- * is a shrink-then-regrow flicker.
+ * Two surfaces grow then shrink the in-flight assistant cell
+ * (`AssistantTurnCell`): a `PermissionDialog` at the foot, and the
+ * `AskUserQuestion` tool block in place (which the user can toggle between
+ * its wizard and a chat-about reply, and which morphs a tall live wizard
+ * into a short answered record). Any of those shrinks — a dialog unmount, a
+ * chat-about ↔ wizard toggle, the answer morph — drops the cell's height in
+ * a single frame, the scrollport's `scrollHeight` dips, the browser clamps
+ * `scrollTop`, and the transcript jumps backward; the replacement content
+ * streams in a beat later, so the net effect is a shrink-then-regrow hop.
  *
  * The fix: on dismissal, freeze the cell entry at its current height
  * via a `min-height` floor. The floored element wraps the WHOLE entry —
@@ -113,7 +112,29 @@ export function useFootHeightReservation(
   const floorElRef = useRef<HTMLDivElement | null>(null);
   /** Held floor in px, or 0 when no floor is reserved. */
   const reservedFloorRef = useRef(0);
+  /** Whether a dialog / pending question is currently live (read by the
+   *  ResizeObserver, which can't see the store directly). */
+  const dialogPresentRef = useRef(false);
   const observerRef = useRef<ResizeObserver | null>(null);
+
+  /**
+   * Hold the cell at its tallest height by ratcheting a `min-height` floor UP
+   * only. `offsetHeight` reads `max(natural, floor)`, so when the live surface
+   * GROWS (a settling sizer, a typed reply) the floor follows; when it would
+   * SHRINK (a chat-about ↔ wizard toggle, or the tall wizard morphing to the
+   * short answered record) the floor holds and the shrink never paints — so
+   * the scroll never hops. Released by the fill-release once the turn's
+   * continuing content overtakes it. [L06] DOM write, not React state.
+   */
+  const ratchet = useCallback((): void => {
+    const el = floorElRef.current;
+    if (el === null) return;
+    const h = el.offsetHeight;
+    if (h > reservedFloorRef.current) {
+      reservedFloorRef.current = h;
+      el.style.minHeight = `${h}px`;
+    }
+  }, []);
 
   const clearFloor = useCallback((): void => {
     const el = floorElRef.current;
@@ -129,29 +150,29 @@ export function useFootHeightReservation(
   // only one that can host a foot dialog.
   useLayoutEffect(() => {
     if (!inFlight) return;
-    let wasDialogPresent = false;
+    // Seed from the live store: a question/permission may already be pending
+    // when this cell mounts (a cold restore mid-question), so reserve at once.
+    dialogPresentRef.current =
+      store.getSnapshot().pendingApproval !== null ||
+      store.getSnapshot().pendingQuestion !== null;
+    if (dialogPresentRef.current) ratchet();
+    let wasDialogPresent = dialogPresentRef.current;
     const onStoreChange = (): void => {
       const floorEl = floorElRef.current;
       const snap = store.getSnapshot();
-      // Only the permission forward still mounts a foot-slot dialog. A
-      // pending QUESTION now lives in place at its tool block (the
-      // AskUserQuestion block morphs the same chrome on answer, no foot
-      // unmount), so it never collapses the foot and needs no reservation.
-      const isDialogPresent = snap.pendingApproval !== null;
-      if (
-        floorEl !== null &&
-        shouldReserveOnDismiss({
-          wasDialogPresent,
-          isDialogPresent,
-          alreadyReserved: reservedFloorRef.current > 0,
-        })
-      ) {
-        // The dialog is still in the DOM here — measure before React
-        // unmounts it. No transition: the floor lands on the same frame
-        // the dialog leaves, so the shrink never paints.
-        const height = floorEl.offsetHeight;
-        floorEl.style.minHeight = `${height}px`;
-        reservedFloorRef.current = height;
+      // A pending PERMISSION dialog foots here, and a pending QUESTION lives in
+      // place at its tool block — both grow then shrink this cell (the question
+      // via its chat-about ↔ wizard toggle and its answer morph). Treat either
+      // as "present" and hold the cell at its tallest height across the whole
+      // interaction so neither sub-mode switch nor the morph hops the scroll.
+      const isDialogPresent =
+        snap.pendingApproval !== null || snap.pendingQuestion !== null;
+      dialogPresentRef.current = isDialogPresent;
+      if (floorEl !== null && (isDialogPresent || wasDialogPresent)) {
+        // Reserve continuously while pending, and once more on the dismissal
+        // edge (the surface is still in the DOM in this synchronous notify,
+        // before React unmounts it) so the floor is in place before the morph.
+        ratchet();
       }
       wasDialogPresent = isDialogPresent;
     };
@@ -164,7 +185,7 @@ export function useFootHeightReservation(
       // the result never overtook it.
       clearFloor();
     };
-  }, [store, inFlight, clearFloor]);
+  }, [store, inFlight, clearFloor, ratchet]);
 
   // Disconnect the observer on unmount.
   useEffect(
@@ -186,9 +207,17 @@ export function useFootHeightReservation(
     const observer = new ResizeObserver(() => {
       const node = floorElRef.current;
       if (node === null) return;
-      // Fill-release: once natural content overtakes the floor, the
-      // floor is moot — clear it (no visual change; content holds the
-      // height). The `+ 1` absorbs sub-pixel rounding.
+      if (dialogPresentRef.current) {
+        // While pending, the floor tracks the cell's tallest height (the live
+        // surface settling / a typed reply growing). A chat-about ↔ wizard
+        // toggle that would SHRINK the cell is absorbed: the floor holds, so
+        // `offsetHeight` stays put and the scroll never hops.
+        ratchet();
+        return;
+      }
+      // Fill-release: after dismissal, once the turn's continuing content
+      // overtakes the floor, the floor is moot — clear it (no visual change;
+      // content holds the height). The `+ 1` absorbs sub-pixel rounding.
       if (
         reservedFloorRef.current > 0 &&
         node.offsetHeight > reservedFloorRef.current + 1
@@ -199,7 +228,7 @@ export function useFootHeightReservation(
     });
     observer.observe(el);
     observerRef.current = observer;
-  }, []);
+  }, [ratchet]);
 
   return { floorRef };
 }
