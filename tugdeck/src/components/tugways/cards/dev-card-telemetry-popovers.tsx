@@ -1112,7 +1112,7 @@ function JobRow({
           title="Stop this job"
           emphasis="filled"
           role="danger"
-          size="xs"
+          size="2xs"
           onClick={() => onStopJob(job.jobId)}
         />
       ) : null}
@@ -1180,7 +1180,7 @@ export function JobsPopoverContent({
         <TugPushButton
           emphasis="outlined"
           role="action"
-          size="xs"
+          size="2xs"
           aria-label="Clear finished jobs"
           title="Clear finished jobs (running jobs are kept)"
           disabled={counts.finished === 0 || onClearJobs === undefined}

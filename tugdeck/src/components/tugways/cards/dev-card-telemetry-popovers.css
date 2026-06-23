@@ -45,6 +45,24 @@
   font-size: 0.6875rem;
 }
 
+/* Affordance buttons inside a popover are chrome, not telemetry data —
+   keep them in the proportional UI font rather than inheriting the
+   frame's monospace face. Without this override the COPY / Clear labels
+   render in mono and read as a visibly different button than the SAME
+   `BlockCopyButton` / `TugPushButton` elsewhere (e.g. the Z1B turn-footer
+   COPY, which inherits the UI font). The button itself declares
+   `font-family: inherit`, so context — not the component — decides the
+   face; this pins the right one. The raw `.dev-popover-row-turn` address
+   links are NOT `.tug-button`, so they keep the frame's mono face and
+   stay aligned with the tabular per-turn rows. */
+.dev-popover-frame .tug-button {
+  font-family: var(--tug-font-family-sans);
+  /* Nudge the affordance buttons down 1px so their text-middle lands on
+     the footer label's optical baseline — the proportional UI font sits a
+     hair high against the frame's mono row text otherwise. */
+  transform: translateY(1px);
+}
+
 .dev-popover-frame[data-popover-kind="default"] {
   /* Sized for the four-column per-turn row — entry-number pair,
      request preview (capped at 24 chars), end-state badge, and a
