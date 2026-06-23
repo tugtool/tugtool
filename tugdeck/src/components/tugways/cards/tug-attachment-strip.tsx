@@ -7,10 +7,10 @@
  * atom, the strip renders a fixed-aspect tile whose `<img>` source
  * is the bytes-store entry's `thumbnailDataUrl` (populated by Step
  * 5c's synthesizer at construction time, live AND replay). The
- * tile's caption is `#${pad4(messageNumber)}-${atom.label}` — the
- * same string the inline chip carries via `decorateChipLabel`, so a
- * reader can pair an in-line chip with its strip thumbnail by label
- * alone.
+ * tile's caption is `${formatTurnAddress(address)}-${atom.label}`
+ * (e.g. `#u9-image-1`) — the same string the inline chip carries via
+ * `decorateChipLabel`, so a reader can pair an in-line chip with its
+ * strip thumbnail by label alone.
  *
  * The bytes-store IS external state: its contents grow on the live
  * path (drop / paste / synthesize) and on the replay path
@@ -49,6 +49,7 @@ import * as React from "react";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 import { decorateChipLabel } from "./tug-atom-text-body";
+import type { TurnAddress } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
 // Two-line caption split (Finder-style)
@@ -56,11 +57,11 @@ import { decorateChipLabel } from "./tug-atom-text-body";
 
 /**
  * Split a `decorateChipLabel` output into Finder-style two-line
- * caption parts. When the label carries the transcript-position
- * prefix (`#NNNN-`), the first line is the prefix (including its
+ * caption parts. When the label carries the transcript-address
+ * prefix (`#u{turn}-`), the first line is the prefix (including its
  * trailing hyphen) and the second line is the suffix
  * (e.g., `image-N`). Labels without the prefix (atoms in surfaces
- * where `messageNumber` is unset) return as a single line.
+ * where `address` is unset) return as a single line.
  *
  * The hyphen between the prefix and suffix is "owned" by line 1 —
  * matching macOS Finder's filename-wrap behaviour where a trailing
@@ -72,8 +73,8 @@ import { decorateChipLabel } from "./tug-atom-text-body";
  * Pure on input; exported for tests.
  */
 export function splitChipLabelLines(label: string): string[] {
-  // Only split when the transcript-position prefix is present. The
-  // prefix always starts with `#` (formatSequenceNumber's output);
+  // Only split when the transcript-address prefix is present. The
+  // prefix always starts with `#` (formatTurnAddress's output);
   // labels in other surfaces (editor pre-submit) don't carry it and
   // render as a single line.
   if (!label.startsWith("#")) return [label];
@@ -91,14 +92,15 @@ export function splitChipLabelLines(label: string): string[] {
 
 export interface TugAttachmentStripProps {
   /**
-   * 1-based transcript message number. Threaded through to each
-   * tile's caption so the strip and the inline chip share an
-   * identical `#NNNN-image-N` label. Omitted (`undefined`) for a
-   * surface with no committed turn number yet — e.g. a queued
-   * (ghost) send — in which case the caption is the atom's bare
-   * `image-N` label, matching the inline chip on that same surface.
+   * Transcript entry address. Threaded through to each tile's caption
+   * so the strip and the inline chip share an identical
+   * `#u{turn}-image-N` label, matching the user row's attribution
+   * badge. Omitted (`undefined`) for a surface with no committed turn
+   * yet — e.g. a queued (ghost) send — in which case the caption is the
+   * atom's bare `image-N` label, matching the inline chip on that same
+   * surface.
    */
-  messageNumber?: number;
+  address?: TurnAddress;
   /**
    * Image atoms from the user message's synthesized substrate
    * (`UserMessage.attachments` filtered to `type === "image"`).
@@ -238,7 +240,7 @@ export const TugAttachmentStrip = React.forwardRef<
   TugAttachmentStripProps
 >(function TugAttachmentStrip(
   {
-    messageNumber,
+    address,
     atoms,
     bytesStore,
     onAttachmentClick,
@@ -300,7 +302,7 @@ export const TugAttachmentStrip = React.forwardRef<
       {tiles.map((tile, i) => {
         const caption = decorateChipLabel(
           atoms[i] as AtomSegment,
-          messageNumber,
+          address,
         );
         return (
           <button
@@ -310,7 +312,7 @@ export const TugAttachmentStrip = React.forwardRef<
             className="tug-attachment-strip__tile"
             onClick={() => handleClick(atoms[i] as AtomSegment, i)}
             // The button label for assistive tech is the caption —
-            // the same `#NNNN-image-N` string the chip carries.
+            // the same `#u{turn}-image-N` string the chip carries.
             aria-label={caption}
             title={tile.value}
           >

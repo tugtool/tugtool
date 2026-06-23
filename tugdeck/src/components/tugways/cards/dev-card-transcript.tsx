@@ -381,10 +381,10 @@ const UserMessageCell = React.memo(function UserMessageCell({
                 data-testid="dev-card-transcript-user-body"
                 text={text}
                 atoms={atoms}
-                messageNumber={turnNumber}
+                address={address}
               />
               <TugAttachmentStrip
-                messageNumber={turnNumber}
+                address={address}
                 atoms={imageAtoms}
                 bytesStore={bytesStore}
                 onAttachmentClick={handleAttachmentClick}
@@ -454,8 +454,8 @@ const GhostRowCell = React.memo(function GhostRowCell({
   // so the ghost row paints its prompt — inline atom chips AND the
   // image-thumbnail strip — exactly as `UserMessageCell` does. The
   // ghost omits the `#u{turn}` address badge (it has no committed turn
-  // yet), so the atom captions likewise carry no `#NNNN-` prefix:
-  // `messageNumber` is left undefined and the chip/strip share the
+  // yet), so the atom captions likewise carry no `#u{turn}-` prefix:
+  // `address` is left undefined and the chip/strip share the
   // atom's bare `image-N` label. Hooks run unconditionally above the
   // defensive `queued === undefined` guard so the hook order is stable.
   const rawText = queued?.text ?? "";

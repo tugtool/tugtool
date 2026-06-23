@@ -20,7 +20,7 @@
  * URL is baked at `THUMBNAIL_MAX_EDGE_PX` so the display-time scale is
  * a true downscale, keeping the preview crisp on Retina.
  *
- * Atom-position labels (`#NNNN-image-N`) are intentionally monospaced
+ * Atom-position labels (`#u{turn}-image-N`) are intentionally monospaced
  * (matching the inline chip's label font) so a reader pairing a chip
  * with its strip thumbnail can match by digit-aligned eye-scan.
  *
@@ -73,9 +73,9 @@
   align-items: stretch;
   /* Fixed tile width — the thumbnail's tile size, plus the
      caption sits beneath at the same width (the caption may
-     ellipsize if the `#NNNN-image-N` label ever grows past the
-     tile's width, which doesn't happen at the planned ≤9999
-     message-number range with 1-digit per-message image counts).
+     ellipsize if the `#u{turn}-image-N` label ever grows past the
+     tile's width, which doesn't happen at the planned turn-address
+     range with 1-digit per-message image counts).
      This keeps the strip's tile grid uniform. */
   width: var(--tugx-attachment-strip-tile-size, 128px);
   /* Spacing between tiles is handled by the parent's `gap` — keep
@@ -168,9 +168,9 @@
 }
 
 .tug-attachment-strip__caption {
-  /* The `#NNNN-image-N` label beneath the thumbnail. Laid out as
+  /* The `#u{turn}-image-N` label beneath the thumbnail. Laid out as
      two tightly-stacked centred lines (Finder-style filename wrap):
-     prefix (`#NNNN-`) on line 1, suffix (`image-N`) on line 2. The
+     prefix (`#u{turn}-`) on line 1, suffix (`image-N`) on line 2. The
      trailing hyphen stays attached to line 1, mirroring how Finder
      keeps the wrap-trigger glyph with the breaking line. Monospaced
      to match the inline chip's label rendering — readers pair chips
@@ -196,7 +196,7 @@
   display: block;
   text-align: center;
   /* Don't allow any single line to overflow the tile width — at the
-     planned `messageNumber` and `image-N` ranges (≤9999, ≤99), the
+     planned `#u{turn}` address and `image-N` ranges, the
      monospace widths fit comfortably inside the tile. The
      `overflow-wrap` here is defensive against a future label growth
      past the tile width: rather than truncating, the line would

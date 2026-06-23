@@ -7,7 +7,7 @@
  * (happy-dom is gone), the tests cover the pure observable contract:
  *
  *   - **Label-match equality**: each tile's caption is exactly the
- *     `#NNNN-image-N` string the inline chip carries (the strip's
+ *     `#u{turn}-image-N` string the inline chip carries (the strip's
  *     core promise — chip-label === strip-caption for the same atom).
  *   - **Atom-array filtering**: the strip's documented contract
  *     ("`atoms` must already be image-only") is matched by the
@@ -53,27 +53,29 @@ function fileAtom(path: string): AtomSegment {
 
 describe("TugAttachmentStrip — chip-label === strip-caption equality", () => {
   // The strip's `aria-label` and visible caption both compute via
-  // `decorateChipLabel(atom, messageNumber)` — the same helper the
-  // inline chip uses (`TugAtomTextBody` calls it inline). So the
+  // `decorateChipLabel(atom, address)` — the same helper the inline
+  // chip uses (`TugAtomTextBody` calls it inline). So the
   // visual-linkage promise "chip and tile share the same label" is
   // testable as: pin both sides to the same decorator and confirm.
 
-  test("messageNumber=1 + atom 'image-1' → chip and strip both render '#0001-image-1'", () => {
+  test("address #u9 + atom 'image-1' → chip and strip both render '#u9-image-1'", () => {
     const atom = imageAtom("editor-A", "image-1");
-    const chipLabel = decorateChipLabel(atom, 1);
+    const address = { speaker: "user" as const, turn: 9 };
+    const chipLabel = decorateChipLabel(atom, address);
     // The strip's caption derivation is the same call. We pin that
     // both produce identical strings, which is the visual-linkage
     // contract the user observes in the transcript.
-    const stripCaption = decorateChipLabel(atom, 1);
-    expect(chipLabel).toBe("#0001-image-1");
+    const stripCaption = decorateChipLabel(atom, address);
+    expect(chipLabel).toBe("#u9-image-1");
     expect(stripCaption).toBe(chipLabel);
   });
 
-  test("messageNumber=42 + two atoms → both labels stay paired", () => {
+  test("address #u42 + two atoms → both labels stay paired", () => {
     const a = imageAtom("editor-A", "image-1");
     const b = imageAtom("editor-B", "image-2");
-    expect(decorateChipLabel(a, 42)).toBe("#0042-image-1");
-    expect(decorateChipLabel(b, 42)).toBe("#0042-image-2");
+    const address = { speaker: "user" as const, turn: 42 };
+    expect(decorateChipLabel(a, address)).toBe("#u42-image-1");
+    expect(decorateChipLabel(b, address)).toBe("#u42-image-2");
   });
 });
 
@@ -254,27 +256,29 @@ describe("TugAttachmentStrip — bytes-store projection", () => {
 
 describe("splitChipLabelLines — Finder-style caption split", () => {
   test("standard label splits at the first hyphen; trailing hyphen stays on line 1", () => {
-    // `#0001-image-1` → ["#0001-", "image-1"]. The hyphen between
-    // the transcript-position prefix and the atom's stored label is
-    // the wrap-trigger glyph; macOS Finder keeps it attached to the
+    // `#u9-image-1` → ["#u9-", "image-1"]. The hyphen between the
+    // transcript-address prefix and the atom's stored label is the
+    // wrap-trigger glyph; macOS Finder keeps it attached to the
     // breaking line, and we mirror that behaviour.
-    expect(splitChipLabelLines("#0001-image-1")).toEqual([
-      "#0001-",
+    expect(splitChipLabelLines("#u9-image-1")).toEqual([
+      "#u9-",
       "image-1",
     ]);
   });
 
-  test("wider message number (#9999) — still splits at the first hyphen", () => {
-    expect(splitChipLabelLines("#9999-image-1")).toEqual([
-      "#9999-",
+  test("steered-message address (#u17.2) — still splits at the first hyphen", () => {
+    // The within-turn `.2` suffix lives before the boundary hyphen,
+    // so it stays on line 1 with the rest of the prefix.
+    expect(splitChipLabelLines("#u17.2-image-1")).toEqual([
+      "#u17.2-",
       "image-1",
     ]);
   });
 
-  test("label without `#NNNN-` prefix → single line", () => {
-    // Atoms in surfaces where `messageNumber` is unset (editor pre-
-    // submit) carry no transcript-position prefix. The caption
-    // renders as a single line — no split.
+  test("label without `#u{turn}-` prefix → single line", () => {
+    // Atoms in surfaces where `address` is unset (editor pre-submit)
+    // carry no transcript-address prefix. The caption renders as a
+    // single line — no split.
     expect(splitChipLabelLines("image-1")).toEqual(["image-1"]);
   });
 
@@ -289,9 +293,9 @@ describe("splitChipLabelLines — Finder-style caption split", () => {
     // lines) must equal the chip's full label exactly; this pins
     // the equality contract under the new two-line layout.
     const samples = [
-      "#0001-image-1",
-      "#0042-image-2",
-      "#9999-image-99",
+      "#u9-image-1",
+      "#u42-image-2",
+      "#u17.2-image-99",
       "image-1",
       "README.md",
     ];
@@ -313,7 +317,9 @@ describe("splitChipLabelLines — Finder-style caption split", () => {
       label: "image-1",
       value: "image-1",
     };
-    const lines = splitChipLabelLines(decorateChipLabel(atom, 1));
-    expect(lines).toEqual(["#0001-", "image-1"]);
+    const lines = splitChipLabelLines(
+      decorateChipLabel(atom, { speaker: "user", turn: 9 }),
+    );
+    expect(lines).toEqual(["#u9-", "image-1"]);
   });
 });

@@ -43,7 +43,7 @@ import {
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { formatSequenceNumber } from "../tug-transcript-entry";
+import { formatTurnAddress, type TurnAddress } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
 // Walking substrate — exported for pure-logic tests
@@ -111,17 +111,18 @@ export function walkAtomText(
 
 /**
  * Compute the chip's displayed label given an atom and an optional
- * transcript message number.
+ * transcript entry address.
  *
- * - When `messageNumber` is set AND the atom is an image, the label is
- *   prefixed with `#NNNN-` (zero-padded to 4 digits via
- *   {@link formatSequenceNumber}). Example: `messageNumber=1`,
- *   `atom.label="image-1"` → `"#0001-image-1"`. This is the
- *   transcript-side rendering — the chip's label matches the
- *   per-message attachment-strip caption ([Step 6](roadmap/dev-atoms.md#step-6)).
- * - When `messageNumber` is unset, the atom's stored `label` is
- *   returned verbatim. This is the editor's pre-submit rendering case:
- *   the editor has no transcript position to encode.
+ * - When `address` is set AND the atom is an image, the label is
+ *   prefixed with the entry's address (`#u{turn}` / `#u{turn}.{sub}`
+ *   via {@link formatTurnAddress}). Example: `address={speaker:"user",
+ *   turn:9}`, `atom.label="image-1"` → `"#u9-image-1"`. This is the
+ *   transcript-side rendering — the chip's label matches the user
+ *   row's attribution badge and the per-message attachment-strip
+ *   caption ([Step 6](roadmap/dev-atoms.md#step-6)).
+ * - When `address` is unset, the atom's stored `label` is returned
+ *   verbatim. This is the editor's pre-submit rendering case: the
+ *   editor has no transcript position to encode.
  * - Non-image atoms (file, doc, link, command) always render their
  *   stored `label` verbatim — file paths and URLs carry no per-message
  *   linkage to encode.
@@ -130,12 +131,12 @@ export function walkAtomText(
  */
 export function decorateChipLabel(
   atom: AtomSegment,
-  messageNumber: number | undefined,
+  address: TurnAddress | undefined,
 ): string {
-  if (messageNumber === undefined || atom.type !== "image") {
+  if (address === undefined || atom.type !== "image") {
     return atom.label;
   }
-  return `${formatSequenceNumber(messageNumber)}-${atom.label}`;
+  return `${formatTurnAddress(address)}-${atom.label}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,16 +153,16 @@ export interface TugAtomTextBodyProps {
    */
   atoms: ReadonlyArray<AtomSegment>;
   /**
-   * Optional 1-based transcript message number. When set, each image
-   * atom's *displayed* chip label is decorated as
-   * `#${pad4(messageNumber)}-${atom.label}` (e.g., `#0001-image-1`) —
+   * Optional transcript entry address. When set, each image atom's
+   * *displayed* chip label is decorated as
+   * `${formatTurnAddress(address)}-${atom.label}` (e.g., `#u9-image-1`) —
    * the linkage between an inline chip and its companion entry in the
-   * per-message attachment strip ([Step 6](roadmap/dev-atoms.md#step-6)).
-   * Non-image atoms are unaffected. When unset (the editor's
-   * pre-submit rendering case), atoms render with their stored
-   * `label` verbatim.
+   * per-message attachment strip ([Step 6](roadmap/dev-atoms.md#step-6)),
+   * matching the user row's attribution badge. Non-image atoms are
+   * unaffected. When unset (the editor's pre-submit rendering case),
+   * atoms render with their stored `label` verbatim.
    */
-  messageNumber?: number;
+  address?: TurnAddress;
   /** Forwarded to the root span. */
   className?: string;
   /** Forwarded to the root span (for test anchoring). */
@@ -177,7 +178,7 @@ export const TugAtomTextBody = React.forwardRef<
   HTMLSpanElement,
   TugAtomTextBodyProps
 >(function TugAtomTextBody(
-  { text, atoms, messageNumber, className, "data-testid": dataTestid },
+  { text, atoms, address, className, "data-testid": dataTestid },
   ref,
 ) {
   const segments = walkAtomText(text, atoms);
@@ -207,7 +208,7 @@ export const TugAtomTextBody = React.forwardRef<
             <React.Fragment key={`s-${i}`}>{TUG_ATOM_CHAR}</React.Fragment>
           );
         }
-        const displayLabel = decorateChipLabel(seg.atom, messageNumber);
+        const displayLabel = decorateChipLabel(seg.atom, address);
         // The shared `.tug-atom-chip { vertical-align: middle }`
         // class centres the chip in the line-box; the line-height
         // floor above guarantees the box is at least atom-tall.

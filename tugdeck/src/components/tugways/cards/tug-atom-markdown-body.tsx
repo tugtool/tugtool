@@ -58,6 +58,7 @@ import {
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { decorateChipLabel } from "./tug-atom-text-body";
+import type { TurnAddress } from "../tug-transcript-entry";
 
 /** A host span (inside the rendered markdown) plus the atom it carries. */
 interface AtomMount {
@@ -135,12 +136,12 @@ export interface TugAtomMarkdownBodyProps {
    */
   atoms: ReadonlyArray<AtomSegment>;
   /**
-   * Optional 1-based transcript message number. Decorates each image
-   * atom's chip label as `#${pad4}-${label}`, linking the inline chip
-   * to its companion in the per-message attachment strip — identical to
-   * the plain-text `TugAtomTextBody` path.
+   * Optional transcript entry address. Decorates each image atom's chip
+   * label as `${formatTurnAddress(address)}-${label}` (e.g. `#u9-image-1`),
+   * linking the inline chip to its companion in the per-message
+   * attachment strip — identical to the plain-text `TugAtomTextBody` path.
    */
-  messageNumber?: number;
+  address?: TurnAddress;
   /** Forwarded to the root element. */
   className?: string;
   /** Forwarded to the root element (test anchor). */
@@ -155,7 +156,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
   HTMLDivElement,
   TugAtomMarkdownBodyProps
 >(function TugAtomMarkdownBody(
-  { text, atoms, messageNumber, className, "data-testid": dataTestid },
+  { text, atoms, address, className, "data-testid": dataTestid },
   ref,
 ) {
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -214,7 +215,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
           <TugAtomChip
             className="tug-atom-chip"
             type={atom.type}
-            label={decorateChipLabel(atom, messageNumber)}
+            label={decorateChipLabel(atom, address)}
             value={atom.value}
           />,
           host,

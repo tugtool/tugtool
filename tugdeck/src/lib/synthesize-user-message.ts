@@ -55,7 +55,7 @@
  * user-friendly labels (`raphael.jpeg`, `src/main.ts`); the
  * synthesized substrate has `image-N` labels. Render-time
  * decoration in `tug-atom-text-body.tsx` further composes
- * `#NNNN-image-N` from the transcript message number. The boundary
+ * `#u{turn}-image-N` from the transcript entry's address. The boundary
  * is intentional: editor = drafting surface, transcript =
  * JSONL-honest committed view (see [Step 5c — submit boundary]
  * (roadmap/dev-atoms.md#step-5c-submit-boundary)).

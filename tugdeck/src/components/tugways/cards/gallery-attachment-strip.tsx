@@ -5,7 +5,7 @@
  * Fixtures: two static image atoms paired with a small in-memory
  * bytes-store carrying canned thumbnail data URLs. The body above
  * the strip mimics the transcript's `TugAtomTextBody` rendering —
- * inline chips at original positions, label `#NNNN-image-N`
+ * inline chips at original positions, label `#u{turn}-image-N`
  * matching the strip's tile captions.
  *
  * The bytes are pre-baked tiny SVG thumbnails encoded as base64
@@ -110,7 +110,7 @@ export function GalleryAttachmentStrip(): React.ReactElement {
         <TugLabel>Transcript user row — body + per-message strip</TugLabel>
         <p style={descStyle}>
           The inline chips in the body and the strip thumbnails share an
-          identical <code>#NNNN-image-N</code> label.
+          identical <code>#u{"{turn}"}-image-N</code> label.
         </p>
         <div style={{
           padding: "12px",
@@ -120,10 +120,10 @@ export function GalleryAttachmentStrip(): React.ReactElement {
           <TugAtomTextBody
             text={FIXTURE_TEXT}
             atoms={FIXTURE_ATOMS}
-            messageNumber={1}
+            address={{ speaker: "user", turn: 1 }}
           />
           <TugAttachmentStrip
-            messageNumber={1}
+            address={{ speaker: "user", turn: 1 }}
             atoms={FIXTURE_ATOMS}
             bytesStore={bytesStore}
           />
@@ -133,10 +133,11 @@ export function GalleryAttachmentStrip(): React.ReactElement {
       <TugSeparator />
 
       <div>
-        <TugLabel>Higher message number — wider zero padding</TugLabel>
+        <TugLabel>Steered message — within-turn suffix</TugLabel>
         <p style={descStyle}>
-          The <code>#NNNN-</code> prefix grows naturally past 4 digits;
-          this preview pins <code>messageNumber=999</code>.
+          A steered (mid-turn) user message carries a <code>.N</code>
+          suffix; this preview pins <code>{"{ turn: 17, sub: 1 }"}</code>{" "}
+          → <code>#u17.2-</code>.
         </p>
         <div style={{
           padding: "12px",
@@ -146,10 +147,10 @@ export function GalleryAttachmentStrip(): React.ReactElement {
           <TugAtomTextBody
             text={FIXTURE_TEXT}
             atoms={FIXTURE_ATOMS}
-            messageNumber={999}
+            address={{ speaker: "user", turn: 17, sub: 1 }}
           />
           <TugAttachmentStrip
-            messageNumber={999}
+            address={{ speaker: "user", turn: 17, sub: 1 }}
             atoms={FIXTURE_ATOMS}
             bytesStore={bytesStore}
           />
@@ -172,10 +173,10 @@ export function GalleryAttachmentStrip(): React.ReactElement {
           <TugAtomTextBody
             text="plain prose, no atoms here"
             atoms={[]}
-            messageNumber={2}
+            address={{ speaker: "user", turn: 2 }}
           />
           <TugAttachmentStrip
-            messageNumber={2}
+            address={{ speaker: "user", turn: 2 }}
             atoms={[]}
             bytesStore={bytesStore}
           />
