@@ -38,7 +38,7 @@ export function registerDevCard(): void {
       // toolbar/indicator rows) AND leave the transcript its minimum
       // (`--dev-transcript-min`), so the entry never crowds the transcript
       // out even at the smallest card size.
-      min: { width: 800, height: 500 },
+      min: { width: 800, height: 600 },
       // Default size opens the card tall enough for an extended
       // transcript to read as a continuous column, not a porthole,
       // and wide enough to give the Choose Session sheet (caps at
@@ -47,7 +47,7 @@ export function registerDevCard(): void {
       // `addCard` clamps width AND height to 90% of the live canvas
       // at creation, so on a smaller screen the card opens at
       // canvas * 0.9 instead of pushing past the viewport.
-      preferred: { width: 900, height: 1200 },
+      preferred: { width: 850, height: 1200 },
     },
     engineKind: "em",
   });
