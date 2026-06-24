@@ -1460,14 +1460,13 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   }, [focusGroup]);
 
   const handleExitDecline = React.useCallback(() => {
-    // Back to the wizard — re-seed focus mirroring the open seed: a single
-    // single-select question (and the review step / the no-questions form)
-    // lands on Submit; every other live question lands on its options.
+    // Back to the wizard — re-seed focus mirroring the open seed: every live
+    // question lands on its options (the list re-seeds its cursor on the
+    // selected answer); only the review step / the no-questions form lands on
+    // Submit.
     const atReview = currentIndex >= questions.length;
-    const singleSelectOnly =
-      questions.length === 1 && questions[0]?.multiSelect === false;
     pendingFocusKeyRef.current =
-      questions.length > 0 && !atReview && !singleSelectOnly
+      questions.length > 0 && !atReview
         ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
         : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
     setDeclineMode(false);
@@ -1573,9 +1572,10 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     const multi = questions.length > 1;
     const atReview = currentIndex >= questions.length;
     // Single SINGLE-select Submit lights up on the preseed alone (no prior
-    // visit needed) so it joins the grid — and is the seeded key view — on
-    // mount. A single multi-select question and every multi-question wizard
-    // still gate on each row being user-confirmed.
+    // visit needed) so it joins the grid on mount — a single Return on the
+    // preseeded answer commits and advances onto it. A single multi-select
+    // question and every multi-question wizard still gate on each row being
+    // user-confirmed.
     const everyAnswered =
       hasQ &&
       (questions.length === 1 && questions[0]?.multiSelect === false
@@ -1631,22 +1631,20 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   // the key view on the current question's options on open (answering is the
   // task), or on Submit at the review step.
   //
-  // Single single-select question: seed the key view on Submit (which is
-  // enabled on mount — the first option is preseeded). The common "accept the
-  // recommendation" path is then a single Return without ever leaving Submit;
-  // changing the pick is Tab/arrow to the options, Space to choose, then back
-  // to Submit. A single MULTI-select question still seeds the options (the user
-  // is meant to choose which apply), as does every multi-question wizard.
-  const isSingleSelectOnly =
-    questions.length === 1 && questions[0]?.multiSelect === false;
+  // Every live question — single OR multi, single-select OR multi-select —
+  // seeds the OPTIONS item-group so the keyboard opens *on the answers*, not on
+  // a button. The list seeds its own cursor on the selected option (the preseed
+  // for single-select, the first checked row for multi), so the selection caret
+  // lands on the recommended answer the instant the dialog opens. Return then
+  // commits that answer and advances (single-question → Submit, so a second
+  // Return sends). Only the review step (nothing to answer) and decline mode
+  // (the reply field is the task) seed a non-options stop.
   const seedAtReview = currentIndex >= questions.length;
   const seedFocusKey = declineMode
     ? `${focusGroup}:${QUESTION_DECLINE_TEXT_ORDER}`
-    : isSingleSelectOnly
-      ? `${focusGroup}:${QUESTION_SUBMIT_ORDER}`
-      : questions.length > 0 && !seedAtReview
-        ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
-        : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
+    : questions.length > 0 && !seedAtReview
+      ? `${focusGroup}:${QUESTION_OPTIONS_ORDER}`
+      : `${focusGroup}:${QUESTION_SUBMIT_ORDER}`;
   const { attachRoot } = useInlineDialogScope({
     active: isPending,
     defaultFocusKey: seedFocusKey,
