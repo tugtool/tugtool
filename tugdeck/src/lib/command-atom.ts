@@ -83,9 +83,14 @@ export function chipHasIcon(type: string): boolean {
  * `getTokenValue(--…)` — both selecting the same tokens.
  */
 export interface ChipTokens {
-  /** Background fill of the chip rect. */
+  /** Base surface the chip rect fills with, before the key wash. */
   surface: string;
-  /** Stroke of the chip rect. */
+  /** Theme **Key** hue (the selection / filled-action axis) — washed lightly
+   *  into {@link surface} at {@link ATOM_KEY_WASH} so the chip carries a hint
+   *  of the active theme instead of reading as flat neutral. */
+  key: string;
+  /** Recess edge colour: the soft inset top-shade gradient and the faint
+   *  all-round inset hairline that bound the unit in place of a hard stroke. */
   border: string;
   /** Stroke of the icon glyph. */
   icon: string;
@@ -111,16 +116,34 @@ export interface ChipStyle {
 }
 
 /**
+ * Strength of the Key-hue wash over the chip surface — the `fill-opacity` of
+ * a Key-coloured overlay rect painted on top of the opaque surface. Both
+ * renderers use the overlay technique rather than CSS `color-mix`: a Key fill
+ * at alpha `a` over an opaque surface composites to `a·key + (1−a)·surface`,
+ * exactly equal to `color-mix(in srgb, key a, surface)`, but `fill-opacity` is
+ * universally supported — including inside the editor's `<img src="data:…">`
+ * document, where `color-mix` support is not guaranteed. 0.09 ≈ a 9% wash.
+ */
+export const ATOM_KEY_WASH = 0.09;
+
+/**
  * The one chip style every atom type shares — file, image, link, doc, and
  * command. All chips read as the same inline-reference family; the per-type
  * **icon** ({@link ATOM_ICON_PATHS}) is the only differentiator (a command
  * shows a terminal glyph, a file a document glyph, …). Defined once here
  * rather than as literals in the two renderers so the token names and corner
  * radius live in a single place.
+ *
+ * The chip reads as a *recessed* unit: a light Key wash over {@link
+ * ChipTokens.surface} (see {@link ATOM_KEY_WASH}), bounded by a soft inset
+ * top-shade + a faint inset hairline drawn from {@link ChipTokens.border} —
+ * not a hard 1px stroke. The bounded shape still says "indivisible unit"; the
+ * softer edge and full-size label keep it legible in flowing prose.
  */
 const CHIP_STYLE: ChipStyle = {
   tokens: {
     surface: "--tug7-surface-atom-primary-normal-default-rest",
+    key: "--tug7-surface-control-primary-filled-action-rest",
     border: "--tug7-element-atom-border-normal-default-rest",
     icon: "--tug7-element-atom-icon-normal-default-rest",
     text: "--tug7-element-atom-text-normal-default-rest",

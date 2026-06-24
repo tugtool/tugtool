@@ -43,6 +43,7 @@ describe("chipStyle", () => {
     expect(chipStyle()).toEqual({
       tokens: {
         surface: "--tug7-surface-atom-primary-normal-default-rest",
+        key: "--tug7-surface-control-primary-filled-action-rest",
         border: "--tug7-element-atom-border-normal-default-rest",
         icon: "--tug7-element-atom-icon-normal-default-rest",
         text: "--tug7-element-atom-text-normal-default-rest",

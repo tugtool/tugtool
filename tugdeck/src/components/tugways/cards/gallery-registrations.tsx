@@ -1540,15 +1540,16 @@ export function registerGalleryCards(): void {
     engineKind: "em",
   });
 
-  // Temporary design spike — slash-command / file-completion row treatments.
-  // Renders the shipping baseline against four alternatives (glyph + path,
-  // atom-chip rows, grouped + hint, two-column preview) over the same static
-  // sample data. Remove once a direction lands in `paintCompletionPopup` /
-  // `TugFileChooser`.
+  // Temporary design spike — how slash-command / file-completion atoms read
+  // INLINE in the transcript and the prompt-entry editor. Renders the shipping
+  // pill baseline (real chip renderers) against three inline treatments
+  // (link-weight text, type-tinted pill, inline-code token), each shown in
+  // both contexts. Remove once a direction lands in `tug-atom-img.ts` /
+  // `tug-atom-text-body.tsx`.
   registerCard({
     componentId: "gallery-completion-spike",
     contentFactory: (_cardId) => <GalleryCompletionSpike />,
-    defaultMeta: { title: "Completion Atoms (spike)", icon: "Sparkles", closable: true },
+    defaultMeta: { title: "Inline Atoms (spike)", icon: "Sparkles", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

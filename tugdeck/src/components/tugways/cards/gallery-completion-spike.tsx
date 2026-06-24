@@ -1,143 +1,179 @@
 /**
- * gallery-completion-spike.tsx — design spike for slash-command and
- * file-completion atoms.
+ * gallery-completion-spike.tsx — design spike for the inline atom.
  *
- * A temporary gallery card that renders four candidate row treatments
- * (A glyph + path · B atom-chip rows · C grouped + trailing hint · D
- * two-column preview) against the current baseline, for the same static
- * sample data. A trigger toggle switches between the `/` command catalog
- * and the `@` file catalog; a query field filters and highlights matches.
+ * Direction locked: the atom keeps its bounded, indivisible shape (caret
+ * can't land inside, selects/deletes whole) but renders as full-size live
+ * text inside a RECESSED fill — a soft inset shadow, no hard 1px stroke — so
+ * legibility matches the surrounding prose. (Treatment "C" from the earlier
+ * matrix.)
  *
- * The baseline column reuses the genuine `.tug-completion-menu` classes
- * (and tokens, via the imported completion-menu CSS) so the comparison is
- * faithful; the alternatives only restyle the row anatomy.
+ * This pass adds a light keycolor wash to the recessed fill: a low-percentage
+ * blend of the theme's KEY hue (the selection / filled-action axis — not the
+ * accent/affordance hue) into the atom surface, so the atom carries a hint of
+ * the active theme instead of reading as a flat neutral slot. The wash
+ * strength is driven by the `--cspike-wash` custom property, so the ramp
+ * section can tune "light" by eye; switch themes to confirm the hue tracks the
+ * key colour.
  *
- * Not production code — this card exists to vet the direction before any
- * change lands in the real completion painter (`paintCompletionPopup` in
- * `tug-text-editor.tsx`) and `TugFileChooser`.
+ * Shown in both places the atom lives — a transcript sentence and a
+ * prompt-entry editor line — for a slash command and a file together. The
+ * baseline (genuine `TugAtomChip` / `createAtomImgElement`) stays for
+ * reference. Nothing here is wired into the real editor/transcript; this card
+ * only lets us judge the look before a direction lands in `tug-atom-img.ts` /
+ * `tug-atom-text-body.tsx`.
  *
  * @module components/tugways/cards/gallery-completion-spike
  */
 
-import React, { useId, useMemo, useState } from "react";
-import {
-  Terminal,
-  Folder,
-  File as FileIcon,
-  FileCode,
-  FileText,
-  CornerDownLeft,
-} from "lucide-react";
-import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
-import { TugInput } from "@/components/tugways/tug-input";
+import React, { useEffect, useRef } from "react";
+import { File as FileIcon } from "lucide-react";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { useResponderForm } from "@/components/tugways/use-responder-form";
-import "../tug-completion-menu.css";
+import { createAtomImgElement } from "@/lib/tug-atom-img";
 import "./gallery-completion-spike.css";
 
 // ---------------------------------------------------------------------------
-// Sample data
+// Sample atoms + the two sample lines they appear in
 // ---------------------------------------------------------------------------
 
-type Trigger = "/" | "@";
+type Atom =
+  | { kind: "command"; name: string }
+  | { kind: "file"; label: string; value: string };
 
-interface CommandRow {
-  kind: "command";
-  /** Command name (no leading slash). */
-  label: string;
-  description: string;
-  /** Provider group — drives alt C section headers. */
-  group: "Local" | "Built-in";
-  /** Argument hint shown in the trailing column (alt C) / preview (alt D). */
-  args?: string;
-}
+const cmd = (name: string): Atom => ({ kind: "command", name });
+const file = (label: string, value: string): Atom => ({ kind: "file", label, value });
 
-interface FileRow {
-  kind: "file" | "dir";
-  /** Basename (with trailing slash for directories). */
-  label: string;
-  /** Directory the entry lives in — the part the current UI drops. */
-  dir: string;
-}
+const A = {
+  review: cmd("review"),
+  rewind: cmd("rewind"),
+  model: cmd("model"),
+  feed: file("feed-store.ts", "/Users/kocienda/project/src/lib/feed-store.ts"),
+  editor: file("tug-text-editor.tsx", "/Users/kocienda/project/tugdeck/src/components/tugways/tug-text-editor.tsx"),
+};
 
-type Row = CommandRow | FileRow;
+type Seg = { t: string } | { a: Atom };
 
-const COMMANDS: CommandRow[] = [
-  { kind: "command", label: "rewind", description: "Rewind to a previous turn", group: "Local", args: "[n]" },
-  { kind: "command", label: "review", description: "Review the current diff for bugs", group: "Local" },
-  { kind: "command", label: "compact", description: "Summarize and compact the context", group: "Built-in" },
-  { kind: "command", label: "clear", description: "Clear the transcript", group: "Built-in" },
-  { kind: "command", label: "model", description: "Switch the active model", group: "Built-in", args: "<name>" },
-  { kind: "command", label: "theme", description: "Change the color theme", group: "Built-in", args: "<name>" },
+// A realistic assistant turn — atoms embedded mid-prose.
+const TRANSCRIPT_LINE: Seg[] = [
+  { t: "Reviewed the diff with " },
+  { a: A.review },
+  { t: ", flagged a stale cache in " },
+  { a: A.feed },
+  { t: " — run " },
+  { a: A.rewind },
+  { t: " to back it out." },
 ];
 
-const FILES: FileRow[] = [
-  { kind: "file", label: "gallery-theme-editor.tsx", dir: "tugdeck/src/components/tugways/cards/" },
-  { kind: "file", label: "tug-text-editor.tsx", dir: "tugdeck/src/components/tugways/" },
-  { kind: "file", label: "completion-extension.ts", dir: "tugdeck/src/components/tugways/tug-text-editor/" },
-  { kind: "file", label: "tug-completion-menu.css", dir: "tugdeck/src/components/tugways/" },
-  { kind: "file", label: "action-dispatch.ts", dir: "tugdeck/src/" },
-  { kind: "dir", label: "tugways/", dir: "tugdeck/src/components/" },
-  { kind: "file", label: "theme-engine.md", dir: "tuglaws/" },
+// A realistic prompt-entry line — what the user typed before sending.
+const EDITOR_LINE: Seg[] = [
+  { a: A.model },
+  { t: " opus-4.8, then summarize " },
+  { a: A.editor },
+  { t: " and " },
+  { a: A.feed },
 ];
 
+type Rep = "pill" | "wash";
+type Context = "transcript" | "editor";
+
+/** The default "light" wash the chosen treatment ships at. */
+const DEFAULT_WASH = "9%";
+
+/** Wash strengths for the tuning ramp — 0% is the neutral recessed slot. */
+const WASH_RAMP = ["0%", "6%", "9%", "13%", "18%"];
+
 // ---------------------------------------------------------------------------
-// Matching helpers
+// Inline token renderers
 // ---------------------------------------------------------------------------
 
-type MatchRange = [number, number] | null;
+const displayText = (atom: Atom): string =>
+  atom.kind === "command" ? `/${atom.name}` : atom.label;
 
-/** Case-insensitive substring match over the basename / command name. */
-function matchRange(label: string, query: string): MatchRange {
-  if (!query) return null;
-  const i = label.toLowerCase().indexOf(query.toLowerCase());
-  return i < 0 ? null : [i, i + query.length];
+const atomValue = (atom: Atom): string =>
+  atom.kind === "command" ? atom.name : atom.value;
+
+/** The real editor bake path — `createAtomImgElement`, mounted into a span. */
+function RealEditorAtom({ atom }: { atom: Atom }): React.ReactElement {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    const host = ref.current;
+    if (!host) return;
+    host.textContent = "";
+    const img = createAtomImgElement(
+      atom.kind === "command" ? "command" : "file",
+      atom.kind === "command" ? `/${atom.name}` : atom.label,
+      atomValue(atom),
+    );
+    host.appendChild(img);
+    return () => {
+      host.textContent = "";
+    };
+  }, [atom]);
+  return <span className="cspike-real-atom" ref={ref} />;
 }
 
-interface Scored {
-  row: Row;
-  range: MatchRange;
-  key: string;
-}
+function InlineToken({
+  rep,
+  atom,
+  context,
+  wash,
+}: {
+  rep: Rep;
+  atom: Atom;
+  context: Context;
+  wash?: string;
+}): React.ReactElement {
+  const isCommand = atom.kind === "command";
 
-function filterRows(rows: Row[], trigger: Trigger, query: string): Scored[] {
-  const out: Scored[] = [];
-  for (const row of rows) {
-    const range = matchRange(row.label, query);
-    if (query && !range) continue;
-    out.push({ row, range, key: `${trigger}${row.label}` });
+  if (rep === "pill") {
+    if (context === "editor") return <RealEditorAtom atom={atom} />;
+    return (
+      <TugAtomChip
+        className="tug-atom-chip"
+        type={isCommand ? "command" : "file"}
+        label={displayText(atom)}
+        value={atomValue(atom)}
+      />
+    );
   }
-  return out;
-}
 
-/** Render a label with the matched span wrapped in `matchClass`. */
-function Highlighted(props: { text: string; range: MatchRange; matchClass: string }): React.ReactElement {
-  const { text, range, matchClass } = props;
-  if (!range) return <>{text}</>;
-  const [s, e] = range;
   return (
-    <>
-      {text.slice(0, s)}
-      <span className={matchClass}>{text.slice(s, e)}</span>
-      {text.slice(e)}
-    </>
+    <span
+      className="cspike-tok cspike-tok-wash"
+      data-kind={atom.kind}
+      title={atomValue(atom)}
+      style={wash !== undefined ? ({ "--cspike-wash": wash } as React.CSSProperties) : undefined}
+    >
+      {!isCommand && <FileIcon className="cspike-tok-ico" aria-hidden />}
+      {displayText(atom)}
+    </span>
   );
 }
 
-function fileGlyph(row: FileRow): React.ReactElement {
-  if (row.kind === "dir") return <Folder size={15} />;
-  if (row.label.endsWith(".md")) return <FileText size={15} />;
-  if (/\.(tsx?|css|jsx?)$/.test(row.label)) return <FileCode size={15} />;
-  return <FileIcon size={15} />;
-}
-
-/** Atom-chip type name for a row (file/command/doc — no folder type exists). */
-function chipType(row: Row): string {
-  if (row.kind === "command") return "command";
-  if (row.kind === "file" && row.label.endsWith(".md")) return "doc";
-  return "file";
+/** Lay out one sample line, rendering each atom in the given representation. */
+function SampleLine({
+  rep,
+  context,
+  wash,
+}: {
+  rep: Rep;
+  context: Context;
+  wash?: string;
+}): React.ReactElement {
+  const script = context === "transcript" ? TRANSCRIPT_LINE : EDITOR_LINE;
+  return (
+    <div className={context === "transcript" ? "cspike-prose" : "cspike-editor"}>
+      {script.map((seg, i) =>
+        "t" in seg ? (
+          <React.Fragment key={i}>{seg.t}</React.Fragment>
+        ) : (
+          <InlineToken key={i} rep={rep} atom={seg.a} context={context} wash={wash} />
+        ),
+      )}
+      {context === "editor" && <span className="cspike-caret" aria-hidden />}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -145,354 +181,75 @@ function chipType(row: Row): string {
 // ---------------------------------------------------------------------------
 
 export function GalleryCompletionSpike(): React.ReactElement {
-  const [trigger, setTrigger] = useState<Trigger>("/");
-  const [query, setQuery] = useState("");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-
-  const triggerId = useId();
-  const { ResponderScope, responderRef } = useResponderForm({
-    selectValue: {
-      [triggerId]: (v: string) => {
-        setTrigger(v as Trigger);
-        setSelectedKey(null);
-      },
-    },
-  });
-
-  const rows: Row[] = trigger === "/" ? COMMANDS : FILES;
-  const filtered = useMemo(() => filterRows(rows, trigger, query), [rows, trigger, query]);
-
-  // Selection follows an explicit click; falls back to the first row so the
-  // accent treatment and alt-D preview always have a subject.
-  const selected =
-    filtered.find((f) => f.key === selectedKey) ?? filtered[0] ?? null;
-  const isSelected = (key: string): boolean => selected?.key === key;
-
-  const isCommand = trigger === "/";
-
-  // Grouping for alt C — preserve first-seen order of the group key.
-  const grouped = useMemo(() => {
-    const groups: { name: string; items: Scored[] }[] = [];
-    for (const f of filtered) {
-      const name = f.row.kind === "command" ? f.row.group : (f.row as FileRow).dir;
-      let g = groups.find((x) => x.name === name);
-      if (!g) {
-        g = { name, items: [] };
-        groups.push(g);
-      }
-      g.items.push(f);
-    }
-    return groups;
-  }, [filtered]);
-
-  const empty = filtered.length === 0;
-
   return (
-    <ResponderScope>
-      <div
-        className="cg-content"
-        data-testid="gallery-completion-spike"
-        ref={responderRef as (el: HTMLDivElement | null) => void}
-      >
-        {/* ---- Controls ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">Spike controls</TugLabel>
-          <p className="cspike-note">
-            Switch the trigger and type to filter. Every panel below renders the
-            same filtered data — the baseline is the shipping look; A–D are the
-            alternatives. Click a row to move the selection (and drive the alt-D
-            preview).
-          </p>
-          <div className="cspike-controls">
-            <TugChoiceGroup
-              value={trigger}
-              senderId={triggerId}
-              aria-label="Completion trigger"
-              items={[
-                { value: "/", label: "/ commands", icon: <Terminal /> },
-                { value: "@", label: "@ files", icon: <FileIcon /> },
-              ]}
-            />
-            <TugInput
-              size="sm"
-              type="search"
-              className="cspike-query"
-              placeholder={isCommand ? "Filter commands…" : "Filter files…"}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setSelectedKey(null);
-              }}
-            />
+    <div className="cg-content" data-testid="gallery-completion-spike">
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Recessed atom + keycolor wash</TugLabel>
+        <p className="cspike-note">
+          The chosen direction: full-size live text in a bounded, recessed slot
+          (soft inset shadow, no hard stroke) so the atom still reads as one
+          indivisible unit but no longer breaks legibility. This pass tints the
+          slot with a light wash of the theme's key colour. Hover a token to see
+          it select as a unit; switch themes to confirm the wash tracks the key
+          hue.
+        </p>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Baseline (reference) ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Baseline — current chip (reference)</TugLabel>
+        <p className="cspike-note">
+          The genuine renderers, kept for contrast: hard stroke, 12px baked text
+          in 14px prose.
+        </p>
+        <div className="cspike-ctx">
+          <span className="cspike-ctx-label">Transcript</span>
+          <SampleLine rep="pill" context="transcript" />
+        </div>
+        <div className="cspike-ctx">
+          <span className="cspike-ctx-label">Prompt editor</span>
+          <SampleLine rep="pill" context="editor" />
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Chosen treatment ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">{`C — recessed + keycolor wash (${DEFAULT_WASH})`}</TugLabel>
+        <p className="cspike-note">
+          Recessed slot, full prose size, with the light key wash. Reads as the
+          same atom — just legible and theme-aware.
+        </p>
+        <div className="cspike-ctx">
+          <span className="cspike-ctx-label">Transcript</span>
+          <SampleLine rep="wash" context="transcript" wash={DEFAULT_WASH} />
+        </div>
+        <div className="cspike-ctx">
+          <span className="cspike-ctx-label">Prompt editor</span>
+          <SampleLine rep="wash" context="editor" wash={DEFAULT_WASH} />
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Wash strength ramp ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Wash strength — tune "light"</TugLabel>
+        <p className="cspike-note">
+          The same transcript line at rising key-wash strength (0% is the neutral
+          recessed slot). Pick the lightest level that still reads as
+          theme-tinted rather than grey.
+        </p>
+        {WASH_RAMP.map((w) => (
+          <div className="cspike-ctx" key={w}>
+            <span className="cspike-ctx-label">{w === "0%" ? "0% (neutral)" : w}</span>
+            <SampleLine rep="wash" context="transcript" wash={w} />
           </div>
-        </div>
-
-        <TugSeparator />
-
-        {/* ---- Baseline (current) ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">Baseline — shipping look</TugLabel>
-          <p className="cspike-note">
-            What renders today: a fixed-width name column + muted description for
-            commands; for files, the basename only — the directory is dropped, so
-            two same-named files are indistinguishable, and nothing marks
-            command vs file vs folder.
-          </p>
-          {empty ? (
-            <div className="tug-completion-menu cspike-empty">No matches</div>
-          ) : (
-            <div className="tug-completion-menu" style={{ position: "static", maxHeight: "none" }}>
-              {filtered.map((f) => (
-                <div
-                  key={f.key}
-                  className={
-                    "tug-completion-menu-item" +
-                    (isSelected(f.key) ? " tug-completion-menu-item-selected" : "")
-                  }
-                  onMouseDown={() => setSelectedKey(f.key)}
-                >
-                  <span className="tug-completion-menu-label">
-                    <Highlighted text={f.row.label} range={f.range} matchClass="tug-completion-match" />
-                  </span>
-                  {f.row.kind === "command" && (
-                    <span className="tug-completion-menu-desc">{f.row.description}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <TugSeparator />
-
-        {/* ---- Alt A — Glyph + path ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">A — Glyph + path</TugLabel>
-          <p className="cspike-note">
-            A leading type glyph distinguishes command / file / folder at a
-            glance, and file rows regain the dimmed directory path (right-aligned)
-            so same-named files disambiguate — VS Code's Ctrl-P lesson. Cheapest
-            fix for the real ambiguity problems.
-          </p>
-          <AltPanel
-            filtered={filtered}
-            empty={empty}
-            isSelected={isSelected}
-            onSelect={setSelectedKey}
-            renderRow={(f) => (
-              <>
-                <span className="cspike-glyph">
-                  {f.row.kind === "command" ? <Terminal size={15} /> : fileGlyph(f.row)}
-                </span>
-                <span className="cspike-label">
-                  <Highlighted text={f.row.label} range={f.range} matchClass="cspike-match" />
-                </span>
-                {f.row.kind === "command" ? (
-                  <span className="cspike-desc">{f.row.description}</span>
-                ) : (
-                  <span className="cspike-path">{(f.row as FileRow).dir}</span>
-                )}
-              </>
-            )}
-          />
-        </div>
-
-        <TugSeparator />
-
-        {/* ---- Alt B — Atom-chip rows ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">B — TugAtomChip rows</TugLabel>
-          <p className="cspike-note">
-            The leading element is the actual <code>TugAtomChip</code> that gets
-            inserted, so a row previews its own result and the menu visually
-            rhymes with the atoms already in the input. Match highlighting moves
-            to the trailing description / path since the chip carries the name.
-          </p>
-          <AltPanel
-            filtered={filtered}
-            empty={empty}
-            isSelected={isSelected}
-            onSelect={setSelectedKey}
-            renderRow={(f) => (
-              <>
-                <span className="cspike-chip">
-                  <TugAtomChip
-                    type={chipType(f.row)}
-                    label={f.row.label}
-                    value={f.row.kind === "command" ? `/${f.row.label}` : `${(f.row as FileRow).dir}${f.row.label}`}
-                    fontSize={12}
-                  />
-                </span>
-                {f.row.kind === "command" ? (
-                  <span className="cspike-desc">{f.row.description}</span>
-                ) : (
-                  <span className="cspike-path">{(f.row as FileRow).dir}</span>
-                )}
-              </>
-            )}
-          />
-        </div>
-
-        <TugSeparator />
-
-        {/* ---- Alt C — Grouped + trailing hint ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">C — Grouped + trailing hint</TugLabel>
-          <p className="cspike-note">
-            Section headers (Local / Built-in for commands; by directory for
-            files) plus a trailing mono hint column — argument signature for
-            commands, the ↵-to-insert / file-type cue otherwise. Closest to
-            Linear / Raycast; earns its keep only if the catalog is long enough
-            that grouping aids scanning.
-          </p>
-          {empty ? (
-            <div className="cspike-panel cspike-empty">No matches</div>
-          ) : (
-            <div className="cspike-panel">
-              {grouped.map((g) => (
-                <React.Fragment key={g.name}>
-                  <div className="cspike-group-header">{g.name}</div>
-                  {g.items.map((f) => (
-                    <div
-                      key={f.key}
-                      className="cspike-row"
-                      data-selected={isSelected(f.key)}
-                      onMouseDown={() => setSelectedKey(f.key)}
-                    >
-                      <span className="cspike-glyph">
-                        {f.row.kind === "command" ? <Terminal size={15} /> : fileGlyph(f.row)}
-                      </span>
-                      <span className="cspike-label">
-                        <Highlighted text={f.row.label} range={f.range} matchClass="cspike-match" />
-                      </span>
-                      {f.row.kind === "command" && (
-                        <span className="cspike-desc">{f.row.description}</span>
-                      )}
-                      <span className="cspike-hint">
-                        {f.row.kind === "command"
-                          ? f.row.args ?? "↵"
-                          : f.row.kind === "dir"
-                            ? "dir"
-                            : f.row.label.slice(f.row.label.lastIndexOf("."))}
-                      </span>
-                    </div>
-                  ))}
-                </React.Fragment>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <TugSeparator />
-
-        {/* ---- Alt D — Two-column preview ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">D — Two-column preview</TugLabel>
-          <p className="cspike-note">
-            A compact list on the left; the selected entry expands into a preview
-            pane on the right — full description + argument signature for
-            commands, full path + kind for files. The "rich content" palette
-            variant; the most ambitious, and probably more than this input needs.
-          </p>
-          {empty ? (
-            <div className="cspike-panel cspike-empty">No matches</div>
-          ) : (
-            <div className="cspike-split">
-              <div className="cspike-split-list">
-                {filtered.map((f) => (
-                  <div
-                    key={f.key}
-                    className="cspike-row"
-                    data-selected={isSelected(f.key)}
-                    onMouseDown={() => setSelectedKey(f.key)}
-                  >
-                    <span className="cspike-glyph">
-                      {f.row.kind === "command" ? <Terminal size={15} /> : fileGlyph(f.row)}
-                    </span>
-                    <span className="cspike-label">
-                      <Highlighted text={f.row.label} range={f.range} matchClass="cspike-match" />
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="cspike-split-preview">
-                <PreviewPane selected={selected} />
-              </div>
-            </div>
-          )}
-        </div>
+        ))}
       </div>
-    </ResponderScope>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Shared sub-views
-// ---------------------------------------------------------------------------
-
-/** A flat completion panel that defers each row's body to `renderRow`. */
-function AltPanel(props: {
-  filtered: Scored[];
-  empty: boolean;
-  isSelected: (key: string) => boolean;
-  onSelect: (key: string) => void;
-  renderRow: (f: Scored) => React.ReactNode;
-}): React.ReactElement {
-  const { filtered, empty, isSelected, onSelect, renderRow } = props;
-  if (empty) return <div className="cspike-panel cspike-empty">No matches</div>;
-  return (
-    <div className="cspike-panel">
-      {filtered.map((f) => (
-        <div
-          key={f.key}
-          className="cspike-row"
-          data-selected={isSelected(f.key)}
-          onMouseDown={() => onSelect(f.key)}
-        >
-          {renderRow(f)}
-        </div>
-      ))}
     </div>
-  );
-}
-
-function PreviewPane(props: { selected: Scored | null }): React.ReactElement {
-  const { selected } = props;
-  if (!selected) return <div className="cspike-preview-body">Nothing selected.</div>;
-  const row = selected.row;
-  if (row.kind === "command") {
-    return (
-      <>
-        <div className="cspike-preview-title">
-          <Terminal size={16} />
-          {`/${row.label}`}
-        </div>
-        <div className="cspike-preview-body">{row.description}</div>
-        <dl className="cspike-preview-meta">
-          <dt>Group</dt>
-          <dd>{row.group}</dd>
-          <dt>Usage</dt>
-          <dd>{`/${row.label}${row.args ? ` ${row.args}` : ""}`}</dd>
-        </dl>
-      </>
-    );
-  }
-  return (
-    <>
-      <div className="cspike-preview-title">
-        {row.kind === "dir" ? <Folder size={16} /> : fileGlyph(row)}
-        {row.label}
-      </div>
-      <dl className="cspike-preview-meta">
-        <dt>Path</dt>
-        <dd>{`${row.dir}${row.label}`}</dd>
-        <dt>Kind</dt>
-        <dd>{row.kind === "dir" ? "directory" : "file"}</dd>
-        <dt>Inserts</dt>
-        <dd>
-          <CornerDownLeft size={11} style={{ verticalAlign: "-1px" }} /> atom
-        </dd>
-      </dl>
-    </>
   );
 }

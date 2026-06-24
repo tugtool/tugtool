@@ -50,11 +50,14 @@
  *                                    rows are uniform across atoms
  *                                    and the caret reads consistently
  *   `.cm-content img[data-atom-label]`
- *                                  — atom widgets — vertical-align
- *                                    middle so the atom centers
- *                                    within the (at-least-atom-tall)
- *                                    line-box and never grows it
- *                                    further
+ *                                  — atom widgets — no rule; their
+ *                                    inline `vertical-align` offset
+ *                                    baseline-aligns the chip text
+ *                                    with the prose. The ghost above is
+ *                                    anchored to the SAME offset, so it
+ *                                    reserves the atom's baseline
+ *                                    extents and atom lines == text
+ *                                    lines (uniform height)
  *   `.cm-selectionBackground`      — custom selection-layer overlay;
  *                                    active / inactive variants split
  *                                    on `&.cm-focused`
@@ -213,25 +216,31 @@ export const tugTheme: Extension = EditorView.theme({
   // failed to publish the variable — a configuration bug, not a
   // production state. Having the fallback prevents a totally-broken
   // layout in that case.
+  // The ghost is anchored to the SAME `vertical-align` offset the atom uses
+  // (not `middle`), so it reserves the atom's exact above/below-baseline
+  // extents. With both the ghost and the atom baseline-anchored, the atom rides
+  // the prose baseline AND every line — atom-bearing or text-only — reserves an
+  // identical box, so line heights stay uniform with no "hop". The offset is
+  // published from `getAtomBaselineOffsetPx()`; the `0px` fallback degrades to
+  // a plain (still-uniform) floor if the host wrapper failed to publish it.
   ".cm-line::before": {
     content: '""',
     display: "inline-block",
     width: "0",
     height: "max(1lh, var(--tug-text-editor-atom-height, 21px))",
-    verticalAlign: "middle",
+    verticalAlign: "var(--tug-text-editor-atom-baseline-offset, 0px)",
   },
 
-  // Atom widgets render via `tug-atom-img.ts` as `<img>` elements with
-  // an inline `vertical-align` offset designed for the host's flowing
-  // text baseline. Inside the editor we pin them to vertical-align
-  // middle so the atom centers within the line-box (which is at
-  // least atom-tall thanks to the `.cm-line::before` floor above)
-  // and never grows the line further. `!important` is required
-  // because the atom rendering applies vertical-align as an inline
-  // style.
-  ".cm-content img[data-atom-label]": {
-    verticalAlign: "middle !important",
-  },
+  // Atom widgets render via `tug-atom-img.ts` as `<img>` elements carrying an
+  // inline `vertical-align` offset (`atomBaselineOffsetFor`) that lands the
+  // chip's internal text baseline on the surrounding text baseline. We let that
+  // inline offset govern — no override here. The `.cm-line::before` ghost above
+  // is anchored to the same offset, so it reserves the atom's above/below-
+  // baseline extents on every line: the atom is baseline-aligned with the prose
+  // AND atom-bearing and text-only lines are the exact same height. (Box-
+  // centering with `vertical-align: middle` would keep heights uniform but
+  // float the chip's text above the prose baseline — the two are reconciled by
+  // anchoring the ghost, not by centering the atom.)
 
   // Selection overlay painted by `tug-text-editor/selection-layer.ts`.
   // The `.cm-selectionBackground` divs are layered behind the

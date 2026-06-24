@@ -56,8 +56,9 @@ import * as React from "react";
 import {
   TRANSCRIPT_CHIP_BASE_FONT_SIZE,
   computeAtomChipGeometry,
+  ATOM_RECESS,
 } from "./tug-atom-img";
-import { chipStyle, chipDisplayLabel } from "./command-atom";
+import { chipStyle, chipDisplayLabel, ATOM_KEY_WASH } from "./command-atom";
 
 /**
  * Lazy-resolved transcript chip font family.
@@ -143,6 +144,9 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
     // Shared chip token names, referenced as `var(--…)` so a theme switch
     // or a token edit re-paints via CSS cascade — no SVG re-bake [L06].
     const tokens = chipStyle().tokens;
+    // Per-instance id for the recess top-shade gradient, so multiple chips in
+    // one document don't collide on a shared `<linearGradient>` id.
+    const gradId = `tug-atom-recess-${React.useId()}`;
     return (
       <svg
         ref={ref}
@@ -156,14 +160,40 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
         aria-label={displayLabel}
         role="img"
       >
+        {/* Recess top-shade gradient — `border` colour fading to transparent
+            down the top of the box. Colours stay `var(--…)` so a theme switch
+            re-paints via cascade. */}
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset={0} stopColor={`var(${tokens.border})`} stopOpacity={ATOM_RECESS.shadeOpacity} />
+            <stop offset={ATOM_RECESS.shadeStop} stopColor={`var(${tokens.border})`} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        {/* Base surface (opaque), then the Key wash overlay — together the
+            9% key wash, no hard stroke. Both keep `var(--…)` fills so a theme
+            switch re-paints via cascade. */}
+        <rect x={0} y={0} width={geom.width} height={geom.height} rx={geom.radius} fill={`var(${tokens.surface})`} />
+        <rect
+          x={0}
+          y={0}
+          width={geom.width}
+          height={geom.height}
+          rx={geom.radius}
+          fill={`var(${tokens.key})`}
+          fillOpacity={ATOM_KEY_WASH}
+        />
+        {/* Recess: top inner shade, then a faint inset hairline — the bounded
+            "indivisible unit" edge, softer than a 1px stroke. */}
+        <rect x={0} y={0} width={geom.width} height={geom.height} rx={geom.radius} fill={`url(#${gradId})`} />
         <rect
           x={0.5}
           y={0.5}
           width={geom.width - 1}
           height={geom.height - 1}
-          rx={geom.radius}
-          fill={`var(${tokens.surface})`}
+          rx={Math.max(0, geom.radius - 0.5)}
+          fill="none"
           stroke={`var(${tokens.border})`}
+          strokeOpacity={ATOM_RECESS.hairlineOpacity}
           strokeWidth={1}
         />
         {/* Icon paths are static module-local SVG markup strings

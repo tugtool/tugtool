@@ -1,26 +1,14 @@
 /**
- * gallery-completion-spike.css — styling for the completion-atom design
- * spike card. Temporary: paired with `gallery-completion-spike.tsx`.
+ * gallery-completion-spike.css — styling for the inline-atom representation
+ * spike. Temporary: paired with `gallery-completion-spike.tsx`.
  *
- * All alternatives borrow the real completion-menu surface tokens
- * (`--tugx-completion-*`, defined on `body` in `tug-completion-menu.css`,
- * which the component imports) so the spike recolors with the theme and
- * reads as the genuine popup chrome — only the row anatomy differs per alt.
+ * The baseline uses the real chip renderers. The chosen treatment keeps the
+ * atom's own surface/border/text tokens — so it reads as the SAME atom — but
+ * renders full-size live text in a recessed slot (soft inset shadow, no hard
+ * stroke) tinted with a light wash of the theme key (accent) hue. The wash
+ * strength is the `--cspike-wash` custom property so the ramp can tune it.
  */
 
-/* Controls bar — trigger toggle + query field. */
-.cspike-controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.cspike-query {
-  max-width: 260px;
-}
-
-/* Per-alt explainer line. */
 .cspike-note {
   margin: 0;
   font-size: 12px;
@@ -29,193 +17,112 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* Static stand-in for the floating popup panel. Mirrors the real
-   `.tug-completion-menu` chrome but sits inline in the card. */
-.cspike-panel {
-  width: fit-content;
-  min-width: 260px;
-  max-width: 540px;
-  padding: 4px;
-  background-color: var(--tugx-completion-bg);
-  color: var(--tugx-completion-fg);
-  border: 1px solid var(--tugx-completion-border);
-  border-radius: var(--tug-radius-sm);
-  box-shadow: var(--tugx-completion-shadow);
-}
-
-.cspike-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 5px 10px;
-  border-radius: var(--tug-radius-xs);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.cspike-row[data-selected="true"] {
-  background-color: var(--tugx-completion-item-hover-bg);
-  color: var(--tugx-completion-item-hover-fg);
-}
-
-/* Leading type glyph (lucide icon or atom chip wrapper). Centered against
-   the first text line rather than riding the shared baseline. */
-.cspike-glyph {
-  flex: 0 0 auto;
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  color: var(--tugx-completion-desc-fg);
-}
-
-.cspike-row[data-selected="true"] .cspike-glyph {
-  color: inherit;
-}
-
-/* Atom-chip leading slot needs vertical centering but no fixed box. */
-.cspike-chip {
-  flex: 0 0 auto;
-  align-self: center;
-  display: inline-flex;
-}
-
-.cspike-label {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.cspike-match {
-  font-weight: var(--tug-font-weight-semibold);
-}
-
-/* Muted directory path, pushed to the right of the basename (alt A / B). */
-.cspike-path {
-  flex: 1 1 auto;
-  min-width: 0;
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  color: var(--tugx-completion-desc-fg);
-}
-
-.cspike-row[data-selected="true"] .cspike-path,
-.cspike-row[data-selected="true"] .cspike-desc {
-  color: var(--tugx-completion-item-hover-fg);
-  opacity: 0.85;
-}
-
-/* Muted command description, single line. */
-.cspike-desc {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--tugx-completion-desc-fg);
-}
-
-/* Trailing mono hint column (alt C). */
-.cspike-hint {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding-left: 16px;
+.cspike-note code {
   font-family: var(--tug-font-family-mono);
-  font-size: 11px;
-  color: var(--tugx-completion-desc-fg);
-  opacity: 0.85;
+  font-size: 0.92em;
 }
 
-.cspike-row[data-selected="true"] .cspike-hint {
-  color: inherit;
-  opacity: 0.85;
+/* A context block — small caption above a sample line. */
+.cspike-ctx {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-/* Group header band (alt C). */
-.cspike-group-header {
-  padding: 7px 10px 3px;
+.cspike-ctx-label {
   font-size: 10px;
   font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--tugx-completion-desc-fg);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
   user-select: none;
 }
 
-.cspike-group-header:not(:first-child) {
-  margin-top: 2px;
-  border-top: 1px solid color-mix(in srgb, var(--tugx-completion-border) 60%, transparent);
-}
+/* ---- The two host surfaces the atoms are judged inside ---- */
 
-/* Alt D — two-column list + preview. */
-.cspike-split {
-  display: flex;
-  width: fit-content;
-  max-width: 100%;
-  overflow: hidden;
-  background-color: var(--tugx-completion-bg);
-  color: var(--tugx-completion-fg);
-  border: 1px solid var(--tugx-completion-border);
-  border-radius: var(--tug-radius-sm);
-  box-shadow: var(--tugx-completion-shadow);
-}
-
-.cspike-split-list {
-  flex: 0 0 auto;
-  width: 232px;
-  padding: 4px;
-  border-right: 1px solid var(--tugx-completion-border);
-}
-
-.cspike-split-preview {
-  flex: 1 1 auto;
-  min-width: 248px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-}
-
-.cspike-preview-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* Transcript prose — body font at the transcript's 14px scope. */
+.cspike-prose {
   font-size: 14px;
-  font-weight: var(--tug-font-weight-semibold);
+  line-height: 1.75;
+  max-width: 44rem;
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-.cspike-preview-body {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--tugx-completion-desc-fg);
-}
-
-.cspike-preview-meta {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 14px;
-  margin: 0;
-  font-size: 11px;
-}
-
-.cspike-preview-meta dt {
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--tugx-completion-desc-fg);
-}
-
-.cspike-preview-meta dd {
-  margin: 0;
+/* Prompt editor line — the field surface + mono editor font, with a caret. */
+.cspike-editor {
   font-family: var(--tug-font-family-mono);
-  color: var(--tugx-completion-fg);
+  font-size: 13px;
+  line-height: 1.9;
+  max-width: 44rem;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background: var(--tug7-surface-field-primary-normal-plain-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  padding: 10px 12px;
 }
 
-.cspike-empty {
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--tugx-completion-desc-fg);
+.cspike-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--tug7-element-global-fill-normal-accent-rest);
+  opacity: 0.75;
+}
+
+/* The real editor-bake <img> mounts inside this span. */
+.cspike-real-atom {
+  display: inline;
+}
+
+/* ---- Inline token: recessed slot + keycolor wash ----
+ *
+ * `display: inline` (not inline-flex) so the token sits on the natural text
+ * baseline and never disturbs prose flow; `box-decoration-break: clone` keeps
+ * the padding + rounded fill intact across a line wrap. Font size is inherited
+ * from the host — full prose / editor size, never shrunk. Colour is the atom's
+ * own text token, which the leading file icon inherits via currentColor. */
+.cspike-tok {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--tug-radius-sm);
+  color: var(--tug7-element-atom-text-normal-default-rest);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.cspike-tok-ico {
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 3px;
+  vertical-align: -0.15em;
+}
+
+/* The recessed, key-washed slot.
+ *
+ * Background: a light blend of the theme KEY hue into the atom surface,
+ * strength set by `--cspike-wash` (default light). Key — not accent — is the
+ * selection / filled-action axis; `--tug7-surface-control-primary-filled-action-rest`
+ * is that hue at full saturation, the same family as the atom selection
+ * surface used on hover below, so wash and selection cohere. Edge: a soft
+ * inset shadow instead of a 1px stroke — a top inner shade for the recess plus
+ * a faint all-round inset hairline to bound the unit. No hard outline. */
+.cspike-tok-wash {
+  --cspike-wash: 9%;
+  background-color: color-mix(
+    in srgb,
+    var(--tug7-surface-control-primary-filled-action-rest) var(--cspike-wash),
+    var(--tug7-surface-atom-primary-normal-default-rest)
+  );
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--tug7-element-atom-border-normal-default-rest) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--tug7-element-atom-border-normal-default-rest) 25%, transparent);
+}
+
+/* Whole-unit selection cue — the atom "selected" surface both real renderers
+   use, so hover demonstrates the token highlighting as one indivisible thing. */
+.cspike-tok-wash:hover {
+  background-color: var(--tug7-surface-atom-primary-normal-selected-rest);
+  color: var(--tug7-element-atom-text-normal-selected-rest);
 }

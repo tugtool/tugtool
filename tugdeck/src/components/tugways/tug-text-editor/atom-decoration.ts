@@ -38,6 +38,7 @@ import type { EditorState, Extension, Range, Transaction } from "@codemirror/sta
 import {
   createAtomImgElement,
   getAtomHeightPx,
+  getAtomBaselineOffsetPx,
   TUG_ATOM_CHAR,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
@@ -59,7 +60,7 @@ import type { AtomBytesStore } from "@/lib/atom-bytes-store";
  * resolves at the published value; JS readers call `getAtomHeightPx()`
  * directly. Single source, two outlets.
  */
-export { getAtomHeightPx };
+export { getAtomHeightPx, getAtomBaselineOffsetPx };
 
 // ---------------------------------------------------------------------------
 // Types

@@ -132,6 +132,7 @@ import {
   atomDecorationField,
   atomInvertedEffects,
   getAtomHeightPx,
+  getAtomBaselineOffsetPx,
   getAtomsInRange,
   insertAtomAtSelection,
   pendingAtomSyncPlugin,
@@ -2426,6 +2427,11 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       }
       next["--tug-text-editor-max-rows"] = maxRows;
       next["--tug-text-editor-atom-height"] = `${getAtomHeightPx()}px`;
+      // The atom widget's inline vertical-align offset, mirrored onto the
+      // `.cm-line::before` ghost so the ghost reserves the atom's exact
+      // above/below-baseline extents on every line — atom and text-only lines
+      // stay identical height while the atom rides the prose baseline.
+      next["--tug-text-editor-atom-baseline-offset"] = `${getAtomBaselineOffsetPx()}px`;
       if (fontFamily !== undefined) {
         next["--tug-font-family-editor"] = fontFamily;
       }

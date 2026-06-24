@@ -14,7 +14,31 @@
 
 import { getTokenValue } from "@/theme-tokens";
 import { findEmbeddableFace } from "./tug-atom-fonts";
-import { chipStyle, chipDisplayLabel, chipHasIcon } from "./command-atom";
+import { chipStyle, chipDisplayLabel, chipHasIcon, ATOM_KEY_WASH } from "./command-atom";
+
+/**
+ * Recess-edge geometry shared by both renderers so the inline-`<svg>` chip
+ * (`TugAtomChip`) and the baked data-URI chip paint an identical recess. The
+ * edge is two soft layers in place of a hard stroke:
+ *  - a top inner shade (the `inset 0 1px …` of a recess) — a vertical gradient
+ *    from `border @ shadeOpacity` fading to transparent by `shadeStop` of the
+ *    height, painted over the rounded shape;
+ *  - a faint all-round inset hairline (`inset 0 0 0 1px`) — a stroked rounded
+ *    rect at `hairlineOpacity`, inset half a pixel so it reads as an inner
+ *    bound rather than an outline.
+ */
+export const ATOM_RECESS = {
+  hairlineOpacity: 0.32,
+  // A thin soft shade hugging the top edge — the SVG analogue of the spike's
+  // `inset 0 1px 2px`, not a half-height band. Low peak opacity, fading out
+  // within the top ~12% of the box.
+  shadeOpacity: 0.14,
+  shadeStop: 0.12,
+} as const;
+
+/** DOM id of the recess top-shade gradient inside a baked chip's isolated
+ *  SVG document. Constant is safe — each data-URI is its own document. */
+const BAKED_RECESS_GRADIENT_ID = "tug-atom-recess";
 
 // ---- Types ----
 
@@ -97,12 +121,14 @@ let _editorFontSize = 14;
  *  @font-face embedding; see tug-atom-fonts.ts). */
 let _measureFamily = "system-ui, sans-serif";
 /**
- * Atom label rendered as a fraction of the editor font size. SVG text
- * rasterizes slightly heavier than hinted HTML text at the same nominal
- * px, so 1.0 looks oversized against the surrounding text. Shave it to
- * visually match.
+ * Atom label size as a fraction of the editor font size. Held at 1.0 so the
+ * chip label renders at the *same* px as the surrounding editor text — an
+ * atom should read at full prose size, matching the transcript treatment.
+ * (An earlier 0.96 shave compensated for SVG text rasterizing slightly
+ * heavier than hinted HTML text, but it left the label visibly smaller than
+ * the prose, which read as a size break rather than a weight match.)
  */
-const ATOM_LABEL_SIZE_RATIO = 0.96;
+const ATOM_LABEL_SIZE_RATIO = 1.0;
 /**
  * Pixel height of an atom chip for a given font size — the formula
  * is `round(size * 1.75)`. Exported because consumers that pixel-bake
@@ -128,8 +154,14 @@ function iconSize(): number { return iconSizeFor(_fontSize); }
  * prose. The size is anchored here at 12px; the Swift host's
  * `WKWebView.pageZoom` scales the rendered chip uniformly with the
  * rest of the page, so the bake size stays fixed.
+ *
+ * Anchored at the transcript's own prose size (14px) so an atom reads at the
+ * same size as the words around it — the legibility fix that paired with the
+ * recessed, key-washed treatment. This tracks the *transcript* prose size, a
+ * fixed surface constant; it deliberately does NOT track the user's editor
+ * font size (the coupling that surprised users — see the note above).
  */
-export const TRANSCRIPT_CHIP_BASE_FONT_SIZE = 12;
+export const TRANSCRIPT_CHIP_BASE_FONT_SIZE = 14;
 
 /**
  * Current rendered height of an atom widget, in pixels. Derived from
@@ -145,6 +177,20 @@ export const TRANSCRIPT_CHIP_BASE_FONT_SIZE = 12;
  */
 export function getAtomHeightPx(): number {
   return atomHeight();
+}
+
+/**
+ * Current atom widget's vertical-align offset, in px (typically negative) —
+ * the same value `createAtomImgElement` applies inline so the chip's internal
+ * text baseline lands on the surrounding text baseline. The editor publishes
+ * this to `--tug-text-editor-atom-baseline-offset` and applies it to BOTH the
+ * atom `<img>` and the per-line `.cm-line::before` ghost, so the ghost
+ * reserves the atom's exact above/below-baseline extents on every line: atom
+ * and text-only lines stay identical height while the atom sits on the prose
+ * baseline. Tracks `setAtomFont` like {@link getAtomHeightPx}.
+ */
+export function getAtomBaselineOffsetPx(): number {
+  return atomBaselineOffset();
 }
 
 /**
@@ -429,18 +475,33 @@ export function buildAtomSVGDataUri(
   // hex because the `<img src="data:…">` document is isolated from the host
   // cascade.
   const tokens = chipStyle().tokens;
-  const bgColor = getTokenValue(tokens.surface);
+  const surfaceColor = getTokenValue(tokens.surface);
+  const keyColor = getTokenValue(tokens.key);
   const borderColor = getTokenValue(tokens.border);
   const iconColor = getTokenValue(tokens.icon);
   const textColor = getTokenValue(tokens.text);
-  const defs = g.fontFaceCSS ? `<defs><style>${g.fontFaceCSS}</style></defs>` : "";
+  // The recess top-shade gradient is declared in <defs> alongside any embedded
+  // font face. The Key wash is an overlay rect (below), not color-mix, so it
+  // resolves inside the isolated `<img>` document.
+  const gradient =
+    `<linearGradient id="${BAKED_RECESS_GRADIENT_ID}" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0" stop-color="${borderColor}" stop-opacity="${ATOM_RECESS.shadeOpacity}"/>`
+    + `<stop offset="${ATOM_RECESS.shadeStop}" stop-color="${borderColor}" stop-opacity="0"/>`
+    + `</linearGradient>`;
+  const defs = `<defs>${gradient}${g.fontFaceCSS ? `<style>${g.fontFaceCSS}</style>` : ""}</defs>`;
   const icon = g.hasIcon
     ? `<g transform="${g.iconTransform}" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${g.iconPath}</g>`
     : "";
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}" height="${g.height}" viewBox="0 0 ${g.width} ${g.height}">`,
     defs,
-    `<rect x="0.5" y="0.5" width="${g.width - 1}" height="${g.height - 1}" rx="${g.radius}" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
+    // Base surface (opaque), then the Key wash overlay — together a 9% wash,
+    // no hard stroke.
+    `<rect x="0" y="0" width="${g.width}" height="${g.height}" rx="${g.radius}" fill="${surfaceColor}"/>`,
+    `<rect x="0" y="0" width="${g.width}" height="${g.height}" rx="${g.radius}" fill="${keyColor}" fill-opacity="${ATOM_KEY_WASH}"/>`,
+    // Recess: top inner shade, then a faint inset hairline.
+    `<rect x="0" y="0" width="${g.width}" height="${g.height}" rx="${g.radius}" fill="url(#${BAKED_RECESS_GRADIENT_ID})"/>`,
+    `<rect x="0.5" y="0.5" width="${g.width - 1}" height="${g.height - 1}" rx="${Math.max(0, g.radius - 0.5)}" fill="none" stroke="${borderColor}" stroke-opacity="${ATOM_RECESS.hairlineOpacity}" stroke-width="1"/>`,
     icon,
     `<text x="${g.textX}" y="${g.textY}" font-size="${g.fontSize}" font-family="${g.svgFontFamily}" fill="${textColor}">${escapeSVG(g.displayLabel)}</text>`,
     `</svg>`,
