@@ -17,7 +17,11 @@
  *    `popInteractive`); the responder sits on the dialog's outer element, the
  *    ancestor of every control, so the cancel-action walks up to it;
  *  - seeding the engine key view onto the recommended default on open
- *    ({@link useSeedKeyView}), so the default rests ringed and Return commits;
+ *    ({@link useSeedKeyView}), so the default rests ringed and Return commits —
+ *    and re-seeding it when the card (re)gains key status while the dialog is
+ *    still open ([P20]/[P21]), so a dialog that popped while its card was in the
+ *    background (or behind a non-frontmost pane) lands focus on the default the
+ *    moment the user activates the card, not on a stray Tab into Cancel/Deny;
  *  - releasing the enclosing list's follow-bottom and scrolling the ENTIRE
  *    dialog into view on open — anchored to its bottom so the whole card-modal
  *    shows at once (usually a scroll to the bottom), or to its header at the top
@@ -32,9 +36,12 @@
  * hooks); [L26] tolerant of a null manager (no-op outside a provider).
  */
 
-import { useCallback, useId, useLayoutEffect, useRef } from "react";
+import { useCallback, useContext, useId, useLayoutEffect, useRef } from "react";
 
+import { CardIdContext } from "@/lib/card-id-context";
+import { FocusManagerContext } from "./focus-manager";
 import { useSeedKeyView } from "./use-focusable";
+import { useKeyCardId } from "./use-key-card";
 import { useOptionalResponder } from "./use-responder";
 import { useScroller } from "./internal/scroller-context";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -100,6 +107,35 @@ export function useInlineDialogScope(
   // Seed the engine key view onto the default control on open ([P12]).
   const { active, defaultFocusKey } = opts;
   useSeedKeyView(active ? defaultFocusKey : null);
+
+  // Re-seed the default key view when this card (re)gains key status while the
+  // dialog is open ([P20]/[P21]). `useSeedKeyView` arms the default exactly once
+  // on mount — but a dialog that POPS while its card is in the background (a
+  // request arriving for a non-key card, or one in a non-frontmost pane) can't
+  // land DOM focus then, and a pointer activation that brings the card forward
+  // can coarsen the key view off the default before it ever resolves. So on the
+  // background→key transition we re-arm `armKeyboardRestore`, which lands the
+  // ring (and now DOM focus, the card being active) back on the recommended
+  // default — the answer options for a question, Allow/Submit for a permission —
+  // instead of stranding the user on a bare Tab that starts at Cancel/Deny.
+  const manager = useContext(FocusManagerContext);
+  const cardId = useContext(CardIdContext);
+  const keyCardId = useKeyCardId();
+  const isKeyCard = cardId !== null && keyCardId === cardId;
+  const wasKeyCardRef = useRef(isKeyCard);
+  useLayoutEffect(() => {
+    const was = wasKeyCardRef.current;
+    wasKeyCardRef.current = isKeyCard;
+    if (
+      active &&
+      isKeyCard &&
+      !was &&
+      defaultFocusKey !== null &&
+      manager !== null
+    ) {
+      manager.contextFor(cardId).armKeyboardRestore(defaultFocusKey);
+    }
+  }, [active, isKeyCard, defaultFocusKey, manager, cardId]);
 
   // While open, release the enclosing list's follow-bottom and bring the ENTIRE
   // dialog into view; re-engage on close.

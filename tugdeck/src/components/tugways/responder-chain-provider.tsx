@@ -782,6 +782,43 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       return target.closest(FOCUS_REFUSE_SELECTOR) !== null;
     }
 
+    // ---- Card-modal scrim barrier ([P16]/[P19]) ----
+    //
+    // While an inline dialog (permission / question) is pending its card is
+    // card-modal: the keyboard is trapped in the dialog and the surround is
+    // scrimmed. The CSS scrim drops `pointer-events` on the dimmed regions so
+    // wheel still reaches the scroll container — but that very passthrough means
+    // a click on dimmed content (or the bare scroll viewport) lands on an
+    // interactive ancestor and promotes IT to first responder, coarsening the
+    // dialog's key view and stealing its ring ("focus follows my click").
+    //
+    // The fix completes the modality at the single promotion seam: a pointerdown
+    // anywhere in a card-modal card but OUTSIDE its bright dialog island is a
+    // stray click. We redirect the promotion to the dialog island itself, so the
+    // gesture (a) activates the card if it was in the background and (b) leaves
+    // first responder on the dialog — never on the scrimmed surround. Returns the
+    // dialog island element to redirect to, or `null` when the target is not a
+    // stray modal-scrim click (the common path).
+    const CARD_MODAL_SCRIM_SELECTOR = '[data-inline-dialog-pending="true"]';
+    const DIALOG_ISLAND_SELECTOR =
+      ".dev-question-dialog, .dev-permission-dialog";
+
+    function modalScrimRedirectTarget(target: EventTarget | null): Element | null {
+      const el =
+        target instanceof Element
+          ? target
+          : target instanceof Node
+            ? target.parentElement
+            : null;
+      if (el === null) return null;
+      const card = el.closest(CARD_MODAL_SCRIM_SELECTOR);
+      if (card === null) return null;
+      // A click already inside the bright dialog island behaves normally.
+      if (el.closest(DIALOG_ISLAND_SELECTOR) !== null) return null;
+      // Stray click on the scrimmed surround → redirect to the dialog island.
+      return card.querySelector(DIALOG_ISLAND_SELECTOR);
+    }
+
     function promoteOnPointerDown(event: PointerEvent): void {
       // Focus-refusing controls skip first-responder promotion.
       // This is safe because controls use targeted dispatch
@@ -790,6 +827,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // dispatch and need the first responder to stay on the
       // editor, so skipping promotion here is correct for both.
       if (isFocusRefusing(event.target)) return;
+      // Card-modal barrier: a stray click on the scrimmed surround promotes the
+      // dialog island instead of the click target, and does so as a PROGRAMMATIC
+      // (non-pointer) promotion — so `seedKeyViewFromChain` yields to the finer
+      // key view already resting on the dialog default and its ring survives,
+      // while first responder still lands on (and activates) the dialog's card.
+      const redirect = modalScrimRedirectTarget(event.target);
+      if (redirect !== null) {
+        promoteFromTarget(redirect);
+        return;
+      }
       // Mark this promotion pointer-driven so the key-view seeding coarsens to
       // the promoted responder and clears the ring (click-to-focus). Programmatic
       // promotions (focusin from `.focus()`, boot restore) are not wrapped, so
@@ -802,8 +849,13 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // Focus-refusing controls prevent the browser from moving keyboard
       // focus on mousedown. This keeps focus in the active editor so the
       // caret and selection are preserved. The click event still fires
-      // normally.
-      if (isFocusRefusing(event.target)) {
+      // normally. A stray click on a card-modal scrim does the same — the
+      // browser must not drop a caret in (or select text out of) the dimmed
+      // surround; the dialog owns focus. The click event still fires.
+      if (
+        isFocusRefusing(event.target) ||
+        modalScrimRedirectTarget(event.target) !== null
+      ) {
         event.preventDefault();
       }
     }

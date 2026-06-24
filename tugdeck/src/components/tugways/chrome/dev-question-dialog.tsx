@@ -28,8 +28,9 @@
  * stationary *panel* that hosts the current question's heading and
  * options. A single-question payload renders the same rail (one row)
  * and panel — no special case; only the multi-question nav (Back /
- * Next) and the `N questions · M answered` count drop away when there
- * is just one question to answer. Rail rows carry a status:
+ * Next) drops away when there is just one question to answer, and the
+ * `N questions · M answered` count collapses to a bare `1 question`
+ * label (the corner is never left empty). Rail rows carry a status:
  *
  *  - **done** — the user has picked at least one option. Row shows
  *    `✓ N. Question text` over `→ chosen answer`. Clickable to jump
@@ -60,8 +61,8 @@
  * close enough to the questions for the touch target to feel coupled
  * to the row it mutates, but stable across question advances so the
  * button never moves out from under the mouse. Single-question
- * payloads omit the nav row (nothing to navigate, no progress to
- * summarize).
+ * payloads drop the Back / Next nav (nothing to navigate) but keep the
+ * summary slot, which reads a bare `1 question`.
  *
  * The wizard exposes a **review state** at the end of the flow:
  * `currentIndex === questions.length` paints every rail row as its
@@ -1866,10 +1867,16 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   const dialogDescription: React.ReactNode | undefined = !hasQuestions
     ? "Claude sent a question that could not be displayed."
     : undefined;
-  const wizardSummary: string | null =
-    hasQuestions && single === null
-      ? `${questions.length} questions · ${confirmedCount} answered`
-      : null;
+  // The progress summary on the action bar's leading edge. A single question
+  // has nothing to navigate and no running count to report, so it shows the
+  // bare `1 question` label — the count still belongs in the corner (parity
+  // with the answered Q&A artifact) rather than leaving the slot empty. A
+  // multi-question payload reports its live `N questions · M answered` count.
+  const wizardSummary: string | null = !hasQuestions
+    ? null
+    : single !== null
+      ? "1 question"
+      : `${questions.length} questions · ${confirmedCount} answered`;
 
   // Wizard navigation state. `currentIndex === questions.length` is
   // the review state added at the end of the flow — no row is
