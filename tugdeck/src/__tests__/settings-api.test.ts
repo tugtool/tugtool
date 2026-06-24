@@ -443,3 +443,41 @@ describe("capDurableCardState — strip the dead cellHeights field", () => {
     expect((out.regionScroll!.small.meta as Record<string, unknown>).cellHeights).toBeUndefined();
   });
 });
+
+describe("capDurableCardState — strip in-flight attachment bytes", () => {
+  test("drops content.attachmentBytes, keeps the rest of content", () => {
+    const bag: CardStateBag = {
+      content: {
+        route: "❯",
+        draft: { text: "hi", atoms: [], selection: null },
+        attachmentBytes: { b1: { content: "AAAA", mediaType: "image/png" } },
+      },
+    };
+    const out = capDurableCardState(bag);
+    const content = out.content as Record<string, unknown>;
+    expect(content.attachmentBytes).toBeUndefined();
+    expect(content.route).toBe("❯");
+    expect(content.draft).toEqual({ text: "hi", atoms: [], selection: null });
+    // The input bag is not mutated — the in-memory cache keeps its bytes.
+    expect(
+      (bag.content as Record<string, unknown>).attachmentBytes,
+    ).toBeDefined();
+  });
+
+  test("a content payload without attachmentBytes is returned unchanged", () => {
+    const bag: CardStateBag = {
+      content: { route: "$", draft: null },
+    };
+    expect(capDurableCardState(bag)).toBe(bag);
+  });
+
+  test("strips both attachmentBytes and cellHeights in one pass", () => {
+    const bag: CardStateBag = {
+      content: { attachmentBytes: { b: { content: "x", mediaType: "image/png" } } },
+      regionScroll: { r: { x: 0, y: 0, meta: { cellHeights: [1, 2, 3] } } },
+    };
+    const out = capDurableCardState(bag);
+    expect((out.content as Record<string, unknown>).attachmentBytes).toBeUndefined();
+    expect((out.regionScroll!.r.meta as Record<string, unknown>).cellHeights).toBeUndefined();
+  });
+});

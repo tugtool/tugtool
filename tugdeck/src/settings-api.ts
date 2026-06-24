@@ -22,35 +22,69 @@ import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
 
 /**
- * Strip the dead `regionScroll[*].meta.cellHeights` field from a card-state
- * bag before the tugbank write. `cellHeights` was a per-cell measured-height
- * seed for the old `content-visibility` / estimate first-paint path; that
- * path is gone — the transcript renders every row at its real, measured
- * height, so the scrollbar never shifts and there is no estimate to seed.
- * The field is never written anymore, so this is purely a **migration**: it
- * removes `cellHeights` from any legacy durable bag on the next save (an old
- * "load all" on a whale persisted thousands of entries — the bloat that
- * accumulated to ~18 MB and stalled the boot-time DEFAULTS frame). The tiny
- * `anchor` is always kept so a true reload still restores to the right cell.
+ * Cap a card-state bag before the tugbank write — the seam where the
+ * **durable** copy is allowed to diverge from the full in-memory bag. The
+ * in-memory `cardStateCache` keeps everything (so HMR Fast Refresh restores
+ * a card byte-for-byte); this function decides what is worth persisting past
+ * a page reload or app relaunch, both of which read only the durable copy.
+ *
+ * Two strips, both about size:
+ *
+ *  1. **`content.attachmentBytes`** — in-flight image-attachment payloads
+ *     (base64, megabytes-scale) carried by the prompt entry. They survive
+ *     HMR via the in-memory cache, but across a true reload / relaunch the
+ *     JS heap is gone and an abandoned prompt-edit's images can't be
+ *     re-resolved, so persisting them buys nothing and risks the exact
+ *     bloat that stalled boot at ~18 MB. Dropped here; the user's typed
+ *     text + non-image atoms still round-trip durably. The orphaned image
+ *     atoms are pruned on restore (see `coerceRestorePayload`'s caller).
+ *     [L23] protects user-visible state that *can* be preserved — image
+ *     bytes whose source is gone across a cold boot are not in that set.
+ *
+ *  2. **`regionScroll[*].meta.cellHeights`** — a dead per-cell
+ *     measured-height seed for the old `content-visibility` / estimate
+ *     first-paint path; the transcript now renders every row at its real
+ *     measured height, so there is no estimate to seed. Never written
+ *     anymore, so this is purely a **migration** that removes the field
+ *     from any legacy durable bag on the next save. The tiny `anchor` is
+ *     always kept so a true reload still restores to the right cell.
  *
  * Exported for unit testing; callers use {@link putCardState}.
  */
 export function capDurableCardState(bag: CardStateBag): CardStateBag {
-  if (bag.regionScroll === undefined || bag.regionScroll === null) return bag;
-  let changed = false;
-  const capped: RegionScrollSnapshot = {};
-  for (const [key, snap] of Object.entries(bag.regionScroll)) {
-    const meta = snap.meta as Record<string, unknown> | undefined | null;
-    if (meta !== null && meta !== undefined && "cellHeights" in meta) {
-      const { cellHeights: _drop, ...restMeta } = meta;
-      void _drop;
-      capped[key] = { x: snap.x, y: snap.y, meta: restMeta };
-      changed = true;
-    } else {
-      capped[key] = snap;
-    }
+  let next = bag;
+
+  // Strip 1 — in-flight attachment bytes (see docblock).
+  if (
+    next.content !== null &&
+    typeof next.content === "object" &&
+    "attachmentBytes" in (next.content as Record<string, unknown>)
+  ) {
+    const { attachmentBytes: _dropBytes, ...restContent } =
+      next.content as Record<string, unknown>;
+    void _dropBytes;
+    next = { ...next, content: restContent };
   }
-  return changed ? { ...bag, regionScroll: capped } : bag;
+
+  // Strip 2 — dead cellHeights seed (migration, see docblock).
+  if (next.regionScroll !== undefined && next.regionScroll !== null) {
+    let changed = false;
+    const capped: RegionScrollSnapshot = {};
+    for (const [key, snap] of Object.entries(next.regionScroll)) {
+      const meta = snap.meta as Record<string, unknown> | undefined | null;
+      if (meta !== null && meta !== undefined && "cellHeights" in meta) {
+        const { cellHeights: _drop, ...restMeta } = meta;
+        void _drop;
+        capped[key] = { x: snap.x, y: snap.y, meta: restMeta };
+        changed = true;
+      } else {
+        capped[key] = snap;
+      }
+    }
+    if (changed) next = { ...next, regionScroll: capped };
+  }
+
+  return next;
 }
 
 // ── Read functions (TugbankClient cache) ─────────────────────────────────────

@@ -154,6 +154,88 @@ describe("coerceRestorePayload — defaults", () => {
 });
 
 // ---------------------------------------------------------------------------
+// coerceRestorePayload — orphaned image-atom pruning
+//
+// `capDurableCardState` strips `attachmentBytes` from the durable bag, so a
+// reload / relaunch restores a draft whose image atoms have no surviving
+// bytes. `coerceRestorePayload` prunes those atoms (splicing the U+FFFC
+// placeholder, shifting positions + selection) so the editor mounts clean
+// typed text instead of a dead placeholder chip. HMR carries the bytes, so
+// an image atom WITH matching bytes is preserved untouched.
+// ---------------------------------------------------------------------------
+
+describe("coerceRestorePayload — orphaned image-atom pruning", () => {
+  const A = TUG_ATOM_CHAR;
+
+  it("keeps an image atom whose bytes rode along (the HMR path)", () => {
+    const draft: TugTextEditingState = {
+      text: `pic ${A}`,
+      atoms: [
+        { position: 4, type: "image", label: "image-1", value: "image-1", id: "b1" },
+      ],
+      selection: { start: 5, end: 5 },
+    };
+    const result = coerceRestorePayload({
+      route: "❯",
+      draft,
+      attachmentBytes: { b1: { content: "AAAA", mediaType: "image/png" } },
+    });
+    expect(result.draft).toEqual(draft);
+  });
+
+  it("drops an image atom with no bytes and splices its placeholder", () => {
+    const result = coerceRestorePayload({
+      route: "❯",
+      draft: {
+        text: `pic ${A}`,
+        atoms: [
+          { position: 4, type: "image", label: "image-1", value: "image-1", id: "b1" },
+        ],
+        selection: { start: 5, end: 5 },
+      },
+      // attachmentBytes absent — the reload / relaunch case.
+    });
+    expect(result.draft?.text).toBe("pic ");
+    expect(result.draft?.atoms).toEqual([]);
+    // Selection rides left by the one spliced char.
+    expect(result.draft?.selection).toEqual({ start: 4, end: 4 });
+  });
+
+  it("keeps self-contained atoms while dropping a later orphaned image", () => {
+    const result = coerceRestorePayload({
+      route: "❯",
+      draft: {
+        text: `${A} and ${A}`,
+        atoms: [
+          { position: 0, type: "file", label: "a.ts", value: "a.ts" },
+          { position: 6, type: "image", label: "image-1", value: "image-1", id: "b2" },
+        ],
+        selection: null,
+      },
+    });
+    expect(result.draft?.text).toBe(`${A} and `);
+    expect(result.draft?.atoms).toEqual([
+      { position: 0, type: "file", label: "a.ts", value: "a.ts" },
+    ]);
+  });
+
+  it("shifts a selection that sits past a dropped atom", () => {
+    const result = coerceRestorePayload({
+      route: "❯",
+      draft: {
+        text: `${A}hi`,
+        atoms: [
+          { position: 0, type: "image", label: "image-1", value: "image-1", id: "b3" },
+        ],
+        selection: { start: 3, end: 3 },
+      },
+    });
+    expect(result.draft?.text).toBe("hi");
+    expect(result.draft?.selection).toEqual({ start: 2, end: 2 });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // classifyBlockedSubmit — drop while replaying, defer otherwise
 // ---------------------------------------------------------------------------
 

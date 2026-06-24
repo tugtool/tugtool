@@ -213,6 +213,19 @@ export interface IDeckManagerStore {
   setCardState: (cardId: string, bag: CardStateBag) => void;
 
   /**
+   * Capture a card's current bag and persist it durably *now*, bypassing
+   * the debounce. Used by surfaces whose state must reach tugbank the
+   * instant it changes rather than 500 ms later — the prompt entry calls
+   * it on submit so the cleared draft is durable immediately and a crash
+   * or relaunch in the debounce window can't resurrect the just-sent
+   * message. Uses a `keepalive` PUT so the write outlives an
+   * immediately-following teardown. Optional — only the concrete
+   * `DeckManager` implements it; test doubles may omit it, so callers
+   * invoke it optionally. [L23].
+   */
+  flushCardStateNow?: (cardId: string) => void;
+
+  /**
    * Suspend debounced card-state saves for the duration of a batch load,
    * returning a disposer that resumes them. A card mid-load holds this so
    * the [A9] persistence flush never fetches per dirty card while the load

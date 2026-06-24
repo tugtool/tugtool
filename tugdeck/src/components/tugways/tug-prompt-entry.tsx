@@ -39,6 +39,7 @@ import "./tug-prompt-entry.css";
 
 import React, {
   useCallback,
+  useContext,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -105,6 +106,8 @@ import {
   canonicalizeBareCommandLine,
 } from "@/lib/slash-supported";
 import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
+import { useCardDirty } from "../chrome/tug-pane";
+import { DeckManagerContext } from "@/deck-manager-context";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { getDeckStore } from "@/lib/deck-store-registry";
@@ -264,7 +267,10 @@ export function coerceRestorePayload(raw: unknown): TugPromptEntryState {
 
   // New shape — `route` + `draft` are both present.
   if (typeof obj.route === "string") {
-    const draft = isEditingState(obj.draft) ? obj.draft : null;
+    const draft = pruneOrphanedImageAtoms(
+      isEditingState(obj.draft) ? obj.draft : null,
+      attachmentBytes,
+    );
     return { route: obj.route, draft, attachmentBytes };
   }
 
@@ -277,11 +283,74 @@ export function coerceRestorePayload(raw: unknown): TugPromptEntryState {
   ) {
     const perRoute = obj.perRoute as Record<string, unknown>;
     const candidate = perRoute[obj.currentRoute];
-    const draft = isEditingState(candidate) ? candidate : null;
+    const draft = pruneOrphanedImageAtoms(
+      isEditingState(candidate) ? candidate : null,
+      attachmentBytes,
+    );
     return { route: obj.currentRoute, draft, attachmentBytes };
   }
 
   return fallback;
+}
+
+/**
+ * Drop image atoms whose bytes did not ride along in the same restore
+ * payload, splicing out their `TUG_ATOM_CHAR` placeholders and shifting the
+ * surviving atom positions + selection to match.
+ *
+ * Image-attachment bytes live only in the in-memory cache: HMR Fast Refresh
+ * carries them, but `capDurableCardState` strips them from the durable bag
+ * (`settings-api.ts`), so a reload or relaunch restores the draft with
+ * `attachmentBytes` absent. Without this prune the editor would mount a
+ * placeholder chip with no payload — a chip that ships no image on resubmit.
+ * The user accepts losing attachments across a cold boot; what they keep is
+ * their typed text and every self-contained atom (text/file/command/doc,
+ * whose `value` IS the payload and so are never pruned here). [L23].
+ *
+ * Returns the draft unchanged when nothing is orphaned (the HMR path), and
+ * `null` straight through. Exported-via-coerce; a self-consistent payload
+ * where every surviving image atom has bytes is the postcondition.
+ */
+function pruneOrphanedImageAtoms(
+  draft: TugTextEditingState | null,
+  attachmentBytes:
+    | Record<string, { content: string; mediaType: string }>
+    | undefined,
+): TugTextEditingState | null {
+  if (draft === null) return null;
+  const hasBytes = (id: string | undefined): boolean =>
+    id !== undefined && attachmentBytes !== undefined && id in attachmentBytes;
+  const dropPositions = draft.atoms
+    .filter((a) => a.type === "image" && !hasBytes(a.id))
+    .map((a) => a.position)
+    .sort((x, y) => x - y);
+  if (dropPositions.length === 0) return draft;
+
+  const dropSet = new Set(dropPositions);
+  let text = "";
+  for (let i = 0; i < draft.text.length; i += 1) {
+    if (!dropSet.has(i)) text += draft.text.charAt(i);
+  }
+  // Shift a surviving offset left by the count of dropped chars before it.
+  const shift = (offset: number): number => {
+    let n = 0;
+    for (const p of dropPositions) {
+      if (p < offset) n += 1;
+      else break;
+    }
+    return offset - n;
+  };
+  const atoms = draft.atoms
+    .filter((a) => !dropSet.has(a.position))
+    .map((a) => ({ ...a, position: shift(a.position) }));
+  const selection =
+    draft.selection === null
+      ? null
+      : {
+          start: shift(draft.selection.start),
+          end: shift(draft.selection.end),
+        };
+  return { ...draft, text, atoms, selection };
 }
 
 /**
@@ -1110,6 +1179,26 @@ export const TugPromptEntry = React.forwardRef<
   const cardIdForTraceRef = useRef(cardIdForTrace);
   cardIdForTraceRef.current = cardIdForTrace;
 
+  // Dirty-pipeline participation. `useCardDirtyState` only marks the card
+  // dirty on host-level `scroll` / `selectionchange`; the editor must mark
+  // itself on every doc change so a typed character, a dropped/pasted atom,
+  // or an undo schedules the debounced durable save — rather than relying
+  // on an incidental selection event to do it. Stable callback (no-op
+  // outside a `CardHost`, e.g. the gallery); held in a ref so the mount-time
+  // editor extension reads the live value at fire time [L07].
+  const markDirty = useCardDirty();
+  const markDirtyRef = useRef(markDirty);
+  markDirtyRef.current = markDirty;
+
+  // Deck store + card id, read at submit time to force the cleared draft
+  // durable the instant a turn is sent (see `performSubmit`). Held through
+  // refs so the `performSubmit` closure never goes stale [L07]. Both are
+  // absent in the gallery / unit-test mounts, where submit just skips the
+  // forced flush.
+  const deckStore = useContext(DeckManagerContext);
+  const deckStoreRef = useRef(deckStore);
+  deckStoreRef.current = deckStore;
+
   // Helper: route the embedded substrate's selection through
   // selectionGuard for the inactive-paint channel.
   const publishToSelectionGuard = useCallback((range: Range | null): void => {
@@ -1141,6 +1230,12 @@ export const TugPromptEntry = React.forwardRef<
       // every keystroke.
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return;
+        // Every doc change is a draft edit — schedule the debounced durable
+        // save. This is the editor's entry into the dirty pipeline; without
+        // it the draft is only persisted when an incidental scroll /
+        // selectionchange happens to fire (e.g. a programmatic atom insert
+        // that doesn't move the global selection would otherwise not save).
+        markDirtyRef.current();
         const root = rootRef.current;
         if (root !== null) {
           root.setAttribute(
@@ -1227,6 +1322,22 @@ export const TugPromptEntry = React.forwardRef<
   const localCommandTargetIdRef = useRef(localCommandTargetId);
   localCommandTargetIdRef.current = localCommandTargetId;
 
+  // Force the just-cleared draft durable immediately after a submit.
+  // `editor.clear()` empties the doc, but the debounced save that would
+  // persist the cleared state is up to SAVE_DEBOUNCE_MS out, and WKWebView
+  // fires no `beforeunload` / `visibilitychange` on quit — so a relaunch in
+  // that window would otherwise restore the just-submitted message from the
+  // stale pre-submit bag. Flushing here closes the window regardless of the
+  // quit path. No-op in the gallery / unit-test mounts (no deck store or
+  // card id). [L23].
+  const persistClearedDraft = useCallback(() => {
+    const store = deckStoreRef.current;
+    const cardId = cardIdForTraceRef.current;
+    if (store?.flushCardStateNow !== undefined && cardId !== null) {
+      store.flushCardStateNow(cardId);
+    }
+  }, []);
+
   // Shared submit logic. Invoked by both the SUBMIT chain-action
   // handler (button click, Cmd+Enter, etc.) and the Return /
   // Shift+Return keyboard path (via the substrate's `onSubmit`).
@@ -1309,6 +1420,7 @@ export const TugPromptEntry = React.forwardRef<
           // cursor to the end of the list — next ↑ starts from the most
           // recent entry, including this one.
           currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+          persistClearedDraft();
           return;
         }
       }
@@ -1517,8 +1629,17 @@ export const TugPromptEntry = React.forwardRef<
     // rather than wherever the user had browsed to. The draft is the
     // now-empty editor.
     currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+    // Force the cleared draft durable now so a relaunch can't restore the
+    // message we just sent (see `persistClearedDraft`).
+    persistClearedDraft();
     // Route is a sticky user preference. Do not reset on submit.
-  }, [codeSessionStore, historyStore, manager, sessionMetadataStore]);
+  }, [
+    codeSessionStore,
+    historyStore,
+    manager,
+    sessionMetadataStore,
+    persistClearedDraft,
+  ]);
 
   // Flush a deferred submit. When a submit landed during the
   // transport-settling window, `performSubmit`'s blocked-submit branch

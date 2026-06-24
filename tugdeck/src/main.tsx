@@ -309,10 +309,21 @@ if (!container) {
   // so orphaned bags would accumulate unbounded across the app's life —
   // the leak that bloated the cardstate domain to 18 MB and stalled the
   // boot DEFAULTS frame. Fire-and-forget, post-mount.
-  pruneOrphanedCardStates(
-    tugbankClient,
-    new Set(deck.getSnapshot().cards.map((c) => c.id)),
-  );
+  //
+  // SKIPPED in test mode. There, `DeckManager` boots empty by design —
+  // the harness drives state via `seedDeckState` *after* this point — so
+  // `deck.getSnapshot().cards` is empty here and the sweep would treat
+  // EVERY persisted bag as orphaned and delete it. That wipes exactly
+  // the cardstate a reload/relaunch test persisted in its first launch
+  // and expects to read on the next boot, turning real persistence into
+  // a false negative. Production always boots with its persisted layout,
+  // so its live-set is correct and the sweep stays meaningful there.
+  if (!isTestMode) {
+    pruneOrphanedCardStates(
+      tugbankClient,
+      new Set(deck.getSnapshot().cards.map((c) => c.id)),
+    );
+  }
 
   // Wire the dev panel to deck-manager so it clears its selectedCardId
   // when the selected card is closed. Subscribes once at boot; checks

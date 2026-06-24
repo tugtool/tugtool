@@ -1204,6 +1204,29 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
+   * Capture `cardId`'s current bag and persist it durably immediately,
+   * skipping the {@link SAVE_DEBOUNCE_MS} window. The prompt entry calls
+   * this on submit: `editor.clear()` empties the draft, but the debounced
+   * save that would persist the cleared state is up to half a second out,
+   * and WKWebView fires no `beforeunload`/`visibilitychange` on quit — so a
+   * relaunch in that window would otherwise restore the just-submitted
+   * message from the stale pre-submit bag. Forcing the write here closes
+   * the window independent of the quit path.
+   *
+   * `keepalive` lets the PUT outlive an immediately-following teardown. A
+   * batch load that holds the save gate leaves the bag captured in the
+   * in-memory cache and dirty; the post-load debounce persists it. [L23].
+   */
+  flushCardStateNow(cardId: string): void {
+    this.setCardState(cardId, this.captureCardState(cardId));
+    if (this.cardStateSaveTimer !== null) {
+      window.clearTimeout(this.cardStateSaveTimer);
+      this.cardStateSaveTimer = null;
+    }
+    void this.flushDirtyCardStates({ keepalive: true });
+  }
+
+  /**
    * Write all dirty per-card state bags to tugbank and clear the dirty set.
    *
    * Persists under `dev.tugtool.deck.cardstate/{cardId}`. `putCardState` uses
