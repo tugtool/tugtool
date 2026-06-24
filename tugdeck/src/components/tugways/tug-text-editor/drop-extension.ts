@@ -10,7 +10,7 @@
  *      idea where their drop will land — a critical UX gap. The
  *      caret position carries the same vertical bias the existing
  *      `TugTextEngine` uses (`DROP_Y_OFFSET_RATIO`): the hit-test
- *      point is shifted ~0.9 line-heights upward so the resolved
+ *      point is shifted ~1.6 line-heights upward so the resolved
  *      position sits above the drag ghost rather than behind it.
  *
  *   2. **`dragover` accept.** `preventDefault()` on `dragover` is
@@ -95,15 +95,24 @@ import type { AtomBytesStore } from "@/lib/atom-bytes-store";
  * Mirror of `DROP_Y_OFFSET_RATIO` in `tug-text-engine.ts`. The drag
  * ghost rendered by the OS sits centered on the cursor; without the
  * bias, `posAtCoords` resolves to the position *under* the ghost,
- * which is hidden from the user. Shifting the hit-test point ~0.9
- * line-heights upward puts the resolved position directly above the
- * ghost where the eye is naturally looking.
+ * which is hidden from the user. Shifting the hit-test point ~1.6
+ * line-heights upward puts the resolved drop position — and the drop
+ * caret painted at it — clearly above the ghost where the eye is
+ * looking, so the preview doesn't smash into the caret.
+ *
+ * The bias is scaled by `view.defaultLineHeight`, so when
+ * `EDITOR_LINE_HEIGHT` dropped from 1.7 to 1.5 the absolute pixel
+ * clearance shrank with it and the preview started overlapping the
+ * caret again. `-1.6` lifts the resolved position a comfortable line
+ * and a half above the cursor so the (often multi-line-tall) drag
+ * preview clears the caret entirely, and stays proportional to the
+ * line metric regardless of future tuning.
  *
  * The negative value subtracts from `clientY`. Keeping the constant
  * shape and name identical to the engine so a future alignment pass
  * (or a regression report citing one) maps to both substrates.
  */
-const DROP_Y_OFFSET_RATIO = -0.9;
+const DROP_Y_OFFSET_RATIO = -1.6;
 
 /** File extensions classified as images for the default file→atom map. */
 const IMG_EXTS: ReadonlySet<string> = new Set([
