@@ -138,6 +138,30 @@ const lineWrapCompartment = new Compartment();
 /** Reconfigurable line-number gutter (`lineNumbers()` or empty). */
 const lineNumbersCompartment = new Compartment();
 
+/**
+ * Build the line-number gutter extension for a given starting offset.
+ *
+ * CM6's `lineNumbers()` numbers the document from 1 — it has no notion
+ * of where the buffer sits inside a larger file. When the host hands us
+ * a windowed region (a Read with `offset`, say lines 192-213), the
+ * document still starts at internal line 1, so the stock gutter would
+ * label that first line "1" instead of "192". We close the gap with
+ * `formatNumber`: CM6 passes the 1-based document line number and we
+ * shift it by `startLine - 1` so the gutter reads as the real file line.
+ *
+ * `startLine` is 1-based and defaults to 1 (whole-file reads, pastes —
+ * any content that already begins at the top of the file), for which
+ * the offset is zero and the gutter is unchanged.
+ */
+function buildLineNumbers(enabled: boolean, startLine: number): Extension {
+  if (!enabled) return [];
+  if (startLine <= 1) return cmLineNumbers();
+  const offset = startLine - 1;
+  return cmLineNumbers({
+    formatNumber: (lineNo) => String(lineNo + offset),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Theme
 // ---------------------------------------------------------------------------
@@ -315,6 +339,13 @@ export interface TugCodeViewProps {
    * @default true
    */
   lineNumbers?: boolean;
+  /**
+   * 1-based file line number of the first line of `value`. The gutter
+   * offsets its labels by `startLine - 1` so a windowed read (Read with
+   * `offset`) shows real file line numbers rather than counting from 1.
+   * @default 1
+   */
+  startLine?: number;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
   /**
@@ -358,6 +389,7 @@ export const TugCodeView = React.forwardRef<
     language: _language,
     wrap = true,
     lineNumbers = true,
+    startLine = 1,
     className,
     onFindRequested,
     onScrollIntoView,
@@ -377,6 +409,7 @@ export const TugCodeView = React.forwardRef<
   // mount [L07].
   const wrapRef = useRef(wrap);
   const lineNumbersRef = useRef(lineNumbers);
+  const startLineRef = useRef(startLine);
   // Latest `onFindRequested` callback. The responder-chain `FIND`
   // handler reads this so it picks up prop changes without recomposing
   // the actions object on every render.
@@ -393,6 +426,9 @@ export const TugCodeView = React.forwardRef<
   useLayoutEffect(() => {
     lineNumbersRef.current = lineNumbers;
   }, [lineNumbers]);
+  useLayoutEffect(() => {
+    startLineRef.current = startLine;
+  }, [startLine]);
   useLayoutEffect(() => {
     onFindRequestedRef.current = onFindRequested;
   }, [onFindRequested]);
@@ -567,6 +603,7 @@ export const TugCodeView = React.forwardRef<
 
     const initialWrap = wrapRef.current;
     const initialLineNumbers = lineNumbersRef.current;
+    const initialStartLine = startLineRef.current;
 
     const state = EditorState.create({
       doc: value,
@@ -576,7 +613,7 @@ export const TugCodeView = React.forwardRef<
           initialWrap ? EditorView.lineWrapping : [],
         ),
         lineNumbersCompartment.of(
-          initialLineNumbers ? cmLineNumbers() : [],
+          buildLineNumbers(initialLineNumbers, initialStartLine),
         ),
         // The search extension is always present so `setSearchQuery`
         // effects work; the bundled panel is NOT used (we don't bind
@@ -645,16 +682,20 @@ export const TugCodeView = React.forwardRef<
   }, [wrap]);
 
   // ---- Line-numbers reconfigure ----
+  //
+  // Tracks both the gutter toggle and the starting offset: a `value`
+  // swap to a region with a different `startLine` (e.g. re-reading the
+  // same file at a new offset) must re-derive the gutter's `formatNumber`.
 
   useLayoutEffect(() => {
     const view = viewRef.current;
     if (view === null) return;
     view.dispatch({
       effects: lineNumbersCompartment.reconfigure(
-        lineNumbers ? cmLineNumbers() : [],
+        buildLineNumbers(lineNumbers, startLine),
       ),
     });
-  }, [lineNumbers]);
+  }, [lineNumbers, startLine]);
 
   return (
     <ResponderScope>

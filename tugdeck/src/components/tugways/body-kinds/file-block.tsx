@@ -147,9 +147,10 @@ export interface FileData {
   content: string;
 
   /**
-   * 1-based line number of the first line of `content`. Reserved for
-   * future use by the substrate (e.g. seeding `lineNumbers()`'s
-   * starting index). Defaults to 1.
+   * 1-based line number of the first line of `content`. Forwarded to
+   * `TugCodeView`, which offsets its line-number gutter so a windowed
+   * read (Read with `offset`) shows real file line numbers instead of
+   * counting from 1. Defaults to 1.
    */
   startLine?: number;
 
@@ -919,6 +920,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           ref={codeViewRef}
           value={data.content}
           language={language}
+          startLine={data.startLine}
           onScrollIntoView={handleScrollMatchIntoView}
           // File viewer defaults: wrap on, line numbers on. The CM6
           // substrate handles the per-line scrollbar bug by
