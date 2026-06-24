@@ -377,7 +377,7 @@ body {
    the nested em inherits condensed and adds italic → real Condensed
    BoldItalic. Single `*` em (below) stays regular-width body italic. */
 .tugx-md-block strong { font-weight: var(--tugx-md-strong-weight); font-family: var(--tug-font-family-condensed); }
-.tugx-md-block em { font-style: var(--tugx-md-em-style); }
+.tugx-md-block em { font-style: var(--tugx-md-em-style); font-family: var(--tug-font-family-condensed); }
 .tugx-md-block del,
 .tugx-md-block s {
   text-decoration: var(--tugx-md-strikethrough-decoration);
