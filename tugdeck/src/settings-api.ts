@@ -315,9 +315,6 @@ export function putFocusedCardId(focusedCardId: string): void {
 export interface EditorSettings {
   fontId: string;
   fontSize: number;
-  letterSpacing: number;
-  /** Unit-less line-height multiplier (e.g. 1.7). */
-  lineHeight: number;
   /** Whether the editor wraps long lines. Defaults to false on the
    *  substrate; opt-in via the editor settings sheet. */
   lineWrap: boolean;

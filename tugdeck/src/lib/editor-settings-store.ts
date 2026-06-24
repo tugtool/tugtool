@@ -30,12 +30,18 @@ import { ensureAtomFontsLoaded } from "./tug-atom-fonts";
 const DOMAIN = "dev.tugtool.editor";
 const KEY = "settings";
 
+/**
+ * Editor line metrics are no longer user-tunable — they're pinned here so
+ * atom chips can be sized to fit the line box without a moving target. The
+ * store publishes these as `--tug-line-height-editor` / `--tug-letter-spacing-editor`
+ * on the bound element.
+ */
+export const EDITOR_LINE_HEIGHT = 1.7;
+export const EDITOR_LETTER_SPACING = "normal";
+
 export const DEFAULT_SETTINGS: EditorSettings = {
   fontId: "hack",
   fontSize: 13,
-  letterSpacing: 0,
-  // Matches the historical CSS default in tug-prompt-input.css.
-  lineHeight: 1.7,
   lineWrap: true,
   lineNumbers: false,
   highlightActiveLineGutter: false,
@@ -102,15 +108,25 @@ export class EditorSettingsStore {
   }
 
   /** Read settings from the TugbankClient cache. Returns null if not stored.
-   *  Persisted snapshots from earlier versions may be missing newer fields
-   *  (e.g. lineHeight added later); fill missing keys with defaults so the
-   *  store always sees a complete shape. */
+   *  Picks only the current schema fields so retired keys (the old
+   *  user-tunable `lineHeight` / `letterSpacing`) are dropped rather than
+   *  round-tripped back into tugbank; missing keys fall back to defaults. */
   private _readFromCache(): EditorSettings | null {
     const client = getTugbankClient();
     if (!client) return null;
     const entry = client.get(DOMAIN, KEY);
     if (entry && entry.kind === "json" && entry.value !== undefined) {
-      return { ...DEFAULT_SETTINGS, ...(entry.value as Partial<EditorSettings>) };
+      const stored = entry.value as Partial<EditorSettings>;
+      return {
+        fontId: stored.fontId ?? DEFAULT_SETTINGS.fontId,
+        fontSize: stored.fontSize ?? DEFAULT_SETTINGS.fontSize,
+        lineWrap: stored.lineWrap ?? DEFAULT_SETTINGS.lineWrap,
+        lineNumbers: stored.lineNumbers ?? DEFAULT_SETTINGS.lineNumbers,
+        highlightActiveLineGutter:
+          stored.highlightActiveLineGutter ?? DEFAULT_SETTINGS.highlightActiveLineGutter,
+        returnKeyAction: stored.returnKeyAction ?? DEFAULT_SETTINGS.returnKeyAction,
+        numpadEnterAction: stored.numpadEnterAction ?? DEFAULT_SETTINGS.numpadEnterAction,
+      };
     }
     return null;
   }
@@ -188,12 +204,15 @@ export class EditorSettingsStore {
   private _applyCSSProperties(): void {
     const el = this._targetEl;
     if (!el) return;
-    const { fontId, fontSize, letterSpacing, lineHeight } = this._settings;
+    const { fontId, fontSize } = this._settings;
     const stack = FONT_STACKS[fontId];
     if (stack) el.style.setProperty("--tug-font-family-editor", stack);
     el.style.setProperty("--tug-font-size-editor", `${fontSize}px`);
-    el.style.setProperty("--tug-letter-spacing-editor", letterSpacing === 0 ? "normal" : `${letterSpacing}px`);
-    el.style.setProperty("--tug-line-height-editor", String(lineHeight));
+    // Line metrics are fixed (no longer user-tunable) — publish the pinned
+    // constants so the substrate theme's `var(--tug-line-height-editor, …)`
+    // resolves to a stable value.
+    el.style.setProperty("--tug-letter-spacing-editor", EDITOR_LETTER_SPACING);
+    el.style.setProperty("--tug-line-height-editor", String(EDITOR_LINE_HEIGHT));
   }
 
   private _applyAtomFont(): void {

@@ -66,29 +66,6 @@ const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
 ];
 
-const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.35, label: "-0.35 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.25, label: "-0.25 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.15, label: "-0.15 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.10, label: "-0.10 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.05, label: "-0.05 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0, label: "Normal" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0.05, label: "+0.05 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0.10, label: "+0.10 px" },
-];
-
-const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.1, label: "1.1" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.2, label: "1.2" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.3, label: "1.3" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.4, label: "1.4" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.5, label: "1.5" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.6, label: "1.6" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.7, label: "1.7" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.8, label: "1.8" },
-];
-
 /**
  * Default permission-mode choices, derived from the chip's behavior-sheet
  * menu so the two surfaces never drift. Each carries the same human-readable
@@ -111,11 +88,6 @@ const MAGNIFICATION_FORMATTER = createNumberFormatter({ decimals: 2 });
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function letterSpacingLabel(value: number): string {
-  if (value === 0) return "Normal";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)} px`;
-}
 
 /**
  * Plain-language legend for the submit-key option groups — one line per
@@ -175,8 +147,6 @@ export function SettingsGeneralBody() {
   // responder scope registered below.
   const fontPopupId = useId();
   const fontSizePopupId = useId();
-  const letterSpacingPopupId = useId();
-  const lineHeightPopupId = useId();
   const lineWrapId = useId();
   const lineNumbersId = useId();
   const activeLineGutterId = useId();
@@ -193,8 +163,6 @@ export function SettingsGeneralBody() {
     },
     setValueNumber: {
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
-      [letterSpacingPopupId]: (v: number) => editorStore.set({ letterSpacing: v }),
-      [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
       [responseEntryMarginSliderId]: (v: number) =>
         responseStore.set({ entryMargin: v }),
       [responseMagnificationSliderId]: (v: number) =>
@@ -282,22 +250,6 @@ export function SettingsGeneralBody() {
               label={`${editorSettings.fontSize}px`}
               items={FONT_SIZE_OPTIONS}
               senderId={fontSizePopupId}
-              size="sm"
-            />
-            <TugPopupButton
-              className="settings-general-popup settings-general-popup-line"
-              topLabel="Line"
-              label={editorSettings.lineHeight.toFixed(1)}
-              items={LINE_HEIGHT_OPTIONS}
-              senderId={lineHeightPopupId}
-              size="sm"
-            />
-            <TugPopupButton
-              className="settings-general-popup settings-general-popup-spacing"
-              topLabel="Spacing"
-              label={letterSpacingLabel(editorSettings.letterSpacing)}
-              items={LETTER_SPACING_OPTIONS}
-              senderId={letterSpacingPopupId}
               size="sm"
             />
           </div>

@@ -17,7 +17,9 @@ import { describe, expect, test } from "bun:test";
 import {
   atomHeightFor,
   formatAtomLabel,
+  TRANSCRIPT_CHIP_BASE_FONT_SIZE,
 } from "../tug-atom-img";
+import { EDITOR_LINE_HEIGHT } from "../editor-settings-store";
 
 describe("formatAtomLabel — `filename` mode (basename extraction)", () => {
   test("absolute path: returns the last component", () => {
@@ -66,11 +68,37 @@ describe("formatAtomLabel — `filename` mode (basename extraction)", () => {
 describe("atomHeightFor", () => {
   // Pure layout helper exported so the transcript walker can publish
   // a `line-height` floor that matches the chip's actual rendered
-  // height (the formula is `round(size * 1.75)` — see the atom-img
-  // module for the rationale).
-  test("computes height = round(size * 1.75)", () => {
-    expect(atomHeightFor(12)).toBe(21); // 12 * 1.75 = 21
-    expect(atomHeightFor(18)).toBe(32); // 18 * 1.75 = 31.5 → 32
-    expect(atomHeightFor(9)).toBe(16);  // 9 * 1.75 = 15.75 → 16
+  // height. The chip fills the prose line box (`round(size * 1.6)`)
+  // minus a 1px inset each edge — see the atom-img module — so it fits
+  // inside the natural line-box.
+  test("computes height = round(size * 1.6) - 2", () => {
+    expect(atomHeightFor(13)).toBe(19); // round(20.8) - 2 = 21 - 2 = 19
+    expect(atomHeightFor(14)).toBe(20); // round(22.4) - 2 = 22 - 2 = 20
+    expect(atomHeightFor(18)).toBe(27); // round(28.8) - 2 = 29 - 2 = 27
+  });
+
+  // The whole no-hop / no-bloat scheme rests on one cross-file contract:
+  // the chip must fit *inside* the natural line box on every surface that
+  // bakes it. `atomHeightFor` derives from 1.6 (the tighter line-height);
+  // this guards that the editor's pinned line-height never drops below it,
+  // which would silently bring the line-hop back. If the editor metric
+  // changes below the chip basis, this fails instead of the UI regressing.
+  test("chip fits inside the editor line box at every font size (no hop)", () => {
+    for (const size of [11, 12, 13, 14, 15, 16]) {
+      const lineBox = Math.floor(size * EDITOR_LINE_HEIGHT);
+      expect(atomHeightFor(size)).toBeLessThanOrEqual(lineBox);
+    }
+  });
+
+  // Same contract for the transcript body, whose prose line-height is the
+  // `--tugx-md-body-line-height: 1.6` token (kept in lockstep here).
+  test("chip fits inside the transcript line box (no hop)", () => {
+    const TRANSCRIPT_BODY_LINE_HEIGHT = 1.6; // --tugx-md-body-line-height
+    const lineBox = Math.floor(
+      TRANSCRIPT_CHIP_BASE_FONT_SIZE * TRANSCRIPT_BODY_LINE_HEIGHT,
+    );
+    expect(atomHeightFor(TRANSCRIPT_CHIP_BASE_FONT_SIZE)).toBeLessThanOrEqual(
+      lineBox,
+    );
   });
 });

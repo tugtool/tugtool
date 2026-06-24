@@ -115,7 +115,6 @@ const ATOM_ICON_PATHS: Record<string, string> = {
 // ---- Layout constants ----
 
 let _fontSize = 12;
-let _editorFontSize = 14;
 /** Font family stack for Canvas measurement and SVG rendering (full stack
  *  including custom @font-face fonts — resolved inside the SVG via inline
  *  @font-face embedding; see tug-atom-fonts.ts). */
@@ -130,17 +129,35 @@ let _measureFamily = "system-ui, sans-serif";
  */
 const ATOM_LABEL_SIZE_RATIO = 1.0;
 /**
- * Pixel height of an atom chip for a given font size — the formula
- * is `round(size * 1.75)`. Exported because consumers that pixel-bake
- * chips (the transcript walker `TugAtomTextBody`) need to publish a
- * matching `line-height` floor so the chip never breaks out of its
- * line-box. Pure — no module state, no DOM access.
+ * The *tightest* prose line-height the chip must fit inside — NOT the editor's
+ * line-height. The chip is baked once and shown on two surfaces: the editor
+ * (line-height 1.7, pinned in `editor-settings-store`) and the transcript body
+ * (1.6, `--tugx-md-body-line-height`). A chip sized for 1.6 fits the roomier
+ * 1.7 editor line with slack to spare; a chip sized for 1.7 would be too tall
+ * for the 1.6 transcript line and would poke out. So this tracks the tighter of
+ * the two (1.6), and the `tug-atom-img.test` guards assert the fit on both.
  */
-export function atomHeightFor(size: number): number { return Math.round(size * 1.75); }
+const ATOM_PROSE_LINE_HEIGHT = 1.6;
+/**
+ * Px the chip is inset inside the line box on each vertical edge, so a
+ * baseline-aligned chip clears the line-box floor with a hair to spare.
+ */
+const ATOM_LINE_INSET = 1;
+
+/**
+ * Pixel height of an atom chip for a given font size — the chip fills the
+ * prose line-box (`size × {@link ATOM_PROSE_LINE_HEIGHT}`) minus a 1px inset
+ * on each edge. Sizing the chip *from the line box* (rather than a tuned
+ * multiplier) is what guarantees it fits inside the natural line: adjacent
+ * lines never grow to host an atom (no "hop") and the per-line `max(1lh, …)`
+ * floors collapse to a plain `1lh`. Exported because consumers that pixel-bake
+ * chips (the transcript walker `TugAtomTextBody`) publish it as the floor's
+ * atom-height term. Pure — no module state, no DOM access.
+ */
+export function atomHeightFor(size: number): number {
+  return Math.round(size * ATOM_PROSE_LINE_HEIGHT) - 2 * ATOM_LINE_INSET;
+}
 function iconSizeFor(size: number): number { return size; }
-/** Module-state versions used by the editor path. */
-function atomHeight(): number { return atomHeightFor(_fontSize); }
-function iconSize(): number { return iconSizeFor(_fontSize); }
 
 // ---- Transcript-side chip sizing ----
 
@@ -164,36 +181,6 @@ function iconSize(): number { return iconSizeFor(_fontSize); }
 export const TRANSCRIPT_CHIP_BASE_FONT_SIZE = 14;
 
 /**
- * Current rendered height of an atom widget, in pixels. Derived from
- * `_fontSize` × 1.75 (rounded). Tracks any prior `setAtomFont` call.
- *
- * Substrates that need to floor their line-height to "always tall
- * enough to host an atom" read this value and either pass it as a
- * CSS variable (theme `max(1lh, var(--…))`) or use it directly in JS
- * geometry math (caret-layer row sizing). A function rather than a
- * constant because the atom's intrinsic size moves with `setAtomFont`;
- * callers re-read on prop / theme changes that may have triggered a
- * font swap.
- */
-export function getAtomHeightPx(): number {
-  return atomHeight();
-}
-
-/**
- * Current atom widget's vertical-align offset, in px (typically negative) —
- * the same value `createAtomImgElement` applies inline so the chip's internal
- * text baseline lands on the surrounding text baseline. The editor publishes
- * this to `--tug-text-editor-atom-baseline-offset` and applies it to BOTH the
- * atom `<img>` and the per-line `.cm-line::before` ghost, so the ghost
- * reserves the atom's exact above/below-baseline extents on every line: atom
- * and text-only lines stay identical height while the atom sits on the prose
- * baseline. Tracks `setAtomFont` like {@link getAtomHeightPx}.
- */
-export function getAtomBaselineOffsetPx(): number {
-  return atomBaselineOffset();
-}
-
-/**
  * Set the font used for the editor's atom-chip rendering AND
  * measurement. `family` is the full CSS font-family stack
  * (e.g. `"Hack", monospace`). The editor settings store calls this
@@ -209,7 +196,6 @@ export function getAtomBaselineOffsetPx(): number {
  */
 export function setAtomFont(family: string, size?: number): void {
   _measureFamily = family;
-  _editorFontSize = size ?? _editorFontSize;
   _fontSize = size !== undefined
     ? Math.round(size * ATOM_LABEL_SIZE_RATIO)
     : _fontSize;
@@ -225,9 +211,6 @@ export function setAtomFont(family: string, size?: number): void {
  */
 function atomBaselineOffsetFor(size: number): number {
   return Math.round(size * 0.32 - atomHeightFor(size) / 2);
-}
-function atomBaselineOffset(): number {
-  return atomBaselineOffsetFor(_fontSize);
 }
 
 // ---- Text measurement ----

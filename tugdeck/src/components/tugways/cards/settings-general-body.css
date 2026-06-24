@@ -90,7 +90,7 @@
    toggling between options never reflows the row — the button stays
    at the width of its widest option. Numbers come from the option
    labels: the longest Font label is `IBM Plex Sans` (~13 chars at
-   sm size); the longest Spacing label is `-0.35 px`. */
+   sm size). */
 .settings-general-popup {
   min-width: 6.5rem;
 }
@@ -99,13 +99,8 @@
   min-width: 9.5rem;
 }
 
-.settings-general-popup-size,
-.settings-general-popup-line {
+.settings-general-popup-size {
   min-width: 6rem;
-}
-
-.settings-general-popup-spacing {
-  min-width: 7rem;
 }
 
 /* Longest mode label is `Accept Edits`. */

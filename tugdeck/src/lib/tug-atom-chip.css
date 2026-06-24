@@ -34,18 +34,16 @@
  */
 
 .tug-atom-chip {
-  /* Centre the chip within the line-box. Combined with the host
-     surface's own line-height treatment (the transcript walker's
-     line-height floor; a tool-block header's single-line flex
-     layout), this keeps the chip vertically centred without
-     enlarging the line it sits in. Overrides the chip's intrinsic
-     `vertical-align: <baselineOffset>px` from
-     `createAtomImgElement` — that offset is calibrated for flowing
-     prose without a line-height floor, not for these surfaces.
+  /* The chip carries its own `vertical-align: <baselineOffset>px` inline
+     (set by `TugAtomChip`, the same offset the editor's `<img>` path uses)
+     so its text baseline lands on the surrounding prose baseline. We do NOT
+     set `vertical-align` here — that would override the per-instance offset.
+     Now that chips are sized to fit inside the line box, baseline alignment
+     is correct on every inline surface; the old `vertical-align: middle` +
+     optical-lift fudge (needed when chips were taller than the line) is gone.
 
      Explicit `display: inline-block` defends against any user-agent
      quirk that would default `<img>` to a different display value. */
   display: inline-block;
-  vertical-align: middle;
   margin: 0 2px;
 }

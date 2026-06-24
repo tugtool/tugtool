@@ -31,12 +31,11 @@
  *     the caret needs to read as a thin vertical mark, not a
  *     full-row bar.
  *   - **Row height source**: read via `getComputedStyle` on the
- *     `.cm-line::before` ghost (whose height is the floor
- *     `max(1lh, atom-height)` set by `theme.ts`). Direct read of
- *     the rendered floor — works for every font / size /
- *     line-height / atom configuration without re-implementing
- *     the floor math in JS. See the inline comment in `markers()`
- *     for the alternatives considered and why this source won.
+ *     `.cm-line::before` ghost (a single inline-block of height `1lh`
+ *     set by `theme.ts`). Direct read of the rendered row height —
+ *     works for every font / size / line-height without re-implementing
+ *     the metrics in JS. See the inline comment in `markers()` for the
+ *     alternatives considered and why this source won.
  *
  * Why not the containing `.cm-line` element's `getBoundingClientRect()`
  * directly: with `EditorView.lineWrapping` engaged, one `.cm-line`
@@ -142,18 +141,18 @@ function lineElementAtPos(view: EditorView, pos: number): HTMLElement | null {
 
 /**
  * Production row-height source: parse the `::before` ghost's
- * computed height (in pixels). The ghost's CSS is
- * `height: max(1lh, var(--tug-text-editor-atom-height))` (set by
- * `theme.ts`), so this read returns the actual rendered floor
- * regardless of how `1lh` and the atom-height variable resolve at
- * the current font / line-height props.
+ * computed height (in pixels). The ghost's CSS is `height: 1lh` (set
+ * by `theme.ts`), so this read returns the rendered per-row height
+ * regardless of how `1lh` resolves at the current font / line-height
+ * props — and regardless of wrap state, since the pseudo is one row
+ * tall even when its `.cm-line` spans several visual rows.
  *
  * Returns `view.defaultLineHeight` as a fallback when the line
- * element can't be located or the parsed value isn't finite. The
- * fallback is correct only when no atom forces the row taller than
- * `defaultLineHeight`; in production this only fires before CM6
- * has rendered any line element, which for a focused-editor caret
- * paint shouldn't happen.
+ * element can't be located or the parsed value isn't finite — itself
+ * the same row height (atoms no longer force a row taller than the
+ * line-height); in production this only fires before CM6 has rendered
+ * any line element, which for a focused-editor caret paint shouldn't
+ * happen.
  */
 function readRowHeightFromGhost(view: EditorView, head: number): number {
   const line = lineElementAtPos(view, head);
@@ -254,30 +253,26 @@ export const tugCaretLayer: Extension = layer({
     if (coords === null) return [];
     const base = documentBase(view);
     // Row-height source: the rendered `::before` ghost. The theme
-    // pins `.cm-line::before { height: max(1lh, var(...)) }` so
-    // reading it via `getComputedStyle` returns the actual rendered
-    // floor, regardless of font ascent metrics or how `1lh` and the
-    // atom-height variable resolve at the current props.
+    // pins `.cm-line::before { height: 1lh }` so reading it via
+    // `getComputedStyle` returns the actual rendered per-row height,
+    // regardless of font ascent metrics or how `1lh` resolves at the
+    // current props.
     //
     // Two alternatives were instrumented during Step 14.5 (per [Q11]):
     //
     //   - `view.lineBlockAt(head).height / rowCount` — CM6's measured
     //     block height divided by visual-row count. Routed through
     //     CM6's heightOracle.
-    //   - `Math.max(view.defaultLineHeight, getAtomHeightPx())` — JS
-    //     baseline that re-implements the floor in code.
+    //   - `view.defaultLineHeight` — CM6's own uniform row height.
     //
     // The empirical hand-tune in the gallery confirmed the
     // `getComputedStyle('::before')` source produces visually-correct
-    // carets across every font / size / line-height / atom
-    // configuration we exercise. The alternatives weren't observed
-    // to disagree in any tested scenario, but they each have a
-    // failure mode the ghost read avoids: `lineBlockAt` returns
-    // stale-cache values when CM6 hasn't measured a fresh row yet,
-    // and the JS baseline re-derives a value that already lives in
-    // the theme — duplication invites drift. The ghost is direct
-    // and cheap (one synchronous style read per caret paint, the
-    // same pattern the `selection-layer` uses).
+    // carets across every font / size / line-height configuration we
+    // exercise. The alternatives weren't observed to disagree in any
+    // tested scenario, but `lineBlockAt` returns stale-cache values
+    // when CM6 hasn't measured a fresh row yet. The ghost is direct and
+    // cheap (one synchronous style read per caret paint, the same
+    // pattern the `selection-layer` uses).
     const rowHeight = readRowHeightFromGhost(view, sel.head);
     const caretHeight = rowHeight * CARET_HEIGHT_FACTOR;
     // Center the caret on the glyph's vertical center: the glyph's

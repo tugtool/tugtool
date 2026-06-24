@@ -155,6 +155,14 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
         height={geom.height}
         viewBox={`0 0 ${geom.width} ${geom.height}`}
         className={className}
+        // Baseline-align the chip exactly like the editor's `<img>` path:
+        // the offset lands the chip's internal text baseline on the
+        // surrounding prose baseline. Now that chips are sized to fit inside
+        // the line box, this is correct on every inline surface (no floor
+        // fights it), so the chip needs no `vertical-align: middle` + optical
+        // lift fudge. In flex headers (tool blocks) `vertical-align` is
+        // ignored, so this is inert there.
+        style={{ verticalAlign: `${geom.baselineOffset}px` }}
         data-slot={dataSlot}
         data-testid={dataTestid}
         aria-label={displayLabel}

@@ -131,8 +131,6 @@ import {
   atomBytesStoreFacet,
   atomDecorationField,
   atomInvertedEffects,
-  getAtomHeightPx,
-  getAtomBaselineOffsetPx,
   getAtomsInRange,
   insertAtomAtSelection,
   pendingAtomSyncPlugin,
@@ -2410,28 +2408,12 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // typography variables fall through verbatim so callers can pass
     // any valid CSS value. Each variable is conditionally set so an
     // omitted prop leaves the existing token cascade intact.
-    //
-    // `--tug-text-editor-atom-height` is always set: it's the row-height
-    // floor used by the theme's `.cm-line::before { height: max(1lh, …) }`
-    // rule so lines are tall enough to host an atom widget regardless
-    // of the configured `lineHeight`. The value comes from
-    // `getAtomHeightPx()` which tracks the atom widget's own
-    // `_fontSize` × 1.75 sizing in `tug-atom-img.ts`. Always-set rather
-    // than conditional because a missing variable would let the theme's
-    // `max()` collapse to `1lh` (no floor) and atoms would re-introduce
-    // the line-hop the floor is meant to prevent.
     const hostStyle = useMemo<React.CSSProperties>(() => {
       const next: Record<string, string | number> = {};
       if (styleProp !== undefined) {
         Object.assign(next, styleProp);
       }
       next["--tug-text-editor-max-rows"] = maxRows;
-      next["--tug-text-editor-atom-height"] = `${getAtomHeightPx()}px`;
-      // The atom widget's inline vertical-align offset, mirrored onto the
-      // `.cm-line::before` ghost so the ghost reserves the atom's exact
-      // above/below-baseline extents on every line — atom and text-only lines
-      // stay identical height while the atom rides the prose baseline.
-      next["--tug-text-editor-atom-baseline-offset"] = `${getAtomBaselineOffsetPx()}px`;
       if (fontFamily !== undefined) {
         next["--tug-font-family-editor"] = fontFamily;
       }
