@@ -96,14 +96,45 @@
   flex: 0 1 auto;
   width: 100%;
   min-width: 0;
-  /* ── Tune this ──────────────────────────────────────────────────────
-     Default (opening) height of the text-entry area, in CSS pixels. The
+  /* ── Tune these ──────────────────────────────────────────────────────
+     Opening (empty) height of the text-entry area, in CSS pixels. The
      editor opens this tall and grows with content up to its cap — `card
      height − --dev-transcript-min − --dev-entry-chrome` (see the scroller
      rule below) — then scrolls. So it never pushes the Z4 / Z5 toolbar off
      the card bottom. The fixed Z4 / Z5 rows are unaffected.
      ──────────────────────────────────────────────────────────────────── */
-  --tug-text-editor-min-height: 160px;
+  --dev-entry-base-height: 160px;
+  /* Constant height of the compose attachment zone (Z4C). Inherited down
+     into `.tug-prompt-entry-attachments` (which sets its own height from
+     this var) AND subtracted by the steal below, so the height the editor
+     yields and the height the zone occupies are ONE value — they can't
+     drift. Owned here (a prompt-entry/Dev dimension), NOT in the
+     attachment-preview token family — the strip's own tile tokens
+     (`--tugx-attachment-tile-*`) live there. Sized to fit one compose tile
+     (`--tugx-attachment-tile-height`, 56px) plus its caption; shrinking the
+     tile and this together widens the range of text lengths that steal
+     cleanly. */
+  --tug-prompt-entry-attach-height: 84px;
+  /* Hard safety floor for the editor min-height. Only engaged if the strip
+     ever grows taller than `base − floor`; in the normal case the steal
+     target (`base − strip` ≈ 3 editor rows) sits above it. */
+  --dev-entry-steal-floor: 64px;
+  /* HEIGHT-STEALING. When a compose preview is present the editor yields
+     exactly the strip's height from its empty floor, so the entry's TOTAL
+     height is unchanged — the editor doesn't hop when the first image
+     drops. The `:has()` rule below feeds `--tug-attach-height`; with no
+     preview it's unset → 0 → this resolves to the plain base height
+     (pixel-identical to before). */
+  --tug-text-editor-min-height:
+    max(var(--dev-entry-steal-floor),
+        calc(var(--dev-entry-base-height) - var(--tug-attach-height, 0px)));
+}
+
+/* Feed the steal: a present compose strip contributes its constant height,
+   which the editor min-height above subtracts. Pure CSS — no measurement,
+   no React state ([L06]). */
+.dev-card-entry-region:has(.tug-prompt-entry-attachments) {
+  --tug-attach-height: var(--tug-prompt-entry-attach-height);
 }
 
 /* Cap the text area's auto-expand at `--dev-entry-max-height` (a fraction

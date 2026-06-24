@@ -5,11 +5,14 @@
  *
  * It has two faces, both driven by the per-card {@link AtomBytesStore}:
  *
- *  - the **strip** ({@link TugAttachmentPreview}): a horizontal grid of
- *    fixed-width thumbnail tiles, one per image atom, mounted below a
- *    user-row body in the transcript OR as the prompt-entry's Z4C zone
- *    while composing. Each tile's `<img>` source is the bytes-store
- *    entry's `thumbnailDataUrl`.
+ *  - the **strip** ({@link TugAttachmentPreview}): a row of thumbnail
+ *    tiles, one per image atom, mounted below a user-row body in the
+ *    transcript (a fixed-width, wrapping grid) OR as the prompt-entry's Z4C
+ *    zone while composing (a single-row, fixed-HEIGHT strip — see the CSS
+ *    pair for the two layouts and why the compose one is height-driven).
+ *    Each tile paints, in order: the baked `thumbnailDataUrl`; else the
+ *    full-resolution bytes the moment they land (the replay window, before
+ *    the bake); else a transparent reserved slot — never a dark box.
  *  - the **sheet** ({@link AttachmentPreviewSheet}, internal): the
  *    full-resolution image, opened in a pane-sheet when a tile is
  *    clicked, with ←/→ paging across the message's image set and a Copy
@@ -123,6 +126,14 @@ interface TileSnapshot {
   readonly label: string;
   readonly value: string;
   readonly thumbnailDataUrl: string | undefined;
+  /**
+   * Full-resolution bytes + media type when the store entry is present.
+   * Used as the paint fallback before the thumbnail bake lands (the replay
+   * window, where `put` writes content first and the thumbnail follows) so
+   * a tile shows the real image rather than an empty box.
+   */
+  readonly content: string | undefined;
+  readonly mediaType: string | undefined;
 }
 
 function buildSnapshot(
@@ -138,6 +149,8 @@ function buildSnapshot(
       label: atom.label,
       value: atom.value,
       thumbnailDataUrl: entry?.thumbnailDataUrl,
+      content: entry?.content,
+      mediaType: entry?.mediaType,
     });
   }
   return out;
@@ -152,7 +165,12 @@ function buildSnapshot(
 function snapshotKey(snap: ReadonlyArray<TileSnapshot>): string {
   let key = "";
   for (const t of snap) {
-    key += `${t.atomId}|${t.thumbnailDataUrl ?? ""}|`;
+    // Content presence (not the bytes themselves) joins the key so the
+    // tile re-renders when content lands ahead of its thumbnail — without
+    // hashing the whole base64 string on every snapshot.
+    key += `${t.atomId}|${t.thumbnailDataUrl ?? ""}|${
+      t.content !== undefined ? "c" : ""
+    }|`;
   }
   return key;
 }
@@ -284,6 +302,20 @@ export const TugAttachmentPreview = React.forwardRef<
     >
       {tiles.map((tile, i) => {
         const caption = decorateChipLabel(atoms[i] as AtomSegment, address);
+        // Paint order, FOUC-free: the baked thumbnail when present; else
+        // the full-resolution bytes the moment they land (the replay
+        // window, where content arrives before the thumbnail bake); else
+        // `undefined` — render a transparent reserved slot, NEVER a dark
+        // box, for the brief drop-time window before any pixels exist.
+        // If a bake never lands (corrupt / exotic codec on replay), the
+        // content fallback persists — the tile shows the original scaled
+        // down rather than an empty box. Heavier than a thumbnail, but rare
+        // and strictly better than the alternative.
+        const src =
+          tile.thumbnailDataUrl ??
+          (tile.content !== undefined && tile.mediaType !== undefined
+            ? `data:${tile.mediaType};base64,${tile.content}`
+            : undefined);
         return (
           <div
             key={tile.atomId.length > 0 ? `id-${tile.atomId}` : `pos-${i}`}
@@ -308,24 +340,28 @@ export const TugAttachmentPreview = React.forwardRef<
               <span
                 data-slot="tug-attachment-preview__thumb"
                 className="tug-attachment-preview__thumb"
+                // The frame (border + fill) is gated on this in CSS, so the
+                // pre-pixel window shows nothing instead of an empty box.
+                data-has-image={src !== undefined ? "" : undefined}
               >
-                {tile.thumbnailDataUrl !== undefined ? (
+                {src !== undefined ? (
                   <img
                     className="tug-attachment-preview__thumb-img"
-                    src={tile.thumbnailDataUrl}
+                    src={src}
                     alt={caption}
                   />
                 ) : (
-                  // Placeholder while the bake settles (or when bake
-                  // failed). Square by default since the aspect is unknown
-                  // until the image lands.
+                  // No pixels yet (the brief pre-bake drop window) or a
+                  // failed bake: a transparent, reserved slot — never a dark
+                  // box. The fixed-height zone already holds the space, so
+                  // the image simply pops in when the bake lands.
                   <span
                     data-slot="tug-attachment-preview__placeholder"
                     className="tug-attachment-preview__placeholder"
                     aria-hidden="true"
                   />
                 )}
-                {deletable && (
+                {deletable && src !== undefined && (
                   // Compose-phase delete. A component-owned overlay affordance
                   // (not a TugButton) pinned to the thumbnail's own top-right
                   // corner, so it stays flush regardless of cell/caption width.

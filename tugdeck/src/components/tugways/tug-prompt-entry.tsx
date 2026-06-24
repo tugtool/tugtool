@@ -74,6 +74,7 @@ import type {
   ArgumentHintResolver,
 } from "./tug-text-editor/argument-hint-extension";
 import type { PastedCommandResolver } from "./tug-text-editor/clipboard-filters";
+import { processAttachmentFiles } from "./tug-text-editor/drop-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
   getAtomsInState,
@@ -920,6 +921,54 @@ export const TugPromptEntry = React.forwardRef<
     [attachmentBytesStore],
   );
 
+  // Z4C zone as a drop target. The attachment strip sits BELOW the editor
+  // and holds no text position of its own, so a file dropped onto it routes
+  // through the editor's exact attachment pipeline and lands at the editor's
+  // current caret/selection — mirroring the image-paste path, which also has
+  // no drop coordinate. Without these handlers the browser rejects the drop
+  // (a `dragover` that calls `preventDefault` is what marks an element a
+  // drop target). The `data-drop-active` flag is a DOM write — appearance,
+  // not React state ([L06]) — keyed by the CSS drop ring beside the editor's.
+  const handleAttachmentsDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      event.currentTarget.setAttribute("data-drop-active", "accept");
+    },
+    [],
+  );
+  const handleAttachmentsDragLeave = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      // Ignore leave events that merely cross into a descendant (the strip,
+      // a tile) — only clear when the pointer truly exits the zone.
+      const next = event.relatedTarget as Node | null;
+      if (next !== null && event.currentTarget.contains(next)) return;
+      event.currentTarget.removeAttribute("data-drop-active");
+    },
+    [],
+  );
+  const handleAttachmentsDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      event.currentTarget.removeAttribute("data-drop-active");
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) return;
+      const view = textEditorRef.current?.view();
+      if (view === null || view === undefined) return;
+      event.preventDefault();
+      // Insert at the editor's current caret/selection — the strip has no
+      // position, so the drop lands where the user last was in the prose.
+      processAttachmentFiles(
+        view,
+        files,
+        view.state.selection.main.from,
+        attachmentBytesStore,
+        publishAttachmentError,
+      );
+    },
+    [attachmentBytesStore, publishAttachmentError],
+  );
+
   // Z5 submit-button state machine. The button's whole view — label,
   // icon, `disabled`, `data-mode` — is a pure function of the
   // lifecycle-derived `submitButtonMode` (six kinds: submit / stop /
@@ -1588,6 +1637,17 @@ export const TugPromptEntry = React.forwardRef<
       ...(snap.canInterrupt && !snap.interruptInFlight
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
+              // A visible slash-command / file completion popup owns Escape
+              // first: dismiss it and bail. The capture-phase keybinding
+              // routes Escape here BEFORE the editor's bubble-phase keymap
+              // runs (because a turn is in flight, this CANCEL_DIALOG handler
+              // is registered and claims the event), so without this check
+              // Escape would interrupt the turn while leaving the popup open.
+              // When no popup is open this is a no-op and we fall through to
+              // the interrupt — Escape ≡ the Stop button.
+              if (textEditorRef.current?.cancelActiveCompletion() === true) {
+                return;
+              }
               codeSessionStore.popInteractive();
             },
           }
@@ -1973,6 +2033,12 @@ export const TugPromptEntry = React.forwardRef<
               // Descendant controls that need focus (none here — the tile
               // opens a sheet, the ✕ refuses) are unaffected.
               data-tug-focus="refuse"
+              // Drop another image onto the strip → insert at the editor's
+              // caret (see the handlers above). Without these the browser
+              // rejects the drop.
+              onDragOver={handleAttachmentsDragOver}
+              onDragLeave={handleAttachmentsDragLeave}
+              onDrop={handleAttachmentsDrop}
             >
               <TugAttachmentPreview
                 atoms={composeImageAtoms}
