@@ -331,6 +331,11 @@ body {
   flex-direction: row;
   align-items: center;
   gap: var(--tug-space-sm);
+  /* Condensed face for the tight Z4B chip band — buys horizontal room for
+     long values (project paths, "Opus 4.8 · 1M") without shrinking type.
+     The chips inherit it: .tug-badge is `font-family: inherit` and
+     TugPushButton sets no family of its own, so both pick this up. */
+  font-family: var(--tug-font-family-condensed);
 }
 
 /* The two equal flex spacers flanking Z4B. Each absorbs an equal share

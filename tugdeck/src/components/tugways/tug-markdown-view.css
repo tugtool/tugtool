@@ -298,6 +298,10 @@ body {
 .tugx-md-block h6 {
   color: var(--tugx-block-text-color);
   line-height: var(--tugx-md-heading-line-height);
+  /* Condensed display face — headings carry the Plex Sans Condensed cut
+     so they read as a distinct display register against the regular-width
+     body Sans, without changing weight or size. Falls back to Plex Sans. */
+  font-family: var(--tug-font-family-condensed);
   /* Margin intentionally omitted — inter-block spacing is owned by the
      block-wrapper rules below ([P04] spacing model), not the heading
      element, so it cannot stack against a preceding BFC block. */
@@ -366,7 +370,12 @@ body {
 .tugx-md-block > p:last-child { margin-bottom: 0; }
 
 /* Inline emphasis */
-.tugx-md-block strong { font-weight: var(--tugx-md-strong-weight); }
+/* Strong (`**`) carries the condensed display face — in assistant prose,
+   bold is overwhelmingly run-in labels ("Note:", "Step 1:"), so it reads
+   as a micro-heading and ties to the block headings. `***` is <strong><em>:
+   the nested em inherits condensed and adds italic → real Condensed
+   BoldItalic. Single `*` em (below) stays regular-width body italic. */
+.tugx-md-block strong { font-weight: var(--tugx-md-strong-weight); font-family: var(--tug-font-family-condensed); }
 .tugx-md-block em { font-style: var(--tugx-md-em-style); }
 .tugx-md-block del,
 .tugx-md-block s {
@@ -732,6 +741,10 @@ body {
 /* @tug-renders-on: --tugx-block-strip-bg */
 .tugx-md-block thead th {
   font-weight: var(--tugx-md-table-header-weight);
+  /* Condensed display face — table headers are tabular and column-width
+     constrained, so the narrower set width earns room; matches the heading
+     register. */
+  font-family: var(--tug-font-family-condensed);
   background: var(--tugx-block-strip-bg);
   position: sticky;
   /* Fallback (unwrapped table): stick at the bare pin-stack top. */
