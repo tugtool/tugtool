@@ -78,7 +78,7 @@ body {
   --tugx-md-h6-weight: var(--tug-font-weight-semibold);
 
   /* Inline emphasis */
-  --tugx-md-strong-weight:            var(--tug-font-weight-bold);
+  --tugx-md-strong-weight:            var(--tug-font-weight-semibold);
   --tugx-md-em-style:                 italic;
   --tugx-md-strikethrough-decoration: line-through;
 
