@@ -332,6 +332,22 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   const savedLetterSpacing = useSavedComponentState<string | null>(
     "letterSpacing",
   );
+  // The View-section switches capture into `bag.components` under their
+  // own `componentStatePreservationKey` (shape `{ checked }`), but a
+  // *controlled* TugSwitch never re-dispatches its saved value on
+  // restore (the parent owns truth — see tug-switch.tsx). So the card
+  // must read the saved `checked` itself and seed the `useState`
+  // initializer, exactly as the typography props above do; without this
+  // the switches reset to their hard-coded defaults on every reload.
+  const savedLineWrap = useSavedComponentState<{ checked: boolean }>(
+    "lineWrap",
+  );
+  const savedLineNumbers = useSavedComponentState<{ checked: boolean }>(
+    "lineNumbers",
+  );
+  const savedActiveLineGutter = useSavedComponentState<{ checked: boolean }>(
+    "highlightActiveLineGutter",
+  );
 
   const [maxRows, setMaxRows] = useState<number>(15);
   const [growDirection, setGrowDirection] = useState<"up" | "down">("down");
@@ -379,10 +395,20 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   );
 
   // ---- View controls ----
-  const [lineWrap, setLineWrap] = useState<boolean>(true);
-  const [lineNumbers, setLineNumbers] = useState<boolean>(true);
+  const [lineWrap, setLineWrap] = useState<boolean>(() =>
+    typeof savedLineWrap?.checked === "boolean" ? savedLineWrap.checked : true,
+  );
+  const [lineNumbers, setLineNumbers] = useState<boolean>(() =>
+    typeof savedLineNumbers?.checked === "boolean"
+      ? savedLineNumbers.checked
+      : true,
+  );
   const [highlightActiveLineGutter, setHighlightActiveLineGutter] =
-    useState<boolean>(false);
+    useState<boolean>(() =>
+      typeof savedActiveLineGutter?.checked === "boolean"
+        ? savedActiveLineGutter.checked
+        : false,
+    );
 
   // ---- Submit counter (display only) ----
   const [submitCount, setSubmitCount] = useState<number>(0);

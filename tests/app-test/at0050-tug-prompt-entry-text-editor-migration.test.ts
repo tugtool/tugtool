@@ -232,34 +232,18 @@ describe.skipIf(!SHOULD_RUN)(
             // Delete the leading `>`. [Q06]=b: deletion of the
             // prefix character is a no-op for route detection. The
             // route stays on `$`.
-            await app.evalJS<void>(
-              `(function(){
-                var ed = document.querySelector('[data-card-id="A"] ${EDITOR_SELECTOR}');
-                if (!ed) throw new Error("[m50] editor not found");
-                ed.focus();
-              })()`,
-            );
-            // Move caret to position 1 (after the `>`) and press
-            // Backspace twice — once to delete `>` and once would
-            // delete the space, but we only want to delete `>` so
-            // we use a single keystroke after positioning.
-            await app.evalJS<void>(
-              `(function(){
-                // Best-effort: dispatch a keydown / input pair the
-                // substrate's CM6 keymap recognizes. Using a direct
-                // CM6 dispatch through the substrate-test surface
-                // would be simpler if available; falling back to
-                // textContent-style edits would lose the
-                // CM6-mediated path the user actually exercises.
-                var view = window.__tug.findEditorView && window.__tug.findEditorView('[data-card-id="A"]');
-                if (!view) throw new Error("[m50] view not reachable");
-                view.dispatch({
-                  changes: { from: 0, to: 1, insert: "" },
-                  selection: { anchor: 0 },
-                  userEvent: "delete.backward"
-                });
-              })()`,
-            );
+            //
+            // Drive this through real keystrokes rather than a
+            // synthetic CM6 transaction: refocus the editor (the Shell
+            // click moved focus to the segment button), Home to put the
+            // caret at the line start (offset 0, before the `>`), then a
+            // forward Delete to remove the `>`. This exercises the same
+            // CM6 input + route-prefix-extension path the user hits, so
+            // the no-op-on-deletion behavior is genuinely tested.
+            await focusEditor(app);
+            await app.nativeKey("Home");
+            await new Promise((r) => setTimeout(r, 100));
+            await app.nativeKey("Delete");
             await app.waitForCondition<boolean>(
               `(function(){
                 var s = window.__tug.getEmCardState("A");

@@ -10,14 +10,14 @@
  *     visible) or two markers (a leftover from a previous
  *     transition).
  *   - The caret height drifting away from the row-box. The
- *     `.cm-line::before` ghost in `theme.ts` pins each row to
- *     `max(1lh, atom-height)` (24.5px at the default 14px font /
- *     1.75 line-height); `caret-layer.ts` paints the caret at
- *     90% of that row height (`CARET_HEIGHT_FACTOR`), so the
- *     expected stroke is ~22.05px. A regression to glyph-rect
- *     height (`coordsAtPos(head).bottom - .top`) would show up
- *     as ~14-18px; a regression to full row height would show
- *     up as ~24.5px.
+ *     `.cm-line::before` ghost in `theme.ts` pins each row to `1lh`
+ *     (atoms are sized to fit the line box, so no atom-height floor);
+ *     `caret-layer.ts` paints the caret at 90% of that row height
+ *     (`CARET_HEIGHT_FACTOR`). The test reads the live ghost height and
+ *     asserts the caret is that × 0.9, so a font / line-height retune
+ *     keeps it honest. A regression to glyph-rect height
+ *     (`coordsAtPos(head).bottom - .top`) shows up as ~font-size; a
+ *     regression to the full un-scaled row height shows up as 1lh.
  *   - Step 9.5C requirement: caret visible at offset 0 on a
  *     leading-atom doc. The previous native-caret implementation
  *     left the caret invisible there because WebKit's
@@ -45,17 +45,21 @@ const FILE_ATOM_BUTTON_SELECTOR =
 const CARET_SELECTOR = '[data-card-id="A"] .tug-text-editor-caret';
 
 /**
- * Expected caret height — `.cm-line::before` ghost pins the row to
- * `max(1lh, atom-height)` = `max(24.5px, 21px)` = 24.5px at the
- * default 14px font / 1.75 line-height; the caret is 90% of that
- * (`CARET_HEIGHT_FACTOR` in `caret-layer.ts`).
+ * The caret height is the rendered row height times this factor —
+ * `CARET_HEIGHT_FACTOR` in `caret-layer.ts`. Kept in sync by hand; the
+ * test derives its expected height from the *live* row box (read from
+ * the `.cm-line::before` ghost, the same source the caret layer reads)
+ * rather than hard-coding a pixel value, so a font / line-height retune
+ * (e.g. the 1.75 → 1.6 default change) doesn't make the assertion stale
+ * while still catching a caret-layer regression to glyph-rect height
+ * (~14px) or to the full un-scaled row height.
  */
-const EXPECTED_CARET_HEIGHT_PX = 24.5 * 0.9;
+const CARET_HEIGHT_FACTOR = 0.9;
 /**
- * Pixel tolerance. Sub-pixel layout under WebKit can produce
- * 22.0 / 22.05 / 22.1 depending on rasterization, plus the 90%
- * factor multiplies any 1-px row-height jitter into ~0.9-px caret
- * jitter. ±1.5px is safe.
+ * Pixel tolerance. Sub-pixel layout under WebKit can produce small
+ * rasterization jitter, plus the 90% factor multiplies any 1-px
+ * row-height jitter into ~0.9-px caret jitter. ±1.5px is safe, and
+ * still well under the ~10% (≈2px) gap to the full-row regression.
  */
 const HEIGHT_TOLERANCE_PX = 1.5;
 
@@ -117,6 +121,26 @@ async function caretProbe(app: App): Promise<CaretProbe> {
   );
 }
 
+/**
+ * Read the live per-row height from the `.cm-line::before` ghost — the
+ * exact source `caret-layer.ts` measures (`height: 1lh`, set in
+ * `theme.ts`). Multiplying by `CARET_HEIGHT_FACTOR` yields the height
+ * the caret should paint at, independent of the current font / line-
+ * height configuration.
+ */
+async function expectedCaretHeight(app: App): Promise<number> {
+  const rowHeight = await app.evalJS<number>(
+    `(function(){
+      var line = document.querySelector('[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR} .cm-line');
+      if (line === null) return 0;
+      var ghost = getComputedStyle(line, "::before");
+      var h = parseFloat(ghost.height);
+      return Number.isFinite(h) && h > 0 ? h : 0;
+    })()`,
+  );
+  return rowHeight * CARET_HEIGHT_FACTOR;
+}
+
 async function refocusEditor(app: App): Promise<void> {
   const editorSelector = `[data-card-id="A"] ${TUG_EDIT_CONTENT_SELECTOR}`;
   await app.nativeClickAtElement(editorSelector);
@@ -150,6 +174,16 @@ describe.skipIf(!SHOULD_RUN)(
           try {
             await setupGallery(app);
 
+            // The `.cm-line::before` ghost pins every row to `1lh`
+            // regardless of doc shape (atoms are sized to fit the line
+            // box, see `theme.ts`), so one read of the live row height
+            // gives the expected caret height for all four shapes below.
+            const expected = await expectedCaretHeight(app);
+            expect(
+              expected,
+              "row-height read produced a positive expected caret height",
+            ).toBeGreaterThan(0);
+
             // ---------------------------------------------------------
             // Empty doc, caret at 0
             // ---------------------------------------------------------
@@ -158,8 +192,8 @@ describe.skipIf(!SHOULD_RUN)(
             expect(empty.count, "empty doc: exactly one caret").toBe(1);
             expect(empty.width, "empty doc: caret width = 2px").toBe(2);
             expect(
-              Math.abs((empty.height ?? 0) - EXPECTED_CARET_HEIGHT_PX),
-              "empty doc: caret height ≈ 90% of 1.75em",
+              Math.abs((empty.height ?? 0) - expected),
+              "empty doc: caret height ≈ 90% of the row box",
             ).toBeLessThan(HEIGHT_TOLERANCE_PX);
 
             // ---------------------------------------------------------
@@ -170,8 +204,8 @@ describe.skipIf(!SHOULD_RUN)(
             const textOnly = await caretProbe(app);
             expect(textOnly.count, "text-only: exactly one caret").toBe(1);
             expect(
-              Math.abs((textOnly.height ?? 0) - EXPECTED_CARET_HEIGHT_PX),
-              "text-only: caret height ≈ 90% of 1.75em",
+              Math.abs((textOnly.height ?? 0) - expected),
+              "text-only: caret height ≈ 90% of the row box",
             ).toBeLessThan(HEIGHT_TOLERANCE_PX);
 
             // Clear back to empty.
@@ -191,8 +225,8 @@ describe.skipIf(!SHOULD_RUN)(
             const beforeAtom = await caretProbe(app);
             expect(beforeAtom.count, "atom-only, caret before atom: exactly one caret").toBe(1);
             expect(
-              Math.abs((beforeAtom.height ?? 0) - EXPECTED_CARET_HEIGHT_PX),
-              "atom-only, caret before atom: caret height ≈ 90% of 1.75em (Step 9.5C)",
+              Math.abs((beforeAtom.height ?? 0) - expected),
+              "atom-only, caret before atom: caret height ≈ 90% of the row box (Step 9.5C)",
             ).toBeLessThan(HEIGHT_TOLERANCE_PX);
 
             // ---------------------------------------------------------
@@ -203,8 +237,8 @@ describe.skipIf(!SHOULD_RUN)(
             const afterAtom = await caretProbe(app);
             expect(afterAtom.count, "atom-only, caret after atom: exactly one caret").toBe(1);
             expect(
-              Math.abs((afterAtom.height ?? 0) - EXPECTED_CARET_HEIGHT_PX),
-              "atom-only, caret after atom: caret height ≈ 90% of 1.75em",
+              Math.abs((afterAtom.height ?? 0) - expected),
+              "atom-only, caret after atom: caret height ≈ 90% of the row box",
             ).toBeLessThan(HEIGHT_TOLERANCE_PX);
 
             // ---------------------------------------------------------
@@ -216,8 +250,8 @@ describe.skipIf(!SHOULD_RUN)(
             const mixed = await caretProbe(app);
             expect(mixed.count, "mixed doc: exactly one caret").toBe(1);
             expect(
-              Math.abs((mixed.height ?? 0) - EXPECTED_CARET_HEIGHT_PX),
-              "mixed doc: caret height ≈ 90% of 1.75em",
+              Math.abs((mixed.height ?? 0) - expected),
+              "mixed doc: caret height ≈ 90% of the row box",
             ).toBeLessThan(HEIGHT_TOLERANCE_PX);
           } finally {
             await app.close();

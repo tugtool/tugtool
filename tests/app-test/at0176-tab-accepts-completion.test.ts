@@ -5,19 +5,21 @@
  *
  * The document-level focus-walk stage intercepts Tab in the capture phase
  * ahead of everything else. Its editor-precedence rule ([Q02], flag model):
- * while the typeahead popup is interactive the editor advertises
- * `data-tug-tab-consume="true"` on its contentDOM, and the focus walk yields
- * Tab to the editor's own completion keymap instead of advancing the key
- * view. So Tab still accepts the completion — and focus stays in the editor.
+ * a focused, editable multi-line editor advertises `data-tug-tab-consume="true"`
+ * on its contentDOM (driven by focus, not popup state — `cc0ed15d1`), and the
+ * focus walk yields Tab to the editor's own keymap instead of advancing the
+ * key view. With a completion open that keymap accepts the suggestion; with no
+ * completion a plain Tab indents. Either way Tab stays in the editor.
  *
  * Here: a bound dev session with two anchored turns (so `/rewind` is an offered
  * local command). Type `/rew` → the popup opens and the consume marker appears.
- * Press Tab → the completion is accepted (the editor text becomes `/rewind`),
- * the popup closes, the marker clears, and focus stays on the editor.
+ * Press Tab → the completion is accepted (the `/rew` fragment commits as an
+ * atom), the popup closes, focus stays on the editor, and — because the marker
+ * tracks focus — the marker stays present.
  *
  * Has teeth: if the focus-walk stage swallowed Tab instead of yielding, the
- * completion would not be accepted (text stays `/rew`) and focus could leave
- * the editor.
+ * popup would not close, the completion would not be accepted (text stays
+ * `/rew`), and focus could leave the editor (clearing the marker).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -108,15 +110,32 @@ describe.skipIf(!SHOULD_RUN)("AT0176: Tab accepts an open completion (editor kee
         );
 
         // Press Tab. The focus walk yields to the editor, which accepts the
-        // completion: the popup closes (the marker clears), the typed `/rew`
-        // fragment is consumed (the accepted command commits as an atom
-        // widget, so the contentDOM has no `/rew` text), and — crucially —
-        // DOM focus stays in the editor. Had the focus walk swallowed Tab
-        // instead, the fragment would remain `/rew` and/or focus would leave
-        // the editor.
+        // completion: the typed `/rew` fragment commits as a command atom
+        // widget, and — crucially — DOM focus stays in the editor. Had the
+        // focus walk swallowed Tab instead, the fragment would remain `/rew`
+        // and/or focus would leave the editor.
+        //
+        // The marker is driven by editor *focus*, not popup state ([Q02] flag
+        // model, `cc0ed15d1`): a focused multi-line editor owns Tab for
+        // indentation, so the marker stays present as long as focus stays —
+        // which it does here. Asserting the marker survives is part of the
+        // teeth: it proves focus never left the editor.
         await app.nativeKey("Tab");
+        // Accept signal: the `/rew` query fragment is replaced by the
+        // committed command atom (an `img[data-atom-label]` widget). We
+        // wait on the doc, not on the menu: accepting `/rewind` — a
+        // command that takes a turn argument — immediately opens its
+        // *argument* completion, so `tug-completion-menu` transitions to
+        // a new session rather than going null. The fragment being gone
+        // and an atom present is the unambiguous proof Tab reached the
+        // editor's completion keymap.
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(TAB_CONSUME)}) === null`,
+          `(function(){
+            var e = document.querySelector(${JSON.stringify(PROMPT_INPUT)});
+            if (e === null) return false;
+            return e.textContent.indexOf("/rew") === -1
+              && e.querySelector("img[data-atom-label]") !== null;
+          })()`,
           { timeoutMs: 6000 },
         );
         const fragmentGone = await app.evalJS<boolean>(
@@ -127,6 +146,13 @@ describe.skipIf(!SHOULD_RUN)("AT0176: Tab accepts an open completion (editor kee
           `(function(){ var c = document.querySelector(${JSON.stringify(PROMPT_INPUT)}); return c !== null && c.contains(document.activeElement); })()`,
         );
         expect(focusInEditor).toBe(true);
+        // Focus stayed in the editor, so the focus-driven tab-consume marker
+        // is still advertised. (A regression that blurred the editor on
+        // accept would clear it.)
+        const markerStillPresent = await app.evalJS<boolean>(
+          `document.querySelector(${JSON.stringify(TAB_CONSUME)}) !== null`,
+        );
+        expect(markerStillPresent).toBe(true);
       } finally {
         await app.close();
       }

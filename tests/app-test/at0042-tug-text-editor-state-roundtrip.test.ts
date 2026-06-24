@@ -462,9 +462,19 @@ describe.skipIf(!SHOULD_RUN)(
             // and writes the mirror.
             await app.enableDeckTrace(true);
 
+            // Seed the gallery card's `lineWrap` switch OFF from the
+            // first paint. The card defaults `lineWrap` ON, which would
+            // wrap the long line and leave `.cm-scroller` with no
+            // horizontal overflow — `scrollLeft` would clamp to 0 and
+            // the round-trip could never be observed. Seeding via
+            // `bag.components` (the switch's preservation channel) mounts
+            // the editor unwrapped, so the scroller is horizontally
+            // scrollable, and the same `{ checked: false }` rides the
+            // save/restore round-trip so the reseeded card stays
+            // unwrapped too.
             await app.seedDeckState({
               state: deckShape(),
-              cardStates: {},
+              cardStates: { A: { components: { lineWrap: { checked: false } } } },
               focusCardId: "A",
             });
 
@@ -523,6 +533,19 @@ describe.skipIf(!SHOULD_RUN)(
               observedText,
               "axis text: nativeType must land the long line verbatim",
             ).toBe(TYPED_LONG_LINE);
+
+            // Precondition: with line-wrap off the long line overflows
+            // the scroller box, so `.cm-scroller` has real horizontal
+            // room. If this isn't true the `scrollLeft` write below would
+            // silently clamp to 0 — assert it so a wrap regression fails
+            // here (clear cause) instead of at the scrollLeft round-trip.
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var sc = document.querySelector('[data-card-id="A"] [data-slot="tug-text-editor"] .cm-scroller');
+                return sc !== null && sc.scrollWidth - sc.clientWidth > ${SCROLL_LEFT_OFFSET};
+              })()`,
+              { timeoutMs: 4000 },
+            );
 
             // Drive scrollLeft on the `.cm-scroller` element CM6
             // owns. The engine's `scroll` listener mirrors both
