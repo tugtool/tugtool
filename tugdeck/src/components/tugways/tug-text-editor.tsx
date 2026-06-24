@@ -389,6 +389,20 @@ export interface TugTextEditorDelegate {
    */
   acceptActiveCompletion(): boolean;
   /**
+   * If the completion popup is currently open and interactive (active
+   * with at least one item), dismiss it and return `true`. Otherwise
+   * no-op and return `false`.
+   *
+   * The CodeMirror keymap already dismisses the popup on a bare Escape
+   * that reaches the editor. This is the seam for the chain-level
+   * CANCEL_DIALOG path: when a turn is in flight, the capture-phase
+   * keybinding routes Escape to the prompt entry's interrupt handler
+   * BEFORE the editor's bubble-phase keymap runs, so the handler must
+   * consult and dismiss the popup itself rather than let Escape fall
+   * through to interrupt the turn. No-op when not mounted.
+   */
+  cancelActiveCompletion(): boolean;
+  /**
    * Insert an atom at the current selection head, replacing any
    * non-empty selection. The transaction inserts the U+FFFC text
    * marker and the matching decoration in a single step, so the
@@ -1704,6 +1718,21 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           return false;
         }
         acceptCompletionAt(view);
+        return true;
+      },
+      cancelActiveCompletion(): boolean {
+        const view = viewRef.current;
+        if (view === null) return false;
+        const state = getCompletionState(view);
+        if (
+          !completionPopupIsInteractive({
+            active: state.active,
+            itemCount: state.filtered.length,
+          })
+        ) {
+          return false;
+        }
+        cancelCompletion(view);
         return true;
       },
       insertAtom(segment: AtomSegment) {
