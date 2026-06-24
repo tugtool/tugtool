@@ -87,20 +87,21 @@ body {
   --tugx-md-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
   --tugx-md-link-decoration:  underline;
 
-  /* Inline code ([P05]). Plex Sans and Plex Mono share an identical
-   * x-height (516) and cap-height (698), so Mono needs no size-down to
-   * sit level with the prose — it renders at full 1em. There is no
-   * box: background and padding are stripped so code never chops the
-   * line. Distinction comes from the mono font plus a scaled-back hue,
-   * the theme accent muted toward prose color so it reads as emphasized
-   * prose, not a warning. The accent ref is direction-correct across
-   * themes (bright on dark, deep on light). */
-  --tugx-md-inline-code-padding: 0;
+  /* Inline code ([P05]). Treated like a highlighter swipe, NOT a chip:
+   * full 1em (no size-down), straight edges (no radius), no border/shadow.
+   * The wash is horizontal-only padding so it bleeds past the glyphs like
+   * a marker stroke and keeps the text on the prose baseline. Body text
+   * color is kept — distinction is the mono font plus the wash. This is
+   * deliberately unlike an atom chip (recessed, rounded, key-washed).
+   *
+   * Wash hue: a neutral `currentColor`-derived tint (no accent), so it
+   * never reads as interactive/link and tracks every theme automatically
+   * (light gray over dark prose, dark gray over light prose). */
+  --tugx-md-inline-code-padding: 0 0.2em;
   --tugx-md-inline-code-radius:  0;
-  --tugx-md-inline-code-size:    0.95em;
-  --tugx-md-inline-code-color:
-    color-mix(in srgb, var(--tug7-element-tone-text-normal-accent-rest) 60%, currentColor);
-  --tugx-md-inline-code-bg:      transparent;
+  --tugx-md-inline-code-size:    1em;
+  --tugx-md-inline-code-color:   inherit;
+  --tugx-md-inline-code-bg:      color-mix(in srgb, currentColor 11%, transparent);
 
   /* Fenced code body */
   --tugx-md-fenced-code-padding:     var(--tug-space-md) var(--tug-space-lg);
