@@ -22,10 +22,23 @@
 .task-tool-block-args {
   display: flex;
   align-items: baseline;
-  gap: var(--tugx-block-header-gap);
   flex: 1 1 auto;
   min-width: 0;
   white-space: nowrap;
+}
+
+/* Space the description off the agent-type label with a margin on the
+ * description rather than a flex `gap` on this wrapper. This row also
+ * carries `tool-call-header-clamp`, so while the block is COLLAPSED the
+ * shared clamp rule swaps this box to `display: -webkit-box` to engage
+ * the line clamp — and flex `gap` does not apply under `-webkit-box`,
+ * which would smash the agent type and description together
+ * ("ExploreFind …"). A sibling margin is honored in BOTH the expanded
+ * (flex) and collapsed (-webkit-box) states, so the gap is identical
+ * either way. Scoped to the `code + description` adjacency so a
+ * description-only row (no agent type) carries no leading indent. */
+.task-tool-block-args code + .task-tool-block-description {
+  margin-inline-start: var(--tugx-block-header-gap);
 }
 
 /* The subagent type — a short label, end-ellipsized like the other
