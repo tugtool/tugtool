@@ -5,9 +5,6 @@
 # Golden snapshots for token output identity checks
 styles/*.golden
 
-# Runtime active theme file (written by Vite plugin and activate endpoint — always a complete theme)
-styles/tug-active-theme.css
-
 # Theme Editor live state (per-theme identity baseline + last applied seed; rebuilt from the .css)
 styles/themes/theme-editor-state.json
 

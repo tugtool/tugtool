@@ -49,8 +49,25 @@ function paletteHotReload(): VitePlugin {
   };
 }
 
-/** Absolute path to the active theme CSS file in the Vite module graph. */
-const THEME_ACTIVE_CSS = path.resolve(__dirname, "styles/tug-active-theme.css");
+/**
+ * Virtual module id for the active theme stylesheet.
+ *
+ * The active theme is NOT a physical file — it is served from this dev
+ * server's in-memory `activeThemeName` (below) through a Vite virtual
+ * module. The resolved id ends in `.css` so Vite routes it through the CSS
+ * pipeline (PostCSS expands `--tug-color()` tokens) and injects it as a
+ * stylesheet. `src/css-imports.ts` imports it as a side effect.
+ *
+ * Why virtual, not a file: every build variant (release / debug / each
+ * worktree) runs its OWN dev server process but shares ONE working tree. A
+ * physical `tug-active-theme.css` was therefore a single mutable artifact
+ * that every variant wrote and every variant's file watcher repainted from —
+ * so activating a theme in one variant bled into all the others. Per-process
+ * in-memory state has no shared artifact, so variants are isolated by
+ * construction and nothing accumulates on disk.
+ */
+export const ACTIVE_THEME_VIRTUAL_ID = "virtual:tug-active-theme.css";
+export const ACTIVE_THEME_RESOLVED_ID = "\0" + ACTIVE_THEME_VIRTUAL_ID;
 /** Absolute path to the brio theme CSS file. */
 const BASE_THEME_CSS = path.resolve(__dirname, "styles/themes/brio.css");
 /** Absolute path to shipped override CSS files. */
@@ -63,9 +80,17 @@ const { BASE_THEME_NAME } = require("./src/theme-constants") as { BASE_THEME_NAM
  * The dev server's authoritative record of which theme is currently active.
  *
  * Seeded at server boot from a best-effort `tugbank read` (see
- * `themeLoaderPlugin`), then driven by the client: every successful
+ * `activeThemeVirtualPlugin`), then driven by the client: every successful
  * POST `/__themes/activate` updates it. This — NOT a fresh `tugbank read` —
- * is what `controlTokenHotReload` re-bakes when a theme's CSS is edited.
+ * is what the `virtual:tug-active-theme.css` module renders, and what
+ * `controlTokenHotReload` re-renders when a theme's CSS is edited.
+ *
+ * This value lives only in THIS dev server process. Each build variant
+ * (release / debug / each worktree) runs its own dev server, so each holds
+ * its own active theme — activating a theme in one variant cannot bleed into
+ * another. (There is no shared on-disk artifact anymore; the active theme
+ * used to be a single `tug-active-theme.css` file in the shared working tree,
+ * which is exactly what leaked across variants.)
  *
  * Why not re-read tugbank on every token edit: the dev server resolves its
  * tugbank db from its OWN process environment (`TUG_INSTANCE_ID` /
@@ -93,25 +118,6 @@ function readActiveThemeFromTugbank(): string {
   }
 }
 
-/**
- * Write `content` to `filePath` only if it differs from what's already there.
- * Returns true when a write happened. Skipping no-op writes keeps Vite's file
- * watcher quiet — the client's startup theme sync re-bakes the active theme on
- * every load, and without this guard each load would fire a spurious CSS HMR
- * even when the baked theme already matches.
- */
-function writeIfChanged(filePath: string, content: string): boolean {
-  try {
-    if (fs.existsSync(filePath) && fs.readFileSync(filePath, "utf-8") === content) {
-      return false;
-    }
-  } catch {
-    // Fall through to write — an unreadable target should be overwritten.
-  }
-  fs.writeFileSync(filePath, content, "utf-8");
-  return true;
-}
-
 /** Resolve shipped theme CSS path by name. */
 function findThemeCssPath(themeName: string, themesCssDir: string): string | null {
   const cssPath = path.join(themesCssDir, `${themeName}.css`);
@@ -127,97 +133,103 @@ export function parseHostCanvasColor(cssText: string): string | null {
 }
 
 /**
- * Copy the active theme's complete CSS into tug-active-theme.css.
+ * Resolve the active theme's complete CSS text — the body of the
+ * `virtual:tug-active-theme.css` module.
  *
- * - For brio (or missing/default): copies styles/themes/brio.css.
- * - For any other theme: copies styles/themes/<name>.css.
- * - The file is always a complete theme; it is never empty.
- *
- * Returns true when the active file actually changed on disk (so callers can
- * skip broadcasting a theme-changed HMR event for a no-op re-bake).
+ * - For brio (or missing/default): reads styles/themes/brio.css.
+ * - For any other theme: reads styles/themes/<name>.css.
+ * - Falls back to brio when the named theme is missing or unreadable.
+ * - The result is always a complete theme; it is never empty.
  */
-function copyActiveThemeToFile(themeName: string, activeCssPath: string): boolean {
+function resolveActiveThemeCss(themeName: string): string {
   if (!themeName || themeName === BASE_THEME_NAME) {
-    const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
-    return writeIfChanged(activeCssPath, css);
+    return fs.readFileSync(BASE_THEME_CSS, "utf-8");
   }
 
   const sourceCssPath = findThemeCssPath(themeName, SHIPPED_THEMES_CSS_DIR);
   if (!sourceCssPath) {
-    console.warn(`[themeLoaderPlugin] theme "${themeName}" not found, falling back to brio`);
-    const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
-    return writeIfChanged(activeCssPath, css);
+    console.warn(`[active-theme] theme "${themeName}" not found, falling back to brio`);
+    return fs.readFileSync(BASE_THEME_CSS, "utf-8");
   }
 
   try {
-    const css = fs.readFileSync(sourceCssPath, "utf-8");
-    return writeIfChanged(activeCssPath, css);
+    return fs.readFileSync(sourceCssPath, "utf-8");
   } catch (err) {
-    console.error(`[themeLoaderPlugin] failed to copy CSS for theme "${themeName}":`, err);
-    const css = fs.readFileSync(BASE_THEME_CSS, "utf-8");
-    return writeIfChanged(activeCssPath, css);
+    console.error(`[active-theme] failed to read CSS for theme "${themeName}":`, err);
+    return fs.readFileSync(BASE_THEME_CSS, "utf-8");
   }
 }
 
 /**
- * Vite plugin: ensure `tug-active-theme.css` contains the active theme's
- * complete CSS at startup, before Vite processes any CSS.
+ * Vite plugin: serve the active theme as the `virtual:tug-active-theme.css`
+ * module, sourced from this dev server's in-memory `activeThemeName`.
  *
- * - Reads the active theme name from tugbank via `tugbank read dev.tugtool.app theme`.
- * - For brio (or missing/default): copies styles/themes/brio.css into tug-active-theme.css.
- * - For any other theme: copies styles/themes/<name>.css into tug-active-theme.css.
- * - The file is always a complete theme; it is never empty.
- * - Same logic for both dev and build modes — no special cases.
+ * - `configResolved` seeds `activeThemeName` best-effort from tugbank
+ *   (`tugbank read dev.tugtool.app theme`). Correct when the dev server
+ *   shares the running app variant's tugbank instance; otherwise the client
+ *   corrects it on startup via `/__themes/activate` (see `syncDevActiveTheme`).
+ *   Either way, `activeThemeName` — not a fresh read — drives later loads.
+ * - `load` returns the active theme's complete CSS; PostCSS expands its
+ *   `--tug-color()` tokens. The module is never empty.
+ * - Same logic for dev and build — in a production build `load` runs at build
+ *   time and bakes the seeded theme into the bundle (the production link swap
+ *   then overrides it at runtime, [D08]).
  */
-function themeLoaderPlugin(): VitePlugin {
+function activeThemeVirtualPlugin(): VitePlugin {
   return {
-    name: "theme-loader",
+    name: "active-theme-virtual",
     configResolved() {
-      // Best-effort boot seed. Correct when the dev server shares the
-      // running app's tugbank instance; otherwise the client corrects it on
-      // startup via `/__themes/activate` (see `syncDevActiveTheme`). Either
-      // way, `activeThemeName` — not a fresh read — drives later re-bakes.
       activeThemeName = readActiveThemeFromTugbank();
-      copyActiveThemeToFile(activeThemeName, THEME_ACTIVE_CSS);
+    },
+    resolveId(id) {
+      if (id === ACTIVE_THEME_VIRTUAL_ID) return ACTIVE_THEME_RESOLVED_ID;
+    },
+    load(id) {
+      if (id === ACTIVE_THEME_RESOLVED_ID) {
+        return resolveActiveThemeCss(activeThemeName);
+      }
     },
   };
 }
 
 /**
- * Vite plugin: when a theme source file changes, re-copy the active theme
- * into tug-active-theme.css so the app receives standard CSS HMR updates.
+ * Re-render the active-theme virtual module on this dev server and tell the
+ * client a theme change is coming.
  *
- * Watches styles/themes/*.css (all themes including brio).
+ * Sends `tug:theme-changed` FIRST so the `hmr-bridge` consumer sees it ahead
+ * of the CSS update Vite emits for the reloaded module and can skip the
+ * per-card state-preservation flush. WebSocket messages are TCP-ordered, so
+ * the custom event lands before `reloadModule`'s update. No-op if the module
+ * has not been pulled into the graph yet (no client has loaded it).
+ */
+function repaintActiveTheme(server: import("vite").ViteDevServer): void {
+  const mod = server.moduleGraph.getModuleById(ACTIVE_THEME_RESOLVED_ID);
+  if (!mod) return;
+  server.ws.send({ type: "custom", event: "tug:theme-changed" });
+  void server.reloadModule(mod);
+}
+
+/**
+ * Vite plugin: when a theme source file changes, re-render the active-theme
+ * virtual module so the app receives a standard CSS HMR update.
  *
- * Also broadcasts a `tug:theme-changed` custom HMR event to the client
- * so the `installHmrBridge` consumer can skip per-card state-preservation
- * flush on the incoming CSS-only update — see `hmr-bridge.ts` for the
- * skip protocol.
+ * Watches styles/themes/*.css (all themes including brio). Only the active
+ * theme's own CSS feeds the live stylesheet — editing any other theme's file
+ * changes nothing on screen, so we emit no update. The repaint reads from
+ * `activeThemeName` (the client's truth), never a fresh `tugbank read` (wrong
+ * db — see `activeThemeName`).
  */
 function controlTokenHotReload(): VitePlugin {
   return {
     name: "control-token-hot-reload",
     handleHotUpdate({ file, server }) {
       if (file.startsWith(SHIPPED_THEMES_CSS_DIR) && file.endsWith(".css")) {
-        // Only the active theme's own CSS feeds the live stylesheet.
-        // Editing any other theme's file changes nothing on screen, so
-        // leave the active file untouched and emit no update — re-baking
-        // here is exactly what used to flip the live theme back to the
-        // base. Re-bake from `activeThemeName` (the client's truth), never
-        // a fresh `tugbank read` (wrong db — see `activeThemeName`).
         const editedTheme = path.basename(file, ".css");
-        if (editedTheme !== activeThemeName) {
-          return [];
+        if (editedTheme === activeThemeName) {
+          repaintActiveTheme(server);
         }
-        const changed = copyActiveThemeToFile(activeThemeName, THEME_ACTIVE_CSS);
-        if (changed) {
-          // Fire BEFORE returning so the client receives the custom
-          // event ahead of the HMR payload Vite emits for the
-          // resulting tug-active-theme.css change. WebSocket messages
-          // are TCP-ordered; chokidar detects the file change after
-          // this send call, so the event lands first.
-          server.ws.send({ type: "custom", event: "tug:theme-changed" });
-        }
+        // The virtual module — not this source file — is what the client
+        // imports, so suppress Vite's own update for the edited source.
         return [];
       }
     },
@@ -233,50 +245,40 @@ function controlTokenHotReload(): VitePlugin {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// activateTheme — shared logic for startup plugin and activate endpoint
+// resolveThemeActivation — shared validation for the activate endpoint
 //
-// Copies the active theme's complete CSS into activeCssPath, parses the
-// source CSS metadata token --tugx-host-canvas-color, and returns
-// { theme, hostCanvasColor }.
+// Validates the theme exists and parses its --tugx-host-canvas-color metadata,
+// returning { theme, hostCanvasColor }. The active stylesheet itself is served
+// from the in-memory `activeThemeName` via the virtual module, so this writes
+// nothing — the endpoint sets `activeThemeName` and repaints the module.
 // ---------------------------------------------------------------------------
 
-/** Return value of activateTheme on success. */
+/** Return value of resolveThemeActivation on success. */
 export interface ActivateResult {
   theme: string;
   hostCanvasColor: string;
-  /** True when the active CSS file actually changed on disk. */
-  changed: boolean;
 }
 
 /**
- * Activate a theme by writing the complete theme CSS into activeCssPath.
- * Returns { theme, hostCanvasColor } on success.
+ * Validate a theme and read its host canvas color.
  *
- * - For the base theme (brio): copies styles/themes/brio.css to activeCssPath.
- * - For non-base themes: copies CSS from styles/themes/<name>.css to activeCssPath.
+ * - For the base theme (brio): reads styles/themes/brio.css.
+ * - For non-base themes: reads styles/themes/<name>.css from themesCssDir.
  * - Parses --tugx-host-canvas-color from the source CSS file.
- * - Throws if source CSS is missing or host color metadata is missing/invalid.
- * - The active theme file is always a complete theme; it is never empty.
+ * - Throws if the source CSS is missing or host color metadata is missing/invalid.
  *
- * The active theme name is persisted to tugbank by the client-side settings-api.ts
- * (putTheme), not by this function. This function only manages the active CSS file.
+ * The active theme name is persisted to tugbank by the client (putTheme) and
+ * held in this dev server's in-memory `activeThemeName`; this function only
+ * resolves metadata.
  */
-export function activateTheme(
+export function resolveThemeActivation(
   themeName: string,
   themesCssDir: string,
-  activeCssPath: string,
 ): ActivateResult {
-  if (themeName === BASE_THEME_NAME) {
-    const baseCss = fs.readFileSync(BASE_THEME_CSS, "utf-8");
-    const hostCanvasColor = parseHostCanvasColor(baseCss);
-    if (!hostCanvasColor) {
-      throw new Error(`Missing or invalid --tugx-host-canvas-color in ${BASE_THEME_CSS}`);
-    }
-    const changed = writeIfChanged(activeCssPath, baseCss);
-    return { theme: BASE_THEME_NAME, hostCanvasColor, changed };
-  }
-
-  const cssPath = findThemeCssPath(themeName, themesCssDir);
+  const cssPath =
+    themeName === BASE_THEME_NAME
+      ? BASE_THEME_CSS
+      : findThemeCssPath(themeName, themesCssDir);
   if (!cssPath) {
     throw new Error(`Theme '${themeName}' not found`);
   }
@@ -286,8 +288,7 @@ export function activateTheme(
   if (!hostCanvasColor) {
     throw new Error(`Missing or invalid --tugx-host-canvas-color in ${cssPath}`);
   }
-  const changed = writeIfChanged(activeCssPath, css);
-  return { theme: themeName, hostCanvasColor, changed };
+  return { theme: themeName, hostCanvasColor };
 }
 
 // ---------------------------------------------------------------------------
@@ -309,20 +310,18 @@ function withMutex(fn: () => Promise<void>): Promise<void> {
 // ---------------------------------------------------------------------------
 // handleThemesActivate — POST /__themes/activate
 //
-// Parses the request body, validates the theme field, calls
-// activateTheme inside the write mutex, and returns the response.
-// Exported for unit testing with mocked fs.
+// Parses the request body, validates the theme field, resolves its metadata,
+// and returns the response. The caller (middleware) sets `activeThemeName` and
+// repaints the virtual module on success. Exported for unit testing.
 //
 // Parameters:
 //   body           — parsed JSON request body (unknown)
 //   themesCssDir   — absolute path to shipped theme CSS files
-//   activeCssPath  — absolute path to tug-active-theme.css
 // ---------------------------------------------------------------------------
 
 export async function handleThemesActivate(
   body: unknown,
   themesCssDir: string,
-  activeCssPath: string,
 ): Promise<{ status: number; body: string }> {
   if (!body || typeof body !== "object") {
     return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
@@ -337,7 +336,7 @@ export async function handleThemesActivate(
   return new Promise<{ status: number; body: string }>((resolve) => {
     withMutex(async () => {
       try {
-        const result = activateTheme(name, themesCssDir, activeCssPath);
+        const result = resolveThemeActivation(name, themesCssDir);
         resolve({ status: 200, body: JSON.stringify(result) });
       } catch (err) {
         const msg = String(err instanceof Error ? err.message : err);
@@ -401,7 +400,6 @@ function bootstrapThemeState(currentCss: string): ThemeEditorEntry {
 export async function handleThemeEditApply(
   body: unknown,
   themesCssDir: string,
-  activeCssPath: string,
 ): Promise<{ status: number; body: string }> {
   if (!body || typeof body !== "object") {
     return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
@@ -469,9 +467,8 @@ export async function handleThemeEditApply(
         state[theme] = { identityBaseline: baseline, appliedSeed: newSeed, lastGenCss: css };
         saveThemeEditorState(themesCssDir, state);
 
-        // Push the change into the active-theme file so the running card repaints.
-        const activeTheme = readActiveThemeFromTugbank();
-        copyActiveThemeToFile(activeTheme, activeCssPath);
+        // The written themes/<theme>.css triggers controlTokenHotReload, which
+        // repaints the active-theme virtual module when `theme` is active.
         resolve({ status: 200, body: JSON.stringify({ theme, keyHue, accentHue, keyCount, accentCount }) });
       } catch (err) {
         resolve({ status: 500, body: JSON.stringify({ error: String(err instanceof Error ? err.message : err) }) });
@@ -491,7 +488,6 @@ export async function handleThemeEditApply(
 export async function handleThemeDerive(
   body: unknown,
   themesCssDir: string,
-  activeCssPath: string,
 ): Promise<{ status: number; body: string }> {
   if (!body || typeof body !== "object") {
     return { status: 400, body: JSON.stringify({ error: "invalid request body" }) };
@@ -526,9 +522,8 @@ export async function handleThemeDerive(
         const baseCss = fs.readFileSync(baseFile, "utf-8");
         const { css, count } = deriveTheme(baseCss, keyHue, accentHue, keyAnchor);
         fs.writeFileSync(outFile, css, "utf-8");
-        // If the derived theme is the active one, repaint the running app.
-        const activeTheme = readActiveThemeFromTugbank();
-        if (activeTheme === out) copyActiveThemeToFile(activeTheme, activeCssPath);
+        // If the derived theme is active, the written themes/<out>.css triggers
+        // controlTokenHotReload, which repaints the active-theme virtual module.
         resolve({ status: 200, body: JSON.stringify({ base, out, keyHue, accentHue, count }) });
       } catch (err) {
         resolve({ status: 500, body: JSON.stringify({ error: String(err instanceof Error ? err.message : err) }) });
@@ -562,10 +557,9 @@ function themeEditApplyPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              handleThemeEditApply(parsed, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
-                if (result.status === 200) {
-                  server.ws.send({ type: "custom", event: "tug:theme-changed" });
-                }
+              handleThemeEditApply(parsed, SHIPPED_THEMES_CSS_DIR).then((result) => {
+                // Repaint flows through controlTokenHotReload when the written
+                // themes/<theme>.css is the active theme — no manual broadcast.
                 res.writeHead(result.status, { "Content-Type": "application/json" });
                 res.end(result.body);
               }).catch((err) => {
@@ -587,10 +581,9 @@ function themeEditApplyPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              handleThemeDerive(parsed, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
-                if (result.status === 200) {
-                  server.ws.send({ type: "custom", event: "tug:theme-changed" });
-                }
+              handleThemeDerive(parsed, SHIPPED_THEMES_CSS_DIR).then((result) => {
+                // Repaint flows through controlTokenHotReload when the written
+                // themes/<out>.css is the active theme — no manual broadcast.
                 res.writeHead(result.status, { "Content-Type": "application/json" });
                 res.end(result.body);
               }).catch((err) => {
@@ -632,31 +625,23 @@ function themeSaveLoadPlugin(): VitePlugin {
                 res.end(JSON.stringify({ error: "invalid JSON body" }));
                 return;
               }
-              handleThemesActivate(body, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
+              handleThemesActivate(body, SHIPPED_THEMES_CSS_DIR).then((result) => {
                 if (result.status === 200) {
                   // The client is the source of truth for the active theme.
-                  // Record what it just activated so later theme-css edits
-                  // re-bake THIS theme (see `activeThemeName`) — including
-                  // the startup sync, which corrects a stale boot seed.
-                  let changed = true;
+                  // Record what it just activated so the virtual module — and
+                  // later theme-css edits — render THIS theme (see
+                  // `activeThemeName`), including the startup sync that
+                  // corrects a stale boot seed. Repaint only on a real change:
+                  // a no-op re-activate (e.g. startup sync of an
+                  // already-correct theme) needs no HMR and no flash.
                   try {
-                    const parsed = JSON.parse(result.body) as { theme?: string; changed?: boolean };
-                    if (typeof parsed.theme === "string") activeThemeName = parsed.theme;
-                    if (typeof parsed.changed === "boolean") changed = parsed.changed;
+                    const parsed = JSON.parse(result.body) as { theme?: string };
+                    if (typeof parsed.theme === "string" && parsed.theme !== activeThemeName) {
+                      activeThemeName = parsed.theme;
+                      repaintActiveTheme(server);
+                    }
                   } catch {
-                    // Keep the prior active theme; default to broadcasting.
-                  }
-                  // Tell the client a theme change is coming via the
-                  // forthcoming `vite:beforeUpdate`. The `hmr-bridge`
-                  // consumes this to skip the per-card state-preservation
-                  // flush on the CSS-only update. WS messages are
-                  // TCP-ordered; this send precedes Vite's automatic
-                  // file-watcher-triggered HMR payload, so the client
-                  // sees it first. Skip it when nothing changed on disk —
-                  // a no-op re-bake (e.g. startup sync of an already-correct
-                  // theme) emits no HMR, so there is no update to herald.
-                  if (changed) {
-                    server.ws.send({ type: "custom", event: "tug:theme-changed" });
+                    // Keep the prior active theme; no repaint.
                   }
                 }
                 res.writeHead(result.status, { "Content-Type": "application/json" });
@@ -796,7 +781,7 @@ export default (defineConfig as any)(() => {
   return {
     plugins: [
       react(),
-      themeLoaderPlugin(),
+      activeThemeVirtualPlugin(),
       paletteHotReload(),
       controlTokenHotReload(),
       themeSaveLoadPlugin(),

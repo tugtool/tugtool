@@ -45,9 +45,9 @@
  * (e.g. the prompt-entry's bytes-store of inline image attachments).
  *
  * The dev server's `themeSaveLoadPlugin` and `controlTokenHotReload`
- * broadcast a `tug:theme-changed` custom HMR event immediately after
- * writing `tug-active-theme.css`. WebSocket order is TCP-preserved,
- * and the subsequent file-watcher-driven `vite:beforeUpdate` is
+ * broadcast a `tug:theme-changed` custom HMR event immediately before
+ * re-rendering the `virtual:tug-active-theme.css` module. WebSocket
+ * order is TCP-preserved, and the resulting `vite:beforeUpdate` is
  * processed milliseconds later — so the client always sees the
  * custom event first. We use that as a reliable discriminator
  * because the path-suffix approach doesn't work (Vite reports the

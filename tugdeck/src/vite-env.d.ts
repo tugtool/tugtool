@@ -9,3 +9,11 @@ declare module "virtual:capabilities/system-metadata" {
   const content: string;
   export default content;
 }
+
+/**
+ * The active theme's complete CSS, served from the dev server's in-memory
+ * active-theme state by `activeThemeVirtualPlugin` in `vite.config.ts`. A
+ * side-effect CSS module (imported for its stylesheet, no exports); see
+ * `src/css-imports.ts`.
+ */
+declare module "virtual:tug-active-theme.css";

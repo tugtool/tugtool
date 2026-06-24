@@ -3,11 +3,14 @@
  *
  * Architecture: direct file load (not base+override cascade).
  *
- * Dev mode: Theme switching posts to POST /__themes/activate, which copies the
- * selected theme's complete CSS into tug-active-theme.css through Vite's CSS
- * pipeline so PostCSS expands all --tug-color() tokens correctly. Brio copies
- * styles/themes/brio.css; all other themes copy their own CSS file. The active
- * theme file is always complete; it is never empty.
+ * Dev mode: Theme switching posts to POST /__themes/activate, which records the
+ * selected theme as the dev server's in-memory active theme and re-renders the
+ * `virtual:tug-active-theme.css` module through Vite's CSS pipeline (PostCSS
+ * expands all --tug-color() tokens). The module's source is the theme's own
+ * styles/themes/<name>.css; it is always complete and never empty. The active
+ * theme lives only in this dev server process, so build variants (release /
+ * debug / each worktree) sharing one working tree no longer bleed themes into
+ * each other.
  *
  * Production mode: Theme switching swaps a <link id="tug-theme-override">
  * element pointing to the pre-built per-theme CSS asset. Host canvas color
@@ -135,17 +138,18 @@ export async function activateProductionTheme(themeName: string): Promise<string
 // ---------------------------------------------------------------------------
 
 /**
- * Dev-only: bring the dev server's baked `tug-active-theme.css` in line with
- * the theme this client actually wants, on startup.
+ * Dev-only: bring the dev server's in-memory active theme in line with the
+ * theme this client actually wants, on startup.
  *
- * In dev the active stylesheet is a single file the Vite server bakes from a
- * best-effort `tugbank read` in ITS OWN environment — which resolves a
- * different per-instance db than this app variant writes to. So the baked
- * theme can disagree with the theme this client read from its own instance
- * (e.g. the server boots brio while this variant is nocturne). POST the
- * client's theme to `/__themes/activate` so the server re-bakes the right one
- * and records it as active — which is also what makes a later theme-css edit
- * re-bake THIS theme instead of snapping back to the stale boot seed.
+ * In dev the active stylesheet is the `virtual:tug-active-theme.css` module,
+ * seeded at boot from a best-effort `tugbank read` in the Vite server's OWN
+ * environment — which resolves a different per-instance db than this app
+ * variant writes to. So the seeded theme can disagree with the theme this
+ * client read from its own instance (e.g. the server boots brio while this
+ * variant is nocturne). POST the client's theme to `/__themes/activate` so the
+ * server re-renders the right one and records it as active — which is also what
+ * makes a later theme-css edit re-render THIS theme instead of snapping back to
+ * the stale boot seed.
  *
  * No-ops in production (no dev server, no endpoint) and never persists — the
  * value came from tugbank, so there is nothing to write back. The server
@@ -188,9 +192,10 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  * update the theme from the Mac menu.
  *
  * The `setTheme` implementation posts to POST /__themes/activate with the new
- * theme name. The server copies the theme's complete CSS into tug-active-theme.css
- * and returns { theme, hostCanvasColor }. On success: calls sendCanvasColor(hostCanvasColor),
- * updates React state, persists to localStorage, and calls putTheme(). [D03]
+ * theme name. The server records it as the active theme, re-renders the
+ * virtual:tug-active-theme.css module, and returns { theme, hostCanvasColor }.
+ * On success: calls sendCanvasColor(hostCanvasColor), updates React state,
+ * persists to localStorage, and calls putTheme(). [D03]
  */
 export function TugThemeProvider({
   children,
@@ -221,7 +226,7 @@ export function TugThemeProvider({
       return;
     }
 
-    // Dev: POST to activate endpoint — copies active theme into tug-active-theme.css via HMR. [D03]
+    // Dev: POST to activate endpoint — re-renders the active-theme virtual module via HMR. [D03]
     void fetch("/__themes/activate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
