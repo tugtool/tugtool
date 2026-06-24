@@ -12,18 +12,19 @@
   white-space: nowrap;
 }
 
-/* Floor EVERY markdown line — chip-bearing or not — to the atom-height,
+/* Floor EVERY markdown line — chip-bearing or not — to atom-height + 4px,
    so a line reads the same whether or not it carries an atom (the hard
-   invariant: atoms must never change line height). The atom-height is
-   sized (≤ the prose line-height, see `atomHeightFor`) to fit inside the
-   natural line-box, so this `max()` normally defers to `1lh` (the prose
-   rhythm) and only forces the floor on unusually tight surfaces. The chip
-   baseline-aligns to the prose via its own inline `vertical-align` offset
-   (set by `TugAtomChip`) — no per-surface alignment rule needed. */
+   invariant: atoms must never change line height). The chip baseline-aligns
+   to the prose via its own inline `vertical-align` offset (set by
+   `TugAtomChip`), which lifts its box a little above the prose cap line; the
+   +4px hands back the breathing room so that overhang stays inside the line
+   box and isn't clipped on a message's first line (where there's no line
+   above to overflow into). `max(1lh, …)` still defers to the inherited
+   line-height when it already clears the chip+room floor. */
 [data-slot="tug-atom-markdown-body"]
   :is(p, li, h1, h2, h3, h4, h5, h6) {
   line-height: max(
     1lh,
-    var(--tugx-atom-markdown-body-atom-height, 21px)
+    calc(var(--tugx-atom-markdown-body-atom-height, 21px) + 4px)
   );
 }

@@ -36,11 +36,13 @@
 .tug-atom-chip {
   /* The chip carries its own `vertical-align: <baselineOffset>px` inline
      (set by `TugAtomChip`, the same offset the editor's `<img>` path uses)
-     so its text baseline lands on the surrounding prose baseline. We do NOT
-     set `vertical-align` here — that would override the per-instance offset.
-     Now that chips are sized to fit inside the line box, baseline alignment
-     is correct on every inline surface; the old `vertical-align: middle` +
-     optical-lift fudge (needed when chips were taller than the line) is gone.
+     so its internal text baseline lands on the surrounding prose baseline —
+     the hard atom/text baseline invariant. We must NOT set `vertical-align`
+     here: `middle` would override the per-instance offset and float the chip
+     text off the baseline. A baseline-aligned chip's box reaches a little
+     above the prose cap line; surfaces that clip (the transcript message
+     body) reserve a top cushion for that overhang rather than re-centring
+     the chip.
 
      Explicit `display: inline-block` defends against any user-agent
      quirk that would default `<img>` to a different display value. */
