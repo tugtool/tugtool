@@ -196,6 +196,18 @@ export const tugTheme: Extension = EditorView.theme({
     height: "1lh",
   },
 
+  // CM6's stock placeholder is `display: inline-block; vertical-align:
+  // top`, which pins the hint text to the *top* of the line box. With
+  // the `.cm-line::before` ghost above reserving a full `1lh` of
+  // above-baseline extent on every line, that top sits well above the
+  // text baseline — so the placeholder paints high and the first typed
+  // glyph appears to "hop" down to the baseline where prose actually
+  // lands. Baseline-aligning the placeholder lands its text on the same
+  // baseline as typed text, so there is no jump on first keystroke.
+  ".cm-placeholder": {
+    verticalAlign: "baseline",
+  },
+
   // Atom widgets render via `tug-atom-img.ts` as `<img>` elements carrying an
   // inline `vertical-align` offset (`atomBaselineOffsetFor`) that lands the
   // chip's internal text baseline on the surrounding text baseline. We let that

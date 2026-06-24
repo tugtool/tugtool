@@ -77,6 +77,7 @@ import {
   getAtomsInState,
   removeAtomById,
 } from "./atom-decoration";
+import { CARET_HEIGHT_FACTOR, readRowHeightFromGhost } from "./caret-layer";
 import type { DropHandler } from "@/lib/tug-text-types";
 import {
   downsampleImage,
@@ -309,12 +310,13 @@ class TugDropCaretPlugin implements PluginValue {
    * scrollDOM-relative coords so the caret sits at the resolved
    * drop point and scrolls with the content.
    *
-   * Caret height matches `view.defaultLineHeight` (the line-box
-   * height pinned by the `.cm-line::before` ghost in
-   * `tug-text-editor/theme.ts`) rather than the glyph rect from
-   * `coordsAtPos` — the regular browser caret renders at the
-   * full line-box height, and the drop caret should match so
-   * the user reads them as the same kind of position indicator.
+   * Caret height matches the text-editing caret exactly: the
+   * `.cm-line::before` ghost row height (read via
+   * `readRowHeightFromGhost`, the same source `caret-layer.ts`
+   * uses) scaled by `CARET_HEIGHT_FACTOR`. The two carets are the
+   * same kind of position indicator, so they read as the same
+   * height — a full line-box-tall drop caret looked oversized next
+   * to the slimmer editing caret.
    * The caret is centered vertically on the glyph rect so a
    * mid-line atom (24px) and adjacent text (~18px) both produce
    * the same drop-caret position.
@@ -329,12 +331,13 @@ class TugDropCaretPlugin implements PluginValue {
     const rect = this.view.coordsAtPos(pos);
     if (rect === null) return null;
     const outer = this.view.scrollDOM.getBoundingClientRect();
-    const lineHeight = this.view.defaultLineHeight;
+    const rowHeight = readRowHeightFromGhost(this.view, pos);
+    const caretHeight = rowHeight * CARET_HEIGHT_FACTOR;
     const center = (rect.top + rect.bottom) / 2;
     return {
       left: rect.left - outer.left + this.view.scrollDOM.scrollLeft,
-      top: center - lineHeight / 2 - outer.top + this.view.scrollDOM.scrollTop,
-      height: lineHeight,
+      top: center - caretHeight / 2 - outer.top + this.view.scrollDOM.scrollTop,
+      height: caretHeight,
     };
   }
 
@@ -449,9 +452,14 @@ function insertMixedAt(
 
 /**
  * Drop-caret styling. Width / position / pointer-events are
- * structural; color is themed via the same token the engine uses,
- * so brio and harmony pick up the right blue without needing a
- * separate per-substrate theme entry.
+ * structural; color is the drop *accent* — the same token the
+ * `[data-drop-active]` ring uses
+ * (`--tug7-element-highlight-stroke-normal-drop-rest`), so the caret
+ * reads as part of the drop affordance rather than as the regular
+ * text-editing caret (which is the cobalt
+ * `--tug7-element-field-border-normal-plain-active`). Pairing the
+ * caret with the ring's accent keeps the two drop cues visually
+ * unified across brio and harmony.
  */
 const tugDropCaretTheme = EditorView.baseTheme({
   [`.${DROP_CARET_CLASS}`]: {
@@ -459,7 +467,7 @@ const tugDropCaretTheme = EditorView.baseTheme({
     width: "2px",
     borderRadius: "1px",
     pointerEvents: "none",
-    backgroundColor: "var(--tug7-element-highlight-fill-normal-drop-rest)",
+    backgroundColor: "var(--tug7-element-highlight-stroke-normal-drop-rest)",
   },
 });
 

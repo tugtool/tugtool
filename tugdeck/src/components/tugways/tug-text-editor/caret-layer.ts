@@ -96,7 +96,7 @@ const CARET_STROKE_WIDTH = 2;
  * starting target; hand-tuned in the gallery against the rest of
  * the substrate's chrome.
  */
-const CARET_HEIGHT_FACTOR = 0.9;
+export const CARET_HEIGHT_FACTOR = 0.9;
 
 /**
  * Idle delay before the typing-steady attribute clears and blink resumes.
@@ -154,7 +154,7 @@ function lineElementAtPos(view: EditorView, pos: number): HTMLElement | null {
  * any line element, which for a focused-editor caret paint shouldn't
  * happen.
  */
-function readRowHeightFromGhost(view: EditorView, head: number): number {
+export function readRowHeightFromGhost(view: EditorView, head: number): number {
   const line = lineElementAtPos(view, head);
   if (line === null) return view.defaultLineHeight;
   const ghost = window.getComputedStyle(line, "::before");

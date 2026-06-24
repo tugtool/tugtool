@@ -36,7 +36,7 @@ const KEY = "settings";
  * store publishes these as `--tug-line-height-editor` / `--tug-letter-spacing-editor`
  * on the bound element.
  */
-export const EDITOR_LINE_HEIGHT = 1.7;
+export const EDITOR_LINE_HEIGHT = 1.5;
 export const EDITOR_LETTER_SPACING = "normal";
 
 export const DEFAULT_SETTINGS: EditorSettings = {
