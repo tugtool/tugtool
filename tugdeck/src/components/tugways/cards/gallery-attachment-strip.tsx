@@ -5,8 +5,8 @@
  * Fixtures: two static image atoms paired with a small in-memory
  * bytes-store carrying canned thumbnail data URLs. The body above
  * the strip mimics the transcript's `TugAtomTextBody` rendering —
- * inline chips at original positions, label `#u{turn}-image-N`
- * matching the strip's tile captions.
+ * inline chips at original positions, label `image-N` matching the
+ * strip's tile captions.
  *
  * The bytes are pre-baked tiny SVG thumbnails encoded as base64
  * data URLs so the gallery doesn't need to spin the
@@ -24,7 +24,7 @@
 import * as React from "react";
 
 import { TugAtomTextBody } from "@/components/tugways/cards/tug-atom-text-body";
-import { TugAttachmentStrip } from "@/components/tugways/cards/tug-attachment-strip";
+import { TugAttachmentPreview } from "@/components/tugways/cards/tug-attachment-preview";
 import {
   createAtomBytesStore,
   type AtomBytesStore,
@@ -110,20 +110,16 @@ export function GalleryAttachmentStrip(): React.ReactElement {
         <TugLabel>Transcript user row — body + per-message strip</TugLabel>
         <p style={descStyle}>
           The inline chips in the body and the strip thumbnails share an
-          identical <code>#u{"{turn}"}-image-N</code> label.
+          identical <code>image-N</code> label — one attach-time-minted
+          name, carried through unchanged.
         </p>
         <div style={{
           padding: "12px",
           background: "var(--tug7-element-field-fill-rest)",
           borderRadius: "6px",
         }}>
-          <TugAtomTextBody
-            text={FIXTURE_TEXT}
-            atoms={FIXTURE_ATOMS}
-            address={{ speaker: "user", turn: 1 }}
-          />
-          <TugAttachmentStrip
-            address={{ speaker: "user", turn: 1 }}
+          <TugAtomTextBody text={FIXTURE_TEXT} atoms={FIXTURE_ATOMS} />
+          <TugAttachmentPreview
             atoms={FIXTURE_ATOMS}
             bytesStore={bytesStore}
           />
@@ -133,26 +129,23 @@ export function GalleryAttachmentStrip(): React.ReactElement {
       <TugSeparator />
 
       <div>
-        <TugLabel>Steered message — within-turn suffix</TugLabel>
+        <TugLabel>Compose phase — deletable tiles</TugLabel>
         <p style={descStyle}>
-          A steered (mid-turn) user message carries a <code>.N</code>
-          suffix; this preview pins <code>{"{ turn: 17, sub: 1 }"}</code>{" "}
-          → <code>#u17.2-</code>.
+          In the prompt-entry Z4C zone the same strip carries a ✕ on each
+          tile (and a Delete in the preview). The controls dispatch{" "}
+          <code>REMOVE_ATTACHMENT</code> through the chain; with no responder
+          in the gallery the dispatch no-ops, so the fixtures stay put.
         </p>
         <div style={{
           padding: "12px",
           background: "var(--tug7-element-field-fill-rest)",
           borderRadius: "6px",
         }}>
-          <TugAtomTextBody
-            text={FIXTURE_TEXT}
-            atoms={FIXTURE_ATOMS}
-            address={{ speaker: "user", turn: 17, sub: 1 }}
-          />
-          <TugAttachmentStrip
-            address={{ speaker: "user", turn: 17, sub: 1 }}
+          <TugAtomTextBody text={FIXTURE_TEXT} atoms={FIXTURE_ATOMS} />
+          <TugAttachmentPreview
             atoms={FIXTURE_ATOMS}
             bytesStore={bytesStore}
+            deletable
           />
         </div>
       </div>
@@ -170,16 +163,8 @@ export function GalleryAttachmentStrip(): React.ReactElement {
           background: "var(--tug7-element-field-fill-rest)",
           borderRadius: "6px",
         }}>
-          <TugAtomTextBody
-            text="plain prose, no atoms here"
-            atoms={[]}
-            address={{ speaker: "user", turn: 2 }}
-          />
-          <TugAttachmentStrip
-            address={{ speaker: "user", turn: 2 }}
-            atoms={[]}
-            bytesStore={bytesStore}
-          />
+          <TugAtomTextBody text="plain prose, no atoms here" atoms={[]} />
+          <TugAttachmentPreview atoms={[]} bytesStore={bytesStore} />
         </div>
       </div>
     </div>

@@ -51,14 +51,15 @@
  *
  * ## Submit boundary
  *
- * On the live path, the editor's pre-submit substrate carries
- * user-friendly labels (`raphael.jpeg`, `src/main.ts`); the
- * synthesized substrate has `image-N` labels. Render-time
- * decoration in `tug-atom-text-body.tsx` further composes
- * `#u{turn}-image-N` from the transcript entry's address. The boundary
- * is intentional: editor = drafting surface, transcript =
- * JSONL-honest committed view (see [Step 5c — submit boundary]
- * (roadmap/dev-atoms.md#step-5c-submit-boundary)).
+ * Image atoms carry the unified `image-N` name on both sides of the
+ * boundary: the editor mints `image-N` at attach time (the original
+ * filename can't cross the wire — the image content block carries no
+ * name), and this synthesizer re-mints `image-N` in document order from
+ * the JSONL content blocks. So the live editor, the live transcript, and
+ * a cold replay all render the same label, with no render-time address
+ * decoration (see [Step 5c — submit boundary]
+ * (roadmap/dev-atoms.md#step-5c-submit-boundary)). Non-image `@`-mention
+ * atoms keep their path / URL value verbatim.
  *
  * Laws:
  *  - [L02] external state — the bytes-store mutation is documented

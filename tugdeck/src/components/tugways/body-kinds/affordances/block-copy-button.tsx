@@ -100,7 +100,7 @@ export const COPIED_FLASH_MS = 1200;
  * accidentally promoted to a primary-CTA size (`sm` / `md` / `lg`)
  * — Copy is always a secondary action in an action row.
  */
-export type BlockCopyButtonSize = "2xs" | "xs";
+export type BlockCopyButtonSize = "2xs" | "xs" | "sm" | "md";
 
 export interface BlockCopyButtonProps {
   /**
@@ -161,11 +161,13 @@ export interface BlockCopyButtonProps {
    * Button shape. `"icon-text"` (default) is the action-row chip with a
    * "Copy"/"Copied" label beside the glyph. `"icon"` is glyph-only — for
    * compact affordance rows like the collapsed tool header's Copy, where
-   * a label would crowd the line. The confirmation still swaps the icon
-   * (Copy → Check); the text-only width stabilization is dropped since
-   * there is no label to jostle.
+   * a label would crowd the line; its width stabilization is dropped since
+   * there is no label to jostle. `"text"` is label-only (no glyph) — for a
+   * button row where the Copy chip families with plain text buttons (the
+   * image preview's header, alongside Delete / Done); the confirmation
+   * swaps "Copy" → "Copied" and the width stabilizes across the swap.
    */
-  subtype?: "icon-text" | "icon";
+  subtype?: "icon-text" | "icon" | "text";
   /**
    * Visual weight — forwarded to the underlying `TugPushButton`.
    * Defaults to `"ghost"`, the action-row affordance default that sits
@@ -175,6 +177,17 @@ export interface BlockCopyButtonProps {
    * Copy button).
    */
   emphasis?: Extract<TugButtonEmphasis, "ghost" | "outlined">;
+  /**
+   * Focus group to author the button into (forwarded to the underlying
+   * `TugPushButton`). Supply it where the Copy chip lives on a
+   * keyboard-navigated surface — a dialog / sheet button row — so it
+   * joins the `Tab` walk and the spatial plane rather than reading as a
+   * skipped native stop. Omitted on plain block headers, which are
+   * native-only affordances.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0. */
+  focusOrder?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +204,8 @@ export function BlockCopyButton({
   size = "2xs",
   subtype = "icon-text",
   emphasis = "ghost",
+  focusGroup,
+  focusOrder,
 }: BlockCopyButtonProps): React.ReactElement {
   const [copied, setCopied] = React.useState<boolean>(false);
   const copiedTimerRef = React.useRef<number | null>(null);
@@ -280,6 +295,8 @@ export function BlockCopyButton({
       size={size}
       disabled={disabled}
       aria-label={ariaLabel}
+      focusGroup={focusGroup}
+      focusOrder={focusOrder}
       onClick={() => stableClick(handleCopy)}
       confirmation={{
         icon: <TugSpriteIcon name="check" node={checkIconNode as LucideIconNode} />,
@@ -291,7 +308,7 @@ export function BlockCopyButton({
       // swap — no sibling-jostling on click. Only meaningful for the
       // labeled `icon-text` shape; the glyph-only `icon` shape has no
       // label to stabilize.
-      widthStabilize={subtype === "icon-text" ? { alternateLabel: "Copied" } : undefined}
+      widthStabilize={subtype === "icon" ? undefined : { alternateLabel: "Copied" }}
     >
       Copy
     </TugPushButton>

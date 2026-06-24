@@ -1270,7 +1270,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-attachment-strip",
     contentFactory: (_cardId) => <GalleryAttachmentStrip />,
-    defaultMeta: { title: "TugAttachmentStrip", icon: "Image", closable: true },
+    defaultMeta: { title: "TugAttachmentPreview", icon: "Image", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

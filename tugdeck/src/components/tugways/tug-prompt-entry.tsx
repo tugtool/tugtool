@@ -44,6 +44,7 @@ import React, {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 
@@ -77,8 +78,11 @@ import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
   getAtomsInState,
   regenerateAtomsEffect,
+  removeAtomById,
+  replaceAtomsEffect,
   type PositionedAtom,
 } from "./tug-text-editor/atom-decoration";
+import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { createRoutePrefixExtension } from "./tug-prompt-entry/route-prefix-extension";
 import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { TugPushButton } from "./tug-push-button";
@@ -838,6 +842,84 @@ export const TugPromptEntry = React.forwardRef<
     [codeSessionStore],
   );
 
+  // Z4C — the compose-phase attachment-preview zone. The image atoms in
+  // the editor are external state (CodeMirror's atom field); they enter
+  // React here so the preview strip below the editor reflects every
+  // drop / paste / delete. The `editorExtensions` updateListener
+  // recomputes this on any doc change ([L02] — the bridge from CM state
+  // into React is the listener; the strip itself is a pure projection).
+  const [composeImageAtoms, setComposeImageAtoms] = useState<
+    ReadonlyArray<AtomSegment>
+  >([]);
+  // Structural key of the current image-atom list (ids + labels) so the
+  // listener only re-renders the strip when the set actually changes,
+  // not on every keystroke. Held in a ref because the listener closes
+  // over it once (the extension array is built with empty deps).
+  const composeAtomsKeyRef = useRef("");
+  const syncComposeImageAtoms = useCallback(
+    (atoms: ReadonlyArray<AtomSegment>): void => {
+      // The strip is always contiguous: derive `image-N` from the image's
+      // position in document order, independent of the atom's stored label.
+      // So the Z4C strip reads correct the instant an attachment is added
+      // or removed, even before the editor's inline chips are relabeled by
+      // the renumber pass below.
+      const images = atoms
+        .filter((a) => a.type === "image")
+        .map((a, i) => {
+          const name = `image-${i + 1}`;
+          return a.label === name && a.value === name
+            ? a
+            : { ...a, label: name, value: name };
+        });
+      let key = "";
+      for (const a of images) key += `${a.id ?? ""}|${a.label}|`;
+      if (key === composeAtomsKeyRef.current) return;
+      composeAtomsKeyRef.current = key;
+      setComposeImageAtoms(images);
+    },
+    [],
+  );
+  // Keep the editor's inline image chips numbered `image-1..N` in document
+  // order. The Z4C strip derives its own contiguous numbering, but the
+  // inline chips store their label in the atom field, so a delete or a
+  // mid-insert can leave them stale; this corrects them in one follow-up
+  // transaction. Idempotent — re-reads fresh state and dispatches only
+  // when a label is actually wrong, so it never loops.
+  const renumberImageChips = useCallback((view: EditorView): void => {
+    if (!view.dom.isConnected) return;
+    const positioned = getAtomsInState(view.state);
+    let n = 0;
+    let changed = false;
+    const corrected: PositionedAtom[] = positioned.map((p) => {
+      if (p.segment.type !== "image") return p;
+      n += 1;
+      const name = `image-${n}`;
+      if (p.segment.label === name && p.segment.value === name) return p;
+      changed = true;
+      return {
+        position: p.position,
+        segment: { ...p.segment, label: name, value: name },
+      };
+    });
+    if (changed) view.dispatch({ effects: replaceAtomsEffect.of(corrected) });
+  }, []);
+  // Remove a draft attachment by atom id: drop its atom from the editor
+  // doc (the updateListener then refreshes the strip) and free its
+  // bytes-store entry. The bytes `delete` is the store's documented
+  // pre-submit cleanup path. This is the responder side of [L11] — the
+  // prompt-entry owns the editor document and bytes store, so it handles
+  // the `REMOVE_ATTACHMENT` action the preview's controls dispatch.
+  const handleRemoveAttachmentById = useCallback(
+    (atomId: string): void => {
+      const view = textEditorRef.current?.view();
+      if (view !== null && view !== undefined) {
+        removeAtomById(view, atomId);
+      }
+      attachmentBytesStore.delete(atomId);
+    },
+    [attachmentBytesStore],
+  );
+
   // Z5 submit-button state machine. The button's whole view — label,
   // icon, `disabled`, `data-mode` — is a pure function of the
   // lifecycle-derived `submitButtonMode` (six kinds: submit / stop /
@@ -1011,11 +1093,34 @@ export const TugPromptEntry = React.forwardRef<
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return;
         const root = rootRef.current;
-        if (root === null) return;
-        root.setAttribute(
-          "data-empty",
-          String(update.state.doc.length === 0),
-        );
+        if (root !== null) {
+          root.setAttribute(
+            "data-empty",
+            String(update.state.doc.length === 0),
+          );
+        }
+        // Z4C bridge: refresh the compose-phase attachment strip from the
+        // editor's live atom set. Cheap structural-key gate inside.
+        const positioned = getAtomsInState(update.state);
+        syncComposeImageAtoms(positioned.map((p) => p.segment));
+        // Renumber inline image chips if a delete / mid-insert left them
+        // out of document order. Cheap synchronous check; the correcting
+        // dispatch is deferred to a microtask so it doesn't re-enter the
+        // in-flight update.
+        let ord = 0;
+        let mismatch = false;
+        for (const p of positioned) {
+          if (p.segment.type !== "image") continue;
+          ord += 1;
+          if (p.segment.label !== `image-${ord}`) {
+            mismatch = true;
+            break;
+          }
+        }
+        if (mismatch) {
+          const view = update.view;
+          queueMicrotask(() => renumberImageChips(view));
+        }
       }),
       // Empty-Escape gesture. On an empty editor, Escape surfaces
       // `onEscapeWhenEmpty` so the host can collapse the entry pane.
@@ -1458,6 +1563,13 @@ export const TugPromptEntry = React.forwardRef<
         // `setRoute` is a no-op when `nextRoute` equals the current route.
         routeLifecycle.setRoute(nextRoute);
       },
+      [TUG_ACTIONS.REMOVE_ATTACHMENT]: (event: ActionEvent) => {
+        // The preview's ✕ / Delete controls dispatch the atom id of the
+        // attachment to drop; the prompt-entry owns the editor doc +
+        // bytes store, so it performs the removal here ([L11]).
+        if (typeof event.value !== "string") return;
+        handleRemoveAttachmentById(event.value);
+      },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         // The primary Z5 button dispatches SUBMIT in every mode. When
         // a turn is running the button is Stop — it pops the newest
@@ -1840,6 +1952,35 @@ export const TugPromptEntry = React.forwardRef<
               preserveState={false}
             />
           </div>
+          {/*
+            Z4C — the compose-phase attachment-preview zone. A flow sibling
+            between the editor's scroll viewport and the toolbar (Z4), so it
+            stays pinned below the scrolling text and directly above the
+            toolbar, and grows the entry's height like added text rows.
+            Rendered only when the editor holds image atoms; the preview
+            component itself short-circuits to null when empty, but gating
+            here keeps the zone wrapper out of the DOM entirely so it adds
+            no padding to an attachment-free entry. The ✕ / Delete delete
+            affordance is live here ([compose phase] — `onDelete` supplied),
+            unlike the read-only transcript strip.
+          */}
+          {composeImageAtoms.length > 0 && (
+            <div
+              className="tug-prompt-entry-attachments"
+              data-slot="tug-prompt-entry-attachments"
+              // Chrome, like the toolbar: a click on a tile or its ✕ must
+              // not steal first-responder / DOM focus from the editor.
+              // Descendant controls that need focus (none here — the tile
+              // opens a sheet, the ✕ refuses) are unaffected.
+              data-tug-focus="refuse"
+            >
+              <TugAttachmentPreview
+                atoms={composeImageAtoms}
+                bytesStore={attachmentBytesStore}
+                deletable
+              />
+            </div>
+          )}
           <div
             className="tug-prompt-entry-toolbar"
             // The toolbar is chrome: clicking anywhere in it — a badge, the

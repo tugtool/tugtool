@@ -93,7 +93,7 @@ import "./tug-icon-button.css";
 import React from "react";
 import { cn } from "@/lib/utils";
 import { TugButton } from "./internal/tug-button";
-import type { TugButtonEmphasis } from "./internal/tug-button";
+import type { TugButtonEmphasis, TugButtonRounded } from "./internal/tug-button";
 import type { FocusPolicy } from "./focus-manager";
 import type { ActionEvent } from "./responder-chain";
 import { useControlDispatch } from "./use-control-dispatch";
@@ -157,6 +157,13 @@ export interface TugIconButtonProps {
    */
   emphasis?: Extract<TugButtonEmphasis, "ghost" | "outlined">;
   /**
+   * Corner radius — forwarded to the underlying `TugButton`. Omit for the
+   * size-proportional default (a rounded square); pass `"none"` for a
+   * square icon button (e.g. a corner-flush overlay badge) or `"full"`
+   * for a circle.
+   */
+  rounded?: TugButtonRounded;
+  /**
    * Stable sender id used when `dispatch` is provided without a
    * `sender`. Auto-derived via `useId()` if omitted. Override in tests
    * for deterministic chain logging.
@@ -201,6 +208,7 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
       size = "sm",
       tone = "default",
       emphasis = "ghost",
+      rounded,
       senderId: senderIdProp,
       focusGroup,
       focusOrder,
@@ -259,6 +267,7 @@ export const TugIconButton = React.forwardRef<HTMLButtonElement, TugIconButtonPr
         ref={ref}
         subtype="icon"
         emphasis={emphasis}
+        rounded={rounded}
         role={role}
         size={size}
         icon={icon}

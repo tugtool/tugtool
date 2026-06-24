@@ -43,7 +43,7 @@ import {
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { formatTurnAddress, type TurnAddress } from "../tug-transcript-entry";
+import type { TurnAddress } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
 // Walking substrate — exported for pure-logic tests
@@ -110,33 +110,28 @@ export function walkAtomText(
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the chip's displayed label given an atom and an optional
- * transcript entry address.
+ * Compute the chip's displayed label.
  *
- * - When `address` is set AND the atom is an image, the label is
- *   prefixed with the entry's address (`#u{turn}` / `#u{turn}.{sub}`
- *   via {@link formatTurnAddress}). Example: `address={speaker:"user",
- *   turn:9}`, `atom.label="image-1"` → `"#u9-image-1"`. This is the
- *   transcript-side rendering — the chip's label matches the user
- *   row's attribution badge and the per-message attachment-strip
- *   caption ([Step 6](roadmap/dev-atoms.md#step-6)).
- * - When `address` is unset, the atom's stored `label` is returned
- *   verbatim. This is the editor's pre-submit rendering case: the
- *   editor has no transcript position to encode.
- * - Non-image atoms (file, doc, link, command) always render their
- *   stored `label` verbatim — file paths and URLs carry no per-message
- *   linkage to encode.
+ * The label is the atom's stored `label` verbatim — `image-N` for image
+ * atoms (minted at attach time in the editor, re-minted in document order
+ * by the transcript synthesizer), a path / URL for file / doc / link
+ * atoms, the command leaf for command atoms. One unified name, identical
+ * across the compose editor and the transcript.
+ *
+ * The `address` parameter is retained for call-site compatibility but no
+ * longer decorates the label: the former `#u{turn}-image-N` turn-address
+ * prefix is retired in favour of a single attach-time-minted name that
+ * carries through unchanged. (The turn address still renders on the user
+ * row's attribution badge via {@link formatTurnAddress} — that is a
+ * separate surface from the chip label.)
  *
  * Pure on inputs.
  */
 export function decorateChipLabel(
   atom: AtomSegment,
-  address: TurnAddress | undefined,
+  _address: TurnAddress | undefined,
 ): string {
-  if (address === undefined || atom.type !== "image") {
-    return atom.label;
-  }
-  return `${formatTurnAddress(address)}-${atom.label}`;
+  return atom.label;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,14 +148,11 @@ export interface TugAtomTextBodyProps {
    */
   atoms: ReadonlyArray<AtomSegment>;
   /**
-   * Optional transcript entry address. When set, each image atom's
-   * *displayed* chip label is decorated as
-   * `${formatTurnAddress(address)}-${atom.label}` (e.g., `#u9-image-1`) —
-   * the linkage between an inline chip and its companion entry in the
-   * per-message attachment strip ([Step 6](roadmap/dev-atoms.md#step-6)),
-   * matching the user row's attribution badge. Non-image atoms are
-   * unaffected. When unset (the editor's pre-submit rendering case),
-   * atoms render with their stored `label` verbatim.
+   * Optional transcript entry address. Retained for call-site
+   * compatibility (the user row threads its address through), but it no
+   * longer affects the chip label: atoms render their stored `label`
+   * verbatim — the unified attach-time-minted `image-N` name — on every
+   * surface. See {@link decorateChipLabel}.
    */
   address?: TurnAddress;
   /** Forwarded to the root span. */

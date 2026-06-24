@@ -1,0 +1,379 @@
+/**
+ * tug-attachment-preview.css — layout and appearance for the shared
+ * attachment-preview facility: the inline thumbnail **strip** and the
+ * full-resolution **sheet** it opens.
+ *
+ * Strip layout: a single horizontal row of fixed-width tiles separated by
+ * a fixed gap, wrapping to multiple lines when the tile count exceeds the
+ * row's width (a tidy grid rather than horizontal scroll). Each tile is a
+ * fixed-width thumbnail whose height follows the source image's aspect
+ * ratio, with a small caption beneath; clicking opens the sheet. In the
+ * compose phase (`[data-deletable]`), each tile carries a ✕ overlay.
+ *
+ * Sheet layout: a content-sized flex column (header band, aspect-locked
+ * image area, footer row) inside a pane-sheet running with
+ * `aspectLockContent`, so the image fills its area with no letterbox.
+ *
+ * Laws:
+ *  - [L06] all appearance flows from CSS cascaded from `data-slot`
+ *    selectors; no React state controls visual state.
+ *  - [L19] component-CSS pair; selectors scoped to the component's own
+ *    `data-slot` family so the rules don't leak.
+ *  - [L20] one component-token slot family (`--tugx-attachment-*`); no
+ *    global tokens overridden.
+ */
+
+/* ===========================================================================
+ * Strip
+ * ======================================================================== */
+
+[data-slot="tug-attachment-preview"] {
+  /* Tile dimension slot, declared on the root so every descendant
+     reference resolves to one value; the inline `var(…, 64px)` fallbacks
+     below match so a consumer that doesn't inherit still gets the size.
+     Sized for a compact glance — click a tile for the full-resolution
+     preview sheet. */
+  --tugx-attachment-tile-size: 64px;
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tugx-attachment-gap, 8px);
+  /* Sit a comfortable distance below the body / above the toolbar. */
+  margin-top: var(--tugx-attachment-margin-top, 8px);
+  align-items: flex-start;
+}
+
+.tug-attachment-preview__cell {
+  /* Positioning context for the ✕ delete overlay; sized to the tile. */
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: var(--tugx-attachment-tile-size, 64px);
+}
+
+.tug-attachment-preview__tile {
+  /* Button reset: strip default chrome so the tile reads purely as the
+     thumbnail + caption. */
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  /* Stack thumbnail + caption vertically; fill the cell width. */
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  border-radius: var(--tugx-attachment-tile-radius, 4px);
+}
+
+/* Focus indication is the app-owned focus-ring primitive (focus-ring.css). */
+
+.tug-attachment-preview__thumb {
+  /* Thumbnail container. Fixed width; height follows the image's own
+     aspect (the `<img>` below is `width:100%; height:auto`), so the whole
+     image is shown — never cropped, never letterboxed. Tiles in a row
+     therefore vary in height; the strip's `align-items: flex-start` keeps
+     their tops aligned. */
+  display: block;
+  position: relative;
+  width: 100%;
+  border-radius: var(--tugx-attachment-tile-radius, 4px);
+  /* A thin border in the theme body-text color frames the preview as a
+     whole (sets background in the same rule, so it is self-documenting). */
+  border: 1px solid var(--tug7-element-global-text-normal-default-rest);
+  background: var(--tugx-attachment-thumb-bg,
+    var(--tug7-element-field-fill-rest,
+    var(--tug-color-surface-2, #1d1d1d)));
+  overflow: hidden;
+}
+
+/* Hover wash: a light film over the whole thumbnail the instant the
+   pointer enters its tile, reading as a gentle brighten that says "this is
+   clickable" without shifting layout. Painted as an `::after` film (not a
+   `filter: brightness()`) so it reads the same on a dark or blown-out
+   image and can't clip highlights; `pointer-events: none` so it never
+   intercepts the tile's own click. */
+.tug-attachment-preview__thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tugx-attachment-hover-wash, rgb(255 255 255 / 0.14));
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.tug-attachment-preview__tile:hover .tug-attachment-preview__thumb::after {
+  opacity: 1;
+}
+
+.tug-attachment-preview__thumb-img {
+  /* Render the whole image at the tile's fixed width with its natural
+     aspect (`height: auto`), so the container height matches the image
+     exactly — no crop, no distortion. The baked thumbnail is sized so this
+     is a true downscale at display time, keeping the preview crisp on
+     Retina. */
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: inherit;
+}
+
+.tug-attachment-preview__placeholder {
+  /* Soft placeholder for the brief window between the bytes-store entry
+     landing and the thumbnail-bake completing. No pulse — a busy
+     loading-state would distract from transcript reading. Square by
+     default since the aspect is unknown until the image lands. */
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--tugx-attachment-placeholder-bg,
+    var(--tug7-element-field-fill-rest, #2a2a2a));
+}
+
+.tug-attachment-preview__caption {
+  /* The unified `image-N` label beneath the thumbnail. A single centred
+     line, monospaced to match the inline chip's label rendering — readers
+     pair an inline chip with its strip tile by label match. */
+  display: block;
+  text-align: center;
+  margin-top: var(--tugx-attachment-caption-gap, 4px);
+  font-family: var(--tugx-attachment-caption-font,
+    ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--tugx-attachment-caption-size, 0.7rem);
+  line-height: 1.2;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--tugx-attachment-caption-color,
+    var(--tug7-element-field-text-normal-label-rest, currentColor));
+}
+
+/* Delete overlay — compose phase only. A square ✕ chip pinned flush to the
+   thumbnail's top-right corner. It is a component-owned element (a plain
+   <button>, NOT a TugButton), so its appearance is defined here outright
+   with no competing role rules — deterministic, themed, no specificity
+   tricks, no `!important`.
+
+   The treatment ("neutral chip at rest → solid danger on hover") has no
+   stock button equivalent:
+     - Rest: the OPAQUE overlay surface + the theme body-text glyph — a
+       guaranteed-contrast element-on-surface pairing legible in every theme
+       over any image (light surface + dark text in a light theme, dark
+       surface + light text in a dark theme). The backdrop fully occludes the
+       image behind it — not a ghost / translucent chip.
+     - Hover: the filled-danger pairing (solid danger surface + on-danger
+       icon) — no translucency.
+   Square (no radius), flush in the corner. */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-overlay-rest */
+.tug-attachment-preview__delete {
+  /* Button reset. */
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Corner-flush square. */
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: var(--tugx-attachment-delete-size, 18px);
+  height: var(--tugx-attachment-delete-size, 18px);
+  border-radius: 0;
+  /* Rest: opaque overlay surface + theme body text glyph. */
+  background: var(--tug7-surface-global-primary-normal-overlay-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  transition: background-color 80ms ease, color 80ms ease;
+}
+
+.tug-attachment-preview__delete svg {
+  width: var(--tugx-attachment-delete-glyph, 9px);
+  height: var(--tugx-attachment-delete-glyph, 9px);
+}
+
+/* Hover: solid danger fill + on-danger icon — no translucency. Sets both
+   background and foreground in one rule, so it is self-documenting. */
+.tug-attachment-preview__delete:hover {
+  background: var(--tug7-surface-control-primary-filled-danger-hover);
+  color: var(--tug7-element-control-icon-filled-danger-hover);
+}
+
+/* ===========================================================================
+ * Sheet (full-resolution preview body)
+ * ======================================================================== */
+
+.tug-attachment-preview-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/**
+ * Top bar — a header band taking its cues from the tool-call header: the
+ * chrome strip surface with a hairline divider underneath. Title at the
+ * left is the flexible column that pushes the right-aligned actions to the
+ * trailing edge. The host sheet hides its own header, so this band bleeds
+ * past the sheet's B padding to the panel's edges.
+ *
+ * @tug-renders-on --tugx-block-strip-bg
+ */
+.tug-attachment-preview-sheet__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  margin:
+    calc(-1 * var(--tugx-sheet-space-b))
+    calc(-1 * var(--tugx-sheet-space-b))
+    var(--tugx-sheet-space-b);
+  padding: var(--tugx-sheet-space-a) var(--tugx-sheet-space-b);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.tug-attachment-preview-sheet__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-md);
+  font-weight: var(--tug-font-weight-semibold);
+  color: var(--tug7-text-primary-normal-plain-rest);
+}
+
+.tug-attachment-preview-sheet__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+/**
+ * Image area — the sheet's aspect-lock region. Its `aspect-ratio` is set
+ * from the image's natural size on load (square fallback before then); at
+ * `width: 100%` that fixes its height, which drives the whole panel's
+ * content height. The image fills it exactly, so there is no letterbox.
+ */
+.tug-attachment-preview-sheet__image-area {
+  flex: 0 0 auto;
+  aspect-ratio: var(--preview-aspect, 1);
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/**
+ * The image fills the aspect-locked area (which already carries the
+ * image's own ratio, so `contain` neither crops nor letterboxes).
+ *
+ * @tug-renders-on .tug-sheet-body (background established by tug-sheet.css)
+ */
+.tug-attachment-preview-sheet__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/**
+ * Empty-body placeholder. Lower-contrast indicator that the slot is there
+ * but no bytes are available; aria-hidden so screen readers don't announce
+ * a missing image.
+ */
+.tug-attachment-preview-sheet__empty {
+  width: 100%;
+  height: 100%;
+  background-color: var(--tug7-surface-indicator-primary-normal-plain-rest);
+  opacity: 0.4;
+}
+
+/**
+ * Footer — a three-part flex row: a left cell (Delete in the compose
+ * phase), the centered paging dots, and the right-aligned Done button. The
+ * outer cells carry equal weight so the dots cell sits on the row's true
+ * center (under the image) while Done stays at the trailing edge.
+ */
+.tug-attachment-preview-sheet__footer {
+  display: flex;
+  align-items: center;
+  margin-top: var(--tugx-sheet-space-b);
+}
+
+.tug-attachment-preview-sheet__footer-side {
+  flex: 1 1 0;
+  display: flex;
+  min-width: 0;
+}
+
+.tug-attachment-preview-sheet__footer-end {
+  justify-content: flex-end;
+}
+
+.tug-attachment-preview-sheet__footer .tug-button {
+  min-width: 5rem;
+}
+
+/**
+ * Paging dots — the centered cell, a roving item-container. `flex: 0 0 auto`
+ * keeps it sized to its dots so the two side cells split the remaining width
+ * evenly, landing the cluster on the row's center. Empty (zero-width) for a
+ * single-image set.
+ *
+ * Focus language: the dots are too small to ring individually, so the WHOLE
+ * SET rings — the container carries the key-view ring (the global
+ * `[data-key-view-kbd]` leaf ring in `focus-ring.css`, which follows this
+ * `border-radius`), and the per-dot cursor ring is suppressed below. The
+ * inline padding gives the ring room so it doesn't hug the dots.
+ */
+.tug-attachment-preview-sheet__pager {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tugx-attachment-pager-pad, 6px 8px);
+  border-radius: var(--tugx-attachment-pager-radius, 999px);
+}
+
+/* Ring the dot SET, not each dot: suppress the per-item cursor ring so only
+   the container's key-view ring shows. The current image still reads via the
+   `[data-active]` fill. */
+.tug-attachment-preview-sheet__dot[data-key-cursor] {
+  outline: none;
+}
+
+/**
+ * One dot per image. A small neutral disc that brightens on hover and
+ * fills to full strength for the current image (`[data-active]`).
+ */
+.tug-attachment-preview-sheet__dot {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  color: inherit;
+  background: currentColor;
+  opacity: 0.4;
+  transition: opacity 120ms ease;
+}
+
+.tug-attachment-preview-sheet__dot:hover {
+  opacity: 0.7;
+}
+
+.tug-attachment-preview-sheet__dot[data-active] {
+  opacity: 1;
+}

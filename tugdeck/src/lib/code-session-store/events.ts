@@ -36,11 +36,10 @@ export interface SendActionEvent {
   text: string;
   /**
    * Parallel synthesized atom array — one entry per `U+FFFC` in
-   * `text`. Image atoms carry `label: "image-N"` (1-based per
-   * message); transcript chip rendering decorates with the entry's
-   * address to produce `#u{turn}-image-N`. Goes onto
-   * `UserMessage.attachments` for the substrate's atom lookup at
-   * render / replay time.
+   * `text`. Image atoms carry `label: "image-N"` (1-based per message) —
+   * the same unified name minted at attach time in the editor, rendered
+   * verbatim on every surface. Goes onto `UserMessage.attachments` for
+   * the substrate's atom lookup at render / replay time.
    */
   atoms: AtomSegment[];
   /**

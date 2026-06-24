@@ -206,6 +206,13 @@ export const TUG_ACTIONS = {
   //     dispatch routed to the handler means the same thing.
   SUBMIT: "submit",
 
+  // REMOVE_ATTACHMENT: payload — `value: string` (the atom id of the
+  //     attachment to drop). Dispatched by the compose-phase attachment
+  //     preview's ✕ / Delete controls; the prompt-entry responder owns
+  //     the editor document + bytes store, so it handles the action by
+  //     removing the atom and freeing its bytes. Phase `discrete`.
+  REMOVE_ATTACHMENT: "remove-attachment",
+
   // ---- Navigation ----
   //
   // CYCLE_CARD:     payload — none. Canvas-level: rotate through cards.

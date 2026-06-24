@@ -72,7 +72,11 @@ import {
   TUG_ATOM_CHAR,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
-import { addAtomsEffect, removeAtomById } from "./atom-decoration";
+import {
+  addAtomsEffect,
+  getAtomsInState,
+  removeAtomById,
+} from "./atom-decoration";
 import type { DropHandler } from "@/lib/tug-text-types";
 import {
   downsampleImage,
@@ -596,6 +600,26 @@ export function processAttachmentFiles(
   // skeleton-image entries; everything else yields filename-text.
   const classified = classifyDroppedFiles(files);
   if (classified.length === 0) return;
+
+  // Step 1.5 — mint the unified `image-N` name at attach time, numbered
+  // by the atom's position among ALL image atoms in the doc (existing
+  // count + this batch's order). The original filename is intentionally
+  // dropped: it can't cross the wire (the image content block carries no
+  // name), so the editor speaks the same `image-N` the transcript
+  // synthesizer mints — one name, born here, carried through unchanged.
+  // This seeds the common append case flash-free; the editor's renumber
+  // pass keeps the labels contiguous across later deletes / mid-inserts.
+  let imageOrdinal = getAtomsInState(view.state).filter(
+    (p) => p.segment.type === "image",
+  ).length;
+  for (const entry of classified) {
+    if (entry.kind === "skeleton-image") {
+      imageOrdinal += 1;
+      const name = `image-${imageOrdinal}`;
+      entry.atom.label = name;
+      entry.atom.value = name;
+    }
+  }
 
   // Step 2 — flatten to mixed items + one-transaction insert. Atoms
   // and text interleave in input order with single-space separators.

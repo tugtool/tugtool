@@ -99,9 +99,7 @@ import { DevZ1B } from "@/components/tugways/cards/dev-card-z1b";
 import { useFootHeightReservation } from "@/components/tugways/cards/dev-card-transcript-foot-reservation";
 import { formatAtomTextForCopy } from "@/components/tugways/cards/tug-atom-text-body";
 import { TugAtomMarkdownBody } from "@/components/tugways/cards/tug-atom-markdown-body";
-import { TugAttachmentStrip } from "@/components/tugways/cards/tug-attachment-strip";
-import { DevAttachmentPreview } from "@/components/tugways/cards/dev-attachment-preview";
-import { useTugSheet } from "@/components/tugways/tug-sheet";
+import { TugAttachmentPreview } from "@/components/tugways/cards/tug-attachment-preview";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import { formatModelLabel } from "@/lib/model-label";
 import { DevZ1C } from "@/components/tugways/cards/dev-card-z1c";
@@ -295,45 +293,6 @@ const UserMessageCell = React.memo(function UserMessageCell({
     [atoms],
   );
   const bytesStore = codeSessionStore.getAtomBytesStore();
-  // Pane-modal preview sheet for clicked attachment thumbnails. Each
-  // user row hosts its own `useTugSheet` instance — TugSheet's portal
-  // is per-pane, so visually at most one preview shows at a time
-  // regardless of which row hosts the hook. The handler captures
-  // `bytesStore` so the preview component reads the current bytes
-  // entry at sheet-mount time.
-  const { showSheet, renderSheet } = useTugSheet();
-  const handleAttachmentClick = React.useCallback(
-    (atom: AtomSegment, clickedIndex: number) => {
-      void showSheet({
-        title: atom.value,
-        // The preview owns its own top bar (title + actions), so the
-        // sheet's header is suppressed; `title` stays for aria-label.
-        // `xl` + drag-resize gives the image real room — the previous
-        // `sm` default squeezed every screenshot into a 460px column.
-        // `aspectLockContent` locks the panel to the image's aspect (the
-        // image area is the aspect region) so the margin around the image
-        // stays uniform and resize follows the aspect; `maxHostFraction`
-        // keeps it within 90% of the card on either axis.
-        hideHeader: true,
-        displayWidth: "xl",
-        resizable: true,
-        aspectLockContent: true,
-        maxHostFraction: 0.9,
-        // The preview opens on the clicked tile and steps across the whole
-        // message's image set with ←/→, so it takes the full `imageAtoms`
-        // array plus the clicked index, not just one atom.
-        content: (close) => (
-          <DevAttachmentPreview
-            atoms={imageAtoms}
-            startIndex={clickedIndex}
-            bytesStore={bytesStore}
-            onClose={() => close()}
-          />
-        ),
-      });
-    },
-    [showSheet, bytesStore, imageAtoms],
-  );
   // User-row timestamp is the submit time, not the turn's end time —
   // the user's row "posts" the moment they hit submit, regardless of
   // whether the assistant has replied yet. `submitAt` rides the
@@ -383,14 +342,12 @@ const UserMessageCell = React.memo(function UserMessageCell({
                 atoms={atoms}
                 address={address}
               />
-              <TugAttachmentStrip
+              <TugAttachmentPreview
                 address={address}
                 atoms={imageAtoms}
                 bytesStore={bytesStore}
-                onAttachmentClick={handleAttachmentClick}
                 data-testid="dev-card-transcript-attachment-strip"
               />
-              {renderSheet()}
             </>
           }
           controls={
@@ -467,28 +424,6 @@ const GhostRowCell = React.memo(function GhostRowCell({
     [atoms],
   );
   const bytesStore = codeSessionStore.getAtomBytesStore();
-  const { showSheet, renderSheet } = useTugSheet();
-  const handleAttachmentClick = React.useCallback(
-    (atom: AtomSegment, clickedIndex: number) => {
-      void showSheet({
-        title: atom.value,
-        hideHeader: true,
-        displayWidth: "xl",
-        resizable: true,
-        aspectLockContent: true,
-        maxHostFraction: 0.9,
-        content: (close) => (
-          <DevAttachmentPreview
-            atoms={imageAtoms}
-            startIndex={clickedIndex}
-            bytesStore={bytesStore}
-            onClose={() => close()}
-          />
-        ),
-      });
-    },
-    [showSheet, bytesStore, imageAtoms],
-  );
   // The adapter only emits a `ghost` kind alongside a `queued`
   // payload; this guard is defensive against an out-of-range read.
   if (queued === undefined) return null;
@@ -507,12 +442,10 @@ const GhostRowCell = React.memo(function GhostRowCell({
               text={text}
               atoms={atoms}
             />
-            <TugAttachmentStrip
+            <TugAttachmentPreview
               atoms={imageAtoms}
               bytesStore={bytesStore}
-              onAttachmentClick={handleAttachmentClick}
             />
-            {renderSheet()}
           </>
         }
         controls={

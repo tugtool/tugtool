@@ -243,7 +243,9 @@
   justify-content: center;
   gap: 0.5rem;
   white-space: nowrap;
-  border-radius: 999px;
+  /* Radius is carried by `data-rounded` (rules below); this is only the
+     fallback if the attribute is ever absent. */
+  border-radius: 0.5rem;
   font-size: 0.75rem;
   font-weight: var(--tug-font-weight-semibold);
   font-family: inherit;
@@ -257,6 +259,16 @@
   border: 1px solid var(--tug7-element-control-border-outlined-action-rest);
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
+
+/* Border-radius scale, keyed on the `data-rounded` attribute the component
+   stamps (rem-based, Tailwind-proportional). Lives in the cascade ([L06]) so
+   a composing component or theme can override it with an ordinary rule — no
+   inline style to fight, no `!important`. */
+.tug-button[data-rounded="none"] { border-radius: 0; }
+.tug-button[data-rounded="sm"]   { border-radius: 0.25rem; }  /* 4px */
+.tug-button[data-rounded="md"]   { border-radius: 0.375rem; } /* 6px */
+.tug-button[data-rounded="lg"]   { border-radius: 0.5rem; }   /* 8px */
+.tug-button[data-rounded="full"] { border-radius: 9999px; }   /* pill */
 
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug7-surface-control-primary-outlined-action-hover);

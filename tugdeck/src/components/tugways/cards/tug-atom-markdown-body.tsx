@@ -136,10 +136,10 @@ export interface TugAtomMarkdownBodyProps {
    */
   atoms: ReadonlyArray<AtomSegment>;
   /**
-   * Optional transcript entry address. Decorates each image atom's chip
-   * label as `${formatTurnAddress(address)}-${label}` (e.g. `#u9-image-1`),
-   * linking the inline chip to its companion in the per-message
-   * attachment strip — identical to the plain-text `TugAtomTextBody` path.
+   * Optional transcript entry address. Retained for call-site
+   * compatibility but no longer decorates the chip label: image atoms
+   * render their unified `image-N` name verbatim, identical to the
+   * plain-text `TugAtomTextBody` path. See {@link decorateChipLabel}.
    */
   address?: TurnAddress;
   /** Forwarded to the root element. */

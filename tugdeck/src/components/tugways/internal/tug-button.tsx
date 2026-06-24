@@ -385,17 +385,15 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
   stealsFocusOnClick?: boolean;
 }
 
-// ---- Border-radius tokens (rem-based, Tailwind-proportional) ----
+// ---- Border-radius ----
+//
+// The named → px mapping lives in `tug-button.css`, keyed on the
+// `data-rounded` attribute the component stamps below. Appearance belongs
+// in the cascade ([L06]); a component or theme can override the radius with
+// an ordinary rule, with no inline style to fight and no `!important`.
 
-const ROUNDED_MAP: Record<TugButtonRounded, string> = {
-  none: "0",
-  sm: "0.25rem",   // 4px — Tailwind rounded
-  md: "0.375rem",  // 6px — Tailwind rounded-md
-  lg: "0.5rem",    // 8px — Tailwind rounded-lg
-  full: "9999px",  // pill
-};
-
-/** Size-proportional default: all sizes default to pill shape */
+/** Size-proportional default: every size resolves to `lg` unless a caller
+ *  passes an explicit `rounded`. */
 const SIZE_ROUNDED_DEFAULT: Record<TugButtonSize, TugButtonRounded> = {
   "2xs": "lg",
   xs: "lg",
@@ -570,8 +568,9 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   // ---- Layout helpers ----
 
-  // Border radius: explicit token wins, otherwise size-proportional default
-  const resolvedRadius = ROUNDED_MAP[rounded ?? SIZE_ROUNDED_DEFAULT[size]];
+  // Border radius: explicit token wins, otherwise the size-proportional
+  // default. Stamped as `data-rounded` below; the px value lives in CSS.
+  const resolvedRounded: TugButtonRounded = rounded ?? SIZE_ROUNDED_DEFAULT[size];
 
   // ---- Confirmation state (appearance-zone, [L06]) ----
   //
@@ -1042,7 +1041,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       aria-disabled={ariaDisabled}
       onClick={handleClick}
       className={buttonClassName}
-      style={{ borderRadius: resolvedRadius }}
+      data-rounded={resolvedRounded}
       {...rest}
     >
       <span className="tug-button-rest-content">{renderContent()}</span>

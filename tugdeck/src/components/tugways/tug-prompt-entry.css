@@ -115,6 +115,22 @@ body {
   border-radius: 0;
 }
 
+/* .tug-prompt-entry-attachments — Z4C, the compose-phase attachment-preview
+   zone. A flow sibling between the editor's scroll viewport and the toolbar,
+   so it stays pinned below the scrolling text and directly above the toolbar
+   and grows the entry's height like added text rows. Content-sized
+   (`flex: 0 0 auto`) so the strip's own height drives the zone. Inline
+   padding matches the toolbar so the tiles sit off the entry's side edges;
+   vertical separation is owned by the strip's own top margin above and the
+   toolbar's top margin below. */
+.tug-prompt-entry-attachments {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 var(--tug-space-md);
+}
+
 /* ----------------------------------------------------------------------------
    Background consolidation — editor surface tracks the card / transcript
    ----------------------------------------------------------------------------

@@ -210,37 +210,28 @@ const ATOM_IMAGE_1: AtomSegment = {
 };
 
 describe("decorateChipLabel", () => {
-  test("address set + image atom → `#u{turn}-image-N` prefix", () => {
-    // The transcript-side rendering: the chip's displayed label
-    // carries the entry's address so the per-message attachment strip
-    // ([Step 6]) can pair it via matching captions, matching the user
-    // row's attribution badge.
+  // Unified name: the displayed label is the atom's stored `image-N`
+  // verbatim on every surface. The former `#u{turn}-` turn-address
+  // prefix is retired, so `address` never alters the result — the
+  // editor (no address) and transcript (address) render identically.
+
+  test("image atom + address → bare `image-N`, no #u prefix", () => {
     expect(
       decorateChipLabel(ATOM_IMAGE_1, { speaker: "user", turn: 9 }),
-    ).toBe("#u9-image-1");
+    ).toBe("image-1");
   });
 
-  test("steered message (sub set) → within-turn suffix in the prefix", () => {
-    // A steered/mid-turn user message's badge is `#u17.2`; its atom
-    // captions carry the same `.2` suffix so the pairing holds.
+  test("steered message (sub set) → still bare `image-N`", () => {
     expect(
       decorateChipLabel(ATOM_IMAGE_1, { speaker: "user", turn: 17, sub: 1 }),
-    ).toBe("#u17.2-image-1");
+    ).toBe("image-1");
   });
 
-  test("address unset → image atom's stored label verbatim (editor case)", () => {
-    // The editor's pre-submit rendering: no transcript position to
-    // encode. The chip carries the atom's stored label as-is. Pre-
-    // submit, that's still the user's filename (e.g. `raphael.jpeg`);
-    // post-submit through the synthesizer, that's `image-N`. Either
-    // way: no decoration when `address` is undefined.
+  test("address unset → same `image-N` (editor and transcript agree)", () => {
     expect(decorateChipLabel(ATOM_IMAGE_1, undefined)).toBe("image-1");
   });
 
-  test("non-image atom (file): no decoration even when address is set", () => {
-    // File / doc / link / command atoms carry no per-message linkage
-    // (their `value` is a path or URL, displayed verbatim). The
-    // prefix would be misleading here, so the decorator skips it.
+  test("non-image atom (file): stored label verbatim", () => {
     const fileAtom: AtomSegment = {
       kind: "atom",
       type: "file",
@@ -252,7 +243,7 @@ describe("decorateChipLabel", () => {
     ).toBe("README.md");
   });
 
-  test("non-image atom (link): no decoration", () => {
+  test("non-image atom (link): stored label verbatim", () => {
     const linkAtom: AtomSegment = {
       kind: "atom",
       type: "link",
@@ -262,15 +253,5 @@ describe("decorateChipLabel", () => {
     expect(
       decorateChipLabel(linkAtom, { speaker: "user", turn: 42 }),
     ).toBe("https://example.com");
-  });
-
-  test("editor case for synthesized atom: label === value === 'image-1' renders verbatim", () => {
-    // The post-Step-5c synthesizer lands a substrate whose image
-    // atoms carry `label: "image-1"`, `value: "image-1"`. In the
-    // editor's pre-submit surface, where `address` is unset,
-    // the chip renders the raw label — confirming the synthesizer's
-    // output is renderable as-is when the transcript context is
-    // absent.
-    expect(decorateChipLabel(ATOM_IMAGE_1, undefined)).toBe("image-1");
   });
 });
