@@ -11,8 +11,12 @@
  *
  * Detection is delegated to `linkify-element` (linkifyjs, MIT) rather
  * than a hand-rolled regex: it handles the fiddly edges (trailing
- * punctuation, parenthesised URLs, `www.`-prefixed hosts) well enough
- * for transcript content without us owning that surface.
+ * punctuation, parenthesised URLs) well enough for transcript content
+ * without us owning that surface. We do constrain it with a `validate`
+ * guard, though — linkify treats any host with a registered TLD as a
+ * link, which turns prose filenames like `tuglaws.md` into bogus `.md`
+ * "domains". So only URL matches that carry an explicit `scheme://`
+ * survive; a bare host with no scheme is left as text.
  *
  * The anchors this produces deliberately carry **no `target`** and no
  * `rel` — they navigate the main frame as an ordinary link click. The
@@ -60,8 +64,19 @@ import type { Opts } from "linkifyjs";
  */
 const IGNORE_TAGS = ["A", "CODE", "PRE"];
 
+/**
+ * A bare `scheme://` prefix (RFC 3986 scheme grammar). linkifyjs treats
+ * any host with a registered TLD as a link, so prose like `tuglaws.md`
+ * or `tuglaws/tuglaws.md` linkifies as a `.md` domain. Transcript text
+ * is full of such filenames and dotted identifiers, so we require an
+ * explicit scheme: only matches that carry `scheme://` survive.
+ */
+const HAS_URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
 const LINKIFY_OPTS: Opts = {
-  // A `www.foo.com` host with no scheme links as https, not http.
+  // A `www.foo.com` host with no scheme links as https, not http — only
+  // matters for matches that already pass `validate`, i.e. ones that
+  // carried a scheme to begin with.
   defaultProtocol: "https",
   // `target`/`rel` are left at linkify's defaults (both null), so the
   // anchor carries no `target` and activates in the main frame, where
@@ -70,6 +85,13 @@ const LINKIFY_OPTS: Opts = {
   // which is only a safety net.
   className: "tugx-md-autolink",
   ignoreTags: IGNORE_TAGS,
+  // Only linkify URL matches that begin with an explicit `scheme://`.
+  // This rejects bare hosts (`tuglaws.md`, `foo.ts`) that linkify would
+  // otherwise treat as domains. Email matches keep linkify's default
+  // validation — an `@` is unambiguous and never a stray filename.
+  validate: {
+    url: (value) => HAS_URL_SCHEME.test(value),
+  },
 };
 
 /**
