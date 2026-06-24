@@ -290,11 +290,18 @@ export const TugAttachmentPreview = React.forwardRef<
             data-slot="tug-attachment-preview__cell"
             className="tug-attachment-preview__cell"
           >
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               data-slot="tug-attachment-preview__tile"
               className="tug-attachment-preview__tile"
               onClick={() => openPreview(atoms[i] as AtomSegment, i)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openPreview(atoms[i] as AtomSegment, i);
+                }
+              }}
               aria-label={caption}
               title={tile.value}
             >
@@ -318,6 +325,28 @@ export const TugAttachmentPreview = React.forwardRef<
                     aria-hidden="true"
                   />
                 )}
+                {deletable && (
+                  // Compose-phase delete. A component-owned overlay affordance
+                  // (not a TugButton) pinned to the thumbnail's own top-right
+                  // corner, so it stays flush regardless of cell/caption width.
+                  // It is an [L11] control — the click dispatches
+                  // `REMOVE_ATTACHMENT` through the chain — and
+                  // `data-tug-focus="refuse"` keeps focus on the editor.
+                  // `stopPropagation` keeps the X from also opening the sheet.
+                  <button
+                    type="button"
+                    data-slot="tug-attachment-preview__delete"
+                    className="tug-attachment-preview__delete"
+                    data-tug-focus="refuse"
+                    aria-label={`Remove ${tile.value}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dispatchRemove(atoms[i] as AtomSegment);
+                    }}
+                  >
+                    <X size={12} strokeWidth={2.5} aria-hidden="true" />
+                  </button>
+                )}
               </span>
               <span
                 data-slot="tug-attachment-preview__caption"
@@ -325,28 +354,7 @@ export const TugAttachmentPreview = React.forwardRef<
               >
                 {caption}
               </span>
-            </button>
-            {deletable && (
-              // Compose-phase delete. A component-owned overlay affordance
-              // (not a TugButton): its rest/hover/focus appearance is a
-              // bespoke "neutral chip → solid danger" treatment that no stock
-              // button emphasis × role provides, and overriding TugButton's
-              // deeply-specific state rules from here would be a specificity
-              // arms race. So this component owns the element and its themed
-              // CSS outright. It is still an [L11] control — the click
-              // dispatches `REMOVE_ATTACHMENT` through the chain — and
-              // `data-tug-focus="refuse"` keeps focus on the editor.
-              <button
-                type="button"
-                data-slot="tug-attachment-preview__delete"
-                className="tug-attachment-preview__delete"
-                data-tug-focus="refuse"
-                aria-label={`Remove ${tile.value}`}
-                onClick={() => dispatchRemove(atoms[i] as AtomSegment)}
-              >
-                <X size={12} strokeWidth={2.5} aria-hidden="true" />
-              </button>
-            )}
+            </div>
           </div>
         );
       })}
