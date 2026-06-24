@@ -659,6 +659,13 @@ body {
   margin: var(--tugx-md-list-item-margin) 0;
 }
 
+/* The list's outer spacing is owned by the block wrapper ([P04]); the
+   item margin is only the gap BETWEEN items. Zero the first item's top
+   and the last item's bottom so neither leaks past the padding-less
+   ul/ol and stacks onto the wrapper's block gap. */
+.tugx-md-block li:first-child { margin-top: 0; }
+.tugx-md-block li:last-child { margin-bottom: 0; }
+
 /* Task-list checkboxes (GFM) — disabled but visible. */
 .tugx-md-block li input[type="checkbox"] {
   margin-right: 0.5em;
