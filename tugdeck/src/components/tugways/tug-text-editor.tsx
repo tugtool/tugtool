@@ -136,6 +136,7 @@ import {
   pendingAtomSyncPlugin,
   pendingAtomTheme,
   regenerateAtomsEffect,
+  selectedAtomSyncPlugin,
 } from "./tug-text-editor/atom-decoration";
 import {
   argumentHintPlugin,
@@ -1077,6 +1078,12 @@ function buildExtensions(
     // registered (facet default thunk returns `null`).
     pendingAtomSyncPlugin,
     pendingAtomTheme,
+    // Swaps each atom chip between its resting and selected-variant
+    // bake to match the text selection — a chip the selection covers
+    // paints with the `-selected-rest` tokens so it reads forward of
+    // the blue selection wash instead of dissolving into it. Pure DOM
+    // `src` mutation ([L06]), no widget rebuild.
+    selectedAtomSyncPlugin,
     // Argument-hint ghost slot — reads the resolver thunk (live catalog +
     // local registry) and paints a muted placeholder after a lone accepted
     // command atom (`/devise ┆ type arguments…`). No-op when no resolver is

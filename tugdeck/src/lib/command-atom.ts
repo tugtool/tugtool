@@ -116,6 +116,16 @@ export interface ChipStyle {
 }
 
 /**
+ * Which appearance a chip paints with. `"default"` is the resting chip;
+ * `"selected"` is the chip when the editor's text selection covers it —
+ * a more-saturated surface and lighter text/icon so the chip reads as a
+ * distinct unit *forward* of the blue selection wash instead of
+ * dissolving into it (blue-on-blue). Geometry is identical between the
+ * two, so a chip swapping variants never changes size.
+ */
+export type ChipVariant = "default" | "selected";
+
+/**
  * Strength of the Key-hue wash over the chip surface — the `fill-opacity` of
  * a Key-coloured overlay rect painted on top of the opaque surface. Both
  * renderers use the overlay technique rather than CSS `color-mix`: a Key fill
@@ -151,10 +161,32 @@ const CHIP_STYLE: ChipStyle = {
   geometry: { radius: 3, paddingX: 6, gap: 4 },
 };
 
+/**
+ * The selected-state chip style. Swaps the three tokens the theme tunes
+ * for selection — surface, text, icon — to their `-selected-rest`
+ * variants (each theme authors these: a higher-chroma surface and
+ * lighter glyphs). Border and key keep their default tokens; the theme
+ * defines no selected variant for those, and the recess edge / key wash
+ * read fine over the saturated surface. Geometry matches {@link
+ * CHIP_STYLE} exactly so the chip never resizes when selection moves
+ * across it.
+ */
+const CHIP_STYLE_SELECTED: ChipStyle = {
+  tokens: {
+    surface: "--tug7-surface-atom-primary-normal-selected-rest",
+    key: "--tug7-surface-control-primary-filled-action-rest",
+    border: "--tug7-element-atom-border-normal-default-rest",
+    icon: "--tug7-element-atom-icon-normal-selected-rest",
+    text: "--tug7-element-atom-text-normal-selected-rest",
+  },
+  geometry: { radius: 3, paddingX: 6, gap: 4 },
+};
+
 /** The shared chip style consumed by both chip renderers (the editor
- *  data-URI baker and the React `TugAtomChip`). */
-export function chipStyle(): ChipStyle {
-  return CHIP_STYLE;
+ *  data-URI baker and the React `TugAtomChip`). Pass `"selected"` for
+ *  the selection-covered appearance; defaults to the resting chip. */
+export function chipStyle(variant: ChipVariant = "default"): ChipStyle {
+  return variant === "selected" ? CHIP_STYLE_SELECTED : CHIP_STYLE;
 }
 
 // ---------------------------------------------------------------------------

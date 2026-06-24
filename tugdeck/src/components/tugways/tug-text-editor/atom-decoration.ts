@@ -36,6 +36,7 @@ import type { DecorationSet, PluginValue, ViewUpdate } from "@codemirror/view";
 import { Facet, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import {
+  buildAtomSVGDataUri,
   createAtomImgElement,
   TUG_ATOM_CHAR,
   type AtomSegment,
@@ -590,6 +591,122 @@ export function syncPendingAttributes(
  */
 export const pendingAtomSyncPlugin = ViewPlugin.fromClass(
   PendingAtomSyncPlugin,
+);
+
+// ---------------------------------------------------------------------------
+// Selection-sync ViewPlugin
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-element cache of the two baked data-URIs an atom `<img>` swaps
+ * between: its resting `src` and its selected-variant `src`. Keyed on
+ * the element (a `WeakMap`, so a widget remounted by a theme switch or
+ * doc edit drops its stale entry and re-bakes against the fresh theme).
+ *
+ * The resting URI is captured lazily from `img.src` the first time the
+ * atom is selected; the selected URI is baked lazily (and once) from the
+ * `data-atom-*` attributes the img already carries. Atoms that are never
+ * selected pay nothing.
+ */
+const _restSrc = new WeakMap<HTMLImageElement, string>();
+const _selectedSrc = new WeakMap<HTMLImageElement, string>();
+
+/** Whether document position `pos` (an atom's U+FFFC offset) is covered
+ *  by any non-empty selection range. Atoms are atomic, so a range that
+ *  reaches `pos` covers the whole `[pos, pos + 1)` widget. */
+function isPositionSelected(state: EditorState, pos: number): boolean {
+  for (const range of state.selection.ranges) {
+    if (range.from <= pos && range.to > pos) return true;
+  }
+  return false;
+}
+
+/**
+ * Swap each atom widget's `<img>` between its resting and selected bakes
+ * to match the editor's current text selection. A chip covered by the
+ * selection paints with the `-selected-rest` chip tokens (saturated
+ * surface, lighter glyphs) so it reads *forward* of the blue selection
+ * wash instead of dissolving into it — the blue-on-blue problem the
+ * default chip has when the selection overlay sits behind it.
+ *
+ * Why a DOM `src` swap rather than rebuilding the CM6 widget: selection
+ * changes fire on every cursor move and drag. Folding selection state
+ * into `AtomWidget.eq()` would churn the decoration set and remount
+ * widget DOM on each tick. The atom's *identity* (type / label / value)
+ * is unchanged by selection — only its appearance — so this is the [L06]
+ * path: ephemeral appearance lives in the DOM, mutated directly, exactly
+ * as {@link syncPendingAttributes} handles the pending pulse. The baked
+ * selected URI is geometry-identical to the resting one, so the swap
+ * never resizes the chip or shifts layout.
+ */
+export function syncSelectedAtoms(view: EditorView): void {
+  const imgs = view.contentDOM.querySelectorAll<HTMLImageElement>(
+    "img[data-atom-type]",
+  );
+  for (const img of imgs) {
+    const pos = view.posAtDOM(img);
+    if (isPositionSelected(view.state, pos)) {
+      if (!_restSrc.has(img)) _restSrc.set(img, img.src);
+      let selected = _selectedSrc.get(img);
+      if (selected === undefined) {
+        selected = buildAtomSVGDataUri(
+          img.dataset.atomType ?? "",
+          img.dataset.atomLabel ?? "",
+          img.dataset.atomValue ?? "",
+          { variant: "selected" },
+        ).dataUri;
+        _selectedSrc.set(img, selected);
+      }
+      if (img.src !== selected) img.src = selected;
+      if (img.dataset.selected !== "true") img.dataset.selected = "true";
+    } else {
+      const rest = _restSrc.get(img);
+      if (rest !== undefined && img.src !== rest) img.src = rest;
+      if (img.dataset.selected !== undefined) delete img.dataset.selected;
+    }
+  }
+}
+
+/**
+ * ViewPlugin that keeps atom chips' selected appearance in sync with the
+ * editor selection. Re-syncs whenever the selection moves, the document
+ * changes (atom offsets shift), or the viewport scrolls in new atom DOM.
+ * Pure DOM mutation via {@link syncSelectedAtoms} — no CM6 transaction,
+ * no React round-trip.
+ */
+class SelectedAtomSyncPlugin implements PluginValue {
+  constructor(private readonly view: EditorView) {
+    syncSelectedAtoms(view);
+  }
+
+  update(update: ViewUpdate): void {
+    // Selection moves and doc edits (atom offsets shift) and viewport
+    // scrolls (new atom DOM) all change which chips should read selected.
+    // A theme switch dispatches `regenerateAtomsEffect`, which remounts
+    // every chip's `<img>` at the resting bake with no doc/selection
+    // change — re-sync on that too so a selected chip keeps its selected
+    // appearance across the swap.
+    const regenerated = update.transactions.some((tr) =>
+      tr.effects.some((e) => e.is(regenerateAtomsEffect)),
+    );
+    if (
+      update.selectionSet
+      || update.docChanged
+      || update.viewportChanged
+      || regenerated
+    ) {
+      syncSelectedAtoms(update.view);
+    }
+  }
+}
+
+/**
+ * The selection-sync `ViewPlugin` exported for editor extension
+ * registration. Paints the selected-state chip appearance for atoms the
+ * text selection covers; no-op for editors with no atoms.
+ */
+export const selectedAtomSyncPlugin = ViewPlugin.fromClass(
+  SelectedAtomSyncPlugin,
 );
 
 // ---------------------------------------------------------------------------

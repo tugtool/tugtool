@@ -15,6 +15,7 @@
 import { getTokenValue } from "@/theme-tokens";
 import { findEmbeddableFace } from "./tug-atom-fonts";
 import { chipStyle, chipDisplayLabel, chipHasIcon, ATOM_KEY_WASH } from "./command-atom";
+import type { ChipVariant } from "./command-atom";
 
 /**
  * Recess-edge geometry shared by both renderers so the inline-`<svg>` chip
@@ -450,6 +451,14 @@ export function buildAtomSVGDataUri(
      * `_fontSize`.
      */
     fontSize?: number;
+    /**
+     * Which appearance to bake. `"selected"` resolves the
+     * `-selected-rest` chip tokens so a chip covered by the editor
+     * selection reads forward of the blue selection wash. Defaults to
+     * `"default"`. Geometry is variant-independent, so the selected and
+     * default bakes are pixel-identical in size.
+     */
+    variant?: ChipVariant;
   },
 ): AtomSvgResult {
   // A slash command displays its leading slash (`/tugplug:commit`); every
@@ -460,7 +469,7 @@ export function buildAtomSVGDataUri(
   // Colors come from the shared chip style. The editor path bakes resolved
   // hex because the `<img src="data:…">` document is isolated from the host
   // cascade.
-  const tokens = chipStyle().tokens;
+  const tokens = chipStyle(options?.variant).tokens;
   const surfaceColor = getTokenValue(tokens.surface);
   const keyColor = getTokenValue(tokens.key);
   const borderColor = getTokenValue(tokens.border);
