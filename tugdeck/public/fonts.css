@@ -138,8 +138,8 @@
 
 
 /* IBM Plex Sans Condensed — heading / tight-chip display face. Shares
-   the Plex skeleton at a narrower set width. Upright 400/500/600/700;
-   no italic is requested for condensed. OFL 1.1. */
+   the Plex skeleton at a narrower set width. Upright 400/500/600/700 plus
+   regular (400) italic. OFL 1.1. */
 @font-face {
   font-family: "IBM Plex Sans Condensed";
   src: url("/fonts/IBMPlexSansCondensed-Regular.woff2") format("woff2");
@@ -169,6 +169,14 @@
   src: url("/fonts/IBMPlexSansCondensed-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Condensed";
+  src: url("/fonts/IBMPlexSansCondensed-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
   font-display: block;
 }
 

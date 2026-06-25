@@ -267,8 +267,8 @@ SOFTWARE.
 ## IBM Plex
 
 **Source:** https://github.com/IBM/plex (npm: `@ibm/plex-*`)
-**What was adopted:** IBM Plex font files (woff2) bundled in `tugdeck/public/fonts/`, used as the primary UI typeface family. Core families — IBM Plex Sans, IBM Plex Mono, IBM Plex Sans Condensed — plus the non-Latin script companions IBM Plex Sans Arabic, Hebrew, Thai, and Devanagari, which extend the same skeleton to scripts the core face lacks. The script faces are vendored reproducibly via `tugdeck/scripts/fetch-fonts.ts` (`just fetch-fonts`), pinned to `@ibm/plex-*@1.1.0`.
-**Used in:** `tugdeck/public/fonts.css` `@font-face` declarations; `--tug-font-family-sans` / `--tug-font-family-mono` / `--tug-font-family-condensed` token stacks in `tugdeck/styles/themes/*.css`.
+**What was adopted:** IBM Plex font files (woff2) bundled in `tugdeck/public/fonts/`, used as the primary UI typeface family. Core families — IBM Plex Sans, IBM Plex Mono, IBM Plex Sans Condensed — plus the non-Latin script companions IBM Plex Sans Arabic, Hebrew, Thai, and Devanagari, and the CJK families IBM Plex Sans JP and KR (shipped as IBM's pre-split unicode-range subsets so the browser fetches only on-screen subsets). All companion faces are vendored reproducibly via `tugdeck/scripts/fetch-fonts.ts` (`just fetch-fonts` / `just fetch-fonts --cjk`), pinned to the versions in that script's manifest.
+**Used in:** `tugdeck/public/fonts.css` + `tugdeck/public/fonts-cjk.css` `@font-face` declarations; `--tug-font-family-sans` / `--tug-font-family-mono` / `--tug-font-family-condensed` token stacks in `tugdeck/styles/themes/*.css`.
 
 ```
 SIL Open Font License Version 1.1

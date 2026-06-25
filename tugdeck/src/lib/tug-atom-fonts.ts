@@ -45,6 +45,10 @@ const _nonAtomFamilies = new Set<string>([
   "ibm plex sans hebrew",
   "ibm plex sans thai",
   "ibm plex sans devanagari",
+  "ibm plex sans jp",
+  "ibm plex sans kr",
+  "ibm plex sans sc",
+  "ibm plex sans tc",
 ]);
 
 const _database: LoadedFontFace[] = [];
