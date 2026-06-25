@@ -71,7 +71,7 @@ This plan closes that gap in three prongs: (1) **surface** scheduled work as fir
 
 #### Constraints {#constraints}
 
-- **Tuglaws**: ledger rows are store state read via `useSyncExternalStore` ([L02]); the per-second countdown "now" is read from the **existing shared `tickValue` store** (the TIME cell's 1 Hz clock) via `useSyncExternalStore` ([L02]) — no new local interval, no `useState` tick; cell pulse is appearance via the existing `TugProgressIndicator` pose, not React-driven styling ([L06]).
+- **Tuglaws**: ledger rows are store state read via `useSyncExternalStore` ([L02]); the per-second countdown "now" is read via the **exported `useLiveTick()` hook** (a `useSyncExternalStore` over the shared 1 Hz tick store, already used by `JobElapsedValue`) ([L02]) — no new local interval, no `useState` tick; cell pulse is appearance via the existing `TugProgressIndicator` pose, not React-driven styling ([L06]).
 - **Warnings are errors** across the workspace; ts/lint must stay clean.
 - The fired wake re-init (`ScheduleWakeup`/`CronCreate` cohort) carries **empty `task_id` / `tool_use_id`** — no id to correlate the fire to a specific row ([P04], Risk R01).
 - tugcode is a **passive wake detector** — it does not schedule, persist, or cancel; cancellation cannot bypass the harness ([P05], [Q01]).
@@ -203,7 +203,7 @@ This plan uses explicit anchors and rich `References:` lines as defined in the s
 - The scheduled-flip must be threaded through **every** return branch of `handleWakeStarted` (nested-wake, mid-turn-refused, replaying, idle-mint), the same way the `jobs` fold is threaded today — a watch-item for the build.
 - **Reaper:** the reducer has no clock of its own, so on any subsequent event it folds scheduled rows whose `firesAtMs` is more than `REAP_GRACE_MS` past `Date.now()` (and that never received a flip) to `stopped`. This bounds accumulation and guarantees `clearTerminalJobs` can eventually reclaim a mis-targeted row (Risk R01 residual).
 - **Threshold ordering:** `STALE_THRESHOLD_MS` (late-badge boundary for a row that *did* fire) and `REAP_GRACE_MS` (GC boundary for a row that *never* fired) serve different purposes; `REAP_GRACE_MS` must be comfortably **larger** than `STALE_THRESHOLD_MS` so the "fired late" window always has room to show before a never-fired row is reaped.
-- The popover renders the countdown by reading the **existing module-level tick store** (`tickValue`/`useSyncExternalStore` in `dev-card-telemetry-renderers.tsx`, the same 1 Hz source the TIME cell's live clock uses) and deriving `firesAtMs − now` at render — no new local interval, no `useState` tick. The ledger itself does not tick.
+- The popover renders the countdown via the **exported `useLiveTick()` hook** (`dev-card-telemetry-renderers.tsx`) — already consumed by the Jobs popover's `JobElapsedValue` leaf for live per-row time — deriving `firesAtMs − tick` at render. The hook's interval is **subscription-driven, not turn-gated**, so the countdown updates while the session is idle between turns (exactly when a wakeup lives) and costs nothing until the popover mounts. No new interval, no `useState` tick; the ledger itself does not tick.
 
 #### [P05] Cancellation is soft now, wire-level deferred (DECIDED) {#p05-soft-cancel}
 
@@ -242,7 +242,7 @@ No local-only row removal in any case.
 - The countdown makes a duration mismatch ("fires in 52:00" vs an 8-minute suite) self-evident; a late badge names the staleness the user hit and invites redirection.
 
 **Implications:**
-- `isWakeLate` + a badge in the popover row; a short note added to an existing doc surface, not a freestanding dropfile (project memory).
+- The badge is **derived at render** via `isWakeLate(firesAtMs, endedAtMs)` — no stored `late` field on `JobItem` (#inputs-outputs); a short note added to an existing doc surface, not a freestanding dropfile (project memory).
 
 ---
 
@@ -263,7 +263,8 @@ No local-only row removal in any case.
 - A `ScheduleWakeup` completion (`handleToolResult` `status === "done"` branch) inserts a `kind:"wakeup"`, `status:"scheduled"` row keyed by its own `tool_use_id`, `firesAtMs = Date.now() + delaySeconds*1000`, `description = reason`. No supersede — each call is its own row (#p02-reducer-registration).
 - A `CronCreate` completion inserts a `kind:"cron"`, `status:"scheduled"` row, `scheduleLabel` from the expression, `firesAtMs = null`, and captures the **cron id from the `CronCreate` `tool_result` echo** (the `Task #N` / monitor-task-id precedent) as `jobId` so a later `CronDelete` can match it.
 - A `CronDelete` completion removes (or flips to `stopped`) the cron row whose `jobId` matches the deleted cron id.
-- `handleWakeStarted` flips a scheduled row **only when `wake_trigger.task_id === ""`** (the id-less `ScheduleWakeup`/`CronCreate` cohort): the earliest scheduled row whose `firesAtMs <= now` (one-shot), else the earliest scheduled cron, to `completed`; if `now - firesAtMs > STALE_THRESHOLD_MS`, the row records a late marker. A wake with a real `task_id` (background-job/Monitor completion) never touches scheduled rows.
+- `handleWakeStarted` flips a scheduled row **only when `wake_trigger.task_id === ""`** (the id-less `ScheduleWakeup`/`CronCreate` cohort): the earliest scheduled row whose `firesAtMs <= now` (one-shot), else the earliest scheduled cron, to `completed` with `endedAtMs = now`. A wake with a real `task_id` (background-job/Monitor completion) never touches scheduled rows.
+- **"Fired late" is derived, not a stored field.** No `late` flag is added to `JobItem`; the badge derives at render via `isWakeLate(firesAtMs, endedAtMs)` (`endedAtMs - firesAtMs > STALE_THRESHOLD_MS`) for a `completed` row. A reaper-stopped row (`status:"stopped"`, `firesAtMs` in the past) renders "never fired" — also derived from existing fields. The only new `JobItem` fields are `firesAtMs` / `scheduleLabel`.
 - A row stays `status:"scheduled"` from `firesAtMs` onward; the displayed countdown is purely derived. While `now < firesAtMs` it reads "fires in MM:SS"; at/after `firesAtMs` (unflipped, un-reaped) it reads "firing…" — the status does not change on the countdown reaching zero, only on a wake flip or the reaper.
 - On any event, `reapElapsedScheduled` folds scheduled rows whose `firesAtMs` is more than `REAP_GRACE_MS` past `Date.now()` (and unflipped) to `stopped`, so a mis-targeted row cannot linger un-clearable. `REAP_GRACE_MS` > `STALE_THRESHOLD_MS` (#p04-time-driven).
 - `session_init` sweeps any remaining `scheduled` rows to `stopped` (a respawned claude does not re-fire harness wakeups).
@@ -271,7 +272,8 @@ No local-only row removal in any case.
 
 **Display derivation:**
 
-- `countJobs` adds `scheduled` to `JobCounts`; `running` continues to exclude it.
+- `countJobs` adds a `scheduled` sub-count to `JobCounts`; `running` continues to exclude it.
+- **The compact cell `finished/total` reading excludes scheduled rows from both numerator and denominator** — a time-deferred promise is not an in-flight work unit, so a lone pending wakeup must not read "0/1". `total` for the cell numerator counts only non-scheduled rows; scheduled work surfaces via the pulse + the "N scheduled" summary, not the fraction. (When a wakeup fires it becomes `completed`, a real work unit, and enters the fraction then.)
 - `jobsCellPose` returns `running` (pulse) when any row is `running` **or** `scheduled`.
 - `composeJobsSummary` appends `"N scheduled"` (zero-drop, same idiom as `watching`).
 
@@ -280,7 +282,7 @@ No local-only row removal in any case.
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
 | Scheduled rows in `jobs` ledger | structure (store) | reducer fold + `useJobsState` / `useSyncExternalStore` | [L02] |
-| Per-second countdown "now" | structure (shared tick store) | existing module `tickValue` read via `useSyncExternalStore`; countdown = `firesAtMs − now` derived at render — no new interval, no `useState` tick | [L02] |
+| Per-second countdown "now" | structure (shared tick store) | exported `useLiveTick()` (already used by `JobElapsedValue`); countdown = `firesAtMs − tick` derived at render; subscription-driven, ticks while idle — no new interval, no `useState` tick | [L02] |
 | `JOBS` cell pulse pose | appearance | `TugProgressIndicator` pose derived from ledger; CSS/DOM, no React styling | [L06] |
 | Cancel → user message | structure | `cancelScheduledWork` → `send(text, atoms, opts)` → CODE_INPUT | [L02] |
 
@@ -314,7 +316,7 @@ No local-only row removal in any case.
 | `session_init` sweep | reducer branch | `reducer.ts` | scheduled → stopped on respawn |
 | `cancelScheduledWork` | method | `code-session-store.ts` | soft-cancel via `send(...)`; cron/loop only |
 | Scheduled group + countdown + Cancel | component | `dev-card-telemetry-popovers.tsx` | extend `JobsPopoverContent` / `JobRow`; Cancel disabled for lone one-shot |
-| `JOBS` cell pose/count | component | `dev-card-telemetry-renderers.tsx` | scheduled pulses + counts; countdown reads existing `tickValue` store |
+| `JOBS` cell pose/count | component | `dev-card-telemetry-renderers.tsx` | scheduled pulses + counts; `finished/total` excludes scheduled; countdown via exported `useLiveTick()` |
 
 ---
 
@@ -366,7 +368,7 @@ No local-only row removal in any case.
 - [ ] Teach every switch/branch the `"scheduled"` case (preserve in clear, pulse in pose, split in summary).
 
 **Tests:**
-- [ ] Unit: `countJobs` reports `scheduled`; `composeJobsSummary` renders "N scheduled"; `clearTerminalJobs` keeps scheduled; `jobsCellPose` pulses on scheduled-only.
+- [ ] Unit: `countJobs` reports `scheduled` and **excludes it from the `finished/total` fraction** (a lone scheduled row does not read "0/1"); `composeJobsSummary` renders "N scheduled"; `clearTerminalJobs` keeps scheduled; `jobsCellPose` pulses on scheduled-only.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test select-jobs`
@@ -456,11 +458,11 @@ No local-only row removal in any case.
 **References:** [P01] Fold into jobs, [P04] Time-driven, Risk R02 (#r02-countdown-render), (#state-zone-mapping)
 
 **Artifacts:**
-- `dev-card-telemetry-popovers.tsx`: a Scheduled group between Running and Finished; per-row "fires in MM:SS" (one-shot, `now < firesAtMs`), "firing…" (one-shot, elapsed but still `scheduled`), or recurring label (cron). The countdown reads the **existing module `tickValue` store** via `useSyncExternalStore` (the TIME cell's 1 Hz source) and derives `firesAtMs − now` at render — no new interval, no `useState` tick.
+- `dev-card-telemetry-popovers.tsx`: a Scheduled group between Running and Finished; per-row "fires in MM:SS" (one-shot, `now < firesAtMs`), "firing…" (one-shot, elapsed but still `scheduled`), or recurring label (cron). The countdown consumes the exported **`useLiveTick()`** hook (already used by `JobElapsedValue`) and derives `firesAtMs − tick` at render — no new interval, no `useState` tick.
 
 **Tasks:**
 - [ ] Group rows by Running / Scheduled / Finished.
-- [ ] Render countdown as `firesAtMs − tickValue` (one-shot), "firing…" at/after zero, recurring label for crons — reusing the shared tick store.
+- [ ] Render countdown as `firesAtMs − useLiveTick()` (one-shot), "firing…" at/after zero, recurring label for crons — reusing the exported tick hook.
 
 **Tests:**
 - [ ] Unit: countdown formatter over `(firesAtMs, now)` pairs incl. the elapsed "firing…" case (pure formatter, not DOM).
@@ -498,7 +500,7 @@ No local-only row removal in any case.
 
 #### Step 7: Staleness badge + steering note {#step-7}
 
-**Depends on:** #step-4, #step-6
+**Depends on:** #step-4, #step-5
 
 **Commit:** `feat(tugdeck): mark late wake fires and document the watcher best practice`
 
