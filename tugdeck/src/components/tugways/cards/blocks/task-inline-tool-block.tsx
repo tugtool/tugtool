@@ -242,11 +242,11 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
         data-tone="danger"
       >
         <ListChecks
-          size={14}
+          size={16}
           aria-hidden="true"
           className="task-inline-tool-block-icon"
         />
-        <TugLabel size="sm" role="danger" emphasis="normal">
+        <TugLabel size="md" role="danger" emphasis="normal">
           {errorText}
         </TugLabel>
       </div>
@@ -264,11 +264,11 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
       data-kind={kind ?? undefined}
     >
       <ListChecks
-        size={14}
+        size={16}
         aria-hidden="true"
         className="task-inline-tool-block-icon"
       />
-      <TugLabel size="sm" emphasis="whisper">
+      <TugLabel size="md" emphasis="whisper">
         {labelText}
       </TugLabel>
     </div>

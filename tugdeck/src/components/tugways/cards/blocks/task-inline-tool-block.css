@@ -55,10 +55,13 @@ body {
    * with the transcript's left edge (no horizontal padding, so the
    * icon doesn't read as indented under the content above it). The
    * vertical margin gives the run of markers room to breathe apart
-   * from the surrounding message text. The gap between icon and
-   * label is `xs` (one notch wider than `2xs`) so the icon reads as
-   * a glyph anchored to the label, not as a separate floating
-   * element. */
+   * from the surrounding message text. It is applied uniformly per
+   * row — an earlier adjacency-driven "wider at the run's edges"
+   * scheme made streamed rows hop as their first/last status flipped
+   * when a new marker appended, so the spacing stays constant. The
+   * gap between icon and label is `xs` (one notch wider than `2xs`)
+   * so the icon reads as a glyph anchored to the label, not as a
+   * separate floating element. */
   --tugx-task-inline-row-margin:  var(--tug-space-2xs);
   --tugx-task-inline-row-gap:     var(--tug-space-xs);
 }
