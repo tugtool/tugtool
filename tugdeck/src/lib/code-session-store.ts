@@ -1082,6 +1082,33 @@ export class CodeSessionStore {
   }
 
   /**
+   * Soft-cancel a scheduled cron — the Jobs popover's per-row Cancel
+   * button. Harness-owned timers can't be stopped over the wire (tugcode
+   * is a passive wake detector, [Q01]), so the honest path is to ask the
+   * assistant to `CronDelete` it: a real user message that opens its own
+   * turn. Gated to idle (so it doesn't interleave with in-flight work)
+   * and to cron rows (a one-shot `ScheduleWakeup` is fire-once and
+   * harness-owned — its row's Cancel is disabled in the UI, and this
+   * method no-ops defensively). The row flips to `stopped` when the
+   * assistant's `CronDelete` lands (the reducer's CronDelete fold).
+   */
+  cancelScheduledWork(jobId: string): void {
+    if (this._disposed) return;
+    const job = this.state.jobs.find((j) => j.jobId === jobId);
+    if (
+      job === undefined ||
+      job.status !== "scheduled" ||
+      job.kind !== "cron" ||
+      this.state.phase !== "idle"
+    ) {
+      return;
+    }
+    const label = job.scheduleLabel ?? job.description;
+    const suffix = label.length > 0 ? ` (${label})` : "";
+    this.send(`Please cancel the scheduled cron \`${jobId}\`${suffix} using CronDelete.`, []);
+  }
+
+  /**
    * Request the per-turn code diff-stat preview for the `/rewind` sheet
    * ([#step-7-1]/[#step-7-3]). Marks `rewindPreviews[promptUuid]` loading and
    * emits a `rewind_preview` (dry-run) CODE_INPUT frame; the result folds back

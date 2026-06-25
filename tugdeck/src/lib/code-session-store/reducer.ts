@@ -117,6 +117,16 @@ import {
   terminalJobStatusFromWire,
   type JobItem,
 } from "./select-jobs";
+import {
+  flipEarliestElapsedScheduled,
+  narrowCronCreateInput,
+  narrowCronDeleteInput,
+  narrowScheduleWakeupInput,
+  reapElapsedScheduled,
+  scheduledRowFromCron,
+  scheduledRowFromWakeup,
+  stopScheduledRow,
+} from "./select-scheduled-work";
 import { decodePermissionDenials, mergeDenials } from "./denials";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import {
@@ -1293,8 +1303,9 @@ function handleSessionInit(
   // means a fresh claude subprocess (tugcode forwards only a
   // subprocess's FIRST init; re-inits route to the wake detector), and
   // a respawned claude cannot have carried background tasks across —
-  // rows still `running` are dead, so they flip to `stopped` rather
-  // than pulsing forever.
+  // rows still `running` are dead, and a `scheduled` wakeup will not
+  // re-fire after `--resume` (an upstream harness limitation), so both
+  // flip to `stopped` rather than pulsing forever.
   const jobs = markRunningJobsStopped(state.jobs, Date.now());
   if (jobs === state.jobs) {
     return { state, effects: [] };
@@ -1987,7 +1998,46 @@ function handleToolResult(
       if (stoppedId !== undefined) {
         jobs = applyJobFlip(jobs, stoppedId, "stopped", now);
       }
+    } else {
+      // Scheduled-work registration — the harness-owned timers
+      // (`ScheduleWakeup` / `CronCreate`) emit no `task_started` frame,
+      // so the scheduling tool call is the only insert path. The fired
+      // wake carries no `task_id`, so a row is reconciled by time
+      // (`flipEarliestElapsedScheduled` / `reapElapsedScheduled`), not
+      // by id. `CronDelete` removes the matching cron row.
+      const toolName = mutated.toolName.toLowerCase();
+      if (toolName === "schedulewakeup") {
+        const wakeInput = narrowScheduleWakeupInput(input);
+        if (wakeInput !== undefined) {
+          jobs = insertJob(
+            jobs,
+            scheduledRowFromWakeup(mutated.toolUseId, wakeInput, now),
+          );
+        }
+      } else if (toolName === "croncreate") {
+        const cronInput = narrowCronCreateInput(input);
+        if (cronInput !== undefined) {
+          jobs = insertJob(
+            jobs,
+            scheduledRowFromCron(
+              mutated.toolUseId,
+              cronInput,
+              mutated.result,
+              now,
+            ),
+          );
+        }
+      } else if (toolName === "crondelete") {
+        const delInput = narrowCronDeleteInput(input);
+        if (delInput !== undefined) {
+          jobs = stopScheduledRow(jobs, delInput.cronId, now);
+        }
+      }
     }
+    // Any landed tool result is a clock reading: reap scheduled rows
+    // whose fire is long past with no wake, so a mis-targeted or
+    // never-arriving timer cannot linger un-clearable.
+    jobs = reapElapsedScheduled(jobs, now);
   }
 
   return {
@@ -4374,14 +4424,23 @@ function handleWakeStarted(
   // notifications. During replay the ledger is structurally empty
   // (launch inserts are suppressed), so a synthesized replay wake
   // cannot flip anything.
+  const wakeNow = Date.now();
   const wireStatus = terminalJobStatusFromWire(trigger.status);
   const foldTarget = state.jobs.find((j) => j.jobId === trigger.taskId);
-  const jobs =
+  const flipped =
     wireStatus !== undefined &&
     foldTarget !== undefined &&
     foldTarget.kind !== "monitor"
-      ? applyJobFlip(state.jobs, trigger.taskId, wireStatus, Date.now())
+      ? applyJobFlip(state.jobs, trigger.taskId, wireStatus, wakeNow)
       : state.jobs;
+  // Id-less cohort: a fired `ScheduleWakeup` / `CronCreate` re-init
+  // carries an empty `task_id` (the background-job fold above no-ops on
+  // it), so reconcile by time — flip the earliest elapsed scheduled
+  // row. A wake with a real `task_id` never touches scheduled rows.
+  const jobs =
+    trigger.taskId === ""
+      ? flipEarliestElapsedScheduled(flipped, wakeNow, wakeNow)
+      : flipped;
   if (state.phase === "waking") {
     // Nested wake — idempotent refresh of trigger metadata only.
     if (state.wakeTrigger === null) {

@@ -36,31 +36,65 @@ import type { TaskStartedEvent, TaskUpdatedEvent } from "./events";
  * `"killed"` and `task_notification`'s `"stopped"` both read
  * {@link JobStatus} `"stopped"`; `"completed"` / `"failed"` map
  * directly.
+ *
+ * `"scheduled"` is the time-deferred state for wakeup / cron rows:
+ * nothing is executing, the work is promised for a future time. It is
+ * neither running nor terminal — a scheduled row pulses the cell (work
+ * pending) but is excluded from the `finished/total` fraction, and
+ * survives the popover's Clear like a running row.
  */
-export type JobStatus = "running" | "completed" | "failed" | "stopped";
+export type JobStatus =
+  | "running"
+  | "scheduled"
+  | "completed"
+  | "failed"
+  | "stopped";
 
-/** Statuses that mean the job is no longer running. */
+/**
+ * Statuses that mean the job is no longer doing (or awaiting) work.
+ * `"running"` and `"scheduled"` are both non-terminal — a scheduled
+ * wakeup has work pending, so it must not be cleared or counted as
+ * finished.
+ */
 export function isTerminalJobStatus(status: JobStatus): boolean {
-  return status !== "running";
+  return status !== "running" && status !== "scheduled";
+}
+
+/** A row whose work is promised for a future time (wakeup / cron). */
+export function isScheduledJobStatus(status: JobStatus): boolean {
+  return status === "scheduled";
 }
 
 /**
  * One background job in the session-lifetime ledger. `jobId` is
  * claude's `task_id` (`backgroundTaskId` / `agentId` in the launch
- * echoes). `source` is a forward-compat discriminant — only
- * `"claude"` ships; the shape stays open for a possible tugexec
- * future without consumers ever switching on it.
+ * echoes); for a `"cron"` row it is the cron id parsed from the
+ * `CronCreate` echo (or a synthetic fallback). `source` is a
+ * forward-compat discriminant — only `"claude"` ships; the shape
+ * stays open for a possible tugexec future without consumers ever
+ * switching on it.
+ *
+ * `firesAtMs` / `scheduleLabel` carry the `"scheduled"`-row payload:
+ * a one-shot wakeup has a `firesAtMs` target (drives the derived
+ * countdown), a cron has a `scheduleLabel` (its expression) and a
+ * `null` `firesAtMs` (next-occurrence is deferred). "Fired late" /
+ * "never fired" are derived from `firesAtMs` + `endedAtMs` at render
+ * — there is no stored late flag.
  */
 export interface JobItem {
   jobId: string;
   source: "claude";
-  kind: "bash" | "agent" | "monitor" | "unknown";
+  kind: "bash" | "agent" | "monitor" | "unknown" | "wakeup" | "cron";
   toolUseId: string;
   description: string;
   outputFile?: string;
   status: JobStatus;
   startedAtMs: number;
   endedAtMs: number | null;
+  /** One-shot wakeup target (ms); `null`/absent for crons + non-scheduled rows. */
+  firesAtMs?: number | null;
+  /** Human label for a recurring cron (e.g. its cron expression). */
+  scheduleLabel?: string;
 }
 
 const EMPTY_JOBS: readonly JobItem[] = Object.freeze([]);
@@ -337,29 +371,31 @@ export function applyJobFlip(
 }
 
 /**
- * Flip every `running` row to `stopped` — the stale-marking rule for
- * a fresh `session_init`: a respawned claude cannot have carried
- * background tasks across, so rows still `running` are dead.
+ * Flip every non-terminal row to `stopped` — the stale-marking rule
+ * for a fresh `session_init`: a respawned claude cannot have carried
+ * background tasks across, and the harness does not re-fire a pending
+ * wakeup after `--resume`, so rows still `running` or `scheduled` are
+ * dead.
  */
 export function markRunningJobsStopped(
   jobs: readonly JobItem[],
   endedAtMs: number,
 ): readonly JobItem[] {
-  if (!jobs.some((j) => j.status === "running")) return jobs;
+  if (!jobs.some((j) => !isTerminalJobStatus(j.status))) return jobs;
   return jobs.map((j) =>
-    j.status === "running" ? { ...j, status: "stopped", endedAtMs } : j,
+    !isTerminalJobStatus(j.status) ? { ...j, status: "stopped", endedAtMs } : j,
   );
 }
 
 /**
- * Drop terminal rows; `running` rows always survive (clearing a
- * running job would orphan it from the UI with no way to stop it).
- * An emptied ledger returns the shared frozen empty array.
+ * Drop terminal rows; `running` and `scheduled` rows always survive
+ * (clearing one would orphan it from the UI with no way to stop or
+ * monitor it). An emptied ledger returns the shared frozen empty array.
  */
 export function clearTerminalJobs(
   jobs: readonly JobItem[],
 ): readonly JobItem[] {
-  const kept = jobs.filter((j) => j.status === "running");
+  const kept = jobs.filter((j) => !isTerminalJobStatus(j.status));
   if (kept.length === jobs.length) return jobs;
   return kept.length === 0 ? EMPTY_JOBS : kept;
 }
@@ -368,13 +404,25 @@ export function clearTerminalJobs(
 // Display derivation (pure)
 // ---------------------------------------------------------------------------
 
-/** Per-status counts plus the `finished/total` cell reading. */
+/**
+ * Per-status counts plus the `finished/total` cell reading.
+ *
+ * `total` is the cell's *fraction* denominator — it counts only
+ * non-scheduled rows, so a lone pending wakeup never reads "0/1". A
+ * time-deferred promise is not an in-flight work unit; it surfaces via
+ * the pulse + the "N scheduled" summary, and joins the fraction only
+ * once it fires (becoming `completed`). `scheduled` is the separate
+ * sub-count for that summary.
+ */
 export interface JobCounts {
+  /** Non-scheduled rows — the `finished/total` fraction denominator. */
   total: number;
   /** ALL running rows, watchers included (`watching` is a subset). */
   running: number;
   /** Running rows of kind `"monitor"` — live watchers. */
   watching: number;
+  /** Time-deferred rows (wakeup / cron) — pulse + summary only. */
+  scheduled: number;
   completed: number;
   failed: number;
   stopped: number;
@@ -385,6 +433,7 @@ export interface JobCounts {
 export function countJobs(jobs: readonly JobItem[]): JobCounts {
   let running = 0;
   let watching = 0;
+  let scheduled = 0;
   let completed = 0;
   let failed = 0;
   let stopped = 0;
@@ -392,14 +441,17 @@ export function countJobs(jobs: readonly JobItem[]): JobCounts {
     if (j.status === "running") {
       running += 1;
       if (j.kind === "monitor") watching += 1;
-    } else if (j.status === "completed") completed += 1;
+    } else if (j.status === "scheduled") scheduled += 1;
+    else if (j.status === "completed") completed += 1;
     else if (j.status === "failed") failed += 1;
     else stopped += 1;
   }
   return {
-    total: jobs.length,
+    // Scheduled rows are excluded from the fraction denominator.
+    total: jobs.length - scheduled,
     running,
     watching,
+    scheduled,
     completed,
     failed,
     stopped,
@@ -413,11 +465,12 @@ export function countJobs(jobs: readonly JobItem[]): JobCounts {
  * runs between turns, so an idle session must not demote a running
  * dot (the one semantic divergence from the TASKS cell).
  *
- *  - empty ledger      → `stopped` (quiet placeholder)
- *  - any running       → `running`
- *  - else any failed   → `aborted` (danger; holds until cleared or
- *                        superseded by a new job)
- *  - else              → `completed`
+ *  - empty ledger          → `stopped` (quiet placeholder)
+ *  - any running/scheduled → `running` (pulse — a scheduled wakeup is
+ *                            pending work even though nothing executes)
+ *  - else any failed       → `aborted` (danger; holds until cleared or
+ *                            superseded by a new job)
+ *  - else                  → `completed`
  */
 export function jobsCellPose(
   jobs: readonly JobItem[],
@@ -425,7 +478,7 @@ export function jobsCellPose(
   if (jobs.length === 0) return "stopped";
   let anyFailed = false;
   for (const j of jobs) {
-    if (j.status === "running") return "running";
+    if (j.status === "running" || j.status === "scheduled") return "running";
     if (j.status === "failed") anyFailed = true;
   }
   return anyFailed ? "aborted" : "completed";
@@ -444,6 +497,7 @@ export function composeJobsSummary(counts: JobCounts): string {
   const runningJobs = counts.running - counts.watching;
   if (runningJobs > 0) parts.push(`${runningJobs} running`);
   if (counts.watching > 0) parts.push(`${counts.watching} watching`);
+  if (counts.scheduled > 0) parts.push(`${counts.scheduled} scheduled`);
   if (counts.completed > 0) parts.push(`${counts.completed} done`);
   if (counts.failed > 0) parts.push(`${counts.failed} failed`);
   if (counts.stopped > 0) parts.push(`${counts.stopped} stopped`);

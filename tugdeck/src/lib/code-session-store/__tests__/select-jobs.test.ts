@@ -17,6 +17,8 @@ import {
   countJobs,
   insertJob,
   isJobLaunch,
+  isScheduledJobStatus,
+  isTerminalJobStatus,
   jobsCellPose,
   jobKindForLaunch,
   jobKindFromTaskType,
@@ -272,6 +274,7 @@ describe("display derivation", () => {
       total: 4,
       running: 1,
       watching: 0,
+      scheduled: 0,
       completed: 1,
       failed: 1,
       stopped: 1,
@@ -316,6 +319,79 @@ describe("display derivation", () => {
         ]),
       ),
     ).toBe("1 running, 2 done, 1 failed");
+  });
+});
+
+describe("scheduled rows", () => {
+  const wakeup = (jobId: string, over: Partial<JobItem> = {}): JobItem =>
+    job({ jobId, kind: "wakeup", status: "scheduled", firesAtMs: 9_000, ...over });
+
+  test("isScheduledJobStatus / isTerminalJobStatus treat scheduled as non-terminal pending", () => {
+    expect(isScheduledJobStatus("scheduled")).toBe(true);
+    expect(isScheduledJobStatus("running")).toBe(false);
+    expect(isTerminalJobStatus("scheduled")).toBe(false);
+    expect(isTerminalJobStatus("running")).toBe(false);
+    expect(isTerminalJobStatus("completed")).toBe(true);
+  });
+
+  test("countJobs reports scheduled and excludes it from the finished/total fraction", () => {
+    // A lone scheduled wakeup must not read "0/1": total counts
+    // non-scheduled rows only.
+    const lone = countJobs([wakeup("w")]);
+    expect(lone.scheduled).toBe(1);
+    expect(lone.total).toBe(0);
+    expect(lone.finished).toBe(0);
+
+    const mixed = countJobs([
+      wakeup("w"),
+      job({ jobId: "a" }),
+      job({ jobId: "b", status: "completed", endedAtMs: 1 }),
+    ]);
+    expect(mixed.scheduled).toBe(1);
+    // Denominator excludes the wakeup: 1 running + 1 completed.
+    expect(mixed.total).toBe(2);
+    expect(mixed.finished).toBe(1);
+  });
+
+  test("jobsCellPose pulses on a scheduled-only ledger", () => {
+    expect(jobsCellPose([wakeup("w")])).toBe("running");
+    // Scheduled outranks a past failure, like running does.
+    expect(
+      jobsCellPose([wakeup("w"), job({ jobId: "f", status: "failed", endedAtMs: 1 })]),
+    ).toBe("running");
+  });
+
+  test("composeJobsSummary renders the scheduled bucket between watching and done", () => {
+    expect(
+      composeJobsSummary(
+        countJobs([
+          job({ jobId: "a" }),
+          wakeup("w"),
+          job({ jobId: "d", status: "completed", endedAtMs: 1 }),
+        ]),
+      ),
+    ).toBe("1 running, 1 scheduled, 1 done");
+    expect(composeJobsSummary(countJobs([wakeup("w")]))).toBe("1 scheduled");
+  });
+
+  test("clearTerminalJobs keeps scheduled rows like running ones", () => {
+    const w = wakeup("w");
+    const r = job({ jobId: "a" });
+    const cleared = clearTerminalJobs([
+      w,
+      r,
+      job({ jobId: "b", status: "completed", endedAtMs: 1 }),
+    ]);
+    expect(cleared).toEqual([w, r]);
+  });
+
+  test("markRunningJobsStopped sweeps scheduled rows too (respawn kills pending wakeups)", () => {
+    const marked = markRunningJobsStopped(
+      [wakeup("w"), job({ jobId: "a" }), job({ jobId: "b", status: "completed", endedAtMs: 1 })],
+      9_999,
+    );
+    expect(marked.map((j) => j.status)).toEqual(["stopped", "stopped", "completed"]);
+    expect(marked[0].endedAtMs).toBe(9_999);
   });
 });
 

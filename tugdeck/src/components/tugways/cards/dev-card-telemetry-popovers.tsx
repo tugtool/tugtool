@@ -101,14 +101,16 @@ import {
   useLiveTick,
 } from "./dev-card-telemetry-renderers";
 import { turnHasTiming } from "@/lib/code-session-store/telemetry";
-import { Square } from "lucide-react";
+import { Square, X } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   composeJobsSummary,
   countJobs,
+  isTerminalJobStatus,
   type JobItem,
   type JobStatus,
 } from "@/lib/code-session-store/select-jobs";
+import { isWakeLate } from "@/lib/code-session-store/select-scheduled-work";
 
 // ---------------------------------------------------------------------------
 // Cross-popover callback contract
@@ -995,6 +997,10 @@ function jobTurnIndex(
 function jobRowState(status: JobStatus): TugProgressIndicatorState {
   switch (status) {
     case "running":
+    case "scheduled":
+      // A scheduled wakeup is pending work — it keeps the pulsing pose
+      // even though nothing executes yet (the countdown carries the
+      // "later, not now" distinction in the row label).
       return "running";
     case "completed":
       return "completed";
@@ -1020,6 +1026,60 @@ function JobElapsedValue({ startedAtMs }: { startedAtMs: number }): React.ReactE
 }
 
 /**
+ * Format a one-shot wakeup's countdown from its target and the current
+ * clock — `"fires in 0m 52s"` while pending, `"firing…"` once the
+ * target has passed but the wake has not yet flipped the row. Pure so
+ * the format is unit-testable without the tick subscription.
+ */
+export function formatWakeCountdown(firesAtMs: number, nowMs: number): string {
+  const remaining = firesAtMs - nowMs;
+  return remaining > 0 ? `fires in ${formatDurationMs(remaining)}` : "firing…";
+}
+
+/**
+ * Staleness badge for a wakeup row — derived, never stored. A wakeup
+ * that completed more than the threshold past its target reads "fired
+ * late" (the exact staleness session 7772e2d5 hit); one stopped while
+ * still pending (reaper or respawn) reads "never fired". Crons and rows
+ * with no `firesAtMs` get no badge. Returns `null` when no badge
+ * applies.
+ */
+export function wakeBadgeText(job: JobItem): string | null {
+  if (job.kind !== "wakeup") return null;
+  if (job.status === "completed" && isWakeLate(job.firesAtMs, job.endedAtMs)) {
+    return "fired late";
+  }
+  if (job.status === "stopped" && typeof job.firesAtMs === "number") {
+    return "never fired";
+  }
+  return null;
+}
+
+/**
+ * Whether a scheduled row's Cancel button does anything. Only a cron is
+ * genuinely cancellable — the assistant `CronDelete`s it. A one-shot
+ * `ScheduleWakeup` is harness-owned and fire-once, so its fire is
+ * unavoidable regardless of whether it is a lone wakeup or part of a
+ * `/loop` (the two are indistinguishable at the row level); its Cancel
+ * is disabled. Pure, so the rule is unit-testable.
+ */
+export function scheduledCancelEnabled(job: JobItem): boolean {
+  return job.status === "scheduled" && job.kind === "cron";
+}
+
+/**
+ * Live countdown readout for a scheduled one-shot wakeup — the
+ * scheduled-row sibling of {@link JobElapsedValue}. Subscribes to the
+ * shared 1Hz tick (mounted only while the popover is open) and ticks
+ * down to "firing…" at the target; the row's status flips to terminal
+ * out-of-band (wake fold or reaper), not from this clock.
+ */
+function JobCountdownValue({ firesAtMs }: { firesAtMs: number }): React.ReactElement {
+  const now = useLiveTick();
+  return <>{formatWakeCountdown(firesAtMs, now)}</>;
+}
+
+/**
  * One row of the Jobs popover — a status dot beside a two-line text
  * block (description above a muted meta line: the launching turn's
  * clickable `#a{turn}` address, the job kind, and the elapsed
@@ -1036,12 +1096,14 @@ function JobRow({
   turnNumberBase,
   onScrollToRow,
   onStopJob,
+  onCancelScheduledWork,
 }: {
   job: JobItem;
   transcript: ReadonlyArray<TurnEntry>;
   turnNumberBase: number;
   onScrollToRow?: ScrollToRowHandler;
   onStopJob?: (jobId: string) => void;
+  onCancelScheduledWork?: (jobId: string) => void;
 }): React.ReactElement {
   const description = jobDescriptionText(job.description);
   // The job launched from an assistant turn's `tool_use`; link its
@@ -1049,14 +1111,24 @@ function JobRow({
   const turnIndex = jobTurnIndex(job, transcript);
   const rowIndex =
     turnIndex === -1 ? -1 : assistantRowIndexForTurn(turnIndex, transcript);
+  // Meta-line trailing value: live elapsed for running rows, a live
+  // countdown / recurring label for scheduled rows, frozen elapsed for
+  // terminal ones.
   const elapsed =
     job.status === "running" ? (
       <JobElapsedValue startedAtMs={job.startedAtMs} />
+    ) : job.status === "scheduled" ? (
+      typeof job.firesAtMs === "number" ? (
+        <JobCountdownValue firesAtMs={job.firesAtMs} />
+      ) : (
+        `recurring (${job.scheduleLabel ?? "cron"})`
+      )
     ) : (
       formatDurationMs(
         Math.max(0, (job.endedAtMs ?? job.startedAtMs) - job.startedAtMs),
       )
     );
+  const wakeBadge = wakeBadgeText(job);
   const textBlock = (
     <div className="dev-jobs-popover-text">
       <span className="dev-jobs-popover-description">{description}</span>
@@ -1081,6 +1153,11 @@ function JobRow({
           ·
         </span>
         <span className="dev-jobs-popover-elapsed">{elapsed}</span>
+        {wakeBadge !== null ? (
+          <TugBadge emphasis="tinted" role="danger" size="2xs">
+            {wakeBadge}
+          </TugBadge>
+        ) : null}
       </span>
     </div>
   );
@@ -1115,7 +1192,55 @@ function JobRow({
           size="2xs"
           onClick={() => onStopJob(job.jobId)}
         />
+      ) : job.status === "scheduled" && onCancelScheduledWork !== undefined ? (
+        // A cron is genuinely cancellable (the assistant `CronDelete`s
+        // it). A one-shot wakeup is harness-owned and fire-once — its
+        // fire is unavoidable, so the button is disabled and says so.
+        <TugPushButton
+          subtype="icon"
+          icon={<X size={12} strokeWidth={3} />}
+          aria-label={
+            job.kind === "cron"
+              ? `Cancel scheduled cron: ${description}`
+              : `Scheduled wakeup (cannot be cancelled): ${description}`
+          }
+          title={
+            job.kind === "cron"
+              ? "Ask the assistant to cancel this cron"
+              : "Harness-scheduled — it will fire once and can't be cancelled"
+          }
+          emphasis="outlined"
+          role="action"
+          size="2xs"
+          disabled={!scheduledCancelEnabled(job)}
+          onClick={() => onCancelScheduledWork(job.jobId)}
+        />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * A labeled section of the Jobs popover (Running / Scheduled /
+ * Finished). Renders nothing when its bucket is empty, so the labels
+ * only appear for groups that exist.
+ */
+function JobGroup({
+  label,
+  rows,
+  render,
+}: {
+  label: string;
+  rows: readonly JobItem[];
+  render: (job: JobItem) => React.ReactElement;
+}): React.ReactElement | null {
+  if (rows.length === 0) return null;
+  return (
+    <div className="dev-jobs-popover-group" data-slot="dev-jobs-popover-group">
+      <div className="dev-jobs-popover-group-label" aria-hidden>
+        {label}
+      </div>
+      {rows.map(render)}
     </div>
   );
 }
@@ -1126,7 +1251,9 @@ function JobRow({
  * column of rows ({@link JobRow}) above a footer carrying the
  * composed summary ("1 running, 2 done, 1 failed") and a Clear
  * button. Clear is a deck-local wipe of terminal rows only — running
- * rows always survive — and is disabled while nothing is clearable.
+ * and scheduled rows always survive — and is disabled while nothing is
+ * clearable. Once a wakeup/cron is pending, the rows split into
+ * labeled Running / Scheduled / Finished groups.
  *
  * An empty ledger renders the standard popover empty message.
  */
@@ -1136,6 +1263,7 @@ export function JobsPopoverContent({
   turnNumberBase = 0,
   onScrollToRow,
   onStopJob,
+  onCancelScheduledWork,
   onClearJobs,
 }: {
   jobs: readonly JobItem[];
@@ -1146,6 +1274,7 @@ export function JobsPopoverContent({
   turnNumberBase?: number;
   onScrollToRow?: ScrollToRowHandler;
   onStopJob?: (jobId: string) => void;
+  onCancelScheduledWork?: (jobId: string) => void;
   onClearJobs?: () => void;
 }): React.ReactElement {
   if (jobs.length === 0) {
@@ -1156,19 +1285,35 @@ export function JobsPopoverContent({
     );
   }
   const counts = countJobs(jobs);
+  const renderRow = (job: JobItem): React.ReactElement => (
+    <JobRow
+      key={job.jobId}
+      job={job}
+      transcript={transcript}
+      turnNumberBase={turnNumberBase}
+      onScrollToRow={onScrollToRow}
+      onStopJob={onStopJob}
+      onCancelScheduledWork={onCancelScheduledWork}
+    />
+  );
+  // Flat (launch-order) list when there is no scheduled work — the
+  // long-standing shape. Once a wakeup/cron is pending, split into
+  // Running / Scheduled / Finished so the time-deferred promises read
+  // distinctly from work that is executing or done.
+  const body =
+    counts.scheduled === 0 ? (
+      jobs.map(renderRow)
+    ) : (
+      <>
+        <JobGroup label="Running" rows={jobs.filter((j) => j.status === "running")} render={renderRow} />
+        <JobGroup label="Scheduled" rows={jobs.filter((j) => j.status === "scheduled")} render={renderRow} />
+        <JobGroup label="Finished" rows={jobs.filter((j) => isTerminalJobStatus(j.status))} render={renderRow} />
+      </>
+    );
   return (
     <PerAreaPopoverFrame title="Jobs">
       <div className="dev-jobs-popover-body" data-slot="dev-jobs-popover-body">
-        {jobs.map((job) => (
-          <JobRow
-            key={job.jobId}
-            job={job}
-            transcript={transcript}
-            turnNumberBase={turnNumberBase}
-            onScrollToRow={onScrollToRow}
-            onStopJob={onStopJob}
-          />
-        ))}
+        {body}
       </div>
       <div
         className="dev-jobs-popover-footer"

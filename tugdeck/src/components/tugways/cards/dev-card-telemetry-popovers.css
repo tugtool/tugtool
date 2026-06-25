@@ -520,6 +520,23 @@
   padding-block: var(--tug-space-xs);
 }
 
+.dev-jobs-popover-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Group header (Running / Scheduled / Finished) — a quiet uppercase
+   label, only shown when a wakeup/cron splits the list into groups. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-group-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--tug-space-xs) var(--tug-space-sm) 0;
+}
+
 .dev-jobs-popover-row {
   display: flex;
   flex-direction: row;

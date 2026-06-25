@@ -692,10 +692,17 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // surfaces a failed job until the user clears it or new work starts.
   const jobsLedger = useJobsState(codeSessionStore);
   const jobCounts = countJobs(jobsLedger);
-  const hasJobs = jobCounts.total > 0;
-  const jobsLabelText = hasJobs
+  // `total` excludes scheduled rows, so the `finished/total` fraction
+  // reads only executing/done work. A lone pending wakeup has total 0
+  // but is not "None" — it shows its scheduled count and keeps the dot
+  // pulsing (`jobsCellPose` treats scheduled as pending work).
+  const hasFraction = jobCounts.total > 0;
+  const hasJobs = jobsLedger.length > 0;
+  const jobsLabelText = hasFraction
     ? `${jobCounts.finished}/${jobCounts.total}`
-    : "None";
+    : jobCounts.scheduled > 0
+      ? `${jobCounts.scheduled}`
+      : "None";
   const jobsIndicatorState: TugProgressIndicatorState = jobsCellPose(jobsLedger);
   // Popover actions — fire-and-forget control-style callbacks onto the
   // store's named methods (stop rides the wire; clear is deck-local).
@@ -705,6 +712,10 @@ export const DevTelemetryStatusRow = React.forwardRef<
   );
   const clearJobs = useCallback(
     () => codeSessionStore.clearJobs(),
+    [codeSessionStore],
+  );
+  const cancelScheduledWork = useCallback(
+    (jobId: string) => codeSessionStore.cancelScheduledWork(jobId),
     [codeSessionStore],
   );
 
@@ -759,6 +770,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
       turnNumberBase={turnNumberBase}
       onScrollToRow={onScrollToRow}
       onStopJob={stopJob}
+      onCancelScheduledWork={cancelScheduledWork}
       onClearJobs={clearJobs}
     />
   );
@@ -901,12 +913,14 @@ export const DevTelemetryStatusRow = React.forwardRef<
             labelAlign="center"
             phaseLabels={{
               none: "None",
-              max: hasJobs ? `${jobCounts.total}/${jobCounts.total}` : "0/0",
+              max: hasFraction ? `${jobCounts.total}/${jobCounts.total}` : "0/0",
             }}
             aria-label={
-              hasJobs
+              hasFraction
                 ? `${jobCounts.finished} of ${jobCounts.total} jobs finished`
-                : "No background jobs"
+                : jobCounts.scheduled > 0
+                  ? `${jobCounts.scheduled} scheduled`
+                  : "No background jobs"
             }
           />
         )}

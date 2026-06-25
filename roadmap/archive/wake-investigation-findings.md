@@ -12,6 +12,10 @@ This document settles, with empirical capture data and official documentation re
 
 The shadow scheduler we built (`tugcode/src/scheduler.ts` `WakeScheduler` + `handleSchedulingToolUse` intercept + `cronIdToToolUseId` map + croner dependency) is wrong-headed and must be removed: it duplicates work the harness already does, double-fires wakes alongside the harness, and cannot reliably cancel itself when the harness's `CronDelete` runs.
 
+## Best practice — prefer a Monitor over a bare timed wakeup for "notify me when X finishes"
+
+`ScheduleWakeup`/`CronCreate` fire on a **guessed clock** (`delaySeconds`, or a cron time), with built-in jitter — a recurring task may fire up to 30 minutes late. So a bare timed wakeup used to poll "is the suite done yet?" tends to land long after the work actually finished (the stale-wake symptom that motivated the JOBS-cell scheduled-work surfacing). For a *completion* notification, prefer running the work as a **backgrounded job** (`Bash`/`Agent` with `run_in_background: true`) and a **`Monitor`** watching it: that path is **event-driven** (it fires on actual completion via `system/task_notification`, not a timer) and is **already tracked** in the Z2 `JOBS` cell, so the user can see and stop it. Scheduled wakeups now appear in the same cell with a live countdown and a "fired late" badge — which makes a duration mismatch ("fires in 52:00" against an 8-minute suite) self-evident — but the timer is still the wrong tool when an event-driven Monitor is available. Reserve `ScheduleWakeup`/`CronCreate` for genuinely time-based work (a periodic check, a deadline), not for polling another task to completion.
+
 ## What the official docs say
 
 From [code.claude.com/docs/en/scheduled-tasks](https://code.claude.com/docs/en/scheduled-tasks):

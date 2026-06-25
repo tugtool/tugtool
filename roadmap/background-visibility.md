@@ -345,14 +345,14 @@ No local-only row removal in any case.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Extend jobs data model + pure helpers | pending | — |
-| #step-2 | Scheduled-work narrowing + row builders | pending | — |
-| #step-3 | Reducer registration of scheduled rows | pending | — |
-| #step-4 | Wake-flip + respawn sweep | pending | — |
-| #step-5 | Popover Scheduled group + countdown | pending | — |
-| #step-6 | Cell pulse/count + soft-cancel wiring | pending | — |
-| #step-7 | Staleness badge + steering note | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Extend jobs data model + pure helpers | done | 42677c4df |
+| #step-2 | Scheduled-work narrowing + row builders | done | 43faa36f7 |
+| #step-3 | Reducer registration of scheduled rows | done | 65832b56d |
+| #step-4 | Wake-flip + respawn sweep | done | 33f6af582 |
+| #step-5 | Popover Scheduled group + countdown | done | 42f3ce0d9 |
+| #step-6 | Cell pulse/count + soft-cancel wiring | done | f0cbfd9c0 |
+| #step-7 | Staleness badge + steering note | done | dd5f77048 |
+| #step-8 | Integration checkpoint | done | N/A (verification only) |
 
 #### Step 1: Extend jobs data model + pure helpers {#step-1}
 
