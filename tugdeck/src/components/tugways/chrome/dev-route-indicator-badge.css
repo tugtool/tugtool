@@ -1,16 +1,16 @@
 /* @tug-pairings:
    - the click-expand report's title / version / detail text set
      `color` alone and carry a `@tug-renders-on` annotation naming the
-     popover surface. The badge itself is a composed `TugBadge` — it
+     popover surface. The chip itself is a composed `TugPushButton` — it
      owns its surface and tokens; this file declares none for it.
-   `DevRouteIndicatorBadge` is the Z4B route-aware indicator badge
-   plus its click-expand report. The badge is a `TugBadge`; only the
+   `DevRouteIndicatorBadge` is the Z4B route-aware indicator chip
+   plus its right-click report. The chip is a `TugPushButton`; only the
    report geometry lives here, under `--tugx-route-indicator-*`.
 */
 
 /**
  * dev-route-indicator-badge.css — `DevRouteIndicatorBadge` report
- * styling. The badge is a composed `TugBadge`; only the popover
+ * styling. The chip is a composed `TugPushButton`; only the popover
  * report is dressed here.
  *
  * Tuglaw cross-check:
@@ -20,7 +20,7 @@
  *  - [L19] file pair; the report node carries
  *    `data-slot="dev-route-indicator-badge-report"`.
  *  - [L20] component-token sovereignty — owns `--tugx-route-indicator-*`
- *    only; the composed `TugBadge` keeps its own tokens.
+ *    only; the composed `TugPushButton` keeps its own tokens.
  */
 
 /* ---- Component-tier aliases — report geometry [L17] ---- */
@@ -34,11 +34,12 @@ body {
 
 /* ---- Trigger badge ---- */
 
-/* The badge is a `TugBadge` (its own surface + tokens); the only thing
- * this consumer adds is the pointer cursor — the badge opens the
- * version / drift report popover on click. The Shell branch has no
- * report to expand to, so the pointer cursor is suppressed there to
- * match what clicking actually does. */
+/* The chip is a `TugPushButton` (its own surface + tokens); the only
+ * thing this consumer adds is the pointer cursor — the Code-route chip
+ * opens the changelog on left click (right click opens the version /
+ * drift report popover). The Shell branch's click is a placeholder
+ * no-op today, so the pointer cursor is suppressed there to match what
+ * clicking actually does. */
 .dev-route-indicator-badge {
   cursor: pointer;
 }

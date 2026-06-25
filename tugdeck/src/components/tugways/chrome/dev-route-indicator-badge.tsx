@@ -10,59 +10,64 @@
  *   ❯ Code | `Claude Code <version>` (drift-aware)      | sessionMetadataStore + drift detectors
  *   $ Shell| `<shell name>`                             | HostFactsStore.shell
  *
- * Rendered as a two-line `TugBadge` (`layout="label-top"`): an
+ * Rendered as a two-line `TugPushButton` (`layout="label-top"`): an
  * uppercase caption over the value — `CLAUDE CODE` / version on the
  * Code route, `SHELL` / shell-path on the Shell route — matching the
  * other Z4B chrome chips.
  *
  * **Mount identity ([L26], Risk R03).** The badge keeps its mount
  * across a route flip — the returned tree always has the same shape:
- * a single `TugPopover` wrapping a `TugPopoverTrigger` wrapping one
- * `TugBadge`. Only the badge's `label`, children, role, icon, and the
- * conditional `TugPopoverContent` swap. React reconciles the
- * `TugBadge` element as the same type at the same position; the
- * `Code`-route drift popover's open/closed state survives a flip-
- * away-and-back through Shell.
+ * a single `TugPopover` wrapping a `TugPopoverAnchor` wrapping one
+ * `TugPushButton`. Only the button's `label`, children, icon, click
+ * behavior, and the conditional `TugPopoverContent` swap. React
+ * reconciles the `TugPushButton` element as the same type at the same
+ * position; the `Code`-route drift report's open/closed state survives
+ * a flip-away-and-back through Shell.
  *
- * **Code branch.** Caption `Claude Code`, value the running
- * stream-json version (with `· N events` appended on drift); escalates
- * to `caution` when the dispatch detected drift ([D04] / [Q03]). A
- * click opens the report popover listing running / validated versions
- * and any drift events. Falls back to the tugbank-persisted last-known
- * version before the live `system_metadata.version` lands, or `?` when
- * none has ever been seen.
+ * **Code branch ([D13] interactive Z4B chip).** Caption `Claude Code`,
+ * value the running stream-json version (with `· N events` appended on
+ * drift, flagged with a `TriangleAlert` icon and a `data-drift` hook
+ * when the dispatch detected drift, [D04] / [Q03]). A **left click**
+ * opens Anthropic's Claude Code changelog in the system browser; a
+ * **right click** opens the report popover listing running / validated
+ * versions and any drift events. Falls back to the tugbank-persisted
+ * last-known version before the live `system_metadata.version` lands,
+ * or `?` when none has ever been seen.
  *
  * **Shell branch.** Caption `Shell`, value the full `$SHELL` path
  * (`/bin/zsh`, `/usr/local/bin/fish`, …), read from {@link useHostFacts}
  * ([D04]). Falls back to the basename (`shell`) if `shellPath` is empty
  * (an older tugcast that predates the field), then to the `shell`
  * placeholder before host facts resolve at all (the fetch is one-shot
- * at app load, so this is brief). No popover content — clicking does
- * nothing visible.
+ * at app load, so this is brief). No report; clicking is a placeholder
+ * no-op today — someday it opens the shell in the user's terminal app.
  *
- * **Width stabilization.** The badge pins its footprint across the
+ * **Width stabilization.** The chip pins its footprint across the
  * route flip so its neighbors (Project / Session / … chips) never
- * shift when the user toggles Code ↔ Shell. This rides `TugBadge`'s
- * `widthStabilize` feature: the badge is handed the *inactive* face
- * (caption + value) and reserves the wider of the two faces. A face
- * that grows past the reserved width (the Code route's `· N events`
- * drift annotation) still fits — the active face is a real layout
- * item, so the box grows to it rather than clipping.
+ * shift when the user toggles Code ↔ Shell. Both lines wrap a
+ * `TugStableOverlay`: the caption overlays `Claude Code` / `Shell` and
+ * the value overlays version / shell-path, each cell reserving the
+ * wider of its two faces ([R01]). A face that grows past the reserved
+ * width (the Code route's `· N events` drift annotation) still fits —
+ * the active face is a real layout item, so the box grows to it rather
+ * than clipping.
  *
  * Laws:
  *  - [L02] external state enters through `useSyncExternalStore` — the
  *    `CodeSessionStore` transcript, `SessionMetadataStore` version,
  *    `HostFactsStore` host facts, and `RouteLifecycle` route are all
  *    subscribed, never mirrored into React state.
- *  - [L06] no React state for appearance — the popover's open/closed
- *    state is owned by the uncontrolled `TugPopover` (Radix), and the
- *    quiet/caution treatment is pure render from the derived summary.
- *  - [L11] the badge emits no chain action — it is a popover trigger
- *    only; `TugPopover` owns the disclosure.
+ *  - [L06] no React state for appearance — the report popover's
+ *    open/closed state is owned by `TugPopover` and driven imperatively
+ *    (`handle.open()` on right-click); the drift treatment is pure
+ *    render from the derived summary.
+ *  - [L11] the chip emits no chain action — its left click opens an
+ *    external URL and its right click opens the report popover via the
+ *    imperative handle; `TugPopover` owns the disclosure.
  *  - [L19] file pair (`.tsx` + `.css`); the report node carries
  *    `data-slot="dev-route-indicator-badge-report"`.
  *  - [L20] owns only the `--tugx-route-indicator-*` report-geometry
- *    slots; composes `TugBadge` (the chip) and `DevCautionBadge`
+ *    slots; composes `TugPushButton` (the chip) and `DevCautionBadge`
  *    (the report rows), each of which keeps its own tokens.
  *  - [L26] one component-type at one React position; no per-route
  *    keying — mount identity is preserved across route flips.
@@ -75,12 +80,15 @@ import "./dev-route-indicator-badge.css";
 import React, { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { TriangleAlert } from "lucide-react";
 
-import { TugBadge } from "@/components/tugways/tug-badge";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import {
   TugPopover,
+  TugPopoverAnchor,
   TugPopoverContent,
-  TugPopoverTrigger,
+  type TugPopoverHandle,
 } from "@/components/tugways/tug-popover";
+import { openUrlInOS } from "@/lib/os-open";
 import {
   VALIDATED_CC_VERSION,
   logDriftEvent,
@@ -102,6 +110,16 @@ import { DevCautionBadge } from "./dev-caution-badge";
 // (not re-exported from there) so this component depends only on the
 // route's *value* — a `string` — not on the prompt-entry's item list.
 const ROUTE_SHELL = "$";
+
+// ── External links ─────────────────────────────────────────────────────────
+
+/**
+ * Anthropic's Claude Code changelog. Clicking the Code-route chip opens this
+ * in the system browser ([D13] interactive Z4B chip). The version/drift report
+ * moves to the chip's right-click menu.
+ */
+const CLAUDE_CODE_CHANGELOG_URL =
+  "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md";
 
 // ── Last-known version persistence ─────────────────────────────────────────
 
@@ -273,40 +291,80 @@ export function DevRouteIndicatorBadge({
 
   // Two-line faces: an uppercase caption (CSS-transformed) over the
   // value. Caption and value both swap with the route. The *inactive*
-  // face is handed to `TugBadge`'s `widthStabilize` so the chip reserves
-  // the wider of the two and a route flip never reflows its neighbors.
+  // face is overlaid (hidden) in the same cell via `TugStableOverlay` so
+  // the chip reserves the wider of the two and a route flip never
+  // reflows its neighbors ([R01]).
   const caption = isShell ? "Shell" : "Claude Code";
   const content = isShell ? shellFace : codeContent;
   const inactiveCaption = isShell ? "Claude Code" : "Shell";
   const inactiveContent = isShell ? codeContent : shellFace;
 
-  // One-shape render: `TugPopover` always wraps the `TugBadge` ([L26],
-  // Risk R03) so the badge's mount survives a route flip. The
-  // `TugPopoverContent` is the only piece that varies — Shell renders
+  // Imperative handle for the report popover — opened on right-click of
+  // the Code-route chip ([D13]). Left click is reassigned to the
+  // changelog, so the disclosure is driven imperatively rather than by a
+  // `TugPopoverTrigger`'s click-toggle.
+  const popoverRef = React.useRef<TugPopoverHandle>(null);
+
+  // Click: Code opens Anthropic's changelog in the system browser; Shell
+  // is a placeholder no-op today (someday it opens the shell in the
+  // user's terminal app).
+  const handleClick = isShell
+    ? undefined
+    : () => openUrlInOS(CLAUDE_CODE_CHANGELOG_URL);
+
+  // Right-click: Code opens the version / drift report popover; Shell has
+  // no report, so its native context menu is left alone.
+  const handleContextMenu = isShell
+    ? undefined
+    : (e: React.MouseEvent) => {
+        e.preventDefault();
+        popoverRef.current?.open();
+      };
+
+  // Tooltip carries the route's face plus the affordance hint; on the
+  // Code route it surfaces the drift count so the signal survives even
+  // without opening the report.
+  const title = isShell
+    ? `${content} — opens in your terminal (coming soon)`
+    : hasDrift
+      ? `Claude Code ${version ?? displayVersion ?? "?"} · ${eventCountLabel(summary.count)} drift — click for changelog, right-click for report`
+      : `Claude Code ${displayVersion ?? "?"} — click for changelog, right-click for report`;
+
+  // One-shape render: `TugPopover` always wraps the `TugPushButton`
+  // anchor ([L26], Risk R03) so the chip's mount survives a route flip.
+  // The `TugPopoverContent` is the only piece that varies — Shell renders
   // none (nothing to expand to), Code renders the running/validated
   // versions and any drift events.
   return (
-    <TugPopover>
-      <TugPopoverTrigger>
-        <TugBadge
+    <TugPopover ref={popoverRef}>
+      <TugPopoverAnchor>
+        <TugPushButton
           layout="label-top"
-          label={caption}
-          role={hasDrift ? "caution" : "action"}
+          label={
+            <TugStableOverlay
+              active={caption}
+              alternates={[inactiveCaption]}
+            />
+          }
           emphasis="tinted"
+          role="action"
           size="sm"
           icon={hasDrift ? <TriangleAlert aria-hidden="true" /> : undefined}
           className={cls}
           data-route={isShell ? "shell" : "code"}
+          data-drift={hasDrift ? "" : undefined}
           data-slot="dev-route-indicator-badge"
-          copyText={`${caption}: ${content}`}
-          widthStabilize={{
-            alternateLabel: inactiveCaption,
-            alternateContent: inactiveContent,
-          }}
+          aria-label={isShell ? "Shell" : "Claude Code — open changelog"}
+          title={title}
+          onClick={handleClick}
+          onContextMenu={handleContextMenu}
         >
-          {content}
-        </TugBadge>
-      </TugPopoverTrigger>
+          <TugStableOverlay
+            active={content}
+            alternates={[inactiveContent]}
+          />
+        </TugPushButton>
+      </TugPopoverAnchor>
       {isShell ? null : (
         <TugPopoverContent side="top" align="end" sideOffset={8} arrow>
           <div

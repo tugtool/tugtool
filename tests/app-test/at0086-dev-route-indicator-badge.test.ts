@@ -9,7 +9,8 @@
  * badge route-aware (Table T01, reduced to Code / Shell after Command's
  * retirement):
  *
- *    - `❯` Code → `Claude Code <version>` (drift-aware, popover)
+ *    - `❯` Code → `Claude Code <version>` (drift-aware; left click opens
+ *      the changelog, right click opens the version/drift report popover)
  *    - `$` Shell → `<shell name>` (from `HostFactsStore`)
  *
  * Two regression surfaces:
@@ -21,12 +22,12 @@
  *      `useSyncExternalStore` ([L02]), so the flip drives a re-render
  *      in one commit.
  *
- *   2. **Mount identity ([L26], Risk R03).** The badge is one
+ *   2. **Mount identity ([L26], Risk R03).** The chip is one
  *      component branching internally on route — not per-route
  *      components and not route-keyed. React must reconcile the
- *      `TugBadge` DOM node as the same element across a flip; the
- *      Code-branch popover state survives a flip-away-and-back through
- *      Shell.
+ *      `TugPushButton` DOM node as the same element across a flip; the
+ *      Code-branch right-click report popover state survives a
+ *      flip-away-and-back through Shell.
  *
  * ## Test matrix
  *

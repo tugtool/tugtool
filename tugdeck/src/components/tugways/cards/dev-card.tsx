@@ -3436,7 +3436,11 @@ export function DevCardBody({
                   <DevRouteShellGate>
                     {(isShell) => (
                       <>
-                        <DevSessionIdBadge cardId={cardId} disabled={isShell} />
+                        <DevSessionIdBadge
+                          cardId={cardId}
+                          sessionMetadataStore={sessionMetadataStore}
+                          disabled={isShell}
+                        />
                         {effectivePromptStatusContent}
                         <PermissionModeChip
                           cardId={cardId}
