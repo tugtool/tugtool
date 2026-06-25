@@ -175,8 +175,8 @@ describe.skipIf(!SHOULD_RUN)(
 
           // Open the picker (synthetic click — the chip sits at the card's
           // bottom-right edge, below the window's clickable region for a
-          // CGEvent, so we drive its real `onClick` directly; at0095 set the
-          // precedent of DOM-driven chip/banner app-tests). Opus supports
+          // CGEvent, so we drive its real `onClick` directly — the
+          // DOM-driven-chip app-test pattern). Opus supports
           // exactly five levels, and the effective default ("high") is
           // pre-selected.
           await app.click(CHIP);

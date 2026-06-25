@@ -89,10 +89,7 @@ import { GalleryTextEditor } from "./gallery-text-editor";
 import { GallerySplitPane } from "./gallery-split-pane";
 import { GalleryStatePreservation } from "./gallery-state-preservation";
 import { GalleryTugCue } from "./gallery-tug-cue";
-import {
-  GalleryBashToolBlock,
-  GalleryBashMountInSavedState,
-} from "./gallery-bash-tool-block";
+import { GalleryBashToolBlock } from "./gallery-bash-tool-block";
 import { GalleryCommitBlock } from "./gallery-commit-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GalleryDevThinking } from "./gallery-dev-thinking";
@@ -696,28 +693,6 @@ export function registerGalleryCards(): void {
     componentId: "gallery-bash-tool-block",
     contentFactory: (_cardId) => <GalleryBashToolBlock />,
     defaultMeta: { title: "BashToolBlock", icon: "Terminal", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-
-  // Mount-in-saved-state fixture: a long-stdout BashToolBlock that
-  // engages both the fold axis (TerminalBlock collapsed/expanded via
-  // `bag.components`) and the inner-scroll axis (virtualized scroller
-  // via `bag.regionScroll`). Drives
-  // `tests/app-test/at0067-bash-block-mount-in-saved-state.test.ts`
-  // and `tests/app-test/at0068-bash-block-inner-scroll-from-creation.test.ts`.
-  // See `tuglaws/state-preservation.md` → "Restoring saved state at
-  // mount".
-  registerCard({
-    componentId: "gallery-bash-mount-in-saved-state",
-    contentFactory: (_cardId) => <GalleryBashMountInSavedState />,
-    defaultMeta: {
-      title: "BashToolBlock — Mount-in-saved-state",
-      icon: "Terminal",
-      closable: true,
-    },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

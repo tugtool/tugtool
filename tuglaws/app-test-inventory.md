@@ -395,14 +395,12 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Tests:** *(removed)*.
 
 #### [AT0067] BashToolBlock fold state mounts in its saved value on first paint
-- **Status:** 🚧 added at Phase E.8 — gates the mount-in-saved-state contract for the component-axis.
-- **Tests:** `at0067-bash-block-mount-in-saved-state.test.ts`.
-- **Summary:** Drives `gallery-bash-mount-in-saved-state` — a BashToolBlock with 100 lines of stdout, so the TerminalBlock's uncontrolled fold default is "collapsed". Phase 1: mount card, click the fold cue to expand, assert `data-collapsed="false"`. Phase 2: `appReload()`. Phase 3: install a `MutationObserver` against the document subtree BEFORE re-seeding the deck so the very first `data-collapsed` value on the terminal-block outer is captured into a window-level recorder; re-seed with the on-disk bag; wait for the card to register and the block to render. Assert: the recorded sequence is non-empty AND the FIRST value is `"false"` (the saved value) AND no recorded value disagrees with the saved value (no intermediate frame painted the `useState` default). Closes Phase E.8's "first paint reflects the saved fold" sub-task.
+- **Status:** 🗑️ retired — surface migrated. The per-body TerminalBlock fold AT0067 drove no longer exists for tool blocks: `BashToolBlock` renders its `TerminalBlock` `embedded`, which suppresses the per-body fold (the body renders a flat clamped preview), and the whole-block fold moved to the chrome (`ToolBlockHistoryCollapse`, `data-block-collapsed`), persisted via `ToolBlockExpansionContext` overrides that only the transcript host provides. The mount-in-saved-state contract for that override is unit-covered by `blocks/__tests__/expansion-state.test.ts`, and the chrome's synchronous `useState` initializer prevents the post-mount flash by construction. (A future dev-card/transcript-level test could add integration coverage of the chrome fold's first-paint-from-saved-state; the gallery-bash approach can't reach it.)
+- **Tests:** none (was `at0067-bash-block-mount-in-saved-state.test.ts`, deleted; the `gallery-bash-mount-in-saved-state` fixture was removed too).
 
 #### [AT0068] BashToolBlock inner scroller is created at its saved scrollTop
-- **Status:** 🚧 added at Phase E.8 — gates the mount-in-saved-state contract for the inner-scroll axis.
-- **Tests:** `at0068-bash-block-inner-scroll-from-creation.test.ts`.
-- **Summary:** Companion to AT0067 for the [A9] region-scroll axis on the inner virtualized scroller. Drives the same `gallery-bash-mount-in-saved-state` fixture. Phase 1: mount, expand, scroll the inner scroller to a known position, record `scrollTop`. Phase 2: `appReload()` and assert the on-disk bag's `bag.regionScroll["${toolUseId}-body/term-scroll"].y` matches. Phase 3: install a `MutationObserver` against the document subtree BEFORE re-seeding the deck so the FIRST observable `scrollTop` of the new scroller (and any subsequent `scroll` events) is captured; re-seed; wait. Assert: the first observed `scrollTop` matches the saved value within tolerance AND no recorded scroll event lands more than tolerance away from the saved value (no jump from 0 to saved). Closes Phase E.8's "scroller created at saved position" sub-task.
+- **Status:** 🗑️ retired — surface removed. An embedded `BashToolBlock` body renders a flat clamped preview, not a virtualized inner scroller — there is no inner `data-tug-scroll-key` scroller to persist. Scroll-restore-on-reload for the transcript is now owned by the outer transcript scroller, app-covered by [AT0190] / [AT0059] / [AT0061].
+- **Tests:** none (was `at0068-bash-block-inner-scroll-from-creation.test.ts`, deleted).
 
 #### [AT0069] Outer transcript first-paint accuracy with saved geometry — RETIRED
 - **Status:** ⬛ retired. AT0069 gated the saved-`meta.cellHeights` first-paint optimization — hydrating a per-cell measured-height snapshot into the live `HeightIndex` so commit 1 resolved the anchor offset exactly instead of from an estimate. That whole apparatus was deleted: the transcript renders inline (every row at its real, measured height) with no `content-visibility` deferral and no estimates, so the saved-height bag had no purpose and was removed entirely. The regression it gated (estimated-then-refined first-paint hop) is structurally impossible without estimates. Anchor restore — the surviving mechanism — is gated by **AT0190** (`at0190-transcript-anchor-restore.test.ts`) and AT0061. Test file `at0069-outer-transcript-first-paint.test.ts` deleted. The tag number is retired (not reused).
@@ -531,9 +529,9 @@ Surfaced during the dev-card / Claude-Code-parity plan. Gate the `/permissions` 
 - **Summary:** The add-rule scope picker routes a new rule to the chosen scope (project / user / etc.).
 
 #### [AT0095] Rate-limit caution banner
-- **Status:** ✅ closed.
-- **Tests:** `at0095-rate-limit-banner.test.ts`.
-- **Summary:** A single, app-level rate-limit caution banner surfaces (not per-card).
+- **Status:** 🗑️ retired — feature removed.
+- **Tests:** none (was `at0095-rate-limit-banner.test.ts`, deleted).
+- **Summary:** The persistent app-level rate-limit banner was replaced by a single deck-wide `RateLimitBulletinBridge` that fires transient bulletins from the account-global rate-limit store. Per-card dedup (the test's whole premise) is now structurally impossible; the surviving transition logic (`nextUsageBulletin`) is unit-covered in `lib/__tests__/rate-limit.test.ts`.
 
 #### [AT0096] Reasoning-effort chip
 - **Status:** ✅ closed.

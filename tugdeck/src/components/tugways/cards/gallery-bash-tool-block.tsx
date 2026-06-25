@@ -37,66 +37,6 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
-// Long-stdout fixture for the mount-in-saved-state app-tests
-// ---------------------------------------------------------------------------
-
-/**
- * 400-line stdout — exceeds `DEFAULT_COLLAPSE_THRESHOLD` (25) so the
- * uncontrolled TerminalBlock defaults to collapsed, and exceeds
- * `VISIBLE_THRESHOLD` (300) so the expanded body builds the
- * virtualizer's inner scroller. Both surfaces are what AT0067 and
- * AT0068 drive against:
- *
- *   - AT0067 expands the block, saves, reloads, and asserts the
- *     TerminalBlock's `data-collapsed` attribute reflects the saved
- *     "expanded" state from the very first DOM observation — no
- *     intermediate frame where the default-collapsed state painted
- *     before the saved value applied.
- *   - AT0068 scrolls the inner virtualized scroller to a non-zero
- *     position, saves, reloads, and asserts the scroller's first
- *     observable `scrollTop` matches the saved value — no jump from
- *     0 to saved.
- */
-const MOUNT_IN_SAVED_STATE_STDOUT = Array.from(
-  { length: 400 },
-  (_, i) =>
-    `line ${String(i + 1).padStart(3, "0")}: contents of a synthetic Bash run that exceeds the fold threshold`,
-).join("\n");
-
-const MOUNT_IN_SAVED_STATE_PROPS: ToolBlockProps = {
-  // Stable across reload so `componentStatePreservationKey` matches
-  // (the BashToolBlock derives its preservation key from `toolUseId`).
-  toolUseId: "toolu_mount_in_saved_state_e8",
-  toolName: "Bash",
-  seq: 0,
-  input: { command: "echo many lines" },
-  structuredResult: {
-    stdout: MOUNT_IN_SAVED_STATE_STDOUT,
-    stderr: "",
-    interrupted: false,
-  },
-  isError: false,
-  status: "ready",
-  durationMs: 12,
-};
-
-/**
- * `gallery-bash-mount-in-saved-state` — fixture for AT0067/AT0068.
- * Renders a single BashToolBlock whose stdout is long enough to engage
- * both the fold state (TerminalBlock collapsed/expanded) and the
- * virtualizer (inner scrollport with `data-tug-scroll-key`). Each
- * surface is a separate axis of `bag.components` / `bag.regionScroll`
- * and each axis must mount in its saved state on cold boot.
- */
-export function GalleryBashMountInSavedState(): React.ReactElement {
-  return (
-    <div className="cg-content" data-testid="gallery-bash-mount-in-saved-state">
-      <BashToolBlock {...MOUNT_IN_SAVED_STATE_PROPS} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
