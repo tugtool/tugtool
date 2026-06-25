@@ -1,14 +1,15 @@
 /**
- * Pure-logic test for the scheduled-wakeup countdown formatter. The
- * `JobCountdownValue` component wires this to the shared 1Hz tick and
- * renders through the real-app harness; here we pin the deterministic
- * format, including the elapsed-but-not-yet-flipped "firing…" case.
+ * Pure-logic test for the scheduled-wakeup helpers. `formatWakeSchedule`
+ * reads the row's *requested* delay (not a live clock) and renders a
+ * coarse, approximate label — the harness fires on its own jittered
+ * minute-boundary schedule, so a ticking per-second countdown would be
+ * false precision.
  */
 
 import { describe, expect, it } from "bun:test";
 
 import {
-  formatWakeCountdown,
+  formatWakeSchedule,
   scheduledCancelEnabled,
   wakeBadgeText,
 } from "@/components/tugways/cards/dev-card-telemetry-popovers";
@@ -73,14 +74,18 @@ describe("wakeBadgeText", () => {
   });
 });
 
-describe("formatWakeCountdown", () => {
-  it("counts down while the target is in the future", () => {
-    expect(formatWakeCountdown(60_000, 0)).toBe("fires in 1m 00s");
-    expect(formatWakeCountdown(52_000, 0)).toBe("fires in 52s");
+describe("formatWakeSchedule", () => {
+  it("renders an approximate minute label from the requested delay — no false precision", () => {
+    expect(formatWakeSchedule(60_000)).toBe("fires in ~1m");
+    expect(formatWakeSchedule(300_000)).toBe("fires in ~5m");
+    // Sub-minute rounds up to ~1m (the harness fires at the next minute
+    // boundary anyway); 90s rounds to ~2m.
+    expect(formatWakeSchedule(5_000)).toBe("fires in ~1m");
+    expect(formatWakeSchedule(90_000)).toBe("fires in ~2m");
   });
 
-  it("reads 'firing…' at and past the target (status flips out-of-band)", () => {
-    expect(formatWakeCountdown(1_000, 1_000)).toBe("firing…");
-    expect(formatWakeCountdown(1_000, 5_000)).toBe("firing…");
+  it("switches to an hour label past 60 minutes", () => {
+    expect(formatWakeSchedule(3_600_000)).toBe("fires in ~1h");
+    expect(formatWakeSchedule(2 * 3_600_000)).toBe("fires in ~2h");
   });
 });

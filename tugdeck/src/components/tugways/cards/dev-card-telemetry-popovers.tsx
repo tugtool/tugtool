@@ -1026,14 +1026,20 @@ function JobElapsedValue({ startedAtMs }: { startedAtMs: number }): React.ReactE
 }
 
 /**
- * Format a one-shot wakeup's countdown from its target and the current
- * clock — `"fires in 0m 52s"` while pending, `"firing…"` once the
- * target has passed but the wake has not yet flipped the row. Pure so
- * the format is unit-testable without the tick subscription.
+ * Format a wakeup's *requested* delay as a coarse, approximate label —
+ * `"fires in ~1m"`. Read from the row's own scheduled interval
+ * (`firesAtMs − startedAtMs`), NOT a live clock: the harness fires on
+ * its own jittered, minute-boundary schedule we don't observe (a "1
+ * minute" wakeup empirically landed at 1m 41s), so a ticking
+ * per-second countdown would be false precision. No tick, no drift —
+ * just the scheduled interval, rounded to a minute (or hour) with a
+ * `~`. Pure and unit-testable.
  */
-export function formatWakeCountdown(firesAtMs: number, nowMs: number): string {
-  const remaining = firesAtMs - nowMs;
-  return remaining > 0 ? `fires in ${formatDurationMs(remaining)}` : "firing…";
+export function formatWakeSchedule(delayMs: number): string {
+  const minutes = Math.max(1, Math.round(delayMs / 60_000));
+  if (minutes < 60) return `fires in ~${minutes}m`;
+  const hours = Math.max(1, Math.round(minutes / 60));
+  return `fires in ~${hours}h`;
 }
 
 /**
@@ -1067,17 +1073,6 @@ export function scheduledCancelEnabled(job: JobItem): boolean {
   return job.status === "scheduled" && job.kind === "cron";
 }
 
-/**
- * Live countdown readout for a scheduled one-shot wakeup — the
- * scheduled-row sibling of {@link JobElapsedValue}. Subscribes to the
- * shared 1Hz tick (mounted only while the popover is open) and ticks
- * down to "firing…" at the target; the row's status flips to terminal
- * out-of-band (wake fold or reaper), not from this clock.
- */
-function JobCountdownValue({ firesAtMs }: { firesAtMs: number }): React.ReactElement {
-  const now = useLiveTick();
-  return <>{formatWakeCountdown(firesAtMs, now)}</>;
-}
 
 /**
  * One row of the Jobs popover — a status dot beside a two-line text
@@ -1119,7 +1114,7 @@ function JobRow({
       <JobElapsedValue startedAtMs={job.startedAtMs} />
     ) : job.status === "scheduled" ? (
       typeof job.firesAtMs === "number" ? (
-        <JobCountdownValue firesAtMs={job.firesAtMs} />
+        formatWakeSchedule(job.firesAtMs - job.startedAtMs)
       ) : (
         `recurring (${job.scheduleLabel ?? "cron"})`
       )
@@ -1192,27 +1187,18 @@ function JobRow({
           size="2xs"
           onClick={() => onStopJob(job.jobId)}
         />
-      ) : job.status === "scheduled" && onCancelScheduledWork !== undefined ? (
-        // A cron is genuinely cancellable (the assistant `CronDelete`s
-        // it). A one-shot wakeup is harness-owned and fire-once — its
-        // fire is unavoidable, so the button is disabled and says so.
+      ) : scheduledCancelEnabled(job) && onCancelScheduledWork !== undefined ? (
+        // Only a cron gets a Cancel button — the assistant `CronDelete`s
+        // it. A one-shot wakeup is harness-owned and fire-once, so there
+        // is nothing to cancel; we show no button rather than a dead one.
         <TugPushButton
           subtype="icon"
           icon={<X size={12} strokeWidth={3} />}
-          aria-label={
-            job.kind === "cron"
-              ? `Cancel scheduled cron: ${description}`
-              : `Scheduled wakeup (cannot be cancelled): ${description}`
-          }
-          title={
-            job.kind === "cron"
-              ? "Ask the assistant to cancel this cron"
-              : "Harness-scheduled — it will fire once and can't be cancelled"
-          }
+          aria-label={`Cancel scheduled cron: ${description}`}
+          title="Ask the assistant to cancel this cron"
           emphasis="outlined"
           role="action"
           size="2xs"
-          disabled={!scheduledCancelEnabled(job)}
           onClick={() => onCancelScheduledWork(job.jobId)}
         />
       ) : null}

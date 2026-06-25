@@ -554,10 +554,14 @@
   margin-block-start: 1px;
 }
 
-/* The stop button is a row-level control, not an indicator — it stays
-   vertically centered across the two-line block. */
+/* Trailing control (Stop / Cancel) — a fixed-size icon button in its
+   own column: it never shrinks (so the square glyph can't be crushed to
+   an oval by a long description) and top-aligns to the row's first line,
+   matching the status dot rather than centering across both lines. */
 .dev-jobs-popover-row > .tug-push-button {
-  align-self: center;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-block-start: 1px;
 }
 
 /* The two-line text block takes the row's free width; min-width: 0
