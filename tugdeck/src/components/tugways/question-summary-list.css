@@ -31,14 +31,14 @@ body {
   /* Inter-row gap. */
   --tugx-qrow-stack-gap: var(--tug-space-xs);
 
-  /* Heading typography. */
-  --tugx-qrow-heading-size:    0.8125rem;
+  /* Heading typography — regular transcript-text size (14px nominal). */
+  --tugx-qrow-heading-size:    0.875rem;
   --tugx-qrow-heading-weight:  var(--tug-font-weight-medium);
   --tugx-qrow-heading-leading: 1.4;
   --tugx-qrow-heading-color:   var(--tug7-element-global-text-normal-default-rest);
 
-  /* Answer typography — a tone quieter than the heading. */
-  --tugx-qrow-answer-size:    0.8125rem;
+  /* Answer typography — a tone quieter than the heading, same size. */
+  --tugx-qrow-answer-size:    0.875rem;
   --tugx-qrow-answer-leading: 1.4;
   --tugx-qrow-answer-color:   var(--tug7-element-global-text-normal-muted-rest);
 
