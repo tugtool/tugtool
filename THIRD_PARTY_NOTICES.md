@@ -264,42 +264,20 @@ SOFTWARE.
 
 ---
 
-## B612 Mono
+## IBM Plex
 
-**Source:** https://github.com/polarsys/b612
-**What was adopted:** Font files (`B612Mono-Regular.ttf`, `B612Mono-Bold.ttf`) bundled in `tugdeck/styles/fonts/` and `tugdeck/public/fonts/` for the tide-card Z2 status-row design spike. B612 Mono was designed by Airbus, ENAC, and Université de Toulouse III for maximum legibility on aircraft cockpit instrument screens.
-**Used in:** `tugdeck/styles/tug.css` `@font-face` declarations; `tugdeck/src/components/tugways/cards/gallery-tide-status-row.tsx` font variants.
+**Source:** https://github.com/IBM/plex (npm: `@ibm/plex-*`)
+**What was adopted:** IBM Plex font files (woff2) bundled in `tugdeck/public/fonts/`, used as the primary UI typeface family. Core families — IBM Plex Sans, IBM Plex Mono, IBM Plex Sans Condensed — plus the non-Latin script companions IBM Plex Sans Arabic, Hebrew, Thai, and Devanagari, which extend the same skeleton to scripts the core face lacks. The script faces are vendored reproducibly via `tugdeck/scripts/fetch-fonts.ts` (`just fetch-fonts`), pinned to `@ibm/plex-*@1.1.0`.
+**Used in:** `tugdeck/public/fonts.css` `@font-face` declarations; `--tug-font-family-sans` / `--tug-font-family-mono` / `--tug-font-family-condensed` token stacks in `tugdeck/styles/themes/*.css`.
 
 ```
 SIL Open Font License Version 1.1
 
-Copyright (c) 2012, Polarsys (polarsys.org),
-with Reserved Font Name B612.
+Copyright © 2017 IBM Corp. with Reserved Font Name "Plex".
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
 https://openfontlicense.org
 
-(Full license text in tugdeck/styles/fonts/B612-OFL.txt)
-```
-
----
-
-## JetBrains Mono
-
-**Source:** https://github.com/JetBrains/JetBrainsMono
-**What was adopted:** Font files (`JetBrainsMono-Regular.woff2`, `JetBrainsMono-Bold.woff2`) bundled in `tugdeck/styles/fonts/` and `tugdeck/public/fonts/` for the tide-card Z2 status-row design spike. JetBrains Mono is the typeface JetBrains commissioned for code editors; ships tabular figures by default.
-**Used in:** `tugdeck/styles/tug.css` `@font-face` declarations; `tugdeck/src/components/tugways/cards/gallery-tide-status-row.tsx` font variants.
-
-```
-SIL Open Font License Version 1.1
-
-Copyright 2020 The JetBrains Mono Project Authors
-(https://github.com/JetBrains/JetBrainsMono)
-
-This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-https://openfontlicense.org
-
-(Full license text in tugdeck/styles/fonts/JetBrainsMono-OFL.txt)
+(Full per-family license text in tugdeck/public/fonts/licenses/plex-sans-*-OFL.txt)
 ```

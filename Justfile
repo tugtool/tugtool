@@ -33,6 +33,11 @@ dev-watch: build
     trap "kill $CARGO_WATCH_PID 2>/dev/null" EXIT
     tugrust/target/debug/tugexec
 
+# Vendor IBM Plex woff2 faces from npm into tugdeck/public/fonts (no runtime web loading).
+# No args = all phase-1 script families; pass a package short name to fetch one (e.g. plex-math).
+fetch-fonts *ARGS:
+    cd tugdeck && bun run scripts/fetch-fonts.ts {{ARGS}}
+
 # Run all tests (Rust + TypeScript)
 test: test-rust test-ts
 

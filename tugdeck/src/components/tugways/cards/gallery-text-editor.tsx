@@ -145,18 +145,13 @@ const FONT_FAMILY_OPTIONS: TugPopupButtonItem<string>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: "default", label: "Default (editor)" },
   {
     action: TUG_ACTIONS.SET_VALUE,
-    value: '"Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace',
-    label: "Hack (mono)",
+    value: '"IBM Plex Mono", "SFMono-Regular", "Menlo", monospace',
+    label: "IBM Plex Mono",
   },
   {
     action: TUG_ACTIONS.SET_VALUE,
-    value: '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, sans-serif',
+    value: '"IBM Plex Sans", "Segoe UI", system-ui, sans-serif',
     label: "IBM Plex Sans",
-  },
-  {
-    action: TUG_ACTIONS.SET_VALUE,
-    value: '"Inter", "Segoe UI", system-ui, sans-serif',
-    label: "Inter",
   },
 ];
 

@@ -13,6 +13,7 @@
     "audit:tokens": "bun run scripts/audit-tokens.ts",
     "audit:theme-contrast": "bun run scripts/audit-theme-contrast.ts",
     "generate:rename-maps": "bun run scripts/generate-rename-maps.ts",
+    "fetch:fonts": "bun run scripts/fetch-fonts.ts",
     "test": "bun test"
   },
   "dependencies": {

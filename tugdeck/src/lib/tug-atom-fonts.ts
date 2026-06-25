@@ -33,6 +33,20 @@ export interface LoadedFontFace {
   css: string;
 }
 
+/**
+ * Families intentionally NOT embedded into atom SVGs. Atoms only ever
+ * render Latin/mono labels (the editor + mono stacks), so the non-Latin
+ * script faces would only bloat boot — each one fetched and base64-encoded
+ * for glyphs no atom can contain. Excluding them keeps discovery cheap as
+ * the bundled font set grows. Compared via normalizeFamily.
+ */
+const _nonAtomFamilies = new Set<string>([
+  "ibm plex sans arabic",
+  "ibm plex sans hebrew",
+  "ibm plex sans thai",
+  "ibm plex sans devanagari",
+]);
+
 const _database: LoadedFontFace[] = [];
 const _listeners: Array<() => void> = [];
 let _loading = false;
@@ -121,7 +135,10 @@ function collectFontFaceRules(): CSSFontFaceRule[] {
       continue;
     }
     for (const rule of Array.from(rules)) {
-      if (rule instanceof CSSFontFaceRule) out.push(rule);
+      if (!(rule instanceof CSSFontFaceRule)) continue;
+      const family = rule.style.getPropertyValue("font-family").trim();
+      if (_nonAtomFamilies.has(normalizeFamily(family))) continue;
+      out.push(rule);
     }
   }
   return out;

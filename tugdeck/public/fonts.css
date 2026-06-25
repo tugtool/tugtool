@@ -23,65 +23,48 @@
  *
  * Paths are root-absolute (`/fonts/*.woff2`) so they resolve identically
  * in dev (Vite serves /public at root) and in prod (the files are copied
- * to the dist root). OFL 1.1 (IBM Plex), Hack license, Atkinson
- * Hyperlegible OFL — see THIRD_PARTY_NOTICES.md. */
+ * to the dist root).
+ *
+ * Weight set is pruned to what the UI actually requests across every
+ * family: regular (400), medium (500), semibold (600), bold (700) — see
+ * the --tug-font-weight-* tokens. Italic ships only where prose/code
+ * emphasis needs it (Latin 400 + 700). Thin/ExtraLight/Light/Text(450)
+ * are not shipped; nothing renders them, and font-synthesis:none means an
+ * unused weight is never faked. Refresh script faces via `just fetch-fonts`.
+ *
+ * All IBM Plex faces are OFL 1.1 — see THIRD_PARTY_NOTICES.md. */
 
-/* IBM Plex Sans — complete family (Thin..Bold incl. Text/450, upright + italic).
-   Bundled in full: the app runs locally, so there is no download-size reason
-   to ship a weight subset — every weight + italic maps here so CSS can request
-   any of them and get a real face (no synthetic bolding/obliquing). OFL 1.1. */
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-Thin.woff2") format("woff2");
-  font-weight: 100;
-  font-style: normal;
-  font-display: block;
-}
 
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-ThinItalic.woff2") format("woff2");
-  font-weight: 100;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-ExtraLight.woff2") format("woff2");
-  font-weight: 200;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-ExtraLightItalic.woff2") format("woff2");
-  font-weight: 200;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-Light.woff2") format("woff2");
-  font-weight: 300;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-LightItalic.woff2") format("woff2");
-  font-weight: 300;
-  font-style: italic;
-  font-display: block;
-}
-
+/* IBM Plex Sans — primary UI typeface (Latin/Greek/Cyrillic). Upright
+   400/500/600/700; italic 400/700 for prose emphasis. OFL 1.1. */
 @font-face {
   font-family: "IBM Plex Sans";
   src: url("/fonts/IBMPlexSans-Regular.woff2") format("woff2");
   font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/IBMPlexSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/IBMPlexSans-Bold.woff2") format("woff2");
+  font-weight: 700;
   font-style: normal;
   font-display: block;
 }
@@ -96,122 +79,43 @@
 
 @font-face {
   font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-Text.woff2") format("woff2");
-  font-weight: 450;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-TextItalic.woff2") format("woff2");
-  font-weight: 450;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-MediumItalic.woff2") format("woff2");
-  font-weight: 500;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-SemiBoldItalic.woff2") format("woff2");
-  font-weight: 600;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  src: url("/fonts/IBMPlexSans-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
   src: url("/fonts/IBMPlexSans-BoldItalic.woff2") format("woff2");
   font-weight: 700;
   font-style: italic;
   font-display: block;
 }
 
-/* IBM Plex Mono — complete family, paired with IBM Plex Sans (shared
-   metrics + x-height). Same full weight + italic coverage. OFL 1.1. */
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-Thin.woff2") format("woff2");
-  font-weight: 100;
-  font-style: normal;
-  font-display: block;
-}
 
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-ThinItalic.woff2") format("woff2");
-  font-weight: 100;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-ExtraLight.woff2") format("woff2");
-  font-weight: 200;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-ExtraLightItalic.woff2") format("woff2");
-  font-weight: 200;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-Light.woff2") format("woff2");
-  font-weight: 300;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-LightItalic.woff2") format("woff2");
-  font-weight: 300;
-  font-style: italic;
-  font-display: block;
-}
-
+/* IBM Plex Mono — editor + code face, metrics-paired with Plex Sans.
+   Same pruned weight/italic set. OFL 1.1. */
 @font-face {
   font-family: "IBM Plex Mono";
   src: url("/fonts/IBMPlexMono-Regular.woff2") format("woff2");
   font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-Bold.woff2") format("woff2");
+  font-weight: 700;
   font-style: normal;
   font-display: block;
 }
@@ -226,225 +130,16 @@
 
 @font-face {
   font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-Text.woff2") format("woff2");
-  font-weight: 450;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-TextItalic.woff2") format("woff2");
-  font-weight: 450;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-MediumItalic.woff2") format("woff2");
-  font-weight: 500;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-SemiBold.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-SemiBoldItalic.woff2") format("woff2");
-  font-weight: 600;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/IBMPlexMono-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
   src: url("/fonts/IBMPlexMono-BoldItalic.woff2") format("woff2");
   font-weight: 700;
   font-style: italic;
   font-display: block;
 }
 
-@font-face {
-  font-family: "Hack";
-  src: url("/fonts/hack-regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
 
-/* B612 Mono — Airbus cockpit display font (SIL OFL 1.1).
-   Designed for maximum legibility on aircraft instrument screens;
-   particularly distinctive tabular figures. Bundled for the Z2
-   status-row design spike — every digit-bearing slot can adopt it
-   as the instrument-readout typeface. */
-@font-face {
-  font-family: "B612 Mono";
-  src: url("/fonts/B612Mono-Regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "B612 Mono";
-  src: url("/fonts/B612Mono-Bold.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: block;
-}
-
-/* JetBrains Mono — designed for code editors, ships tabular figures
-   by default. Reads cleaner / more modern than Hack at small sizes.
-   SIL OFL 1.1. Comparison companion to B612 Mono in the Z2 spike. */
-@font-face {
-  font-family: "JetBrains Mono";
-  src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "JetBrains Mono";
-  src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Inter";
-  src: url("/fonts/Inter-VariableFont_opsz,wght.ttf") format("truetype");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Inter";
-  src: url("/fonts/Inter-Italic-VariableFont_opsz,wght.ttf") format("truetype");
-  font-weight: 100 900;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Source Sans 3";
-  src: url("/fonts/SourceSans3-VariableFont_wght.ttf") format("truetype");
-  font-weight: 200 900;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Source Sans 3";
-  src: url("/fonts/SourceSans3-Italic-VariableFont_wght.ttf") format("truetype");
-  font-weight: 200 900;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Nunito Sans";
-  src: url("/fonts/NunitoSans-VariableFont_YTLC,opsz,wdth,wght.ttf") format("truetype");
-  font-weight: 200 1000;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Nunito Sans";
-  src: url("/fonts/NunitoSans-Italic-VariableFont_YTLC,opsz,wdth,wght.ttf") format("truetype");
-  font-weight: 200 1000;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/fonts/AtkinsonHyperlegible-Regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/fonts/AtkinsonHyperlegible-Italic.ttf") format("truetype");
-  font-weight: 400;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/fonts/AtkinsonHyperlegible-Bold.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("/fonts/AtkinsonHyperlegible-BoldItalic.ttf") format("truetype");
-  font-weight: 700;
-  font-style: italic;
-  font-display: block;
-}
-
-/* IBM Plex Sans Condensed — display/space-constrained companion to IBM
-   Plex Sans (shares the Plex skeleton, narrower set width). Used as the
-   markdown heading display face and for the tight Z4B indicator chips.
-   Full weight + italic coverage (TTF->woff2 via woff2_compress). OFL 1.1. */
-
-@font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-Thin.woff2") format("woff2");
-  font-weight: 100;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-ExtraLight.woff2") format("woff2");
-  font-weight: 200;
-  font-style: normal;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-Light.woff2") format("woff2");
-  font-weight: 300;
-  font-style: normal;
-  font-display: block;
-}
-
+/* IBM Plex Sans Condensed — heading / tight-chip display face. Shares
+   the Plex skeleton at a narrower set width. Upright 400/500/600/700;
+   no italic is requested for condensed. OFL 1.1. */
 @font-face {
   font-family: "IBM Plex Sans Condensed";
   src: url("/fonts/IBMPlexSansCondensed-Regular.woff2") format("woff2");
@@ -477,58 +172,146 @@
   font-display: block;
 }
 
-@font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-ThinItalic.woff2") format("woff2");
-  font-weight: 100;
-  font-style: italic;
-  font-display: block;
-}
 
-@font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-ExtraLightItalic.woff2") format("woff2");
-  font-weight: 200;
-  font-style: italic;
-  font-display: block;
-}
+/* IBM Plex Sans — non-Latin script companions (Phase 1). IBM Plex Sans
+   covers Latin/Greek/Cyrillic; these sibling families extend the same
+   skeleton to scripts the core face lacks, so mixed-script prose stays
+   in one typeface instead of falling back to a system font. Upright,
+   same 400/500/600/700 set (these scripts have no italic). Vendored via
+   `just fetch-fonts`. OFL 1.1 — see fonts/licenses/. */
 
+/* IBM Plex Sans Arabic — Arabic (also Persian/Urdu glyph set). RTL. */
 @font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-LightItalic.woff2") format("woff2");
-  font-weight: 300;
-  font-style: italic;
-  font-display: block;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-Italic.woff2") format("woff2");
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/IBMPlexSansArabic-Regular.woff2") format("woff2");
   font-weight: 400;
-  font-style: italic;
+  font-style: normal;
   font-display: block;
 }
 
 @font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-MediumItalic.woff2") format("woff2");
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/IBMPlexSansArabic-Medium.woff2") format("woff2");
   font-weight: 500;
-  font-style: italic;
+  font-style: normal;
   font-display: block;
 }
 
 @font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-SemiBoldItalic.woff2") format("woff2");
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/IBMPlexSansArabic-SemiBold.woff2") format("woff2");
   font-weight: 600;
-  font-style: italic;
+  font-style: normal;
   font-display: block;
 }
 
 @font-face {
-  font-family: "IBM Plex Sans Condensed";
-  src: url("/fonts/IBMPlexSansCondensed-BoldItalic.woff2") format("woff2");
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/IBMPlexSansArabic-Bold.woff2") format("woff2");
   font-weight: 700;
-  font-style: italic;
+  font-style: normal;
   font-display: block;
 }
+
+
+/* IBM Plex Sans Hebrew — Hebrew. RTL. */
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  src: url("/fonts/IBMPlexSansHebrew-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  src: url("/fonts/IBMPlexSansHebrew-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  src: url("/fonts/IBMPlexSansHebrew-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  src: url("/fonts/IBMPlexSansHebrew-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+
+/* IBM Plex Sans Thai — Thai. */
+@font-face {
+  font-family: "IBM Plex Sans Thai";
+  src: url("/fonts/IBMPlexSansThai-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Thai";
+  src: url("/fonts/IBMPlexSansThai-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Thai";
+  src: url("/fonts/IBMPlexSansThai-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Thai";
+  src: url("/fonts/IBMPlexSansThai-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+
+/* IBM Plex Sans Devanagari — Devanagari (Hindi, Marathi, Nepali, Sanskrit). */
+@font-face {
+  font-family: "IBM Plex Sans Devanagari";
+  src: url("/fonts/IBMPlexSansDevanagari-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Devanagari";
+  src: url("/fonts/IBMPlexSansDevanagari-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Devanagari";
+  src: url("/fonts/IBMPlexSansDevanagari-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Devanagari";
+  src: url("/fonts/IBMPlexSansDevanagari-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+

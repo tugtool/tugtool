@@ -187,7 +187,7 @@ export const TRANSCRIPT_CHIP_BASE_FONT_SIZE = 14;
 /**
  * Set the font used for the editor's atom-chip rendering AND
  * measurement. `family` is the full CSS font-family stack
- * (e.g. `"Hack", monospace`). The editor settings store calls this
+ * (e.g. `"IBM Plex Mono", monospace`). The editor settings store calls this
  * when the user's font preference changes (and at cold-boot
  * construction time).
  *

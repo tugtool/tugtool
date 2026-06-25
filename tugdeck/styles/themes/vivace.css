@@ -42,10 +42,10 @@ body {
   --tug-icon-size-xs: 12px;
 
   /* Font */
-  --tug-font-family-editor: "IBM Plex Mono", "Hack", "SFMono-Regular", "Menlo", monospace;
-  --tug-font-family-mono: "IBM Plex Mono", "Hack", "SFMono-Regular", "Menlo", monospace;
-  --tug-font-family-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --tug-font-family-condensed: "IBM Plex Sans Condensed", "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tug-font-family-editor: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+  --tug-font-family-mono: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+  --tug-font-family-sans: "IBM Plex Sans", "IBM Plex Sans Arabic", "IBM Plex Sans Hebrew", "IBM Plex Sans Thai", "IBM Plex Sans Devanagari", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tug-font-family-condensed: "IBM Plex Sans Condensed", "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
   --tug-font-size-8xs: 5px;
   --tug-font-size-7xs: 6px;
   --tug-font-size-6xs: 7px;
