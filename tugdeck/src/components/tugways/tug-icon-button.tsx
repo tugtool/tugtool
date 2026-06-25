@@ -67,6 +67,8 @@
  *
  * Sizing maps directly to `TugButton`'s `size`:
  *
+ *  - `size="xs"`           → `tug-button-icon-xs` — the most compact,
+ *    for trailing actions tucked into dense rows.
  *  - `size="sm"` (default) → `tug-button-icon-sm` — list-row trailing
  *    actions (~14×14 icon, 24×24 hit target).
  *  - `size="md"`           → `tug-button-icon-md` — denser toolbars.
@@ -135,7 +137,7 @@ export interface TugIconButtonProps {
    *  - `"sm"` (default) — list-row trailing icon (24×24 hit target).
    *  - `"md"`           — denser toolbar action.
    */
-  size?: "sm" | "md";
+  size?: "xs" | "sm" | "md";
   /**
    * Color tone — maps to TugButton's `role`:
    *
