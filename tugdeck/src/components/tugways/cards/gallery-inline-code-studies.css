@@ -1,0 +1,120 @@
+/**
+ * gallery-inline-code-studies.css — the interactive inline-code tuner.
+ *
+ * One live preview of dense prose whose inline `code` is styled entirely
+ * from CSS variables the card writes onto `.cg-ics-preview` via the DOM
+ * ([L06]): `--ics-spot` (the theme's spot color as resolved oklch),
+ * `--ics-level` (how much spot rides on the neutral), and `--ics-size`
+ * (the monospace size factor). The shipped `.tugx-md-block code` rule in
+ * `tug-markdown-view.css` is never touched — these overrides are scoped
+ * to `.cg-ics-preview`.
+ *
+ * `--ics-neutral` is the round-1 winner (a dim of the prose color); the
+ * spot blends onto it, so level 0% lands on that neutral and higher
+ * levels add hue. Spot color is dialed per theme through the embedded
+ * color well + picker; level and size through sliders.
+ */
+
+.cg-inline-code-studies {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Controls strip — stays put; the preview scrolls under it. */
+.cg-ics-controls {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.cg-ics-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cg-ics-row-label {
+  flex: none;
+  width: 92px;
+  font-family: var(--tug-font-family-sans);
+  font-size: 11px;
+  font-weight: var(--tug-font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.cg-ics-note {
+  font-family: var(--tug-font-family-mono);
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.cg-ics-row .tug-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The embedded picker, shown when a well is active. */
+.cg-ics-picker {
+  flex: none;
+  padding: 4px 20px 14px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* Copyable readout of every theme's current dialed-in values. */
+.cg-ics-readout {
+  flex: none;
+  margin: 0;
+  padding: 12px 20px;
+  font-family: var(--tug-font-family-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+  opacity: 0.85;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.cg-ics-readout .cg-ics-active {
+  font-weight: var(--tug-font-weight-bold);
+  opacity: 1;
+}
+
+/* Live preview — a reading column, scrolls within the card. */
+.cg-ics-preview {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  padding: 16px 24px 48px;
+  font-size: 14px;
+
+  --ics-neutral: color-mix(in srgb, currentColor 78%, transparent);
+}
+
+.cg-ics-measure {
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+/* The treatment under test — driven entirely by the live CSS variables. */
+.cg-ics-preview .tugx-md-block code {
+  background: transparent;
+  padding: 0;
+  color: color-mix(
+    in srgb,
+    var(--ics-spot, currentColor) var(--ics-level, 30%),
+    var(--ics-neutral)
+  );
+  font-size: var(--ics-size, 1em);
+}

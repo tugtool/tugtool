@@ -73,6 +73,7 @@ import { GalleryZ2Workshop } from "./gallery-z2-workshop";
 import { GalleryPaneBulletin } from "./gallery-pane-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryTranscriptMarkdown } from "./gallery-transcript-markdown";
+import { GalleryInlineCodeStudies } from "./gallery-inline-code-studies";
 import { GalleryTranscriptCopy } from "./gallery-transcript-copy";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
@@ -1038,6 +1039,19 @@ export function registerGalleryCards(): void {
     componentId: "gallery-transcript-markdown",
     contentFactory: (_cardId) => <GalleryTranscriptMarkdown />,
     defaultMeta: { title: "Transcript Markdown", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Inline-code legibility spike — six treatments of one dense paragraph
+  // of real prose, stacked at reading width, to vet how (and whether) to
+  // signal inline `code` without the wash fragmenting the line.
+  registerCard({
+    componentId: "gallery-inline-code-studies",
+    contentFactory: (_cardId) => <GalleryInlineCodeStudies />,
+    defaultMeta: { title: "Inline Code Studies", icon: "FileText", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

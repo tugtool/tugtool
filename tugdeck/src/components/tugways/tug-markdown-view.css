@@ -87,21 +87,20 @@ body {
   --tugx-md-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
   --tugx-md-link-decoration:  underline;
 
-  /* Inline code ([P05]). Treated like a highlighter swipe, NOT a chip:
-   * full 1em (no size-down), straight edges (no radius), no border/shadow.
-   * The wash is horizontal-only padding so it bleeds past the glyphs like
-   * a marker stroke and keeps the text on the prose baseline. Body text
-   * color is kept — distinction is the mono font plus the wash. This is
-   * deliberately unlike an atom chip (recessed, rounded, key-washed).
-   *
-   * Wash hue: a neutral `currentColor`-derived tint (no accent), so it
-   * never reads as interactive/link and tracks every theme automatically
-   * (light gray over dark prose, dark gray over light prose). */
-  --tugx-md-inline-code-padding: 0 0.2em;
+  /* Inline code ([P05]). No wash, no chip — a field of washed boxes is
+   * what broke reading flow in dense prose. Distinction is carried by the
+   * mono font plus the theme's `spot` color (its third-leg hue, separate
+   * from key and accent), dimmed onto the prose neutral so it reads as a
+   * quiet literal, never as a link or affordance. The final color is
+   * authored per theme as `--tug7-element-tone-text-normal-code-rest`
+   * (spot at the theme's level over the neutral), so it tracks every theme
+   * and its mode. A slight 0.95em size-down lets the mono sit a touch
+   * quieter against the sans without leaving the prose baseline. */
+  --tugx-md-inline-code-padding: 0;
   --tugx-md-inline-code-radius:  0;
-  --tugx-md-inline-code-size:    1em;
-  --tugx-md-inline-code-color:   inherit;
-  --tugx-md-inline-code-bg:      color-mix(in srgb, currentColor 11%, transparent);
+  --tugx-md-inline-code-size:    0.95em;
+  --tugx-md-inline-code-color:   var(--tug7-element-tone-text-normal-code-rest);
+  --tugx-md-inline-code-bg:      transparent;
 
   /* Fenced code body */
   --tugx-md-fenced-code-padding:     var(--tug-space-md) var(--tug-space-lg);
@@ -376,8 +375,8 @@ body {
    as a micro-heading and ties to the block headings. `***` is <strong><em>:
    the nested em inherits condensed and adds italic → real Condensed
    BoldItalic. Single `*` em (below) stays regular-width body italic. */
-.tugx-md-block strong { font-weight: var(--tugx-md-strong-weight); font-family: var(--tug-font-family-condensed); }
-.tugx-md-block em { font-style: var(--tugx-md-em-style); font-family: var(--tug-font-family-condensed); }
+.tugx-md-block strong { font-weight: var(--tugx-md-strong-weight); }
+.tugx-md-block em { font-style: var(--tugx-md-em-style); }
 .tugx-md-block del,
 .tugx-md-block s {
   text-decoration: var(--tugx-md-strikethrough-decoration);
