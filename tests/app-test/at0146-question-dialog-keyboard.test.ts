@@ -352,30 +352,16 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         );
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
 
-        // (1) On open a SINGLE single-select question seeds the key view on
-        //     Submit (enabled by the preseeded first option) — so the
-        //     recommended default is acceptable in one Return.
+        // (1) On open a single-select question seeds the key view on the
+        //     OPTIONS group — answering is the task — with the cursor on the
+        //     first option (`seedFocusKey` → QUESTION_OPTIONS_ORDER, see
+        //     dev-question-dialog.tsx). The seam below starts from there.
         await app.waitForCondition<boolean>(
-          `(function(){var el=document.querySelector(${JSON.stringify(SUBMIT)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+          `(function(){var el=document.querySelector(${JSON.stringify(OPTIONS)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
           { timeoutMs: 4000 },
         );
 
-        // (2) Down from the button row crosses the seam into the radio options.
-        await app.nativeKey("ArrowDown");
-        await app.waitForCondition<boolean>(
-          `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
-          { timeoutMs: 3000 },
-        );
-        expect(
-          await hasAttr(app, RADIO, "data-key-view-kbd"),
-          "Down from the button row seams into the radio options",
-        ).toBe(true);
-        expect(
-          await hasAttr(app, EDITOR, "data-key-view-kbd"),
-          "the arrow never escapes the trap to the editor",
-        ).toBe(false);
-
-        // (3) Up from the top of the radio group seams back to the button row.
+        // (2) Up from the top of the radio group crosses the seam to the button row.
         await app.nativeKey("ArrowUp");
         await app.waitForCondition<boolean>(
           `(function(){var el=document.querySelector(${JSON.stringify(CANCEL)});return el!==null && el.hasAttribute("data-key-view-kbd");})()` +
@@ -385,15 +371,23 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         expect(
           (await hasAttr(app, CANCEL, "data-key-view-kbd")) ||
             (await hasAttr(app, SUBMIT, "data-key-view-kbd")),
-          "Up from the radio group seams to the button row (Cancel or Submit)",
+          "Up from the top of the radio group seams to the button row (Cancel or Submit)",
         ).toBe(true);
+        expect(
+          await hasAttr(app, EDITOR, "data-key-view-kbd"),
+          "the arrow never escapes the trap to the editor",
+        ).toBe(false);
 
-        // Return into the radio options to rove the cursor below.
+        // (3) Down from the button row crosses the seam back into the radio options.
         await app.nativeKey("ArrowDown");
         await app.waitForCondition<boolean>(
           `(function(){var el=document.querySelector(${JSON.stringify(RADIO)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
           { timeoutMs: 3000 },
         );
+        expect(
+          await hasAttr(app, RADIO, "data-key-view-kbd"),
+          "Down from the button row seams into the radio options",
+        ).toBe(true);
 
         // (4) Inside the group, Down roves the cursor (no commit on move).
         await app.nativeKey("ArrowDown");

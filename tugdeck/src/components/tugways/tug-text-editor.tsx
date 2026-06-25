@@ -2766,6 +2766,16 @@ function CompletionOverlay({
       ref={popupRef}
       data-slot="tug-completion-menu"
       className="tug-completion-menu"
+      // Refuse focus-chain promotion: a pointerdown on a completion item
+      // must NOT promote the enclosing `deck-canvas` responder, or
+      // click-to-accept would steal first-responder from the editor and
+      // the accepted atom would land nowhere. The canvas overlay root the
+      // menu portals into no longer carries a blanket refuse (it was
+      // disambiguated away in `f9a1b5714`), so the menu marks itself —
+      // `isFocusRefusing` matches via `.closest()`, covering every item.
+      // Pointer events still fire (the accept handler runs); only the
+      // capture-phase responder promotion is short-circuited.
+      data-tug-focus="refuse"
       style={{
         position: "fixed",
         // `pointer-events: auto` re-enables clicks on this child of

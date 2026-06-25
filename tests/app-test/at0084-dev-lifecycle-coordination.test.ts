@@ -210,8 +210,8 @@ function ghostRowCount(app: App, cardId: CardId): Promise<number> {
 function ghostRowTexts(app: App, cardId: CardId): Promise<string[]> {
   return app.evalJS<string[]>(
     `Array.from(document.querySelectorAll(
-      '[data-card-id="${cardId}"] [data-slot="dev-transcript-ghost-row"] .dev-card-transcript-user-body'
-    )).map(function (el) { return el.textContent; })`,
+      '[data-card-id="${cardId}"] [data-slot="dev-transcript-ghost-row"] [data-testid="dev-card-transcript-user-body"]'
+    )).map(function (el) { return (el.textContent || "").trim(); })`,
   );
 }
 
@@ -446,8 +446,8 @@ describe.skipIf(!SHOULD_RUN)(
           await waitForSubmitMode(app, "E", "restoring");
           expect(
             await stateCellLabel(app, "E"),
-            "REPLAYING: Z2 STATE cell reads Replaying",
-          ).toBe("Replaying");
+            "REPLAYING: Z2 STATE cell reads Restoring",
+          ).toBe("Restoring");
 
           // --- Card F: TRANSPORT_DOWN -------------------------------
           // The wire goes offline on an idle card: Z5 becomes the inert

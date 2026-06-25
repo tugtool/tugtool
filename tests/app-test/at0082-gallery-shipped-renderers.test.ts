@@ -78,19 +78,23 @@ const CARD_SPECS: ReadonlyArray<CardSpec> = [
   {
     componentId: "gallery-tool-block-file",
     testId: "gallery-tool-block-file",
-    // 3 Read variants + 3 Edit variants; each a single tool-block root.
+    // 3 Read + 3 Edit + 3 Write + 3 NotebookEdit variants ([#step-26]);
+    // each a single tool-block root.
     expectedSlots: [
       { selector: '[data-slot="read-tool-block"]', count: 3 },
       { selector: '[data-slot="edit-tool-block"]', count: 3 },
-      { selector: '[data-slot$="-tool-block"]', count: 6 },
+      { selector: '[data-slot="write-tool-block"]', count: 3 },
+      { selector: '[data-slot="notebook-edit-tool-block"]', count: 3 },
+      { selector: '[data-slot$="-tool-block"]', count: 12 },
     ],
   },
   {
     componentId: "gallery-tool-block-default",
     testId: "gallery-tool-block-default",
-    // 6 DefaultToolWrapper variants.
+    // 6 DefaultToolBlock variants (the block root data-slot is
+    // `default-tool-block`, delegated via the chrome).
     expectedSlots: [
-      { selector: '[data-slot="default-tool-wrapper"]', count: 6 },
+      { selector: '[data-slot="default-tool-block"]', count: 6 },
     ],
   },
   {

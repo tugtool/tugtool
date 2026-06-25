@@ -46,7 +46,7 @@ const RESTORE_TOLERANCE_PX = 2;
 
 interface RegionMeta {
   atBottom?: boolean;
-  anchor?: { index: number; offset: number; depthFromEnd?: number };
+  anchor?: { index: number; offset: number; turnDepthFromEnd?: number; depthFromEnd?: number };
 }
 interface CardBag {
   regionScroll?: Record<string, { x: number; y: number; meta?: RegionMeta }>;
@@ -123,12 +123,16 @@ describe.skipIf(!SHOULD_RUN)("at0190: scrolled-up transcript restores pixel-perf
         expect(regionA).toBeTruthy();
         expect(regionA?.meta?.atBottom).not.toBe(true);
         expect(typeof regionA?.meta?.anchor?.index).toBe("number");
-        // The anchor records its distance-from-bottom in message-rows — the
-        // invariant that drives faithful restore under recency windowing
-        // ([recency P05], #step-6): it sizes the resume window and relocates
-        // the anchor regardless of how much is paged in.
-        expect(typeof regionA?.meta?.anchor?.depthFromEnd).toBe("number");
-        expect(regionA?.meta?.anchor?.depthFromEnd).toBeGreaterThan(0);
+        // The anchor records its distance-from-bottom — the invariant that
+        // drives faithful restore under recency windowing ([recency P05],
+        // #step-6): it sizes the resume window and relocates the anchor
+        // regardless of how much is paged in. The transcript is a
+        // turn-windowed source, so this depth is persisted as
+        // `turnDepthFromEnd` (a non-turn list would persist a row
+        // `depthFromEnd` instead — see the anchor-state writer in
+        // tug-list-view.tsx).
+        expect(typeof regionA?.meta?.anchor?.turnDepthFromEnd).toBe("number");
+        expect(regionA?.meta?.anchor?.turnDepthFromEnd).toBeGreaterThan(0);
         expect(Math.abs((regionA?.y ?? -1) - savedTop)).toBeLessThanOrEqual(
           RESTORE_TOLERANCE_PX,
         );

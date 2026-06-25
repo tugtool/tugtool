@@ -439,6 +439,7 @@ const GhostRowCell = React.memo(function GhostRowCell({
           <>
             <TugAtomMarkdownBody
               className="dev-card-transcript-user-markdown"
+              data-testid="dev-card-transcript-user-body"
               text={text}
               atoms={atoms}
             />

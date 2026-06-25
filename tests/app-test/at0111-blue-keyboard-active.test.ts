@@ -4,13 +4,15 @@
  *
  * The color contract, end state (after the accent/action role swap): a
  * **selected-and-focused** element must read as two distinct things at once — a
- * **blue** selection fill and an **orange** focus ring — and a default **CTA**
- * button must stay **orange**. This pins the three tokens such an element (and a
- * CTA) actually paint, and proves the two selection-vs-focus hues are far apart
- * (so "selected" and "keyboard-active" are not the same color):
+ * **blue** selection fill and an **orange** focus ring. The keyboard-active axis
+ * (the ring) is the lone orange surface; the primary **CTA** rides the *action*
+ * axis, which the swap moved to **blue** (cobalt) — so the CTA is no longer
+ * orange. This pins the three tokens those surfaces paint, and proves the
+ * selection-vs-focus hues are far apart (so "selected" and "keyboard-active" are
+ * not the same color):
  *   - `--tugx-list-row-selected-bg` (the fill a selected row paints) → blue;
  *   - `--tugx-focus-ring-color` (the ring a focused element paints) → orange;
- *   - `--tug7-surface-control-primary-filled-action-rest` (the CTA) → orange.
+ *   - `--tug7-surface-control-primary-filled-action-rest` (the CTA) → blue.
  *
  * Hue is read from each token's build-expanded `oklch(L C H …)` value — robust
  * against tone/intensity tuning and theme differences, since orange and blue sit
@@ -97,10 +99,12 @@ describe.skipIf(!SHOULD_RUN)("AT0111: orange is the keyboard-active axis, not se
         expect(focusRingHue).toBeGreaterThan(ORANGE_LO);
         expect(focusRingHue).toBeLessThan(ORANGE_HI);
 
-        // The default CTA stays on the keyboard-active axis — orange.
+        // The primary CTA rides the action axis, which the accent/action
+        // swap moved to blue — so the CTA is blue (cobalt), not orange.
+        // Orange is now confined to the keyboard-active ring above.
         expect(ctaHue).not.toBeNull();
-        expect(ctaHue).toBeGreaterThan(ORANGE_LO);
-        expect(ctaHue).toBeLessThan(ORANGE_HI);
+        expect(ctaHue).toBeGreaterThan(BLUE_LO);
+        expect(ctaHue).toBeLessThan(BLUE_HI);
 
         // Selection and keyboard-active are no longer the same color: the two
         // hues are far apart, so a selected-and-focused element reads as both.

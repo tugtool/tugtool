@@ -85,6 +85,33 @@ const EDITOR_FOCUSED = `(function(){
 
 const POPOVER_OPEN = `document.querySelector('[data-slot="tug-popover"]') !== null`;
 
+// Effort-capable model payload. The EFFORT chip disables itself (and drops out
+// of the Tab cycle) when the bound model lacks effort support; a synthetic
+// `bindDevSession` seeds no model, so the documented route → … → Effort → … →
+// TIME walk would overshoot TIME by one stop. Seeding restores Effort as a live
+// stop so the Tab count lands on the TIME cell. (Mirrors at0096/at0140.)
+function effortModelCapabilities() {
+  return {
+    type: "session_capabilities",
+    models: [
+      {
+        value: "default",
+        displayName: "Default (recommended)",
+        description: "Opus 4.8 (1M context)",
+        supportsEffort: true,
+        supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+      },
+    ],
+    commands: [],
+    agents: [],
+    available_output_styles: [],
+    output_style: "default",
+    account: null,
+    effort: null,
+    ipc_version: 2,
+  };
+}
+
 describe.skipIf(!SHOULD_RUN)("AT0157: Escape over a cycle is mode-stack ordering", () => {
   test(
     "same pane: first Escape closes the popover (cycle survives), second Escape exits the cycle",
@@ -98,6 +125,9 @@ describe.skipIf(!SHOULD_RUN)("AT0157: Escape over a cycle is mode-stack ordering
         );
         await app.bindDevSession("A");
         await app.awaitEngineReady("A");
+        // Seed an effort-capable model so the EFFORT chip is an enabled Tab
+        // stop; otherwise the route → … → Effort → … → TIME walk overshoots.
+        await app.ingestSessionMetadata("A", effortModelCapabilities());
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(SUBMIT)}) !== null`,
           { timeoutMs: 8000 },

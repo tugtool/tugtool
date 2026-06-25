@@ -25,7 +25,7 @@
  *      number; a turn with a tool call adds no extra markers (one per
  *      attribution row, none inline).
  *   3. Paging in the older history (loadPrevious) does NOT renumber an
- *      already-loaded turn — turn 8 stays `#a0008`, and the window now
+ *      already-loaded turn — turn 8 stays `#a8`, and the window now
  *      reaches turn 1.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -189,12 +189,12 @@ describe.skipIf(!SHOULD_RUN)(
           // Each turn shows a user (#u) and an assistant (#a) marker sharing
           // the turn number — one per attribution row, none inline. Turn 7's
           // tool call does NOT add extra markers.
-          expect(addrs).toContain("#u0006");
-          expect(addrs).toContain("#a0006");
-          expect(addrs).toContain("#u0007");
-          expect(addrs).toContain("#a0007");
-          expect(addrs).toContain("#u0008");
-          expect(addrs).toContain("#a0008");
+          expect(addrs).toContain("#u6");
+          expect(addrs).toContain("#a6");
+          expect(addrs).toContain("#u7");
+          expect(addrs).toContain("#a7");
+          expect(addrs).toContain("#u8");
+          expect(addrs).toContain("#a8");
 
           // --- Phase 2: page in the older history (turns 1..5) ------------
           await app.driveDevSession("A", { op: "loadPrevious", amount: "all" });
@@ -207,7 +207,7 @@ describe.skipIf(!SHOULD_RUN)(
           await ingest(replayComplete(5, 0, 8, false));
 
           await app.waitForCondition<boolean>(
-            `JSON.parse(${ADDRS_JS}).some((a) => a === "#u0001")`,
+            `JSON.parse(${ADDRS_JS}).some((a) => a === "#u1")`,
             { timeoutMs: 8000 },
           );
 
@@ -217,9 +217,9 @@ describe.skipIf(!SHOULD_RUN)(
           expect(Math.min(...turns2)).toBe(1);
           expect(Math.max(...turns2)).toBe(8);
           // The already-loaded turns did NOT renumber across the prepend.
-          expect(addrs).toContain("#a0008");
-          expect(addrs).toContain("#a0007");
-          expect(addrs).toContain("#u0006");
+          expect(addrs).toContain("#a8");
+          expect(addrs).toContain("#a7");
+          expect(addrs).toContain("#u6");
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

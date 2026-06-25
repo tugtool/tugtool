@@ -91,6 +91,20 @@ describe.skipIf(!SHOULD_RUN)("AT0112: base button focus is engine-driven", () =>
         await app.nativeClickAtElement(DEMO);
         await new Promise((resolve) => setTimeout(resolve, 200));
 
+        // The base button's keyboard ring is an `outline` painted directly
+        // on the `data-key-view-kbd` element, and `focus-ring.css` quiets
+        // that outline while `data-app-active="false"`. The seeded deck is
+        // foregrounded (`hasFocus: true`), which `seedDeckState` projects
+        // onto `data-app-active`, so the ring is live — guard on it here so
+        // a regression in that projection fails with a clear cause rather
+        // than as a mysterious outline-0. (Wrapper-ringed controls —
+        // checkbox/switch — paint the ring on a wrapper that lacks the
+        // marker, so the suppression misses them regardless.)
+        await app.waitForCondition<boolean>(
+          `document.documentElement.getAttribute("data-app-active") === "true"`,
+          { timeoutMs: 4000 },
+        );
+
         // (1) Tab → key view lands on the first accept stop, Alpha.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(`${KEY_VIEW_TESTID} === "focus-walk-alpha"`, {

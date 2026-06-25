@@ -236,9 +236,17 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await waitForSettled(app, "A");
 
+          // Wheel-up first to disengage follow-bottom before parking at a
+          // mid-list offset — SmartScroll only releases the bottom pin on a
+          // real gesture ([D07]); a bare `scrollTop` write + synthetic
+          // `scroll` event keeps following the bottom, so the save records
+          // `atBottom` and the cold-boot restore re-pins to the bottom
+          // instead of the mid anchor this test asserts. (The file's second
+          // test already does this.)
           await app.evalJS<void>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(scrollContainerSelectorFor("A"))});
+              el.dispatchEvent(new WheelEvent('wheel', { deltaY: -600, bubbles: true, cancelable: true }));
               el.scrollTop = ${RESTORE_TARGET_PX};
               el.dispatchEvent(new Event('scroll', { bubbles: true }));
             })()`,

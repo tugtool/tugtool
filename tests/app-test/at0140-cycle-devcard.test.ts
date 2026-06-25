@@ -17,12 +17,12 @@
  *      reads `data-cycling="false"` and the submit holds no key view.
  *   2. **empty editor → submit is skipped:** ⌥⇥ seeds the route; touring the
  *      live stops (route → Mode → Model → Effort → STATE → TIME → TOKENS →
- *      CONTEXT → TASKS → editor → wrap) never lands on the submit, because its
+ *      CONTEXT → TASKS → JOBS → editor → wrap) never lands on the submit, because its
  *      empty-input gate disables it. ⌥⇥ off restores caret.
  *   3. **typed editor → route seeds:** with content, ⌥⇥ seeds the route (the
  *      first stop in the revised order).
  *   4. **Tab tours the stops:** route → Mode → Model → Effort → submit → STATE
- *      → TIME → TOKENS → CONTEXT → TASKS → editor → wrap (trapped). Each Z2
+ *      → TIME → TOKENS → CONTEXT → TASKS → JOBS → editor → wrap (trapped). Each Z2
  *      status cell is its own leaf stop ([P10] revised — no arrow-roving): Tab
  *      steps cell-to-cell and each wears the blue leaf ring in turn. The editor
  *      is the last stop — a text stop: the input area takes the border while the
@@ -73,6 +73,7 @@ const Z2_TIME = `${CARD} [data-priority="time"]`;
 const Z2_TOKENS = `${CARD} [data-priority="tokens"]`;
 const Z2_CONTEXT = `${CARD} [data-priority="context"]`;
 const Z2_TASKS = `${CARD} [data-priority="tasks"]`;
+const Z2_JOBS = `${CARD} [data-priority="jobs"]`;
 // A settings sheet opened from a cycle-stop chip (here the permission-mode chip,
 // which populates reliably headless) and one of its option rows.
 const SHEET = '[data-slot="tug-sheet"]';
@@ -143,9 +144,38 @@ const EDITOR_TEXT = `(function(){
   return el ? el.textContent : null;
 })()`;
 
+// Capability payload whose default model supports reasoning effort. The
+// EFFORT chip disables itself when the bound model lacks effort support
+// (`effort-chip.tsx`: `chipDisabled = disabled || !display.supported`), and a
+// disabled stop drops out of the Tab cycle. A synthetic `bindDevSession` seeds
+// no model, so without this the chip is permanently disabled and the documented
+// route → … → Effort → … tour can never land on it. Seeding an effort-capable
+// model restores Effort as a live cycle stop. (Mirrors at0096's helper.)
+function effortModelCapabilities() {
+  return {
+    type: "session_capabilities",
+    models: [
+      {
+        value: "default",
+        displayName: "Default (recommended)",
+        description: "Opus 4.8 (1M context)",
+        supportsEffort: true,
+        supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+      },
+    ],
+    commands: [],
+    agents: [],
+    available_output_styles: [],
+    output_style: "default",
+    account: null,
+    effort: null,
+    ipc_version: 2,
+  };
+}
+
 describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → editor → wrap (each Z2 cell a leaf stop), skips the disabled submit when empty, Return on the editor stop resumes typing",
+    "⌥⇥ seeds the route, Tab tours route → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → JOBS → editor → wrap (each Z2 cell a leaf stop), skips the disabled submit when empty, Return on the editor stop resumes typing",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard" });
       try {
@@ -156,6 +186,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         );
         await app.bindDevSession("A");
         await app.awaitEngineReady("A");
+        // Seed an effort-capable model so the EFFORT chip is enabled and
+        // joins the Tab cycle (a disabled chip drops out — see helper).
+        await app.ingestSessionMetadata("A", effortModelCapabilities());
 
         // The connected body is up: the submit button mounts and is authored
         // into the cycle scope (a registered focusable).
@@ -181,7 +214,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
 
         // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
         // empty-input gate), so it is NOT a Tab target — touring the live stops
-        // (route → Mode → Model → Effort → STATE → … → TASKS → editor → wrap)
+        // (route → Mode → Model → Effort → STATE → … → TASKS → JOBS → editor → wrap)
         // skips it: Tab steps from Effort straight to STATE, never the submit.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
@@ -206,7 +239,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_TASKS), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // TASKS → editor.
+        await app.waitForCondition<boolean>(hasKeyView(Z2_JOBS), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        // JOBS → editor.
         await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
@@ -247,9 +282,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.waitForCondition<boolean>(hasKeyView(EFFORT_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        // submit → the five Z2 cells, each its own leaf stop ([P10] revised):
-        // STATE → TIME → TOKENS → CONTEXT → TASKS. Each cell carries the leaf
-        // key view (and the blue ring) in turn — no arrow-roving.
+        // submit → the six Z2 cells, each its own leaf stop ([P10] revised):
+        // STATE → TIME → TOKENS → CONTEXT → TASKS → JOBS. Each cell carries the
+        // leaf key view (and the blue ring) in turn — no arrow-roving.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
@@ -262,6 +297,8 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.waitForCondition<boolean>(hasKeyView(Z2_CONTEXT), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_TASKS), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_JOBS), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         // The editor text-stop holds the ring but the caret is NOT active (the
@@ -279,8 +316,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         // Re-enter, walk to the editor stop, and Return to resume typing.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        // route→Mode→Model→Effort→submit→STATE→TIME→TOKENS→CONTEXT→TASKS→editor.
-        for (let i = 0; i < 10; i++) await app.nativeKey("Tab");
+        // route→Mode→Model→Effort→submit→STATE→TIME→TOKENS→CONTEXT→TASKS→JOBS→editor
+        // (11 Tabs from the seeded route to the editor text-stop).
+        for (let i = 0; i < 11; i++) await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         await app.nativeKey("Return");
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
@@ -417,6 +455,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         );
         await app.bindDevSession("A");
         await app.awaitEngineReady("A");
+        // Seed an effort-capable model so the EFFORT chip is enabled and
+        // joins the Tab cycle (a disabled chip drops out — see helper).
+        await app.ingestSessionMetadata("A", effortModelCapabilities());
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(SUBMIT)}) !== null`,
           { timeoutMs: 8000 },

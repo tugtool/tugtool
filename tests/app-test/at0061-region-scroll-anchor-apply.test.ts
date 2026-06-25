@@ -205,12 +205,17 @@ describe.skipIf(!SHOULD_RUN)(
 
           await waitForSettled(app, "A");
 
-          // Scroll to a known offset that is NOT the bottom (so
-          // follow-bottom doesn't legitimately re-engage and pin to
-          // bottom, defeating the test).
+          // Scroll to a known offset that is NOT the bottom. A wheel-up
+          // gesture FIRST disengages follow-bottom — SmartScroll only
+          // releases the bottom pin on a real user gesture ([D07]); a bare
+          // `scrollTop` write + synthetic `scroll` event stays in the idle
+          // phase and the list keeps following the bottom, so the save
+          // would record `atBottom` and the reload would re-pin to the
+          // bottom (defeating the anchor round-trip this test exercises).
           await app.evalJS<void>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(scrollContainerSelectorFor("A"))});
+              el.dispatchEvent(new WheelEvent('wheel', { deltaY: -600, bubbles: true, cancelable: true }));
               el.scrollTop = ${REGION_SCROLL_TARGET};
               el.dispatchEvent(new Event('scroll', { bubbles: true }));
             })()`,

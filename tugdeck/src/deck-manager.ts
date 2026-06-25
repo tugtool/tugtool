@@ -1761,6 +1761,16 @@ export class DeckManager implements IDeckManagerStore {
     // session-only — the caller supplies it in `args.state`.
     this.deckState = args.state;
 
+    // Re-project the seeded `hasFocus` onto `data-app-active`. The
+    // constructor seeds the DOM bit from `document.hasFocus()`, but a
+    // seed supplies its own `hasFocus` (tests typically `true`); without
+    // this the projection stays stuck at the construction-time reading,
+    // leaving `data-app-active` out of sync with `deckState.hasFocus`.
+    // `setHasFocus` can't recover it (it early-returns when the value is
+    // unchanged), so the focus-language ring on a foregrounded seed would
+    // stay quiet. Reflect here so the DOM matches the seeded state.
+    this.reflectAppActive(this.deckState.hasFocus);
+
     if (args.cardStates) {
       for (const [cardId, bag] of args.cardStates) {
         this.cardStateCache.set(cardId, bag);

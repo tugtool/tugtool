@@ -142,8 +142,7 @@ export function EffortChip({
       onClick={onOpenPicker}
     >
       <TugStableOverlay
-        data-slot="effort-value"
-        active={content}
+        active={<span data-slot="effort-value">{content}</span>}
         alternates={sizerLabels}
       />
     </TugPushButton>
