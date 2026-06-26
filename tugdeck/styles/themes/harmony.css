@@ -102,11 +102,16 @@ body {
   --tug7-surface-global-primary-normal-sunken-rest: --tug-color(indigo, i: 8, t: 90);
 
   /* Element — Text */
-  --tug7-element-global-text-normal-default-rest: --tug-color(indigo, i: 4, t: 8);
+  --tug7-element-global-text-normal-default-rest: --tug-color(indigo, i: 0, t: 0);
+  /* Darker than the default for prose + block-header text (legibility on light). */
+  --tugx-prose-text:        --tug-color(indigo, i: 4, t: 3);
+  --tugx-block-header-text: --tug-color(indigo, i: 4, t: 3);
   --tug7-element-global-text-normal-inverse-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
   --tug7-element-global-text-normal-link-hover: --tug-color(blue, i: 50, t: 20);
   --tug7-element-global-text-normal-link-rest: --tug-color(blue, i: 50, t: 28);
   --tug7-element-global-text-normal-muted-rest: --tug-color(indigo, i: 6, t: 29);
+  /* Block-header description text (command / path) — darker than muted for legibility. */
+  --tugx-block-header-detail: --tug-color(indigo, i: 5, t: 7);
   --tug7-element-global-text-normal-onAccent-rest: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug7-element-global-text-normal-onCaution-rest: --tug-color(indigo, i: 5, t: 7);
   --tug7-element-global-text-normal-onDanger-rest: --tug-color(sapphire-cobalt, i: 4, t: 94);

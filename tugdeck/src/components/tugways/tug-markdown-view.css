@@ -282,7 +282,7 @@ body {
 /* Body — every block inherits these unless overridden by an
    element-specific rule below. */
 .tugx-md-block {
-  color: var(--tugx-block-text-color);
+  color: var(--tugx-prose-text-color);
   line-height: var(--tugx-md-body-line-height);
 }
 
@@ -296,7 +296,7 @@ body {
 .tugx-md-block h4,
 .tugx-md-block h5,
 .tugx-md-block h6 {
-  color: var(--tugx-block-text-color);
+  color: var(--tugx-prose-text-color);
   line-height: var(--tugx-md-heading-line-height);
   /* Condensed display face — headings carry the Plex Sans Condensed cut
      so they read as a distinct display register against the regular-width

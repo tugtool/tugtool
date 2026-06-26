@@ -102,11 +102,16 @@ body {
   --tug7-surface-global-primary-normal-sunken-rest: --tug-color(cyan, i: 8, t: 85);
 
   /* Element — Text */
-  --tug7-element-global-text-normal-default-rest: --tug-color(cyan, i: 4, t: 7);
+  --tug7-element-global-text-normal-default-rest: --tug-color(cyan, i: 0, t: 0);
+  /* Darker than the default for prose + block-header text (legibility on light). */
+  --tugx-prose-text:        --tug-color(cyan, i: 4, t: 3);
+  --tugx-block-header-text: --tug-color(cyan, i: 4, t: 3);
   --tug7-element-global-text-normal-inverse-rest: --tug-color(teal, i: 3, t: 100);
   --tug7-element-global-text-normal-link-hover: --tug-color(seafoam, i: 43, t: 19);
   --tug7-element-global-text-normal-link-rest: --tug-color(seafoam, i: 43, t: 27);
   --tug7-element-global-text-normal-muted-rest: --tug-color(cyan, i: 6, t: 26);
+  /* Block-header description text (command / path) — darker than muted for legibility. */
+  --tugx-block-header-detail: --tug-color(cyan, i: 5, t: 7);
   --tug7-element-global-text-normal-onAccent-rest: --tug-color(teal, i: 4, t: 92);
   --tug7-element-global-text-normal-onCaution-rest: --tug-color(cyan, i: 5, t: 6);
   --tug7-element-global-text-normal-onDanger-rest: --tug-color(teal, i: 4, t: 92);

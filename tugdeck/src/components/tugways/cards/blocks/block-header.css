@@ -75,7 +75,7 @@ body {
   padding-inline-end: var(--tugx-toolheader-sep-gap);
   background: var(--tugx-block-strip-bg);
   font-family: var(--tugx-block-strip-font);
-  color: var(--tugx-block-text-color);
+  color: var(--tugx-block-header-text-color);
 }
 
 /* Expanded ⇒ a body is mounted below; divide the header from it. Collapsed
@@ -134,7 +134,7 @@ body {
 .tool-call-header-name {
   font-size: var(--tugx-toolheader-name-size);
   font-weight: var(--tugx-toolheader-name-weight);
-  color: var(--tugx-block-text-color);
+  color: var(--tugx-block-header-text-color);
   white-space: nowrap;
 }
 
@@ -161,7 +161,14 @@ body {
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-toolheader-detail-size);
   line-height: var(--tugx-toolheader-line);
-  color: var(--tugx-block-text-color-muted);
+  /* The header's description text (the trailing command / path). Its own
+   * per-theme override — darker on the light themes, brighter on the dark
+   * themes — falling back to the normal muted tone when a theme sets nothing.
+   * Base never declares `--tugx-block-header-detail`, so a theme's `body{}`
+   * value always wins (a base declaration would lose to it on load order).
+   * Scoped to this selector only: not the tool name, the notice/error band,
+   * or file paths in block bodies. */
+  color: var(--tugx-block-header-detail, var(--tugx-block-text-color-muted));
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: break-word;

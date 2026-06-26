@@ -145,10 +145,26 @@ body {
   --tugx-block-code-line-height: 1.55;
 
   /* ------------------------------------------------------------------ *
-   * Body text colors.                                                  *
-   * ------------------------------------------------------------------ */
-  --tugx-block-text-color:       var(--tug7-element-global-text-normal-default-rest);
-  --tugx-block-text-color-muted: var(--tug7-element-global-text-normal-muted-rest);
+   * Text colors — three independently theme-tunable roles.             *
+   * ------------------------------------------------------------------ *
+   *  - block body (`--tugx-block-text-color`) — a tool block's content *
+   *    (file / diff / terminal). Unchanged across themes.              *
+   *  - block header (`--tugx-block-header-text-color`) — the tool-call *
+   *    header's identity row. Light themes darken it, dark themes      *
+   *    brighten it for legibility.                                     *
+   *  - prose (`--tugx-prose-text-color`) — transcript markdown body.   *
+   *    Light themes darken it; dark is unchanged.                      *
+   * Header + prose read a per-theme override hook first                *
+   * (`--tugx-block-header-text` / `--tugx-prose-text`) and fall back   *
+   * to the default text. The default is the `var()` fallback, NOT a    *
+   * `body{}` declaration — a base declaration would be a same-         *
+   * specificity rival the themes' load order beats (see               *
+   * `--tugx-block-surface-mix`). A theme that sets neither hook just   *
+   * inherits the default text color.                                   */
+  --tugx-block-text-color:        var(--tug7-element-global-text-normal-default-rest);
+  --tugx-block-text-color-muted:  var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-block-header-text-color: var(--tugx-block-header-text, var(--tug7-element-global-text-normal-default-rest));
+  --tugx-prose-text-color:        var(--tugx-prose-text, var(--tug7-element-global-text-normal-default-rest));
 
   /* ------------------------------------------------------------------ *
    * Header / footer strip (same shape for both). Sits above the body   *

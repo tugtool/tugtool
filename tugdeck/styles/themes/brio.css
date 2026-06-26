@@ -91,10 +91,14 @@ body {
 
   /* Element — Text */
   --tug7-element-global-text-normal-default-rest: --tug-color(indigo, i: 3, t: 94);
+  /* Brighter than the default for block-header text (legibility on dark). */
+  --tugx-block-header-text: --tug-color(indigo, i: 3, t: 99);
   --tug7-element-global-text-normal-inverse-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
   --tug7-element-global-text-normal-link-hover: --tug-color(cobalt, i: 18, t: 85);
   --tug7-element-global-text-normal-link-rest: --tug-color(cobalt, i: 45, t: 86);
   --tug7-element-global-text-normal-muted-rest: --tug-color(indigo-violet, i: 5, t: 66);
+  /* Block-header description text (command / path) — brighter than muted for legibility. */
+  --tugx-block-header-detail: --tug-color(indigo-violet, i: 5, t: 82);
   --tug7-element-global-text-normal-onAccent-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
   --tug7-element-global-text-normal-onCaution-rest: --tug-color(indigo-violet, i: 4, t: 7);
   --tug7-element-global-text-normal-onDanger-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
