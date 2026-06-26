@@ -75,7 +75,12 @@ import type {
   ArgumentHintResolver,
 } from "./tug-text-editor/argument-hint-extension";
 import type { PastedCommandResolver } from "./tug-text-editor/clipboard-filters";
-import { processAttachmentFiles } from "./tug-text-editor/drop-extension";
+import {
+  clearDropCaret,
+  dropOffsetAtCoords,
+  paintDropCaret,
+  processAttachmentFiles,
+} from "./tug-text-editor/drop-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
   getAtomsInState,
@@ -1004,18 +1009,36 @@ export const TugPromptEntry = React.forwardRef<
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
       event.currentTarget.setAttribute("data-drop-active", "accept");
+      // Drive the editor's drop caret while the cursor is over the strip —
+      // the strip continues the editor's drop surface. The coordinate
+      // resolves to the bottom row (the strip is below the doc), pushed up
+      // clear of the drag ghost so the drop target stays visible.
+      const view = textEditorRef.current?.view();
+      if (view !== null && view !== undefined) {
+        paintDropCaret(view, event.clientX, event.clientY);
+      }
+    },
+    [],
+  );
+  const clearAttachmentsDropState = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      event.currentTarget.removeAttribute("data-drop-active");
+      const view = textEditorRef.current?.view();
+      if (view !== null && view !== undefined) clearDropCaret(view);
     },
     [],
   );
   const handleAttachmentsDragLeave = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
       // Ignore leave events that merely cross into a descendant (the strip,
-      // a tile) — only clear when the pointer truly exits the zone.
+      // a tile) — only clear when the pointer truly exits the zone. A native
+      // Escape-cancel fires dragleave with a null relatedTarget, so this also
+      // tears down the caret on cancel.
       const next = event.relatedTarget as Node | null;
       if (next !== null && event.currentTarget.contains(next)) return;
-      event.currentTarget.removeAttribute("data-drop-active");
+      clearAttachmentsDropState(event);
     },
-    [],
+    [clearAttachmentsDropState],
   );
   const handleAttachmentsDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
@@ -1025,12 +1048,18 @@ export const TugPromptEntry = React.forwardRef<
       const view = textEditorRef.current?.view();
       if (view === null || view === undefined) return;
       event.preventDefault();
-      // Insert at the editor's current caret/selection — the strip has no
-      // position, so the drop lands where the user last was in the prose.
+      // Resolve the drop against the editor's measured layout, same as a
+      // drop on the editor itself. The strip sits below the document, so the
+      // coordinate clamps to the nearest position — the bottom row — letting
+      // the user target it instead of dumping at a stale caret.
+      const pos =
+        dropOffsetAtCoords(view, event.clientX, event.clientY) ??
+        view.state.doc.length;
+      clearDropCaret(view);
       processAttachmentFiles(
         view,
         files,
-        view.state.selection.main.from,
+        pos,
         attachmentBytesStore,
         publishAttachmentError,
       );
@@ -2159,6 +2188,7 @@ export const TugPromptEntry = React.forwardRef<
               // rejects the drop.
               onDragOver={handleAttachmentsDragOver}
               onDragLeave={handleAttachmentsDragLeave}
+              onDragEnd={clearAttachmentsDropState}
               onDrop={handleAttachmentsDrop}
             >
               <TugAttachmentPreview

@@ -252,6 +252,37 @@ const tugDropCaretField = StateField.define<number | null>({
   },
 });
 
+/**
+ * Paint the drop caret at the bias-adjusted position for `(clientX,
+ * clientY)`. Exported so a sibling drop surface (the prompt-entry
+ * attachment strip) can drive the *editor's* caret while the cursor
+ * is over it — the strip sits below the document, so the caret resolves
+ * to the bottom row, pushed up clear of the drag ghost. No-ops if the
+ * position is unchanged.
+ */
+export function paintDropCaret(
+  view: EditorView,
+  clientX: number,
+  clientY: number,
+): void {
+  const pos = dropOffsetAtCoords(view, clientX, clientY);
+  if (view.state.field(tugDropCaretField) !== pos) {
+    view.dispatch({ effects: setTugDropCaretPos.of(pos) });
+  }
+}
+
+/**
+ * Hide the drop caret. Exported alongside {@link paintDropCaret} so the
+ * strip can clear it on drag-leave / drag-end / drop — the drag-end and
+ * drag-leave clears are what make a native Escape-cancel visibly remove
+ * the caret.
+ */
+export function clearDropCaret(view: EditorView): void {
+  if (view.state.field(tugDropCaretField) !== null) {
+    view.dispatch({ effects: setTugDropCaretPos.of(null) });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Drop-caret painter (ViewPlugin)
 // ---------------------------------------------------------------------------
@@ -855,10 +886,7 @@ export function tugDropExtension(
           // `dropEffect` is read-only in some environments.
         }
 
-        const pos = dropOffsetAtCoords(view, event.clientX, event.clientY);
-        if (view.state.field(tugDropCaretField) !== pos) {
-          view.dispatch({ effects: setTugDropCaretPos.of(pos) });
-        }
+        paintDropCaret(view, event.clientX, event.clientY);
         return true;
       },
       dragleave(event, view) {
@@ -872,16 +900,12 @@ export function tugDropExtension(
           return false;
         }
         setDropActive(host, null);
-        if (view.state.field(tugDropCaretField) !== null) {
-          view.dispatch({ effects: setTugDropCaretPos.of(null) });
-        }
+        clearDropCaret(view);
         return false;
       },
       dragend(_event, view) {
         setDropActive(host, null);
-        if (view.state.field(tugDropCaretField) !== null) {
-          view.dispatch({ effects: setTugDropCaretPos.of(null) });
-        }
+        clearDropCaret(view);
         return false;
       },
       drop(event, view) {
@@ -891,9 +915,7 @@ export function tugDropExtension(
           // left one up, then bail without preventDefault so the
           // browser handles the (non-file) drop natively.
           setDropActive(host, null);
-          if (view.state.field(tugDropCaretField) !== null) {
-            view.dispatch({ effects: setTugDropCaretPos.of(null) });
-          }
+          clearDropCaret(view);
           return false;
         }
 
@@ -913,9 +935,7 @@ export function tugDropExtension(
         if (handler !== null) {
           const atoms = handler(files);
           if (atoms.length === 0) {
-            if (view.state.field(tugDropCaretField) !== null) {
-              view.dispatch({ effects: setTugDropCaretPos.of(null) });
-            }
+            clearDropCaret(view);
             return true;
           }
           insertAtomsAt(view, insertPos, atoms);
@@ -926,9 +946,7 @@ export function tugDropExtension(
         // will dispatch its own insertion transaction once
         // processing completes, but the user already let go of the
         // drag and the caret should track that.
-        if (view.state.field(tugDropCaretField) !== null) {
-          view.dispatch({ effects: setTugDropCaretPos.of(null) });
-        }
+        clearDropCaret(view);
 
         const bytesStore = getBytesStore();
         if (bytesStore === null) {
