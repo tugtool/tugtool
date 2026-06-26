@@ -164,9 +164,10 @@ function main(): void {
 
   const totalOutP3 = [...themes, ...shared].reduce((n, r) => n + r.outP3.length, 0);
   console.log(
-    `\nout-of-P3 is advisory: signals are pushed past sRGB by design (richer on P3),` +
-    ` and light themes legitimately push further than dark. Run \`audit-gamut <theme>\`` +
-    ` to drill in.`,
+    `\nout-of-sRGB is expected: signals are authored past sRGB by design so P3 displays` +
+    ` render them richer (light themes push further than dark). out-of-P3 is the tier` +
+    ` that matters — it should stay 0 (authored chroma = what a P3 display delivers).` +
+    ` Run \`audit-gamut <theme>\` to drill in, \`clamp-theme-gamut --write\` to fix.`,
   );
 
   if (strict && totalOutP3 > 0) {

@@ -37,14 +37,14 @@ body {
   --tugx-stat-trend-neutral: var(--tug7-element-global-text-normal-subtle-rest);
 
   /* --- Chart Series (palette var() references — Phase 5d5e) --- */
-  --tugx-chart-series-warm: --tug-color(orange, l: 0.78, c: 0.146);
-  --tugx-chart-series-cool: --tug-color(cyan, l: 0.803, c: 0.134);
-  --tugx-chart-series-violet: --tug-color(violet, l: 0.708, c: 0.149);
-  --tugx-chart-series-rose: --tug-color(red, l: 0.659, c: 0.22);
-  --tugx-chart-series-verdant: --tug-color(green, l: 0.821, c: 0.22);
-  --tugx-chart-series-golden: --tug-color(yellow, l: 0.901, c: 0.125);
-  --tugx-chart-series-orchid: --tug-color(pink, l: 0.794, c: 0.167);
-  --tugx-chart-series-coral: --tug-color(coral, l: 0.5549, c: 0.22);
+  --tugx-chart-series-warm: --tug-color(orange, l: 0.78, c: 0.15);
+  --tugx-chart-series-cool: --tug-color(cyan, l: 0.8, c: 0.13);
+  --tugx-chart-series-violet: --tug-color(violet, l: 0.71, c: 0.15);
+  --tugx-chart-series-rose: --tug-color(red, l: 0.66, c: 0.22);
+  --tugx-chart-series-verdant: --tug-color(green, l: 0.82, c: 0.22);
+  --tugx-chart-series-golden: --tug-color(yellow, l: 0.9, c: 0.13);
+  --tugx-chart-series-orchid: --tug-color(pink, l: 0.79, c: 0.17);
+  --tugx-chart-series-coral: --tug-color(coral, l: 0.55, c: 0.22);
   /* Chart infrastructure tokens */
   --tugx-chart-grid: var(--tug7-surface-overlay-primary-normal-highlight-rest);
   --tugx-chart-axis: var(--tug7-element-global-border-normal-default-rest);
