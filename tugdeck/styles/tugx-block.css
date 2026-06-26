@@ -94,6 +94,43 @@ body {
   --tugx-block-margin: var(--tug-space-md) 0;
 
   /* ------------------------------------------------------------------ *
+   * Flush-rows treatment. The chrome no longer paints a per-call frame *
+   * (border / radius / raised fill); instead consecutive tool blocks   *
+   * read as a borderless list separated by a single hairline, and a    *
+   * run is set off from surrounding prose by `--tugx-block-run-gap`.    *
+   *                                                                     *
+   * The hairline is derived from the foreground color, not a fixed      *
+   * divider token: a muted divider reads on light surfaces but goes     *
+   * invisible on the dark themes. A text-derived line inverts with the  *
+   * theme (dark on light, light on dark) so it holds up everywhere.     *
+   * ------------------------------------------------------------------ */
+  --tugx-block-hairline: color-mix(in srgb, var(--tug7-element-global-text-normal-default-rest) 16%, transparent);
+  --tugx-block-run-gap:  var(--tug-space-md);
+
+  /* The block panel surface — one tint worn by the WHOLE block (the header
+   * strip and, scoped in the chrome, the expanded body) so a tool call reads
+   * as a single tinted panel, set off from the transcript column by contrast
+   * rather than a border. Derived from the foreground over the column surface,
+   * so it inverts with the theme: a touch lighter than the column on dark, a
+   * touch darker on light — visible on both, where a fixed raised surface goes
+   * flat on light. The mix amount is a per-theme token: every theme file owns
+   * its own `--tugx-block-surface-mix` (dark themes 7%, light themes a lower
+   * value — a dark-text mix reads heavier on a light column than a light-text
+   * mix does on a dark one), so each theme is tuned in one place beside its
+   * other tokens. The `7%` here is only a fallback for a theme that forgets to
+   * set it — NOT a `body{}` declaration, which would be a same-specificity rival
+   * to the themes decided by stylesheet load order. Tune each theme in its
+   * `styles/themes/<name>.css`. */
+  --tugx-block-surface: color-mix(in srgb, var(--tug7-element-global-text-normal-default-rest) var(--tugx-block-surface-mix, 7%), var(--tug7-surface-global-primary-normal-default-rest));
+
+  /* The radius worn by a tool-block panel. Applied run-aware in block-chrome.css
+   * — only a run's OUTER corners round (top of the first block, bottom of the
+   * last); internal joins stay square so a run reads as one rounded panel.
+   * Distinct from `--tugx-block-radius` (0 inside a block, since the body kinds
+   * are clipped by the chrome's rounded corners). */
+  --tugx-block-chrome-radius: var(--tug-radius-md);
+
+  /* ------------------------------------------------------------------ *
    * Frame — chrome wrapper variant (sits above body; raised surface).  *
    * Only the bg differs; chrome wrappers consume the body-kind border, *
    * radius, and margin unchanged.                                      *
@@ -119,8 +156,13 @@ body {
    * ------------------------------------------------------------------ */
   --tugx-block-strip-padding: var(--tug-space-xs) var(--tug-space-md);
   --tugx-block-strip-gap:     var(--tug-space-sm);
-  --tugx-block-strip-bg:      var(--tug7-surface-global-primary-normal-raised-rest);
-  --tugx-block-strip-border:  var(--tug7-element-global-divider-normal-muted-rest);
+  /* Flush rows: the strip wears the block panel surface so a collapsed
+   * header reads as a tinted bar against the column, and an expanded block
+   * (whose body the chrome scopes onto the same surface) reads as one
+   * continuous panel. Opaque — NOT transparent — because the header is
+   * `position: sticky` and must mask a scrolling body beneath it. */
+  --tugx-block-strip-bg:      var(--tugx-block-surface);
+  --tugx-block-strip-border:  var(--tugx-block-hairline);
   --tugx-block-strip-color:   var(--tug7-element-global-text-normal-muted-rest);
   --tugx-block-strip-size:    var(--tug-font-size-2xs);
   --tugx-block-strip-font:    var(--tug-font-family-base);

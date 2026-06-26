@@ -40,13 +40,13 @@ body {
   gap: var(--tugx-toolnotice-gap);
   padding: var(--tugx-toolnotice-padding);
   background: var(--tugx-block-strip-bg);
-  /* The band owns BOTH dividers: a top rule sets it off from the header
-     (which suppresses its own bottom border when a notice follows, so the
-     rule never doubles — see block-header.css), and a bottom rule sets
-     it off from the body when expanded. Both states read as a crisp,
-     self-enclosed strip on the same surface as the header. */
+  /* The band owns the one retained rule — a top rule that sets it off from
+     the header (which suppresses its own bottom border when a notice follows,
+     so the rule never doubles — see block-header.css). No bottom rule: the
+     band, the body, and the footer all ride the same panel surface, so the
+     notice flows into the body below it (the only horizontal rule in an
+     expanded block is this header→content divider). */
   border-top: 1px solid var(--tugx-block-strip-border);
-  border-bottom: 1px solid var(--tugx-block-strip-border);
   color: var(--tugx-block-text-color);
   font-family: var(--tugx-block-code-font);
   font-size: var(--tugx-toolnotice-text-size);

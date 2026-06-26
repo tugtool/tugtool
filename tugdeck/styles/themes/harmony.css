@@ -2,6 +2,10 @@
 body {
   --tugx-host-canvas-color: #2d4750;
 
+  /* Lighter tool-block panel tint than the dark default: a dark-text mix
+   * reads heavier on a light column. See styles/tugx-block.css. */
+  --tugx-block-surface-mix: 4%;
+
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
   --tug-motion-duration-glacial: calc(500ms * var(--tug-timing));

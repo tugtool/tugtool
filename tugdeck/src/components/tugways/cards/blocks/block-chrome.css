@@ -3,10 +3,12 @@
    - --tugx-block-strip-bg / --tugx-block-strip-color           (shared header / footer strip)
    - --tugx-block-tone-caution-bg / --tugx-block-tone-caution-color (shared caution chip)
    - --tugx-block-tone-remove-bg / --tugx-block-tone-remove-color   (shared error band)
-   The chrome paints a subtle bordered card around tool-call content
-   with a header row (icon + name + args summary) and an optional
-   footer for badges. The header's lifecycle dot is the single status
-   signal — there is no stripe and the frame is uniform across states;
+   The chrome frames tool-call content as a flush, borderless row — a
+   header row (icon + name + args summary), an optional notice band, the
+   body region, and an optional footer for badges. There is no per-call
+   border or raised fill; consecutive blocks read as a list separated by a
+   single hairline (see `.tool-block-chrome + .tool-block-chrome`). The
+   header's lifecycle dot is the single status signal — there is no stripe;
    on a failure the dot is the only red, and the body / error text keep
    neutral tones. Shared block-surface scaffold lives in
    `styles/tugx-block.css`.
@@ -95,18 +97,80 @@ body {
   --tugx-block-actions-gap: var(--tug-space-2xs);
 }
 
+/* Flush rows: no per-call frame. The chrome paints no border or radius; each
+ * tool call is one tinted panel on `--tugx-block-surface`, set off from the
+ * transcript column by contrast rather than a border. Consecutive rows are
+ * separated by a single hairline (the `+` rule below), and a run is set off
+ * from surrounding prose by `--tugx-block-run-gap` at its two ends.
+ *
+ * The body kinds are scoped onto the SAME surface here ([L20] cascade
+ * override): inside a block they read `--tugx-block-bg` = the panel surface
+ * (so an expanded body matches the header bar, not a recessed sunken tint),
+ * drop their self-frame (`--tugx-block-border` → transparent, radius 0), and
+ * — scoped to the body region — drop their internal horizontal dividers
+ * (`--tugx-block-strip-border` → transparent on the body) so the only rule in
+ * an expanded block is the header→content divider. Standalone body kinds (the
+ * gallery) keep the global defaults, untouched. */
 .tool-block-chrome {
   display: flex;
   flex-direction: column;
-  margin: var(--tugx-block-margin);
-  background: var(--tugx-block-chrome-bg);
-  border: 1px solid var(--tugx-block-border);
-  border-radius: var(--tugx-block-radius);
-  /* `overflow: clip` clips to the rounded border-radius without
-   * forming a scrolling container — `overflow: hidden` would form
-   * one and capture sticky positioning from any composed body kind
-   * with a `position: sticky` header. */
+  /* Default: a run boundary on top (gap from prose / a thinking block above).
+   * Removed below when this block follows another block (mid-run). */
+  margin: var(--tugx-block-run-gap) 0 0 0;
+  background: var(--tugx-block-surface);
+  /* Default rounding = all four corners (the standalone-block case). Run
+   * position squares the inner corners below, so only a run's OUTER edges
+   * round. The radius is on the chrome (the whole header+body panel), so the
+   * bottom corners sit at the bottom of whatever is showing — they move down
+   * when the block expands. The body kinds inside stay at radius 0 and are
+   * clipped to these corners by `overflow: clip`. */
+  border-radius: var(--tugx-block-chrome-radius);
+  --tugx-block-bg: var(--tugx-block-surface);
+  --tugx-block-border: transparent;
+  --tugx-block-radius: 0;
+  /* `overflow: clip` still avoids forming a scrolling container that would
+   * capture sticky positioning from a composed body kind's pinned header, and
+   * clips the body to the panel's rounded corners. */
   overflow: clip;
+}
+
+/* The expanded body region drops body-kind internal horizontal rules (a
+ * terminal's command strip, a file/diff lang bar, a truncation banner). The
+ * panel surface + spacing separate those zones now. Scoped to the body so the
+ * chrome's own header→content divider (on the header, outside this region)
+ * keeps its hairline. */
+.tool-block-chrome-body {
+  --tugx-block-strip-border: transparent;
+}
+
+/* Mid-run: two adjacent tool blocks collapse flush and take a single hairline
+ * between them. `ToolBlockHistoryCollapse` is context-only (no DOM node), so
+ * consecutive blocks are true adjacent siblings and this selector matches.
+ * Following another block ⇒ not a run's first block ⇒ square the top corners
+ * so the join with the block above is seamless. */
+.tool-block-chrome + .tool-block-chrome {
+  margin-top: 0;
+  border-top: 1px solid var(--tugx-block-hairline);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Followed by another block ⇒ not a run's last block ⇒ square the bottom
+ * corners. With the rule above, only a run's outer corners round: the run
+ * reads as one rounded panel with square internal joins, while a standalone
+ * block (matching neither) keeps all four. */
+.tool-block-chrome:has(+ .tool-block-chrome) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Run end: the last block before non-block content (prose, a thinking block,
+ * or nothing) regains a bottom gap so the run doesn't butt against the column.
+ * `:not(:has(+ .tool-block-chrome))` = no following tool block. A standalone
+ * block matches both this and the default top margin, so it keeps the full
+ * gap top and bottom — exactly the old single-block spacing. */
+.tool-block-chrome:not(:has(+ .tool-block-chrome)) {
+  margin-bottom: var(--tugx-block-run-gap);
 }
 
 /* ---- Variants ([data-variant]) ----
@@ -125,9 +189,9 @@ body {
  * tool defaults. */
 
 /* No left-edge status stripe: the header's lifecycle dot is the single
- * status signal (the Quiet Line). Every block keeps the uniform 1px frame
- * border declared on `.tool-block-chrome` above — collapsed, expanded, and
- * non-collapsing tools all read the same, with no left-edge treatment. */
+ * status signal (the Quiet Line). Every block reads as a frameless row —
+ * collapsed, expanded, and non-collapsing tools all share the flush
+ * treatment, with no left-edge treatment and no per-call border. */
 
 /* ---- Header ---- */
 
@@ -164,8 +228,9 @@ body {
   flex-wrap: wrap;
   gap: var(--tugx-block-footer-gap);
   padding: var(--tugx-block-strip-padding);
+  /* No top rule: the footer rides the same panel surface as the body, so it
+   * reads as the tail of the panel (the only retained rule is header→content). */
   background: var(--tugx-block-strip-bg);
-  border-top: 1px solid var(--tugx-block-strip-border);
   color: var(--tugx-block-strip-color);
   font-size: var(--tugx-block-strip-size);
   font-family: var(--tugx-block-strip-font);
