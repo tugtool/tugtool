@@ -18,17 +18,10 @@
  */
 
 /**
- * OKLCH chroma ceiling — the oklch C that authored chroma 1000 maps to. Chroma's
- * 0–1000 authoring range spans 0–MAX_CHROMA, chosen as headroom above the most
- * saturated authored color (themes top out near c≈620, oklch C≈0.31).
- *
- * NOTE: 0.5 is NOT a gamut boundary. The in-gamut chroma ceiling is hue- and
- * lightness-dependent (≈c270–c570 at mid lightness) and always below 1000, so the
- * upper part of the range is out of gamut and the browser gamut-maps it. A single
- * linear scale cannot make the whole 0–1000 range in-gamut — only a per-hue,
- * per-lightness remap could, and that is exactly the "intensity" model this system
- * deliberately retired (see color-palette.md history). The audit:gamut script
- * reports where authored values cross the real P3 ceiling.
+ * OKLCH chroma search ceiling. No hue in Display P3 exceeds this, so it bounds the
+ * binary search in `maxChromaInGamut`. It is NOT the authoring ceiling — authored
+ * chroma is gamut-relative (see the authoring-scale block below), so the real
+ * ceiling is the per-hue, per-lightness P3 edge that `maxChromaInGamut` finds.
  */
 export const MAX_CHROMA = 0.5;
 
@@ -39,22 +32,36 @@ export const MAX_CHROMA = 0.5;
 /**
  * --tug-color() authors lightness, chroma, and alpha as integers 0–AUTHOR_MAX.
  * Lightness and alpha map linearly onto the full 0–1 oklch axis; chroma maps onto
- * 0–MAX_CHROMA (the top of the chroma range exceeds the in-gamut ceiling for every
- * hue — see MAX_CHROMA). These four functions are the single
- * definition of that scale — the parser, the serializers, the picker/adjustment,
- * the theme editor, and the gamut scripts all route through them, so no module
- * carries its own copy of the arithmetic.
+ * the full 0–1 oklch axis. Chroma is GAMUT-RELATIVE: `c: 1000` is the most saturated
+ * the hue can be at that lightness on a Display-P3 screen, `c: 500` is half that —
+ * so the whole 0–1000 range describes real, displayable colors, uniformly across
+ * every hue (a hue/lightness with little headroom and one with lots both author
+ * "max" as 1000). Relative chroma therefore needs the hue angle + lightness to
+ * resolve. These functions are the single definition of the scale — parser,
+ * serializers, picker, theme editor, and gamut scripts all route through them.
+ *
+ * VALUES vs DELTAS. A --tug-color chroma *value* is relative (chromaFromAuthored /
+ * authoredFromChroma, hue+L aware). An additive chroma *delta* (duet/treatment
+ * re-hueing) stays absolute oklch on the same ×1000 footing as lightness — it is
+ * applied across many tokens of differing hue/lightness where "relative" has no
+ * single meaning, so deltas use fracFromAuthored / authoredFromFrac like l and a.
  */
 export const AUTHOR_MAX = 1000;
 
-/** Lightness or alpha: authored integer → oklch fraction. */
+/** Lightness or alpha value, and ALL additive deltas: authored integer → oklch fraction. */
 export const fracFromAuthored = (n: number): number => n / AUTHOR_MAX;
-/** Lightness or alpha: oklch fraction → authored integer. */
+/** Lightness or alpha value, and ALL additive deltas: oklch fraction → authored integer. */
 export const authoredFromFrac = (n: number): number => Math.round(n * AUTHOR_MAX);
-/** Chroma: authored integer → oklch C (0–MAX_CHROMA). */
-export const chromaFromAuthored = (n: number): number => (n / AUTHOR_MAX) * MAX_CHROMA;
-/** Chroma: oklch C → authored integer. */
-export const authoredFromChroma = (n: number): number => Math.round((n / MAX_CHROMA) * AUTHOR_MAX);
+
+/** Gamut-relative chroma value: authored 0–1000 → absolute oklch C, against the P3 edge at (L, hueAngle). */
+export const chromaFromAuthored = (n: number, L: number, hueAngle: number): number =>
+  (n / AUTHOR_MAX) * maxChromaInGamut(L, hueAngle, isInP3Gamut);
+/** Gamut-relative chroma value: absolute oklch C → authored 0–1000 (0 when no headroom; clamped to range). */
+export const authoredFromChroma = (C: number, L: number, hueAngle: number): number => {
+  const maxC = maxChromaInGamut(L, hueAngle, isInP3Gamut);
+  if (maxC <= 0) return 0;
+  return Math.min(AUTHOR_MAX, Math.max(0, Math.round((C / maxC) * AUTHOR_MAX)));
+};
 
 // ---------------------------------------------------------------------------
 // HUE_FAMILIES — 48 named hue families mapped to OKLCH hue angles
@@ -262,10 +269,21 @@ export function resolveTugColorToOklch(
   }
 
   // Chromatic hues — angle from the name (or adjacency); l/c passthrough.
-  const baseAngle = HUE_FAMILIES[name];
-  if (baseAngle === undefined) return { L: lightness, C: 0, h: 0, alpha };
-  const h = adjacentName ? resolveHyphenatedHue(name, adjacentName) : baseAngle;
+  const h = resolveHueAngle(name, adjacentName);
+  if (h === undefined) return { L: lightness, C: 0, h: 0, alpha };
   return { L: lightness, C: chroma, h, alpha };
+}
+
+/**
+ * The OKLCH hue angle for a hue name, or an adjacency pair when `adjacentName` is
+ * given. Returns undefined for non-chromatic names (achromatics, gray, transparent,
+ * unknown). The single source for the angle both the resolver and the gamut-relative
+ * chroma conversion need.
+ */
+export function resolveHueAngle(name: string, adjacentName?: string): number | undefined {
+  const baseAngle = HUE_FAMILIES[name];
+  if (baseAngle === undefined) return undefined;
+  return adjacentName ? resolveHyphenatedHue(name, adjacentName) : baseAngle;
 }
 
 // ---------------------------------------------------------------------------

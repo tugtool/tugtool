@@ -21,9 +21,8 @@ import {
   HUE_FAMILIES,
   NAMED_GRAYS,
   ADJACENCY_RING,
-  AUTHOR_MAX,
-  MAX_CHROMA,
   authoredFromFrac,
+  authoredFromChroma,
   resolveTugColorToOklch,
   isInP3Gamut,
   maxChromaInGamut,
@@ -73,8 +72,10 @@ function clampFile(rel: string, write: boolean, stats: Stats, sample: string[]):
     const { L, C, h } = resolveTugColorToOklch(color.name, color.adjacentName, lightness, chroma, alpha);
     if (C <= 0 || isInP3Gamut(L, C, h)) continue; // achromatic or already in P3
 
-    // Floor the P3 ceiling to a whole authored unit so the written value stays in-gamut.
-    const ceilingH = Math.floor((maxChromaInGamut(L, h, isInP3Gamut) / MAX_CHROMA) * AUTHOR_MAX);
+    // The P3 ceiling in authored units. Under gamut-relative chroma this is the top
+    // of the range (~1000) by construction, so this path is effectively a no-op
+    // safety net: relative authoring cannot exceed P3 in the first place.
+    const ceilingH = authoredFromChroma(maxChromaInGamut(L, h, isInP3Gamut), L, h);
     const token = color.adjacentName ? `${color.name}-${color.adjacentName}` : color.name;
     const alphaArg = alpha < 1 ? `, a: ${u(alpha)}` : "";
     const replacement = `--tug-color(${token}, l: ${u(lightness)}, c: ${ceilingH}${alphaArg})`;

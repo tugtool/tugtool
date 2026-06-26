@@ -31,6 +31,7 @@ import {
   chromaFromAuthored,
   authoredFromFrac,
   authoredFromChroma,
+  resolveHueAngle,
 } from "./palette-engine";
 import {
   getActiveColorTarget,
@@ -187,13 +188,25 @@ export function TugColorPicker(): React.ReactElement {
   useSpatialOrder(sliderOrder);
 
   // Sliders edit in authored units (0–1000); the spec stays in oklch fractions.
+  // Chroma is gamut-relative, so it converts against the CURRENT hue + lightness
+  // (read from valueRef per L07 — these handlers register once at mount).
   const { ResponderScope, responderRef } = useResponderForm({
     setValueNumber: {
       [lId]: (v: number, phase: ActionPhase) => editColor({ l: fracFromAuthored(v) }, phase),
-      [cId]: (v: number, phase: ActionPhase) => editColor({ c: chromaFromAuthored(v) }, phase),
+      [cId]: (v: number, phase: ActionPhase) => {
+        const cur = valueRef.current;
+        const angle = resolveHueAngle(cur.hue, cur.adjacent);
+        editColor({ c: angle === undefined ? cur.c : chromaFromAuthored(v, cur.l, angle) }, phase);
+      },
       [aId]: (v: number, phase: ActionPhase) => editColor({ a: fracFromAuthored(v) }, phase),
     },
   });
+
+  // The chroma slider shows percent-of-gamut at the current hue + lightness.
+  const chromaAuthored = (s: TugColorSpec): number => {
+    const angle = resolveHueAngle(s.hue, s.adjacent);
+    return angle === undefined ? 0 : authoredFromChroma(s.c, s.l, angle);
+  };
 
   return (
     <ResponderScope>
@@ -242,7 +255,7 @@ export function TugColorPicker(): React.ReactElement {
         <TugBox label="OKLCH" variant="bordered" size="sm" className="tug-color-picker-box">
           <div className="tug-color-picker-sliders">
             <TugSlider label="Lightness" senderId={lId} value={authoredFromFrac(value.l)} min={0} max={AUTHOR_MAX} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
-            <TugSlider label="Chroma" senderId={cId} value={authoredFromChroma(value.c)} min={0} max={AUTHOR_MAX} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
+            <TugSlider label="Chroma" senderId={cId} value={chromaAuthored(value)} min={0} max={AUTHOR_MAX} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
             <TugSlider label="Alpha" senderId={aId} value={authoredFromFrac(value.a)} min={0} max={AUTHOR_MAX} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
           </div>
         </TugBox>

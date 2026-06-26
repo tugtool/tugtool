@@ -35,7 +35,7 @@ body {
   /* --- Status / Badge / Progress / Banner --- */
   --tugx-badge-neutral-bg: var(--tug7-element-global-divider-normal-default-rest);
   --tugx-badge-neutral-fg: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-badge-accent-bg: --tug-color(orange, l: 780, c: 300, a: 200);
+  --tugx-badge-accent-bg: --tug-color(orange, l: 780, c: 796, a: 200);
   --tugx-badge-accent-fg: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-progress-track: var(--tug7-element-global-divider-normal-separator-rest);
   --tugx-progress-fill: var(--tug7-element-global-fill-normal-accent-rest);

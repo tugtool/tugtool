@@ -33,7 +33,7 @@ import { TugColorPicker } from "@/components/tugways/tug-color-picker";
 import { TugSlider } from "@/components/tugways/tug-slider";
 import { useResponder } from "@/components/tugways/use-responder";
 import { setActiveColorTarget } from "@/components/tugways/active-color-target";
-import { HUE_FAMILIES, authoredFromFrac, authoredFromChroma } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, authoredFromFrac, authoredFromChroma, resolveHueAngle } from "@/components/tugways/palette-engine";
 import {
   hueText,
   swatchOklch,
@@ -87,7 +87,9 @@ const angleOf = (hue: string): string => {
 
 /** The theme-file form a dialed-in spot would be authored as (0–1000 units). */
 function spotToken(s: TugColorSpec): string {
-  const head = `--tug-color(${hueText(s)}, l: ${authoredFromFrac(s.l)}, c: ${authoredFromChroma(s.c)}`;
+  const angle = resolveHueAngle(s.hue, s.adjacent);
+  const c = angle === undefined ? 0 : authoredFromChroma(s.c, s.l, angle);
+  const head = `--tug-color(${hueText(s)}, l: ${authoredFromFrac(s.l)}, c: ${c}`;
   return s.a >= 1 ? `${head})` : `${head}, a: ${authoredFromFrac(s.a)})`;
 }
 

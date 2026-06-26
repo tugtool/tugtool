@@ -14,7 +14,13 @@ import { describe, it, expect } from "bun:test";
 
 import postcss from "postcss";
 import postcssTugColor from "../../postcss-tug-color";
-import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
+import {
+  HUE_FAMILIES, isInP3Gamut, maxChromaInGamut, resolveHueAngle,
+} from "@/components/tugways/palette-engine";
+
+/** Expected oklch chroma (4-decimal) for authored `c` at a hue+lightness — gamut-relative. */
+const relC = (hue: string, L: number, c: number): string =>
+  parseFloat(((c / 1000) * maxChromaInGamut(L, resolveHueAngle(hue)!, isInP3Gamut)).toFixed(4)).toString();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,9 +37,9 @@ function processCSS(css: string): string {
 
 describe("postcss-tug-color Vite integration: plugin processes --tug-color() in CSS", () => {
   it("--tug-color(blue, l, c) expands to the correct oklch() value", () => {
-    const css = "a { color: --tug-color(blue, l: 310, c: 160); }";
+    const css = "a { color: --tug-color(blue, l: 310, c: 500); }";
     const result = processCSS(css);
-    expect(result).toContain(`oklch(0.31 0.08 ${HUE_FAMILIES.blue})`);
+    expect(result).toContain(`oklch(0.31 ${relC("blue", 0.31, 500)} ${HUE_FAMILIES.blue})`);
     expect(result).not.toContain("--tug-color(");
   });
 
@@ -87,13 +93,13 @@ describe("postcss-tug-color Vite integration: coexistence with Tailwind v4", () 
     // not corrupt CSS it doesn't recognise.
     const css = [
       ".btn {",
-      "  color: --tug-color(blue, l: 310, c: 40);",
+      "  color: --tug-color(blue, l: 310, c: 100);",
       "  font-weight: bold;",
       "}",
     ].join("\n");
     const result = processCSS(css);
     expect(result).not.toContain("--tug-color(");
-    expect(result).toContain(`oklch(0.31 0.02 ${HUE_FAMILIES.blue})`);
+    expect(result).toContain(`oklch(0.31 ${relC("blue", 0.31, 100)} ${HUE_FAMILIES.blue})`);
   });
 
   it("CSS custom property declarations (non-tug-color) pass through unchanged", () => {

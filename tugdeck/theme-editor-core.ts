@@ -23,6 +23,7 @@ import {
   chromaFromAuthored,
   authoredFromFrac,
   authoredFromChroma,
+  resolveHueAngle,
 } from "./src/components/tugways/palette-engine";
 
 const CHROMATIC = new Set(Object.keys(HUE_FAMILIES));
@@ -150,31 +151,39 @@ interface Parsed { l: number; c: number; a: number | null; }
 /** Parse the inner of `--tug-color(...)`; returns null for achromatic / unknown hues. */
 function parseTugColor(inner: string): Parsed | null {
   const parts = inner.split(",").map((s) => s.trim());
-  const hue = parts[0].split("-")[0];
-  let l = 0.5;
-  let c = 0;
-  let a: number | null = null;
+  const [name, adjacent] = parts[0].split("-");
+  if (!CHROMATIC.has(name)) return null;
+  // Collect raw authored ints first — chroma is gamut-relative, so it can only be
+  // converted once lightness is known (args may arrive in any order).
+  let lRaw: number | undefined;
+  let cRaw = 0;
+  let aRaw: number | undefined;
   for (const p of parts.slice(1)) {
     const m = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!m) continue;
-    // Authored 0–1000; store oklch fractions.
-    if (m[1] === "l") l = fracFromAuthored(parseFloat(m[2]));
-    if (m[1] === "c") c = chromaFromAuthored(parseFloat(m[2]));
-    if (m[1] === "a") a = fracFromAuthored(parseFloat(m[2]));
+    const v = parseFloat(m[2]);
+    if (m[1] === "l") lRaw = v;
+    else if (m[1] === "c") cRaw = v;
+    else aRaw = v;
   }
-  if (!CHROMATIC.has(hue)) return null;
+  const l = lRaw === undefined ? 0.5 : fracFromAuthored(lRaw);
+  const angle = resolveHueAngle(name, adjacent);
+  const c = angle === undefined ? 0 : chromaFromAuthored(cRaw, l, angle);
+  const a = aRaw === undefined ? null : fracFromAuthored(aRaw);
   return { l, c, a };
 }
 
 /** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]` on the 0–1000 scale. */
 function formatInner(hue: string, l: number, c: number, a: number | null): string {
   // Clamp every axis to its valid oklch range (treatment deltas and chroma scaling
-  // can otherwise overshoot), then emit authored 0–1000 units.
+  // can otherwise overshoot), then emit authored 0–1000 units. Chroma is gamut-
+  // relative, so it resolves against the hue angle (adjacency-aware) at this L.
   const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, n));
-  const parts = [
-    `l: ${authoredFromFrac(clamp(l, 1))}`,
-    `c: ${authoredFromChroma(clamp(c, MAX_CHROMA))}`,
-  ];
+  const L = clamp(l, 1);
+  const [name, adjacent] = hue.split("-");
+  const angle = resolveHueAngle(name, adjacent);
+  const cAuthored = angle === undefined ? 0 : authoredFromChroma(clamp(c, MAX_CHROMA), L, angle);
+  const parts = [`l: ${authoredFromFrac(L)}`, `c: ${cAuthored}`];
   if (a !== null) parts.push(`a: ${authoredFromFrac(clamp(a, 1))}`);
   return `${hue}, ${parts.join(", ")}`;
 }

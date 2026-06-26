@@ -12,6 +12,7 @@ import {
   MAX_CHROMA,
   authoredFromFrac,
   authoredFromChroma,
+  resolveHueAngle,
   resolveTugColorToOklch,
   type ResolvedOklch,
 } from "./palette-engine";
@@ -54,9 +55,12 @@ export function hueText(s: TugColorSpec): string {
   return s.adjacent ? `${s.hue}-${s.adjacent}` : s.hue;
 }
 
-/** Value text: `tug(blue, l:300, c:160, a:1000)` — labeled axes in authored 0–1000, alpha always shown. */
+/** Value text: `tug(blue, l:300, c:500, a:1000)` — labeled axes in authored 0–1000, alpha always shown. */
 export function formatTugColorText(s: TugColorSpec): string {
-  return `tug(${hueText(s)}, l:${authoredFromFrac(clamp01(s.l))}, c:${authoredFromChroma(clampChroma(s.c))}, a:${authoredFromFrac(clamp01(s.a))})`;
+  const L = clamp01(s.l);
+  const angle = resolveHueAngle(s.hue, s.adjacent);
+  const c = angle === undefined ? 0 : authoredFromChroma(clampChroma(s.c), L, angle);
+  return `tug(${hueText(s)}, l:${authoredFromFrac(L)}, c:${c}, a:${authoredFromFrac(clamp01(s.a))})`;
 }
 
 /** Equality on the three axes (+ hue) — used to skip no-op store writes. */

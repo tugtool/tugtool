@@ -17,7 +17,7 @@ import {
   isKnownHue,
   type DuetSeed,
 } from "./theme-editor-core";
-import { fracFromAuthored, chromaFromAuthored } from "./src/components/tugways/palette-engine";
+import { fracFromAuthored, chromaFromAuthored, resolveHueAngle } from "./src/components/tugways/palette-engine";
 
 /**
  * Vite plugin: seamless CSS hot-reload when palette-engine.ts changes.
@@ -409,13 +409,13 @@ export async function handleThemeEditApply(
   const theme = typeof b.theme === "string" ? b.theme.trim() : "";
   const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
   const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : "";
-  // Additive lightness/chroma/alpha deltas off each rung's base, on the 0–1000
-  // --tug-color() authoring scale, stored as oklch fractions.
+  // Additive lightness/chroma/alpha deltas off each rung's base. Deltas are
+  // ABSOLUTE oklch nudges (×1000, like l/a) — not the relative chroma value scale —
+  // since one delta applies across many tokens of differing hue/lightness.
   const frac = (v: unknown): number => (v === undefined ? 0 : fracFromAuthored(Number(v)));
-  const chr = (v: unknown): number => (v === undefined ? 0 : chromaFromAuthored(Number(v)));
   const parseAdjust = (v: unknown): { lDelta: number; cDelta: number; aDelta?: number } => {
     const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-    return { lDelta: frac(o.lDelta), cDelta: chr(o.cDelta), aDelta: frac(o.aDelta) };
+    return { lDelta: frac(o.lDelta), cDelta: frac(o.cDelta), aDelta: frac(o.aDelta) };
   };
   const key = parseAdjust(b.key);
   const accent = parseAdjust(b.accent);
@@ -425,12 +425,14 @@ export async function handleThemeEditApply(
     return { status: 400, body: JSON.stringify({ error: "theme + valid keyHue/accentHue + numeric key/accent {lDelta,cDelta,aDelta} required" }) };
   }
 
+  // Treatments are VALUE colors painted on the key hue, so their chroma is the
+  // relative scale resolved against keyHue's angle at the treatment lightness.
+  const keyAngle = resolveHueAngle(keyHue);
   const parseTreatment = (v: unknown): { l: number; c: number; a?: number } | undefined => {
     if (!v || typeof v !== "object") return undefined;
     const o = v as Record<string, unknown>;
-    // Treatment l/c/a arrive on the 0–1000 authoring scale; store oklch fractions.
     const l = fracFromAuthored(Number(o.l));
-    const c = chromaFromAuthored(Number(o.c));
+    const c = keyAngle === undefined ? 0 : chromaFromAuthored(Number(o.c), l, keyAngle);
     if (!Number.isFinite(l) || !Number.isFinite(c)) return undefined;
     const a = o.a === undefined ? undefined : fracFromAuthored(Number(o.a));
     return { l, c, a: a !== undefined && Number.isFinite(a) ? a : undefined };

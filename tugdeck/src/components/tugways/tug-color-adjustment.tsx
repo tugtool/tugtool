@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { TugValueInput } from "./tug-value-input";
 import { TugColorWell } from "./tug-color-well";
 import { swatchOklch, clamp01, clampChroma, type TugColorSpec } from "./tug-color-spec";
-import { AUTHOR_MAX, authoredFromFrac, authoredFromChroma } from "./palette-engine";
+import { AUTHOR_MAX, authoredFromFrac } from "./palette-engine";
 import "./tug-color-adjustment.css";
 
 /** Additive deltas in OKLCH units (mirror of core's DuetAdjust). */
@@ -93,7 +93,9 @@ export function TugColorAdjustment({
       ) : (
         <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
       )}
-      {/* Deltas display on the 0–1000 scale (l/c/a all ±AUTHOR_MAX); stored as oklch fractions. */}
+      {/* Deltas are absolute OKLCH nudges (×1000, same footing as l/a), NOT the
+          relative --tug-color chroma scale — they apply across many tokens of
+          differing hue/lightness where "relative" has no single meaning. */}
       <span className="tug-color-adjustment-deltas">
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">lΔ</span>
@@ -101,7 +103,7 @@ export function TugColorAdjustment({
         </label>
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">cΔ</span>
-          <TugValueInput value={authoredFromChroma(value.cDelta)} senderId={ids.c} min={-AUTHOR_MAX} max={AUTHOR_MAX} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
+          <TugValueInput value={authoredFromFrac(value.cDelta)} senderId={ids.c} min={-AUTHOR_MAX} max={AUTHOR_MAX} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
         </label>
         {showAlpha && (
           <label className="tug-color-adjustment-delta">

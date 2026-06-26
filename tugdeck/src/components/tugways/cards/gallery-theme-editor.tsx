@@ -40,7 +40,7 @@ import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-or
 import { CardIdContext } from "@/lib/card-id-context";
 import { setActiveColorTarget } from "@/components/tugways/active-color-target";
 import { type TugColorSpec } from "@/components/tugways/tug-color-spec";
-import { HUE_FAMILIES, fracFromAuthored, chromaFromAuthored } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, fracFromAuthored, chromaFromAuthored, resolveHueAngle } from "@/components/tugways/palette-engine";
 import { deriveTheme } from "../../../../theme-editor-core";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import brioRaw from "../../../../styles/themes/brio.css?raw";
@@ -100,17 +100,22 @@ function tokenSpec(css: string, name: string): TugColorSpec | null {
   const m = new RegExp(`${name}\\s*:\\s*--tug-color\\(([^)]*)\\)`).exec(css);
   if (!m) return null;
   const parts = m[1].split(",").map((s) => s.trim());
-  const hue = parts[0].split("-")[0];
-  let l = 0.5, c = 0, a = 1;
+  const [hue, adjacent] = parts[0].split("-");
+  // Collect raw authored ints first — chroma is gamut-relative, resolved once L is known.
+  let lRaw: number | undefined, cRaw = 0, aRaw: number | undefined;
   for (const p of parts.slice(1)) {
     const mm = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!mm) continue;
-    // Authored 0–1000; store oklch fractions.
-    if (mm[1] === "l") l = fracFromAuthored(parseFloat(mm[2]));
-    else if (mm[1] === "c") c = chromaFromAuthored(parseFloat(mm[2]));
-    else a = fracFromAuthored(parseFloat(mm[2]));
+    const v = parseFloat(mm[2]);
+    if (mm[1] === "l") lRaw = v;
+    else if (mm[1] === "c") cRaw = v;
+    else aRaw = v;
   }
-  return { hue, l, c, a };
+  const l = lRaw === undefined ? 0.5 : fracFromAuthored(lRaw);
+  const angle = resolveHueAngle(hue, adjacent);
+  const c = angle === undefined ? 0 : chromaFromAuthored(cRaw, l, angle);
+  const a = aRaw === undefined ? 1 : fracFromAuthored(aRaw);
+  return { hue, adjacent, l, c, a };
 }
 
 /** A base's current key color, read from its anchor token. */

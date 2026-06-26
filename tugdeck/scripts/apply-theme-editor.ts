@@ -28,7 +28,7 @@ import {
   isKnownHue,
   type DuetSeed,
 } from "../theme-editor-core";
-import { fracFromAuthored, chromaFromAuthored, authoredFromFrac, authoredFromChroma } from "../src/components/tugways/palette-engine";
+import { fracFromAuthored, authoredFromFrac } from "../src/components/tugways/palette-engine";
 
 interface ThemeEditorEntry {
   identityBaseline: Record<string, string>;
@@ -48,13 +48,14 @@ if (!isKnownHue(keyHue) || !isKnownHue(accentHue)) {
   process.exit(1);
 }
 
-// Deltas are typed on the 0–1000 --tug-color() authoring scale and stored as oklch
-// fractions (chroma scaled through MAX_CHROMA, lightness linear).
+// Deltas are absolute OKLCH nudges (×1000, like lightness) — not the relative
+// chroma value scale — since one delta applies across many tokens of differing
+// hue/lightness. Stored as oklch fractions.
 const seed: DuetSeed = {
   keyHue,
-  key: { cDelta: chromaFromAuthored(parseFloat(keyCStr)), lDelta: keyLStr ? fracFromAuthored(parseFloat(keyLStr)) : 0, aDelta: 0 },
+  key: { cDelta: fracFromAuthored(parseFloat(keyCStr)), lDelta: keyLStr ? fracFromAuthored(parseFloat(keyLStr)) : 0, aDelta: 0 },
   accentHue,
-  accent: { cDelta: chromaFromAuthored(parseFloat(accentCStr)), lDelta: accentLStr ? fracFromAuthored(parseFloat(accentLStr)) : 0, aDelta: 0 },
+  accent: { cDelta: fracFromAuthored(parseFloat(accentCStr)), lDelta: accentLStr ? fracFromAuthored(parseFloat(accentLStr)) : 0, aDelta: 0 },
 };
 
 const themesDir = path.resolve(import.meta.dir, "..", "styles", "themes");
@@ -85,10 +86,8 @@ const { css, keyCount, accentCount } = applyDuet(current, baseline, seed);
 fs.writeFileSync(themeFile, css);
 state[theme] = { identityBaseline: baseline, appliedSeed: seed, lastGenCss: css };
 fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
-const sgn = (n: number): string => (n >= 0 ? "+" : "");
-const lDel = (n: number): string => `${sgn(n)}${authoredFromFrac(n)}`;
-const cDel = (n: number): string => `${sgn(n)}${authoredFromChroma(n)}`;
+const del = (n: number): string => `${n >= 0 ? "+" : ""}${authoredFromFrac(n)}`;
 console.log(
-  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (c${cDel(seed.key.cDelta)}, l${lDel(seed.key.lDelta)}), ` +
-    `${accentCount} Accent -> ${accentHue} (c${cDel(seed.accent.cDelta)}, l${lDel(seed.accent.lDelta)})`,
+  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (c${del(seed.key.cDelta)}, l${del(seed.key.lDelta)}), ` +
+    `${accentCount} Accent -> ${accentHue} (c${del(seed.accent.cDelta)}, l${del(seed.accent.lDelta)})`,
 );

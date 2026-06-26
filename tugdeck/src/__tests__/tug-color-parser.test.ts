@@ -2,8 +2,9 @@
  * Tests for tug-color-parser — the tokenizer and parser for --tug-color() notation.
  *
  * --tug-color() is thin sugar over oklch(): a named hue plus l / c / a authored as
- * integers on one 0–1000 scale (l: 300 → oklch L 0.30; chroma maps 0–1000 onto
- * 0–MAX_CHROMA, so c: 160 → oklch C 0.08). Stored as oklch fractions.
+ * integers on one 0–1000 scale. l/a are linear (l: 300 → oklch L 0.30); chroma is
+ * gamut-relative (c: 1000 → the P3 chroma ceiling at that hue+lightness, c: 500 →
+ * half). Stored as oklch fractions.
  *
  * Covers:
  * - Chromatic hues require explicit l + c; labeled and positional forms
@@ -16,7 +17,14 @@
 import { describe, it, expect } from "bun:test";
 import { parseTugColor, findTugColorCalls, findTugColorCallsWithWarnings } from "../../tug-color-parser";
 import type { TugColorParsed } from "../../tug-color-parser";
-import { ADJACENCY_RING, NAMED_GRAYS } from "@/components/tugways/palette-engine";
+import {
+  ADJACENCY_RING, NAMED_GRAYS, HUE_FAMILIES,
+  isInP3Gamut, maxChromaInGamut, resolveHueAngle,
+} from "@/components/tugways/palette-engine";
+
+/** The absolute oklch C that authored chroma `c` resolves to at this hue + lightness. */
+const expectChroma = (hue: string, L: number, c: number, adjacent?: string): number =>
+  (c / 1000) * maxChromaInGamut(L, resolveHueAngle(hue, adjacent)!, isInP3Gamut);
 
 const KNOWN_HUES = new Set([
   ...ADJACENCY_RING,
@@ -44,37 +52,43 @@ function expectErr(input: string): string[] {
 }
 
 describe("chromatic hues — labeled l/c/a on the 0–1000 scale", () => {
-  it("parses l + c, storing oklch fractions (chroma scaled through MAX_CHROMA)", () => {
-    const v = expectOk("indigo, l: 300, c: 160");
+  it("parses l + c, storing oklch fractions (chroma is gamut-relative)", () => {
+    const v = expectOk("indigo, l: 300, c: 500");
     expect(v.color).toEqual({ name: "indigo" });
     expect(v.lightness).toBeCloseTo(0.3, 10);
-    expect(v.chroma).toBeCloseTo(0.08, 10);
+    expect(v.chroma).toBeCloseTo(expectChroma("indigo", 0.3, 500), 10);
     expect(v.alpha).toBe(1);
   });
 
   it("parses l + c + a", () => {
     const v = expectOk("red, l: 660, c: 440, a: 500");
     expect(v.lightness).toBeCloseTo(0.66, 10);
-    expect(v.chroma).toBeCloseTo(0.22, 10);
+    expect(v.chroma).toBeCloseTo(expectChroma("red", 0.66, 440), 10);
     expect(v.alpha).toBeCloseTo(0.5, 10);
   });
 
   it("labels may appear in any order", () => {
     const v = expectOk("blue, c: 200, a: 800, l: 400");
     expect(v.lightness).toBeCloseTo(0.4, 10);
-    expect(v.chroma).toBeCloseTo(0.1, 10);
+    expect(v.chroma).toBeCloseTo(expectChroma("blue", 0.4, 200), 10);
     expect(v.alpha).toBeCloseTo(0.8, 10);
   });
 
   it("accepts positional l, c, a after the color", () => {
     const v = expectOk("violet, 500, 240, 900");
     expect(v.lightness).toBeCloseTo(0.5, 10);
-    expect(v.chroma).toBeCloseTo(0.12, 10);
+    expect(v.chroma).toBeCloseTo(expectChroma("violet", 0.5, 240), 10);
     expect(v.alpha).toBeCloseTo(0.9, 10);
   });
 
-  it("c: 1000 reaches the full usable chroma (MAX_CHROMA)", () => {
-    expect(expectOk("red, l: 500, c: 1000").chroma).toBeCloseTo(0.5, 10);
+  it("c: 1000 reaches the full P3 chroma ceiling at that hue + lightness", () => {
+    expect(expectOk("red, l: 500, c: 1000").chroma)
+      .toBeCloseTo(maxChromaInGamut(0.5, HUE_FAMILIES.red, isInP3Gamut), 10);
+  });
+
+  it("c: 500 is half the ceiling (the scale is linear in % of gamut)", () => {
+    const full = expectOk("green, l: 600, c: 1000").chroma;
+    expect(expectOk("green, l: 600, c: 500").chroma).toBeCloseTo(full / 2, 10);
   });
 
   it("normalizes uppercase hue names", () => {
@@ -205,7 +219,7 @@ describe("tokenizer + argument edge cases", () => {
   it("treats NBSP (U+00A0) as whitespace", () => {
     const v = expectOk("red, l: 500, c: 200");
     expect(v.lightness).toBeCloseTo(0.5, 10);
-    expect(v.chroma).toBeCloseTo(0.1, 10);
+    expect(v.chroma).toBeCloseTo(expectChroma("red", 0.5, 200), 10);
   });
 
   it("rejects a positional argument after a labeled one", () => {

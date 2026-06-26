@@ -33,9 +33,6 @@ import {
   HUE_FAMILIES,
   NAMED_GRAYS,
   ADJACENCY_RING,
-  AUTHOR_MAX,
-  MAX_CHROMA,
-  authoredFromChroma,
   resolveTugColorToOklch,
   isInSRGBGamut,
   isInP3Gamut,
@@ -128,11 +125,12 @@ function printSummary(r: FileReport): void {
   console.log(`${mark} ${r.label}: ${r.total} chromatic · ${r.outSRGB} out-of-sRGB · ${r.outP3.length} out-of-P3`);
 }
 
-/** Full per-recipe drill-down (single-theme mode). Chroma shown in authored 0–1000 units. */
+/** Full per-recipe drill-down (single-theme mode). Gamut overflow is an absolute-
+ *  oklch concern, so chroma is shown as raw oklch C, not the relative authoring scale. */
 function printDetail(r: FileReport): void {
   for (const f of r.outP3) {
     console.log(`    ${r.label}:${f.line}  ${f.recipe}`);
-    console.log(`      chroma ${authoredFromChroma(f.C)} exceeds P3 max ${Math.floor((f.maxP3C / MAX_CHROMA) * AUTHOR_MAX)} at this lightness`);
+    console.log(`      oklch C ${f.C.toFixed(3)} exceeds P3 max ${f.maxP3C.toFixed(3)} at this lightness`);
   }
 }
 
