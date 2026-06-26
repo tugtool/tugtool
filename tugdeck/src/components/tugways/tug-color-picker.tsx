@@ -71,8 +71,8 @@ const ARROW_DIRS: Record<string, ArrowDir> = {
   ArrowDown: "down",
 };
 
-/** Fixed value-box width so every slider's track (and value) lines up. */
-const SLIDER_VALUE_WIDTH = "3.5rem";
+/** Fixed value-box width so every slider's track (and value) lines up (holds 4-digit thousandths). */
+const SLIDER_VALUE_WIDTH = "4rem";
 
 /** The picker always shows a color; with no active well it edits this scratch. */
 const SCRATCH_DEFAULT: TugColorSpec = { hue: "blue", l: 0.5, c: 0.12, a: 1 };
@@ -179,16 +179,16 @@ export function TugColorPicker(): React.ReactElement {
   );
   useSpatialOrder(sliderOrder);
 
-  // Sliders edit in authoring units (hundredths); the spec stays in oklch fractions.
+  // Sliders edit in authoring units (thousandths); the spec stays in oklch fractions.
   const { ResponderScope, responderRef } = useResponderForm({
     setValueNumber: {
-      [lId]: (v: number, phase: ActionPhase) => editColor({ l: v / 100 }, phase),
-      [cId]: (v: number, phase: ActionPhase) => editColor({ c: v / 100 }, phase),
-      [aId]: (v: number, phase: ActionPhase) => editColor({ a: v / 100 }, phase),
+      [lId]: (v: number, phase: ActionPhase) => editColor({ l: v / 1000 }, phase),
+      [cId]: (v: number, phase: ActionPhase) => editColor({ c: v / 1000 }, phase),
+      [aId]: (v: number, phase: ActionPhase) => editColor({ a: v / 1000 }, phase),
     },
   });
 
-  const u = (n: number): number => Math.round(n * 100);
+  const u = (n: number): number => Math.round(n * 1000);
 
   return (
     <ResponderScope>
@@ -233,12 +233,12 @@ export function TugColorPicker(): React.ReactElement {
           ))}
         </div>
 
-        {/* OKLCH axes — lightness / chroma / alpha in hundredths (l/a 0–100, c 0–50). */}
+        {/* OKLCH axes — lightness / chroma / alpha in thousandths (l/a 0–1000, c 0–500). */}
         <TugBox label="OKLCH" variant="bordered" size="sm" className="tug-color-picker-box">
           <div className="tug-color-picker-sliders">
-            <TugSlider label="Lightness" senderId={lId} value={u(value.l)} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
-            <TugSlider label="Chroma" senderId={cId} value={u(value.c)} min={0} max={Math.round(MAX_CHROMA * 100)} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
-            <TugSlider label="Alpha" senderId={aId} value={u(value.a)} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
+            <TugSlider label="Lightness" senderId={lId} value={u(value.l)} min={0} max={1000} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
+            <TugSlider label="Chroma" senderId={cId} value={u(value.c)} min={0} max={Math.round(MAX_CHROMA * 1000)} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
+            <TugSlider label="Alpha" senderId={aId} value={u(value.a)} min={0} max={1000} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
           </div>
         </TugBox>
       </div>

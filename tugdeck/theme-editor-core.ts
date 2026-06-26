@@ -153,21 +153,21 @@ function parseTugColor(inner: string): Parsed | null {
   for (const p of parts.slice(1)) {
     const m = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!m) continue;
-    // Authoring units are hundredths; store oklch fractions.
-    if (m[1] === "l") l = parseFloat(m[2]) / 100;
-    if (m[1] === "c") c = parseFloat(m[2]) / 100;
-    if (m[1] === "a") a = parseFloat(m[2]) / 100;
+    // Authoring units are thousandths; store oklch fractions.
+    if (m[1] === "l") l = parseFloat(m[2]) / 1000;
+    if (m[1] === "c") c = parseFloat(m[2]) / 1000;
+    if (m[1] === "a") a = parseFloat(m[2]) / 1000;
   }
   if (!CHROMATIC.has(hue)) return null;
   return { l, c, a };
 }
 
-/** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]` in hundredths. */
+/** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]` in thousandths. */
 function formatInner(hue: string, l: number, c: number, a: number | null): string {
   // Clamp every axis to its valid range (fractions) — treatment deltas and chroma
-  // scaling can otherwise overshoot — then emit authoring units (hundredths).
+  // scaling can otherwise overshoot — then emit authoring units (thousandths).
   const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, n));
-  const u = (n: number): string => String(Math.round(n * 100));
+  const u = (n: number): string => String(Math.round(n * 1000));
   const parts = [`l: ${u(clamp(l, 1))}`, `c: ${u(clamp(c, MAX_CHROMA))}`];
   if (a !== null) parts.push(`a: ${u(clamp(a, 1))}`);
   return `${hue}, ${parts.join(", ")}`;

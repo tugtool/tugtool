@@ -92,20 +92,20 @@ export function TugColorAdjustment({
       ) : (
         <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
       )}
-      {/* Deltas display in hundredths (l/a ±100, c ±50); stored as oklch fractions. */}
+      {/* Deltas display in thousandths (l/a ±1000, c ±500); stored as oklch fractions. */}
       <span className="tug-color-adjustment-deltas">
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">lΔ</span>
-          <TugValueInput value={Math.round(value.lDelta * 100)} senderId={ids.l} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
+          <TugValueInput value={Math.round(value.lDelta * 1000)} senderId={ids.l} min={-1000} max={1000} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
         </label>
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">cΔ</span>
-          <TugValueInput value={Math.round(value.cDelta * 100)} senderId={ids.c} min={-Math.round(MAX_CHROMA * 100)} max={Math.round(MAX_CHROMA * 100)} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
+          <TugValueInput value={Math.round(value.cDelta * 1000)} senderId={ids.c} min={-Math.round(MAX_CHROMA * 1000)} max={Math.round(MAX_CHROMA * 1000)} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
         </label>
         {showAlpha && (
           <label className="tug-color-adjustment-delta">
             <span className="tug-color-adjustment-delta-tag">aΔ</span>
-            <TugValueInput value={Math.round(value.aDelta * 100)} senderId={ids.a} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
+            <TugValueInput value={Math.round(value.aDelta * 1000)} senderId={ids.a} min={-1000} max={1000} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
           </label>
         )}
       </span>

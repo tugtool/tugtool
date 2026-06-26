@@ -10,12 +10,12 @@
  * state file with the dev-server POST /__theme-editor/apply endpoint via
  * theme-editor-core.ts.
  *
- * Deltas are in hundredths (the --tug-color() authoring units).
+ * Deltas are in thousandths (the --tug-color() authoring units).
  *
  * Usage:
  *   bun run scripts/apply-theme-editor.ts <theme> <keyHue> <keyCDelta> <accentHue> <accentCDelta> [keyLDelta] [accentLDelta]
- *   bun run scripts/apply-theme-editor.ts brio cobalt -2 orange -3
- *   bun run scripts/apply-theme-editor.ts aria purple 0 sky 0 -5 4
+ *   bun run scripts/apply-theme-editor.ts brio cobalt -20 orange -30
+ *   bun run scripts/apply-theme-editor.ts aria purple 0 sky 0 -50 40
  */
 
 import fs from "fs";
@@ -47,13 +47,13 @@ if (!isKnownHue(keyHue) || !isKnownHue(accentHue)) {
   process.exit(1);
 }
 
-// Deltas are typed in hundredths (matching the --tug-color() authoring units) and
+// Deltas are typed in thousandths (matching the --tug-color() authoring units) and
 // stored as oklch fractions.
 const seed: DuetSeed = {
   keyHue,
-  key: { cDelta: parseFloat(keyCStr) / 100, lDelta: keyLStr ? parseFloat(keyLStr) / 100 : 0, aDelta: 0 },
+  key: { cDelta: parseFloat(keyCStr) / 1000, lDelta: keyLStr ? parseFloat(keyLStr) / 1000 : 0, aDelta: 0 },
   accentHue,
-  accent: { cDelta: parseFloat(accentCStr) / 100, lDelta: accentLStr ? parseFloat(accentLStr) / 100 : 0, aDelta: 0 },
+  accent: { cDelta: parseFloat(accentCStr) / 1000, lDelta: accentLStr ? parseFloat(accentLStr) / 1000 : 0, aDelta: 0 },
 };
 
 const themesDir = path.resolve(import.meta.dir, "..", "styles", "themes");
@@ -84,8 +84,8 @@ const { css, keyCount, accentCount } = applyDuet(current, baseline, seed);
 fs.writeFileSync(themeFile, css);
 state[theme] = { identityBaseline: baseline, appliedSeed: seed, lastGenCss: css };
 fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
-const hund = (n: number): string => `${n >= 0 ? "+" : ""}${Math.round(n * 100)}`;
+const thou = (n: number): string => `${n >= 0 ? "+" : ""}${Math.round(n * 1000)}`;
 console.log(
-  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (c${hund(seed.key.cDelta)}, l${hund(seed.key.lDelta)}), ` +
-    `${accentCount} Accent -> ${accentHue} (c${hund(seed.accent.cDelta)}, l${hund(seed.accent.lDelta)})`,
+  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (c${thou(seed.key.cDelta)}, l${thou(seed.key.lDelta)}), ` +
+    `${accentCount} Accent -> ${accentHue} (c${thou(seed.accent.cDelta)}, l${thou(seed.accent.lDelta)})`,
 );

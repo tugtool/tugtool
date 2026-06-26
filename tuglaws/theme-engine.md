@@ -46,7 +46,7 @@ largely a hue swap: keep the *lightness* ladder, change the *hue*.
 
 1. **One tint hue per theme** for all `--tug7-surface-global-primary-*` neutrals (and the neutral
    text/icon/border/divider families). Surfaces differ by **lightness only**; chroma stays in a tight
-   low band (a faint tint, c ≈ 0–2 in hundredths). Lightness carries elevation, not hue.
+   low band (a faint tint, c ≈ 0–20 in thousandths). Lightness carries elevation, not hue.
 2. **Monotonic elevation ladder.** Dark: deeper base, lighter raised/overlay. Light: lighter base
    (content/raised/overlay near white), darker recessed wells (sunken). No hue jumps, no
    dark-surface-in-a-light-theme surprises. `screen` (tooltips, dev panel) is the lone exception in

@@ -11,9 +11,9 @@
  *   <color>     := <hue-name> | <hue-name>-<adjacent-hue> | black | white | gray
  *                  | <named-gray> | transparent
  *   <hue-name>  := one of 48 named hues (garnet, cherry, scarlet, … berry)
- *   <lightness> := <number>   // OKLCH lightness, 0–1 (required for chromatic + gray)
- *   <chroma>    := <number>   // OKLCH chroma, 0–~0.4 (required for chromatic)
- *   <alpha>     := <number>   // 0–1 (default 1, fully opaque)
+ *   <lightness> := <number>   // OKLCH lightness ×1000, 0–1000 (required for chromatic + gray)
+ *   <chroma>    := <number>   // OKLCH chroma ×1000, 0–~500 (required for chromatic)
+ *   <alpha>     := <number>   // ×1000, 0–1000 (default 1000, fully opaque)
  *
  * Labeled arguments (l:, c:, a:) may appear in any order after the color.
  * Positional order (color, lightness, chroma, alpha) is also supported.
@@ -26,12 +26,12 @@
  *   transparent — always expands to oklch(0 0 0 / 0), ignoring all args
  *
  * Examples:
- *   --tug-color(blue, l: 0.3115, c: 0.0143)     → oklch(0.3115 0.0143 230)
- *   --tug-color(cobalt-indigo, l: 0.3, c: 0.05) → hyphenated adjacency hue
- *   --tug-color(black, a: 0.5)                  → oklch(0 0 0 / 0.5)
- *   --tug-color(paper)                          → oklch(0.22 0 0)
- *   --tug-color(gray, l: 0.43)                  → oklch(0.43 0 0)
- *   --tug-color(transparent)                    → oklch(0 0 0 / 0)
+ *   --tug-color(blue, l: 312, c: 14)         → oklch(0.312 0.014 230)
+ *   --tug-color(cobalt-indigo, l: 300, c: 50) → hyphenated adjacency hue
+ *   --tug-color(black, a: 500)               → oklch(0 0 0 / 0.5)
+ *   --tug-color(paper)                       → oklch(0.22 0 0)
+ *   --tug-color(gray, l: 430)                → oklch(0.43 0 0)
+ *   --tug-color(transparent)                 → oklch(0 0 0 / 0)
  *
  * Multiple calls in a single declaration are all expanded.
  * Values without --tug-color() are passed through unchanged.

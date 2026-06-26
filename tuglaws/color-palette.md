@@ -8,14 +8,14 @@
 
 ## Color Space
 
-TugColor operates in OKLCH — a perceptually uniform color space. A TugColor value is a **named hue** plus three OKLCH coordinates, each written in **hundredths** of the oklch value (a leading `0.` is just noise to type):
+TugColor operates in OKLCH — a perceptually uniform color space. A TugColor value is a **named hue** plus three OKLCH coordinates, each written in **thousandths** of the oklch value (a leading `0.` is just noise to type):
 
 - **Hue:** one of 48 named hues (or a hyphenated adjacency pair), supplying the OKLCH hue angle.
-- **Lightness (l):** 0–100 — OKLCH L ×100 (`l: 67` = L 0.67).
-- **Chroma (c):** 0–~50 — OKLCH C ×100 (`c: 19` = C 0.19; the axis maxes near 0.5, hence ~50).
-- **Alpha (a):** 0–100 — opacity ×100. Defaults to 100 (fully opaque).
+- **Lightness (l):** 0–1000 — OKLCH L ×1000 (`l: 670` = L 0.67).
+- **Chroma (c):** 0–~500 — OKLCH C ×1000 (`c: 190` = C 0.19; the axis maxes near 0.5, hence ~500).
+- **Alpha (a):** 0–1000 — opacity ×1000. Defaults to 1000 (fully opaque).
 
-Values are **whole numbers** — fractional values (`l: 30.5`) are rejected; a hundredth is the precision floor. The hundredths are a **linear ×100 rescale of the notation only** — not the retired intensity/tone remap. `--tug-color(indigo, l: 30, c: 8)` expands to `oklch(0.30 0.08 260)`: the parser divides by 100 and nothing else happens. The hue names (and adjacency) are the only abstraction over raw `oklch()` — they name the angle so authors don't memorize degrees; the labels `l`/`c` are the oklch axes themselves.
+Values are **whole numbers** — fractional values (`l: 300.5`) are rejected; a thousandth is the precision floor. The thousandths are a **linear ×1000 rescale of the notation only** — not the retired intensity/tone remap. `--tug-color(indigo, l: 300, c: 80)` expands to `oklch(0.30 0.08 260)`: the parser divides by 1000 and nothing else happens. The hue names (and adjacency) are the only abstraction over raw `oklch()` — they name the angle so authors don't memorize degrees; the labels `l`/`c` are the oklch axes themselves.
 
 > **History.** Earlier TugColor replaced OKLCH chroma/lightness with abstract *intensity* (0–100, gamut-relative chroma) and *tone* (0–100, piecewise lightness through a per-hue canonical L). That remapping was retired: it added conceptual overhead and a large conversion layer, its "shared tone skeleton" was undercut by per-hue canonical-L, and its headline benefit (P3 widening) is already handled by the browser (see [P3 Gamut](#p3-gamut)).
 
@@ -101,17 +101,17 @@ Named grays have fixed lightness and take no `l`/`c` (supplying them warns). For
 A compact CSS notation that expands to `oklch()` at build time via a PostCSS plugin (`postcss-tug-color.ts`):
 
 ```css
---tug-color(indigo, l: 30, c: 8)           /* chromatic → oklch(0.30 0.08 260) */
---tug-color(cobalt-indigo, l: 30, c: 5)    /* hyphenated adjacency */
---tug-color(gray, l: 43)                   /* gray pseudo-hue (achromatic) */
+--tug-color(indigo, l: 300, c: 80)         /* chromatic → oklch(0.30 0.08 260) */
+--tug-color(cobalt-indigo, l: 300, c: 50)  /* hyphenated adjacency */
+--tug-color(gray, l: 430)                  /* gray pseudo-hue (achromatic) */
 --tug-color(charcoal)                      /* named gray (fixed L) */
---tug-color(white, a: 8)                   /* fixed endpoint + alpha */
+--tug-color(white, a: 80)                  /* fixed endpoint + alpha */
 --tug-color(transparent)                   /* fully transparent */
 ```
 
 - **Chromatic hues require explicit `l` and `c`.** (The model is honest sugar over oklch — there is no canonical default.)
 - Labels `l:`/`c:`/`a:` may appear in any order after the hue; positional order is `color, lightness, chroma, alpha`.
-- Ranges (whole hundredths): `l` 0–100, `c` 0–~50, `a` 0–100. Fractional values are rejected.
+- Ranges (whole thousandths): `l` 0–1000, `c` 0–~500, `a` 0–1000. Fractional values are rejected.
 - The plugin expands these to concrete `oklch(L C h)` values. Zero runtime cost — built CSS contains only standard `oklch()`.
 
 ### `resolveTugColorToOklch()`

@@ -21,8 +21,8 @@ body {
   --tugx-dock-border: var(--tug7-element-global-divider-normal-default-rest);
   --tugx-dock-indicator: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-dock-menu-caret: var(--tug7-element-global-text-normal-subtle-rest);
-  --tug-dock-button-bg-hover: --tug-color(white, a: 8);
-  --tug-dock-button-bg-active: --tug-color(white, a: 12);
+  --tug-dock-button-bg-hover: --tug-color(white, a: 80);
+  --tug-dock-button-bg-active: --tug-color(white, a: 120);
   --tugx-dock-button-fg: var(--tug7-element-global-text-normal-subtle-rest);
   --tugx-dock-button-fg-active: var(--tug7-element-global-fill-normal-accent-rest);
   --tugx-dock-button-fg-attention: var(--tug7-element-tone-fill-normal-caution-rest);
@@ -31,8 +31,8 @@ body {
   --tugx-dock-button-insertIndicator: var(--tug7-element-global-icon-normal-active-rest);
 
   /* --- Canvas / Grid --- */
-  --tug-canvas-grid-emphasis: --tug-color(white, a: 10);
+  --tug-canvas-grid-emphasis: --tug-color(white, a: 100);
 
   /* --- Snap / Sash / Flash --- */
-  --tug-snap-guide: --tug-color(cyan, l: 80, c: 13, a: 60);
+  --tug-snap-guide: --tug-color(cyan, l: 800, c: 130, a: 600);
 }

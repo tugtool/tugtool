@@ -49,8 +49,8 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
   ...NAMED_GRAYS,
 ]);
 
-/** Format an oklch fraction as authoring hundredths (integer). */
-const u = (n: number): string => String(Math.round(n * 100));
+/** Format an oklch fraction as authoring thousandths (integer). */
+const u = (n: number): string => String(Math.round(n * 1000));
 
 interface Stats { files: number; calls: number; clamped: number; }
 
@@ -70,8 +70,8 @@ function clampFile(rel: string, write: boolean, stats: Stats, sample: string[]):
     const { L, C, h } = resolveTugColorToOklch(color.name, color.adjacentName, lightness, chroma, alpha);
     if (C <= 0 || isInP3Gamut(L, C, h)) continue; // achromatic or already in P3
 
-    // Floor the P3 ceiling to a whole hundredth so the written value stays in-gamut.
-    const ceilingH = Math.floor(maxChromaInGamut(L, h, isInP3Gamut) * 100);
+    // Floor the P3 ceiling to a whole thousandth so the written value stays in-gamut.
+    const ceilingH = Math.floor(maxChromaInGamut(L, h, isInP3Gamut) * 1000);
     const token = color.adjacentName ? `${color.name}-${color.adjacentName}` : color.name;
     const alphaArg = alpha < 1 ? `, a: ${u(alpha)}` : "";
     const replacement = `--tug-color(${token}, l: ${u(lightness)}, c: ${ceilingH}${alphaArg})`;
