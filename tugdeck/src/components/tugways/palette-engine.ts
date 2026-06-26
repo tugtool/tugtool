@@ -874,91 +874,55 @@ export interface ResolvedOklch {
 /**
  * Resolve a parsed --tug-color() value to numeric OKLCH components.
  *
- * This is the single source of truth for --tug-color() expansion math. The
- * postcss-tug-color build plugin formats this result into an `oklch(...)` string;
- * the CLI contrast audit feeds it straight into the WCAG/perceptual checks.
- * Keeping both on this one function guarantees the build output and the audit
- * never drift.
+ * This is the single source of truth for --tug-color() expansion. The plugin only
+ * names the hue and carries OKLCH lightness/chroma/alpha through — so this function
+ * is little more than a hue-angle lookup plus passthrough. The build plugin formats
+ * the result into `oklch(...)`; the CLI contrast audit feeds it straight into the
+ * WCAG/perceptual checks, so build output and audit never drift.
  *
- * Tier order mirrors the authoring spec exactly:
- *   1. Achromatic adjacency (e.g. paper-linen) — must precede the black/white/
- *      named-gray early returns so endpoint pairs are not silently broken.
- *   2. transparent → fully transparent black.
- *   3. black / white → exact endpoints, alpha honored.
- *   4. Named grays (pitch…paper) → fixed L, intensity/tone ignored, alpha honored.
- *   5. gray pseudo-hue → achromatic, tone drives the piecewise L.
- *   6. Chromatic hues → named hue or hyphenated chromatic adjacency.
+ * Resolution:
+ *   - transparent → fully transparent black (l/c ignored).
+ *   - black / white → exact endpoints (l/c ignored), alpha honored.
+ *   - Named grays (pitch…paper) → fixed L, C=0 (l/c ignored), alpha honored.
+ *   - gray pseudo-hue → achromatic, L from `lightness`, C=0.
+ *   - Chromatic hues → angle from the hue name (or hyphenated adjacency), L/C from
+ *     `lightness`/`chroma`.
  *
  * @param name - Primary hue/keyword (bare name, achromatic name, or "gray"/"transparent").
- * @param adjacentName - Second name for hyphenated adjacency, else undefined.
- * @param intensity - Intensity axis 0–100.
- * @param tone - Tone axis 0–100.
- * @param alpha - Alpha 0–100 (converted to a 0–1 fraction in the result).
+ * @param adjacentName - Second name for hyphenated chromatic adjacency, else undefined.
+ * @param lightness - OKLCH lightness 0–1.
+ * @param chroma - OKLCH chroma 0–~0.4.
+ * @param alpha - Alpha 0–1.
  */
 export function resolveTugColorToOklch(
   name: string,
   adjacentName: string | undefined,
-  intensity: number,
-  tone: number,
+  lightness: number,
+  chroma: number,
   alpha: number,
 ): ResolvedOklch {
-  const a = alpha / 100;
-
-  // Tier 1: achromatic adjacency
-  if (adjacentName !== undefined) {
-    const idxA = ACHROMATIC_SEQUENCE.indexOf(name);
-    const idxB = ACHROMATIC_SEQUENCE.indexOf(adjacentName);
-    if (idxA !== -1 && idxB !== -1) {
-      return { L: resolveAchromaticAdjacency(name, adjacentName), C: 0, h: 0, alpha: a };
-    }
-  }
-
-  // Tier 2: transparent
+  // transparent
   if (name === "transparent") return { L: 0, C: 0, h: 0, alpha: 0 };
 
-  // Tier 3: black / white
-  if (name === "black") return { L: 0, C: 0, h: 0, alpha: a };
-  if (name === "white") return { L: 1, C: 0, h: 0, alpha: a };
+  // black / white
+  if (name === "black") return { L: 0, C: 0, h: 0, alpha };
+  if (name === "white") return { L: 1, C: 0, h: 0, alpha };
 
-  // Tier 4: named grays (pitch through paper) — fixed L, i/t ignored
+  // Named grays (pitch through paper) — fixed L, achromatic
   if (NAMED_GRAYS[name] !== undefined) {
-    return { L: ACHROMATIC_L_VALUES[name] ?? 0.5, C: 0, h: 0, alpha: a };
+    return { L: ACHROMATIC_L_VALUES[name] ?? 0.5, C: 0, h: 0, alpha };
   }
 
-  // Tier 5: gray pseudo-hue — achromatic, canonical L=0.5, tone drives L
+  // gray pseudo-hue — achromatic, arbitrary L
   if (name === "gray") {
-    const GRAY_CANONICAL_L = 0.5;
-    const L =
-      L_DARK +
-      (Math.min(tone, 50) * (GRAY_CANONICAL_L - L_DARK)) / 50 +
-      (Math.max(tone - 50, 0) * (L_LIGHT - GRAY_CANONICAL_L)) / 50;
-    return { L, C: 0, h: 0, alpha: a };
+    return { L: lightness, C: 0, h: 0, alpha };
   }
 
-  // Tier 6: chromatic hues
+  // Chromatic hues — angle from the name (or adjacency); l/c passthrough.
   const baseAngle = HUE_FAMILIES[name];
-  if (baseAngle === undefined) return { L: 0.5, C: 0, h: 0, alpha: a };
-
-  let h: number;
-  let canonicalL: number;
-  let peakC: number;
-  if (adjacentName) {
-    h = resolveHyphenatedHue(name, adjacentName);
-    canonicalL = DEFAULT_CANONICAL_L[name] ?? 0.77;
-    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
-  } else {
-    h = baseAngle;
-    canonicalL = DEFAULT_CANONICAL_L[name] ?? 0.77;
-    peakC = (MAX_CHROMA_FOR_HUE[name] ?? 0.022) * PEAK_C_SCALE;
-  }
-
-  const L =
-    L_DARK +
-    (Math.min(tone, 50) * (canonicalL - L_DARK)) / 50 +
-    (Math.max(tone - 50, 0) * (L_LIGHT - canonicalL)) / 50;
-  const C = (intensity / 100) * peakC;
-
-  return { L, C, h, alpha: a };
+  if (baseAngle === undefined) return { L: lightness, C: 0, h: 0, alpha };
+  const h = adjacentName ? resolveHyphenatedHue(name, adjacentName) : baseAngle;
+  return { L: lightness, C: chroma, h, alpha };
 }
 
 /**

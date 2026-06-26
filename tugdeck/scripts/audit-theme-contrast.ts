@@ -27,8 +27,6 @@ import {
   HUE_FAMILIES,
   NAMED_GRAYS,
   ADJACENCY_RING,
-  ACHROMATIC_SEQUENCE,
-  TUG_COLOR_PRESETS,
   resolveTugColorToOklch,
 } from "../src/components/tugways/palette-engine";
 import {
@@ -55,7 +53,7 @@ const STYLES_DIR = path.join(TUGDECK, "styles");
 const TUGWAYS_DIR = path.join(TUGDECK, "src/components/tugways");
 
 // ---------------------------------------------------------------------------
-// --tug-color() parse context (mirrors postcss-tug-color's KNOWN_HUES/presets)
+// --tug-color() parse context (mirrors postcss-tug-color's KNOWN_HUES)
 // ---------------------------------------------------------------------------
 
 export const KNOWN_HUES: ReadonlySet<string> = new Set([
@@ -66,7 +64,6 @@ export const KNOWN_HUES: ReadonlySet<string> = new Set([
   ...Object.keys(NAMED_GRAYS),
   "transparent",
 ]);
-export const KNOWN_PRESETS = new Map(Object.entries(TUG_COLOR_PRESETS));
 
 // ---------------------------------------------------------------------------
 // CSS token-definition extraction
@@ -129,20 +126,14 @@ export function buildDefs(themeFile: string): Map<string, string> {
 export function resolveRecipe(value: string): ResolvedColor | null {
   const calls = findTugColorCalls(value);
   if (calls.length === 0) return null;
-  const parsed = parseTugColor(
-    calls[0].inner,
-    KNOWN_HUES,
-    KNOWN_PRESETS,
-    ADJACENCY_RING,
-    ACHROMATIC_SEQUENCE,
-  );
+  const parsed = parseTugColor(calls[0].inner, KNOWN_HUES, ADJACENCY_RING);
   if (!parsed.ok) return null;
-  const { color, intensity, tone, alpha } = parsed.value;
+  const { color, lightness, chroma, alpha } = parsed.value;
   const { L, C, h, alpha: a } = resolveTugColorToOklch(
     color.name,
     color.adjacentName,
-    intensity,
-    tone,
+    lightness,
+    chroma,
     alpha,
   );
   return { L, C, h, alpha: a };

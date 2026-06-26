@@ -26,44 +26,44 @@ body {
      Accent-derived tokens: palette var() references per Phase 5d5e.
      Text-derived tokens: var() references to --tug-fg-* per [D09] — these do NOT
      need per-theme overrides since they inherit from the already-overridden fg tokens. */
-  --tug-syntax-keyword: --tug-color(cyan);
-  --tug-syntax-string: --tug-color(coral-muted);
-  --tug-syntax-number: --tug-color(green);
-  --tug-syntax-function: --tug-color(yellow);
-  --tug-syntax-type: --tug-color(green);
-  --tug-syntax-variable: --tug-color(cyan);
+  --tug-syntax-keyword: --tug-color(cyan, l: 0.803, c: 0.134);
+  --tug-syntax-string: --tug-color(coral, l: 0.5549, c: 0.22);
+  --tug-syntax-number: --tug-color(green, l: 0.821, c: 0.22);
+  --tug-syntax-function: --tug-color(yellow, l: 0.901, c: 0.125);
+  --tug-syntax-type: --tug-color(green, l: 0.821, c: 0.22);
+  --tug-syntax-variable: --tug-color(cyan, l: 0.803, c: 0.134);
   /* text-derived — inherits per-theme via fg-muted override */
   --tugx-syntax-comment: var(--tug7-element-global-text-normal-muted-rest);
   /* text-derived — inherits per-theme via fg-default override */
   --tugx-syntax-operator: var(--tug7-element-global-text-normal-default-rest);
   --tugx-syntax-punctuation: var(--tug7-element-global-text-normal-default-rest);
-  --tug-syntax-constant: --tug-color(cyan);
-  --tug-syntax-decorator: --tug-color(violet);
-  --tug-syntax-tag: --tug-color(cyan);
-  --tug-syntax-attribute: --tug-color(cyan);
+  --tug-syntax-constant: --tug-color(cyan, l: 0.803, c: 0.134);
+  --tug-syntax-decorator: --tug-color(violet, l: 0.708, c: 0.149);
+  --tug-syntax-tag: --tug-color(cyan, l: 0.803, c: 0.134);
+  --tug-syntax-attribute: --tug-color(cyan, l: 0.803, c: 0.134);
 
   /* --- Terminal --- */
   --tugx-terminal-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-terminal-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-terminal-fg-muted: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-terminal-cursor: var(--tug7-element-global-fill-normal-accent-rest);
-  --tug-terminal-selection-bg: --tug-color(cyan, i: 50, t: 50, a: 30);
+  --tug-terminal-selection-bg: --tug-color(cyan, l: 0.803, c: 0.134, a: 0.3);
   --tugx-terminal-border: var(--tug7-element-global-divider-normal-default-rest);
   /* ANSI color palette — palette var() references per Phase 5d5e */
-  --tug-terminal-ansi-black: --tug-color(violet, i: 5, t: 12);
-  --tug-terminal-ansi-red: --tug-color(red);
-  --tug-terminal-ansi-green: --tug-color(green);
-  --tug-terminal-ansi-yellow: --tug-color(yellow);
-  --tug-terminal-ansi-blue: --tug-color(cyan);
-  --tug-terminal-ansi-magenta: --tug-color(violet);
-  --tug-terminal-ansi-cyan: --tug-color(cyan);
-  --tug-terminal-ansi-white: --tug-color(cobalt, i: 3, t: 94);
+  --tug-terminal-ansi-black: --tug-color(violet, l: 0.2839, c: 0.0149);
+  --tug-terminal-ansi-red: --tug-color(red, l: 0.659, c: 0.22);
+  --tug-terminal-ansi-green: --tug-color(green, l: 0.821, c: 0.22);
+  --tug-terminal-ansi-yellow: --tug-color(yellow, l: 0.901, c: 0.125);
+  --tug-terminal-ansi-blue: --tug-color(cyan, l: 0.803, c: 0.134);
+  --tug-terminal-ansi-magenta: --tug-color(violet, l: 0.708, c: 0.149);
+  --tug-terminal-ansi-cyan: --tug-color(cyan, l: 0.803, c: 0.134);
+  --tug-terminal-ansi-white: --tug-color(cobalt, l: 0.9341, c: 0.0081);
 
   /* --- Conversation / Chat / Code Block --- */
   --tugx-chat-transcript-bg: var(--tug7-surface-field-primary-normal-plain-focus);
   --tugx-chat-message-user-bg: var(--tug7-surface-global-primary-normal-default-rest);
   --tugx-chat-message-assistant-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
-  --tug-chat-message-system-bg: --tug-color(cyan, i: 50, t: 50, a: 7);
+  --tug-chat-message-system-bg: --tug-color(cyan, l: 0.803, c: 0.134, a: 0.07);
   --tugx-chat-message-border: var(--tug7-element-global-divider-normal-default-rest);
   --tugx-chat-composer-bg: var(--tug7-surface-global-primary-normal-default-rest);
   --tugx-chat-composer-border: var(--tug7-element-global-border-normal-default-rest);
@@ -76,18 +76,18 @@ body {
   --tugx-codeBlock-header-fg: var(--tug7-element-global-text-normal-subtle-rest);
 
   /* --- Files / Git / Tree --- */
-  --tug-tree-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
+  --tug-tree-row-bg-hover: --tug-color(white, a: 0.04);
   --tugx-tree-row-bg-selected: var(--tug7-surface-control-primary-normal-highlighted-rest);
-  --tug-tree-row-bg-current: --tug-color(cyan, i: 50, t: 50, a: 10);
+  --tug-tree-row-bg-current: --tug-color(cyan, l: 0.803, c: 0.134, a: 0.1);
   --tugx-tree-row-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-tree-chevron: var(--tug7-element-global-border-normal-default-rest);
   --tugx-file-status-added: var(--tug7-element-tone-fill-normal-success-rest);
   --tugx-file-status-modified: var(--tug7-element-tone-fill-normal-caution-rest);
   --tugx-file-status-deleted: var(--tug7-element-tone-fill-normal-danger-rest);
   --tugx-file-status-renamed: var(--tug7-element-tone-fill-normal-active-rest);
-  --tug-diff-addition-bg: --tug-color(green, i: 50, t: 50, a: 12);
+  --tug-diff-addition-bg: --tug-color(green, l: 0.821, c: 0.22, a: 0.12);
   --tugx-diff-addition-fg: var(--tug7-element-tone-fill-normal-success-rest);
-  --tug-diff-deletion-bg: --tug-color(red, i: 50, t: 50, a: 12);
+  --tug-diff-deletion-bg: --tug-color(red, l: 0.659, c: 0.22, a: 0.12);
   --tugx-diff-deletion-fg: var(--tug7-element-tone-fill-normal-danger-rest);
 
   /* --- Workflow / Feed Progress --- */
