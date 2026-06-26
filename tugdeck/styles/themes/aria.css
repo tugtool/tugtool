@@ -4,7 +4,7 @@ body {
 
   /* Lighter tool-block panel tint than the dark default: a dark-text mix
    * reads heavier on a light column. See styles/tugx-block.css. */
-  --tugx-block-surface-mix: 4%;
+  --tugx-block-surface-mix: 3%;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
@@ -325,7 +325,7 @@ body {
   --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(orchid, l: 90, c: 3);
 
   /* Card — Status Bar (Z2 placement zone at bottom of top split-panel) */
-  --tug7-surface-card-primary-normal-status-rest: --tug-color(orchid, l: 89, c: 1);
+  --tug7-surface-card-primary-normal-status-rest: --tug-color(orchid, l: 92, c: 1);
 
   /* Card — Title Bar Element Tokens */
   --tug7-element-card-text-normal-title-active: --tug-color(orchid, l: 25, c: 1);
