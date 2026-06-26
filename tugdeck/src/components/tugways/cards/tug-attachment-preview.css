@@ -187,7 +187,9 @@
    backdrop is OPAQUE — a translucent rest backdrop let the thumbnail's hover
    wash bleed through and made the glyph appear to "hop" on hover. Only the
    backdrop color changes across states:
-     - Rest: an opaque neutral overlay surface — solid gray.
+     - Rest: a fixed dark neutral gray — the SAME in every theme (a
+       theme-relative overlay token went near-white in the light themes and
+       left the white glyph illegible).
      - Hover: solid danger fill.
      - Active (pressed): the brighter danger fill.
    Square (no radius), flush in the corner. */
@@ -209,8 +211,9 @@
   width: var(--tugx-attachment-delete-size, 18px);
   height: var(--tugx-attachment-delete-size, 18px);
   border-radius: 0;
-  /* Rest: opaque neutral overlay surface; glyph always white. */
-  background: var(--tug7-surface-global-primary-normal-overlay-rest);
+  /* Rest: fixed dark neutral gray, identical in every theme; glyph always
+     white. (Theme-relative overlay tokens go near-white in light themes.) */
+  background: rgb(60 60 60);
   color: #fff;
   transition: background-color 80ms ease;
 }
