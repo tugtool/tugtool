@@ -754,7 +754,7 @@ When the substrate needs something it doesn't yet provide (e.g. a particular lan
 
 ## Pin-stack composition — `--tugx-pin-stack-top`
 
-When the Tide transcript scrolls, a tower of sticky chrome can pin simultaneously: the entry header (Claude / model / timestamp), the wrapper-chrome header (Read / Edit / Bash identity), a body kind's identity header (file path / diff stats / terminal label), and inside a diff the per-hunk header bands. These bars must **stack**, not overlap — each one pins flush below the bar above it.
+When the Dev transcript scrolls, a tower of sticky chrome can pin simultaneously: the entry header (Claude / model / timestamp), the wrapper-chrome header (Read / Edit / Bash identity), a body kind's identity header (file path / diff stats / terminal label), and inside a diff the per-hunk header bands. These bars must **stack**, not overlap — each one pins flush below the bar above it.
 
 The composition rule is a single CSS variable propagated through the cascade.
 
@@ -817,7 +817,7 @@ Resting affordances (Copy, fold cue, view-mode toggle) do **not** get their own 
 
 The portal mechanism is React-side, not DOM-side: `BlockChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
 
-Content blocks render no text-entry UI of their own — no per-block Find row. A card has at most one text-entry surface (see [Focus in content-owning cards](#focus-in-content-owning-cards)); for a tide card that is the engine's `tug-prompt-entry`.
+Content blocks render no text-entry UI of their own — no per-block Find row. A card has at most one text-entry surface (see [Focus in content-owning cards](#focus-in-content-owning-cards)); for a dev card that is the engine's `tug-prompt-entry`.
 
 **Authoring rules:**
 
@@ -1099,7 +1099,7 @@ Cell renderers in `TugListView` are pure render functions. The contract is enfor
 | Trailing icon actions (trash, more, info) | Dispatch a chain action via `TugIconButton` (`dispatch={...}`); the responder handles the action |
 | Cell DOM ref (e.g. for `IntersectionObserver`) | The list view itself owns the ref; cells render markup only |
 
-**Anti-patterns:** raw `<button>` for trailing actions (use `TugIconButton`), per-cell `TugConfirmPopover` instances (hoist to the form, address by data id), `useState` for popover-open visual styling (drive `data-*` attributes from upstream state). The Tide picker's session-forget flow is the case study and reference implementation — see [tugplan-tide-picker-redesign §D17](../roadmap/tugplan-tide-picker-redesign.md#d17-pure-renderer-rule).
+**Anti-patterns:** raw `<button>` for trailing actions (use `TugIconButton`), per-cell `TugConfirmPopover` instances (hoist to the form, address by data id), `useState` for popover-open visual styling (drive `data-*` attributes from upstream state). The Dev picker's session-forget flow is the case study and reference implementation — see [tugplan-tide-picker-redesign §D17](../roadmap/tugplan-tide-picker-redesign.md#d17-pure-renderer-rule).
 
 ---
 
@@ -1188,7 +1188,7 @@ The renderer assigns `scroller.scrollTop = initialScrollTop` immediately after `
 
 Some scrollers can't restore correctly from raw pixel `scrollTop` alone:
 
-- **Variable-height virtualized lists** (`TugListView` driving tide-card's transcript). Cell heights drift as async sub-content settles; the saved pixel `y` no longer maps to the saved *content* by the time the bag is replayed.
+- **Variable-height virtualized lists** (`TugListView` driving dev-card's transcript). Cell heights drift as async sub-content settles; the saved pixel `y` no longer maps to the saved *content* by the time the bag is replayed.
 - **Code editors with wrapping** (CM6 in `FileBlock`). Font-load reflow shifts the pixel position of every line on first paint; a raw pixel restore lands at the wrong line.
 
 For these, the substrate writes a richer payload onto `data-tug-scroll-state`:
@@ -1286,11 +1286,11 @@ The attribute is button-class-only. Structural markers like `data-slot="tug-canv
 
 ### Focus in content-owning cards
 
-**A card has at most one text-entry / input surface.** For a content-owning + engine card (a tide card, anything whose factory writes `bag.content`) that surface is the engine's editor — `tug-prompt-entry` for a tide card. Content blocks inside the card (`FileBlock`, `DiffBlock`, `TerminalBlock`) render no text-entry UI of their own. So a tide card's activation focus has exactly one destination: the engine. There is no "where does focus go when this card is activated" decision — it goes to the prompt entry, on every activation source (cold-boot, app-switch, card-switch, cross-pane drag, reload).
+**A card has at most one text-entry / input surface.** For a content-owning + engine card (a dev card, anything whose factory writes `bag.content`) that surface is the engine's editor — `tug-prompt-entry` for a dev card. Content blocks inside the card (`FileBlock`, `DiffBlock`, `TerminalBlock`) render no text-entry UI of their own. So a dev card's activation focus has exactly one destination: the engine. There is no "where does focus go when this card is activated" decision — it goes to the prompt entry, on every activation source (cold-boot, app-switch, card-switch, cross-pane drag, reload).
 
-The engine is a **callable**: it registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks`, and the framework's `applyBagFocus` dispatcher invokes them through the `engine` resolution. A tide card carries no `data-tug-focus-key` / `data-tug-state-key` element of its own, so `captureFocus` only ever returns `engine` or `none` for it; either way the assembler leaves `bag.focus` absent and `resolveBagFocus` routes the card to the engine from its registry tag.
+The engine is a **callable**: it registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks`, and the framework's `applyBagFocus` dispatcher invokes them through the `engine` resolution. A dev card carries no `data-tug-focus-key` / `data-tug-state-key` element of its own, so `captureFocus` only ever returns `engine` or `none` for it; either way the assembler leaves `bag.focus` absent and `resolveBagFocus` routes the card to the engine from its registry tag.
 
-**Focusable-but-not-entry content classifies as `none`.** A read-only `TugCodeView` (FileBlock's CM6 viewer) is still *focusable* — CM6 read-only views accept focus for selection / copy. But its `.cm-content` lives under `data-slot="tug-code-view"`, which is not an engine-owned selector and carries no `data-tug-*-key`. So when the user clicks into a FileBlock viewer inside a tide card, `captureFocus` returns `none`, and on the next activation `resolveBagFocus` routes the card to its engine — focus lands on the prompt entry, not back in the viewer. This is intended: a viewer is not a text-entry surface, and transient selection-to-copy focus is not preserved across activation.
+**Focusable-but-not-entry content classifies as `none`.** A read-only `TugCodeView` (FileBlock's CM6 viewer) is still *focusable* — CM6 read-only views accept focus for selection / copy. But its `.cm-content` lives under `data-slot="tug-code-view"`, which is not an engine-owned selector and carries no `data-tug-*-key`. So when the user clicks into a FileBlock viewer inside a dev card, `captureFocus` returns `none`, and on the next activation `resolveBagFocus` routes the card to its engine — focus lands on the prompt entry, not back in the viewer. This is intended: a viewer is not a text-entry surface, and transient selection-to-copy focus is not preserved across activation.
 
 **Do not add per-block transient focus targets to a content-owning card.** No per-block find rows, no inline parameter editors stamped with `data-tug-focus-key`, no second text input. The notion of Find is being redesigned and will not return as a per-block widget. If a future feature needs in-card text entry, it belongs in (or replaces) the engine's one text-entry surface — not as a sibling framework-axis target.
 
@@ -1539,7 +1539,7 @@ Before a component is done:
 
 Some external stores aren't backed by tugbank; they're projections of
 server-side state that the supervisor pushes over the CONTROL feed.
-`TideSessionLedgerStore` is the second consumer of this pattern — the
+`DevSessionLedgerStore` is the second consumer of this pattern — the
 first was the live-sessions broadcast handling that landed alongside
 T3.4.c §step-4-5-5.
 
@@ -1551,7 +1551,7 @@ The shape:
    handler validates the payload shape and forwards a typed event
    through a small pub/sub bus.
 2. **A pub/sub bus per store.** The ledger uses
-   `lib/tide-session-ledger-events.ts` — a process-global module that
+   `lib/dev-session-ledger-events.ts` — a process-global module that
    exports `subscribe*` / `publish*` functions per event kind. The bus
    is the single decoupling point between the wire decoder and the
    store consumer.

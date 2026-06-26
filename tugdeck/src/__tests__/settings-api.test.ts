@@ -387,7 +387,7 @@ describe("readDevRecentProjects", () => {
   });
 });
 
-// PUT behavior for `putDevRecentProjects` is covered by T-TIDE-07 in
+// PUT behavior for `putDevRecentProjects` is covered by T-DEV-07 in
 // dev-card.test.tsx (which asserts the bind effect fires it with the
 // right payload). Duplicating it here would require an unmocked
 // `fetch`, but dev-card.test.tsx process-globally replaces the

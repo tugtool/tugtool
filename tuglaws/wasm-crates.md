@@ -21,7 +21,7 @@ All WASM crates live as members of a virtual Cargo workspace at `tugdeck/crates/
 
 | Crate | Wraps | Exports | Lazy-loaded? |
 |---|---|---|---|
-| `tugmark-wasm` | `pulldown-cmark` | `lex_blocks`, `parse_to_html`, `parse_blocks_to_html` | No — Tide card boot dependency |
+| `tugmark-wasm` | `pulldown-cmark` | `lex_blocks`, `parse_to_html`, `parse_blocks_to_html` | No — Dev card boot dependency |
 | `tugdiff-wasm` | `imara-diff` | `parse_unified_diff`, `two_text_diff` | Yes — first `DiffBlock` mount |
 
 ```

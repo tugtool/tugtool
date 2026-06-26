@@ -8,7 +8,7 @@
 
 ## Why a route pipe
 
-A Tide prompt entry has a *command route* — the surface a submission is sent to: `❯` Code (Claude) or `$` Shell. The route is a single scalar of state, but it is read in several places and changed from several triggers, and a slice of chrome wants to *react* when it changes. Holding it in `TugPromptEntry`'s `useState` worked while that component was its only reader; it stopped working the moment the route gained a consumer *outside* the component — the route-indicator badge, which names what the active route targets.
+A Dev prompt entry has a *command route* — the surface a submission is sent to: `❯` Code (Claude) or `$` Shell. The route is a single scalar of state, but it is read in several places and changed from several triggers, and a slice of chrome wants to *react* when it changes. Holding it in `TugPromptEntry`'s `useState` worked while that component was its only reader; it stopped working the moment the route gained a consumer *outside* the component — the route-indicator badge, which names what the active route targets.
 
 `RouteLifecycle` is the pipe that resolves this. It owns the authoritative route, exposes it as external state so any descendant can subscribe, and announces every change as a will/did pair so imperative reactors can prepare and respond. It is the route-scoped sibling of the deck's `CardLifecycle` ([lifecycle-delegates.md](lifecycle-delegates.md)) — the same observer-vs-delegate shape, a far smaller surface, a finer scope.
 
@@ -16,7 +16,7 @@ A Tide prompt entry has a *command route* — the surface a submission is sent t
 
 ## Scope: one pipe per prompt entry
 
-`RouteLifecycle` is **not** deck-level. One instance is constructed per `TugPromptEntry` and provided to that entry's subtree through `RouteLifecycleContext`. A route is a property of a single prompt entry; each Tide card has its own, and a multi-card deck has independent routes with no cross-talk. The context naturally bounds who can observe — only descendants of the entry's provider, which is exactly where the toolbar's indicator slot renders.
+`RouteLifecycle` is **not** deck-level. One instance is constructed per `TugPromptEntry` and provided to that entry's subtree through `RouteLifecycleContext`. A route is a property of a single prompt entry; each Dev card has its own, and a multi-card deck has independent routes with no cross-talk. The context naturally bounds who can observe — only descendants of the entry's provider, which is exactly where the toolbar's indicator slot renders.
 
 The instance is constructed once and stays stable for the component's lifetime — a `useRef` lazy-init inside `TugPromptEntry`, never a module singleton. There is, deliberately, no module-level registry the way `CardLifecycle` has one (`registerCardLifecycle` / `getCardLifecycle`): nothing outside the React tree needs to reach a `RouteLifecycle`, so the context provider is the whole story.
 
@@ -145,7 +145,7 @@ Planning history — kept for context, not authoritative.
 ## Cross-Links
 
 - [lifecycle-delegates.md](lifecycle-delegates.md) — The deck-level `TugCardDelegate` pipe that `RouteLifecycle` is modeled on. Same observer-vs-delegate split; `CardLifecycle` is deck-scoped, surfaces six moments, carries a payload-less `cardId`, and defers delegates through a `MessageChannel` drain. `RouteLifecycle` is per-prompt-entry, surfaces one moment, carries `(prev, next)`, and dispatches synchronously.
-- [design-decisions.md](design-decisions.md) — [D99] (`RouteLifecycle` owns the authoritative route), [D97] (the Tide card's `Z0`–`Z5` placement zones), [D98] (host facts — the route-indicator badge names a route's target from them).
+- [design-decisions.md](design-decisions.md) — [D99] (`RouteLifecycle` owns the authoritative route), [D97] (the Dev card's `Z0`–`Z5` placement zones), [D98] (host facts — the route-indicator badge names a route's target from them).
 - [responder-chain.md](responder-chain.md) — the `SELECT_VALUE` and `SELECT_ROUTE` actions that reach `TugPromptEntry`'s responder and call `setRoute`.
 - [state-preservation.md](state-preservation.md) — the `onSave` / `onRestore` protocol the route rides; the persisted route is applied through `setRoute` before first paint.
 - [tuglaws.md](tuglaws.md) — [L02] (external state enters React through `useSyncExternalStore`; why the route left `useState`), [L03] (`useLayoutEffect` for registrations that events depend on; how `useRouteDelegate` installs), [L07] (handlers read live state — `getRoute()` off the stable instance).

@@ -72,7 +72,7 @@ import { TugFileChooser } from "../tug-file-chooser";
 import { TugPushButton } from "../tug-push-button";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
-import { TidePulseStrip } from "./tide-pulse-strip";
+import { DevPulseStrip } from "./dev-pulse-strip";
 import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,
@@ -2647,7 +2647,7 @@ export function DevCardBody({
   });
 
   // `/help` tabbed sheet ([#step-13b2]) per [D16], card-scoped per [D15]. A
-  // General tab (Tide + shortcuts + the unsupported-commands doc link) over a
+  // General tab (Dev + shortcuts + the unsupported-commands doc link) over a
   // Commands / Custom-commands browse of the session catalog, projected through
   // the [D14] allowlist so it lists exactly what the slash popup offers.
   const helpSheet = useHelpSheet({
@@ -3364,7 +3364,7 @@ export function DevCardBody({
               `pulse/enabled` default is off.
             */}
             {effectiveStatusBarContent != null && (
-              <TidePulseStrip codeSessionStore={codeSessionStore} />
+              <DevPulseStrip codeSessionStore={codeSessionStore} />
             )}
           </div>
         {/*

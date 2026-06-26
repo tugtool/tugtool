@@ -3,7 +3,7 @@
  *
  * Modeled on the Claude Code terminal's `/help` ([D16]) as a card-scoped
  * overlay ([D15]) with two tabs:
- *  - **General** — what Tide is, the useful keyboard shortcuts, and a pointer
+ *  - **General** — what Dev is, the useful keyboard shortcuts, and a pointer
  *    to the unsupported-commands doc.
  *  - **Commands** — the built-in slash commands.
  *

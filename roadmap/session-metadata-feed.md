@@ -2,7 +2,7 @@
 
 **Status:** Proposed  
 **Depends on:** tugcast feed infrastructure, tugcode IPC  
-**Relates to:** T3.3 (SessionMetadataStore), Tide roadmap
+**Relates to:** T3.3 (SessionMetadataStore), Dev roadmap
 
 ## Problem
 

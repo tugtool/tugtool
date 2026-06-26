@@ -39,7 +39,7 @@ chevron at the very end).
 This plan carries that design into the production dev card. It follows the PULSE
 plan (`roadmap/archive/pulse.md`, since shipped — its data path subsequently
 rebuilt by `roadmap/archive/pulse-2.md`, "Watch the Wire"), which ships the
-`pulse-store`, the `tide-pulse-strip` component, and the `pulse/enabled` toggle
+`pulse-store`, the `dev-pulse-strip` component, and the `pulse/enabled` toggle
 this plan's PULSE row item, PULSE lane, and strip-suppression rule all consume —
 and which explicitly deferred Shelf/Rack productionization here (its [Q03] and
 non-goals). PULSE 2 left the store/hook surface this plan reads (`usePulse`,
@@ -123,7 +123,7 @@ non-goals). PULSE 2 left the store/hook surface this plan reads (`usePulse`,
   `usePulse()` `useSyncExternalStore` hook; the snapshot's `latest` field is the
   newest line directly, and `latestLineForScope(lines, scope, clearedKeys?)`
   resolves the newest line for a scope honoring the per-scope `cleared` map; cap
-  `PULSE_LINES_CAP`), `tide-pulse-strip.tsx/.css`, and the `pulse/enabled` tugbank
+  `PULSE_LINES_CAP`), `dev-pulse-strip.tsx/.css`, and the `pulse/enabled` tugbank
   default (`PULSE_ENABLED_DOMAIN`/`KEY`). The PULSE row cell, PULSE lane, and strip
   suppression all read these; the row cell / lane key their off-state on `enabled`
   (the `status`/`cleared` fields are additive and need no special handling in v1).
@@ -291,7 +291,7 @@ toggle, the resolved Z2 content node, the stores, and the cycle scope.
   (the transcript host is `flex: 1 1 auto`, so a content-sized shelf steals height
   from it for free — the exact mechanism the spike documents). One component owns
   that sibling group.
-- The pulse plan mounts `tide-pulse-strip` under the status row in `dev-card.tsx`;
+- The pulse plan mounts `dev-pulse-strip` under the status row in `dev-card.tsx`;
   this plan relocates that mount inside the status area so the suppression rule
   ([P04]) computes next to its inputs.
 
@@ -736,7 +736,7 @@ conduct, Spec S02, Spec S03, Spec S06, (#s02-bar-chrome, #s06-customize-bridge)
 - `dev-card-status-area.tsx/.css`: bar (maximize left + spacer, CycleScope'd Z2
   content, gear, chevron), strip slot driven by `resolvePulseSurface`, shelf mount
   point (renders nothing until #step-4).
-- `dev-card.tsx`: status-bar block replaced; `tide-pulse-strip` mount relocated
+- `dev-card.tsx`: status-bar block replaced; `dev-pulse-strip` mount relocated
   into the area.
 
 **Tasks:**

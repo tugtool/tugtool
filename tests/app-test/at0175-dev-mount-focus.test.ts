@@ -83,7 +83,7 @@ const TEST_TIMEOUT_MS = 60_000;
 // caret blinking?".
 const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
-const TIDE_DECK_STATE = {
+const DEV_DECK_STATE = {
   cards: [
     { id: "A", componentId: "dev", title: "Dev A", closable: true },
   ],
@@ -270,7 +270,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           try {
             await app.enableDeckTrace(true);
-            await app.seedDeckState({ state: TIDE_DECK_STATE, focusCardId: "A" });
+            await app.seedDeckState({ state: DEV_DECK_STATE, focusCardId: "A" });
             await new Promise<void>((r) => setTimeout(r, 1500));
             await app.bindDevSession("A");
             await waitForEditor(app, "A");
@@ -351,7 +351,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           try {
             await app.enableDeckTrace(true);
-            await app.seedDeckState({ state: TIDE_DECK_STATE, focusCardId: "A" });
+            await app.seedDeckState({ state: DEV_DECK_STATE, focusCardId: "A" });
             await new Promise<void>((r) => setTimeout(r, 1500));
 
             // Install the banner-mount observer BEFORE bind so we

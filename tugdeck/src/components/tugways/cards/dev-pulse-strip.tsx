@@ -1,5 +1,5 @@
 /**
- * TidePulseStrip — the production Z2 PULSE strip: the machine
+ * DevPulseStrip — the production Z2 PULSE strip: the machine
  * thinking out loud, one line beneath the dev card's status row, fed
  * by the app-scoped {@link PulseStore} and FILTERED TO THIS CARD'S
  * SESSION (a card never wears another session's voice).
@@ -23,13 +23,13 @@
  *       refs) — opacity never passes through React state; the dwell
  *       queue is local presentation data (`useState`/`useRef`), which
  *       changes WHAT text exists, not how it looks;
- *       [L19] `.tsx`/`.css` pair, `data-slot="tide-pulse-strip"`;
+ *       [L19] `.tsx`/`.css` pair, `data-slot="dev-pulse-strip"`;
  *       [L26] mounted whenever enabled; only the text layers change.
  *
- * @module components/tugways/cards/tide-pulse-strip
+ * @module components/tugways/cards/dev-pulse-strip
  */
 
-import "./tide-pulse-strip.css";
+import "./dev-pulse-strip.css";
 
 import React, {
   useCallback,
@@ -143,7 +143,7 @@ function useDwellDisplay(target: DisplayEntry): {
   return { current, outgoing, settleOutgoing };
 }
 
-export function TidePulseStrip({
+export function DevPulseStrip({
   codeSessionStore,
 }: {
   codeSessionStore: CodeSessionStore;
@@ -186,7 +186,7 @@ export function TidePulseStrip({
       animate(currentEl, [{ opacity: 0 }, { opacity: 1 }], {
         duration: XFADE_MS,
         easing: "ease",
-        key: "tide-pulse-xfade-in",
+        key: "dev-pulse-xfade-in",
       });
     }
     if (outgoingEl === null) {
@@ -196,7 +196,7 @@ export function TidePulseStrip({
     const fade = animate(outgoingEl, [{ opacity: 1 }, { opacity: 0 }], {
       duration: XFADE_MS,
       easing: "ease",
-      key: "tide-pulse-xfade-out",
+      key: "dev-pulse-xfade-out",
     });
     fade.finished
       .then(() => settleOutgoing(outgoing))
@@ -205,16 +205,16 @@ export function TidePulseStrip({
 
   if (!pulse.enabled) return null;
   return (
-    <div className="tide-pulse-strip" data-slot="tide-pulse-strip">
-      <span className="tide-pulse-strip-legend">PULSE</span>
-      <span className="tide-pulse-strip-stage">
+    <div className="dev-pulse-strip" data-slot="dev-pulse-strip">
+      <span className="dev-pulse-strip-legend">PULSE</span>
+      <span className="dev-pulse-strip-stage">
         <PulseLineText
           spanRef={currentElRef}
           entry={current}
           className={
             current.placeholder
-              ? "tide-pulse-strip-text tide-pulse-strip-placeholder"
-              : "tide-pulse-strip-text"
+              ? "dev-pulse-strip-text dev-pulse-strip-placeholder"
+              : "dev-pulse-strip-text"
           }
         />
         {outgoing !== null ? (
@@ -223,8 +223,8 @@ export function TidePulseStrip({
             entry={outgoing}
             className={
               outgoing.placeholder
-                ? "tide-pulse-strip-text tide-pulse-strip-outgoing tide-pulse-strip-placeholder"
-                : "tide-pulse-strip-text tide-pulse-strip-outgoing"
+                ? "dev-pulse-strip-text dev-pulse-strip-outgoing dev-pulse-strip-placeholder"
+                : "dev-pulse-strip-text dev-pulse-strip-outgoing"
             }
             ariaHidden
           />

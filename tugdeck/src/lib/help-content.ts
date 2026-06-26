@@ -3,7 +3,7 @@
  * ([#step-13b2]).
  *
  * The `/help` sheet ([D16]) mirrors the Claude Code terminal's tabbed help:
- * a **General** tab (what Tide is + key shortcuts + a pointer to the
+ * a **General** tab (what Dev is + key shortcuts + a pointer to the
  * unsupported-commands doc), a **Commands** tab (the built-in slash commands),
  * and a **Custom commands** tab (plugin / user skills + agents). This module is
  * the pure, testable core: the static General-tab copy and a projection of the
@@ -26,12 +26,12 @@ import { isHiddenSlashCommand } from "./slash-supported";
 import type { SlashCommandInfo } from "./session-metadata-store";
 
 // ---------------------------------------------------------------------------
-// General-tab copy — what Tide is, how routing works, the useful shortcuts
+// General-tab copy — what Dev is, how routing works, the useful shortcuts
 // ---------------------------------------------------------------------------
 
 /** Lead paragraph at the top of the General tab. */
 export const HELP_INTRO =
-  "Tide unifies shell commands and AI conversations in one command surface — " +
+  "Dev unifies shell commands and AI conversations in one command surface — " +
   "talk to Claude, run shell commands, and inspect your project without leaving the prompt.";
 
 /** One keyboard shortcut row on the General tab. */

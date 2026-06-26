@@ -52,7 +52,7 @@ In-session transitions, focus restore paths, and cross-card selection. Surfaced 
 #### [AT0002] Intra-pane tab switch — EM focus loss
 - **Status:** ✅ closed.
 - **Tests:** `at0002-tab-switch-em.test.ts`.
-- **Summary:** Same shape as AT0001 for engine-managed cards (tide, gallery-prompt-input, gallery-prompt-entry); engine root re-focuses + selection paint restores on return.
+- **Summary:** Same shape as AT0001 for engine-managed cards (dev, gallery-prompt-input, gallery-prompt-entry); engine root re-focuses + selection paint restores on return.
 
 #### [AT0003] Pane activation change
 - **Status:** ✅ closed.
@@ -201,7 +201,7 @@ Component-level state preservation — gaps surfaced from the L23 audit of the s
 - **Summary:** `tug-radio-group`, `tug-choice-group`, `tug-option-group` capture their selected value via [A9] (see [state-preservation.md](state-preservation.md)). The narrower "focused but not selected" axis is deferred — niche edge case.
 
 #### [AT0031] `tug-prompt-entry` chrome state (`route`) — retired
-- **Status:** ⊘ retired — the tools popover was removed from the prompt-entry design (it was never in production Tide; only the gallery card mounted it). Its `toolsOpen` axis and `at0031-prompt-entry-chrome.test.ts` were deleted with it.
+- **Status:** ⊘ retired — the tools popover was removed from the prompt-entry design (it was never in production Dev; only the gallery card mounted it). Its `toolsOpen` axis and `at0031-prompt-entry-chrome.test.ts` were deleted with it.
 - **Tests:** none — the `route` axis is now gated by `at0085-prompt-entry-route.test.ts`.
 - **Summary:** `tug-prompt-entry` no longer exposes a `bag.components` chrome surface. The `route` axis rides `bag.content.route` and round-trips through `at0085-prompt-entry-route.test.ts`.
 
@@ -361,7 +361,7 @@ Surfaced during the popup-bindings plan (`roadmap/tugplan-tide-popup-bindings.md
 
 ### Region-scroll anchor-metadata save tag (AT0059)
 
-Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension that lets variable-height virtualized lists (notably the tide-card transcript) preserve their scroll position across reload by anchoring on `(cellIndex, offsetWithinCell)` rather than raw pixels. This tag pins the SAVE side: the `data-tug-scroll-state` DOM attribute reflects live scroll, and `captureRegionScrolls` reads it into `bag.regionScroll[key].meta`.
+Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension that lets variable-height virtualized lists (notably the dev-card transcript) preserve their scroll position across reload by anchoring on `(cellIndex, offsetWithinCell)` rather than raw pixels. This tag pins the SAVE side: the `data-tug-scroll-state` DOM attribute reflects live scroll, and `captureRegionScrolls` reads it into `bag.regionScroll[key].meta`.
 
 #### [AT0059] Region-scroll anchor metadata — save side
 - **Status:** ✅ closed at Phase E.6 step 1 (`just app-test` PASS).
@@ -371,7 +371,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0060] Variable-height list view — content settled detection
 - **Status:** ✅ closed at Phase E.6 step 2 (`just app-test` PASS).
 - **Tests:** `at0060-list-view-content-settled.test.ts`.
-- **Summary:** Mount the `gallery-list-view-scroll-keyed` card (which runs in `inline=true` mode — every cell mounted, mirroring the tide-card transcript). Prove three signals that together identify "content has loaded, rendered, and settled": (1) **loaded** — `dataSource.numberOfItems()` reflects the seeded item count; (2) **rendered** — `document.querySelectorAll('[data-tug-list-cell-index]').length === itemCount` (every cell in DOM); (3) **settled** — `scrollHeight` of the scroll container is stable across two observations 250ms apart, AND scrollHeight exceeds clientHeight (real layout has happened, not a zero-height intermediate state). Once all three are true, the apply path's preconditions for anchor-based restore are satisfied. Closes Phase E.6's "prove we can identify when content has settled" sub-task.
+- **Summary:** Mount the `gallery-list-view-scroll-keyed` card (which runs in `inline=true` mode — every cell mounted, mirroring the dev-card transcript). Prove three signals that together identify "content has loaded, rendered, and settled": (1) **loaded** — `dataSource.numberOfItems()` reflects the seeded item count; (2) **rendered** — `document.querySelectorAll('[data-tug-list-cell-index]').length === itemCount` (every cell in DOM); (3) **settled** — `scrollHeight` of the scroll container is stable across two observations 250ms apart, AND scrollHeight exceeds clientHeight (real layout has happened, not a zero-height intermediate state). Once all three are true, the apply path's preconditions for anchor-based restore are satisfied. Closes Phase E.6's "prove we can identify when content has settled" sub-task.
 
 #### [AT0061] Region-scroll anchor metadata — apply side (full round-trip)
 - **Status:** ✅ closed at Phase E.6 step 3 (`just app-test` PASS).
@@ -390,7 +390,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0068]. Same goal — inner scroll survives reload — but AT0068 pins the stronger contract that the scroller is CREATED at the saved `scrollTop` (no jump from 0 to saved).
 - **Tests:** *(removed)*.
 
-#### [AT0065] Tide-card-like inner scroll survives Developer > Reload + scroller-rebuild
+#### [AT0065] Dev-card-like inner scroll survives Developer > Reload + scroller-rebuild
 - **Status:** 🗑️ superseded at Phase E.8. The element-identity-gated `MutationObserver` re-apply for inner-scroller rebuilds stays in `card-host.tsx` (it's the fallback for scrollers recreated mid-card-lifetime), but the production failure AT0065 pinned was scoped to the now-removed late-mount path; the manual checkpoints in `tide-assistant-rendering.md` Phase E.8 cover the rebuild-after-restore case end-to-end.
 - **Tests:** *(removed)*.
 
@@ -424,29 +424,29 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Tests:** `at0073-content-owning-focus-survives-reload.test.ts` (deleted).
 
 #### [AT0074] Engine focus fallback when `bag.focus` is absent
-- **Status:** 🗑 **retired at Phase E.12** — bundled with the find-fixture AT-series at Phase E.12. The "absent `bag.focus` → engine resolution" path it gated is still exercised: a fresh tide card has no saved focus and AT0033 gates fresh-card activation; AT0078 / AT0080 / AT0081 gate the engine path across every activation source. No successor needed.
+- **Status:** 🗑 **retired at Phase E.12** — bundled with the find-fixture AT-series at Phase E.12. The "absent `bag.focus` → engine resolution" path it gated is still exercised: a fresh dev card has no saved focus and AT0033 gates fresh-card activation; AT0078 / AT0080 / AT0081 gate the engine path across every activation source. No successor needed.
 - **Tests:** `at0074-engine-focus-fallback.test.ts` (deleted).
 
-#### [AT0075] Tide-card find row focus survives app-switch
+#### [AT0075] Dev-card find row focus survives app-switch
 - **Status:** 🗑 **retired at Phase E.12** — was `describe.skip` pending a harness extension; per-block Find is removed in total at Phase E.12, so the behavior is gone. The file is deleted.
-- **Tests:** `at0075-tide-find-app-switch.test.ts` (deleted).
+- **Tests:** `at0075-dev-find-app-switch.test.ts` (deleted).
 
-#### [AT0076] Tide-card find row focus survives card-switch
+#### [AT0076] Dev-card find row focus survives card-switch
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
-- **Tests:** `at0076-tide-find-card-switch.test.ts` (deleted).
+- **Tests:** `at0076-dev-find-card-switch.test.ts` (deleted).
 
-#### [AT0077] Tide-card find row focus survives Developer > Reload
+#### [AT0077] Dev-card find row focus survives Developer > Reload
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
-- **Tests:** `at0077-tide-find-reload.test.ts` (deleted).
+- **Tests:** `at0077-dev-find-reload.test.ts` (deleted).
 
 #### [AT0078] Dev-card engine focus survives app-switch
 - **Status:** ✅ shipped at Phase E.11; retained + repurposed at Phase E.12 as the app-switch gate for the single-text-entry rule (#phase-e-12): a dev card's activation focus always lands on the `tug-prompt-entry` contenteditable.
 - **Tests:** `at0078-dev-engine-focus-survives.test.ts`.
 - **Summary:** Seed a dev-card, bind a fake session, await engine ready. Click into the contenteditable, type "hello", `simulateAppResign` (window-blur). After a brief blur dwell, `simulateAppBecomeActive` runs `reactivateCurrentFocusDestination` → `applyBagFocus` → engine resolution → engine hook invocation → `view.focus()`. Asserts `document.activeElement` is the dev-card's contenteditable.
 
-#### [AT0079] Tide-card engine focus wins over stale find-row mount
+#### [AT0079] Dev-card engine focus wins over stale find-row mount
 - **Status:** 🗑 **retired at Phase E.12** — was `describe.skip`; per-block Find is removed in total at Phase E.12, so there is no "stale find-row mount" for the engine kind to win over. The file is deleted.
-- **Tests:** `at0079-tide-engine-focus-wins-over-stale-find.test.ts` (deleted).
+- **Tests:** `at0079-dev-engine-focus-wins-over-stale-find.test.ts` (deleted).
 
 #### [AT0080] Dev-card focus lands on the prompt entry after card-switch
 - **Status:** ✅ shipped at Phase E.12 — the card-switch gate for the single-text-entry rule (#phase-e-12).
@@ -458,7 +458,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Tests:** `at0081-dev-focus-reload.test.ts`.
 - **Summary:** Seed a dev card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the dev-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
 
-> **Cross-pane drag** — the fourth activation source for the single-text-entry rule (#phase-e-12) — is gated by AT0034 (`at0034-em-focus-after-move.test.ts`), which exercises a cross-pane drag and a detach on `gallery-prompt-entry` (the `tug-prompt-entry` surface a tide card uses internally) and asserts focus lands on the contenteditable. No new tag is needed.
+> **Cross-pane drag** — the fourth activation source for the single-text-entry rule (#phase-e-12) — is gated by AT0034 (`at0034-em-focus-after-move.test.ts`), which exercises a cross-pane drag and a detach on `gallery-prompt-entry` (the `tug-prompt-entry` surface a dev card uses internally) and asserts focus lands on the contenteditable. No new tag is needed.
 
 #### [AT0082] Gallery-shipped assistant renderers
 - **Status:** ✅ closed.
@@ -468,7 +468,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0083] TugListView scroll-to-bottom reliability + auto-pin funnel
 - **Status:** ✅ shipped at tide-assistant-turns Step 20.4.16 Sub-step I — gates the I-0 restore-anchor fix and the I-1 `maybePinToBottom` consolidation.
 - **Tests:** `at0083-list-view-submit-pin.test.ts`.
-- **Summary:** Drives `gallery-list-view-scroll-keyed` (real `TugListView` + `SmartScroll` + CardHost region-scroll restore). Test 1 (I-0): cold-boot a card restored to a mid-list anchor, drive the fixture's "Scroll to bottom" control (the inner `TugListView`'s imperative `scrollToBottom()` — the same method the tide-card transcript host calls on submit), assert the scroller lands AND holds at the bottom — the restore-anchor apply effect must not pull it back. Test 2 (I-0 a/b/c + I-1): `scrollToBottom()` at the bottom is a no-op; after `tug-disengage-follow-bottom` content growth does NOT auto-pin (gate false — also covers the collapsed-hunk case); `scrollToBottom()` re-engages follow-bottom; subsequent growth then auto-pins (gate true). Gates `SmartScroll.shouldAutoPin` / `maybePinToBottom` — the funnel `TugMarkdownView` also routes through.
+- **Summary:** Drives `gallery-list-view-scroll-keyed` (real `TugListView` + `SmartScroll` + CardHost region-scroll restore). Test 1 (I-0): cold-boot a card restored to a mid-list anchor, drive the fixture's "Scroll to bottom" control (the inner `TugListView`'s imperative `scrollToBottom()` — the same method the dev-card transcript host calls on submit), assert the scroller lands AND holds at the bottom — the restore-anchor apply effect must not pull it back. Test 2 (I-0 a/b/c + I-1): `scrollToBottom()` at the bottom is a no-op; after `tug-disengage-follow-bottom` content growth does NOT auto-pin (gate false — also covers the collapsed-hunk case); `scrollToBottom()` re-engages follow-bottom; subsequent growth then auto-pins (gate true). Gates `SmartScroll.shouldAutoPin` / `maybePinToBottom` — the funnel `TugMarkdownView` also routes through.
 
 ### Dev-card lifecycle + chrome tags (AT0084–AT0088)
 

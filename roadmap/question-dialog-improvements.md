@@ -572,7 +572,7 @@ On submit: `pendingQuestion` clears → `isLive` flips false → same `BlockChro
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Revisit whether multi-question should optionally adopt an all-stacked layout for an even more seamless multi-Q morph.
-- [ ] Sweep stale "Tide" references in `tuglaws/` (tracked separately).
+- [ ] Sweep stale "Dev" references in `tuglaws/` (tracked separately).
 
 | Checkpoint | Verification |
 |------------|--------------|

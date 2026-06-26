@@ -2,17 +2,17 @@
 /**
  * audit-claude-sessions.ts — Empirical analysis of the local Claude Code session
  * corpus. Drives the threshold calibrations and tool-coverage decisions for
- * tide-assistant rendering.
+ * dev-assistant rendering.
  *
  * The script streams every `*.jsonl` file under
  * `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/` (~1k+ files,
  * ~2 GB), parses each line as JSON, and emits frequency / distribution
  * summaries. Output is written as both:
  *
- *   - JSON at `roadmap/tide-assistant-rendering-session-audit.json` (machine readable,
+ *   - JSON at `roadmap/dev-assistant-rendering-session-audit.json` (machine readable,
  *     useful as a future drift baseline)
  *   - A markdown digest written by hand into
- *     `roadmap/tide-assistant-rendering-session-audit.md`
+ *     `roadmap/dev-assistant-rendering-session-audit.md`
  *
  * Note on data shape:
  *   This script reads Claude Code's *session-log* format (JSONL files written by

@@ -1,5 +1,5 @@
 /**
- * tide-pulse-strip.css — the Z2 PULSE strip's scoped styling.
+ * dev-pulse-strip.css — the Z2 PULSE strip's scoped styling.
  *
  * One fixed-height line: a letterspaced mono PULSE legend, then the
  * machine's latest thought in a small italic, ellipsized. Replacement
@@ -9,26 +9,26 @@
  * keyframes and no React state).
  *
  * Tuglaw cross-check:
- *  - [L19] component file pair with `data-slot="tide-pulse-strip"`.
+ *  - [L19] component file pair with `data-slot="dev-pulse-strip"`.
  *  - [L20] the strip owns its own legend/stage/text/placeholder
  *    scope; the dev card contributes only the mount position.
  *  - [L16] color-setting rules pair with `@tug-renders-on` (the strip
  *    rides the card's status surface).
  *
- * @module components/tugways/cards/tide-pulse-strip
+ * @module components/tugways/cards/dev-pulse-strip
  */
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-pulse-strip {
+.dev-pulse-strip {
   /* Fixed-height contract: one CONSTANT height, sized so typeset
    * math (fractions, operators) fits without ever moving layout —
    * prose centers in the same box. */
-  --tide-pulse-strip-height: 28px;
+  --dev-pulse-strip-height: 28px;
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
   flex: 0 0 auto;
-  height: var(--tide-pulse-strip-height);
+  height: var(--dev-pulse-strip-height);
   box-sizing: border-box;
   padding-block: 0;
   padding-inline: var(--tug-space-md);
@@ -38,7 +38,7 @@
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-pulse-strip-legend {
+.dev-pulse-strip-legend {
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-family: var(--tug-font-mono, monospace);
   font-size: 0.5625rem;
@@ -48,7 +48,7 @@
 }
 
 /* The cross-fade stage: a fixed box both text layers center within. */
-.tide-pulse-strip-stage {
+.dev-pulse-strip-stage {
   position: relative;
   display: block;
   flex: 1 1 auto;
@@ -58,7 +58,7 @@
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-pulse-strip-text {
+.dev-pulse-strip-text {
   /* Both layers share the same absolute geometry, vertically centered
    * in the fixed stage: a tall KaTeX line box can NEVER move layout —
    * extreme overshoot crops symmetrically instead. */
@@ -76,18 +76,18 @@
 
 /* The outgoing layer rides atop the incoming during the fade (same
  * geometry; only opacity differs while TugAnimator runs). */
-.tide-pulse-strip-outgoing {
+.dev-pulse-strip-outgoing {
   z-index: 1;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-pulse-strip-placeholder {
+.dev-pulse-strip-placeholder {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* Rendered markdown flattens to one inline run: the strip is a single
  * line; block wrappers from the parse lose their box behavior. */
-.tide-pulse-strip-text :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+.dev-pulse-strip-text :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
   display: inline;
   margin: 0;
   padding: 0;
@@ -95,34 +95,34 @@
   font-weight: inherit;
 }
 
-.tide-pulse-strip-text li {
+.dev-pulse-strip-text li {
   list-style: none;
 }
 
-.tide-pulse-strip-text code {
+.dev-pulse-strip-text code {
   font-family: var(--tug-font-mono, monospace);
   font-size: 0.95em;
 }
 
 /* Transcript parity inside one line: display math flows inline, media
  * shrinks to text height, tables flatten to an inline run. */
-.tide-pulse-strip-text .katex-display {
+.dev-pulse-strip-text .katex-display {
   display: inline;
   margin: 0;
 }
 
-.tide-pulse-strip-text .katex-display > .katex {
+.dev-pulse-strip-text .katex-display > .katex {
   display: inline;
   white-space: nowrap;
 }
 
-.tide-pulse-strip-text :is(img, svg, video) {
+.dev-pulse-strip-text :is(img, svg, video) {
   max-height: 1.1em;
   width: auto;
   vertical-align: text-bottom;
 }
 
-.tide-pulse-strip-text :is(table, thead, tbody, tr, th, td) {
+.dev-pulse-strip-text :is(table, thead, tbody, tr, th, td) {
   display: inline;
   padding: 0;
   border: none;
@@ -130,6 +130,6 @@
 
 /* KaTeX inside the strip: clamp the engine's 1.21em default so a
  * fraction stack fits the fixed box. */
-.tide-pulse-strip-text .katex {
+.dev-pulse-strip-text .katex {
   font-size: 1.05em;
 }
