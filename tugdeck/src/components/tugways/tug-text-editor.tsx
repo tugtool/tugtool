@@ -852,6 +852,52 @@ const keepCaretVisible: Extension = EditorView.updateListener.of((update) => {
 });
 
 /**
+ * Marks `.cm-scroller` as overflowing its `max-height` cap, gating the CSS
+ * that switches it from `overflow-y: hidden` back to `auto` (see
+ * `tug-text-editor.css`). Written by {@link scrollbarAtCap}.
+ */
+const OVERFLOWING_ATTRIBUTE = "data-tug-overflowing";
+
+/**
+ * Show the vertical scrollbar only once the auto-height editor has actually
+ * hit its `max-height` cap — never during the transient relayout as it grows
+ * to fit a new line.
+ *
+ * CM6's own default is `overflow-y: auto` on `.cm-scroller`, which paints a
+ * scrollbar *reactively* the instant `scrollHeight` exceeds `clientHeight`.
+ * While the editor is auto-growing, the content height jumps a row ahead of
+ * the scroller box for one layout pass, so that default flashes a scrollbar
+ * that vanishes the moment the box catches up — visible jitter on every line
+ * break below the cap.
+ *
+ * So the CSS pins `.cm-scroller` to `overflow-y: hidden`, and this listener
+ * flips it to `auto` (via `data-tug-overflowing`) only when content genuinely
+ * exceeds the box. With overflow hidden, `clientHeight` is `min(content,
+ * max-height)`: so `scrollHeight > clientHeight` is true *only* once the
+ * `max-height` clamp engages — the stable at-cap state where a scrollbar is
+ * wanted — and never during the sub-cap grow, where the box always fits its
+ * content in a single layout. [L06] appearance-zone DOM write, never React.
+ */
+const scrollbarAtCap: Extension = EditorView.updateListener.of((update) => {
+  if (!update.docChanged && !update.geometryChanged) return;
+  const view = update.view;
+  view.requestMeasure({
+    read() {
+      const scroller = view.scrollDOM;
+      return scroller.scrollHeight > scroller.clientHeight;
+    },
+    write(overflowing) {
+      const scroller = view.scrollDOM;
+      if (overflowing) {
+        scroller.setAttribute(OVERFLOWING_ATTRIBUTE, "true");
+      } else {
+        scroller.removeAttribute(OVERFLOWING_ATTRIBUTE);
+      }
+    },
+  });
+});
+
+/**
  * Mirror undo/redo *state* outward to the native Edit menu.
  *
  * Two outputs per document change:
@@ -1108,6 +1154,7 @@ function buildExtensions(
     ),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
+    scrollbarAtCap,
     undoMenuStatePlugin,
     tabConsumeMarker,
   ];
