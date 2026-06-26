@@ -124,6 +124,8 @@ The single source of truth for expansion (`palette-engine.ts`): a hue-angle look
 
 `oklch()` is device-independent: the browser maps each coordinate to whatever the display can show. A chroma within sRGB renders the same everywhere; a chroma beyond sRGB is gamut-mapped down on sRGB displays and rendered richer on Display P3 — **automatically, with no media query**. Authoring richer saturated colors therefore means writing a larger `c`; the platform handles per-display mapping. There is no per-hue chroma table or `@media (color-gamut: p3)` override in the system.
 
+Because chroma is verbatim, nothing stops an author from exceeding a hue's real ceiling. `bun run audit:gamut` (`scripts/audit-gamut.ts`) makes this visible: it resolves every `--tug-color()` recipe and reports, per theme, how many land out-of-sRGB (intended for signals — richer on P3) versus out-of-P3 (beyond any display; always gamut-mapped). It is **advisory**, not a gate — out-of-P3 is pervasive by design, and light themes legitimately push further than dark to hold contrast on near-white. Run `audit:gamut <theme>` for a per-recipe drill-down (each out-of-P3 color with the max chroma that would fit at its lightness), or `--strict` for a CI exit code.
+
 ---
 
 ## Three-Tier Token Architecture

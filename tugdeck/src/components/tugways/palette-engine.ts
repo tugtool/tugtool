@@ -269,6 +269,69 @@ export function oklchToLinearSRGB(L: number, C: number, h: number): { r: number;
 }
 
 /**
+ * Convert OKLCH polar coordinates to linear Display P3 channels (each in [0, 1] for
+ * in-gamut colors). Steps 1–3 match oklchToLinearSRGB; step 4 uses the LMS→linear-P3
+ * matrix (OKLab LMS→XYZ composed with XYZ D65→Display-P3, CSS Color 4).
+ */
+export function oklchToLinearP3(L: number, C: number, h: number): { r: number; g: number; b: number } {
+  const hRad = (h * Math.PI) / 180;
+  const a = C * Math.cos(hRad);
+  const b = C * Math.sin(hRad);
+
+  const lHat = L + 0.3963377774 * a + 0.2158037573 * b;
+  const mHat = L - 0.1055613458 * a - 0.0638541728 * b;
+  const sHat = L - 0.0894841775 * a - 1.2914855480 * b;
+
+  const lLMS = lHat * lHat * lHat;
+  const mLMS = mHat * mHat * mHat;
+  const sLMS = sHat * sHat * sHat;
+
+  const r =  3.1281105290 * lLMS - 2.2570750183 * mLMS + 0.1293047883 * sLMS;
+  const g = -1.0911281610 * lLMS + 2.4132667618 * mLMS - 0.3221681709 * sLMS;
+  const bVal = -0.0260136498 * lLMS - 0.5080276490 * mLMS + 1.5333166822 * sLMS;
+
+  return { r, g, b: bVal };
+}
+
+/** True if all linear channels lie within [0, 1] (allowing a small epsilon). */
+function channelsInGamut(c: { r: number; g: number; b: number }, epsilon: number): boolean {
+  return (
+    c.r >= -epsilon && c.r <= 1 + epsilon &&
+    c.g >= -epsilon && c.g <= 1 + epsilon &&
+    c.b >= -epsilon && c.b <= 1 + epsilon
+  );
+}
+
+/** Check if an OKLCH color is within the sRGB gamut. */
+export function isInSRGBGamut(L: number, C: number, h: number, epsilon = 0.001): boolean {
+  return channelsInGamut(oklchToLinearSRGB(L, C, h), epsilon);
+}
+
+/** Check if an OKLCH color is within the Display P3 gamut. */
+export function isInP3Gamut(L: number, C: number, h: number, epsilon = 0.001): boolean {
+  return channelsInGamut(oklchToLinearP3(L, C, h), epsilon);
+}
+
+/**
+ * Binary-search the maximum chroma that stays within a gamut at a given L and hue.
+ * Used by the gamut audit to report how far an out-of-gamut color overshoots.
+ */
+export function maxChromaInGamut(
+  L: number,
+  h: number,
+  gamutCheck: (L: number, C: number, h: number) => boolean,
+): number {
+  let lo = 0;
+  let hi = 0.5;
+  for (let i = 0; i < 28; i++) {
+    const mid = (lo + hi) / 2;
+    if (gamutCheck(L, mid, h)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
  * Convert OKLCH components to a 6-digit hex string (#rrggbb).
  * Uses the standard OKLab → linear-sRGB → gamma-sRGB pipeline, clamped to gamut.
  */
