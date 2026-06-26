@@ -24,13 +24,13 @@ import type { TugColorSpec } from "../tug-color-spec";
 import "./gallery-color-picker.css";
 
 const WELLS: { id: string; label: string; spec: TugColorSpec }[] = [
-  { id: "well-filled", label: "Filled", spec: { hue: "blue", i: 84, t: 44, a: 100 } },
-  { id: "well-tinted", label: "Tinted", spec: { hue: "blue", i: 75, t: 38, a: 40 } },
-  { id: "well-textsel", label: "Text selection", spec: { hue: "blue", i: 50, t: 50, a: 40 } },
-  { id: "well-link", label: "Link", spec: { hue: "cobalt", i: 45, t: 86, a: 100 } },
+  { id: "well-filled", label: "Filled", spec: { hue: "blue", l: 0.55, c: 0.18, a: 1 } },
+  { id: "well-tinted", label: "Tinted", spec: { hue: "blue", l: 0.5, c: 0.16, a: 0.4 } },
+  { id: "well-textsel", label: "Text selection", spec: { hue: "blue", l: 0.59, c: 0.14, a: 0.4 } },
+  { id: "well-link", label: "Link", spec: { hue: "cobalt", l: 0.9, c: 0.07, a: 1 } },
 ];
 
-const ADJ_BASE: TugColorSpec = { hue: "blue", i: 50, t: 50, a: 100 };
+const ADJ_BASE: TugColorSpec = { hue: "blue", l: 0.59, c: 0.14, a: 1 };
 const ADJ_ID = "demo-adjust";
 
 export function GalleryColorWells(): React.ReactElement {
@@ -38,7 +38,7 @@ export function GalleryColorWells(): React.ReactElement {
   const [specs, setSpecs] = useState<Record<string, TugColorSpec>>(() =>
     Object.fromEntries(WELLS.map((w) => [w.id, w.spec])),
   );
-  const [delta, setDelta] = useState<TugColorDelta>({ iDelta: 0, tDelta: 0, aDelta: 0 });
+  const [delta, setDelta] = useState<TugColorDelta>({ lDelta: 0, cDelta: 0, aDelta: 0 });
 
   // L07: handlers read live state through refs, not render closures.
   const specsRef = useRef(specs);
@@ -68,8 +68,8 @@ export function GalleryColorWells(): React.ReactElement {
     const v = typeof event.value === "number" ? event.value : NaN;
     if (Number.isNaN(v)) return;
     const ids = colorAdjustSenders(ADJ_ID);
-    if (sender === ids.i) setDelta((d) => ({ ...d, iDelta: v }));
-    else if (sender === ids.t) setDelta((d) => ({ ...d, tDelta: v }));
+    if (sender === ids.l) setDelta((d) => ({ ...d, lDelta: v }));
+    else if (sender === ids.c) setDelta((d) => ({ ...d, cDelta: v }));
     else if (sender === ids.a) setDelta((d) => ({ ...d, aDelta: v }));
   }, []);
 

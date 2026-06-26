@@ -1,10 +1,9 @@
 /**
  * TugColorAdjustment — edits an offset off a base color expressed as additive
- * TugColor intensity / tone / alpha DELTAS (per the tug-color model), not a
- * chroma multiplier or oklch shift.
+ * OKLCH lightness / chroma / alpha DELTAS, not a chroma multiplier or hue shift.
  *
  * Shows the base swatch → the adjusted-result swatch, with three delta steppers
- * (iΔ, tΔ, aΔ). Each stepper is a TugValueInput that dispatches SET_VALUE to the
+ * (lΔ, cΔ, aΔ). Each stepper is a TugValueInput that dispatches SET_VALUE to the
  * host responder under its own sub-sender id; the host maps the three ids back
  * to the delta fields. Use `colorAdjustSenders(id)` to build those bindings.
  */
@@ -13,19 +12,19 @@ import React, { useId } from "react";
 import { cn } from "@/lib/utils";
 import { TugValueInput } from "./tug-value-input";
 import { TugColorWell } from "./tug-color-well";
-import { swatchOklch, clamp100, type TugColorSpec } from "./tug-color-spec";
+import { swatchOklch, clamp01, clampChroma, MAX_CHROMA, type TugColorSpec } from "./tug-color-spec";
 import "./tug-color-adjustment.css";
 
-/** Additive deltas in TugColor units (mirror of core's DuetAdjust). */
+/** Additive deltas in OKLCH units (mirror of core's DuetAdjust). */
 export interface TugColorDelta {
-  iDelta: number;
-  tDelta: number;
+  lDelta: number;
+  cDelta: number;
   aDelta: number;
 }
 
 /** The three per-axis sender ids a host binds for one adjustment. */
-export function colorAdjustSenders(senderId: string): { i: string; t: string; a: string } {
-  return { i: `${senderId}-i`, t: `${senderId}-t`, a: `${senderId}-a` };
+export function colorAdjustSenders(senderId: string): { l: string; c: string; a: string } {
+  return { l: `${senderId}-l`, c: `${senderId}-c`, a: `${senderId}-a` };
 }
 
 /** Apply a delta to a base spec (clamped) — the resolved color the row previews. */
@@ -33,9 +32,9 @@ export function applyColorDelta(base: TugColorSpec, d: TugColorDelta): TugColorS
   return {
     hue: base.hue,
     adjacent: base.adjacent,
-    i: clamp100(base.i + d.iDelta),
-    t: clamp100(base.t + d.tDelta),
-    a: clamp100(base.a + d.aDelta),
+    l: clamp01(base.l + d.lDelta),
+    c: clampChroma(base.c + d.cDelta),
+    a: clamp01(base.a + d.aDelta),
   };
 }
 
@@ -95,17 +94,17 @@ export function TugColorAdjustment({
       )}
       <span className="tug-color-adjustment-deltas">
         <label className="tug-color-adjustment-delta">
-          <span className="tug-color-adjustment-delta-tag">iΔ</span>
-          <TugValueInput value={value.iDelta} senderId={ids.i} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
+          <span className="tug-color-adjustment-delta-tag">lΔ</span>
+          <TugValueInput value={value.lDelta} senderId={ids.l} min={-1} max={1} step={0.01} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
         </label>
         <label className="tug-color-adjustment-delta">
-          <span className="tug-color-adjustment-delta-tag">tΔ</span>
-          <TugValueInput value={value.tDelta} senderId={ids.t} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
+          <span className="tug-color-adjustment-delta-tag">cΔ</span>
+          <TugValueInput value={value.cDelta} senderId={ids.c} min={-MAX_CHROMA} max={MAX_CHROMA} step={0.005} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
         </label>
         {showAlpha && (
           <label className="tug-color-adjustment-delta">
             <span className="tug-color-adjustment-delta-tag">aΔ</span>
-            <TugValueInput value={value.aDelta} senderId={ids.a} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
+            <TugValueInput value={value.aDelta} senderId={ids.a} min={-1} max={1} step={0.01} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
           </label>
         )}
       </span>

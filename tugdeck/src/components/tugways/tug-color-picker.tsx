@@ -5,18 +5,16 @@
  * SET_COLOR back to that well's host via sendToTarget — the same remote-target
  * pattern the gallery property-inspector uses.
  *
- * Editing is in TugColor units only (per color-palette.md): a compact named-hue
- * swatch grid (one focus stop, arrow-navigable), a preset TugChoiceGroup with a
- * `custom` slot, and intensity / tone / alpha sliders. Every interactive part is
- * authored into one focus group so the keyboard loops through them ([P02]); the
- * active-target store is the single truth the well and the picker both read.
+ * Editing is in OKLCH units (per color-palette.md): a compact named-hue swatch grid
+ * (one focus stop, arrow-navigable) plus lightness / chroma / alpha sliders. Every
+ * interactive part is authored into one focus group so the keyboard loops through
+ * them ([P02]); the active-target store is the single truth the well and the picker
+ * both read.
  */
 
 import React, { useCallback, useContext, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
 import { TugSlider } from "./tug-slider";
 import { TugBox } from "./tug-box";
-import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { useResponderForm } from "./use-responder-form";
 import { useFocusable, useFocusManager } from "./use-focusable";
 import { useSpatialOrder } from "./use-spatial-order";
@@ -25,21 +23,17 @@ import { captureSet } from "./focus-act";
 import { CardIdContext } from "@/lib/card-id-context";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { ADJACENCY_RING, HUE_FAMILIES, TUG_COLOR_PRESETS } from "./palette-engine";
+import { ADJACENCY_RING, HUE_FAMILIES } from "./palette-engine";
 import {
   getActiveColorTarget,
   updateActiveColorValue,
   useActiveColorTarget,
 } from "./active-color-target";
 import {
-  chromaOf,
+  MAX_CHROMA,
   formatTugColorText,
-  intensityForChroma,
-  lightnessOf,
   normalizeSpec,
-  peakChromaFor,
   swatchOklch,
-  toneForLightness,
   type TugColorSpec,
 } from "./tug-color-spec";
 import type { ActionPhase } from "./responder-chain";
@@ -77,28 +71,15 @@ const ARROW_DIRS: Record<string, ArrowDir> = {
   ArrowDown: "down",
 };
 
-const PRESET_NAMES = ["canonical", "light", "dark", "intense", "muted"] as const;
-const CUSTOM = "custom";
-
 /** Fixed value-box width so every slider's track (and value) lines up. */
 const SLIDER_VALUE_WIDTH = "3.5rem";
 
 /** The picker always shows a color; with no active well it edits this scratch. */
-const SCRATCH_DEFAULT: TugColorSpec = { hue: "blue", i: 50, t: 50, a: 100 };
+const SCRATCH_DEFAULT: TugColorSpec = { hue: "blue", l: 0.5, c: 0.12, a: 1 };
 
-const PRESET_ITEMS: TugChoiceItem[] = [
-  ...PRESET_NAMES.map((name) => ({ value: name, label: name })),
-  { value: CUSTOM, label: CUSTOM },
-];
-
-/** Which preset (if any) a value's i/t matches — else "custom". */
-function presetOf(spec: TugColorSpec): string {
-  for (const name of PRESET_NAMES) {
-    const p = TUG_COLOR_PRESETS[name];
-    if (p.intensity === spec.i && p.tone === spec.t) return name;
-  }
-  return CUSTOM;
-}
+/** A representative l/c for painting a hue grid cell (mid lightness, vivid). */
+const CELL_L = 0.6;
+const CELL_C = 0.16;
 
 export function TugColorPicker(): React.ReactElement {
   const manager = useRequiredResponderChain();
@@ -110,21 +91,11 @@ export function TugColorPicker(): React.ReactElement {
   const valueRef = useRef(value);
   valueRef.current = value;
 
-  // The presets group is normally derived from the color (presetOf), but the user
-  // can explicitly rest the selection on "custom" even while the color happens to
-  // match a preset — so honor that choice until the color is next edited. Reset
-  // when a different well is activated.
-  const [customForced, setCustomForced] = useState(false);
-  useLayoutEffect(() => { setCustomForced(false); }, [active?.senderId]);
-
   const focusGroup = useId();
-  const iId = useId();
-  const tId = useId();
-  const aId = useId();
-  const presetId = useId();
-  const hueGridId = useId();
-  const cId = useId();
   const lId = useId();
+  const cId = useId();
+  const aId = useId();
+  const hueGridId = useId();
 
   // Land keyboard focus on a control so the loop is reachable: arm the hue grid
   // (loop start) the first time a color is active and this card is the key card.
@@ -151,7 +122,7 @@ export function TugColorPicker(): React.ReactElement {
   // the well's host (sendToTarget) plus the shared store so the well and these
   // controls repaint from one truth; with no active well, update the local
   // scratch so the picker stays live as a standalone color tool.
-  const dispatchSpec = useCallback(
+  const editColor = useCallback(
     (partial: Partial<TugColorSpec>, phase: ActionPhase): void => {
       const target = getActiveColorTarget();
       if (!target) {
@@ -168,16 +139,6 @@ export function TugColorPicker(): React.ReactElement {
       });
     },
     [manager],
-  );
-
-  // A color edit from the hue grid or sliders releases any forced "custom" so the
-  // presets group resyncs to whatever preset (or custom) the new color matches.
-  const editColor = useCallback(
-    (partial: Partial<TugColorSpec>, phase: ActionPhase): void => {
-      setCustomForced(false);
-      dispatchSpec(partial, phase);
-    },
-    [dispatchSpec],
   );
 
   // Hue grid — one Tab stop that owns all four arrows for 2D navigation with
@@ -213,7 +174,6 @@ export function TugColorPicker(): React.ReactElement {
   const sliderOrder = useMemo<SpatialOrder>(
     () => rowGridOrder([
       [`${focusGroup}:1`], [`${focusGroup}:2`], [`${focusGroup}:3`],
-      [`${focusGroup}:4`], [`${focusGroup}:5`],
     ]),
     [focusGroup],
   );
@@ -221,30 +181,13 @@ export function TugColorPicker(): React.ReactElement {
 
   const { ResponderScope, responderRef } = useResponderForm({
     setValueNumber: {
-      [iId]: (v: number, phase: ActionPhase) => editColor({ i: v }, phase),
-      [tId]: (v: number, phase: ActionPhase) => editColor({ t: v }, phase),
+      [lId]: (v: number, phase: ActionPhase) => editColor({ l: v }, phase),
+      [cId]: (v: number, phase: ActionPhase) => editColor({ c: v }, phase),
       [aId]: (v: number, phase: ActionPhase) => editColor({ a: v }, phase),
-      // Perceptual axes: edit absolute chroma / lightness, back-solving i / t for
-      // the current hue (so the same C reads the same on any hue).
-      [cId]: (v: number, phase: ActionPhase) =>
-        editColor({ i: intensityForChroma(valueRef.current, v) }, phase),
-      [lId]: (v: number, phase: ActionPhase) =>
-        editColor({ t: toneForLightness(valueRef.current, v) }, phase),
-    },
-    selectValue: {
-      [presetId]: (name: string) => {
-        // "custom" is a real, restable selection — hold it (don't snap back to the
-        // preset the color matches). A real preset applies its i/t and releases.
-        if (name === CUSTOM) {
-          setCustomForced(true);
-          return;
-        }
-        setCustomForced(false);
-        const p = TUG_COLOR_PRESETS[name];
-        if (p) dispatchSpec({ i: p.intensity, t: p.tone }, "discrete");
-      },
     },
   });
+
+  const round3 = (n: number): number => Math.round(n * 1000) / 1000;
 
   return (
     <ResponderScope>
@@ -283,42 +226,20 @@ export function TugColorPicker(): React.ReactElement {
               title={`${hue} (${HUE_FAMILIES[hue]}°)`}
               aria-label={`${hue} (${HUE_FAMILIES[hue]} degrees)`}
               className="tug-color-picker-hue-cell"
-              style={{ "--tcp-cell": swatchOklch({ hue, i: 70, t: 50, a: 100 }) } as React.CSSProperties}
+              style={{ "--tcp-cell": swatchOklch({ hue, l: CELL_L, c: CELL_C, a: 1 }) } as React.CSSProperties}
               onClick={() => editColor({ hue, adjacent: undefined }, "discrete")}
             />
           ))}
         </div>
 
-        {/* TugColor axes — gamut-relative intensity / tone / alpha. */}
-        <TugBox label="TugColor" variant="bordered" size="sm" className="tug-color-picker-box">
-          <div className="tug-color-picker-sliders">
-            <TugSlider label="Intensity" senderId={iId} value={value.i} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
-            <TugSlider label="Tone" senderId={tId} value={value.t} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
-            <TugSlider label="Alpha" senderId={aId} value={value.a} min={0} max={100} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
-          </div>
-        </TugBox>
-
-        {/* OKLCH axes — absolute chroma / lightness. Editing these back-solves
-            i / t for the hue, so the same C reads as the same saturation anywhere. */}
+        {/* OKLCH axes — direct lightness / chroma / alpha. */}
         <TugBox label="OKLCH" variant="bordered" size="sm" className="tug-color-picker-box">
           <div className="tug-color-picker-sliders">
-            <TugSlider label="Chroma" senderId={cId} value={Math.round(chromaOf(value) * 1000) / 1000} min={0} max={Math.round(peakChromaFor(value) * 1000) / 1000} step={0.005} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={4} />
-            <TugSlider label="Lightness" senderId={lId} value={Math.round(lightnessOf(value) * 1000) / 1000} min={0} max={1} step={0.005} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={5} />
+            <TugSlider label="Lightness" senderId={lId} value={round3(value.l)} min={0} max={1} step={0.005} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
+            <TugSlider label="Chroma" senderId={cId} value={round3(value.c)} min={0} max={MAX_CHROMA} step={0.005} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
+            <TugSlider label="Alpha" senderId={aId} value={round3(value.a)} min={0} max={1} step={0.01} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
           </div>
         </TugBox>
-
-        <div className="tug-color-picker-presets">
-          <TugChoiceGroup
-            items={PRESET_ITEMS}
-            value={customForced ? CUSTOM : presetOf(value)}
-            senderId={presetId}
-            size="xs"
-            aria-label="Presets"
-            commit="live"
-            focusGroup={focusGroup}
-            focusOrder={6}
-          />
-        </div>
       </div>
     </ResponderScope>
   );

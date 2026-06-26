@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import fs from "fs";
 import { execSync } from "child_process";
-// postcss-tug-color expands --tug-color(color, i: intensity, t: tone) to oklch() at build time.
+// postcss-tug-color expands --tug-color(color, l: lightness, c: chroma) to oklch() at build time.
 import postcssTugColor from "./postcss-tug-color";
 // theme-editor-core re-hues a theme's Key/Accent axes; shared with
 // scripts/apply-theme-editor.ts.
@@ -408,28 +408,28 @@ export async function handleThemeEditApply(
   const theme = typeof b.theme === "string" ? b.theme.trim() : "";
   const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
   const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : "";
-  // Additive intensity/tone/alpha deltas off each rung's base (tug-color units).
+  // Additive lightness/chroma/alpha deltas off each rung's base (OKLCH units).
   const num = (v: unknown): number => (v === undefined ? 0 : Number(v));
-  const parseAdjust = (v: unknown): { iDelta: number; tDelta: number; aDelta?: number } => {
+  const parseAdjust = (v: unknown): { lDelta: number; cDelta: number; aDelta?: number } => {
     const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-    return { iDelta: num(o.iDelta), tDelta: num(o.tDelta), aDelta: num(o.aDelta) };
+    return { lDelta: num(o.lDelta), cDelta: num(o.cDelta), aDelta: num(o.aDelta) };
   };
   const key = parseAdjust(b.key);
   const accent = parseAdjust(b.accent);
   if (!theme || !isKnownHue(keyHue) || !isKnownHue(accentHue) ||
-      !Number.isFinite(key.iDelta) || !Number.isFinite(key.tDelta) ||
-      !Number.isFinite(accent.iDelta) || !Number.isFinite(accent.tDelta)) {
-    return { status: 400, body: JSON.stringify({ error: "theme + valid keyHue/accentHue + numeric key/accent {iDelta,tDelta,aDelta} required" }) };
+      !Number.isFinite(key.lDelta) || !Number.isFinite(key.cDelta) ||
+      !Number.isFinite(accent.lDelta) || !Number.isFinite(accent.cDelta)) {
+    return { status: 400, body: JSON.stringify({ error: "theme + valid keyHue/accentHue + numeric key/accent {lDelta,cDelta,aDelta} required" }) };
   }
 
-  const parseTreatment = (v: unknown): { i: number; t: number; a?: number } | undefined => {
+  const parseTreatment = (v: unknown): { l: number; c: number; a?: number } | undefined => {
     if (!v || typeof v !== "object") return undefined;
     const o = v as Record<string, unknown>;
-    const i = Number(o.i);
-    const t = Number(o.t);
-    if (!Number.isFinite(i) || !Number.isFinite(t)) return undefined;
+    const l = Number(o.l);
+    const c = Number(o.c);
+    if (!Number.isFinite(l) || !Number.isFinite(c)) return undefined;
     const a = o.a === undefined ? undefined : Number(o.a);
-    return { i, t, a: a !== undefined && Number.isFinite(a) ? a : undefined };
+    return { l, c, a: a !== undefined && Number.isFinite(a) ? a : undefined };
   };
   const titlebar = parseTreatment(b.titlebar);
   const filled = parseTreatment(b.filled);

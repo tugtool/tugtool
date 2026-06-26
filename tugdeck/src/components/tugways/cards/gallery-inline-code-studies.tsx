@@ -57,15 +57,15 @@ interface Tuning {
 /** Seed each theme from the spot tokens authored in `styles/themes/*.css`.
  *  Dark themes start lighter (color reads stronger on dark); light heavier. */
 const SEED: Record<string, Tuning> = {
-  brio: { spot: { hue: "grass", i: 30, t: 95, a: 100 }, level: 25, size: 95 },
-  nocturne: { spot: { hue: "peony", i: 30, t: 95, a: 100 }, level: 25, size: 95 },
-  bravura: { spot: { hue: "lime", i: 30, t: 95, a: 100 }, level: 25, size: 95 },
-  harmony: { spot: { hue: "peony", i: 50, t: 30, a: 100 }, level: 40, size: 95 },
-  aria: { spot: { hue: "green", i: 50, t: 30, a: 100 }, level: 40, size: 95 },
-  vivace: { spot: { hue: "plum", i: 50, t: 30, a: 100 }, level: 40, size: 95 },
+  brio: { spot: { hue: "grass", l: 0.93, c: 0.06, a: 1 }, level: 25, size: 95 },
+  nocturne: { spot: { hue: "peony", l: 0.93, c: 0.06, a: 1 }, level: 25, size: 95 },
+  bravura: { spot: { hue: "lime", l: 0.94, c: 0.06, a: 1 }, level: 25, size: 95 },
+  harmony: { spot: { hue: "peony", l: 0.4, c: 0.12, a: 1 }, level: 40, size: 95 },
+  aria: { spot: { hue: "green", l: 0.42, c: 0.12, a: 1 }, level: 40, size: 95 },
+  vivace: { spot: { hue: "plum", l: 0.4, c: 0.12, a: 1 }, level: 40, size: 95 },
 };
 
-const FALLBACK: Tuning = { spot: { hue: "grass", i: 30, t: 95, a: 100 }, level: 25, size: 95 };
+const FALLBACK: Tuning = { spot: { hue: "grass", l: 0.93, c: 0.06, a: 1 }, level: 25, size: 95 };
 
 const THEME_ORDER = ["brio", "nocturne", "bravura", "harmony", "aria", "vivace"];
 
@@ -87,8 +87,8 @@ const angleOf = (hue: string): string => {
 
 /** The theme-file form a dialed-in spot would be authored as. */
 function spotToken(s: TugColorSpec): string {
-  const head = `--tug-color(${hueText(s)}, i: ${s.i}, t: ${s.t}`;
-  return s.a >= 100 ? `${head})` : `${head}, a: ${s.a})`;
+  const head = `--tug-color(${hueText(s)}, l: ${s.l}, c: ${s.c}`;
+  return s.a >= 1 ? `${head})` : `${head}, a: ${s.a})`;
 }
 
 /**
@@ -192,7 +192,7 @@ export function GalleryInlineCodeStudies(): React.ReactElement {
               focusOrder={0}
             />
             <span className="cg-ics-note">
-              {hueText(current.spot)} ({angleOf(current.spot.hue)}) · i{current.spot.i} t{current.spot.t}
+              {hueText(current.spot)} ({angleOf(current.spot.hue)}) · l{current.spot.l} c{current.spot.c}
             </span>
           </div>
           <div className="cg-ics-row">

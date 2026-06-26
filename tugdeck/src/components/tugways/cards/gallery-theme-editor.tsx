@@ -101,20 +101,20 @@ function tokenSpec(css: string, name: string): TugColorSpec | null {
   if (!m) return null;
   const parts = m[1].split(",").map((s) => s.trim());
   const hue = parts[0].split("-")[0];
-  let i = 50, t = 50, a = 100;
+  let l = 0.5, c = 0, a = 1;
   for (const p of parts.slice(1)) {
-    const mm = p.match(/^([ita])\s*:\s*([\d.]+)$/);
+    const mm = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!mm) continue;
-    if (mm[1] === "i") i = parseFloat(mm[2]);
-    else if (mm[1] === "t") t = parseFloat(mm[2]);
+    if (mm[1] === "l") l = parseFloat(mm[2]);
+    else if (mm[1] === "c") c = parseFloat(mm[2]);
     else a = parseFloat(mm[2]);
   }
-  return { hue, i, t, a };
+  return { hue, l, c, a };
 }
 
 /** A base's current key color, read from its anchor token. */
 function baseKeyColor(base: BaseName): TugColorSpec {
-  return tokenSpec(BASE_CSS[base], ANCHOR_KEY_TOKEN) ?? { hue: "cobalt", i: 65, t: 45, a: 100 };
+  return tokenSpec(BASE_CSS[base], ANCHOR_KEY_TOKEN) ?? { hue: "cobalt", l: 0.5, c: 0.14, a: 1 };
 }
 
 // ---------------------------------------------------------------------------
@@ -135,8 +135,8 @@ export function GalleryThemeEditor(): React.ReactElement {
   const fam = FAMILY[output];
   // These wells only contribute their HUE — derivation rotates by hue and holds
   // each token's own perceived chroma + lightness.
-  const [keySpec, setKeySpec] = useState<TugColorSpec>({ hue: fam.key, i: 50, t: 50, a: 100 });
-  const [accSpec, setAccSpec] = useState<TugColorSpec>({ hue: fam.accent, i: 50, t: 50, a: 100 });
+  const [keySpec, setKeySpec] = useState<TugColorSpec>({ hue: fam.key, l: 0.5, c: 0.12, a: 1 });
+  const [accSpec, setAccSpec] = useState<TugColorSpec>({ hue: fam.accent, l: 0.5, c: 0.12, a: 1 });
   const [derivedBusy, setDerivedBusy] = useState(false);
   const [derivedMsg, setDerivedMsg] = useState<string | null>(null);
   const keyHue = keySpec.hue;
@@ -149,8 +149,8 @@ export function GalleryThemeEditor(): React.ReactElement {
 
   // On family switch, reset the hues to that member's defaults.
   useEffect(() => {
-    setKeySpec({ hue: FAMILY[output].key, i: 50, t: 50, a: 100 });
-    setAccSpec({ hue: FAMILY[output].accent, i: 50, t: 50, a: 100 });
+    setKeySpec({ hue: FAMILY[output].key, l: 0.5, c: 0.12, a: 1 });
+    setAccSpec({ hue: FAMILY[output].accent, l: 0.5, c: 0.12, a: 1 });
   }, [output]);
 
   // Base audition — derive the base onto itself with the explicit key color.

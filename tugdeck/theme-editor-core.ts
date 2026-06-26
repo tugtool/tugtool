@@ -9,7 +9,7 @@
  *     by the Theme Editor card's Apply button
  *
  * Re-hue is computed from an identity-space BASELINE recipe (per-token
- * intensities/tones with the hue and i/t/a deltas removed) so applying repeatedly
+ * lightness/chroma with the hue and l/c/a deltas removed) so applying repeatedly
  * with new hues/deltas never compounds — each apply is absolute. The baseline is not
  * a frozen file: the dev-server keeps it live by diff-merging hand edits made
  * directly to the theme CSS back into it (diffMergeBaseline / inverseSeed), so
@@ -18,40 +18,37 @@
 
 import {
   HUE_FAMILIES,
-  TUG_COLOR_PRESETS,
-  MAX_CHROMA_FOR_HUE,
-  PEAK_C_SCALE,
-  DEFAULT_CANONICAL_L,
-  L_DARK,
-  L_LIGHT,
 } from "./src/components/tugways/palette-engine";
 
 const CHROMATIC = new Set(Object.keys(HUE_FAMILIES));
 
-/** A chrome treatment — a TugColor of the Key hue with its own intensity / tone (/ alpha). */
+/** Practical OKLCH chroma ceiling — clamps deltas/scaling so postcss accepts the value. */
+const MAX_C = 0.5;
+
+/** A chrome treatment — a TugColor of the Key hue with its own lightness / chroma (/ alpha). */
 export interface DuetTreatment {
-  i: number;
-  t: number;
+  l: number;
+  c: number;
   a?: number;
 }
 
 /**
- * An adjustment off a base color — additive deltas in TugColor intensity / tone
- * / alpha units (NOT a chroma multiplier or oklch offset). Applied to every rung
+ * An adjustment off a base color — additive deltas in OKLCH lightness / chroma
+ * / alpha units (NOT a chroma multiplier or hue offset). Applied to every rung
  * of an axis: out = clamp(base + delta). Additive so it inverts by subtraction.
  */
 export interface DuetAdjust {
-  iDelta: number;
-  tDelta: number;
+  lDelta: number;
+  cDelta: number;
   aDelta?: number;
 }
 
 export interface DuetSeed {
   keyHue: string;
-  /** Intensity/tone/alpha deltas applied to every Key rung off its base. */
+  /** Lightness/chroma/alpha deltas applied to every Key rung off its base. */
   key: DuetAdjust;
   accentHue: string;
-  /** Intensity/tone/alpha deltas applied to every Accent rung off its base. */
+  /** Lightness/chroma/alpha deltas applied to every Accent rung off its base. */
   accent: DuetAdjust;
   /** Title bar / active tab tint (writes --tugx-chrome-key-surface where present). */
   titlebar?: DuetTreatment;
@@ -62,7 +59,7 @@ export interface DuetSeed {
   /**
    * Text-selection wash — the Key-hued fill behind selected text and the
    * editing caret (writes --tug7-surface-selection-primary-normal-plain-rest).
-   * Its own intensity / tone / alpha off the Key hue, independent of the rest
+   * Its own lightness / chroma / alpha off the Key hue, independent of the rest
    * of the Key ramp.
    */
   textsel?: DuetTreatment;
@@ -146,48 +143,39 @@ export function classifyRole(name: string): DuetRole {
   return null;
 }
 
-interface Parsed { i: number; t: number; a: number | null; }
+interface Parsed { l: number; c: number; a: number | null; }
 
 /** Parse the inner of `--tug-color(...)`; returns null for achromatic / unknown hues. */
 function parseTugColor(inner: string): Parsed | null {
   const parts = inner.split(",").map((s) => s.trim());
-  const head = parts[0];
-  let i = 50;
-  let t = 50;
+  const hue = parts[0].split("-")[0];
+  let l = 0.5;
+  let c = 0;
   let a: number | null = null;
-  const segs = head.split("-");
-  const hue = segs[0];
-  for (let k = 1; k < segs.length; k++) {
-    const preset = TUG_COLOR_PRESETS[segs[k]];
-    if (preset) {
-      i = preset.intensity;
-      t = preset.tone;
-    }
-  }
   for (const p of parts.slice(1)) {
-    const m = p.match(/^([ita])\s*:\s*([\d.]+)$/);
+    const m = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!m) continue;
-    if (m[1] === "i") i = parseFloat(m[2]);
-    if (m[1] === "t") t = parseFloat(m[2]);
+    if (m[1] === "l") l = parseFloat(m[2]);
+    if (m[1] === "c") c = parseFloat(m[2]);
     if (m[1] === "a") a = parseFloat(m[2]);
   }
   if (!CHROMATIC.has(hue)) return null;
-  return { i, t, a };
+  return { l, c, a };
 }
 
-/** Format the inner of `--tug-color(...)` — `hue, i: X, t: Y[, a: Z]`. */
-function formatInner(hue: string, i: number, t: number, a: number | null): string {
-  // Clamp every axis to its valid --tug-color() range — treatment deltas (e.g.
-  // filled rest + active delta) and chroma scaling can otherwise overshoot and
-  // the postcss plugin rejects the value.
-  const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, Math.round(n)));
-  const parts = [`i: ${clamp(i, 100)}`, `t: ${clamp(t, 100)}`];
-  if (a !== null) parts.push(`a: ${clamp(a, 100)}`);
+/** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]`. */
+function formatInner(hue: string, l: number, c: number, a: number | null): string {
+  // Clamp every axis to its valid --tug-color() range — treatment deltas and
+  // chroma scaling can otherwise overshoot and the postcss plugin rejects it.
+  const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, n));
+  const fmt = (n: number): string => parseFloat(n.toFixed(4)).toString();
+  const parts = [`l: ${fmt(clamp(l, 1))}`, `c: ${fmt(clamp(c, MAX_C))}`];
+  if (a !== null) parts.push(`a: ${fmt(clamp(a, 1))}`);
   return `${hue}, ${parts.join(", ")}`;
 }
 
-function formatTugColor(hue: string, i: number, t: number, a: number | null): string {
-  return `--tug-color(${formatInner(hue, i, t, a)})`;
+function formatTugColor(hue: string, l: number, c: number, a: number | null): string {
+  return `--tug-color(${formatInner(hue, l, c, a)})`;
 }
 
 /** The hue head of a `--tug-color(...)` inner (`blue-light, i: 50` -> `blue`). */
@@ -242,19 +230,19 @@ export function applyDuet(
     if (!parsed) continue;
 
     // Text-selection treatment owns the plain-rest wash directly: a TugColor of
-    // the Key hue at its own i / t / a (alpha in 0–1 oklch convention, scaled to
-    // --tug-color()'s 0–100). Overrides the generic Key re-hue for this one token.
+    // the Key hue at its own l / c / a. Overrides the generic Key re-hue for this
+    // one token.
     if (seed.textsel && name === TEXTSEL_TOKEN) {
-      const a = seed.textsel.a !== undefined ? seed.textsel.a * 100 : parsed.a;
-      if (replaceToken(name, formatTugColor(seed.keyHue, seed.textsel.i, seed.textsel.t, a))) {
+      const a = seed.textsel.a !== undefined ? seed.textsel.a : parsed.a;
+      if (replaceToken(name, formatTugColor(seed.keyHue, seed.textsel.l, seed.textsel.c, a))) {
         keyCount++;
       }
       continue;
     }
 
     // Chrome treatments override the Key re-hue for the filled/tinted surface +
-    // border tokens: a TugColor of the Key hue at the treatment's own i/t, with
-    // hover/active/disabled keeping their baseline tone/intensity delta from rest
+    // border tokens: a TugColor of the Key hue at the treatment's own l/c, with
+    // hover/active/disabled keeping their baseline lightness/chroma delta from rest
     // so the interaction ramp survives. Text/icon stay on the normal Key re-hue.
     const tg = treatmentGroup(name);
     const tr = tg ? seed[tg] : undefined;
@@ -263,29 +251,27 @@ export function applyDuet(
       const baseThis = parsed;
       const baseRest = parseTugColor(baseline[restName] ?? inner);
       if (baseRest) {
-        const di = baseThis.i - baseRest.i;
-        const dt = baseThis.t - baseRest.t;
-        const i = tr.i + di;
-        const t = Math.max(0, Math.min(100, tr.t + dt));
+        const dl = baseThis.l - baseRest.l;
+        const dc = baseThis.c - baseRest.c;
+        const l = tr.l + dl;
+        const c = Math.max(0, tr.c + dc);
         // Tinted surface rest takes the treatment's alpha; everything else keeps
         // its own baseline alpha (so border/hover translucency is preserved).
-        // Treatment alpha is 0–1 (oklch convention); --tug-color() wants 0–100,
-        // so scale it up — the source of the "transparent at rest" bug.
         let alpha = baseThis.a;
         if (tg === "tinted" && name === restName && name.includes("surface")) {
-          alpha = tr.a !== undefined ? tr.a * 100 : baseThis.a;
+          alpha = tr.a !== undefined ? tr.a : baseThis.a;
         }
-        if (replaceToken(name, formatTugColor(seed.keyHue, i, t, alpha))) keyCount++;
+        if (replaceToken(name, formatTugColor(seed.keyHue, l, c, alpha))) keyCount++;
         continue;
       }
     }
 
     const hue = role === "key" ? seed.keyHue : seed.accentHue;
     const adj = role === "key" ? seed.key : seed.accent;
-    const i = parsed.i + adj.iDelta;
-    const t = parsed.t + adj.tDelta;
+    const l = parsed.l + adj.lDelta;
+    const c = parsed.c + adj.cDelta;
     const a = parsed.a === null ? null : parsed.a + (adj.aDelta ?? 0);
-    const rewritten = formatTugColor(hue, i, t, a);
+    const rewritten = formatTugColor(hue, l, c, a);
     if (replaceToken(name, rewritten)) {
       if (role === "key") keyCount++;
       else accentCount++;
@@ -297,7 +283,7 @@ export function applyDuet(
   if (seed.titlebar) {
     replaceToken(
       "--tugx-chrome-key-surface",
-      formatTugColor(seed.keyHue, seed.titlebar.i, seed.titlebar.t, seed.titlebar.a ?? null),
+      formatTugColor(seed.keyHue, seed.titlebar.l, seed.titlebar.c, seed.titlebar.a ?? null),
     );
   }
 
@@ -320,10 +306,10 @@ export function inverseSeed(inner: string, seed: DuetSeed, role: DuetRole): stri
   const parsed = parseTugColor(inner);
   if (!parsed || !role) return inner;
   const adj = role === "key" ? seed.key : seed.accent;
-  const i = parsed.i - adj.iDelta;
-  const t = parsed.t - adj.tDelta;
+  const l = parsed.l - adj.lDelta;
+  const c = parsed.c - adj.cDelta;
   const a = parsed.a === null ? null : parsed.a - (adj.aDelta ?? 0);
-  return formatInner(hueOf(inner), i, t, a);
+  return formatInner(hueOf(inner), l, c, a);
 }
 
 /**
@@ -351,46 +337,19 @@ export function diffMergeBaseline(
   return merged;
 }
 
-/** An identity seed — re-hue to the token's own hue with zero i/t/a deltas. */
+/** An identity seed — re-hue to the token's own hue with zero l/c/a deltas. */
 export function identitySeed(): DuetSeed {
-  const zero: DuetAdjust = { iDelta: 0, tDelta: 0, aDelta: 0 };
+  const zero: DuetAdjust = { lDelta: 0, cDelta: 0, aDelta: 0 };
   return { keyHue: "blue", key: { ...zero }, accentHue: "blue", accent: { ...zero } };
 }
 
 // ---------------------------------------------------------------------------
-// Perceptual re-hue — derive a theme family member from a base theme.
+// Re-hue — derive a theme family member from a base theme.
 //
-// Intensity/tone are GAMUT-relative (i → this hue's chroma ceiling, t → its
-// canonical lightness), so re-hueing at the same i/t shifts perceived
-// saturation/lightness. Deriving a theme instead preserves absolute OKLCH
-// chroma (C) and lightness (L) per token, so "brio at seafoam" reads the same
-// as brio, just greener — the family-from-one-base model.
+// Tokens carry absolute OKLCH lightness (l) and chroma (c) directly, so deriving
+// a sibling is a pure hue rotation that keeps each token's own l/c — "brio at
+// seafoam" reads the same as brio, just greener — the family-from-one-base model.
 // ---------------------------------------------------------------------------
-
-function peakChromaOf(hue: string): number {
-  return (MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
-}
-function canonicalLOf(hue: string): number {
-  return DEFAULT_CANONICAL_L[hue] ?? 0.77;
-}
-function chromaAt(hue: string, i: number): number {
-  return (i / 100) * peakChromaOf(hue);
-}
-function lightnessAt(hue: string, t: number): number {
-  const cl = canonicalLOf(hue);
-  return L_DARK + (Math.min(t, 50) * (cl - L_DARK)) / 50 + (Math.max(t - 50, 0) * (L_LIGHT - cl)) / 50;
-}
-function intensityForChroma(hue: string, c: number): number {
-  const peak = peakChromaOf(hue);
-  return peak <= 0 ? 0 : Math.max(0, Math.min(100, (c / peak) * 100));
-}
-function toneForLightness(hue: string, l: number): number {
-  const cl = canonicalLOf(hue);
-  const t = l <= cl
-    ? ((l - L_DARK) / (cl - L_DARK)) * 50
-    : 50 + ((l - cl) / (L_LIGHT - cl)) * 50;
-  return Math.max(0, Math.min(100, t));
-}
 
 /** The dominant chromatic hue among an axis's tokens (the theme's brand hue). */
 function dominantHue(counts: Record<string, number>): string | null {
@@ -506,11 +465,8 @@ export function deriveTheme(
     const am = new RegExp(`${ANCHOR_KEY_TOKEN}\\s*:\\s*--tug-color\\(([^)]*)\\)`).exec(baseCss);
     const ap = am ? parseTugColor(am[1]) : null;
     if (ap) {
-      const aHue = hueOf(am![1]);
-      const aC = chromaAt(aHue, ap.i);
-      const aL = lightnessAt(aHue, ap.t);
-      if (aC > 0) cScale = keyAnchor.c / aC;
-      if (aL > 0) lScale = keyAnchor.l / aL;
+      if (ap.c > 0) cScale = keyAnchor.c / ap.c;
+      if (ap.l > 0) lScale = keyAnchor.l / ap.l;
     }
   }
   // 1. Detect the base's Key / Accent brand hues from the duet-classified tokens,
@@ -562,12 +518,10 @@ export function deriveTheme(
         target = nearestHue(deg + accentDelta);
       }
       if (!target) return full; // signal / syntax / far hue — keep
-      const c = chromaAt(hue, parsed.i) * (isKey ? cScale : 1);
-      const l = lightnessAt(hue, parsed.t) * (isKey ? lScale : 1);
-      const i = intensityForChroma(target, c);
-      const t = toneForLightness(target, l);
+      const c = parsed.c * (isKey ? cScale : 1);
+      const l = parsed.l * (isKey ? lScale : 1);
       count++;
-      return `${name}${sep}${formatTugColor(target, i, t, parsed.a)}${semi}`;
+      return `${name}${sep}${formatTugColor(target, l, c, parsed.a)}${semi}`;
     },
   );
 
