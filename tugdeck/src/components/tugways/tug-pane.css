@@ -46,7 +46,7 @@
 body {
   /* --- Pane frame (.tug-pane-chrome outer chrome) --- */
   --tugx-pane-bg: var(--tug7-surface-global-primary-normal-content-rest);
-  --tugx-pane-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-border: var(--tug7-element-card-border-normal-frame-rest, var(--tug7-element-global-border-normal-default-rest));
   --tugx-pane-shadow-active: 0 1px 4px var(--tug7-element-global-shadow-normal-md-rest);
   --tugx-pane-shadow-inactive: 0 1px 4px var(--tug7-element-global-shadow-normal-xs-rest);
   --tugx-pane-dim-overlay: var(--tug7-surface-overlay-primary-normal-highlight-rest);
