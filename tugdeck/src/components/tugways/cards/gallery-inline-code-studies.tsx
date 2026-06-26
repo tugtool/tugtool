@@ -85,10 +85,11 @@ const angleOf = (hue: string): string => {
   return a === undefined ? "" : `${a}°`;
 };
 
-/** The theme-file form a dialed-in spot would be authored as. */
+/** The theme-file form a dialed-in spot would be authored as (whole hundredths). */
 function spotToken(s: TugColorSpec): string {
-  const head = `--tug-color(${hueText(s)}, l: ${s.l}, c: ${s.c}`;
-  return s.a >= 1 ? `${head})` : `${head}, a: ${s.a})`;
+  const u = (n: number): string => String(Math.round(n * 100));
+  const head = `--tug-color(${hueText(s)}, l: ${u(s.l)}, c: ${u(s.c)}`;
+  return s.a >= 1 ? `${head})` : `${head}, a: ${u(s.a)})`;
 }
 
 /**
@@ -192,7 +193,7 @@ export function GalleryInlineCodeStudies(): React.ReactElement {
               focusOrder={0}
             />
             <span className="cg-ics-note">
-              {hueText(current.spot)} ({angleOf(current.spot.hue)}) · l{current.spot.l} c{current.spot.c}
+              {hueText(current.spot)} ({angleOf(current.spot.hue)}) · l{Math.round(current.spot.l * 100)} c{Math.round(current.spot.c * 100)}
             </span>
           </div>
           <div className="cg-ics-row">

@@ -49,8 +49,6 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
   ...NAMED_GRAYS,
 ]);
 
-const fmt = (n: number): string => parseFloat(n.toFixed(4)).toString();
-
 interface Finding {
   line: number;
   recipe: string;
@@ -127,11 +125,11 @@ function printSummary(r: FileReport): void {
   console.log(`${mark} ${r.label}: ${r.total} chromatic · ${r.outSRGB} out-of-sRGB · ${r.outP3.length} out-of-P3`);
 }
 
-/** Full per-recipe drill-down (single-theme mode). */
+/** Full per-recipe drill-down (single-theme mode). Chroma shown in hundredths. */
 function printDetail(r: FileReport): void {
   for (const f of r.outP3) {
     console.log(`    ${r.label}:${f.line}  ${f.recipe}`);
-    console.log(`      chroma ${fmt(f.C)} exceeds P3 max ${fmt(f.maxP3C)} at this lightness`);
+    console.log(`      chroma ${Math.round(f.C * 100)} exceeds P3 max ${Math.floor(f.maxP3C * 100)} at this lightness`);
   }
 }
 

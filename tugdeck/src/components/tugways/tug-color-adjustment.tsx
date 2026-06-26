@@ -92,19 +92,20 @@ export function TugColorAdjustment({
       ) : (
         <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
       )}
+      {/* Deltas display in hundredths (l/a ±100, c ±50); stored as oklch fractions. */}
       <span className="tug-color-adjustment-deltas">
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">lΔ</span>
-          <TugValueInput value={value.lDelta} senderId={ids.l} min={-1} max={1} step={0.01} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
+          <TugValueInput value={Math.round(value.lDelta * 100)} senderId={ids.l} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
         </label>
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">cΔ</span>
-          <TugValueInput value={value.cDelta} senderId={ids.c} min={-MAX_CHROMA} max={MAX_CHROMA} step={0.005} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
+          <TugValueInput value={Math.round(value.cDelta * 100)} senderId={ids.c} min={-Math.round(MAX_CHROMA * 100)} max={Math.round(MAX_CHROMA * 100)} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
         </label>
         {showAlpha && (
           <label className="tug-color-adjustment-delta">
             <span className="tug-color-adjustment-delta-tag">aΔ</span>
-            <TugValueInput value={value.aDelta} senderId={ids.a} min={-1} max={1} step={0.01} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
+            <TugValueInput value={Math.round(value.aDelta * 100)} senderId={ids.a} min={-100} max={100} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
           </label>
         )}
       </span>

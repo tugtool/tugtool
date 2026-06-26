@@ -52,9 +52,10 @@ export function hueText(s: TugColorSpec): string {
   return s.adjacent ? `${s.hue}-${s.adjacent}` : s.hue;
 }
 
-/** Value text: `tug(blue, l:0.3, c:0.08, a:1)` — labeled axes, alpha always shown. */
+/** Value text: `tug(blue, l:30, c:8, a:100)` — labeled axes in whole hundredths, alpha always shown. */
 export function formatTugColorText(s: TugColorSpec): string {
-  return `tug(${hueText(s)}, l:${fmt(clamp01(s.l))}, c:${fmt(clampChroma(s.c))}, a:${fmt(clamp01(s.a))})`;
+  const u = (n: number): string => String(Math.round(n * 100));
+  return `tug(${hueText(s)}, l:${u(clamp01(s.l))}, c:${u(clampChroma(s.c))}, a:${u(clamp01(s.a))})`;
 }
 
 /** Equality on the three axes (+ hue) — used to skip no-op store writes. */

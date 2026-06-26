@@ -408,8 +408,9 @@ export async function handleThemeEditApply(
   const theme = typeof b.theme === "string" ? b.theme.trim() : "";
   const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
   const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : "";
-  // Additive lightness/chroma/alpha deltas off each rung's base (OKLCH units).
-  const num = (v: unknown): number => (v === undefined ? 0 : Number(v));
+  // Additive lightness/chroma/alpha deltas off each rung's base, in hundredths
+  // (the --tug-color() authoring units), stored as oklch fractions.
+  const num = (v: unknown): number => (v === undefined ? 0 : Number(v) / 100);
   const parseAdjust = (v: unknown): { lDelta: number; cDelta: number; aDelta?: number } => {
     const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
     return { lDelta: num(o.lDelta), cDelta: num(o.cDelta), aDelta: num(o.aDelta) };
@@ -425,10 +426,11 @@ export async function handleThemeEditApply(
   const parseTreatment = (v: unknown): { l: number; c: number; a?: number } | undefined => {
     if (!v || typeof v !== "object") return undefined;
     const o = v as Record<string, unknown>;
-    const l = Number(o.l);
-    const c = Number(o.c);
+    // Treatment l/c/a arrive in hundredths; store oklch fractions.
+    const l = Number(o.l) / 100;
+    const c = Number(o.c) / 100;
     if (!Number.isFinite(l) || !Number.isFinite(c)) return undefined;
-    const a = o.a === undefined ? undefined : Number(o.a);
+    const a = o.a === undefined ? undefined : Number(o.a) / 100;
     return { l, c, a: a !== undefined && Number.isFinite(a) ? a : undefined };
   };
   const titlebar = parseTreatment(b.titlebar);

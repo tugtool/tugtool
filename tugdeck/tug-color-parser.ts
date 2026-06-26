@@ -3,23 +3,27 @@
  *
  * --tug-color() is thin sugar over oklch(): it names the hue and carries the OKLCH
  * lightness/chroma/alpha directly.
+ * Values are authored as whole HUNDREDTHS of the oklch coordinate (linear, not the
+ * retired intensity/tone remap): l/a run 0–100, c runs 0–~50, integers only —
+ * fractional values are rejected. The parser divides by 100 into oklch fractions.
+ *
  *   Color:         A named hue, optionally followed by a ring-adjacent hue (hyphenated)
- *   Lightness (l): OKLCH lightness, 0–1 (required for chromatic hues and the gray pseudo-hue)
- *   Chroma (c):    OKLCH chroma, 0–~0.5 (required for chromatic hues)
- *   Alpha (a):     Opacity, 0–1 (default 1)
+ *   Lightness (l): OKLCH lightness ×100, 0–100 (required for chromatic hues and gray)
+ *   Chroma (c):    OKLCH chroma ×100, 0–~50 (required for chromatic hues)
+ *   Alpha (a):     Opacity ×100, 0–100 (default 100)
  *
  * Supported color forms (60-name vocabulary: 48 chromatic + 11 achromatic + 1 transparent):
- *   --tug-color(indigo, l: 0.30, c: 0.08)   chromatic hue → oklch(0.30 0.08 260)
- *   --tug-color(cobalt-indigo, l: 0.3, c: 0.05) hyphenated adjacency (cobalt dominant)
- *   --tug-color(gray, l: 0.43)              gray pseudo-hue (achromatic, arbitrary L)
+ *   --tug-color(indigo, l: 30, c: 8)        chromatic hue → oklch(0.30 0.08 260)
+ *   --tug-color(cobalt-indigo, l: 30, c: 5) hyphenated adjacency (cobalt dominant)
+ *   --tug-color(gray, l: 43)                gray pseudo-hue (achromatic, arbitrary L)
  *   --tug-color(paper)                      named gray (fixed L, no l/c)
- *   --tug-color(white, a: 0.08)             fixed endpoint with alpha
+ *   --tug-color(white, a: 8)                fixed endpoint with alpha
  *   --tug-color(transparent)                fully transparent (always oklch(0 0 0 / 0))
  *
  * Supported syntax forms:
- *   --tug-color(indigo, l: 0.3, c: 0.08)          labeled (canonical form)
- *   --tug-color(indigo, 0.3, 0.08)                positional: color, lightness, chroma
- *   --tug-color(indigo, l: 0.3, c: 0.08, a: 0.5)  with alpha
+ *   --tug-color(indigo, l: 30, c: 8)          labeled (canonical form)
+ *   --tug-color(indigo, 30, 8)                positional: color, lightness, chroma
+ *   --tug-color(indigo, l: 30, c: 8, a: 50)   with alpha
  *
  * Labels: l/lightness, c/chroma, a/alpha. Color is the first positional argument.
  * Positional order: color, lightness, chroma, alpha. Positional args must precede labeled args.
@@ -248,16 +252,17 @@ const VALID_LABELS = "l, lightness, c, chroma, a, or alpha";
 // Positional slot order (color is always first; lightness/chroma/alpha follow).
 const SLOT_ORDER = ["color", "lightness", "chroma", "alpha"] as const;
 
-// Default for the optional alpha slot. Lightness/chroma have no default — they are
-// required for chromatic hues and ignored for fixed achromatics.
-const DEFAULTS = { alpha: 1 } as const;
+// Default for the optional alpha slot, in authoring units (hundredths). Lightness/
+// chroma have no default — required for chromatic hues, ignored for fixed achromatics.
+const DEFAULTS = { alpha: 100 } as const;
 
-// Permitted numeric ranges per slot (oklch-native). Chroma shares the system-wide
-// MAX_CHROMA ceiling so the parser, picker, and theme editor agree on one bound.
+// Authoring units are hundredths of the oklch coordinate: l/a run 0–100, c runs
+// 0–(MAX_CHROMA × 100). Parsed values are divided by 100 into oklch fractions, so
+// the resolver and everything downstream stay in 0–1 space.
 const RANGES: Record<string, [number, number]> = {
-  lightness: [0, 1],
-  chroma: [0, MAX_CHROMA],
-  alpha: [0, 1],
+  lightness: [0, 100],
+  chroma: [0, MAX_CHROMA * 100],
+  alpha: [0, 100],
 };
 
 // ---------------------------------------------------------------------------
@@ -441,9 +446,20 @@ function parseNumericTokens(
     return null;
   }
 
+  // Span covers from anchor token to end of last token consumed.
+  const lastTok = tokens.length === 2 ? tokens[1] : tokens[0];
+
+  // Authoring units are whole hundredths — fractional values are not supported.
+  if (!Number.isInteger(value)) {
+    errors.push({
+      message: `Value ${value} for ${slotName} must be a whole number (hundredths, e.g. l: 30)`,
+      pos: anchorTok.pos,
+      end: lastTok.end,
+    });
+    return null;
+  }
+
   if (value < min || value > max) {
-    // Span covers from anchor token to end of last token consumed
-    const lastTok = tokens.length === 2 ? tokens[1] : tokens[0];
     errors.push({
       message: `Value ${value} is out of range for ${slotName} (${min}–${max})`,
       pos: anchorTok.pos,
@@ -636,9 +652,10 @@ export function parseTugColor(
     return { ok: false, errors };
   }
 
-  const resolvedLightness = lightness ?? 0;
-  const resolvedChroma = chroma ?? 0;
-  const resolvedAlpha = alpha ?? DEFAULTS.alpha;
+  // Authoring units are hundredths; store oklch fractions for the resolver.
+  const resolvedLightness = (lightness ?? 0) / 100;
+  const resolvedChroma = (chroma ?? 0) / 100;
+  const resolvedAlpha = (alpha ?? DEFAULTS.alpha) / 100;
   const resolvedColor = color!;
 
   // Soft warnings — flag l/c supplied where they are ignored. Spans cover the full

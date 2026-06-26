@@ -31,14 +31,14 @@ function processCSS(css: string): string {
 
 describe("postcss-tug-color Vite integration: plugin processes --tug-color() in CSS", () => {
   it("--tug-color(blue, l, c) expands to the correct oklch() value", () => {
-    const css = "a { color: --tug-color(blue, l: 0.3115, c: 0.0143); }";
+    const css = "a { color: --tug-color(blue, l: 31, c: 8); }";
     const result = processCSS(css);
-    expect(result).toContain(`oklch(0.3115 0.0143 ${HUE_FAMILIES.blue})`);
+    expect(result).toContain(`oklch(0.31 0.08 ${HUE_FAMILIES.blue})`);
     expect(result).not.toContain("--tug-color(");
   });
 
   it("expands --tug-color() in a realistic CSS rule (background declaration)", () => {
-    const css = "body { background: --tug-color(cobalt, l: 0.31, c: 0.018); }";
+    const css = "body { background: --tug-color(cobalt, l: 31, c: 2); }";
     const result = processCSS(css);
     expect(result).not.toContain("--tug-color(");
     expect(result).toMatch(/oklch\(/);
@@ -47,7 +47,7 @@ describe("postcss-tug-color Vite integration: plugin processes --tug-color() in 
   it("preserves var() and other CSS functions alongside --tug-color() expansion", () => {
     const css = [
       ".card {",
-      "  color: --tug-color(blue, l: 0.31, c: 0.014);",
+      "  color: --tug-color(blue, l: 31, c: 2);",
       "  background: var(--tug-surface);",
       "  border: 1px solid rgba(0, 0, 0, 0.2);",
       "}",
@@ -87,13 +87,13 @@ describe("postcss-tug-color Vite integration: coexistence with Tailwind v4", () 
     // not corrupt CSS it doesn't recognise.
     const css = [
       ".btn {",
-      "  color: --tug-color(blue, l: 0.31, c: 0.014);",
+      "  color: --tug-color(blue, l: 31, c: 2);",
       "  font-weight: bold;",
       "}",
     ].join("\n");
     const result = processCSS(css);
     expect(result).not.toContain("--tug-color(");
-    expect(result).toContain(`oklch(0.31 0.014 ${HUE_FAMILIES.blue})`);
+    expect(result).toContain(`oklch(0.31 0.02 ${HUE_FAMILIES.blue})`);
   });
 
   it("CSS custom property declarations (non-tug-color) pass through unchanged", () => {

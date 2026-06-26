@@ -153,22 +153,23 @@ function parseTugColor(inner: string): Parsed | null {
   for (const p of parts.slice(1)) {
     const m = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!m) continue;
-    if (m[1] === "l") l = parseFloat(m[2]);
-    if (m[1] === "c") c = parseFloat(m[2]);
-    if (m[1] === "a") a = parseFloat(m[2]);
+    // Authoring units are hundredths; store oklch fractions.
+    if (m[1] === "l") l = parseFloat(m[2]) / 100;
+    if (m[1] === "c") c = parseFloat(m[2]) / 100;
+    if (m[1] === "a") a = parseFloat(m[2]) / 100;
   }
   if (!CHROMATIC.has(hue)) return null;
   return { l, c, a };
 }
 
-/** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]`. */
+/** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]` in hundredths. */
 function formatInner(hue: string, l: number, c: number, a: number | null): string {
-  // Clamp every axis to its valid --tug-color() range — treatment deltas and
-  // chroma scaling can otherwise overshoot and the postcss plugin rejects it.
+  // Clamp every axis to its valid range (fractions) — treatment deltas and chroma
+  // scaling can otherwise overshoot — then emit authoring units (hundredths).
   const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, n));
-  const fmt = (n: number): string => parseFloat(n.toFixed(4)).toString();
-  const parts = [`l: ${fmt(clamp(l, 1))}`, `c: ${fmt(clamp(c, MAX_CHROMA))}`];
-  if (a !== null) parts.push(`a: ${fmt(clamp(a, 1))}`);
+  const u = (n: number): string => String(Math.round(n * 100));
+  const parts = [`l: ${u(clamp(l, 1))}`, `c: ${u(clamp(c, MAX_CHROMA))}`];
+  if (a !== null) parts.push(`a: ${u(clamp(a, 1))}`);
   return `${hue}, ${parts.join(", ")}`;
 }
 

@@ -105,9 +105,10 @@ function tokenSpec(css: string, name: string): TugColorSpec | null {
   for (const p of parts.slice(1)) {
     const mm = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!mm) continue;
-    if (mm[1] === "l") l = parseFloat(mm[2]);
-    else if (mm[1] === "c") c = parseFloat(mm[2]);
-    else a = parseFloat(mm[2]);
+    // Authoring units are hundredths; store oklch fractions.
+    if (mm[1] === "l") l = parseFloat(mm[2]) / 100;
+    else if (mm[1] === "c") c = parseFloat(mm[2]) / 100;
+    else a = parseFloat(mm[2]) / 100;
   }
   return { hue, l, c, a };
 }

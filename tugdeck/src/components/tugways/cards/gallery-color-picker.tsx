@@ -67,10 +67,11 @@ export function GalleryColorWells(): React.ReactElement {
     const sender = typeof event.sender === "string" ? event.sender : "";
     const v = typeof event.value === "number" ? event.value : NaN;
     if (Number.isNaN(v)) return;
+    // Steppers emit hundredths; deltas are stored as oklch fractions.
     const ids = colorAdjustSenders(ADJ_ID);
-    if (sender === ids.l) setDelta((d) => ({ ...d, lDelta: v }));
-    else if (sender === ids.c) setDelta((d) => ({ ...d, cDelta: v }));
-    else if (sender === ids.a) setDelta((d) => ({ ...d, aDelta: v }));
+    if (sender === ids.l) setDelta((d) => ({ ...d, lDelta: v / 100 }));
+    else if (sender === ids.c) setDelta((d) => ({ ...d, cDelta: v / 100 }));
+    else if (sender === ids.a) setDelta((d) => ({ ...d, aDelta: v / 100 }));
   }, []);
 
   const { ResponderScope, responderRef } = useResponder({
