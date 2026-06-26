@@ -283,6 +283,65 @@ export function clearDropCaret(view: EditorView): void {
   }
 }
 
+/**
+ * Quiet window after the last `dragover` before the watchdog calls a
+ * drag dead. Must comfortably exceed WebKit's steady `dragover` cadence
+ * (which keeps firing while a drag is live, even stationary) so a
+ * held-still drag is never mistaken for a cancel. A false positive only
+ * costs a caret repaint on the next move, so erring slightly long is
+ * cheap; erring short would flicker mid-drag.
+ */
+const DROP_CANCEL_QUIET_MS = 250;
+
+/**
+ * Window-level drag-cancel watchdog.
+ *
+ * When an OS-originated (Finder) file drag is cancelled with Escape,
+ * WebKit dispatches NO terminal DOM event — no `dragend`, and the
+ * cancel `dragleave` lands on the document rather than the element
+ * under the cursor. So neither the editor's nor the strip's
+ * element-level `dragleave`/`dragend` reliably fires, and the drop
+ * caret + ring would hang until the next drag. The one signal that
+ * survives a cancel is the *absence* of further `dragover`: WebKit
+ * fires `dragover` on a steady cadence while a drag is live and stops
+ * the instant it ends. This plugin arms a timer on each window
+ * `dragover` and tears the caret + ring down if the stream goes quiet —
+ * covering Escape, drag-off-window, and any other silent cancel for
+ * every surface that paints into the shared caret state. A real drop /
+ * dragend disarms it first, so the normal path is untouched.
+ */
+function tugDropCancelWatchdog(host: HTMLElement | null): Extension {
+  return ViewPlugin.define((view) => {
+    let timer: number | null = null;
+    const disarm = (): void => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+    const onDragOver = (event: DragEvent): void => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
+      disarm();
+      timer = window.setTimeout(() => {
+        timer = null;
+        setDropActive(host, null);
+        clearDropCaret(view);
+      }, DROP_CANCEL_QUIET_MS);
+    };
+    window.addEventListener("dragover", onDragOver, true);
+    window.addEventListener("drop", disarm, true);
+    window.addEventListener("dragend", disarm, true);
+    return {
+      destroy(): void {
+        disarm();
+        window.removeEventListener("dragover", onDragOver, true);
+        window.removeEventListener("drop", disarm, true);
+        window.removeEventListener("dragend", disarm, true);
+      },
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Drop-caret painter (ViewPlugin)
 // ---------------------------------------------------------------------------
@@ -859,6 +918,7 @@ export function tugDropExtension(
     tugDropCaretField,
     tugDropCaretPlugin,
     tugDropCaretTheme,
+    tugDropCancelWatchdog(host),
     EditorView.domEventHandlers({
       dragenter(event, _view) {
         // Only claim file drags. Keyboard-driven or application-
