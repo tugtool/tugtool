@@ -12,7 +12,7 @@ TugColor operates in OKLCH — a perceptually uniform color space. A TugColor va
 
 - **Hue:** one of 48 named hues (or a hyphenated adjacency pair), supplying the OKLCH hue angle.
 - **Lightness (l):** 0–1. OKLCH L, used verbatim.
-- **Chroma (c):** 0–~0.4. OKLCH C, used verbatim.
+- **Chroma (c):** 0–~0.5. OKLCH C, used verbatim.
 - **Alpha (a):** 0–1. Opacity. Defaults to 1 (fully opaque).
 
 There is **no remapping**: `--tug-color(indigo, l: 0.30, c: 0.08)` expands to `oklch(0.30 0.08 260)`. The hue names (and adjacency) are the only abstraction over raw `oklch()` — they name the angle so authors don't memorize degrees.
@@ -111,7 +111,7 @@ A compact CSS notation that expands to `oklch()` at build time via a PostCSS plu
 
 - **Chromatic hues require explicit `l` and `c`.** (The model is honest sugar over oklch — there is no canonical default.)
 - Labels `l:`/`c:`/`a:` may appear in any order after the hue; positional order is `color, lightness, chroma, alpha`.
-- Ranges: `l` 0–1, `c` 0–~0.4, `a` 0–1.
+- Ranges: `l` 0–1, `c` 0–~0.5, `a` 0–1.
 - The plugin expands these to concrete `oklch(L C h)` values. Zero runtime cost — built CSS contains only standard `oklch()`.
 
 ### `resolveTugColorToOklch()`

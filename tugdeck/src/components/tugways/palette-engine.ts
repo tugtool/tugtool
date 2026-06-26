@@ -17,6 +17,16 @@
  * @module components/tugways/palette-engine
  */
 
+/**
+ * OKLCH chroma ceiling. The single source for every chroma bound in the system —
+ * the parser's accepted range, the picker/adjustment slider caps, and the
+ * theme-editor clamp all reference this. Set above the most saturated authored
+ * value: themes intentionally push past the sRGB boundary (signals reach c≈0.44 so
+ * P3 displays render them richer than sRGB; the browser gamut-maps the rest), and
+ * 0.5 leaves headroom for the theme editor's chroma scaling without clipping.
+ */
+export const MAX_CHROMA = 0.5;
+
 // ---------------------------------------------------------------------------
 // HUE_FAMILIES — 48 named hue families mapped to OKLCH hue angles
 // ---------------------------------------------------------------------------
@@ -133,36 +143,17 @@ export function resolveHyphenatedHue(a: string, b: string): number {
   return ((2 / 3) * angleA + (1 / 3) * adjustedB + 360) % 360;
 }
 
-/**
- * Check if two hue names are adjacent in the ADJACENCY_RING (distance 1, with wrap).
- */
-export function isAdjacent(a: string, b: string): boolean {
-  const idxA = ADJACENCY_RING.indexOf(a);
-  const idxB = ADJACENCY_RING.indexOf(b);
-  if (idxA === -1 || idxB === -1) return false;
-  const dist = Math.abs(idxA - idxB);
-  return dist === 1 || dist === ADJACENCY_RING.length - 1;
-}
-
 // ---------------------------------------------------------------------------
 // Named Grays — fixed-lightness achromatic values
 // ---------------------------------------------------------------------------
 
 /**
- * Named gray tone mapping: descriptive name → its position label (10–90), kept so
- * callers can enumerate the named grays. The actual lightness is in ACHROMATIC_L_VALUES.
+ * The 9 descriptive named grays (dark to light). Each name's fixed lightness is in
+ * ACHROMATIC_L_VALUES; this set is the membership check / enumeration source.
  */
-export const NAMED_GRAYS: Record<string, number> = {
-  pitch:     10,
-  ink:       20,
-  charcoal:  30,
-  carbon:    40,
-  graphite:  50,
-  vellum:    60,
-  parchment: 70,
-  linen:     80,
-  paper:     90,
-};
+export const NAMED_GRAYS: ReadonlySet<string> = new Set([
+  "pitch", "ink", "charcoal", "carbon", "graphite", "vellum", "parchment", "linen", "paper",
+]);
 
 /**
  * Mapping from each achromatic name to its fixed OKLCH L value.
@@ -232,7 +223,7 @@ export function resolveTugColorToOklch(
   if (name === "white") return { L: 1, C: 0, h: 0, alpha };
 
   // Named grays (pitch through paper) — fixed L, achromatic
-  if (NAMED_GRAYS[name] !== undefined) {
+  if (NAMED_GRAYS.has(name)) {
     return { L: ACHROMATIC_L_VALUES[name] ?? 0.5, C: 0, h: 0, alpha };
   }
 

@@ -9,12 +9,12 @@
  */
 
 import {
+  MAX_CHROMA,
   resolveTugColorToOklch,
   type ResolvedOklch,
 } from "./palette-engine";
 
-/** Practical OKLCH chroma ceiling for the picker (well beyond any in-gamut hue). */
-export const MAX_CHROMA = 0.4;
+export { MAX_CHROMA };
 
 /** A TugColor value: a hue (optionally adjacent) with oklch l / c / a. */
 export interface TugColorSpec {
@@ -61,19 +61,4 @@ export function formatTugColorText(s: TugColorSpec): string {
 export function specsEqual(a: TugColorSpec, b: TugColorSpec): boolean {
   return a.hue === b.hue && (a.adjacent ?? "") === (b.adjacent ?? "") &&
     a.l === b.l && a.c === b.c && a.a === b.a;
-}
-
-// ---------------------------------------------------------------------------
-// Axis accessors. In the oklch model these are the spec's own l / c — kept as
-// functions so callers that read "the absolute chroma / lightness" stay terse.
-// ---------------------------------------------------------------------------
-
-/** The spec's absolute OKLCH chroma. */
-export function chromaOf(s: TugColorSpec): number {
-  return s.c;
-}
-
-/** The spec's absolute OKLCH lightness. */
-export function lightnessOf(s: TugColorSpec): number {
-  return s.l;
 }

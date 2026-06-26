@@ -63,7 +63,7 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
   "black",
   "white",
   "gray",
-  ...Object.keys(NAMED_GRAYS),
+  ...NAMED_GRAYS,
   "transparent",
 ]);
 

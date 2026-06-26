@@ -39,7 +39,7 @@ import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-order";
 import { CardIdContext } from "@/lib/card-id-context";
 import { setActiveColorTarget } from "@/components/tugways/active-color-target";
-import { chromaOf, lightnessOf, type TugColorSpec } from "@/components/tugways/tug-color-spec";
+import { type TugColorSpec } from "@/components/tugways/tug-color-spec";
 import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
 import { deriveTheme } from "../../../../theme-editor-core";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -154,7 +154,7 @@ export function GalleryThemeEditor(): React.ReactElement {
   }, [output]);
 
   // Base audition — derive the base onto itself with the explicit key color.
-  const baseAnchor = useMemo(() => ({ c: chromaOf(baseKey), l: lightnessOf(baseKey) }), [baseKey]);
+  const baseAnchor = useMemo(() => ({ c: baseKey.c, l: baseKey.l }), [baseKey]);
   const basePreview = useMemo(() => {
     const { css } = deriveTheme(BASE_CSS[baseSel], baseKey.hue, undefined, baseAnchor);
     return PREVIEW.map(([label, name]) => [label, tokenSpec(css, name)] as const);

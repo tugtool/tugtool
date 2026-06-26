@@ -5,7 +5,7 @@
  * lightness/chroma/alpha directly.
  *   Color:         A named hue, optionally followed by a ring-adjacent hue (hyphenated)
  *   Lightness (l): OKLCH lightness, 0–1 (required for chromatic hues and the gray pseudo-hue)
- *   Chroma (c):    OKLCH chroma, 0–~0.4 (required for chromatic hues)
+ *   Chroma (c):    OKLCH chroma, 0–~0.5 (required for chromatic hues)
  *   Alpha (a):     Opacity, 0–1 (default 1)
  *
  * Supported color forms (60-name vocabulary: 48 chromatic + 11 achromatic + 1 transparent):
@@ -33,6 +33,8 @@
  * @module tug-color-parser
  */
 
+import { MAX_CHROMA } from "./src/components/tugways/palette-engine";
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -46,7 +48,7 @@ export interface TugColorParsed {
   color: TugColorValue;
   /** OKLCH lightness, 0–1. Undefined for fixed achromatics where L is implied. */
   lightness: number;
-  /** OKLCH chroma, 0–~0.4. Undefined / 0 for achromatics. */
+  /** OKLCH chroma, 0–~0.5. Undefined / 0 for achromatics. */
   chroma: number;
   /** Alpha, 0–1. */
   alpha: number;
@@ -250,10 +252,11 @@ const SLOT_ORDER = ["color", "lightness", "chroma", "alpha"] as const;
 // required for chromatic hues and ignored for fixed achromatics.
 const DEFAULTS = { alpha: 1 } as const;
 
-// Permitted numeric ranges per slot (oklch-native).
+// Permitted numeric ranges per slot (oklch-native). Chroma shares the system-wide
+// MAX_CHROMA ceiling so the parser, picker, and theme editor agree on one bound.
 const RANGES: Record<string, [number, number]> = {
   lightness: [0, 1],
-  chroma: [0, 1],
+  chroma: [0, MAX_CHROMA],
   alpha: [0, 1],
 };
 

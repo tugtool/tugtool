@@ -12,3 +12,6 @@ styles/themes/theme-editor-state.json
 rename-tug7.json
 rename-tugc.json
 rename-tugx.json
+
+# tug-color losslessness baseline (local snapshot for verify-tug-color-lossless.ts)
+scripts/.tug-color-baseline.json

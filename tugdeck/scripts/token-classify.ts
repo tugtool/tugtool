@@ -28,7 +28,7 @@ import {
 const HUE_NAMES = new Set(Object.keys(HUE_FAMILIES));
 
 /** Set of all named gray names, e.g. "pitch", "ink", "graphite", … */
-const NAMED_GRAY_NAMES = new Set(Object.keys(NAMED_GRAYS));
+const NAMED_GRAY_NAMES = new Set(NAMED_GRAYS);
 
 // ---------------------------------------------------------------------------
 // tugx extension allowlist

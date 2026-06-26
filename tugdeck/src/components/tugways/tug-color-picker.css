@@ -105,15 +105,9 @@
   box-shadow: 0 0 0 1px var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* Preset choice group — centered under the hue grid. */
-.tug-color-picker-presets {
-  display: flex;
-  justify-content: center;
-}
-
-/* TugColor / OKLCH groups — bordered TugBoxes with a slider stack. Centered to a
-   fixed width (matching the hue grid's centered feel); min-width:0 stops the
-   fieldset from shrink-wrapping to its content. */
+/* OKLCH group — a bordered TugBox with the lightness/chroma/alpha slider stack.
+   Centered to a fixed width (matching the hue grid's centered feel); min-width:0
+   stops the fieldset from shrink-wrapping to its content. */
 .tug-color-picker-box {
   align-self: center;
   width: 100%;

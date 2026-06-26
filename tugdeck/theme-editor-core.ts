@@ -18,12 +18,10 @@
 
 import {
   HUE_FAMILIES,
+  MAX_CHROMA,
 } from "./src/components/tugways/palette-engine";
 
 const CHROMATIC = new Set(Object.keys(HUE_FAMILIES));
-
-/** Practical OKLCH chroma ceiling — clamps deltas/scaling so postcss accepts the value. */
-const MAX_C = 0.5;
 
 /** A chrome treatment — a TugColor of the Key hue with its own lightness / chroma (/ alpha). */
 export interface DuetTreatment {
@@ -169,7 +167,7 @@ function formatInner(hue: string, l: number, c: number, a: number | null): strin
   // chroma scaling can otherwise overshoot and the postcss plugin rejects it.
   const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, n));
   const fmt = (n: number): string => parseFloat(n.toFixed(4)).toString();
-  const parts = [`l: ${fmt(clamp(l, 1))}`, `c: ${fmt(clamp(c, MAX_C))}`];
+  const parts = [`l: ${fmt(clamp(l, 1))}`, `c: ${fmt(clamp(c, MAX_CHROMA))}`];
   if (a !== null) parts.push(`a: ${fmt(clamp(a, 1))}`);
   return `${hue}, ${parts.join(", ")}`;
 }

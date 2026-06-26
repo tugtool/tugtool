@@ -20,7 +20,7 @@ import { ADJACENCY_RING, NAMED_GRAYS } from "@/components/tugways/palette-engine
 const KNOWN_HUES = new Set([
   ...ADJACENCY_RING,
   "black", "white", "gray", "transparent",
-  ...Object.keys(NAMED_GRAYS),
+  ...NAMED_GRAYS,
 ]);
 
 /** Assert a successful parse (with the adjacency ring) and return the value. */
@@ -185,5 +185,38 @@ describe("findTugColorCalls", () => {
     const r: ReturnType<typeof findTugColorCallsWithWarnings> =
       findTugColorCallsWithWarnings("--tug-color(red, l: 0.5, c: 0.1");
     expect(r.warnings.length).toBeGreaterThan(0);
+  });
+});
+
+describe("tokenizer + argument edge cases", () => {
+  it("decodes a CSS hex escape in the hue name (\\72 ed → red)", () => {
+    expect(expectOk("\\72 ed, l: 0.5, c: 0.1").color.name).toBe("red");
+  });
+
+  it("treats NBSP (U+00A0) as whitespace", () => {
+    const v = expectOk("red, l: 0.5, c: 0.1");
+    expect(v.lightness).toBe(0.5);
+    expect(v.chroma).toBe(0.1);
+  });
+
+  it("rejects a positional argument after a labeled one", () => {
+    expect(expectErr("red, l: 0.5, 0.1").join()).toContain("Positional argument after labeled");
+  });
+
+  it("rejects a duplicate label", () => {
+    expect(expectErr("red, l: 0.5, l: 0.3, c: 0.1").join()).toContain("Duplicate value");
+  });
+
+  it("rejects a bare '-' with no number", () => {
+    expect(expectErr("red, l: -, c: 0.1").join()).toContain("Bare '-'");
+  });
+
+  it("rejects chroma above the MAX_CHROMA ceiling", () => {
+    expect(expectErr("red, l: 0.5, c: 0.6").join()).toContain("range");
+  });
+
+  it("rejects an empty call", () => {
+    const r = parseTugColor("", KNOWN_HUES, ADJACENCY_RING);
+    expect(r.ok).toBe(false);
   });
 });
