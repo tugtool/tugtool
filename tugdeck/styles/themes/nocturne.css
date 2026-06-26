@@ -197,7 +197,7 @@ body {
   --tug7-element-tone-text-normal-agent-rest: --tug-color(aqua, i: 54, t: 78);
   --tug7-element-tone-text-normal-caution-rest: --tug-color(yellow, t: 47);
   --tug7-element-tone-text-normal-spot-rest: --tug-color(grass, i: 50, t: 100);
-  --tug7-element-tone-text-normal-code-rest: color-mix(in srgb, var(--tug7-element-tone-text-normal-spot-rest) 40%, color-mix(in srgb, currentColor 78%, transparent));
+  --tug7-element-tone-text-normal-code-rest: color-mix(in srgb, var(--tug7-element-tone-text-normal-spot-rest) 30%, color-mix(in srgb, currentColor 78%, transparent));
   --tug7-element-tone-text-normal-danger-rest: --tug-color(red, t: 86);
   --tug7-element-tone-text-normal-data-rest: --tug-color(teal, t: 87);
   --tug7-element-tone-text-normal-success-rest: --tug-color(green, t: 88);
