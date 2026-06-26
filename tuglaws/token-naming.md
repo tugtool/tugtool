@@ -8,22 +8,24 @@
 
 ## Prefix System
 
-All `--tug*-` CSS custom properties use one of four prefixes:
+All `--tug*-` CSS custom properties use one of three prefixes:
 
 | Prefix | Kind | Parse Rule | Examples |
 |--------|------|-----------|---------|
 | `--tug7-` | Seven-slot semantic token | Always 7 segments after prefix. Machine-parseable. | `--tug7-element-global-text-normal-plain-rest` |
-| `--tugc-` | Color palette | Hue constants, named grays, global anchors. | `--tugc-red-h`, `--tugc-gray-ink`, `--tugc-l-dark` |
 | `--tugx-` | Extension | Component aliases, shared utilities. Locally defined. | `--tugx-pane-border`, `--tugx-control-disabled-opacity` |
 | `--tug-` | Scale / dimension | Spacing, radius, motion, font, icon sizes. Simple global values. | `--tug-space-md`, `--tug-radius-lg`, `--tug-motion-duration-fast` |
 
 An agent seeing a CSS custom property classifies it instantly by prefix:
 - **`--tug7-`** → Seven-slot token. Split on `-`, read the 7 slots. Look up in this document.
-- **`--tugc-`** → Palette color. Defined in `tug-palette.css`. Never component-scoped.
 - **`--tugx-`** → Extension. Trace to its definition — component CSS `body {}` block or shared utility file.
 - **`--tug-`** → Scale. Global dimensional value. Never ambiguous with the above.
 
 No counting hyphens. No tracing. No guessing.
+
+The **palette tier** (the 48-hue vocabulary and named grays) has no CSS prefix: it lives in
+`palette-engine.ts` and is consumed only through `--tug-color(...)` recipes, which the build expands to
+`oklch()`. (An earlier `--tugc-*` palette-constant prefix was retired with the intensity/tone model.)
 
 ---
 

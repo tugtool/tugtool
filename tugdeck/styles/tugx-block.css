@@ -10,7 +10,7 @@
  * ## Where this fits in the three-tier architecture
  *
  * Per `tuglaws/color-palette.md`:
- *  - Palette tier (`--tugc-*`) — theme-invariant hue / gray anchors.
+ *  - Palette tier (palette-engine.ts) — theme-invariant hue / gray vocabulary (no CSS prefix).
  *  - Base tier   (`--tug7-*`) — theme-specific seven-slot semantic tokens.
  *  - Component   (`--tugx-*`) — component aliases AND shared utilities.
  *

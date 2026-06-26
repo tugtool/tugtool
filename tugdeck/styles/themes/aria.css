@@ -1072,7 +1072,7 @@ body {
 
   /* `--tugx-file-*` slots live in file-block.css's body{} block per
    * tuglaws/token-naming.md (`--tugx-` is component-local; theme files
-   * own only `--tug7-`, `--tug-`, `--tugc-`). Per-theme variance flows
+   * own only `--tug7-`, `--tug-`). Per-theme variance flows
    * through `--tug7-*` base tokens those aliases resolve to. */
 
 

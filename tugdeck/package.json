@@ -9,7 +9,6 @@
     "check": "bunx tsc --noEmit",
     "dev": "vite",
     "extract:tug-token-names": "bun run scripts/extract-tug-token-names.ts",
-    "generate:palette": "bun run scripts/generate-tug-palette.ts",
     "audit:tokens": "bun run scripts/audit-tokens.ts",
     "audit:theme-contrast": "bun run scripts/audit-theme-contrast.ts",
     "generate:rename-maps": "bun run scripts/generate-rename-maps.ts",

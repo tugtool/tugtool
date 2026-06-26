@@ -234,7 +234,7 @@ export function GalleryFocusLanguage(): React.ReactElement {
         <SectionHead
           title="4 · Continuous / slider"
           branch="ring"
-          note="The COMPLETE control is the label + track + value readout. Keyboard focus rings the WHOLE component and FILLS the thumb solid (hollow at rest). There is no separate 'selected' — the value (the fill length) is the state; it just commits live as you move. Covers TugSlider, TugHueStrip, TugColorStrip, the SplitPane divider."
+          note="The COMPLETE control is the label + track + value readout. Keyboard focus rings the WHOLE component and FILLS the thumb solid (hollow at rest). There is no separate 'selected' — the value (the fill length) is the state; it just commits live as you move. Covers TugSlider and the SplitPane divider."
         />
         <div className="fl-grid">
           <Cell label="rest">

@@ -9,9 +9,8 @@
  * (see that file's header for the no-flash rationale).
  *
  * Import order (enforced in globals.css):
- *   1. tug-palette.css     — TugColor palette constants (--tug-{hue}-h, --tug-{hue}-canonical-l, --tug-{hue}-peak-c)
- *   2. tug.css             — multipliers, motion rules, scrollbars [this file]
- *   3. Component CSS files — Tier 3 component tokens (--tug-<component>-*)
+ *   1. tug.css             — multipliers, motion rules, scrollbars [this file]
+ *   2. Component CSS files — Tier 3 component tokens (--tug-<component>-*)
  *
  * Chromatic color tokens use --tug-color() notation, expanded to oklch() at build
  * time by postcss-tug-color. Semi-transparent chromatic tokens use the `a:` (alpha)

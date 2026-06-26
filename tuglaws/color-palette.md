@@ -1,6 +1,6 @@
 # Color Palette
 
-*The TugColor palette is a continuous OKLCH color space. Components consume semantic tokens; the palette provides the colors those tokens resolve to.*
+*TugColor is a thin, named-hue sugar over OKLCH. Components consume semantic tokens; those tokens resolve to `--tug-color(...)` recipes that carry OKLCH coordinates directly.*
 
 *Cross-references: `[D##]` → [design-decisions.md](design-decisions.md). `[L##]` → [tuglaws.md](tuglaws.md).*
 
@@ -8,21 +8,16 @@
 
 ## Color Space
 
-TugColor operates in OKLCH — a perceptually uniform color space with three axes:
+TugColor operates in OKLCH — a perceptually uniform color space. A TugColor value is a **named hue** plus three OKLCH coordinates:
 
-- **Hue (h):** Angle in degrees around the color wheel (0°–360°).
-- **Intensity (i):** 0–100. Controls chroma (saturation). 0 = achromatic, 100 = maximum chroma for the hue.
-- **Tone (t):** 0–100. Controls lightness via a piecewise mapping through each hue's canonical lightness.
-- **Alpha (a):** 0–100. Opacity. Defaults to 100 (fully opaque).
+- **Hue:** one of 48 named hues (or a hyphenated adjacency pair), supplying the OKLCH hue angle.
+- **Lightness (l):** 0–1. OKLCH L, used verbatim.
+- **Chroma (c):** 0–~0.4. OKLCH C, used verbatim.
+- **Alpha (a):** 0–1. Opacity. Defaults to 1 (fully opaque).
 
-Two global lightness anchors define the tone endpoints:
+There is **no remapping**: `--tug-color(indigo, l: 0.30, c: 0.08)` expands to `oklch(0.30 0.08 260)`. The hue names (and adjacency) are the only abstraction over raw `oklch()` — they name the angle so authors don't memorize degrees.
 
-```
-L_DARK  = 0.15   (tone 0)
-L_LIGHT = 0.96   (tone 100)
-```
-
-Each hue has a **canonical lightness** — the L value at which it achieves maximum chroma within sRGB gamut. Tone 50 produces canonical lightness. Below 50, L interpolates toward L_DARK. Above 50, L interpolates toward L_LIGHT.
+> **History.** Earlier TugColor replaced OKLCH chroma/lightness with abstract *intensity* (0–100, gamut-relative chroma) and *tone* (0–100, piecewise lightness through a per-hue canonical L). That remapping was retired: it added conceptual overhead and a large conversion layer, its "shared tone skeleton" was undercut by per-hue canonical-L, and its headline benefit (P3 widening) is already handled by the browser (see [P3 Gamut](#p3-gamut)).
 
 ---
 
@@ -57,7 +52,7 @@ Each hue has a **canonical lightness** — the L value at which it achieves maxi
 | 23 | jade | 147.5° | | 47 | fuchsia | 350° |
 | 24 | mint | 155° | | 48 | berry | 355° |
 
-Names are single lowercase words drawn from nature, gemstones, flowers, fruits, spices, and pigments. All hue names are unhyphenated — hyphens are reserved for adjacency syntax.
+Names are single lowercase words drawn from nature, gemstones, flowers, fruits, spices, and pigments. All hue names are unhyphenated — hyphens are reserved for adjacency syntax. The vocabulary lives in `HUE_FAMILIES` (`tugdeck/src/components/tugways/palette-engine.ts`).
 
 ---
 
@@ -71,151 +66,73 @@ hue(A-B) = (2/3 × angle(A)) + (1/3 × angle(B))
 
 This yields **144 expressible chromatic hue points** (~2.5° average spacing). The ring is circular — berry (355°) and garnet (2.5°) are adjacent and wrap correctly across the 360°/0° boundary.
 
-Only adjacent pairs are valid. Non-adjacent combinations (e.g., `yellow-blue`) are hard errors at parse time. No silent fallback.
+Only adjacent pairs are valid (`ADJACENCY_RING`). Non-adjacent combinations (e.g., `yellow-blue`) are hard errors at parse time. No silent fallback.
 
 ---
 
 ## Named Grays
 
-Nine descriptive names for intermediate achromatic values, ordered dark to light:
+Nine descriptive names for intermediate achromatic values, ordered dark to light, each a fixed OKLCH L (`ACHROMATIC_L_VALUES`):
 
-| Name | Tone | OKLCH L |
-|------|-----:|--------:|
-| pitch | 10 | 0.22 |
-| ink | 20 | 0.29 |
-| charcoal | 30 | 0.36 |
-| carbon | 40 | 0.43 |
-| graphite | 50 | 0.50 |
-| vellum | 60 | 0.592 |
-| parchment | 70 | 0.684 |
-| linen | 80 | 0.776 |
-| paper | 90 | 0.868 |
+| Name | OKLCH L |
+|------|--------:|
+| pitch | 0.22 |
+| ink | 0.29 |
+| charcoal | 0.36 |
+| carbon | 0.43 |
+| graphite | 0.50 |
+| vellum | 0.592 |
+| parchment | 0.684 |
+| linen | 0.776 |
+| paper | 0.868 |
 
 Plus two endpoints: **black** (L=0) and **white** (L=1).
 
-Named grays have fixed lightness. Supplying intensity or tone parameters produces a warning — if adjustable lightness is needed, use the `gray` pseudo-hue with an explicit tone value.
-
-### Achromatic Adjacency
-
-The 11 achromatic names form a linear (non-wrapping) sequence:
-
-```
-black · pitch · ink · charcoal · carbon · graphite · vellum · parchment · linen · paper · white
-```
-
-Adjacent pairs use the same 2/3 + 1/3 weighting applied to lightness values:
-
-```
-L(A-B) = (2/3 × L(A)) + (1/3 × L(B))
-```
-
-Both directions are valid and produce different L values: `pitch-ink` ≠ `ink-pitch`. This yields **31 achromatic names** total (11 base + 20 hyphenated).
+Named grays have fixed lightness and take no `l`/`c` (supplying them warns). For an arbitrary achromatic lightness, use the `gray` pseudo-hue with an explicit `l`.
 
 ### Transparent
 
-`transparent` is a named color expanding to `oklch(0 0 0 / 0)`. It is excluded from all adjacency sequences. Supplying i/t/a arguments produces a warning.
-
----
-
-## Five Convenience Presets
-
-Every chromatic hue has five presets with fixed i/t values:
-
-| Preset | i | t | Character |
-|--------|--:|--:|-----------|
-| canonical | 50 | 50 | The crayon color — reference point |
-| light | 20 | 85 | Background-safe, airy |
-| dark | 50 | 20 | Contrast text, dark surfaces |
-| intense | 90 | 50 | Saturated, draws attention |
-| muted | 50 | 42 | Subdued, secondary |
-
-Presets are accessed via hyphen: `red-intense`, `blue-light`. Preset names are checked before adjacency during parsing — this disambiguates without lookahead.
-
-Presets and adjacency compose: `cobalt-indigo-intense` resolves the hue first (biased toward cobalt), then applies the intense preset. Explicit i/t/a parameters override preset defaults.
-
----
-
-## CSS Variables
-
-### Per-Hue Constants (3 per hue × 48 = 144 variables)
-
-```css
---tugc-{hue}-h: {angle};
---tugc-{hue}-canonical-l: {L};
---tugc-{hue}-peak-c: {peakChroma};
-```
-
-### Named Gray Variables
-
-```css
---tugc-gray-pitch: oklch(0.22 0 0);
---tugc-gray-ink: oklch(0.29 0 0);
---tugc-gray-charcoal: oklch(0.36 0 0);
---tugc-gray-carbon: oklch(0.43 0 0);
---tugc-gray-graphite: oklch(0.5 0 0);
---tugc-gray-vellum: oklch(0.592 0 0);
---tugc-gray-parchment: oklch(0.684 0 0);
---tugc-gray-linen: oklch(0.776 0 0);
---tugc-gray-paper: oklch(0.868 0 0);
---tugc-black: oklch(0 0 0);
---tugc-white: oklch(1 0 0);
-```
-
-### Global Anchors
-
-```css
---tugc-l-dark: 0.15;
---tugc-l-light: 0.96;
-```
-
-All palette variables are scoped to `body {}`.
+`transparent` is a named color expanding to `oklch(0 0 0 / 0)`. Supplying any arguments warns.
 
 ---
 
 ## The `--tug-color()` Notation
 
-A compact CSS notation that expands to `oklch()` at build time via PostCSS plugin:
+A compact CSS notation that expands to `oklch()` at build time via a PostCSS plugin (`postcss-tug-color.ts`):
 
 ```css
---tug-color(red, i: 70, t: 30)          /* chromatic with explicit i/t */
---tug-color(indigo-cobalt, i: 7, t: 16) /* hyphenated adjacency */
---tug-color(blue-intense)                /* preset */
---tug-color(cobalt-indigo-intense, t: 30)/* adjacency + preset + override */
---tug-color(gray, t: 40)                /* gray pseudo-hue with tone */
---tug-color(charcoal)                   /* named gray (fixed L) */
---tug-color(paper-linen, a: 50)         /* achromatic adjacency with alpha */
---tug-color(black, a: 40)              /* black with alpha */
+--tug-color(indigo, l: 0.30, c: 0.08)        /* chromatic → oklch(0.30 0.08 260) */
+--tug-color(cobalt-indigo, l: 0.30, c: 0.05) /* hyphenated adjacency */
+--tug-color(gray, l: 0.43)                   /* gray pseudo-hue (achromatic) */
+--tug-color(charcoal)                        /* named gray (fixed L) */
+--tug-color(white, a: 0.08)                  /* fixed endpoint + alpha */
+--tug-color(transparent)                     /* fully transparent */
 ```
 
-The plugin expands these to concrete `oklch(L C h)` values. Zero runtime cost — the built CSS contains only standard `oklch()`.
+- **Chromatic hues require explicit `l` and `c`.** (The model is honest sugar over oklch — there is no canonical default.)
+- Labels `l:`/`c:`/`a:` may appear in any order after the hue; positional order is `color, lightness, chroma, alpha`.
+- Ranges: `l` 0–1, `c` 0–~0.4, `a` 0–1.
+- The plugin expands these to concrete `oklch(L C h)` values. Zero runtime cost — built CSS contains only standard `oklch()`.
 
-### `tugColor()` TypeScript Function
+### `resolveTugColorToOklch()`
 
-Programmatic access using the same math:
-
-```typescript
-tugColor(hueName: string, intensity: number, tone: number, canonicalL: number, peakChroma?: number): string
-```
-
-Returns an `oklch(L C h)` CSS string. Used for color pickers, data visualization, and dynamic styling.
+The single source of truth for expansion (`palette-engine.ts`): a hue-angle lookup plus l/c/a passthrough, returning `{ L, C, h, alpha }`. The PostCSS plugin formats its result into an `oklch(...)` string; the headless contrast audit feeds it straight into the WCAG/perceptual checks — so build output and audit never drift.
 
 ---
 
 ## P3 Gamut
 
-On Display P3 screens, `@media (color-gamut: p3)` overrides `--tugc-{hue}-peak-c` with wider chroma caps. Since all formulas reference `peak-c`, colors automatically become richer on P3 displays. No per-preset overrides needed.
-
-Each hue has independently derived sRGB and P3 chroma caps — binary-searched against the gamut boundary, not interpolated from neighbors.
+`oklch()` is device-independent: the browser maps each coordinate to whatever the display can show. A chroma within sRGB renders the same everywhere; a chroma beyond sRGB is gamut-mapped down on sRGB displays and rendered richer on Display P3 — **automatically, with no media query**. Authoring richer saturated colors therefore means writing a larger `c`; the platform handles per-display mapping. There is no per-hue chroma table or `@media (color-gamut: p3)` override in the system.
 
 ---
 
 ## Three-Tier Token Architecture
 
-1. **Palette tier** — `--tugc-{hue}-*` per-hue constants and `--tugc-gray-*` named grays. Theme-independent.
-2. **Base tier** — `--tug7-*` seven-slot semantic tokens (surface and element). Theme-specific chromatic choices live here. [D71, L17]
+1. **Palette tier** — the hue vocabulary (`HUE_FAMILIES`, `ADJACENCY_RING`) and named grays (`ACHROMATIC_L_VALUES`) in `palette-engine.ts`. Theme-independent; consumed by `--tug-color(...)` expansion, not referenced as CSS variables.
+2. **Base tier** — `--tug7-*` seven-slot semantic tokens (surface and element). Theme-specific chromatic choices live here, authored as `--tug-color(...)` recipes. [D71, L17]
 3. **Component tier** — `--tugx-<component>-*` aliases. Resolve to base tier in one hop. [D71, L17]
 
-Components consume base and component tokens. The palette tier provides the raw materials used by authored theme CSS tokens.
+Components consume base and component tokens. The palette tier provides the raw hue/gray materials those recipes name.
 
 ---
 
@@ -223,7 +140,5 @@ Components consume base and component tokens. The palette tier provides the raw 
 
 Theme runtime is CSS-first:
 
-- theme tokens are authored in `styles/themes/*.css` (brio, harmony, and others)
-- Vite/PostCSS expands `--tug-color(...)` to normal CSS in dev/build
-
-The palette feeds authored theme CSS through `--tug-color(...)` expansion in Vite/PostCSS.
+- theme tokens are authored in `styles/themes/*.css` (brio, harmony, and others) as `--tug-color(...)` recipes
+- Vite/PostCSS expands `--tug-color(...)` to normal `oklch()` in dev/build

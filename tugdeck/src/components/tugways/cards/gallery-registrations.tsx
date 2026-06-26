@@ -33,7 +33,6 @@ import { GalleryDefaultButton } from "./gallery-default-button";
 import { GalleryTitleBar } from "./gallery-title-bar";
 import { GalleryMutationTx } from "./gallery-mutation-tx";
 import { GalleryObservableProps } from "./gallery-observable-props";
-import { GalleryPalette } from "./gallery-palette";
 import { GalleryThemeEditor } from "./gallery-theme-editor";
 import { GalleryColorWells, GalleryColorPicker } from "./gallery-color-picker";
 import { GalleryScaleTiming } from "./gallery-scale-timing";
@@ -547,16 +546,6 @@ export function registerGalleryCards(): void {
   // ===========================================================================
   // Animation & Theming
   // ===========================================================================
-
-  registerCard({
-    componentId: "gallery-palette",
-    contentFactory: (_cardId) => <GalleryPalette />,
-    defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.animation,
-  });
 
   registerCard({
     componentId: "gallery-theme-editor",

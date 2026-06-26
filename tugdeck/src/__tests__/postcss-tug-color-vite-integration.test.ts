@@ -14,7 +14,7 @@ import { describe, it, expect } from "bun:test";
 
 import postcss from "postcss";
 import postcssTugColor from "../../postcss-tug-color";
-import { tugColor, DEFAULT_CANONICAL_L } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,16 +30,15 @@ function processCSS(css: string): string {
 // ---------------------------------------------------------------------------
 
 describe("postcss-tug-color Vite integration: plugin processes --tug-color() in CSS", () => {
-  it("--tug-color(blue, 50, 50) expands to the correct oklch() value", () => {
-    const css = "a { color: --tug-color(blue, 50, 50); }";
+  it("--tug-color(blue, l, c) expands to the correct oklch() value", () => {
+    const css = "a { color: --tug-color(blue, l: 0.3115, c: 0.0143); }";
     const result = processCSS(css);
-    const expected = tugColor("blue", 50, 50, DEFAULT_CANONICAL_L["blue"]);
-    expect(result).toContain(expected);
+    expect(result).toContain(`oklch(0.3115 0.0143 ${HUE_FAMILIES.blue})`);
     expect(result).not.toContain("--tug-color(");
   });
 
   it("expands --tug-color() in a realistic CSS rule (background declaration)", () => {
-    const css = "body { background: --tug-color(cobalt, 3, 18); }";
+    const css = "body { background: --tug-color(cobalt, l: 0.31, c: 0.018); }";
     const result = processCSS(css);
     expect(result).not.toContain("--tug-color(");
     expect(result).toMatch(/oklch\(/);
@@ -48,7 +47,7 @@ describe("postcss-tug-color Vite integration: plugin processes --tug-color() in 
   it("preserves var() and other CSS functions alongside --tug-color() expansion", () => {
     const css = [
       ".card {",
-      "  color: --tug-color(blue, 5, 13);",
+      "  color: --tug-color(blue, l: 0.31, c: 0.014);",
       "  background: var(--tug-surface);",
       "  border: 1px solid rgba(0, 0, 0, 0.2);",
       "}",
@@ -88,14 +87,13 @@ describe("postcss-tug-color Vite integration: coexistence with Tailwind v4", () 
     // not corrupt CSS it doesn't recognise.
     const css = [
       ".btn {",
-      "  color: --tug-color(blue, 50, 50);",
+      "  color: --tug-color(blue, l: 0.31, c: 0.014);",
       "  font-weight: bold;",
       "}",
     ].join("\n");
     const result = processCSS(css);
     expect(result).not.toContain("--tug-color(");
-    const expected = tugColor("blue", 50, 50, DEFAULT_CANONICAL_L["blue"]);
-    expect(result).toContain(expected);
+    expect(result).toContain(`oklch(0.31 0.014 ${HUE_FAMILIES.blue})`);
   });
 
   it("CSS custom property declarations (non-tug-color) pass through unchanged", () => {

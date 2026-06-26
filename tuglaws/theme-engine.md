@@ -20,17 +20,17 @@ Shipped themes (registered in `SHIPPED_THEME_NAMES`, `tugdeck/src/action-dispatc
 Each theme carries a **Key + Accent duet** ([`color-refactor`](../roadmap/archive/color-refactor.md)):
 **Key** is the selection / primary-action hue (list & menu selection, toggle/radio/checkbox/choice
 "on", tabs, links, the primary CTA, text selection); **Accent** is the affordance hue (keyboard caret
-bar, focus ring, drag-drop stroke, flash). The chroma column is the per-theme chroma scale applied to
-every rung (`apply-theme-editor.ts`).
+bar, focus ring, drag-drop stroke, flash). The chroma column notes each axis's relative saturation —
+low-chroma Keys read as pale tints, high-chroma Keys as vivid.
 
 | Theme | Mode | Tint | Key (chroma) | Accent (chroma) |
 |---|---|---|---|---|
-| `brio` | dark | indigo-violet | cobalt (×0.90) | orange (×0.85) |
-| `nocturne` | dark | cobalt | sapphire (×0.85) | tangerine (×0.80) |
-| `bravura` | dark | plum | cerise (×0.30, pale rose) | aqua (×0.90) |
-| `harmony` | light | indigo | cobalt (×0.90) | orange (×1.00) |
-| `aria` | light | rose | purple (×0.50) | sky (×0.90) |
-| `vivace` | light | teal | seafoam (×0.44) | fuchsia (×0.90) |
+| `brio` | dark | indigo-violet | cobalt (vivid) | orange (vivid) |
+| `nocturne` | dark | cobalt | sapphire (vivid) | tangerine (vivid) |
+| `bravura` | dark | plum | cerise (pale rose) | aqua (vivid) |
+| `harmony` | light | indigo | cobalt (vivid) | orange (vivid) |
+| `aria` | light | rose | purple (muted) | sky (vivid) |
+| `vivace` | light | teal | seafoam (pale) | fuchsia (vivid) |
 
 Every theme is a peer — none depends on another at runtime. `brio` is special only as
 `BASE_THEME_NAME` (the bundled base; see `tugdeck/src/theme-constants.ts`). Each theme is a
@@ -40,13 +40,13 @@ complete, hand-authored CSS file defining the full token vocabulary.
 
 ## Tinted-Neutral Authoring Doctrine
 
-Every theme is **one tint hue over a shared tone skeleton** — the "predominant tint colors the
-details without a redesign" model. The engine (`--tug-color(hue, i:, t:)`, OKLCH) makes a new theme
-largely a hue swap: keep the *tone* ladder, change the *hue*.
+Every theme is **one tint hue over a shared lightness skeleton** — the "predominant tint colors the
+details without a redesign" model. The engine (`--tug-color(hue, l:, c:)`, OKLCH) makes a new theme
+largely a hue swap: keep the *lightness* ladder, change the *hue*.
 
 1. **One tint hue per theme** for all `--tug7-surface-global-primary-*` neutrals (and the neutral
-   text/icon/border/divider families). Surfaces differ by **tone only**; intensity stays in a tight
-   low band (dark ≈ i:2–6, light ≈ i:3–8). Tone carries elevation, not hue.
+   text/icon/border/divider families). Surfaces differ by **lightness only**; chroma stays in a tight
+   low band (a faint tint, c ≈ 0.004–0.02). Lightness carries elevation, not hue.
 2. **Monotonic elevation ladder.** Dark: deeper base, lighter raised/overlay. Light: lighter base
    (content/raised/overlay near white), darker recessed wells (sunken). No hue jumps, no
    dark-surface-in-a-light-theme surprises. `screen` (tooltips, dev panel) is the lone exception in
@@ -55,16 +55,16 @@ largely a hue swap: keep the *tone* ladder, change the *hue*.
    `data`=teal, `agent`=violet. The **selection / primary-action axis is no longer a fixed blue** —
    each theme picks its own **Key** hue (the `selection`/`active`/`toggle-on`/`link`/filled-action
    tokens) and a partnered **Accent** hue (the affordance axis: caret, focus ring, drag-drop, flash).
-   Both ride the TugColor model (`--tug-color(hue, i:, t:)`, tones kept per-mode so light themes keep
-   their darker legible links); a per-theme chroma scale folds into each rung's intensity. Re-hue a
-   theme with `tugdeck/scripts/apply-theme-editor.ts` from a clean theme file, then run the contrast audit.
+   Both ride the TugColor model (`--tug-color(hue, l:, c:)`, lightness kept per-mode so light themes keep
+   their darker legible links); each rung carries its own chroma. Re-hue a theme with
+   `tugdeck/scripts/apply-theme-editor.ts` (additive l/c deltas) from a clean theme file, then run the contrast audit.
    Keep Key and Accent ≥~30° from every signal hue and from each other; on-fill contrast text stays a
    near-white (dark) / near-black (light) neutral — never the Key hue, or it vanishes on its own fill.
 4. **Signal tuning is per-mode.** Dark: bright, mid-tone, saturated. Light: darker and more saturated
    so a mark holds contrast on near-white. Saturated light hues (orange/yellow/teal) can't reach 3:1
    on white without turning muddy — that is an accepted light-theme tension, the mirror of dark
    themes' dark-on-dark limits.
-5. **Consistent authoring style** (uniform `i:`/`t:` usage) so themes diff cleanly and the next tint
+5. **Consistent authoring style** (uniform `l:`/`c:` usage) so themes diff cleanly and the next tint
    swap stays mechanical.
 
 A new theme: copy the same-mode reference (brio for dark, harmony for light), remap the neutral-tint
