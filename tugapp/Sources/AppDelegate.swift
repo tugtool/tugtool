@@ -605,6 +605,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // pulled from MenuState.edit (the web responder chain's caps).
         editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(performCut(_:)), keyEquivalent: "x").identified("edit.cut"))
         editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(performCopy(_:)), keyEquivalent: "c").identified("edit.copy"))
+        // Copy as Plain Text — a chain-action round-trip (NOT the native
+        // NSText.copy selector). The web responder chain strips Markdown
+        // from the selection and writes the plain text to the clipboard;
+        // enablement reuses the copy gate (MenuState.edit.copy) since both
+        // need a selection.
+        editMenu.addItem(NSMenuItem(title: "Copy as Plain Text", action: #selector(performCopyAsPlainText(_:)), keyEquivalent: "c", modifierMask: [.command, .shift]).identified("edit.copyAsPlainText"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(performPaste(_:)), keyEquivalent: "v").identified("edit.paste"))
         // Paste variants — chain-action round-trips (NOT the native
         // NSText.paste selector). The web responder chain reads the
@@ -1026,6 +1032,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
     }
 
+    // Edit ▸ Copy as Plain Text — a chain-action round-trip. Unlike Copy,
+    // this does NOT re-dispatch NSText.copy: the Markdown-strip transform
+    // lives in the web responder chain, which writes the plain text to the
+    // clipboard. An unhandled dispatch is a silent no-op (no selection).
+    @objc private func performCopyAsPlainText(_ sender: Any?) {
+        sendControl("copy-as-plain-text")
+    }
+
     @objc private func performDelete(_ sender: Any?) {
         NSApp.sendAction(#selector(NSText.delete(_:)), to: nil, from: sender)
     }
@@ -1296,6 +1310,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "edit.cut":
             return menuState.edit.cut
         case "edit.copy":
+            return menuState.edit.copy
+        // Copy as Plain Text shares the copy gate — both need a selection.
+        case "edit.copyAsPlainText":
             return menuState.edit.copy
         case "edit.paste":
             return menuState.edit.paste

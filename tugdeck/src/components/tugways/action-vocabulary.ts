@@ -94,6 +94,11 @@ export const TUG_ACTIONS = {
   //              delete the selection after the menu blink).
   // COPY:        payload — none. The first responder copies its current
   //              selection. No continuation expected.
+  // COPY_AS_PLAIN_TEXT: payload — none. Like COPY, but the selection's
+  //              Markdown source is stripped to plain text (headings,
+  //              emphasis, code, links → their text content) before it
+  //              lands on the clipboard. Plain-text only; no atom sidecar.
+  //              Bound to ⇧⌘C.
   // PASTE:       payload — none. The first responder pastes clipboard
   //              content. Handlers typically return a continuation so the
   //              paste happens after any menu activation animation.
@@ -116,6 +121,7 @@ export const TUG_ACTIONS = {
   //              until a control wires it up.
   CUT:                 "cut",
   COPY:                "copy",
+  COPY_AS_PLAIN_TEXT:  "copy-as-plain-text",
   PASTE:               "paste",
   PASTE_AS_QUOTE:      "paste-as-quote",
   PASTE_AS_PLAIN_TEXT: "paste-as-plain-text",

@@ -534,6 +534,11 @@ export function initActionDispatch(
     // continuation is invoked immediately below.
     TUG_ACTIONS.PASTE_AS_QUOTE,
     TUG_ACTIONS.PASTE_AS_PLAIN_TEXT,
+    // Copy variant (Edit ▸ Copy as Plain Text). Its handler writes the
+    // stripped selection synchronously (no continuation), but it rides
+    // the same first-responder round-trip so the Swift menu chord and
+    // the web-side ⇧⌘C keystroke produce identical dispatches.
+    TUG_ACTIONS.COPY_AS_PLAIN_TEXT,
   ]) {
     registerAction(action, () => {
       if (responderChainManagerRef) {

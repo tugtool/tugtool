@@ -121,6 +121,12 @@ export const KEYBINDINGS: KeyBinding[] = [
   // the semantics — including atom-aware HTML preservation.
   { key: "KeyX", meta: true, action: TUG_ACTIONS.CUT, preventDefaultOnMatch: true },
   { key: "KeyC", meta: true, action: TUG_ACTIONS.COPY, preventDefaultOnMatch: true },
+  // Copy variant. ⇧⌘C strips Markdown from the selection to plain text.
+  // The exact-modifier match in `keyBindingMatchesEvent` keeps it
+  // distinct from bare ⌘C. In Tug.app the Swift Edit menu owns the chord
+  // (AppKit swallows it at the menu bar and round-trips a control frame);
+  // this entry serves browser-only dev where no Swift menu is present.
+  { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT, preventDefaultOnMatch: true },
   { key: "KeyV", meta: true, action: TUG_ACTIONS.PASTE, preventDefaultOnMatch: true },
   // Paste variants. ⌥⌘V wraps the clipboard as a Markdown blockquote;
   // ⇧⌘V strips Markdown to plain text. The exact-modifier match in

@@ -1,6 +1,7 @@
 /**
  * text-editing-menu — single source of truth for the standard
- * cut / copy / paste / paste-as-quote / paste-as-plain-text /
+ * cut / copy / copy-as-plain-text / paste / paste-as-quote /
+ * paste-as-plain-text /
  * select-all context menu.
  *
  * The items appear in the same order with the same labels and the
@@ -12,6 +13,7 @@
  *
  *   - Cut requires a selection AND an editable surface.
  *   - Copy requires a selection.
+ *   - Copy as Plain Text requires a selection.
  *   - Paste requires an editable surface.
  *   - Paste as Quote / Paste as Plain Text require an editable surface.
  *   - Select All is always enabled.
@@ -101,6 +103,12 @@ export function buildTextEditingMenuItems(
       action: TUG_ACTIONS.COPY,
       label: "Copy",
       shortcut: "⌘C",
+      disabled: !hasSelection,
+    },
+    {
+      action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT,
+      label: "Copy as Plain Text",
+      shortcut: "⇧⌘C",
       disabled: !hasSelection,
     },
     {

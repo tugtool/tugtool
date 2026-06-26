@@ -34,6 +34,7 @@ import type { TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
+import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
 
 // ---- DeckCanvasProps ----
 
@@ -373,6 +374,17 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         if (m === null || s.length === 0) return;
         const activePaneId = s[s.length - 1].id; // topmost pane (z-order)
         m.sendToTarget(activePaneId, { action: TUG_ACTIONS.CLOSE_ALL, phase: "discrete" });
+      },
+      // Copy as Plain Text ([D08] last-resort). Plain Copy operates on the
+      // live document selection wherever it lives — in Tug.app ⌘C routes to
+      // WebKit's native `copy:`, not the responder chain — so Copy as Plain
+      // Text reads that same selection directly here at the root rather than
+      // per surface. The walk always reaches the canvas (dispatch consults
+      // only the actions map, never an intervening `canHandle`), so this one
+      // handler covers every text-bearing surface: transcript, markdown /
+      // code views, terminal output, the prompt editor, and native inputs.
+      [TUG_ACTIONS.COPY_AS_PLAIN_TEXT]: (_event: ActionEvent) => {
+        copySelectionAsPlainText();
       },
     },
   });
