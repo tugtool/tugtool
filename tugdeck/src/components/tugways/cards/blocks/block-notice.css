@@ -31,6 +31,8 @@ body {
   /* The one-line box the icon centers in — also the text's line height, so
      the icon and the first text line share a baseline. */
   --tugx-toolnotice-line: calc(var(--tug-font-size-sm) * 1.5);
+  /* Upward nudge so the glyph sits against the text cap height, not the line box center. */
+  --tugx-toolnotice-icon-shift: 0.25px;
 }
 
 .tool-block-notice {
@@ -53,10 +55,9 @@ body {
 }
 
 /* Tone → icon color. Only the glyph is tinted; the surface and text stay
- * neutral, so the band reads quiet (one restrained tone marker, like the
- * header's lifecycle dot) rather than a saturated alarm. */
+ * neutral, so the band reads quiet rather than a saturated alarm. */
 .tool-block-notice[data-tone="error"] {
-  --tugx-toolnotice-icon-color: var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-toolnotice-icon-color: var(--tug7-element-global-border-normal-danger-rest);
 }
 .tool-block-notice[data-tone="warning"] {
   --tugx-toolnotice-icon-color: var(--tug7-element-global-text-normal-caution-rest);
@@ -73,6 +74,7 @@ body {
   display: inline-flex;
   align-items: center;
   min-height: var(--tugx-toolnotice-line);
+  transform: translateY(calc(-1 * var(--tugx-toolnotice-icon-shift)));
   color: var(--tugx-toolnotice-icon-color);
 }
 
