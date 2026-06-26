@@ -20,6 +20,7 @@ import { setActiveColorTarget } from "../active-color-target";
 import { TugColorWell } from "../tug-color-well";
 import { TugColorPicker } from "../tug-color-picker";
 import { TugColorAdjustment, colorAdjustSenders, type TugColorDelta } from "../tug-color-adjustment";
+import { fracFromAuthored, chromaFromAuthored } from "../palette-engine";
 import type { TugColorSpec } from "../tug-color-spec";
 import "./gallery-color-picker.css";
 
@@ -67,11 +68,11 @@ export function GalleryColorWells(): React.ReactElement {
     const sender = typeof event.sender === "string" ? event.sender : "";
     const v = typeof event.value === "number" ? event.value : NaN;
     if (Number.isNaN(v)) return;
-    // Steppers emit thousandths; deltas are stored as oklch fractions.
+    // Steppers emit authored 0–1000; deltas are stored as oklch fractions.
     const ids = colorAdjustSenders(ADJ_ID);
-    if (sender === ids.l) setDelta((d) => ({ ...d, lDelta: v / 1000 }));
-    else if (sender === ids.c) setDelta((d) => ({ ...d, cDelta: v / 1000 }));
-    else if (sender === ids.a) setDelta((d) => ({ ...d, aDelta: v / 1000 }));
+    if (sender === ids.l) setDelta((d) => ({ ...d, lDelta: fracFromAuthored(v) }));
+    else if (sender === ids.c) setDelta((d) => ({ ...d, cDelta: chromaFromAuthored(v) }));
+    else if (sender === ids.a) setDelta((d) => ({ ...d, aDelta: fracFromAuthored(v) }));
   }, []);
 
   const { ResponderScope, responderRef } = useResponder({

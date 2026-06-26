@@ -33,6 +33,9 @@ import {
   HUE_FAMILIES,
   NAMED_GRAYS,
   ADJACENCY_RING,
+  AUTHOR_MAX,
+  MAX_CHROMA,
+  authoredFromChroma,
   resolveTugColorToOklch,
   isInSRGBGamut,
   isInP3Gamut,
@@ -125,11 +128,11 @@ function printSummary(r: FileReport): void {
   console.log(`${mark} ${r.label}: ${r.total} chromatic · ${r.outSRGB} out-of-sRGB · ${r.outP3.length} out-of-P3`);
 }
 
-/** Full per-recipe drill-down (single-theme mode). Chroma shown in thousandths. */
+/** Full per-recipe drill-down (single-theme mode). Chroma shown in authored 0–1000 units. */
 function printDetail(r: FileReport): void {
   for (const f of r.outP3) {
     console.log(`    ${r.label}:${f.line}  ${f.recipe}`);
-    console.log(`      chroma ${Math.round(f.C * 1000)} exceeds P3 max ${Math.floor(f.maxP3C * 1000)} at this lightness`);
+    console.log(`      chroma ${authoredFromChroma(f.C)} exceeds P3 max ${Math.floor((f.maxP3C / MAX_CHROMA) * AUTHOR_MAX)} at this lightness`);
   }
 }
 

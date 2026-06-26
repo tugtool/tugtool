@@ -33,7 +33,7 @@ import { TugColorPicker } from "@/components/tugways/tug-color-picker";
 import { TugSlider } from "@/components/tugways/tug-slider";
 import { useResponder } from "@/components/tugways/use-responder";
 import { setActiveColorTarget } from "@/components/tugways/active-color-target";
-import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, authoredFromFrac, authoredFromChroma } from "@/components/tugways/palette-engine";
 import {
   hueText,
   swatchOklch,
@@ -85,11 +85,10 @@ const angleOf = (hue: string): string => {
   return a === undefined ? "" : `${a}°`;
 };
 
-/** The theme-file form a dialed-in spot would be authored as (whole thousandths). */
+/** The theme-file form a dialed-in spot would be authored as (0–1000 units). */
 function spotToken(s: TugColorSpec): string {
-  const u = (n: number): string => String(Math.round(n * 1000));
-  const head = `--tug-color(${hueText(s)}, l: ${u(s.l)}, c: ${u(s.c)}`;
-  return s.a >= 1 ? `${head})` : `${head}, a: ${u(s.a)})`;
+  const head = `--tug-color(${hueText(s)}, l: ${authoredFromFrac(s.l)}, c: ${authoredFromChroma(s.c)}`;
+  return s.a >= 1 ? `${head})` : `${head}, a: ${authoredFromFrac(s.a)})`;
 }
 
 /**

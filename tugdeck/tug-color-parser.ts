@@ -2,28 +2,30 @@
  * tug-color-parser — Tokenizer and parser for the --tug-color() color notation.
  *
  * --tug-color() is thin sugar over oklch(): it names the hue and carries the OKLCH
- * lightness/chroma/alpha directly.
- * Values are authored as whole THOUSANDTHS of the oklch coordinate (linear, not the
- * retired intensity/tone remap): l/a run 0–1000, c runs 0–~500, integers only —
- * fractional values are rejected. The parser divides by 1000 into oklch fractions.
+ * lightness/chroma/alpha as integers on one uniform 0–1000 scale.
+ * Lightness and alpha map linearly onto the full 0–1 oklch axis; chroma's 0–1000
+ * maps onto 0–MAX_CHROMA (its top exceeds the in-gamut ceiling — see palette-engine's
+ * MAX_CHROMA note — so high chroma is browser gamut-mapped). Integers only —
+ * fractional values are rejected. The conversion lives in palette-engine
+ * (fracFromAuthored / chromaFromAuthored); the parser just calls it.
  *
  *   Color:         A named hue, optionally followed by a ring-adjacent hue (hyphenated)
- *   Lightness (l): OKLCH lightness ×1000, 0–1000 (required for chromatic hues and gray)
- *   Chroma (c):    OKLCH chroma ×1000, 0–~500 (required for chromatic hues)
- *   Alpha (a):     Opacity ×1000, 0–1000 (default 1000)
+ *   Lightness (l): 0–1000 → oklch L 0–1 (required for chromatic hues and gray)
+ *   Chroma (c):    0–1000 → oklch C 0–MAX_CHROMA (required for chromatic hues)
+ *   Alpha (a):     0–1000 → opacity 0–1 (default 1000)
  *
  * Supported color forms (60-name vocabulary: 48 chromatic + 11 achromatic + 1 transparent):
- *   --tug-color(indigo, l: 300, c: 80)        chromatic hue → oklch(0.30 0.08 260)
- *   --tug-color(cobalt-indigo, l: 300, c: 50) hyphenated adjacency (cobalt dominant)
+ *   --tug-color(indigo, l: 300, c: 160)       chromatic hue → oklch(0.30 0.08 260)
+ *   --tug-color(cobalt-indigo, l: 300, c: 100) hyphenated adjacency (cobalt dominant)
  *   --tug-color(gray, l: 430)                 gray pseudo-hue (achromatic, arbitrary L)
- *   --tug-color(paper)                      named gray (fixed L, no l/c)
- *   --tug-color(white, a: 8)                fixed endpoint with alpha
- *   --tug-color(transparent)                fully transparent (always oklch(0 0 0 / 0))
+ *   --tug-color(paper)                        named gray (fixed L, no l/c)
+ *   --tug-color(white, a: 80)                 fixed endpoint with alpha
+ *   --tug-color(transparent)                  fully transparent (always oklch(0 0 0 / 0))
  *
  * Supported syntax forms:
- *   --tug-color(indigo, l: 300, c: 80)          labeled (canonical form)
- *   --tug-color(indigo, 300, 80)                positional: color, lightness, chroma
- *   --tug-color(indigo, l: 300, c: 80, a: 500)  with alpha
+ *   --tug-color(indigo, l: 300, c: 160)         labeled (canonical form)
+ *   --tug-color(indigo, 300, 160)               positional: color, lightness, chroma
+ *   --tug-color(indigo, l: 300, c: 160, a: 500) with alpha
  *
  * Labels: l/lightness, c/chroma, a/alpha. Color is the first positional argument.
  * Positional order: color, lightness, chroma, alpha. Positional args must precede labeled args.
@@ -37,7 +39,11 @@
  * @module tug-color-parser
  */
 
-import { MAX_CHROMA } from "./src/components/tugways/palette-engine";
+import {
+  AUTHOR_MAX,
+  fracFromAuthored,
+  chromaFromAuthored,
+} from "./src/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -252,17 +258,15 @@ const VALID_LABELS = "l, lightness, c, chroma, a, or alpha";
 // Positional slot order (color is always first; lightness/chroma/alpha follow).
 const SLOT_ORDER = ["color", "lightness", "chroma", "alpha"] as const;
 
-// Default for the optional alpha slot, in authoring units (thousandths). Lightness/
-// chroma have no default — required for chromatic hues, ignored for fixed achromatics.
-const DEFAULTS = { alpha: 1000 } as const;
+// Default for the optional alpha slot, in authoring units. Lightness/chroma have no
+// default — required for chromatic hues, ignored for fixed achromatics.
+const DEFAULTS = { alpha: AUTHOR_MAX } as const;
 
-// Authoring units are thousandths of the oklch coordinate: l/a run 0–1000, c runs
-// 0–(MAX_CHROMA × 1000). Parsed values are divided by 1000 into oklch fractions, so
-// the resolver and everything downstream stay in 0–1 space.
+// Every axis is an integer 0–AUTHOR_MAX; palette-engine maps it into oklch space.
 const RANGES: Record<string, [number, number]> = {
-  lightness: [0, 1000],
-  chroma: [0, MAX_CHROMA * 1000],
-  alpha: [0, 1000],
+  lightness: [0, AUTHOR_MAX],
+  chroma: [0, AUTHOR_MAX],
+  alpha: [0, AUTHOR_MAX],
 };
 
 // ---------------------------------------------------------------------------
@@ -449,10 +453,10 @@ function parseNumericTokens(
   // Span covers from anchor token to end of last token consumed.
   const lastTok = tokens.length === 2 ? tokens[1] : tokens[0];
 
-  // Authoring units are whole thousandths — fractional values are not supported.
+  // Every axis is a whole number 0–1000 — fractional values are not supported.
   if (!Number.isInteger(value)) {
     errors.push({
-      message: `Value ${value} for ${slotName} must be a whole number (thousandths, e.g. l: 300)`,
+      message: `Value ${value} for ${slotName} must be a whole number 0–1000 (e.g. l: 300)`,
       pos: anchorTok.pos,
       end: lastTok.end,
     });
@@ -652,10 +656,10 @@ export function parseTugColor(
     return { ok: false, errors };
   }
 
-  // Authoring units are thousandths; store oklch fractions for the resolver.
-  const resolvedLightness = (lightness ?? 0) / 1000;
-  const resolvedChroma = (chroma ?? 0) / 1000;
-  const resolvedAlpha = (alpha ?? DEFAULTS.alpha) / 1000;
+  // Authored integers (0–1000) → oklch fractions for the resolver.
+  const resolvedLightness = fracFromAuthored(lightness ?? 0);
+  const resolvedChroma = chromaFromAuthored(chroma ?? 0);
+  const resolvedAlpha = fracFromAuthored(alpha ?? DEFAULTS.alpha);
   const resolvedColor = color!;
 
   // Soft warnings — flag l/c supplied where they are ignored. Spans cover the full

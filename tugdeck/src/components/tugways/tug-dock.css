@@ -34,5 +34,5 @@ body {
   --tug-canvas-grid-emphasis: --tug-color(white, a: 100);
 
   /* --- Snap / Sash / Flash --- */
-  --tug-snap-guide: --tug-color(cyan, l: 800, c: 130, a: 600);
+  --tug-snap-guide: --tug-color(cyan, l: 800, c: 260, a: 600);
 }

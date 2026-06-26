@@ -18,14 +18,43 @@
  */
 
 /**
- * OKLCH chroma ceiling. The single source for every chroma bound in the system —
- * the parser's accepted range, the picker/adjustment slider caps, and the
- * theme-editor clamp all reference this. Set above the most saturated authored
- * value: themes intentionally push past the sRGB boundary (signals reach c≈0.44 so
- * P3 displays render them richer than sRGB; the browser gamut-maps the rest), and
- * 0.5 leaves headroom for the theme editor's chroma scaling without clipping.
+ * OKLCH chroma ceiling — the oklch C that authored chroma 1000 maps to. Chroma's
+ * 0–1000 authoring range spans 0–MAX_CHROMA, chosen as headroom above the most
+ * saturated authored color (themes top out near c≈620, oklch C≈0.31).
+ *
+ * NOTE: 0.5 is NOT a gamut boundary. The in-gamut chroma ceiling is hue- and
+ * lightness-dependent (≈c270–c570 at mid lightness) and always below 1000, so the
+ * upper part of the range is out of gamut and the browser gamut-maps it. A single
+ * linear scale cannot make the whole 0–1000 range in-gamut — only a per-hue,
+ * per-lightness remap could, and that is exactly the "intensity" model this system
+ * deliberately retired (see color-palette.md history). The audit:gamut script
+ * reports where authored values cross the real P3 ceiling.
  */
 export const MAX_CHROMA = 0.5;
+
+// ---------------------------------------------------------------------------
+// Authoring scale — the ONE place --tug-color()'s 0–1000 axes convert to/from oklch
+// ---------------------------------------------------------------------------
+
+/**
+ * --tug-color() authors lightness, chroma, and alpha as integers 0–AUTHOR_MAX.
+ * Lightness and alpha map linearly onto the full 0–1 oklch axis; chroma maps onto
+ * 0–MAX_CHROMA (the top of the chroma range exceeds the in-gamut ceiling for every
+ * hue — see MAX_CHROMA). These four functions are the single
+ * definition of that scale — the parser, the serializers, the picker/adjustment,
+ * the theme editor, and the gamut scripts all route through them, so no module
+ * carries its own copy of the arithmetic.
+ */
+export const AUTHOR_MAX = 1000;
+
+/** Lightness or alpha: authored integer → oklch fraction. */
+export const fracFromAuthored = (n: number): number => n / AUTHOR_MAX;
+/** Lightness or alpha: oklch fraction → authored integer. */
+export const authoredFromFrac = (n: number): number => Math.round(n * AUTHOR_MAX);
+/** Chroma: authored integer → oklch C (0–MAX_CHROMA). */
+export const chromaFromAuthored = (n: number): number => (n / AUTHOR_MAX) * MAX_CHROMA;
+/** Chroma: oklch C → authored integer. */
+export const authoredFromChroma = (n: number): number => Math.round((n / MAX_CHROMA) * AUTHOR_MAX);
 
 // ---------------------------------------------------------------------------
 // HUE_FAMILIES — 48 named hue families mapped to OKLCH hue angles

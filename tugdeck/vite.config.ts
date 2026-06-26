@@ -17,6 +17,7 @@ import {
   isKnownHue,
   type DuetSeed,
 } from "./theme-editor-core";
+import { fracFromAuthored, chromaFromAuthored } from "./src/components/tugways/palette-engine";
 
 /**
  * Vite plugin: seamless CSS hot-reload when palette-engine.ts changes.
@@ -408,12 +409,13 @@ export async function handleThemeEditApply(
   const theme = typeof b.theme === "string" ? b.theme.trim() : "";
   const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
   const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : "";
-  // Additive lightness/chroma/alpha deltas off each rung's base, in thousandths
-  // (the --tug-color() authoring units), stored as oklch fractions.
-  const num = (v: unknown): number => (v === undefined ? 0 : Number(v) / 1000);
+  // Additive lightness/chroma/alpha deltas off each rung's base, on the 0–1000
+  // --tug-color() authoring scale, stored as oklch fractions.
+  const frac = (v: unknown): number => (v === undefined ? 0 : fracFromAuthored(Number(v)));
+  const chr = (v: unknown): number => (v === undefined ? 0 : chromaFromAuthored(Number(v)));
   const parseAdjust = (v: unknown): { lDelta: number; cDelta: number; aDelta?: number } => {
     const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-    return { lDelta: num(o.lDelta), cDelta: num(o.cDelta), aDelta: num(o.aDelta) };
+    return { lDelta: frac(o.lDelta), cDelta: chr(o.cDelta), aDelta: frac(o.aDelta) };
   };
   const key = parseAdjust(b.key);
   const accent = parseAdjust(b.accent);
@@ -426,11 +428,11 @@ export async function handleThemeEditApply(
   const parseTreatment = (v: unknown): { l: number; c: number; a?: number } | undefined => {
     if (!v || typeof v !== "object") return undefined;
     const o = v as Record<string, unknown>;
-    // Treatment l/c/a arrive in thousandths; store oklch fractions.
-    const l = Number(o.l) / 1000;
-    const c = Number(o.c) / 1000;
+    // Treatment l/c/a arrive on the 0–1000 authoring scale; store oklch fractions.
+    const l = fracFromAuthored(Number(o.l));
+    const c = chromaFromAuthored(Number(o.c));
     if (!Number.isFinite(l) || !Number.isFinite(c)) return undefined;
-    const a = o.a === undefined ? undefined : Number(o.a) / 1000;
+    const a = o.a === undefined ? undefined : fracFromAuthored(Number(o.a));
     return { l, c, a: a !== undefined && Number.isFinite(a) ? a : undefined };
   };
   const titlebar = parseTreatment(b.titlebar);

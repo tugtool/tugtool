@@ -31,7 +31,7 @@ function processCSS(css: string): string {
 
 describe("postcss-tug-color Vite integration: plugin processes --tug-color() in CSS", () => {
   it("--tug-color(blue, l, c) expands to the correct oklch() value", () => {
-    const css = "a { color: --tug-color(blue, l: 310, c: 80); }";
+    const css = "a { color: --tug-color(blue, l: 310, c: 160); }";
     const result = processCSS(css);
     expect(result).toContain(`oklch(0.31 0.08 ${HUE_FAMILIES.blue})`);
     expect(result).not.toContain("--tug-color(");
@@ -87,7 +87,7 @@ describe("postcss-tug-color Vite integration: coexistence with Tailwind v4", () 
     // not corrupt CSS it doesn't recognise.
     const css = [
       ".btn {",
-      "  color: --tug-color(blue, l: 310, c: 20);",
+      "  color: --tug-color(blue, l: 310, c: 40);",
       "  font-weight: bold;",
       "}",
     ].join("\n");

@@ -11,9 +11,9 @@
  *   <color>     := <hue-name> | <hue-name>-<adjacent-hue> | black | white | gray
  *                  | <named-gray> | transparent
  *   <hue-name>  := one of 48 named hues (garnet, cherry, scarlet, … berry)
- *   <lightness> := <number>   // OKLCH lightness ×1000, 0–1000 (required for chromatic + gray)
- *   <chroma>    := <number>   // OKLCH chroma ×1000, 0–~500 (required for chromatic)
- *   <alpha>     := <number>   // ×1000, 0–1000 (default 1000, fully opaque)
+ *   <lightness> := <integer>  // 0–1000 → oklch L 0–1 (required for chromatic + gray)
+ *   <chroma>    := <integer>  // 0–1000 → oklch C 0–MAX_CHROMA (required for chromatic)
+ *   <alpha>     := <integer>  // 0–1000 → opacity 0–1 (default 1000, fully opaque)
  *
  * Labeled arguments (l:, c:, a:) may appear in any order after the color.
  * Positional order (color, lightness, chroma, alpha) is also supported.

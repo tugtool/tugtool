@@ -10,7 +10,7 @@
  * state file with the dev-server POST /__theme-editor/apply endpoint via
  * theme-editor-core.ts.
  *
- * Deltas are in thousandths (the --tug-color() authoring units).
+ * Deltas are on the 0–1000 --tug-color() authoring scale.
  *
  * Usage:
  *   bun run scripts/apply-theme-editor.ts <theme> <keyHue> <keyCDelta> <accentHue> <accentCDelta> [keyLDelta] [accentLDelta]
@@ -28,6 +28,7 @@ import {
   isKnownHue,
   type DuetSeed,
 } from "../theme-editor-core";
+import { fracFromAuthored, chromaFromAuthored, authoredFromFrac, authoredFromChroma } from "../src/components/tugways/palette-engine";
 
 interface ThemeEditorEntry {
   identityBaseline: Record<string, string>;
@@ -47,13 +48,13 @@ if (!isKnownHue(keyHue) || !isKnownHue(accentHue)) {
   process.exit(1);
 }
 
-// Deltas are typed in thousandths (matching the --tug-color() authoring units) and
-// stored as oklch fractions.
+// Deltas are typed on the 0–1000 --tug-color() authoring scale and stored as oklch
+// fractions (chroma scaled through MAX_CHROMA, lightness linear).
 const seed: DuetSeed = {
   keyHue,
-  key: { cDelta: parseFloat(keyCStr) / 1000, lDelta: keyLStr ? parseFloat(keyLStr) / 1000 : 0, aDelta: 0 },
+  key: { cDelta: chromaFromAuthored(parseFloat(keyCStr)), lDelta: keyLStr ? fracFromAuthored(parseFloat(keyLStr)) : 0, aDelta: 0 },
   accentHue,
-  accent: { cDelta: parseFloat(accentCStr) / 1000, lDelta: accentLStr ? parseFloat(accentLStr) / 1000 : 0, aDelta: 0 },
+  accent: { cDelta: chromaFromAuthored(parseFloat(accentCStr)), lDelta: accentLStr ? fracFromAuthored(parseFloat(accentLStr)) : 0, aDelta: 0 },
 };
 
 const themesDir = path.resolve(import.meta.dir, "..", "styles", "themes");
@@ -84,8 +85,10 @@ const { css, keyCount, accentCount } = applyDuet(current, baseline, seed);
 fs.writeFileSync(themeFile, css);
 state[theme] = { identityBaseline: baseline, appliedSeed: seed, lastGenCss: css };
 fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
-const thou = (n: number): string => `${n >= 0 ? "+" : ""}${Math.round(n * 1000)}`;
+const sgn = (n: number): string => (n >= 0 ? "+" : "");
+const lDel = (n: number): string => `${sgn(n)}${authoredFromFrac(n)}`;
+const cDel = (n: number): string => `${sgn(n)}${authoredFromChroma(n)}`;
 console.log(
-  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (c${thou(seed.key.cDelta)}, l${thou(seed.key.lDelta)}), ` +
-    `${accentCount} Accent -> ${accentHue} (c${thou(seed.accent.cDelta)}, l${thou(seed.accent.lDelta)})`,
+  `${theme}: re-hued ${keyCount} Key -> ${keyHue} (c${cDel(seed.key.cDelta)}, l${lDel(seed.key.lDelta)}), ` +
+    `${accentCount} Accent -> ${accentHue} (c${cDel(seed.accent.cDelta)}, l${lDel(seed.accent.lDelta)})`,
 );

@@ -40,7 +40,7 @@ import { rowGridOrder, type SpatialOrder } from "@/components/tugways/spatial-or
 import { CardIdContext } from "@/lib/card-id-context";
 import { setActiveColorTarget } from "@/components/tugways/active-color-target";
 import { type TugColorSpec } from "@/components/tugways/tug-color-spec";
-import { HUE_FAMILIES } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, fracFromAuthored, chromaFromAuthored } from "@/components/tugways/palette-engine";
 import { deriveTheme } from "../../../../theme-editor-core";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import brioRaw from "../../../../styles/themes/brio.css?raw";
@@ -105,10 +105,10 @@ function tokenSpec(css: string, name: string): TugColorSpec | null {
   for (const p of parts.slice(1)) {
     const mm = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!mm) continue;
-    // Authoring units are thousandths; store oklch fractions.
-    if (mm[1] === "l") l = parseFloat(mm[2]) / 1000;
-    else if (mm[1] === "c") c = parseFloat(mm[2]) / 1000;
-    else a = parseFloat(mm[2]) / 1000;
+    // Authored 0–1000; store oklch fractions.
+    if (mm[1] === "l") l = fracFromAuthored(parseFloat(mm[2]));
+    else if (mm[1] === "c") c = chromaFromAuthored(parseFloat(mm[2]));
+    else a = fracFromAuthored(parseFloat(mm[2]));
   }
   return { hue, l, c, a };
 }

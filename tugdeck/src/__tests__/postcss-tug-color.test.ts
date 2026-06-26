@@ -2,10 +2,10 @@
  * Tests for the postcss-tug-color PostCSS plugin.
  *
  * --tug-color() is thin sugar over oklch(): the plugin formats a named hue plus
- * OKLCH l / c / a (authored in thousandths) into a concrete oklch() string at build.
+ * OKLCH l / c / a (authored as integers 0–1000) into a concrete oklch() string at build.
  *
  * Covers:
- * - Chromatic expansion: --tug-color(blue, l: 300, c: 80) → oklch(0.3 0.08 230)
+ * - Chromatic expansion: --tug-color(blue, l: 300, c: 160) → oklch(0.3 0.08 230)
  * - Adjacency: --tug-color(cobalt-indigo, l, c) (angle from resolveHyphenatedHue)
  * - Fixed achromatics: black, white, named grays, gray pseudo-hue, transparent
  * - Alpha: emitted only when < 1
@@ -37,21 +37,21 @@ function processDeclExpectError(value: string): string {
 }
 
 describe("chromatic expansion", () => {
-  it("expands a bare hue's l/c (thousandths) onto its angle", () => {
-    expect(processDecl("--tug-color(blue, l: 300, c: 80)")).toBe(`oklch(0.3 0.08 ${HUE_FAMILIES.blue})`);
+  it("maps a bare hue's l/c (0–1000) onto its angle (chroma scaled through MAX_CHROMA)", () => {
+    expect(processDecl("--tug-color(blue, l: 300, c: 160)")).toBe(`oklch(0.3 0.08 ${HUE_FAMILIES.blue})`);
   });
 
-  it("passes lightness and chroma through verbatim", () => {
-    expect(processDecl("--tug-color(red, l: 660, c: 220)")).toBe(`oklch(0.66 0.22 ${HUE_FAMILIES.red})`);
+  it("maps lightness linearly and chroma through MAX_CHROMA", () => {
+    expect(processDecl("--tug-color(red, l: 660, c: 440)")).toBe(`oklch(0.66 0.22 ${HUE_FAMILIES.red})`);
   });
 
-  it("resolves a finer gradation than hundredths allowed", () => {
-    expect(processDecl("--tug-color(blue, l: 305, c: 83)")).toBe(`oklch(0.305 0.083 ${HUE_FAMILIES.blue})`);
+  it("resolves a fine gradation on the 0–1000 scale", () => {
+    expect(processDecl("--tug-color(blue, l: 305, c: 166)")).toBe(`oklch(0.305 0.083 ${HUE_FAMILIES.blue})`);
   });
 
   it("resolves an adjacency angle via resolveHyphenatedHue", () => {
     const h = resolveHyphenatedHue("cobalt", "indigo");
-    expect(processDecl("--tug-color(cobalt-indigo, l: 300, c: 50)")).toBe(`oklch(0.3 0.05 ${h})`);
+    expect(processDecl("--tug-color(cobalt-indigo, l: 300, c: 100)")).toBe(`oklch(0.3 0.05 ${h})`);
   });
 });
 
@@ -83,7 +83,7 @@ describe("alpha", () => {
   });
 
   it("omits the suffix at full opacity", () => {
-    expect(processDecl("--tug-color(blue, l: 400, c: 100)")).toBe(`oklch(0.4 0.1 ${HUE_FAMILIES.blue})`);
+    expect(processDecl("--tug-color(blue, l: 400, c: 200)")).toBe(`oklch(0.4 0.1 ${HUE_FAMILIES.blue})`);
   });
 });
 
@@ -91,7 +91,7 @@ describe("declaration handling", () => {
   it("expands multiple calls in one value", () => {
     const h1 = HUE_FAMILIES.red;
     const h2 = HUE_FAMILIES.blue;
-    expect(processDecl("linear-gradient(--tug-color(red, l: 600, c: 200), --tug-color(blue, l: 400, c: 100))"))
+    expect(processDecl("linear-gradient(--tug-color(red, l: 600, c: 400), --tug-color(blue, l: 400, c: 200))"))
       .toBe(`linear-gradient(oklch(0.6 0.2 ${h1}), oklch(0.4 0.1 ${h2}))`);
   });
 

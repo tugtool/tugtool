@@ -19,6 +19,10 @@
 import {
   HUE_FAMILIES,
   MAX_CHROMA,
+  fracFromAuthored,
+  chromaFromAuthored,
+  authoredFromFrac,
+  authoredFromChroma,
 } from "./src/components/tugways/palette-engine";
 
 const CHROMATIC = new Set(Object.keys(HUE_FAMILIES));
@@ -153,23 +157,25 @@ function parseTugColor(inner: string): Parsed | null {
   for (const p of parts.slice(1)) {
     const m = p.match(/^([lca])\s*:\s*([\d.]+)$/);
     if (!m) continue;
-    // Authoring units are thousandths; store oklch fractions.
-    if (m[1] === "l") l = parseFloat(m[2]) / 1000;
-    if (m[1] === "c") c = parseFloat(m[2]) / 1000;
-    if (m[1] === "a") a = parseFloat(m[2]) / 1000;
+    // Authored 0–1000; store oklch fractions.
+    if (m[1] === "l") l = fracFromAuthored(parseFloat(m[2]));
+    if (m[1] === "c") c = chromaFromAuthored(parseFloat(m[2]));
+    if (m[1] === "a") a = fracFromAuthored(parseFloat(m[2]));
   }
   if (!CHROMATIC.has(hue)) return null;
   return { l, c, a };
 }
 
-/** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]` in thousandths. */
+/** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]` on the 0–1000 scale. */
 function formatInner(hue: string, l: number, c: number, a: number | null): string {
-  // Clamp every axis to its valid range (fractions) — treatment deltas and chroma
-  // scaling can otherwise overshoot — then emit authoring units (thousandths).
+  // Clamp every axis to its valid oklch range (treatment deltas and chroma scaling
+  // can otherwise overshoot), then emit authored 0–1000 units.
   const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, n));
-  const u = (n: number): string => String(Math.round(n * 1000));
-  const parts = [`l: ${u(clamp(l, 1))}`, `c: ${u(clamp(c, MAX_CHROMA))}`];
-  if (a !== null) parts.push(`a: ${u(clamp(a, 1))}`);
+  const parts = [
+    `l: ${authoredFromFrac(clamp(l, 1))}`,
+    `c: ${authoredFromChroma(clamp(c, MAX_CHROMA))}`,
+  ];
+  if (a !== null) parts.push(`a: ${authoredFromFrac(clamp(a, 1))}`);
   return `${hue}, ${parts.join(", ")}`;
 }
 

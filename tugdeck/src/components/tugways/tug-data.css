@@ -37,14 +37,14 @@ body {
   --tugx-stat-trend-neutral: var(--tug7-element-global-text-normal-subtle-rest);
 
   /* --- Chart Series (palette var() references — Phase 5d5e) --- */
-  --tugx-chart-series-warm: --tug-color(orange, l: 780, c: 150);
-  --tugx-chart-series-cool: --tug-color(cyan, l: 800, c: 130);
-  --tugx-chart-series-violet: --tug-color(violet, l: 710, c: 150);
-  --tugx-chart-series-rose: --tug-color(red, l: 660, c: 220);
-  --tugx-chart-series-verdant: --tug-color(green, l: 820, c: 220);
-  --tugx-chart-series-golden: --tug-color(yellow, l: 900, c: 130);
-  --tugx-chart-series-orchid: --tug-color(pink, l: 790, c: 170);
-  --tugx-chart-series-coral: --tug-color(coral, l: 550, c: 220);
+  --tugx-chart-series-warm: --tug-color(orange, l: 780, c: 300);
+  --tugx-chart-series-cool: --tug-color(cyan, l: 800, c: 260);
+  --tugx-chart-series-violet: --tug-color(violet, l: 710, c: 300);
+  --tugx-chart-series-rose: --tug-color(red, l: 660, c: 440);
+  --tugx-chart-series-verdant: --tug-color(green, l: 820, c: 440);
+  --tugx-chart-series-golden: --tug-color(yellow, l: 900, c: 260);
+  --tugx-chart-series-orchid: --tug-color(pink, l: 790, c: 340);
+  --tugx-chart-series-coral: --tug-color(coral, l: 550, c: 440);
   /* Chart infrastructure tokens */
   --tugx-chart-grid: var(--tug7-surface-overlay-primary-normal-highlight-rest);
   --tugx-chart-axis: var(--tug7-element-global-border-normal-default-rest);

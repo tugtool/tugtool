@@ -8,14 +8,16 @@
 
 ## Color Space
 
-TugColor operates in OKLCH — a perceptually uniform color space. A TugColor value is a **named hue** plus three OKLCH coordinates, each written in **thousandths** of the oklch value (a leading `0.` is just noise to type):
+TugColor operates in OKLCH — a perceptually uniform color space. A TugColor value is a **named hue** plus three coordinates written as integers on **one uniform 0–1000 scale**:
 
 - **Hue:** one of 48 named hues (or a hyphenated adjacency pair), supplying the OKLCH hue angle.
-- **Lightness (l):** 0–1000 — OKLCH L ×1000 (`l: 670` = L 0.67).
-- **Chroma (c):** 0–~500 — OKLCH C ×1000 (`c: 190` = C 0.19; the axis maxes near 0.5, hence ~500).
-- **Alpha (a):** 0–1000 — opacity ×1000. Defaults to 1000 (fully opaque).
+- **Lightness (l):** 0–1000 → OKLCH L 0–1 (`l: 670` = L 0.67).
+- **Chroma (c):** 0–1000 → OKLCH C 0–`MAX_CHROMA` (`c: 380` = C 0.19; `c: 1000` = C 0.5, past the gamut — see below).
+- **Alpha (a):** 0–1000 → opacity 0–1. Defaults to 1000 (fully opaque).
 
-Values are **whole numbers** — fractional values (`l: 300.5`) are rejected; a thousandth is the precision floor. The thousandths are a **linear ×1000 rescale of the notation only** — not the retired intensity/tone remap. `--tug-color(indigo, l: 300, c: 80)` expands to `oklch(0.30 0.08 260)`: the parser divides by 1000 and nothing else happens. The hue names (and adjacency) are the only abstraction over raw `oklch()` — they name the angle so authors don't memorize degrees; the labels `l`/`c` are the oklch axes themselves.
+Values are **whole numbers** — fractional values (`l: 300.5`) are rejected. Lightness and alpha map linearly onto the full 0–1 oklch axis; chroma's 0–1000 maps onto 0–`MAX_CHROMA` (0.5). The conversion lives in exactly one place — `fracFromAuthored` / `chromaFromAuthored` in `palette-engine.ts` — and every surface (parser, build plugin, picker, theme editor, gamut scripts) routes through it; no module carries its own copy of the arithmetic. The hue names (and adjacency) are the only abstraction over raw `oklch()` — they name the angle so authors don't memorize degrees.
+
+**Chroma is not gamut-relative.** `MAX_CHROMA` (0.5) is headroom above the most saturated authored color (≈`c620`, C 0.31), *not* a gamut boundary. The real in-gamut chroma ceiling is hue- and lightness-dependent (≈`c270`–`c570` at mid lightness), so the upper part of the 0–1000 range is out of gamut and the browser gamut-maps it. A single linear scale cannot make the whole range in-gamut for every hue — only a per-hue/per-lightness remap could, and that is the **intensity** model this system retired (see History) for its conceptual overhead. The deliberate trade is a uniform, hue-independent 0–1000 scale at the cost of an out-of-gamut tail; `audit:gamut` flags any authored value that crosses the real P3 ceiling.
 
 > **History.** Earlier TugColor replaced OKLCH chroma/lightness with abstract *intensity* (0–100, gamut-relative chroma) and *tone* (0–100, piecewise lightness through a per-hue canonical L). That remapping was retired: it added conceptual overhead and a large conversion layer, its "shared tone skeleton" was undercut by per-hue canonical-L, and its headline benefit (P3 widening) is already handled by the browser (see [P3 Gamut](#p3-gamut)).
 
@@ -101,8 +103,8 @@ Named grays have fixed lightness and take no `l`/`c` (supplying them warns). For
 A compact CSS notation that expands to `oklch()` at build time via a PostCSS plugin (`postcss-tug-color.ts`):
 
 ```css
---tug-color(indigo, l: 300, c: 80)         /* chromatic → oklch(0.30 0.08 260) */
---tug-color(cobalt-indigo, l: 300, c: 50)  /* hyphenated adjacency */
+--tug-color(indigo, l: 300, c: 160)        /* chromatic → oklch(0.30 0.08 260) */
+--tug-color(cobalt-indigo, l: 300, c: 100) /* hyphenated adjacency */
 --tug-color(gray, l: 430)                  /* gray pseudo-hue (achromatic) */
 --tug-color(charcoal)                      /* named gray (fixed L) */
 --tug-color(white, a: 80)                  /* fixed endpoint + alpha */
@@ -111,12 +113,12 @@ A compact CSS notation that expands to `oklch()` at build time via a PostCSS plu
 
 - **Chromatic hues require explicit `l` and `c`.** (The model is honest sugar over oklch — there is no canonical default.)
 - Labels `l:`/`c:`/`a:` may appear in any order after the hue; positional order is `color, lightness, chroma, alpha`.
-- Ranges (whole thousandths): `l` 0–1000, `c` 0–~500, `a` 0–1000. Fractional values are rejected.
+- Ranges: `l`, `c`, and `a` are all whole numbers 0–1000. Fractional values are rejected.
 - The plugin expands these to concrete `oklch(L C h)` values. Zero runtime cost — built CSS contains only standard `oklch()`.
 
 ### `resolveTugColorToOklch()`
 
-The single source of truth for expansion (`palette-engine.ts`): a hue-angle lookup plus l/c/a passthrough, returning `{ L, C, h, alpha }`. The PostCSS plugin formats its result into an `oklch(...)` string; the headless contrast audit feeds it straight into the WCAG/perceptual checks — so build output and audit never drift.
+The single source of truth for expansion (`palette-engine.ts`): a hue-angle lookup plus the l/c/a oklch fractions (already converted from the 0–1000 authoring scale by `fracFromAuthored` / `chromaFromAuthored`), returning `{ L, C, h, alpha }`. The PostCSS plugin formats its result into an `oklch(...)` string; the headless contrast audit feeds it straight into the WCAG/perceptual checks — so build output and audit never drift.
 
 ---
 

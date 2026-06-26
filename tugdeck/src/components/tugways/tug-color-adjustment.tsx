@@ -12,7 +12,8 @@ import React, { useId } from "react";
 import { cn } from "@/lib/utils";
 import { TugValueInput } from "./tug-value-input";
 import { TugColorWell } from "./tug-color-well";
-import { swatchOklch, clamp01, clampChroma, MAX_CHROMA, type TugColorSpec } from "./tug-color-spec";
+import { swatchOklch, clamp01, clampChroma, type TugColorSpec } from "./tug-color-spec";
+import { AUTHOR_MAX, authoredFromFrac, authoredFromChroma } from "./palette-engine";
 import "./tug-color-adjustment.css";
 
 /** Additive deltas in OKLCH units (mirror of core's DuetAdjust). */
@@ -92,20 +93,20 @@ export function TugColorAdjustment({
       ) : (
         <span className="tug-color-adjustment-swatch" style={{ "--tca-swatch": swatchOklch(base) } as React.CSSProperties} />
       )}
-      {/* Deltas display in thousandths (l/a ±1000, c ±500); stored as oklch fractions. */}
+      {/* Deltas display on the 0–1000 scale (l/c/a all ±AUTHOR_MAX); stored as oklch fractions. */}
       <span className="tug-color-adjustment-deltas">
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">lΔ</span>
-          <TugValueInput value={Math.round(value.lDelta * 1000)} senderId={ids.l} min={-1000} max={1000} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
+          <TugValueInput value={authoredFromFrac(value.lDelta)} senderId={ids.l} min={-AUTHOR_MAX} max={AUTHOR_MAX} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 1} />
         </label>
         <label className="tug-color-adjustment-delta">
           <span className="tug-color-adjustment-delta-tag">cΔ</span>
-          <TugValueInput value={Math.round(value.cDelta * 1000)} senderId={ids.c} min={-Math.round(MAX_CHROMA * 1000)} max={Math.round(MAX_CHROMA * 1000)} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
+          <TugValueInput value={authoredFromChroma(value.cDelta)} senderId={ids.c} min={-AUTHOR_MAX} max={AUTHOR_MAX} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 2} />
         </label>
         {showAlpha && (
           <label className="tug-color-adjustment-delta">
             <span className="tug-color-adjustment-delta-tag">aΔ</span>
-            <TugValueInput value={Math.round(value.aDelta * 1000)} senderId={ids.a} min={-1000} max={1000} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
+            <TugValueInput value={authoredFromFrac(value.aDelta)} senderId={ids.a} min={-AUTHOR_MAX} max={AUTHOR_MAX} step={1} size="sm" disabled={disabled} focusGroup={focusGroup} focusOrder={focusOrderBase + 3} />
           </label>
         )}
       </span>

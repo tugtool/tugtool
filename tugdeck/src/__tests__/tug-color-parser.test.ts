@@ -1,15 +1,16 @@
 /**
  * Tests for tug-color-parser — the tokenizer and parser for --tug-color() notation.
  *
- * --tug-color() is thin sugar over oklch(): a named hue plus OKLCH l / c / a, where
- * l/c/a are authored in THOUSANDTHS (l: 300 → oklch L 0.30) and stored as fractions.
+ * --tug-color() is thin sugar over oklch(): a named hue plus l / c / a authored as
+ * integers on one 0–1000 scale (l: 300 → oklch L 0.30; chroma maps 0–1000 onto
+ * 0–MAX_CHROMA, so c: 160 → oklch C 0.08). Stored as oklch fractions.
  *
  * Covers:
  * - Chromatic hues require explicit l + c; labeled and positional forms
  * - Adjacency syntax (cobalt-indigo) and non-adjacent / extra-segment errors
  * - Fixed achromatics (black, white, named grays, transparent) take no l/c
  * - gray pseudo-hue requires l, forces c=0
- * - Range validation in thousandths (l/a 0–1000, c 0–500)
+ * - Range validation (l/c/a all 0–1000)
  * - Ignored-argument warnings; error reporting; tokenizer edges
  */
 import { describe, it, expect } from "bun:test";
@@ -42,9 +43,9 @@ function expectErr(input: string): string[] {
   return result.errors.map((e) => e.message);
 }
 
-describe("chromatic hues — labeled l/c/a in thousandths", () => {
-  it("parses l + c, storing oklch fractions", () => {
-    const v = expectOk("indigo, l: 300, c: 80");
+describe("chromatic hues — labeled l/c/a on the 0–1000 scale", () => {
+  it("parses l + c, storing oklch fractions (chroma scaled through MAX_CHROMA)", () => {
+    const v = expectOk("indigo, l: 300, c: 160");
     expect(v.color).toEqual({ name: "indigo" });
     expect(v.lightness).toBeCloseTo(0.3, 10);
     expect(v.chroma).toBeCloseTo(0.08, 10);
@@ -52,38 +53,36 @@ describe("chromatic hues — labeled l/c/a in thousandths", () => {
   });
 
   it("parses l + c + a", () => {
-    const v = expectOk("red, l: 660, c: 220, a: 500");
+    const v = expectOk("red, l: 660, c: 440, a: 500");
     expect(v.lightness).toBeCloseTo(0.66, 10);
     expect(v.chroma).toBeCloseTo(0.22, 10);
     expect(v.alpha).toBeCloseTo(0.5, 10);
   });
 
   it("labels may appear in any order", () => {
-    const v = expectOk("blue, c: 100, a: 800, l: 400");
+    const v = expectOk("blue, c: 200, a: 800, l: 400");
     expect(v.lightness).toBeCloseTo(0.4, 10);
     expect(v.chroma).toBeCloseTo(0.1, 10);
     expect(v.alpha).toBeCloseTo(0.8, 10);
   });
 
   it("accepts positional l, c, a after the color", () => {
-    const v = expectOk("violet, 500, 120, 900");
+    const v = expectOk("violet, 500, 240, 900");
     expect(v.lightness).toBeCloseTo(0.5, 10);
     expect(v.chroma).toBeCloseTo(0.12, 10);
     expect(v.alpha).toBeCloseTo(0.9, 10);
   });
 
-  it("resolves a finer gradation than hundredths allowed", () => {
-    const v = expectOk("indigo, l: 305, c: 83");
-    expect(v.lightness).toBeCloseTo(0.305, 10);
-    expect(v.chroma).toBeCloseTo(0.083, 10);
+  it("c: 1000 reaches the full usable chroma (MAX_CHROMA)", () => {
+    expect(expectOk("red, l: 500, c: 1000").chroma).toBeCloseTo(0.5, 10);
   });
 
   it("normalizes uppercase hue names", () => {
-    expect(expectOk("Cobalt, l: 300, c: 50").color.name).toBe("cobalt");
+    expect(expectOk("Cobalt, l: 300, c: 100").color.name).toBe("cobalt");
   });
 
   it("requires lightness for a chromatic hue", () => {
-    expect(expectErr("indigo, c: 80").join()).toContain("lightness");
+    expect(expectErr("indigo, c: 160").join()).toContain("lightness");
   });
 
   it("requires chroma for a chromatic hue", () => {
@@ -151,7 +150,7 @@ describe("gray pseudo-hue", () => {
   });
 });
 
-describe("range + error reporting (thousandths)", () => {
+describe("range + error reporting (l/c/a all 0–1000)", () => {
   it("rejects lightness > 1000", () => {
     expect(expectErr("red, l: 1500, c: 100").join()).toContain("range");
   });
@@ -160,8 +159,8 @@ describe("range + error reporting (thousandths)", () => {
     expect(expectErr("red, l: 500, c: -100").join()).toContain("range");
   });
 
-  it("rejects chroma above the ceiling (500)", () => {
-    expect(expectErr("red, l: 500, c: 600").join()).toContain("range");
+  it("rejects chroma above 1000", () => {
+    expect(expectErr("red, l: 500, c: 1200").join()).toContain("range");
   });
 
   it("rejects an unknown color", () => {
@@ -204,7 +203,7 @@ describe("tokenizer + argument edge cases", () => {
   });
 
   it("treats NBSP (U+00A0) as whitespace", () => {
-    const v = expectOk("red, l: 500, c: 100");
+    const v = expectOk("red, l: 500, c: 200");
     expect(v.lightness).toBeCloseTo(0.5, 10);
     expect(v.chroma).toBeCloseTo(0.1, 10);
   });

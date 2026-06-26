@@ -23,14 +23,21 @@ import { captureSet } from "./focus-act";
 import { CardIdContext } from "@/lib/card-id-context";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { ADJACENCY_RING, HUE_FAMILIES } from "./palette-engine";
+import {
+  ADJACENCY_RING,
+  HUE_FAMILIES,
+  AUTHOR_MAX,
+  fracFromAuthored,
+  chromaFromAuthored,
+  authoredFromFrac,
+  authoredFromChroma,
+} from "./palette-engine";
 import {
   getActiveColorTarget,
   updateActiveColorValue,
   useActiveColorTarget,
 } from "./active-color-target";
 import {
-  MAX_CHROMA,
   formatTugColorText,
   normalizeSpec,
   swatchOklch,
@@ -71,7 +78,7 @@ const ARROW_DIRS: Record<string, ArrowDir> = {
   ArrowDown: "down",
 };
 
-/** Fixed value-box width so every slider's track (and value) lines up (holds 4-digit thousandths). */
+/** Fixed value-box width so every slider's track (and value) lines up (holds a 4-digit 0–1000 value). */
 const SLIDER_VALUE_WIDTH = "4rem";
 
 /** The picker always shows a color; with no active well it edits this scratch. */
@@ -179,16 +186,14 @@ export function TugColorPicker(): React.ReactElement {
   );
   useSpatialOrder(sliderOrder);
 
-  // Sliders edit in authoring units (thousandths); the spec stays in oklch fractions.
+  // Sliders edit in authored units (0–1000); the spec stays in oklch fractions.
   const { ResponderScope, responderRef } = useResponderForm({
     setValueNumber: {
-      [lId]: (v: number, phase: ActionPhase) => editColor({ l: v / 1000 }, phase),
-      [cId]: (v: number, phase: ActionPhase) => editColor({ c: v / 1000 }, phase),
-      [aId]: (v: number, phase: ActionPhase) => editColor({ a: v / 1000 }, phase),
+      [lId]: (v: number, phase: ActionPhase) => editColor({ l: fracFromAuthored(v) }, phase),
+      [cId]: (v: number, phase: ActionPhase) => editColor({ c: chromaFromAuthored(v) }, phase),
+      [aId]: (v: number, phase: ActionPhase) => editColor({ a: fracFromAuthored(v) }, phase),
     },
   });
-
-  const u = (n: number): number => Math.round(n * 1000);
 
   return (
     <ResponderScope>
@@ -233,12 +238,12 @@ export function TugColorPicker(): React.ReactElement {
           ))}
         </div>
 
-        {/* OKLCH axes — lightness / chroma / alpha in thousandths (l/a 0–1000, c 0–500). */}
+        {/* OKLCH axes — lightness / chroma / alpha on one 0–1000 scale. */}
         <TugBox label="OKLCH" variant="bordered" size="sm" className="tug-color-picker-box">
           <div className="tug-color-picker-sliders">
-            <TugSlider label="Lightness" senderId={lId} value={u(value.l)} min={0} max={1000} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
-            <TugSlider label="Chroma" senderId={cId} value={u(value.c)} min={0} max={Math.round(MAX_CHROMA * 1000)} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
-            <TugSlider label="Alpha" senderId={aId} value={u(value.a)} min={0} max={1000} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
+            <TugSlider label="Lightness" senderId={lId} value={authoredFromFrac(value.l)} min={0} max={AUTHOR_MAX} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={1} />
+            <TugSlider label="Chroma" senderId={cId} value={authoredFromChroma(value.c)} min={0} max={AUTHOR_MAX} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={2} />
+            <TugSlider label="Alpha" senderId={aId} value={authoredFromFrac(value.a)} min={0} max={AUTHOR_MAX} step={1} size="sm" valueWidth={SLIDER_VALUE_WIDTH} focusGroup={focusGroup} focusOrder={3} />
           </div>
         </TugBox>
       </div>
