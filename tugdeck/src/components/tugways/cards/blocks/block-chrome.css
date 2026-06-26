@@ -97,11 +97,12 @@ body {
   --tugx-block-actions-gap: var(--tug-space-2xs);
 }
 
-/* Flush rows: no per-call frame. The chrome paints no border or radius; each
- * tool call is one tinted panel on `--tugx-block-surface`, set off from the
- * transcript column by contrast rather than a border. Consecutive rows are
- * separated by a single hairline (the `+` rule below), and a run is set off
- * from surrounding prose by `--tugx-block-run-gap` at its two ends.
+/* Discrete cards: no per-call frame, but each tool call is its own fully
+ * rounded tinted panel on `--tugx-block-surface`, set off from the transcript
+ * column by contrast rather than a border. Consecutive tool calls are NOT a
+ * semantic group, so adjacent blocks are separated by `--tugx-block-stack-gap`
+ * (the `+` rule below) rather than fused into one panel; the first/last block
+ * is set off from surrounding prose by the wider `--tugx-block-run-gap`.
  *
  * The body kinds are scoped onto the SAME surface here ([L20] cascade
  * override): inside a block they read `--tugx-block-bg` = the panel surface
@@ -118,12 +119,11 @@ body {
    * Removed below when this block follows another block (mid-run). */
   margin: var(--tugx-block-run-gap) 0 0 0;
   background: var(--tugx-block-surface);
-  /* Default rounding = all four corners (the standalone-block case). Run
-   * position squares the inner corners below, so only a run's OUTER edges
-   * round. The radius is on the chrome (the whole header+body panel), so the
-   * bottom corners sit at the bottom of whatever is showing — they move down
-   * when the block expands. The body kinds inside stay at radius 0 and are
-   * clipped to these corners by `overflow: clip`. */
+  /* Every block rounds all four corners — a tool call is its own card, never
+   * fused into a run. The radius is on the chrome (the whole header+body
+   * panel), so the bottom corners sit at the bottom of whatever is showing —
+   * they move down when the block expands. The body kinds inside stay at
+   * radius 0 and are clipped to these corners by `overflow: clip`. */
   border-radius: var(--tugx-block-chrome-radius);
   --tugx-block-bg: var(--tugx-block-surface);
   --tugx-block-border: transparent;
@@ -143,32 +143,19 @@ body {
   --tugx-block-strip-border: transparent;
 }
 
-/* Mid-run: two adjacent tool blocks collapse flush and take a single hairline
- * between them. `ToolBlockHistoryCollapse` is context-only (no DOM node), so
+/* Between consecutive tool blocks: a tighter gap than the prose boundary, so a
+ * sequence of calls reads as a sequence of distinct cards — not one fused
+ * panel. `ToolBlockHistoryCollapse` is context-only (no DOM node), so
  * consecutive blocks are true adjacent siblings and this selector matches.
- * Following another block ⇒ not a run's first block ⇒ square the top corners
- * so the join with the block above is seamless. */
+ * Each block keeps its full four-corner rounding (the default above). */
 .tool-block-chrome + .tool-block-chrome {
-  margin-top: 0;
-  border-top: 1px solid var(--tugx-block-hairline);
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-
-/* Followed by another block ⇒ not a run's last block ⇒ square the bottom
- * corners. With the rule above, only a run's outer corners round: the run
- * reads as one rounded panel with square internal joins, while a standalone
- * block (matching neither) keeps all four. */
-.tool-block-chrome:has(+ .tool-block-chrome) {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  margin-top: var(--tugx-block-stack-gap);
 }
 
 /* Run end: the last block before non-block content (prose, a thinking block,
- * or nothing) regains a bottom gap so the run doesn't butt against the column.
- * `:not(:has(+ .tool-block-chrome))` = no following tool block. A standalone
- * block matches both this and the default top margin, so it keeps the full
- * gap top and bottom — exactly the old single-block spacing. */
+ * or nothing) gets the wider prose gap so the sequence doesn't butt against
+ * the column. A standalone block matches both this and the default top margin,
+ * so it keeps the full gap top and bottom. */
 .tool-block-chrome:not(:has(+ .tool-block-chrome)) {
   margin-bottom: var(--tugx-block-run-gap);
 }

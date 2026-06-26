@@ -105,7 +105,13 @@ body {
    * theme (dark on light, light on dark) so it holds up everywhere.     *
    * ------------------------------------------------------------------ */
   --tugx-block-hairline: color-mix(in srgb, var(--tug7-element-global-text-normal-default-rest) 16%, transparent);
+  /* Gap from surrounding prose (above the first block, below the last). */
   --tugx-block-run-gap:  var(--tug-space-md);
+  /* Gap between consecutive tool blocks. Each tool call is its own rounded
+   * panel; a sequence is NOT a semantic group, so adjacent blocks are set
+   * apart by this gap rather than fused into one panel. Tighter than the
+   * prose gap so a sequence still reads as a sequence of distinct cards. */
+  --tugx-block-stack-gap: var(--tug-space-md);
 
   /* The block panel surface — one tint worn by the WHOLE block (the header
    * strip and, scoped in the chrome, the expanded body) so a tool call reads
@@ -123,11 +129,10 @@ body {
    * `styles/themes/<name>.css`. */
   --tugx-block-surface: color-mix(in srgb, var(--tug7-element-global-text-normal-default-rest) var(--tugx-block-surface-mix, 7%), var(--tug7-surface-global-primary-normal-default-rest));
 
-  /* The radius worn by a tool-block panel. Applied run-aware in block-chrome.css
-   * — only a run's OUTER corners round (top of the first block, bottom of the
-   * last); internal joins stay square so a run reads as one rounded panel.
-   * Distinct from `--tugx-block-radius` (0 inside a block, since the body kinds
-   * are clipped by the chrome's rounded corners). */
+  /* The radius worn by a tool-block panel. Every block rounds all four corners
+   * — a tool call is its own card, never fused into a run. Distinct from
+   * `--tugx-block-radius` (0 inside a block, since the body kinds are clipped
+   * by the chrome's rounded corners). */
   --tugx-block-chrome-radius: var(--tug-radius-md);
 
   /* ------------------------------------------------------------------ *
