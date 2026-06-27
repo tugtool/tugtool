@@ -197,7 +197,7 @@ body {
   --tug7-element-tone-text-normal-active-rest: --tug-color(purple, l: 910, c: 100);
   --tug7-element-tone-text-normal-agent-rest: --tug-color(plum, l: 890, c: 120);
   --tug7-element-tone-text-normal-caution-rest: --tug-color(yellow, l: 860, c: 260);
-  --tug7-element-tone-text-normal-spot-rest: --tug-color(orchid, l: 960, c: 40);
+  --tug7-element-tone-text-normal-spot-rest: --tug-color(orchid, l: 800, c: 850);
   --tug7-element-tone-text-normal-code-rest: color-mix(in srgb, var(--tug7-element-tone-text-normal-spot-rest) 30%, color-mix(in srgb, currentColor 78%, transparent));
   --tug7-element-tone-text-normal-danger-rest: --tug-color(red, l: 880, c: 160);
   --tug7-element-tone-text-normal-data-rest: --tug-color(teal, l: 920, c: 260);
