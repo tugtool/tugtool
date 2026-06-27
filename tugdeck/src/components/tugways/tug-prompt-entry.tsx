@@ -767,6 +767,28 @@ export interface TugPromptEntryProps {
    * caret returns. Paired with {@link editorFocusGroup}.
    */
   onResumeTyping?: () => void;
+  /**
+   * Authors the `Z4C` compose-phase attachment tiles into a focus group
+   * ([P02]) — forwarded to `TugAttachmentPreview` so each image-attachment
+   * tile registers as a leaf cycle stop (Return / Space opens its preview
+   * sheet). Supplied by the Dev card under its `CycleScope`; omitted by
+   * non-cycling hosts, where the tiles stay plain native focus stops.
+   */
+  attachmentFocusGroup?: string;
+  /**
+   * Order of the FIRST attachment tile within {@link attachmentFocusGroup};
+   * the tiles take consecutive orders left→right in document order. Defaults
+   * to 0.
+   */
+  attachmentFocusOrderBase?: number;
+  /**
+   * Fired whenever the number of compose-phase image attachments changes,
+   * surfacing the live tile count to the host. The Dev card uses it to size
+   * the attachment row of its keyboard-cycle spatial grid to exactly the
+   * registered tiles. Omit when the host does not author the tiles into a
+   * cycle.
+   */
+  onAttachmentCountChange?: (count: number) => void;
 }
 
 /**
@@ -842,6 +864,9 @@ export const TugPromptEntry = React.forwardRef<
     editorFocusGroup,
     editorFocusOrder,
     onResumeTyping,
+    attachmentFocusGroup,
+    attachmentFocusOrderBase,
+    onAttachmentCountChange,
   } = props;
 
   // [L02] external store state enters React through useSyncExternalStore only.
@@ -954,6 +979,18 @@ export const TugPromptEntry = React.forwardRef<
     },
     [],
   );
+  // Surface the live attachment-tile count to the host ([L07] via ref so a
+  // fresh inline callback never re-fires the effect). The Dev card sizes its
+  // keyboard-cycle spatial-grid attachment row from this, so the count must
+  // track every drop / paste / delete — the same `composeImageAtoms` set the
+  // Z4C strip renders.
+  const onAttachmentCountChangeRef = useRef(onAttachmentCountChange);
+  useLayoutEffect(() => {
+    onAttachmentCountChangeRef.current = onAttachmentCountChange;
+  }, [onAttachmentCountChange]);
+  useLayoutEffect(() => {
+    onAttachmentCountChangeRef.current?.(composeImageAtoms.length);
+  }, [composeImageAtoms.length]);
   // Keep the editor's inline image chips numbered `image-1..N` in document
   // order. The Z4C strip derives its own contiguous numbering, but the
   // inline chips store their label in the atom field, so a delete or a
@@ -2235,6 +2272,8 @@ export const TugPromptEntry = React.forwardRef<
                 atoms={composeImageAtoms}
                 bytesStore={attachmentBytesStore}
                 deletable
+                focusGroup={attachmentFocusGroup}
+                focusOrderBase={attachmentFocusOrderBase}
               />
             </div>
           )}

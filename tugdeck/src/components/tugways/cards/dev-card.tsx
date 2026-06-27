@@ -230,24 +230,32 @@ const ROUTE_SHELL = "$";
  */
 const DEV_CYCLE_GROUP = "dev-prompt-cycle";
 // Cycle order ([P10], revised): the cycle reads the card bottom toolbar
-// left→right, then up to the status cells, then into the editor, and **seeds at
-// the route** (order 0). Forward Tab: route → Mode → Model → Effort → submit →
-// STATE → TIME → TOKENS → CONTEXT → TASKS → editor → wrap; Shift+Tab reverses.
-// The Z4B chips and the five Z2 status cells are all independent leaf stops
-// (no arrow-roving); the editor is the last stop (a text stop — Return resumes
-// typing). A disabled stop (the empty submit, or the chips on the Shell route)
-// drops out of the walk via the engine's interactivity filter, so the seed
-// lands on the next live stop.
+// left→right, then up to the status cells, then into the editor and its
+// compose-phase attachment tiles, and **seeds at the route** (order 0).
+// Forward Tab: route → Mode → Model → Effort → submit → STATE → TIME →
+// TOKENS → CONTEXT → TASKS → JOBS → editor → attachment-1 … attachment-N →
+// wrap; Shift+Tab reverses. The Z4B chips and the six Z2 status cells are all
+// independent leaf stops (no arrow-roving); the editor is a text stop (Return
+// resumes typing); each Z4C attachment tile is a leaf stop (Return / Space
+// opens its preview). Attachment stops exist only while the editor holds
+// image atoms — when there are none the walk runs editor → wrap. A disabled
+// stop (the empty submit, or the chips on the Shell route) drops out of the
+// walk via the engine's interactivity filter, so the seed lands on the next
+// live stop.
 const DEV_CYCLE_ORDER_ROUTE = 0;
 const DEV_CYCLE_ORDER_MODE = 1;
 const DEV_CYCLE_ORDER_MODEL = 2;
 const DEV_CYCLE_ORDER_EFFORT = 3;
 const DEV_CYCLE_ORDER_SUBMIT = 4;
-// The Z2 status cells are five independent leaf stops ([P10] revised —
-// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / TASKS take orders
-// 5…9 (base + 0…4). The editor (the last stop) follows at 10.
+// The Z2 status cells are six independent leaf stops ([P10] revised —
+// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / TASKS / JOBS take
+// orders 5…10 (base + 0…5). The editor (the text body) follows at 11,
+// and the Z4C compose-phase attachment tiles — one leaf stop each — take
+// the orders from 12 upward (base + tile index), so they Tab right after
+// the editor.
 const DEV_CYCLE_ORDER_STATUS_BASE = 5;
-const DEV_CYCLE_ORDER_EDITOR = 10;
+const DEV_CYCLE_ORDER_EDITOR = 11;
+const DEV_CYCLE_ORDER_ATTACHMENT_BASE = 12;
 
 // What committing a Z4B settings picker (effort / model / permission mode) opened
 // from a cycle stop does to the cycle ([P15]). Both behaviors are first-class
@@ -2183,17 +2191,28 @@ export function DevCardBody({
     restingFocus: () => entryDelegateRef.current?.focus(),
   });
 
+  // Count of Z4C compose-phase attachment tiles, surfaced from the prompt
+  // entry's image-atom set so the spatial grid can size the attachment row to
+  // exactly the live tiles. The navigator's liveliness net ([#step-7-8]) makes
+  // a brief count↔registration mismatch harmless (an absent ring target falls
+  // through to the linear walk, never a beep or a dead-arrow warning), so this
+  // does not have to be frame-perfect with the tile registrations.
+  const [attachmentCount, setAttachmentCount] = useState(0);
+
   // Spatial arrow order for the cycle ([P22] / [P23]). Tab walks the cycle stops
-  // linearly; arrows give them a 2D feel: two horizontal rings — the bottom
-  // toolbar (route → mode → model → effort → submit) and the Z2 status cells —
-  // with a vertical seam cycle between the rows. The editor (the last stop) is the
-  // cycle's BODY, reached by Tab / typing, not arrows: it is deactivated while
-  // cycling and a focused editor keeps its caret arrows ([P25] editing-host yield),
-  // so it is deliberately left OUT of the grid. The chips disable on the Shell
-  // route; the navigator skips a disabled ring target onto the next live stop, so
-  // this fixed grid needs no per-route membership. Declared under the cycle scope
-  // so it is consulted exactly while cycling. All leaf stops — no delegated group,
-  // so no list-as-handle or edge-landing primitive is needed here.
+  // linearly; arrows give them a 2D feel: horizontal rings — the bottom toolbar
+  // (route → mode → model → effort → submit), the Z2 status cells, and (while
+  // composing with attachments) the Z4C tiles — with a vertical seam cycle
+  // between the rows. The editor (the text body) is reached by Tab / typing, not
+  // arrows: it is deactivated while cycling and a focused editor keeps its caret
+  // arrows ([P25] editing-host yield), so it is deliberately left OUT of the grid.
+  // The chips disable on the Shell route; the navigator skips a disabled ring
+  // target onto the next live stop, so this grid needs no per-route membership.
+  // The attachment row is sized to the live tile count (an empty row is dropped
+  // by rowGridOrder, so a no-attachment compose runs as the two-row grid).
+  // Declared under the cycle scope so it is consulted exactly while cycling. All
+  // leaf stops — no delegated group, so no list-as-handle or edge-landing
+  // primitive is needed here.
   const cycleSpatialOrder = useMemo<SpatialOrder>(() => {
     const k = (order: number) => `${DEV_CYCLE_GROUP}:${order}`;
     return rowGridOrder([
@@ -2210,9 +2229,13 @@ export function DevCardBody({
         k(DEV_CYCLE_ORDER_STATUS_BASE + 2),
         k(DEV_CYCLE_ORDER_STATUS_BASE + 3),
         k(DEV_CYCLE_ORDER_STATUS_BASE + 4),
+        k(DEV_CYCLE_ORDER_STATUS_BASE + 5),
       ],
+      Array.from({ length: attachmentCount }, (_, i) =>
+        k(DEV_CYCLE_ORDER_ATTACHMENT_BASE + i),
+      ),
     ]);
-  }, []);
+  }, [attachmentCount]);
   useSpatialOrder(cycle.scopeId, cycleSpatialOrder);
 
 
@@ -3416,6 +3439,9 @@ export function DevCardBody({
               routeFocusOrder={DEV_CYCLE_ORDER_ROUTE}
               editorFocusGroup={DEV_CYCLE_GROUP}
               editorFocusOrder={DEV_CYCLE_ORDER_EDITOR}
+              attachmentFocusGroup={DEV_CYCLE_GROUP}
+              attachmentFocusOrderBase={DEV_CYCLE_ORDER_ATTACHMENT_BASE}
+              onAttachmentCountChange={setAttachmentCount}
               onResumeTyping={() => cycle.exit()}
               localCommandTargetId={`${cardId}-card-content`}
               codeSessionStore={codeSessionStore}

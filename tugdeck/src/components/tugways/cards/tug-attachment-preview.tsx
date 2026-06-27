@@ -63,7 +63,8 @@ import type { TurnAddress } from "../tug-transcript-entry";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
-import { useSeedKeyView } from "@/components/tugways/use-focusable";
+import { useFocusable, useSeedKeyView } from "@/components/tugways/use-focusable";
+import type { FocusPolicy } from "@/components/tugways/focus-manager";
 import { useItemGroupKeyboard } from "@/components/tugways/use-item-group-keyboard";
 import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import type { SpatialOrder } from "@/components/tugways/spatial-order";
@@ -115,6 +116,23 @@ export interface TugAttachmentPreviewProps {
   className?: string;
   /** Forwarded to the strip root element (for test anchoring). */
   "data-testid"?: string;
+  /**
+   * Author the strip's tiles into a focus group ([P10]) — when set, **each
+   * tile is its own leaf cycle stop** (Tab moves tile-to-tile, no
+   * arrow-roving), like the Z2 status cells. The engine drives DOM focus onto
+   * the tile during the walk; the tile's own `role="button"` handles
+   * Return / Space natively to open its preview sheet. Supplied by the
+   * prompt-entry's compose-phase Z4C zone; omitted in the read-only transcript
+   * strip, where the tiles are not Tab stops.
+   */
+  focusGroup?: string;
+  /**
+   * Order of the FIRST tile within {@link focusGroup}; tiles take consecutive
+   * orders left→right in `atoms` order. Defaults to 0.
+   */
+  focusOrderBase?: number;
+  /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
+  focusPolicy?: FocusPolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +231,9 @@ export const TugAttachmentPreview = React.forwardRef<
     deletable = false,
     className,
     "data-testid": dataTestid,
+    focusGroup,
+    focusOrderBase = 0,
+    focusPolicy,
   },
   ref,
 ) {
@@ -314,127 +335,191 @@ export const TugAttachmentPreview = React.forwardRef<
       className={className}
       data-testid={dataTestid}
     >
-      {tiles.map((tile, i) => {
-        const caption = decorateChipLabel(atoms[i] as AtomSegment, address);
-        // Paint order, FOUC-free: the baked thumbnail when present; else
-        // the full-resolution bytes the moment they land (the replay
-        // window, where content arrives before the thumbnail bake); else
-        // `undefined` — render a transparent reserved slot, NEVER a dark
-        // box, for the brief drop-time window before any pixels exist.
-        // If a bake never lands (corrupt / exotic codec on replay), the
-        // content fallback persists — the tile shows the original scaled
-        // down rather than an empty box. Heavier than a thumbnail, but rare
-        // and strictly better than the alternative.
-        const hasThumb =
-          tile.thumbnailDataUrl !== undefined &&
-          tile.thumbnailDataUrl.length > 0;
-        const hasContent =
-          tile.content !== undefined &&
-          tile.content.length > 0 &&
-          tile.mediaType !== undefined &&
-          tile.mediaType.length > 0;
-        const src = hasThumb
-          ? tile.thumbnailDataUrl
-          : hasContent
-            ? `data:${tile.mediaType};base64,${tile.content}`
-            : undefined;
-        return (
-          <div
-            key={tile.atomId.length > 0 ? `id-${tile.atomId}` : `pos-${i}`}
-            data-slot="tug-attachment-preview__cell"
-            className="tug-attachment-preview__cell"
-          >
-            <div
-              role="button"
-              tabIndex={0}
-              data-slot="tug-attachment-preview__tile"
-              className="tug-attachment-preview__tile"
-              onClick={() => openPreview(atoms[i] as AtomSegment, i)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  openPreview(atoms[i] as AtomSegment, i);
-                }
-              }}
-              aria-label={caption}
-              title={tile.value}
-            >
-              <span
-                data-slot="tug-attachment-preview__thumb"
-                className="tug-attachment-preview__thumb"
-                // The frame (border + fill) is gated on this in CSS, so the
-                // pre-pixel window shows nothing instead of an empty box.
-                data-has-image={src !== undefined ? "" : undefined}
-              >
-                {src !== undefined ? (
-                  <img
-                    className="tug-attachment-preview__thumb-img"
-                    src={src}
-                    alt={caption}
-                  />
-                ) : tile.broken ? (
-                  // Broken image: the atom points at a bytes-store entry
-                  // with no pixels — a recalled history image whose bytes
-                  // are gone and whose durable thumbnail was never captured.
-                  // A fractured-bone glyph reads as "this image is broken"
-                  // rather than a blank slot that looks like it's still
-                  // loading.
-                  <span
-                    data-slot="tug-attachment-preview__broken"
-                    className="tug-attachment-preview__broken"
-                    aria-label="Image unavailable"
-                    title="Image unavailable"
-                  >
-                    <BoneFracture aria-hidden="true" />
-                  </span>
-                ) : (
-                  // No pixels yet (the brief pre-bake drop window): a
-                  // transparent, reserved slot — never a dark box. The
-                  // fixed-height zone already holds the space, so the image
-                  // simply pops in when the bake lands.
-                  <span
-                    data-slot="tug-attachment-preview__placeholder"
-                    className="tug-attachment-preview__placeholder"
-                    aria-hidden="true"
-                  />
-                )}
-                {deletable && (src !== undefined || tile.broken) && (
-                  // Compose-phase delete. A component-owned overlay affordance
-                  // (not a TugButton) pinned to the thumbnail's own top-right
-                  // corner, so it stays flush regardless of cell/caption width.
-                  // It is an [L11] control — the click dispatches
-                  // `REMOVE_ATTACHMENT` through the chain — and
-                  // `data-tug-focus="refuse"` keeps focus on the editor.
-                  // `stopPropagation` keeps the X from also opening the sheet.
-                  <button
-                    type="button"
-                    data-slot="tug-attachment-preview__delete"
-                    className="tug-attachment-preview__delete"
-                    data-tug-focus="refuse"
-                    aria-label={`Remove ${tile.value}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      dispatchRemove(atoms[i] as AtomSegment);
-                    }}
-                  >
-                    <X size={12} strokeWidth={2.5} aria-hidden="true" />
-                  </button>
-                )}
-              </span>
-              <span
-                data-slot="tug-attachment-preview__caption"
-                className="tug-attachment-preview__caption"
-              >
-                {caption}
-              </span>
-            </div>
-          </div>
-        );
-      })}
+      {tiles.map((tile, i) => (
+        <AttachmentPreviewTile
+          key={tile.atomId.length > 0 ? `id-${tile.atomId}` : `pos-${i}`}
+          tile={tile}
+          caption={decorateChipLabel(atoms[i] as AtomSegment, address)}
+          deletable={deletable}
+          onOpen={() => openPreview(atoms[i] as AtomSegment, i)}
+          onRemove={() => dispatchRemove(atoms[i] as AtomSegment)}
+          focusGroup={focusGroup}
+          focusOrder={focusOrderBase + i}
+          focusPolicy={focusPolicy}
+        />
+      ))}
       {renderSheet()}
     </div>
   );
 });
+
+// ---------------------------------------------------------------------------
+// Tile — one thumbnail (internal)
+// ---------------------------------------------------------------------------
+
+interface AttachmentPreviewTileProps {
+  tile: TileSnapshot;
+  caption: string;
+  deletable: boolean;
+  /** Open this tile's full-resolution preview sheet. */
+  onOpen: () => void;
+  /** Dispatch `REMOVE_ATTACHMENT` for this tile (compose phase). */
+  onRemove: () => void;
+  /** Cycle focus group when the strip is authored into one; else undefined. */
+  focusGroup?: string;
+  /** This tile's order within {@link focusGroup}. */
+  focusOrder: number;
+  /** Walk policy when registered. */
+  focusPolicy?: FocusPolicy;
+}
+
+/**
+ * One attachment thumbnail. A leaf in the focus language ([P10]): when the
+ * strip authors a `focusGroup`, the tile registers as a cycle stop and the
+ * engine drives DOM focus onto it during the walk; its own `role="button"`
+ * handles Return / Space natively to open the preview sheet (the engine leaves
+ * a leaf's act keys to the native pipeline — `responder-chain-provider`). Each
+ * tile is its own component so the per-tile {@link useFocusable} call is a top-
+ * level hook, not a hook inside `.map` ([L19]).
+ */
+function AttachmentPreviewTile({
+  tile,
+  caption,
+  deletable,
+  onOpen,
+  onRemove,
+  focusGroup,
+  focusOrder,
+  focusPolicy,
+}: AttachmentPreviewTileProps): React.ReactElement {
+  const registered = focusGroup !== undefined;
+  const focusableId = React.useId();
+  const { focusableRef } = useFocusable({
+    id: focusableId,
+    group: focusGroup ?? "",
+    order: focusOrder,
+    policy: focusPolicy,
+    register: registered,
+  });
+
+  // Paint order, FOUC-free: the baked thumbnail when present; else the
+  // full-resolution bytes the moment they land (the replay window, where
+  // content arrives before the thumbnail bake); else `undefined` — render a
+  // transparent reserved slot, NEVER a dark box, for the brief drop-time
+  // window before any pixels exist. If a bake never lands (corrupt / exotic
+  // codec on replay), the content fallback persists — the tile shows the
+  // original scaled down rather than an empty box. Heavier than a thumbnail,
+  // but rare and strictly better than the alternative.
+  const hasThumb =
+    tile.thumbnailDataUrl !== undefined && tile.thumbnailDataUrl.length > 0;
+  const hasContent =
+    tile.content !== undefined &&
+    tile.content.length > 0 &&
+    tile.mediaType !== undefined &&
+    tile.mediaType.length > 0;
+  const src = hasThumb
+    ? tile.thumbnailDataUrl
+    : hasContent
+      ? `data:${tile.mediaType};base64,${tile.content}`
+      : undefined;
+
+  return (
+    <div
+      data-slot="tug-attachment-preview__cell"
+      className="tug-attachment-preview__cell"
+    >
+      <div
+        ref={focusableRef as (el: HTMLDivElement | null) => void}
+        role="button"
+        // The engine drives DOM focus here during the cycle walk (a
+        // `tabIndex=-1` element is programmatically focusable); a native `0`
+        // when the strip is not authored into a cycle (the transcript).
+        tabIndex={registered ? -1 : 0}
+        // A pure preview trigger: a click while focus-cycling must not pull
+        // card focus to the editor (the pane-focus-controller's activate →
+        // apply-focus path), matching the Z2 status cells.
+        data-no-activate={registered ? "" : undefined}
+        data-slot="tug-attachment-preview__tile"
+        className="tug-attachment-preview__tile"
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        aria-label={caption}
+        title={tile.value}
+      >
+        <span
+          data-slot="tug-attachment-preview__thumb"
+          className="tug-attachment-preview__thumb"
+          // The frame (border + fill) is gated on this in CSS, so the
+          // pre-pixel window shows nothing instead of an empty box.
+          data-has-image={src !== undefined ? "" : undefined}
+        >
+          {src !== undefined ? (
+            <img
+              className="tug-attachment-preview__thumb-img"
+              src={src}
+              alt={caption}
+            />
+          ) : tile.broken ? (
+            // Broken image: the atom points at a bytes-store entry with no
+            // pixels — a recalled history image whose bytes are gone and whose
+            // durable thumbnail was never captured. A fractured-bone glyph
+            // reads as "this image is broken" rather than a blank slot that
+            // looks like it's still loading.
+            <span
+              data-slot="tug-attachment-preview__broken"
+              className="tug-attachment-preview__broken"
+              aria-label="Image unavailable"
+              title="Image unavailable"
+            >
+              <BoneFracture aria-hidden="true" />
+            </span>
+          ) : (
+            // No pixels yet (the brief pre-bake drop window): a transparent,
+            // reserved slot — never a dark box. The fixed-height zone already
+            // holds the space, so the image simply pops in when the bake lands.
+            <span
+              data-slot="tug-attachment-preview__placeholder"
+              className="tug-attachment-preview__placeholder"
+              aria-hidden="true"
+            />
+          )}
+          {deletable && (src !== undefined || tile.broken) && (
+            // Compose-phase delete. A component-owned overlay affordance (not a
+            // TugButton) pinned to the thumbnail's own top-right corner, so it
+            // stays flush regardless of cell/caption width. It is an [L11]
+            // control — the click dispatches `REMOVE_ATTACHMENT` through the
+            // chain — and `data-tug-focus="refuse"` keeps focus on the editor.
+            // `stopPropagation` keeps the X from also opening the sheet.
+            <button
+              type="button"
+              data-slot="tug-attachment-preview__delete"
+              className="tug-attachment-preview__delete"
+              data-tug-focus="refuse"
+              aria-label={`Remove ${tile.value}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+            >
+              <X size={12} strokeWidth={2.5} aria-hidden="true" />
+            </button>
+          )}
+        </span>
+        <span
+          data-slot="tug-attachment-preview__caption"
+          className="tug-attachment-preview__caption"
+        >
+          {caption}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Sheet body — the full-resolution preview (internal)

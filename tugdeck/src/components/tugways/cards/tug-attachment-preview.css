@@ -273,6 +273,18 @@
   overflow-x: auto;
   align-items: center;
   margin-top: 0;
+  /* Reserve room for a tile's keyboard focus ring inside this scroll box.
+     The compose strip is the Z4C cycle's attachment stops; the leaf ring is
+     an `outline` offset just outside each tile (`focus-ring.css`), and a
+     scrolling container clips it on every edge (a non-`visible` `overflow-x`
+     forces `overflow-y` to `auto` too). Padding the ring's full reach —
+     offset + width — keeps the outline painting inside the clip box rather
+     than sheared off at the tile boundary. The hosting zone reserves enough
+     height above the strip to absorb this (see `--tug-prompt-entry-attach-
+     height` in dev-card.css). */
+  padding: calc(
+    var(--tugx-focus-ring-offset) + var(--tugx-focus-ring-width)
+  );
 }
 
 [data-slot="tug-attachment-preview"][data-deletable]
