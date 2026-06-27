@@ -16,7 +16,7 @@ exactly once across its three possible homes — all persisted through tugbank.
 | Owner | Ken Kocienda |
 | Status | in progress |
 | Target branch | main |
-| Last updated | 2026-06-18 |
+| Last updated | 2026-06-27 |
 
 ---
 
@@ -25,16 +25,19 @@ exactly once across its three possible homes — all persisted through tugbank.
 #### Context {#context}
 
 The Z2 status row ships today as a fixed six-cell instrument row (STATE, TIME,
-TOKENS, CONTEXT, TASKS, JOBS — `DevTelemetryStatusRow` over `TugStatusCell`), with a
-trailing maximize toggle and a balancing lead spacer in `dev-card.tsx`. The
+TOKENS, CONTEXT, TASKS, JOBS — `DevTelemetryStatusRow` over `TugStatusCell`),
+CycleScope'd inside `dev-card.tsx`'s status-bar block with no trailing chrome (the
+Z2 maximize toggle, its `maximized` state, and `data-maximized` were removed Jun 23
+in `1bdae0b79`). The
 `gallery-z2-workshop` spike settled, over four review rounds, a richer design: the
 row's items become configurable (drag to add/remove/reorder, with SPACE / FLEX SPACE
 spacers and a flexible PULSE item); a chevron at the row's end opens a pinned shelf
 of up to three lanes (TASKS, JOBS, PULSE) that steals fixed height from the
 transcript; a gear opens an in-place configurator (Finder "Customize Toolbar…"
 translated — the live surface IS the editor, with palettes directly beneath each
-section); and chrome rearranges (maximize to the LEFT end, gear inboard right,
-chevron at the very end).
+section); and chrome is introduced (gear inboard right, chevron at the very end,
+with a balancing lead spacer to keep the cells centered — maximize is **not**
+resurrected by this plan).
 
 This plan carries that design into the production dev card. It follows the PULSE
 plan (`roadmap/archive/pulse.md`, since shipped — its data path subsequently
@@ -56,7 +59,9 @@ non-goals). PULSE 2 left the store/hook surface this plan reads (`usePulse`,
   render the row pixel-identical before anything new ships.
 - **Extract the status area as one component.** The row chrome, the PULSE strip slot,
   the shelf, and the configurator compose into `DevCardStatusArea`, replacing the
-  status-bar block inline in `dev-card.tsx` — the card body keeps only `maximized`.
+  status-bar block inline in `dev-card.tsx`. The card body keeps no extracted state —
+  the bar today is a bare CycleScope'd Z2 slot (the maximize toggle that once lived
+  here is gone), so the swap is a clean lift.
 - **Spike code is the reference implementation.** The drag grammar (ghost, caret,
   dim), shelf geometry, lane focus affordance, and single-surface rule port from
   `gallery-z2-workshop.tsx/.css` with production data swapped in; the card itself
@@ -92,8 +97,8 @@ non-goals). PULSE 2 left the store/hook surface this plan reads (`usePulse`,
 2. `DevTelemetryStatusRow` refactor: cell registry, config-ordered rendering,
    SPACE / FLEX SPACE spacer cells, the PULSE row cell (flexible width, live
    `pulse-store` line, dimmed-off when disabled), config-derived focus orders.
-3. `DevCardStatusArea`: extracted Z2 composite — chrome rearrangement (maximize
-   left, gear inboard right, chevron at end), strip slot with the single-surface
+3. `DevCardStatusArea`: extracted Z2 composite — chrome (lead spacer balancing gear
+   inboard right + chevron at end), strip slot with the single-surface
    suppression rule, shelf + configurator mounts; `dev-card.tsx` swap.
 4. `DevCardStatusShelf`: height-stable lanes (TASKS / JOBS / PULSE), lane focus
    affordance, sixth footer row with clickable overflow counts.
@@ -205,7 +210,7 @@ can land later without structural change.
 | Row refactor regresses cell popovers / focus cycle | med | low | Registry preserves each cell's JSX verbatim; default-config render proven identical before new items ship (#step-2 checkpoint) | Any popover/focus diff in the live walk |
 | Config-driven rows fight the static collapse rungs | low | med | Keep rungs as-is ([P10]); flexible PULSE cell ellipsizes; configurator hint nudges restraint | A configured row that clips at common widths |
 | HTML5 dnd quirks in WKWebView | med | low | The spike card already runs the identical dnd code in-app; verify the production surfaces in Tug.app at #step-5's checkpoint | Ghost/caret misbehavior in the app build |
-| Chrome rearrangement breaks cell centering | low | med | Spec S02 pins the balance rule (left flank = maximize + spacer; right flank = gear + chevron) | Visible off-center drift |
+| New chrome breaks cell centering | low | med | Spec S02 pins the balance rule (left flank = lead spacer; right flank = gear + chevron, matched widths) | Visible off-center drift |
 
 **Risk R01: Stored config drifts from the vocabulary** {#r01-config-drift}
 
@@ -277,27 +282,29 @@ repeatable, everything else one-shot, `pulse` and `flex` flexible-width.
 #### [P03] Extract `DevCardStatusArea` as the one Z2 composite (DECIDED) {#p03-status-area-component}
 
 **Decision:** A new `dev-card-status-area.tsx/.css` owns the whole Z2 area: the
-status-bar row (maximize at the LEFT end, the Z2 content in a `CycleScope`, the
-configure gear inboard right, the shelf chevron at the very end — Spec S02), the
+status-bar row (a balancing lead spacer at the LEFT end, the Z2 content in a
+`CycleScope`, the configure gear inboard right, the shelf chevron at the very
+end — Spec S02), the
 PULSE strip slot with the single-surface rule ([P04]), the shelf ([P05]), and the
-customize mode ([P08]). `dev-card.tsx` replaces its inline status-bar block
-(lead-spacer + main + trailing maximize) with this component, passing `maximized` +
-toggle, the resolved Z2 content node, the stores, and the cycle scope.
+customize mode ([P08]). `dev-card.tsx` replaces its inline status-bar block (today a
+bare `CycleScope`'d main, no maximize) with this component, passing
+the resolved Z2 content node, the stores, and the cycle scope.
 
 **Rationale:**
-- `dev-card.tsx` is already ~3600 lines; the status area is a coherent [L19]
+- `dev-card.tsx` is already ~3550 lines; the status area is a coherent [L19]
   component with its own CSS scope.
 - The shelf must be a flex sibling *below* the bar inside `dev-card-top-column`
-  (the transcript host is `flex: 1 1 auto`, so a content-sized shelf steals height
-  from it for free — the exact mechanism the spike documents). One component owns
-  that sibling group.
+  (`dev-card-top-column` is `flex: 1 1 0` and the transcript host inside it is
+  `flex: 1 1 auto`, so a content-sized shelf steals height from the transcript for
+  free — the exact mechanism the spike documents, with `--dev-transcript-min` the
+  floor). One component owns that sibling group.
 - The pulse plan mounts `dev-pulse-strip` under the status row in `dev-card.tsx`;
   this plan relocates that mount inside the status area so the suppression rule
   ([P04]) computes next to its inputs.
 
 **Implications:**
-- `maximized` state stays in `DevCardBody` ([L06], session-only) — the area only
-  renders the button.
+- The area introduces no session-only appearance state of its own (the maximize
+  toggle that once justified one is gone); only the local `customizing` mode below.
 - Customize state (`customizing`) lives in `DevCardStatusArea` (local structural
   mode, `useState`). It reaches the row — whose node is *created by the placement
   harness* (`useDevPlacementSlots` → `sessionNode("statusRow")`) and arrives as a
@@ -373,7 +380,7 @@ pointer-move frequency and strain [L06].
 over a container, moved by `style.left` writes, removed on dragleave / drop /
 dragend; only the drop *commit* enters React, as a config write ([P01]).
 `data-dragging` stays a render-driven attribute (one flip per drag start/end — the
-`data-maximized` shape).
+same shape `data-focus` and other one-flip attrs use).
 
 #### [P07] Shelf footer: clickable overflow counts, no separate buttons (DECIDED) {#p07-footer}
 
@@ -419,9 +426,9 @@ payload in the area's delegated handlers (Spec S06).
 
 **Decision:** The configured cells join the card's focus cycle as consecutive leaf
 stops from `focusOrderBase`, in configured order, spacers skipped ([P02]). The
-maximize, gear, and chevron buttons are chrome — `data-tug-focus`-conformant,
-never cycle stops (exactly the current maximize's conduct). The bar keeps cells
-centered: the left flank (maximize + one button-width spacer) balances the right
+gear and chevron buttons are chrome — `data-tug-focus`-conformant,
+never cycle stops (the conduct the removed maximize button once modeled). The bar
+keeps cells centered: the left flank (a button-width lead spacer) balances the right
 flank (gear + chevron) per Spec S02.
 
 **Rationale:** The existing leaf-stop cycle semantics (the "[P10] revised" cited in
@@ -478,15 +485,15 @@ total — it never throws.
 **Spec S02: Z2 bar chrome layout** {#s02-bar-chrome}
 
 ```
-[Maximize] [spacer₁ᵇ]  ····· configured cells, centered ·····  [Gear] [Chevron]
+[spacerᵇ]  ····· configured cells, centered ·····  [Gear] [Chevron]
 ```
 
-Left flank = maximize button + one button-width spacer; right flank = gear +
-chevron; equal flank widths keep the cell group centered (replacing today's
-lead-spacer-balances-trailing-maximize rule). Gear: lucide `Settings`, `ghost`
-emphasis, `tinted` while customizing. Chevron: `ChevronDown` when open /
-`ChevronUp` when closed, toggles `shelfOpen` (persisted). Maximize keeps its
-current button styling and [L06] conduct, relocated. The bar retains
+Left flank = a lead spacer sized to two button widths; right flank = gear +
+chevron; equal flank widths keep the cell group centered. (Maximize no longer
+exists — removed Jun 23 in `1bdae0b79` — so the lead spacer is the only thing
+balancing the right flank now, not a maximize button.) Gear: lucide `Settings`,
+`ghost` emphasis, `tinted` while customizing. Chevron: `ChevronDown` when open /
+`ChevronUp` when closed, toggles `shelfOpen` (persisted). The bar retains
 `data-tug-focus="refuse"`, the `CycleScope`, and the `:empty`-collapse behavior
 for a null Z2 slot.
 
@@ -561,7 +568,7 @@ ReactNode — props cannot reach it. Three mechanisms bridge the boundary:
 |-------|--------------------------------------------|-----------|-----|
 | status-area config (row / lanes / shelfOpen) | external config | `useTugbankValue` + `setLocalValue`/PUT write helper (placement-experiment pattern) | [L02] |
 | `customizing` | local structural mode | `useState` in `DevCardStatusArea`, bridged to the slot-rendered row via `StatusAreaCustomizeContext` (Spec S06) | — |
-| `maximized` | session-only appearance (existing) | stays in `DevCardBody`; `data-maximized` + CSS | [L06] |
+| ~~`maximized`~~ | — (removed Jun 23, `1bdae0b79`) | n/a — no longer part of the card | — |
 | pulse line / enabled (read) | external app state | `pulse-store` via `useSyncExternalStore` (pulse plan) | [L02] |
 | lane focus (which lane expanded) | local-data → appearance | `useState` lane id → `data-focus` attr; flex in CSS | [L06] |
 | drag source dim | appearance | `data-dragging` attr + CSS rule | [L06] |
@@ -595,7 +602,7 @@ ReactNode — props cannot reach it. Three mechanisms bridge the boundary:
 | `DevCardStatusShelf` | component | `dev-card-status-shelf.tsx` | [P05]/[P07]; Spec S04 |
 | `startDragGhost`, `computeInsertion`, imperative caret helper | fn | shared in `dev-card-status-area.tsx` (or small helper module) | Specs S05/S06; caret via direct DOM (`card-drag-coordinator` precedent) |
 | `StatusAreaCustomizeContext` | React context | `status-area-config.ts` | Spec S06; tolerant `null` default |
-| status-bar block swap; strip mount relocation | edit | `dev-card.tsx` | [P03]; maximize state stays |
+| status-bar block swap; strip mount relocation | edit | `dev-card.tsx` | [P03]; bare CycleScope'd main today (no maximize) |
 | focus-order derivation from config | edit | `dev-card-telemetry-renderers.tsx` | [P09] |
 
 ---
@@ -733,7 +740,7 @@ Spec S01, Spec S06, (#s01-config-schema, #s06-customize-bridge, #symbols)
 conduct, Spec S02, Spec S03, Spec S06, (#s02-bar-chrome, #s06-customize-bridge)
 
 **Artifacts:**
-- `dev-card-status-area.tsx/.css`: bar (maximize left + spacer, CycleScope'd Z2
+- `dev-card-status-area.tsx/.css`: bar (lead spacer, CycleScope'd Z2
   content, gear, chevron), strip slot driven by `resolvePulseSurface`, shelf mount
   point (renders nothing until #step-4).
 - `dev-card.tsx`: status-bar block replaced; `dev-pulse-strip` mount relocated
@@ -748,8 +755,8 @@ conduct, Spec S02, Spec S03, Spec S06, (#s02-bar-chrome, #s06-customize-bridge)
       exercised from the start (Spec S06).
 - [ ] Compute `resolvePulseSurface` and render the strip only on `"strip"`;
       placeholder variant while customizing-and-suppressed ([P04]).
-- [ ] Swap `dev-card.tsx`'s inline block for `<DevCardStatusArea …>`; `maximized`
-      state + setter stay in `DevCardBody`.
+- [ ] Swap `dev-card.tsx`'s inline status-bar block for `<DevCardStatusArea …>` (the
+      block is a bare CycleScope'd main today — nothing else to thread out).
 - [ ] Preserve `:empty` collapse for a null Z2 slot and the cycle-scope wiring.
 
 **Tests:**
@@ -757,7 +764,7 @@ conduct, Spec S02, Spec S03, Spec S06, (#s02-bar-chrome, #s06-customize-bridge)
 
 **Checkpoint:**
 - [ ] `bunx tsc --noEmit`; `bun test`
-- [ ] Live walk: maximize works from the left end; cells stay centered; chevron
+- [ ] Live walk: cells stay centered against the lead spacer + gear/chevron; chevron
       flips and persists `shelfOpen` across reload (shelf itself still empty-mount);
       strip appears/disappears per the rule when toggling PULSE into the row config
       via console-written config.
@@ -800,9 +807,10 @@ conduct, Spec S02, Spec S03, Spec S06, (#s02-bar-chrome, #s06-customize-bridge)
       never moves as data changes; focus expand/contract; footer counts open the
       right popovers with working stop/clear; transcript cedes exactly the shelf's
       height.
-- [ ] Live walk with **maximize on + shelf open together**: the transcript holds
-      its floor (`--dev-transcript-min`) without collapsing and the entry's
-      max-height cap holds — the two height-stealers coexist.
+- [ ] Live walk with **shelf open on a short card**: the transcript holds its floor
+      (`--dev-transcript-min`) without collapsing and the entry's max-height cap
+      holds — the shelf steals height cleanly down to the floor. (The old
+      maximize+shelf coexistence case is moot — maximize was removed.)
 
 ---
 
