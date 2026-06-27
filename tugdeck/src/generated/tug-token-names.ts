@@ -554,6 +554,7 @@ export const TUG_TOKEN_NAMES: readonly string[] = [
   "--tug7-surface-card-control-normal-plain-hover",
   "--tug7-surface-card-control-normal-plain-rest",
   "--tug7-surface-card-primary-normal-block-rest",
+  "--tug7-surface-card-primary-normal-controlbar-rest",
   "--tug7-surface-card-primary-normal-findmatch-active",
   "--tug7-surface-card-primary-normal-findmatch-rest",
   "--tug7-surface-card-primary-normal-status-rest",

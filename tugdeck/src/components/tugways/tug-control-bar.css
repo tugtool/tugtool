@@ -1,7 +1,7 @@
 /**
  * tug-control-bar.css — the Z0 control band + its region scrim.
  *
- * The band borrows the Z2 status-bar surface token so it reads as a
+ * The band wears its own Z0 control-band surface token so it reads as a
  * distinct chrome strip (not transcript-colored). The host writes the
  * visibility to `data-visible` ([L06]); the band is `display:none` until
  * `data-visible="true"` — the timing (a progress dwell, the persisting load
@@ -24,8 +24,8 @@
   width: 100%;
   padding-block: 0;
   padding-inline: var(--tug-space-md);
-  /* Distinct Z0 band — borrows the Z2 status-bar surface ([P09]). */
-  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  /* Distinct Z0 band — its own control-band surface ([P09]). */
+  background-color: var(--tug7-surface-card-primary-normal-controlbar-rest);
   font-size: 0.85em;
   user-select: none;
   /* The band sits above the region scrim. */

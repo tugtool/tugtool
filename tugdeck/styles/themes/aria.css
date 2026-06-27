@@ -322,11 +322,15 @@ body {
   --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(orchid, l: 600, c: 85);
   --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(orchid, l: 650, c: 65);
 
-  /* Card — Status Bar (Z0 + Z2 share this surface).
-     Chrome level C2 — a pale rung of the same Key hue as the C1 title band, so
-     the two chrome bars read as one family (dark band / pale strip) with neutral
-     content between. Stays pale enough to hold dark text. */
-  --tug7-surface-card-primary-normal-status-rest: --tug-color(iris, l: 890, c: 22);
+  /* Card — Status Bar (Z2) — the STATE/TIME/TOKENS strip beneath the transcript.
+     Chrome level C2: a pale rung of the C1 Key hue, landing midway between the Z0
+     control band (l:890 c:22) and the tool-block surface (l:925 c:10). Tuned
+     independently of Z0 below. */
+  --tug7-surface-card-primary-normal-status-rest: --tug-color(iris, l: 908, c: 16);
+
+  /* Card — Control band (Z0) — the transcript's top load / session strip. Its own
+     surface so Z0 and Z2 tune separately (seeded equal to Z2). */
+  --tug7-surface-card-primary-normal-controlbar-rest: --tug-color(iris, l: 890, c: 22);
 
   /* Card — Frame border (.tug-pane-chrome outer edge). Darker/quieter than the
      global default so the card edge recedes into the canvas instead of glaring

@@ -307,6 +307,9 @@ body {
   /* Card — Status Bar (Z2 placement zone at bottom of top split-panel) */
   --tug7-surface-card-primary-normal-status-rest: --tug-color(grape, l: 270, c: 20);
 
+  /* Card — Control band (Z0) — its own surface so Z0/Z2 tune separately (seeded equal). */
+  --tug7-surface-card-primary-normal-controlbar-rest: --tug-color(grape, l: 270, c: 20);
+
   /* Card — Tool-block surface (header strip + body panel share it). A touch
      lighter than the column so blocks read as their own tinted panel. Bakes the
      former text-into-surface color-mix into a plain token (look unchanged). */

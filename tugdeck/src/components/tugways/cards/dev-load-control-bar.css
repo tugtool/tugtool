@@ -50,7 +50,7 @@
      flush at the top; restore that breathing BELOW the strip instead, so the
      first turn isn't cramped against the divider. */
   margin-block-end: var(--tug-space-md);
-  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  background-color: var(--tug7-surface-card-primary-normal-controlbar-rest);
   border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   font-size: 0.85em;
   user-select: none;
@@ -79,7 +79,7 @@
   right: 0;
   width: var(--tugx-z0-gutter, 0);
   height: 2.5rem;
-  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  background-color: var(--tug7-surface-card-primary-normal-controlbar-rest);
   border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   pointer-events: none;
 }
