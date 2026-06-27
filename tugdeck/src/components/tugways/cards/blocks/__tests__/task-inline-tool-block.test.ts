@@ -23,6 +23,7 @@ import { describe, expect, test } from "bun:test";
 import {
   TaskInlineToolBlock,
   composeCreatedLabel,
+  composeMarker,
   composeMarkerText,
   composeUpdatedLabel,
   deriveTaskInlineKind,
@@ -224,6 +225,92 @@ describe("composeMarkerText", () => {
         tasks: TASKS,
       }),
     ).toBe("Task event");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// composeMarker — the structured state + parts that drive the icon
+// and the verb / subject split. `composeMarkerText` is derived from
+// this, so the assertions above already cover the joined-string form;
+// these pin the `state` that selects the per-state icon.
+// ---------------------------------------------------------------------------
+
+describe("composeMarker", () => {
+  test("create + ready → state `created`, verb `Created`, subject from input", () => {
+    expect(
+      composeMarker({
+        kind: "create",
+        input: { subject: "Write the spec" },
+        status: "ready",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "created", verb: "Created", subject: "Write the spec" });
+  });
+
+  test("update + in_progress → state `started`", () => {
+    expect(
+      composeMarker({
+        kind: "update",
+        input: { taskId: "2", status: "in_progress" },
+        status: "ready",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "started", verb: "Started", subject: "Land the wrapper" });
+  });
+
+  test("update + completed → state `completed`", () => {
+    expect(
+      composeMarker({
+        kind: "update",
+        input: { taskId: "1", status: "completed" },
+        status: "ready",
+        tasks: TASKS,
+      }).state,
+    ).toBe("completed");
+  });
+
+  test("update + pending → state `reset`", () => {
+    expect(
+      composeMarker({
+        kind: "update",
+        input: { taskId: "3", status: "pending" },
+        status: "ready",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "reset", verb: "Reset", subject: "Ship the gallery" });
+  });
+
+  test("streaming create → state `creating`, no subject", () => {
+    expect(
+      composeMarker({
+        kind: "create",
+        input: {},
+        status: "streaming",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "creating", verb: "Creating…", subject: "" });
+  });
+
+  test("streaming update → state `updating`, no subject", () => {
+    expect(
+      composeMarker({
+        kind: "update",
+        input: { taskId: "2" },
+        status: "streaming",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "updating", verb: "Updating…", subject: "" });
+  });
+
+  test("null kind → state `unknown` (defensive)", () => {
+    expect(
+      composeMarker({
+        kind: null,
+        input: {},
+        status: "ready",
+        tasks: TASKS,
+      }),
+    ).toEqual({ state: "unknown", verb: "Task event", subject: "" });
   });
 });
 

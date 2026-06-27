@@ -11,43 +11,48 @@
  * never duplicate work: the cell answers "what's on the list now?";
  * the marker answers "when did this happen?".
  *
- * Conformance deviation (intentional). This is the first wrapper to
- * opt out of `BlockChrome`. No frame, no status stripe, no
- * error band, no actions cluster. A `ListChecks` icon plus a single
- * `TugLabel` row, sized to read as ambient conversation-flow
- * annotation rather than another tool-call card. Putting the
- * `Background Task ·`-style chrome around these would fight the
- * TASKS cell for the user's attention — the cell is primary, the
- * marker is ambient.
+ * Conformance posture. The wrapper still opts out of `BlockChrome`
+ * — no frame, no status stripe, no error band, no actions cluster
+ * — but it borrows the tool-call header's *geometry*: a fixed
+ * leading status slot, a one-line box every cross-row item rides,
+ * and the header type scale. The result reads in the transcript's
+ * row rhythm (so it no longer looks like a different species) while
+ * staying lighter than a real tool-call card. The status slot holds
+ * a per-state icon rather than the header's animated lifecycle dot:
+ * task events are discrete, terminal state changes, not live
+ * phases, so a static state glyph reads truer than a pulse — and it
+ * keeps task markers visually distinct from the tool calls that
+ * keep the dot.
  *
- * Per-event reading (label text + icon carry the meaning; color is
- * uniform — see "Why whisper-uniform" below):
- *  - `TaskCreate` → `"Created: <subject>"` (subject is in the
- *    input — narrowed via `narrowTaskCreateInput`).
- *  - `TaskUpdate → in_progress` → `"Started: <subject>"`.
- *  - `TaskUpdate → completed` → `"Completed: <subject>"`.
- *  - `TaskUpdate → pending` → `"Reset: <subject>"` (rare —
+ * Per-event reading. The row is `[icon] Verb subject` — the verb is
+ * the bold header "name", the subject the muted detail (the
+ * block-header name/detail mapping). The icon carries the state by
+ * shape:
+ *  - `TaskCreate` → `ListPlus` + `"Created"` + subject (subject is
+ *    in the input — narrowed via `narrowTaskCreateInput`).
+ *  - `TaskUpdate → in_progress` → `CircleDot` + `"Started"`.
+ *  - `TaskUpdate → completed` → `CircleCheck` + `"Completed"`.
+ *  - `TaskUpdate → pending` → `RotateCcw` + `"Reset"` (rare —
  *    explicit revert from a non-pending status; defensive coverage
  *    of a valid wire value the design didn't specify a verb for).
- *  - `TaskUpdate` with unknown `taskId` → falls back to
- *    `"<Verb>: Task #<taskId>"` (the matching `TaskCreate` may
- *    have arrived out of order in replay; the bare id is the
- *    least-misleading thing we can render).
- *  - Streaming (input still arriving) → `"Creating…"` /
- *    `"Updating…"` placeholder, whisper treatment.
- *  - Errored event → error text + `role="danger"` +
- *    `emphasis="normal"` (drop whisper so the danger color reads
- *    cleanly — `whisper`'s `color:` would otherwise override the
- *    role tint).
+ *  - `TaskUpdate` with unknown `taskId` → subject falls back to
+ *    `"Task #<taskId>"` (the matching `TaskCreate` may have arrived
+ *    out of order in replay; the bare id is the least-misleading
+ *    thing we can render).
+ *  - Streaming (input still arriving) → `ListChecks` + `"Creating…"`
+ *    / `"Updating…"` placeholder, no subject.
+ *  - Errored event → `CircleAlert` + error text, both danger-tinted
+ *    (`data-tone="danger"`).
  *
- * Why whisper-uniform, not role-colored. An earlier draft proposed
+ * Why muted-icon, not role-colored. An earlier draft proposed
  * `role="action"` for Created / Started and `role="success"` for
  * Completed — colored accents per event. The audit volume of these
  * events in a real session is high enough (often 8–12 per turn for
  * a multi-task plan) that role-coloring pulls weight away from the
- * TASKS cell. `emphasis="whisper"` keeps every row visually
- * subordinate to the cell. Color is reserved for the rare error
- * case, where it earns the visual interrupt.
+ * TASKS cell. So the state is carried by icon *shape*, not hue: the
+ * icon stays muted and the verb reads in the header's normal text
+ * tone. Color is reserved for the rare error case, where it earns
+ * the visual interrupt.
  *
  * `subject` lookup for `TaskUpdate`. The wire only carries
  * `taskId`. The wrapper resolves `subject` by reading the
@@ -87,9 +92,15 @@
 import "./task-inline-tool-block.css";
 
 import React from "react";
-import { ListChecks } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleDot,
+  ListChecks,
+  ListPlus,
+  RotateCcw,
+} from "lucide-react";
 
-import { TugLabel } from "@/components/tugways/tug-label";
 import {
   narrowTaskCreateInput,
   narrowTaskUpdateInput,
@@ -163,6 +174,32 @@ function updateVerb(status: TaskStatus): string {
 }
 
 /**
+ * The resolved marker state — drives both the per-state icon and
+ * (with `verb`) the row's text. A single enum keeps the icon and
+ * the verb from drifting: every render reads both off the one
+ * `composeMarker` result.
+ */
+export type TaskMarkerState =
+  | "created"
+  | "started"
+  | "completed"
+  | "reset"
+  | "creating"
+  | "updating"
+  | "unknown";
+
+function updateState(status: TaskStatus): TaskMarkerState {
+  switch (status) {
+    case "in_progress":
+      return "started";
+    case "completed":
+      return "completed";
+    case "pending":
+      return "reset";
+  }
+}
+
+/**
  * Resolve a `subject` for a `TaskUpdate`'s `taskId` against the
  * reducer's task list. Falls back to `Task #<taskId>` when the
  * matching `TaskCreate` hasn't been folded yet (the rare replay-
@@ -219,16 +256,45 @@ interface RowProps {
   tasks: readonly TaskItem[];
 }
 
+/** Source size for every marker glyph — see {@link markerIcon}. */
+const MARKER_ICON_SIZE = 16;
+
+/**
+ * The per-state glyph. State is carried by *shape*, not color (the
+ * icon stays muted via CSS — see "Why muted-icon" in the module
+ * docstring); the error glyph is the one exception, danger-tinted
+ * via the row's `data-tone`. The streaming / unknown placeholders
+ * keep the original `ListChecks` so an in-flight row reads as
+ * "a task event, kind not yet known".
+ */
+function markerIcon(state: TaskMarkerState): React.ReactNode {
+  switch (state) {
+    case "created":
+      return <ListPlus size={MARKER_ICON_SIZE} aria-hidden="true" />;
+    case "started":
+      return <CircleDot size={MARKER_ICON_SIZE} aria-hidden="true" />;
+    case "completed":
+      return <CircleCheck size={MARKER_ICON_SIZE} aria-hidden="true" />;
+    case "reset":
+      return <RotateCcw size={MARKER_ICON_SIZE} aria-hidden="true" />;
+    case "creating":
+    case "updating":
+    case "unknown":
+      return <ListChecks size={MARKER_ICON_SIZE} aria-hidden="true" />;
+  }
+}
+
 const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
   const { toolName, input, textOutput, status } = baseProps;
   const kind = deriveTaskInlineKind(toolName);
 
-  // Error branch: surface the error text with a danger tint. Drop
-  // whisper so the role's text color reads cleanly (whisper's `color:`
-  // rule would otherwise win in the cascade). When `textOutput` is
-  // missing on an errored event (rare — `tool_result.is_error` true
-  // without an output body), fall back to a generic "Failed" label
-  // so the marker isn't a blank danger row.
+  // Error branch: surface the error text with a danger tint carried
+  // by the row's `data-tone` (icon + text both tint via CSS). When
+  // `textOutput` is missing on an errored event (rare —
+  // `tool_result.is_error` true without an output body), fall back
+  // to a generic "Failed" label so the marker isn't a blank danger
+  // row. The error text rides the subject slot (it IS the content);
+  // there's no verb.
   if (status === "error") {
     const errorText =
       textOutput !== undefined && textOutput.length > 0
@@ -241,36 +307,31 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
         data-kind={kind ?? undefined}
         data-tone="danger"
       >
-        <ListChecks
-          size={16}
-          aria-hidden="true"
-          className="task-inline-tool-block-icon"
-        />
-        <TugLabel size="md" role="danger" emphasis="normal">
-          {errorText}
-        </TugLabel>
+        <span className="task-inline-tool-block-icon">
+          <CircleAlert size={MARKER_ICON_SIZE} aria-hidden="true" />
+        </span>
+        <span className="task-inline-tool-block-subject">{errorText}</span>
       </div>
     );
   }
 
-  // Calm-uniform branch — every non-error event reads as ambient
-  // annotation. The label text varies; the visual treatment does
-  // not.
-  const labelText = composeMarkerText({ kind, input, status, tasks });
+  // Steady / streaming branch — block-header geometry: a leading
+  // per-state icon slot, the verb as the bold header "name", and
+  // the subject as the muted detail. Placeholder rows (streaming /
+  // unknown) carry a verb but no subject.
+  const { state, verb, subject } = composeMarker({ kind, input, status, tasks });
   return (
     <div
       className="task-inline-tool-block"
       data-slot="task-inline-tool-block"
       data-kind={kind ?? undefined}
+      data-state={state}
     >
-      <ListChecks
-        size={16}
-        aria-hidden="true"
-        className="task-inline-tool-block-icon"
-      />
-      <TugLabel size="md" emphasis="whisper">
-        {labelText}
-      </TugLabel>
+      <span className="task-inline-tool-block-icon">{markerIcon(state)}</span>
+      <span className="task-inline-tool-block-verb">{verb}</span>
+      {subject.length > 0 ? (
+        <span className="task-inline-tool-block-subject">{subject}</span>
+      ) : null}
     </div>
   );
 };
@@ -287,37 +348,58 @@ interface ComposeArgs {
   tasks: readonly TaskItem[];
 }
 
+/** The marker's resolved state + its two text parts. */
+export interface TaskMarker {
+  state: TaskMarkerState;
+  /** The bold header "name" — `Created` / `Started` / a placeholder. */
+  verb: string;
+  /** The muted detail — the task subject; empty for placeholder rows. */
+  subject: string;
+}
+
 /**
- * Compose the marker's visible text for a non-error event.
- * Exported for tests.
+ * Resolve a non-error event to its state + verb + subject. The one
+ * pure surface every non-error row reads: the component maps
+ * `state` → icon and renders `verb` + `subject` as the header
+ * name + detail. Exported for tests.
  */
-export function composeMarkerText({
+export function composeMarker({
   kind,
   input,
   status,
   tasks,
-}: ComposeArgs): string {
-  // Streaming branch — input is still arriving; we may not yet
-  // have a subject (TaskCreate) or a taskId (TaskUpdate). Fall back
-  // to the streaming placeholder. The whisper treatment is the same
-  // as the steady-state row.
+}: ComposeArgs): TaskMarker {
+  // Streaming branch — input is still arriving; we may not yet have
+  // a subject (TaskCreate) or a taskId (TaskUpdate). Fall back to
+  // the streaming placeholder (verb only, no subject).
   if (status === "streaming") {
-    if (kind === "create") return "Creating…";
-    if (kind === "update") return "Updating…";
-    return "…";
+    if (kind === "create") return { state: "creating", verb: "Creating…", subject: "" };
+    if (kind === "update") return { state: "updating", verb: "Updating…", subject: "" };
+    return { state: "unknown", verb: "…", subject: "" };
   }
   if (kind === "create") {
     const narrowed = narrowTaskCreateInput(input);
-    if (narrowed === undefined) return "Creating…";
-    return composeCreatedLabel(narrowed.subject);
+    if (narrowed === undefined) return { state: "creating", verb: "Creating…", subject: "" };
+    return { state: "created", verb: "Created", subject: narrowed.subject };
   }
   if (kind === "update") {
     const narrowed = narrowTaskUpdateInput(input);
-    if (narrowed === undefined) return "Updating…";
+    if (narrowed === undefined) return { state: "updating", verb: "Updating…", subject: "" };
     const subject = resolveUpdateSubject(narrowed.taskId, tasks);
-    return composeUpdatedLabel(narrowed.status, subject);
+    return { state: updateState(narrowed.status), verb: updateVerb(narrowed.status), subject };
   }
   // Defensive — an unrecognised kind shouldn't reach here, but the
   // wrapper renders a neutral placeholder rather than crashing.
-  return "Task event";
+  return { state: "unknown", verb: "Task event", subject: "" };
+}
+
+/**
+ * The marker's visible text as one string (`"Verb: subject"`, or
+ * just the verb for a placeholder row). Derived from
+ * {@link composeMarker} so the verb words have one source. Exported
+ * for tests.
+ */
+export function composeMarkerText(args: ComposeArgs): string {
+  const { verb, subject } = composeMarker(args);
+  return subject.length > 0 ? `${verb}: ${subject}` : verb;
 }
