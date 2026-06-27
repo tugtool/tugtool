@@ -1173,6 +1173,37 @@ export const TugPromptEntry = React.forwardRef<
     return fresh;
   }, [historyStore, route, snap.tugSessionId]);
 
+  // Re-seed the per-card bytes store from durable history thumbnails so a
+  // recalled prompt shows its image previews even after a cold launch —
+  // the full bytes are ephemeral and per-card, but the baked thumbnail
+  // rode the history entry into tugbank. This is structure-zone store→store
+  // wiring ([L24]): observe the history store's own subscription directly
+  // and mutate the bytes store in the callback ([L22]) — not a
+  // `useSyncExternalStore` → `useEffect` round-trip. The effect re-subscribes
+  // on a session change, so the callback never reads a stale id ([L07]).
+  // Gaps only: a live id whose full bytes are still present is never
+  // clobbered. An image atom with no stored thumbnail gets an empty marker
+  // so it recalls as a broken-image tile rather than inert text.
+  useLayoutEffect(() => {
+    const sessionId = snap.tugSessionId;
+    if (sessionId.length === 0) return;
+    const reseed = (): void => {
+      for (const entry of historyStore.getSessionEntries(sessionId)) {
+        for (const atom of entry.atoms) {
+          if (atom.type !== "image" || atom.id === undefined) continue;
+          if (attachmentBytesStore.get(atom.id) !== null) continue;
+          attachmentBytesStore.put(atom.id, {
+            content: "",
+            mediaType: "",
+            thumbnailDataUrl: atom.thumbnailDataUrl,
+          });
+        }
+      }
+    };
+    reseed();
+    return historyStore.subscribe(reseed);
+  }, [historyStore, attachmentBytesStore, snap.tugSessionId]);
+
   // Live ref to the active route's history provider so `performSubmit`
   // can reset its cursor without taking `currentHistoryProvider` as a
   // dep (which would churn `performSubmit`'s identity on every route
@@ -1643,6 +1674,14 @@ export const TugPromptEntry = React.forwardRef<
         type: a.segment.type,
         label: a.segment.label,
         value: a.segment.value,
+        id: a.segment.id,
+        // Persist the baked thumbnail so the preview survives a cold
+        // launch (the full bytes live only in the ephemeral per-card
+        // store). Read straight off the bytes store at submit time.
+        thumbnailDataUrl:
+          a.segment.id !== undefined
+            ? attachmentBytesStore.get(a.segment.id)?.thumbnailDataUrl
+            : undefined,
       })),
       timestamp: Date.now(),
     });
@@ -1668,6 +1707,7 @@ export const TugPromptEntry = React.forwardRef<
     manager,
     sessionMetadataStore,
     persistClearedDraft,
+    attachmentBytesStore,
   ]);
 
   // Flush a deferred submit. When a submit landed during the

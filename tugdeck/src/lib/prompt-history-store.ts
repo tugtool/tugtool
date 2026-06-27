@@ -25,6 +25,24 @@ export interface SerializedAtom {
   type: string;
   label: string;
   value: string;
+  /**
+   * Bytes-store key for image atoms — the link back to the per-card
+   * `AtomBytesStore` entry holding the image payload + thumbnail.
+   * Without it a recalled image atom is severed from its bytes and
+   * renders as inert placeholder text. Optional: non-image atoms
+   * (file mentions, etc.) carry no id.
+   */
+  id?: string;
+  /**
+   * Durable thumbnail data URL for image atoms. The full image bytes
+   * live only in the per-card `AtomBytesStore` (ephemeral); persisting
+   * the small baked thumbnail here lets a recalled prompt re-seed the
+   * store and show its preview even after a cold launch, when the
+   * original bytes are gone. Absent for non-image atoms, and for image
+   * atoms whose thumbnail bake hadn't landed at submit time (those
+   * recall as a broken-image tile).
+   */
+  thumbnailDataUrl?: string;
 }
 
 /**
@@ -196,6 +214,7 @@ function entryToEditingState(entry: HistoryEntry): TugTextEditingState {
       type: a.type,
       label: a.label,
       value: a.value,
+      id: a.id,
     })),
     selection: null,
   };
@@ -447,6 +466,16 @@ export class PromptHistoryStore {
     }
 
     return new RouteHistoryProvider(sessionId, this, route);
+  }
+
+  /**
+   * Read the loaded entries for a session. Used by the prompt entry to
+   * re-seed the per-card bytes store from durable image thumbnails so
+   * recalled prompts show their previews after a cold launch. Returns
+   * the live array (do not mutate) or an empty array if not yet loaded.
+   */
+  getSessionEntries(sessionId: string): readonly HistoryEntry[] {
+    return this._sessions.get(sessionId) ?? [];
   }
 
   // ── Internal helpers (used by SessionHistoryProvider) ─────────────────────

@@ -161,6 +161,30 @@
   background: transparent;
 }
 
+.tug-attachment-preview__broken {
+  /* Broken image — a framed box with a centred fractured-bone glyph, for a
+     recalled image whose bytes are gone and whose durable thumbnail was
+     never captured. Framed (unlike the transparent pending placeholder)
+     because this is a terminal state, not a loading one: the frame +
+     muted glyph read as "this image is broken," not "still loading." */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 1px solid color-mix(in srgb,
+    var(--tug7-element-global-text-normal-default-rest) 50%, transparent);
+  background: var(--tugx-attachment-thumb-bg,
+    var(--tug7-element-field-fill-rest,
+    var(--tug-color-surface-2, #1d1d1d)));
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-attachment-preview__broken svg {
+  width: 45%;
+  height: 45%;
+}
+
 .tug-attachment-preview__caption {
   /* The unified `image-N` label beneath the thumbnail. A single centred
      line, monospaced to match the inline chip's label rendering — readers
@@ -291,6 +315,15 @@
   /* Square reservation while pixels are pending — transparent, no 1:1
      aspect box. */
   display: block;
+  width: var(--tugx-attachment-tile-height, 56px);
+  height: var(--tugx-attachment-tile-height, 56px);
+  aspect-ratio: auto;
+}
+
+[data-slot="tug-attachment-preview"][data-deletable]
+  .tug-attachment-preview__broken {
+  /* Fixed square in the height-driven compose strip, matching the pending
+     placeholder's footprint so a recalled broken tile holds the same slot. */
   width: var(--tugx-attachment-tile-height, 56px);
   height: var(--tugx-attachment-tile-height, 56px);
   aspect-ratio: auto;

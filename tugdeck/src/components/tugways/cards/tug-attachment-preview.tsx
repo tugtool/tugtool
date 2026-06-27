@@ -54,7 +54,7 @@
 import "./tug-attachment-preview.css";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { BoneFracture, X } from "lucide-react";
 
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
@@ -134,6 +134,15 @@ interface TileSnapshot {
    */
   readonly content: string | undefined;
   readonly mediaType: string | undefined;
+  /**
+   * The atom resolves to a bytes-store entry that carries no usable
+   * pixels — neither a thumbnail nor full content. This is the
+   * "broken image" state: a recalled history atom whose bytes are gone
+   * and whose durable thumbnail was never captured (re-seeded as an empty
+   * marker). Distinct from the pre-pixel drop window (no entry at all),
+   * which stays a transparent reserved slot.
+   */
+  readonly broken: boolean;
 }
 
 function buildSnapshot(
@@ -144,6 +153,8 @@ function buildSnapshot(
   for (const atom of atoms) {
     const id = atom.id ?? "";
     const entry = id.length > 0 ? bytesStore.get(id) : null;
+    const hasThumb = (entry?.thumbnailDataUrl ?? "").length > 0;
+    const hasContent = (entry?.content ?? "").length > 0;
     out.push({
       atomId: id,
       label: atom.label,
@@ -151,6 +162,7 @@ function buildSnapshot(
       thumbnailDataUrl: entry?.thumbnailDataUrl,
       content: entry?.content,
       mediaType: entry?.mediaType,
+      broken: entry !== null && !hasThumb && !hasContent,
     });
   }
   return out;
@@ -167,10 +179,12 @@ function snapshotKey(snap: ReadonlyArray<TileSnapshot>): string {
   for (const t of snap) {
     // Content presence (not the bytes themselves) joins the key so the
     // tile re-renders when content lands ahead of its thumbnail — without
-    // hashing the whole base64 string on every snapshot.
+    // hashing the whole base64 string on every snapshot. `broken` joins it
+    // too so a same-id atom flipping from broken-marker to real bytes (or
+    // back) busts the cache even though its presence flags didn't move.
     key += `${t.atomId}|${t.thumbnailDataUrl ?? ""}|${
-      t.content !== undefined ? "c" : ""
-    }|`;
+      (t.content ?? "").length > 0 ? "c" : ""
+    }|${t.broken ? "b" : ""}|`;
   }
   return key;
 }
@@ -311,11 +325,19 @@ export const TugAttachmentPreview = React.forwardRef<
         // content fallback persists — the tile shows the original scaled
         // down rather than an empty box. Heavier than a thumbnail, but rare
         // and strictly better than the alternative.
-        const src =
-          tile.thumbnailDataUrl ??
-          (tile.content !== undefined && tile.mediaType !== undefined
+        const hasThumb =
+          tile.thumbnailDataUrl !== undefined &&
+          tile.thumbnailDataUrl.length > 0;
+        const hasContent =
+          tile.content !== undefined &&
+          tile.content.length > 0 &&
+          tile.mediaType !== undefined &&
+          tile.mediaType.length > 0;
+        const src = hasThumb
+          ? tile.thumbnailDataUrl
+          : hasContent
             ? `data:${tile.mediaType};base64,${tile.content}`
-            : undefined);
+            : undefined;
         return (
           <div
             key={tile.atomId.length > 0 ? `id-${tile.atomId}` : `pos-${i}`}
@@ -350,18 +372,33 @@ export const TugAttachmentPreview = React.forwardRef<
                     src={src}
                     alt={caption}
                   />
+                ) : tile.broken ? (
+                  // Broken image: the atom points at a bytes-store entry
+                  // with no pixels — a recalled history image whose bytes
+                  // are gone and whose durable thumbnail was never captured.
+                  // A fractured-bone glyph reads as "this image is broken"
+                  // rather than a blank slot that looks like it's still
+                  // loading.
+                  <span
+                    data-slot="tug-attachment-preview__broken"
+                    className="tug-attachment-preview__broken"
+                    aria-label="Image unavailable"
+                    title="Image unavailable"
+                  >
+                    <BoneFracture aria-hidden="true" />
+                  </span>
                 ) : (
-                  // No pixels yet (the brief pre-bake drop window) or a
-                  // failed bake: a transparent, reserved slot — never a dark
-                  // box. The fixed-height zone already holds the space, so
-                  // the image simply pops in when the bake lands.
+                  // No pixels yet (the brief pre-bake drop window): a
+                  // transparent, reserved slot — never a dark box. The
+                  // fixed-height zone already holds the space, so the image
+                  // simply pops in when the bake lands.
                   <span
                     data-slot="tug-attachment-preview__placeholder"
                     className="tug-attachment-preview__placeholder"
                     aria-hidden="true"
                   />
                 )}
-                {deletable && src !== undefined && (
+                {deletable && (src !== undefined || tile.broken) && (
                   // Compose-phase delete. A component-owned overlay affordance
                   // (not a TugButton) pinned to the thumbnail's own top-right
                   // corner, so it stays flush regardless of cell/caption width.
@@ -520,7 +557,17 @@ function buildPreviewSnapshot(
   if (id === undefined || id.length === 0) return null;
   const entry = bytesStore.get(id);
   if (entry === null) return null;
-  return `data:${entry.mediaType};base64,${entry.content}`;
+  // Prefer the full-resolution bytes; fall back to the durable thumbnail
+  // for a recalled preview-only entry (no full bytes, but a thumbnail rode
+  // history) so the sheet shows the (smaller) image rather than nothing. A
+  // broken entry has neither — the sheet renders its empty state.
+  if (entry.content.length > 0 && entry.mediaType.length > 0) {
+    return `data:${entry.mediaType};base64,${entry.content}`;
+  }
+  if (entry.thumbnailDataUrl !== undefined && entry.thumbnailDataUrl.length > 0) {
+    return entry.thumbnailDataUrl;
+  }
+  return null;
 }
 
 function AttachmentPreviewSheet({

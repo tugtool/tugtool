@@ -181,7 +181,16 @@ export function buildWirePayload(
     }
     atomIdx += 1;
     const bytes = atom.id !== undefined ? bytesStore.get(atom.id) : null;
-    if (atom.type === "image" && bytes !== null && atom.id !== undefined) {
+    // `content.length > 0` skips preview-only entries — a recalled image
+    // re-seeded from a durable history thumbnail carries a thumbnail but no
+    // full bytes, so it can't be re-sent. It falls through to a mention
+    // marker rather than shipping an empty `image` block.
+    if (
+      atom.type === "image" &&
+      bytes !== null &&
+      bytes.content.length > 0 &&
+      atom.id !== undefined
+    ) {
       flushText();
       content.push({
         type: "image",
