@@ -313,7 +313,7 @@ body {
   /* Card — Tool-block surface (header strip + body panel share it). A touch
      lighter than the column so blocks read as their own tinted panel. Bakes the
      former text-into-surface color-mix into a plain token (look unchanged). */
-  --tug7-surface-card-primary-normal-block-rest: --tug-color(indigo-violet, l: 342, c: 20);
+  --tug7-surface-card-primary-normal-block-rest: --tug-color(indigo-violet, l: 360, c: 20);
 
   /* Card — Title Bar Element Tokens */
   --tug7-element-card-text-normal-title-active: --tug-color(indigo, l: 930, c: 20);
