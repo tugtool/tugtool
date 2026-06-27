@@ -253,6 +253,24 @@ export class DevSessionsDataSource implements TugListViewDataSource {
     return this.rows[index].kind;
   }
 
+  /**
+   * A session is *enabled* (pickable) unless it is held by a live
+   * process the user can't resume into from here: live in another Tug
+   * card (`state === "live"`) or in use by an external terminal app
+   * (`terminal_live !== null`). The `TugListView` skips disabled rows
+   * during arrow navigation and refuses click / Space-Enter selection
+   * on them, so these "Live in another card" / "In use in a terminal"
+   * rows stay visible-for-context but unpickable. `session-new` and the
+   * `loading` placeholder are always enabled (the latter is never
+   * actually cursorable — it's the sole row while pending). Mirrors the
+   * `disabled` appearance derived in `SessionResumeCell`.
+   */
+  enabledForIndex(index: number): boolean {
+    const row = this.rows[index];
+    if (row.kind !== "session-resume") return true;
+    return row.row.state !== "live" && row.row.terminal_live === null;
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => {

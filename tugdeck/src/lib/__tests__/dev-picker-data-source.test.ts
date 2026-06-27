@@ -115,7 +115,7 @@ describe("DevSessionsDataSource with external rows", () => {
     expect(ds.nonLiveCount()).toBe(2);
   });
 
-  test("terminal-live rows are still listed (blocking is render-side)", () => {
+  test("terminal-live rows are still listed (blocking is via enabledForIndex)", () => {
     const ds = new DevSessionsDataSource({
       query: "/proj",
       ledger: readySnapshot([
@@ -130,5 +130,37 @@ describe("DevSessionsDataSource with external rows", () => {
     const row = ds.rowAt(1);
     if (row.kind !== "session-resume") throw new Error("expected resume row");
     expect(row.row.terminal_live).toEqual({ status: "busy" });
+  });
+});
+
+describe("DevSessionsDataSource.enabledForIndex", () => {
+  test("live and terminal-live rows are disabled; the rest are enabled", () => {
+    const ds = new DevSessionsDataSource({
+      query: "/proj",
+      ledger: readySnapshot([
+        makeRow({ session_id: "pickable", state: "closed", turn_count: 3 }),
+        makeRow({ session_id: "live", state: "live", turn_count: 1 }),
+        makeRow({
+          session_id: "held",
+          origin: "external",
+          terminal_live: { status: "idle" },
+        }),
+      ]),
+    });
+    // Rows: [session-new, pickable, live, held].
+    expect(rowsOf(ds)).toEqual(["session-new", "pickable", "live", "held"]);
+    expect(ds.enabledForIndex(0)).toBe(true); // session-new
+    expect(ds.enabledForIndex(1)).toBe(true); // closed, has turns
+    expect(ds.enabledForIndex(2)).toBe(false); // live in another card
+    expect(ds.enabledForIndex(3)).toBe(false); // in use in a terminal
+  });
+
+  test("the pending loading row is enabled (sole row, never cursored past)", () => {
+    const ds = new DevSessionsDataSource({
+      query: "/proj",
+      ledger: { status: "pending", rows: [], dirExists: true } as WorkspaceSnapshot,
+    });
+    expect(rowsOf(ds)).toEqual(["loading"]);
+    expect(ds.enabledForIndex(0)).toBe(true);
   });
 });

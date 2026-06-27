@@ -226,6 +226,32 @@ export interface TugListViewDataSource {
   roleForIndex?(index: number): TugListViewCellRole;
 
   /**
+   * Whether the `"cell"`-role row at `index` is *enabled* — pickable.
+   * Optional; when omitted (or returning `true`), every cell is
+   * enabled, preserving the v1 all-pickable shape. Implementing it is
+   * purely additive.
+   *
+   * A disabled cell is still rendered and still occupies its slot in
+   * the windowing math — it is NOT hidden. What it loses is
+   * *engagement*: the movement cursor skips over it (Up/Down/Home/End/
+   * Page and the key-view gain seed all land on the nearest *enabled*
+   * cell instead), it is not a native Tab stop (`tabIndex={-1}`), and a
+   * click or Space/Enter on it does not fire `delegate.onSelect` nor
+   * move the list's owned selection. The wrapper carries
+   * `data-disabled="true"` and `aria-disabled="true"` so CSS and
+   * assistive tech can reflect the state. The session picker's
+   * "Live in another card" / "In use in a terminal" rows are the
+   * canonical consumers — visible for context, but unpickable.
+   *
+   * Only consulted for `"cell"`-role rows; headers / footers are
+   * already inert via {@link roleForIndex} regardless. Re-read on
+   * every render and at click / keydown time (via the live data source
+   * reference), mirroring `roleForIndex`, so an enabled→disabled
+   * transition between render and activation is honored.
+   */
+  enabledForIndex?(index: number): boolean;
+
+  /**
    * Subscribe to data-source changes. Listener fires on every change
    * that should re-window. Returns an unsubscribe callback.
    */
@@ -999,11 +1025,12 @@ function isEditableEventTarget(target: EventTarget | null): boolean {
 /**
  * Resolve the effective selected index for `selectionRequired` mode.
  *
- * Keeps `current` when it still points at a selectable row (in range
- * and `roleForIndex === "cell"`); otherwise falls to the first
- * selectable row. Returns `null` only when the data source has no
- * selectable rows at all — the transient empty-list state. Pure: no
- * DOM, no side effects, just a read of the data source.
+ * Keeps `current` when it still points at a selectable row (in range,
+ * `roleForIndex === "cell"`, and `enabledForIndex !== false`);
+ * otherwise falls to the first selectable row. Returns `null` only
+ * when the data source has no selectable rows at all — the transient
+ * empty-list state. Pure: no DOM, no side effects, just a read of the
+ * data source.
  */
 function resolveSelectionIndex(
   current: number | null,
@@ -1013,7 +1040,8 @@ function resolveSelectionIndex(
   const isSelectable = (i: number): boolean =>
     i >= 0 &&
     i < count &&
-    (dataSource.roleForIndex?.(i) ?? DEFAULT_CELL_ROLE) === "cell";
+    (dataSource.roleForIndex?.(i) ?? DEFAULT_CELL_ROLE) === "cell" &&
+    (dataSource.enabledForIndex?.(i) ?? true);
   if (current !== null && isSelectable(current)) return current;
   for (let i = 0; i < count; i += 1) {
     if (isSelectable(i)) return i;
@@ -2629,6 +2657,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       id: string;
       kind: string;
       role: TugListViewCellRole;
+      enabled: boolean;
     }> = [];
     // Defensive against a data-source shrink mid-render: if itemCount
     // dropped below the previously-computed window, skip indices that
@@ -2640,6 +2669,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         id: dataSource.idForIndex(i),
         kind: dataSource.kindForIndex(i),
         role: dataSource.roleForIndex?.(i) ?? DEFAULT_CELL_ROLE,
+        enabled: dataSource.enabledForIndex?.(i) ?? true,
       });
     }
 
@@ -2713,19 +2743,29 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // state — moving it must not re-render ([L06]).
     const cursorIndexRef = React.useRef<number>(-1);
 
-    // Cursorable-row helpers — the cursor lands only on `"cell"`-role rows
-    // (headers / footers are inert dividers, skipped during movement).
+    // Cursorable-row helpers — the cursor lands only on *enabled* `"cell"`-
+    // role rows. Headers / footers are inert dividers (skipped by role);
+    // disabled cells are visible-but-unpickable (skipped by enablement). Both
+    // exclusions funnel through `isCursorableRow`, so every movement path
+    // (Up/Down/Home/End/Page, the key-view gain seed, single-select seeding)
+    // inherits the skip without each needing its own filter.
     const roleOfRow = React.useCallback(
       (i: number): TugListViewCellRole =>
         dataSourceRef.current.roleForIndex?.(i) ?? DEFAULT_CELL_ROLE,
       [],
     );
+    const isRowEnabled = React.useCallback(
+      (i: number): boolean => dataSourceRef.current.enabledForIndex?.(i) ?? true,
+      [],
+    );
     const isCursorableRow = React.useCallback(
       (i: number): boolean => {
         const total = dataSourceRef.current.numberOfItems();
-        return i >= 0 && i < total && roleOfRow(i) === "cell";
+        return (
+          i >= 0 && i < total && roleOfRow(i) === "cell" && isRowEnabled(i)
+        );
       },
-      [roleOfRow],
+      [roleOfRow, isRowEnabled],
     );
     const firstCursorableRow = React.useCallback((): number => {
       const total = dataSourceRef.current.numberOfItems();
@@ -3360,6 +3400,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const role =
           dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;
         if (role !== "cell") return;
+        // Disabled cells are visible-but-unpickable: a click must not
+        // promote them to selection nor park the cursor on them. Re-read
+        // from the live data source so an enabled→disabled tick between
+        // mount and click is honored (mirrors the role gate above).
+        if (dataSourceRef.current.enabledForIndex?.(index) === false) return;
         delegateRef.current?.onSelect?.(index);
         // `selectionRequired` mode — the list view owns the selected
         // index; a cell activation moves it. `delegate.onSelect` above
@@ -3398,6 +3443,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const role =
           dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;
         if (role !== "cell") return;
+        // Disabled cells swallow neither the key nor the activation: a
+        // Space/Enter on one is a no-op (the row is unpickable). Leave the
+        // event unmodified so any focused descendant's own handler still
+        // sees it (mirrors the header/footer role gate).
+        if (dataSourceRef.current.enabledForIndex?.(index) === false) return;
         e.preventDefault();
         e.stopPropagation();
         delegateRef.current?.onSelect?.(index);
@@ -3480,7 +3530,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         <ScrollerProvider scroller={scrollerFacadeRef.current}>
         <TugListRowLayoutProvider value={rowLayoutValue}>
         <div className="tug-list-view-window">
-          {renderedRange.map(({ index, id, kind, role }) => {
+          {renderedRange.map(({ index, id, kind, role, enabled }) => {
             // Role-aware wrapper attributes:
             //  - `tabIndex` is `0` for cells (focusable, in tab order)
             //    and `-1` for headers/footers (not focusable). See
@@ -3494,9 +3544,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //    roles, keeping the existing default-cell DOM shape
             //    byte-identical for backwards-compatible CSS
             //    selectors that don't yet know about roles.
+            //  - A disabled cell is visible but unpickable: it drops out
+            //    of the native Tab order (`tabIndex={-1}`) and carries
+            //    `data-disabled` / `aria-disabled` so CSS and assistive
+            //    tech reflect the state. The movement cursor already skips
+            //    it via `isCursorableRow`.
             const wrapperTabIndex =
-              rowsAreNativeStops && interactive && role === "cell" ? 0 : -1;
+              rowsAreNativeStops && interactive && role === "cell" && enabled
+                ? 0
+                : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
+            const wrapperDisabledAttr = enabled ? undefined : "true";
             // `selectionRequired` mode — the owned selected row.
             // Surfaced two ways from the one source: `data-selected`
             // on the wrapper (the CSS-cascade hook,
@@ -3530,6 +3588,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   data-tug-list-cell-kind={kind}
                   data-list-cell-role={wrapperRoleAttr}
                   data-selected={wrapperSelectedAttr}
+                  data-disabled={wrapperDisabledAttr}
+                  aria-disabled={enabled ? undefined : true}
                   role="listitem"
                   tabIndex={wrapperTabIndex}
                   ref={getCellCallbacks(index).ref}
@@ -3546,6 +3606,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 data-tug-list-cell-kind={kind}
                 data-list-cell-role={wrapperRoleAttr}
                 data-selected={wrapperSelectedAttr}
+                data-disabled={wrapperDisabledAttr}
+                aria-disabled={enabled ? undefined : true}
                 role={itemRole}
                 tabIndex={wrapperTabIndex}
                 ref={getCellCallbacks(index).ref}
