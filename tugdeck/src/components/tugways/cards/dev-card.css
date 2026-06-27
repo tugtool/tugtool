@@ -520,8 +520,13 @@
 /* Ghost row — a queued send awaiting dispatch. Painted as an ordinary
    user row, then de-emphasized so it reads as "not yet sent." Opacity
    alone — no token-governed color property — carries the ghosting; the
-   row carries a per-row ✕ that un-sends that one queued message. */
-.dev-card-transcript-ghost-row {
+   row carries a per-row ✕ that un-sends that one queued message. The
+   dimming lands on the icon/header/body, NOT the controls — opacity on
+   the whole row would scrim the ✕ too (a child can't exceed its parent's
+   opacity), and the un-send button stays full-strength and live. */
+.dev-card-transcript-ghost-row .tug-transcript-entry__icon,
+.dev-card-transcript-ghost-row .tug-transcript-entry__header,
+.dev-card-transcript-ghost-row .tug-transcript-entry__body {
   opacity: 0.5;
 }
 

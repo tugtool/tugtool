@@ -455,11 +455,11 @@ const GhostRowCell = React.memo(function GhostRowCell({
           // be composing in. `cancelQueuedSend` removes this one entry
           // and routes its text back through `pendingDraftRestore`.
           <TugIconButton
-            icon={<X size={12} strokeWidth={2.5} />}
+            icon={<X size={11} strokeWidth={2.5} />}
             aria-label="Cancel queued message"
             tone="danger"
-            size="xs"
-            emphasis="outlined"
+            size="2xs"
+            emphasis="filled"
             onClick={() => codeSessionStore.cancelQueuedSend(turnKey)}
           />
         }
