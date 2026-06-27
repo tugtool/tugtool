@@ -90,6 +90,15 @@ export interface TugFileChooserProps {
   focusGroup?: string;
   /** Order within {@link focusGroup}. Defaults to 0. */
   focusOrder?: number;
+  /**
+   * Author the native "Browse…" button into {@link focusGroup} as its own focus
+   * stop ([P02]), at this order — so the folder button joins the surrounding
+   * surface's Tab walk right beside the field and Return / Space opens the native
+   * picker. Omitted by default: the button stays a plain control outside the walk
+   * (the gallery / permission-rules hosts). Only honored when {@link focusGroup}
+   * is also set.
+   */
+  browseFocusOrder?: number;
 }
 
 const DEBOUNCE_MS = 120;
@@ -138,6 +147,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       disabled,
       focusGroup,
       focusOrder = 0,
+      browseFocusOrder,
     },
     forwardedRef,
   ) {
@@ -422,6 +432,11 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
             data-slot="tug-file-chooser-browse"
             disabled={disabled}
             onClick={browse}
+            // A leaf focus stop when the host authors a browse order ([P02]);
+            // the engine lands the key view on the button and Return / Space
+            // fires the native picker through the button's own click path.
+            focusGroup={browseFocusOrder !== undefined ? focusGroup : undefined}
+            focusOrder={browseFocusOrder}
           >
             <FolderOpen aria-hidden="true" size={14} />
           </TugPushButton>

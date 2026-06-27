@@ -8,8 +8,9 @@
  * (`handleArrowKey` + a parallel `PickerSelection`) and its controls were not
  * focus stops at all. This step retires that and authors the controls into the
  * sheet's already-trapped engine focus mode as one group — path field (0) →
- * Recents (1) → Sessions (2) → Move-all-to-Trash (3) → Cancel (4) → Open (5) —
- * so the engine's Tab walk owns navigation, each `TugListView` is ONE item-group
+ * Browse folder button (0.5) → Recents (1) → Sessions (2) → Move-all-to-Trash
+ * (3) → Cancel (4) → Open (5) — so the engine's Tab walk owns navigation, each
+ * `TugListView` is ONE item-group
  * stop that arrow-roves internally, and `armKeyboardRestore` seeds the ring on
  * the commit-home (Open). Each assertion below fails loudly if a seam breaks:
  *
@@ -66,6 +67,9 @@ const TEST_TIMEOUT_MS = 120_000;
 // the same attribute the engine lands `data-key-view-kbd` on, so it doubles as
 // the key-view probe target and is immune to DOM-structure churn.
 const PATH = '[data-tug-focus-key="dev-picker-cycle:0"]';
+// The native "Browse…" folder button sits between the path field and Recents in
+// the walk, at a fractional order so the stops below keep their stable keys.
+const BROWSE = '[data-tug-focus-key="dev-picker-cycle:0.5"]';
 const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
 const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
 const PICKER_FORM = ".dev-card-picker-form";
@@ -171,11 +175,13 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         expect(await app.evalJS<boolean>(PATH_INPUT_FOCUSED)).toBe(true);
 
         // (C) The completion menu is closed, so the path field does NOT own Tab:
-        // Tab leaves it for Recents (the next present stop). If the tab-consume
-        // marker were stuck on, the key view would stay on the field.
+        // Tab leaves it for the Browse button (the next stop), then Recents. If
+        // the tab-consume marker were stuck on, the key view would stay on the field.
+        await pressKey(app, "Tab");
+        await app.waitForCondition<boolean>(hasKeyView(BROWSE), { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(hasKeyView(PATH))).toBe(false);
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(RECENTS), { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(hasKeyView(PATH))).toBe(false);
 
         // (D) Recents is ONE stop with internal arrow-roving. Landing on it seeds
         // the cursor on a row; ArrowDown moves the cursor to a DIFFERENT row while

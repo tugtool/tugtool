@@ -1174,6 +1174,12 @@ function noticeText(notice: PickerNotice): string {
  */
 const PICKER_CYCLE_GROUP = "dev-picker-cycle";
 const PICKER_ORDER_PATH = 0;
+// The native "Browse…" folder button sits just after the path field in reading
+// order. It takes a fractional order so it slots between PATH (0) and RECENTS
+// (1) in the Tab walk WITHOUT renumbering the stops below it — their authored
+// focus-keys (`dev-picker-cycle:1…5`) are a stable contract the app-tests and a
+// baked corpus snapshot address by string, so they must not shift.
+const PICKER_ORDER_BROWSE = 0.5;
 const PICKER_ORDER_RECENTS = 1;
 const PICKER_ORDER_SESSIONS = 2;
 const PICKER_ORDER_TRASH_ALL = 3;
@@ -1688,20 +1694,27 @@ function DevProjectPickerForm({
   const dirMissing = sessionsDataSource.dirExists() === false;
   const openDisabled = trimmedPath.length === 0 || dirMissing;
 
-  // Smart-latch default focus ([P12] Picker → Open). Re-evaluated as the
-  // async path seed settles `openDisabled`:
-  //   - Open enabled → seed Open (Return opens the seeded path); latch.
+  // Smart-latch default focus ([P12] Picker → New session). Re-evaluated as the
+  // async path seed settles `openDisabled` and the sessions list becomes ready:
+  //   - Open enabled + sessions ready → seed the Sessions list, which rests its
+  //     cursor on the "New session" row (the selection defaults to
+  //     `session-new`). A single-select list does not consume Return, so it
+  //     falls through to the persistent-default Open: one Return spawns a new
+  //     session at the seeded (most-recent) path. Latch.
+  //   - Open enabled but sessions not ready yet → keep the caret in the path
+  //     field so a still-loading picker is never ringless; do NOT latch, so the
+  //     seed promotes to the Sessions list the moment the list mounts.
   //   - Open disabled → keep the ring/caret in the path field so typing starts
   //     immediately; do NOT latch, so a seed that later enables Open
-  //     (before the user types) promotes the ring to it on the next run.
+  //     (before the user types) promotes the ring on the next run.
   //   - The user has touched the field → that field is the default;
   //     latch without moving so typing is never interrupted.
   // The picker is persistent-cycling ([P13]) — the seed is the engine KEY VIEW
   // (ring + DOM focus), not a bare `.focus()`, so the focus engine stays the
   // single owner and the ring rests on the seed at open. `armKeyboardRestore`
-  // resolves the stop by its stable focus-key now (the buttons/field are
-  // already registered) or re-lights it the instant it mounts. [L03] layout
-  // effect (seed before paint).
+  // resolves the stop by its stable focus-key now (the field is already
+  // registered) or re-lights it the instant it mounts. [L03] layout effect
+  // (seed before paint).
   useLayoutEffect(() => {
     if (focusManager === null) return;
     if (defaultFocusPlacedRef.current) return;
@@ -1709,13 +1722,13 @@ function DevProjectPickerForm({
       defaultFocusPlacedRef.current = true;
       return;
     }
-    if (!openDisabled) {
-      defaultFocusPlacedRef.current = true;
-      focusManager.armKeyboardRestore(pickerFocusKey(PICKER_ORDER_OPEN));
-    } else {
+    if (openDisabled || !sessionsReady) {
       focusManager.armKeyboardRestore(pickerFocusKey(PICKER_ORDER_PATH));
+      return;
     }
-  }, [openDisabled, focusManager]);
+    defaultFocusPlacedRef.current = true;
+    focusManager.armKeyboardRestore(pickerFocusKey(PICKER_ORDER_SESSIONS));
+  }, [openDisabled, sessionsReady, focusManager]);
 
   return (
     <PickerFormResponderScope>
@@ -1760,6 +1773,7 @@ function DevProjectPickerForm({
           placeholder="/path/to/project"
           focusGroup={PICKER_CYCLE_GROUP}
           focusOrder={PICKER_ORDER_PATH}
+          browseFocusOrder={PICKER_ORDER_BROWSE}
         />
       </label>
       <PickerCellProvider value={cellContextValue}>

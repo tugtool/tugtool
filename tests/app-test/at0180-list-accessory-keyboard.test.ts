@@ -70,6 +70,8 @@ const TEST_TIMEOUT_MS = 180_000;
 const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
 const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
 const PATH = '[data-tug-focus-key="dev-picker-cycle:0"]';
+// The native "Browse…" folder button sits between PATH and RECENTS in the walk.
+const BROWSE = '[data-tug-focus-key="dev-picker-cycle:0.5"]';
 const PICKER_FORM = ".dev-card-picker-form";
 const RECENTS_LIST = ".dev-card-picker-recents-list";
 const POPOVER = ".tug-confirm-popover";
@@ -178,10 +180,13 @@ describe.skipIf(!SHOULD_RUN)("AT0180: list-row accessories join the keyboard foc
         );
 
         // Walk the cycle onto the Recents stop: seed lands on Open; Tab wraps
-        // to the path field; Tab again reaches Recents (at0141's walk).
+        // to the path field; Tab steps through the Browse button, then reaches
+        // Recents (at0141's walk).
         await app.waitForCondition<boolean>(hasKeyView(OPEN), { timeoutMs: 8000 });
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(PATH), { timeoutMs: 6000 });
+        await pressKey(app, "Tab");
+        await app.waitForCondition<boolean>(hasKeyView(BROWSE), { timeoutMs: 6000 });
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(RECENTS), { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(`${CURSORED_RECENT} !== null`, { timeoutMs: 6000 });
