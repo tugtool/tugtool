@@ -27,7 +27,6 @@ fn main() -> ExitCode {
             instance,
             param,
         }) => commands::run_tell(action, port, instance, param, cli.json),
-        Some(Commands::Color { color }) => commands::run_color(color, cli.json, cli.quiet),
         Some(Commands::Dash(dash_cmd)) => match dash_cmd {
             DashCommands::Create { name, description } => {
                 commands::run_dash_create(name, description, cli.json, cli.quiet)

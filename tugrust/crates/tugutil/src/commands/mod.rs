@@ -1,6 +1,5 @@
 //! CLI command implementations
 
-pub mod color;
 pub mod dash;
 pub mod gate;
 pub mod init;
@@ -10,7 +9,6 @@ pub mod state_dir;
 pub mod tell;
 pub mod version;
 
-pub use color::run_color;
 pub use dash::{
     DashCommands, run_dash_commit, run_dash_create, run_dash_join, run_dash_list, run_dash_release,
     run_dash_show,
