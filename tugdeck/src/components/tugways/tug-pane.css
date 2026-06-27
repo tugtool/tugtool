@@ -366,6 +366,18 @@ body {
   color: inherit;
 }
 
+/*
+ * The icon follows the title-bar button's theme-aware text color in every
+ * state. The shared ghost-action svg rules in tug-button.css pin the icon to
+ * --tug7-element-control-icon-ghost-action-{hover,active} on interaction, which
+ * outranks the rest-state inherit above (and reads dark on light themes), so
+ * re-assert inherit at a higher specificity for the interactive states.
+ */
+.tug-pane .tug-pane-title-bar-controls .tug-button:hover:not(:disabled) svg,
+.tug-pane .tug-pane-title-bar-controls .tug-button:active:not(:disabled) svg {
+  color: inherit;
+}
+
 /* ============================================================================
    Accessory slot
    ========================================================================= */
