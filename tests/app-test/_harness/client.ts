@@ -934,6 +934,19 @@ export function menuItemState(
   return caller.rpcCall<MenuItemState>("menuItemState", { identifier });
 }
 
+// ---- screenshot ----
+
+/**
+ * Render the app's WKWebView to a PNG (via `WKWebView.takeSnapshot` — no
+ * Screen Recording permission needed) written to a temp file, returning
+ * its path. The caller owns the file and should delete it when done.
+ */
+export function screenshot(
+  caller: HarnessCaller,
+): Promise<{ path: string }> {
+  return caller.rpcCall<{ path: string }>("screenshot", {});
+}
+
 // ---- native gestures ----
 
 export interface NativeClickOptions {

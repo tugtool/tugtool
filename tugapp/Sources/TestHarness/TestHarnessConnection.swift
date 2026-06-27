@@ -88,7 +88,7 @@ final class TestHarnessConnection {
     /// validation sweep so validators that refresh radio checkmarks
     /// (the permission-mode submenu) are reflected. Additive; major
     /// stays `1`.
-    static let surfaceVersion = "1.7.0"
+    static let surfaceVersion = "1.8.0"
 
     private let fileHandle: FileHandle
     private var buffer = Data()
@@ -214,6 +214,8 @@ final class TestHarnessConnection {
                 return
             }
             dispatchMenuItemState(id: id, identifier: identifier)
+        case "screenshot":
+            dispatchScreenshot(id: id)
         default:
             respondError(id: id, name: "NotImplemented", message: "Unknown method: \(method)")
         }
@@ -371,6 +373,51 @@ final class TestHarnessConnection {
                     "height": outH,
                 ]
                 self.respond(id: id, ok: true, payload: ["value": rect])
+            }
+        }
+    }
+
+    // MARK: - Screenshot capture
+
+    /// Render the WKWebView's current contents to a PNG and write it to a
+    /// temp file, returning the file path. Uses `WKWebView.takeSnapshot`,
+    /// which captures the rendered web content directly — no Screen
+    /// Recording permission, no separate display capture. The harness
+    /// reads the file and is responsible for deleting it.
+    private func dispatchScreenshot(id: Int) {
+        guard let webView = webView else {
+            respondError(id: id, name: "AppCrashedError", message: "WKWebView unavailable")
+            return
+        }
+        let completionState = EvalCompletionState()
+        DispatchQueue.main.async {
+            let config = WKSnapshotConfiguration()
+            config.afterScreenUpdates = true
+            webView.takeSnapshot(with: config) { [weak self] image, error in
+                guard let self = self else { return }
+                guard completionState.markCompleted() else { return }
+                if let error = error {
+                    self.respondError(id: id, name: "ScreenshotError", message: error.localizedDescription)
+                    return
+                }
+                guard let image = image,
+                      let tiff = image.tiffRepresentation,
+                      let rep = NSBitmapImageRep(data: tiff),
+                      let png = rep.representation(using: .png, properties: [:]) else {
+                    self.respondError(id: id, name: "ScreenshotError", message: "PNG encoding failed")
+                    return
+                }
+                let path = (NSTemporaryDirectory() as NSString)
+                    .appendingPathComponent("tugapp-screenshot-\(UUID().uuidString).png")
+                do {
+                    try png.write(to: URL(fileURLWithPath: path))
+                } catch {
+                    self.respondError(
+                        id: id, name: "ScreenshotError",
+                        message: "write failed: \(error.localizedDescription)")
+                    return
+                }
+                self.respond(id: id, ok: true, payload: ["value": ["path": path]])
             }
         }
     }

@@ -303,6 +303,15 @@ export function paintMirrorAsActive(
  * active selection belongs to whichever card is the deck-level first
  * responder — its `paintMirrorAsActive` writes that.
  *
+ * A COLLAPSED selection (a bare caret, `start === end`) publishes
+ * `null`, not a zero-width Range. The `inactive-selection` highlight
+ * carries *remembered selections*; a caret is not one. And a collapsed
+ * Range handed to a CSS Custom Highlight does not render as nothing in
+ * WebKit — it paints a band across the caret's text node (the
+ * deactivation "selection wash" over un-selected text). Publishing
+ * `null` for an empty selection keeps the highlight empty, so a card
+ * with no selection shows no inactive band.
+ *
  * `scrollTop`: per-element, not racy across cards. Inactive cards
  * still need their scroll position preserved — the user expects to
  * find the editor at the same scroll offset when it later activates.
@@ -320,7 +329,10 @@ export function paintMirrorAsInactive(
     const sel = view.state.selection.main;
     selection = { start: sel.from, end: sel.to };
   }
-  if (selection !== null) {
+  // An empty selection (bare caret) is not a remembered selection — a
+  // collapsed Range in a CSS Custom Highlight paints a spurious band over
+  // the caret's text in WebKit, so clear instead of publishing it.
+  if (selection !== null && selection.start !== selection.end) {
     try {
       const startDom = view.domAtPos(selection.start);
       const endDom = view.domAtPos(selection.end);

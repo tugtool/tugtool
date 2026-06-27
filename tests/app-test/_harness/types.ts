@@ -24,6 +24,7 @@ export type RpcMethod =
   | "getElementScreenBounds"
   | "menuSnapshot"
   | "menuItemState"
+  | "screenshot"
   | "nativeClick"
   | "nativeDoubleClick"
   | "nativeRightClick"
@@ -223,6 +224,10 @@ export type Request =
       id: number;
       method: "menuItemState";
       identifier: string;
+    }
+  | {
+      id: number;
+      method: "screenshot";
     }
   | {
       id: number;

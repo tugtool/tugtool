@@ -144,8 +144,12 @@ export type {
  * `NSControl.StateValue`, 1 = checked), captured after the
  * validation sweep so validator-refreshed radio checkmarks are
  * current. Additive; major stays `1`.
+ *
+ * `1.8.0`: adds the `screenshot` verb — renders the WKWebView to a
+ * PNG temp file (via `WKWebView.takeSnapshot`) and returns its path.
+ * Additive; major stays `1`.
  */
-export const EXPECTED_SURFACE_VERSION = "1.7.0" as const;
+export const EXPECTED_SURFACE_VERSION = "1.8.0" as const;
 
 /**
  * Directory (relative to this file) where per-test subprocess logs
@@ -466,6 +470,16 @@ export class App {
    */
   menuItemState(identifier: string): Promise<MenuItemState> {
     return client.menuItemState(this as HarnessCaller, identifier);
+  }
+
+  /**
+   * Capture the app's WKWebView as a PNG (written to a temp file) and
+   * return its path. Uses `WKWebView.takeSnapshot` — captures rendered
+   * web content directly, no Screen Recording permission. The caller
+   * owns the file.
+   */
+  screenshot(): Promise<{ path: string }> {
+    return client.screenshot(this as HarnessCaller);
   }
 
   /** Compact state bundle: tagName, disabled, readOnly, checked, visible, isFocused. */
