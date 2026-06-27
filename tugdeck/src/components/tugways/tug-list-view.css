@@ -50,6 +50,18 @@ body {
   --tugx-list-view-row-gap:            var(--tug-space-sm);
   --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
 
+  /* Optional self-frame. When a consumer sets these, the list draws its OWN
+     border + rounded corners and clips its rows to them — it is the scroll
+     container, so its overflow already clips to the radius. The focus-ring
+     outline below follows the same radius, and the frame border joins the ring
+     on keyboard focus. Default off (0 / transparent), so unframed lists — the
+     transcript, gallery demos — are pixel-unchanged. Consumers that want a
+     bordered, rounded list box (the dev picker hosts) set these instead of
+     wrapping the list in a clipping host. */
+  --tugx-list-view-radius:             0;
+  --tugx-list-view-frame-width:        0px;
+  --tugx-list-view-frame-color:        transparent;
+
   /* Keyboard movement-cursor mark — a leading-edge bar on the cursor row, the
      "you are here" keyboard affordance. A MARK, not a fill: marks (this bar, the
      container ring, selection glyphs) are the keyboard; a fill that comes and
@@ -78,6 +90,12 @@ body {
   overflow-x: hidden;
   position: relative;
   box-sizing: border-box;
+
+  /* Self-frame (opt-in via the tokens above; default 0 = no-op). The radius
+     also clips the rows — overflow already rounds content to the border box —
+     so the first/last rows hug the rounded corners with no gap. */
+  border: var(--tugx-list-view-frame-width) solid var(--tugx-list-view-frame-color);
+  border-radius: var(--tugx-list-view-radius);
 
   /* Fill the parent — the primitive is itself the scroll container,
      so its height needs to be bounded by something for `overflow-y:
@@ -129,20 +147,24 @@ body {
 
    The ring OVERLAYS the list's own edge (`outline-offset: 0`) rather than sitting
    inset — an inset ring read as a second border floating inside the list's
-   frame. For an un-hosted list (e.g. the gallery) this paints the perimeter ring
-   right at the list edge. A list wrapped in a bordered, `overflow: hidden` host
-   (the dev picker's recents / sessions boxes) clips this outward outline to
-   nothing — by design: that host draws the focus ring on its OWN border via a
-   `:has(.tug-list-view[data-key-view-kbd])` rule, so the ring overlays the
-   visible frame the user actually sees. On Enter-descend the container drops the
+   frame. On a SELF-FRAMED list (the dev picker boxes) the frame border joins the
+   ring: the frame recolors to the ring hue and the outline makes up the rest, so
+   the total ring equals the cursor-caret width (`--tugx-list-key-ring-width`)
+   whether or not the list wears a frame. On Enter-descend the container drops the
    key view and wears the quiet `[data-key-within]` mark (the global rule).
    Role-resolved via `--tugx-focus-ring`. */
 .tug-list-view {
   outline: none;
 }
 .tug-list-view[data-key-view-kbd] {
-  outline: var(--tugx-list-key-ring-width) solid var(--tugx-focus-ring);
+  /* Frame + outline together total the caret width: on a framed list the 1px
+     frame carries part of the ring, so the outline is the remainder; unframed
+     (frame-width 0) the outline carries the whole width and the border-color
+     recolor is a no-op on the 0-width border. */
+  outline: calc(var(--tugx-list-key-ring-width) - var(--tugx-list-view-frame-width))
+    solid var(--tugx-focus-ring);
   outline-offset: 0;
+  border-color: var(--tugx-focus-ring);
 }
 
 /* Block-axis breathing room — implemented as scroll-flow children

@@ -847,42 +847,25 @@
    corners replace the former TugBox border; `overflow: hidden` clips
    the list's rows to the radius. The internal list view scrolls when
    content exceeds the host's height. */
+/* The picker boxes are pure sizing wrappers: the embedded TugListView draws its
+   own frame, rounded corners, row clipping, and focus ring from these tokens
+   (it is the scroll container, so it clips its own rows to the radius). No
+   border / overflow / ring drawn here — the component owns all of it. */
 /* @tug-renders-on: surface.global.neutral.default */
+.dev-card-picker-recents-host,
+.dev-card-picker-sessions-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  --tugx-list-view-radius: var(--tug-radius-sm);
+  --tugx-list-view-frame-width: 1px;
+  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
+}
 .dev-card-picker-recents-host {
   height: 7.5rem;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
-  border-radius: var(--tug-radius-md);
-  overflow: hidden;
 }
-
-/* @tug-renders-on: surface.global.neutral.default */
 .dev-card-picker-sessions-host {
   height: 14.5rem;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
-  border-radius: var(--tug-radius-md);
-  overflow: hidden;
-}
-
-/* Container focus ring — drawn on the HOST, not the inner list. The host's
-   `overflow: hidden` (which clips the rows to the rounded frame) also clips an
-   outward outline on the inner `.tug-list-view`, so the list-view's own
-   perimeter ring never shows here. Instead, when the engine lands the keyboard
-   key view on the inner list, light up the host's OWN border as the focus ring —
-   it overlays the visible frame exactly (the border the user reads as the list's
-   edge). The host's own border + box-shadow are not subject to its own overflow
-   clip. Role-resolved via `--tugx-focus-ring`. */
-.dev-card-picker-recents-host:has(.tug-list-view[data-key-view-kbd]),
-.dev-card-picker-sessions-host:has(.tug-list-view[data-key-view-kbd]) {
-  border-color: var(--tugx-focus-ring);
-  /* The host's own 1px border carries 1px of the ring; the halo makes up the
-     rest so the total matches the row's leading-edge cursor caret width. */
-  box-shadow: 0 0 0 calc(var(--tugx-list-key-ring-width) - 1px) var(--tugx-focus-ring);
 }
 
 /* Empty-state placeholder — fills the (fixed-height) host so the

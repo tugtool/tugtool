@@ -60,7 +60,7 @@ body {
    * surface (the rail's current row carries the same tint, [--tugx-qrow-*]). */
   --tugx-question-current-bg:    var(--tug7-surface-highlight-primary-normal-active-rest);
   --tugx-question-panel-padding: var(--tug-space-md);
-  --tugx-question-panel-radius:  var(--tug-radius-md);
+  --tugx-question-panel-radius:  var(--tug-radius-sm);
 
   /* Number prefix in the panel heading. Reserved width is enough for a
    * two-digit number ("##.") with tabular numerals; the trailing gap
@@ -371,6 +371,10 @@ body {
 .dev-question-dialog-options-list.tug-list-view {
   height: auto;
   padding-inline: 0;
+  /* Round the perimeter ring to match the question panel (no frame border —
+     the options are borderless on the panel surface). Same self-frame radius
+     token the dev picker uses, so the ring shape is consistent app-wide. */
+  --tugx-list-view-radius: var(--tugx-question-panel-radius);
   --tugx-list-view-padding-block: 0;
   --tugx-list-view-padding-block-start: 0;
   --tugx-list-view-padding-block-end: 0;
