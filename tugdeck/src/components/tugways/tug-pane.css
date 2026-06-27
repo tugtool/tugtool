@@ -228,6 +228,14 @@ body {
   flex-shrink: 0;
 }
 
+/* When a tab bar sits directly below, drop the title-bar divider so the title
+   bar and tab bar read as one continuous chrome. The tab bar carries its own
+   bottom divider against the content. Single-tab cards (no tab bar, content
+   directly below) keep the divider. */
+.tug-pane-title-bar:has(+ .tug-pane-body .tug-tab-bar) {
+  border-bottom-color: transparent;
+}
+
 /* Prevent selection highlight from appearing in the title bar even when a
    content-area selection range spans through it (WebKit renders ::selection
    in user-select: none regions that fall within an active range). */
