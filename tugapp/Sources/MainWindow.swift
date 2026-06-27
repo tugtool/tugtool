@@ -466,7 +466,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
     /// Brio canvas color — final fallback when no other source is available.
     /// Must match --tugx-host-canvas-color in tugdeck/styles/themes/brio.css.
-    static let defaultBackgroundHex = "#16181a"
+    static let defaultBackgroundHex = "#16181d"
 
     /// Resolve the startup background color from the active theme's CSS file.
     /// Reads the theme name and source tree path from tugbank, then parses

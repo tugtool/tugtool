@@ -1,6 +1,6 @@
 /* Brio — dark theme. */
 body {
-  --tugx-host-canvas-color: #17171a;
+  --tugx-host-canvas-color: #18181d;
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
