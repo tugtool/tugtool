@@ -2,10 +2,6 @@
 body {
   --tugx-host-canvas-color: #2d4750;
 
-  /* Lighter tool-block panel tint than the dark default: a dark-text mix
-   * reads heavier on a light column. See styles/tugx-block.css. */
-  --tugx-block-surface-mix: 3%;
-
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
   --tug-motion-duration-glacial: calc(500ms * var(--tug-timing));
@@ -91,7 +87,7 @@ body {
      ground (light-on-dark, like drafting paper), not a dark stroke. sunken/screen
      are recessed-within-card and tooltip surfaces, so they stay light and
      hold dark default text. */
-  --tug7-surface-global-primary-normal-canvas-rest: --tug-color(cerulean, l: 380, c: 60);
+  --tug7-surface-global-primary-normal-canvas-rest: --tug-color(cerulean, l: 380, c: 20);
   --tug7-surface-global-primary-normal-content-rest: --tug-color(indigo, l: 960, c: 0);
   --tug7-surface-global-primary-normal-control-rest: var(--tug7-surface-control-primary-outlined-action-rest);
   --tug7-surface-global-primary-normal-default-rest: --tug-color(indigo, l: 960, c: 20);
@@ -336,6 +332,12 @@ body {
      global default so the card edge recedes into the canvas instead of glaring
      white against the dark C1 title band. */
   --tug7-element-card-border-normal-frame-rest: --tug-color(indigo, l: 650, c: 40);
+
+  /* Card — Tool-block surface (header strip + body panel share it).
+     CONTENT level, not chrome: a near-neutral gray, far less colorful than the
+     Key-tinted C2 status rung, so tool blocks recede into the transcript flow
+     instead of reading as tinted chrome. */
+  --tug7-surface-card-primary-normal-block-rest: --tug-color(indigo, l: 925, c: 10);
 
   /* Card — Title Bar Element Tokens (white-on-color, like the dark themes) */
   --tug7-element-card-text-normal-title-active: --tug-color(blue, l: 980, c: 4);

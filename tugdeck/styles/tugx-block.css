@@ -115,19 +115,12 @@ body {
 
   /* The block panel surface — one tint worn by the WHOLE block (the header
    * strip and, scoped in the chrome, the expanded body) so a tool call reads
-   * as a single tinted panel, set off from the transcript column by contrast
-   * rather than a border. Derived from the foreground over the column surface,
-   * so it inverts with the theme: a touch lighter than the column on dark, a
-   * touch darker on light — visible on both, where a fixed raised surface goes
-   * flat on light. The mix amount is a per-theme token: every theme file owns
-   * its own `--tugx-block-surface-mix` (dark themes 7%, light themes a lower
-   * value — a dark-text mix reads heavier on a light column than a light-text
-   * mix does on a dark one), so each theme is tuned in one place beside its
-   * other tokens. The `7%` here is only a fallback for a theme that forgets to
-   * set it — NOT a `body{}` declaration, which would be a same-specificity rival
-   * to the themes decided by stylesheet load order. Tune each theme in its
-   * `styles/themes/<name>.css`. */
-  --tugx-block-surface: color-mix(in srgb, var(--tug7-element-global-text-normal-default-rest) var(--tugx-block-surface-mix, 7%), var(--tug7-surface-global-primary-normal-default-rest));
+   * as a single panel set off from the transcript column. Authored per theme as
+   * a plain `--tug7-surface-card-primary-normal-block-rest` token beside the
+   * theme's other surfaces: light themes use a near-neutral content-level gray
+   * (recessive, not chrome); dark themes a touch lighter than the column. Tune
+   * each in `styles/themes/<name>.css`. */
+  --tugx-block-surface: var(--tug7-surface-card-primary-normal-block-rest);
 
   /* The radius worn by a tool-block panel. Every block rounds all four corners
    * — a tool call is its own card, never fused into a run. Distinct from
@@ -163,9 +156,8 @@ body {
    * (`--tugx-block-header-text` / `--tugx-prose-text`) and fall back   *
    * to the default text. The default is the `var()` fallback, NOT a    *
    * `body{}` declaration — a base declaration would be a same-         *
-   * specificity rival the themes' load order beats (see               *
-   * `--tugx-block-surface-mix`). A theme that sets neither hook just   *
-   * inherits the default text color.                                   */
+   * specificity rival the themes' load order beats. A theme that sets *
+   * neither hook just inherits the default text color.                */
   --tugx-block-text-color:        var(--tug7-element-global-text-normal-default-rest);
   --tugx-block-text-color-muted:  var(--tug7-element-global-text-normal-muted-rest);
   --tugx-block-header-text-color: var(--tugx-block-header-text, var(--tug7-element-global-text-normal-default-rest));
