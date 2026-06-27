@@ -89,6 +89,14 @@ import { deckTrace } from "@/deck-trace";
 const CARET_STROKE_WIDTH = 2;
 
 /**
+ * Breathing room, in pixels, kept between a wrap-mode caret pinned at the
+ * right edge (sitting on hung trailing spaces) and the scroller's inner
+ * edge — so the caret reads as just inside the field rather than jammed
+ * against the chrome.
+ */
+const CARET_EDGE_RELIEF = 2;
+
+/**
  * Caret height as a fraction of the rendered row height. A caret
  * spanning the full row reads as a vertical bar rather than a
  * text-editing caret — every code editor (VS Code, Sublime, IDEA,
@@ -282,10 +290,30 @@ export const tugCaretLayer: Extension = layer({
     // shrinks symmetrically as `CARET_HEIGHT_FACTOR` decreases.
     const glyphCenter = (coords.top + coords.bottom) / 2;
     const top = glyphCenter - caretHeight / 2;
+    // Clamp the caret into the viewport in wrap mode. Under `white-space:
+    // pre-wrap` a run of trailing spaces hangs past the line edge while
+    // the scroller is held at `scrollLeft: 0` (the content/layers are
+    // bounded so the view can't scroll to follow); a caret at the end of
+    // that hung run would otherwise paint out past the right edge. Pin it
+    // just inside the scroller's right edge — `CARET_EDGE_RELIEF` keeps a
+    // hair of breathing room rather than jamming it against the chrome.
+    // Gated on wrap mode (`cm-lineWrapping` on contentDOM) and a no-op for
+    // any in-bounds caret, so non-wrapping editors that legitimately
+    // scroll horizontally are untouched.
+    const rawLeft = coords.left - base.left;
+    let left = rawLeft;
+    if (view.contentDOM.classList.contains("cm-lineWrapping")) {
+      const visibleRight =
+        view.scrollDOM.scrollLeft
+        + view.scrollDOM.clientWidth
+        - CARET_STROKE_WIDTH
+        - CARET_EDGE_RELIEF;
+      left = Math.min(rawLeft, visibleRight);
+    }
     return [
       new RectangleMarker(
         "tug-text-editor-caret",
-        coords.left - base.left,
+        left,
         top - base.top,
         CARET_STROKE_WIDTH,
         caretHeight,

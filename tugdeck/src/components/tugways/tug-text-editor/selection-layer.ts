@@ -65,6 +65,12 @@ function baseOffset(view: EditorView): { left: number; top: number } {
  * on the final row). A strip that collapses to nothing — a row whose
  * selection is only the trailing newline sitting in the hanging-indent
  * gutter — is dropped rather than painting an orphan sliver.
+ *
+ * In wrap mode the right edge is also clamped to the viewport: a selection
+ * over a hung trailing space (white-space: pre-wrap) must not paint past
+ * the line edge, both visually and — since the strip is a scroller child —
+ * to keep it from inflating `scrollWidth` and re-enabling horizontal
+ * scroll. See the inline note at `markerRight`.
  */
 function clipMarkerToText(
   view: EditorView,
@@ -79,7 +85,18 @@ function clipMarkerToText(
   const base = baseOffset(view);
   const contentLeft = view.contentDOM.getBoundingClientRect().left;
   const rows = Math.max(1, Math.round(marker.height / rowHeight));
-  const markerRight = marker.left + width;
+  // Clamp the right edge to the viewport in wrap mode. A selection that
+  // covers a hung trailing space (white-space: pre-wrap) would otherwise
+  // paint a rect out past the line edge — and, being a child of the
+  // scroller, would inflate `scrollWidth` and let CM6 scroll the view
+  // sideways to follow it. Bounding it (together with the content clip and
+  // the caret clamp) keeps `scrollLeft` structurally pinned at 0. No-op
+  // for in-bounds rects and for non-wrapping editors that legitimately
+  // scroll horizontally.
+  const rawRight = marker.left + width;
+  const markerRight = view.contentDOM.classList.contains("cm-lineWrapping")
+    ? Math.min(rawRight, view.scrollDOM.scrollLeft + view.scrollDOM.clientWidth)
+    : rawRight;
 
   const out: RectangleMarker[] = [];
   for (let i = 0; i < rows; i++) {

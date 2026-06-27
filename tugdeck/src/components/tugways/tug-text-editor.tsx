@@ -154,6 +154,7 @@ import {
 } from "./tug-text-editor/inline-command-completion";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
+import { atomBindExt } from "./tug-text-editor/atom-bind";
 import {
   clipboardExtension,
   parseClipboardSidecar,
@@ -1113,6 +1114,10 @@ function buildExtensions(
     atomDecorationField,
     atomInvertedEffects,
     atomicRangesExt,
+    // Bind each atom to its abutting punctuation so a wrap can't strand
+    // a comma (etc.) on the next row — atoms are replaced elements, which
+    // would otherwise carry a break opportunity on both edges.
+    atomBindExt,
     // Bytes-store facet — read by `AtomWidget.toDOM` and the
     // pending-sync `ViewPlugin` to derive the pending appearance
     // for skeleton atoms (drop / paste inserted them synchronously
@@ -2521,6 +2526,12 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           data-focus-style={focusStyle}
           data-borderless={borderless ? "" : undefined}
           data-disabled={disabled ? "" : undefined}
+          // Reflect soft-wrap onto the host so the CSS can pin the
+          // scroller's horizontal overflow in wrap mode (hung trailing
+          // spaces must not scroll the view) without touching the
+          // non-wrapping case, which still needs horizontal scroll for
+          // long lines.
+          data-wrap={lineWrap ? "" : undefined}
           data-grow-direction={growDirection}
           aria-disabled={disabled || undefined}
           className={cn("tug-text-editor", className)}

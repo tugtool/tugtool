@@ -176,6 +176,47 @@ export const tugTheme: Extension = EditorView.theme({
     padding: "0",
   },
 
+  // Soft-wrap with HANGING trailing spaces. `EditorView.lineWrapping`
+  // applies CM6's `.cm-lineWrapping`, whose base theme sets
+  // `white-space: break-spaces` — under which preserved spaces take up
+  // width and do NOT hang, so a trailing space that overflows the line
+  // edge wraps down to start the next visual row (most visible when a
+  // wide atom fills the line right up to the edge). That breaks the
+  // cardinal rule that trailing spaces hang at the end of a line. We
+  // override just this content surface to `pre-wrap`, under which a
+  // run of trailing spaces hangs past the edge instead of wrapping. The
+  // `word-break` / `overflow-wrap` from `.cm-lineWrapping` are untouched,
+  // so a single over-long token still breaks to avoid overflow. Scoped
+  // to `.cm-lineWrapping` so the non-wrapping mode keeps CM6's `pre`.
+  //
+  // `overflow-x: clip` bounds the content's scrollable width to its own
+  // box: the hung trailing spaces are clipped at the edge and — crucially
+  // — do NOT inflate the scroller's `scrollWidth`. Without this the
+  // scroller would stay horizontally scrollable and CM6's `scrollIntoView`
+  // (e.g. Shift-Arrow extending the selection into a hung space) would
+  // slide the whole view sideways. `clip` survives here (unlike on the
+  // scroller) because `.cm-content`'s other axis is `visible` — `clip`
+  // only degrades to `hidden` when paired with a scrolling overflow. The
+  // caret and selection layers, the other two things that live in the
+  // scroller, are clamped to the same edge in `caret-layer.ts` /
+  // `selection-layer.ts`, so nothing extends `scrollWidth` past the
+  // viewport and `scrollLeft` is structurally pinned at 0.
+  // @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest
+  ".cm-content.cm-lineWrapping": {
+    whiteSpace: "pre-wrap",
+    overflowX: "clip",
+  },
+
+  // Atom-bind run (see `tug-text-editor/atom-bind.ts`): the maximal
+  // non-whitespace run containing an atom is wrapped in this class so it
+  // wraps as one unbreakable token. `nowrap` suppresses the break
+  // opportunities the atom's replaced `<img>` would otherwise expose on
+  // each edge, so abutting punctuation stays glued to the atom and the
+  // pair breaks only at the spaces around the run — word semantics.
+  ".cm-tug-atom-bind": {
+    whiteSpace: "nowrap",
+  },
+
   // A zero-width, one-line-tall ghost on every line. It exists as the
   // caret layer's per-row ruler: `caret-layer.ts` reads this pseudo's
   // computed height via `getComputedStyle(line, '::before')` to size the

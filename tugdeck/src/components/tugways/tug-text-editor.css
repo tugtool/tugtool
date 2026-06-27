@@ -213,6 +213,28 @@ body {
   overflow-y: auto;
 }
 
+/* Soft-wrap: never scroll horizontally. With `white-space: pre-wrap`
+ * (theme.ts) a run of trailing spaces HANGS past the line edge instead
+ * of wrapping to the next row — the cardinal rule that trailing spaces
+ * live at the end of a line. WebKit, though, counts that hung run in the
+ * scroller's `scrollWidth`, so CM6 can scroll the view sideways to follow
+ * the caret/selection into it (clipping every line's left edge).
+ *
+ * The real "no horizontal scroll" guarantee is structural: `.cm-content`
+ * is `overflow-x: clip` and both custom layers are clamped (theme.ts /
+ * caret-layer.ts / selection-layer.ts), so nothing in the scroller
+ * extends `scrollWidth` past the viewport and the browser pins
+ * `scrollLeft` at 0 — programmatic `scrollIntoView` included. This
+ * `overflow-x: hidden` is only belt-and-suspenders against a stray
+ * sub-pixel scrollbar. It is NOT itself the scroll guard: `hidden` still
+ * honors programmatic `scrollLeft`, and `clip` can't be used here because
+ * on the scroller — whose vertical axis scrolls — `clip` degrades to
+ * `hidden`. Scoped to `[data-wrap]` so the non-wrapping mode keeps
+ * horizontal scroll for long lines. */
+.tug-text-editor[data-wrap] > .cm-editor > .cm-scroller {
+  overflow-x: hidden;
+}
+
 /* ---- growDirection: anchor the editor to the bottom of its parent ---- */
 
 /* When `growDirection="up"`, push the host to the bottom of any
