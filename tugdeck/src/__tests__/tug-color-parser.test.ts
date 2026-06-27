@@ -3,8 +3,8 @@
  *
  * --tug-color() is thin sugar over oklch(): a named hue plus l / c / a authored as
  * integers on one 0–1000 scale. l/a are linear (l: 300 → oklch L 0.30); chroma is
- * gamut-relative (c: 1000 → the P3 chroma ceiling at that hue+lightness, c: 500 →
- * half). Stored as oklch fractions.
+ * absolute and portable (c maps linearly to oklch C 0–MAX_CHROMA, then clamps to the
+ * P3 gamut, so c: 1000 → the P3 ceiling). Stored as oklch fractions.
  *
  * Covers:
  * - Chromatic hues require explicit l + c; labeled and positional forms
@@ -18,13 +18,14 @@ import { describe, it, expect } from "bun:test";
 import { parseTugColor, findTugColorCalls, findTugColorCallsWithWarnings } from "../../tug-color-parser";
 import type { TugColorParsed } from "../../tug-color-parser";
 import {
-  ADJACENCY_RING, NAMED_GRAYS, HUE_FAMILIES,
+  ADJACENCY_RING, NAMED_GRAYS, HUE_FAMILIES, MAX_CHROMA,
   isInP3Gamut, maxChromaInGamut, resolveHueAngle,
 } from "@/components/tugways/palette-engine";
 
-/** The absolute oklch C that authored chroma `c` resolves to at this hue + lightness. */
+/** The absolute oklch C that authored chroma `c` resolves to at this hue + lightness:
+ *  a fixed fraction of MAX_CHROMA (portable across hues), clamped to the P3 gamut. */
 const expectChroma = (hue: string, L: number, c: number, adjacent?: string): number =>
-  (c / 1000) * maxChromaInGamut(L, resolveHueAngle(hue, adjacent)!, isInP3Gamut);
+  Math.min((c / 1000) * MAX_CHROMA, maxChromaInGamut(L, resolveHueAngle(hue, adjacent)!, isInP3Gamut));
 
 const KNOWN_HUES = new Set([
   ...ADJACENCY_RING,
@@ -52,7 +53,7 @@ function expectErr(input: string): string[] {
 }
 
 describe("chromatic hues — labeled l/c/a on the 0–1000 scale", () => {
-  it("parses l + c, storing oklch fractions (chroma is gamut-relative)", () => {
+  it("parses l + c, storing oklch fractions (chroma is absolute, gamut-clamped)", () => {
     const v = expectOk("indigo, l: 300, c: 500");
     expect(v.color).toEqual({ name: "indigo" });
     expect(v.lightness).toBeCloseTo(0.3, 10);
@@ -86,9 +87,19 @@ describe("chromatic hues — labeled l/c/a on the 0–1000 scale", () => {
       .toBeCloseTo(maxChromaInGamut(0.5, HUE_FAMILIES.red, isInP3Gamut), 10);
   });
 
-  it("c: 500 is half the ceiling (the scale is linear in % of gamut)", () => {
-    const full = expectOk("green, l: 600, c: 1000").chroma;
-    expect(expectOk("green, l: 600, c: 500").chroma).toBeCloseTo(full / 2, 10);
+  it("maps c to an absolute oklch C — the SAME on every hue (portable copy)", () => {
+    // c: 100 → 0.1 × MAX_CHROMA, comfortably inside the gamut at L 0.5 for all hues,
+    // so the identical authored number lands on the identical perceived chroma. This
+    // is the property that lets l/c copy between themes (which differ only by hue).
+    const target = 0.1 * MAX_CHROMA;
+    expect(expectOk("blue, l: 500, c: 100").chroma).toBeCloseTo(target, 10);
+    expect(expectOk("green, l: 500, c: 100").chroma).toBeCloseTo(target, 10);
+    expect(expectOk("orange, l: 500, c: 100").chroma).toBeCloseTo(target, 10);
+  });
+
+  it("chroma is linear below the gamut ceiling", () => {
+    expect(expectOk("blue, l: 500, c: 200").chroma)
+      .toBeCloseTo(2 * expectOk("blue, l: 500, c: 100").chroma, 10);
   });
 
   it("normalizes uppercase hue names", () => {

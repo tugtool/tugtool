@@ -188,8 +188,8 @@ export function TugColorPicker(): React.ReactElement {
   useSpatialOrder(sliderOrder);
 
   // Sliders edit in authored units (0–1000); the spec stays in oklch fractions.
-  // Chroma is gamut-relative, so it converts against the CURRENT hue + lightness
-  // (read from valueRef per L07 — these handlers register once at mount).
+  // Chroma is absolute (a fraction of MAX_CHROMA) but still gamut-clamped, so it
+  // reads the CURRENT hue + lightness (from valueRef per L07 — registered once at mount).
   const { ResponderScope, responderRef } = useResponderForm({
     setValueNumber: {
       [lId]: (v: number, phase: ActionPhase) => editColor({ l: fracFromAuthored(v) }, phase),
@@ -202,7 +202,7 @@ export function TugColorPicker(): React.ReactElement {
     },
   });
 
-  // The chroma slider shows percent-of-gamut at the current hue + lightness.
+  // The chroma slider shows the authored value (a fraction of MAX_CHROMA), gamut-clamped.
   const chromaAuthored = (s: TugColorSpec): number => {
     const angle = resolveHueAngle(s.hue, s.adjacent);
     return angle === undefined ? 0 : authoredFromChroma(s.c, s.l, angle);

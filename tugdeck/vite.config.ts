@@ -409,9 +409,9 @@ export async function handleThemeEditApply(
   const theme = typeof b.theme === "string" ? b.theme.trim() : "";
   const keyHue = typeof b.keyHue === "string" ? b.keyHue.trim() : "";
   const accentHue = typeof b.accentHue === "string" ? b.accentHue.trim() : "";
-  // Additive lightness/chroma/alpha deltas off each rung's base. Deltas are
-  // ABSOLUTE oklch nudges (×1000, like l/a) — not the relative chroma value scale —
-  // since one delta applies across many tokens of differing hue/lightness.
+  // Additive lightness/chroma/alpha deltas off each rung's base. Deltas are oklch
+  // nudges on the full-axis ×1000 footing (like l/a) — NOT the chroma value scale
+  // (×MAX_CHROMA) — since one delta applies across many tokens of differing hue.
   const frac = (v: unknown): number => (v === undefined ? 0 : fracFromAuthored(Number(v)));
   const parseAdjust = (v: unknown): { lDelta: number; cDelta: number; aDelta?: number } => {
     const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;

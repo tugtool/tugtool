@@ -101,7 +101,7 @@ function tokenSpec(css: string, name: string): TugColorSpec | null {
   if (!m) return null;
   const parts = m[1].split(",").map((s) => s.trim());
   const [hue, adjacent] = parts[0].split("-");
-  // Collect raw authored ints first — chroma is gamut-relative, resolved once L is known.
+  // Collect raw authored ints first — chroma is absolute but gamut-clamped once L is known.
   let lRaw: number | undefined, cRaw = 0, aRaw: number | undefined;
   for (const p of parts.slice(1)) {
     const mm = p.match(/^([lca])\s*:\s*([\d.]+)$/);

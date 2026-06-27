@@ -15,12 +15,12 @@ import { describe, it, expect } from "bun:test";
 import postcss from "postcss";
 import postcssTugColor from "../../postcss-tug-color";
 import {
-  HUE_FAMILIES, isInP3Gamut, maxChromaInGamut, resolveHueAngle,
+  HUE_FAMILIES, MAX_CHROMA, isInP3Gamut, maxChromaInGamut, resolveHueAngle,
 } from "@/components/tugways/palette-engine";
 
-/** Expected oklch chroma (4-decimal) for authored `c` at a hue+lightness — gamut-relative. */
-const relC = (hue: string, L: number, c: number): string =>
-  parseFloat(((c / 1000) * maxChromaInGamut(L, resolveHueAngle(hue)!, isInP3Gamut)).toFixed(4)).toString();
+/** Expected oklch chroma (4-decimal) for authored `c` — absolute (fraction of MAX_CHROMA), gamut-clamped. */
+const absC = (hue: string, L: number, c: number): string =>
+  parseFloat(Math.min((c / 1000) * MAX_CHROMA, maxChromaInGamut(L, resolveHueAngle(hue)!, isInP3Gamut)).toFixed(4)).toString();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,7 +39,7 @@ describe("postcss-tug-color Vite integration: plugin processes --tug-color() in 
   it("--tug-color(blue, l, c) expands to the correct oklch() value", () => {
     const css = "a { color: --tug-color(blue, l: 310, c: 500); }";
     const result = processCSS(css);
-    expect(result).toContain(`oklch(0.31 ${relC("blue", 0.31, 500)} ${HUE_FAMILIES.blue})`);
+    expect(result).toContain(`oklch(0.31 ${absC("blue", 0.31, 500)} ${HUE_FAMILIES.blue})`);
     expect(result).not.toContain("--tug-color(");
   });
 
@@ -99,7 +99,7 @@ describe("postcss-tug-color Vite integration: coexistence with Tailwind v4", () 
     ].join("\n");
     const result = processCSS(css);
     expect(result).not.toContain("--tug-color(");
-    expect(result).toContain(`oklch(0.31 ${relC("blue", 0.31, 100)} ${HUE_FAMILIES.blue})`);
+    expect(result).toContain(`oklch(0.31 ${absC("blue", 0.31, 100)} ${HUE_FAMILIES.blue})`);
   });
 
   it("CSS custom property declarations (non-tug-color) pass through unchanged", () => {

@@ -72,9 +72,9 @@ function clampFile(rel: string, write: boolean, stats: Stats, sample: string[]):
     const { L, C, h } = resolveTugColorToOklch(color.name, color.adjacentName, lightness, chroma, alpha);
     if (C <= 0 || isInP3Gamut(L, C, h)) continue; // achromatic or already in P3
 
-    // The P3 ceiling in authored units. Under gamut-relative chroma this is the top
-    // of the range (~1000) by construction, so this path is effectively a no-op
-    // safety net: relative authoring cannot exceed P3 in the first place.
+    // The P3 ceiling in authored units. Under absolute chroma the parser already
+    // gamut-clamps at resolve time (chromaFromAuthored), so resolved C is in-P3 by
+    // construction and this path is effectively a no-op safety net.
     const ceilingH = authoredFromChroma(maxChromaInGamut(L, h, isInP3Gamut), L, h);
     const token = color.adjacentName ? `${color.name}-${color.adjacentName}` : color.name;
     const alphaArg = alpha < 1 ? `, a: ${u(alpha)}` : "";

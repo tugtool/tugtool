@@ -12,16 +12,18 @@ TugColor operates in OKLCH — a perceptually uniform color space. A TugColor va
 
 - **Hue:** one of 48 named hues (or a hyphenated adjacency pair), supplying the OKLCH hue angle.
 - **Lightness (l):** 0–1000 → OKLCH L 0–1, linear (`l: 670` = L 0.67).
-- **Chroma (c):** 0–1000 → **fraction of the Display-P3 chroma ceiling at this hue + lightness.** `c: 1000` is as saturated as the hue can get there; `c: 500` is half that.
+- **Chroma (c):** 0–1000 → **OKLCH C 0–MAX_CHROMA, absolute, then clamped into the Display-P3 gamut.** The same `c` is the same perceived chroma on every hue; `c: 1000` always lands on the punchiest in-gamut color.
 - **Alpha (a):** 0–1000 → opacity 0–1, linear. Defaults to 1000 (fully opaque).
 
 Values are **whole numbers** — fractional values (`l: 300.5`) are rejected.
 
-**Chroma is gamut-relative.** OKLCH chroma is unbounded and its real ceiling depends on *both* hue and lightness (bright yellow holds far more chroma than blue; near-white or near-black holds almost none). No fixed number can mean "fully saturated," so a uniform fixed-ceiling scale either wastes range or clips vivid hues. Instead `c` is a percentage of `maxChromaInGamut(hue, lightness, P3)` — the per-color P3 edge found by `palette-engine`. The whole 0–1000 range therefore describes real, displayable colors on *every* hue, uniformly. This is the **intensity** idea (see History) done surgically: only chroma is relativized; lightness stays linear (relativizing lightness — the old "tone" remap — is what made intensity too complex). Two consequences to know: the same `c` reads differently as `l` moves (relative saturation tracks the shrinking gamut — usually what you want), and reauthoring from an absolute scale rounds sub-perceptibly (≤0.0002 in oklch C).
+**Chroma is absolute and portable.** `c` maps linearly onto OKLCH C 0–`MAX_CHROMA` (0.5), then **clamps** into `maxChromaInGamut(hue, lightness, P3)` — the per-color P3 edge found by `palette-engine`. Because the mapping is fixed (not normalized per hue), **the same `c` is the same perceived chroma on every hue**, so an authored `l`/`c` pair copies cleanly from one theme into another — which differs only by hue — and yields the *same color, hue-rotated*. Authoring never goes out of P3: `c: 1000` (→ C 0.5, above every gamut) resolves to the in-gamut ceiling, so "punchiest valid color" is just `c: 1000` — no per-hue table, no separate `max` keyword. Two things to know: a high `c` on a low-gamut hue/lightness clamps (several near-max `c` values can resolve to the same color), and the migration from the old scale rounded sub-perceptibly (≤0.00025 in oklch C).
 
-**Values vs. deltas.** A `--tug-color` chroma *value* is relative. An additive chroma *delta* (the theme editor's duet/treatment re-hueing) is **absolute** oklch (×1000, same footing as lightness) — one delta applies across many tokens of differing hue/lightness, where "relative" has no single meaning, and the duet's additive inverse requires it. The conversions live in one place — `fracFromAuthored` (l/a and all deltas) and `chromaFromAuthored` / `authoredFromChroma` (relative chroma values, hue+L aware) in `palette-engine.ts`; every surface routes through them, no module keeps its own copy.
+> **Why not gamut-relative?** An earlier version made `c` a *percentage of each hue's own ceiling*. It guaranteed in-gamut authoring, but it made identical numbers land on *different* colors per hue — so copying an `l`/`c` pair between themes silently produced a different color (a vivid hue's `c: 500` is far more chroma than a muted hue's `c: 500`). That broke the one ergonomic that matters most: copy-paste. Absolute chroma restores it; the gamut ceiling is preserved by clamping at resolve time instead of by normalizing the scale.
 
-> **History.** Earlier TugColor replaced OKLCH chroma/lightness with abstract *intensity* (0–100, gamut-relative chroma) and *tone* (0–100, piecewise lightness through a per-hue canonical L). That remapping was retired: it added conceptual overhead and a large conversion layer, its "shared tone skeleton" was undercut by per-hue canonical-L, and its headline benefit (P3 widening) is already handled by the browser (see [P3 Gamut](#p3-gamut)).
+**Values vs. deltas.** Both a `--tug-color` chroma *value* and an additive chroma *delta* (the theme editor's duet/treatment re-hueing) are **absolute** oklch (×1000, same footing as lightness). The conversions live in one place — `fracFromAuthored` (l/a and deltas) and `chromaFromAuthored` / `authoredFromChroma` (chroma values; absolute, gamut-clamped) in `palette-engine.ts`; every surface routes through them, no module keeps its own copy.
+
+> **History.** Earlier TugColor replaced OKLCH chroma/lightness with abstract *intensity* (0–100) and *tone* (0–100, piecewise lightness through a per-hue canonical L). That remapping was retired: it added conceptual overhead and a large conversion layer, its "shared tone skeleton" was undercut by per-hue canonical-L, and its headline benefit (P3 widening) is already handled by the browser (see [P3 Gamut](#p3-gamut)).
 
 ---
 
@@ -105,7 +107,7 @@ Named grays have fixed lightness and take no `l`/`c` (supplying them warns). For
 A compact CSS notation that expands to `oklch()` at build time via a PostCSS plugin (`postcss-tug-color.ts`):
 
 ```css
---tug-color(indigo, l: 300, c: 500)        /* chromatic; c = 50% of P3 max at L 0.30 */
+--tug-color(indigo, l: 300, c: 500)        /* chromatic; c = C 0.25 absolute, gamut-clamped */
 --tug-color(cobalt-indigo, l: 300, c: 300) /* hyphenated adjacency */
 --tug-color(gray, l: 430)                  /* gray pseudo-hue (achromatic) */
 --tug-color(charcoal)                      /* named gray (fixed L) */
@@ -120,16 +122,16 @@ A compact CSS notation that expands to `oklch()` at build time via a PostCSS plu
 
 ### `resolveTugColorToOklch()`
 
-The single source of truth for expansion (`palette-engine.ts`): a hue-angle lookup plus l/c/a as oklch fractions, returning `{ L, C, h, alpha }`. Callers convert the authored 0–1000 values to those fractions first via `fracFromAuthored` (l/a) and `chromaFromAuthored` (relative chroma, hue+L aware). The PostCSS plugin formats the result into an `oklch(...)` string; the headless contrast audit feeds it straight into the WCAG/perceptual checks — so build output and audit never drift.
+The single source of truth for expansion (`palette-engine.ts`): a hue-angle lookup plus l/c/a as oklch fractions, returning `{ L, C, h, alpha }`. Callers convert the authored 0–1000 values to those fractions first via `fracFromAuthored` (l/a) and `chromaFromAuthored` (absolute chroma, gamut-clamped). The PostCSS plugin formats the result into an `oklch(...)` string; the headless contrast audit feeds it straight into the WCAG/perceptual checks — so build output and audit never drift.
 
 ---
 
 ## P3 Gamut
 
-`oklch()` is device-independent: the browser maps each coordinate to whatever the display can show. Because chroma is **gamut-relative to the P3 edge**, `c: 1000` resolves to exactly that edge — so authored theme colors are in-P3 by construction; you cannot accidentally author past it. A chroma within sRGB renders the same everywhere; one between the sRGB and P3 edges (high `c`) is gamut-mapped down on sRGB displays and rendered richer on P3 — **automatically, with no media query**. There is no per-hue chroma table or `@media (color-gamut: p3)` override.
+`oklch()` is device-independent: the browser maps each coordinate to whatever the display can show. Because chroma is **clamped to the P3 edge at resolve time**, authored theme colors are in-P3 by construction (`c: 1000` lands on the edge); you cannot accidentally author past it. A chroma within sRGB renders the same everywhere; one between the sRGB and P3 edges (high `c`) is gamut-mapped down on sRGB displays and rendered richer on P3 — **automatically, with no media query**. There is no per-hue chroma table or `@media (color-gamut: p3)` override.
 
-- `bun run audit:gamut` (`scripts/audit-gamut.ts`) resolves every `--tug-color()` recipe and reports, per theme, how many land out-of-sRGB versus out-of-P3. **out-of-sRGB is expected** — vivid colors are authored past sRGB by design so P3 renders them richer; those colors are still within P3. **out-of-P3 stays 0** — guaranteed now that chroma is relative to the P3 edge. Run `audit:gamut <theme>` for a per-recipe drill-down, or `--strict` for a CI exit code.
-- `bun run scripts/clamp-theme-gamut.ts --write` (`scripts/clamp-theme-gamut.ts`) is now a no-op safety net: with relative chroma nothing exceeds P3, so it has nothing to clamp. Retained as a guard against hand-edited absolute values.
+- `bun run audit:gamut` (`scripts/audit-gamut.ts`) resolves every `--tug-color()` recipe and reports, per theme, how many land out-of-sRGB versus out-of-P3. **out-of-sRGB is expected** — vivid colors are authored past sRGB by design so P3 renders them richer; those colors are still within P3. **out-of-P3 stays 0** — guaranteed now that chroma is clamped to the P3 edge at resolve time. Run `audit:gamut <theme>` for a per-recipe drill-down, or `--strict` for a CI exit code.
+- `bun run scripts/clamp-theme-gamut.ts --write` (`scripts/clamp-theme-gamut.ts`) is a no-op safety net: the parser already gamut-clamps at resolve time, so nothing exceeds P3 and it has nothing to clamp. Retained as a guard.
 
 ---
 

@@ -153,8 +153,8 @@ function parseTugColor(inner: string): Parsed | null {
   const parts = inner.split(",").map((s) => s.trim());
   const [name, adjacent] = parts[0].split("-");
   if (!CHROMATIC.has(name)) return null;
-  // Collect raw authored ints first — chroma is gamut-relative, so it can only be
-  // converted once lightness is known (args may arrive in any order).
+  // Collect raw authored ints first — chroma is absolute but gamut-clamped, so its
+  // resolve still needs lightness known (args may arrive in any order).
   let lRaw: number | undefined;
   let cRaw = 0;
   let aRaw: number | undefined;

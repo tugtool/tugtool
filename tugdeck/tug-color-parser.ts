@@ -3,20 +3,21 @@
  *
  * --tug-color() is thin sugar over oklch(): it names the hue and carries the OKLCH
  * lightness/chroma/alpha as integers on one uniform 0–1000 scale.
- * Lightness and alpha map linearly onto the full 0–1 oklch axis. Chroma is
- * GAMUT-RELATIVE: c: 1000 is the most saturated the hue can be at that lightness on
- * a Display-P3 screen, c: 500 is half that — so the whole range is usable on every
- * hue. Integers only — fractional values are rejected. The conversion lives in
+ * Lightness and alpha map linearly onto the full 0–1 oklch axis. Chroma is ABSOLUTE
+ * and PORTABLE: c maps linearly to oklch C 0–MAX_CHROMA, then clamps into the hue's
+ * Display-P3 gamut. The same c is the same perceived chroma on EVERY hue, so l/c copy
+ * between themes unchanged; c: 1000 always clamps to the punchiest in-gamut color.
+ * Integers only — fractional values are rejected. The conversion lives in
  * palette-engine (fracFromAuthored / chromaFromAuthored); the parser just calls it.
  *
  *   Color:         A named hue, optionally followed by a ring-adjacent hue (hyphenated)
  *   Lightness (l): 0–1000 → oklch L 0–1 (required for chromatic hues and gray)
- *   Chroma (c):    0–1000 → fraction of the P3 chroma ceiling at this hue+lightness
+ *   Chroma (c):    0–1000 → oklch C 0–MAX_CHROMA, clamped to the P3 gamut
  *                  (required for chromatic hues)
  *   Alpha (a):     0–1000 → opacity 0–1 (default 1000)
  *
  * Supported color forms (60-name vocabulary: 48 chromatic + 11 achromatic + 1 transparent):
- *   --tug-color(indigo, l: 300, c: 500)       chromatic hue (half-max chroma at L 0.30)
+ *   --tug-color(indigo, l: 300, c: 500)       chromatic hue (C 0.25 at L 0.30, gamut-clamped)
  *   --tug-color(cobalt-indigo, l: 300, c: 300) hyphenated adjacency (cobalt dominant)
  *   --tug-color(gray, l: 430)                 gray pseudo-hue (achromatic, arbitrary L)
  *   --tug-color(paper)                        named gray (fixed L, no l/c)
@@ -659,8 +660,8 @@ export function parseTugColor(
   }
 
   // Authored integers (0–1000) → oklch fractions for the resolver. Chroma is
-  // gamut-relative, so it resolves against the hue angle at this lightness; for
-  // non-chromatic names the angle is absent and chroma is ignored downstream.
+  // absolute (a fraction of MAX_CHROMA) and gamut-clamped against the hue angle at
+  // this lightness; for non-chromatic names the angle is absent and chroma is 0.
   const resolvedColor = color!;
   const resolvedLightness = fracFromAuthored(lightness ?? 0);
   const hueAngle = resolveHueAngle(resolvedColor.name, resolvedColor.adjacentName);
