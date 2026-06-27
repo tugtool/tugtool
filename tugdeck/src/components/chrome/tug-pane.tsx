@@ -566,7 +566,7 @@ const SNAP_GAP_PX = 5;
  * `.snap-guide-line-x` / `.snap-guide-line-y` in chrome.css so a right/bottom-edge
  * guide can be pulled back by exactly one line width to sit on the card's edge.
  */
-const SNAP_GUIDE_LINE_PX = 1;
+const SNAP_GUIDE_LINE_PX = 2;
 
 /** Height of the title bar chrome inside `.tug-pane-body` (below the outer frame). */
 const HEADER_HEIGHT_PX = 28;
