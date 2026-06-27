@@ -91,6 +91,11 @@
   /* Drag-and-drop accent ring thickness — one knob for every drop affordance
      (editor, composer input area, attachment zone, tab-bar drop targets). */
   --tugx-drop-ring-width: 2px;
+  /* List keyboard-focus width — the leading-edge cursor caret AND the matching
+     container focus ring on lists (TugListView, QuestionDialog options, the dev
+     picker hosts) share this one value, so the ring and the caret read at the
+     same thickness and align at the top-left corner. */
+  --tugx-list-key-ring-width: 3px;
 }
 
 /* Light themes carry the drop ring a pixel thicker so the accent reads with

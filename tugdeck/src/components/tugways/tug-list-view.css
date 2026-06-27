@@ -59,7 +59,7 @@ body {
      COLOR is the Accent axis (`--tugx-list-view-cursor-bar-color` → the accent
      fill), so the keyboard caret reads distinctly from the Key selection fill it
      overlays while sharing the affordance hue with the focus ring. */
-  --tugx-list-view-cursor-bar-width:   3px;
+  --tugx-list-view-cursor-bar-width:   var(--tugx-list-key-ring-width);
   --tugx-list-view-cursor-bar-color:   var(--tug7-element-global-fill-normal-accent-rest);
 
   /* Row-layout slots — consumed only when `rowLayout` is set. */
@@ -141,7 +141,7 @@ body {
   outline: none;
 }
 .tug-list-view[data-key-view-kbd] {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline: var(--tugx-list-key-ring-width) solid var(--tugx-focus-ring);
   outline-offset: 0;
 }
 

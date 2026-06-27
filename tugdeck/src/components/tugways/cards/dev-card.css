@@ -880,7 +880,9 @@
 .dev-card-picker-recents-host:has(.tug-list-view[data-key-view-kbd]),
 .dev-card-picker-sessions-host:has(.tug-list-view[data-key-view-kbd]) {
   border-color: var(--tugx-focus-ring);
-  box-shadow: 0 0 0 1px var(--tugx-focus-ring);
+  /* The host's own 1px border carries 1px of the ring; the halo makes up the
+     rest so the total matches the row's leading-edge cursor caret width. */
+  box-shadow: 0 0 0 calc(var(--tugx-list-key-ring-width) - 1px) var(--tugx-focus-ring);
 }
 
 /* Empty-state placeholder — fills the (fixed-height) host so the
