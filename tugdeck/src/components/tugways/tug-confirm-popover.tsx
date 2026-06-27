@@ -586,6 +586,15 @@ export const TugConfirmPopover = React.forwardRef<
         <div
           data-slot="tug-confirm-popover"
           className="tug-confirm-popover"
+          // Refuse first-responder promotion on the surface itself, not just its
+          // buttons. A pointerdown in the popover's empty space (or on the message
+          // label) would otherwise run a pointer-driven promotion of this responder,
+          // coarsening the key view off the default button and clearing its
+          // `data-key-view-kbd` ring — visually "deactivating" the default control.
+          // A modal confirmation owns first responder while open; refusing here
+          // keeps the key view on the default button no matter where inside the
+          // popover the user clicks.
+          data-tug-focus="refuse"
           onMouseDown={suppressButtonFocusShift}
           onKeyDown={handleKeyDown}
           onFocus={handleContentFocus}

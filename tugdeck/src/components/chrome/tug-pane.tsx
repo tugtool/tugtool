@@ -163,15 +163,6 @@ function CardTitleBar({
     [onDragStart],
   );
 
-  const handleTitleBarDoubleClick = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      const target = event.target as HTMLElement;
-      if (target.closest(".tug-button")) return;
-      onCollapse();
-    },
-    [onCollapse],
-  );
-
   // Controlled-mode open state for the close-confirm popover (the shared
   // `TugConfirmPopover` component). The X button and the imperative
   // `requestClose*` handles drive it open; the component's onConfirm /
@@ -331,7 +322,6 @@ function CardTitleBar({
       className="tug-pane-title-bar"
       data-slot="tug-pane-title-bar"
       onPointerDown={handleTitleBarPointerDown}
-      onDoubleClick={handleTitleBarDoubleClick}
       data-testid="tug-pane-title-bar"
     >
       {IconComponent && (
