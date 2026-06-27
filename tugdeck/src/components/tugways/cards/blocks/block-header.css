@@ -249,13 +249,18 @@ body {
 }
 
 /* When a summary's right pipe already divides the result from the controls,
- * the actions cluster drops its own left rule (and the margin/padding that
- * paired with it) so there's a SINGLE rule there, with the parent row-gap
- * supplying the spacing on each side — keeping the badge's left and right
- * gaps equal. With no summary present, the actions rule stands on its own
+ * the actions cluster drops its own left rule (and the padding that paired
+ * with it) so there's a SINGLE rule there. It keeps a margin equal to
+ * `sep-gap − row-gap`, which the parent flex row-gap then tops up to a full
+ * `sep-gap` between the summary's right pipe and the buttons — the same gap
+ * the standalone actions rule carries with NO summary present. Without it the
+ * pipe would sit only `row-gap` from the buttons and visibly hop rightward the
+ * moment a summary appears. With no summary, the actions rule stands on its own
  * (detail │ controls) via the rule below. */
 .tool-call-header-summary + .tool-call-header-actions {
-  margin-left: 0;
+  margin-left: calc(
+    var(--tugx-toolheader-sep-gap) - var(--tugx-toolheader-row-gap)
+  );
   padding-left: 0;
   border-left: none;
 }
