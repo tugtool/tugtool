@@ -875,15 +875,15 @@ body {
   --tug7-element-control-border-tinted-accent-hover: --tug-color(orange, l: 590, c: 300, a: 720);
   --tug7-element-control-border-tinted-accent-active: --tug-color(orange, l: 590, c: 300, a: 860);
   /* Tinted Action */
-  --tug7-surface-control-primary-tinted-action-rest: --tug-color(blue, l: 620, c: 320, a: 260);
-  --tug7-surface-control-primary-tinted-action-hover: --tug-color(blue, l: 620, c: 320, a: 560);
-  --tug7-surface-control-primary-tinted-action-active: --tug-color(blue, l: 620, c: 320, a: 720);
-  --tug7-element-control-text-tinted-action-rest: --tug-color(blue, l: 420, c: 220);
-  --tug7-element-control-text-tinted-action-hover: --tug-color(blue, l: 420, c: 220);
-  --tug7-element-control-text-tinted-action-active: --tug-color(blue, l: 420, c: 220);
-  --tug7-element-control-border-tinted-action-rest: --tug-color(blue, l: 620, c: 320, a: 550);
-  --tug7-element-control-border-tinted-action-hover: --tug-color(blue, l: 620, c: 320, a: 720);
-  --tug7-element-control-border-tinted-action-active: --tug-color(blue, l: 620, c: 320, a: 860);
+  --tug7-surface-control-primary-tinted-action-rest: --tug-color(blue, l: 620, c: 180, a: 200);
+  --tug7-surface-control-primary-tinted-action-hover: --tug-color(blue, l: 620, c: 180, a: 300);
+  --tug7-surface-control-primary-tinted-action-active: --tug-color(blue, l: 620, c: 180, a: 440);
+  --tug7-element-control-text-tinted-action-rest: --tug-color(blue, l: 420, c: 120);
+  --tug7-element-control-text-tinted-action-hover: --tug-color(blue, l: 420, c: 120);
+  --tug7-element-control-text-tinted-action-active: --tug-color(blue, l: 420, c: 120);
+  --tug7-element-control-border-tinted-action-rest: --tug-color(blue, l: 620, c: 180, a: 350);
+  --tug7-element-control-border-tinted-action-hover: --tug-color(blue, l: 620, c: 180, a: 520);
+  --tug7-element-control-border-tinted-action-active: --tug-color(blue, l: 620, c: 180, a: 650);
   /* Tinted Agent */
   --tug7-surface-control-primary-tinted-agent-rest: --tug-color(violet, l: 600, c: 460, a: 400);
   --tug7-surface-control-primary-tinted-agent-hover: --tug-color(violet, l: 600, c: 460, a: 560);
@@ -931,7 +931,7 @@ body {
   --tug7-element-badge-border-outlined-data-rest: --tug-color(teal, l: 670, c: 320);
   --tug7-element-badge-border-outlined-success-rest: --tug-color(green, l: 690, c: 480);
   --tug7-element-badge-border-tinted-accent-rest: --tug-color(orange, l: 590, c: 300, a: 550);
-  --tug7-element-badge-border-tinted-action-rest: --tug-color(blue, l: 620, c: 320, a: 550);
+  --tug7-element-badge-border-tinted-action-rest: --tug-color(blue, l: 620, c: 180, a: 350);
   --tug7-element-badge-border-tinted-agent-rest: --tug-color(violet, l: 540, c: 300, a: 550);
   --tug7-element-badge-border-tinted-caution-rest: --tug-color(yellow, l: 720, c: 340, a: 600);
   --tug7-element-badge-border-tinted-danger-rest: --tug-color(red, l: 660, c: 560, a: 600);
@@ -966,7 +966,7 @@ body {
   --tug7-element-badge-text-outlined-data-rest: --tug-color(teal, l: 610, c: 300);
   --tug7-element-badge-text-outlined-success-rest: --tug-color(green, l: 620, c: 440);
   --tug7-element-badge-text-tinted-accent-rest: --tug-color(orange, l: 530, c: 300);
-  --tug7-element-badge-text-tinted-action-rest: --tug-color(blue, l: 420, c: 220);
+  --tug7-element-badge-text-tinted-action-rest: --tug-color(blue, l: 420, c: 120);
   --tug7-element-badge-text-tinted-agent-rest: --tug-color(violet, l: 400, c: 480);
   --tug7-element-badge-text-tinted-caution-rest: --tug-color(gold, l: 460, c: 220);
   --tug7-element-badge-text-tinted-danger-rest: --tug-color(red, l: 370, c: 340);
@@ -987,7 +987,7 @@ body {
   --tug7-surface-badge-primary-outlined-data-rest: transparent;
   --tug7-surface-badge-primary-outlined-success-rest: transparent;
   --tug7-surface-badge-primary-tinted-accent-rest: --tug-color(orange, l: 650, c: 360, a: 400);
-  --tug7-surface-badge-primary-tinted-action-rest: --tug-color(blue, l: 620, c: 320, a: 260);
+  --tug7-surface-badge-primary-tinted-action-rest: --tug-color(blue, l: 620, c: 180, a: 200);
   --tug7-surface-badge-primary-tinted-agent-rest: --tug-color(violet, l: 600, c: 460, a: 400);
   --tug7-surface-badge-primary-tinted-caution-rest: --tug-color(yellow, l: 940, c: 180, a: 550);
   --tug7-surface-badge-primary-tinted-danger-rest: --tug-color(red, l: 880, c: 160, a: 550);
