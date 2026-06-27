@@ -301,8 +301,8 @@ body {
 
   /* Card — Title Bar */
   --tug7-surface-card-primary-normal-titlebar-active: --tug-color(teal, l: 320, c: 80);
-  --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(teal, l: 310, c: 20);
-  --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(teal, l: 310, c: 20);
+  --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(teal, l: 310, c: 33);
+  --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(teal, l: 300, c: 24);
 
   /* Card — Status Bar (Z2 placement zone at bottom of top split-panel) */
   --tug7-surface-card-primary-normal-status-rest: --tug-color(teal, l: 280, c: 20);

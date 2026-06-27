@@ -319,8 +319,8 @@ body {
      Key hue (the action family the Z4B buttons/badges use). Tune this value. */
   --tugx-chrome-key-surface: --tug-color(iris, l: 500, c: 133);
   --tug7-surface-card-primary-normal-titlebar-active: var(--tugx-chrome-key-surface);
-  --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(orchid, l: 600, c: 85);
-  --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(orchid, l: 650, c: 65);
+  --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(orchid, l: 580, c: 33);
+  --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(orchid, l: 610, c: 24);
 
   /* Card — Status Bar (Z2) — the STATE/TIME/TOKENS strip beneath the transcript.
      Chrome level C2: a pale rung of the C1 Key hue, landing midway between the Z0
