@@ -38,11 +38,12 @@
  * lone FAB or submit affordance — where a resting solid fill is wanted.)
  *
  * It shows on **keyboard** focus, never on a mouse click — a click leaves no
- * ring, and the mouse never moves the ring off the default ([P12]). The orange
- * focus axis (`--tugx-focus-ring-color`), `outline`-based: layout-free (it never
- * shifts boxes) and it follows each element's `border-radius`, with a default
- * ring radius applied below so flat container key-views round too — no
- * per-component radius bookkeeping.
+ * ring, and the mouse never moves the ring off the default ([P12]). The ring
+ * rides the Accent axis (`--tugx-focus-ring`, aliased to the theme accent token
+ * on `body` below) and is `outline`-based: layout-free (it never shifts boxes)
+ * and it follows each element's `border-radius`, with a default ring radius
+ * applied below so flat container key-views round too — no per-component radius
+ * bookkeeping.
  *
  * **One trigger: `[data-key-view-kbd]`** — the focus engine's own signal that it
  * moved the key view by keyboard (the Tab walk, surface entry, default-seed on

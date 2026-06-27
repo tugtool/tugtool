@@ -160,14 +160,6 @@ body {
   --tug7-element-global-outline-normal-accentCool-rest: --tug-color(orange, l: 850, c: 240);
   --tug7-element-global-fill-normal-accentSubtle-rest: --tug-color(orange, l: 530, c: 300, a: 100);
 
-  /* Focus ring — the single app-owned ring on the keyboard-active control, the
-     live commit-key affordance ([P12]). Focus is its OWN axis (orange), a fixed
-     theme color independent of the accent/action roles — a literal, not a role
-     reference, so a future role recolor never drags the ring with it. (Selection
-     is the other decoupled axis — the toggle `on` role + the selection surfaces
-     below.) Ring width / offset / radius are single-sourced in focus-ring.css
-     (:root) — theme-independent; only the color (here) is per-theme. */
-  --tugx-focus-ring-color: --tug-color(orange, l: 740, c: 300);
   /* Movement cursor / row hover for item-groups ([P03]/[Q01]) — a clearly
      visible neutral overlay, distinct from the selection accent. Brio overlays
      light on a dark surface. */

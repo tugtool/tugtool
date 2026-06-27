@@ -1393,7 +1393,15 @@ export class FocusContext {
       .querySelectorAll<HTMLElement>(`[${KEY_WITHIN_ATTRIBUTE}]`)
       .forEach((el) => el.removeAttribute(KEY_WITHIN_ATTRIBUTE));
     const top = this.modeStack[this.modeStack.length - 1];
-    const withinId = top?.restoreKeyView ?? null;
+    // Only a DESCEND scope (`trapped: false` — an accordion section, a list row)
+    // projects the within mark: there the key view moves INTO a container that
+    // stays its DOM ancestor, so marking that container "contains the active
+    // component" is true. A trapped floating surface (popover / sheet / alert /
+    // menu) is portaled OUT of its trigger — the captured `restoreKeyView` is the
+    // trigger, which does not contain the surface — so projecting the within mark
+    // onto it paints a spurious ring on the host control behind the open surface.
+    if (top === undefined || top.trapped) return;
+    const withinId = top.restoreKeyView ?? null;
     if (withinId === null) return;
     const escaped =
       typeof CSS !== "undefined" && typeof CSS.escape === "function"

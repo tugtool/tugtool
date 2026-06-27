@@ -771,11 +771,11 @@ export const TUG_TOKEN_NAMES: readonly string[] = [
   "--tug7-surface-tone-primary-normal-danger-rest",
   "--tug7-surface-tone-primary-normal-data-rest",
   "--tug7-surface-tone-primary-normal-success-rest",
+  "--tugx-accent",
   "--tugx-block-header-detail",
   "--tugx-block-header-text",
   "--tugx-chrome-key-surface",
   "--tugx-control-disabled-opacity",
-  "--tugx-focus-ring-color",
   "--tugx-host-canvas-color",
   "--tugx-key-cursor-surface",
   "--tugx-prose-text",
@@ -795,4 +795,5 @@ export const TUG_TOKEN_NAMES: readonly string[] = [
   "--tugx-term-ansi-red",
   "--tugx-term-ansi-white",
   "--tugx-term-ansi-yellow",
+  "--tugx-theme-appearance",
 ];
