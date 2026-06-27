@@ -134,10 +134,13 @@ export interface TugIconButtonProps {
   /**
    * Size variant.
    *
+   *  - `"2xs"`          — the most compact chip (20×20), e.g. a per-row
+   *    un-send affordance.
+   *  - `"xs"`           — dense affordance.
    *  - `"sm"` (default) — list-row trailing icon (24×24 hit target).
    *  - `"md"`           — denser toolbar action.
    */
-  size?: "xs" | "sm" | "md";
+  size?: "2xs" | "xs" | "sm" | "md";
   /**
    * Color tone — maps to TugButton's `role`:
    *
@@ -151,13 +154,11 @@ export interface TugIconButtonProps {
    *  - `"ghost"` (default) — borderless, the canonical in-list trailing
    *    affordance.
    *  - `"outlined"` — a bordered box so the control's edge aligns with the
-   *    surrounding margins (e.g. a queued-row cancel that would otherwise
-   *    float without a visible frame).
-   *
-   * Constrained to these two so the icon button can't be promoted to a
-   * filled CTA; that would be a different primitive.
+   *    surrounding margins.
+   *  - `"filled"` — a solid fill, for a destructive affordance that should
+   *    read as a deliberate button (e.g. a queued-row un-send ✕).
    */
-  emphasis?: Extract<TugButtonEmphasis, "ghost" | "outlined">;
+  emphasis?: Extract<TugButtonEmphasis, "ghost" | "outlined" | "filled">;
   /**
    * Corner radius — forwarded to the underlying `TugButton`. Omit for the
    * size-proportional default (a rounded square); pass `"none"` for a
