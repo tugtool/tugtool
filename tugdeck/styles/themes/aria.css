@@ -289,7 +289,7 @@ body {
 
   /* Tab — the active tab shares the C1 chrome band (--tugx-chrome-key-surface),
      so its text flips to white in lockstep with the title bar. */
-  --tug7-element-tab-text-normal-plain-active: --tug-color(iris, l: 980, c: 150);
+  --tug7-element-tab-text-normal-plain-active: --tug-color(iris, l: 980, c: 185);
   --tug7-element-tab-text-normal-plain-hover: --tug-color(orchid, l: 260, c: 69);
   --tug7-element-tab-text-normal-plain-rest: --tug-color(orchid, l: 480, c: 77);
   --tug7-element-tab-close-normal-plain-hover: --tug-color(orchid, l: 260, c: 69);
@@ -321,33 +321,36 @@ body {
   /* One shared Key-tinted chrome surface — the single knob for the focused
      title bar and its merged active tab, keeping them unified with the theme's
      Key hue (the action family the Z4B buttons/badges use). Tune this value. */
-  --tugx-chrome-key-surface: --tug-color(iris, l: 500, c: 500);
+  --tugx-chrome-key-surface: --tug-color(iris, l: 500, c: 217);
   --tug7-surface-card-primary-normal-titlebar-active: var(--tugx-chrome-key-surface);
-  --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(orchid, l: 600, c: 180);
-  --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(orchid, l: 650, c: 160);
+  --tug7-surface-card-primary-normal-titlebar-inactive: --tug-color(orchid, l: 600, c: 132);
+  --tug7-surface-card-primary-normal-titlebar-collapsed: --tug-color(orchid, l: 650, c: 117);
 
-  /* Card — Status Bar (Z2 placement zone at bottom of top split-panel) */
-  --tug7-surface-card-primary-normal-status-rest: --tug-color(orchid, l: 920, c: 173);
+  /* Card — Status Bar (Z0 + Z2 share this surface).
+     Chrome level C2 — a pale rung of the same Key hue as the C1 title band, so
+     the two chrome bars read as one family (dark band / pale strip) with neutral
+     content between. Stays pale enough to hold dark text. */
+  --tug7-surface-card-primary-normal-status-rest: --tug-color(iris, l: 890, c: 185);
 
   /* Card — Frame border (.tug-pane-chrome outer edge). Darker/quieter than the
      global default so the card edge recedes into the canvas instead of glaring
      white against the dark C1 title band. */
-  --tug7-element-card-border-normal-frame-rest: --tug-color(orchid, l: 650, c: 100);
+  --tug7-element-card-border-normal-frame-rest: --tug-color(orchid, l: 650, c: 73);
 
   /* Card — Title Bar Element Tokens (white-on-color, like the dark themes) */
-  --tug7-element-card-text-normal-title-active: --tug-color(iris, l: 980, c: 150);
-  --tug7-element-card-text-normal-title-inactive: --tug-color(orchid, l: 920, c: 110);
+  --tug7-element-card-text-normal-title-active: --tug-color(iris, l: 980, c: 185);
+  --tug7-element-card-text-normal-title-inactive: --tug-color(orchid, l: 920, c: 81);
   /* Card-type glyph is a lightened, saturated tint of the Key hue (like the dark
      themes' light-tint glyph), so it reads as colored chrome against the C1 band
      without competing with the white title text. */
-  --tug7-element-card-icon-normal-title-active: --tug-color(iris, l: 925, c: 900);
-  --tug7-element-card-icon-normal-title-inactive: --tug-color(iris, l: 780, c: 220);
-  --tug7-element-card-icon-normal-title-hover: --tug-color(iris, l: 910, c: 480);
+  --tug7-element-card-icon-normal-title-active: --tug-color(iris, l: 925, c: 1000);
+  --tug7-element-card-icon-normal-title-inactive: --tug-color(iris, l: 780, c: 271);
+  --tug7-element-card-icon-normal-title-hover: --tug-color(iris, l: 910, c: 592);
 
   /* Card — Title Bar Control Buttons (ghost-style, focused card) */
-  --tug7-element-card-control-normal-plain-rest: --tug-color(iris, l: 900, c: 180);
-  --tug7-element-card-control-normal-plain-hover: --tug-color(iris, l: 970, c: 150);
-  --tug7-element-card-control-normal-plain-active: --tug-color(iris, l: 995, c: 100);
+  --tug7-element-card-control-normal-plain-rest: --tug-color(iris, l: 900, c: 222);
+  --tug7-element-card-control-normal-plain-hover: --tug-color(iris, l: 970, c: 185);
+  --tug7-element-card-control-normal-plain-active: --tug-color(iris, l: 995, c: 124);
   --tug7-surface-card-control-normal-plain-rest: transparent;
   --tug7-surface-card-control-normal-plain-hover: --tug-color(white, a: 130);
   --tug7-surface-card-control-normal-plain-active: --tug-color(white, a: 220);
@@ -356,9 +359,9 @@ body {
   --tug7-element-card-border-normal-plain-active: --tug-color(white, a: 200);
 
   /* Card — Title Bar Control Buttons (ghost-style, unfocused card) */
-  --tug7-element-card-control-normal-muted-rest: --tug-color(orchid, l: 860, c: 110);
-  --tug7-element-card-control-normal-muted-hover: --tug-color(iris, l: 970, c: 150);
-  --tug7-element-card-control-normal-muted-active: --tug-color(iris, l: 995, c: 100);
+  --tug7-element-card-control-normal-muted-rest: --tug-color(orchid, l: 860, c: 81);
+  --tug7-element-card-control-normal-muted-hover: --tug-color(iris, l: 970, c: 185);
+  --tug7-element-card-control-normal-muted-active: --tug-color(iris, l: 995, c: 124);
   --tug7-surface-card-control-normal-muted-rest: transparent;
   --tug7-surface-card-control-normal-muted-hover: --tug-color(white, a: 90);
   --tug7-surface-card-control-normal-muted-active: --tug-color(white, a: 160);
