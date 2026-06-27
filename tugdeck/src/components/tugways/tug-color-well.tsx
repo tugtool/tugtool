@@ -22,7 +22,7 @@ import { useFocusable } from "./use-focusable";
 import type { FocusPolicy } from "./focus-manager";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { COLOR_PICKER_COMPONENT_ID, useActiveColorTarget } from "./active-color-target";
-import { formatTugColorText, swatchOklch, type TugColorSpec } from "./tug-color-spec";
+import { formatTugColorText, swatchOklch, type TugColorSpec } from "./tugcolor";
 import { DeckManagerContext } from "@/deck-manager-context";
 import "./tug-color-well.css";
 

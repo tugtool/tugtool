@@ -28,7 +28,7 @@ import {
   isKnownHue,
   type DuetSeed,
 } from "../theme-editor-core";
-import { fracFromAuthored, authoredFromFrac } from "../src/components/tugways/palette-engine";
+import { fracFromAuthored, authoredFromFrac } from "../src/components/tugways/tugcolor";
 
 interface ThemeEditorEntry {
   identityBaseline: Record<string, string>;

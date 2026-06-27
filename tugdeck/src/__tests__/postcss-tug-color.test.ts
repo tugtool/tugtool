@@ -18,7 +18,7 @@ import postcssTugColor from "../../postcss-tug-color";
 import {
   HUE_FAMILIES, MAX_CHROMA, resolveHyphenatedHue,
   isInP3Gamut, maxChromaInGamut, resolveHueAngle,
-} from "@/components/tugways/palette-engine";
+} from "@/components/tugways/tugcolor";
 
 /** Format like the plugin does (4 decimals, trailing zeros stripped). */
 const fmt = (n: number): string => parseFloat(n.toFixed(4)).toString();

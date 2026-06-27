@@ -20,8 +20,8 @@ import { setActiveColorTarget } from "../active-color-target";
 import { TugColorWell } from "../tug-color-well";
 import { TugColorPicker } from "../tug-color-picker";
 import { TugColorAdjustment, colorAdjustSenders, type TugColorDelta } from "../tug-color-adjustment";
-import { fracFromAuthored } from "../palette-engine";
-import type { TugColorSpec } from "../tug-color-spec";
+import { fracFromAuthored } from "../tugcolor";
+import type { TugColorSpec } from "../tugcolor";
 import "./gallery-color-picker.css";
 
 const WELLS: { id: string; label: string; spec: TugColorSpec }[] = [

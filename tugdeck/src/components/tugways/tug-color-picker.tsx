@@ -32,7 +32,7 @@ import {
   authoredFromFrac,
   authoredFromChroma,
   resolveHueAngle,
-} from "./palette-engine";
+} from "./tugcolor";
 import {
   getActiveColorTarget,
   updateActiveColorValue,
@@ -43,7 +43,7 @@ import {
   normalizeSpec,
   swatchOklch,
   type TugColorSpec,
-} from "./tug-color-spec";
+} from "./tugcolor";
 import type { ActionPhase } from "./responder-chain";
 import "./tug-color-picker.css";
 

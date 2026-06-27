@@ -15,7 +15,7 @@
  * @module components/tugways/theme-accessibility
  */
 
-import { oklchToHex, oklchToLinearSRGB } from "./palette-engine";
+import { oklchToHex, oklchToLinearSRGB } from "./tugcolor";
 import type { ElementSurfacePairing } from "./theme-pairings";
 
 export interface ResolvedColor {
@@ -674,7 +674,7 @@ export function checkCVDDistinguishability(
 // Utility: oklchToHex re-export for consumers of this module
 // ---------------------------------------------------------------------------
 
-export { oklchToHex } from "./palette-engine";
+export { oklchToHex } from "./tugcolor";
 
 // ---------------------------------------------------------------------------
 // Perceptual contrast thresholds (normative) and WCAG ratio thresholds (informational)

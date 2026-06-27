@@ -1,5 +1,5 @@
 /**
- * Tests for the OKLCH gamut helpers in palette-engine (used by the gamut audit).
+ * Tests for the OKLCH gamut helpers in tugcolor (used by the gamut audit).
  *
  * Covers isInSRGBGamut / isInP3Gamut / maxChromaInGamut and the invariant that
  * P3 is a superset of sRGB.
@@ -10,7 +10,7 @@ import {
   isInSRGBGamut,
   isInP3Gamut,
   maxChromaInGamut,
-} from "@/components/tugways/palette-engine";
+} from "@/components/tugways/tugcolor";
 
 const RED = HUE_FAMILIES.red;
 const GREEN = HUE_FAMILIES.green;

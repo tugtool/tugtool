@@ -16,7 +16,7 @@ import postcss from "postcss";
 import postcssTugColor from "../../postcss-tug-color";
 import {
   HUE_FAMILIES, MAX_CHROMA, isInP3Gamut, maxChromaInGamut, resolveHueAngle,
-} from "@/components/tugways/palette-engine";
+} from "@/components/tugways/tugcolor";
 
 /** Expected oklch chroma (4-decimal) for authored `c` — absolute (fraction of MAX_CHROMA), gamut-clamped. */
 const absC = (hue: string, L: number, c: number): string =>

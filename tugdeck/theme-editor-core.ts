@@ -24,7 +24,7 @@ import {
   authoredFromFrac,
   authoredFromChroma,
   resolveHueAngle,
-} from "./src/components/tugways/palette-engine";
+} from "./src/components/tugways/tugcolor";
 
 const CHROMATIC = new Set(Object.keys(HUE_FAMILIES));
 
@@ -176,8 +176,8 @@ function parseTugColor(inner: string): Parsed | null {
 /** Format the inner of `--tug-color(...)` — `hue, l: X, c: Y[, a: Z]` on the 0–1000 scale. */
 function formatInner(hue: string, l: number, c: number, a: number | null): string {
   // Clamp every axis to its valid oklch range (treatment deltas and chroma scaling
-  // can otherwise overshoot), then emit authored 0–1000 units. Chroma is gamut-
-  // relative, so it resolves against the hue angle (adjacency-aware) at this L.
+  // can otherwise overshoot), then emit authored 0–1000 units. Chroma is absolute
+  // (a fraction of MAX_CHROMA), gamut-clamped against the hue angle at this L.
   const clamp = (n: number, hi: number): number => Math.max(0, Math.min(hi, n));
   const L = clamp(l, 1);
   const [name, adjacent] = hue.split("-");

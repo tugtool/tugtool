@@ -26,8 +26,8 @@ import {
   resolveTugColorToOklch,
   isInP3Gamut,
   maxChromaInGamut,
-} from "../src/components/tugways/palette-engine";
-import { parseTugColor, findTugColorCallsWithWarnings } from "../tug-color-parser";
+} from "../src/components/tugways/tugcolor";
+import { parseTugColor, findTugColorCallsWithWarnings } from "../src/components/tugways/tugcolor";
 
 const TUGDECK = path.resolve(import.meta.dir, "..");
 

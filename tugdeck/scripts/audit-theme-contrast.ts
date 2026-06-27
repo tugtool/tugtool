@@ -28,11 +28,11 @@ import {
   NAMED_GRAYS,
   ADJACENCY_RING,
   resolveTugColorToOklch,
-} from "../src/components/tugways/palette-engine";
+} from "../src/components/tugways/tugcolor";
 import {
   parseTugColor,
   findTugColorCalls,
-} from "../tug-color-parser";
+} from "../src/components/tugways/tugcolor";
 import {
   validateThemeContrast,
   checkCVDDistinguishability,

@@ -33,12 +33,12 @@ import { TugColorPicker } from "@/components/tugways/tug-color-picker";
 import { TugSlider } from "@/components/tugways/tug-slider";
 import { useResponder } from "@/components/tugways/use-responder";
 import { setActiveColorTarget } from "@/components/tugways/active-color-target";
-import { HUE_FAMILIES, authoredFromFrac, authoredFromChroma, resolveHueAngle } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, authoredFromFrac, authoredFromChroma, resolveHueAngle } from "@/components/tugways/tugcolor";
 import {
   hueText,
   swatchOklch,
   type TugColorSpec,
-} from "@/components/tugways/tug-color-spec";
+} from "@/components/tugways/tugcolor";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { useThemeContext } from "@/contexts/theme-provider";
 import { TUG_ACTIONS } from "../action-vocabulary";

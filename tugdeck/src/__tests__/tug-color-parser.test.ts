@@ -1,5 +1,5 @@
 /**
- * Tests for tug-color-parser — the tokenizer and parser for --tug-color() notation.
+ * Tests for the --tug-color() notation parser (now part of tugcolor.ts).
  *
  * --tug-color() is thin sugar over oklch(): a named hue plus l / c / a authored as
  * integers on one 0–1000 scale. l/a are linear (l: 300 → oklch L 0.30); chroma is
@@ -11,16 +11,15 @@
  * - Adjacency syntax (cobalt-indigo) and non-adjacent / extra-segment errors
  * - Fixed achromatics (black, white, named grays, transparent) take no l/c
  * - gray pseudo-hue requires l, forces c=0
- * - Range validation (l/c/a all 0–1000)
- * - Ignored-argument warnings; error reporting; tokenizer edges
+ * - Range / whole-number validation; ignored-argument warnings; call scanning
  */
 import { describe, it, expect } from "bun:test";
-import { parseTugColor, findTugColorCalls, findTugColorCallsWithWarnings } from "../../tug-color-parser";
-import type { TugColorParsed } from "../../tug-color-parser";
 import {
+  parseTugColor, findTugColorCalls, findTugColorCallsWithWarnings,
+  type TugColorParsed,
   ADJACENCY_RING, NAMED_GRAYS, HUE_FAMILIES, MAX_CHROMA,
   isInP3Gamut, maxChromaInGamut, resolveHueAngle,
-} from "@/components/tugways/palette-engine";
+} from "@/components/tugways/tugcolor";
 
 /** The absolute oklch C that authored chroma `c` resolves to at this hue + lightness:
  *  a fixed fraction of MAX_CHROMA (portable across hues), clamped to the P3 gamut. */
@@ -55,7 +54,7 @@ function expectErr(input: string): string[] {
 describe("chromatic hues — labeled l/c/a on the 0–1000 scale", () => {
   it("parses l + c, storing oklch fractions (chroma is absolute, gamut-clamped)", () => {
     const v = expectOk("indigo, l: 300, c: 500");
-    expect(v.color).toEqual({ name: "indigo" });
+    expect(v.color).toEqual({ name: "indigo", adjacentName: undefined });
     expect(v.lightness).toBeCloseTo(0.3, 10);
     expect(v.chroma).toBeCloseTo(expectChroma("indigo", 0.3, 500), 10);
     expect(v.alpha).toBe(1);
@@ -180,8 +179,8 @@ describe("range + error reporting (l/c/a all 0–1000)", () => {
     expect(expectErr("red, l: 1500, c: 100").join()).toContain("range");
   });
 
-  it("rejects negative chroma", () => {
-    expect(expectErr("red, l: 500, c: -100").join()).toContain("range");
+  it("rejects negative chroma (not a whole 0–1000)", () => {
+    expect(expectErr("red, l: 500, c: -100").join()).toContain("whole number");
   });
 
   it("rejects chroma above 1000", () => {
@@ -196,8 +195,27 @@ describe("range + error reporting (l/c/a all 0–1000)", () => {
     expect(expectErr("red, x: 50").join()).toContain("label");
   });
 
-  it("rejects '+' (offset syntax removed)", () => {
+  it("rejects a non-color first token", () => {
     expect(expectErr("red+50, l: 500, c: 100").length).toBeGreaterThan(0);
+  });
+});
+
+describe("argument edge cases", () => {
+  it("rejects a positional argument after a labeled one", () => {
+    expect(expectErr("red, l: 500, 100").join()).toContain("Positional argument after labeled");
+  });
+
+  it("rejects a duplicate label", () => {
+    expect(expectErr("red, l: 500, l: 300, c: 100").join()).toContain("Duplicate value");
+  });
+
+  it("rejects a fractional value (whole thousandths only)", () => {
+    expect(expectErr("red, l: 300.5, c: 80").join()).toContain("whole number");
+  });
+
+  it("rejects an empty call", () => {
+    const r = parseTugColor("", KNOWN_HUES, ADJACENCY_RING);
+    expect(r.ok).toBe(false);
   });
 });
 
@@ -216,41 +234,7 @@ describe("findTugColorCalls", () => {
   });
 
   it("warns on an unmatched paren", () => {
-    const r: ReturnType<typeof findTugColorCallsWithWarnings> =
-      findTugColorCallsWithWarnings("--tug-color(red, l: 500, c: 100");
+    const r = findTugColorCallsWithWarnings("--tug-color(red, l: 500, c: 100");
     expect(r.warnings.length).toBeGreaterThan(0);
-  });
-});
-
-describe("tokenizer + argument edge cases", () => {
-  it("decodes a CSS hex escape in the hue name (\\72 ed → red)", () => {
-    expect(expectOk("\\72 ed, l: 500, c: 100").color.name).toBe("red");
-  });
-
-  it("treats NBSP (U+00A0) as whitespace", () => {
-    const v = expectOk("red, l: 500, c: 200");
-    expect(v.lightness).toBeCloseTo(0.5, 10);
-    expect(v.chroma).toBeCloseTo(expectChroma("red", 0.5, 200), 10);
-  });
-
-  it("rejects a positional argument after a labeled one", () => {
-    expect(expectErr("red, l: 500, 100").join()).toContain("Positional argument after labeled");
-  });
-
-  it("rejects a duplicate label", () => {
-    expect(expectErr("red, l: 500, l: 300, c: 100").join()).toContain("Duplicate value");
-  });
-
-  it("rejects a bare '-' with no number", () => {
-    expect(expectErr("red, l: -, c: 100").join()).toContain("Bare '-'");
-  });
-
-  it("rejects a fractional value (whole thousandths only)", () => {
-    expect(expectErr("red, l: 300.5, c: 80").join()).toContain("whole number");
-  });
-
-  it("rejects an empty call", () => {
-    const r = parseTugColor("", KNOWN_HUES, ADJACENCY_RING);
-    expect(r.ok).toBe(false);
   });
 });

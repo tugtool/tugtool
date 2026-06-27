@@ -50,9 +50,9 @@ import {
   ADJACENCY_RING,
   NAMED_GRAYS,
   resolveTugColorToOklch,
-} from "./src/components/tugways/palette-engine";
-import { parseTugColor, findTugColorCallsWithWarnings } from "./tug-color-parser";
-import type { TugColorValue } from "./tug-color-parser";
+} from "./src/components/tugways/tugcolor";
+import { parseTugColor, findTugColorCallsWithWarnings } from "./src/components/tugways/tugcolor";
+import type { TugColorValue } from "./src/components/tugways/tugcolor";
 
 // ---------------------------------------------------------------------------
 // Known hues set (for parseTugColor validation)

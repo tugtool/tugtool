@@ -10,7 +10,7 @@
  */
 
 import { useSyncExternalStore } from "react";
-import type { TugColorSpec } from "./tug-color-spec";
+import type { TugColorSpec } from "./tugcolor";
 
 /** componentId of the standalone color-picker card the wells reveal/activate. */
 export const COLOR_PICKER_COMPONENT_ID = "gallery-color-picker";

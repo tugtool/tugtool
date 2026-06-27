@@ -18,10 +18,10 @@
 import {
   HUE_FAMILIES,
   NAMED_GRAYS,
-} from "../src/components/tugways/palette-engine";
+} from "../src/components/tugways/tugcolor";
 
 // ---------------------------------------------------------------------------
-// Constants derived from palette-engine
+// Constants derived from tugcolor
 // ---------------------------------------------------------------------------
 
 /** Set of all hue family names, e.g. "red", "blue", "amber", … */

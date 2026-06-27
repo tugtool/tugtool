@@ -12,8 +12,8 @@ import React, { useId } from "react";
 import { cn } from "@/lib/utils";
 import { TugValueInput } from "./tug-value-input";
 import { TugColorWell } from "./tug-color-well";
-import { swatchOklch, clamp01, clampChroma, type TugColorSpec } from "./tug-color-spec";
-import { AUTHOR_MAX, authoredFromFrac } from "./palette-engine";
+import { swatchOklch, clamp01, clampChroma, type TugColorSpec } from "./tugcolor";
+import { AUTHOR_MAX, authoredFromFrac } from "./tugcolor";
 import "./tug-color-adjustment.css";
 
 /** Additive deltas in OKLCH units (mirror of core's DuetAdjust). */

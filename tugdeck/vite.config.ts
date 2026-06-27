@@ -17,25 +17,25 @@ import {
   isKnownHue,
   type DuetSeed,
 } from "./theme-editor-core";
-import { fracFromAuthored, chromaFromAuthored, resolveHueAngle } from "./src/components/tugways/palette-engine";
+import { fracFromAuthored, chromaFromAuthored, resolveHueAngle } from "./src/components/tugways/tugcolor";
 
 /**
- * Vite plugin: seamless CSS hot-reload when palette-engine.ts changes.
+ * Vite plugin: seamless CSS hot-reload when tugcolor.ts changes.
  *
- * Problem: palette-engine.ts is in vite.config.ts's import chain (via
+ * Problem: tugcolor.ts is in vite.config.ts's import chain (via
  * postcss-tug-color.ts). Vite treats it as a config dependency and
  * auto-restarts the server on change, crashing the SharedWorker HMR client.
  *
  * Solution:
- *   1. Exclude palette-engine.ts from Vite's watcher (prevents auto-restart).
+ *   1. Exclude tugcolor.ts from Vite's watcher (prevents auto-restart).
  *   2. Use fs.watchFile in our plugin to detect changes independently.
  *   3. Touch tug.css to trigger normal CSS HMR.
  *   4. PostCSS plugin re-reads presets from disk on mtime change.
  *
- * Result: edit palette-engine.ts → colors update seamlessly via CSS HMR.
+ * Result: edit tugcolor.ts → colors update seamlessly via CSS HMR.
  */
 function paletteHotReload(): VitePlugin {
-  const paletteEngine = path.resolve(__dirname, "src/components/tugways/palette-engine.ts");
+  const paletteEngine = path.resolve(__dirname, "src/components/tugways/tugcolor.ts");
   const tugBase = path.resolve(__dirname, "styles/tug.css");
   return {
     name: "palette-hot-reload",
@@ -818,13 +818,13 @@ export default (defineConfig as any)(() => {
       host: "127.0.0.1",
       proxy: proxyConfig,
       watch: {
-        // Exclude palette-engine.ts from Vite's watcher. It's in the config
-        // import chain (vite.config → postcss-tug-color → palette-engine),
+        // Exclude tugcolor.ts from Vite's watcher. It's in the config
+        // import chain (vite.config → postcss-tug-color → tugcolor),
         // so changes would trigger an auto-restart that crashes SharedWorker.
         // The paletteHotReload plugin handles it via fs.watchFile instead.
         // The crates/*/pkg glob auto-covers every WASM crate's built
         // artifacts; new crates need no edit here.
-        ignored: ["**/palette-engine.ts", "**/tugdeck/crates/*/pkg/**"],
+        ignored: ["**/tugcolor.ts", "**/tugdeck/crates/*/pkg/**"],
       },
       // Pin the HMR host/protocol explicitly. Vite would otherwise
       // infer them from the loaded page's URL — under WKWebView the
