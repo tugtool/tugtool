@@ -202,9 +202,35 @@ export function synthesizeUserMessageFromBlocks(
   const commandEcho = detectCommandEcho(blocks);
   if (commandEcho !== null) {
     const { value, args } = commandEcho;
+    const echoAtoms: AtomSegment[] = [
+      { kind: "atom", type: "command", label: value, value },
+    ];
+    // Argument atoms (a `@`-mention file dropped after the command) ride
+    // the args text as backtick-`@` markers — the same wrap `buildWirePayload`
+    // emits for any non-image atom. Reverse the wrap here so the file chip
+    // returns alongside the command chip, matching the optimistic substrate
+    // that `hasLeadingCommandAtom` preserved on submit. Without this the
+    // marker would render as literal `` `@path` `` text on replay.
+    let echoText = TUG_ATOM_CHAR;
+    if (args) {
+      echoText += " ";
+      for (const seg of parseAtomMentionSegments(args)) {
+        if (seg.kind === "text") {
+          echoText += seg.text;
+          continue;
+        }
+        echoText += TUG_ATOM_CHAR;
+        echoAtoms.push({
+          kind: "atom",
+          type: "file",
+          label: seg.value,
+          value: seg.value,
+        });
+      }
+    }
     return {
-      text: TUG_ATOM_CHAR + (args ? " " + args : ""),
-      atoms: [{ kind: "atom", type: "command", label: value, value }],
+      text: echoText,
+      atoms: echoAtoms,
       thumbnailBake: Promise.resolve(),
     };
   }

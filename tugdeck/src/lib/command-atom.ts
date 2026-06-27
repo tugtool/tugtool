@@ -257,30 +257,36 @@ export function detectCommandEcho(
 }
 
 /**
- * Whether an editor substrate is a single command atom at the very
- * start of the message (optionally followed by argument text) — the
- * shape claude expands into a user invocation.
+ * Whether an editor substrate *leads* with a command atom — the shape
+ * claude expands into a user invocation. Argument text and **further
+ * atoms** (a `@`-mention file, a pasted image) may follow; only the
+ * leading atom must be the command.
  *
  * The live submit path uses this to decide the *optimistic* echo: a
  * command atom is sent as a clean `/name` (markerless) so claude can
  * expand it, which means the wire can't round-trip the command-ness.
  * Re-synthesizing the optimistic substrate from that wire would render
  * plain `/name` text and then flip to a chip when claude's
- * `<command-name>` echo replays — a flicker. When this returns true the
- * caller preserves the editor's command substrate instead, so the
- * optimistic echo already shows the same chip the replay will.
+ * `<command-name>` echo replays — a flicker. Worse, when an *argument
+ * atom* follows (e.g. `/implement ⟨roadmap/x.md⟩`), the wire carries the
+ * bare `/name` next to the file's mention marker, so the resynthesis
+ * recovers the file chip but leaves the command as plain text — the
+ * command chip is lost outright, not merely flickered. When this returns
+ * true the caller preserves the editor's full substrate instead, so the
+ * optimistic echo shows the same command chip (and argument chips) the
+ * replay reconstructs.
  *
  * `atomChar` is the substrate placeholder (`U+FFFC`), passed in rather
  * than imported to keep this module free of a `tug-atom-img` cycle.
  * Pure.
  */
-export function isLoneLeadingCommandAtom(
+export function hasLeadingCommandAtom(
   text: string,
   atoms: ReadonlyArray<{ type: string }>,
   atomChar: string,
 ): boolean {
   return (
-    atoms.length === 1 &&
+    atoms.length >= 1 &&
     atoms[0].type === "command" &&
     text.startsWith(atomChar)
   );

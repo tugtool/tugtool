@@ -11,7 +11,7 @@ import {
   chipDisplayLabel,
   chipHasIcon,
   detectCommandEcho,
-  isLoneLeadingCommandAtom,
+  hasLeadingCommandAtom,
 } from "../command-atom";
 import type { ContentBlock } from "@/protocol";
 
@@ -126,28 +126,32 @@ describe("detectCommandEcho", () => {
   });
 });
 
-describe("isLoneLeadingCommandAtom", () => {
+describe("hasLeadingCommandAtom", () => {
   const C = "\uFFFC";
   const cmd = { type: "command" };
   const file = { type: "file" };
 
   test("true for a single command atom at the message start", () => {
-    expect(isLoneLeadingCommandAtom(C, [cmd], C)).toBe(true);
+    expect(hasLeadingCommandAtom(C, [cmd], C)).toBe(true);
   });
 
   test("true with trailing argument text after the command", () => {
-    expect(isLoneLeadingCommandAtom(`${C} one two`, [cmd], C)).toBe(true);
+    expect(hasLeadingCommandAtom(`${C} one two`, [cmd], C)).toBe(true);
+  });
+
+  test("true with a trailing argument atom (file mention) after the command", () => {
+    expect(hasLeadingCommandAtom(`${C} ${C}`, [cmd, file], C)).toBe(true);
   });
 
   test("false when text leads the command (claude won't expand it)", () => {
-    expect(isLoneLeadingCommandAtom(`run ${C}`, [cmd], C)).toBe(false);
+    expect(hasLeadingCommandAtom(`run ${C}`, [cmd], C)).toBe(false);
   });
 
-  test("false for more than one atom", () => {
-    expect(isLoneLeadingCommandAtom(`${C}${C}`, [cmd, file], C)).toBe(false);
+  test("false when a non-command atom leads", () => {
+    expect(hasLeadingCommandAtom(`${C}${C}`, [file, cmd], C)).toBe(false);
   });
 
   test("false for a non-command atom", () => {
-    expect(isLoneLeadingCommandAtom(C, [file], C)).toBe(false);
+    expect(hasLeadingCommandAtom(C, [file], C)).toBe(false);
   });
 });

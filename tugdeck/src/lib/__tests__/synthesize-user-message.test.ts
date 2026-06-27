@@ -543,6 +543,34 @@ describe("synthesizeUserMessageFromBlocks — command-expansion echo", () => {
     ]);
   });
 
+  test("a command echo with a file-mention arg recovers the file chip", () => {
+    const store = createAtomBytesStore();
+    const echo: ContentBlock = {
+      type: "text",
+      text:
+        "<command-name>/tugplug:implement</command-name>\n" +
+        "<command-args>`@roadmap/z2-status-redesign.md`, all steps</command-args>",
+    };
+    const synth = synthesizeUserMessageFromBlocks([echo], store, {
+      mintAtomId: makeCounter(),
+    });
+    expect(synth.text).toBe(`${C} ${C}, all steps`);
+    expect(synth.atoms).toEqual([
+      {
+        kind: "atom",
+        type: "command",
+        label: "tugplug:implement",
+        value: "tugplug:implement",
+      },
+      {
+        kind: "atom",
+        type: "file",
+        label: "roadmap/z2-status-redesign.md",
+        value: "roadmap/z2-status-redesign.md",
+      },
+    ]);
+  });
+
   test("ordinary text that is not an envelope is untouched (no command atom)", () => {
     const store = createAtomBytesStore();
     const synth = synthesizeUserMessageFromBlocks(
