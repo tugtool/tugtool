@@ -284,7 +284,7 @@ body {
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .tug-text-editor[data-drop-active] {
   border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
-  outline: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
+  outline: var(--tugx-drop-ring-width) solid var(--tug7-element-highlight-stroke-normal-drop-rest);
   outline-offset: -1px;
 }
 
@@ -312,7 +312,7 @@ body {
 /* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
 .tug-text-editor[data-focused][data-drop-active] {
   border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
-  outline: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
+  outline: var(--tugx-drop-ring-width) solid var(--tug7-element-highlight-stroke-normal-drop-rest);
   outline-offset: -1px;
 }
 

@@ -35,8 +35,22 @@ export function unsubscribeThemeChange(callback: () => void): void {
   _subscribers.delete(callback);
 }
 
+/**
+ * Reflect the active theme's light/dark appearance onto
+ * `<html data-theme-mode>` so component CSS can branch on it (e.g. thicker
+ * accent rings on the pale light-theme fields). The value comes from each
+ * theme's own `--tugx-theme-appearance` metadata token, read from applied CSS
+ * — same mechanism as `--tugx-host-canvas-color`. Defaults to `dark` when the
+ * token is absent (the base theme is dark).
+ */
+function reflectThemeAppearance(): void {
+  const mode = getTokenValue("--tugx-theme-appearance") === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme-mode", mode);
+}
+
 /** Fire all theme change subscribers. */
 function fireSubscribers(): void {
+  reflectThemeAppearance();
   for (const cb of _subscribers) {
     cb();
   }
@@ -106,4 +120,5 @@ export function notifyThemeStyleEdit(): void {
  */
 export function initThemeTokens(): void {
   _cachedSentinel = getTokenValue(SENTINEL_TOKEN);
+  reflectThemeAppearance();
 }

@@ -1,6 +1,10 @@
 /* Brio — dark theme. */
 body {
   --tugx-host-canvas-color: #111816;
+  --tugx-theme-appearance: dark;
+  /* Single accent knob — every accent affordance (drop/focus rings, list
+     selection, cursors, spinners, tab underlines, color-well) resolves here. */
+  --tugx-accent: --tug-color(orange, l: 755, c: 1000);
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
@@ -121,7 +125,7 @@ body {
   --tug7-element-global-icon-normal-plain-disabled: --tug-color(teal, l: 410, c: 40);
 
   /* Element — Border */
-  --tug7-element-global-border-normal-accent-rest: --tug-color(orange, l: 780, c: 300);
+  --tug7-element-global-border-normal-accent-rest: var(--tugx-accent);
   --tug7-element-global-border-normal-danger-rest: --tug-color(red, l: 660, c: 440);
   --tug7-element-global-border-normal-default-rest: --tug-color(teal, l: 490, c: 40);
   --tug7-element-global-border-normal-inverse-rest: --tug-color(teal, l: 930, c: 20);
@@ -151,7 +155,7 @@ body {
   --tug7-surface-overlay-primary-normal-scrim-rest: --tug-color(black, a: 640);
 
   /* Element — Fill (Accent) */
-  --tug7-element-global-fill-normal-accent-rest: --tug-color(orange, l: 780, c: 300);
+  --tug7-element-global-fill-normal-accent-rest: var(--tugx-accent);
   --tug7-element-global-fill-normal-accentCool-rest: --tug-color(orange, l: 850, c: 240);
   --tug7-element-global-outline-normal-accentCool-rest: --tug-color(orange, l: 850, c: 240);
   --tug7-element-global-fill-normal-accentSubtle-rest: --tug-color(orange, l: 530, c: 300, a: 100);
@@ -170,7 +174,7 @@ body {
   --tugx-key-cursor-surface: --tug-color(white, a: 140);
 
   /* Tone */
-  --tug7-element-tone-border-normal-accent-rest: --tug-color(orange, l: 740, c: 300);
+  --tug7-element-tone-border-normal-accent-rest: var(--tugx-accent);
   --tug7-element-tone-border-normal-active-rest: --tug-color(seafoam, l: 710, c: 240);
   --tug7-element-tone-border-normal-agent-rest: --tug-color(aqua, l: 670, c: 300);
   --tug7-element-tone-border-normal-caution-rest: --tug-color(yellow, l: 860, c: 260);
@@ -264,7 +268,7 @@ body {
 
   /* Element — Highlight */
   --tug7-element-highlight-fill-normal-drop-rest: --tug-color(seafoam, l: 790, c: 280);
-  --tug7-element-highlight-stroke-normal-drop-rest: --tug-color(orange, l: 780, c: 300);
+  --tug7-element-highlight-stroke-normal-drop-rest: var(--tugx-accent);
 
   /* Surface — Highlight */
   --tug7-surface-highlight-primary-normal-drop-rest: --tug-color(seafoam, l: 740, c: 240, a: 180);

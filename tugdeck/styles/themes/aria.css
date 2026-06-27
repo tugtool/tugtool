@@ -1,6 +1,10 @@
 /* Harmony — light theme. */
 body {
   --tugx-host-canvas-color: #404248;
+  --tugx-theme-appearance: light;
+  /* Single accent knob — every accent affordance (drop/focus rings, list
+     selection, cursors, spinners, tab underlines, color-well) resolves here. */
+  --tugx-accent: --tug-color(orange, l: 755, c: 1000);
 
   /* Motion */
   --tug-motion-duration-fast: calc(100ms * var(--tug-timing));
@@ -127,7 +131,7 @@ body {
   --tug7-element-global-icon-normal-plain-disabled: --tug-color(orchid, l: 810, c: 40);
 
   /* Element — Border */
-  --tug7-element-global-border-normal-accent-rest: --tug-color(amber, l: 780, c: 300);
+  --tug7-element-global-border-normal-accent-rest: var(--tugx-accent);
   --tug7-element-global-border-normal-danger-rest: --tug-color(red, l: 510, c: 460);
   --tug7-element-global-border-normal-default-rest: --tug-color(orchid, l: 770, c: 40);
   --tug7-element-global-border-normal-inverse-rest: --tug-color(orchid, l: 250, c: 20);
@@ -160,7 +164,7 @@ body {
   --tug7-surface-overlay-primary-normal-scrim-rest: --tug-color(black, a: 480);
 
   /* Element — Fill (Accent) */
-  --tug7-element-global-fill-normal-accent-rest: --tug-color(amber, l: 810, c: 340);
+  --tug7-element-global-fill-normal-accent-rest: var(--tugx-accent);
   --tug7-element-global-fill-normal-accentCool-rest: --tug-color(amber, l: 270, c: 140);
   --tug7-element-global-outline-normal-accentCool-rest: --tug-color(amber, l: 270, c: 140);
   --tug7-element-global-fill-normal-accentSubtle-rest: --tug-color(amber, l: 710, c: 300, a: 100);
@@ -179,7 +183,7 @@ body {
   --tugx-key-cursor-surface: --tug-color(black, a: 100);
 
   /* Tone */
-  --tug7-element-tone-border-normal-accent-rest: --tug-color(amber, l: 710, c: 360);
+  --tug7-element-tone-border-normal-accent-rest: var(--tugx-accent);
   --tug7-element-tone-border-normal-active-rest: --tug-color(iris, l: 790, c: 220);
   --tug7-element-tone-border-normal-agent-rest: --tug-color(pink, l: 540, c: 300);
   --tug7-element-tone-border-normal-caution-rest: --tug-color(gold, l: 710, c: 280);
@@ -272,7 +276,7 @@ body {
 
   /* Element — Highlight */
   --tug7-element-highlight-fill-normal-drop-rest: --tug-color(iris, l: 790, c: 220);
-  --tug7-element-highlight-stroke-normal-drop-rest: --tug-color(amber, l: 920, c: 120);
+  --tug7-element-highlight-stroke-normal-drop-rest: var(--tugx-accent);
 
   /* Surface — Highlight */
   --tug7-surface-highlight-primary-normal-drop-rest: --tug-color(iris, l: 770, c: 240, a: 180);

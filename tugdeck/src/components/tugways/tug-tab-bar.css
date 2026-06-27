@@ -383,7 +383,7 @@ body {
 /* Drop-target highlight on multi-tab card tab bars. */
 .tug-tab-bar[data-drop-target="true"] {
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
-  border-bottom-color: var(--tug7-element-global-fill-normal-accent-rest);
+  border-bottom-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
 }
 
 /* Drop-target highlight on single-tab card accessory divs.
@@ -392,7 +392,7 @@ body {
 .tug-pane-accessory[data-drop-target="true"] {
   min-height: var(--tug-chrome-height);
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
-  border-bottom: 2px solid var(--tug7-element-global-fill-normal-accent-rest);
+  border-bottom: var(--tugx-drop-ring-width) solid var(--tug7-element-highlight-stroke-normal-drop-rest);
   transition:
     min-height var(--tug-motion-duration-fast) var(--tug-motion-easing-standard),
     background-color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
@@ -414,7 +414,7 @@ body {
 /* Highlight the target tab bar when a pane frame is dragged over it. */
 .tug-tab-bar[data-card-drag-target="true"] {
   background-color: var(--tug7-surface-global-primary-normal-control-rest);
-  border-bottom-color: var(--tug7-element-global-fill-normal-accent-rest);
-  outline: 2px solid var(--tug7-element-global-fill-normal-accent-rest);
+  border-bottom-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
+  outline: var(--tugx-drop-ring-width) solid var(--tug7-element-highlight-stroke-normal-drop-rest);
   outline-offset: -2px;
 }

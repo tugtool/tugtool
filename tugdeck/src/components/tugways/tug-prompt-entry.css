@@ -312,7 +312,7 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  border: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
+  border: var(--tugx-drop-ring-width) solid var(--tug7-element-highlight-stroke-normal-drop-rest);
   border-radius: 0;
   pointer-events: none;
   z-index: 2;
@@ -328,7 +328,7 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  border: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
+  border: var(--tugx-drop-ring-width) solid var(--tug7-element-highlight-stroke-normal-drop-rest);
   border-radius: 0;
   pointer-events: none;
   z-index: 2;

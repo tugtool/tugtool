@@ -96,14 +96,21 @@
   flex: 0 1 auto;
   width: 100%;
   min-width: 0;
-  /* ── Tune these ──────────────────────────────────────────────────────
+  /* ── Tune this ──────────────────────────────────────────────────────
      Opening (empty) height of the text-entry area, in CSS pixels. The
      editor opens this tall and grows with content up to its cap — `card
      height − --dev-transcript-min − --dev-entry-chrome` (see the scroller
      rule below) — then scrolls. So it never pushes the Z4 / Z5 toolbar off
      the card bottom. The fixed Z4 / Z5 rows are unaffected.
-     ──────────────────────────────────────────────────────────────────── */
-  --dev-entry-base-height: 160px;
+
+     HEIGHT-STEAL HEADROOM: when a compose image is present the editor floor
+     drops to `base − --tug-prompt-entry-attach-height` (= 160 − 84 = 76px
+     today). That floor is the height three typed lines are meant to fit
+     into so the strip steals cleanly with no hop. If three lines hop, the
+     floor is a hair too short for the real rendered line height — BUMP THIS
+     VALUE; every px added here adds 1px of steal headroom (and opens the
+     empty editor 1px taller). ──────────────────────────────────────────── */
+  --dev-entry-base-height: 162px;
   /* Constant height of the compose attachment zone (Z4C). Inherited down
      into `.tug-prompt-entry-attachments` (which sets its own height from
      this var) AND subtracted by the steal below, so the height the editor
