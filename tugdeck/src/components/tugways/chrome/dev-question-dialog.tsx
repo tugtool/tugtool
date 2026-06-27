@@ -1775,6 +1775,30 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     manager.armKeyboardRestore(target);
   }, [isPending, manager, currentIndex, declineMode]);
 
+  // Reveal Submit when the wizard reaches the review step. The action bar
+  // (Cancel · Back · Next · Submit) sits at the TOP of the dialog body, so on
+  // a dialog taller than the scrollport the user has typically scrolled down
+  // to answer the last question — leaving Submit off the top edge. The instant
+  // every question is answered (review), pull the action bar back into view so
+  // the Submit it now offers is reachable without a manual scroll. `block:
+  // "nearest"` is self-gating: it does nothing when the bar is already visible
+  // (the common short-dialog case), so this only acts when needed. Fires on the
+  // false→true edge into review, not every render at review. [L03] layout effect;
+  // [L06] this is a scroll write (appearance), not React state.
+  const wasAtReviewRef = React.useRef(false);
+  React.useLayoutEffect(() => {
+    const atReview = currentIndex >= questions.length;
+    const was = wasAtReviewRef.current;
+    wasAtReviewRef.current = atReview;
+    if (!isPending || declineMode || !atReview || was) return;
+    const root = dialogRootRef.current;
+    if (root === null) return;
+    const actionbar = root.querySelector<HTMLElement>(
+      '[data-slot="dev-question-dialog-actionbar"]',
+    );
+    (actionbar ?? root).scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [isPending, declineMode, currentIndex, questions.length]);
+
   // Panel height floor, ratcheted — the hard guarantee under the sizer grid.
   // The stacked sizers already hold the panel at the tallest question's
   // natural height, but any transient under-measure in a hidden sizer (a
