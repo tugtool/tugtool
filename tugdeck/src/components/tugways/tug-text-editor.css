@@ -313,6 +313,21 @@ body {
   display: none;
 }
 
+/* Hide the regular caret whenever a drop caret is painted, even when
+ * the drag is over the sibling attachment strip rather than the editor.
+ * A strip drag drives the editor's drop caret (`paintDropCaret`) but
+ * never sets `data-drop-active` on the editor host — that flag marks the
+ * editor itself as the drop target — so the rule above wouldn't fire and
+ * the text caret would compete with the drop caret. `data-drop-caret` is
+ * mirrored onto the host by the drop-caret painter in `drop-extension.ts`
+ * keyed off the live caret position, so the two carets are never shown
+ * together no matter which surface drove the drag.
+ *
+ * @tug-renders-on .cm-content (background established by tug-text-editor/theme.ts) */
+.tug-text-editor[data-drop-caret] .tug-text-editor-caret-layer {
+  display: none;
+}
+
 /* When the editor has a ranged selection at drag start, switch
  * the selection overlay to the inactive paint so the editor reads
  * as "stepping out of the way" of the drop. The selection content

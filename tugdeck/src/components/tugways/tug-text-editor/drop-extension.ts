@@ -127,6 +127,16 @@ const IMG_EXTS: ReadonlySet<string> = new Set([
 /** CSS class applied to the drop caret indicator element. */
 const DROP_CARET_CLASS = "cm-tug-drop-caret";
 
+/**
+ * Attribute mirrored onto the `.tug-text-editor` host whenever a drop
+ * caret is painted, regardless of which surface drove it (the editor
+ * itself or the sibling attachment strip). The CSS in `tug-text-editor.css`
+ * keys the regular-caret hide off this so the text caret and the drop
+ * caret are never visible at once — even for a drag over the strip, which
+ * never sets `data-drop-active` on the editor host.
+ */
+const DROP_CARET_HOST_ATTR = "data-drop-caret";
+
 // ---------------------------------------------------------------------------
 // Drop classification — image vs filename text
 // ---------------------------------------------------------------------------
@@ -384,8 +394,10 @@ class TugDropCaretPlugin implements PluginValue {
         this.caret.remove();
         this.caret = null;
       }
+      this.setHostDropCaret(false);
       return;
     }
+    this.setHostDropCaret(true);
     if (this.caret === null) {
       this.caret = this.view.scrollDOM.appendChild(
         document.createElement("div"),
@@ -458,11 +470,32 @@ class TugDropCaretPlugin implements PluginValue {
     this.caret.style.height = `${measured.height}px`;
   }
 
+  /**
+   * Mirror the drop-caret presence onto the `.tug-text-editor` host so
+   * the CSS hides the regular caret while a drop caret is up. Keyed off
+   * the caret field (not `data-drop-active`) so the strip's drag — which
+   * paints the editor's drop caret without claiming the editor as a drop
+   * target — still hides the text caret. The drop ring and inactive-
+   * selection paint stay on `data-drop-active` and are untouched here.
+   */
+  private setHostDropCaret(active: boolean): void {
+    const host = this.view.dom.closest<HTMLElement>(".tug-text-editor");
+    if (host === null) return;
+    if (active) {
+      if (!host.hasAttribute(DROP_CARET_HOST_ATTR)) {
+        host.setAttribute(DROP_CARET_HOST_ATTR, "");
+      }
+    } else if (host.hasAttribute(DROP_CARET_HOST_ATTR)) {
+      host.removeAttribute(DROP_CARET_HOST_ATTR);
+    }
+  }
+
   destroy(): void {
     if (this.caret !== null) {
       this.caret.remove();
       this.caret = null;
     }
+    this.setHostDropCaret(false);
   }
 }
 
