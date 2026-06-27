@@ -25,7 +25,10 @@
 
 body {
   --tugx-toolnotice-padding: var(--tug-space-xs) var(--tug-space-md);
-  --tugx-toolnotice-gap: var(--tug-space-xs);
+  /* Match the header's dot→label gap (`--tugx-toolheader-row-gap`) so the
+     tone glyph sits the same distance from its text as the lifecycle dot does
+     from the header label — the notice reads as a continuation of that column. */
+  --tugx-toolnotice-gap: var(--tug-space-sm);
   --tugx-toolnotice-text-size: var(--tug-font-size-sm);
   /* Matches the 14px header lifecycle dot so the tone glyph sits in the same
      column at the same diameter — the notice reads as a continuation of the
