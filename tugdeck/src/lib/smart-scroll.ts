@@ -359,23 +359,35 @@ export class SmartScroll {
 
   /** True when a content-growth signal should auto-pin the scroller to the
    *  bottom: the scroller is following the bottom (intent) AND the user is
-   *  not actively scrolling (safe to take the scroll position).
+   *  either idle OR still sitting at the live edge.
    *
-   *  This is the single home of the `isFollowingBottom && !isUserScrolling`
-   *  gate. Auto-pin callers previously re-derived it inline at many sites —
-   *  the list view's three growth-pin paths, the markdown view's two raw
-   *  `scrollTop` slams (which omitted the `isUserScrolling` half entirely
-   *  and so fought an in-flight user gesture), and the markdown view's
-   *  predicted-bottom render decision. Reading the gate from one place
-   *  keeps the policy consistent: a user mid-scroll always wins, and a
-   *  scroller the user has scrolled up from is never yanked back.
+   *  This is the single home of the auto-pin gate. Auto-pin callers
+   *  previously re-derived it inline at many sites — the list view's three
+   *  growth-pin paths, the markdown view's two raw `scrollTop` slams (which
+   *  omitted the user-gesture half entirely and so fought an in-flight user
+   *  gesture), and the markdown view's predicted-bottom render decision.
+   *  Reading the gate from one place keeps the policy consistent.
+   *
+   *  The `isAtBottom` clause is what keeps a *downward* gesture pinned. A
+   *  downward wheel enters the `dragging` phase (so `isUserScrolling` is
+   *  true) but does NOT disengage follow-bottom — only an upward/away
+   *  gesture does (wheel-up, key-up, drag-up all call
+   *  `_setFollowingBottom(false)`). So a gesture that leaves
+   *  `_isFollowingBottom` engaged is, by construction, one heading to or
+   *  sitting at the live edge — and while the scroller is still at the
+   *  bottom, freshly streamed content must keep pinning rather than open a
+   *  gap beneath a user parked at the edge. Without this clause, a user who
+   *  wheels down mid-stream falls behind the growing bottom while the card
+   *  still reports itself "pinned." Once the user scrolls away past the
+   *  at-bottom band the disengage paths flip `_isFollowingBottom` off, so
+   *  this never yanks a user who has genuinely left the bottom.
    *
    *  Exposed as a getter (not just folded into `maybePinToBottom`) because
    *  some callers need the gate as a *value* — e.g. choosing whether to
    *  render the virtualized window at the predicted bottom or at the
    *  user's live scroll position. */
   get shouldAutoPin(): boolean {
-    return this._isFollowingBottom && !this.isUserScrolling;
+    return this._isFollowingBottom && (!this.isUserScrolling || this.isAtBottom);
   }
 
   /** Pin to bottom when `shouldAutoPin` — the convenience wrapper for the

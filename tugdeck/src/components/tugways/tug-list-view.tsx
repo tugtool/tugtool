@@ -2239,7 +2239,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (!pinRequestedRef.current) return;
       const ss = smartScrollRef.current;
       if (ss === null) return;
-      if (ss.isUserScrolling) return;
+      // Hold the request while the user is scrolling AWAY (mid-gesture and
+      // off the bottom) so the pin re-fires once the gesture ends. But a
+      // user still sitting AT the live edge during a downward gesture is
+      // not scrolling away — follow-bottom stays engaged (only an
+      // upward/away gesture disengages it), so growth must keep pinning
+      // rather than open a gap beneath them. `maybePinToBottom`'s
+      // `shouldAutoPin` gate carries the same `isAtBottom` allowance, so
+      // the two stay consistent; this guard only governs whether the
+      // request survives to a later commit.
+      if (ss.isUserScrolling && !ss.isAtBottom) return;
       pinRequestedRef.current = false;
       if (itemCount <= 0) return;
       ss.maybePinToBottom();
