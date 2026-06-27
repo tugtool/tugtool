@@ -386,10 +386,11 @@ body {
 /* ---- Monospace, dense content row (`mono`) ----
    A standard row type for monospace text — file paths, ids, code-ish
    strings. Tighter block padding than the default comfortable row, the
-   mono family, and a compact `xs` line, with the macOS smoothing pin so
-   glyphs don't shift as the row background changes between rest and
-   selected. The content column inherits all of it, whether it renders a
-   `title` / `subtitle` or free-form `children`. */
+   mono family, and a compact `xs` line. Smoothing is left at `auto`
+   (the heavier default render) rather than grayscale-pinned — IBM Plex
+   Mono's 400 reads too light under grayscale AA, and there's no 450 cut
+   to step up to. The content column inherits all of it, whether it
+   renders a `title` / `subtitle` or free-form `children`. */
 .tug-list-row[data-mono="true"] {
   --tugx-list-row-padding-block: 4px;
 }
@@ -398,8 +399,8 @@ body {
 .tug-list-row[data-mono="true"] .tug-list-row-content .tug-label {
   font-family: var(--tug-font-family-mono);
   font-size: var(--tug-font-size-xs);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 /* ---- Variant: flush ----

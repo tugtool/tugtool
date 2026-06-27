@@ -819,8 +819,8 @@
    load order. */
 .dev-card-picker-field .dev-card-picker-path-input {
   font-family: var(--tug-font-family-mono);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 /* ----------------------------------------------------------------------------

@@ -18,8 +18,8 @@
    inherited family regardless of stylesheet load order. */
 input.tug-file-chooser-input {
   font-family: var(--tug-font-family-mono);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 /* Square picker button matching the sm input's height (an explicit box —
