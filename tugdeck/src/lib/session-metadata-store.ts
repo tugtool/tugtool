@@ -396,8 +396,16 @@ function parseSystemRegion(payload: unknown): SystemRegion | null {
     model: typeof p.model === "string" && p.model.length > 0 ? p.model : null,
     // Wire emits `permissionMode` (camelCase) per
     // `tugcode/src/session.ts:498,517`. The earlier snake_case parse
-    // key silently returned null for every live payload.
-    permissionMode: typeof p.permissionMode === "string" ? p.permissionMode : null,
+    // key silently returned null for every live payload. An empty-string
+    // mode is "no signal", not a mode — claude's live `system/init` emits
+    // `permissionMode: ""` when its init event omits the field
+    // (`tugcode/src/session.ts`), mirroring the `model: ""` case above.
+    // Normalize it to `null` so the `resolvePermissionMode` `?? ` chain
+    // falls back to `default` instead of rendering a blank chip.
+    permissionMode:
+      typeof p.permissionMode === "string" && p.permissionMode.length > 0
+        ? p.permissionMode
+        : null,
     cwd: typeof p.cwd === "string" ? p.cwd : null,
     version: typeof p.version === "string" ? p.version : null,
     slashCommands,
