@@ -95,7 +95,7 @@
      container focus ring on lists (TugListView, QuestionDialog options, the dev
      picker hosts) share this one value, so the ring and the caret read at the
      same thickness and align at the top-left corner. */
-  --tugx-list-key-ring-width: 3px;
+  --tugx-list-key-ring-width: 2px;
 }
 
 /* Light themes carry the drop ring a pixel thicker so the accent reads with
