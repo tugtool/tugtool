@@ -247,15 +247,28 @@ export const DevZ1B: React.FC<DevZ1BProps> = ({
  * source size leaves the glyph a hair larger than the label text
  * before the CSS scale-down, which keeps stroke weight crisp at
  * the rendered size.
+ *
+ * The two shield glyphs (interrupted / error) carry
+ * `dev-z1b-shield-icon`, which `dev-card-z1b.css` renders a touch
+ * larger than the 12px badge default so the shield reads at full
+ * weight next to its label.
  */
 function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
   switch (reason) {
     case "complete":
       return <Check size={14} aria-hidden="true" />;
     case "interrupted":
-      return <ShieldAlert size={14} aria-hidden="true" />;
+      return (
+        <ShieldAlert
+          size={16}
+          className="dev-z1b-shield-icon"
+          aria-hidden="true"
+        />
+      );
     case "error":
-      return <ShieldX size={14} aria-hidden="true" />;
+      return (
+        <ShieldX size={16} className="dev-z1b-shield-icon" aria-hidden="true" />
+      );
     case "transport_lost":
       return <Unplug size={14} aria-hidden="true" />;
   }

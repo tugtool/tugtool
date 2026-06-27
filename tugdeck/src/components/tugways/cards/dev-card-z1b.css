@@ -169,3 +169,13 @@
   gap: var(--tugx-dev-z1b-gap);
   white-space: nowrap;
 }
+
+/* The interrupted / error shield glyphs render a touch larger than
+   the 12px badge-icon default so the shield reads at full weight
+   beside its label. Scoped to the Z1B end-state badge so no other
+   `md` badge icon is affected; the extra class selector outweighs
+   `tug-badge.css`'s `.tug-badge-size-md .tug-badge-icon svg`. */
+.dev-z1b-end-state .tug-badge-icon svg.dev-z1b-shield-icon {
+  width: 0.9375rem; /* 15px */
+  height: 0.9375rem;
+}
