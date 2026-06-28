@@ -24,6 +24,9 @@
    * math (fractions, operators) fits without ever moving layout —
    * prose centers in the same box. */
   --dev-pulse-strip-height: 28px;
+  /* Heat ramp tint — `data-heat` overrides below shade it from calm
+   * (the muted legend color) toward red as a turn runs long. */
+  --dev-pulse-heat: var(--tug7-element-global-text-normal-muted-rest);
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
@@ -37,14 +40,48 @@
   overflow: hidden;
 }
 
+/* The heat ramp: a turn warms from calm through yellow → orange → coral →
+ * red the longer it runs (Claude Code's yellow→red status-line shading).
+ * The component writes `data-heat` from an elapsed-seconds bucket; only the
+ * legend and the elapsed clock wear the tint, so the line stays readable. */
+.dev-pulse-strip[data-heat="1"] {
+  --dev-pulse-heat: --tug-color(yellow, l: 900, c: 260);
+}
+.dev-pulse-strip[data-heat="2"] {
+  --dev-pulse-heat: --tug-color(orange, l: 780, c: 300);
+}
+.dev-pulse-strip[data-heat="3"] {
+  --dev-pulse-heat: --tug-color(coral, l: 550, c: 440);
+}
+.dev-pulse-strip[data-heat="4"] {
+  --dev-pulse-heat: --tug-color(red, l: 660, c: 440);
+}
+
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-strip-legend {
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  color: var(--dev-pulse-heat);
   font-family: var(--tug-font-mono, monospace);
   font-size: 0.5625rem;
   letter-spacing: 0.18em;
   flex: 0 0 auto;
   opacity: 0.8;
+  transition: color 0.6s ease;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-pulse-strip-elapsed {
+  color: var(--dev-pulse-heat);
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.5625rem;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+  /* Reserve the widest running-clock width so ticking never shifts the
+   * text's ellipsis boundary. Empty while idle (no turn in flight). */
+  min-width: 3.5ch;
+  text-align: end;
+  opacity: 0.8;
+  transition: color 0.6s ease;
 }
 
 /* The cross-fade stage: a fixed box both text layers center within. */
