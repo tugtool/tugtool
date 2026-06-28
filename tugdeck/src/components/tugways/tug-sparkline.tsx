@@ -35,10 +35,16 @@ import React, { useLayoutEffect, useRef } from "react";
 
 import { isTugMotionEnabled } from "./scale-timing";
 
+/**
+ * How long a datum stays visible, in seconds — the ONE knob for the time span.
+ * The scroll speed is derived from it and the width, so a datum enters at the
+ * right edge and scrolls off the left exactly this many seconds later.
+ */
+const VISIBLE_SECONDS = 15;
 /** Sample cadence (ms) — 4 Hz. The motion between samples is WAAPI, not this. */
 const SAMPLE_MS = 250;
-/** Scroll speed (px/sec). With a 64px window this is a ~11s visible span. */
-const PX_PER_SEC = 6;
+/** Off-screen seconds kept past the left edge before a point is pruned. */
+const PRUNE_MARGIN_S = 4;
 /** Seconds the scroll runs before a seamless time-rebase + restart. */
 const EPOCH_S = 120;
 /** Window over which the plotted rate is summed (a rolling per-second rate). */
@@ -73,7 +79,9 @@ export function TugSparkline({
   const lineRef = useRef<SVGPolylineElement | null>(null);
   const areaRef = useRef<SVGPolygonElement | null>(null);
 
-  const epochPx = EPOCH_S * PX_PER_SEC;
+  // Scroll speed derived from the single time-span knob and the width.
+  const pxPerSec = width / VISIBLE_SECONDS;
+  const epochPx = EPOCH_S * pxPerSec;
   const svgWidth = Math.ceil(width + epochPx + 8);
 
   useLayoutEffect(() => {
@@ -101,11 +109,11 @@ export function TugSparkline({
       return Math.min(1, sum / fullScale);
     };
 
-    const xOf = (t: number): number => width + ((t - t0) / 1000) * PX_PER_SEC;
+    const xOf = (t: number): number => width + ((t - t0) / 1000) * pxPerSec;
 
     const redraw = (): void => {
       const now = Date.now();
-      const cutoff = now - (width / PX_PER_SEC + 4) * 1000;
+      const cutoff = now - (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000;
       while (tape.length > 0 && tape[0].t < cutoff) tape.shift();
       if (tape.length === 0) {
         line.setAttribute("points", "");
@@ -170,7 +178,7 @@ export function TugSparkline({
         anim.cancel();
       }
     };
-  }, [getSeries, binMs, fullScale, width, height, epochPx]);
+  }, [getSeries, binMs, fullScale, width, height, pxPerSec, epochPx]);
 
   return (
     <div
