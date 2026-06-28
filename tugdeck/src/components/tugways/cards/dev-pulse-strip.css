@@ -208,6 +208,19 @@
   display: flex;
   gap: var(--tug-space-xs);
   align-items: baseline;
+  /* Pad the row so the hover band has breathing room, and pull the column
+     back by the same inset so the text still aligns to the title above. */
+  padding: 2px var(--tug-space-xs);
+  margin-inline: calc(-1 * var(--tug-space-xs));
+  border-radius: var(--tug-radius-sm, 4px);
+  transition: background-color 0.1s ease;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-pulse-history-row:hover {
+  /* Rollover affordance for the copyable row, matching the strip legend's
+     interactive-control hover tint on this surface. */
+  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
 }
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */

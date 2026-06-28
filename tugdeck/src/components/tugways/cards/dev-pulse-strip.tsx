@@ -268,7 +268,14 @@ export function DevPulseStrip({
   if (!pulse.enabled) return null;
   return (
     <div className="dev-pulse-strip" data-slot="dev-pulse-strip">
-      <TugPopover>
+      {/*
+        dismissOnChainActivity=false: a row's right-click → Copy dispatches the
+        `copy` action through the responder chain, which would otherwise read as
+        foreign chain activity and close this popover mid-copy. The copy
+        originates from WITHIN the popover, so it must not dismiss it; Escape,
+        click-outside, Space, and the trigger toggle still close it.
+      */}
+      <TugPopover dismissOnChainActivity={false}>
         <TugPopoverTrigger>
           <button
             type="button"

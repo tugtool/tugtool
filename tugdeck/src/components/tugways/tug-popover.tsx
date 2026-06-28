@@ -782,6 +782,21 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           // because every user click that moves focus also fires
           // pointerdown first.
           onFocusOutside={(e) => e.preventDefault()}
+          // A context menu spawned from this popover's own content (a copyable
+          // row's right-click → Copy) portals to the canvas overlay, structurally
+          // OUTSIDE this content — so clicking its `Copy` item reads as a
+          // pointerdown-outside and would dismiss the popover mid-interaction.
+          // The menu is part of this surface's interaction, not an exit: ignore
+          // pointerdowns that land within a `tug-editor-context-menu`.
+          onPointerDownOutside={(e) => {
+            const target = e.detail.originalEvent.target;
+            if (
+              target instanceof Element &&
+              target.closest('[data-slot="tug-editor-context-menu"]') !== null
+            ) {
+              e.preventDefault();
+            }
+          }}
           // [P03] Suppress Radix's own Escape dismissal — the engine's Escape
           // ladder is the single arbiter and calls `onEscapeDismiss` (above).
           // Listener ordering can never matter again: Radix never acts on Escape.
