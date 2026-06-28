@@ -20,100 +20,81 @@
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-strip {
-  /* Fixed-height contract: one CONSTANT height, sized so typeset
-   * math (fractions, operators) fits without ever moving layout —
-   * prose centers in the same box. */
-  --dev-pulse-strip-height: 28px;
-  /* Heat ramp tint — `data-heat` overrides below shade it from calm
-   * (the muted legend color) toward red as a turn runs long. */
-  --dev-pulse-heat: var(--tug7-element-global-text-normal-muted-rest);
+  /* One fixed-height line. The line box equals the strip height, so the
+   * single line centers vertically and the legend + text — same font-size,
+   * same line box — share ONE baseline. Tall typeset math crops (overflow)
+   * rather than moving layout. */
+  --dev-pulse-strip-height: 32px;
+  --dev-pulse-strip-font-size: 0.75rem;
+  /* The legend matches the Z2 status labels' size exactly; the line text
+   * keeps its own larger size. */
+  --dev-pulse-strip-label-size: 0.5625rem;
   display: flex;
+  /* Optically center the small label against the larger line text (NOT
+   * baseline-aligned — that drops the small label low). */
   align-items: center;
   gap: var(--tug-space-sm);
   flex: 0 0 auto;
   height: var(--dev-pulse-strip-height);
+  line-height: var(--dev-pulse-strip-height);
   box-sizing: border-box;
   padding-block: 0;
   padding-inline: var(--tug-space-md);
-  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* The strip MIRRORS the transcript — same background — so it reads as a
+   * distinct band between the Z2 status row (its own status surface) and the
+   * text editor, with NO rules of its own. Z2 drops its bottom border when
+   * this strip follows (see dev-card.css), so the only divider in the
+   * cluster is the full-contrast transcript→Z2 rule above. */
+  background-color: var(--tugx-pane-bg);
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;
 }
 
-/* The heat ramp: a turn warms from calm through yellow → orange → coral →
- * red the longer it runs (Claude Code's yellow→red status-line shading).
- * The component writes `data-heat` from an elapsed-seconds bucket; only the
- * legend and the elapsed clock wear the tint, so the line stays readable. */
-.dev-pulse-strip[data-heat="1"] {
-  --dev-pulse-heat: --tug-color(yellow, l: 900, c: 260);
-}
-.dev-pulse-strip[data-heat="2"] {
-  --dev-pulse-heat: --tug-color(orange, l: 780, c: 300);
-}
-.dev-pulse-strip[data-heat="3"] {
-  --dev-pulse-heat: --tug-color(coral, l: 550, c: 440);
-}
-.dev-pulse-strip[data-heat="4"] {
-  --dev-pulse-heat: --tug-color(red, l: 660, c: 440);
-}
-
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-strip-legend {
-  color: var(--dev-pulse-heat);
-  font-family: var(--tug-font-mono, monospace);
-  font-size: 0.5625rem;
+  /* Same font + size as the text (NOT mono) so the label and the line read
+   * as one matched pair on a shared baseline; uppercase + tracking is the
+   * only thing that marks it as a legend. Color and tracking match the Z2
+   * status labels (`.dev-telemetry-endcap-label`). */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--dev-pulse-strip-label-size);
   letter-spacing: 0.18em;
   flex: 0 0 auto;
-  opacity: 0.8;
-  transition: color 0.6s ease;
+  /* Nudge the small label down a hair so it sits optically centered
+     against the larger line text. */
+  position: relative;
+  top: 0.4px;
 }
 
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.dev-pulse-strip-elapsed {
-  color: var(--dev-pulse-heat);
-  font-family: var(--tug-font-mono, monospace);
-  font-size: 0.5625rem;
-  letter-spacing: 0.08em;
-  font-variant-numeric: tabular-nums;
-  flex: 0 0 auto;
-  /* Reserve the widest running-clock width so ticking never shifts the
-   * text's ellipsis boundary. Empty while idle (no turn in flight). */
-  min-width: 3.5ch;
-  text-align: end;
-  opacity: 0.8;
-  transition: color 0.6s ease;
-}
-
-/* The cross-fade stage: a fixed box both text layers center within. */
+/* The cross-fade stage: fills the remaining width so the text runs to the
+ * strip's right padding before it ellipsizes (no character-count clip). */
 .dev-pulse-strip-stage {
   position: relative;
   display: block;
   flex: 1 1 auto;
   min-width: 0;
-  height: 100%;
-  overflow: hidden;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-strip-text {
-  /* Both layers share the same absolute geometry, vertically centered
-   * in the fixed stage: a tall KaTeX line box can NEVER move layout —
-   * extreme overshoot crops symmetrically instead. */
-  position: absolute;
-  inset-inline: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  /* The incoming/current line sits IN FLOW so its baseline drives the
+   * stage's baseline (shared with the legend). One line, ellipsized at the
+   * stage's right edge — fills the available width, not a character count. */
+  display: block;
   color: var(--tug7-element-global-text-normal-default-rest);
-  font-size: 0.6875rem;
+  font-size: var(--dev-pulse-strip-font-size);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
 
-/* The outgoing layer rides atop the incoming during the fade (same
- * geometry; only opacity differs while TugAnimator runs). */
+/* The outgoing layer rides absolutely atop the incoming during the fade
+ * (same geometry; only opacity differs while TugAnimator runs). */
 .dev-pulse-strip-outgoing {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
   z-index: 1;
 }
 

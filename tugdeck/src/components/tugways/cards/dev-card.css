@@ -228,40 +228,20 @@
   background-color: var(--tug7-surface-card-primary-normal-status-rest);
   /* Borders top and bottom frame the status bar: the top rule separates it
      from the transcript above, the bottom rule from the prompt entry below.
+     When the PULSE strip follows, the bottom rule is dropped (see below) —
+     the strip's transcript-colored background does the separating instead.
      Both render on the status surface set on this same rule (self-documenting
      per [L16]). */
   border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  /* Drop shadow casting upward from the top edge so the transcript's
-     bottom rows read as scrolling "under" the bar. The hard border-
-     top above is the fixed separator line; the shadow is the soft
-     fade that signals depth.
-
-     `position: relative` + `z-index: 1` are NECESSARY here, not
-     decorative: `TugListView`'s scroller (inside `.dev-card-
-     transcript`) sets `position: relative` and so paints in the
-     positioned-descendants phase of the surrounding stacking context.
-     If the status bar stayed static, its `box-shadow` would paint in
-     the non-positioned phase and the scroller's content would land
-     on top of the shadow — the shadow would disappear under the
-     transcript instead of casting onto it. Promoting the bar to a
-     positioned element with a higher z-index puts the bar's paint
-     (including the shadow) above the scroller's positioned subtree.
-
-     Slot declared at the consuming rule per [L20] (the component owns
-     its tokens; declare-and-read in one place); the slot resolves to
-     the base-tier shadow color in one hop per [L17]. The structured
-     `0 -2px 6px <color>` value is a component decision; the color
-     comes from the theme via `--tug7-element-global-shadow-normal-md-
-     rest` (the global "medium" shadow alpha — strong enough to read
-     in both brio and harmony, subtle enough not to dominate). A
-     future cascade-scoped consumer can retune by overriding the
-     slot. */
+  /* `position: relative` + `z-index: 1`: `TugListView`'s scroller (inside
+     `.dev-card-transcript`) sets `position: relative` and so paints in the
+     positioned-descendants phase of the surrounding stacking context. The
+     bar must be promoted to a positioned element with a higher z-index so
+     its own paint lands above the scroller's positioned subtree rather than
+     under the transcript. */
   position: relative;
   z-index: 1;
-  --tugx-dev-status-bar-shadow:
-    0 0px 2px var(--tug7-element-global-shadow-normal-md-rest);
-  box-shadow: var(--tugx-dev-status-bar-shadow);
   /* Establish a CSS containment context so the combined status-row
      renderer's container queries can target this host. `inline-size`
      so the queries see the host's width but height stays content-
@@ -280,6 +260,15 @@
    collapses. */
 .dev-card-status-bar:empty {
   display: none;
+}
+
+/* When the PULSE strip follows Z2, it differentiates itself by its
+   transcript-colored background, not a rule — so drop Z2's bottom divider
+   to collapse the cluster of lower lines. The border box is kept
+   (color → transparent) so there's no 1px layout shift. With the pulse
+   disabled there's no `.dev-pulse-strip` sibling and the divider stays. */
+.dev-card-status-bar:has(+ .dev-pulse-strip) {
+  border-bottom-color: transparent;
 }
 
 /* Z2 status content — `flex: 1 1 auto` lets it span the row; `min-width: 0`

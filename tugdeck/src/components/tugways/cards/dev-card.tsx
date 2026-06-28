@@ -3393,12 +3393,11 @@ export function DevCardBody({
               )}
             </div>
             {/*
-              The PULSE strip — one ambient line of color commentary
-              beneath the Z2 status row, filtered to THIS card's
-              session (one app-wide commentator, per-card display).
-              Gated like the status bar (no Z2 content → no strip);
-              the component additionally hides itself while the
-              `pulse/enabled` default is off.
+              The PULSE strip — one ambient line of commentary beneath the
+              Z2 status row, filtered to THIS card's session (one app-wide
+              commentator, per-card display). Gated like the status bar (no
+              Z2 content → no strip); the component additionally hides itself
+              while the `pulse/enabled` default is off.
             */}
             {effectiveStatusBarContent != null && (
               <DevPulseStrip codeSessionStore={codeSessionStore} />

@@ -15,21 +15,14 @@
  *    (submit), which swaps immediately;
  *  - replacements CROSS-FADE via TugAnimator (the outgoing line fades
  *    out over the incoming line fading in);
- *  - a dimmed `None` placeholder before the session's first line;
- *  - a HEAT RAMP: while a turn is in flight the legend and a running
- *    clock warm from calm through yellow → red the longer it runs
- *    (Claude Code's yellow→red status shading) — liveliness even when
- *    no new line is streaming. A single interval writes the elapsed
- *    text and `data-heat` straight to the DOM; idle clears both.
+ *  - a dimmed `None` placeholder before the session's first line.
  *
- * Laws: [L02] every store read via `useSyncExternalStore` (`usePulse`,
- *       the session-id / `canInterrupt` / `submitAt` selectors below);
+ * Laws: [L02] both stores via `useSyncExternalStore` (`usePulse` and
+ *       the session-id selector below);
  *       [L06] the cross-fade runs through TugAnimator (WAAPI on DOM
- *       refs) — opacity never passes through React state; the heat
- *       ramp likewise writes `data-heat` + the elapsed clock straight
- *       to the DOM (no per-tick re-render); the dwell queue is local
- *       presentation data (`useState`/`useRef`), which changes WHAT
- *       text exists, not how it looks;
+ *       refs) — opacity never passes through React state; the dwell
+ *       queue is local presentation data (`useState`/`useRef`), which
+ *       changes WHAT text exists, not how it looks;
  *       [L19] `.tsx`/`.css` pair, `data-slot="dev-pulse-strip"`;
  *       [L26] mounted whenever enabled; only the text layers change.
  *
@@ -56,32 +49,6 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 export const MIN_DWELL_MS = 1_800;
 /** Cross-fade length (raw ms; TugAnimator scales by the timing dial). */
 export const XFADE_MS = 600;
-
-/**
- * Elapsed-seconds thresholds for the heat ramp: a turn warms from calm
- * (bucket 0) through yellow → orange → coral → red as it runs longer, the
- * way Claude Code's terminal status line shades from yellow toward red. The
- * bucket count is the heat attribute; the CSS maps each to a tint.
- */
-const HEAT_THRESHOLDS_S = [10, 30, 60, 120] as const;
-
-/** Map elapsed seconds to a heat bucket (0 = calm … 4 = hottest). */
-function heatBucket(seconds: number): number {
-  let bucket = 0;
-  for (const threshold of HEAT_THRESHOLDS_S) {
-    if (seconds >= threshold) bucket += 1;
-    else break;
-  }
-  return bucket;
-}
-
-/** Terse running clock: "12s" under a minute, "1m05s" beyond. */
-function formatElapsed(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m${String(s).padStart(2, "0")}s`;
-}
 
 /** What the strip is showing: a pulse line or the placeholder. */
 interface DisplayEntry {
@@ -191,24 +158,6 @@ export function DevPulseStrip({
       [codeSessionStore],
     ),
   );
-  // The heat ramp's inputs: whether a turn is in flight (`canInterrupt` is
-  // the store's turn-in-flight predicate) and when it started. Both are
-  // primitives, so the snapshot stays `Object.is`-stable per [L02]; the
-  // per-second ramp itself never flows through React state ([L06]).
-  const busy = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () => codeSessionStore.getSnapshot().canInterrupt,
-      [codeSessionStore],
-    ),
-  );
-  const turnStartedAt = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () => codeSessionStore.getSnapshot().activeTurn?.submitAt ?? 0,
-      [codeSessionStore],
-    ),
-  );
   // Lines cleared by this card's last submit stay hidden; the next
   // turn's voice repopulates the strip.
   const latest = latestLineForScope(
@@ -224,35 +173,6 @@ export function DevPulseStrip({
 
   const currentElRef = useRef<HTMLSpanElement | null>(null);
   const outgoingElRef = useRef<HTMLSpanElement | null>(null);
-  const stripElRef = useRef<HTMLDivElement | null>(null);
-  const elapsedElRef = useRef<HTMLSpanElement | null>(null);
-
-  // The heat ramp + running clock. One interval, alive only while a turn is.
-  // It writes the `data-heat` attribute (CSS maps it to a tint) and the
-  // elapsed readout's text DIRECTLY to the DOM — appearance and high-churn
-  // content never round-trip through React state ([L06]). The effect re-arms
-  // when the turn flips or restarts; teardown clears the clock.
-  useEffect(() => {
-    const strip = stripElRef.current;
-    if (strip === null) return;
-    if (!busy || turnStartedAt <= 0) {
-      strip.dataset.heat = "0";
-      if (elapsedElRef.current !== null) elapsedElRef.current.textContent = "";
-      return;
-    }
-    const tick = (): void => {
-      const seconds = Math.max(0, Math.floor((Date.now() - turnStartedAt) / 1000));
-      strip.dataset.heat = String(heatBucket(seconds));
-      if (elapsedElRef.current !== null) {
-        elapsedElRef.current.textContent = formatElapsed(seconds);
-      }
-    };
-    tick();
-    const id = window.setInterval(tick, 1_000);
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [busy, turnStartedAt]);
 
   // The cross-fade: incoming rises to full opacity while the parked
   // outgoing layer fades away, both through TugAnimator ([L06] —
@@ -285,12 +205,7 @@ export function DevPulseStrip({
 
   if (!pulse.enabled) return null;
   return (
-    <div
-      className="dev-pulse-strip"
-      data-slot="dev-pulse-strip"
-      data-heat="0"
-      ref={stripElRef}
-    >
+    <div className="dev-pulse-strip" data-slot="dev-pulse-strip">
       <span className="dev-pulse-strip-legend">PULSE</span>
       <span className="dev-pulse-strip-stage">
         <PulseLineText
@@ -315,11 +230,6 @@ export function DevPulseStrip({
           />
         ) : null}
       </span>
-      <span
-        className="dev-pulse-strip-elapsed"
-        ref={elapsedElRef}
-        aria-hidden
-      />
     </div>
   );
 }
