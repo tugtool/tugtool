@@ -168,6 +168,16 @@ export function TugSparkline({
       anim.onfinish = () => startEpoch();
     };
 
+    // Seed a CONTINUOUS baseline across the whole window so the chart starts
+    // FULL — a flat blank line — instead of growing in from the right. One
+    // seed per sample interval, so as each prunes off the left the next keeps
+    // the left edge covered until real data has scrolled all the way across.
+    const seedNow = Date.now();
+    const seedSpan = (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000;
+    for (let dt = seedSpan; dt > 0; dt -= SAMPLE_MS) {
+      tape.push({ t: seedNow - dt, v: 0 });
+    }
+
     sample();
     startEpoch();
     const timer = window.setInterval(sample, SAMPLE_MS);
