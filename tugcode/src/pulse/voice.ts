@@ -339,6 +339,51 @@ function taskBeat(frame: ToolUse): string | null {
   return null;
 }
 
+/** Last path segment of a slash path. */
+function baseName(path: string): string {
+  const parts = path.split("/");
+  return parts[parts.length - 1] || path;
+}
+
+/** One line, clipped with an ellipsis. */
+function clipPhrase(text: string, n: number): string {
+  const t = oneLine(text);
+  return t.length <= n ? t : `${t.slice(0, n - 1)}…`;
+}
+
+/**
+ * Narrate a generic tool call ("Reading foo.ts", "Running make test") for the
+ * strip — used for SUBAGENT tool calls, which are the only activity a subagent
+ * streams to the parent (no text/thinking deltas cross over).
+ */
+function narrateTool(toolName: string, input: object): string {
+  const inp = input as Record<string, unknown>;
+  const path = typeof inp.file_path === "string" ? baseName(inp.file_path) : null;
+  switch (toolName) {
+    case "Read":
+      return path ? `Reading ${path}` : "Reading";
+    case "Write":
+      return path ? `Writing ${path}` : "Writing";
+    case "Edit":
+    case "NotebookEdit":
+      return path ? `Editing ${path}` : "Editing";
+    case "Bash":
+      return typeof inp.command === "string"
+        ? `Running ${clipPhrase(inp.command, 48)}`
+        : "Running a command";
+    case "Grep":
+      return typeof inp.pattern === "string"
+        ? `Searching ${clipPhrase(inp.pattern, 32)}`
+        : "Searching";
+    case "Glob":
+      return typeof inp.pattern === "string"
+        ? `Finding ${clipPhrase(inp.pattern, 32)}`
+        : "Finding files";
+    default:
+      return toolName;
+  }
+}
+
 /**
  * Render a `tool_input_progress` frame into a one-line strip update, e.g.
  * "Writing voice.ts — 37 lines". Falls back to the bare file name (or verb)
@@ -370,6 +415,13 @@ class ScopeVoiceState {
    * again (monologue resumes) or the turn ends.
    */
   directLine: string | null = null;
+  /**
+   * Launched-agent labels: `Agent`/`Task` tool_use_id → a short label
+   * (subagent type or description). A subagent's own tool calls arrive with
+   * `parent_tool_use_id` set to its launching call, so this lets the strip
+   * prefix them ("Explore · Reading foo.ts").
+   */
+  agentLabels = new Map<string, string>();
   /** The line currently on the strip (dedupe for change-driven emits). */
   shownText: string | null = null;
   lastEmitAt = Number.NEGATIVE_INFINITY;
@@ -379,6 +431,7 @@ class ScopeVoiceState {
     this.blockKey = null;
     this.blockText = "";
     this.directLine = null;
+    this.agentLabels.clear();
     this.shownText = null;
   }
 }
@@ -410,6 +463,32 @@ export class PulseVoice {
         state.directLine = synthesizeToolLine(frame);
         return null;
       case "tool_use": {
+        const parentId = (frame as unknown as Record<string, unknown>)
+          .parent_tool_use_id;
+        if (typeof parentId === "string" && parentId.length > 0) {
+          // A SUBAGENT's tool call — the only activity a subagent streams to
+          // the parent. Narrate it (prefixed with the agent's label) so the
+          // strip isn't frozen while an agent works in the background.
+          if (Object.keys(frame.input ?? {}).length > 0) {
+            const label = state.agentLabels.get(parentId) ?? "Agent";
+            state.directLine = `${label} · ${narrateTool(frame.tool_name, frame.input)}`;
+          }
+          return null;
+        }
+        // A launched agent: remember its label so its tool calls can be
+        // prefixed, and announce the launch.
+        if (frame.tool_name === "Agent" || frame.tool_name === "Task") {
+          const input = frame.input as Record<string, unknown>;
+          const label =
+            (typeof input.subagent_type === "string" && input.subagent_type) ||
+            (typeof input.description === "string" && input.description) ||
+            null;
+          if (label !== null) {
+            state.agentLabels.set(frame.tool_use_id, label);
+            state.directLine = `Launching ${label}…`;
+          }
+          return null;
+        }
         // Task-list lifecycle is a materially interesting beat the prose
         // monologue glosses over — surface it directly.
         const beat = taskBeat(frame);

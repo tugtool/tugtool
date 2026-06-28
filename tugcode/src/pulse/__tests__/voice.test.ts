@@ -36,16 +36,21 @@ function turnComplete(): OutboundMessage {
   return { type: "turn_complete", msg_id: "m1", seq: 9, result: "done", ipc_version: 2 };
 }
 
-function toolUse(toolName: string, input: Record<string, unknown>): OutboundMessage {
+function toolUse(
+  toolName: string,
+  input: Record<string, unknown>,
+  opts: { id?: string; parent?: string } = {},
+): OutboundMessage {
   return {
     type: "tool_use",
     msg_id: "m1",
     seq: 1,
     tool_name: toolName,
-    tool_use_id: "toolu_x",
+    tool_use_id: opts.id ?? "toolu_x",
     input,
     ipc_version: 2,
-  };
+    ...(opts.parent !== undefined ? { parent_tool_use_id: opts.parent } : {}),
+  } as OutboundMessage;
 }
 
 function toolProgress(
@@ -275,6 +280,37 @@ describe("PulseVoice — the monologue", () => {
     expect(voice.flush(3_500)).toEqual([{ scope: "s1", text: "Started task 1" }]);
     voice.onFrame("s1", toolUse("TaskUpdate", { taskId: "1", status: "completed" }), 4_600);
     expect(voice.flush(4_700)).toEqual([{ scope: "s1", text: "Completed task 1" }]);
+  });
+
+  test("subagent work surfaces through the agent's tool calls", () => {
+    const voice = new PulseVoice();
+    // Launching the agent is announced...
+    voice.onFrame(
+      "s1",
+      toolUse("Agent", { subagent_type: "Explore", description: "find x" }, { id: "toolu_agent" }),
+      0,
+    );
+    expect(voice.flush(1_100)).toEqual([
+      { scope: "s1", text: "Launching Explore…" },
+    ]);
+    // ...then the subagent's own tool calls (tagged with parent_tool_use_id —
+    // the only thing a subagent streams to the parent) narrate, prefixed.
+    voice.onFrame(
+      "s1",
+      toolUse("Read", { file_path: "/a/b/session.ts" }, { id: "toolu_1", parent: "toolu_agent" }),
+      1_200,
+    );
+    expect(voice.flush(2_300)).toEqual([
+      { scope: "s1", text: "Explore · Reading session.ts" },
+    ]);
+    voice.onFrame(
+      "s1",
+      toolUse("Bash", { command: "grep -rn foo src" }, { id: "toolu_2", parent: "toolu_agent" }),
+      3_400,
+    );
+    expect(voice.flush(3_500)).toEqual([
+      { scope: "s1", text: "Explore · Running grep -rn foo src" },
+    ]);
   });
 
   test("a non-task tool call produces no beat", () => {

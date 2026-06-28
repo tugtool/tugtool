@@ -64,6 +64,11 @@ import {
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { getPulseStore } from "./pulse-store";
 import { ThroughputMeter } from "./throughput-meter";
+
+/** Sparkline pulse (chars-equivalent) for one subagent tool call. */
+const SUBAGENT_ACTIVITY_UNITS = 250;
+/** Cap on chars credited for a subagent tool result. */
+const SUBAGENT_RESULT_UNITS_CAP = 600;
 import {
   clearCachedParses,
   invalidateCachedParsesByPrefix,
@@ -373,6 +378,8 @@ export class CodeSessionStore {
   readonly throughputMeter = new ThroughputMeter();
   /** Per-`tool_use_id` last cumulative byte count, for streaming deltas. */
   private readonly _toolInputBytes = new Map<string, number>();
+  /** Subagent tool_use ids already pulsed into the meter (dedupe). */
+  private readonly _subagentToolSeen = new Set<string>();
 
   private _transcript: ReadonlyArray<TurnEntry> = [];
   // Older turns staged by a load-previous (prepend) replay bracket, in
@@ -1413,6 +1420,9 @@ export class CodeSessionStore {
     const ev = value as Record<string, unknown> & { type?: string };
     const t = ev.type;
     const now = Date.now();
+    const parent =
+      typeof ev.parent_tool_use_id === "string" &&
+      ev.parent_tool_use_id.length > 0;
     if (
       (t === "assistant_text" || t === "thinking_text") &&
       ev.is_partial === true &&
@@ -1428,6 +1438,28 @@ export class CodeSessionStore {
       const delta = ev.bytes - last;
       this._toolInputBytes.set(ev.tool_use_id, ev.bytes);
       if (delta > 0) this.throughputMeter.record(delta, now);
+    } else if (
+      parent &&
+      t === "tool_use" &&
+      typeof ev.tool_use_id === "string" &&
+      ev.input != null &&
+      typeof ev.input === "object" &&
+      Object.keys(ev.input as object).length > 0
+    ) {
+      // A subagent's tool call. Subagents stream NO partial deltas to the
+      // parent — these complete tool_use/tool_result frames are the only
+      // activity signal — so pulse the meter (once per call) to keep the
+      // sparkline alive while an agent works.
+      if (!this._subagentToolSeen.has(ev.tool_use_id)) {
+        this._subagentToolSeen.add(ev.tool_use_id);
+        this.throughputMeter.record(SUBAGENT_ACTIVITY_UNITS, now);
+      }
+    } else if (parent && t === "tool_result" && typeof ev.output === "string") {
+      // The subagent's tool returned — real content flowing back.
+      this.throughputMeter.record(
+        Math.min(ev.output.length, SUBAGENT_RESULT_UNITS_CAP),
+        now,
+      );
     }
   }
 
