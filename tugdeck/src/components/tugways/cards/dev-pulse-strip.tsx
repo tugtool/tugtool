@@ -42,10 +42,23 @@ import React, {
 
 import { animate } from "@/components/tugways/tug-animator";
 import { TugSparkline } from "@/components/tugways/tug-sparkline";
+import {
+  TugPopover,
+  TugPopoverContent,
+  TugPopoverTrigger,
+} from "@/components/tugways/tug-popover";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
-import { latestLineForScope, usePulse } from "@/lib/pulse-store";
+import {
+  latestLineForScope,
+  linesForScope,
+  usePulse,
+  type PulseLineEntry,
+} from "@/lib/pulse-store";
 import { THROUGHPUT_BIN_MS } from "@/lib/throughput-meter";
 import type { CodeSessionStore } from "@/lib/code-session-store";
+
+/** How many recent pulses the PULSE-label popover lists. */
+const PULSE_HISTORY_COUNT = 8;
 
 /** Every line holds the strip at least this long before the next. */
 export const MIN_DWELL_MS = 1_800;
@@ -217,10 +230,32 @@ export function DevPulseStrip({
       .catch(() => settleOutgoing(outgoing));
   }, [outgoing, settleOutgoing]);
 
+  // The last few pulses for this card's session — shown in the legend popover.
+  const history = linesForScope(pulse.lines, tugSessionId, PULSE_HISTORY_COUNT);
+
   if (!pulse.enabled) return null;
   return (
     <div className="dev-pulse-strip" data-slot="dev-pulse-strip">
-      <span className="dev-pulse-strip-legend">PULSE</span>
+      <TugPopover>
+        <TugPopoverTrigger>
+          <button
+            type="button"
+            className="dev-pulse-strip-legend"
+            data-slot="dev-pulse-legend"
+            // Pointer-only trigger, like the Z2 status cells: not a native Tab
+            // stop and never steals card focus to the editor on click.
+            tabIndex={-1}
+            data-tug-focus="refuse"
+            data-no-activate=""
+            aria-label="Recent pulses"
+          >
+            PULSE
+          </button>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="start" sideOffset={8} arrow>
+          <DevPulseHistory lines={history} />
+        </TugPopoverContent>
+      </TugPopover>
       <span className="dev-pulse-strip-stage">
         <PulseLineText
           spanRef={currentElRef}
@@ -252,6 +287,51 @@ export function DevPulseStrip({
         height={22}
         className="dev-pulse-strip-spark"
       />
+    </div>
+  );
+}
+
+/**
+ * The PULSE-label popover body: the last few pulses for this session, newest
+ * first, each rendered through the same markdown/LaTeX pipeline as the strip.
+ * An empty history reads as a quiet placeholder.
+ */
+function DevPulseHistory({
+  lines,
+}: {
+  lines: readonly PulseLineEntry[];
+}): React.ReactElement {
+  return (
+    <div className="dev-pulse-history" data-slot="dev-pulse-history">
+      <div className="dev-pulse-history-title">Recent pulses</div>
+      {lines.length === 0 ? (
+        <div className="dev-pulse-history-empty">None yet</div>
+      ) : (
+        lines.map((line) => (
+          <DevPulseHistoryRow key={line.key} text={line.text} />
+        ))
+      )}
+    </div>
+  );
+}
+
+function DevPulseHistoryRow({ text }: { text: string }): React.ReactElement {
+  const render = React.useMemo(() => renderPulseLine(text), [text]);
+  const body =
+    render === null || render.html.length === 0 ? (
+      <span className="dev-pulse-history-text">{text}</span>
+    ) : (
+      <span
+        className="dev-pulse-history-text"
+        dangerouslySetInnerHTML={{ __html: render.html }}
+      />
+    );
+  return (
+    <div className="dev-pulse-history-row">
+      <span className="dev-pulse-history-bullet" aria-hidden="true">
+        •
+      </span>
+      {body}
     </div>
   );
 }

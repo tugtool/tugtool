@@ -90,6 +90,32 @@ export function latestLineForScope(
   return null;
 }
 
+/**
+ * The newest `limit` lines about `scope`, newest-first — the strip's history
+ * popover. Same scope rule as {@link latestLineForScope} (the session's own
+ * lines plus `app`-wide / unscoped ambience); cleared watermarks are NOT
+ * applied, since the history shows what actually happened.
+ */
+export function linesForScope(
+  lines: readonly PulseLineEntry[],
+  scope: string,
+  limit: number,
+): PulseLineEntry[] {
+  const out: PulseLineEntry[] = [];
+  if (scope.length === 0) return out;
+  for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
+    const line = lines[i];
+    if (
+      line.scopes.length === 0 ||
+      line.scopes.includes(scope) ||
+      line.scopes.includes("app")
+    ) {
+      out.push(line);
+    }
+  }
+  return out;
+}
+
 const EMPTY_LINES: readonly PulseLineEntry[] = Object.freeze([]);
 const EMPTY_CLEARED: ReadonlyMap<string, ReadonlySet<string>> = new Map();
 const IDLE_SNAPSHOT: PulseSnapshot = Object.freeze({

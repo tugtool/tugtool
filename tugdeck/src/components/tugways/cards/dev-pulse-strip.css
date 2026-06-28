@@ -52,18 +52,40 @@
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-strip-legend {
-  /* Same font + size as the text (NOT mono) so the label and the line read
-   * as one matched pair on a shared baseline; uppercase + tracking is the
-   * only thing that marks it as a legend. Color and tracking match the Z2
-   * status labels (`.dev-telemetry-endcap-label`). */
+  /* A button-rooted popover trigger (the recent-pulses history), styled to
+   * read as the legend label: same font + size as the text (NOT mono),
+   * uppercase + tracking matching the Z2 status labels
+   * (`.dev-telemetry-endcap-label`). A subtle hover tint + pointer makes the
+   * click target discoverable, exactly as the Z2 status cells do. */
+  appearance: none;
+  border: none;
+  margin: 0;
+  padding: 1px 5px;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: transparent;
   color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
   font-size: var(--dev-pulse-strip-label-size);
   letter-spacing: 0.18em;
   flex: 0 0 auto;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
   /* Nudge the small label down a hair so it sits optically centered
      against the larger line text. */
   position: relative;
   top: 0.4px;
+}
+
+.dev-pulse-strip-legend:hover {
+  /* This is a ghost-control trigger; use the interactive-control hover tint
+     (white a:100), which reads with real contrast on the pulse bar's darker
+     surface — twice the highlight `hover` tint the Z2 cells use. */
+  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
+}
+
+/* While the popover is open the trigger stays lit (Radix sets data-state). */
+.dev-pulse-strip-legend[data-state="open"] {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-active);
 }
 
 /* The cross-fade stage: fills the remaining width so the text runs to the
@@ -150,4 +172,74 @@
  * fraction stack fits the fixed box. */
 .dev-pulse-strip-text .katex {
   font-size: 1.05em;
+}
+
+/* ── PULSE legend popover: the recent-pulses history ──────────────────────
+   Modeled on the Z2 status-row popover frame (`.dev-popover-frame`): a padded
+   column with a centered, letterspaced title above the rows. The popover
+   chrome (background/border/shadow) is owned by TugPopoverContent. */
+.dev-pulse-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-md);
+  min-width: 240px;
+  max-width: 420px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-pulse-history-title {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.625rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  margin-block-end: var(--tug-space-xs);
+}
+
+.dev-pulse-history-row {
+  display: flex;
+  gap: var(--tug-space-xs);
+  align-items: baseline;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-pulse-history-bullet {
+  flex: 0 0 auto;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-pulse-history-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-pulse-history-empty {
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Rendered markdown in a history row flattens to one inline run per row,
+   matching the strip. */
+.dev-pulse-history-row :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.dev-pulse-history-row code {
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.95em;
 }
