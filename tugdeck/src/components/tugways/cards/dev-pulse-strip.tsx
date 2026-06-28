@@ -41,6 +41,7 @@ import React, {
 } from "react";
 
 import { animate } from "@/components/tugways/tug-animator";
+import { TugSparkline } from "@/components/tugways/tug-sparkline";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import { latestLineForScope, usePulse } from "@/lib/pulse-store";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -49,6 +50,12 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 export const MIN_DWELL_MS = 1_800;
 /** Cross-fade length (raw ms; TugAnimator scales by the timing dial). */
 export const XFADE_MS = 600;
+/**
+ * Sparkline scale floor, in streamed chars per 1s bin. ~50 tok/s of output
+ * is ~200 chars/s, so a peak below this still reads as low activity rather
+ * than filling the height; busier seconds auto-scale above it.
+ */
+const SPARKLINE_FLOOR_CHARS = 200;
 
 /** What the strip is showing: a pulse line or the placeholder. */
 interface DisplayEntry {
@@ -171,6 +178,12 @@ export function DevPulseStrip({
       : NONE_ENTRY;
   const { current, outgoing, settleOutgoing } = useDwellDisplay(target);
 
+  // Live output-velocity series for the sparkline. The meter is a stable
+  // store field (NOT snapshot state), so reading it imperatively keeps the
+  // 10 Hz redraw off React's render path ([L06]).
+  const meter = codeSessionStore.throughputMeter;
+  const getSeries = useCallback(() => meter.series(Date.now()), [meter]);
+
   const currentElRef = useRef<HTMLSpanElement | null>(null);
   const outgoingElRef = useRef<HTMLSpanElement | null>(null);
 
@@ -230,6 +243,12 @@ export function DevPulseStrip({
           />
         ) : null}
       </span>
+      <TugSparkline
+        getSeries={getSeries}
+        floor={SPARKLINE_FLOOR_CHARS}
+        width={64}
+        className="dev-pulse-strip-spark"
+      />
     </div>
   );
 }

@@ -1,0 +1,15 @@
+/**
+ * tug-sparkline.css — the canvas activity graph's scoped styling.
+ *
+ * The canvas paints with the element's resolved `color` (read in JS), so
+ * the tint is set here and the theme owns it. Block display so width/height
+ * are exact; no layout of its own beyond the box the caller sizes.
+ *
+ * @module components/tugways/tug-sparkline
+ */
+
+.tug-sparkline {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}

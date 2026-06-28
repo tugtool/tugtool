@@ -36,6 +36,18 @@ function turnComplete(): OutboundMessage {
   return { type: "turn_complete", msg_id: "m1", seq: 9, result: "done", ipc_version: 2 };
 }
 
+function toolUse(toolName: string, input: Record<string, unknown>): OutboundMessage {
+  return {
+    type: "tool_use",
+    msg_id: "m1",
+    seq: 1,
+    tool_name: toolName,
+    tool_use_id: "toolu_x",
+    input,
+    ipc_version: 2,
+  };
+}
+
 function toolProgress(
   opts: { filePath: string | null; lines: number; toolName?: string },
 ): OutboundMessage {
@@ -247,6 +259,53 @@ describe("PulseVoice — the monologue", () => {
     expect(voice.flush(2_300)).toEqual([
       { scope: "s1", text: "Now running the test suite to confirm." },
     ]);
+  });
+
+  test("task-list lifecycle surfaces as pulse beats", () => {
+    const voice = new PulseVoice();
+    // The empty-input content_block_start frame yields nothing...
+    voice.onFrame("s1", toolUse("TaskCreate", {}), 0);
+    expect(voice.flush(1_100)).toEqual([]);
+    // ...the filled frame speaks the new task.
+    voice.onFrame("s1", toolUse("TaskCreate", { subject: "Write the Makefile" }), 1_200);
+    expect(voice.flush(2_300)).toEqual([
+      { scope: "s1", text: "Created: Write the Makefile" },
+    ]);
+    voice.onFrame("s1", toolUse("TaskUpdate", { taskId: "1", status: "in_progress" }), 3_400);
+    expect(voice.flush(3_500)).toEqual([{ scope: "s1", text: "Started task 1" }]);
+    voice.onFrame("s1", toolUse("TaskUpdate", { taskId: "1", status: "completed" }), 4_600);
+    expect(voice.flush(4_700)).toEqual([{ scope: "s1", text: "Completed task 1" }]);
+  });
+
+  test("a non-task tool call produces no beat", () => {
+    const voice = new PulseVoice();
+    voice.onFrame("s1", assistantText("Running the build now."), 0);
+    voice.flush(1_100);
+    voice.onFrame("s1", toolUse("Bash", { command: "make" }), 1_200);
+    // The monologue still owns the strip; no spurious tool beat.
+    expect(voice.flush(2_300)).toEqual([]);
+  });
+});
+
+describe("extractDisplay — dangling labels", () => {
+  test("a heading label that introduces a table is skipped for real prose", () => {
+    const raw =
+      "I finished the calculator and it builds clean.\n\n" +
+      "Verified behavior:\n\n" +
+      "| expr | result |";
+    expect(extractDisplay(raw)).toBe(
+      "I finished the calculator and it builds clean.",
+    );
+  });
+
+  test("a bold heading label is skipped too", () => {
+    const raw =
+      "The parser handles precedence correctly now.\n\n" +
+      "**What's next:**\n\n" +
+      "- add modulo";
+    expect(extractDisplay(raw)).toBe(
+      "The parser handles precedence correctly now.",
+    );
   });
 });
 

@@ -32,6 +32,7 @@ import type {
   AssistantText,
   OutboundMessage,
   ToolInputProgress,
+  ToolUse,
   TurnCancelled,
   TurnComplete,
 } from "../types";
@@ -159,6 +160,15 @@ function isShowable(chunk: string): boolean {
   return chunk.length >= 12 && chunk.includes(" ");
 }
 
+/**
+ * A heading-style label that only introduces what follows — e.g. "Verified
+ * behavior:" or "**What's next:**" — never a thought on its own. Trailing
+ * emphasis markers and whitespace are stripped before the colon test.
+ */
+function isDanglingLabel(chunk: string): boolean {
+  return /:\s*[*_\s]*$/.test(chunk);
+}
+
 /** A segment counts as settled when it ends like a finished thought. */
 function endsSettled(segment: string): boolean {
   const t = segment.trimEnd();
@@ -214,6 +224,9 @@ export function extractDisplay(raw: string): string | null {
     if (!settled) continue;
     let display = oneLine(segments[i]);
     if (!isShowable(display)) continue;
+    // Skip a bare heading label ("Verified behavior:") — it introduces the
+    // next segment but says nothing itself; fall through to an older thought.
+    if (!hasMath(display) && isDanglingLabel(display)) continue;
     const spans = findMathSpans(display);
     const mathOnly =
       spans.length > 0 &&
@@ -302,6 +315,31 @@ function toolVerb(toolName: string): string {
 }
 
 /**
+ * Render a task-list `tool_use` (TaskCreate / TaskUpdate) into a one-line
+ * lifecycle beat, else null for any other tool. Reads the assembled tool
+ * input (the empty-input content_block_start frame yields null and is
+ * skipped; the filled continuation frame carries subject / status).
+ */
+function taskBeat(frame: ToolUse): string | null {
+  const input = (frame.input ?? {}) as Record<string, unknown>;
+  if (frame.tool_name === "TaskCreate") {
+    return typeof input.subject === "string" && input.subject.length > 0
+      ? `Created: ${input.subject}`
+      : null;
+  }
+  if (frame.tool_name === "TaskUpdate") {
+    const status = typeof input.status === "string" ? input.status : null;
+    const id = input.taskId != null ? String(input.taskId) : null;
+    if (status === null || id === null) return null;
+    if (status === "in_progress") return `Started task ${id}`;
+    if (status === "completed") return `Completed task ${id}`;
+    if (status === "deleted") return `Dropped task ${id}`;
+    return null;
+  }
+  return null;
+}
+
+/**
  * Render a `tool_input_progress` frame into a one-line strip update, e.g.
  * "Writing voice.ts — 37 lines". Falls back to the bare file name (or verb)
  * before any content has streamed.
@@ -371,6 +409,13 @@ export class PulseVoice {
       case "tool_input_progress":
         state.directLine = synthesizeToolLine(frame);
         return null;
+      case "tool_use": {
+        // Task-list lifecycle is a materially interesting beat the prose
+        // monologue glosses over — surface it directly.
+        const beat = taskBeat(frame);
+        if (beat !== null) state.directLine = beat;
+        return null;
+      }
       case "turn_complete":
         return this.onTurnEnd(state, scope, atMs, "Done", frame);
       case "turn_cancelled":

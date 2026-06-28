@@ -63,6 +63,7 @@ import {
 } from "./code-session-store/reducer";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { getPulseStore } from "./pulse-store";
+import { ThroughputMeter } from "./throughput-meter";
 import {
   clearCachedParses,
   invalidateCachedParsesByPrefix,
@@ -363,6 +364,16 @@ export class CodeSessionStore {
   private readonly atomBytesStore: AtomBytesStore;
 
   private state: CodeSessionState;
+
+  /**
+   * Live output-velocity meter feeding the PULSE sparkline. Mutated from
+   * `recordThroughput` on every streamed delta; read imperatively by the
+   * sparkline canvas. Deliberately NOT in the snapshot ([L02]/[L06]).
+   */
+  readonly throughputMeter = new ThroughputMeter();
+  /** Per-`tool_use_id` last cumulative byte count, for streaming deltas. */
+  private readonly _toolInputBytes = new Map<string, number>();
+
   private _transcript: ReadonlyArray<TurnEntry> = [];
   // Older turns staged by a load-previous (prepend) replay bracket, in
   // arrival order. `flush-prepend` commits this batch to the FRONT of
@@ -1388,7 +1399,40 @@ export class CodeSessionStore {
    * the outer value at the FeedStore boundary, so inner frames dispatch
    * post-filter and need no `tug_session_id` of their own.
    */
+  /**
+   * Feed the output-velocity meter from streamed deltas. Counts only
+   * is_partial text/thinking deltas (the live stream — replay delivers
+   * complete frames, never deltas) and the incremental byte growth of
+   * `tool_input_progress` (a long Write's content as it forms; that frame
+   * is dropped by the reducer, so it's tapped here before `frameToEvent`).
+   * Skipped entirely during a replay bracket so historical frames replayed
+   * in a burst don't spike "now".
+   */
+  private recordThroughput(value: unknown): void {
+    if (this.state.phase === "replaying") return;
+    const ev = value as Record<string, unknown> & { type?: string };
+    const t = ev.type;
+    const now = Date.now();
+    if (
+      (t === "assistant_text" || t === "thinking_text") &&
+      ev.is_partial === true &&
+      typeof ev.text === "string"
+    ) {
+      this.throughputMeter.record(ev.text.length, now);
+    } else if (
+      t === "tool_input_progress" &&
+      typeof ev.bytes === "number" &&
+      typeof ev.tool_use_id === "string"
+    ) {
+      const last = this._toolInputBytes.get(ev.tool_use_id) ?? 0;
+      const delta = ev.bytes - last;
+      this._toolInputBytes.set(ev.tool_use_id, ev.bytes);
+      if (delta > 0) this.throughputMeter.record(delta, now);
+    }
+  }
+
   private routeFrame(feedId: number, value: unknown): void {
+    if (feedId === FeedId.CODE_OUTPUT) this.recordThroughput(value);
     if (
       feedId === FeedId.CODE_OUTPUT &&
       (value as { type?: string }).type === "replay_batch"
