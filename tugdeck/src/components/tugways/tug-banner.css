@@ -118,7 +118,7 @@ body {
 .tug-banner-detail-panel {
   margin-top: 32px;
   width: calc(100% - 48px);
-  max-width: 680px;
+  max-width: 1040px;
   max-height: calc(100vh - 160px);
   display: flex;
   flex-direction: column;
