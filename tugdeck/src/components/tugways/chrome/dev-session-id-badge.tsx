@@ -51,12 +51,20 @@ export interface DevSessionIdBadgeProps {
   /** Dim + disable the chip (e.g. on the Shell route, where the Code
    *  session id is inapplicable). Forwarded to {@link TugPushButton}. */
   disabled?: boolean;
+  /** Author the chip into a focus group ([P02]) — forwarded to the composed
+   *  {@link TugPushButton}. The dev card passes its cycle group so the chip
+   *  becomes a keyboard-focus-cycling stop; omitted elsewhere. */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
 }
 
 export function DevSessionIdBadge({
   cardId,
   sessionMetadataStore,
   disabled,
+  focusGroup,
+  focusOrder,
 }: DevSessionIdBadgeProps): React.ReactElement | null {
   const binding = React.useSyncExternalStore(
     cardSessionBindingStore.subscribe,
@@ -128,6 +136,8 @@ export function DevSessionIdBadge({
         layout="label-top"
         label="Session"
         data-slot="dev-session-id-badge"
+        focusGroup={focusGroup}
+        focusOrder={focusOrder}
         aria-label="Open session files in Finder"
         title={
           jsonlDir !== null

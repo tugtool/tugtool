@@ -335,3 +335,21 @@ export function usePulse(): PulseSnapshot {
     () => IDLE_SNAPSHOT,
   );
 }
+
+/**
+ * React hook: just the `pulse/enabled` toggle. A narrow selector (boolean,
+ * no identity churn) so a subscriber re-renders only when the kill switch
+ * flips, not on every new line — the dev card reads this to decide whether
+ * the PULSE strip occupies a row in its keyboard-focus cycle.
+ */
+export function usePulseEnabled(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      const store = _activeStore;
+      if (store === null) return () => {};
+      return store.subscribe(listener);
+    },
+    () => _activeStore?.getSnapshot().enabled ?? IDLE_SNAPSHOT.enabled,
+    () => IDLE_SNAPSHOT.enabled,
+  );
+}

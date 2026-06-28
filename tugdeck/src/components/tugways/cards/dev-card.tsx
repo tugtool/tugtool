@@ -73,6 +73,7 @@ import { TugPushButton } from "../tug-push-button";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
 import { DevPulseStrip } from "./dev-pulse-strip";
+import { usePulseEnabled } from "@/lib/pulse-store";
 import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,
@@ -230,32 +231,39 @@ const ROUTE_SHELL = "$";
  */
 const DEV_CYCLE_GROUP = "dev-prompt-cycle";
 // Cycle order ([P10], revised): the cycle reads the card bottom toolbar
-// left→right, then up to the status cells, then into the editor and its
-// compose-phase attachment tiles, and **seeds at the route** (order 0).
-// Forward Tab: route → Mode → Model → Effort → submit → STATE → TIME →
-// TOKENS → CONTEXT → TASKS → JOBS → editor → attachment-1 … attachment-N →
-// wrap; Shift+Tab reverses. The Z4B chips and the six Z2 status cells are all
-// independent leaf stops (no arrow-roving); the editor is a text stop (Return
-// resumes typing); each Z4C attachment tile is a leaf stop (Return / Space
-// opens its preview). Attachment stops exist only while the editor holds
-// image atoms — when there are none the walk runs editor → wrap. A disabled
-// stop (the empty submit, or the chips on the Shell route) drops out of the
-// walk via the engine's interactivity filter, so the seed lands on the next
-// live stop.
+// left→right, then up to the status cells and the PULSE strip, then into the
+// editor and its compose-phase attachment tiles, and **seeds at the route**
+// (order 0). Forward Tab: route → Claude Code → Session → Project → Mode →
+// Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → JOBS →
+// PULSE → editor → attachment-1 … attachment-N → wrap; Shift+Tab reverses.
+// Every Z4B chip (the route indicator, Session / Project badges, and the
+// Mode / Model / Effort pickers), the six Z2 status cells, and the PULSE
+// label are independent leaf stops (no arrow-roving); the editor is a text
+// stop (Return resumes typing); each Z4C attachment tile is a leaf stop
+// (Return / Space opens its preview). PULSE exists only while the strip is
+// shown (status bar present AND the `pulse/enabled` default on); attachment
+// stops exist only while the editor holds image atoms — when neither is
+// present the walk runs … JOBS → editor → wrap. A disabled stop (the empty
+// submit, or the chips on the Shell route) drops out of the walk via the
+// engine's interactivity filter, so the seed lands on the next live stop.
 const DEV_CYCLE_ORDER_ROUTE = 0;
-const DEV_CYCLE_ORDER_MODE = 1;
-const DEV_CYCLE_ORDER_MODEL = 2;
-const DEV_CYCLE_ORDER_EFFORT = 3;
-const DEV_CYCLE_ORDER_SUBMIT = 4;
+const DEV_CYCLE_ORDER_CLAUDE_CODE = 1;
+const DEV_CYCLE_ORDER_SESSION = 2;
+const DEV_CYCLE_ORDER_PROJECT = 3;
+const DEV_CYCLE_ORDER_MODE = 4;
+const DEV_CYCLE_ORDER_MODEL = 5;
+const DEV_CYCLE_ORDER_EFFORT = 6;
+const DEV_CYCLE_ORDER_SUBMIT = 7;
 // The Z2 status cells are six independent leaf stops ([P10] revised —
 // no arrow-roving): STATE / TIME / TOKENS / CONTEXT / TASKS / JOBS take
-// orders 5…10 (base + 0…5). The editor (the text body) follows at 11,
-// and the Z4C compose-phase attachment tiles — one leaf stop each — take
-// the orders from 12 upward (base + tile index), so they Tab right after
-// the editor.
-const DEV_CYCLE_ORDER_STATUS_BASE = 5;
-const DEV_CYCLE_ORDER_EDITOR = 11;
-const DEV_CYCLE_ORDER_ATTACHMENT_BASE = 12;
+// orders 8…13 (base + 0…5). The PULSE label follows at 14 (its own one-node
+// grid row beneath the status cells); the editor (the text body) at 15; and
+// the Z4C compose-phase attachment tiles — one leaf stop each — the orders
+// from 16 upward (base + tile index), so they Tab right after the editor.
+const DEV_CYCLE_ORDER_STATUS_BASE = 8;
+const DEV_CYCLE_ORDER_PULSE = 14;
+const DEV_CYCLE_ORDER_EDITOR = 15;
+const DEV_CYCLE_ORDER_ATTACHMENT_BASE = 16;
 
 // What committing a Z4B settings picker (effort / model / permission mode) opened
 // from a cycle stop does to the cycle ([P15]). Both behaviors are first-class
@@ -2213,6 +2221,13 @@ export function DevCardBody({
   // does not have to be frame-perfect with the tile registrations.
   const [attachmentCount, setAttachmentCount] = useState(0);
 
+  // Whether the PULSE label is a live cycle stop: the strip renders (and so
+  // registers its leaf) exactly while the `pulse/enabled` default is on AND a
+  // status bar is present — and the status bar always is in the real card
+  // (`effectiveZ2` falls back to the status row). A narrow boolean selector so
+  // this re-renders only when the kill switch flips, not per pulse line.
+  const pulseStopPresent = usePulseEnabled();
+
   // Spatial arrow order for the cycle ([P22] / [P23]). Tab walks the cycle stops
   // linearly; arrows give them a 2D feel: horizontal rings — the bottom toolbar
   // (route → mode → model → effort → submit), the Z2 status cells, and (while
@@ -2232,6 +2247,9 @@ export function DevCardBody({
     return rowGridOrder([
       [
         k(DEV_CYCLE_ORDER_ROUTE),
+        k(DEV_CYCLE_ORDER_CLAUDE_CODE),
+        k(DEV_CYCLE_ORDER_SESSION),
+        k(DEV_CYCLE_ORDER_PROJECT),
         k(DEV_CYCLE_ORDER_MODE),
         k(DEV_CYCLE_ORDER_MODEL),
         k(DEV_CYCLE_ORDER_EFFORT),
@@ -2245,11 +2263,16 @@ export function DevCardBody({
         k(DEV_CYCLE_ORDER_STATUS_BASE + 4),
         k(DEV_CYCLE_ORDER_STATUS_BASE + 5),
       ],
+      // PULSE — a one-node row beneath the status cells (rowGridOrder drops it
+      // when the strip is hidden, so Down from a status cell reaches the editor
+      // / attachments instead). A lone node gets no horizontal ring; the seams
+      // carry Up / Down across it.
+      pulseStopPresent ? [k(DEV_CYCLE_ORDER_PULSE)] : [],
       Array.from({ length: attachmentCount }, (_, i) =>
         k(DEV_CYCLE_ORDER_ATTACHMENT_BASE + i),
       ),
     ]);
-  }, [attachmentCount]);
+  }, [attachmentCount, pulseStopPresent]);
   useSpatialOrder(cycle.scopeId, cycleSpatialOrder);
 
 
@@ -3206,6 +3229,8 @@ export function DevCardBody({
         layout="label-top"
         label="Project"
         data-slot="project-chip"
+        focusGroup={DEV_CYCLE_GROUP}
+        focusOrder={DEV_CYCLE_ORDER_PROJECT}
         aria-label="Open project folder in Finder"
         title={`Open in Finder: ${projectDir}`}
         onClick={() => openPathInOS(projectDir, "folder")}
@@ -3400,7 +3425,17 @@ export function DevCardBody({
               while the `pulse/enabled` default is off.
             */}
             {effectiveStatusBarContent != null && (
-              <DevPulseStrip codeSessionStore={codeSessionStore} />
+              // Wrapped in a cycle scope (sharing this card's mode id, like the
+              // status row above) so the PULSE label's `useFocusable` registers
+              // into the same cycle as the prompt-entry stops ([P10] revised —
+              // a leaf stop at order 14, its own one-node grid row).
+              <cycle.CycleScope>
+                <DevPulseStrip
+                  codeSessionStore={codeSessionStore}
+                  focusGroup={DEV_CYCLE_GROUP}
+                  focusOrder={DEV_CYCLE_ORDER_PULSE}
+                />
+              </cycle.CycleScope>
             )}
           </div>
         {/*
@@ -3471,6 +3506,8 @@ export function DevCardBody({
                   <DevRouteIndicatorBadge
                     codeSessionStore={codeSessionStore}
                     sessionMetadataStore={sessionMetadataStore}
+                    focusGroup={DEV_CYCLE_GROUP}
+                    focusOrder={DEV_CYCLE_ORDER_CLAUDE_CODE}
                   />
                   <DevRouteShellGate>
                     {(isShell) => (
@@ -3479,6 +3516,8 @@ export function DevCardBody({
                           cardId={cardId}
                           sessionMetadataStore={sessionMetadataStore}
                           disabled={isShell}
+                          focusGroup={DEV_CYCLE_GROUP}
+                          focusOrder={DEV_CYCLE_ORDER_SESSION}
                         />
                         {effectivePromptStatusContent}
                         <PermissionModeChip

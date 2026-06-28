@@ -47,6 +47,7 @@ import {
   TugPopoverContent,
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
+import { useFocusable } from "@/components/tugways/use-focusable";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
   latestLineForScope,
@@ -166,10 +167,37 @@ function useDwellDisplay(target: DisplayEntry): {
 
 export function DevPulseStrip({
   codeSessionStore,
+  focusGroup,
+  focusOrder,
 }: {
   codeSessionStore: CodeSessionStore;
+  /**
+   * Author the PULSE label into a focus group ([P10] revised) — when set, the
+   * label registers as a **leaf** cycle stop (its own Tab stop, like the Z2
+   * status cells; no arrow-roving), and Space/Enter open the recent-pulses
+   * popover natively. Supplied by the dev card, which owns the Tab order;
+   * omitted in gallery / fixture mounts (pointer-only, as before).
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
 }): React.ReactElement | null {
   const pulse = usePulse();
+  // Leaf cycle-stop registration ([P10] revised), mirroring `TugStatusCell`.
+  // Keyed by `id` independent of the DOM ref, so we stamp `data-tug-focusable`
+  // straight onto the button below rather than routing a ref through
+  // `TugPopoverTrigger` (whose `asChild` clone would replace it). The engine
+  // resolves the label by that attribute, drives DOM focus to it during the
+  // cycle walk, and paints the leaf ring via the global `[data-key-view-kbd]`
+  // rule. Hooks run before the `!enabled` early return ([L02]).
+  const legendFocusableId = React.useId();
+  const legendRegistered = focusGroup !== undefined;
+  useFocusable({
+    id: legendFocusableId,
+    group: focusGroup ?? "",
+    order: focusOrder ?? 0,
+    register: legendRegistered,
+  });
   // The card's bound session id — the strip's scope filter. Read
   // through the store per [L02]; empty until a session binds.
   const tugSessionId = useSyncExternalStore(
@@ -242,11 +270,14 @@ export function DevPulseStrip({
             type="button"
             className="dev-pulse-strip-legend"
             data-slot="dev-pulse-legend"
-            // Pointer-only trigger, like the Z2 status cells: not a native Tab
-            // stop and never steals card focus to the editor on click.
+            // Like the Z2 status cells: not a *native* Tab stop and never steals
+            // card focus to the editor on click; the engine drives DOM focus
+            // here during the cycle walk (a `<button>` is programmatically
+            // focusable at -1) and Space/Enter open the popover natively.
             tabIndex={-1}
             data-tug-focus="refuse"
             data-no-activate=""
+            data-tug-focusable={legendRegistered ? legendFocusableId : undefined}
             aria-label="Recent pulses"
           >
             PULSE

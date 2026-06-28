@@ -165,6 +165,12 @@ export interface DevRouteIndicatorBadgeProps {
   sessionMetadataStore?: SessionMetadataStore;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
+  /** Author the chip into a focus group ([P02]) — forwarded to the composed
+   *  {@link TugPushButton}. The dev card passes its cycle group so the chip
+   *  becomes a keyboard-focus-cycling stop; omitted elsewhere. */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
 }
 
 /** Stable list key for a drift event row. */
@@ -186,6 +192,8 @@ export function DevRouteIndicatorBadge({
   codeSessionStore,
   sessionMetadataStore,
   className,
+  focusGroup,
+  focusOrder,
 }: DevRouteIndicatorBadgeProps): React.ReactElement {
   // Route from the per-prompt-entry `RouteLifecycle`. `null` outside a
   // provider; treated the same as the `Code` default below.
@@ -354,6 +362,8 @@ export function DevRouteIndicatorBadge({
           data-route={isShell ? "shell" : "code"}
           data-drift={hasDrift ? "" : undefined}
           data-slot="dev-route-indicator-badge"
+          focusGroup={focusGroup}
+          focusOrder={focusOrder}
           aria-label={isShell ? "Shell" : "Claude Code — open changelog"}
           title={title}
           onClick={handleClick}
