@@ -22,6 +22,7 @@ import type {
   PermissionModeMessage,
   OutboundMessage,
   ThinkingText,
+  ToolInputProgress,
   CompactBoundary,
   ApiRetry,
   RateLimitEvent,
@@ -1586,6 +1587,44 @@ function streamingUsageFrame(
  * Map a single stream-json inner event (from stream_event wrapper) to IPC messages.
  * Exported for unit testing.
  */
+// ---------------------------------------------------------------------------
+// Tool-input progress — derived from the streaming `input_json_delta`
+// fragments claude emits while assembling a tool's argument JSON. tugcode's
+// reducer otherwise waits for the terminal `tool_use` (assembled input); these
+// fragments let the pulse strip narrate a long Write as it happens.
+//
+// `parseToolInputProgress` is pure and unit-tested: given the partial argument
+// JSON accumulated so far, it returns a best-effort progress summary. While the
+// JSON is still open, file path / line count are best-effort regex reads
+// (exact once the value's closing quote streams in).
+// ---------------------------------------------------------------------------
+
+export interface ToolInputProgressSummary {
+  /** Raw bytes of partial argument JSON accumulated so far. */
+  bytes: number;
+  /** `file_path` field value once it has streamed in, else null. */
+  filePath: string | null;
+  /** Newlines seen inside the `content` field so far (best-effort while open). */
+  contentLines: number | null;
+}
+
+export function parseToolInputProgress(partialJson: string): ToolInputProgressSummary {
+  const pathMatch = partialJson.match(/"file_path"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  const filePath = pathMatch ? pathMatch[1] : null;
+
+  // Count escaped newlines (`\n`, two chars in JSON) inside the content field.
+  // While the JSON is still open this is best-effort; exact once parseable.
+  let contentLines: number | null = null;
+  const contentKey = partialJson.indexOf('"content"');
+  if (contentKey !== -1) {
+    const after = partialJson.slice(contentKey);
+    const matches = after.match(/\\n/g);
+    contentLines = (matches ? matches.length : 0) + 1;
+  }
+
+  return { bytes: partialJson.length, filePath, contentLines };
+}
+
 export function mapStreamEvent(
   event: Record<string, unknown>,
   ctx: EventMappingContext,
@@ -1738,6 +1777,11 @@ export function mapStreamEvent(
       };
       messages.push(thinkingMsg);
     }
+    // `input_json_delta` is intentionally not mapped to an outbound message
+    // here — mapStreamEvent stays pure and stateless. The cumulative
+    // `tool_input_progress` frame is emitted from `dispatchEventToTurn`,
+    // which holds the per-turn block state needed to correlate the delta's
+    // block_index to its tool_use_id / tool_name.
   } else if (eventType === "tool_use") {
     messages.push({
       type: "tool_use",
@@ -1849,6 +1893,17 @@ interface ToolUseBlockState {
    * input. Always present; may be empty.
    */
   toolInput: Record<string, unknown>;
+  /**
+   * Streaming accumulator for the argument JSON as `input_json_delta`
+   * fragments arrive, used to derive `tool_input_progress` frames. Distinct
+   * from `toolInput`, which holds the final assembled object.
+   */
+  partialInputJson?: string;
+  /**
+   * Last `(file_path|content_lines)` tuple emitted as a `tool_input_progress`
+   * frame, so progress emits only when the narratable state changes.
+   */
+  progressKey?: string;
   /** Populated when the matching `tool_result` lands. */
   toolResult?: { output: string; isError: boolean };
   /** Populated when the matching `tool_use_structured` lands. */
@@ -2123,6 +2178,51 @@ export class ActiveTurn {
         block.toolStructuredResult = msg.structured_result as Record<string, unknown>;
       }
     }
+  }
+
+  /**
+   * Accumulate one streaming `input_json_delta` fragment onto its tool block
+   * and, when the narratable state advances, return a `tool_input_progress`
+   * frame for the caller to emit. Returns null when the block isn't a known
+   * tool_use block or when nothing display-relevant changed (throttle).
+   *
+   * Correlation lives here, not in `mapStreamEvent`: the delta carries only
+   * `block_index`, and the block was minted (with its tool_use_id / name) by
+   * the preceding `content_block_start` via `updateBlockStateFromMessages`.
+   */
+  recordToolInputDelta(
+    msgId: string,
+    blockIndex: number,
+    fragment: string,
+  ): ToolInputProgress | null {
+    const blocks = this.messageBlocks.get(msgId);
+    const block = blocks?.find((b) => b.index === blockIndex);
+    if (block === undefined || block.kind !== "tool_use") return null;
+
+    block.partialInputJson = (block.partialInputJson ?? "") + fragment;
+    const prog = parseToolInputProgress(block.partialInputJson);
+    const lines = prog.contentLines ?? 0;
+
+    // Only Write/Edit-shaped inputs (a file path or growing content) are
+    // worth narrating; skip frames that would render as a bare tool name.
+    if (prog.filePath === null && lines === 0) return null;
+
+    const key = `${prog.filePath ?? ""}|${lines}`;
+    if (key === block.progressKey) return null;
+    block.progressKey = key;
+
+    return {
+      type: "tool_input_progress",
+      msg_id: msgId,
+      seq: this.seq,
+      block_index: blockIndex,
+      tool_use_id: block.toolUseId,
+      tool_name: block.toolName,
+      bytes: prog.bytes,
+      content_lines: lines,
+      file_path: prog.filePath,
+      ipc_version: 2,
+    };
   }
 }
 
@@ -4368,6 +4468,33 @@ export class SessionManager {
       // Mirror streamed messages onto per-block state. Same rationale
       // as the routeResult call above.
       turn.updateBlockStateFromMessages(streamResult.messages);
+
+      // Tool-input progress: claude streams a tool's argument JSON as
+      // `input_json_delta` fragments. The block state (minted by the
+      // preceding content_block_start) was just refreshed above, so the
+      // delta's block_index now resolves to its tool_use_id / name. Emit a
+      // cumulative `tool_input_progress` frame when the narratable state
+      // advances. Gate site shares the suppressEmit discipline of the
+      // sibling delta emits — accumulation continues, the wire stays quiet
+      // during a replay bracket.
+      const inner = routeResult.streamEvent;
+      if (inner.type === "content_block_delta") {
+        const innerDelta = inner.delta as Record<string, unknown> | undefined;
+        if (
+          innerDelta?.type === "input_json_delta" &&
+          typeof innerDelta.partial_json === "string"
+        ) {
+          const innerIndex =
+            typeof inner.index === "number" ? inner.index : 0;
+          const progress = turn.recordToolInputDelta(
+            ctx.msgId,
+            innerIndex,
+            innerDelta.partial_json,
+          );
+          if (progress !== null && !turn.suppressEmit) writeLine(progress);
+        }
+      }
+
       turn.rev = streamResult.newRev;
       turn.partialText = streamResult.partialText;
       // Latch this iteration's `usage`. The latest `message_delta` is

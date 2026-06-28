@@ -140,6 +140,33 @@ export interface ToolResult {
   ipc_version: number;
 }
 
+/**
+ * Live progress for an in-flight tool call, derived from the streaming
+ * `input_json_delta` fragments claude emits while assembling a tool's
+ * argument JSON. Emitted only while the argument carries something worth
+ * narrating (a `file_path` or growing `content`), so a long Write reads as
+ * "Writing foo.ts — 37 lines and climbing" instead of a frozen strip.
+ *
+ * Display-only telemetry: the authoritative tool input still arrives on the
+ * terminal `tool_use` frame. The deck's transcript reducer drops this type
+ * (not in `KNOWN_CODE_OUTPUT_TYPES`); the pulse daemon is the consumer.
+ */
+export interface ToolInputProgress {
+  type: "tool_input_progress";
+  msg_id: string;
+  seq: number;
+  block_index: number;
+  tool_use_id: string;
+  tool_name: string;
+  /** Cumulative bytes of partial argument JSON streamed so far. */
+  bytes: number;
+  /** Best-effort newlines seen inside the `content` field (0 if none yet). */
+  content_lines: number;
+  /** `file_path` argument once its value has finished streaming, else null. */
+  file_path: string | null;
+  ipc_version: number;
+}
+
 export interface ToolApprovalRequest {
   type: "tool_approval_request";
   request_id: string;
@@ -1204,6 +1231,7 @@ export type OutboundMessage =
   | AssistantText
   | ToolUse
   | ToolResult
+  | ToolInputProgress
   | ToolApprovalRequest
   | Question
   | TurnComplete

@@ -66,6 +66,7 @@ const RESPAWN_MIN_INTERVAL: Duration = Duration::from_secs(5);
 const PULSE_FORWARD_ALLOWLIST: &[&str] = &[
     "tool_use",
     "tool_result",
+    "tool_input_progress",
     "assistant_text",
     "turn_complete",
     "turn_cancelled",

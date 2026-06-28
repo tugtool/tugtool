@@ -31,6 +31,7 @@
 import type {
   AssistantText,
   OutboundMessage,
+  ToolInputProgress,
   TurnCancelled,
   TurnComplete,
 } from "../types";
@@ -286,10 +287,51 @@ export function parseWireLine(
   return { scope: v.tug_session_id, frame: value as OutboundMessage };
 }
 
+/** Present-progressive verb for a tool, else the tool name itself. */
+function toolVerb(toolName: string): string {
+  switch (toolName) {
+    case "Write":
+      return "Writing";
+    case "Edit":
+      return "Editing";
+    case "NotebookEdit":
+      return "Editing";
+    default:
+      return toolName;
+  }
+}
+
+/**
+ * Render a `tool_input_progress` frame into a one-line strip update, e.g.
+ * "Writing voice.ts — 37 lines". Falls back to the bare file name (or verb)
+ * before any content has streamed.
+ */
+function synthesizeToolLine(frame: ToolInputProgress): string {
+  const verb = toolVerb(frame.tool_name);
+  const target =
+    frame.file_path !== null
+      ? frame.file_path.split("/").pop() || frame.file_path
+      : null;
+  if (target !== null && frame.content_lines > 0) {
+    const noun = frame.content_lines === 1 ? "line" : "lines";
+    return `${verb} ${target} — ${frame.content_lines} ${noun}`;
+  }
+  if (target !== null) return `${verb} ${target}…`;
+  return `${verb}…`;
+}
+
 class ScopeVoiceState {
   /** The newest text block — the latest thought is the only speaker. */
   blockKey: string | null = null;
   blockText = "";
+  /**
+   * A tool-progress line ("Writing foo.ts — 37 lines") synthesized from
+   * `tool_input_progress`. While set it takes precedence over the monologue,
+   * so the strip stays live during a long Write instead of freezing on the
+   * assistant's last pre-tool thought. Cleared when the assistant speaks
+   * again (monologue resumes) or the turn ends.
+   */
+  directLine: string | null = null;
   /** The line currently on the strip (dedupe for change-driven emits). */
   shownText: string | null = null;
   lastEmitAt = Number.NEGATIVE_INFINITY;
@@ -298,6 +340,7 @@ class ScopeVoiceState {
   resetTurn(): void {
     this.blockKey = null;
     this.blockText = "";
+    this.directLine = null;
     this.shownText = null;
   }
 }
@@ -325,6 +368,9 @@ export class PulseVoice {
       case "assistant_text":
         this.onAssistantText(state, frame);
         return null;
+      case "tool_input_progress":
+        state.directLine = synthesizeToolLine(frame);
+        return null;
       case "turn_complete":
         return this.onTurnEnd(state, scope, atMs, "Done", frame);
       case "turn_cancelled":
@@ -341,8 +387,18 @@ export class PulseVoice {
   flush(atMs: number): VoiceLine[] {
     const lines: VoiceLine[] = [];
     for (const [scope, state] of this.scopes) {
-      if (state.blockText.length === 0) continue;
       if (atMs - state.lastEmitAt < VOICE_THROTTLE_MS) continue;
+      // A live tool-progress line outranks the monologue: during a long
+      // Write there is no assistant_text to settle, so the directLine is
+      // the only thing keeping the strip alive.
+      if (state.directLine !== null) {
+        if (state.directLine === state.shownText) continue;
+        state.shownText = state.directLine;
+        state.lastEmitAt = atMs;
+        lines.push({ scope, text: state.directLine });
+        continue;
+      }
+      if (state.blockText.length === 0) continue;
       const display = extractDisplay(state.blockText);
       if (display === null || display === state.shownText) continue;
       state.shownText = display;
@@ -368,6 +424,9 @@ export class PulseVoice {
 
   private onAssistantText(state: ScopeVoiceState, frame: AssistantText): void {
     if (typeof frame.text !== "string") return;
+    // The assistant is narrating again — the monologue supersedes any
+    // lingering tool-progress line.
+    state.directLine = null;
     const key = `${frame.msg_id}:${frame.block_index}`;
     if (state.blockKey !== key) {
       // A new block starts a new thought; the old one is history.

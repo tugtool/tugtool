@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { ActiveTurn, SessionManager, buildClaudeArgs, buildContentBlocksFromLegacyJournal, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent, payloadHexPreview } from "../session.ts";
+import { ActiveTurn, SessionManager, buildClaudeArgs, buildContentBlocksFromLegacyJournal, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent, payloadHexPreview, parseToolInputProgress } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 import type { ContentBlock, ContentBlockText, StreamingUsage } from "../types.ts";
 
@@ -1041,6 +1041,88 @@ describe("mapStreamEvent (updated)", () => {
   test("content_block_stop produces no messages", () => {
     const result = mapStreamEvent({ type: "content_block_stop", index: 0 }, baseCtx, "");
     expect(result.messages).toHaveLength(0);
+  });
+
+  test("recordToolInputDelta correlates, throttles, and reports progress", () => {
+    const turn = new ActiveTurn(7, [{ type: "text", text: "" }]);
+    // Mint the tool_use block the way dispatchEventToTurn does, via the
+    // content_block_start message — this is what gives the delta's
+    // block_index its tool_use_id / tool_name.
+    turn.updateBlockStateFromMessages([
+      {
+        type: "content_block_start",
+        msg_id: "m1",
+        block_index: 0,
+        kind: "tool_use",
+        tool_use_id: "toolu_1",
+        tool_name: "Write",
+        ipc_version: 2,
+      },
+    ]);
+
+    // Fragment 1: opens the JSON, path value not yet closed → nothing
+    // narratable yet, so no frame.
+    expect(turn.recordToolInputDelta("m1", 0, '{"file_path":"src/a')).toBeNull();
+
+    // Fragment 2: closes the path and opens content's first line.
+    const p1 = turn.recordToolInputDelta("m1", 0, '.ts","content":"one\\n');
+    expect(p1).not.toBeNull();
+    expect(p1!.type).toBe("tool_input_progress");
+    expect(p1!.tool_use_id).toBe("toolu_1");
+    expect(p1!.tool_name).toBe("Write");
+    expect(p1!.file_path).toBe("src/a.ts");
+    expect(p1!.content_lines).toBe(2);
+
+    // Fragment 3: line count advances → a fresh frame.
+    const p2 = turn.recordToolInputDelta("m1", 0, "two\\nthree");
+    expect(p2!.content_lines).toBe(3);
+
+    // Fragment 4: no narratable change (still 3 lines, same path) → throttled.
+    expect(turn.recordToolInputDelta("m1", 0, " words")).toBeNull();
+
+    // Unknown block index → no correlation, no frame.
+    expect(turn.recordToolInputDelta("m1", 9, '{"x":1}')).toBeNull();
+  });
+
+  test("parseToolInputProgress assembles a streaming Write tool input", () => {
+    // Realistic fragmentation of a Write tool_use: claude streams the
+    // argument JSON as `input_json_delta.partial_json` chunks that split
+    // mid-key and mid-value. Concatenated, they form the full input.
+    const fragments = [
+      '{"file_',
+      'path":"src/foo',
+      '.ts","content":"line one\\n',
+      'line two\\n',
+      'line three"}',
+    ];
+    let acc = "";
+
+    // file_path stays null until its value's closing quote streams in —
+    // `{"file_path":"src/foo` is an unterminated string, not yet readable.
+    acc += fragments[0];
+    expect(parseToolInputProgress(acc).filePath).toBeNull();
+
+    acc += fragments[1];
+    expect(parseToolInputProgress(acc).filePath).toBeNull();
+
+    // fragment[2] closes the path value and opens content.
+    acc += fragments[2];
+    expect(parseToolInputProgress(acc).filePath).toBe("src/foo.ts");
+    expect(parseToolInputProgress(acc).contentLines).toBe(2);
+
+    acc += fragments[3];
+    expect(parseToolInputProgress(acc).contentLines).toBe(3);
+
+    acc += fragments[4];
+    const final = parseToolInputProgress(acc);
+    expect(final.filePath).toBe("src/foo.ts");
+    expect(final.contentLines).toBe(3);
+    expect(final.bytes).toBe(acc.length);
+    // The assembled fragments are valid JSON carrying the real input.
+    expect(JSON.parse(acc)).toEqual({
+      file_path: "src/foo.ts",
+      content: "line one\nline two\nline three",
+    });
   });
 
   test("message_start without usage produces no messages", () => {

@@ -36,6 +36,23 @@ function turnComplete(): OutboundMessage {
   return { type: "turn_complete", msg_id: "m1", seq: 9, result: "done", ipc_version: 2 };
 }
 
+function toolProgress(
+  opts: { filePath: string | null; lines: number; toolName?: string },
+): OutboundMessage {
+  return {
+    type: "tool_input_progress",
+    msg_id: "m1",
+    seq: 1,
+    block_index: 0,
+    tool_use_id: "toolu_1",
+    tool_name: opts.toolName ?? "Write",
+    bytes: 100,
+    content_lines: opts.lines,
+    file_path: opts.filePath,
+    ipc_version: 2,
+  };
+}
+
 describe("extractDisplay", () => {
   test("a complete sentence shows as itself", () => {
     expect(
@@ -195,6 +212,41 @@ describe("PulseVoice — the monologue", () => {
 
   test("throttle constant sanity", () => {
     expect(VOICE_THROTTLE_MS).toBeGreaterThan(0);
+  });
+
+  test("a long write narrates progress instead of freezing", () => {
+    const voice = new PulseVoice();
+    // The assistant says what it's about to do, then falls silent while the
+    // Write streams — the monologue alone would freeze on this line.
+    voice.onFrame("s1", assistantText("I'll write the poem file now."), 0);
+    expect(voice.flush(1_100)).toEqual([
+      { scope: "s1", text: "I'll write the poem file now." },
+    ]);
+
+    // Tool-input progress takes over and keeps the strip alive.
+    voice.onFrame("s1", toolProgress({ filePath: "/a/b/poem.txt", lines: 12 }), 2_200);
+    expect(voice.flush(2_300)).toEqual([
+      { scope: "s1", text: "Writing poem.txt — 12 lines" },
+    ]);
+
+    // It climbs as more content streams.
+    voice.onFrame("s1", toolProgress({ filePath: "/a/b/poem.txt", lines: 30 }), 3_400);
+    expect(voice.flush(3_500)).toEqual([
+      { scope: "s1", text: "Writing poem.txt — 30 lines" },
+    ]);
+  });
+
+  test("the assistant resuming speech supersedes the tool-progress line", () => {
+    const voice = new PulseVoice();
+    voice.onFrame("s1", toolProgress({ filePath: "/x/voice.ts", lines: 5 }), 0);
+    expect(voice.flush(1_100)).toEqual([
+      { scope: "s1", text: "Writing voice.ts — 5 lines" },
+    ]);
+    // Once the assistant narrates again, the monologue wins back the strip.
+    voice.onFrame("s1", assistantText("Now running the test suite to confirm."), 1_200);
+    expect(voice.flush(2_300)).toEqual([
+      { scope: "s1", text: "Now running the test suite to confirm." },
+    ]);
   });
 });
 
