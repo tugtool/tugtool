@@ -181,6 +181,7 @@ import { useFocusManager } from "@/components/tugways/use-focusable";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
 import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
 import { useInlineDialogScope } from "@/components/tugways/use-inline-dialog-scope";
+import { useScroller } from "@/components/tugways/internal/scroller-context";
 import { animate } from "@/components/tugways/tug-animator";
 import {
   useComponentStatePreservation,
@@ -1227,6 +1228,11 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   // `attachRoot`) is built after `useInlineDialogScope` runs.
   const dialogRootRef = React.useRef<HTMLDivElement | null>(null);
 
+  // The transcript's scroll façade — used to release follow-bottom before the
+  // review-reveal scroll below, so SmartScroll doesn't re-pin the view to the
+  // live edge and yank Submit back off the top. No-op outside a scroller.
+  const scroller = useScroller();
+
   // Whether every question would be answered if `assumeVisited` were visited —
   // the gate the Next-boundary uses to choose Submit (all answered) vs Back. A
   // question counts as answered when it is visited (or the assumed one) AND
@@ -1780,11 +1786,20 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   // a dialog taller than the scrollport the user has typically scrolled down
   // to answer the last question — leaving Submit off the top edge. The instant
   // every question is answered (review), pull the action bar back into view so
-  // the Submit it now offers is reachable without a manual scroll. `block:
-  // "nearest"` is self-gating: it does nothing when the bar is already visible
-  // (the common short-dialog case), so this only acts when needed. Fires on the
-  // false→true edge into review, not every render at review. [L03] layout effect;
-  // [L06] this is a scroll write (appearance), not React state.
+  // the Submit it now offers is reachable without a manual scroll.
+  //
+  // The transcript's SmartScroll is normally following the live edge, so a bare
+  // `scrollIntoView` loses the fight: it scrolls Submit up, then the next pin
+  // (cell ResizeObserver on the review-face swap, post-commit pin) slams the
+  // view back to the bottom and Submit is gone again — the reason the first
+  // version of this never worked. So we release follow-bottom FIRST (the same
+  // cooperative move BlockFoldCue makes), then scroll: with following off,
+  // `maybePinToBottom` is a no-op and the reveal holds.
+  //
+  // `block: "nearest"` is self-gating: it does nothing when the bar is already
+  // visible (the common short-dialog case), so this only acts when needed.
+  // Fires on the false→true edge into review, not every render at review.
+  // [L03] layout effect; [L06] this is a scroll write (appearance), not React state.
   const wasAtReviewRef = React.useRef(false);
   React.useLayoutEffect(() => {
     const atReview = currentIndex >= questions.length;
@@ -1796,8 +1811,9 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     const actionbar = root.querySelector<HTMLElement>(
       '[data-slot="dev-question-dialog-actionbar"]',
     );
+    scroller.disengage("question-review");
     (actionbar ?? root).scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [isPending, declineMode, currentIndex, questions.length]);
+  }, [isPending, declineMode, currentIndex, questions.length, scroller]);
 
   // Panel height floor, ratcheted — the hard guarantee under the sizer grid.
   // The stacked sizers already hold the panel at the tallest question's
