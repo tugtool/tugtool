@@ -654,4 +654,74 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
     },
     TEST_TIMEOUT_MS,
   );
+
+  test(
+    "Space toggles an info popover ([P02] space-dismiss): Space opens the STATE / PULSE popover from its stop, a second Space closes it and the ring returns to the stop",
+    async () => {
+      const app = await launchTugApp({ testName: "at0140-cycle-devcard-space-toggle" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindDevSession("A");
+        await app.awaitEngineReady("A");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(Z2_STATE)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        // Caret in the editor, then ⌥⇥ to start cycling (route seeded).
+        await app.nativeClickAtElement(EDITOR);
+        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+
+        // Tab off the route (a roving item-group) onto the Claude Code chip — a
+        // toolbar leaf — then ArrowDown seams from the toolbar straight to the
+        // status row's first cell (STATE), independent of which stops are live.
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("ArrowDown");
+        await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
+
+        // Space OPENS the STATE popover (the cell button activates).
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(POPOVER_OPEN, { timeoutMs: 6000 });
+        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+
+        // A SECOND Space CLOSES it (space-dismiss): the popover dismisses, the ring
+        // returns to the STATE cell, the card stays cycling, and DOM focus does not
+        // fall back to the editor.
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(`${POPOVER_OPEN} === false`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(hasKeyView(Z2_STATE), { timeoutMs: 6000 });
+        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+        expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
+
+        // The same toggle holds for the PULSE label (its own one-node row beneath
+        // the status cells): ArrowDown from STATE seams into the PULSE row.
+        await app.nativeKey("ArrowDown");
+        await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(POPOVER_OPEN, { timeoutMs: 6000 });
+        await app.nativeKey(" ");
+        await app.waitForCondition<boolean>(`${POPOVER_OPEN} === false`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
+        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0140-cycle-devcard-space-toggle] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

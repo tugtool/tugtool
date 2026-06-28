@@ -77,6 +77,15 @@ export interface UseFocusTrapOptions {
    * to `escapeCurrentMode` / `ascend` instead of a callback.
    */
   onEscapeDismiss?: () => void;
+  /**
+   * Opt this surface into "Space also closes me" ([P02] generalized): an info
+   * popover that a second Space dismisses (the symmetric partner to the Space
+   * that opened it). The act dispatch consults the pushed mode and gates the
+   * dismiss so a Space on an interactive control inside still presses it. Leave
+   * unset for surfaces whose Space belongs to their content (pickers, menus,
+   * modal confirms).
+   */
+  spaceDismisses?: boolean;
 }
 
 export interface UseFocusTrapResult {
@@ -102,6 +111,7 @@ export function useFocusTrap({
   closeDisposition,
   deferDomFocusToTeardown,
   onEscapeDismiss,
+  spaceDismisses,
 }: UseFocusTrapOptions): UseFocusTrapResult {
   const manager = useContext(FocusManagerContext);
   // The chain — for the mouse-opened close-focus fallback in `onCloseAutoFocus`
@@ -143,6 +153,7 @@ export function useFocusTrap({
     ctx.pushFocusMode(scopeId, {
       trapped,
       onEscapeDismiss: hasOnEscapeDismiss ? stableOnEscapeDismiss : undefined,
+      spaceDismisses,
     });
     return () => {
       // The disposition is read at pop time (it is set on commit, just before the
@@ -169,6 +180,7 @@ export function useFocusTrap({
     deferDomFocusToTeardown,
     hasOnEscapeDismiss,
     stableOnEscapeDismiss,
+    spaceDismisses,
   ]);
 
   // The surface's single close-focus DOM writer (see UseFocusTrapResult). Stable

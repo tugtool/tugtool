@@ -676,6 +676,16 @@ export interface TugPopoverContentProps {
    * Forwarded verbatim to Radix's `Popover.Content`.
    */
   onOpenAutoFocus?: (event: Event) => void;
+  /**
+   * Opt this popover into "Space also closes it" — a second Space, after the
+   * one that opened it from a focus-cycle trigger, dismisses it. The act
+   * dispatch gates this so a Space on an interactive control inside the popover
+   * still presses it; only a Space on the popover's own chrome closes. Use for
+   * info popovers (Z2 status cells, PULSE, the route report); leave off for
+   * pickers, menus, and modal confirms whose Space belongs to their content.
+   * @default false
+   */
+  spaceDismisses?: boolean;
   /** Additional CSS class names. */
   className?: string;
   children: React.ReactNode;
@@ -706,6 +716,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
       collisionPadding = 0,
       arrow = false,
       onOpenAutoFocus,
+      spaceDismisses,
       className,
       children,
     },
@@ -724,6 +735,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
     const { FocusModeScope, onCloseAutoFocus } = useFocusTrap({
       active: ctx?.open ?? false,
       deferDomFocusToTeardown: true,
+      spaceDismisses,
       // [P01]/[P05] The engine's Escape ladder owns this surface's dismissal:
       // when the popover's trap is the top mode, the ladder calls this to close
       // AND re-emit `DISMISS_POPOVER` (so inner composites resolve). Radix's own

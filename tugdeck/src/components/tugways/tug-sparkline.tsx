@@ -64,6 +64,7 @@ export function TugSparkline({
   width = 64,
   height = 22,
   className,
+  title,
 }: {
   /** Current window oldest→newest; the last element is the still-open bin. */
   getSeries: (nowMs: number) => number[];
@@ -74,6 +75,8 @@ export function TugSparkline({
   width?: number;
   height?: number;
   className?: string;
+  /** Native hover tooltip. The graphic itself stays `aria-hidden`. */
+  title?: string;
 }): React.ReactElement {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const lineRef = useRef<SVGPolylineElement | null>(null);
@@ -195,6 +198,7 @@ export function TugSparkline({
       className={className ? `tug-sparkline ${className}` : "tug-sparkline"}
       data-slot="tug-sparkline"
       style={{ width, height }}
+      title={title}
       aria-hidden
     >
       <div ref={trackRef} className="tug-sparkline-track">

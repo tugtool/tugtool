@@ -376,7 +376,7 @@ export function DevRouteIndicatorBadge({
         </TugPushButton>
       </TugPopoverAnchor>
       {isShell ? null : (
-        <TugPopoverContent side="top" align="end" sideOffset={8} arrow>
+        <TugPopoverContent side="top" align="end" sideOffset={8} arrow spaceDismisses>
           <div
             className="dev-route-indicator-badge-report"
             data-slot="dev-route-indicator-badge-report"

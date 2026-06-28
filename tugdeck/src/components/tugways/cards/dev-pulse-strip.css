@@ -60,7 +60,18 @@
   appearance: none;
   border: none;
   margin: 0;
-  padding: 1px 5px;
+  /* A taller pill than the bare text so the click target is easy to hit; the
+     text is centered in it (both axes) rather than nudged. The trailing
+     letter-spacing pads the right edge, so a matching start indent keeps the
+     glyph run optically centered. */
+  height: 24px;
+  padding-inline: 7px;
+  padding-block: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-indent: 0.18em;
+  line-height: 1;
   border-radius: var(--tug-radius-sm, 4px);
   background-color: transparent;
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -70,10 +81,6 @@
   flex: 0 0 auto;
   cursor: pointer;
   transition: background-color 0.1s ease;
-  /* Nudge the small label down a hair so it sits optically centered
-     against the larger line text. */
-  position: relative;
-  top: 0.4px;
 }
 
 .dev-pulse-strip-legend:hover {

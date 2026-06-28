@@ -195,7 +195,7 @@ export function TugStatusCell({
           </span>
         </button>
       </TugPopoverTrigger>
-      <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+      <TugPopoverContent side="top" align="center" sideOffset={8} arrow spaceDismisses>
         {popover}
       </TugPopoverContent>
     </TugPopover>

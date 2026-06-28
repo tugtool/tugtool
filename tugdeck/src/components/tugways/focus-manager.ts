@@ -203,6 +203,16 @@ interface FocusModeEntry extends FocusMode {
   commitDisposition?: (commit: FocusCommit) => CycleDisposition;
   escapeExits?: boolean;
   /**
+   * Opt a dismissable popover into "Space also closes me" — the symmetric
+   * partner to the Space that opened it from its trigger leaf. Consulted by the
+   * act dispatch: a Space that lands on the popover's own (non-interactive)
+   * chrome runs {@link FocusModeEntry.onEscapeDismiss}, while a Space on an
+   * interactive control inside keeps its native press / select. Set only by
+   * info popovers (Z2 cells, PULSE, the route report); unset for modal confirm
+   * popovers, menus, and pickers, whose Space belongs to their content.
+   */
+  spaceDismisses?: boolean;
+  /**
    * The chain's first responder when this mode was pushed — the SECOND axis of the
    * CFRunLoop restore, alongside `restoreKeyView`. DOM focus, the key view, and the
    * first responder are all projections of one focus state; a trapped surface (a
@@ -656,6 +666,7 @@ export class FocusContext {
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
       escapeExits?: boolean;
       onEscapeDismiss?: () => void;
+      spaceDismisses?: boolean;
     },
   ): void {
     const existing = this.modeStack.findIndex((m) => m.scopeId === scopeId);
@@ -670,6 +681,7 @@ export class FocusContext {
       commitDisposition: opts.commitDisposition,
       escapeExits: opts.escapeExits,
       onEscapeDismiss: opts.onEscapeDismiss,
+      spaceDismisses: opts.spaceDismisses,
       // Capture the first responder alongside the key view ([#cfrunloop-model]):
       // a surface about to claim first responder on open (a modal confirm popover)
       // captures here, BEFORE its claim, so the pop restores the prior responder.
@@ -902,6 +914,18 @@ export class FocusContext {
   currentFocusModeOnEscapeDismiss(): (() => void) | null {
     const top = this.modeStack[this.modeStack.length - 1];
     return top?.onEscapeDismiss ?? null;
+  }
+
+  /**
+   * Whether the current (top) focus mode opted into Space-dismiss
+   * ({@link FocusModeEntry.spaceDismisses}) — an info popover that a second
+   * Space closes. The act dispatch consults this (with its own
+   * interactive-control gate) before treating a Space at the popover's chrome
+   * as a dismiss. `false` at the base mode.
+   */
+  currentFocusModeSpaceDismisses(): boolean {
+    const top = this.modeStack[this.modeStack.length - 1];
+    return top ? top.spaceDismisses === true : false;
   }
 
   /**
@@ -1881,6 +1905,7 @@ export class FocusManager {
       commitDisposition?: (commit: FocusCommit) => CycleDisposition;
       escapeExits?: boolean;
       onEscapeDismiss?: () => void;
+      spaceDismisses?: boolean;
     },
   ): void {
     this.activeContext().pushFocusMode(scopeId, opts);
@@ -1911,6 +1936,9 @@ export class FocusManager {
   }
   currentFocusModeOnEscapeDismiss(): (() => void) | null {
     return this.activeContext().currentFocusModeOnEscapeDismiss();
+  }
+  currentFocusModeSpaceDismisses(): boolean {
+    return this.activeContext().currentFocusModeSpaceDismisses();
   }
   escapeCurrentMode(): boolean {
     return this.activeContext().escapeCurrentMode();

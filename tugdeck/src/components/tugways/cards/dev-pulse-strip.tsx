@@ -48,6 +48,7 @@ import {
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
 import { useFocusable } from "@/components/tugways/use-focusable";
+import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
   latestLineForScope,
@@ -261,6 +262,9 @@ export function DevPulseStrip({
   // The last few pulses for this card's session — shown in the legend popover.
   const history = linesForScope(pulse.lines, tugSessionId, PULSE_HISTORY_COUNT);
 
+  // Right-click → Copy the current line's raw text (not the placeholder).
+  const copyLine = useCopyableButton(current.placeholder ? "" : current.text);
+
   if (!pulse.enabled) return null;
   return (
     <div className="dev-pulse-strip" data-slot="dev-pulse-strip">
@@ -283,11 +287,15 @@ export function DevPulseStrip({
             PULSE
           </button>
         </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="start" sideOffset={8} arrow>
+        <TugPopoverContent side="top" align="start" sideOffset={8} arrow spaceDismisses>
           <DevPulseHistory lines={history} />
         </TugPopoverContent>
       </TugPopover>
-      <span className="dev-pulse-strip-stage">
+      <span
+        ref={copyLine.ref as React.Ref<HTMLSpanElement>}
+        onContextMenu={copyLine.onContextMenu}
+        className="dev-pulse-strip-stage"
+      >
         <PulseLineText
           spanRef={currentElRef}
           entry={current}
@@ -317,7 +325,9 @@ export function DevPulseStrip({
         width={64}
         height={22}
         className="dev-pulse-strip-spark"
+        title="Output throughput in characters streamed per second"
       />
+      {copyLine.contextMenu}
     </div>
   );
 }
@@ -348,6 +358,8 @@ function DevPulseHistory({
 
 function DevPulseHistoryRow({ text }: { text: string }): React.ReactElement {
   const render = React.useMemo(() => renderPulseLine(text), [text]);
+  // Right-click → Copy this row's raw pulse text.
+  const copy = useCopyableButton(text);
   const body =
     render === null || render.html.length === 0 ? (
       <span className="dev-pulse-history-text">{text}</span>
@@ -358,11 +370,16 @@ function DevPulseHistoryRow({ text }: { text: string }): React.ReactElement {
       />
     );
   return (
-    <div className="dev-pulse-history-row">
+    <div
+      ref={copy.ref as React.Ref<HTMLDivElement>}
+      onContextMenu={copy.onContextMenu}
+      className="dev-pulse-history-row"
+    >
       <span className="dev-pulse-history-bullet" aria-hidden="true">
         •
       </span>
       {body}
+      {copy.contextMenu}
     </div>
   );
 }

@@ -117,6 +117,40 @@ function FallbackContextMenu({ x, y, onClose }: { x: number; y: number; onClose:
  */
 const DEFAULT_BUTTON_PRESS_MS = 120;
 
+/**
+ * Whether DOM focus currently sits on an interactive control — a button, link,
+ * form field, or ARIA widget. The Space-dismiss path for `spaceDismisses` info
+ * popovers consults this so a Space on a control INSIDE the popover (a JOBS
+ * stop button) still presses it; only a Space on the popover's own
+ * non-interactive chrome closes it.
+ */
+function activeElementIsInteractive(): boolean {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement)) return false;
+  return el.matches(
+    [
+      "button",
+      "a[href]",
+      "input",
+      "select",
+      "textarea",
+      "summary",
+      '[role="button"]',
+      '[role="menuitem"]',
+      '[role="menuitemcheckbox"]',
+      '[role="menuitemradio"]',
+      '[role="option"]',
+      '[role="checkbox"]',
+      '[role="radio"]',
+      '[role="switch"]',
+      '[role="tab"]',
+      '[role="link"]',
+      '[contenteditable="true"]',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(","),
+  );
+}
+
 // ---- ResponderChainProvider ----
 
 /**
@@ -547,6 +581,24 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             focusManager.applyCommitDisposition("act");
             event.preventDefault();
             event.stopImmediatePropagation();
+            break;
+          }
+          // [P02] generalized: a second Space closes an info popover that opted
+          // into space-dismiss — the symmetric partner to the Space that opened
+          // it from its trigger leaf. Gated to a Space landing on the popover's
+          // own non-interactive chrome (the key view is empty / a tabindex=-1
+          // content wrapper); a Space on a control inside keeps its native press.
+          if (
+            (key === " " || key === "Spacebar") &&
+            focusManager.currentFocusModeSpaceDismisses() &&
+            !activeElementIsInteractive()
+          ) {
+            const dismiss = focusManager.currentFocusModeOnEscapeDismiss();
+            if (dismiss !== null) {
+              dismiss();
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
           }
           break;
         case "ascend":
