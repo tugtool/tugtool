@@ -1,15 +1,44 @@
 /**
- * tug-sparkline.css — the canvas activity graph's scoped styling.
+ * tug-sparkline.css — the scrolling activity graph's scoped styling.
  *
- * The canvas paints with the element's resolved `color` (read in JS), so
- * the tint is set here and the theme owns it. Block display so width/height
- * are exact; no layout of its own beyond the box the caller sizes.
+ * The track is translated by WAAPI (GPU); these rules only set geometry box
+ * and the line/area/baseline tint, which ride the element's resolved `color`
+ * so the theme owns it. [L16] each color rule names its surface.
  *
  * @module components/tugways/tug-sparkline
  */
 
 .tug-sparkline {
+  position: relative;
   display: block;
   flex: 0 0 auto;
+  overflow: hidden;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
+
+/* The scrolling layer — WAAPI animates its transform; pinned top-left so the
+   SVG inside it scrolls under the fixed window. */
+.tug-sparkline-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline-area {
+  fill: currentColor;
+  stroke: none;
+  opacity: 0.16;
+}
+

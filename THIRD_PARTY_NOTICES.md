@@ -281,3 +281,36 @@ https://openfontlicense.org
 
 (Full per-family license text in tugdeck/public/fonts/licenses/plex-sans-*-OFL.txt)
 ```
+
+---
+
+## Smoothie Charts
+
+**Source:** https://github.com/joewalnes/smoothie (http://smoothiecharts.org/)
+**What was adopted:** The time-to-x scrolling algorithm for real-time charts — a data point at time `T` is drawn at `width − (now − T) · rate`, so the newest sample pins to the right edge and older samples trail left in real time. `tugdeck/src/components/tugways/tug-sparkline.tsx` reimplements this mapping, substituting a continuous WAAPI `translateX` for Smoothie's per-frame requestAnimationFrame redraw (to satisfy tuglaw L13). No source was copied verbatim.
+**Used in:** `tugdeck/src/components/tugways/tug-sparkline.tsx` (the PULSE strip's activity sparkline).
+
+```
+MIT License
+
+Copyright (c) 2010-2013, Joe Walnes
+              2013-2018, Drew Noakes
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```

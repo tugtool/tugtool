@@ -14,10 +14,10 @@
  * @module lib/throughput-meter
  */
 
-/** Width of one bucket, in ms. */
-export const THROUGHPUT_BIN_MS = 1_000;
-/** Number of buckets retained — the sparkline's visible window. */
-export const THROUGHPUT_WINDOW_BINS = 45;
+/** Width of one bucket, in ms (4 Hz). */
+export const THROUGHPUT_BIN_MS = 250;
+/** Buckets retained — enough to compute a rolling ~1s rate with headroom. */
+export const THROUGHPUT_WINDOW_BINS = 40;
 
 export class ThroughputMeter {
   private readonly bins: Float64Array;

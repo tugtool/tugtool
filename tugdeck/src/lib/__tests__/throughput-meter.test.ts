@@ -1,11 +1,9 @@
 import { describe, test, expect } from "bun:test";
 
-import {
-  ThroughputMeter,
-  THROUGHPUT_BIN_MS,
-} from "../throughput-meter";
+import { ThroughputMeter } from "../throughput-meter";
 
-const B = THROUGHPUT_BIN_MS;
+/** A test bin width, independent of the production cadence. */
+const B = 1000;
 
 describe("ThroughputMeter", () => {
   test("sums units within a bin and separates adjacent bins", () => {
@@ -43,4 +41,5 @@ describe("ThroughputMeter", () => {
     const m = new ThroughputMeter(B, 3);
     expect(m.series(1234 * B)).toEqual([0, 0, 0]);
   });
+
 });
