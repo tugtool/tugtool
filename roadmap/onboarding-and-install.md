@@ -252,6 +252,37 @@ What we *don't* have yet: the lab is a pile of uncommitted shell scripts on an e
 
 ### Deep Dives (Optional) {#deep-dives}
 
+#### Picking this up cold (orientation for a fresh session) {#picking-up-cold}
+
+> Read this first if you have no chat-history context. This plan is walked **interactively on `main`, one step at a time** — implement a step, pass its Checkpoint, commit, move on. Start at the first `pending` row in the [Step Status Ledger](#step-status-ledger) (Step 1 is done — the doc is committed; begin at **[#step-2]**). The repo's auto-memory (`MEMORY.md`) loads the durable facts; this is the plan-local quickstart.
+
+**Operational etiquette (matters):**
+- **The user drives the VM.** Do **not** launch Tug.app, click, sign in, or `screencapture` inside a guest. Build + stage the dmg, then hand off — the user installs and reports back. (SSH for read-only diagnostics only, and it has proven flaky.)
+- **Commits:** work goes **directly on `main`** (no feature branches); only the user commits, except `/tugplug:commit`. **Never** add a `Co-Authored-By` / AI-attribution trailer.
+- **Verify real, not faked:** drive real code paths in the real app. No jsdom/RTL render tests, no mock-store assertions (see [#test-non-goals]).
+
+**Fast feedback loops:**
+- tugdeck: `bunx tsc --noEmit` **and** `bunx vite build` — the debug app loads the production rollup, so an import that works under dev esbuild can still fail the build and hang the splash. HMR is always live; never hand-build tugdeck.
+- tugcast / Rust: `cd tugrust && cargo nextest run -p tugcast` (workspace is `-D warnings`; warnings fail the build).
+- **tugcode is a compiled bun binary** (rebuilt by `build-app.sh`) — its changes do **not** hot-reload.
+- Installer for the lab: `just lab-dmg unsigned` (~2 min, no notary) → stages `/Volumes/Lab-A/share/Tug.dmg`. `just lab-dmg` = signed + notarized.
+
+**Lab quickstart (Tart on `/Volumes/Lab-A`):**
+- Set `TART_HOME=/Volumes/Lab-A/tart` **inline on every command** — the Bash tool shell does not source `~/.zshrc`.
+- Scripts live (pre-vendoring) at `/Volumes/Lab-A/bin/{lab-new,lab-run,lab-wipe,lab-ls}`; [#step-3] vendors them to `scripts/lab/`.
+- **Always a fresh clone** — never reinstall into a running guest (VirtioFS cache + stale `/Applications/Tug.app` make it unreliable; a cycle was already wasted on this). Loop: `lab-wipe <run>; lab-new sequoia <run2>; lab-run <run2> --dir=drop:/Volumes/Lab-A/share`. The dmg lands in the guest at `/Volumes/My Shared Files/drop/Tug.dmg`.
+- `base-sequoia` is the only base today (macOS 15.7.7; login `admin`/`admin`; Gatekeeper/spctl **off** so unsigned dmgs run). [#step-5] adds `base-tahoe` + `base-goldengate`.
+
+**Verified code touchpoints (by symbol — line numbers drift):**
+- Handshake server response: `tugcast/src/router.rs` → `perform_handshake` (the `response` json carrying `protocol`/`version`/`capabilities` — add `host` here). Client parse: `tugdeck/src/connection.ts` → the `handshakePending` branch of `ws.onmessage` (already `JSON.parse`s the reply — the publish point for `hostInfoStore`). → [#step-6]
+- App-modal mount: `tugdeck/src/deck-manager.ts` → the single `reactRoot.render()` Fragment (siblings `DeckCanvas`, `TugSetup`, `TugDevPanel`); add `TugVersionGate` as another sibling ([L01] preserved). → [#step-7]
+- TugSetup: `tugdeck/src/components/tugways/tug-setup.tsx` (driven by `authStore`; `DEV_FORCE_SETUP` forces it under HMR for iteration). → [#step-9], [#step-10]
+- Session-error banner: `dev-card.tsx` → `renderDevCardBanner` (+ `.dev-card-error-diagnostic` in `dev-card.css`); backend `detail` is `summary\nstderr`. → [#step-8]
+- DMG build step: `tugrust/scripts/build-app.sh` → "Step 10: Create DMG" (`hdiutil create`, runs after the `SIGN_IDENTITY_ARG` sign block + notarize; wraps the already-notarized `.app`). → [#step-2]
+- Auth backend (reference): `tugcast/src/actions.rs` (`check_auth`/`install_claude`/`claude_sign_in`) + `tugcast/src/feeds/claude_auth.rs` (`claude_executable`, `probe`/`login`/`install`).
+
+**Relevant auto-memories:** [[project_macos_vm_lab]], [[reference_tugcode_wasm_embed]], [[project_tug_external_deps]], [[feedback_real_not_fake]], [[feedback_verify_with_vite_build]], [[feedback_commit_on_main]].
+
 #### As-Built Audit — everything since 62beec13f {#as-built-audit}
 
 The audit deliverable (M01). Three commits carried this work; this is the durable record.
@@ -484,7 +515,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Land roadmap doc + as-built audit | pending | — |
+| #step-1 | Land roadmap doc + as-built audit | done | 61ba4bfef, 12fb18de0 |
 | #step-2 | Styled distribution DMG (drag-to-Applications) | pending | — |
 | #step-3 | Vendor lab scripts + just recipes | pending | — |
 | #step-4 | One-command inner loop (`just lab-cycle`) | pending | — |
@@ -498,6 +529,8 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | #step-12 | Signed golden pass per OS + lock minimums | pending | — |
 
 #### Step 1: Land roadmap doc + as-built audit {#step-1}
+
+> **DONE** — committed `61ba4bfef` (plan) + `12fb18de0` (vet fixups); vetted via `/tugplug:vet`. A fresh session starts at [#step-2].
 
 **Commit:** `docs(roadmap): onboarding & install plan + as-built audit`
 
