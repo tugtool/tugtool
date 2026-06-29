@@ -6,6 +6,36 @@ use tugcast_core::{FeedId, Frame};
 
 use crate::router::LagPolicy;
 
+/// Broadcast a `claude_auth_result` CONTROL frame from a resolved auth state.
+/// Shared by the `check_auth` (probe) and `claude_sign_in` (login) actions so
+/// both report login state to the deck in one shape. `tug_session_id` is echoed
+/// when present so a per-card sign-in can resume the originating card.
+fn broadcast_auth_result(
+    cat: Option<broadcast::Sender<Frame>>,
+    state: crate::feeds::claude_auth::AuthState,
+    tug_session_id: Option<String>,
+) {
+    use crate::feeds::claude_auth::AuthState;
+    let (logged_in, email, subscription_type, auth_method) = match state {
+        AuthState::LoggedIn(info) => {
+            (true, info.email, info.subscription_type, info.auth_method)
+        }
+        _ => (false, None, None, None),
+    };
+    let Some(cat) = cat else { return };
+    let body = serde_json::json!({
+        "action": "claude_auth_result",
+        "loggedIn": logged_in,
+        "tug_session_id": tug_session_id,
+        "email": email,
+        "subscriptionType": subscription_type,
+        "authMethod": auth_method,
+    });
+    if let Ok(bytes) = serde_json::to_vec(&body) {
+        let _ = cat.send(Frame::new(FeedId::CONTROL, bytes));
+    }
+}
+
 /// Dispatch an action received from any ingress path (HTTP tell, WebSocket control frame, UDS tell).
 ///
 /// Classifies the action and routes it to the appropriate channel(s).
@@ -57,12 +87,25 @@ pub async fn dispatch_action(
                 }
             }
         }
+        "check_auth" => {
+            // App-level auth probe (no login): runs `claude auth status` and
+            // broadcasts the result so the deck can gate at launch and before
+            // the session picker without spawning a session.
+            info!("dispatch_action: claude auth check requested");
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            tokio::spawn(async move {
+                let state = crate::feeds::claude_auth::probe().await;
+                broadcast_auth_result(cat, state, None);
+            });
+        }
         "claude_sign_in" => {
-            // Drive `claude auth login` and report the result back to the card
-            // that asked, so it can retry its session spawn. login() awaits the
-            // CLI's exit — the CLI blocks on its own browser OAuth callback, so
-            // there's no polling. Spawned as a task so dispatch returns promptly
-            // while the user completes sign-in in the browser.
+            // Drive `claude auth login` and report the result back so the
+            // app-wide sheet (and the card that asked) can resume. login()
+            // awaits the CLI's exit — the CLI blocks on its own browser OAuth
+            // callback, so there's no polling. Spawned as a task so dispatch
+            // returns promptly while the user completes sign-in in the browser.
             info!("dispatch_action: claude sign-in requested");
             let cat = stream_outputs
                 .get(&FeedId::CONTROL)
@@ -75,27 +118,8 @@ pub async fn dispatch_action(
                         .map(str::to_owned)
                 });
             tokio::spawn(async move {
-                use crate::feeds::claude_auth::AuthState;
-                let (logged_in, email, subscription_type, auth_method) =
-                    match crate::feeds::claude_auth::login().await {
-                        AuthState::LoggedIn(info) => {
-                            (true, info.email, info.subscription_type, info.auth_method)
-                        }
-                        _ => (false, None, None, None),
-                    };
-                if let Some(cat) = cat {
-                    let body = serde_json::json!({
-                        "type": "claude_auth_result",
-                        "loggedIn": logged_in,
-                        "tug_session_id": tug_session_id,
-                        "email": email,
-                        "subscriptionType": subscription_type,
-                        "authMethod": auth_method,
-                    });
-                    if let Ok(bytes) = serde_json::to_vec(&body) {
-                        let _ = cat.send(Frame::new(FeedId::CONTROL, bytes));
-                    }
-                }
+                let state = crate::feeds::claude_auth::login().await;
+                broadcast_auth_result(cat, state, tug_session_id);
             });
         }
         other => {

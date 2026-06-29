@@ -127,6 +127,15 @@ export const connectionLifecycle = new ConnectionLifecycle();
 connection.setLifecycle(connectionLifecycle);
 registerConnectionLifecycle(connectionLifecycle);
 
+// Probe Claude login state whenever the wire comes up — initial connect and
+// every reconnect. tugcast answers with `claude_auth_result`, which feeds the
+// app-level `authStore`. Keeping the probe here (imperative, transition-driven)
+// rather than in a component effect honors [L02]/[L24]: `AuthGate` purely reads
+// the store via `useSyncExternalStore` and renders.
+connectionLifecycle.observeConnectionDidOpen(() => {
+  connection.sendControlFrame("check_auth");
+});
+
 // Register connection in the singleton so modules that cannot safely import
 // from main.tsx (due to circular dependency risk) can access it via getConnection().
 setConnection(connection);

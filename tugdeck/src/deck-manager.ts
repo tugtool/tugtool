@@ -45,6 +45,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
+import { AuthGate } from "./components/tugways/auth-gate";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugDevPanel } from "./components/tug-dev-panel/tug-dev-panel";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
@@ -573,6 +574,10 @@ export class DeckManager implements IDeckManagerStore {
             store: this.rateLimitStore,
           }),
           React.createElement(DeckCanvas, {}),
+          // App-wide Claude sign-in gate. Covers the deck when signed out so
+          // auth is resolved before any cards/picker are usable (strictly
+          // required). Renders nothing when signed in.
+          React.createElement(AuthGate, {}),
           // Tug Dev Panel — persistent dev inspector. Mounts once at
           // app root, hidden by default. Visibility toggled via DOM
           // (per [L06]) by `tugDevPanelStore`. Triggered from the

@@ -46,6 +46,7 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
+import { applyAuthResultPayload } from "./lib/auth-store";
 import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
 import { notifySpawnRejected } from "./lib/dev-session-restore";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
@@ -266,6 +267,13 @@ export function initActionDispatch(
   });
 
   // Register built-in handlers
+
+  // claude_auth_result: tugcast's answer to `check_auth` (probe) and
+  // `claude_sign_in` (login). Updates the app-level authStore that the
+  // app-wide sign-in sheet, the picker gate, and the per-card banner all read.
+  registerAction("claude_auth_result", (payload) => {
+    applyAuthResultPayload(payload);
+  });
 
   // reload: Reload page with dedup guard.
   // prepareForReload() saves+flushes with a normal fetch and sets reloadPending

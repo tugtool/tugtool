@@ -103,7 +103,15 @@ import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-s
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
-import { deriveDevCardBannerSpec } from "./dev-card-banner-spec";
+import { deriveDevCardBannerSpec, type AuthBannerVariant } from "./dev-card-banner-spec";
+
+// TEMP dev affordance (dev builds only): flip to "auth_required" or
+// "claude_missing" to force the Claude sign-in banner while logged in, so the
+// auth UI can be iterated under HMR without actually signing out. Leave `false`
+// for normal use; the real end-to-end test runs on a logged-out Lab-A VM. The
+// `import.meta.env.DEV` guard at the use site folds this out of production
+// builds, so a stray non-false value here can never reach a shipped app.
+const DEV_FORCE_AUTH_BANNER: AuthBannerVariant | false = false;
 import { TransientNoticeController } from "./transient-notice-controller";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
@@ -2226,7 +2234,10 @@ export function DevCardBody({
   // `useDevCardObserver` is about to clear the binding and route that
   // cause through the picker.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const bannerSpec = deriveDevCardBannerSpec(codeSnap, { dismissedAt });
+  const bannerSpec =
+    import.meta.env.DEV && DEV_FORCE_AUTH_BANNER
+      ? ({ kind: "auth", variant: DEV_FORCE_AUTH_BANNER, at: 0 } as const)
+      : deriveDevCardBannerSpec(codeSnap, { dismissedAt });
 
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
