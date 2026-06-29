@@ -648,6 +648,38 @@ dmg:
 notarize:
     tugrust/scripts/build-app.sh
 
+# Build a Tug.dmg and stage it on the external VM-lab disk for the
+# share-into-guest step (`lab-run <run> --dir=drop:/Volumes/Lab-A/share`).
+# Default mode is the canonical signed+notarized build (installs like a
+# real customer download on a clean VM). Pass `unsigned` for the fast
+# variant — Gatekeeper will block it on a fresh guest, so bypass with a
+# right-click → Open inside the VM.
+#
+#   just lab-dmg            # signed + notarized
+#   just lab-dmg unsigned   # fast, unsigned
+#
+# Override the staging dir with LAB_SHARE=/some/path.
+#
+# Build Tug.dmg and stage it on the VM-lab disk (MODE: notarized|unsigned).
+lab-dmg MODE="notarized":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    LAB_SHARE="${LAB_SHARE:-/Volumes/Lab-A/share}"
+    LAB_ROOT="$(dirname "$LAB_SHARE")"
+    if [ ! -d "$LAB_ROOT" ]; then
+        echo "error: VM-lab disk not mounted (missing $LAB_ROOT)" >&2
+        exit 1
+    fi
+    case "{{MODE}}" in
+        notarized) tugrust/scripts/build-app.sh ;;
+        unsigned)  tugrust/scripts/build-app.sh --skip-sign --skip-notarize ;;
+        *) echo "unknown mode: {{MODE}} (use 'notarized' or 'unsigned')" >&2; exit 1 ;;
+    esac
+    mkdir -p "$LAB_SHARE"
+    cp -f Tug.dmg "$LAB_SHARE/Tug.dmg"
+    echo "==> staged for the VM lab: $LAB_SHARE/Tug.dmg"
+    ls -lh "$LAB_SHARE/Tug.dmg"
+
 # One-time per-machine signing check. Verifies that an Apple
 # Developer ID Application certificate is installed in the login
 # keychain (the identity every Tug build signs with per [D11]).

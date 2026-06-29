@@ -57,6 +57,47 @@ pub async fn dispatch_action(
                 }
             }
         }
+        "claude_sign_in" => {
+            // Drive `claude auth login` and report the result back to the card
+            // that asked, so it can retry its session spawn. login() awaits the
+            // CLI's exit — the CLI blocks on its own browser OAuth callback, so
+            // there's no polling. Spawned as a task so dispatch returns promptly
+            // while the user completes sign-in in the browser.
+            info!("dispatch_action: claude sign-in requested");
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            let tug_session_id = serde_json::from_slice::<serde_json::Value>(raw_payload)
+                .ok()
+                .and_then(|v| {
+                    v.get("tug_session_id")
+                        .and_then(|s| s.as_str())
+                        .map(str::to_owned)
+                });
+            tokio::spawn(async move {
+                use crate::feeds::claude_auth::AuthState;
+                let (logged_in, email, subscription_type, auth_method) =
+                    match crate::feeds::claude_auth::login().await {
+                        AuthState::LoggedIn(info) => {
+                            (true, info.email, info.subscription_type, info.auth_method)
+                        }
+                        _ => (false, None, None, None),
+                    };
+                if let Some(cat) = cat {
+                    let body = serde_json::json!({
+                        "type": "claude_auth_result",
+                        "loggedIn": logged_in,
+                        "tug_session_id": tug_session_id,
+                        "email": email,
+                        "subscriptionType": subscription_type,
+                        "authMethod": auth_method,
+                    });
+                    if let Ok(bytes) = serde_json::to_vec(&body) {
+                        let _ = cat.send(Frame::new(FeedId::CONTROL, bytes));
+                    }
+                }
+            });
+        }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
             if let Some((tx, _)) = stream_outputs.get(&FeedId::CONTROL) {

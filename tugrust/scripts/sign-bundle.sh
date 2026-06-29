@@ -139,6 +139,17 @@ if [ -x "$TUGPULSE_BIN" ]; then
         --sign "$IDENTITY" "$TUGPULSE_BIN"
 fi
 
+# (3c) Bundled tmux (built from source, statically linked). Native code
+# with no JIT — hardened-runtime defaults and no custom entitlements, like
+# the Rust helpers. Lives in Resources/bin/ rather than MacOS/. Signing it
+# here ensures the outer seal in (5) covers it and notarization passes.
+TMUX_BIN="$APP_PATH/Contents/Resources/bin/tmux"
+if [ -x "$TMUX_BIN" ]; then
+    echo "    signing bundled tmux:  hardened runtime"
+    codesign --force --options runtime --timestamp \
+        --sign "$IDENTITY" "$TMUX_BIN"
+fi
+
 # (4) Reserved slot for nested frameworks. Sign them HERE, before
 # the outer seal in (5). Adding one without updating this script
 # will fail notarization (the outer seal won't cover the framework's

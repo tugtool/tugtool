@@ -2021,7 +2021,58 @@ interface DevCardBodyProps {
 function renderDevCardBanner(
   spec: ReturnType<typeof deriveDevCardBannerSpec>,
   setDismissedAt: (at: number) => void,
+  onSignIn: () => void,
+  signingIn: boolean,
 ): React.ReactElement {
+  if (spec.kind === "auth") {
+    // Not breakage — an actionable sign-in / install prompt. Caution tone
+    // (amber), not the red session-dead lock. `auth_required` offers Sign In
+    // (which drives `claude auth login` in the browser); `claude_missing`
+    // gives install guidance.
+    const missing = spec.variant === "claude_missing";
+    return (
+      <TugPaneBanner
+        visible={true}
+        variant="error"
+        tone="caution"
+        minMountedMs={0}
+        label={missing ? "Claude Code required" : "Sign in to Claude"}
+        message={
+          missing
+            ? "Tug needs the Claude Code CLI. Install it, then reopen this card."
+            : "Tug runs sessions with your Claude subscription. Sign in to continue."
+        }
+        detailIcon={missing ? "alert-triangle" : "key"}
+        detailTitle={missing ? "Claude Code required" : "Sign in to Claude"}
+        footer={
+          missing ? (
+            <TugPushButton
+              emphasis="outlined"
+              onClick={() => setDismissedAt(spec.at)}
+            >
+              Dismiss
+            </TugPushButton>
+          ) : (
+            <TugPushButton
+              emphasis="filled"
+              onClick={onSignIn}
+              disabled={signingIn}
+            >
+              {signingIn ? "Finish in your browser…" : "Sign In"}
+            </TugPushButton>
+          )
+        }
+      >
+        <p>
+          {missing
+            ? "Install Claude Code from claude.com/download, then close and reopen this card."
+            : signingIn
+              ? "Complete sign-in in the browser window that opened. This card resumes automatically."
+              : "A browser window will open to sign in to your Anthropic account."}
+        </p>
+      </TugPaneBanner>
+    );
+  }
   if (spec.kind === "error") {
     return (
       <TugPaneBanner
@@ -2192,7 +2243,29 @@ export function DevCardBody({
   const sessionErrored =
     codeSnap.lastError !== null &&
     codeSnap.lastError.cause !== "resume_failed" &&
-    codeSnap.lastError.cause !== "attachment_rejected";
+    codeSnap.lastError.cause !== "attachment_rejected" &&
+    // A logged-out / missing-CLI gate is not a dead session — it routes to
+    // the calm auth banner, not the red session-dead overlay.
+    !(
+      codeSnap.lastError.cause === "session_state_errored" &&
+      (codeSnap.lastError.message === "auth_required" ||
+        codeSnap.lastError.message === "claude_missing")
+    );
+
+  // Drives `claude auth login` (browser OAuth) via tugcast's `claude_sign_in`
+  // action; tugcast re-probes on the child's exit and broadcasts the result.
+  const [signingIn, setSigningIn] = useState(false);
+  const handleSignIn = useCallback(() => {
+    const connection = getConnection();
+    if (!connection) {
+      console.warn("DevCardBody: connection unavailable for sign-in");
+      return;
+    }
+    setSigningIn(true);
+    connection.sendControlFrame("claude_sign_in", {
+      tug_session_id: codeSnap.tugSessionId,
+    });
+  }, [codeSnap.tugSessionId]);
 
   // Keyboard-focus-cycling ([P09]/[P10]). ⌥⇥ trades the editor's Tab for
   // a trapped tour of the card's chrome zones (the submit is the
@@ -3573,7 +3646,7 @@ export function DevCardBody({
         false`; the component runs its exit animation and then
         unmounts via its internal `mounted` state.
       */}
-      {renderDevCardBanner(bannerSpec, setDismissedAt)}
+      {renderDevCardBanner(bannerSpec, setDismissedAt, handleSignIn, signingIn)}
       </div>
     </CardContentResponderScope>
   );

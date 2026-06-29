@@ -63,7 +63,7 @@ fn tmux_server_args() -> Vec<String> {
 
 /// Check tmux version (must be >= 3.0)
 pub async fn check_tmux_version() -> Result<String, TmuxError> {
-    let output = TokioCommand::new("tmux")
+    let output = TokioCommand::new(tugcore::instance::tmux_bin())
         .args(tmux_server_args())
         .arg("-V")
         .output()
@@ -104,7 +104,7 @@ pub async fn ensure_session(session: &str) -> Result<(), TmuxError> {
     // that's its normal "no" answer, not an error. Pipe its stderr to
     // /dev/null so that noise doesn't surface to the parent (test harness,
     // capture binary, or end-user process).
-    let status = TokioCommand::new("tmux")
+    let status = TokioCommand::new(tugcore::instance::tmux_bin())
         .args(tmux_server_args())
         .args(["has-session", "-t", session])
         .stderr(std::process::Stdio::null())
@@ -119,7 +119,7 @@ pub async fn ensure_session(session: &str) -> Result<(), TmuxError> {
 
     // Create new session
     info!(session = %session, "creating new tmux session");
-    let status = TokioCommand::new("tmux")
+    let status = TokioCommand::new(tugcore::instance::tmux_bin())
         .args(tmux_server_args())
         .args(["new-session", "-d", "-s", session])
         .status()
@@ -138,7 +138,7 @@ pub async fn ensure_session(session: &str) -> Result<(), TmuxError> {
 
 /// Capture current tmux pane content
 pub async fn capture_pane(session: &str) -> Result<Vec<u8>, TmuxError> {
-    let output = TokioCommand::new("tmux")
+    let output = TokioCommand::new(tugcore::instance::tmux_bin())
         .args(tmux_server_args())
         .args(["capture-pane", "-t", session, "-p", "-e"])
         .output()
@@ -218,7 +218,7 @@ impl StreamFeed for TerminalFeed {
         }
 
         // Spawn tmux attach-session (on this instance's private server)
-        let _child = match pty_process::Command::new("tmux")
+        let _child = match pty_process::Command::new(tugcore::instance::tmux_bin())
             .args(tmux_server_args())
             .arg("attach-session")
             .arg("-t")
@@ -374,7 +374,7 @@ mod tests {
         let session = "tugcast-test-session";
 
         // Clean up any existing test session
-        let _ = TokioCommand::new("tmux")
+        let _ = TokioCommand::new(tugcore::instance::tmux_bin())
             .args(["kill-session", "-t", session])
             .status()
             .await;
@@ -384,7 +384,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify it exists
-        let status = TokioCommand::new("tmux")
+        let status = TokioCommand::new(tugcore::instance::tmux_bin())
             .args(["has-session", "-t", session])
             .status()
             .await
@@ -392,7 +392,7 @@ mod tests {
         assert!(status.success());
 
         // Clean up
-        let _ = TokioCommand::new("tmux")
+        let _ = TokioCommand::new(tugcore::instance::tmux_bin())
             .args(["kill-session", "-t", session])
             .status()
             .await;
@@ -404,7 +404,7 @@ mod tests {
         let session = "tugcast-test-capture";
 
         // Clean up any existing test session
-        let _ = TokioCommand::new("tmux")
+        let _ = TokioCommand::new(tugcore::instance::tmux_bin())
             .args(["kill-session", "-t", session])
             .status()
             .await;
@@ -413,7 +413,7 @@ mod tests {
         ensure_session(session).await.unwrap();
 
         // Send some text to the session
-        let _ = TokioCommand::new("tmux")
+        let _ = TokioCommand::new(tugcore::instance::tmux_bin())
             .args(["send-keys", "-t", session, "echo 'test'", "Enter"])
             .status()
             .await;
@@ -426,7 +426,7 @@ mod tests {
         assert!(!output.is_empty());
 
         // Clean up
-        let _ = TokioCommand::new("tmux")
+        let _ = TokioCommand::new(tugcore::instance::tmux_bin())
             .args(["kill-session", "-t", session])
             .status()
             .await;

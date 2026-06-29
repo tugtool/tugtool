@@ -492,6 +492,36 @@ pub async fn run_session_bridge(
     let session_id_str = tug_session_id.as_str().to_string();
     let project_dir_str = project_dir.display().to_string();
     loop {
+        // Auth gate. A logged-out (or entirely missing) `claude` exits the
+        // instant it's spawned, which the relay can't distinguish from a crash
+        // — so without this it would crash-loop to a useless
+        // `crash_budget_exhausted`. Probe first and surface an actionable auth
+        // state instead. Re-probed every iteration (cheap local CLI call), so a
+        // mid-session logout is caught on the next respawn, not just at open.
+        let auth_detail = match crate::feeds::claude_auth::probe().await {
+            crate::feeds::claude_auth::AuthState::LoggedIn(_) => None,
+            crate::feeds::claude_auth::AuthState::ClaudeMissing => Some("claude_missing"),
+            crate::feeds::claude_auth::AuthState::LoggedOut => Some("auth_required"),
+        };
+        if let Some(detail) = auth_detail {
+            let mut entry = ledger_entry.lock().await;
+            let already_closed = entry.spawn_state == SpawnState::Closed;
+            if !already_closed {
+                entry.spawn_state = SpawnState::Errored;
+            }
+            entry.input_tx = None;
+            drop(entry);
+            if !already_closed {
+                info!(session = %tug_session_id, detail, "claude auth gate: not logged in");
+                let _ = state_tx.send(build_session_state_frame(
+                    &tug_session_id,
+                    "errored",
+                    Some(detail),
+                ));
+            }
+            return;
+        }
+
         // Crash-budget check: if exhausted, flip state + drop dispatcher
         // sender under a single lock acquisition so a racing `close_session`
         // can't have its `Closed` flip clobbered by our `Errored` assignment.

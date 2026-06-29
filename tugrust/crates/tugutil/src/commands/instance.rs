@@ -531,10 +531,10 @@ fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
 /// the instance never launched an app are expected and ignored.
 pub(crate) fn reap_instance_tmux(instance_id: &str) {
     let label = tugcore::instance::tmux_socket_label_for(instance_id);
-    let _ = std::process::Command::new("tmux")
+    let _ = std::process::Command::new(tugcore::instance::tmux_bin())
         .args(["-L", &label, "kill-server"])
         .output();
-    let _ = std::process::Command::new("tmux")
+    let _ = std::process::Command::new(tugcore::instance::tmux_bin())
         .args(["kill-session", "-t", &format!("cc-{instance_id}")])
         .output();
 }

@@ -5,6 +5,7 @@
 
 pub mod agent_bridge;
 pub mod agent_supervisor;
+pub mod claude_auth;
 pub mod code;
 pub mod defaults;
 pub mod file_watcher;

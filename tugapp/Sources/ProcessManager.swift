@@ -97,7 +97,13 @@ class ProcessManager {
         // until the next cache miss. For Tug's stable toolchain that never
         // bites in practice; if it ever does, deleting the cache file forces
         // a re-resolve.
-        if let cached = readCachedShellPATH(), which("tmux", onPath: cached) != nil {
+        // With a bundled tmux, tmux need not be on PATH at all, so the
+        // tmux-presence sentinel no longer signals cache validity — trust a
+        // present cache and skip the login-shell spawn. Without a bundled
+        // tmux (dev build), keep the original sentinel: re-resolve if tmux
+        // vanished from the cached PATH.
+        if let cached = readCachedShellPATH(),
+           bundledTmuxURL() != nil || which("tmux", onPath: cached) != nil {
             _shellPATH = cached
             return
         }
@@ -186,8 +192,38 @@ class ProcessManager {
         try? Data(path.utf8).write(to: url, options: .atomic)
     }
 
-    /// Check if tmux is available using the user's shell PATH
+    /// Whether the user forced Tug to use their own PATH tmux instead of the
+    /// bundled one. The escape hatch mirrors `tmux_bin()` on the Rust side.
+    static var useSystemTmux: Bool {
+        ProcessInfo.processInfo.environment["TUG_USE_SYSTEM_TMUX"] != nil
+    }
+
+    /// The self-contained tmux bundled inside Tug.app
+    /// (`Contents/Resources/bin/tmux`), or nil when absent — e.g. dev builds
+    /// run straight from DerivedData, which never ran `fetch-tmux.sh`.
+    static func bundledTmuxURL() -> URL? {
+        guard let resources = Bundle.main.resourceURL else { return nil }
+        let url = resources.appendingPathComponent("bin/tmux")
+        return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+    }
+
+    /// The bundled terminfo database (`Contents/Resources/terminfo`) carrying
+    /// `tmux-256color` and friends, or nil when absent.
+    static func bundledTerminfoPath() -> String? {
+        guard let resources = Bundle.main.resourceURL else { return nil }
+        let path = resources.appendingPathComponent("terminfo").path
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
+        return (exists && isDir.boolValue) ? path : nil
+    }
+
+    /// Check that a usable tmux exists. The bundled tmux satisfies this with
+    /// nothing installed; only when it's absent (dev build / corrupt bundle)
+    /// or explicitly bypassed do we require tmux on the user's PATH.
     static func checkTmux() -> Bool {
+        if !useSystemTmux, bundledTmuxURL() != nil {
+            return true
+        }
         return which("tmux") != nil
     }
 
@@ -694,10 +730,26 @@ class ProcessManager {
         let proc = Process()
         proc.executableURL = tugcastURL
 
-        // Pass the user's full shell PATH so tugcast can find tmux, etc.
-        // Mac apps inherit a minimal PATH that doesn't include Homebrew, nix, etc.
+        // Pass the user's full shell PATH so tugcast can find git and the
+        // user's own tools. Mac apps inherit a minimal PATH that doesn't
+        // include Homebrew, nix, etc.
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = ProcessManager.shellPATH
+
+        // Point every tmux invocation (tugcast and its panes) at the
+        // self-contained tmux bundled in the app, plus its terminfo — so a
+        // factory-fresh machine needs nothing installed. tmux_bin() on the
+        // Rust side reads TUG_TMUX. Skipped when the user opts into their own
+        // tmux, or in dev builds where no bundled tmux exists.
+        if !ProcessManager.useSystemTmux, let tmux = ProcessManager.bundledTmuxURL() {
+            env["TUG_TMUX"] = tmux.path
+            if let terminfo = ProcessManager.bundledTerminfoPath() {
+                // Bundled terminfo first; a trailing colon keeps the system
+                // database as fallback for any entry we didn't bundle.
+                let prior = env["TERMINFO_DIRS"] ?? ""
+                env["TERMINFO_DIRS"] = prior.isEmpty ? "\(terminfo):" : "\(terminfo):\(prior)"
+            }
+        }
 
         // Per-instance identity (per [D12]). Swift owns the
         // computation; every spawned child inherits these via the

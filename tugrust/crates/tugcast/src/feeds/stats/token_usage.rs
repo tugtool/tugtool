@@ -99,7 +99,7 @@ impl StatCollector for TokenUsageCollector {
             Some(label) => vec!["-L".to_string(), label],
             None => Vec::new(),
         };
-        let output = match Command::new("tmux")
+        let output = match Command::new(tugcore::instance::tmux_bin())
             .args(&server_args)
             .args(["capture-pane", "-t", &self.session, "-p"])
             .output()

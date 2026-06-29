@@ -80,6 +80,26 @@ pub fn tmux_socket_label() -> Option<String> {
     instance_id().map(|id| tmux_socket_label_for(&id))
 }
 
+/// Path to the tmux binary every Tug process should invoke.
+///
+/// Tug.app bundles a self-contained tmux and points `TUG_TMUX` at it, so
+/// the user needs nothing installed. Returns that path when set, otherwise
+/// falls back to `"tmux"` resolved from `PATH` (dev builds, standalone
+/// launches). Setting `TUG_USE_SYSTEM_TMUX` forces the `PATH` lookup even
+/// when `TUG_TMUX` is set — the escape hatch for users who deliberately
+/// want their own tmux. All tmux invocations route through here so the
+/// bundled client and the bundled server are always the same version.
+pub fn tmux_bin() -> String {
+    if std::env::var_os("TUG_USE_SYSTEM_TMUX").is_none() {
+        if let Some(path) = std::env::var_os("TUG_TMUX") {
+            if !path.is_empty() {
+                return path.to_string_lossy().into_owned();
+            }
+        }
+    }
+    "tmux".to_string()
+}
+
 /// Per-instance data directory.
 ///
 /// - With `TUG_INSTANCE_ID=<id>`: `<base>/Tug/instances/<id>/`

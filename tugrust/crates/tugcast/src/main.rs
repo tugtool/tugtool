@@ -290,12 +290,19 @@ async fn main() {
     // `watch_dir` because that's what it is semantically — the Cargo walk
     // at T3.0.W3.b deletes the bootstrap entirely when the Dev card lands
     // a per-card project picker.
-    let watch_dir = if cli.source_tree.is_absolute() {
-        cli.source_tree.clone()
-    } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(&cli.source_tree)
+    let watch_dir = match cli.source_tree.clone() {
+        Some(p) if p.is_absolute() => p,
+        Some(p) => std::env::current_dir().unwrap_or_default().join(p),
+        None => {
+            // Distributed app: no project is bound at startup. The bootstrap
+            // workspace exists only to emit the initial empty feed snapshots
+            // an unbound Dev card renders against; per-card workspaces drive
+            // every real feed directory at card-open time. Watch an empty
+            // per-instance directory so nothing meaningful is observed.
+            let dir = tug_instance::data_dir().join("bootstrap-empty");
+            let _ = std::fs::create_dir_all(&dir);
+            dir
+        }
     };
 
     // Open the TugbankClient. On success, wrap in Arc for shared ownership between
@@ -997,7 +1004,7 @@ async fn main() {
         && let Some(label) = tug_instance::tmux_socket_label()
     {
         info!(%label, "tearing down ephemeral app-test tmux server");
-        let _ = std::process::Command::new("tmux")
+        let _ = std::process::Command::new(tug_instance::tmux_bin())
             .args(["-L", &label, "kill-server"])
             .status();
     }

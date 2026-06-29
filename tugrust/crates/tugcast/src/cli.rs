@@ -35,11 +35,14 @@ pub struct Cli {
     #[arg(long)]
     pub port: Option<u16>,
 
-    /// Workspace directory for the bootstrap file-tree/git feeds.
-    /// Transitional: this flag will be removed in T3.4.c when the Dev
-    /// card lands a real project picker at card-open time.
-    #[arg(long, default_value = ".")]
-    pub source_tree: PathBuf,
+    /// Optional bootstrap workspace directory for the file-tree/git feeds.
+    /// The distributed app omits this — per-card workspaces drive every feed
+    /// directory at card-open time. When absent, the bootstrap watches an
+    /// empty per-instance directory purely to emit the initial empty
+    /// snapshots an unbound Dev card renders against. Transitional: removed
+    /// entirely once the bootstrap workspace is retired.
+    #[arg(long)]
+    pub source_tree: Option<PathBuf>,
 
     /// Path to tugcode binary (overrides auto-detection)
     #[arg(long)]

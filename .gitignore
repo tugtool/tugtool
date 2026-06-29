@@ -56,3 +56,6 @@ tugdeck/dist/
 /Tug.dmg
 /TugNightly.dmg
 /build/
+
+# Static tmux build cache (tugrust/scripts/fetch-tmux.sh).
+/.tmux-build/

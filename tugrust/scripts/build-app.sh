@@ -128,6 +128,17 @@ echo "==> Copying tugplug to Contents/Resources/"
 mkdir -p "$STAGING_APP/Contents/Resources"
 cp -R "$TUGPLUG_DIR" "$STAGING_APP/Contents/Resources/"
 
+# Step 6b: Bundle a self-contained tmux (built from source) + its terminfo.
+# Eliminates the "tmux Required" preflight on machines without Homebrew tmux.
+# ProcessManager points TUG_TMUX / TERMINFO_DIRS at these at launch.
+echo "==> Bundling static tmux + terminfo"
+TMUX_OUT="$("$SCRIPT_DIR/fetch-tmux.sh")"
+mkdir -p "$STAGING_APP/Contents/Resources/bin"
+cp "$TMUX_OUT/bin/tmux" "$STAGING_APP/Contents/Resources/bin/tmux"
+cp -R "$TMUX_OUT/terminfo" "$STAGING_APP/Contents/Resources/terminfo"
+mkdir -p "$STAGING_APP/Contents/Resources/third-party-licenses"
+cp "$TMUX_OUT/licenses/"*.txt "$STAGING_APP/Contents/Resources/third-party-licenses/"
+
 # Step 7: Override bundle ID and app name for nightly
 if [ "$NIGHTLY" = true ]; then
     echo "==> Configuring nightly bundle ID and icon"
@@ -166,7 +177,15 @@ if [ "$SKIP_SIGN" = false ]; then
                 ;;
         esac
     fi
-    bash "$SCRIPT_DIR/sign-bundle.sh" "$STAGING_APP" "${SIGN_IDENTITY_ARG[@]}"
+    # Guard the array expansion: macOS /bin/bash is 3.2, where expanding an
+    # empty array as "${arr[@]}" under `set -u` aborts with "unbound variable".
+    # DEVELOPER_ID_NAME is normally unset (sign-bundle.sh auto-detects from the
+    # keychain), so this array is empty in the common path.
+    if [ "${#SIGN_IDENTITY_ARG[@]}" -gt 0 ]; then
+        bash "$SCRIPT_DIR/sign-bundle.sh" "$STAGING_APP" "${SIGN_IDENTITY_ARG[@]}"
+    else
+        bash "$SCRIPT_DIR/sign-bundle.sh" "$STAGING_APP"
+    fi
 else
     echo "==> Skipping code signing (--skip-sign)"
 fi

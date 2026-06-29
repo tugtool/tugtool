@@ -183,16 +183,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             lap("onReady (tugcast port=\(port))")
             self.lastAuthURL = url
 
-            guard let path = self.sourceTreePath else {
-                // No source tree -- sendDevMode needs the source tree; show error alert
-                let alert = NSAlert()
-                alert.messageText = "Source Tree Required"
-                alert.informativeText = "Tug requires a source tree to serve the frontend.\nGo to Maker > Source Tree... to set one."
-                alert.alertStyle = .warning
-                alert.runModal()
-                return
-            }
-
             // Extract the auth token from the ready URL so both paths can construct their load URL.
             let token = url.components(separatedBy: "token=").dropFirst().first?.components(separatedBy: "&").first ?? ""
 
@@ -220,7 +210,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 // dev-*serving* switch (Vite, watchers, allowlist).
                 self.processManager.sendDevMode(
                     enabled: self.devServingEnabled,
-                    sourceTree: path,
+                    sourceTree: self.sourceTreePath,
                     vitePort: self.vitePort
                 )
                 return
@@ -228,6 +218,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             self.initialLoadComplete = true
 
             if self.devServingEnabled {
+                // Maker mode serves the frontend from the tugtool source via
+                // Vite, so it genuinely needs a source tree. Maker mode is a
+                // dev-only feature, hidden in distributed builds.
+                guard let path = self.sourceTreePath else {
+                    let alert = NSAlert()
+                    alert.messageText = "Source Tree Required for Maker Mode"
+                    alert.informativeText = "Maker mode serves the frontend from the tugtool source.\nGo to Maker > Source Tree… to set one, or turn Maker mode off."
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                    return
+                }
                 // Dev mode: spawn Vite (HMR), wait for it, then load from the Vite port.
                 // The duplication guard inside spawnViteServer prevents re-spawning on tugcast restarts.
                 self.processManager.spawnViteServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort, devMode: true)
@@ -247,7 +248,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 let tugcastURL = "http://127.0.0.1:\(port)/auth?token=\(token)"
                 self.window.loadURL(tugcastURL)
                 // Notify tugcast to update file watchers and clear dev_port from origin allowlist.
-                self.processManager.sendDevMode(enabled: false, sourceTree: path, vitePort: self.vitePort)
+                self.processManager.sendDevMode(enabled: false, sourceTree: self.sourceTreePath, vitePort: self.vitePort)
             }
         }
 
