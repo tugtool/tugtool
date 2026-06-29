@@ -86,6 +86,7 @@ What we *don't* have yet: the lab is a pile of uncommitted shell scripts on an e
 #### Assumptions {#assumptions}
 
 - The connection handshake response (`router.rs`) is the right app-level channel for the host OS version — it fires once per connect, before any card, which matches the app-wide gate. ([P06])
+- tugcast is **co-located** with Tug.app (local host), so its `kern.osproductversion` *is* the user's macOS version. If tugcast is ever run remote, the OS source must move to the Swift host (`ProcessInfo.operatingSystemVersion`) — a follow-on, not this phase. ([P06])
 - The minimum supported line is Sequoia and up; older lines (Ventura/Sonoma) are untested and treated as unsupported until proven otherwise ([Q02]).
 - The lab's golden bases stay factory-fresh (Gatekeeper/spctl disabled so unsigned dmgs run); the signed golden pass is what certifies the real Gatekeeper path.
 - The same bundled arm64 static binaries (tmux, tugcode) that work on Sequoia work on Tahoe/27 unless a golden run shows otherwise ([Q03]).
@@ -296,8 +297,8 @@ The guest mounts the share via `--dir=drop:/Volumes/Lab-A/share`; the dmg appear
 
 1. Client connects; tugcast's handshake response now carries `host:{os,version}` ([P06]).
 2. The frontend connection layer writes it into `hostInfoStore` ([L02]).
-3. A pure derivation compares the host version against the matrix constant ([P07]); if the host is *below* its line's minimum (or on an unsupported line), the version gate renders an app-modal "update macOS" panel — a sibling of TugSetup, same chrome.
-4. Above the floor: gate `open=false`, TugSetup/decks proceed normally.
+3. A pure derivation compares the host version against the matrix constant ([P07]); if the host is *below* its line's minimum (or on an unsupported line), the version gate renders an app-modal "update macOS" panel — a sibling of TugSetup, same chrome. The gate **takes precedence over TugSetup** (Spec S02): while it's open, TugSetup suppresses itself, so the two app-modals never stack.
+4. Above the floor (or host still unknown pre-handshake): gate `open=false`, TugSetup/decks proceed normally.
 
 #### TugSetup states (happy + unhappy) {#tugsetup-states}
 
@@ -356,12 +357,13 @@ Sources: [dmgbuild settings](https://dmgbuild.readthedocs.io/en/latest/settings.
 
 - Input: `hostInfoStore.version` (e.g. `"15.7.7"`), parsed to `{major,minor,patch}`.
 - Policy: a TS constant `SUPPORTED_MACOS` keyed by major line → minimum `{minor,patch}` ([P07]); kept in sync with the manifest's `min_version` (drift test).
-- Output: gate `open` iff the host line is unknown/unsupported OR host version `<` its line minimum. Comparison is a pure, unit-tested semver-ish compare.
+- Output: gate `open` iff the host line is unknown/unsupported OR host version `<` its line minimum. Comparison is a pure, unit-tested semver-ish compare. Treat *unknown* (no `host` field yet, e.g. pre-handshake) as **not below floor** → don't block (fail-open, [R02]).
 - UI: app-modal panel in TugSetup chrome; copy names the host version and the required minimum; no dismiss (like TugSetup). A `DEV`-guarded override forces/suppresses it for iteration.
+- **Precedence over TugSetup:** the version gate and TugSetup are both app-modal siblings at z 99990/99991, so a below-floor *and* not-yet-set-up user would otherwise satisfy `open` for both and stack them. The version gate **wins**: when it is open, TugSetup's `open` derivation must yield `false` (no point onboarding on an OS we're about to block). Implement as: TugSetup reads the gate-open derivation and suppresses itself while it is true.
 
 **Spec S03: Handshake host field** {#s03-handshake-host}
 
-The `router.rs` handshake response gains `"host": {"os":"macos","version":"<sw_vers ProductVersion>"}`. Additive and back-compatible: older clients ignore it; the gate treats a missing field as "unknown → don't block" (fail-open, since a false lockout is worse — [R02]).
+The `router.rs` handshake response gains `"host": {"os":"macos","version":"<kern.osproductversion>"}` (read via `sysctl kern.osproductversion`, e.g. `"15.7.7"` — no subprocess). Additive and back-compatible: older clients ignore it; the gate treats a missing field as "unknown → don't block" (fail-open, since a false lockout is worse — [R02]).
 
 **Spec S04: Distribution DMG (dmgbuild)** {#s04-dmg}
 
@@ -434,7 +436,8 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
 | handshake `host` field | json field | `tugcast/src/router.rs` | Spec S03 ([P06]) |
-| `host_os_version()` | fn | `tugcast` (router/util) | reads `sw_vers`/sysctl |
+| `host_os_version()` | fn | `tugcast` (router/util) | reads `sysctl kern.osproductversion` |
+| `parseHandshakeHost` | fn | `tugdeck` (`host-info-store.ts`) | pure parse of the handshake `host` field; unit-tested ([P06]) |
 | `lab-cycle`, `lab-new`, `lab-run`, `lab-wipe`, `lab-ls` | just recipes | `justfile` | wrap `scripts/lab/*` ([P02]) |
 | `lab-dmg` | just recipe | `justfile` | parameterize base/OS where needed |
 | `hostInfoStore` | store | `host-info-store.ts` | [L02] |
@@ -529,17 +532,17 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - `build-app.sh` DMG step replaced: `dmgbuild` instead of bare `hdiutil`, then `codesign` the `.dmg`.
 
 **Tasks:**
-- [ ] Add `dmgbuild` as a build prerequisite (pinned; documented install).
-- [ ] Author `settings.py` per Spec S04 + Table T02: volume name `Tug`, hidden toolbar/sidebar/pathbar/statusbar, `window_rect` 720×460, `icon_size` 128, app icon at (208,250) + `symlinks={'Applications':'/Applications'}` at (512,250), background art, volume icon.
+- [ ] Add `dmgbuild` as a build prerequisite — pin it and install via `pipx`/venv (not system `pip`) so it doesn't pollute system python; document in the build prereqs.
+- [ ] Author `settings.py` per Spec S04 + Table T02: volume name `Tug`, hidden toolbar/sidebar/pathbar/statusbar, `window_rect` 720×460, `icon_size` 128, app icon at (208,250) + `symlinks={'Applications':'/Applications'}` at (512,250), background art, volume icon. `files` points at the staged `Tug.app` (`$STAGING_APP`) only — **not** `$STAGING_DIR` — so the image holds just the app + Applications symlink.
 - [ ] Produce the retina background TIFF (720×460 @1x + 1440×920 @2x via `tiffutil -cathidpicheck`) in Tug's visual language (app icon, arrow at (360,250), Applications, "Drag Tug to Applications" caption at (360,384)), honoring the [art safe-areas](#s05-dmg-geometry); no Finder chrome.
-- [ ] Swap the `hdiutil` step in `build-app.sh` for `dmgbuild` + `codesign --sign "<Developer ID>" Tug.dmg`; keep `--skip-sign` honoring the unsigned path.
+- [ ] Swap the `hdiutil` step in `build-app.sh` for `dmgbuild` + `codesign --sign "<Developer ID>" Tug.dmg` (reuse the existing `SIGN_IDENTITY_ARG`); keep `--skip-sign` honoring the unsigned path.
 
 **Tests:**
-- [ ] `just lab-dmg unsigned` produces a `Tug.dmg`; mounting it shows the styled window (icons positioned, background, Applications target, no toolbar/sidebar).
+- [ ] `just lab-dmg unsigned` produces a `Tug.dmg`; `open Tug.dmg` on the host shows the styled window (icons positioned, background, Applications target, no toolbar/sidebar) — no VM needed.
 - [ ] `codesign --verify Tug.dmg` passes on a signed build.
 
 **Checkpoint:**
-- [ ] On a fresh guest (`just lab-cycle sequoia`), opening the dmg presents the branded drag-to-Applications window; dragging installs Tug. Build is deterministic (no GUI/Finder session needed).
+- [ ] `open Tug.dmg` on the build host presents the branded drag-to-Applications window with the app icon, arrow, and Applications target over the Tug background; dragging the icon copies Tug into `/Applications`. Build is deterministic (no GUI/Finder session needed). (In-VM drag-install on a fresh guest is certified later in the golden runs, [#step-11].)
 
 ---
 
@@ -627,14 +630,15 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 **Artifacts:**
 - `host:{os,version}` on the `router.rs` handshake response; `host_os_version()` helper.
 - `tugdeck/src/lib/host-info-store.ts` (`hostInfoStore` + `useHostInfo()`), populated by the connection layer.
+- A pure `parseHandshakeHost(responseJson)` helper (in `host-info-store.ts` or beside the handshake parse) so the parse is unit-testable without a live socket or a mock store; `connection.ts`'s handshake handler calls it and publishes the result.
 
 **Tasks:**
-- [ ] Add the field (additive); read `sw_vers ProductVersion` (or sysctl) once.
-- [ ] Capture it in the frontend handshake handler into `hostInfoStore` ([L02]).
+- [ ] Add the field (additive); read the host version once via `sysctl kern.osproductversion` (returns `"15.7.7"` directly — no subprocess; preferred over parsing `sw_vers`).
+- [ ] Factor `parseHandshakeHost`; call it from the existing handshake-response parse in `connection.ts` and publish into `hostInfoStore` ([L02]).
 
 **Tests:**
 - [ ] tugcast integration test: handshake response includes a well-formed `host` object (`cargo nextest`).
-- [ ] Frontend: `hostInfoStore` snapshot reflects the wired value (real frame, no mock).
+- [ ] Frontend unit (pure): `parseHandshakeHost` extracts `{os,version}` from a real handshake-response JSON and tolerates a missing `host` field (→ unknown). No mock store, no jsdom.
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugcast` green; `bunx tsc --noEmit` + `bunx vite build` clean; `useHostInfo()` returns the live version in the running app.
@@ -657,14 +661,16 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 **Tasks:**
 - [ ] Implement the pure comparator + policy constant (seed [Q01] defaults).
 - [ ] Build the gate (TugSetup chrome; names host version + required minimum; no dismiss; `DEV` override).
+- [ ] Wire the gate→TugSetup precedence (Spec S02): TugSetup suppresses its `open` while the gate is open, so the two app-modals never stack.
 - [ ] Decide & apply the plist floor ([Q02]); add a manifest↔policy drift test.
 
 **Tests:**
 - [ ] Unit: comparator + gate-open derivation across below/at/above floor and unknown line.
+- [ ] Unit: TugSetup `open` derivation yields `false` whenever the gate is open (precedence).
 - [ ] Drift: `SUPPORTED_MACOS` matches `matrix.json` `min_version`s.
 
 **Checkpoint:**
-- [ ] In-app (DEV override / floor-spoof): below-floor shows the gate; supported version does not. `tsc` + `vite build` clean.
+- [ ] In-app (DEV override / floor-spoof): below-floor shows the gate and TugSetup stays hidden behind it; supported version shows neither (or TugSetup alone if not yet set up). `tsc` + `vite build` clean.
 
 ---
 
