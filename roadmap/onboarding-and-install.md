@@ -288,7 +288,7 @@ What we *don't* have yet: the lab is a pile of uncommitted shell scripts on an e
 The audit deliverable (M01). Three commits carried this work; this is the durable record.
 
 **`62beec13f` — Bundle tmux, drop source-tree gate, auth gate**
-- *Bundled static tmux:* `tugrust/scripts/fetch-tmux.sh` builds an arm64 static tmux from source (ncurses 6.5, libevent 2.1.12-stable, utf8proc 2.9.0; checksums pinned; links only libSystem/libresolv; Apple `xcrun clang`). Bundled by `build-app.sh` to `Contents/Resources/bin/tmux` + `terminfo/` + licenses, signed in `sign-bundle.sh`. `tugcore::instance::tmux_bin()` resolves `$TUG_TMUX` else `"tmux"`; 15 non-test call sites route through it; `TUG_USE_SYSTEM_TMUX` overrides. `ProcessManager` sets `TUG_TMUX`/`TERMINFO_DIRS`. **Result: the tmux preflight dialog is gone on a clean guest.**
+- *Bundled static tmux:* `tugrust/scripts/fetch-tmux.sh` builds an arm64 static tmux from source (ncurses 6.5, libevent 2.1.12-stable, utf8proc 2.9.0; checksums pinned; links only libSystem/libresolv; Apple `xcrun clang`). Bundled by `build-app.sh` to `Contents/Resources/bin/tmux` + `terminfo/` + licenses, signed in `sign-bundle.sh`. `tugcore::instance::tmux_bin()` resolves `$TUG_TMUX` else `"tmux"`; 9 non-test call sites route through it; `TUG_USE_SYSTEM_TMUX` overrides. `ProcessManager` sets `TUG_TMUX`/`TERMINFO_DIRS`. **Result: the tmux preflight dialog is gone on a clean guest.**
 - *Source-tree gate removed:* `tugcast/src/cli.rs` `--source-tree` is `Option<PathBuf>`; `main.rs` defaults `watch_dir` to a per-instance `bootstrap-empty` dir when absent; `AppDelegate.swift` `onReady` no longer gates production on a source tree. **Result: release launches straight to the Dev card.**
 
 **`e2ebaa44b` + `b13b3e1db` — TugSetup gate, session-error diagnostics, tiktoken wasm fix**
@@ -540,14 +540,14 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - `roadmap/onboarding-and-install.md` (this document), reviewed and finalized with the user.
 
 **Tasks:**
-- [ ] Walk the [As-Built Audit](#as-built-audit) and [known-gaps register](#l03-known-gaps) with the user; correct any detail.
-- [ ] Confirm milestone ordering and decisions [P01]–[P11].
+- [x] Walk the [As-Built Audit](#as-built-audit) and [known-gaps register](#l03-known-gaps) with the user; correct any detail. *(Re-audited against the repo via parallel symbol-level verification; one drift corrected — `tmux_bin()` has 9 non-test call sites, not 15.)*
+- [x] Confirm milestone ordering and decisions [P01]–[P11].
 
 **Tests:**
-- [ ] N/A (documentation).
+- [x] N/A (documentation).
 
 **Checkpoint:**
-- [ ] The plan reads true against the repo; the user signs off on scope and decisions.
+- [x] The plan reads true against the repo; the user signs off on scope and decisions.
 
 ---
 
