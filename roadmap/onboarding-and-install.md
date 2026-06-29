@@ -516,7 +516,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Land roadmap doc + as-built audit | done | 61ba4bfef, 12fb18de0 |
-| #step-2 | Styled distribution DMG (drag-to-Applications) | pending | — |
+| #step-2 | Styled distribution DMG (drag-to-Applications) | done | (pending commit) |
 | #step-3 | Vendor lab scripts + just recipes | pending | — |
 | #step-4 | One-command inner loop (`just lab-cycle`) | pending | — |
 | #step-5 | Tahoe + Golden Gate bases + matrix manifest | pending | — |
@@ -565,17 +565,17 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - `build-app.sh` DMG step replaced: `dmgbuild` instead of bare `hdiutil`, then `codesign` the `.dmg`.
 
 **Tasks:**
-- [ ] Add `dmgbuild` as a build prerequisite — pin it and install via `pipx`/venv (not system `pip`) so it doesn't pollute system python; document in the build prereqs.
-- [ ] Author `settings.py` per Spec S04 + Table T02: volume name `Tug`, hidden toolbar/sidebar/pathbar/statusbar, `window_rect` 720×460, `icon_size` 128, app icon at (208,250) + `symlinks={'Applications':'/Applications'}` at (512,250), background art, volume icon. `files` points at the staged `Tug.app` (`$STAGING_APP`) only — **not** `$STAGING_DIR` — so the image holds just the app + Applications symlink.
-- [ ] Produce the retina background TIFF (720×460 @1x + 1440×920 @2x via `tiffutil -cathidpicheck`) in Tug's visual language (app icon, arrow at (360,250), Applications, "Drag Tug to Applications" caption at (360,384)), honoring the [art safe-areas](#s05-dmg-geometry); no Finder chrome.
-- [ ] Swap the `hdiutil` step in `build-app.sh` for `dmgbuild` + `codesign --sign "<Developer ID>" Tug.dmg` (reuse the existing `SIGN_IDENTITY_ARG`); keep `--skip-sign` honoring the unsigned path.
+- [x] Add `dmgbuild` as a build prerequisite — pin it and install via `pipx`/venv (not system `pip`) so it doesn't pollute system python; document in the build prereqs. *(`scripts/dmg/ensure-dmgbuild.sh` bootstraps a pinned `dmgbuild==1.6.7` in a gitignored `.build-tools/dmgbuild-venv`; honors `$DMGBUILD` / PATH first.)*
+- [x] Author `settings.py` per Spec S04 + Table T02: volume name `Tug`, hidden toolbar/sidebar/pathbar/statusbar, `window_rect` 720×460, `icon_size` 128, app icon at (208,250) + `symlinks={'Applications':'/Applications'}` at (512,250), background art, volume icon. `files` points at the staged `Tug.app` (`$STAGING_APP`) only — **not** `$STAGING_DIR` — so the image holds just the app + Applications symlink. *(`scripts/dmg/settings.py`; app/background/icon arrive via `-D` defines.)*
+- [x] Produce the retina background TIFF (720×460 @1x + 1440×920 @2x via `tiffutil -cathidpicheck`) in Tug's visual language (app icon, arrow at (360,250), Applications, "Drag Tug to Applications" caption at (360,384)), honoring the [art safe-areas](#s05-dmg-geometry); no Finder chrome. *(User-supplied `resources/dmg-background.tiff` — verified two-rep 720×460 + 1440×920; placed at `scripts/dmg/background.tiff`. `VolumeIcon.icns` generated from the release app icon.)*
+- [x] Swap the `hdiutil` step in `build-app.sh` for `dmgbuild` + `codesign --sign "<Developer ID>" Tug.dmg` (reuse the existing `SIGN_IDENTITY_ARG`); keep `--skip-sign` honoring the unsigned path. *(Step 10 rewritten; DMG-sign branch mirrors `sign-bundle.sh` identity auto-detect; `--skip-sign` skips signing.)*
 
 **Tests:**
-- [ ] `just lab-dmg unsigned` produces a `Tug.dmg`; `open Tug.dmg` on the host shows the styled window (icons positioned, background, Applications target, no toolbar/sidebar) — no VM needed.
-- [ ] `codesign --verify Tug.dmg` passes on a signed build.
+- [x] `just lab-dmg unsigned` produces a `Tug.dmg`; `open Tug.dmg` on the host shows the styled window (icons positioned, background, Applications target, no toolbar/sidebar) — no VM needed. *(Ran the equivalent `build-app.sh --skip-sign --skip-notarize`; produced an 84 MB `Tug.dmg`. The baked `.DS_Store` confirms `ShowToolbar/StatusBar/Pathbar/Sidebar=False`, `WindowBounds {{200,120},{720,460}}`, `iconSize 128`, icons at (208,250)/(512,250). Verified the styled window renders on a default Finder — user-approved.)*
+- [x] `codesign --verify Tug.dmg` passes on a signed build. *(Verified against a stand-in image with the real `Developer ID Application: Kenneth Kocienda` identity: `--force --timestamp --sign` then `--verify` both pass.)*
 
 **Checkpoint:**
-- [ ] `open Tug.dmg` on the build host presents the branded drag-to-Applications window with the app icon, arrow, and Applications target over the Tug background; dragging the icon copies Tug into `/Applications`. Build is deterministic (no GUI/Finder session needed). (In-VM drag-install on a fresh guest is certified later in the golden runs, [#step-11].)
+- [x] `open Tug.dmg` on the build host presents the branded drag-to-Applications window with the app icon, arrow, and Applications target over the Tug background; dragging the icon copies Tug into `/Applications`. Build is deterministic (no GUI/Finder session needed). (In-VM drag-install on a fresh guest is certified later in the golden runs, [#step-11].) *(User-approved on a clean Finder. Note: a dev whose Finder has show-hidden-files / show-all-extensions / a sticky toolbar will see dotfiles, the `.app` extension, or a toolbar — all environment, not the image; the baked `.DS_Store` is correct and end users get the clean layout.)*
 
 ---
 

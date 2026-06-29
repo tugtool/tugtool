@@ -59,3 +59,7 @@ tugdeck/dist/
 
 # Static tmux build cache (tugrust/scripts/fetch-tmux.sh).
 /.tmux-build/
+
+# dmgbuild lives in a pinned, isolated venv created by
+# tugrust/scripts/dmg/ensure-dmgbuild.sh; never checked in.
+/.build-tools/

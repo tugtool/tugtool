@@ -204,15 +204,47 @@ else
 fi
 
 # Step 10: Create DMG
-echo "==> Creating DMG"
+#
+# Branded drag-to-Applications image built with dmgbuild (Python). dmgbuild
+# writes the layout into .DS_Store directly via ds_store/mac_alias — no
+# Finder, no AppleScript, no GUI session — so this stays deterministic and
+# headless under notary/CI conditions, unlike create-dmg/osascript approaches.
+# settings.py + background.tiff + VolumeIcon.icns live in scripts/dmg/.
+echo "==> Creating DMG (dmgbuild)"
 OUTPUT_DMG="$REPO_ROOT/$DMG_NAME"
 rm -f "$OUTPUT_DMG"
-hdiutil create \
-    -volname "$APP_NAME" \
-    -srcfolder "$STAGING_DIR" \
-    -ov \
-    -format UDZO \
+DMGBUILD="$("$SCRIPT_DIR/dmg/ensure-dmgbuild.sh")"
+"$DMGBUILD" \
+    -s "$SCRIPT_DIR/dmg/settings.py" \
+    -D app="$STAGING_APP" \
+    -D background="$REPO_ROOT/resources/dmg-background.tiff" \
+    -D icon="$SCRIPT_DIR/dmg/VolumeIcon.icns" \
+    "$APP_NAME" \
     "$OUTPUT_DMG"
+
+# Code-sign the .dmg on signed builds. Mirrors sign-bundle.sh's identity
+# resolution: an explicit DEVELOPER_ID_NAME (full or short form) wins,
+# otherwise the first "Developer ID Application" in the login keychain.
+# (Notarizing the dmg wrapper itself remains a follow-on; the .app inside
+# is already notarized + stapled.)
+if [ "$SKIP_SIGN" = false ]; then
+    DMG_IDENTITY="${DEVELOPER_ID_NAME:-}"
+    case "$DMG_IDENTITY" in
+        "Developer ID Application: "*) : ;;
+        "") DMG_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+                | awk -F'"' '/Developer ID Application:/ {print $2; exit}')" ;;
+        *) DMG_IDENTITY="Developer ID Application: $DMG_IDENTITY" ;;
+    esac
+    if [ -z "$DMG_IDENTITY" ]; then
+        echo "error: no Developer ID Application identity found to sign the DMG" >&2
+        exit 1
+    fi
+    echo "==> Signing DMG: $DMG_IDENTITY"
+    codesign --force --timestamp --sign "$DMG_IDENTITY" "$OUTPUT_DMG"
+    codesign --verify --verbose "$OUTPUT_DMG"
+else
+    echo "==> Skipping DMG signing (--skip-sign)"
+fi
 
 echo "==> Build complete: $OUTPUT_DMG"
 
