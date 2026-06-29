@@ -22,19 +22,35 @@ export interface AuthAccount {
   authMethod: string | null;
 }
 
+/**
+ * Why the user is signed out — drives which setup-checklist step is active:
+ * `claude_missing` = the CLI isn't installed; `logged_out` = installed but not
+ * signed in. `null` when logged in (or not yet probed).
+ */
+export type AuthReason = "claude_missing" | "logged_out";
+
 export interface AuthSnapshot {
   /** `null` until the first probe answers; then the known login state. */
   loggedIn: boolean | null;
+  /** Which signed-out step is active, or `null` when logged in / unknown. */
+  reason: AuthReason | null;
   /** Account details for display ("Signed in as … — Max"), when logged in. */
   account: AuthAccount | null;
   /** True between sending `claude_sign_in` and the next `claude_auth_result`. */
   signingIn: boolean;
+  /** True while a Tug-managed `install_claude` is running. */
+  installing: boolean;
+  /** Last install error, or `null`. Cleared when a new install starts. */
+  installError: string | null;
 }
 
 const INITIAL: AuthSnapshot = {
   loggedIn: null,
+  reason: null,
   account: null,
   signingIn: false,
+  installing: false,
+  installError: null,
 };
 
 class AuthStore {
@@ -51,19 +67,42 @@ class AuthStore {
 
   getSnapshot = (): AuthSnapshot => this._snapshot;
 
-  /** Mark a sign-in attempt in flight (the sheet/banner show "Finish in your browser…"). */
+  /** Mark a sign-in attempt in flight (the wizard shows "Waiting for browser sign-in…"). */
   setSigningIn(signingIn: boolean): void {
     if (this._snapshot.signingIn === signingIn) return;
     this._snapshot = { ...this._snapshot, signingIn };
     this.notify();
   }
 
-  /** Apply a `claude_auth_result`: records login state and clears `signingIn`. */
-  applyResult(loggedIn: boolean, account: AuthAccount | null): void {
+  /** Mark a Tug-managed install in flight (clears any prior install error). */
+  setInstalling(installing: boolean): void {
+    this._snapshot = { ...this._snapshot, installing, installError: null };
+    this.notify();
+  }
+
+  /** Apply a `claude_install_result`: ends the install, records any error. */
+  applyInstallResult(ok: boolean, error: string | null): void {
     this._snapshot = {
+      ...this._snapshot,
+      installing: false,
+      installError: ok ? null : (error ?? "install failed"),
+    };
+    this.notify();
+  }
+
+  /** Apply a `claude_auth_result`: records login state and clears `signingIn`. */
+  applyResult(
+    loggedIn: boolean,
+    reason: AuthReason | null,
+    account: AuthAccount | null,
+  ): void {
+    this._snapshot = {
+      ...this._snapshot,
       loggedIn,
+      reason: loggedIn ? null : reason,
       account: loggedIn ? account : null,
       signingIn: false,
+      installing: false,
     };
     this.notify();
   }
@@ -88,8 +127,15 @@ export function applyAuthResultPayload(payload: Record<string, unknown>): void {
   const loggedIn = payload.loggedIn === true;
   const str = (v: unknown): string | null =>
     typeof v === "string" && v.length > 0 ? v : null;
+  const reason: AuthReason | null =
+    payload.reason === "claude_missing"
+      ? "claude_missing"
+      : payload.reason === "logged_out"
+        ? "logged_out"
+        : null;
   authStore.applyResult(
     loggedIn,
+    reason,
     loggedIn
       ? {
           email: str(payload.email),
@@ -97,5 +143,13 @@ export function applyAuthResultPayload(payload: Record<string, unknown>): void {
           authMethod: str(payload.authMethod),
         }
       : null,
+  );
+}
+
+/** Apply a `claude_install_result` CONTROL payload (`{ok, error}`). */
+export function applyInstallResultPayload(payload: Record<string, unknown>): void {
+  authStore.applyInstallResult(
+    payload.ok === true,
+    typeof payload.error === "string" ? payload.error : null,
   );
 }

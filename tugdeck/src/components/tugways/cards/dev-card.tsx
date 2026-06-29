@@ -2082,6 +2082,16 @@ function renderDevCardBanner(
     );
   }
   if (spec.kind === "error") {
+    // `spec.message` is the backend detail. For a crashed session it is
+    // multi-line: a short first-line summary (e.g. `crash_budget_exhausted`)
+    // followed by the subprocess's trailing stderr — the real reason claude
+    // exited. Keep the summary on the strip and route the diagnostic tail to
+    // the detail panel so operators see the failure without leaving the card.
+    const newlineAt = spec.message.indexOf("\n");
+    const summary =
+      newlineAt === -1 ? spec.message : spec.message.slice(0, newlineAt);
+    const diagnostic =
+      newlineAt === -1 ? "" : spec.message.slice(newlineAt + 1).trim();
     return (
       <TugPaneBanner
         visible={true}
@@ -2093,7 +2103,7 @@ function renderDevCardBanner(
         // unresponsive UI.
         minMountedMs={0}
         label={CAUSE_LABELS[spec.cause]}
-        message={spec.message}
+        message={summary}
         detailIcon="unplug"
         detailTitle={CAUSE_LABELS[spec.cause]}
         footer={
@@ -2107,6 +2117,9 @@ function renderDevCardBanner(
         }
       >
         <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
+        {diagnostic ? (
+          <pre className="dev-card-error-diagnostic">{diagnostic}</pre>
+        ) : null}
       </TugPaneBanner>
     );
   }

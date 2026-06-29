@@ -1124,3 +1124,22 @@
   pointer-events: none;
 }
 
+/* Diagnostic tail in the session-dead detail panel: the crashed
+   subprocess's trailing stderr, surfaced so an operator sees *why* the
+   session died. Monospace, wrapping, and independently scrollable so a
+   long claude/tugcode error can't push the Dismiss footer off-screen. */
+.dev-card-error-diagnostic {
+  margin: 12px 0 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background-color: var(--tug7-surface-global-primary-normal-overlay-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+

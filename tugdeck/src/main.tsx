@@ -127,12 +127,15 @@ export const connectionLifecycle = new ConnectionLifecycle();
 connection.setLifecycle(connectionLifecycle);
 registerConnectionLifecycle(connectionLifecycle);
 
-// Probe Claude login state whenever the wire comes up — initial connect and
-// every reconnect. tugcast answers with `claude_auth_result`, which feeds the
-// app-level `authStore`. Keeping the probe here (imperative, transition-driven)
-// rather than in a component effect honors [L02]/[L24]: `AuthGate` purely reads
-// the store via `useSyncExternalStore` and renders.
-connectionLifecycle.observeConnectionDidOpen(() => {
+// Re-probe Claude login on every RECONNECT. tugcast answers with
+// `claude_auth_result`, which feeds the app-level `authStore`. The probe is
+// imperative/transition-driven (not a component effect) per [L02]/[L24] —
+// `TugSetup` purely reads the store. Reconnect only: the FIRST connect fires
+// `connectionDidOpen` before `initActionDispatch` registers the
+// `claude_auth_result` handler, so the initial probe is sent after that
+// registration instead (see below) — otherwise the answer races ahead of its
+// handler and is dropped.
+connectionLifecycle.observeConnectionDidReconnect(() => {
   connection.sendControlFrame("check_auth");
 });
 
@@ -282,6 +285,14 @@ if (!container) {
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
+
+  // Initial Claude-auth probe. Sent HERE — after initActionDispatch has
+  // registered the `claude_auth_result` handler and the wire is already open
+  // (tugbank ready was awaited above) — not on the first `connectionDidOpen`,
+  // which fires before that handler exists. Without this, the answer arrives
+  // unhandled and the auth gate never resolves. Reconnects re-probe via
+  // `observeConnectionDidReconnect`.
+  connection.sendControlFrame("check_auth");
 
   // Wire the menuState host push: the aggregator subscribes to the
   // deck store and posts the menu-relevant projection to the Swift

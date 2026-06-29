@@ -182,6 +182,20 @@ impl SessionMode {
 /// Pinned-boxed future produced by [`ChildSpawner::spawn_child`].
 pub type SpawnFuture = Pin<Box<dyn std::future::Future<Output = io::Result<SessionChild>> + Send>>;
 
+/// Number of trailing stderr lines retained per spawn for diagnostics.
+/// On crash-budget exhaustion the bridge folds these into the errored
+/// `SESSION_STATE` detail so the card surfaces *why* the subprocess died
+/// (claude API failure, auth error, missing config) instead of an opaque
+/// `crash_budget_exhausted`.
+const STDERR_TAIL_CAP: usize = 40;
+
+/// Grace period after a relay crash before snapshotting the subprocess
+/// stderr tail. The dying child may flush a final error line (panic,
+/// claude API failure) onto stderr *after* its stdout closes — the signal
+/// the relay uses to detect the crash. This lets the stderr-forwarding
+/// task drain those last lines so they make it into the errored detail.
+const STDERR_DRAIN_GRACE: Duration = Duration::from_millis(50);
+
 /// Thin boxed wrapper around an active subprocess' stdin/stdout. The
 /// `_keepalive` field owns whatever handle is needed to keep the child alive
 /// and cleaned up on drop (e.g., `tokio::process::Child` with
@@ -190,6 +204,11 @@ pub struct SessionChild {
     pub stdin: Box<dyn AsyncWrite + Send + Unpin>,
     pub stdout: Box<dyn AsyncRead + Send + Unpin>,
     pub _keepalive: Box<dyn std::any::Any + Send>,
+    /// Ring of the last [`STDERR_TAIL_CAP`] stderr lines this subprocess
+    /// emitted, populated by the stderr-forwarding task. Read by
+    /// `run_session_bridge` after a crash to attach the real failure
+    /// reason to the errored frame. Mock spawners leave it empty.
+    pub stderr_tail: Arc<std::sync::Mutex<VecDeque<String>>>,
 }
 
 /// Abstraction over subprocess spawning so the supervisor can inject a
@@ -387,7 +406,10 @@ impl ChildSpawner for TugcodeSpawner {
             // the operator. Each line is forwarded verbatim under
             // the `tugcast::tugcode_stderr` target so consumers can
             // grep by that tag.
+            let stderr_tail: Arc<std::sync::Mutex<VecDeque<String>>> =
+                Arc::new(std::sync::Mutex::new(VecDeque::new()));
             if let Some(stderr) = child.stderr.take() {
+                let tail = Arc::clone(&stderr_tail);
                 tokio::spawn(async move {
                     let mut lines = BufReader::new(stderr).lines();
                     loop {
@@ -397,6 +419,12 @@ impl ChildSpawner for TugcodeSpawner {
                                     target: "tugcast::tugcode_stderr",
                                     "{line}",
                                 );
+                                if let Ok(mut buf) = tail.lock() {
+                                    buf.push_back(line);
+                                    while buf.len() > STDERR_TAIL_CAP {
+                                        buf.pop_front();
+                                    }
+                                }
                             }
                             Ok(None) => break,
                             Err(err) => {
@@ -414,6 +442,7 @@ impl ChildSpawner for TugcodeSpawner {
                 stdin: Box::new(stdin),
                 stdout: Box::new(stdout),
                 _keepalive: Box::new(child),
+                stderr_tail,
             })
         })
     }
@@ -491,6 +520,11 @@ pub async fn run_session_bridge(
     // `--session-id` — the single identifier for this session.
     let session_id_str = tug_session_id.as_str().to_string();
     let project_dir_str = project_dir.display().to_string();
+    // Trailing stderr (or spawn error) from the most recent failed spawn,
+    // carried across crash-loop iterations so the top-of-loop budget-
+    // exhaustion publish can fold the real failure reason into the errored
+    // detail instead of an opaque `crash_budget_exhausted`.
+    let mut last_failure_reason: Option<String> = None;
     loop {
         // Auth gate. A logged-out (or entirely missing) `claude` exits the
         // instant it's spawned, which the relay can't distinguish from a crash
@@ -549,10 +583,22 @@ pub async fn run_session_bridge(
                 }
                 if !already_closed {
                     error!(session = %tug_session_id, "crash budget exhausted");
+                    // Fold the last spawn's stderr (or spawn error) into the
+                    // detail so the card shows *why* the subprocess died. The
+                    // first line stays `crash_budget_exhausted` (the strip
+                    // summary + the token existing consumers match on); any
+                    // captured diagnostic follows on subsequent lines and the
+                    // client routes it to the error detail panel.
+                    let detail = match &last_failure_reason {
+                        Some(reason) if !reason.is_empty() => {
+                            format!("crash_budget_exhausted\n{reason}")
+                        }
+                        _ => "crash_budget_exhausted".to_string(),
+                    };
                     let _ = state_tx.send(build_session_state_frame(
                         &tug_session_id,
                         "errored",
-                        Some("crash_budget_exhausted"),
+                        Some(detail.as_str()),
                     ));
                 }
                 return;
@@ -597,6 +643,7 @@ pub async fn run_session_bridge(
             Ok(c) => c,
             Err(e) => {
                 error!(session = %tug_session_id, error = %e, "failed to spawn tugcode");
+                last_failure_reason = Some(format!("spawn failed: {e}"));
                 ledger_entry.lock().await.crash_budget.record_crash();
                 tokio::select! {
                     _ = sleep(retry_delay) => continue,
@@ -622,6 +669,11 @@ pub async fn run_session_bridge(
         )
         .await;
 
+        // Hold a handle to this spawn's captured stderr before the child
+        // drops, so the crash arm below can snapshot the tail as the
+        // failure reason.
+        let stderr_tail = Arc::clone(&child.stderr_tail);
+
         // `child._keepalive` (holding tokio::process::Child) drops here at end
         // of iteration if we fall through. `kill_on_drop(true)` cleans up.
         drop(child._keepalive);
@@ -643,6 +695,16 @@ pub async fn run_session_bridge(
                     tug_session_id = %tug_session_id,
                     outcome = "crashed",
                 );
+                // Let the stderr reader drain any final line the dying child
+                // flushed after stdout closed, then snapshot the tail as the
+                // failure reason for a possible budget exhaustion next round.
+                sleep(STDERR_DRAIN_GRACE).await;
+                if let Ok(buf) = stderr_tail.lock() {
+                    if !buf.is_empty() {
+                        last_failure_reason =
+                            Some(buf.iter().cloned().collect::<Vec<_>>().join("\n"));
+                    }
+                }
                 ledger_entry.lock().await.crash_budget.record_crash();
                 info!(session = %tug_session_id, "tugcode crashed; retrying");
                 tokio::select! {
@@ -1934,6 +1996,7 @@ mod tests {
             stdin: Box::new(stdin),
             stdout: Box::new(stdout),
             _keepalive: Box::new(child),
+            stderr_tail: Arc::new(std::sync::Mutex::new(VecDeque::new())),
         };
 
         // Confirm the process is alive before the drop.

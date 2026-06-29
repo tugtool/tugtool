@@ -45,6 +45,7 @@ import type {
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { Database } from "bun:sqlite";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
@@ -55,6 +56,22 @@ import {
 } from "./replay.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
 import { isSessionHeldByOtherProcess } from "./terminal-liveness.ts";
+
+/**
+ * Resolve the `claude` executable: the user's PATH first, then the native
+ * installer's `~/.local/bin/claude` fallback — so Tug finds a `claude`
+ * installed by `claude.ai/install.sh` even when `~/.local/bin` isn't on the
+ * user's shell PATH (we don't edit their shell environment). Mirrors
+ * `claude_auth::claude_executable` on the tugcast side. Returns null when
+ * nothing is found. Resolved per spawn so a just-installed `claude` is found
+ * without relaunch.
+ */
+function resolveClaudePath(): string | null {
+  const onPath = Bun.which("claude");
+  if (onPath) return onPath;
+  const fallback = join(homedir(), ".local", "bin", "claude");
+  return existsSync(fallback) ? fallback : null;
+}
 
 /**
  * Resolve the tugplug `--plugin-dir`.
@@ -2691,9 +2708,9 @@ export class SessionManager {
     id: string | null,
     mode: "session-id" | "resume",
   ): ClaudeSubprocess {
-    const claudePath = Bun.which("claude");
+    const claudePath = resolveClaudePath();
     if (!claudePath) {
-      throw new Error("claude CLI not found on PATH");
+      throw new Error("claude CLI not found (PATH or ~/.local/bin)");
     }
 
     const args = buildClaudeArgs({
@@ -5830,8 +5847,8 @@ export class SessionManager {
   async handleSessionFork(): Promise<void> {
     await this.killAndCleanup();
 
-    const claudePath = Bun.which("claude");
-    if (!claudePath) throw new Error("claude CLI not found on PATH");
+    const claudePath = resolveClaudePath();
+    if (!claudePath) throw new Error("claude CLI not found (PATH or ~/.local/bin)");
 
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),
@@ -5868,8 +5885,8 @@ export class SessionManager {
   async handleSessionContinue(): Promise<void> {
     await this.killAndCleanup();
 
-    const claudePath = Bun.which("claude");
-    if (!claudePath) throw new Error("claude CLI not found on PATH");
+    const claudePath = resolveClaudePath();
+    if (!claudePath) throw new Error("claude CLI not found (PATH or ~/.local/bin)");
 
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),

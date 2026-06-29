@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,13 @@ import {
   buildSkillsInventory,
   readFrontmatterField,
 } from "../skills-inventory.ts";
+import { initTokenizer } from "../tokenizer.ts";
+
+// `buildSkillsInventory` counts frontmatter tokens via the real tiktoken
+// encoder, which must be instantiated before the first `countTokens` call.
+beforeAll(async () => {
+  await initTokenizer();
+});
 
 let scratchDirs: string[] = [];
 

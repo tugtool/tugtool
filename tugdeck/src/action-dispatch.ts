@@ -46,7 +46,7 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
-import { applyAuthResultPayload } from "./lib/auth-store";
+import { applyAuthResultPayload, applyInstallResultPayload } from "./lib/auth-store";
 import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
 import { notifySpawnRejected } from "./lib/dev-session-restore";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
@@ -273,6 +273,12 @@ export function initActionDispatch(
   // app-wide sign-in sheet, the picker gate, and the per-card banner all read.
   registerAction("claude_auth_result", (payload) => {
     applyAuthResultPayload(payload);
+  });
+
+  // claude_install_result: outcome of a Tug-managed `install_claude` (the
+  // re-probe arrives separately as claude_auth_result).
+  registerAction("claude_install_result", (payload) => {
+    applyInstallResultPayload(payload);
   });
 
   // reload: Reload page with dedup guard.

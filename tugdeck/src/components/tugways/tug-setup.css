@@ -1,0 +1,84 @@
+/*
+ * TugSetup wizard body. The modal chrome (overlay, panel, shadow, z-index)
+ * comes from the inherited `tug-alert-content`/`tug-alert-overlay` classes;
+ * this file styles only the wizard's title and step list. Steps inherit text
+ * color from the panel (no color-setting rules → no @tug-renders-on needed); a
+ * pending step dims via opacity.
+ */
+
+.tug-setup {
+  text-align: left;
+}
+
+.tug-setup-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.tug-setup-subtitle {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0 0 20px;
+  opacity: 0.7;
+}
+
+.tug-setup-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.tug-setup-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.tug-setup-step[data-status="pending"] {
+  opacity: 0.45;
+}
+
+.tug-setup-step-mark {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.tug-setup-step-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.tug-setup-step-label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.tug-setup-step-detail {
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.8;
+}
+
+.tug-setup-step-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.tug-setup-step-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}

@@ -40,10 +40,34 @@ const AUTH_ENV_VARS: [&str; 3] = [
     "CLAUDE_CODE_OAUTH_TOKEN",
 ];
 
-/// A `claude` command with the Anthropic auth env vars scrubbed. Resolved from
-/// PATH (the app forwards the user's full shell PATH to tugcast).
+/// Resolve the `claude` executable: the user's PATH first, then the native
+/// installer's `~/.local/bin/claude` as a fallback. This lets Tug find a
+/// `claude` installed by `claude.ai/install.sh` even when the user hasn't added
+/// `~/.local/bin` to their shell PATH — we don't edit their shell environment.
+/// Resolved fresh on every call so a just-installed `claude` is found without
+/// relaunch. Returns the bare name when nothing is found, so the spawn fails
+/// with `NotFound` and [`probe`] maps it to [`AuthState::ClaudeMissing`].
+pub fn claude_executable() -> std::ffi::OsString {
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join("claude");
+            if candidate.is_file() {
+                return candidate.into_os_string();
+            }
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let candidate = std::path::Path::new(&home).join(".local/bin/claude");
+        if candidate.is_file() {
+            return candidate.into_os_string();
+        }
+    }
+    std::ffi::OsString::from("claude")
+}
+
+/// A `claude` command with the Anthropic auth env vars scrubbed.
 fn claude_command(args: &[&str]) -> Command {
-    let mut cmd = Command::new("claude");
+    let mut cmd = Command::new(claude_executable());
     cmd.args(args);
     for var in AUTH_ENV_VARS {
         cmd.env_remove(var);
@@ -99,6 +123,29 @@ fn parse_status(stdout: &str) -> AuthState {
 pub async fn login() -> AuthState {
     let _ = claude_command(&["auth", "login"]).status().await;
     probe().await
+}
+
+/// Run the official Claude Code installer (`curl -fsSL https://claude.ai/
+/// install.sh | bash`) and return `(ok, error_message)`. The native installer
+/// drops `claude` in `~/.local/bin` without editing the shell PATH; Tug finds
+/// it via [`claude_executable`]'s fallback, so no shell-environment change is
+/// needed. Tug manages the install itself rather than asking the user to run
+/// commands.
+pub async fn install() -> (bool, Option<String>) {
+    match Command::new("bash")
+        .arg("-c")
+        .arg("curl -fsSL https://claude.ai/install.sh | bash")
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => (true, None),
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let detail = stderr.trim().lines().last().unwrap_or("install failed");
+            (false, Some(detail.to_string()))
+        }
+        Err(e) => (false, Some(e.to_string())),
+    }
 }
 
 #[cfg(test)]

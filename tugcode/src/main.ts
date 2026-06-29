@@ -9,6 +9,7 @@ import { isPermissionMode, type PermissionMode } from "./permissions.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
+import { initTokenizer } from "./tokenizer.ts";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -206,6 +207,12 @@ process.on("SIGHUP", () => shutdownOnSignal("SIGHUP"));
 // the live claude subprocess doesn't keep Bun's event loop alive and
 // leave tugcode running as an orphan.
 async function main() {
+  // Build the Claude tokenizer (embedded tiktoken wasm) before any session
+  // handling so the synchronous `countTokens` in the context breakdown /
+  // skills inventory has its encoder ready. See `tokenizer.ts` for why this
+  // is an explicit init rather than an import-time side effect.
+  await initTokenizer();
+
   // Stub-replay mode: load the transcript up front so a malformed
   // file fails fast (before the harness has issued protocol_init).
   // The engine doesn't emit anything until protocol_init arrives.

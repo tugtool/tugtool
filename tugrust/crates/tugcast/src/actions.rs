@@ -16,16 +16,25 @@ fn broadcast_auth_result(
     tug_session_id: Option<String>,
 ) {
     use crate::feeds::claude_auth::AuthState;
-    let (logged_in, email, subscription_type, auth_method) = match state {
-        AuthState::LoggedIn(info) => {
-            (true, info.email, info.subscription_type, info.auth_method)
-        }
-        _ => (false, None, None, None),
+    // `reason` distinguishes the two signed-out cases so the gate can show
+    // install guidance vs. a sign-in prompt: "claude_missing" (no CLI) vs
+    // "logged_out" (CLI present, not signed in). `null` when logged in.
+    let (logged_in, email, subscription_type, auth_method, reason) = match state {
+        AuthState::LoggedIn(info) => (
+            true,
+            info.email,
+            info.subscription_type,
+            info.auth_method,
+            None,
+        ),
+        AuthState::ClaudeMissing => (false, None, None, None, Some("claude_missing")),
+        AuthState::LoggedOut => (false, None, None, None, Some("logged_out")),
     };
     let Some(cat) = cat else { return };
     let body = serde_json::json!({
         "action": "claude_auth_result",
         "loggedIn": logged_in,
+        "reason": reason,
         "tug_session_id": tug_session_id,
         "email": email,
         "subscriptionType": subscription_type,
@@ -96,6 +105,32 @@ pub async fn dispatch_action(
                 .get(&FeedId::CONTROL)
                 .map(|(tx, _)| tx.clone());
             tokio::spawn(async move {
+                let state = crate::feeds::claude_auth::probe().await;
+                broadcast_auth_result(cat, state, None);
+            });
+        }
+        "install_claude" => {
+            // Tug-managed install: run the official installer, report the
+            // outcome, then re-probe (the installer drops `claude` in
+            // ~/.local/bin, which claude_executable() finds without a PATH
+            // edit). Spawned so dispatch returns while the install runs.
+            info!("dispatch_action: claude install requested");
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            tokio::spawn(async move {
+                let (ok, error) = crate::feeds::claude_auth::install().await;
+                if let Some(cat) = &cat {
+                    let body = serde_json::json!({
+                        "action": "claude_install_result",
+                        "ok": ok,
+                        "error": error,
+                    });
+                    if let Ok(bytes) = serde_json::to_vec(&body) {
+                        let _ = cat.send(Frame::new(FeedId::CONTROL, bytes));
+                    }
+                }
+                // Re-probe regardless — on success `claude` is now reachable.
                 let state = crate::feeds::claude_auth::probe().await;
                 broadcast_auth_result(cat, state, None);
             });

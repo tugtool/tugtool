@@ -8,6 +8,7 @@
         "@anthropic-ai/claude-agent-sdk": "^0.2.42",
         "@anthropic-ai/tokenizer": "^0.0.4",
         "bun-types": "^1.3.13",
+        "tiktoken": "^1.0.22",
         "typescript": "5.9.3",
       },
     },

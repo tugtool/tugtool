@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import {
   mkdirSync,
   mkdtempSync,
@@ -10,6 +10,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ClaudeCodeSettings } from "../claude-code-settings.ts";
+import { initTokenizer } from "../tokenizer.ts";
+
+// The token-count helpers below drive the real tiktoken encoder, which must
+// be instantiated before the first synchronous `countTokens` call.
+beforeAll(async () => {
+  await initTokenizer();
+});
 import {
   AUTOCOMPACT_BUFFER_DEFAULT_TOKENS,
   buildContextBreakdownFrame,

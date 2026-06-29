@@ -26,7 +26,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { countTokens } from "@anthropic-ai/tokenizer";
+import { countTokens } from "./tokenizer.ts";
 
 import type { ClaudeCodeSettings } from "./claude-code-settings.ts";
 import type { ContextBreakdown, ContextBreakdownCategory } from "./types.ts";

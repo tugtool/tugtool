@@ -17,7 +17,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { countTokens } from "@anthropic-ai/tokenizer";
+import { countTokens } from "./tokenizer.ts";
 
 import { extractFrontmatter } from "./context-breakdown.ts";
 import type { SkillInventoryEntry, SkillsInventory } from "./types.ts";
