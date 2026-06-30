@@ -22,21 +22,34 @@
   border: 1px solid var(--tug7-element-global-stroke-normal-muted-rest);
   border-radius: 12px;
   padding: 24px;
-  max-width: 440px;
+  max-width: 600px;
   text-align: left;
 }
 
-.cg-setup-preview-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0 0 4px;
+/* TugAlert-style header: a sizable icon left of the title + subtitle block. */
+.cg-setup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 20px;
 }
 
-.cg-setup-preview-subtitle {
-  font-size: 13px;
-  line-height: 1.45;
-  margin: 0 0 20px;
-  opacity: 0.7;
+.cg-setup-icon {
+  flex: 0 0 auto;
+  color: var(--tug7-element-tone-text-normal-action-rest);
+}
+
+.cg-setup-preview-title {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* Match the isolated step-row section to the simulated-flow row width: same
+ * max-width + horizontal padding as the preview panel's inner content. */
+.cg-setup-rows-frame {
+  max-width: 600px;
+  padding: 0 24px;
 }
 
 /* ---- Step list ---------------------------------------------------------- */
@@ -47,29 +60,40 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--tugx-block-stack-gap);
 }
 
+/* Each step is its own little job — a rounded plinth on the same surface the
+ * transcript's block renderers use, so the background does the grouping and a
+ * CTA can hang on the right. A disabled (not hidden) CTA on busy keeps the
+ * right side from emptying out and the row height stable. */
 .cg-setup-step {
   display: flex;
   gap: 12px;
+  /* Top-aligned so the dot and CTA sit on the LABEL row, not centered against
+   * the two-line label+detail block. Symmetric padding (no oversized
+   * min-height) keeps the content vertically centered in the plinth instead of
+   * hugging the top. */
   align-items: flex-start;
+  padding: var(--tug-space-md);
+  background: var(--tugx-block-surface);
+  border-radius: var(--tugx-block-chrome-radius);
 }
 
 .cg-setup-step[data-status="pending"] {
-  opacity: 0.45;
+  opacity: 0.5;
 }
 
 .cg-setup-step-dot {
   flex: 0 0 auto;
-  /* Nudge the dot onto the label's cap-height line. */
+  /* Center the 14px dot on the label's first text line (line-height ≈ 20px). */
   margin-top: 3px;
 }
 
 .cg-setup-step-main {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
@@ -81,41 +105,20 @@
 }
 
 .cg-setup-step-detail {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
   opacity: 0.8;
 }
 
-.cg-setup-step-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 2px;
+.cg-setup-step-action {
+  flex: 0 0 auto;
+  /* Center the CTA against the full row (label + detail), while the dot stays
+   * pinned to the label line above. */
+  align-self: center;
 }
 
-/* ---- Transport-down takeover -------------------------------------------- */
-
-.cg-setup-takeover {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 8px 0;
-}
-
-.cg-setup-takeover-main {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* ---- BlockChrome comparison --------------------------------------------- */
-
-.cg-setup-block-compare {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 560px;
-}
-
-.cg-setup-block-body {
-  padding: 4px 0;
+/* Big green success check that takes the button's place on a completed step. */
+.cg-setup-step-check {
+  display: block;
+  color: var(--tug7-element-tone-text-normal-success-rest);
 }

@@ -22,6 +22,7 @@
  */
 
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import { CircleCheck, Rocket } from "lucide-react";
 import { type ReactElement, useEffect, useState, useSyncExternalStore } from "react";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { authStore, useAuth } from "@/lib/auth-store";
@@ -98,18 +99,24 @@ function StepRow({
       <div className="tug-setup-step-main">
         <span className="tug-setup-step-label">{label}</span>
         {detail && <span className="tug-setup-step-detail">{detail}</span>}
-        {cta && status !== "busy" && (
-          <div className="tug-setup-step-actions">
-            <TugPushButton
-              emphasis={status === "error" ? "outlined" : "filled"}
-              role={status === "error" ? "danger" : "action"}
-              onClick={cta.onClick}
-            >
-              {cta.label}
-            </TugPushButton>
-          </div>
-        )}
       </div>
+      {status === "done" ? (
+        <div className="tug-setup-step-action">
+          <CircleCheck className="tug-setup-step-check" size={28} aria-hidden="true" />
+        </div>
+      ) : cta ? (
+        <div className="tug-setup-step-action">
+          <TugPushButton
+            size="sm"
+            emphasis={status === "error" ? "outlined" : "filled"}
+            role={status === "error" ? "danger" : "action"}
+            disabled={status === "busy"}
+            onClick={cta.onClick}
+          >
+            {cta.label}
+          </TugPushButton>
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -191,7 +198,13 @@ export function TugSetup(): ReactElement {
   };
 
   const claudeStep: Step = installing
-    ? { key: "install", status: "busy", label: "Claude Code installed", detail: "Installing Claude Code…" }
+    ? {
+        key: "install",
+        status: "busy",
+        label: "Claude Code installed",
+        detail: "This can take a moment.",
+        cta: { label: "Installing…", onClick: handleInstall },
+      }
     : installError
       ? {
           key: "install",
@@ -213,7 +226,13 @@ export function TugSetup(): ReactElement {
   const signInStep: Step = claudeMissing
     ? { key: "signin", status: "pending", label: "Sign in to Claude" }
     : signingIn
-      ? { key: "signin", status: "busy", label: "Sign in to Claude", detail: "Finish signing in in your browser…" }
+      ? {
+          key: "signin",
+          status: "busy",
+          label: "Sign in to Claude",
+          detail: "Finish signing in in your browser…",
+          cta: { label: "Signing in…", onClick: handleSignIn },
+        }
       : effectiveLoggedIn
         ? {
             key: "signin",
@@ -233,16 +252,16 @@ export function TugSetup(): ReactElement {
     ? {
         key: "open",
         status: "active",
-        label: "Open your first session",
-        detail: "Open your first Dev card to start.",
+        label: "Start a Claude Code session",
+        detail: "Open a Dev card to get started",
         cta: { label: "Open a Dev Card", onClick: handleOpenSession },
       }
-    : { key: "open", status: "pending", label: "Open your first session" };
+    : { key: "open", status: "pending", label: "Start a Claude Code session" };
 
   const probingSteps: Step[] = [
     { key: "install", status: "busy", label: "Claude Code installed", detail: "Looking for Claude Code…" },
     { key: "signin", status: "pending", label: "Sign in to Claude" },
-    { key: "open", status: "pending", label: "Open your first session" },
+    { key: "open", status: "pending", label: "Start a Claude Code session" },
   ];
 
   const steps: Step[] = probing
@@ -256,18 +275,15 @@ export function TugSetup(): ReactElement {
         <AlertDialog.Content
           className="tug-alert-content tug-setup"
           data-slot="tug-setup"
+          aria-describedby={undefined}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          <AlertDialog.Title className="tug-setup-title">
-            Set up Tug
-          </AlertDialog.Title>
-          <AlertDialog.Description className="tug-setup-subtitle" asChild>
-            <p>
-              {probing
-                ? "Checking your setup…"
-                : "A couple of steps to get your AI IDE ready."}
-            </p>
-          </AlertDialog.Description>
+          <div className="tug-setup-header">
+            <Rocket className="tug-setup-icon" size={32} aria-hidden="true" />
+            <AlertDialog.Title className="tug-setup-title">
+              Set up Tug
+            </AlertDialog.Title>
+          </div>
 
           <ol className="tug-setup-steps">
             {steps.map((step) => (

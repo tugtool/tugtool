@@ -6,21 +6,30 @@
  * pending step dims via opacity.
  */
 
-.tug-setup {
+/* Wider than the default alert (460px): the step rows are horizontal plinths
+ * with a CTA hung on the right, so they want the extra horizontal room. */
+.tug-alert-content.tug-setup {
   text-align: left;
+  max-width: 560px;
+}
+
+/* TugAlert-style header: the rocket icon vertically centered with the title. */
+.tug-setup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 20px;
+}
+
+.tug-setup-icon {
+  flex: 0 0 auto;
+  color: var(--tug7-element-tone-text-normal-action-rest);
 }
 
 .tug-setup-title {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
-  margin: 0 0 4px;
-}
-
-.tug-setup-subtitle {
-  font-size: 13px;
-  line-height: 1.45;
-  margin: 0 0 20px;
-  opacity: 0.7;
+  margin: 0;
 }
 
 .tug-setup-steps {
@@ -29,29 +38,40 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--tugx-block-stack-gap);
 }
 
+/* Each step is its own little job — a rounded plinth on the same surface the
+ * transcript's block renderers use ([D105]). The background does the grouping,
+ * so the CTA hangs on the right of the label/detail; a fixed min-height keeps
+ * the row from hopping as it moves active → busy → done. */
 .tug-setup-step {
   display: flex;
   gap: 12px;
+  /* Top-aligned so the dot and CTA sit on the LABEL row, not centered against
+   * the two-line label+detail block. Symmetric padding (no oversized
+   * min-height) keeps the content vertically centered in the plinth instead of
+   * hugging the top. */
   align-items: flex-start;
+  padding: var(--tug-space-md);
+  background: var(--tugx-block-surface);
+  border-radius: var(--tugx-block-chrome-radius);
 }
 
 .tug-setup-step[data-status="pending"] {
-  opacity: 0.45;
+  opacity: 0.5;
 }
 
 .tug-setup-step-dot {
   flex: 0 0 auto;
-  /* Nudge the dot onto the label's cap-height line. */
+  /* Center the 14px dot on the label's first text line (line-height ≈ 20px). */
   margin-top: 3px;
 }
 
 .tug-setup-step-main {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
@@ -63,13 +83,21 @@
 }
 
 .tug-setup-step-detail {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
   opacity: 0.8;
 }
 
-.tug-setup-step-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 2px;
+.tug-setup-step-action {
+  flex: 0 0 auto;
+  /* Center the CTA against the full row (label + detail), while the dot stays
+   * pinned to the label line above. */
+  align-self: center;
+}
+
+/* Big green success check that takes the button's place on a completed step,
+ * keeping the row's left-right balance. */
+.tug-setup-step-check {
+  display: block;
+  color: var(--tug7-element-tone-text-normal-success-rest);
 }

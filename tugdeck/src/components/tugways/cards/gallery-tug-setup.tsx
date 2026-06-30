@@ -15,17 +15,15 @@
  *      happy path and the unhappy branches ([#step-10] preview), rendered inside
  *      a panel that mimics the real wizard body.
  *
- * The step row is the open design question: a `pulsing-dot` on the left, a
- * requirement / direction line, a detail message for state / progress /
- * completion, and a CTA. We want to know whether the transcript block shell
- * (`BlockChrome`) can do this job or whether a bespoke row is cleaner — so a
- * third section renders the same step content through `BlockChrome` for a
- * side-by-side read. Nothing here touches the real `authStore`.
+ * The step row is a bespoke row: a `pulsing-dot` on the left, a requirement /
+ * direction line, a detail message for state / progress / completion, and a CTA
+ * (or a success check) on the right. Nothing here touches the real `authStore`.
  *
  * @module components/tugways/cards/gallery-tug-setup
  */
 
 import React, { useState } from "react";
+import { CircleCheck, Rocket } from "lucide-react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -35,7 +33,6 @@ import {
   type TugProgressIndicatorRole,
   type TugProgressIndicatorState,
 } from "@/components/tugways/tug-progress-indicator";
-import { BlockChrome } from "./blocks/block-chrome";
 import "./gallery.css";
 import "./gallery-tug-setup.css";
 
@@ -110,18 +107,24 @@ function SetupStepRow({ step }: { step: SetupStepModel }): React.ReactElement {
         {step.detail && (
           <span className="cg-setup-step-detail">{step.detail}</span>
         )}
-        {step.cta && step.status !== "busy" && (
-          <div className="cg-setup-step-actions">
-            <TugPushButton
-              emphasis={step.status === "error" ? "outlined" : "filled"}
-              role={step.status === "error" ? "danger" : "action"}
-              onClick={step.cta.onClick}
-            >
-              {step.cta.label}
-            </TugPushButton>
-          </div>
-        )}
       </div>
+      {step.status === "done" ? (
+        <div className="cg-setup-step-action">
+          <CircleCheck className="cg-setup-step-check" size={28} aria-hidden />
+        </div>
+      ) : step.cta ? (
+        <div className="cg-setup-step-action">
+          <TugPushButton
+            size="sm"
+            emphasis={step.status === "error" ? "outlined" : "filled"}
+            role={step.status === "error" ? "danger" : "action"}
+            disabled={step.status === "busy"}
+            onClick={step.cta.onClick}
+          >
+            {step.cta.label}
+          </TugPushButton>
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -133,7 +136,7 @@ function SetupStepRow({ step }: { step: SetupStepModel }): React.ReactElement {
 const ISOLATED_STEPS: SetupStepModel[] = [
   {
     key: "pending",
-    label: "Open your first session",
+    label: "Start a Claude Code session",
     detail: "Waiting on the steps above.",
     status: "pending",
   },
@@ -149,6 +152,7 @@ const ISOLATED_STEPS: SetupStepModel[] = [
     label: "Sign in to Claude",
     detail: "Finish signing in in your browser…",
     status: "busy",
+    cta: { label: "Signing in…" },
   },
   {
     key: "error",
@@ -195,9 +199,6 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
 ];
 
 interface FlowModel {
-  subtitle: string;
-  /** When set, the wizard body is replaced by a calm full-panel message. */
-  takeover?: { title: string; detail: string };
   steps: SetupStepModel[];
 }
 
@@ -219,17 +220,14 @@ function buildFlow(
   });
   const open = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
     key: "open",
-    label: "Open your first session",
+    label: "Start a Claude Code session",
     status: "pending",
     ...overrides,
   });
 
-  const sub = "A couple of steps to get your AI IDE ready.";
-
   switch (scenario) {
     case "probing":
       return {
-        subtitle: "Checking your setup…",
         steps: [
           install({ status: "busy", detail: "Looking for Claude Code…" }),
           signin({}),
@@ -238,7 +236,6 @@ function buildFlow(
       };
     case "fresh":
       return {
-        subtitle: sub,
         steps: [
           install({
             status: "active",
@@ -251,16 +248,18 @@ function buildFlow(
       };
     case "installing":
       return {
-        subtitle: sub,
         steps: [
-          install({ status: "busy", detail: "Installing Claude Code…" }),
+          install({
+            status: "busy",
+            detail: "This can take a moment.",
+            cta: { label: "Installing…", onClick: () => {} },
+          }),
           signin({}),
           open({}),
         ],
       };
     case "install_failed":
       return {
-        subtitle: sub,
         steps: [
           install({
             status: "error",
@@ -273,7 +272,6 @@ function buildFlow(
       };
     case "signed_out":
       return {
-        subtitle: sub,
         steps: [
           install({ status: "done", detail: "Claude Code is ready." }),
           signin({
@@ -286,16 +284,18 @@ function buildFlow(
       };
     case "signing_in":
       return {
-        subtitle: sub,
         steps: [
           install({ status: "done", detail: "Claude Code is ready." }),
-          signin({ status: "busy", detail: "Finish signing in in your browser…" }),
+          signin({
+            status: "busy",
+            detail: "Finish signing in in your browser…",
+            cta: { label: "Signing in…", onClick: () => {} },
+          }),
           open({}),
         ],
       };
     case "signin_failed":
       return {
-        subtitle: sub,
         steps: [
           install({ status: "done", detail: "Claude Code is ready." }),
           signin({
@@ -308,34 +308,34 @@ function buildFlow(
       };
     case "ready_to_open":
       return {
-        subtitle: "You're all set.",
         steps: [
           install({ status: "done", detail: "Claude Code is ready." }),
           signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max subscription." }),
           open({
             status: "active",
-            detail: "Open your first Dev card to start.",
+            detail: "Open a Dev card to get started",
             cta: { label: "Open a Dev Card", onClick: () => go("complete") },
           }),
         ],
       };
     case "complete":
       return {
-        subtitle: "You're all set.",
         steps: [
           install({ status: "done", detail: "Claude Code is ready." }),
           signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max subscription." }),
-          open({ status: "done", detail: "Opening your first session…" }),
+          open({ status: "done", detail: "Opening Dev card…" }),
         ],
       };
     case "transport_down":
       return {
-        subtitle: sub,
-        takeover: {
-          title: "Reconnecting…",
-          detail: "Lost the connection to Tug. Setup will resume automatically.",
-        },
-        steps: [],
+        steps: [
+          {
+            key: "reconnect",
+            label: "Reconnecting…",
+            detail: "Lost the connection to Tug. Setup will resume automatically.",
+            status: "busy",
+          },
+        ],
       };
   }
 }
@@ -370,62 +370,15 @@ function WizardPreview({
 }): React.ReactElement {
   return (
     <div className="cg-setup-preview-panel" data-slot="setup-preview">
-      <div className="cg-setup-preview-title">Set up Tug</div>
-      <div className="cg-setup-preview-subtitle">{flow.subtitle}</div>
-      {flow.takeover ? (
-        <div className="cg-setup-takeover">
-          <TugProgressIndicator
-            variant="pulsing-dot"
-            size={DOT_SIZE}
-            role="caution"
-            state="running"
-            aria-hidden
-          />
-          <div className="cg-setup-takeover-main">
-            <span className="cg-setup-step-label">{flow.takeover.title}</span>
-            <span className="cg-setup-step-detail">{flow.takeover.detail}</span>
-          </div>
-        </div>
-      ) : (
-        <ol className="cg-setup-steps">
-          {flow.steps.map((step) => (
-            <SetupStepRow key={step.key} step={step} />
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Section 3 — BlockChrome comparison
-// ---------------------------------------------------------------------------
-
-function BlockChromeComparison(): React.ReactElement {
-  return (
-    <div className="cg-setup-block-compare">
-      <BlockChrome
-        toolName="Sign in to Claude"
-        status="streaming"
-        command="Tug runs sessions with your Claude subscription."
-      >
-        <div className="cg-setup-block-body">
-          <TugPushButton emphasis="filled" role="action">
-            Sign In
-          </TugPushButton>
-        </div>
-      </BlockChrome>
-      <BlockChrome
-        toolName="Claude Code installed"
-        status="ready"
-        command="Claude Code is ready."
-      >
-        <div className="cg-setup-block-body">
-          <TugLabel size="2xs" emphasis="calm">
-            (BlockChrome body — done state)
-          </TugLabel>
-        </div>
-      </BlockChrome>
+      <div className="cg-setup-header">
+        <Rocket className="cg-setup-icon" size={32} aria-hidden />
+        <div className="cg-setup-preview-title">Set up Tug</div>
+      </div>
+      <ol className="cg-setup-steps">
+        {flow.steps.map((step) => (
+          <SetupStepRow key={step.key} step={step} />
+        ))}
+      </ol>
     </div>
   );
 }
@@ -455,24 +408,13 @@ export function GalleryTugSetup(): React.ReactElement {
         <TugLabel className="cg-section-title">
           Step-row states (bespoke row)
         </TugLabel>
-        <ol className="cg-setup-steps">
-          {ISOLATED_STEPS.map((step) => (
-            <SetupStepRow key={step.key} step={step} />
-          ))}
-        </ol>
-      </div>
-
-      <TugSeparator />
-
-      <div className="cg-section">
-        <TugLabel className="cg-section-title">
-          Same content via BlockChrome (transcript shell)
-        </TugLabel>
-        <TugLabel size="2xs" emphasis="calm">
-          Side-by-side read: does the transcript block shell fit a setup step, or
-          is the bespoke row cleaner?
-        </TugLabel>
-        <BlockChromeComparison />
+        <div className="cg-setup-rows-frame">
+          <ol className="cg-setup-steps">
+            {ISOLATED_STEPS.map((step) => (
+              <SetupStepRow key={step.key} step={step} />
+            ))}
+          </ol>
+        </div>
       </div>
     </div>
   );
