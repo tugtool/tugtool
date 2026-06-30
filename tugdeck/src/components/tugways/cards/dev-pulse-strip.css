@@ -24,11 +24,27 @@
    * single line centers vertically and the legend + text — same font-size,
    * same line box — share ONE baseline. Tall typeset math crops (overflow)
    * rather than moving layout. */
-  --dev-pulse-strip-height: 32px;
+  --dev-pulse-strip-height: 34px;
   --dev-pulse-strip-font-size: 0.75rem;
   /* The legend matches the Z2 status labels' size exactly; the line text
    * keeps its own larger size. */
   --dev-pulse-strip-label-size: 0.5625rem;
+  /* ── Geometry fine-tuning (one location) ──────────────────────────────
+   * Each offset nudges one element up (negative) or down (positive) from
+   * its flex-centered rest position, via translateY — so it shifts only
+   * that element and never changes the bar's height or flow. The text
+   * offset moves the whole stage, so every message (commentary, None,
+   * Done) shifts together. Bar height is --dev-pulse-strip-height above. */
+  --dev-pulse-strip-legend-offset-y: 1px;
+  --dev-pulse-strip-text-offset-y: 1px;
+  --dev-pulse-strip-spark-offset-y: 0px;
+  /* Horizontal gap between the PULSE label and the text that follows it:
+   * positive nudges the text right (away from the label), negative pulls it
+   * left (toward the label). Moves the whole stage, so every message tracks. */
+  --dev-pulse-strip-text-offset-x: -2px;
+  /* How tightly the keyboard focus ring hugs the PULSE label pill (smaller =
+   * tighter). The global default is 2px; this label wears a snugger ring. */
+  --dev-pulse-strip-legend-ring-offset: 0px;
   display: flex;
   /* Optically center the small label against the larger line text (NOT
    * baseline-aligned — that drops the small label low). */
@@ -81,6 +97,7 @@
   flex: 0 0 auto;
   cursor: pointer;
   transition: background-color 0.1s ease;
+  transform: translateY(var(--dev-pulse-strip-legend-offset-y));
 }
 
 .dev-pulse-strip-legend:hover {
@@ -95,6 +112,13 @@
   background-color: var(--tug7-surface-control-primary-ghost-accent-active);
 }
 
+/* Hug the focus ring tighter to the short PULSE pill — the global 2px offset
+   reads tubby on a 24px control. The ring still follows the pill's own
+   border-radius; only the gap shrinks (see --dev-pulse-strip-legend-ring-offset). */
+.dev-pulse-strip-legend[data-key-view-kbd] {
+  outline-offset: var(--dev-pulse-strip-legend-ring-offset);
+}
+
 /* The cross-fade stage: fills the remaining width so the text runs to the
  * strip's right padding before it ellipsizes (no character-count clip). */
 .dev-pulse-strip-stage {
@@ -102,6 +126,10 @@
   display: block;
   flex: 1 1 auto;
   min-width: 0;
+  transform: translate(
+    var(--dev-pulse-strip-text-offset-x),
+    var(--dev-pulse-strip-text-offset-y)
+  );
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
@@ -116,6 +144,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+/* The activity sparkline; flex-centered in the bar, then nudged by the
+ * spark offset token (see --dev-pulse-strip-spark-offset-y above). */
+.dev-pulse-strip-spark {
+  transform: translateY(var(--dev-pulse-strip-spark-offset-y));
 }
 
 /* The outgoing layer rides absolutely atop the incoming during the fade

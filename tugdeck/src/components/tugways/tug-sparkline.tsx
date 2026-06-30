@@ -94,13 +94,20 @@ export function TugSparkline({
     if (track === null || line === null || area === null) return;
 
     const motion = isTugMotionEnabled();
-    const baselineY = height - 0.5;
+    // The 1px line is drawn inside an overflow:hidden box. Painting the zero
+    // baseline flush at the bottom edge (height - 0.5) leaves its stroke one
+    // sub-pixel from the clip, so some bar heights / device-pixel ratios round
+    // it away. Reserve a 1px floor so the baseline and the area's bottom always
+    // stay inside the box.
+    const FLOOR = 1;
+    const baselineY = height - FLOOR - 0.5;
+    const amplitude = height - FLOOR - 1;
     const rateBins = Math.max(1, Math.round(RATE_WINDOW_MS / binMs));
     const tape: TickPoint[] = []; // append-only; points never mutated
     let t0 = Date.now();
     let anim: Animation | null = null;
 
-    const yOf = (v: number): number => height - v * (height - 1) - 0.5;
+    const yOf = (v: number): number => baselineY - v * amplitude;
 
     // The current rolling rate: sum of the most recent `rateBins` buckets.
     const sampleRate = (now: number): number => {
