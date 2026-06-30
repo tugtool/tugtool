@@ -66,6 +66,7 @@ import { usePermissionMode } from "@/lib/use-permission-mode";
 import { isPermissionMode } from "@/lib/permission-mode";
 import { openPathInOS } from "@/lib/os-open";
 import { TugPaneBanner } from "../tug-pane-banner";
+import { TugCopyBadge } from "../tug-copy-badge";
 import { group } from "../tug-animator";
 import { TugBox } from "../tug-box";
 import { TugFileChooser } from "../tug-file-chooser";
@@ -103,7 +104,7 @@ import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-s
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
-import { deriveDevCardBannerSpec, type AuthBannerVariant } from "./dev-card-banner-spec";
+import { deriveDevCardBannerSpec, humanizeErrorSummary, type AuthBannerVariant } from "./dev-card-banner-spec";
 
 // TEMP dev affordance (dev builds only): flip to "auth_required" or
 // "claude_missing" to force the Claude sign-in banner while logged in, so the
@@ -341,6 +342,7 @@ const CAUSE_LABELS: Record<BannerErrorCause, string> = {
   session_not_owned: "Session not owned",
   attachment_rejected: "Attachment rejected",
 };
+
 
 // ---------------------------------------------------------------------------
 // Props
@@ -2103,7 +2105,7 @@ function renderDevCardBanner(
         // unresponsive UI.
         minMountedMs={0}
         label={CAUSE_LABELS[spec.cause]}
-        message={summary}
+        message={humanizeErrorSummary(summary)}
         detailIcon="unplug"
         detailTitle={CAUSE_LABELS[spec.cause]}
         footer={
@@ -2116,9 +2118,19 @@ function renderDevCardBanner(
           </TugPushButton>
         }
       >
-        <p>The card can&apos;t reach its session. Dismiss to continue; close and reopen the card to retry.</p>
+        <p>
+          This card lost its session. Dismiss to keep working here, or close and
+          reopen the card to start a fresh session.
+        </p>
         {diagnostic ? (
-          <pre className="dev-card-error-diagnostic">{diagnostic}</pre>
+          <div className="dev-card-error-diagnostic-block">
+            <div className="dev-card-error-diagnostic-bar">
+              <TugCopyBadge value={diagnostic} copyLabel="Copy diagnostic">
+                Copy diagnostic
+              </TugCopyBadge>
+            </div>
+            <pre className="dev-card-error-diagnostic">{diagnostic}</pre>
+          </div>
         ) : null}
       </TugPaneBanner>
     );

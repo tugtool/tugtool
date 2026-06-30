@@ -18,9 +18,39 @@ import { describe, it, expect } from "bun:test";
 
 import {
   deriveDevCardBannerSpec,
+  humanizeErrorSummary,
   type DevCardBannerSpec,
 } from "@/components/tugways/cards/dev-card-banner-spec";
 import type { CodeSessionSnapshot } from "@/lib/code-session-store";
+
+describe("humanizeErrorSummary", () => {
+  it("maps known internal tokens to human copy", () => {
+    expect(humanizeErrorSummary("crash_budget_exhausted")).toBe(
+      "The session stopped unexpectedly and couldn't be restarted.",
+    );
+    expect(humanizeErrorSummary("resume_failed")).toBe(
+      "Tug couldn't resume the previous session.",
+    );
+  });
+
+  it("collapses a spawn-failure reason to a humane line", () => {
+    expect(humanizeErrorSummary("spawn failed: ENOENT")).toBe(
+      "Tug couldn't start the session process.",
+    );
+  });
+
+  it("never leaks an internal lower_snake_case token or empty string", () => {
+    expect(humanizeErrorSummary("")).toBe("The session ended unexpectedly.");
+    expect(humanizeErrorSummary("some_new_token")).toBe(
+      "The session ended unexpectedly.",
+    );
+  });
+
+  it("passes an already-human summary through unchanged", () => {
+    const human = "Claude exited with an unexpected error.";
+    expect(humanizeErrorSummary(human)).toBe(human);
+  });
+});
 
 function baseSnap(
   overrides: Partial<CodeSessionSnapshot> = {},

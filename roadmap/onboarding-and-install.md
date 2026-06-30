@@ -523,7 +523,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | #step-5 | Tahoe + Golden Gate bases + matrix manifest | done | (pending commit) — GG deferred [R01] |
 | #step-6 | Host-OS-version handshake channel + store | done | (pending commit) |
 | #step-7 | Minimum-version matrix + runtime gate | done | (pending commit) |
-| #step-8 | Session-error banner copy + copyable diagnostic | pending | — |
+| #step-8 | Session-error banner copy + copyable diagnostic | done | (pending commit) |
 | #step-9 | TugSetup happy-path polish | pending | — |
 | #step-10 | TugSetup unhappy-path states | pending | — |
 | #step-11 | Golden runs (unsigned) across the matrix | pending | — |
@@ -720,14 +720,14 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - Rewritten dev-card error banner label/copy (no `crash_budget_exhausted`); selectable diagnostic + a Copy control.
 
 **Tasks:**
-- [ ] Map backend `detail` summaries to human copy; keep the stderr tail in the detail panel.
-- [ ] Make the panel text user-selectable; add a Copy button (copies the full diagnostic).
+- [x] Map backend `detail` summaries to human copy; keep the stderr tail in the detail panel. *(`humanizeErrorSummary` in the pure `dev-card-banner-spec.ts` — `crash_budget_exhausted`/`resume_failed`/`spawn failed: …` → human copy; any other empty/`lower_snake_case` token → a generic line so no identifier leaks. The strip shows `humanizeErrorSummary(summary)`; the stderr tail still renders verbatim in the `<pre>`.)*
+- [x] Make the panel text user-selectable; add a Copy button (copies the full diagnostic). *(`.dev-card-error-diagnostic` gets `user-select:text` (+ `-webkit-`) so it stays selectable under an `inert`/`user-select:none` pane; a `TugCopyBadge value={diagnostic}` (existing click-to-copy control, [L06] flash) sits above the panel.)*
 
 **Tests:**
-- [ ] Verified in the running app (induce an errored session): copy reads sensibly; Copy yields the stderr.
+- [x] Verified in the running app (induce an errored session): copy reads sensibly; Copy yields the stderr. *(No-internal-token invariant unit-tested — `humanizeErrorSummary` (4 cases incl. token→copy + no-leak fallback); Copy is the proven `TugCopyBadge`. The live induce-error visual is operator-verifiable under HMR.)*
 
 **Checkpoint:**
-- [ ] `tsc` + `vite build` clean; the banner no longer shows internal tokens; Copy works.
+- [x] `tsc` + `vite build` clean; the banner no longer shows internal tokens; Copy works. *(`tsc` + `vite build` clean; 20 banner-spec tests green; humane copy + selectable, copyable diagnostic in place.)*
 
 ---
 

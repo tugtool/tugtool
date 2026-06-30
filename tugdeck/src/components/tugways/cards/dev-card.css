@@ -1128,8 +1128,18 @@
    subprocess's trailing stderr, surfaced so an operator sees *why* the
    session died. Monospace, wrapping, and independently scrollable so a
    long claude/tugcode error can't push the Dismiss footer off-screen. */
+.dev-card-error-diagnostic-block {
+  margin-top: 12px;
+}
+
+.dev-card-error-diagnostic-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
 .dev-card-error-diagnostic {
-  margin: 12px 0 0 0;
+  margin: 0;
   max-height: 220px;
   overflow: auto;
   padding: 10px 12px;
@@ -1141,5 +1151,10 @@
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* The stderr tail is meant to be read and copied: keep it selectable even
+     if an ancestor pane sets user-select:none, and show a text cursor. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 

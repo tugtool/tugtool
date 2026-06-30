@@ -119,3 +119,29 @@ export function deriveDevCardBannerSpec(
   }
   return { kind: "none" };
 }
+
+// Backend `detail` summaries (the first line of an errored session's detail)
+// are internal tokens — most notably `crash_budget_exhausted`. These map them
+// to human copy so the banner strip never surfaces an identifier; the raw
+// stderr tail still rides the diagnostic panel unchanged ([P08]).
+const ERROR_SUMMARY_COPY: Record<string, string> = {
+  crash_budget_exhausted:
+    "The session stopped unexpectedly and couldn't be restarted.",
+  resume_failed: "Tug couldn't resume the previous session.",
+};
+
+/**
+ * Map a backend error `detail` summary to human copy. Known tokens get tailored
+ * copy; a `spawn failed: …` reason collapses to a humane line; any other empty
+ * or `lower_snake_case` token falls back to a generic sentence so an internal
+ * identifier never reaches the user. An already-human summary passes through.
+ */
+export function humanizeErrorSummary(summary: string): string {
+  const key = summary.trim();
+  if (key in ERROR_SUMMARY_COPY) return ERROR_SUMMARY_COPY[key];
+  if (key.startsWith("spawn failed")) {
+    return "Tug couldn't start the session process.";
+  }
+  const looksInternal = key === "" || /^[a-z0-9_]+$/.test(key);
+  return looksInternal ? "The session ended unexpectedly." : key;
+}
