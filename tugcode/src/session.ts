@@ -12,6 +12,7 @@ import {
 } from "./control.ts";
 import {
   parseInitializeControlResponse,
+  parseClaudeVersion,
   enumeratePluginCommands,
   mergePluginCommands,
 } from "./capabilities.ts";
@@ -71,6 +72,28 @@ function resolveClaudePath(): string | null {
   if (onPath) return onPath;
   const fallback = join(homedir(), ".local", "bin", "claude");
   return existsSync(fallback) ? fallback : null;
+}
+
+/**
+ * Resolve the Claude Code CLI version by running `claude --version` (output:
+ * `"2.1.195 (Claude Code)"`) and parsing the leading semver. claude's
+ * `initialize` handshake carries no version — only the post-turn `system/init`
+ * does — so tugcode sources it locally and folds it into
+ * `session_capabilities`, making the frontend's Claude Code badge correct from
+ * the drop rather than "?" until the first turn.
+ *
+ * Best-effort: a spawn failure / unexpected output yields `null` (the badge
+ * then falls back to its last-known / post-turn value). Synchronous and cheap
+ * (one short-lived process), run once per spawn.
+ */
+function resolveClaudeCodeVersion(claudePath: string): string | null {
+  try {
+    const proc = Bun.spawnSync([claudePath, "--version"]);
+    if (!proc.success) return null;
+    return parseClaudeVersion(proc.stdout.toString());
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -2518,6 +2541,16 @@ export class SessionManager {
    */
   private initializeRequestId: string | null = null;
   /**
+   * The Claude Code CLI version (`claude --version`), resolved once per spawn
+   * and folded into the turn-free `session_capabilities` handshake so the
+   * frontend's Claude Code badge reads a real version from the drop instead of
+   * "?" until the first turn. `null` until resolved / when resolution fails.
+   * claude's `initialize` response carries no version — only the post-turn
+   * `system/init` does — so tugcode sources it locally, mirroring the bundled
+   * plugin-command augmentation.
+   */
+  private claudeCodeVersion: string | null = null;
+  /**
    * In-flight `rewind_files` control requests ([#step-7-1]), keyed by the
    * `request_id` sent to claude. Each entry carries the originating
    * `promptUuid` + the rewind dimension so the `control_response` (caught
@@ -2711,6 +2744,14 @@ export class SessionManager {
     const claudePath = resolveClaudePath();
     if (!claudePath) {
       throw new Error("claude CLI not found (PATH or ~/.local/bin)");
+    }
+
+    // Resolve the Claude Code version once per session (it is stable for a
+    // given binary). Folded into the turn-free `session_capabilities`
+    // handshake below so the frontend's Claude Code badge reads a real version
+    // from the drop.
+    if (this.claudeCodeVersion === null) {
+      this.claudeCodeVersion = resolveClaudeCodeVersion(claudePath);
     }
 
     const args = buildClaudeArgs({
@@ -4034,7 +4075,11 @@ export class SessionManager {
     // consume the line. Any other `control_response` falls through to the
     // normal path.
     if (this.initializeRequestId !== null && event.type === "control_response") {
-      const parsed = parseInitializeControlResponse(event, this.currentEffort);
+      const parsed = parseInitializeControlResponse(
+        event,
+        this.currentEffort,
+        this.claudeCodeVersion,
+      );
       if (parsed !== null && parsed.requestId === this.initializeRequestId) {
         this.initializeRequestId = null;
         // claude's turn-free handshake omits `--plugin-dir` plugin commands

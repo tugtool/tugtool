@@ -61,7 +61,11 @@ import type {
   TugTextEditingState,
 } from "@/lib/tug-text-types";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
-import type { CodeSessionPhase, CodeSessionStore } from "@/lib/code-session-store";
+import type {
+  CardSessionMode,
+  CodeSessionPhase,
+  CodeSessionStore,
+} from "@/lib/code-session-store";
 import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -454,22 +458,31 @@ export type BlockedSubmitDisposition = "drop" | "defer";
  * `canSubmit === false` and `canInterrupt === false`.
  *
  * `performSubmit` only reaches this branch in two store states:
- *  - `replaying` — the JSONL bracket owns the card; a deferred send
- *    that committed *after* replay finished would surprise the user
- *    with a dispatch they don't remember initiating. Mirrors the
- *    reducer's own `handleSend` guard. → `"drop"`.
+ *  - `replaying` — the JSONL bracket owns the card. For a `resume`-mode
+ *    card there is real prior content the user is watching replay; a
+ *    deferred send that committed *after* replay finished would surprise
+ *    them with a dispatch they don't remember initiating, so drop it
+ *    (mirrors the reducer's own `handleSend` guard). → `"drop"`.
+ *    A `new`-mode card has no prior content: it still flashes through
+ *    `replaying` because the spawn fires `request_replay` against an
+ *    absent JSONL (`replay_started → replay_complete{jsonl_missing}`),
+ *    and on a cold first launch tugcode's boot widens that window. A
+ *    first Shift+Return that lands inside it is a valid submission with
+ *    nothing to surprise — defer it like the settling case below. → `"defer"`.
  *  - `idle` / `errored` but the transport is not yet `online` — the
  *    brief settling window on a freshly-created or reconnecting card.
  *    The submission is valid; it just landed a beat early. → `"defer"`,
  *    so the entry can re-fire it the instant `canSubmit` flips true
  *    and Shift+Return (or the button) never silently no-ops.
  *
- * Pure: keyed only on the snapshot phase. Exported for the unit tests.
+ * Pure: keyed only on the snapshot phase + session mode. Exported for the
+ * unit tests.
  */
 export function classifyBlockedSubmit(
   phase: CodeSessionPhase,
+  sessionMode: CardSessionMode,
 ): BlockedSubmitDisposition {
-  return phase === "replaying" ? "drop" : "defer";
+  return phase === "replaying" && sessionMode === "resume" ? "drop" : "defer";
 }
 
 /**
@@ -1608,7 +1621,7 @@ export const TugPromptEntry = React.forwardRef<
     // and queues.
     if (!snap.canSubmit && !snap.canInterrupt) {
       if (
-        classifyBlockedSubmit(snap.phase) === "defer" &&
+        classifyBlockedSubmit(snap.phase, snap.sessionMode) === "defer" &&
         !isEffectivelyEmpty(view)
       ) {
         pendingSubmitRef.current = true;

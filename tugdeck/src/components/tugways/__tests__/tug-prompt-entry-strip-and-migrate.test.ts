@@ -240,10 +240,20 @@ describe("coerceRestorePayload — orphaned image-atom pruning", () => {
 // ---------------------------------------------------------------------------
 
 describe("classifyBlockedSubmit", () => {
-  it("drops a submit that lands while the card is replaying", () => {
-    // A deferred send that committed after replay finished would
-    // surprise the user — mirrors the reducer's `handleSend` guard.
-    expect(classifyBlockedSubmit("replaying")).toBe("drop");
+  it("drops a submit that lands while a resume card is replaying", () => {
+    // A resume card replays real prior content; a deferred send that
+    // committed after replay finished would surprise the user — mirrors
+    // the reducer's `handleSend` guard.
+    expect(classifyBlockedSubmit("replaying", "resume")).toBe("drop");
+  });
+
+  it("defers a submit that lands while a new card flashes through replaying", () => {
+    // A new card has no prior content but still flashes through
+    // `replaying` (spawn fires `request_replay` against an absent JSONL).
+    // On a cold first launch tugcode's boot widens that window, so a
+    // first Shift+Return must defer — not silently drop — and flush the
+    // instant `canSubmit` flips true.
+    expect(classifyBlockedSubmit("replaying", "new")).toBe("defer");
   });
 
   it("defers a submit blocked on an idle card (transport still settling)", () => {
@@ -251,11 +261,12 @@ describe("classifyBlockedSubmit", () => {
     // phase idle/errored with the transport not yet online — the
     // settling window on a fresh / reconnecting card. The submission
     // is valid; it should flush the instant `canSubmit` flips true.
-    expect(classifyBlockedSubmit("idle")).toBe("defer");
+    expect(classifyBlockedSubmit("idle", "new")).toBe("defer");
+    expect(classifyBlockedSubmit("idle", "resume")).toBe("defer");
   });
 
   it("defers a submit blocked on an errored card (transport still settling)", () => {
-    expect(classifyBlockedSubmit("errored")).toBe("defer");
+    expect(classifyBlockedSubmit("errored", "resume")).toBe("defer");
   });
 });
 

@@ -487,6 +487,16 @@ export interface SessionCapabilities {
    * carries no current-effort field — is the authority for this value.
    */
   effort: string | null;
+  /**
+   * The Claude Code CLI version (e.g. `"2.1.195"`), or `null` when it could
+   * not be resolved. claude's `initialize` response does NOT carry a version
+   * (only the post-turn `system/init` does), so tugcode sources it locally by
+   * running `claude --version` at spawn and folds it into the handshake — the
+   * same locally-augmented-handshake pattern as the bundled plugin commands.
+   * This makes the frontend's Claude Code badge correct from the drop instead
+   * of showing "?" until the first turn.
+   */
+  version: string | null;
   ipc_version: number;
 }
 

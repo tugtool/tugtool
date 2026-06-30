@@ -601,6 +601,31 @@ describe("SessionMetadataStore handshake command catalog (from the drop)", () =>
     store.dispose();
   });
 
+  test("session_capabilities `version` populates the badge version from the drop", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    // tugcode folds `claude --version` into the handshake so the Claude Code
+    // badge reads a real version before any turn (instead of "?").
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      models: [],
+      commands: [],
+      version: "2.1.195",
+    });
+    expect(store.getSnapshot().version).toBe("2.1.195");
+
+    // The post-turn system_metadata version sharpens (wins over) the handshake
+    // one once a turn confirms claude's own reported version.
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      version: "2.1.196",
+    });
+    expect(store.getSnapshot().version).toBe("2.1.196");
+
+    store.dispose();
+  });
+
   test("a later empty system_metadata does NOT wipe the handshake catalog", () => {
     const feedStore = new MockFeedStore();
     const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);

@@ -122,19 +122,27 @@ const EMPTY_SNAPSHOT: SessionMetadataSnapshot = {
 
 /**
  * The turn-free `initialize` handshake (`session_capabilities`) — available
- * from the drop, before any turn. Owns `models`, `effort`, and the
- * from-the-drop command catalog (`commands`).
+ * from the drop, before any turn. Owns `models`, `effort`, the from-the-drop
+ * command catalog (`commands`), and the Claude Code `version`.
+ *
+ * The version is tugcode-sourced, not from claude's `initialize` response
+ * (which carries no version — only the post-turn `system_metadata` does).
+ * tugcode runs `claude --version` at spawn and folds the result into the
+ * handshake so the version surfaces from the drop, before the first turn —
+ * the same locally-augmented-handshake pattern as the bundled plugin commands.
  */
 interface CapabilitiesRegion {
   models: CapabilityModel[];
   effort: string | null;
   commands: SlashCommandInfo[];
+  version: string | null;
 }
 
 const EMPTY_CAPABILITIES: CapabilitiesRegion = {
   models: [],
   effort: null,
   commands: [],
+  version: null,
 };
 
 /**
@@ -174,8 +182,13 @@ interface OptimisticOverrides {
  * Precedence, per field:
  * - `models` / `effort` ← capabilities (effort: optimistic wins until a fresh
  *   handshake lands).
- * - `sessionId` / `model` / `permissionMode` / `cwd` / `version` ← system
+ * - `sessionId` / `model` / `permissionMode` / `cwd` ← system
  *   (model + mode: optimistic wins until the authoritative frame lands).
+ * - `version` ← the from-the-drop handshake (`session_capabilities`),
+ *   sharpened by the post-turn `system_metadata` when it lands. The
+ *   handshake value (tugcode's `claude --version`) makes the badge correct
+ *   on the very first card; system wins once a turn confirms claude's own
+ *   reported version.
  * - `slashCommands` (the catalog — the only field both sources carry) ← the
  *   post-turn system catalog when non-empty, else the from-the-drop handshake
  *   catalog. So it is populated from the drop and sharpened post-turn, and an
@@ -194,7 +207,7 @@ function reconcileSnapshot(
     model: opt.model ?? sys?.model ?? null,
     permissionMode: opt.permissionMode ?? sys?.permissionMode ?? null,
     cwd: sys?.cwd ?? null,
-    version: sys?.version ?? null,
+    version: sys?.version ?? cap.version ?? null,
     slashCommands:
       sys && sys.slashCommands.length > 0
         ? mergeCatalogs(sys.slashCommands, cap.commands)
@@ -485,6 +498,10 @@ export class SessionMetadataStore {
         // makes the [D14] popup filter + unknown-command detection ([#step-13a])
         // work on the very first input.
         commands: parseCommandCatalog(cap.commands),
+        // tugcode's `claude --version`, folded into the handshake so the
+        // Claude Code badge reads a real version from the drop instead of "?"
+        // until the first turn's `system_metadata` lands.
+        version: typeof cap.version === "string" ? cap.version : null,
       };
       // The authoritative effort just landed → drop any optimistic override.
       delete this._optimistic.effort;

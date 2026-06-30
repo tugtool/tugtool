@@ -116,10 +116,17 @@ function parseCommands(value: unknown): CapabilityCommand[] {
  * caller ([#step-4]): claude's `initialize` response carries no current-effort
  * field, so tugcode — the `--effort` owner — passes in the level it spawned
  * with (`null` when no override is in force).
+ *
+ * `version` is the Claude Code CLI version, likewise supplied by the caller:
+ * the `initialize` response carries no version (only the post-turn
+ * `system/init` does), so tugcode runs `claude --version` at spawn and folds
+ * the result in here — making the frontend's Claude Code badge correct from
+ * the drop. `null` when it could not be resolved.
  */
 export function buildSessionCapabilities(
   response: unknown,
   effort: string | null = null,
+  version: string | null = null,
 ): SessionCapabilities | null {
   const obj = asObject(response);
   if (obj === null) return null;
@@ -132,8 +139,19 @@ export function buildSessionCapabilities(
     output_style: readString(obj, "output_style") ?? "",
     account: asObject(obj.account),
     effort,
+    version,
     ipc_version: 2,
   };
+}
+
+/**
+ * Parse the leading semver out of `claude --version` output, which looks like
+ * `"2.1.195 (Claude Code)\n"`. Returns the bare `"2.1.195"`, or `null` when no
+ * leading dotted-numeric version is present (an unexpected/empty output). Pure.
+ */
+export function parseClaudeVersion(output: string): string | null {
+  const match = output.trim().match(/^(\d+\.\d+\.\d+)/);
+  return match !== null ? match[1]! : null;
 }
 
 /**
@@ -148,6 +166,7 @@ export function buildSessionCapabilities(
 export function parseInitializeControlResponse(
   event: Record<string, unknown>,
   effort: string | null = null,
+  version: string | null = null,
 ): { requestId: string; capabilities: SessionCapabilities } | null {
   if (event.type !== "control_response") return null;
   const response = asObject(event.response);
@@ -155,7 +174,7 @@ export function parseInitializeControlResponse(
   if (response.subtype !== "success") return null;
   const requestId = readString(response, "request_id");
   if (requestId === null) return null;
-  const capabilities = buildSessionCapabilities(response.response, effort);
+  const capabilities = buildSessionCapabilities(response.response, effort, version);
   if (capabilities === null) return null;
   return { requestId, capabilities };
 }

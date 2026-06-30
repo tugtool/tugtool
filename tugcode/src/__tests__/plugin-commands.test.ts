@@ -94,6 +94,7 @@ describe("mergePluginCommands", () => {
       output_style: "",
       account: null,
       effort: null,
+      version: null,
       ipc_version: 2,
     };
   }

@@ -111,9 +111,10 @@ describe("buildSessionCapabilities", () => {
     expect(
       (caps as unknown as Record<string, unknown>).model,
     ).toBeUndefined();
-    expect(
-      (caps as unknown as Record<string, unknown>).version,
-    ).toBeUndefined();
+    // The version is NOT in claude's `initialize` response either — but unlike
+    // the model id, tugcode supplies it separately (from `claude --version`).
+    // With no version argument it defaults to `null`, not absent.
+    expect(caps!.version).toBeNull();
   });
 
   test("skips malformed model / command entries, never throws", () => {
