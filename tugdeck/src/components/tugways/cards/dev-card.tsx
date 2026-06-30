@@ -161,6 +161,7 @@ import { useDevCardObserver } from "./use-dev-card-observer";
 import { useMenuStatePublication } from "./use-menu-state-publication";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
+import { useHostFacts } from "@/lib/host-facts-store";
 import { putDevRecentProjects } from "@/settings-api";
 import {
   useSessionLedger,
@@ -1260,6 +1261,10 @@ function DevProjectPickerForm({
     "",
   );
 
+  // Reliable fallback for the seed when there is no Swift hint: the backend
+  // home directory (the browser can't know it). See the seed effect below.
+  const hostFacts = useHostFacts();
+
   const [path, setPath] = useState("");
   const trimmedPath = path.trim();
   const sessionLedger = useSessionLedger(trimmedPath);
@@ -1294,9 +1299,9 @@ function DevProjectPickerForm({
 
   // One-shot seed so first open isn't a dead-end: if the input is empty,
   // prefer the most-recent project (what the Recents list's old
-  // `selectionRequired` mode filled in on mount), else the Swift-provided
-  // hint. Skipped once a value is present so later tugbank ticks can't
-  // overwrite a user edit.
+  // `selectionRequired` mode filled in on mount), then the Swift-provided
+  // hint, then the backend home directory. Skipped once a value is present so
+  // later tugbank / host-facts ticks can't overwrite a user edit.
   useLayoutEffect(() => {
     if (didSeedPathRef.current) return;
     if (path !== "") {
@@ -1311,10 +1316,11 @@ function DevProjectPickerForm({
       }
       return;
     }
-    if (initialProjectPath === "") return;
+    const seed = initialProjectPath !== "" ? initialProjectPath : (hostFacts?.home ?? "");
+    if (seed === "") return;
     didSeedPathRef.current = true;
-    setPath(initialProjectPath);
-  }, [path, recents.length, initialProjectPath, recentsDataSource]);
+    setPath(seed);
+  }, [path, recents.length, initialProjectPath, hostFacts, recentsDataSource]);
 
   // Session selection. Owned here, read by cells via context. Open
   // resolves submission per [Spec S02].

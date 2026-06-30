@@ -94,16 +94,18 @@ function SetupStepRow({ step }: { step: SetupStepModel }): React.ReactElement {
   const { role, state } = dotVisual(step.status);
   return (
     <li className="cg-setup-step" data-status={step.status}>
-      <TugProgressIndicator
-        variant="pulsing-dot"
-        size={DOT_SIZE}
-        role={role}
-        state={state}
-        className="cg-setup-step-dot"
-        aria-hidden
-      />
       <div className="cg-setup-step-main">
-        <span className="cg-setup-step-label">{step.label}</span>
+        <div className="cg-setup-step-headline">
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            size={DOT_SIZE}
+            role={role}
+            state={state}
+            className="cg-setup-step-dot"
+            aria-hidden
+          />
+          <span className="cg-setup-step-label">{step.label}</span>
+        </div>
         {step.detail && (
           <span className="cg-setup-step-detail">{step.detail}</span>
         )}
@@ -150,21 +152,21 @@ const ISOLATED_STEPS: SetupStepModel[] = [
   {
     key: "busy",
     label: "Sign in to Claude",
-    detail: "Finish signing in in your browser…",
+    detail: "Use your browser to sign in…",
     status: "busy",
     cta: { label: "Signing in…" },
   },
   {
     key: "error",
-    label: "Claude Code installed",
+    label: "Install Claude Code",
     detail: "Install failed: network unreachable.",
     status: "error",
-    cta: { label: "Retry Install" },
+    cta: { label: "Retry" },
   },
   {
     key: "done",
     label: "Signed in as ken@example.com",
-    detail: "Claude Max subscription.",
+    detail: "Claude Max plan",
     status: "done",
   },
 ];
@@ -208,7 +210,7 @@ function buildFlow(
 ): FlowModel {
   const install = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
     key: "install",
-    label: "Claude Code installed",
+    label: "Install Claude Code",
     status: "pending",
     ...overrides,
   });
@@ -240,7 +242,7 @@ function buildFlow(
           install({
             status: "active",
             detail: "Tug will install it for you.",
-            cta: { label: "Install Claude Code", onClick: () => go("installing") },
+            cta: { label: "Install", onClick: () => go("installing") },
           }),
           signin({}),
           open({}),
@@ -264,7 +266,7 @@ function buildFlow(
           install({
             status: "error",
             detail: "Install failed: network unreachable.",
-            cta: { label: "Retry Install", onClick: () => go("installing") },
+            cta: { label: "Retry", onClick: () => go("installing") },
           }),
           signin({}),
           open({}),
@@ -273,7 +275,7 @@ function buildFlow(
     case "signed_out":
       return {
         steps: [
-          install({ status: "done", detail: "Claude Code is ready." }),
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
           signin({
             status: "active",
             detail: "Tug runs sessions with your Claude subscription.",
@@ -285,10 +287,10 @@ function buildFlow(
     case "signing_in":
       return {
         steps: [
-          install({ status: "done", detail: "Claude Code is ready." }),
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
           signin({
             status: "busy",
-            detail: "Finish signing in in your browser…",
+            detail: "Use your browser to sign in…",
             cta: { label: "Signing in…", onClick: () => {} },
           }),
           open({}),
@@ -297,7 +299,7 @@ function buildFlow(
     case "signin_failed":
       return {
         steps: [
-          install({ status: "done", detail: "Claude Code is ready." }),
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
           signin({
             status: "error",
             detail: "Sign-in didn't finish. The browser may have been closed.",
@@ -309,8 +311,8 @@ function buildFlow(
     case "ready_to_open":
       return {
         steps: [
-          install({ status: "done", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max subscription." }),
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max plan" }),
           open({
             status: "active",
             detail: "Open a Dev card to get started",
@@ -321,8 +323,8 @@ function buildFlow(
     case "complete":
       return {
         steps: [
-          install({ status: "done", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max subscription." }),
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max plan" }),
           open({ status: "done", detail: "Opening Dev card…" }),
         ],
       };

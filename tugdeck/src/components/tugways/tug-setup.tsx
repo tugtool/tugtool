@@ -72,8 +72,37 @@ type StepStatus = "pending" | "active" | "busy" | "error" | "done";
 
 const DOT_SIZE = 14;
 
-/** How long to wait on a browser sign-in before offering a re-try (ms). */
-const SIGN_IN_TIMEOUT_MS = 90_000;
+/**
+ * How long to wait on a browser sign-in before offering a re-try (ms). Generous
+ * — the verification email can be slow and the user may step away — so we only
+ * give up after 10 minutes (a late `claude_auth_result` still wins).
+ */
+const SIGN_IN_TIMEOUT_MS = 600_000;
+
+/**
+ * Formal label for a Claude subscription tier (from `claude auth status`'s
+ * `subscriptionType`), for the signed-in step's detail. Returns `undefined`
+ * when unknown so the row simply omits the line — never a bare "subscription."
+ */
+function subscriptionLabel(type: string | null | undefined): string | undefined {
+  switch ((type ?? "").trim().toLowerCase()) {
+    case "":
+      return undefined;
+    case "max":
+      return "Claude Max plan";
+    case "pro":
+      return "Claude Pro plan";
+    case "team":
+      return "Claude Team plan";
+    case "enterprise":
+      return "Claude Enterprise plan";
+    case "free":
+      return "Claude Free plan";
+    default:
+      // An unrecognized tier: title-case the raw token rather than leak it raw.
+      return `Claude ${(type ?? "").trim().replace(/^\w/, (c) => c.toUpperCase())} plan`;
+  }
+}
 
 /** Map a step status onto the dot's role + state ([D02]/[D105]). */
 function dotVisual(status: StepStatus): {
@@ -108,16 +137,18 @@ function StepRow({
   const { role, state } = dotVisual(status);
   return (
     <li className="tug-setup-step" data-status={status}>
-      <TugProgressIndicator
-        variant="pulsing-dot"
-        size={DOT_SIZE}
-        role={role}
-        state={state}
-        className="tug-setup-step-dot"
-        aria-hidden
-      />
       <div className="tug-setup-step-main">
-        <span className="tug-setup-step-label">{label}</span>
+        <div className="tug-setup-step-headline">
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            size={DOT_SIZE}
+            role={role}
+            state={state}
+            className="tug-setup-step-dot"
+            aria-hidden
+          />
+          <span className="tug-setup-step-label">{label}</span>
+        </div>
         {detail && <span className="tug-setup-step-detail">{detail}</span>}
       </div>
       {status === "done" ? (
@@ -236,7 +267,7 @@ export function TugSetup(): ReactElement {
     ? {
         key: "install",
         status: "busy",
-        label: "Claude Code installed",
+        label: "Install Claude Code",
         detail: "This can take a moment.",
         cta: { label: "Installing…", onClick: handleInstall },
       }
@@ -244,17 +275,17 @@ export function TugSetup(): ReactElement {
       ? {
           key: "install",
           status: "error",
-          label: "Claude Code installed",
+          label: "Install Claude Code",
           detail: `Install failed: ${installError}`,
-          cta: { label: "Retry Install", onClick: handleInstall },
+          cta: { label: "Retry", onClick: handleInstall },
         }
       : claudeMissing
         ? {
             key: "install",
             status: "active",
-            label: "Claude Code installed",
+            label: "Install Claude Code",
             detail: "Tug will install it for you.",
-            cta: { label: "Install Claude Code", onClick: handleInstall },
+            cta: { label: "Install", onClick: handleInstall },
           }
         : { key: "install", status: "done", label: "Claude Code installed", detail: "Claude Code is ready." };
 
@@ -265,7 +296,7 @@ export function TugSetup(): ReactElement {
           key: "signin",
           status: "busy",
           label: "Sign in to Claude",
-          detail: "Finish signing in in your browser…",
+          detail: "Use your browser to sign in…",
           cta: { label: "Signing in…", onClick: handleSignIn },
         }
       : effectiveLoggedIn
@@ -273,7 +304,7 @@ export function TugSetup(): ReactElement {
             key: "signin",
             status: "done",
             label: account?.email ? `Signed in as ${account.email}` : "Signed in to Claude",
-            detail: account?.subscriptionType ? `${account.subscriptionType} subscription.` : undefined,
+            detail: subscriptionLabel(account?.subscriptionType),
           }
         : signInFailed
           ? {
@@ -302,7 +333,7 @@ export function TugSetup(): ReactElement {
     : { key: "open", status: "pending", label: "Start a Claude Code session" };
 
   const probingSteps: Step[] = [
-    { key: "install", status: "busy", label: "Claude Code installed", detail: "Looking for Claude Code…" },
+    { key: "install", status: "busy", label: "Install Claude Code", detail: "Looking for Claude Code…" },
     { key: "signin", status: "pending", label: "Sign in to Claude" },
     { key: "open", status: "pending", label: "Start a Claude Code session" },
   ];

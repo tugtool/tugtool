@@ -61,33 +61,29 @@
   display: flex;
   flex-direction: column;
   gap: var(--tugx-block-stack-gap);
+  /* Mirrors tug-setup.css: every row the same fixed height so the dialog never
+   * hops as a step grows. */
+  --tug-setup-row-h: 60px;
+  --tug-setup-dot: 14px;
+  --tug-setup-headline-gap: 10px;
 }
 
 /* Each step is its own little job — a rounded plinth on the same surface the
  * transcript's block renderers use, so the background does the grouping and a
- * CTA can hang on the right. A disabled (not hidden) CTA on busy keeps the
- * right side from emptying out and the row height stable. */
+ * CTA can hang on the right. Fixed-height + centered content so state changes
+ * never resize the row. */
 .cg-setup-step {
   display: flex;
   gap: 12px;
-  /* Top-aligned so the dot and CTA sit on the LABEL row, not centered against
-   * the two-line label+detail block. Symmetric padding (no oversized
-   * min-height) keeps the content vertically centered in the plinth instead of
-   * hugging the top. */
-  align-items: flex-start;
-  padding: var(--tug-space-md);
+  align-items: center;
+  min-height: var(--tug-setup-row-h);
+  padding: 0 var(--tug-space-md);
   background: var(--tugx-block-surface);
   border-radius: var(--tugx-block-chrome-radius);
 }
 
 .cg-setup-step[data-status="pending"] {
   opacity: 0.5;
-}
-
-.cg-setup-step-dot {
-  flex: 0 0 auto;
-  /* Center the 14px dot on the label's first text line (line-height ≈ 20px). */
-  margin-top: 3px;
 }
 
 .cg-setup-step-main {
@@ -98,6 +94,18 @@
   flex: 1;
 }
 
+/* Dot + label on one line so the dot rides the label even though the main block
+ * is vertically centered in the row. */
+.cg-setup-step-headline {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-setup-headline-gap);
+}
+
+.cg-setup-step-dot {
+  flex: 0 0 auto;
+}
+
 .cg-setup-step-label {
   font-size: 14px;
   font-weight: 600;
@@ -105,6 +113,7 @@
 }
 
 .cg-setup-step-detail {
+  padding-left: calc(var(--tug-setup-dot) + var(--tug-setup-headline-gap));
   font-size: 13px;
   line-height: 1.45;
   opacity: 0.8;
@@ -112,9 +121,6 @@
 
 .cg-setup-step-action {
   flex: 0 0 auto;
-  /* Center the CTA against the full row (label + detail), while the dot stays
-   * pinned to the label line above. */
-  align-self: center;
 }
 
 /* Big green success check that takes the button's place on a completed step. */

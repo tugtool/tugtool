@@ -33,6 +33,13 @@ export interface HostFacts {
    * the longer Code face) don't have to reconstruct it.
    */
   shellPath: string;
+  /**
+   * The backend user's home directory, e.g. `/Users/ken`; empty if it
+   * couldn't be resolved. The browser can't know it, so the Dev session
+   * picker seeds its Project Path from this when there is no recent project
+   * and no Swift-provided `initial-project-path` hint.
+   */
+  home: string;
 }
 
 /**
@@ -54,12 +61,13 @@ export interface HostFacts {
  */
 export function parseHostFacts(raw: unknown): HostFacts | null {
   if (raw === null || typeof raw !== "object") return null;
-  const { hostname, shell, shellPath } = raw as Record<string, unknown>;
+  const { hostname, shell, shellPath, home } = raw as Record<string, unknown>;
   if (typeof hostname !== "string" || typeof shell !== "string") return null;
   return {
     hostname,
     shell,
     shellPath: typeof shellPath === "string" ? shellPath : "",
+    home: typeof home === "string" ? home : "",
   };
 }
 

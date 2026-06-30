@@ -6,8 +6,9 @@
 //! route targets. Read-only; restricted to loopback connections like
 //! the other `/api` handlers.
 //!
-//! The response shape is fixed by Spec S01: `{ "hostname": <str>,
-//! "shell": <str>, "shellPath": <str> }`. All values are resolved once
+//! The response shape is `{ "hostname": <str>, "shell": <str>,
+//! "shellPath": <str>, "home": <str> }` (Spec S01 + the additive `home`
+//! field the Dev session picker seeds from). All values are resolved once
 //! per request from the running process's environment; host facts do
 //! not change over a server's lifetime.
 
@@ -38,6 +39,11 @@ pub(crate) struct HostFacts {
     /// already parses.
     #[serde(rename = "shellPath")]
     shell_path: String,
+    /// The user's home directory (`/Users/<name>`). Empty if it can't be
+    /// resolved. The browser can't know the backend's home, so this is the
+    /// reliable fallback the Dev session picker seeds its Project Path from
+    /// when there is no recent project and no Swift-provided hint.
+    home: String,
 }
 
 impl HostFacts {
@@ -52,6 +58,9 @@ impl HostFacts {
                 Some(shell_path.as_str())
             }),
             shell_path,
+            home: dirs::home_dir()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
         }
     }
 }
@@ -93,8 +102,8 @@ fn shell_basename(shell_path: Option<&str>) -> String {
 
 /// Handle `GET /api/host`.
 ///
-/// Returns `{ "hostname": <str>, "shell": <str>, "shellPath": <str> }`
-/// (Spec S01) with `Content-Type: application/json`. Read-only;
+/// Returns `{ "hostname": <str>, "shell": <str>, "shellPath": <str>,
+/// "home": <str> }` with `Content-Type: application/json`. Read-only;
 /// restricted to loopback connections like the other `/api` handlers.
 pub(crate) async fn get_host(ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Response {
     if !addr.ip().is_loopback() {
@@ -118,13 +127,14 @@ mod tests {
             hostname: "studio.local".to_owned(),
             shell: "zsh".to_owned(),
             shell_path: "/bin/zsh".to_owned(),
+            home: "/Users/ken".to_owned(),
         };
         let json = serde_json::to_value(&facts).expect("HostFacts serializes");
         let obj = json.as_object().expect("serializes to a JSON object");
 
-        // The three Spec S01 fields, all JSON strings; `shellPath` is
-        // serialized camelCase to match the cross-stack convention.
-        assert_eq!(obj.len(), 3);
+        // The cross-stack fields, all JSON strings; `shellPath` is serialized
+        // camelCase to match the convention `HostFactsStore` parses.
+        assert_eq!(obj.len(), 4);
         assert_eq!(
             obj.get("hostname").and_then(|v| v.as_str()),
             Some("studio.local")
@@ -134,6 +144,7 @@ mod tests {
             obj.get("shellPath").and_then(|v| v.as_str()),
             Some("/bin/zsh")
         );
+        assert_eq!(obj.get("home").and_then(|v| v.as_str()), Some("/Users/ken"));
     }
 
     #[test]

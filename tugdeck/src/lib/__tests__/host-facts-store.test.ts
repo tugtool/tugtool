@@ -32,21 +32,29 @@ describe("parseHostFacts", () => {
         hostname: "studio.local",
         shell: "zsh",
         shellPath: "/bin/zsh",
+        home: "/Users/ken",
       }),
     ).toEqual({
       hostname: "studio.local",
       shell: "zsh",
       shellPath: "/bin/zsh",
+      home: "/Users/ken",
     });
   });
 
   it("accepts an empty shell — the value sent when $SHELL is unset", () => {
     expect(
-      parseHostFacts({ hostname: "studio.local", shell: "", shellPath: "" }),
+      parseHostFacts({
+        hostname: "studio.local",
+        shell: "",
+        shellPath: "",
+        home: "/Users/ken",
+      }),
     ).toEqual({
       hostname: "studio.local",
       shell: "",
       shellPath: "",
+      home: "/Users/ken",
     });
   });
 
@@ -56,6 +64,7 @@ describe("parseHostFacts", () => {
         hostname: "studio.local",
         shell: "zsh",
         shellPath: "/bin/zsh",
+        home: "/Users/ken",
         platform: "linux",
         extra: 42,
       }),
@@ -63,17 +72,19 @@ describe("parseHostFacts", () => {
       hostname: "studio.local",
       shell: "zsh",
       shellPath: "/bin/zsh",
+      home: "/Users/ken",
     });
   });
 
-  it("treats shellPath as additive — missing falls back to empty", () => {
-    // Older tugcast servers may predate the `shellPath` field. The
-    // parser keeps producing a HostFacts so the snapshot is well-formed;
-    // the Shell-route badge then falls back to `shell` for display.
+  it("treats shellPath and home as additive — missing fall back to empty", () => {
+    // Older tugcast servers may predate the `shellPath` / `home` fields. The
+    // parser keeps producing a HostFacts so the snapshot is well-formed; the
+    // Shell-route badge falls back to `shell`, the picker to its other seeds.
     expect(parseHostFacts({ hostname: "studio.local", shell: "zsh" })).toEqual({
       hostname: "studio.local",
       shell: "zsh",
       shellPath: "",
+      home: "",
     });
   });
 
@@ -101,13 +112,19 @@ describe("parseHostFacts", () => {
 describe("HostFactsStore", () => {
   it("resolves the snapshot from a successful fetch", async () => {
     const store = new HostFactsStore(
-      okFetch({ hostname: "studio.local", shell: "zsh", shellPath: "/bin/zsh" }),
+      okFetch({
+        hostname: "studio.local",
+        shell: "zsh",
+        shellPath: "/bin/zsh",
+        home: "/Users/ken",
+      }),
     );
     await store.ready();
     expect(store.getSnapshot()).toEqual({
       hostname: "studio.local",
       shell: "zsh",
       shellPath: "/bin/zsh",
+      home: "/Users/ken",
     });
   });
 
@@ -117,6 +134,7 @@ describe("HostFactsStore", () => {
         hostname: "studio.local",
         shell: "zsh",
         shellPath: "/bin/zsh",
+        home: "/Users/ken",
         platform: "linux",
       }),
     );
@@ -125,6 +143,7 @@ describe("HostFactsStore", () => {
       hostname: "studio.local",
       shell: "zsh",
       shellPath: "/bin/zsh",
+      home: "/Users/ken",
     });
   });
 
