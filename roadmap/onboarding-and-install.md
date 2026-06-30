@@ -107,7 +107,7 @@ What we *don't* have yet: the lab is a pile of uncommitted shell scripts on an e
 
 **Resolution:** OPEN — resolved empirically in M06; seeded with defaults until then.
 
-#### [Q02] Drop Ventura/Sonoma, i.e. what is the absolute floor? (OPEN) {#q02-absolute-floor}
+#### [Q02] Drop Ventura/Sonoma, i.e. what is the absolute floor? (RESOLVED) {#q02-absolute-floor}
 
 **Question:** Do we keep nominally claiming macOS 13.0 (`LSMinimumSystemVersion`), or raise the plist floor to the lowest line we actually support (likely Sequoia 15)?
 
@@ -117,7 +117,7 @@ What we *don't* have yet: the lab is a pile of uncommitted shell scripts on an e
 
 **Plan to resolve:** Decide during [#step-6] once the matrix data model is concrete; recommend (b) with the absolute floor = lowest supported line.
 
-**Resolution:** OPEN — leaning (b); decided in M04.
+**Resolution:** RESOLVED (b), M04 — `LSMinimumSystemVersion` raised `13.0 → 15.0` (the lowest supported line, Sequoia). launchd blocks anything below macOS 15 with its own dialog (truly ancient); the Tug runtime gate covers sub-minimum minors *within* supported lines (e.g. 15.0–15.5 < the 15.6 floor) and any unsupported newer/older line. The Xcode `MACOSX_DEPLOYMENT_TARGET` stays `13.0` (compiler floor ≠ support policy — non-goal).
 
 #### [Q03] Bundled-dep parity on Tahoe / macOS 27 (OPEN) {#q03-dep-parity}
 
@@ -522,7 +522,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | #step-4 | One-command inner loop (`just lab-cycle`) | done | (pending commit) |
 | #step-5 | Tahoe + Golden Gate bases + matrix manifest | done | (pending commit) — GG deferred [R01] |
 | #step-6 | Host-OS-version handshake channel + store | done | (pending commit) |
-| #step-7 | Minimum-version matrix + runtime gate | pending | — |
+| #step-7 | Minimum-version matrix + runtime gate | done | (pending commit) |
 | #step-8 | Session-error banner copy + copyable diagnostic | pending | — |
 | #step-9 | TugSetup happy-path polish | pending | — |
 | #step-10 | TugSetup unhappy-path states | pending | — |
@@ -693,18 +693,18 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - `LSMinimumSystemVersion` decision per [Q02].
 
 **Tasks:**
-- [ ] Implement the pure comparator + policy constant (seed [Q01] defaults).
-- [ ] Build the gate (TugSetup chrome; names host version + required minimum; no dismiss; `DEV` override).
-- [ ] Wire the gate→TugSetup precedence (Spec S02): TugSetup suppresses its `open` while the gate is open, so the two app-modals never stack.
-- [ ] Decide & apply the plist floor ([Q02]); add a manifest↔policy drift test.
+- [x] Implement the pure comparator + policy constant (seed [Q01] defaults). *(`macos-support.ts`: `SUPPORTED_MACOS` {15→15.6, 26→26.0, 27→27.0}, `parseMacosVersion`, `compareMacosVersion`, fail-open `isHostBelowFloor`.)*
+- [x] Build the gate (TugSetup chrome; names host version + required minimum; no dismiss; `DEV` override). *(`tug-version-gate.tsx` + `.css` — reuses `tug-alert` chrome; copy names `requiredMinimumLabel` + host version; `onEscapeKeyDown` preventDefault; `DEV_FORCE_VERSION_GATE` override.)*
+- [x] Wire the gate→TugSetup precedence (Spec S02): TugSetup suppresses its `open` while the gate is open, so the two app-modals never stack. *(Both read `useVersionGateOpen`; TugSetup `open = deriveTugSetupOpen(gateOpen, wouldOpen)`. Gate mounted as a sibling at the deck root, [L01] preserved.)*
+- [x] Decide & apply the plist floor ([Q02]); add a manifest↔policy drift test. *(`LSMinimumSystemVersion` 13.0→15.0; deployment target stays 13.0. Drift test in `macos-support.test.ts`.)*
 
 **Tests:**
-- [ ] Unit: comparator + gate-open derivation across below/at/above floor and unknown line.
-- [ ] Unit: TugSetup `open` derivation yields `false` whenever the gate is open (precedence).
-- [ ] Drift: `SUPPORTED_MACOS` matches `matrix.json` `min_version`s.
+- [x] Unit: comparator + gate-open derivation across below/at/above floor and unknown line. *(`macos-support.test.ts` — below/at/above, old-line block, future-line fail-open, null/unparseable fail-open.)*
+- [x] Unit: TugSetup `open` derivation yields `false` whenever the gate is open (precedence). *(`deriveTugSetupOpen` truth table.)*
+- [x] Drift: `SUPPORTED_MACOS` matches `matrix.json` `min_version`s. *(Two-way: every matrix `min_version` matches its policy entry, and every policy line has a matrix entry.)*
 
 **Checkpoint:**
-- [ ] In-app (DEV override / floor-spoof): below-floor shows the gate and TugSetup stays hidden behind it; supported version shows neither (or TugSetup alone if not yet set up). `tsc` + `vite build` clean.
+- [x] In-app (DEV override / floor-spoof): below-floor shows the gate and TugSetup stays hidden behind it; supported version shows neither (or TugSetup alone if not yet set up). `tsc` + `vite build` clean. *(`tsc` + `vite build` clean; 13 unit tests green. Derivation fully test-verified; this host (15.6) shows neither — no false lockout ([R02]). The in-app visual is exercised via `DEV_FORCE_VERSION_GATE` under HMR and the golden-run floor-spoof ([#step-11]); first live consumer of `useHostInfo()`.)*
 
 ---
 

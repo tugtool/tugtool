@@ -25,6 +25,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { type ReactElement, useState, useSyncExternalStore } from "react";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { authStore, useAuth } from "@/lib/auth-store";
+import { useVersionGateOpen, deriveTugSetupOpen } from "@/lib/macos-support";
 import { getConnection } from "@/lib/connection-singleton";
 import { useDeckManager } from "@/deck-manager-context";
 import { TugPushButton } from "./tug-push-button";
@@ -86,7 +87,13 @@ export function TugSetup(): ReactElement {
   const notReady = forced ? !forcedLoggedIn : loggedIn === false;
   const needsFirstSession =
     effectiveLoggedIn && cardCount === 0 && !openedFirstSession;
-  const open = forced !== false || notReady || needsFirstSession;
+  // The version gate takes precedence: while it is open, TugSetup suppresses
+  // itself so the two app-modals never stack (Spec S02).
+  const gateOpen = useVersionGateOpen();
+  const open = deriveTugSetupOpen(
+    gateOpen,
+    forced !== false || notReady || needsFirstSession,
+  );
 
   const handleInstall = (): void => {
     authStore.setInstalling(true);

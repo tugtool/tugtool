@@ -46,6 +46,7 @@ import type { Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { TugSetup } from "./components/tugways/tug-setup";
+import { TugVersionGate } from "./components/tugways/tug-version-gate";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugDevPanel } from "./components/tug-dev-panel/tug-dev-panel";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
@@ -574,6 +575,11 @@ export class DeckManager implements IDeckManagerStore {
             store: this.rateLimitStore,
           }),
           React.createElement(DeckCanvas, {}),
+          // App-wide blocking "update macOS" gate. Opens only when the host
+          // version is known-below its line's floor; takes precedence over
+          // TugSetup (which suppresses itself while the gate is open) so the
+          // two app-modals never stack (Spec S02). Renders nothing otherwise.
+          React.createElement(TugVersionGate, {}),
           // App-wide blocking setup wizard. Covers the deck until Claude Code
           // is installed, signed in, and the first session is opened — auth is
           // strictly required for an AI IDE. Renders nothing once set up.
