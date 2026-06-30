@@ -203,7 +203,9 @@ fi
 # headless under notary/CI conditions, unlike create-dmg/osascript approaches.
 # settings.py + background.tiff + VolumeIcon.icns live in scripts/dmg/.
 echo "==> Creating DMG (dmgbuild)"
-OUTPUT_DMG="$REPO_ROOT/$DMG_NAME"
+PRODUCTS_DIR="$REPO_ROOT/products"
+mkdir -p "$PRODUCTS_DIR"
+OUTPUT_DMG="$PRODUCTS_DIR/$DMG_NAME"
 rm -f "$OUTPUT_DMG"
 DMGBUILD="$("$SCRIPT_DIR/dmg/ensure-dmgbuild.sh")"
 "$DMGBUILD" \

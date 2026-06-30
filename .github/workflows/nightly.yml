@@ -86,7 +86,7 @@ jobs:
           tag_name: nightly
           name: Nightly Build
           prerelease: true
-          files: TugNightly.dmg
+          files: products/TugNightly.dmg
           body: |
             Automated nightly build of Tug.
 

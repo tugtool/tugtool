@@ -50,11 +50,11 @@ node_modules/
 # Frontend build output
 tugdeck/dist/
 
-# Distribution artifacts produced by tugrust/scripts/build-app.sh.
-# Notarized DMGs (and nightly variant) live at the repo root after a
-# release build — checked in would be ~90MB per build, useless in git.
-/Tug.dmg
-/TugNightly.dmg
+# Distribution artifacts produced by tugrust/scripts/build-app.sh land in
+# products/ (tracked via products/.gitkeep so the dir persists). The DMGs
+# themselves are ignored — ~90MB per build, useless in git.
+/products/Tug.dmg
+/products/TugNightly.dmg
 /build/
 
 # Static tmux build cache (tugrust/scripts/fetch-tmux.sh).

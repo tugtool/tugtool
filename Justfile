@@ -279,6 +279,7 @@ app-debug: build wasm
 
 # Build a Release bundle and (re)launch the cwd-derived release
 # instance. Quit-prior runs first for the same reason as app-debug.
+# Build a Release bundle and (re)launch the cwd-derived release instance.
 app-release: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
@@ -626,6 +627,7 @@ reap *MODE:
 # 720x460 @1x + 1440x920 @2x — combined via `tiffutil -cathidpicheck`.
 # Re-run after editing the SVG; the live app/Applications icons are NOT
 # painted in (Finder draws them), so only the art changes here.
+# Render resources/dmg-preview.svg into the HiDPI dmg-background.tiff (run after editing the SVG).
 dmg-background:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -647,6 +649,7 @@ dmg-background:
 # distribution-shape artifact; suitable for sharing a build locally
 # (e.g., to a tester on the same Mac) but Gatekeeper will reject it
 # on a clean machine.
+# Build an unsigned Tug.dmg — fast; local testing only (Gatekeeper blocks it on other Macs).
 dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
 
@@ -663,6 +666,7 @@ dmg:
 #
 # This is the canonical distribution build. Use `just dmg` for the
 # fast unsigned variant.
+# Build a signed + notarized Tug.dmg — the canonical shippable build.
 notarize:
     tugrust/scripts/build-app.sh
 
@@ -694,7 +698,7 @@ lab-dmg MODE="notarized":
         *) echo "unknown mode: {{MODE}} (use 'notarized' or 'unsigned')" >&2; exit 1 ;;
     esac
     mkdir -p "$LAB_SHARE"
-    cp -f Tug.dmg "$LAB_SHARE/Tug.dmg"
+    cp -f products/Tug.dmg "$LAB_SHARE/Tug.dmg"
     echo "==> staged for the VM lab: $LAB_SHARE/Tug.dmg"
     ls -lh "$LAB_SHARE/Tug.dmg"
 
@@ -736,6 +740,7 @@ lab-wipe *ARGS:
 #
 # Inside the booted guest, the dmg appears at:
 #   /Volumes/My Shared Files/drop/Tug.dmg
+# Build + stage an unsigned dmg, then boot a fresh clone with it mounted (the inner loop).
 lab-cycle OS="sequoia":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -816,6 +821,7 @@ teardown-dev-signing:
 #
 # Prereqs (one-time per machine):
 #   just setup-dev-signing                 # verifies Developer ID cert
+# Build the signed app-test bundle (stable bundle id) for 'just app-test'.
 build-app:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -1323,6 +1329,7 @@ clean-debug:
 
 # Remove the interactive release build's per-variant DerivedData (matches
 # `app-release`).
+# Remove the interactive release build's per-variant DerivedData.
 clean-release:
     #!/usr/bin/env bash
     set -euo pipefail
