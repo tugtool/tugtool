@@ -1,0 +1,121 @@
+/*
+ * gallery-tug-setup.css — styling for the TugSetup happy-path design spike
+ * (gallery-tug-setup.tsx). Scoped to `.cg-setup-*`; reuses gallery.css for the
+ * section/content frame. The step row mirrors the real wizard's rhythm
+ * (tug-setup.css) so design decisions made here transfer back to TugSetup.
+ *
+ * No color-setting rules on the step text (it inherits from the panel); the
+ * pulsing dot carries the only role tone. A pending step dims via opacity.
+ */
+
+/* ---- Scenario picker ---------------------------------------------------- */
+
+.cg-setup-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---- Wizard preview panel (mimics the real modal body) ------------------ */
+
+.cg-setup-preview-panel {
+  border: 1px solid var(--tug7-element-global-stroke-normal-muted-rest);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 440px;
+  text-align: left;
+}
+
+.cg-setup-preview-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.cg-setup-preview-subtitle {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0 0 20px;
+  opacity: 0.7;
+}
+
+/* ---- Step list ---------------------------------------------------------- */
+
+.cg-setup-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.cg-setup-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.cg-setup-step[data-status="pending"] {
+  opacity: 0.45;
+}
+
+.cg-setup-step-dot {
+  flex: 0 0 auto;
+  /* Nudge the dot onto the label's cap-height line. */
+  margin-top: 3px;
+}
+
+.cg-setup-step-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cg-setup-step-label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.cg-setup-step-detail {
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.8;
+}
+
+.cg-setup-step-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* ---- Transport-down takeover -------------------------------------------- */
+
+.cg-setup-takeover {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 0;
+}
+
+.cg-setup-takeover-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---- BlockChrome comparison --------------------------------------------- */
+
+.cg-setup-block-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.cg-setup-block-body {
+  padding: 4px 0;
+}

@@ -101,6 +101,7 @@ import { GalleryDevChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
+import { GalleryTugSetup } from "./gallery-tug-setup";
 import { GalleryBlockHeader } from "./gallery-tool-call-header";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -1326,6 +1327,19 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
+  });
+
+  // TugSetup happy-path design spike ([#step-9] onboarding-and-install.md):
+  // simulates the whole setup flow from local state so the wizard's copy,
+  // rhythm, and pulsing-dot step rows can be designed without a clean guest.
+  registerCard({
+    componentId: "gallery-tug-setup",
+    contentFactory: (_cardId) => <GalleryTugSetup />,
+    defaultMeta: { title: "TugSetup (design spike)", icon: "ListChecks", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.overlays,
   });
 

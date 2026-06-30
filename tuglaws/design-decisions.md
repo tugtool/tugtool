@@ -327,3 +327,48 @@ A zone's *location* is contract; its *occupant* is not — every zone is a gener
 **D98.** Host facts — the backend's network `hostname` and the basename of its login shell — are resolved by tugcast and served at a read-only `GET /api/host` endpoint, then read into tugdeck's `HostFactsStore` through `useSyncExternalStore`. The browser cannot know the backend's real hostname or `$SHELL` (`window.location.hostname` is only the URL host), and the facts are static for a server's lifetime, so the store fires the fetch exactly once and caches the result. The endpoint is loopback-restricted like the other `/api` handlers; the response shape `{ hostname, shell }` is a cross-stack contract, pinned by a Rust serialization test and a `bun:test` parser test. A failed or pending fetch leaves the store empty, and consumers treat an empty snapshot as "not yet known." [L02]
 
 **D99.** Each Dev prompt entry owns a `RouteLifecycle` — a per-prompt-entry pipe that holds the authoritative command route (`❯` Code / `$` Shell) and announces every change. It offers two surfaces over one fire path: a store surface (`subscribe` + `getRoute`) that renderers read through `useSyncExternalStore` ([L02]), and a synchronous delegate/observer surface (`observeRouteWillChange` / `observeRouteDidChange`, `useRouteDelegate`) for imperative reactors. The route is no longer component `useState`: once it has a consumer outside the component that owns it, it is external state and must enter React through `useSyncExternalStore`. Unlike the deck-level `CardLifecycle`, `RouteLifecycle` is scoped per prompt entry, provided through `RouteLifecycleContext`, surfaces a single `(prev, next)` will/did pair, and dispatches synchronously — route consumers re-render content and have no gesture-focus-lock hazard, so there is no `MessageChannel` drain. See [route-lifecycle.md](route-lifecycle.md). [L02], [L03]
+
+---
+
+## Onboarding & Setup
+
+**D105.** TugSetup — the app-modal onboarding wizard (`tug-setup.tsx`, [#step-9] of `roadmap/onboarding-and-install.md`) — renders as an ordered list of **step rows**, each a **bespoke row** (not a transcript `BlockChrome` [D104]): a left-hand `TugProgressIndicator variant="pulsing-dot"` whose role+state encode the step's lifecycle ([D02]), a requirement/direction **label**, a **detail** line carrying state/progress/completion, and an optional **CTA**. The block shell was evaluated and rejected for this surface — its tool-name/result-summary/copy/chevron affordances are transcript baggage a setup step does not want; the bespoke row keeps the wizard's own rhythm. A step's status is one of `pending | active | busy | error | done`, mapping to the dot as: `pending`→`inherit/stopped` (row dimmed), `active`→`action/running`, `busy`→`agent/running`, `error`→`danger/aborted`, `done`→`success/completed`. The pulsing dot is the *only* role tone on the row; the label/detail inherit panel text ([D104] convention 1 — status is the dot's). The design spike that fixes this surface's copy and rhythm without a clean guest is the **`gallery-tug-setup`** card (`gallery-tug-setup.tsx`), which simulates every state below from local state — it never touches the real `authStore`.
+
+**Flow.** Three steps, each gated on the one before, fed by the app-level `authStore` ([L02]) plus the deck card count:
+
+```
+   (first launch) ──▶ PROBING  "Checking your setup…"
+                          │
+   STEP 1 ── Claude Code installed
+     active (Install) ─▶ busy (Installing) ─▶ done
+                    └─▶ error (Retry Install) ─┘
+                          │ done
+   STEP 2 ── Sign in to Claude
+     active (Sign In) ─▶ busy (Waiting…) ─▶ done
+                    └─▶ error (Try Again) ─┘
+                          │ done
+   STEP 3 ── Open your first session   (success/transition button)
+     active (Open a Dev Card) ─▶ opens first card ─▶ wizard dismisses
+
+   Takeover (replaces body):  TRANSPORT DOWN  "Reconnecting…"
+   Sibling app-modal (wins):  VERSION TOO OLD → TugVersionGate ([#step-7])
+```
+
+**Per-state copy (what we show & say).** Label is the requirement/direction; detail is the state/progress/completion line:
+
+| Step | Status | Dot (role/state) | Label | Detail | CTA |
+|---|---|---|---|---|---|
+| — | probing | agent / running | Claude Code installed | "Looking for Claude Code…" | — |
+| 1 | active | action / running | Claude Code installed | "Tug will install it for you." | **Install Claude Code** |
+| 1 | busy | agent / running | Claude Code installed | "Installing Claude Code…" | — |
+| 1 | error | danger / aborted | Claude Code installed | "Install failed: \<error\>" | **Retry Install** |
+| 1 | done | success / completed | Claude Code installed | "Claude Code is ready." | — |
+| 2 | active | action / running | Sign in to Claude | "Tug runs sessions with your Claude subscription." | **Sign In** |
+| 2 | busy | agent / running | Sign in to Claude | "Finish signing in in your browser…" | — |
+| 2 | error | danger / aborted | Sign in to Claude | "Sign-in didn't finish. The browser may have been closed." | **Try Again** |
+| 2 | done | success / completed | Signed in as \<email\> | "\<subscription\> subscription." | — |
+| 3 | active | action / running | Open your first session | "Open your first Dev card to start." | **Open a Dev Card** |
+| 3 | done | success / completed | Open your first session | "Opening your first session…" | — |
+| — | transport down | caution / running | Reconnecting… | "Lost the connection to Tug. Setup will resume automatically." | — |
+
+**Resolved design questions.** **(1) "Open your first session" is a success/transition button, not a probed step** — its CTA opens the first Dev card and the wizard dismisses. That first card seeds its **Project Path to the user's home directory** (a sensible from-the-drop default; the user re-points it afterward). **(2) The step row is bespoke** (above) — `BlockChrome` was evaluated and rejected. **(3) Probing / first-launch:** on a user's *first* launch TugSetup shows **up front and immediately** (it does not wait to probe behind a blank deck). This is governed by a persisted **first-launch flag** stored via tugbank defaults (`/api/defaults/…`, never `localStorage`); the flag is set once the user has launched the first time, so subsequent launches fall through to the normal probe-then-decide path. **(4) Transport-down** replaces the wizard body with a calm "Reconnecting…" takeover rather than a dead wizard; **version-too-old** is the sibling app-modal `TugVersionGate` ([#step-7], Spec S02) which takes precedence over TugSetup. The unhappy-path states (install-fail, sign-in cancel/timeout, transport-down) are designed in [#step-10]; this decision fixes their copy and visual grammar. [D02], [D104], [L02], [L06]

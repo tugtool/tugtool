@@ -22,14 +22,20 @@
  */
 
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { type ReactElement, useState, useSyncExternalStore } from "react";
+import { type ReactElement, useEffect, useState, useSyncExternalStore } from "react";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { authStore, useAuth } from "@/lib/auth-store";
 import { useVersionGateOpen, deriveTugSetupOpen } from "@/lib/macos-support";
 import { getConnection } from "@/lib/connection-singleton";
+import { getTugbankClient } from "@/lib/tugbank-singleton";
+import { readSetupSeen, putSetupSeen } from "@/settings-api";
 import { useDeckManager } from "@/deck-manager-context";
 import { TugPushButton } from "./tug-push-button";
-import { TugProgressIndicator } from "./tug-progress-indicator";
+import {
+  TugProgressIndicator,
+  type TugProgressIndicatorRole,
+  type TugProgressIndicatorState,
+} from "./tug-progress-indicator";
 import "./tug-alert.css";
 import "./tug-setup.css";
 
@@ -39,24 +45,70 @@ import "./tug-setup.css";
 const DEV_FORCE_SETUP: "claude_missing" | "logged_out" | "open_session" | false =
   false;
 
+/**
+ * A step's lifecycle status, encoded by the left-hand pulsing dot ([D105]):
+ * `pending` (dimmed), `active` (the user's turn — a CTA shows), `busy` (an
+ * async action in flight), `error` (failed — a retry CTA shows), `done`.
+ */
+type StepStatus = "pending" | "active" | "busy" | "error" | "done";
+
+const DOT_SIZE = 14;
+
+/** Map a step status onto the dot's role + state ([D02]/[D105]). */
+function dotVisual(status: StepStatus): {
+  role: TugProgressIndicatorRole;
+  state: TugProgressIndicatorState;
+} {
+  switch (status) {
+    case "pending":
+      return { role: "inherit", state: "stopped" };
+    case "active":
+      return { role: "action", state: "running" };
+    case "busy":
+      return { role: "agent", state: "running" };
+    case "error":
+      return { role: "danger", state: "aborted" };
+    case "done":
+      return { role: "success", state: "completed" };
+  }
+}
+
 function StepRow({
   status,
   label,
-  children,
+  detail,
+  cta,
 }: {
-  status: "done" | "active" | "pending";
+  status: StepStatus;
   label: string;
-  children?: ReactElement | false | null;
+  detail?: string;
+  cta?: { label: string; onClick: () => void };
 }): ReactElement {
-  const mark = status === "done" ? "✓" : status === "active" ? "→" : "○";
+  const { role, state } = dotVisual(status);
   return (
     <li className="tug-setup-step" data-status={status}>
-      <span className="tug-setup-step-mark" aria-hidden="true">
-        {mark}
-      </span>
+      <TugProgressIndicator
+        variant="pulsing-dot"
+        size={DOT_SIZE}
+        role={role}
+        state={state}
+        className="tug-setup-step-dot"
+        aria-hidden
+      />
       <div className="tug-setup-step-main">
         <span className="tug-setup-step-label">{label}</span>
-        {children}
+        {detail && <span className="tug-setup-step-detail">{detail}</span>}
+        {cta && status !== "busy" && (
+          <div className="tug-setup-step-actions">
+            <TugPushButton
+              emphasis={status === "error" ? "outlined" : "filled"}
+              role={status === "error" ? "danger" : "action"}
+              onClick={cta.onClick}
+            >
+              {cta.label}
+            </TugPushButton>
+          </div>
+        )}
       </div>
     </li>
   );
@@ -87,12 +139,29 @@ export function TugSetup(): ReactElement {
   const notReady = forced ? !forcedLoggedIn : loggedIn === false;
   const needsFirstSession =
     effectiveLoggedIn && cardCount === 0 && !openedFirstSession;
+
+  // First launch: show the wizard up front and immediately, even before the
+  // auth probe answers, rather than flashing a blank deck. The flag is read
+  // once at mount (tugbank is ready before React mounts) and persisted on the
+  // first run so later launches fall through to the normal probe-driven path.
+  const [firstRun] = useState(() => {
+    const client = getTugbankClient();
+    return client ? !readSetupSeen(client) : false;
+  });
+  useEffect(() => {
+    if (firstRun) putSetupSeen(true);
+  }, [firstRun]);
+
+  // While the probe is still in flight on a first launch, the login state is
+  // unknown — render a "checking" body instead of guessing step statuses.
+  const probing = !forced && firstRun && loggedIn === null;
+
   // The version gate takes precedence: while it is open, TugSetup suppresses
   // itself so the two app-modals never stack (Spec S02).
   const gateOpen = useVersionGateOpen();
   const open = deriveTugSetupOpen(
     gateOpen,
-    forced !== false || notReady || needsFirstSession,
+    forced !== false || notReady || needsFirstSession || probing,
   );
 
   const handleInstall = (): void => {
@@ -110,18 +179,75 @@ export function TugSetup(): ReactElement {
 
   const overlayRoot = useCanvasOverlay();
 
-  // Step statuses.
-  const claudeStatus: "done" | "active" | "pending" = claudeMissing
-    ? "active"
-    : "done";
-  const signInStatus: "done" | "active" | "pending" = effectiveLoggedIn
-    ? "done"
-    : claudeMissing
-      ? "pending"
-      : "active";
-  const openStatus: "done" | "active" | "pending" = effectiveLoggedIn
-    ? "active"
-    : "pending";
+  // The ordered steps, each a pulsing-dot row ([D105]). During the first-run
+  // probe the login state is unknown, so we render a "checking" body rather
+  // than guess statuses.
+  type Step = {
+    key: string;
+    status: StepStatus;
+    label: string;
+    detail?: string;
+    cta?: { label: string; onClick: () => void };
+  };
+
+  const claudeStep: Step = installing
+    ? { key: "install", status: "busy", label: "Claude Code installed", detail: "Installing Claude Code…" }
+    : installError
+      ? {
+          key: "install",
+          status: "error",
+          label: "Claude Code installed",
+          detail: `Install failed: ${installError}`,
+          cta: { label: "Retry Install", onClick: handleInstall },
+        }
+      : claudeMissing
+        ? {
+            key: "install",
+            status: "active",
+            label: "Claude Code installed",
+            detail: "Tug will install it for you.",
+            cta: { label: "Install Claude Code", onClick: handleInstall },
+          }
+        : { key: "install", status: "done", label: "Claude Code installed", detail: "Claude Code is ready." };
+
+  const signInStep: Step = claudeMissing
+    ? { key: "signin", status: "pending", label: "Sign in to Claude" }
+    : signingIn
+      ? { key: "signin", status: "busy", label: "Sign in to Claude", detail: "Finish signing in in your browser…" }
+      : effectiveLoggedIn
+        ? {
+            key: "signin",
+            status: "done",
+            label: account?.email ? `Signed in as ${account.email}` : "Signed in to Claude",
+            detail: account?.subscriptionType ? `${account.subscriptionType} subscription.` : undefined,
+          }
+        : {
+            key: "signin",
+            status: "active",
+            label: "Sign in to Claude",
+            detail: "Tug runs sessions with your Claude subscription.",
+            cta: { label: "Sign In", onClick: handleSignIn },
+          };
+
+  const openStep: Step = effectiveLoggedIn
+    ? {
+        key: "open",
+        status: "active",
+        label: "Open your first session",
+        detail: "Open your first Dev card to start.",
+        cta: { label: "Open a Dev Card", onClick: handleOpenSession },
+      }
+    : { key: "open", status: "pending", label: "Open your first session" };
+
+  const probingSteps: Step[] = [
+    { key: "install", status: "busy", label: "Claude Code installed", detail: "Looking for Claude Code…" },
+    { key: "signin", status: "pending", label: "Sign in to Claude" },
+    { key: "open", status: "pending", label: "Open your first session" },
+  ];
+
+  const steps: Step[] = probing
+    ? probingSteps
+    : [claudeStep, signInStep, openStep];
 
   return (
     <AlertDialog.Root open={open}>
@@ -136,81 +262,23 @@ export function TugSetup(): ReactElement {
             Set up Tug
           </AlertDialog.Title>
           <AlertDialog.Description className="tug-setup-subtitle" asChild>
-            <p>A couple of steps to get your AI IDE ready.</p>
+            <p>
+              {probing
+                ? "Checking your setup…"
+                : "A couple of steps to get your AI IDE ready."}
+            </p>
           </AlertDialog.Description>
 
           <ol className="tug-setup-steps">
-            <StepRow status={claudeStatus} label="Claude Code installed">
-              {claudeMissing && (
-                <>
-                  <span className="tug-setup-step-detail">
-                    {installError
-                      ? `Install failed: ${installError}`
-                      : "Tug will install it for you."}
-                  </span>
-                  <div className="tug-setup-step-actions">
-                    {installing ? (
-                      <span className="tug-setup-step-status">
-                        <TugProgressIndicator
-                          variant="spinner"
-                          size={14}
-                          state="running"
-                          aria-hidden
-                        />
-                        <span>Installing Claude Code…</span>
-                      </span>
-                    ) : (
-                      <TugPushButton emphasis="filled" onClick={handleInstall}>
-                        {installError ? "Retry Install" : "Install Claude Code"}
-                      </TugPushButton>
-                    )}
-                  </div>
-                </>
-              )}
-            </StepRow>
-
-            <StepRow
-              status={signInStatus}
-              label={
-                effectiveLoggedIn && account?.email
-                  ? `Signed in as ${account.email}`
-                  : "Sign in to Claude"
-              }
-            >
-              {signInStatus === "active" &&
-                (signingIn ? (
-                  <span className="tug-setup-step-status">
-                    <TugProgressIndicator
-                      variant="spinner"
-                      size={14}
-                      state="running"
-                      aria-hidden
-                    />
-                    <span>Waiting for browser sign-in…</span>
-                  </span>
-                ) : (
-                  <>
-                    <span className="tug-setup-step-detail">
-                      Tug runs sessions with your Claude subscription.
-                    </span>
-                    <div className="tug-setup-step-actions">
-                      <TugPushButton emphasis="filled" onClick={handleSignIn}>
-                        Sign In
-                      </TugPushButton>
-                    </div>
-                  </>
-                ))}
-            </StepRow>
-
-            <StepRow status={openStatus} label="Open your first session">
-              {openStatus === "active" && (
-                <div className="tug-setup-step-actions">
-                  <TugPushButton emphasis="filled" onClick={handleOpenSession}>
-                    Open a Dev Card
-                  </TugPushButton>
-                </div>
-              )}
-            </StepRow>
+            {steps.map((step) => (
+              <StepRow
+                key={step.key}
+                status={step.status}
+                label={step.label}
+                detail={step.detail}
+                cta={step.cta}
+              />
+            ))}
           </ol>
         </AlertDialog.Content>
       </AlertDialog.Portal>

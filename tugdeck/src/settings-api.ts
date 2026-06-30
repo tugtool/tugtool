@@ -263,6 +263,32 @@ export function putFocusRingModality(mode: string): void {
 }
 
 /**
+ * Read the first-launch flag from the TugbankClient cache. `true` once the
+ * user has been through TugSetup's first launch; `false`/absent means this is
+ * a first run, so TugSetup shows itself up front (even before the auth probe
+ * answers) instead of waiting behind a blank deck. Stored under
+ * `dev.tugtool.app` / `setup-seen` (Value::Bool).
+ */
+export function readSetupSeen(client: TugbankClient): boolean {
+  const entry = client.get("dev.tugtool.app", "setup-seen");
+  return entry?.kind === "bool" && entry.value === true;
+}
+
+/**
+ * Persist the first-launch flag to tugbank under `dev.tugtool.app` /
+ * `setup-seen`. Fire-and-forget, mirroring `putTheme`.
+ */
+export function putSetupSeen(seen: boolean): void {
+  fetch("/api/defaults/dev.tugtool.app/setup-seen", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "bool", value: seen }),
+  }).catch((err) => {
+    console.warn("[settings] PUT setup-seen failed:", err);
+  });
+}
+
+/**
  * PUT a single per-card state bag to tugbank under `dev.tugtool.deck.cardstate/{cardId}`.
  *
  * Returns a Promise that resolves when the write completes. Callers that
