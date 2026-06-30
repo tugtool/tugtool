@@ -211,22 +211,39 @@ describe("Step R4: main.ts cold-boot resume does not invoke startup replay", () 
     // resume_failed.
     proc.stdin.write(JSON.stringify({ type: "protocol_init", version: 1 }) + "\n");
 
-    // Read all stdout for ~1500ms — enough for any startup-replay
-    // bracket to have landed if it were going to.
+    // Read stdout until the startup frames (protocol_ack + synthetic
+    // session_init) have actually landed, then drain a short extra
+    // window so any (erroneous) replay bracket would have time to
+    // appear. A fixed wall-clock window is flaky: under `just ci`
+    // load (rust + tugdeck tests running first) the cold `bun run
+    // main.ts` subprocess can take >1.5s just to emit protocol_ack,
+    // and the old window would expire having captured nothing.
     const reader = proc.stdout.getReader();
     const decoder = new TextDecoder();
     let buf = "";
-    const deadline = Date.now() + 1500;
+    // Generous cap on how long we'll wait for the startup frames.
+    const hardDeadline = Date.now() + 8000;
+    // Once the startup frames are seen, drain this much longer to
+    // catch any replay frames that would follow them.
+    const drainMs = 500;
+    let drainUntil: number | null = null;
+    const sawStartup = () =>
+      buf.includes('"protocol_ack"') && buf.includes('"session_init"');
     try {
-      while (Date.now() < deadline) {
+      while (Date.now() < hardDeadline) {
+        if (drainUntil !== null && Date.now() >= drainUntil) break;
         const readPromise = reader.read();
-        const timeoutPromise = new Promise<{ done: true; value: undefined }>(
-          (resolve) => setTimeout(() => resolve({ done: true, value: undefined }), 100),
+        const timeoutPromise = new Promise<{ timedOut: true }>(
+          (resolve) => setTimeout(() => resolve({ timedOut: true }), 100),
         );
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result: any = await Promise.race([readPromise, timeoutPromise]);
-        if (result.done) break;
+        if (result.timedOut) continue; // tick, not subprocess output
+        if (result.done) break; // real EOF: nothing more is coming
         buf += decoder.decode(result.value, { stream: true });
+        if (drainUntil === null && sawStartup()) {
+          drainUntil = Date.now() + drainMs;
+        }
       }
     } finally {
       reader.releaseLock();
