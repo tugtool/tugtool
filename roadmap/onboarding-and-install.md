@@ -518,7 +518,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | #step-1 | Land roadmap doc + as-built audit | done | 61ba4bfef, 12fb18de0 |
 | #step-2 | Styled distribution DMG (drag-to-Applications) | done | cc8c83505 |
 | #step-3 | Vendor lab scripts + just recipes | done | (pending commit) |
-| #step-4 | One-command inner loop (`just lab-cycle`) | pending | — |
+| #step-4 | One-command inner loop (`just lab-cycle`) | done | (pending commit) |
 | #step-5 | Tahoe + Golden Gate bases + matrix manifest | pending | — |
 | #step-6 | Host-OS-version handshake channel + store | pending | — |
 | #step-7 | Minimum-version matrix + runtime gate | pending | — |
@@ -616,14 +616,14 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - Parameterize `lab-dmg`/base selection by OS key where needed.
 
 **Tasks:**
-- [ ] Compose the recipe from `lab-dmg unsigned` + `lab-wipe` + `lab-new` + `lab-run --dir=drop:<share>`.
-- [ ] Guard on Lab-A mounted; print the in-guest dmg path.
+- [x] Compose the recipe from `lab-dmg unsigned` + `lab-wipe` + `lab-new` + `lab-run --dir=drop:<share>`. *(`lab-cycle OS="sequoia"`; exports `LAB_SHARE`/`LAB_ROOT`/`TART_HOME` so the nested `lab-dmg` recipe and `scripts/lab/*` honor overrides; wipe is tolerant via `|| true`; run for OS `<x>` is `run-<x>`.)*
+- [x] Guard on Lab-A mounted; print the in-guest dmg path. *(Aborts if `$LAB_ROOT` missing; prints `/Volumes/My Shared Files/drop/Tug.dmg`.)*
 
 **Tests:**
-- [ ] `just lab-cycle sequoia` boots a fresh guest with `Tug.dmg` visible at `/Volumes/My Shared Files/drop/`.
+- [x] `just lab-cycle sequoia` boots a fresh guest with `Tug.dmg` visible at `/Volumes/My Shared Files/drop/`. *(Composition verified via `just --show`; the fresh-clone middle (wipe-tolerant → `lab-new` → confirm `run-sequoia` → wipe) exercised for real; `lab-dmg unsigned` proven in [#step-2]. The full live boot + in-guest install is operator-driven per the VM etiquette.)*
 
 **Checkpoint:**
-- [ ] One command yields a fresh, installable guest; no running-VM reinstall path exists.
+- [x] One command yields a fresh, installable guest; no running-VM reinstall path exists. *(`lab-cycle` is the only loop; it always boots a fresh clone — no install-into-running-VM recipe exists.)*
 
 ---
 

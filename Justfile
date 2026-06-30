@@ -703,6 +703,38 @@ lab-run *ARGS:
 lab-wipe *ARGS:
     scripts/lab/lab-wipe {{ARGS}}
 
+# The one reliable inner loop ([P02]): build an unsigned Tug.dmg, stage it to
+# the lab share, wipe any prior run for this OS, clone a fresh factory-fresh
+# guest, and boot it with the share mounted — in one command. There is
+# deliberately NO install-into-running-VM path: VirtioFS caching + a stale
+# /Applications/Tug.app make reinstall-in-place unreliable, so every cycle
+# boots a fresh clone. The run for OS <x> is run-<x> (replacing the prior one).
+#
+#   just lab-cycle sequoia
+#
+# Inside the booted guest, the dmg appears at:
+#   /Volumes/My Shared Files/drop/Tug.dmg
+lab-cycle OS="sequoia":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Export so the nested lab-dmg recipe and scripts/lab/* honor overrides.
+    export LAB_SHARE="${LAB_SHARE:-/Volumes/Lab-A/share}"
+    export LAB_ROOT="${LAB_ROOT:-/Volumes/Lab-A}"
+    [ -n "${TART_HOME:-}" ] && export TART_HOME
+    if [ ! -d "$LAB_ROOT" ]; then
+        echo "error: VM-lab disk not mounted (missing $LAB_ROOT)" >&2
+        exit 1
+    fi
+    echo "==> [1/4] Build + stage unsigned Tug.dmg -> $LAB_SHARE"
+    just lab-dmg unsigned
+    echo "==> [2/4] Wipe any prior run-{{OS}} (fresh-clone discipline)"
+    scripts/lab/lab-wipe {{OS}} || true
+    echo "==> [3/4] Clone a fresh run-{{OS}} from base-{{OS}}"
+    scripts/lab/lab-new {{OS}}
+    echo "==> [4/4] Boot run-{{OS}} with the share mounted"
+    echo "    In the guest, install from: /Volumes/My Shared Files/drop/Tug.dmg"
+    exec scripts/lab/lab-run {{OS}} --dir=drop:"$LAB_SHARE"
+
 # One-time per-machine signing check. Verifies that an Apple
 # Developer ID Application certificate is installed in the login
 # keychain (the identity every Tug build signs with per [D11]).
