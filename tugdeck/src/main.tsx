@@ -18,6 +18,7 @@ import { attachDevSessionLedgerStore } from "./lib/dev-session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { attachPulseStore } from "./lib/pulse-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import { transportStateStore } from "./lib/transport-state-store";
 import {
   ConnectionLifecycle,
   registerConnectionLifecycle,
@@ -137,6 +138,19 @@ registerConnectionLifecycle(connectionLifecycle);
 // handler and is dropped.
 connectionLifecycle.observeConnectionDidReconnect(() => {
   connection.sendControlFrame("check_auth");
+});
+
+// Feed the app-wide transport-state store from the same lifecycle pipe. This is
+// the channel TugSetup reads to show a calm "Reconnecting…" body instead of a
+// dead wizard when the wire drops mid-setup ([L02]; #tugsetup-states).
+connectionLifecycle.observeConnectionDidOpen(() => {
+  transportStateStore.set("online");
+});
+connectionLifecycle.observeConnectionDidEnterReconnecting(() => {
+  transportStateStore.set("reconnecting");
+});
+connectionLifecycle.observeConnectionDidClose(() => {
+  transportStateStore.set("offline");
 });
 
 // Register connection in the singleton so modules that cannot safely import

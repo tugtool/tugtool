@@ -17,8 +17,24 @@
  * so a binary the installer drops in `~/.local/bin` is reachable without any
  * shell-PATH edit. There is no realistic "installed but unreachable" state.)
  *
- * Pure read of the stores ([L02]/[L24]); the `check_auth` probe is fired
- * imperatively from `main.tsx`.
+ * Each step is a bespoke pulsing-dot row ([D105]): the dot encodes lifecycle,
+ * a CTA (or a success check) hangs on the right. The unhappy paths are
+ * first-class designed states, not fallthroughs ([P10], #tugsetup-states):
+ *   - install failed → `authStore.installError` → an error row + Retry;
+ *   - sign-in cancelled / browser never returned → `authStore.signInFailed`
+ *     (set when an attempt resolves still-logged-out, or by the local timeout)
+ *     → an error row + Try Again;
+ *   - transport down mid-setup → `transportStateStore` → a calm "Reconnecting…"
+ *     body (only swaps an already-open wizard; never pops setup on a set-up
+ *     user — the app-wide reconnect banner owns that);
+ *   - version too old → `TugVersionGate`, a sibling app-modal that takes
+ *     precedence (Spec S02); logged-out mid-session → the per-card dev-card
+ *     auth banner safety net.
+ *
+ * Pure read of the stores ([L02]/[L24]) — `authStore`, the deck, the transport
+ * and version-gate stores; the `check_auth` probe is fired imperatively from
+ * `main.tsx`. The sign-in timeout is the one imperative effect (it schedules a
+ * store call, it does not mirror state).
  */
 
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -27,6 +43,7 @@ import { type ReactElement, useEffect, useState, useSyncExternalStore } from "re
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { authStore, useAuth } from "@/lib/auth-store";
 import { useVersionGateOpen, deriveTugSetupOpen } from "@/lib/macos-support";
+import { useAppTransportState } from "@/lib/transport-state-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { readSetupSeen, putSetupSeen } from "@/settings-api";
@@ -54,6 +71,9 @@ const DEV_FORCE_SETUP: "claude_missing" | "logged_out" | "open_session" | false 
 type StepStatus = "pending" | "active" | "busy" | "error" | "done";
 
 const DOT_SIZE = 14;
+
+/** How long to wait on a browser sign-in before offering a re-try (ms). */
+const SIGN_IN_TIMEOUT_MS = 90_000;
 
 /** Map a step status onto the dot's role + state ([D02]/[D105]). */
 function dotVisual(status: StepStatus): {
@@ -122,8 +142,9 @@ function StepRow({
 }
 
 export function TugSetup(): ReactElement {
-  const { loggedIn, reason, account, signingIn, installing, installError } =
+  const { loggedIn, reason, account, signingIn, signInFailed, installing, installError } =
     useAuth();
+  const transport = useAppTransportState();
   const deck = useDeckManager();
   const deckState = useSyncExternalStore(deck.subscribe, deck.getSnapshot);
   const cardCount = deckState.cards.length;
@@ -158,6 +179,20 @@ export function TugSetup(): ReactElement {
   useEffect(() => {
     if (firstRun) putSetupSeen(true);
   }, [firstRun]);
+
+  // Sign-in safety net: the CLI's `claude auth login` blocks on its own browser
+  // OAuth callback with no backend timeout, so a user who abandons the browser
+  // would otherwise leave the wizard stuck on "Waiting…" forever. Bound the
+  // wait; on expiry, surface the recoverable failure (a late success still
+  // wins — `applyResult` clears the flag).
+  useEffect(() => {
+    if (!signingIn) return;
+    const timer = window.setTimeout(
+      () => authStore.markSignInTimedOut(),
+      SIGN_IN_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [signingIn]);
 
   // While the probe is still in flight on a first launch, the login state is
   // unknown — render a "checking" body instead of guessing step statuses.
@@ -240,13 +275,21 @@ export function TugSetup(): ReactElement {
             label: account?.email ? `Signed in as ${account.email}` : "Signed in to Claude",
             detail: account?.subscriptionType ? `${account.subscriptionType} subscription.` : undefined,
           }
-        : {
-            key: "signin",
-            status: "active",
-            label: "Sign in to Claude",
-            detail: "Tug runs sessions with your Claude subscription.",
-            cta: { label: "Sign In", onClick: handleSignIn },
-          };
+        : signInFailed
+          ? {
+              key: "signin",
+              status: "error",
+              label: "Sign in to Claude",
+              detail: "Sign-in didn't finish. The browser may have been closed.",
+              cta: { label: "Try Again", onClick: handleSignIn },
+            }
+          : {
+              key: "signin",
+              status: "active",
+              label: "Sign in to Claude",
+              detail: "Tug runs sessions with your Claude subscription.",
+              cta: { label: "Sign In", onClick: handleSignIn },
+            };
 
   const openStep: Step = effectiveLoggedIn
     ? {
@@ -264,9 +307,26 @@ export function TugSetup(): ReactElement {
     { key: "open", status: "pending", label: "Start a Claude Code session" },
   ];
 
-  const steps: Step[] = probing
-    ? probingSteps
-    : [claudeStep, signInStep, openStep];
+  // Transport down mid-setup: replace the body with a calm "Reconnecting…" row
+  // rather than a dead wizard (#tugsetup-states). This only changes the body of
+  // an already-open wizard — it is deliberately NOT part of the `open`
+  // derivation, so a transport blip never pops setup on an already-set-up user
+  // (the app-wide reconnect banner covers that case).
+  const transportDown = transport !== "online";
+  const reconnectingSteps: Step[] = [
+    {
+      key: "reconnect",
+      status: "busy",
+      label: "Reconnecting…",
+      detail: "Lost the connection to Tug. Setup will resume automatically.",
+    },
+  ];
+
+  const steps: Step[] = transportDown
+    ? reconnectingSteps
+    : probing
+      ? probingSteps
+      : [claudeStep, signInStep, openStep];
 
   return (
     <AlertDialog.Root open={open}>

@@ -38,6 +38,14 @@ export interface AuthSnapshot {
   account: AuthAccount | null;
   /** True between sending `claude_sign_in` and the next `claude_auth_result`. */
   signingIn: boolean;
+  /**
+   * True when a sign-in attempt resolved without logging in — the browser was
+   * cancelled, closed, or never returned (the backend re-probes after the CLI
+   * exits and there is no distinct failure reason on the wire, so this is the
+   * only signal). Drives the wizard's "Sign-in didn't finish" recovery state.
+   * Cleared when a new attempt starts or a later result logs in.
+   */
+  signInFailed: boolean;
   /** True while a Tug-managed `install_claude` is running. */
   installing: boolean;
   /** Last install error, or `null`. Cleared when a new install starts. */
@@ -49,6 +57,7 @@ const INITIAL: AuthSnapshot = {
   reason: null,
   account: null,
   signingIn: false,
+  signInFailed: false,
   installing: false,
   installError: null,
 };
@@ -69,8 +78,26 @@ class AuthStore {
 
   /** Mark a sign-in attempt in flight (the wizard shows "Waiting for browser sign-in…"). */
   setSigningIn(signingIn: boolean): void {
-    if (this._snapshot.signingIn === signingIn) return;
-    this._snapshot = { ...this._snapshot, signingIn };
+    // Starting an attempt clears any prior failure so the wizard returns to the
+    // "Waiting…" state rather than the error.
+    const nextFailed = signingIn ? false : this._snapshot.signInFailed;
+    if (
+      this._snapshot.signingIn === signingIn &&
+      this._snapshot.signInFailed === nextFailed
+    )
+      return;
+    this._snapshot = { ...this._snapshot, signingIn, signInFailed: nextFailed };
+    this.notify();
+  }
+
+  /**
+   * A sign-in attempt exceeded the wait budget (the browser never returned).
+   * Ends the in-flight state and surfaces the recoverable failure. No-op if no
+   * attempt is in flight (a late `claude_auth_result` already resolved it).
+   */
+  markSignInTimedOut(): void {
+    if (!this._snapshot.signingIn) return;
+    this._snapshot = { ...this._snapshot, signingIn: false, signInFailed: true };
     this.notify();
   }
 
@@ -96,12 +123,17 @@ class AuthStore {
     reason: AuthReason | null,
     account: AuthAccount | null,
   ): void {
+    // A result that arrives while a sign-in was in flight but does not log in
+    // means the attempt failed (cancelled / browser closed). A successful login
+    // clears the flag; a plain probe (no attempt in flight) leaves it as-is.
+    const attempted = this._snapshot.signingIn;
     this._snapshot = {
       ...this._snapshot,
       loggedIn,
       reason: loggedIn ? null : reason,
       account: loggedIn ? account : null,
       signingIn: false,
+      signInFailed: loggedIn ? false : attempted || this._snapshot.signInFailed,
       installing: false,
     };
     this.notify();
