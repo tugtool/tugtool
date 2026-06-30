@@ -517,7 +517,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 |---|---|---|---|
 | #step-1 | Land roadmap doc + as-built audit | done | 61ba4bfef, 12fb18de0 |
 | #step-2 | Styled distribution DMG (drag-to-Applications) | done | cc8c83505 |
-| #step-3 | Vendor lab scripts + just recipes | pending | — |
+| #step-3 | Vendor lab scripts + just recipes | done | (pending commit) |
 | #step-4 | One-command inner loop (`just lab-cycle`) | pending | — |
 | #step-5 | Tahoe + Golden Gate bases + matrix manifest | pending | — |
 | #step-6 | Host-OS-version handshake channel + store | pending | — |
@@ -592,14 +592,14 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - `just lab-new/lab-run/lab-wipe/lab-ls` recipes wrapping them.
 
 **Tasks:**
-- [ ] Copy the four scripts in; replace hardcoded paths with env defaults.
-- [ ] Add `just` recipes; note the external `/Volumes/Lab-A/bin` copies are now a stale mirror.
+- [x] Copy the four scripts in; replace hardcoded paths with env defaults. *(`scripts/lab/{lab-ls,lab-new,lab-run,lab-wipe}`; single `LAB_ROOT` (default `/Volumes/Lab-A`) derives `TART_HOME`; `lab-ls` reports `df` on `$LAB_ROOT`. Fixed a latent bug while vendoring: `lab-wipe --all` used `mapfile` (bash 4+), absent in macOS `/bin/bash` 3.2 — replaced with a 3.2-safe `read` loop, verified under `set -u`.)*
+- [x] Add `just` recipes; note the external `/Volumes/Lab-A/bin` copies are now a stale mirror. *(`lab-ls`/`lab-new`/`lab-run`/`lab-wipe` thin `*ARGS` wrappers; stale-mirror note in the recipe comment.)*
 
 **Tests:**
-- [ ] `just lab-ls` lists `base-sequoia` and current runs.
+- [x] `just lab-ls` lists `base-sequoia` and current runs. *(Lists `base-sequoia`, `run-run-3`, the Cirrus OCI bases, and 1.8Ti free on Lab-A.)*
 
 **Checkpoint:**
-- [ ] `just lab-new sequoia probe && just lab-wipe probe` round-trips a clone.
+- [x] `just lab-new sequoia probe && just lab-wipe probe` round-trips a clone. *(Clone `base-sequoia → run-probe` then wipe — both succeeded.)*
 
 ---
 

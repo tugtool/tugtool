@@ -1,0 +1,41 @@
+#!/bin/bash
+# lab-new — make a throwaway, factory-fresh clone of a golden base VM (Tart).
+#
+#   lab-new <base-name> [run-name]
+#
+# `tart clone` uses an APFS clonefile: instant, ~0 bytes until the clone
+# diverges. Convention: golden bases are named base-<name>, throwaway runs
+# run-<name>. Boot the result with `lab-run <run-name>`.
+#
+# LAB_ROOT (default /Volumes/Lab-A) is the lab disk; TART_HOME defaults to
+# $LAB_ROOT/tart.
+
+set -euo pipefail
+LAB_ROOT="${LAB_ROOT:-/Volumes/Lab-A}"
+export TART_HOME="${TART_HOME:-$LAB_ROOT/tart}"
+
+base="${1:?usage: lab-new <base-name> [run-name]}"
+run="${2:-$base}"
+
+src="base-${base}"
+dst="run-${run}"
+
+# Membership test that consumes all of tart's output (no SIGPIPE / pipefail trap).
+vm_exists() {
+  tart list --format json | /usr/bin/python3 -c \
+    "import sys,json; sys.exit(0 if any(v['Name']==sys.argv[1] for v in json.load(sys.stdin)) else 1)" "$1"
+}
+
+if ! vm_exists "$src"; then
+  echo "no such base VM: $src" >&2
+  echo "available:" >&2; tart list >&2
+  exit 1
+fi
+if vm_exists "$dst"; then
+  echo "run already exists: $dst (wipe it first: lab-wipe $run)" >&2
+  exit 1
+fi
+
+echo "cloning $src -> $dst (APFS clonefile)"
+tart clone "$src" "$dst"
+echo "done. boot it with: lab-run $run"

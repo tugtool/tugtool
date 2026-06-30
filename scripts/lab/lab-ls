@@ -1,0 +1,18 @@
+#!/bin/bash
+# lab-ls — show golden bases (base-*) and active throwaway runs (run-*) in Tart.
+# Clones share blocks with their base (APFS clonefile), so disk is logical;
+# a fresh clone's real footprint is near zero until it diverges.
+#
+# LAB_ROOT (default /Volumes/Lab-A) is the lab disk; TART_HOME defaults to
+# $LAB_ROOT/tart. Both are overridable to relocate the lab off Lab-A.
+
+set -euo pipefail
+LAB_ROOT="${LAB_ROOT:-/Volumes/Lab-A}"
+export TART_HOME="${TART_HOME:-$LAB_ROOT/tart}"
+
+echo "TART_HOME=$TART_HOME"
+echo
+tart list
+echo
+echo "disk free on $LAB_ROOT:"
+df -h "$LAB_ROOT" | tail -1 | awk '{print "  "$4" available ("$5" used)"}'

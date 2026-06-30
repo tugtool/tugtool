@@ -676,6 +676,33 @@ lab-dmg MODE="notarized":
     echo "==> staged for the VM lab: $LAB_SHARE/Tug.dmg"
     ls -lh "$LAB_SHARE/Tug.dmg"
 
+# VM-lab (Tart) recipes — thin wrappers over scripts/lab/*, vendored into the
+# repo from the former /Volumes/Lab-A/bin copies (now a stale mirror). LAB_ROOT
+# (default /Volumes/Lab-A) and TART_HOME (default $LAB_ROOT/tart) parameterize
+# the lab disk so the workflow rides version-controlled tooling, not disk-local
+# one-offs.
+#
+#   just lab-ls                        # bases + runs + lab-disk free space
+#   just lab-new sequoia [run]         # clone base-sequoia -> run-<run>
+#   just lab-run <run> [tart flags]    # boot a run (e.g. --dir=drop:$LAB_SHARE)
+#   just lab-wipe <run> | --all        # delete throwaway run(s); bases untouched
+
+# List golden bases, throwaway runs, and lab-disk free space.
+lab-ls:
+    scripts/lab/lab-ls
+
+# Clone a golden base into a throwaway run (lab-new <base> [run]).
+lab-new *ARGS:
+    scripts/lab/lab-new {{ARGS}}
+
+# Boot a run VM; extra args pass through to `tart run`.
+lab-run *ARGS:
+    scripts/lab/lab-run {{ARGS}}
+
+# Delete a throwaway run (lab-wipe <run> | --all); golden bases untouched.
+lab-wipe *ARGS:
+    scripts/lab/lab-wipe {{ARGS}}
+
 # One-time per-machine signing check. Verifies that an Apple
 # Developer ID Application certificate is installed in the login
 # keychain (the identity every Tug build signs with per [D11]).

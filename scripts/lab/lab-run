@@ -1,0 +1,27 @@
+#!/bin/bash
+# lab-run — boot a run VM in a window (Tart). Extra args pass through to tart run.
+#
+#   lab-run <run-name> [tart run flags...]
+#
+# Useful passthrough flags:
+#   --no-graphics            headless (no window)
+#   --dir=tug:/path/on/host  share a host folder into the guest (e.g. the Tug.app dmg)
+#
+# LAB_ROOT (default /Volumes/Lab-A) is the lab disk; TART_HOME defaults to
+# $LAB_ROOT/tart.
+
+set -euo pipefail
+LAB_ROOT="${LAB_ROOT:-/Volumes/Lab-A}"
+export TART_HOME="${TART_HOME:-$LAB_ROOT/tart}"
+
+run="${1:?usage: lab-run <run-name> [tart run flags...]}"; shift || true
+name="run-${run}"
+
+vm_exists() {
+  tart list --format json | /usr/bin/python3 -c \
+    "import sys,json; sys.exit(0 if any(v['Name']==sys.argv[1] for v in json.load(sys.stdin)) else 1)" "$1"
+}
+if ! vm_exists "$name"; then
+  echo "no such run: $name (make one with: lab-new <base> $run)" >&2; exit 1
+fi
+exec tart run "$name" "$@"

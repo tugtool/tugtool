@@ -1,0 +1,40 @@
+#!/bin/bash
+# lab-wipe — delete a throwaway run VM (Tart). Golden bases are never touched.
+#
+#   lab-wipe <run-name>        delete run-<run-name>
+#   lab-wipe --all             delete every run-* VM (bases left alone)
+#
+# LAB_ROOT (default /Volumes/Lab-A) is the lab disk; TART_HOME defaults to
+# $LAB_ROOT/tart.
+
+set -euo pipefail
+LAB_ROOT="${LAB_ROOT:-/Volumes/Lab-A}"
+export TART_HOME="${TART_HOME:-$LAB_ROOT/tart}"
+
+arg="${1:?usage: lab-wipe <run-name> | --all}"
+
+runs_local() {
+  tart list --format json | /usr/bin/python3 -c \
+    "import sys,json; [print(v['Name']) for v in json.load(sys.stdin) if v.get('Source')=='local' and v['Name'].startswith('run-')]"
+}
+
+if [ "$arg" = "--all" ]; then
+  # Collect run names without mapfile/readarray (absent in macOS /bin/bash 3.2).
+  runs=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && runs+=("$line")
+  done < <(runs_local)
+  if [ "${#runs[@]}" -eq 0 ]; then echo "no runs to wipe"; exit 0; fi
+  printf 'wiping %d run(s):\n' "${#runs[@]}"
+  for r in "${runs[@]}"; do echo "  - $r"; tart delete "$r"; done
+  echo "done."
+  exit 0
+fi
+
+dst="run-${arg}"
+if ! tart list --format json | /usr/bin/python3 -c \
+    "import sys,json; sys.exit(0 if any(v['Name']==sys.argv[1] for v in json.load(sys.stdin)) else 1)" "$dst"; then
+  echo "no such run: $dst" >&2; exit 1
+fi
+tart delete "$dst"
+echo "wiped: $dst"
