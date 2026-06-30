@@ -173,7 +173,7 @@ function StepRow({
 }
 
 export function TugSetup(): ReactElement {
-  const { loggedIn, reason, account, signingIn, signInFailed, installing, installError } =
+  const { loggedIn, reason, account, signingIn, signInFailed, installing, verifyingInstall, installError } =
     useAuth();
   const transport = useAppTransportState();
   const deck = useDeckManager();
@@ -263,7 +263,7 @@ export function TugSetup(): ReactElement {
     cta?: { label: string; onClick: () => void };
   };
 
-  const claudeStep: Step = installing
+  const claudeStep: Step = installing || verifyingInstall
     ? {
         key: "install",
         status: "busy",

@@ -48,6 +48,15 @@ export interface AuthSnapshot {
   signInFailed: boolean;
   /** True while a Tug-managed `install_claude` is running. */
   installing: boolean;
+  /**
+   * True between a successful `claude_install_result` and the `claude_auth_result`
+   * the backend re-probes with right after. The two arrive as separate frames,
+   * so without this bridge the install step would flash back to "needs install"
+   * (install done, but `reason` is still `claude_missing` until the re-probe
+   * lands). Keeps the step "busy" forward through that gap. Cleared by the next
+   * `claude_auth_result`.
+   */
+  verifyingInstall: boolean;
   /** Last install error, or `null`. Cleared when a new install starts. */
   installError: string | null;
 }
@@ -59,6 +68,7 @@ const INITIAL: AuthSnapshot = {
   signingIn: false,
   signInFailed: false,
   installing: false,
+  verifyingInstall: false,
   installError: null,
 };
 
@@ -103,15 +113,26 @@ class AuthStore {
 
   /** Mark a Tug-managed install in flight (clears any prior install error). */
   setInstalling(installing: boolean): void {
-    this._snapshot = { ...this._snapshot, installing, installError: null };
+    this._snapshot = {
+      ...this._snapshot,
+      installing,
+      installError: null,
+      verifyingInstall: false,
+    };
     this.notify();
   }
 
-  /** Apply a `claude_install_result`: ends the install, records any error. */
+  /**
+   * Apply a `claude_install_result`: ends the install, records any error. On
+   * success the install isn't "done" yet — the backend re-probes next — so we
+   * enter `verifyingInstall` to keep the step busy until that result lands,
+   * rather than briefly reverting to "needs install".
+   */
   applyInstallResult(ok: boolean, error: string | null): void {
     this._snapshot = {
       ...this._snapshot,
       installing: false,
+      verifyingInstall: ok,
       installError: ok ? null : (error ?? "install failed"),
     };
     this.notify();
@@ -135,6 +156,9 @@ class AuthStore {
       signingIn: false,
       signInFailed: loggedIn ? false : attempted || this._snapshot.signInFailed,
       installing: false,
+      // This result is the post-install re-probe (or any later probe): the
+      // install step now resolves to its real state, so the bridge ends.
+      verifyingInstall: false,
     };
     this.notify();
   }
