@@ -1898,7 +1898,10 @@ function DevProjectPickerForm({
               </div>
             )}
           </div>
-          <div className="dev-card-picker-trash-all">
+          <div
+            className="dev-card-picker-trash-all"
+            data-disabled={nonLiveCount === 0 ? "true" : undefined}
+          >
             <TugLabel emphasis="proposal" data-testid="dev-card-picker-trash-all-label">
               {nonLiveCount > 1
                 ? `Move all sessions to Trash for this path (${nonLiveCount})`

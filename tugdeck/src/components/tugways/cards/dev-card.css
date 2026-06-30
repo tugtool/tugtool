@@ -836,11 +836,12 @@
   width: 100%;
 }
 
-/* List hosts — fixed heights, not max-heights, so the sections have
-   stable real estate even when content is empty. A 1px frame + rounded
-   corners replace the former TugBox border; `overflow: hidden` clips
-   the list's rows to the radius. The internal list view scrolls when
-   content exceeds the host's height. */
+/* List hosts — content-sized wrappers that grow with their content up to a
+   per-section cap (the cap is a `max-height` on the embedded list view, which
+   is the scroll container). An empty or sparse section collapses to its
+   content so a new user with no recents / sessions doesn't stare at a big
+   reserved void; a section with many rows grows to the cap, then scrolls. The
+   cap is the former fixed height, so the busy case is unchanged. */
 /* The picker boxes are pure sizing wrappers: the embedded TugListView draws its
    own frame, rounded corners, row clipping, and focus ring from these tokens
    (it is the scroll container, so it clips its own rows to the radius). No
@@ -855,21 +856,16 @@
   --tugx-list-view-frame-width: 1px;
   --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
-.dev-card-picker-recents-host {
-  height: 7.5rem;
-}
-.dev-card-picker-sessions-host {
-  height: 14.5rem;
-}
 
-/* Empty-state placeholder — fills the (fixed-height) host so the
-   sessions box stays at its full height even with no path / no
-   rows. Centered text reads as a quiet hint, not a blank panel. */
+/* Empty-state placeholder — content-sized now (the host no longer reserves a
+   fixed height), so an empty section collapses to a compact hint rather than a
+   tall blank panel. A small min-height keeps the single line of italic hint
+   from looking cramped. Centered text reads as a quiet hint. */
 .dev-card-picker-empty {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 2.75rem;
   padding: var(--tug-space-md, 12px);
   font-size: var(--tug-font-size-sm, 0.875rem);
   font-style: italic;
@@ -877,23 +873,27 @@
   text-align: center;
 }
 
-/* The embedded TugListView — zero row gap so adjacent cells share
-   their borders, and full-fill the bounded host. */
+/* The embedded Sessions TugListView — zero row gap so adjacent cells share
+   their borders. Content-height (the scroller grows with its rows) capped at
+   the section's max; beyond the cap the list scrolls. */
 .dev-card-picker-list-view.tug-list-view {
   --tugx-list-view-padding-block: 0;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-row-gap: 0;
-  height: 100%;
+  height: auto;
+  max-height: 14.5rem;
 }
 
 /* The Recents list fills its host edge-to-edge — zero block + inline
    padding so the rows sit flush to the bordered host on every side.
-   (The Sessions list gets the same from `.dev-card-picker-list-view`
-   below.) The `flush` zero row gap and hairline dividers come from
-   `rowLayout="flush"` in `tug-list-view.css`. */
+   Content-height capped at the section's max (the former fixed height); the
+   list scrolls past it. The `flush` zero row gap and hairline dividers come
+   from `rowLayout="flush"` in `tug-list-view.css`. */
 .dev-card-picker-recents-list.tug-list-view {
   --tugx-list-view-padding-block: 0;
   --tugx-list-view-padding-inline: 0;
+  height: auto;
+  max-height: 7.5rem;
 }
 
 /* path-recent — the path text inside a `mono` `flush` `TugListRow`. The
@@ -1011,6 +1011,13 @@
   justify-content: center;
   gap: var(--tug-space-sm, 8px);
   padding: var(--tug-space-lg, 16px) var(--tug-space-md, 12px) 0;
+}
+
+/* Nothing to trash: dim the whole affordance (the label as well as the
+   already-`disabled` icon button) so it reads as inert, not actionable. */
+.dev-card-picker-trash-all[data-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 /* Tighten the gap between the Sessions section (which carries the
