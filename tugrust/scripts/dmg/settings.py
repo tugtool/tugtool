@@ -42,9 +42,14 @@ symlinks = {"Applications": "/Applications"}
 
 # -- Window: hidden chrome, sized exactly to the background ------------------
 
-# window_rect = ((x, y), (w, h)) — content-area size is what matters; Finder
-# may re-center the position. 720x460 matches the background art exactly.
-window_rect = ((200, 120), (720, 460))
+# window_rect = ((x, y), (w, h)); 720x460 matches the background art exactly.
+# Per the dmgbuild docs, y runs bottom-to-top and you cannot position relative
+# to the screen's top-left or centre — but the Finder clamps the window onto
+# the user's display, so a large y pins it to the top-left of ANY screen. We
+# anchor there (the one display-independent corner): x=100 gives a left margin
+# that's always honored; the top lands just under the menu bar (a reliable top
+# margin isn't possible — the clamp wins).
+window_rect = ((100, 100000), (720, 460))
 
 default_view = "icon-view"
 show_icon_preview = False
