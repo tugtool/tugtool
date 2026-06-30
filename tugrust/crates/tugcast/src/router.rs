@@ -299,6 +299,7 @@ pub async fn ws_handler(
 /// kernel via `sysctl kern.osproductversion` — no subprocess. Returns an empty
 /// string if the read fails (e.g. a non-macOS host); the frontend treats an
 /// empty/absent version as "unknown" and never blocks on it ([P06], Spec S03).
+#[cfg(target_os = "macos")]
 fn host_os_version() -> String {
     let name = match std::ffi::CString::new("kern.osproductversion") {
         Ok(n) => n,
@@ -337,6 +338,14 @@ fn host_os_version() -> String {
         }
         String::from_utf8_lossy(&buf).into_owned()
     }
+}
+
+/// Non-macOS fallback: there is no `kern.osproductversion` to read, so the
+/// version is "unknown". The frontend treats an empty version as such and never
+/// blocks on it ([P06], Spec S03).
+#[cfg(not(target_os = "macos"))]
+fn host_os_version() -> String {
+    String::new()
 }
 
 /// Build the handshake response sent to the client at connection open. Carries
