@@ -621,6 +621,28 @@ reap *MODE:
         echo "== done — $REAPED resource(s) released =="
     fi
 
+# Render the styled DMG background art (resources/dmg-preview.svg) into the
+# multi-representation HiDPI TIFF the dmgbuild step consumes. Two reps —
+# 720x460 @1x + 1440x920 @2x — combined via `tiffutil -cathidpicheck`.
+# Re-run after editing the SVG; the live app/Applications icons are NOT
+# painted in (Finder draws them), so only the art changes here.
+dmg-background:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v rsvg-convert &>/dev/null; then
+        echo "error: rsvg-convert not found (brew install librsvg)" >&2
+        exit 1
+    fi
+    SRC=resources/dmg-preview.svg
+    OUT=resources/dmg-background.tiff
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    rsvg-convert -w 720  -h 460 "$SRC" -o "$TMP/bg-1x.png"
+    rsvg-convert -w 1440 -h 920 "$SRC" -o "$TMP/bg-2x.png"
+    tiffutil -cathidpicheck "$TMP/bg-1x.png" "$TMP/bg-2x.png" -out "$OUT"
+    echo "==> wrote $OUT"
+    tiffutil -info "$OUT" | grep -iE "image width|image length"
+
 # Build unsigned DMG (no Developer ID, no notarization). Fastest
 # distribution-shape artifact; suitable for sharing a build locally
 # (e.g., to a tester on the same Mac) but Gatekeeper will reject it
