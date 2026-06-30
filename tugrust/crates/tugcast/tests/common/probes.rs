@@ -1031,20 +1031,30 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["tool_use", "tool_result", "assistant_text", "cost_update"],
         prerequisites: &[],
         timeout_secs: 120,
-        // Skipped at 2.1.197: the setup turn uses the Write tool, and a
-        // Write-tool turn does not complete — `turn_complete` never
-        // arrives after `prompt_anchor` (0 events, 90 s timeout), even
-        // run in isolation. Healthy at 2.1.158. The conversation-only
-        // rewind probes (test-38/40, no file write) still pass, so the
-        // trigger is the file-mutating turn under acceptEdits + file
-        // checkpointing, not rewind itself. Needs a focused
-        // investigation (2.1.197 permission/acceptEdits vs SDK
-        // file-checkpointing change; possible dev-card file-write
-        // impact). Un-skip once the Write-turn hang is root-caused.
+        // Skipped at 2.1.197: the setup turn uses the Write tool, and the
+        // turn does not complete through tugcode — `turn_complete` never
+        // arrives after `prompt_anchor` (0 events, 90 s timeout), even in
+        // isolation. Healthy at 2.1.158; the conversation-only rewind
+        // probes (test-38/40, no file write) still pass, so the trigger
+        // is the Write-tool turn, not rewind.
+        //
+        // Investigated (see the session writeup): it is NOT raw claude —
+        // a raw `claude --permission-mode {bypassPermissions,acceptEdits}`
+        // with file checkpointing on completes the identical Write turn
+        // in a small AND a 2000-file repo. It is NOT the product in
+        // Auto/default mode — the live Dev card (Auto mode, checkpointing
+        // on) runs Write/Edit turns to completion. The hang is specific
+        // to the capture path in **acceptEdits** mode at 2.1.197 — i.e. a
+        // tugcode SDK-control-protocol interaction with an
+        // acceptEdits-auto-approved Write that needs a frame-level trace
+        // (RUST_LOG on the spawned tugcode) to pin, plus a live
+        // acceptEdits-mode write test to rule out a product impact for
+        // users in that mode. Un-skip once root-caused + the probe path
+        // handles the new 2.1.197 control exchange.
         skip_reason: Some(
-            "2.1.197: Write-tool setup turn never completes (turn_complete \
-             times out) under acceptEdits + file checkpointing; healthy at \
-             2.1.158 — pending root-cause",
+            "2.1.197: Write-tool turn does not complete through tugcode in \
+             acceptEdits mode (raw claude + the Auto-mode Dev card are fine); \
+             pending frame-level root-cause",
         ),
     },
     // --- Test 38: conversation rewind, FORK (default) ([#step-7-2]) ---
