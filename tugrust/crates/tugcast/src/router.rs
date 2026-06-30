@@ -295,6 +295,63 @@ pub async fn ws_handler(
 // Protocol handshake
 // ---------------------------------------------------------------------------
 
+/// The host's macOS product version (e.g. `"15.7.7"`), read once from the
+/// kernel via `sysctl kern.osproductversion` — no subprocess. Returns an empty
+/// string if the read fails (e.g. a non-macOS host); the frontend treats an
+/// empty/absent version as "unknown" and never blocks on it ([P06], Spec S03).
+fn host_os_version() -> String {
+    let name = match std::ffi::CString::new("kern.osproductversion") {
+        Ok(n) => n,
+        Err(_) => return String::new(),
+    };
+    let mut size: libc::size_t = 0;
+    // SAFETY: standard two-call sysctlbyname idiom — first call sizes the
+    // buffer, second fills it. All pointers are valid for the lengths passed.
+    unsafe {
+        if libc::sysctlbyname(
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        ) != 0
+            || size == 0
+        {
+            return String::new();
+        }
+        let mut buf = vec![0u8; size];
+        if libc::sysctlbyname(
+            name.as_ptr(),
+            buf.as_mut_ptr() as *mut libc::c_void,
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        ) != 0
+        {
+            return String::new();
+        }
+        // `size` now reflects the bytes written, including the trailing NUL.
+        buf.truncate(size);
+        if buf.last() == Some(&0) {
+            buf.pop();
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    }
+}
+
+/// Build the handshake response sent to the client at connection open. Carries
+/// the protocol identity plus an additive `host` object (`{os, version}`) so
+/// the frontend can gate on the macOS version from the drop, before any card
+/// ([P06], Spec S03). Additive and back-compatible: older clients ignore it.
+fn build_handshake_response() -> serde_json::Value {
+    serde_json::json!({
+        "protocol": PROTOCOL_NAME,
+        "version": PROTOCOL_VERSION,
+        "capabilities": [],
+        "host": { "os": "macos", "version": host_os_version() },
+    })
+}
+
 /// Perform the protocol handshake at WebSocket connection open.
 async fn perform_handshake(socket: &mut WebSocket) -> bool {
     let hello = tokio::time::timeout(HANDSHAKE_TIMEOUT, socket.recv()).await;
@@ -382,11 +439,7 @@ async fn perform_handshake(socket: &mut WebSocket) -> bool {
         return false;
     }
 
-    let response = serde_json::json!({
-        "protocol": PROTOCOL_NAME,
-        "version": PROTOCOL_VERSION,
-        "capabilities": []
-    });
+    let response = build_handshake_response();
     if socket
         .send(Message::Text(response.to_string().into()))
         .await
@@ -1051,6 +1104,46 @@ impl axum::extract::FromRef<FeedRouter> for SharedAuthState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- Handshake response ----
+
+    #[test]
+    fn handshake_response_carries_well_formed_host() {
+        let r = build_handshake_response();
+
+        // Additive host object present and well-formed (Spec S03).
+        let host = r.get("host").expect("handshake response has a host field");
+        assert_eq!(
+            host.get("os").and_then(|v| v.as_str()),
+            Some("macos"),
+            "host.os is \"macos\""
+        );
+        let version = host
+            .get("version")
+            .and_then(|v| v.as_str())
+            .expect("host.version is a string");
+        // On a macOS host this is a dotted version like "15.7.7"; tolerate an
+        // empty string on a non-macOS test host (the frontend treats empty as
+        // unknown and does not block).
+        if !version.is_empty() {
+            assert!(
+                version
+                    .split('.')
+                    .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())),
+                "host.version is dotted digits: {version}"
+            );
+        }
+
+        // Protocol identity preserved — the host field is purely additive.
+        assert_eq!(
+            r.get("protocol").and_then(|v| v.as_str()),
+            Some(PROTOCOL_NAME)
+        );
+        assert_eq!(
+            r.get("version").and_then(|v| v.as_u64()),
+            Some(PROTOCOL_VERSION as u64)
+        );
+    }
 
     // ---- ReplayBuffer ----
 

@@ -17,6 +17,7 @@ import {
   controlFrame,
 } from "./protocol";
 import type { ConnectionLifecycle } from "./lib/connection-lifecycle";
+import { hostInfoStore, parseHandshakeHost } from "./lib/host-info-store";
 
 /** Callback for receiving frames from a specific feed */
 export type FrameCallback = (payload: Uint8Array) => void;
@@ -260,6 +261,10 @@ export class TugConnection {
               return;
             }
             console.log("tugdeck: handshake complete (v" + response.version + ")");
+            // Publish the host OS identity from the drop, before any card, so
+            // the minimum-macOS version gate can derive from it ([P06], [L02]).
+            // Re-runs on reconnect; an absent host leaves any prior value.
+            hostInfoStore.publish(parseHandshakeHost(response));
             this.handshakePending = false;
             // Now transition to connected
             this.state = ConnectionState.CONNECTED;

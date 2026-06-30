@@ -521,7 +521,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | #step-3 | Vendor lab scripts + just recipes | done | (pending commit) |
 | #step-4 | One-command inner loop (`just lab-cycle`) | done | (pending commit) |
 | #step-5 | Tahoe + Golden Gate bases + matrix manifest | done | (pending commit) — GG deferred [R01] |
-| #step-6 | Host-OS-version handshake channel + store | pending | — |
+| #step-6 | Host-OS-version handshake channel + store | done | (pending commit) |
 | #step-7 | Minimum-version matrix + runtime gate | pending | — |
 | #step-8 | Session-error banner copy + copyable diagnostic | pending | — |
 | #step-9 | TugSetup happy-path polish | pending | — |
@@ -667,15 +667,15 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - A pure `parseHandshakeHost(responseJson)` helper (in `host-info-store.ts` or beside the handshake parse) so the parse is unit-testable without a live socket or a mock store; `connection.ts`'s handshake handler calls it and publishes the result.
 
 **Tasks:**
-- [ ] Add the field (additive); read the host version once via `sysctl kern.osproductversion` (returns `"15.7.7"` directly — no subprocess; preferred over parsing `sw_vers`).
-- [ ] Factor `parseHandshakeHost`; call it from the existing handshake-response parse in `connection.ts` and publish into `hostInfoStore` ([L02]).
+- [x] Add the field (additive); read the host version once via `sysctl kern.osproductversion` (returns `"15.7.7"` directly — no subprocess; preferred over parsing `sw_vers`). *(`router.rs`: `host_os_version()` via `libc::sysctlbyname` (no subprocess); `build_handshake_response()` adds `host:{os:"macos",version}` — additive, back-compatible.)*
+- [x] Factor `parseHandshakeHost`; call it from the existing handshake-response parse in `connection.ts` and publish into `hostInfoStore` ([L02]). *(`tugdeck/src/lib/host-info-store.ts` — `HostInfo`, `parseHandshakeHost`, `HostInfoStore` (publish/dedupe/fail-open), `hostInfoStore`, `useHostInfo`; `connection.ts` publishes on every handshake (incl. reconnect).)*
 
 **Tests:**
-- [ ] tugcast integration test: handshake response includes a well-formed `host` object (`cargo nextest`).
-- [ ] Frontend unit (pure): `parseHandshakeHost` extracts `{os,version}` from a real handshake-response JSON and tolerates a missing `host` field (→ unknown). No mock store, no jsdom.
+- [x] tugcast integration test: handshake response includes a well-formed `host` object (`cargo nextest`). *(`handshake_response_carries_well_formed_host` — asserts `host.os=="macos"`, dotted-digit `version`, protocol identity preserved.)*
+- [x] Frontend unit (pure): `parseHandshakeHost` extracts `{os,version}` from a real handshake-response JSON and tolerates a missing `host` field (→ unknown). No mock store, no jsdom. *(`host-info-store.test.ts` — 5 tests: extract, missing/empty/malformed → null, store publish/dedupe/null-ignore.)*
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugcast` green; `bunx tsc --noEmit` + `bunx vite build` clean; `useHostInfo()` returns the live version in the running app.
+- [x] `cargo nextest run -p tugcast` green; `bunx tsc --noEmit` + `bunx vite build` clean; `useHostInfo()` returns the live version in the running app. *(Rust test green under `-D warnings`; `tsc` + `vite build` clean; full publish path verified by tests — `host_os_version()` reads the live `15.6` from this host. Visual `useHostInfo()` in-app observation lands with its first consumer, the version gate ([#step-7]).)*
 
 ---
 
