@@ -25,7 +25,11 @@
  * @module lib/code-session-store/select-jobs
  */
 
-import type { TaskStartedEvent, TaskUpdatedEvent } from "./events";
+import type {
+  TaskStartedEvent,
+  TaskUpdatedEvent,
+  TaskProgressEvent,
+} from "./events";
 
 // ---------------------------------------------------------------------------
 // Public shape
@@ -95,6 +99,26 @@ export interface JobItem {
   firesAtMs?: number | null;
   /** Human label for a recurring cron (e.g. its cron expression). */
   scheduleLabel?: string;
+  /**
+   * Live progress from the most recent `task_progress` tick, folded onto
+   * a running agent row so the JOBS cell can show what it is doing.
+   * Absent until the first tick (bash jobs and scheduled rows never emit
+   * `task_progress`, so they keep it `undefined`). Cleared by nothing —
+   * the last tick's snapshot stays on a terminal row as its final state.
+   */
+  progress?: JobProgress;
+}
+
+/**
+ * Latest-wins snapshot of a running agent's progress, from
+ * `task_progress`. `lastToolName` is the agent's most recent tool;
+ * the usage fields are cumulative across the agent's lifetime.
+ */
+export interface JobProgress {
+  lastToolName?: string;
+  totalTokens?: number;
+  toolUses?: number;
+  durationMs?: number;
 }
 
 const EMPTY_JOBS: readonly JobItem[] = Object.freeze([]);
@@ -157,6 +181,53 @@ export function narrowTaskUpdatedFrame(
     taskId,
     status,
     ...(typeof frame.end_time === "number" ? { endTime: frame.end_time } : {}),
+    ...(typeof frame.tug_session_id === "string"
+      ? { tug_session_id: frame.tug_session_id }
+      : {}),
+  };
+}
+
+/**
+ * Narrow a decoded `task_progress` CODE_OUTPUT frame into the camelCase
+ * {@link TaskProgressEvent}. Defensive on the required `task_id` /
+ * `tool_use_id`; the progress detail (`last_tool_name`, `usage`) is
+ * optional and camelCased here so a partial frame still folds.
+ */
+export function narrowTaskProgressFrame(
+  frame: Record<string, unknown>,
+): TaskProgressEvent | undefined {
+  if (frame.type !== "task_progress") return undefined;
+  const taskId = frame.task_id;
+  const toolUseId = frame.tool_use_id;
+  if (typeof taskId !== "string" || taskId.length === 0) return undefined;
+  if (typeof toolUseId !== "string" || toolUseId.length === 0) return undefined;
+  const subagentType = frame.subagent_type;
+  const lastToolName = frame.last_tool_name;
+  const rawUsage =
+    typeof frame.usage === "object" && frame.usage !== null
+      ? (frame.usage as Record<string, unknown>)
+      : null;
+  const usage = rawUsage
+    ? {
+        ...(typeof rawUsage.total_tokens === "number"
+          ? { totalTokens: rawUsage.total_tokens }
+          : {}),
+        ...(typeof rawUsage.tool_uses === "number"
+          ? { toolUses: rawUsage.tool_uses }
+          : {}),
+        ...(typeof rawUsage.duration_ms === "number"
+          ? { durationMs: rawUsage.duration_ms }
+          : {}),
+      }
+    : undefined;
+  return {
+    type: "task_progress",
+    taskId,
+    toolUseId,
+    description: typeof frame.description === "string" ? frame.description : "",
+    ...(typeof subagentType === "string" ? { subagentType } : {}),
+    ...(typeof lastToolName === "string" ? { lastToolName } : {}),
+    ...(usage && Object.keys(usage).length > 0 ? { usage } : {}),
     ...(typeof frame.tug_session_id === "string"
       ? { tug_session_id: frame.tug_session_id }
       : {}),
@@ -367,6 +438,38 @@ export function applyJobFlip(
   if (jobs[idx].status !== "running") return jobs;
   const next = jobs.slice();
   next[idx] = { ...jobs[idx], status, endedAtMs };
+  return next;
+}
+
+/**
+ * Fold a `task_progress` tick's detail onto its job row (latest wins).
+ * A no-op when the row is unknown (the agent was foreground, so no
+ * ledger row was inserted) or already terminal (a late tick must not
+ * disturb a finished row's final snapshot). Returns the same array
+ * reference when nothing changed, so `useSyncExternalStore` consumers
+ * don't re-render on an ignored tick.
+ */
+export function applyJobProgress(
+  jobs: readonly JobItem[],
+  ev: TaskProgressEvent,
+): readonly JobItem[] {
+  const idx = jobs.findIndex((j) => j.jobId === ev.taskId);
+  if (idx === -1) return jobs;
+  if (jobs[idx].status !== "running") return jobs;
+  const progress: JobProgress = {
+    ...(ev.lastToolName !== undefined ? { lastToolName: ev.lastToolName } : {}),
+    ...(ev.usage?.totalTokens !== undefined
+      ? { totalTokens: ev.usage.totalTokens }
+      : {}),
+    ...(ev.usage?.toolUses !== undefined ? { toolUses: ev.usage.toolUses } : {}),
+    ...(ev.usage?.durationMs !== undefined
+      ? { durationMs: ev.usage.durationMs }
+      : {}),
+  };
+  // An empty tick (no tool name, no usage) carries no new information.
+  if (Object.keys(progress).length === 0) return jobs;
+  const next = jobs.slice();
+  next[idx] = { ...jobs[idx], progress };
   return next;
 }
 

@@ -966,6 +966,34 @@ export interface TaskUpdatedEvent {
 }
 
 /**
+ * Background-job progress tick — tugcode's forward of claude's
+ * `system/task_progress` event, fired while a backgrounded agent runs
+ * (once per observable step, e.g. a tool call completing). Carries the
+ * agent's most recent tool (`lastToolName`) and cumulative `usage`
+ * (tokens / tool-use count / wall-clock) so the JOBS cell can show what
+ * a running agent is doing instead of a bare running→done flip. Same
+ * terminology guard and foreground-fires-too caveat as
+ * {@link TaskStartedEvent}; the reducer folds it onto an existing job
+ * row and never inserts one.
+ */
+export interface TaskProgressEvent {
+  type: "task_progress";
+  taskId: string;
+  toolUseId: string;
+  description: string;
+  subagentType?: string;
+  lastToolName?: string;
+  usage?: {
+    totalTokens?: number;
+    toolUses?: number;
+    durationMs?: number;
+  };
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+
+/**
  * Bracket marker emitted by the replay translator at the start of a
  * JSONL replay window. The reducer transitions
  * `phase: {idle | errored} → replaying` and gates `canSubmit` /
@@ -1127,6 +1155,7 @@ export type CodeSessionEvent =
   | AssistantOpenerEvent
   | TaskStartedEvent
   | TaskUpdatedEvent
+  | TaskProgressEvent
   | ClearJobsActionEvent
   | BindResumeAcknowledgedEvent
   | BeginLoadPreviousEvent

@@ -275,6 +275,32 @@ describe("jobs fixture replay — lifecycle through the real store", () => {
     expect(ledger[0].endedAtMs).toBe(patch.end_time as number);
   });
 
+  it("a bg launch drops exactly one persistent 'background' marker into the launching turn", () => {
+    const { store, conn } = makeStore();
+    // runLaunchTurn drives BOTH job-insert paths (the mid-turn
+    // task_started frame AND the launch-echo tool_result), so this also
+    // pins the exactly-once gating across the two routes.
+    runLaunchTurn(store, conn, jobs.get(ID_CLEAN)!);
+    const transcript = store.getSnapshot().transcript;
+    const lastTurn = transcript[transcript.length - 1]!;
+    const markers = lastTurn.messages.filter(
+      (m) => m.kind === "system_note" && m.source === "background",
+    );
+    expect(markers).toHaveLength(1);
+    expect((markers[0] as { text: string }).text).toContain("Started background");
+  });
+
+  it("a foreground agent launch drops NO marker (the gate that protects the transcript)", () => {
+    const { store, conn } = makeStore();
+    runLaunchTurn(store, conn, jobs.get(ID_FG_AGENT)!);
+    const transcript = store.getSnapshot().transcript;
+    const lastTurn = transcript[transcript.length - 1]!;
+    const markers = lastTurn.messages.filter(
+      (m) => m.kind === "system_note" && m.source === "background",
+    );
+    expect(markers).toHaveLength(0);
+  });
+
   it("a failed job flips failed; a control-request-stopped job flips stopped (killed on the wire)", () => {
     const { store, conn } = makeStore();
     const failed = jobs.get(ID_FAILED)!;

@@ -36,6 +36,7 @@ import type {
   WakeStarted,
   TaskStarted,
   TaskUpdated,
+  TaskProgress,
   Attachment,
   ContentBlock,
   RewindPreview,
@@ -884,6 +885,30 @@ export function buildWakeStartedMessage(
 }
 
 /**
+ * Distinct `system/<subtype>` values already reported by
+ * {@link noteUnhandledSystemSubtype}, so each unknown subtype is logged
+ * once per process rather than on every occurrence (`system/status`
+ * fires ~once per API request — many times a turn).
+ */
+const reportedUnhandledSystemSubtypes = new Set<string>();
+
+/**
+ * Surface a `system` event whose `subtype` tugcode does not translate.
+ * The `case "system"` dispatch translates a known set
+ * (`init` / `compact_boundary` / `api_retry` / `model_refusal_fallback`
+ * / `task_started` / `task_updated` / `task_progress`) and historically
+ * had no final branch, so a newly-introduced subtype vanished silently —
+ * the failure mode that hid `task_progress`. This makes the next wire
+ * addition visible (e.g. `system/status`) so it can be classified and
+ * forwarded deliberately rather than discovered by accident.
+ */
+function noteUnhandledSystemSubtype(subtype: string): void {
+  if (reportedUnhandledSystemSubtypes.has(subtype)) return;
+  reportedUnhandledSystemSubtypes.add(subtype);
+  console.log(`[tugcode] unhandled system subtype="${subtype}" (not forwarded)`);
+}
+
+/**
  * Pure factory for the {@link TaskStarted} IPC frame from a
  * `system/task_started` event. Returns null for non-matching events or
  * ones missing the required `task_id` / `tool_use_id` strings —
@@ -947,6 +972,59 @@ export function buildTaskUpdatedMessage(
     task_id: taskId,
     status,
     ...(typeof endTime === "number" ? { end_time: endTime } : {}),
+    ipc_version: 2,
+  };
+}
+
+/**
+ * Pure factory for the {@link TaskProgress} IPC frame from a
+ * `system/task_progress` event. Returns null for non-matching events or
+ * ones missing the required `task_id` / `tool_use_id` strings —
+ * permissive on the optional progress detail (`last_tool_name`,
+ * `usage`) so a partial frame still forwards. Like
+ * {@link buildTaskStartedMessage} the frame fires for foreground
+ * subagents too; tugcode forwards verbatim and leaves the background
+ * gate to the consumer.
+ */
+export function buildTaskProgressMessage(
+  event: Record<string, unknown>,
+  sessionId: string,
+): TaskProgress | null {
+  if (event.type !== "system" || event.subtype !== "task_progress") {
+    return null;
+  }
+  const taskId = event.task_id;
+  const toolUseId = event.tool_use_id;
+  if (typeof taskId !== "string" || taskId.length === 0) return null;
+  if (typeof toolUseId !== "string" || toolUseId.length === 0) return null;
+  const subagentType = event.subagent_type;
+  const lastToolName = event.last_tool_name;
+  const rawUsage =
+    typeof event.usage === "object" && event.usage !== null
+      ? (event.usage as Record<string, unknown>)
+      : null;
+  const usage = rawUsage
+    ? {
+        ...(typeof rawUsage.total_tokens === "number"
+          ? { total_tokens: rawUsage.total_tokens }
+          : {}),
+        ...(typeof rawUsage.tool_uses === "number"
+          ? { tool_uses: rawUsage.tool_uses }
+          : {}),
+        ...(typeof rawUsage.duration_ms === "number"
+          ? { duration_ms: rawUsage.duration_ms }
+          : {}),
+      }
+    : undefined;
+  return {
+    type: "task_progress",
+    session_id: sessionId,
+    task_id: taskId,
+    tool_use_id: toolUseId,
+    description: typeof event.description === "string" ? event.description : "",
+    ...(typeof subagentType === "string" ? { subagent_type: subagentType } : {}),
+    ...(typeof lastToolName === "string" ? { last_tool_name: lastToolName } : {}),
+    ...(usage && Object.keys(usage).length > 0 ? { usage } : {}),
     ipc_version: 2,
   };
 }
@@ -1164,6 +1242,38 @@ export function routeTopLevelEvent(
           (event.session_id as string) || "",
         );
         if (frame !== null) messages.push(frame);
+      } else if (subtype === "task_progress") {
+        // In-flight background-agent progress (NEW on the 2.1.197-era
+        // wire). Carries the agent's most recent tool + cumulative
+        // usage so the JOBS cell can show what a backgrounded agent is
+        // doing instead of a bare running→done flip. Like the other
+        // task frames it can fire mid-turn (the agent runs concurrently
+        // with the launching turn).
+        const frame = buildTaskProgressMessage(
+          event,
+          (event.session_id as string) || "",
+        );
+        if (frame !== null) messages.push(frame);
+      } else if (subtype === "status") {
+        // Agent activity heartbeat (NEW at 2.1.197) — `system/status`,
+        // one per outbound API request (`status:"requesting"` observed).
+        // Deliberately NOT forwarded: it is a foreground per-request
+        // pulse whose "the loop is alive" meaning is already conveyed by
+        // the deck's `activeTurn`-driven live-activity readout, and
+        // piping a high-frequency heartbeat into the catalog-pinned wire
+        // earns drift churn for no gain the live line doesn't provide.
+        // Characterized + handled here (not a silent drop) so the choice
+        // is explicit; revisit if a finer foreground request pulse is
+        // ever wanted.
+      } else if (subtype !== undefined) {
+        // Guard against silently dropping a newly-introduced system
+        // subtype (e.g. `system/status`, observed first at 2.1.197).
+        // The catch-all dispatch had NO final branch, so any unknown
+        // subtype vanished with no trace — exactly how `task_progress`
+        // went unforwarded for several releases. Log each distinct
+        // subtype once per process so a future wire addition surfaces
+        // in the dev log / stderr instead of disappearing.
+        noteUnhandledSystemSubtype(subtype);
       }
       break;
     }
@@ -4411,6 +4521,20 @@ export class SessionManager {
       );
       if (frame !== null) writeLine(frame);
     }
+    // A backgrounded agent emits its `task_progress` ticks concurrently
+    // with the launching turn, so they too can land in the inter-turn
+    // drain (observed inter-result in the background-Agent catalog
+    // probe). Forward from both tiers, mirroring task_started/updated.
+    if (event.type === "system" && event.subtype === "task_progress") {
+      const frame = buildTaskProgressMessage(
+        event,
+        (event.session_id as string) || this.sessionId,
+      );
+      if (frame !== null) writeLine(frame);
+    }
+    // `system/status` (the 2.1.197 heartbeat) is intentionally not
+    // forwarded from either tier — see the in-turn `routeTopLevelEvent`
+    // note for the rationale.
     // Other inter-turn event types are currently no-ops. The drain
     // is intentionally permissive here — it must not throw, since
     // unhandled-but-syntactically-valid lines from claude (a future

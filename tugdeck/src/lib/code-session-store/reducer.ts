@@ -66,6 +66,7 @@ import type {
   ToolUseStructuredEvent,
   TaskStartedEvent,
   TaskUpdatedEvent,
+  TaskProgressEvent,
   TurnCompleteEvent,
   WakeStartedEvent,
   AssistantOpenerEvent,
@@ -107,6 +108,7 @@ import type {
 import { compactionNoteText } from "./compaction";
 import {
   applyJobFlip,
+  applyJobProgress,
   clearTerminalJobs,
   EMPTY_JOBS_LEDGER,
   insertJob,
@@ -251,6 +253,59 @@ function withScratchEntry(
   const next = new Map(scratch);
   next.set(turnKey, entry);
   return next;
+}
+
+/** Phrase a background-launch marker for the transcript. */
+function backgroundLaunchNoteText(
+  kind: JobItem["kind"],
+  description: string,
+): string {
+  const label =
+    kind === "agent"
+      ? "background agent"
+      : kind === "monitor"
+        ? "monitor"
+        : kind === "bash"
+          ? "background task"
+          : "background work";
+  const desc = description.replace(/\s+/g, " ").trim();
+  return desc.length > 0 ? `Started ${label}: ${desc}` : `Started ${label}`;
+}
+
+/**
+ * Append a `source: "background"` system note — the persistent,
+ * in-transcript "settled marker" that a background job was launched —
+ * to the active turn's scratch. The note rides WITHIN the launching
+ * turn's assistant row (a `system_note` Message, not a new transcript
+ * row), so it commits with the turn and touches none of the row-index /
+ * scroll-addressing math ({@link rowsBeforeTurn} et al.). A no-op when
+ * there is no active turn / scratch entry (defensive; a background
+ * launch always lands during an in-flight turn). The caller gates on
+ * "newly tracked" so the marker fires exactly once across the two job
+ * insert paths (`task_started` frame vs. launch-echo `tool_result`).
+ */
+function appendBackgroundLaunchNote(
+  scratch: ReadonlyMap<string, ScratchEntry>,
+  turnKey: string | undefined,
+  kind: JobItem["kind"],
+  description: string,
+): Map<string, ScratchEntry> {
+  const base = new Map(scratch);
+  if (turnKey === undefined) return base;
+  const entry = scratch.get(turnKey);
+  if (entry === undefined) return base;
+  const note: SystemNote = {
+    kind: "system_note",
+    messageKey: systemNoteKey(turnKey, entry.systemNoteSeq),
+    createdAt: Date.now(),
+    text: backgroundLaunchNoteText(kind, description),
+    source: "background",
+  };
+  return withScratchEntry(scratch, turnKey, {
+    ...entry,
+    messages: [...entry.messages, note],
+    systemNoteSeq: entry.systemNoteSeq + 1,
+  });
 }
 
 /**
@@ -1956,6 +2011,9 @@ function handleToolResult(
   // replayed launch insert would sit at `running` forever; after a
   // reload the ledger deliberately starts empty.
   let jobs = state.jobs;
+  // Set when a background launch drops its persistent marker note into
+  // the turn; replaces `nextScratch` in the return when present.
+  let launchNoteScratch: Map<string, ScratchEntry> | undefined;
   if (!isReplaying && mutated.status === "done") {
     const input =
       typeof mutated.input === "object" && mutated.input !== null
@@ -1969,13 +2027,15 @@ function handleToolResult(
       // idempotently.
       const echo = parseBackgroundLaunchResult(mutated.result);
       if (echo !== undefined) {
+        const launchDescription =
+          typeof input?.description === "string" ? input.description : "";
+        const wasTracked = jobs.some((j) => j.jobId === echo.jobId);
         jobs = insertJob(jobs, {
           jobId: echo.jobId,
           source: "claude",
           kind: echo.kind,
           toolUseId: mutated.toolUseId,
-          description:
-            typeof input?.description === "string" ? input.description : "",
+          description: launchDescription,
           ...(echo.outputFile !== undefined
             ? { outputFile: echo.outputFile }
             : {}),
@@ -1983,6 +2043,17 @@ function handleToolResult(
           startedAtMs: now,
           endedAtMs: null,
         });
+        // First insert of this job → persistent launch marker in this
+        // turn (gated identically to the `task_started` path so the two
+        // insert routes never double-mark).
+        if (!wasTracked) {
+          launchNoteScratch = appendBackgroundLaunchNote(
+            launchNoteScratch ?? nextScratch,
+            turnKey,
+            echo.kind,
+            launchDescription,
+          );
+        }
       }
     } else if (mutated.toolName.toLowerCase() === "taskstop") {
       // Defensive fold: the wire also confirms a stop via
@@ -2044,7 +2115,7 @@ function handleToolResult(
     state: {
       ...state,
       phase: nextPhase,
-      scratch: nextScratch,
+      scratch: launchNoteScratch ?? nextScratch,
       toolUseStartedAt,
       jobs,
       queuedSends,
@@ -4567,10 +4638,12 @@ function handleTaskStarted(
   if (!isJobLaunch(launching.toolName, input)) {
     return { state, effects: [] };
   }
+  const kind = jobKindForLaunch(launching.toolName, event.taskType);
+  const wasTracked = state.jobs.some((j) => j.jobId === event.taskId);
   const jobs = insertJob(state.jobs, {
     jobId: event.taskId,
     source: "claude",
-    kind: jobKindForLaunch(launching.toolName, event.taskType),
+    kind,
     toolUseId: event.toolUseId,
     description: event.description,
     status: "running",
@@ -4580,7 +4653,18 @@ function handleTaskStarted(
   if (jobs === state.jobs) {
     return { state, effects: [] };
   }
-  return { state: { ...state, jobs }, effects: [] };
+  // First insert of this job → drop a persistent launch marker into the
+  // launching turn (exactly once; the echo path gates on the same
+  // "newly tracked" test, so whichever insert runs first owns it).
+  const scratch = wasTracked
+    ? state.scratch
+    : appendBackgroundLaunchNote(
+        state.scratch,
+        turnKey,
+        kind,
+        event.description,
+      );
+  return { state: { ...state, jobs, scratch }, effects: [] };
 }
 
 /**
@@ -4604,6 +4688,24 @@ function handleTaskUpdated(
     status,
     event.endTime ?? Date.now(),
   );
+  if (jobs === state.jobs) {
+    return { state, effects: [] };
+  }
+  return { state: { ...state, jobs }, effects: [] };
+}
+
+/**
+ * `task_progress` — fold a running agent's latest tool + cumulative
+ * usage onto its ledger row. {@link applyJobProgress} no-ops when the
+ * row is unknown (foreground agent — never inserted) or terminal (a
+ * late tick must not disturb the final snapshot), returning the same
+ * `jobs` reference so an ignored tick produces no state change.
+ */
+function handleTaskProgress(
+  state: CodeSessionState,
+  event: TaskProgressEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const jobs = applyJobProgress(state.jobs, event);
   if (jobs === state.jobs) {
     return { state, effects: [] };
   }
@@ -4866,6 +4968,8 @@ export function reduce(
       return handleTaskStarted(state, event);
     case "task_updated":
       return handleTaskUpdated(state, event);
+    case "task_progress":
+      return handleTaskProgress(state, event);
     case "clear_jobs_action":
       return handleClearJobs(state);
     case "bind_resume_acknowledged":

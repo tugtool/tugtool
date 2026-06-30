@@ -521,13 +521,17 @@ pub async fn execute_probe(
     for pre in probe.prerequisites {
         match pre {
             ProbePrereq::TugplugPluginLoaded => {
-                // tugcode derives `--plugin-dir` from `<project_dir>/tugplug/`.
-                // The prerequisite is met iff that directory actually
-                // exists — which is true when `project_dir` is the
-                // tugtool repo root (the capture binary case) and false
-                // when it's a crate-level cwd (the multi_session_real_claude
-                // case). Checking on disk keeps the probe table
-                // environment-agnostic.
+                // The harness points tugcode's `--plugin-dir` at
+                // `<project_dir>/tugplug/` via the `TUG_PLUGIN_DIR`
+                // override set in `TestTugcast::spawn` (tugcode no longer
+                // falls back to a per-project path — it resolves the
+                // override first, else a bundled app-resource path absent
+                // in the dev tree). The prerequisite is met iff that
+                // directory actually exists on disk — true when
+                // `project_dir` is the tugtool repo root (the capture
+                // binary case), false for a crate-level cwd (the
+                // multi_session_real_claude case). Checking on disk keeps
+                // the probe table environment-agnostic.
                 if !project_dir.join("tugplug").is_dir() {
                     return CapturedProbe {
                         name: probe.name.to_string(),
@@ -942,6 +946,19 @@ pub const TOOL_ACTIVITY_EVENT_TYPES: &[&str] = &["tool_use", "tool_result", "too
 /// [`shape_sequence`].
 pub const TOOL_ACTIVITY_MARKER: &str = "tool_activity";
 
+/// Event types that, when interleaved WITHIN a tool-using turn body,
+/// fold into its [`TOOL_ACTIVITY_MARKER`]. An agent — especially a
+/// subagent — chooses freely whether to narrate (`assistant_text`)
+/// before, between, or after its tool calls, and each block (text or
+/// tool) opens with a `content_block_start`; that interleaving is model
+/// non-determinism, not protocol shape (`test-22-subagent-spawn`
+/// captured one order and the next run produced another). [`shape_sequence`]
+/// therefore collapses a contiguous run of {these ∪ tool-activity} that
+/// contains at least one tool call to a single marker. A run with NO
+/// tool call (a pure-text turn) is preserved, so a real text→tool or
+/// `cost_update`→`assistant_text` transposition still surfaces.
+pub const TOOL_BODY_FILLER_EVENT_TYPES: &[&str] = &["assistant_text", "content_block_start"];
+
 /// Event types whose *presence* is per-turn model behavior, not a
 /// protocol contract — so BOTH their appearance and their absence in a
 /// given capture are run-to-run variance, not drift. The differ is
@@ -963,7 +980,17 @@ pub const TOOL_ACTIVITY_MARKER: &str = "tool_activity";
 ///   the choice flips run-to-run on the same prompt. The probe table
 ///   also lists it in every probe's `optional_events` for capture-time
 ///   stability checks; this constant is the differ's counterpart.
-pub const MODEL_OPTIONAL_EVENT_TYPES: &[&str] = &["thinking_text"];
+/// - `task_progress`: background-agent progress heartbeats. A subagent
+///   emits one per observable step, so the COUNT is inherently variable
+///   (a fast step elides it, a slow one repeats it), and the frame fires
+///   for FOREGROUND subagents too — the wire carries no backgrounded
+///   discriminant, so e.g. `test-22-subagent-spawn` captures a
+///   `task_progress` on one run and none the next. Its add/remove is
+///   therefore benign variance. Where its PRESENCE is load-bearing (the
+///   background-agent lifecycle probe) it is pinned the right way — via
+///   that probe's `required_events` at capture time — not via the drift
+///   sequence comparison.
+pub const MODEL_OPTIONAL_EVENT_TYPES: &[&str] = &["thinking_text", "task_progress"];
 
 /// Reduce a probe's event-type sequence to its **order-comparison
 /// shape**: drop position-insensitive interstitial events
@@ -985,19 +1012,54 @@ pub const MODEL_OPTIONAL_EVENT_TYPES: &[&str] = &["thinking_text"];
 /// count, this additionally erases a variable tool-call *cycle* count
 /// and usage-frame interleaving.
 pub fn shape_sequence(types: &[String]) -> Vec<String> {
+    // Pass 1: drop interstitials; map each tool-activity type to the
+    // marker, leave everything else as its raw type.
+    let toks: Vec<&str> = types
+        .iter()
+        .map(String::as_str)
+        .filter(|t| !INTERSTITIAL_EVENT_TYPES.contains(t))
+        .map(|t| {
+            if TOOL_ACTIVITY_EVENT_TYPES.contains(&t) {
+                TOOL_ACTIVITY_MARKER
+            } else {
+                t
+            }
+        })
+        .collect();
+
+    // Pass 2: collapse each contiguous "tool-using turn body" run — a
+    // maximal span of {tool_activity ∪ TOOL_BODY_FILLER} that contains
+    // at least one tool_activity — to a single marker, erasing the
+    // model's narrate-vs-tool ordering. A filler-only run (a pure-text
+    // turn) is preserved as its own tokens. Non-body tokens
+    // (`session_init`, `task_started`, `cost_update`, `turn_complete`, …)
+    // pass through, so a genuine skeleton transposition still surfaces.
+    let is_body = |t: &str| t == TOOL_ACTIVITY_MARKER || TOOL_BODY_FILLER_EVENT_TYPES.contains(&t);
     let mut out: Vec<String> = Vec::new();
-    for t in types {
-        let t = t.as_str();
-        if INTERSTITIAL_EVENT_TYPES.contains(&t) {
-            continue;
+    let push = |out: &mut Vec<String>, tok: &str| {
+        if out.last().map(String::as_str) != Some(tok) {
+            out.push(tok.to_string());
         }
-        let token = if TOOL_ACTIVITY_EVENT_TYPES.contains(&t) {
-            TOOL_ACTIVITY_MARKER
+    };
+    let mut i = 0;
+    while i < toks.len() {
+        if is_body(toks[i]) {
+            let start = i;
+            let mut has_tool = false;
+            while i < toks.len() && is_body(toks[i]) {
+                has_tool |= toks[i] == TOOL_ACTIVITY_MARKER;
+                i += 1;
+            }
+            if has_tool {
+                push(&mut out, TOOL_ACTIVITY_MARKER);
+            } else {
+                for &t in &toks[start..i] {
+                    push(&mut out, t);
+                }
+            }
         } else {
-            t
-        };
-        if out.last().map(String::as_str) != Some(token) {
-            out.push(token.to_string());
+            push(&mut out, toks[i]);
+            i += 1;
         }
     }
     out
@@ -1183,7 +1245,18 @@ pub fn extract_capabilities(
         )
     })?;
 
+    // Pick the RICHEST system_metadata event, not the first. As of
+    // claude 2.1.197 the probe stream carries an empty leading
+    // system_metadata scaffold (cwd / ipc_version / tug_session_id /
+    // type only — tugcode's all-defaults emit ahead of the real init)
+    // followed by the populated one (slash_commands / skills / tools /
+    // …). The old "first match" grabbed the empty scaffold and shipped a
+    // 0-command capabilities snapshot, breaking every downstream
+    // consumer (e.g. tugdeck's system-metadata-fixture test). Top-level
+    // key count is a stable richness proxy: the scaffold has ~4 keys,
+    // the real init ~17.
     let mut found: Option<String> = None;
+    let mut best_keys = 0usize;
     for line in std::io::BufReader::new(file).lines() {
         let line = line?;
         let trimmed = line.trim();
@@ -1195,8 +1268,11 @@ pub fn extract_capabilities(
             Err(_) => continue,
         };
         if event_type_of(&parsed) == Some("system_metadata") {
-            found = Some(trimmed.to_string());
-            break;
+            let keys = parsed.as_object().map_or(0, |o| o.len());
+            if found.is_none() || keys > best_keys {
+                best_keys = keys;
+                found = Some(trimmed.to_string());
+            }
         }
     }
 

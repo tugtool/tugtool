@@ -12,6 +12,7 @@ import { describe, test, expect } from "bun:test";
 
 import {
   applyJobFlip,
+  applyJobProgress,
   clearTerminalJobs,
   composeJobsSummary,
   countJobs,
@@ -25,6 +26,7 @@ import {
   markRunningJobsStopped,
   narrowTaskStartedFrame,
   narrowTaskUpdatedFrame,
+  narrowTaskProgressFrame,
   parseBackgroundLaunchResult,
   terminalJobStatusFromWire,
   type JobItem,
@@ -73,6 +75,19 @@ const UPDATED_COMPLETED = {
   status: "completed",
   end_time: 1781226041319,
   ipc_version: 2,
+};
+
+const AGENT_PROGRESS = {
+  type: "task_progress",
+  session_id: "c78bbf56-1133-49e2-ab57-5b9188249033",
+  task_id: "ab5660790736ebc09",
+  tool_use_id: "toolu_01UfQkA3tVuCDKDrLSVCNULX",
+  description: "Running Run sleep and echo command",
+  subagent_type: "general-purpose",
+  last_tool_name: "Bash",
+  usage: { total_tokens: 7684, tool_uses: 1, duration_ms: 2303 },
+  ipc_version: 2,
+  tug_session_id: "tug-1",
 };
 
 describe("narrowTaskStartedFrame", () => {
@@ -136,6 +151,77 @@ describe("narrowTaskUpdatedFrame", () => {
     expect(
       narrowTaskUpdatedFrame({ ...UPDATED_COMPLETED, status: undefined }),
     ).toBeUndefined();
+  });
+});
+
+describe("narrowTaskProgressFrame", () => {
+  test("narrows a progress tick, camelCasing usage detail", () => {
+    const ev = narrowTaskProgressFrame(AGENT_PROGRESS);
+    expect(ev).toEqual({
+      type: "task_progress",
+      taskId: "ab5660790736ebc09",
+      toolUseId: "toolu_01UfQkA3tVuCDKDrLSVCNULX",
+      description: "Running Run sleep and echo command",
+      subagentType: "general-purpose",
+      lastToolName: "Bash",
+      usage: { totalTokens: 7684, toolUses: 1, durationMs: 2303 },
+      tug_session_id: "tug-1",
+    });
+  });
+
+  test("tolerates a usage-less / tool-less tick and rejects id-less frames", () => {
+    const minimal = narrowTaskProgressFrame({
+      type: "task_progress",
+      task_id: "t1",
+      tool_use_id: "toolu_x",
+    });
+    expect(minimal).toBeDefined();
+    expect("usage" in minimal!).toBe(false);
+    expect("lastToolName" in minimal!).toBe(false);
+    expect(narrowTaskProgressFrame({ type: "task_updated" })).toBeUndefined();
+    expect(
+      narrowTaskProgressFrame({ ...AGENT_PROGRESS, tool_use_id: "" }),
+    ).toBeUndefined();
+  });
+});
+
+describe("applyJobProgress", () => {
+  test("folds the latest tick onto a running agent row", () => {
+    const ledger: readonly JobItem[] = [
+      job({ jobId: "ab5660790736ebc09", kind: "agent" }),
+    ];
+    const ev = narrowTaskProgressFrame(AGENT_PROGRESS)!;
+    const next = applyJobProgress(ledger, ev);
+    expect(next).not.toBe(ledger);
+    expect(next[0]!.progress).toEqual({
+      lastToolName: "Bash",
+      totalTokens: 7684,
+      toolUses: 1,
+      durationMs: 2303,
+    });
+  });
+
+  test("no-ops (same reference) on unknown id, terminal row, or empty tick", () => {
+    const running: readonly JobItem[] = [
+      job({ jobId: "ab5660790736ebc09", kind: "agent" }),
+    ];
+    const ev = narrowTaskProgressFrame(AGENT_PROGRESS)!;
+    // Unknown id — the agent was foreground, no row was inserted.
+    expect(applyJobProgress(running, { ...ev, taskId: "zzz" })).toBe(running);
+    // Terminal row — a late tick must not disturb the final snapshot.
+    const done: readonly JobItem[] = [
+      job({ jobId: "ab5660790736ebc09", kind: "agent", status: "completed" }),
+    ];
+    expect(applyJobProgress(done, ev)).toBe(done);
+    // Empty tick — no tool, no usage — carries no new information.
+    expect(
+      applyJobProgress(running, {
+        type: "task_progress",
+        taskId: "ab5660790736ebc09",
+        toolUseId: "toolu_x",
+        description: "",
+      }),
+    ).toBe(running);
   });
 });
 

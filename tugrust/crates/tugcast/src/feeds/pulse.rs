@@ -72,6 +72,7 @@ const PULSE_FORWARD_ALLOWLIST: &[&str] = &[
     "turn_cancelled",
     "task_started",
     "task_updated",
+    "task_progress",
     "api_retry",
     "error",
     "wake_started",
@@ -597,6 +598,16 @@ mod tests {
         assert_eq!(
             forwardable_session(
                 br#"{"tug_session_id":"s1","type":"tool_use","tool_name":"Bash"}"#,
+                &mut muted,
+            ),
+            Some("s1".to_string())
+        );
+        // Background-agent progress IS forwarded, so the pulse can
+        // narrate what a backgrounded agent is doing (not just its
+        // start/terminal).
+        assert_eq!(
+            forwardable_session(
+                br#"{"tug_session_id":"s1","type":"task_progress","last_tool_name":"Bash"}"#,
                 &mut muted,
             ),
             Some("s1".to_string())

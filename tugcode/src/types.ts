@@ -1060,6 +1060,38 @@ export interface TaskUpdated {
   ipc_version: number;
 }
 
+/**
+ * Background-task progress tick — claude's `system/task_progress`, fired
+ * for an in-flight background agent each time it makes observable
+ * progress (a tool call completing). NEW in the 2.1.197-era wire: the
+ * v2.1.173-jobs-spike noted `task_progress` existed but tugcode dropped
+ * it, so a background agent rendered start→terminal with no visibility
+ * into its work. This frame carries that intermediate detail — the
+ * agent's most recent tool (`last_tool_name`) and cumulative `usage`
+ * (token count, tool-use count, wall-clock). Like {@link TaskStarted}
+ * it fires for foreground subagents too; consumers gate on the
+ * launching tool call's `input.run_in_background` via `tool_use_id`.
+ *
+ * Empirical contract: the background-Agent probe in the recurring
+ * stream-json catalog (promoted from `v2.1.173-jobs-spike`).
+ */
+export interface TaskProgress {
+  type: "task_progress";
+  session_id: string;
+  task_id: string;
+  tool_use_id: string;
+  description: string;
+  subagent_type?: string;
+  last_tool_name?: string;
+  usage?: {
+    total_tokens?: number;
+    tool_uses?: number;
+    duration_ms?: number;
+  };
+  ipc_version: number;
+}
+
+
 export interface ReplayStarted {
   type: "replay_started";
   ipc_version: number;
@@ -1271,6 +1303,7 @@ export type OutboundMessage =
   | AssistantOpener
   | TaskStarted
   | TaskUpdated
+  | TaskProgress
   | RewindPreviewResult
   | RewindResult
   | SkillsInventory

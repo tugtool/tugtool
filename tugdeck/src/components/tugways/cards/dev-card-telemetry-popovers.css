@@ -607,6 +607,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The running agent's most recent tool (from `task_progress`). Tinted
+   to read as live activity against the muted meta line, and clipped so
+   a long tool name never widens the row.
+   @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-jobs-popover-progress {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
 .dev-jobs-popover-footer {
   display: flex;

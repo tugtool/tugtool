@@ -1148,6 +1148,19 @@ function JobRow({
           ·
         </span>
         <span className="dev-jobs-popover-elapsed">{elapsed}</span>
+        {job.progress?.lastToolName !== undefined ? (
+          // A backgrounded agent's most recent tool, from its latest
+          // `task_progress` tick — the running row's window into what
+          // the agent is doing, not just that it is alive.
+          <>
+            <span className="dev-jobs-popover-meta-sep" aria-hidden>
+              ·
+            </span>
+            <span className="dev-jobs-popover-progress">
+              {job.progress.lastToolName}
+            </span>
+          </>
+        ) : null}
         {wakeBadge !== null ? (
           <TugBadge emphasis="tinted" role="danger" size="2xs">
             {wakeBadge}

@@ -41,20 +41,20 @@ describe("createFixtureSessionMetadataStore", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const snapshot = store.getSnapshot();
 
-    // Payload counts for the shipped v2.1.158 capture. The tugplug skills
+    // Payload counts for the shipped v2.1.197 capture. The tugplug skills
     // are the prefixed set (audit/commit/dash/devise/implement/vet); the
     // agent list is the built-in Claude Code set:
-    //   slash_commands: 33  (19 upgrade to "skill", 14 stay "local")
+    //   slash_commands: 35  (20 upgrade to "skill", 15 stay "local")
     //   agents: 5
-    //   total after dedup: 38
-    expect(snapshot.slashCommands.length).toBe(38);
+    //   total after dedup: 40
+    expect(snapshot.slashCommands.length).toBe(40);
 
     const byCategory = new Map<string, number>();
     for (const cmd of snapshot.slashCommands) {
       byCategory.set(cmd.category, (byCategory.get(cmd.category) ?? 0) + 1);
     }
-    expect(byCategory.get("local")).toBe(14);
-    expect(byCategory.get("skill")).toBe(19);
+    expect(byCategory.get("local")).toBe(15);
+    expect(byCategory.get("skill")).toBe(20);
     expect(byCategory.get("agent")).toBe(5);
   });
 

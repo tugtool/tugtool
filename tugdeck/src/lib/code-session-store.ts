@@ -53,6 +53,7 @@ import {
 import {
   narrowTaskStartedFrame,
   narrowTaskUpdatedFrame,
+  narrowTaskProgressFrame,
 } from "./code-session-store/select-jobs";
 import {
   createInitialState,
@@ -279,6 +280,10 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // session-lifetime jobs ledger.
   "task_started",
   "task_updated",
+  // `task_progress`: in-flight ticks for a backgrounded agent (NEW on
+  // the 2.1.197-era wire). The reducer folds the latest tick's tool +
+  // usage onto the running job row; it never inserts a row.
+  "task_progress",
   // `/rewind` frames ([#step-7-1]/[#step-7-2]). `prompt_anchor` carries the
   // live turn's rewind anchor (the reducer stamps it onto the turn);
   // `rewind_preview_result` carries a per-turn diff-stat (folded into the
@@ -1634,7 +1639,11 @@ export class CodeSessionStore {
             : {}),
         } as unknown as CodeSessionEvent;
       }
-      if (ev.type === "task_started" || ev.type === "task_updated") {
+      if (
+        ev.type === "task_started" ||
+        ev.type === "task_updated" ||
+        ev.type === "task_progress"
+      ) {
         // Background-job lifecycle frames — snake_case wire narrowed
         // to the camelCase reducer events by the select-jobs helpers.
         // A drifted/malformed frame narrows to undefined and is
@@ -1642,7 +1651,9 @@ export class CodeSessionStore {
         const narrowed =
           ev.type === "task_started"
             ? narrowTaskStartedFrame(ev)
-            : narrowTaskUpdatedFrame(ev);
+            : ev.type === "task_updated"
+              ? narrowTaskUpdatedFrame(ev)
+              : narrowTaskProgressFrame(ev);
         return narrowed ?? null;
       }
       if (ev.type === "unknown_event") {

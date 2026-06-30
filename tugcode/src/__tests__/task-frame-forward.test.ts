@@ -17,6 +17,7 @@ import { join } from "node:path";
 import {
   buildTaskStartedMessage,
   buildTaskUpdatedMessage,
+  buildTaskProgressMessage,
   routeTopLevelEvent,
   type EventMappingContext,
 } from "../session.ts";
@@ -124,6 +125,55 @@ describe("buildTaskUpdatedMessage", () => {
   });
 });
 
+describe("buildTaskProgressMessage", () => {
+  test("forwards every captured task_progress tick with tool + usage detail", () => {
+    const progress = fixtureEvents().filter(
+      (e) => e.type === "system" && e.subtype === "task_progress",
+    );
+    expect(progress.length).toBeGreaterThanOrEqual(1);
+    for (const event of progress) {
+      const frame = buildTaskProgressMessage(event, "sess-1");
+      expect(frame).not.toBeNull();
+      expect(frame!.type).toBe("task_progress");
+      expect(frame!.session_id).toBe("sess-1");
+      expect(frame!.task_id.length).toBeGreaterThan(0);
+      expect(frame!.tool_use_id.startsWith("toolu_")).toBe(true);
+      expect(frame!.ipc_version).toBe(2);
+      // The spike's bg agent runs a Bash step, so each tick carries
+      // cumulative usage (the detail that lets the deck show progress).
+      expect(typeof frame!.usage).toBe("object");
+      expect(typeof frame!.usage!.total_tokens).toBe("number");
+      expect(typeof frame!.usage!.tool_uses).toBe("number");
+    }
+  });
+
+  test("rejects non-matching and id-less events; tolerates a usage-less tick", () => {
+    expect(
+      buildTaskProgressMessage({ type: "system", subtype: "task_started" }, "s"),
+    ).toBeNull();
+    expect(
+      buildTaskProgressMessage(
+        { type: "system", subtype: "task_progress", task_id: "t1" },
+        "s",
+      ),
+    ).toBeNull();
+    // A minimal tick (ids only, no usage / tool) still forwards — the
+    // progress detail is optional.
+    const minimal = buildTaskProgressMessage(
+      {
+        type: "system",
+        subtype: "task_progress",
+        task_id: "t1",
+        tool_use_id: "toolu_x",
+      },
+      "s",
+    );
+    expect(minimal).not.toBeNull();
+    expect(minimal!.usage).toBeUndefined();
+    expect(minimal!.last_tool_name).toBeUndefined();
+  });
+});
+
 describe("in-turn routing", () => {
   test("routeTopLevelEvent emits task_started / task_updated IPC frames", () => {
     const events = fixtureEvents();
@@ -141,6 +191,13 @@ describe("in-turn routing", () => {
     const updatedResult = routeTopLevelEvent(updated, baseCtx);
     expect(updatedResult.messages).toHaveLength(1);
     expect(updatedResult.messages[0]!.type).toBe("task_updated");
+
+    const progress = events.find(
+      (e) => e.type === "system" && e.subtype === "task_progress",
+    )!;
+    const progressResult = routeTopLevelEvent(progress, baseCtx);
+    expect(progressResult.messages).toHaveLength(1);
+    expect(progressResult.messages[0]!.type).toBe("task_progress");
   });
 
   test("malformed task frames route to zero messages, not a throw", () => {

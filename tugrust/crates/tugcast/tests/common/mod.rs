@@ -234,6 +234,19 @@ impl TestTugcast {
             .arg("--bank-path")
             .arg(&bank_path)
             .env("TUGBANK_PATH", &bank_path)
+            // Point tugcode at the repo's `tugplug/` so the spawned claude
+            // loads the project's skills/agents/commands. tugcode's
+            // `resolvePluginDir` resolves `--plugin-dir` from
+            // `TUG_PLUGIN_DIR` first, else a bundled app-resource path
+            // (`../Resources/tugplug` beside the binary) that does NOT
+            // exist for the dev `target/debug/tugcode` used here — so
+            // without this override the capture runs tugplug-LESS and
+            // bakes the developer's ambient `~/.claude` config into the
+            // golden (empty `plugins`, no `tugplug:` commands). This is
+            // the explicit dev-harness injection that resolver documents;
+            // it restores the contract `execute_probe`'s tugplug-prereq
+            // comment assumes.
+            .env("TUG_PLUGIN_DIR", project_dir.join("tugplug"))
             .stdout(Stdio::null())
             // Pipe stderr (instead of inheriting) and forward it line-by-line
             // to stdout below. Reason: macOS terminals render stderr in red,

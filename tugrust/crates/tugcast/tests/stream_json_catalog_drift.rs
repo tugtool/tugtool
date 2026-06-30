@@ -1313,6 +1313,68 @@ mod differ_tests {
         assert_eq!(report.findings.len(), 0, "{}", report.format_report());
     }
 
+    // ---- 15b-bis. subagent narrate-vs-tool ORDER variance → ok
+    //
+    // Regression for the `test-22-subagent-spawn` drift FAIL: a
+    // foreground subagent narrates (`assistant_text`) between its tool
+    // calls on one run and only after them on the next — pure model
+    // non-determinism. Both reduce to the same tool-using-body skeleton,
+    // so `shape_sequence`'s body collapse must yield identical shapes.
+    // Sequences are the real golden/current from the v2.1.197 drift run.
+    #[test]
+    fn probe_sequence_subagent_narration_order_is_ok() {
+        let golden = schema_with_probe_seq(
+            "test-22-subagent-spawn",
+            &[
+                "session_init", "system_metadata", "session_capabilities",
+                "content_block_start", "assistant_text", "content_block_start",
+                "tool_use", "tool_result", "content_block_start", "tool_use",
+                "tool_result", "task_started", "tool_use", "tool_result",
+                "content_block_start", "assistant_text", "content_block_start",
+                "tool_use", "tool_result", "assistant_text", "tool_use",
+                "tool_result", "cost_update", "assistant_text", "turn_complete",
+            ],
+        );
+        let current = schema_with_probe_seq(
+            "test-22-subagent-spawn",
+            &[
+                "session_init", "system_metadata", "session_capabilities",
+                "content_block_start", "tool_use", "tool_result",
+                "content_block_start", "tool_use", "tool_result", "task_started",
+                "tool_use", "tool_result", "content_block_start", "tool_use",
+                "tool_result", "content_block_start", "assistant_text",
+                "cost_update", "assistant_text", "turn_complete",
+            ],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert_eq!(report.findings.len(), 0, "{}", report.format_report());
+    }
+
+    // ---- 15b-ter. a pure-text turn is NOT collapsed into tool activity
+    //
+    // The body collapse only fires for runs that contain a tool call, so
+    // a genuine text→tool transposition still surfaces (it must not be
+    // masked as benign narration variance).
+    #[test]
+    fn probe_sequence_text_then_tool_transposition_still_flags() {
+        let golden = schema_with_probe_seq(
+            "test-x",
+            &["session_init", "assistant_text", "tool_use", "tool_result",
+              "cost_update", "turn_complete"],
+        );
+        let current = schema_with_probe_seq(
+            "test-x",
+            &["session_init", "cost_update", "assistant_text", "tool_use",
+              "tool_result", "turn_complete"],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert!(
+            report.has_failures(),
+            "a cost_update/assistant_text transposition must still fail: {}",
+            report.format_report()
+        );
+    }
+
     // ---- 15c. streaming_usage interleaving variance → ok
 
     #[test]

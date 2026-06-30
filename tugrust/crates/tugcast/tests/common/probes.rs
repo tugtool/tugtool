@@ -191,7 +191,7 @@ pub enum ProbeStatus {
 }
 
 // -----------------------------------------------------------------------
-// Probe table — 40 entries
+// Probe table — 44 entries
 // -----------------------------------------------------------------------
 
 /// The full probe table. Order matches `transport-exploration.md` tests 1–36.
@@ -1031,7 +1031,21 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["tool_use", "tool_result", "assistant_text", "cost_update"],
         prerequisites: &[],
         timeout_secs: 120,
-        skip_reason: None,
+        // Skipped at 2.1.197: the setup turn uses the Write tool, and a
+        // Write-tool turn does not complete — `turn_complete` never
+        // arrives after `prompt_anchor` (0 events, 90 s timeout), even
+        // run in isolation. Healthy at 2.1.158. The conversation-only
+        // rewind probes (test-38/40, no file write) still pass, so the
+        // trigger is the file-mutating turn under acceptEdits + file
+        // checkpointing, not rewind itself. Needs a focused
+        // investigation (2.1.197 permission/acceptEdits vs SDK
+        // file-checkpointing change; possible dev-card file-write
+        // impact). Un-skip once the Write-turn hang is root-caused.
+        skip_reason: Some(
+            "2.1.197: Write-tool setup turn never completes (turn_complete \
+             times out) under acceptEdits + file checkpointing; healthy at \
+             2.1.158 — pending root-cause",
+        ),
     },
     // --- Test 38: conversation rewind, FORK (default) ([#step-7-2]) ---
     // The conversation half of dev-card `/rewind`, end-to-end through the
@@ -1124,7 +1138,15 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[],
         timeout_secs: 300,
-        skip_reason: None,
+        // Skipped at 2.1.197 for the same reason as test-37: the `both`
+        // composition's setup writes a file, and a Write-tool turn hangs
+        // (no `turn_complete`) under acceptEdits + file checkpointing.
+        // See test-37's note; un-skip once the Write-turn hang is
+        // root-caused.
+        skip_reason: Some(
+            "2.1.197: Write-tool setup turn never completes (see test-37); \
+             healthy at 2.1.158 — pending root-cause",
+        ),
     },
     // --- Test 40: conversation rewind, destructive IN-PLACE (fork:false) ---
     // The opt-in variant: truncate the live session's own JSONL and resume
@@ -1165,6 +1187,201 @@ pub static PROBES: &[ProbeRecord] = &[
         timeout_secs: 240,
         skip_reason: None,
     },
+    // --- Test 41: background Bash, clean completion + wake ---
+    // Promotes the v2.1.173-jobs-spike P1 lifecycle into the recurring
+    // catalog: a backgrounded Bash launches (`task_started{local_bash}`
+    // mid-turn), the launch turn ends, the job completes while claude is
+    // idle (`task_updated{completed}` inter-turn), and its
+    // `task_notification` drives a `wake_started` wake turn. The
+    // terminator is the final `WaitForEvent` (`wake_started`), so the
+    // collect pass captures the whole launch→terminal→wake arc.
+    ProbeRecord {
+        name: "test-41-bg-bash-clean",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Use the Bash tool exactly once with run_in_background set to \
+                       true and the command `sleep 5 && echo JOBS_OK`. After the tool \
+                       returns, end your turn immediately with the single word: \
+                       launched. Do not poll, do not read the output file, do not call \
+                       any other tools.",
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "task_started",
+                max_secs: 60,
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "wake_started",
+                max_secs: 60,
+            },
+        ],
+        required_events: &[
+            "system_metadata",
+            "tool_use",
+            "task_started",
+            "turn_complete",
+            "task_updated",
+            "wake_started",
+        ],
+        optional_events: &[
+            "thinking_text",
+            "assistant_text",
+            "cost_update",
+            "tool_result",
+            "session_init",
+        ],
+        prerequisites: &[],
+        timeout_secs: 120,
+        skip_reason: None,
+    },
+    // --- Test 42: background Agent, progress ticks + wake ---
+    // Promotes the v2.1.173-jobs-spike P6 lifecycle: a backgrounded
+    // subagent emits `task_started{local_agent}`, one or more
+    // `task_progress` ticks as it works (its most recent tool + usage —
+    // the frame tugcode dropped before this change), then
+    // `task_updated{completed}` + a `wake_started` wake. `task_progress`
+    // is optional because a fast agent can finish in a single step with
+    // no intermediate tick; the golden pins its shape whenever it fires.
+    ProbeRecord {
+        name: "test-42-bg-agent-progress",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Use the Agent tool exactly once with run_in_background set to \
+                       true, subagent_type \"general-purpose\", and a prompt instructing \
+                       it to run the Bash command `sleep 4 && echo AGENT_OK` and then \
+                       report the single word done. After the Agent tool returns its \
+                       async-launch acknowledgement, end your turn immediately with the \
+                       single word: launched. Do not poll, do not read the output file, \
+                       do not call any other tools.",
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "task_started",
+                max_secs: 60,
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "wake_started",
+                max_secs: 90,
+            },
+        ],
+        required_events: &[
+            "system_metadata",
+            "tool_use",
+            "task_started",
+            "task_progress",
+            "turn_complete",
+            "wake_started",
+        ],
+        // `task_updated` is OPTIONAL, not required: for a background
+        // AGENT the terminal status rides the `wake_started` (from the
+        // agent's `task_notification`), and the sibling `task_updated`
+        // lands AFTER it — past the `wake_started` terminator, so it is
+        // not in the captured window. The bash lifecycle (test-41) is
+        // where `task_updated` is the load-bearing terminal frame; here
+        // the load-bearing new frame is `task_progress`.
+        optional_events: &[
+            "thinking_text",
+            "assistant_text",
+            "cost_update",
+            "tool_result",
+            "session_init",
+            "task_updated",
+        ],
+        prerequisites: &[],
+        timeout_secs: 150,
+        skip_reason: None,
+    },
+    // --- Test 43: ScheduleWakeup — scheduled re-init wake ---
+    // The harness-owned scheduler (Cohort B): no `task_started` frame, a
+    // task-id-less re-init delivers the wake, which tugcode brackets as
+    // `session_init` + `wake_started{task_id:""}`. Pins the scheduled
+    // lifecycle shape distinct from the background-job tiers above.
+    ProbeRecord {
+        name: "test-43-schedulewakeup-wake",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Use the ScheduleWakeup tool exactly once with delaySeconds 5, \
+                       reason \"jobs probe wake\", and prompt \"continue\". After the \
+                       tool returns, end your turn immediately with the single word: \
+                       scheduled. Do not call any other tools.",
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "wake_started",
+                max_secs: 60,
+            },
+        ],
+        required_events: &[
+            "system_metadata",
+            "tool_use",
+            "turn_complete",
+            "session_init",
+            "wake_started",
+        ],
+        optional_events: &[
+            "thinking_text",
+            "assistant_text",
+            "cost_update",
+            "tool_result",
+        ],
+        prerequisites: &[],
+        timeout_secs: 120,
+        // Skipped in the recurring suite: a 5 s `ScheduleWakeup` does not
+        // reliably fire its harness-timer re-init wake within the probe
+        // window in a spawned stream-json session — the live capture
+        // returned 0 events (the `wake_started` wait timed out). The
+        // scheduled (Cohort B, task-id-less re-init) wake shape stays
+        // pinned at `v2.1.173-jobs-spike` / the wake-investigation
+        // captures; un-skip if a future claude exposes a deterministic
+        // scheduled wake over stream-json. (bg-bash test-41 still
+        // exercises the `wake_started` bracket via a task_notification.)
+        skip_reason: Some(
+            "ScheduleWakeup re-init wake is not deterministic over stream-json; \
+             shape pinned at v2.1.173-jobs-spike",
+        ),
+    },
+    // --- Test 44: Monitor — short-timeout terminal ---
+    // Promotes the v2.1.173-jobs-spike M2 lifecycle: a watcher whose
+    // script outlives its `timeout_ms` is killed on timeout, pinning the
+    // timeout terminal status (`task_updated{killed}` +
+    // `task_notification{stopped}` — the spike found a stopped-status
+    // notification does NOT drive a wake turn, so `wake_started` is
+    // optional here). Deterministic: the `sleep 120` never beats the
+    // 6 s timeout.
+    ProbeRecord {
+        name: "test-44-monitor-timeout",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Use the Monitor tool exactly once with command `sleep 120`, \
+                       description \"Timeout probe\", timeout_ms 6000, persistent false. \
+                       After the tool returns, end your turn immediately with the single \
+                       word: monitoring. Do not call any other tools.",
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "task_started",
+                max_secs: 60,
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "task_updated",
+                max_secs: 60,
+            },
+        ],
+        required_events: &[
+            "system_metadata",
+            "tool_use",
+            "task_started",
+            "turn_complete",
+            "task_updated",
+        ],
+        optional_events: &[
+            "thinking_text",
+            "assistant_text",
+            "cost_update",
+            "tool_result",
+            "session_init",
+            "wake_started",
+        ],
+        prerequisites: &[],
+        timeout_secs: 120,
+        skip_reason: None,
+    },
 ];
 
 #[cfg(test)]
@@ -1172,8 +1389,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn probe_table_has_40_entries() {
-        assert_eq!(PROBES.len(), 40, "probe table must contain all 40 probes");
+    fn probe_table_has_44_entries() {
+        assert_eq!(PROBES.len(), 44, "probe table must contain all 44 probes");
     }
 
     #[test]
