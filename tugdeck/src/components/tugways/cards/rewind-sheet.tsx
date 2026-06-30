@@ -214,9 +214,12 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
     // rewound to (both sheet scopes truncate the conversation), so its row is
     // disabled and says why. `undefined` (still loading) ⇒ enabled.
     const blocked = preview?.conversationRewindable === false;
-    const title = row.preview.trim().length > 0 ? row.preview : "(empty prompt)";
+    const title =
+      row.landingPreview.trim().length > 0
+        ? row.landingPreview
+        : "(empty prompt)";
     const stat = diffStatLabel(preview);
-    const when = submittedAtLabel(row.submitAt);
+    const when = submittedAtLabel(row.landingSubmitAt);
     // The meta line reads: [when] [diff-stat] — either segment dropped when
     // absent, joined by a middot. The present lives in the `(current)` row
     // below the last turn, so no per-turn "Current" prefix here.
@@ -442,13 +445,14 @@ function RewindSheetBody({
     if (selected === null || !isIdle) return;
     setErrorMsg(null);
     setApplying(true);
-    // Fork is the default for conversation/both ([#step-7-2]). The selected
-    // turn's command rides along as the draft: on a successful ack the store
-    // offers it back in the composer for re-edit (both sheet scopes truncate
-    // the conversation, so the draft applies to either).
+    // Fork is the default for conversation/both ([#step-7-2]). The dropped
+    // turn's command (the one just past the destination) rides along as the
+    // draft: on a successful ack the store offers it back in the composer for
+    // re-edit (both sheet scopes truncate the conversation, so the draft
+    // applies to either).
     codeSessionStore.sessionRewind(selected.promptUuid, effectiveScope, true, {
-      text: selected.preview,
-      atoms: selected.atoms,
+      text: selected.draftText,
+      atoms: selected.draftAtoms,
     });
   }, [selected, isIdle, effectiveScope, codeSessionStore]);
 
@@ -474,7 +478,7 @@ function RewindSheetBody({
       >
         <div className="rewind-intro">
           <TugLabel emphasis="proposal" align="center">
-            Pick a turn to rewind to. Earlier turns are kept.
+            Pick a turn to return to. Newer turns are discarded.
           </TugLabel>
         </div>
 

@@ -64,33 +64,38 @@ function wakeTurn(turnKey: string): TurnEntry {
 }
 
 describe("projectRewindTurns", () => {
-  test("excludes the first targetable turn (rewinding to it would empty the session)", () => {
+  test("the newest turn is the present; the row returns to the earlier turn", () => {
     const rows = projectRewindTurns([
       userTurn("t1", "uuid-1", "first prompt", 100),
       userTurn("t2", "uuid-2", "second prompt", 200),
     ]);
-    // Only turn 2 is a valid target — rewinding to it keeps turn 1.
+    // One row: return to turn 1 (displayed), anchored on turn 2 (the dropped
+    // turn, whose prompt is offered back as the re-edit draft).
     expect(rows).toEqual([
       {
         promptUuid: "uuid-2",
         turnKey: "t2",
-        preview: "second prompt",
-        atoms: [],
-        submitAt: 200,
+        landingPreview: "first prompt",
+        landingSubmitAt: 100,
+        draftText: "second prompt",
+        draftAtoms: [],
       },
     ]);
   });
 
-  test("preserves conversation order (oldest first), minus the first turn", () => {
+  test("walks destination/anchor pairs in order (oldest first)", () => {
     const rows = projectRewindTurns([
       userTurn("t1", "uuid-1", "a", 1),
       userTurn("t2", "uuid-2", "b", 2),
       userTurn("t3", "uuid-3", "c", 3),
     ]);
+    // Destinations a, b (c is the present); anchored on b, c respectively.
+    expect(rows.map((r) => r.landingPreview)).toEqual(["a", "b"]);
+    expect(rows.map((r) => r.promptUuid)).toEqual(["uuid-2", "uuid-3"]);
     expect(rows.map((r) => r.turnKey)).toEqual(["t2", "t3"]);
   });
 
-  test("carries the opener's attachments as the row's atoms", () => {
+  test("carries the dropped turn's attachments as the re-edit draft atoms", () => {
     const atom = {
       kind: "atom" as const,
       type: "image",
@@ -107,18 +112,19 @@ describe("projectRewindTurns", () => {
       turn,
     ]);
     expect(rows).toHaveLength(1);
-    expect(rows[0].atoms).toEqual([atom]);
+    expect(rows[0].draftAtoms).toEqual([atom]);
   });
 
   test("skips turns with no anchor (older / pre-[#step-7-1] sessions)", () => {
     // t1 anchorless → not targetable; t2/t3 targetable → t2 is the first
-    // targetable (excluded), t3 is the valid row.
+    // destination (returned to by the t3-anchored row), t3 is the present.
     const rows = projectRewindTurns([
       userTurn("t1", undefined, "no anchor", 1),
       userTurn("t2", "uuid-2", "has anchor", 2),
       userTurn("t3", "uuid-3", "also anchored", 3),
     ]);
     expect(rows.map((r) => r.promptUuid)).toEqual(["uuid-3"]);
+    expect(rows.map((r) => r.landingPreview)).toEqual(["has anchor"]);
   });
 
   test("skips wake turns (no user_message opener)", () => {
@@ -175,7 +181,7 @@ describe("RewindTurnDataSource", () => {
     expect(ds.idForIndex(0)).toBe("uuid-2");
     expect(ds.kindForIndex(0)).toBe("rewind-turn");
     expect(ds.isCurrentRow(0)).toBe(false);
-    expect(ds.rowAt(1).preview).toBe("c");
+    expect(ds.rowAt(1).landingPreview).toBe("b");
   });
 
   test("appends a selectable `(current)` marker below the last turn", () => {

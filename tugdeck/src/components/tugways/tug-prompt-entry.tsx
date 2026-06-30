@@ -50,6 +50,7 @@ import React, {
 } from "react";
 
 import { ArrowUp, Bot, Plus, Shell, Square } from "lucide-react";
+import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
 import { cn } from "@/lib/utils";
@@ -1475,6 +1476,15 @@ export const TugPromptEntry = React.forwardRef<
           },
         },
       ]),
+      // Lowest-precedence Escape catch-all. The handlers above return
+      // `false` on the paths that should fall through (a single non-empty
+      // Escape lets the completion layer dismiss; an auto-repeat tick is
+      // ignored). When nothing downstream claims Escape either, the
+      // keystroke would reach the OS unhandled and WebKit sounds the
+      // system beep. Swallowing it here — after the completion keymap has
+      // had its turn — keeps Escape silent without stealing the
+      // completion-dismiss gesture.
+      Prec.lowest(keymap.of([{ key: "Escape", run: () => true }])),
     ],
     [],
   );

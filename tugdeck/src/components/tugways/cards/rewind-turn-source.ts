@@ -2,9 +2,12 @@
  * rewind-turn-source.ts — the `/rewind` turn-picker projection ([#step-7-3]).
  *
  * Projects the committed `code-session-store` transcript into the rows the
- * `RewindSheet`'s picker lists: one row per *rewind-targetable* turn — a turn
- * that opened with a real user submission AND carries the `promptUuid` anchor
- * ([#step-7-1]). Wake turns (no user message) and pre-anchor turns (older
+ * `RewindSheet`'s picker lists: one row per turn the user can *return to* — a
+ * targetable turn (opened with a real user submission AND carrying the
+ * `promptUuid` anchor, [#step-7-1]) that has a later targetable turn to anchor
+ * the chop on. The row is displayed as its destination but anchored on the
+ * next turn (the first one dropped). The newest turn is the `(current)`
+ * present, not a row. Wake turns (no user message) and pre-anchor turns (older
  * sessions) are skipped — they cannot be `session_rewind` targets.
  *
  * This is NOT a `SessionPickerSheet` data source ([D05]): that lists *distinct
@@ -35,57 +38,80 @@ export const REWIND_CURRENT_ROW_ID = "rewind-current";
 export const REWIND_CURRENT_KIND = "rewind-current";
 
 /**
- * One turn-picker row. `promptUuid` is the rewind anchor passed to
- * `session_rewind` / `rewind_preview`; `turnKey` is the committed turn's
- * React-key seed (a stable, unique row id). `preview` is the user submission
- * text (the cell truncates for display); `submitAt` is the wall-clock the
- * cell renders as the row timestamp. `atoms` is the submission's parallel
- * atom sequence (attachments) — carried so a rewind can seed the composer
- * with the full original prompt, not just its text.
+ * One turn-picker row — a turn the user can *return to*.
+ *
+ * The row is displayed as its destination (the turn that stays as the new
+ * tip) but is anchored on the turn that gets dropped to reach it. Picking
+ * "return to T" rewinds by chopping the turn that came AFTER T (and
+ * everything past it), so the anchor is that next turn, not T itself.
+ *
+ * - `promptUuid` — the rewind anchor passed to `session_rewind` /
+ *   `rewind_preview`: the FIRST dropped turn (the one after the destination).
+ *   Diff-stats and the conversation/code restore key off this.
+ * - `turnKey` — the anchor turn's committed React-key seed (a stable, unique
+ *   row id).
+ * - `landingPreview` / `landingSubmitAt` — the DESTINATION turn's submission
+ *   text and wall-clock: what the cell renders as the row title + timestamp
+ *   ("the message you navigate back to").
+ * - `draftText` / `draftAtoms` — the DROPPED turn's submission, carried so a
+ *   rewind can seed the composer with the full original prompt (text +
+ *   attachments) for re-edit, not the destination's.
  */
 export interface RewindRow {
   promptUuid: string;
   turnKey: string;
-  preview: string;
-  atoms: ReadonlyArray<AtomSegment>;
-  submitAt: number;
+  landingPreview: string;
+  landingSubmitAt: number;
+  draftText: string;
+  draftAtoms: ReadonlyArray<AtomSegment>;
 }
 
 /**
  * Pure projection of the committed transcript into the picker's *valid* rewind
  * rows, in conversation order (oldest first).
  *
- * A row represents "rewind to here" — dropping that turn and everything after
- * it (matching the tugcode chop, [#step-7-2]). The retained prefix is the
- * turns BEFORE the picked one, so a row is only valid when at least one
- * targetable turn precedes it: rewinding to the *first* turn would empty the
- * session, which claude can't `--resume` and which tugcode/the store refuse
- * (`no_retained_turns`, [#step-7-2]). Clearing the whole conversation is a
- * new-session operation, not a rewind — so the first targetable turn is
- * excluded here rather than shown as a row that errors on confirm.
+ * A row represents "return to this turn" — keeping it as the new tip and
+ * dropping everything that came after. The tugcode chop ([#step-7-2]) drops a
+ * given turn and all turns past it, so to LAND on turn T the anchor is the turn
+ * AFTER T (the first one dropped). Each row therefore pairs a destination
+ * (displayed) with the next turn (the anchor + the prompt offered back for
+ * re-edit).
  *
- * Consequence: a 0- or 1-targetable-turn session projects to zero rows, which
- * is exactly the empty-state gate ({@link canOfferRewind}) the plan specifies.
+ * The newest targetable turn is the live present — it is the `(current)`
+ * marker, never a row (returning to it is a no-op). A turn is a valid
+ * destination only when a later targetable turn exists to anchor the chop, so
+ * the projection walks consecutive targetable pairs (destination, next) and
+ * emits one row per pair. The newest turn closes the list as `(current)`; a 0-
+ * or 1-targetable-turn session yields zero rows — exactly the empty-state gate
+ * ({@link canOfferRewind}) the plan specifies. (Returning to the present, or to
+ * a session with nothing earlier, is not a rewind.)
  */
 export function projectRewindTurns(
   transcript: ReadonlyArray<TurnEntry>,
 ): RewindRow[] {
   const rows: RewindRow[] = [];
-  let seenTargetable = 0;
+  let landing: TurnEntry | null = null;
   transcript.forEach((turn) => {
     if (!isTargetable(turn)) return;
-    seenTargetable += 1;
-    // Skip the first targetable turn — rewinding to it leaves no retained
-    // conversation (see the doc comment).
-    if (seenTargetable === 1) return;
-    const opener = turn.messages[0];
+    // The first targetable turn has no earlier turn to anchor on; it opens as
+    // the first destination for the turn that follows it.
+    if (landing === null) {
+      landing = turn;
+      return;
+    }
+    // `turn` is the dropped anchor; `landing` is the destination it returns to.
+    const dropped = turn.messages[0];
+    const dest = landing.messages[0];
     rows.push({
       promptUuid: turn.promptUuid as string,
       turnKey: turn.turnKey,
-      preview: opener.kind === "user_message" ? opener.text : "",
-      atoms: opener.kind === "user_message" ? opener.attachments : [],
-      submitAt: opener.kind === "user_message" ? opener.submitAt : turn.endedAt,
+      landingPreview: dest.kind === "user_message" ? dest.text : "",
+      landingSubmitAt:
+        dest.kind === "user_message" ? dest.submitAt : landing.endedAt,
+      draftText: dropped.kind === "user_message" ? dropped.text : "",
+      draftAtoms: dropped.kind === "user_message" ? dropped.attachments : [],
     });
+    landing = turn;
   });
   return rows;
 }
