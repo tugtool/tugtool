@@ -48,6 +48,7 @@ import { getConnection } from "@/lib/connection-singleton";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { readSetupSeen, putSetupSeen } from "@/settings-api";
 import { useDeckManager } from "@/deck-manager-context";
+import { subscriptionLabel } from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
 import {
   TugProgressIndicator,
@@ -78,31 +79,6 @@ const DOT_SIZE = 14;
  * give up after 10 minutes (a late `claude_auth_result` still wins).
  */
 const SIGN_IN_TIMEOUT_MS = 600_000;
-
-/**
- * Formal label for a Claude subscription tier (from `claude auth status`'s
- * `subscriptionType`), for the signed-in step's detail. Returns `undefined`
- * when unknown so the row simply omits the line — never a bare "subscription."
- */
-function subscriptionLabel(type: string | null | undefined): string | undefined {
-  switch ((type ?? "").trim().toLowerCase()) {
-    case "":
-      return undefined;
-    case "max":
-      return "Claude Max plan";
-    case "pro":
-      return "Claude Pro plan";
-    case "team":
-      return "Claude Team plan";
-    case "enterprise":
-      return "Claude Enterprise plan";
-    case "free":
-      return "Claude Free plan";
-    default:
-      // An unrecognized tier: title-case the raw token rather than leak it raw.
-      return `Claude ${(type ?? "").trim().replace(/^\w/, (c) => c.toUpperCase())} plan`;
-  }
-}
 
 /** Map a step status onto the dot's role + state ([D02]/[D105]). */
 function dotVisual(status: StepStatus): {

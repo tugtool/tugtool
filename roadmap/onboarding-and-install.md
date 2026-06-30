@@ -458,6 +458,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | `scripts/lab/matrix.json` | OS matrix manifest (Spec S01) |
 | `scripts/lab/base-prep.md` | Factory-fresh base prep procedure (incl. Golden Gate from IPSW, [P04]) |
 | `scripts/lab/golden-record` | Records a golden-run verdict into `matrix.json` ([#step-11]/[#step-12]) |
+| `scripts/lab/golden-run.md` | Operator guide: unhappy-path induction recipes + coverage split ([#step-11]) |
 | `tugdeck/src/lib/host-info-store.ts` | `hostInfoStore` + `useHostInfo()` ([P06]) |
 | `tugdeck/src/lib/transport-state-store.ts` | App-wide transport health for TugSetup's reconnecting state ([P10]) |
 | `tugdeck/src/lib/macos-support.ts` | `SUPPORTED_MACOS` policy + pure version compare (Spec S02) |
@@ -805,6 +806,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 2. Walk List L02 steps 2–6 in the guest (drag-install → launch → version-gate check → TugSetup install/sign-in → a real signed-in turn → close+reopen resume).
 3. `scripts/lab/golden-record sequoia pass <host-version>` (or `fail`).
 4. Repeat for `tahoe`. Golden Gate stays deferred ([R01]).
+5. For the unhappy paths (install-fail, sign-in-fail, transport-down, logged-out, version-gate), follow `scripts/lab/golden-run.md` — it has the per-state induction recipes and the spike/unit/VM coverage split (the full [D105] matrix is not all reachable in one release run by design).
 
 ---
 
