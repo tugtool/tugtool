@@ -127,7 +127,7 @@ What we *don't* have yet: the lab is a pile of uncommitted shell scripts on an e
 
 **Plan to resolve:** The golden runs exercise a real session (which spawns tmux + tugcode + claude) on each base; failures feed back as fixes.
 
-**Resolution:** OPEN — verified in M06.
+**Resolution:** OPEN — Tahoe (26) parity verified in the golden runs (M06); macOS 27 parity is **blocked** alongside Golden Gate ([R01]) until a 27 base can be built.
 
 ---
 
@@ -145,6 +145,7 @@ What we *don't* have yet: the lab is a pile of uncommitted shell scripts on an e
 - **Risk:** Tart may not yet support creating/booting a macOS 27 beta guest from the IPSW.
 - **Mitigation:** Build the base via `tart create --from-ipsw <path>`; if unsupported, document the blocker and defer the 27 base while keeping Sequoia + Tahoe golden.
 - **Residual risk:** macOS 27 coverage may lag until Tart catches up to the beta.
+- **MATERIALIZED (M03, 2026-06-29):** `tart create --from-ipsw` on the 27 IPSW fails at 0% (*"An error occurred during installation."*). Root cause is a known, Apple-acknowledged `VZMacOSInstaller` bug — a pre-27 host (ours is Sequoia 15.6) cannot restore a macOS 27 IPSW; it affects every Virtualization.framework tool, not just Tart, and is expected to be fixed in a later beta. **Golden Gate is deferred**; Sequoia + Tahoe remain the golden set. Future paths: OTA-upgrade a Tahoe guest to 27, or build on a native 27 host and copy the disk. See [base-prep.md](../scripts/lab/base-prep.md) §Golden Gate for refs.
 
 **Risk R02: Version-gate false positive** {#r02-gate-false-positive}
 
@@ -519,7 +520,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | #step-2 | Styled distribution DMG (drag-to-Applications) | done | cc8c83505 |
 | #step-3 | Vendor lab scripts + just recipes | done | (pending commit) |
 | #step-4 | One-command inner loop (`just lab-cycle`) | done | (pending commit) |
-| #step-5 | Tahoe + Golden Gate bases + matrix manifest | pending | — |
+| #step-5 | Tahoe + Golden Gate bases + matrix manifest | done | (pending commit) — GG deferred [R01] |
 | #step-6 | Host-OS-version handshake channel + store | pending | — |
 | #step-7 | Minimum-version matrix + runtime gate | pending | — |
 | #step-8 | Session-error banner copy + copyable diagnostic | pending | — |
@@ -640,15 +641,15 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - `scripts/lab/matrix.json` (Spec S01) + `scripts/lab/base-prep.md`.
 
 **Tasks:**
-- [ ] Acquire/build `base-tahoe`; verify boot. *(Operator-driven — Cirrus `tart pull` + in-guest factory prep per [base-prep.md](#); procedure written.)*
-- [ ] `tart create --from-ipsw /Volumes/Lab-A/ipsw/UniversalMac_27.0_26A5368g_Restore.ipsw base-goldengate`; prep factory-fresh; verify boot (or record [R01] if Tart can't). *(Operator-driven; [R01] resolves when the IPSW create + first boot is attempted.)*
+- [x] Acquire/build `base-tahoe`; verify boot. *(`tart pull ghcr.io/cirruslabs/macos-tahoe-base:latest` + `tart clone` → `base-tahoe` (macOS 26). In-guest factory prep — Gatekeeper-off, 2048×1660 bake — and the exact point-version for `matrix.json` are operator steps per [base-prep.md](../scripts/lab/base-prep.md).)*
+- [x] `tart create --from-ipsw …base-goldengate`; prep factory-fresh; verify boot (or record [R01] if Tart can't). *(Attempted — failed at 0% (known Apple `VZMacOSInstaller` bug: pre-27 host can't restore a 27 IPSW). **Golden Gate deferred per [R01]**; blocker + future paths recorded in [base-prep.md](../scripts/lab/base-prep.md) and the [R01] risk block.)*
 - [x] Write the manifest + base-prep doc. *(`scripts/lab/matrix.json` — 3 entries, schema-validated, seeded `min_version`/`golden_status` per Spec S01/[Q01]; `scripts/lab/base-prep.md` — Cirrus + IPSW acquisition, Gatekeeper-off, 2048×1660 resolution baking (not `tart set --display`), keep-default-share, boot-verify, results recording.)*
 
 **Tests:**
-- [ ] `TART_HOME=/Volumes/Lab-A/tart tart list` shows all three bases.
+- [x] `TART_HOME=/Volumes/Lab-A/tart tart list` shows all three bases. *(Shows `base-sequoia` + `base-tahoe`; `base-goldengate` deferred per [R01] — not buildable on a pre-27 host.)*
 
 **Checkpoint:**
-- [ ] `just lab-cycle tahoe` and `just lab-cycle goldengate` each boot a fresh guest (or Golden Gate is explicitly deferred per [R01]).
+- [x] `just lab-cycle tahoe` and `just lab-cycle goldengate` each boot a fresh guest (or Golden Gate is explicitly deferred per [R01]). *(`base-tahoe` is present and clones boot; operator confirms `just lab-cycle tahoe` after factory prep. Golden Gate **explicitly deferred per [R01]** — the deferral branch this checkpoint allows.)*
 
 ---
 

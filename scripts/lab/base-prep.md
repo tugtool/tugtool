@@ -48,10 +48,24 @@ This restores a **fresh** OS, so the first boot lands in Setup Assistant —
 complete it manually (create the `admin`/`admin` account; skip Apple ID,
 Screen Time, analytics, Siri).
 
-> **[R01] risk:** Tart may not yet virtualize the macOS 27 beta. If
-> `tart create --from-ipsw` (or the first boot) fails, record the blocker, set
-> `goldengate` `golden_status` to `fail` in `matrix.json`, and keep Sequoia +
-> Tahoe golden. Re-try when Tart catches up to the beta.
+> **[R01] — BLOCKED on this host (2026-06-29).** `tart create --from-ipsw` on
+> the 27 IPSW fails at 0% with *"An error occurred during installation."* This
+> is a known, Apple-acknowledged bug: the `VZMacOSInstaller` restore path on a
+> pre-27 host (ours is Sequoia 15.6) can't restore a macOS 27 IPSW. It is not
+> Tart-specific — every Virtualization.framework tool (UTM, Parallels, etc.)
+> hits it — and Apple is expected to fix it in a later beta, so it's temporary,
+> not a permanent limit. Golden Gate is **deferred** (its `matrix.json`
+> `golden_status` stays `untested` — there was no golden run to fail; the base
+> simply can't be built here yet). Sequoia + Tahoe stay golden.
+>
+> Future paths when 27 coverage is needed: (a) build a Tahoe base, then inside
+> the guest do an OTA Software Update to 27 (bypasses the IPSW restore path —
+> note VZ guests have no Apple-ID sign-in, so beta access may need a beta
+> profile); or (b) build the VM on a bare-metal macOS 27 host and copy the
+> disk over. Re-attempt `--from-ipsw` once Apple ships the fix.
+>
+> Refs: [OS X Daily](https://osxdaily.com/2026/06/12/macos-golden-gate-27-beta-wont-install-in-a-virtual-machine-its-a-known-issue/),
+> [motionbug](https://motionbug.com/virtualising-macos-27/).
 
 ## 2. Factory-fresh prep (apply to every base, once)
 
