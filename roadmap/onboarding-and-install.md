@@ -640,9 +640,9 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 - `scripts/lab/matrix.json` (Spec S01) + `scripts/lab/base-prep.md`.
 
 **Tasks:**
-- [ ] Acquire/build `base-tahoe`; verify boot.
-- [ ] `tart create --from-ipsw /Volumes/Lab-A/ipsw/UniversalMac_27.0_26A5368g_Restore.ipsw base-goldengate`; prep factory-fresh; verify boot (or record [R01] if Tart can't).
-- [ ] Write the manifest + base-prep doc.
+- [ ] Acquire/build `base-tahoe`; verify boot. *(Operator-driven — Cirrus `tart pull` + in-guest factory prep per [base-prep.md](#); procedure written.)*
+- [ ] `tart create --from-ipsw /Volumes/Lab-A/ipsw/UniversalMac_27.0_26A5368g_Restore.ipsw base-goldengate`; prep factory-fresh; verify boot (or record [R01] if Tart can't). *(Operator-driven; [R01] resolves when the IPSW create + first boot is attempted.)*
+- [x] Write the manifest + base-prep doc. *(`scripts/lab/matrix.json` — 3 entries, schema-validated, seeded `min_version`/`golden_status` per Spec S01/[Q01]; `scripts/lab/base-prep.md` — Cirrus + IPSW acquisition, Gatekeeper-off, 2048×1660 resolution baking (not `tart set --display`), keep-default-share, boot-verify, results recording.)*
 
 **Tests:**
 - [ ] `TART_HOME=/Volumes/Lab-A/tart tart list` shows all three bases.

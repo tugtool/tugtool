@@ -1,0 +1,26 @@
+[
+  {
+    "key": "sequoia",
+    "codename": "Sequoia",
+    "tart_base": "base-sequoia",
+    "macos_version": "15.7.7",
+    "min_version": "15.6",
+    "golden_status": "untested"
+  },
+  {
+    "key": "tahoe",
+    "codename": "Tahoe",
+    "tart_base": "base-tahoe",
+    "macos_version": "26.0",
+    "min_version": "26.0",
+    "golden_status": "untested"
+  },
+  {
+    "key": "goldengate",
+    "codename": "Golden Gate",
+    "tart_base": "base-goldengate",
+    "macos_version": "27.0",
+    "min_version": "27.0",
+    "golden_status": "untested"
+  }
+]
