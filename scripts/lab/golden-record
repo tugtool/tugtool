@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#
+# golden-record — record a golden-run result into scripts/lab/matrix.json.
+#
+# The golden-run checklist (List L02 in roadmap/onboarding-and-install.md) is
+# operator-driven in a VM guest; this is the one-command way to write its
+# verdict back into the manifest so the result isn't hand-edited JSON. Used by
+# the unsigned runs ([#step-11]) and the signed certifying pass ([#step-12]).
+#
+# Usage:
+#   scripts/lab/golden-record <os-key> <pass|fail|untested> [host-version]
+#
+#   <os-key>        a `key` present in matrix.json (sequoia | tahoe | goldengate)
+#   <status>        pass | fail | untested   -> matrix `golden_status`
+#   [host-version]  optional exact point release the run was performed on
+#                   (e.g. 15.7.7) -> recorded as `golden_host` (empirical Q01
+#                   data); omit to leave the prior value untouched.
+#
+# Examples:
+#   scripts/lab/golden-record sequoia pass 15.7.7
+#   scripts/lab/golden-record tahoe  fail
+#
+# bash 3.2 + `set -u` safe (matches the other lab scripts); requires `jq`.
+set -euo pipefail
+
+MATRIX="$(cd "$(dirname "$0")" && pwd)/matrix.json"
+
+usage() {
+    echo "usage: $(basename "$0") <os-key> <pass|fail|untested> [host-version]" >&2
+    exit 2
+}
+
+[ $# -ge 2 ] || usage
+OS_KEY="$1"
+STATUS="$2"
+HOST_VERSION="${3:-}"
+
+command -v jq >/dev/null 2>&1 || { echo "error: jq not found on PATH" >&2; exit 1; }
+[ -f "$MATRIX" ] || { echo "error: matrix not found: $MATRIX" >&2; exit 1; }
+
+case "$STATUS" in
+    pass|fail|untested) ;;
+    *) echo "error: status must be pass|fail|untested (got '$STATUS')" >&2; usage ;;
+esac
+
+# The os-key must already exist — adding a base is a manifest edit + a real
+# base image (Spec S01), not this recorder's job.
+if [ "$(jq --arg k "$OS_KEY" '[.[] | select(.key == $k)] | length' "$MATRIX")" != "1" ]; then
+    echo "error: no entry with key '$OS_KEY' in $MATRIX" >&2
+    echo "       known keys: $(jq -r '[.[].key] | join(", ")' "$MATRIX")" >&2
+    exit 1
+fi
+
+TMP="$MATRIX.tmp.$$"
+jq \
+    --arg k "$OS_KEY" \
+    --arg s "$STATUS" \
+    --arg h "$HOST_VERSION" \
+    'map(if .key == $k
+         then .golden_status = $s
+              | (if $h != "" then .golden_host = $h else . end)
+         else . end)' \
+    "$MATRIX" > "$TMP"
+mv -f "$TMP" "$MATRIX"
+
+echo "==> recorded: $OS_KEY golden_status=$STATUS${HOST_VERSION:+ golden_host=$HOST_VERSION}"
+jq --arg k "$OS_KEY" '.[] | select(.key == $k)' "$MATRIX"

@@ -457,7 +457,9 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | `scripts/lab/lab-new` `lab-run` `lab-wipe` `lab-ls` | Vendored lab scripts ([P01]) |
 | `scripts/lab/matrix.json` | OS matrix manifest (Spec S01) |
 | `scripts/lab/base-prep.md` | Factory-fresh base prep procedure (incl. Golden Gate from IPSW, [P04]) |
+| `scripts/lab/golden-record` | Records a golden-run verdict into `matrix.json` ([#step-11]/[#step-12]) |
 | `tugdeck/src/lib/host-info-store.ts` | `hostInfoStore` + `useHostInfo()` ([P06]) |
+| `tugdeck/src/lib/transport-state-store.ts` | App-wide transport health for TugSetup's reconnecting state ([P10]) |
 | `tugdeck/src/lib/macos-support.ts` | `SUPPORTED_MACOS` policy + pure version compare (Spec S02) |
 | `tugdeck/src/components/tugways/tug-version-gate.tsx` (+ `.css`) | The runtime version gate ([P05]) |
 | `tugrust/scripts/dmg/settings.py` | dmgbuild config for the styled DMG (Spec S04, [P11]) |
@@ -786,17 +788,23 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 **References:** [P09], [P11], List L02, [Q01], [Q03], (#lab-matrix)
 
 **Artifacts:**
-- The golden-run checklist executed (unsigned dmg) on each base; results + host versions recorded.
+- The golden-run checklist executed (unsigned dmg) on each base; results + host versions recorded. *(Prep landed: the unsigned `Tug.dmg` is built + staged to the lab share — which **validated the full production build** (release Rust → tugcode bun-compile → tugdeck rollup → xcodebuild Release → dmg) survives the Step 8–10 tugdeck changes — and a one-command results recorder (`scripts/lab/golden-record`) writes verdicts into `matrix.json`. The in-guest checklist itself is operator-driven (below).)*
 
 **Tasks:**
-- [ ] Run List L02 on `sequoia`, `tahoe`, `goldengate` with `just lab-cycle` (incl. the styled-DMG drag-install step).
-- [ ] Fix any OS-specific failures ([Q03]); update `matrix.json` `golden_status`.
+- [~] Run List L02 on `sequoia`, `tahoe`, `goldengate` with `just lab-cycle` (incl. the styled-DMG drag-install step). *(Agent-side prep done — unsigned dmg built + staged at `/Volumes/Lab-A/share/Tug.dmg`; the fresh-clone loop is ready (`just lab-cycle sequoia` / `tahoe`; Golden Gate deferred per [R01]). The in-guest steps — drag-install, launch, browser sign-in, real turn, resume — are **operator-driven** per the VM etiquette (the agent does not launch/click/sign-in inside a guest); this remains the human-in-the-loop part of the step.)*
+- [~] Fix any OS-specific failures ([Q03]); update `matrix.json` `golden_status`. *(Recorder in place: `scripts/lab/golden-record <os> <pass|fail|untested> [host-version]`. No failures to fix yet — no runs executed; `golden_status` stays `untested` until real operator runs land (no fabricated results, [[feedback_real_not_fake]]).)*
 
 **Tests:**
-- [ ] Each base completes a real signed-in turn.
+- [~] Each base completes a real signed-in turn. *(Operator-driven golden run; pending. Recorded via `golden-record` when it lands.)*
 
 **Checkpoint:**
-- [ ] All bootable bases pass the unsigned checklist (Golden Gate per [R01]); manifest updated.
+- [~] All bootable bases pass the unsigned checklist (Golden Gate per [R01]); manifest updated. *(Pending the operator-driven runs — the agent has staged the dmg, validated the build, and provided the recorder; execution + manifest update is the remaining human-in-the-loop work.)*
+
+**Operator runbook (to complete this step):**
+1. `just lab-cycle sequoia` — boots a fresh guest with the dmg at `/Volumes/My Shared Files/drop/Tug.dmg`.
+2. Walk List L02 steps 2–6 in the guest (drag-install → launch → version-gate check → TugSetup install/sign-in → a real signed-in turn → close+reopen resume).
+3. `scripts/lab/golden-record sequoia pass <host-version>` (or `fail`).
+4. Repeat for `tahoe`. Golden Gate stays deferred ([R01]).
 
 ---
 
