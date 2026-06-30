@@ -132,9 +132,15 @@ pub async fn login() -> AuthState {
 /// needed. Tug manages the install itself rather than asking the user to run
 /// commands.
 pub async fn install() -> (bool, Option<String>) {
+    // `set -o pipefail` is load-bearing: without it the pipeline's exit status
+    // is `bash`'s, not `curl`'s, so a failed download (no network, DNS failure,
+    // HTTP error) is masked — `curl` emits nothing, `bash` reads empty stdin and
+    // exits 0, and the install reports success while nothing was installed. With
+    // pipefail, a `curl` failure fails the whole pipeline so it surfaces as an
+    // install error.
     match Command::new("bash")
         .arg("-c")
-        .arg("curl -fsSL https://claude.ai/install.sh | bash")
+        .arg("set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash")
         .output()
         .await
     {
