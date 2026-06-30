@@ -3619,6 +3619,7 @@ export function DevCardBody({
               pastedCommandResolver={pastedCommandResolver}
               inlineCommandMatcher={inlineCommandMatcher}
               onAfterSubmit={handleAfterSubmit}
+              onDoubleEscapeWhenEmpty={() => rewindSheet.openRewindSheet()}
               indicatorsContent={
                 <>
                   <DevRouteIndicatorBadge

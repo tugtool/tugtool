@@ -205,6 +205,21 @@ const EMPTY_EDIT_STATE: TugTextEditingState = {
  */
 const HISTORY_KEY_SEP = "\u001f";
 
+/**
+ * Upper bound, in milliseconds, between two Escape presses for them to
+ * count as a double-Escape gesture. Sized for a deliberate double-tap,
+ * not a key-repeat stream.
+ */
+const ESCAPE_DOUBLE_PRESS_MS = 400;
+
+/**
+ * Lower bound, in milliseconds, between two Escape keydowns. Presses
+ * spaced tighter than this are auto-repeat from a held key, not a human
+ * double-tap, and are ignored so holding Escape never fires the
+ * double-Escape gesture.
+ */
+const ESCAPE_REPEAT_FLOOR_MS = 60;
+
 // ---------------------------------------------------------------------------
 // Preserved state shape + migration
 // ---------------------------------------------------------------------------
@@ -642,6 +657,18 @@ export interface TugPromptEntryProps {
    */
   onEscapeWhenEmpty?: () => void;
   /**
+   * Fires on a double-Escape (two presses within
+   * `ESCAPE_DOUBLE_PRESS_MS`) while the editor is *empty*. The entry
+   * owns no rewind surface, so it just surfaces the gesture and lets the
+   * host open it — the Dev card raises the same sheet as `/rewind`.
+   *
+   * The single-press empty-Escape (`onEscapeWhenEmpty`) still fires on
+   * the first press; this only adds the second-press action. Omit to
+   * disable the gesture (the gallery harness does). Auto-repeat from a
+   * held key never reaches here (see `ESCAPE_REPEAT_FLOOR_MS`).
+   */
+  onDoubleEscapeWhenEmpty?: () => void;
+  /**
    * Optional content rendered in the status row above the input.
    */
   statusContent?: React.ReactNode;
@@ -858,6 +885,7 @@ export const TugPromptEntry = React.forwardRef<
     onBeforeSubmit,
     onAfterSubmit,
     onEscapeWhenEmpty,
+    onDoubleEscapeWhenEmpty,
     statusContent,
     cautionContent,
     indicatorsContent,
@@ -1281,6 +1309,17 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     onEscapeWhenEmptyRef.current = onEscapeWhenEmpty;
   }, [onEscapeWhenEmpty]);
+  const onDoubleEscapeWhenEmptyRef = useRef(onDoubleEscapeWhenEmpty);
+  useLayoutEffect(() => {
+    onDoubleEscapeWhenEmptyRef.current = onDoubleEscapeWhenEmpty;
+  }, [onDoubleEscapeWhenEmpty]);
+  // Timestamp (performance.now) of the previous Escape keydown, used by
+  // the editor keymap to recognise a double-Escape and reject auto-repeat.
+  const lastEscapePressAtRef = useRef(0);
+  // Forces the just-cleared draft durable the moment a double-Escape
+  // empties the editor. Held in a ref because the mount-time keymap memo
+  // is captured before `persistClearedDraft` is defined [L07].
+  const persistClearedDraftRef = useRef<() => void>(() => {});
 
   // Card id for diagnostic deck-trace events. Held in a ref so the
   // onRestore closure (registered through useCardStatePreservation)
@@ -1389,7 +1428,46 @@ export const TugPromptEntry = React.forwardRef<
         {
           key: "Escape",
           run: (view) => {
-            if (view.state.doc.length !== 0) return false;
+            const now = performance.now();
+            const sinceLast = now - lastEscapePressAtRef.current;
+            lastEscapePressAtRef.current = now;
+
+            // Reject auto-repeat from a held key: presses tighter than the
+            // floor are the OS key-repeat stream, never a human double-tap.
+            // Fall through inertly — the first (non-repeat) press already
+            // ran its single-press action, and nothing else owns Escape on
+            // the now-settled doc.
+            if (sinceLast < ESCAPE_REPEAT_FLOOR_MS) return false;
+
+            const isEmpty = view.state.doc.length === 0;
+            const isDoublePress = sinceLast <= ESCAPE_DOUBLE_PRESS_MS;
+
+            if (isDoublePress) {
+              // Reset so a third press can't pair with this second one.
+              lastEscapePressAtRef.current = 0;
+              if (!isEmpty) {
+                // Double-Escape on a non-empty editor clears the draft.
+                // The clear is a normal transaction (undoable via Cmd+Z),
+                // and the emptied draft is forced durable at once so a
+                // relaunch can't restore the just-cleared text.
+                textEditorRef.current?.clear();
+                persistClearedDraftRef.current();
+                return true;
+              }
+              // Double-Escape on an empty editor surfaces the rewind
+              // gesture (the Dev card raises the same sheet as `/rewind`).
+              const onDoubleEscape = onDoubleEscapeWhenEmptyRef.current;
+              if (onDoubleEscape === undefined) return false;
+              onDoubleEscape();
+              return true;
+            }
+
+            // Single press. On an empty editor, surface `onEscapeWhenEmpty`
+            // so the host can collapse the entry pane. A non-empty editor
+            // returns `false` so Escape falls through to the editor's own
+            // handlers (autocomplete dismiss, etc.) — none of which can be
+            // open on an empty doc, which is why the empty gate is enough.
+            if (!isEmpty) return false;
             const onEscape = onEscapeWhenEmptyRef.current;
             if (onEscape === undefined) return false;
             onEscape();
@@ -1447,6 +1525,7 @@ export const TugPromptEntry = React.forwardRef<
       store.flushCardStateNow(cardId);
     }
   }, []);
+  persistClearedDraftRef.current = persistClearedDraft;
 
   // Shared submit logic. Invoked by both the SUBMIT chain-action
   // handler (button click, Cmd+Enter, etc.) and the Return /
