@@ -516,7 +516,7 @@ Layout rationale: icons are symmetric about the horizontal center (360); 304 pt 
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Land roadmap doc + as-built audit | done | 61ba4bfef, 12fb18de0 |
-| #step-2 | Styled distribution DMG (drag-to-Applications) | done | (pending commit) |
+| #step-2 | Styled distribution DMG (drag-to-Applications) | done | cc8c83505 |
 | #step-3 | Vendor lab scripts + just recipes | pending | — |
 | #step-4 | One-command inner loop (`just lab-cycle`) | pending | — |
 | #step-5 | Tahoe + Golden Gate bases + matrix manifest | pending | — |

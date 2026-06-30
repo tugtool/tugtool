@@ -289,15 +289,11 @@ app-release: build wasm
     PRODUCT_NAME="$(bash tugrust/scripts/product-name-from-cwd.sh release)"
     echo "==> Quitting prior $INSTANCE_ID, if running"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
-    echo "==> Building tugdeck static assets for the release bundle"
-    (cd tugdeck && bun run build)
-    # The xcodebuild copy phase reads binaries from tugrust/target/$CONFIGURATION,
-    # so a Release bundle needs optimized binaries in target/release/. `build`
-    # (a dep) only produces target/debug/, which the Release config never reads.
-    echo "==> Building release Rust binaries for the bundle"
-    (cd tugrust && cargo build --release -p tugcast -p tugexec -p tugutil -p tugrelaunch)
-    bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode
-    bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/release/tugpulse
+    # Compile the shared release inputs (Rust binaries, tugcode/tugpulse,
+    # tugdeck assets) — the same script build-app.sh uses, so the developer
+    # launch build and the distribution build can't drift on what they compile.
+    # The xcodebuild copy phase reads these from tugrust/target/release/.
+    bash tugrust/scripts/build-release-inputs.sh
     find tugapp/Sources -name '*.swift' -exec touch {} +
     DERIVED="$(bash tugrust/scripts/derived-data-path.sh release)"
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" PRODUCT_NAME="$PRODUCT_NAME" build

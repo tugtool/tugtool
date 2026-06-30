@@ -78,21 +78,13 @@ STAGING_DIR="$BUILD_DIR/staging"
 rm -rf "$BUILD_DIR"
 mkdir -p "$DERIVED_DATA" "$STAGING_DIR"
 
-# Step 1: Build Rust binaries
-echo "==> Building Rust binaries (release mode)"
-cd "$TUGCODE_DIR"
-cargo build --release -p tugcast -p tugutil -p tugexec
-
-# Step 1b: Build tugcode (Claude Code bridge) standalone binary
-echo "==> Building tugcode (bun compile)"
-cd "$REPO_ROOT"
-bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode
-
-# Step 2: Build tugdeck frontend
-echo "==> Building tugdeck frontend"
-cd "$TUGDECK_DIR"
-bun install --frozen-lockfile
-bun run build
+# Step 1: Build the shared release inputs — the optimized Rust binaries
+# (tugcast/tugexec/tugutil/tugrelaunch), the bun-compiled tugcode/tugpulse,
+# and the tugdeck static assets. Shared with `just app-release` via one script
+# so the two release paths can't drift on which binaries or flags they build.
+# The Tug Xcode copy phase requires all six binaries in target/release.
+echo "==> Building release inputs (shared with app-release)"
+bash "$SCRIPT_DIR/build-release-inputs.sh"
 
 # Step 3: Build Mac app with xcodebuild
 echo "==> Building Mac app via xcodebuild"
