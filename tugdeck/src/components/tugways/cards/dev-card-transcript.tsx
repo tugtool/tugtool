@@ -111,6 +111,7 @@ import {
   ToolBlockExpansionContext,
   ToolBlockHistoryCollapse,
   ToolUseIdContext,
+  ToolCallMetaProvider,
 } from "@/components/tugways/cards/blocks/collapse-context";
 import { collapseDefaultForMessage } from "@/components/tugways/cards/blocks/tool-collapse-defaults";
 import {
@@ -659,13 +660,20 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
         key={message.messageKey}
         value={message.toolUseId}
       >
-        <ToolBlockHistoryCollapse
+        <ToolCallMetaProvider
           toolUseId={message.toolUseId}
-          defaultCollapsed={collapseByDefault}
-          copyText={() => toolCallToMarkdown(message, childrenByParent)}
+          toolName={message.toolName}
+          status={message.status}
+          startedAtMs={message.createdAt}
         >
-          <Component {...props} />
-        </ToolBlockHistoryCollapse>
+          <ToolBlockHistoryCollapse
+            toolUseId={message.toolUseId}
+            defaultCollapsed={collapseByDefault}
+            copyText={() => toolCallToMarkdown(message, childrenByParent)}
+          >
+            <Component {...props} />
+          </ToolBlockHistoryCollapse>
+        </ToolCallMetaProvider>
       </ToolUseIdContext.Provider>,
     );
   }

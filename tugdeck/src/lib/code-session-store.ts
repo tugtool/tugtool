@@ -70,6 +70,16 @@ import { ThroughputMeter } from "./throughput-meter";
 const SUBAGENT_ACTIVITY_UNITS = 250;
 /** Cap on chars credited for a subagent tool result. */
 const SUBAGENT_RESULT_UNITS_CAP = 600;
+/** Cap on chars credited for a FOREGROUND tool result landing. */
+const FOREGROUND_RESULT_UNITS_CAP = 600;
+/**
+ * Sparkline pulse for one `streaming_usage` frame — a constant beat so the
+ * line stays alive across API-call progress that emits no streamed text
+ * (e.g. the brief assistant turn between tool rounds, context processing).
+ * Kept small relative to a text burst so it animates the curve without
+ * dominating it.
+ */
+const STREAMING_USAGE_UNITS = 60;
 import {
   clearCachedParses,
   invalidateCachedParsesByPrefix,
@@ -1465,6 +1475,22 @@ export class CodeSessionStore {
         Math.min(ev.output.length, SUBAGENT_RESULT_UNITS_CAP),
         now,
       );
+    } else if (!parent && t === "tool_result" && typeof ev.output === "string") {
+      // A FOREGROUND tool returned (Bash/Read/Grep…). Only subagent
+      // results fed the meter before, so a foreground tool's output —
+      // often the only signal after a long silent tool run — never moved
+      // the sparkline. Credit it (capped) so the result landing reads as
+      // a beat of activity.
+      this.throughputMeter.record(
+        Math.min(ev.output.length, FOREGROUND_RESULT_UNITS_CAP),
+        now,
+      );
+    } else if (t === "streaming_usage") {
+      // Authoritative per-API-call telemetry the sparkline ignored. It
+      // fires even when no text streams (between tool rounds, while
+      // claude processes a tool result), so a constant beat here keeps
+      // the line off the floor during active-but-textless API work.
+      this.throughputMeter.record(STREAMING_USAGE_UNITS, now);
     }
   }
 

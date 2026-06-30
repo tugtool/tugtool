@@ -248,6 +248,13 @@ body {
   top: 1px;
 }
 
+/* The in-flight elapsed clock. Tabular figures so the 1 Hz tick never
+ * reflows the header, matching the Z2 status row's TIME cell. The `sm`
+ * badge size already matches the `N lines` result summary. */
+.tool-call-header-elapsed-badge {
+  font-variant-numeric: tabular-nums;
+}
+
 /* When a summary's right pipe already divides the result from the controls,
  * the actions cluster drops its own left rule (and the padding that paired
  * with it) so there's a SINGLE rule there. It keeps a margin equal to

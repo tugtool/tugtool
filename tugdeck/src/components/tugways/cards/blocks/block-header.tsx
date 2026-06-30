@@ -51,6 +51,32 @@ import { cn } from "@/lib/utils";
 import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import {
+  useLiveTick,
+  formatTimeMinutesSeconds,
+} from "@/components/tugways/cards/dev-card-telemetry-renderers";
+import { useToolCallMeta } from "./collapse-context";
+
+/**
+ * Live elapsed clock for an in-flight tool call. Reads the call's start
+ * from the ambient {@link useToolCallMeta} (provided once by the
+ * transcript renderer — no per-block plumbing) and ticks via the shared
+ * 1 Hz {@link useLiveTick}. Mounted by the header ONLY while the call is
+ * in flight, so a resting/committed block pays no clock; renders nothing
+ * outside a provider (standalone / gallery mounts).
+ *
+ * Formatting mirrors the Z2 status row's TIME cell exactly
+ * ({@link formatTimeMinutesSeconds}): whole seconds only — the 1 Hz tick
+ * can't honestly render sub-second — `0m 00s` from the start, zero-padded
+ * seconds for a width-stable read under ten minutes. Tabular figures and
+ * the `sm` badge size come from the wrapping badge / CSS.
+ */
+function ToolElapsedClock(): React.ReactElement | null {
+  const meta = useToolCallMeta();
+  const now = useLiveTick();
+  if (meta === null) return null;
+  return <>{formatTimeMinutesSeconds(Math.max(0, now - meta.startedAtMs))}</>;
+}
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import {
@@ -209,15 +235,26 @@ export const BlockHeader = React.forwardRef<
           or wrapping command) and otherwise serves as the flexible spacer
           that pushes the trailing result + actions to the right edge. */}
       <span className="tool-call-header-detail">{target}</span>
-      {/* Trailing result — one quiet one-line summary as a ghost TugBadge,
-          rendered identically in BOTH states so collapsed and expanded
-          read the same. The badge is borderless (ghost) so it reads as the
-          header's own text, not a box-in-a-box; the summary slot's
-          bracketing separator pipes give it a clear gap from the detail on
-          the left and the actions on the right. Its role still carries
-          pass/fail signal: a nonzero exit reads danger, exit 0 success,
-          every other kind neutral `inherit` (the header's own text color). */}
-      {summary !== undefined ? (
+      {/* Trailing slot. While the call is in flight it shows a LIVE
+          elapsed clock — the only honest "this is still working" signal
+          for a long silent tool (a 3-minute Bash emits nothing on the
+          wire until it returns). Once the call lands, the elapsed gives
+          way to the quiet one-line result summary (a ghost TugBadge),
+          rendered identically collapsed/expanded. The summary's role
+          still carries pass/fail signal: nonzero exit reads danger,
+          exit 0 success, every other kind neutral `inherit`. */}
+      {phase === "in_flight" ? (
+        <span className="tool-call-header-summary" data-slot="tool-call-header-elapsed">
+          <TugBadge
+            emphasis="ghost"
+            role="inherit"
+            size="sm"
+            className="tool-call-header-elapsed-badge"
+          >
+            <ToolElapsedClock />
+          </TugBadge>
+        </span>
+      ) : summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (
             // Diff stat — two outlined badges with neutral borders and

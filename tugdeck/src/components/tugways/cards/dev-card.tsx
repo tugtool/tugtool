@@ -74,7 +74,6 @@ import { TugPushButton } from "../tug-push-button";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
 import { DevPulseStrip } from "./dev-pulse-strip";
-import { DevLiveActivityLine } from "./dev-live-activity-line";
 import { usePulseEnabled } from "@/lib/pulse-store";
 import { TugLabel } from "../tug-label";
 import {
@@ -3543,16 +3542,6 @@ export function DevCardBody({
               Z2 content → no strip); the component additionally hides itself
               while the `pulse/enabled` default is off.
             */}
-            {/*
-              Live-activity line — the ephemeral "what's happening now"
-              status, sat between the Z2 status row and the PULSE strip.
-              Gated like the strip (no Z2 content → no line); it further
-              unmounts itself while nothing is happening. Not a focus
-              stop — it is a passive readout, not an interactive cell.
-            */}
-            {effectiveStatusBarContent != null && (
-              <DevLiveActivityLine codeSessionStore={codeSessionStore} />
-            )}
             {effectiveStatusBarContent != null && (
               // Wrapped in a cycle scope (sharing this card's mode id, like the
               // status row above) so the PULSE label's `useFocusable` registers

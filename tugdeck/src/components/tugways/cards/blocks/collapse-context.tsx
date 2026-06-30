@@ -55,6 +55,67 @@ export const ToolBlockExpansionContext =
  */
 export const ToolUseIdContext = React.createContext<string | null>(null);
 
+/**
+ * Ambient lifecycle / identity / timing metadata for the tool call a
+ * block renders. Provided ONCE by the transcript renderer around every
+ * top-level tool block (where the `ToolUseMessage` is in scope) via
+ * {@link ToolCallMetaProvider}, so the chrome, the header, and any
+ * future block-subtree consumer read it straight from context instead
+ * of each of the ~dozen tool blocks re-threading it through
+ * `BlockChrome` props. That re-threading was the wart: a new ambient
+ * datum (a live clock, a token count, …) meant editing every block.
+ * Now it is a one-line change — add a field here and supply it at the
+ * single provider site; no tool block touches it.
+ *
+ * `null` outside a provider (a standalone / gallery mount), so consumers
+ * must tolerate its absence.
+ */
+export interface ToolCallMeta {
+  toolUseId: string;
+  toolName: string;
+  /** Raw call status — `"pending"` while the call is in flight. */
+  status: "pending" | "done" | "error";
+  /**
+   * Wall-clock ms the call began (the `tool_use` message's `createdAt`).
+   * Drives the running block's live elapsed clock; meaningful only while
+   * `status === "pending"` (a committed/replayed call is not live).
+   */
+  startedAtMs: number;
+}
+
+export const ToolCallMetaContext = React.createContext<ToolCallMeta | null>(
+  null,
+);
+
+/** Read the ambient {@link ToolCallMeta}; `null` outside a provider. */
+export function useToolCallMeta(): ToolCallMeta | null {
+  return React.useContext(ToolCallMetaContext);
+}
+
+/**
+ * Provide {@link ToolCallMeta} to a tool block's subtree. Memoizes the
+ * value on its primitive fields so a transcript re-render doesn't churn
+ * every header; the single provider site (the transcript loop) supplies
+ * the fields from the `ToolUseMessage`.
+ */
+export function ToolCallMetaProvider({
+  toolUseId,
+  toolName,
+  status,
+  startedAtMs,
+  children,
+}: ToolCallMeta & { children: React.ReactNode }): React.ReactElement {
+  const meta = React.useMemo<ToolCallMeta>(
+    () => ({ toolUseId, toolName, status, startedAtMs }),
+    [toolUseId, toolName, status, startedAtMs],
+  );
+  return (
+    <ToolCallMetaContext.Provider value={meta}>
+      {children}
+    </ToolCallMetaContext.Provider>
+  );
+}
+
 export interface ToolBlockCollapseHandle {
   /** Whether the block is currently collapsed (body unmounted). */
   collapsed: boolean;
