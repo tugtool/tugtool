@@ -5986,20 +5986,14 @@ mod tests {
     async fn test_queue_overflow_emits_backpressure() {
         let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
 
-        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
-            .await
-            .expect_handled();
-        // Drain the `spawn_session_ok` ack before
-        // asserting there are no backpressure frames on the control feed.
-        let _ = control_rx.try_recv();
-
-        // Pin the entry to Spawning so the dispatcher buffers into the queue
-        // without triggering a worker drain.
+        // Pin the entry to Spawning so the dispatcher buffers into the queue.
+        // Insert the ledger entry directly rather than via `spawn_session` —
+        // that path launches the real bridge, whose auth gate flips the entry
+        // to Errored on a host with no logged-in `claude` (CI), racing the
+        // dispatch loop below and starving the queue before it can overflow.
         let tug_id = TugSessionId::new("sess-1");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
         {
-            let map = sup.ledger.lock().await;
-            let entry_arc = map.get(&tug_id).unwrap().clone();
-            drop(map);
             let mut entry = entry_arc.lock().await;
             entry.spawn_state = SpawnState::Spawning;
         }
