@@ -549,30 +549,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Background-job launch marker — a quiet, persistent inline row noting
-   that a backgrounded agent / task / monitor was started. Lighter than
-   prose (it is metadata, not conversation), single-line clipped. */
-.dev-card-transcript-bg-marker {
-  display: flex;
-  align-items: baseline;
-  gap: var(--tug-space-xs);
-  width: 100%;
-  margin-block: var(--tug-space-xs);
-  font-size: 0.85em;
-  opacity: 0.65;
-  user-select: none;
-}
-.dev-card-transcript-bg-marker-glyph {
-  flex: 0 0 auto;
-  opacity: 0.8;
-}
-.dev-card-transcript-bg-marker-text {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
    wraps inside the row column. The default `--tugx-md-block-padding-x`

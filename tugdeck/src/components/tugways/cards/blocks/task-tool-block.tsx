@@ -78,6 +78,7 @@ import {
 import { AgentWorkingBody } from "@/components/tugways/body-kinds/agent-working-body";
 
 import type { ToolUseMessage } from "@/lib/code-session-store";
+import { useJobForToolUse } from "@/lib/code-session-store/hooks/use-job-for-tool-use";
 
 import { BlockChrome } from "./block-chrome";
 import type { ToolResultSummary } from "./tool-result-summary";
@@ -275,7 +276,12 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   depth = 0,
   childToolCallsByParent,
   turnInterrupted = false,
+  session,
 }) => {
+  // The launched background job (if any) for this call. A backgrounded
+  // agent streams no entries to the parent, so its live `task_progress`
+  // here is the only content its body gets while it runs.
+  const job = useJobForToolUse(session, toolUseId);
   const agentInput = React.useMemo(() => narrowAgentInput(input), [input]);
   const structured = React.useMemo(
     () => narrowAgentStructured(structuredResult),
@@ -357,8 +363,12 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
         componentStatePreservationKey={`${toolUseId}-body`}
       />
     );
-  } else if (status === "streaming") {
-    body = <AgentWorkingBody />;
+  } else if (status === "streaming" || job?.status === "running") {
+    // Spinning up (`streaming`), OR a backgrounded async agent whose
+    // LAUNCH tool already completed (`status` is `ready`) yet whose job
+    // is still running — its work never streams entries to the parent,
+    // so the job's live `task_progress` is the body's only content.
+    body = <AgentWorkingBody progress={job?.progress} />;
   } else {
     body = null;
   }

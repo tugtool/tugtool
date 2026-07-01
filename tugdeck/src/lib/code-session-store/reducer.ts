@@ -255,59 +255,6 @@ function withScratchEntry(
   return next;
 }
 
-/** Phrase a background-launch marker for the transcript. */
-function backgroundLaunchNoteText(
-  kind: JobItem["kind"],
-  description: string,
-): string {
-  const label =
-    kind === "agent"
-      ? "background agent"
-      : kind === "monitor"
-        ? "monitor"
-        : kind === "bash"
-          ? "background task"
-          : "background work";
-  const desc = description.replace(/\s+/g, " ").trim();
-  return desc.length > 0 ? `Started ${label}: ${desc}` : `Started ${label}`;
-}
-
-/**
- * Append a `source: "background"` system note — the persistent,
- * in-transcript "settled marker" that a background job was launched —
- * to the active turn's scratch. The note rides WITHIN the launching
- * turn's assistant row (a `system_note` Message, not a new transcript
- * row), so it commits with the turn and touches none of the row-index /
- * scroll-addressing math ({@link rowsBeforeTurn} et al.). A no-op when
- * there is no active turn / scratch entry (defensive; a background
- * launch always lands during an in-flight turn). The caller gates on
- * "newly tracked" so the marker fires exactly once across the two job
- * insert paths (`task_started` frame vs. launch-echo `tool_result`).
- */
-function appendBackgroundLaunchNote(
-  scratch: ReadonlyMap<string, ScratchEntry>,
-  turnKey: string | undefined,
-  kind: JobItem["kind"],
-  description: string,
-): Map<string, ScratchEntry> {
-  const base = new Map(scratch);
-  if (turnKey === undefined) return base;
-  const entry = scratch.get(turnKey);
-  if (entry === undefined) return base;
-  const note: SystemNote = {
-    kind: "system_note",
-    messageKey: systemNoteKey(turnKey, entry.systemNoteSeq),
-    createdAt: Date.now(),
-    text: backgroundLaunchNoteText(kind, description),
-    source: "background",
-  };
-  return withScratchEntry(scratch, turnKey, {
-    ...entry,
-    messages: [...entry.messages, note],
-    systemNoteSeq: entry.systemNoteSeq + 1,
-  });
-}
-
 /**
  * Iterate a turn's `tool_use` Messages — the substrate's replacement
  * for today's `toolCallMap.values()`. Pure over the entry's messages
@@ -2011,9 +1958,6 @@ function handleToolResult(
   // replayed launch insert would sit at `running` forever; after a
   // reload the ledger deliberately starts empty.
   let jobs = state.jobs;
-  // Set when a background launch drops its persistent marker note into
-  // the turn; replaces `nextScratch` in the return when present.
-  let launchNoteScratch: Map<string, ScratchEntry> | undefined;
   if (!isReplaying && mutated.status === "done") {
     const input =
       typeof mutated.input === "object" && mutated.input !== null
@@ -2036,7 +1980,6 @@ function handleToolResult(
     if (echo !== undefined) {
       const launchDescription =
         typeof input?.description === "string" ? input.description : "";
-      const wasTracked = jobs.some((j) => j.jobId === echo.jobId);
       jobs = insertJob(jobs, {
         jobId: echo.jobId,
         source: "claude",
@@ -2050,15 +1993,6 @@ function handleToolResult(
         startedAtMs: now,
         endedAtMs: null,
       });
-      // First insert of this job → persistent launch marker in this turn.
-      if (!wasTracked) {
-        launchNoteScratch = appendBackgroundLaunchNote(
-          launchNoteScratch ?? nextScratch,
-          turnKey,
-          echo.kind,
-          launchDescription,
-        );
-      }
     } else if (mutated.toolName.toLowerCase() === "taskstop") {
       // Defensive fold: the wire also confirms a stop via
       // `task_updated{killed}`, but folding the TaskStop call keeps
@@ -2119,7 +2053,7 @@ function handleToolResult(
     state: {
       ...state,
       phase: nextPhase,
-      scratch: launchNoteScratch ?? nextScratch,
+      scratch: nextScratch,
       toolUseStartedAt,
       jobs,
       queuedSends,
@@ -4643,7 +4577,6 @@ function handleTaskStarted(
     return { state, effects: [] };
   }
   const kind = jobKindForLaunch(launching.toolName, event.taskType);
-  const wasTracked = state.jobs.some((j) => j.jobId === event.taskId);
   const jobs = insertJob(state.jobs, {
     jobId: event.taskId,
     source: "claude",
@@ -4657,18 +4590,7 @@ function handleTaskStarted(
   if (jobs === state.jobs) {
     return { state, effects: [] };
   }
-  // First insert of this job → drop a persistent launch marker into the
-  // launching turn (exactly once; the echo path gates on the same
-  // "newly tracked" test, so whichever insert runs first owns it).
-  const scratch = wasTracked
-    ? state.scratch
-    : appendBackgroundLaunchNote(
-        state.scratch,
-        turnKey,
-        kind,
-        event.description,
-      );
-  return { state: { ...state, jobs, scratch }, effects: [] };
+  return { state: { ...state, jobs }, effects: [] };
 }
 
 /**

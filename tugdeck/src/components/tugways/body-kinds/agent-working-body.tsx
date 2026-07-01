@@ -41,20 +41,50 @@ export interface AgentWorkingBodyProps {
   label?: string;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
+  /**
+   * Live progress from the running agent's job row (`task_progress`).
+   * When present, the body shows WHAT the agent is doing — its most
+   * recent tool and cumulative usage — instead of the bare `label`. A
+   * backgrounded agent streams no entries to the parent, so this is the
+   * only content its otherwise-empty body ever gets while it runs.
+   */
+  progress?: {
+    lastToolName?: string;
+    totalTokens?: number;
+    toolUses?: number;
+  };
+}
+
+/** Compact token count: `842`, `7.7K`, `1.2M`. */
+function compactCount(n: number): string {
+  if (n < 1_000) return String(n);
+  if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}K`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
 export const AgentWorkingBody: React.FC<AgentWorkingBodyProps> = ({
   label = "Working…",
   className,
-}) => (
-  <div
-    data-slot="agent-working-body"
-    className={
-      className === undefined
-        ? "agent-working-body"
-        : `agent-working-body ${className}`
-    }
-  >
-    {label}
-  </div>
-);
+  progress,
+}) => {
+  const parts: string[] = [];
+  if (progress?.lastToolName) parts.push(progress.lastToolName);
+  if (progress?.toolUses !== undefined) {
+    parts.push(`${progress.toolUses} ${progress.toolUses === 1 ? "tool" : "tools"}`);
+  }
+  if (progress?.totalTokens !== undefined) {
+    parts.push(`${compactCount(progress.totalTokens)} tokens`);
+  }
+  return (
+    <div
+      data-slot="agent-working-body"
+      className={
+        className === undefined
+          ? "agent-working-body"
+          : `agent-working-body ${className}`
+      }
+    >
+      {parts.length > 0 ? parts.join(" · ") : label}
+    </div>
+  );
+};

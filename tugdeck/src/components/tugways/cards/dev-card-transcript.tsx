@@ -578,27 +578,6 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
         );
         continue;
       }
-      if (message.source === "background") {
-        // Background-job launch marker — a compact, persistent inline
-        // row that settles into history when a backgrounded agent /
-        // task / monitor is launched, so the transcript records the
-        // work instead of going mute. Appearance is CSS-only ([L06]).
-        elements.push(
-          <div
-            key={message.messageKey}
-            className="dev-card-transcript-bg-marker"
-            data-slot="bg-launch-marker"
-          >
-            <span className="dev-card-transcript-bg-marker-glyph" aria-hidden>
-              ⚙
-            </span>
-            <span className="dev-card-transcript-bg-marker-text">
-              {message.text}
-            </span>
-          </div>,
-        );
-        continue;
-      }
       // Other system_note sources (`scheduled` / `other`) have no
       // renderer yet — skip silently rather than crashing.
       continue;

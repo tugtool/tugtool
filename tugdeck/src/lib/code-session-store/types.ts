@@ -172,7 +172,7 @@ export interface AssistantThinking extends MessageBase {
 export interface SystemNote extends MessageBase {
   kind: "system_note";
   text: string;
-  source: "scheduled" | "compact" | "other" | "background";
+  source: "scheduled" | "compact" | "other";
 }
 
 /**
