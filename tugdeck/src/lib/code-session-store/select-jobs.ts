@@ -25,6 +25,7 @@
  * @module lib/code-session-store/select-jobs
  */
 
+import type { ToolUseMessage } from "./types";
 import type {
   TaskStartedEvent,
   TaskUpdatedEvent,
@@ -107,6 +108,23 @@ export interface JobItem {
    * the last tick's snapshot stays on a terminal row as its final state.
    */
   progress?: JobProgress;
+  /**
+   * A background agent's child tool calls, accumulated from its
+   * out-of-band transcript as tugcode tails it live (each a real
+   * `ToolUseMessage`, keyed by `toolUseId`). A background agent's children
+   * arrive *inter-turn* — after the launching turn already committed — so
+   * they can't attach to a turn; they ride the job instead, and the Agent
+   * block reads them here to render the same broken-out blocks live that a
+   * resume reconstructs. Absent for bash/monitor/scheduled rows.
+   */
+  childCalls?: readonly ToolUseMessage[];
+  /**
+   * The agent's composed `structured_result` (final answer + stats) once
+   * its transcript has been tailed to completion. The launching call's own
+   * result is only the async-launch echo, so the Agent block prefers this
+   * for the final answer + footer. Absent until produced.
+   */
+  agentStructuredResult?: unknown;
 }
 
 /**
@@ -470,6 +488,118 @@ export function applyJobProgress(
   if (Object.keys(progress).length === 0) return jobs;
   const next = jobs.slice();
   next[idx] = { ...jobs[idx], progress };
+  return next;
+}
+
+/**
+ * Whether any job owns `parentToolUseId` as its launching call — i.e.
+ * this is a tracked background agent. The reducer uses this to decide
+ * that an inter-turn `parent_tool_use_id` child belongs on the job
+ * ledger rather than being dropped (only background agents have a job;
+ * a foreground agent returns its answer and never creates one).
+ */
+export function jobExistsForParent(
+  jobs: readonly JobItem[],
+  parentToolUseId: string,
+): boolean {
+  return jobs.some((j) => j.toolUseId === parentToolUseId);
+}
+
+/**
+ * The job whose accumulated `childCalls` already contain `childToolUseId`,
+ * or `undefined`. Lets the reducer route a child's later `tool_result` /
+ * `tool_use_structured` to the same job that holds its `tool_use`.
+ */
+export function jobIdForChild(
+  jobs: readonly JobItem[],
+  childToolUseId: string,
+): string | undefined {
+  const job = jobs.find((j) =>
+    (j.childCalls ?? []).some((c) => c.toolUseId === childToolUseId),
+  );
+  return job?.jobId;
+}
+
+/**
+ * Append (or merge) a background agent's child `tool_use` onto its job's
+ * `childCalls`, keyed by the launching call's `parentToolUseId`. An
+ * existing child with the same `toolUseId` is merged (a re-emitted
+ * tool_use only fills a richer `input`), so a redelivered frame — a
+ * live/resume overlap — never duplicates a row.
+ */
+export function applyJobChildToolUse(
+  jobs: readonly JobItem[],
+  parentToolUseId: string,
+  child: ToolUseMessage,
+): readonly JobItem[] {
+  const idx = jobs.findIndex((j) => j.toolUseId === parentToolUseId);
+  if (idx === -1) return jobs;
+  const existing = jobs[idx].childCalls ?? [];
+  const at = existing.findIndex((c) => c.toolUseId === child.toolUseId);
+  const nextChildren = existing.slice();
+  if (at === -1) {
+    nextChildren.push(child);
+  } else {
+    const prev = existing[at];
+    nextChildren[at] = {
+      ...prev,
+      input:
+        Object.keys((child.input ?? {}) as object).length > 0
+          ? child.input
+          : prev.input,
+    };
+  }
+  const next = jobs.slice();
+  next[idx] = { ...jobs[idx], childCalls: nextChildren };
+  return next;
+}
+
+/**
+ * Fold a child's terminal payload (`result` and/or `structuredResult`)
+ * onto the matching `childCalls` entry, flipping its status to `done`.
+ * No-op when no job owns the child.
+ */
+export function applyJobChildResult(
+  jobs: readonly JobItem[],
+  childToolUseId: string,
+  patch: { result?: unknown; structuredResult?: unknown },
+): readonly JobItem[] {
+  const idx = jobs.findIndex((j) =>
+    (j.childCalls ?? []).some((c) => c.toolUseId === childToolUseId),
+  );
+  if (idx === -1) return jobs;
+  const children = jobs[idx].childCalls ?? [];
+  const nextChildren = children.map((c) =>
+    c.toolUseId === childToolUseId
+      ? {
+          ...c,
+          status: "done" as const,
+          ...(patch.result !== undefined ? { result: patch.result } : {}),
+          ...(patch.structuredResult !== undefined
+            ? { structuredResult: patch.structuredResult }
+            : {}),
+        }
+      : c,
+  );
+  const next = jobs.slice();
+  next[idx] = { ...jobs[idx], childCalls: nextChildren };
+  return next;
+}
+
+/**
+ * Fold the agent's own composed `structured_result` (final answer +
+ * stats) onto its job, keyed by the launching call's `toolUseId`. No-op
+ * when no job owns it.
+ */
+export function applyJobAgentStructured(
+  jobs: readonly JobItem[],
+  agentToolUseId: string,
+  structuredResult: unknown,
+): readonly JobItem[] {
+  const idx = jobs.findIndex((j) => j.toolUseId === agentToolUseId);
+  if (idx === -1) return jobs;
+  const next = jobs.slice();
+  next[idx] = { ...jobs[idx], agentStructuredResult: structuredResult };
   return next;
 }
 

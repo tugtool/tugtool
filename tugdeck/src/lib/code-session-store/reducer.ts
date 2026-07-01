@@ -107,12 +107,17 @@ import type {
 } from "./types";
 import { compactionNoteText } from "./compaction";
 import {
+  applyJobAgentStructured,
+  applyJobChildResult,
+  applyJobChildToolUse,
   applyJobFlip,
   applyJobProgress,
   clearTerminalJobs,
   EMPTY_JOBS_LEDGER,
   insertJob,
   isJobLaunch,
+  jobExistsForParent,
+  jobIdForChild,
   jobKindForLaunch,
   markRunningJobsStopped,
   parseBackgroundLaunchResult,
@@ -1707,6 +1712,43 @@ function handleToolUse(
   state: CodeSessionState,
   event: ToolUseEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  const incomingParentId =
+    typeof event.parent_tool_use_id === "string"
+      ? event.parent_tool_use_id
+      : undefined;
+
+  // Background-agent child. Its parent Agent's turn already committed
+  // (a backgrounded agent runs *after* the launching turn ends), so the
+  // child arrives inter-turn and can't attach to a turn. Route it onto the
+  // job ledger — the inter-turn carrier the Agent block already reads via
+  // `useJobForToolUse` — where it renders the same broken-out block a
+  // resume reconstructs, live. Only a background agent has a job; a
+  // foreground agent's streamed children have no job and fall through to
+  // normal turn attachment below. Ordered before the content-bearing bail
+  // precisely because inter-turn phase is not content-bearing.
+  if (
+    incomingParentId !== undefined &&
+    jobExistsForParent(state.jobs, incomingParentId)
+  ) {
+    const child: ToolUseMessage = {
+      kind: "tool_use",
+      messageKey: `agent-child-${event.tool_use_id}`,
+      createdAt: Date.now(),
+      toolUseId: event.tool_use_id,
+      toolName: event.tool_name,
+      input: (event.input ?? {}) as Record<string, unknown>,
+      status: "pending",
+      result: null,
+      structuredResult: null,
+      parentToolUseId: incomingParentId,
+      toolWallMs: null,
+    };
+    const jobs = applyJobChildToolUse(state.jobs, incomingParentId, child);
+    return jobs === state.jobs
+      ? { state, effects: [] }
+      : { state: { ...state, jobs }, effects: [] };
+  }
+
   if (!isContentBearingPhase(state.phase)) {
     return { state, effects: [] };
   }
@@ -1722,10 +1764,6 @@ function handleToolUse(
   const toolUseId = event.tool_use_id;
   const toolName = event.tool_name;
   const incomingInput = (event.input ?? {}) as Record<string, unknown>;
-  const incomingParentId =
-    typeof event.parent_tool_use_id === "string"
-      ? event.parent_tool_use_id
-      : undefined;
 
   let arrayIdx = entry.toolCallIndex.get(toolUseId);
   let nextMessages: Message[];
@@ -1845,6 +1883,19 @@ function handleToolResult(
   state: CodeSessionState,
   event: ToolResultEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  // Background-agent child result. Routed to the job that owns the child
+  // (its parent turn already committed; the child tool_use landed on the
+  // job in `handleToolUse`). Ordered before the phase bail because these
+  // arrive inter-turn.
+  if (jobIdForChild(state.jobs, event.tool_use_id) !== undefined) {
+    const jobs = applyJobChildResult(state.jobs, event.tool_use_id, {
+      result: event.output ?? null,
+    });
+    return jobs === state.jobs
+      ? { state, effects: [] }
+      : { state: { ...state, jobs }, effects: [] };
+  }
+
   // tool_result is accepted in `tool_work`, `replaying`, and `waking` —
   // pairing with a prior `tool_use` that minted the Message during
   // this same bracketed turn.
@@ -2063,10 +2114,53 @@ function handleToolResult(
   };
 }
 
+/**
+ * Whether a `structured_result` is the async-launch echo of a
+ * backgrounded `Agent` (`{ isAsync: true }` / `{ status: "async_launched" }`)
+ * rather than a real composed answer. Used so the echo can't overwrite the
+ * tailer's composed result on the job.
+ */
+function isAsyncLaunchEcho(structured: unknown): boolean {
+  if (structured === null || typeof structured !== "object") return false;
+  const s = structured as Record<string, unknown>;
+  return s.isAsync === true || s.status === "async_launched";
+}
+
 function handleToolUseStructured(
   state: CodeSessionState,
   event: ToolUseStructuredEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  // Background-agent structured result, routed to the job (inter-turn):
+  //  - a child call's structured result (e.g. a nested Read's file body)
+  //    folds onto that child in the job's `childCalls`;
+  //  - the AGENT's own composed structured result (final answer + stats,
+  //    keyed by the launching call's `tool_use_id`) folds onto the job.
+  //    The async-launch echo also arrives as a `tool_use_structured` for
+  //    the same id, but it carries no content — its `isAsync`/
+  //    `async_launched` shape is ignored here so it can't overwrite the
+  //    composed answer; the tailer's real result lands via the else-branch.
+  if (jobIdForChild(state.jobs, event.tool_use_id) !== undefined) {
+    const jobs = applyJobChildResult(state.jobs, event.tool_use_id, {
+      structuredResult: event.structured_result ?? null,
+    });
+    return jobs === state.jobs
+      ? { state, effects: [] }
+      : { state: { ...state, jobs }, effects: [] };
+  }
+  if (
+    jobExistsForParent(state.jobs, event.tool_use_id) &&
+    !isAsyncLaunchEcho(event.structured_result)
+  ) {
+    const jobs = applyJobAgentStructured(
+      state.jobs,
+      event.tool_use_id,
+      event.structured_result ?? null,
+    );
+    return jobs === state.jobs
+      ? { state, effects: [] }
+      : { state: { ...state, jobs }, effects: [] };
+  }
+
   // Accept in the same phases that admit the paired `tool_use` and
   // `tool_result` events. `replaying` is critical: the JSONL replay
   // path emits `tool_use_structured` from the entry-level
