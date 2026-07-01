@@ -8,10 +8,9 @@
  *      tracks the resolved drop position in real time as the user
  *      drags a file over the editor. Without this the user has no
  *      idea where their drop will land — a critical UX gap. The
- *      caret position carries the same vertical bias the existing
- *      `TugTextEngine` uses (`DROP_Y_OFFSET_RATIO`): the hit-test
- *      point is shifted ~1.6 line-heights upward so the resolved
- *      position sits above the drag ghost rather than behind it.
+ *      caret position carries a vertical bias (`DROP_Y_OFFSET_RATIO`):
+ *      the hit-test point is shifted upward so the resolved position
+ *      sits above the drag ghost rather than behind it.
  *
  *   2. **`dragover` accept.** `preventDefault()` on `dragover` is
  *      required to indicate the editor accepts drops; without it
@@ -92,27 +91,21 @@ import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 /**
  * Fraction of line-height to shift the drop hit-point upward.
  *
- * Mirror of `DROP_Y_OFFSET_RATIO` in `tug-text-engine.ts`. The drag
- * ghost rendered by the OS sits centered on the cursor; without the
- * bias, `posAtCoords` resolves to the position *under* the ghost,
- * which is hidden from the user. Shifting the hit-test point ~1.6
- * line-heights upward puts the resolved drop position — and the drop
- * caret painted at it — clearly above the ghost where the eye is
- * looking, so the preview doesn't smash into the caret.
+ * The drag ghost rendered by the OS sits centered on the cursor;
+ * without the bias, `posAtCoords` resolves to the position *under*
+ * the ghost, which is hidden from the user. Shifting the hit-test
+ * point upward puts the resolved drop position — and the drop caret
+ * painted at it — above the ghost where the eye is looking.
  *
- * The bias is scaled by `view.defaultLineHeight`, so when
- * `EDITOR_LINE_HEIGHT` dropped from 1.7 to 1.5 the absolute pixel
- * clearance shrank with it and the preview started overlapping the
- * caret again. `-1.6` lifts the resolved position a comfortable line
- * and a half above the cursor so the (often multi-line-tall) drag
- * preview clears the caret entirely, and stays proportional to the
- * line metric regardless of future tuning.
+ * The bias is scaled by `view.defaultLineHeight` so it stays
+ * proportional to the line metric. A larger lift pushes the caret so
+ * far above the cursor that a drop over the attachment strip can no
+ * longer reach the last row of text; `-0.8` keeps the caret clear of
+ * the ghost while still resolving to the row the cursor is over.
  *
- * The negative value subtracts from `clientY`. Keeping the constant
- * shape and name identical to the engine so a future alignment pass
- * (or a regression report citing one) maps to both substrates.
+ * The negative value subtracts from `clientY`.
  */
-const DROP_Y_OFFSET_RATIO = -1.6;
+const DROP_Y_OFFSET_RATIO = -0.8;
 
 /** File extensions classified as images for the default file→atom map. */
 const IMG_EXTS: ReadonlySet<string> = new Set([
