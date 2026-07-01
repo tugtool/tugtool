@@ -33,10 +33,9 @@ import { parseGitCommit } from "@/components/tugways/body-kinds/commit-block";
 
 /**
  * The tools that mount **expanded**. Everything else collapses by
- * default — file/shell I/O, agent runs, ops tools (monitor / worktree /
- * cron / task-mgmt / remote-trigger), notebook edits, web fetch /
- * search, and any unknown tool all arrive collapsed to their
- * self-describing header.
+ * default — file/shell I/O, ops tools (monitor / worktree / cron /
+ * task-mgmt / remote-trigger), notebook edits, web fetch / search, and
+ * any unknown tool all arrive collapsed to their self-describing header.
  *
  * Add a lowercased wire name here to keep a tool open on arrival.
  */
@@ -44,6 +43,13 @@ export const EXPANDED_BY_DEFAULT: ReadonlySet<string> = new Set([
   // The Q&A decision artifact — the user reads it and acts on it, so it
   // arrives open rather than behind a click.
   "askuserquestion",
+  // An Agent run — its sub-tool calls each collapse per this same policy,
+  // so an expanded Agent reads as the normal transcript indented one
+  // level (its own well), while the noisy children stay folded. `task` is
+  // the pre-rename wire name (Claude Code renamed `Task` → `Agent`); both
+  // resolve to the same block, so both open.
+  "agent",
+  "task",
 ]);
 
 /**

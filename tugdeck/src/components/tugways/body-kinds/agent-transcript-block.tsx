@@ -75,7 +75,14 @@ import { createPortal } from "react-dom";
 
 import { dispatchToolCallState } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import {
+  ToolBlockHistoryCollapse,
+  ToolCallMetaProvider,
+  ToolUseIdContext,
+} from "@/components/tugways/cards/blocks/collapse-context";
+import { collapseDefaultForMessage } from "@/components/tugways/cards/blocks/tool-collapse-defaults";
 import type { ChildToolCallsMap } from "@/components/tugways/cards/blocks/types";
+import { toolCallToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 import {
   BlockActionsCluster,
@@ -195,6 +202,9 @@ export interface AgentTranscriptBlockProps {
  * depth 0–3 render expanded, depth 4+ start folded.
  */
 export const AGENT_MAX_DEPTH = 3;
+
+/** Stable empty children map for the nested-call Copy serializer. */
+const EMPTY_CHILDREN: ChildToolCallsMap = new Map();
 
 const DATA_SLOT_ROOT = "agent-transcript-body";
 const DATA_SLOT_HEADER = "agent-transcript-header";
@@ -324,6 +334,15 @@ interface AgentEntryViewProps {
  * `depth + 1` so it gets its real per-tool block ([D17]) — and the
  * subagent-nesting map rides along so a nested `Agent` resolves its
  * own children ([#step-17-5]).
+ *
+ * The nested call is wrapped in its own collapse context — the same
+ * `ToolUseIdContext` + `ToolCallMetaProvider` + `ToolBlockHistoryCollapse`
+ * trio the top-level transcript dispatch applies — keyed by the child's
+ * own `toolUseId`. Without this wrapper a nested `BlockChrome` reads the
+ * PARENT Agent's collapse handle (the nearest provider up the tree), so
+ * every child's chevron toggled the whole Agent. Its own handle makes the
+ * child fold independently, one indent level deeper, and its collapse
+ * boolean persists through the same card-scoped [A9] expansion registry.
  */
 const AgentEntryView: React.FC<AgentEntryViewProps> = ({
   entry,
@@ -342,8 +361,9 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
       </div>
     );
   }
+  const call = entry.toolCall;
   const { Component, props } = dispatchToolCallState(
-    entry.toolCall,
+    call,
     depth + 1,
     childToolCallsByParent,
     undefined,
@@ -356,7 +376,24 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
       data-slot="agent-transcript-tool"
       data-agent-entry-kind="tool_use"
     >
-      <Component {...props} />
+      <ToolUseIdContext.Provider value={call.toolUseId}>
+        <ToolCallMetaProvider
+          toolUseId={call.toolUseId}
+          toolName={call.toolName}
+          status={call.status}
+          startedAtMs={call.createdAt}
+        >
+          <ToolBlockHistoryCollapse
+            toolUseId={call.toolUseId}
+            defaultCollapsed={collapseDefaultForMessage(call)}
+            copyText={() =>
+              toolCallToMarkdown(call, childToolCallsByParent ?? EMPTY_CHILDREN)
+            }
+          >
+            <Component {...props} />
+          </ToolBlockHistoryCollapse>
+        </ToolCallMetaProvider>
+      </ToolUseIdContext.Provider>
     </div>
   );
 };

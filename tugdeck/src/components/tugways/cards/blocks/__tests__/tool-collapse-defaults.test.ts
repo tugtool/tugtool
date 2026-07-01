@@ -12,10 +12,9 @@ import {
 } from "../tool-collapse-defaults";
 
 describe("collapseDefaultFor", () => {
-  test("collapses by default — file/shell, agent, and ops tools", () => {
+  test("collapses by default — file/shell and ops tools", () => {
     for (const name of [
       "Read", "Grep", "Glob", "Bash", "Edit", "MultiEdit", "Write",
-      "Agent", "Task",
       "Monitor", "Worktree", "Cron", "TaskMgmt", "NotebookEdit",
       "RemoteTrigger", "Skill", "WebFetch", "WebSearch",
     ]) {
@@ -23,8 +22,13 @@ describe("collapseDefaultFor", () => {
     }
   });
 
-  test("leaves only the allowlisted content tool expanded", () => {
+  test("leaves the allowlisted content + agent tools expanded", () => {
     expect(collapseDefaultFor("AskUserQuestion")).toBe(false);
+    // An Agent run opens so it reads as an indented transcript; its
+    // children collapse per this same policy. `Task` is the pre-rename
+    // wire name and resolves to the same block, so it opens too.
+    expect(collapseDefaultFor("Agent")).toBe(false);
+    expect(collapseDefaultFor("Task")).toBe(false);
   });
 
   test("unknown / future / MCP tools collapse by default", () => {
@@ -40,6 +44,10 @@ describe("collapseDefaultFor", () => {
   });
 
   test("the expanded allowlist is exactly the intended set", () => {
-    expect([...EXPANDED_BY_DEFAULT].sort()).toEqual(["askuserquestion"]);
+    expect([...EXPANDED_BY_DEFAULT].sort()).toEqual([
+      "agent",
+      "askuserquestion",
+      "task",
+    ]);
   });
 });

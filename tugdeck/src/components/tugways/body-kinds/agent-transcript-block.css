@@ -17,9 +17,11 @@
  *    `BlockChrome`.
  *  - `.tugx-agent-header` — pinned identity strip (standalone only):
  *    agent type + status + duration + tool count + actions cluster.
- *  - `.tugx-agent-entries` — the content column. Each entry is a
- *    `text` paragraph or a nested tool block, the latter indented
- *    behind a subtle rail so the nesting reads.
+ *  - `.tugx-agent-entries` — the content column, painted as a recessed
+ *    transcript-colored "well" inset within the Agent panel. Each entry
+ *    is a `text` paragraph or a nested tool block; a nested block's own
+ *    chrome separates against the well by contrast, as top-level blocks
+ *    do against the transcript column.
  *  - `.tugx-agent-footer` — a thin token-summary strip; renders in
  *    both standalone and embedded modes.
  *
@@ -48,7 +50,16 @@
 body {
   --tugx-agent-entry-gap:     var(--tug-space-sm);
   --tugx-agent-entry-padding: var(--tug-space-sm);
-  --tugx-agent-rail-indent:   var(--tug-space-md);
+  /* The entries "well" — a recessed, transcript-colored area inset within
+   * the Agent panel. The inset reveals the Agent's own block surface as a
+   * frame on all four sides; the well itself takes the transcript column
+   * background so nested tool blocks (which paint the block surface) stand
+   * off from their backing exactly as top-level blocks do from the
+   * transcript column. Without the well the nested blocks share the Agent
+   * panel's surface and blend into it. */
+  --tugx-agent-well-bg:       var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-agent-well-inset:    var(--tug-space-md);
+  --tugx-agent-well-radius:   var(--tug-radius-md);
   --tugx-agent-text-color:    var(--tug7-element-global-text-normal-default-rest);
   --tugx-agent-type-color:    var(--tug7-element-global-text-normal-default-rest);
   --tugx-agent-meta-color:    var(--tug7-element-global-text-normal-muted-rest);
@@ -160,12 +171,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--tugx-agent-entry-gap);
+  /* The recessed well: inset from the Agent panel (its block surface shows
+   * as the frame), transcript-colored, rounded. Nested tool blocks inside
+   * separate against it by contrast, like the top-level transcript. */
+  margin: var(--tugx-agent-well-inset);
   padding: var(--tugx-agent-entry-padding);
+  background: var(--tugx-agent-well-bg);
+  border-radius: var(--tugx-agent-well-radius);
 }
 
 /* A text entry — the subagent's prose answer. Pre-wrapped so source
  * line breaks survive; wraps rather than overflowing the frame. */
-/* @tug-renders-on: --tugx-block-bg */
+/* @tug-renders-on: --tugx-agent-well-bg */
 .tugx-agent-text {
   color: var(--tugx-agent-text-color);
   line-height: 1.5;
@@ -173,13 +190,12 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* A nested tool call — indented behind a subtle rail so the nesting
- * reads at a glance. The wrapper inside owns its own chrome / margin;
- * this rule only sets the indent + guide. */
-/* @tug-renders-on: --tugx-block-bg */
+/* A nested tool call. Its own chrome is a raised panel that separates
+ * against the transcript-colored well behind it — the same contrast that
+ * sets top-level blocks off from the transcript column — so this rule
+ * carries no rail or indent of its own; the well's inset is the nesting
+ * cue. It sets only the stacking seam. */
 .tugx-agent-tool {
-  padding-left: var(--tugx-agent-rail-indent);
-  border-left: 1px solid var(--tugx-block-strip-border);
   /* Own stacking context, one level below the agent's chrome header
    * (`z-index: 1`). The nested block's own sticky header keeps its full
    * elevation over its body rows INSIDE this context; the context as a
@@ -189,6 +205,18 @@ body {
    * would drop it beneath its own output. */
   position: relative;
   z-index: 0;
+}
+
+/* Inside the well the nested block owns no outer margin. The well's
+ * padding (block-to-edge) and the entries flex gap (block-to-block) are
+ * the sole spacing, and both are `--tug-space-sm`, so each sub-tool call
+ * sits with equal margin on all four sides. Left unset, the block's own
+ * run/stack-gap margins stack on top and blow out the vertical rhythm —
+ * a top+bottom `--tug-space-md` on every block (the `+ .tool-block-chrome`
+ * sibling selector can't fuse them here, since each is wrapped in its own
+ * `.tugx-agent-tool`). Applies at every nesting depth. */
+.tugx-agent-tool .tool-block-chrome {
+  margin: 0;
 }
 
 /* ---------- Footer ---------- */
