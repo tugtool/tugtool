@@ -252,6 +252,97 @@ describe("jobs fixture replay — capture sanity", () => {
 });
 
 describe("jobs fixture replay — lifecycle through the real store", () => {
+  // Regression for the JOBS-shows-None bug: at claude 2.1.197 a
+  // background Agent launches with NO `run_in_background` in its input
+  // (just description/prompt/subagent_type) — the async signal lives in
+  // the RESULT (`Async agent launched successfully` + `agentId`, which
+  // equals the task frames' `task_id`). The ledger must key off the
+  // result echo, not the vanished input flag, or the whole background
+  // agent goes untracked.
+  it("tracks a 2.1.197 async Agent launched WITHOUT run_in_background", () => {
+    const { store, conn } = makeStore();
+    const MSG = "m-ag";
+    const TU = "toolu_ag";
+    const AGENT_ID = "a853a0bb16cf9f191";
+    store.send("Explore the codebase for block-renderer deps.", []);
+    emit(conn, {
+      type: "content_block_start",
+      msg_id: MSG,
+      block_index: 0,
+      kind: "tool_use",
+      tool_use_id: TU,
+      tool_name: "Agent",
+      ipc_version: IPC_VERSION,
+    });
+    emit(conn, {
+      type: "tool_use",
+      msg_id: MSG,
+      tool_use_id: TU,
+      tool_name: "Agent",
+      // The real 2.1.197 shape — NO run_in_background.
+      input: {
+        description: "Find block renderer dependencies",
+        prompt: "…",
+        subagent_type: "Explore",
+      },
+      ipc_version: IPC_VERSION,
+    });
+    // task_started fires (local_agent) but can't discriminate fg/bg.
+    emit(conn, {
+      type: "task_started",
+      session_id: "s",
+      task_id: AGENT_ID,
+      tool_use_id: TU,
+      description: "Find block renderer dependencies",
+      task_type: "local_agent",
+      subagent_type: "Explore",
+      ipc_version: IPC_VERSION,
+    });
+    // The async-launch echo IS the discriminant.
+    emit(conn, {
+      type: "tool_result",
+      tool_use_id: TU,
+      output:
+        "Async agent launched successfully.\nagentId: " +
+        AGENT_ID +
+        " (internal ID - do not mention). output_file: /tmp/" +
+        AGENT_ID +
+        ".output",
+      ipc_version: IPC_VERSION,
+    });
+
+    let ledger = store.getSnapshot().jobs;
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0].jobId).toBe(AGENT_ID);
+    expect(ledger[0].kind).toBe("agent");
+    expect(ledger[0].status).toBe("running");
+
+    // task_progress (keyed by the same id) folds live progress on.
+    emit(conn, {
+      type: "task_progress",
+      session_id: "s",
+      task_id: AGENT_ID,
+      tool_use_id: TU,
+      description: "Find block renderer dependencies",
+      subagent_type: "Explore",
+      last_tool_name: "Grep",
+      usage: { total_tokens: 500, tool_uses: 3, duration_ms: 4000 },
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().jobs[0].progress?.lastToolName).toBe("Grep");
+
+    // Terminal flip completes the row.
+    emit(conn, {
+      type: "task_updated",
+      session_id: "s",
+      task_id: AGENT_ID,
+      status: "completed",
+      end_time: 1_781_000_000_000,
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().jobs[0].status).toBe("completed");
+  });
+
   it("bg launch inserts one running row; the inter-turn task_updated flips it completed", () => {
     const { store, conn } = makeStore();
     const job = jobs.get(ID_CLEAN)!;

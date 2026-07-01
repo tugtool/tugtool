@@ -2019,41 +2019,45 @@ function handleToolResult(
       typeof mutated.input === "object" && mutated.input !== null
         ? (mutated.input as Record<string, unknown>)
         : null;
-    if (isJobLaunch(mutated.toolName, input)) {
-      // Background launch (explicitly backgrounded, or a Monitor
-      // watcher) — the `tool_result` echo carries the job id (and,
-      // for bash/agent, the output file). The `task_started` frame is
-      // the other insert path; `insertJob` composes the two
-      // idempotently.
-      const echo = parseBackgroundLaunchResult(mutated.result);
-      if (echo !== undefined) {
-        const launchDescription =
-          typeof input?.description === "string" ? input.description : "";
-        const wasTracked = jobs.some((j) => j.jobId === echo.jobId);
-        jobs = insertJob(jobs, {
-          jobId: echo.jobId,
-          source: "claude",
-          kind: echo.kind,
-          toolUseId: mutated.toolUseId,
-          description: launchDescription,
-          ...(echo.outputFile !== undefined
-            ? { outputFile: echo.outputFile }
-            : {}),
-          status: "running",
-          startedAtMs: now,
-          endedAtMs: null,
-        });
-        // First insert of this job → persistent launch marker in this
-        // turn (gated identically to the `task_started` path so the two
-        // insert routes never double-mark).
-        if (!wasTracked) {
-          launchNoteScratch = appendBackgroundLaunchNote(
-            launchNoteScratch ?? nextScratch,
-            turnKey,
-            echo.kind,
-            launchDescription,
-          );
-        }
+    // The tool_result ECHO is the authoritative background-launch
+    // discriminant. At claude 2.1.197 an async Agent launch no longer
+    // carries `input.run_in_background` (input is just
+    // description/prompt/subagent_type) — the signal moved to the RESULT
+    // (`isAsync` / "Async agent launched successfully" + an `agentId`
+    // that equals the task frames' `task_id`, so progress/terminal
+    // frames correctly update this row). A background Bash / Monitor
+    // likewise announces itself in its result.
+    // `parseBackgroundLaunchResult` matches exactly those three echoes
+    // and nothing else, so a foreground tool never trips it — the result
+    // is the reliable gate `input.run_in_background` no longer is. (The
+    // `task_started` frame is the other insert path via
+    // `handleTaskStarted`; `insertJob` composes the two idempotently.)
+    const echo = parseBackgroundLaunchResult(mutated.result);
+    if (echo !== undefined) {
+      const launchDescription =
+        typeof input?.description === "string" ? input.description : "";
+      const wasTracked = jobs.some((j) => j.jobId === echo.jobId);
+      jobs = insertJob(jobs, {
+        jobId: echo.jobId,
+        source: "claude",
+        kind: echo.kind,
+        toolUseId: mutated.toolUseId,
+        description: launchDescription,
+        ...(echo.outputFile !== undefined
+          ? { outputFile: echo.outputFile }
+          : {}),
+        status: "running",
+        startedAtMs: now,
+        endedAtMs: null,
+      });
+      // First insert of this job → persistent launch marker in this turn.
+      if (!wasTracked) {
+        launchNoteScratch = appendBackgroundLaunchNote(
+          launchNoteScratch ?? nextScratch,
+          turnKey,
+          echo.kind,
+          launchDescription,
+        );
       }
     } else if (mutated.toolName.toLowerCase() === "taskstop") {
       // Defensive fold: the wire also confirms a stop via
