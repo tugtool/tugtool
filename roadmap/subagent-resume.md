@@ -104,7 +104,7 @@ Anchors are explicit and kebab-case; steps cite decisions/specs/anchors, never l
 
 **Plan to resolve:** Spike in Step 1 — dump a large subagent `tool_result` block from the real fixture and inspect. Wire resolution into the reader only if referenced.
 
-**Resolution:** OPEN — resolved during #step-1; the reader gains a bounded `tool-results/` resolver iff pointers are found.
+**Resolution:** DECIDED (resolved in #step-1) — **no resolver needed.** Large outputs are stored **inline** in the subagent `tool_result` as a `<persisted-output>` string carrying a 2KB preview plus the `tool-results/<hash>.txt` path (verified on the real fixture). This is exactly what the live path shows the model, so the reader passes `tool_result.content` through **verbatim** — preview wrapper and all. No `tool-results/` dereference.
 
 #### [Q02] Structured-result synthesis fidelity in v1 (OPEN) {#q02-structured-result}
 
@@ -203,7 +203,7 @@ Anchors are explicit and kebab-case; steps cite decisions/specs/anchors, never l
 
 **Rationale:** On resume the persisted Agent result is the async echo (no content); without synthesis the block shows calls but no answer/stats. The deck's `composeAgentTranscriptData` already consumes exactly this shape. `.meta.json` carries **no** usage/stats (only `agentType`/`description`/`toolUseId`/`spawnDepth`), so the numbers come from the entries, not the meta.
 
-**Implications:** Resolves [Q02] as include-in-v1. No suppression of the async-echo result is required — the async-echo entry emits its own `tool_use_structured`, and this one is yielded **after** it; `handleToolStructured` is last-write-wins, so the synthesized payload wins by ordering (see [#s04-splice]). The final-answer `content` is reconstructed from the subagent transcript's trailing assistant text; the async echo also names an `output_file` (`…/tasks/<agentId>.output`) as a cheaper fallback source if reconstruction proves lossy — evaluate during #step-5.
+**Implications:** Resolves [Q02] as include-in-v1. **Refinement discovered during #step-5:** the async-launch echo's `tool_use_structured` lands on the main JSONL *after* the parent Agent `tool_use` — i.e. after the splice point — so pure last-write-wins ordering would let the echo clobber the composed result. Instead the splice is **gated to genuinely-async agents** (`collectAsyncAgentToolUseIds` — a `user` entry whose `toolUseResult` is `isAsync`/`async_launched`), and the echo's structured frame is **dropped** in the emit loop for those agents, so the composed result is the **sole writer** of the Agent's `structuredResult` (more robust than ordering, and it means a foreground agent's real inline result is never disturbed). The final-answer `content` is reconstructed from the transcript's trailing assistant text (tool calls excluded — they arrive as parent-linked children); stats (`totalToolUseCount`/`totalTokens`/`totalDurationMs`) derive from the entries.
 
 #### [P07] Idempotent with the live gap-bridge (DECIDED) {#p07-idempotency}
 
@@ -349,17 +349,17 @@ No new deck state. The spliced child `tool_use` messages enter the store through
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Real fixtures + `tool-results` spike ([Q01]) | pending | — |
-| #step-2 | `SubagentTranscript` + `readSubagentTranscripts` (fs) | pending | — |
-| #step-3 | `synthesizeSubagentChildFrames` (pure) | pending | — |
-| #step-4 | Splice into `translateJsonlSession` (window/nesting-aware) | pending | — |
-| #step-5 | Synthesize Agent `tool_use_structured` ([P06]) | pending | — |
-| #step-6 | Wire `session.ts` resume orchestration | pending | — |
-| #step-7 | Idempotency + still-running-at-resume | pending | — |
-| #step-8 | Deck fixture-replay assertion | pending | — |
-| #step-9 | Recurring capture probe + catalog + drift | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
-| #step-11 | Rebuild binary + app-test + live verify | pending | — |
+| #step-1 | Real fixtures + `tool-results` spike ([Q01]) | done | (dash) |
+| #step-2 | `SubagentTranscript` + `readSubagentTranscripts` (fs) | done | (dash) |
+| #step-3 | `synthesizeSubagentChildFrames` (pure) | done | (dash) |
+| #step-4 | Splice into `translateJsonlSession` (window/nesting-aware) | done | (dash) |
+| #step-5 | Synthesize Agent `tool_use_structured` ([P06]) | done | (dash) |
+| #step-6 | Wire `session.ts` resume orchestration | done | (dash) |
+| #step-7 | Idempotency + still-running-at-resume | done | (dash) |
+| #step-8 | Deck fixture-replay assertion | done | (dash) |
+| #step-9 | Recurring capture probe + catalog + drift | done | (dash) |
+| #step-10 | Integration checkpoint | done | (verification only) |
+| #step-11 | Rebuild binary + app-test + live verify | build+launch done; live verify pending user | (dash) |
 
 #### Step 1: Real fixtures + `tool-results` spike {#step-1}
 

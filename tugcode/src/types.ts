@@ -129,6 +129,14 @@ export interface ToolUse {
   tool_name: string;
   tool_use_id: string;
   input: object;
+  /**
+   * Set when this call was made by a subagent — the parent `Agent`
+   * `tool_use.id`. The live path stamps it onto the forwarded frame from
+   * `parent_tool_use_id` on the stream event; the resume path stamps it on
+   * children synthesized from a subagent transcript. The reducer links the
+   * child under its parent Agent from this field.
+   */
+  parent_tool_use_id?: string;
   ipc_version: number;
 }
 

@@ -46,14 +46,17 @@ import type {
   ReplayWindow,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
-import { realpath } from "node:fs/promises";
+import { realpath, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { Database } from "bun:sqlite";
 import { logSessionLifecycle } from "./session-lifecycle-log.ts";
 import {
+  type JsonlEntry,
   type ReplayInput,
   type ReplayTelemetry,
+  type SubagentTranscript,
+  type SubagentTranscriptMeta,
   translateJsonlSession,
 } from "./replay.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
@@ -228,6 +231,30 @@ export function jsonlPathFor(
     claudeProjectsRoot,
     encodeProjectDir(projectDir),
     `${claudeSessionId}.jsonl`,
+  );
+}
+
+/**
+ * Resolve the directory holding a session's background-agent transcripts.
+ * Claude Code writes them beside the main JSONL, under a directory named
+ * by the session id (no `.jsonl` suffix):
+ *
+ *   `<claudeProjectsRoot>/<encodeProjectDir(projectDir)>/<id>/subagents`
+ *
+ * Each async `Agent` launch persists `agent-<agentId>.jsonl` (the agent's
+ * full transcript) + `agent-<agentId>.meta.json` (the launching
+ * `tool_use.id` + display fields) here.
+ */
+export function subagentsDirFor(
+  claudeProjectsRoot: string,
+  projectDir: string,
+  claudeSessionId: string,
+): string {
+  return join(
+    claudeProjectsRoot,
+    encodeProjectDir(projectDir),
+    claudeSessionId,
+    "subagents",
   );
 }
 
@@ -516,6 +543,88 @@ export async function defaultJsonlReader(
       message: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Narrow the parsed `.meta.json` sidecar to a {@link SubagentTranscriptMeta}.
+ * `toolUseId` is required (it is the splice linkage key); a sidecar without a
+ * string `toolUseId` is unusable and yields `undefined` so the caller skips it.
+ */
+function narrowSubagentMeta(value: unknown): SubagentTranscriptMeta | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const v = value as Record<string, unknown>;
+  if (typeof v.toolUseId !== "string" || v.toolUseId.length === 0) {
+    return undefined;
+  }
+  return {
+    toolUseId: v.toolUseId,
+    agentType: typeof v.agentType === "string" ? v.agentType : undefined,
+    description: typeof v.description === "string" ? v.description : undefined,
+    spawnDepth: typeof v.spawnDepth === "number" ? v.spawnDepth : undefined,
+  };
+}
+
+/**
+ * Parse a subagent JSONL body into entries, dropping blank/malformed lines.
+ * Malformed lines are tolerated (skipped) rather than failing the whole
+ * transcript — the same permissiveness the main-JSONL translator applies.
+ */
+function parseSubagentEntries(jsonl: string): JsonlEntry[] {
+  const entries: JsonlEntry[] = [];
+  for (const rawLine of jsonl.split("\n")) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    try {
+      entries.push(JSON.parse(line) as JsonlEntry);
+    } catch {
+      // Skip the malformed line; a partial transcript still restores the
+      // calls that did parse.
+    }
+  }
+  return entries;
+}
+
+/**
+ * Discover and read every background-agent transcript in a session's
+ * `subagents/` directory (see {@link subagentsDirFor}). Each pairs an
+ * `agent-<agentId>.jsonl` body with its `agent-<agentId>.meta.json` sidecar.
+ *
+ * Best-effort and shape-guarded: a missing directory yields `[]`; a file
+ * whose meta is missing / unparseable / lacks a `toolUseId`, or whose body
+ * can't be read, is skipped (the caller may log). Reading never throws and
+ * never blocks the resume — a session with no restorable subagent data
+ * simply replays as it does today.
+ *
+ * `dir` defaults to the real filesystem; tests point it at a fixture
+ * directory of real captured transcripts.
+ */
+export async function readSubagentTranscripts(
+  dir: string,
+): Promise<SubagentTranscript[]> {
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return [];
+  }
+  const transcripts: SubagentTranscript[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".meta.json")) continue;
+    const stem = name.slice(0, -".meta.json".length);
+    const jsonlName = `${stem}.jsonl`;
+    if (!names.includes(jsonlName)) continue;
+    try {
+      const metaText = await Bun.file(join(dir, name)).text();
+      const meta = narrowSubagentMeta(JSON.parse(metaText));
+      if (meta === undefined) continue;
+      const bodyText = await Bun.file(join(dir, jsonlName)).text();
+      const entries = parseSubagentEntries(bodyText);
+      transcripts.push({ meta, entries });
+    } catch {
+      // Skip an unreadable pair; other transcripts still restore.
+    }
+  }
+  return transcripts;
 }
 
 /**
@@ -3549,9 +3658,32 @@ export class SessionManager {
     // synthesized `system_metadata` IPC at the top of replay carries
     // the right session_id field. Only the `ok` variant carries
     // payload; missing/unreadable variants pass through unchanged.
-    const input: ReplayInput = rawInput.kind === "ok"
+    let input: ReplayInput = rawInput.kind === "ok"
       ? { ...rawInput, claudeSessionId }
       : rawInput;
+
+    // Restore any background-agent transcripts Claude Code persisted
+    // out-of-band beside the main JSONL (`subagents/agent-*.jsonl`). On
+    // resume the main JSONL records only the async-launch echo for a
+    // backgrounded `Agent`, so without this its child tool calls + final
+    // answer are lost. Best-effort: a missing/unreadable subagents dir yields
+    // none and replay proceeds exactly as before.
+    if (input.kind === "ok") {
+      const subagentsDir = subagentsDirFor(
+        this.claudeProjectsRoot,
+        canonicalProjectDir,
+        claudeSessionId,
+      );
+      const subagents = await readSubagentTranscripts(subagentsDir);
+      if (subagents.length > 0) {
+        input = { ...input, subagents };
+        logReplay("subagents_restored", {
+          session_id: this.sessionId,
+          count: subagents.length,
+          entries: subagents.reduce((n, t) => n + t.entries.length, 0),
+        });
+      }
+    }
 
     // Exit race only applies when claude is alive. In Step R0d's
     // cold-boot order, claude hasn't been spawned yet — there's

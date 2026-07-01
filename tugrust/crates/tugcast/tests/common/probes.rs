@@ -191,7 +191,7 @@ pub enum ProbeStatus {
 }
 
 // -----------------------------------------------------------------------
-// Probe table — 44 entries
+// Probe table — 45 entries
 // -----------------------------------------------------------------------
 
 /// The full probe table. Order matches `transport-exploration.md` tests 1–36.
@@ -1392,6 +1392,57 @@ pub static PROBES: &[ProbeRecord] = &[
         timeout_secs: 120,
         skip_reason: None,
     },
+    // --- Test 45: Background-agent transcript restore on resume ---
+    // A backgrounded Agent persists its child calls out-of-band in
+    // `subagents/agent-<id>.jsonl`; on resume tugcode splices them back
+    // under the parent Agent (this suite's subject). Verifying it
+    // end-to-end needs a launch → await-completion → RESUME capture, which
+    // the recurring single-session probe harness does not model: resume
+    // re-spawns tugcode in replay mode reading the prior session's JSONL —
+    // a different artifact than a live stream-json turn — and awaiting a
+    // background agent's completion is nondeterministic (cf. test-43). The
+    // DETERMINISTIC gating coverage lives in the tugcode + tugdeck
+    // real-fixture tests (`tugcode/src/__tests__/subagent-resume.test.ts`
+    // and `tugdeck/src/__tests__/subagent-resume-replay.test.ts`), which
+    // drive the actual captured subagent transcript through the real
+    // translator and reducer. Registered here (skipped) so the recurring
+    // suite carries the intent; un-skip if the harness gains resume capture.
+    ProbeRecord {
+        name: "test-45-bg-agent-resume",
+        input_script: &[ProbeMsg::UserMessage {
+            text: "Use the Agent tool exactly once with run_in_background set to \
+                   true, subagent_type \"general-purpose\", and a prompt instructing \
+                   it to run the Bash command `sleep 4 && echo AGENT_OK` and then \
+                   report the single word done. After the Agent tool returns its \
+                   async-launch acknowledgement, end your turn immediately with the \
+                   single word: launched. Do not poll, do not read the output file, \
+                   do not call any other tools.",
+        }],
+        required_events: &[
+            "system_metadata",
+            "tool_use",
+            "task_started",
+            "turn_complete",
+        ],
+        optional_events: &[
+            "thinking_text",
+            "assistant_text",
+            "cost_update",
+            "tool_result",
+            "task_progress",
+            "wake_started",
+            "task_updated",
+            "session_init",
+        ],
+        prerequisites: &[],
+        timeout_secs: 150,
+        skip_reason: Some(
+            "resume-replay restore needs a launch->await->resume capture the \
+             recurring single-session harness does not model, and awaiting bg-agent \
+             completion is nondeterministic; deterministic coverage is the \
+             tugcode/tugdeck real-fixture tests (subagent-resume*.test)",
+        ),
+    },
 ];
 
 #[cfg(test)]
@@ -1399,8 +1450,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn probe_table_has_44_entries() {
-        assert_eq!(PROBES.len(), 44, "probe table must contain all 44 probes");
+    fn probe_table_has_45_entries() {
+        assert_eq!(PROBES.len(), 45, "probe table must contain all 45 probes");
     }
 
     #[test]

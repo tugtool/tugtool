@@ -257,6 +257,186 @@ export interface JsonlEntry {
   toolUseResult?: Record<string, unknown>;
 }
 
+/**
+ * The `.meta.json` sidecar Claude Code writes beside each background
+ * agent's transcript (`subagents/agent-<agentId>.meta.json`). It records
+ * the launching `Agent` `tool_use.id` — the authoritative linkage back to
+ * the parent call — plus display fields. `toolUseId` is the only field the
+ * splice strictly requires; the rest degrade gracefully.
+ */
+export interface SubagentTranscriptMeta {
+  /** Launching `Agent` `tool_use.id` — the linkage key for the splice. */
+  toolUseId: string;
+  /** Subagent type, e.g. "Explore". */
+  agentType?: string;
+  /** The launch description (header detail). */
+  description?: string;
+  /** Nesting depth (1 = top-level agent). Informational. */
+  spawnDepth?: number;
+}
+
+/**
+ * One background agent's out-of-band transcript — the parsed
+ * `subagents/agent-<agentId>.jsonl` entries plus its `.meta.json`. The
+ * resume path discovers these ({@link readSubagentTranscripts} in
+ * `session.ts`) and hands them to {@link translateJsonlSession}, which
+ * splices each transcript's tool calls back under its parent Agent as
+ * `parentToolUseId`-tagged child frames.
+ */
+export interface SubagentTranscript {
+  meta: SubagentTranscriptMeta;
+  entries: JsonlEntry[];
+}
+
+/**
+ * Synthesize the child frames that reconstruct a background agent's tool
+ * calls under its parent `Agent` on resume. For each `tool_use` block in the
+ * transcript's assistant entries emit a `tool_use` frame stamped with
+ * `parent_tool_use_id = meta.toolUseId` (the linkage the reducer keeps
+ * sticky); for each `tool_result` block a `tool_result`; and for an entry's
+ * `toolUseResult` sidecar a `tool_use_structured` bound to that entry's first
+ * `tool_use_id` (so e.g. a child `Read`'s file body restores). The parent id
+ * rides ONLY the `tool_use` frame — the reducer merges `tool_result` /
+ * `tool_use_structured` by id onto the already-linked call.
+ *
+ * Emits **no** turn-lifecycle frames (`turn_started` / `turn_complete` /
+ * `system_metadata`): the children live inside the parent Agent's turn, so
+ * the splice site ({@link translateJsonlSession}) yields these mid-turn and
+ * the reducer attaches them to the open turn. `seq` values come from the
+ * caller's `nextSeq` so they thread the translator's global sequence; the
+ * function is otherwise pure over the transcript.
+ */
+export function synthesizeSubagentChildFrames(
+  transcript: SubagentTranscript,
+  nextSeq: () => number,
+): OutboundMessage[] {
+  const parentId = transcript.meta.toolUseId;
+  const out: OutboundMessage[] = [];
+  for (const entry of transcript.entries) {
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
+    const msgId =
+      typeof entry.message?.id === "string" ? entry.message.id : "";
+    // First `tool_use_id` in this entry — binds an entry-level
+    // `toolUseResult` to its call, mirroring `handleUserEntry`.
+    let firstToolUseId = "";
+    for (const block of content) {
+      const blockType = typeof block.type === "string" ? block.type : "";
+      if (blockType === "tool_use") {
+        const toolUseId = typeof block.id === "string" ? block.id : "";
+        const toolName = typeof block.name === "string" ? block.name : "";
+        if (toolUseId.length === 0 || toolName.length === 0) continue;
+        const toolUse: ToolUse = {
+          type: "tool_use",
+          msg_id: msgId,
+          seq: nextSeq(),
+          tool_name: toolName,
+          tool_use_id: toolUseId,
+          input:
+            typeof block.input === "object" && block.input !== null
+              ? (block.input as object)
+              : {},
+          parent_tool_use_id: parentId,
+          ipc_version: IPC_VERSION,
+        };
+        out.push(toolUse);
+      } else if (blockType === "tool_result") {
+        const toolUseId =
+          typeof block.tool_use_id === "string" ? block.tool_use_id : "";
+        if (toolUseId.length === 0) continue;
+        if (firstToolUseId.length === 0) firstToolUseId = toolUseId;
+        const toolResult: ToolResult = {
+          type: "tool_result",
+          tool_use_id: toolUseId,
+          output: coerceToolResultContent(block.content),
+          is_error: block.is_error === true,
+          ipc_version: IPC_VERSION,
+        };
+        out.push(toolResult);
+      }
+    }
+    // Entry-level structured result (e.g. a child `Read`'s `file.content`),
+    // bound to the entry's first tool_use_id. Emitted after the tool_result
+    // so the reducer's last-write-wins merge lands the richer payload.
+    const toolUseResult = entry.toolUseResult;
+    if (toolUseResult !== undefined && firstToolUseId.length > 0) {
+      const structured: ToolUseStructured = {
+        type: "tool_use_structured",
+        tool_use_id: firstToolUseId,
+        tool_name:
+          typeof toolUseResult.toolName === "string"
+            ? toolUseResult.toolName
+            : "",
+        structured_result: toolUseResult,
+        ipc_version: IPC_VERSION,
+      };
+      out.push(structured);
+    }
+  }
+  return out;
+}
+
+/**
+ * Reconstruct the parent `Agent`'s `structured_result` from its transcript.
+ * On resume the persisted Agent result is only the async-launch echo (no
+ * content), so the block would show its restored calls but no final answer or
+ * footer stats. This composes the shape `composeAgentTranscriptData` consumes:
+ * `content` (the trailing assistant text answer — NOT the tool calls, which
+ * arrive as parent-linked children), plus `agentType`/`status` and the stats
+ * derived from the entries (`totalToolUseCount` = tool_use count;
+ * `totalTokens` = summed assistant output tokens; `totalDurationMs` = last −
+ * first timestamp).
+ */
+export function composeAgentStructuredResult(
+  transcript: SubagentTranscript,
+): Record<string, unknown> {
+  const entries = transcript.entries;
+  // Final answer: the trailing assistant entry that carries text and no
+  // tool_use (the tool calls themselves restore as children, not content).
+  let content: Array<{ type: "text"; text: string }> = [];
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const c = entries[i].message?.content;
+    if (!Array.isArray(c)) continue;
+    const texts = c.filter(
+      (b) => b.type === "text" && typeof b.text === "string",
+    );
+    const hasTool = c.some((b) => b.type === "tool_use");
+    if (texts.length > 0 && !hasTool) {
+      content = texts.map((b) => ({ type: "text", text: b.text as string }));
+      break;
+    }
+  }
+  let totalToolUseCount = 0;
+  let totalTokens = 0;
+  for (const e of entries) {
+    const c = e.message?.content;
+    if (Array.isArray(c)) {
+      totalToolUseCount += c.filter((b) => b.type === "tool_use").length;
+    }
+    const usage = e.message?.usage;
+    if (usage !== undefined) totalTokens += usageTokens(usage.output_tokens);
+  }
+  const firstTs = entries.length > 0 ? parseEntryTimestamp(entries[0]) : undefined;
+  const lastTs =
+    entries.length > 0
+      ? parseEntryTimestamp(entries[entries.length - 1])
+      : undefined;
+  const totalDurationMs =
+    firstTs !== undefined && lastTs !== undefined && lastTs >= firstTs
+      ? lastTs - firstTs
+      : undefined;
+  return {
+    ...(transcript.meta.agentType !== undefined
+      ? { agentType: transcript.meta.agentType }
+      : {}),
+    status: "completed",
+    content,
+    totalToolUseCount,
+    ...(totalTokens > 0 ? { totalTokens } : {}),
+    ...(totalDurationMs !== undefined ? { totalDurationMs } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Per-turn cost reconstruction from JSONL `usage`
 // ---------------------------------------------------------------------------
@@ -1650,6 +1830,15 @@ export type ReplayInput =
        * and the field defaults to "" downstream.
        */
       claudeSessionId?: string;
+      /**
+       * Background-agent transcripts discovered beside the main JSONL
+       * ({@link SubagentTranscript}). When a parent `Agent` `tool_use` is
+       * emitted during replay, its transcript's tool calls are spliced in
+       * as `parent_tool_use_id`-tagged children so a resumed session
+       * restores the agent's work (which lives out-of-band and is not in
+       * the main JSONL). Absent/empty ⇒ byte-identical to legacy replay.
+       */
+      subagents?: SubagentTranscript[];
     }
   | { kind: "missing"; message?: string }
   | { kind: "unreadable"; message: string };
@@ -1972,6 +2161,85 @@ function resolveWindow(
  * (zero yields); a whale pays a handful — not the hundreds of forced
  * idles the old per-16-messages pacing cost (~600ms at 8k messages).
  */
+/**
+ * Yield the child frames for the background agent launched by
+ * `parentToolUseId` — and, recursively, for any nested agent among those
+ * children (a nested `Agent` `tool_use` owns its own transcript). `consumed`
+ * guards against splicing a transcript more than once (a re-emitted parent
+ * `tool_use`, or a defensive cycle). Nesting resolves by enumeration:
+ * because a nested agent's own `tool_use` is itself yielded here, its
+ * transcript matches on the recursive call — no depth walk needed.
+ */
+/**
+ * Collect the `Agent` `tool_use.id`s that were launched in the BACKGROUND —
+ * a `user` entry whose `toolUseResult` is the async-launch echo (`isAsync ===
+ * true` or `status === "async_launched"`). The linkage id is the entry's first
+ * `tool_result` block's `tool_use_id`. Only these agents get their transcripts
+ * spliced; a foreground agent's children/answer already live inline in the
+ * main JSONL.
+ */
+function collectAsyncAgentToolUseIds(
+  parsedEntries: ReadonlyArray<JsonlEntry | null>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of parsedEntries) {
+    if (entry === null || entry.type !== "user") continue;
+    const tur = entry.toolUseResult;
+    const isAsync =
+      tur !== undefined &&
+      (tur.isAsync === true || tur.status === "async_launched");
+    if (!isAsync) continue;
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (
+        block.type === "tool_result" &&
+        typeof block.tool_use_id === "string" &&
+        block.tool_use_id.length > 0
+      ) {
+        ids.add(block.tool_use_id);
+        break;
+      }
+    }
+  }
+  return ids;
+}
+
+function* spliceSubagentChildren(
+  parentToolUseId: string,
+  byParent: ReadonlyMap<string, SubagentTranscript>,
+  consumed: Set<string>,
+  nextSeq: () => number,
+): Generator<OutboundMessage> {
+  if (consumed.has(parentToolUseId)) return;
+  const transcript = byParent.get(parentToolUseId);
+  if (transcript === undefined) return;
+  consumed.add(parentToolUseId);
+  for (const frame of synthesizeSubagentChildFrames(transcript, nextSeq)) {
+    yield frame;
+    if (frame.type === "tool_use") {
+      yield* spliceSubagentChildren(
+        frame.tool_use_id,
+        byParent,
+        consumed,
+        nextSeq,
+      );
+    }
+  }
+  // Restore the agent's own final answer + stats. The persisted Agent result
+  // on the main JSONL is only the async-launch echo (no content); the caller
+  // drops that echo's structured frame, so this composed one is the sole
+  // writer of the Agent's `structuredResult`.
+  const structured: ToolUseStructured = {
+    type: "tool_use_structured",
+    tool_use_id: parentToolUseId,
+    tool_name: "Agent",
+    structured_result: composeAgentStructuredResult(transcript),
+    ipc_version: IPC_VERSION,
+  };
+  yield structured;
+}
+
 export async function* translateJsonlSession(
   input: ReplayInput,
   opts: TranslateSessionOptions = {},
@@ -2023,6 +2291,15 @@ export async function* translateJsonlSession(
   // OK branch: parse + translate line by line.
   const ctx = makeTranslateContext(telemetry);
   const claudeSessionId = input.claudeSessionId ?? "";
+  // Background-agent transcripts, indexed by the parent `Agent`
+  // `tool_use.id` (`meta.toolUseId`). When that parent tool_use is emitted
+  // below, its children splice in mid-turn. `consumedSubagents` ensures each
+  // transcript splices at most once across the pass.
+  const subagentsByParent = new Map<string, SubagentTranscript>();
+  for (const transcript of input.subagents ?? []) {
+    subagentsByParent.set(transcript.meta.toolUseId, transcript);
+  }
+  const consumedSubagents = new Set<string>();
   // Synthesize a `system_metadata` IPC each time the active model
   // changes across the replayed `assistant` entries. The JSONL's
   // top-level `system` entries are skipped (they mirror live
@@ -2069,6 +2346,17 @@ export async function* translateJsonlSession(
       return null;
     }
   });
+
+  // Which parent `Agent` calls were launched in the BACKGROUND — their
+  // main-JSONL result is the async-launch echo (`isAsync` / `status:
+  // "async_launched"`). The splice restores only these: a foreground agent's
+  // real children + answer already live in the main JSONL's structured
+  // result, so touching it would double-render. Computed only when there are
+  // subagent transcripts to place.
+  const asyncAgentToolUseIds =
+    subagentsByParent.size > 0
+      ? collectAsyncAgentToolUseIds(parsedEntries)
+      : new Set<string>();
 
   // Session-created anchor: the wall-clock of the first real turn-bearing
   // entry (a `user` or `assistant` message — `summary` / `system` meta
@@ -2202,11 +2490,50 @@ export async function* translateJsonlSession(
 
     const messages = translateJsonlEntry(parsed, ctx, { suppressTurnComplete });
     for (const msg of messages) {
+      // Drop the async-launch echo's own `tool_use_structured` for an agent
+      // we're restoring — it carries no content, and the composed structured
+      // result the splice emits below is the sole, richer writer. Without this
+      // the echo (which lands after the splice) would clobber the composed one
+      // (`handleToolStructured` is last-write-wins).
+      if (
+        msg.type === "tool_use_structured" &&
+        asyncAgentToolUseIds.has(msg.tool_use_id) &&
+        subagentsByParent.has(msg.tool_use_id)
+      ) {
+        continue;
+      }
       yield msg;
       if (yieldBetweenBatches && now() - sliceStartedAt >= timeSliceMs) {
         onYield?.();
         await yieldToEventLoop();
         sliceStartedAt = now();
+      }
+      // Splice a background agent's persisted children directly after its
+      // parent `Agent` tool_use — mid-turn, so the reducer attaches them to
+      // the open turn (`handleToolUse` resolves the turn via `pendingTurn`,
+      // not `msg_id`). Gated to BACKGROUND agents (`asyncAgentToolUseIds`) so
+      // a foreground agent's inline result is never disturbed. A windowed-out
+      // Agent never emits its tool_use here, so it yields no children
+      // (window-safe by construction). Nested agents resolve recursively
+      // inside `spliceSubagentChildren`.
+      if (
+        msg.type === "tool_use" &&
+        asyncAgentToolUseIds.has(msg.tool_use_id) &&
+        subagentsByParent.has(msg.tool_use_id)
+      ) {
+        for (const child of spliceSubagentChildren(
+          msg.tool_use_id,
+          subagentsByParent,
+          consumedSubagents,
+          () => ctx.globalSeq++,
+        )) {
+          yield child;
+          if (yieldBetweenBatches && now() - sliceStartedAt >= timeSliceMs) {
+            onYield?.();
+            await yieldToEventLoop();
+            sliceStartedAt = now();
+          }
+        }
       }
     }
   }
