@@ -282,6 +282,52 @@ describe("PulseVoice — the monologue", () => {
     expect(voice.flush(4_700)).toEqual([{ scope: "s1", text: "Completed task 1" }]);
   });
 
+  test("lifecycle + recovery frames surface as pulse beats", () => {
+    const voice = new PulseVoice();
+    const beat = (frame: OutboundMessage, at: number): string | undefined => {
+      voice.onFrame("s1", frame, at);
+      return voice.flush(at + VOICE_THROTTLE_MS + 100)[0]?.text;
+    };
+    expect(
+      beat(
+        { type: "task_updated", session_id: "x", task_id: "j1", status: "completed", ipc_version: 2 },
+        0,
+      ),
+    ).toBe("Background job finished");
+    expect(
+      beat(
+        { type: "task_updated", session_id: "x", task_id: "j2", status: "failed", ipc_version: 2 },
+        5_000,
+      ),
+    ).toBe("Background job failed");
+    expect(
+      beat(
+        {
+          type: "wake_started",
+          session_id: "x",
+          wake_trigger: { task_id: "j1", tool_use_id: "t", status: "completed", summary: "", output_file: "" },
+          ipc_version: 2,
+        },
+        10_000,
+      ),
+    ).toBe("Resumed");
+    expect(
+      beat(
+        { type: "api_retry", attempt: 2, max_retries: 10, retry_delay_ms: 0, error_status: 529, error: "overloaded", ipc_version: 2 },
+        15_000,
+      ),
+    ).toBe("Retrying (attempt 2)…");
+    expect(
+      beat(
+        { type: "model_refusal_fallback", original_model: "opus", fallback_model: "sonnet", trigger: "", direction: "", ipc_version: 2 },
+        20_000,
+      ),
+    ).toBe("Switched to sonnet");
+    expect(beat({ type: "output_truncated", ipc_version: 2 }, 25_000)).toBe(
+      "Response truncated",
+    );
+  });
+
   test("subagent work surfaces through the agent's tool calls", () => {
     const voice = new PulseVoice();
     // Launching the agent is announced...

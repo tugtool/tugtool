@@ -76,6 +76,10 @@ const PULSE_FORWARD_ALLOWLIST: &[&str] = &[
     "api_retry",
     "error",
     "wake_started",
+    // Recovery / notice beats the pulse narrates (voice.ts): a model
+    // refusal fallback and an output-truncation ceiling hit.
+    "model_refusal_fallback",
+    "output_truncated",
 ];
 
 /// Active daemon subprocess handles, mirrored on `SessionChild`'s

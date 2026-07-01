@@ -499,6 +499,42 @@ export class PulseVoice {
         return this.onTurnEnd(state, scope, atMs, "Done", frame);
       case "turn_cancelled":
         return this.onTurnEnd(state, scope, atMs, "Stopped", frame);
+      // --- Beats the prose monologue never covers, surfaced directly ---
+      // A backgrounded job reached a terminal state. (The launch + a
+      // subagent's own tool calls are already narrated via the tool_use
+      // path; this is the completion beat, which isn't.)
+      case "task_updated": {
+        const verb =
+          frame.status === "completed"
+            ? "finished"
+            : frame.status === "failed"
+              ? "failed"
+              : "stopped";
+        state.directLine = `Background job ${verb}`;
+        return null;
+      }
+      // Woke from idle to service a deferred/background completion.
+      case "wake_started":
+        state.directLine = "Resumed";
+        return null;
+      // A transient stall the user should read as recovery, not a hang.
+      case "api_retry":
+        state.directLine =
+          frame.attempt > 0
+            ? `Retrying (attempt ${frame.attempt})…`
+            : "Retrying…";
+        return null;
+      // The model declined and the SDK fell back to another model.
+      case "model_refusal_fallback":
+        state.directLine =
+          frame.fallback_model.length > 0
+            ? `Switched to ${frame.fallback_model}`
+            : "Switched to a fallback model";
+        return null;
+      // The turn hit the output ceiling.
+      case "output_truncated":
+        state.directLine = "Response truncated";
+        return null;
       default:
         return null;
     }
